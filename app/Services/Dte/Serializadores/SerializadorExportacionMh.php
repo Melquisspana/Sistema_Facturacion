@@ -1,0 +1,161 @@
+<?php
+
+namespace App\Services\Dte\Serializadores;
+
+use App\DataTransferObjects\Dte\Salida\DteSalidaData;
+use App\Exceptions\Dte\DteNoSerializableException;
+use App\Services\Dte\Serializadores\Concerns\MapeaCatalogosMh;
+
+/**
+ * Serializa una Factura de Exportación (11) al array oficial (fe-fex-v3).
+ *
+ * Particularidades: IVA 0%; receptor EXTRANJERO con codPais/nombrePais (país
+ * obligatorio); flete/seguro; incoterms desde CAT-031 si existe; emisor con
+ * tipoItemExpor. Usa datos ya calculados; no recalcula; no firma/transmite.
+ */
+class SerializadorExportacionMh implements SerializadorMh
+{
+    use MapeaCatalogosMh;
+
+    public function serializar(DteSalidaData $d): array
+    {
+        $problemas = [];
+        $cuerpo = $this->cuerpo($d, $problemas);
+        $receptor = $this->receptor($d, $problemas);
+        if ($problemas !== []) {
+            throw new DteNoSerializableException($problemas);
+        }
+
+        return [
+            'identificacion' => $this->identificacionComun($d->identificacion),
+            'documentoRelacionado' => null,
+            'emisor' => $this->emisor($d),
+            'receptor' => $receptor,
+            'otrosDocumentos' => null,
+            'ventaTercero' => null,
+            'compraTercero' => null,
+            'cuerpoDocumento' => $cuerpo,
+            'resumen' => $this->resumen($d),
+            'apendice' => $this->apendiceComun($d->apendice),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function emisor(DteSalidaData $d): array
+    {
+        $e = $d->emisor;
+
+        return [
+            'nit' => $e->nit,
+            'nrc' => $e->nrc,
+            'nombre' => $e->nombre,
+            'codActividad' => (string) ($e->actividadEconomica ?? ''),
+            'descActividad' => $this->descActividad($e->actividadEconomica),
+            'nombreComercial' => $e->nombreComercial,
+            'direccion' => [
+                'departamento' => mb_substr((string) ($e->departamento ?? ''), 0, 2),
+                'municipio' => mb_substr((string) ($e->municipio ?? ''), 0, 2),
+                'distrito' => '',
+                'complemento' => (string) ($e->direccion ?? ''),
+            ],
+            'telefono' => $e->telefono,
+            'correo' => $e->correo,
+            'codEstable' => $e->codigoEstablecimiento ?: null,
+            'codPuntoVenta' => $e->codigoPuntoVenta ?: null,
+            'tipoItemExpor' => 1,          // 1 = bienes (revisar contra CAT si se manejan servicios)
+            'recintoFiscal' => null,
+            'tipoRegimen' => null,
+            'regimen' => null,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $problemas
+     * @return array<string, mixed>
+     */
+    private function receptor(DteSalidaData $d, array &$problemas): array
+    {
+        $r = $d->receptor;
+        $codPais = $r?->pais;
+        if (blank($codPais)) {
+            $problemas[] = 'La exportación requiere el país del receptor (CAT-020). Falta dato real.';
+        }
+
+        return [
+            'nombre' => (string) ($r?->nombre ?? ''),
+            'tipoDocumento' => (string) ($r?->tipoDocumento ?? ''),
+            'numDocumento' => (string) ($r?->numDocumento ?? ''),
+            'descActividad' => $r?->actividadEconomica ? $this->descActividad($r->actividadEconomica) : '',
+            'nombreComercial' => $r?->nombreComercial,
+            'codPais' => (string) ($codPais ?? ''),
+            'nombrePais' => $this->nombrePais($codPais),
+            'complemento' => (string) ($r?->direccion ?: '—'),
+            'tipoPersona' => (int) ($r?->tipoPersona ?? 1),
+            'telefono' => $r?->telefono,
+            'correo' => $r?->correo,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $problemas
+     * @return array<int, array<string, mixed>>
+     */
+    private function cuerpo(DteSalidaData $d, array &$problemas): array
+    {
+        $items = [];
+        foreach ($d->lineas as $l) {
+            $uni = $this->uniMedida($l, $problemas);
+            if ($l->tipoItem === null) {
+                $problemas[] = "Línea {$l->numeroLinea}: falta tipo de ítem (CAT-011).";
+            }
+
+            $items[] = [
+                'numItem' => $l->numeroLinea,
+                'tipoItem' => (int) ($l->tipoItem ?? 0),
+                'numeroDocumento' => null,
+                'cantidad' => (float) $l->cantidad,
+                'codigo' => $l->codigo,
+                'codTributo' => null,
+                'uniMedida' => $uni,
+                'descripcion' => $l->descripcion,
+                'precioUni' => (float) $l->precioUnitario,
+                'montoDescu' => (float) $l->descuento,
+                'ventaGravada' => (float) $l->ventaExportacion, // la venta de exportación va aquí
+                'tributos' => null,                              // IVA 0%
+                'noGravado' => 0.0,
+            ];
+        }
+
+        return $items;
+    }
+
+    /** @return array<string, mixed> */
+    private function resumen(DteSalidaData $d): array
+    {
+        $r = $d->resumen;
+        $totalGravada = (float) $r->totalExportacion;
+        $totalDescu = (float) $r->descuentoTotal;
+
+        return [
+            'totalGravada' => $totalGravada,
+            'descuGravada' => $totalDescu,
+            'porcentajeDescuento' => (float) $r->porcentajeDescuento,
+            'totalDescu' => $totalDescu,
+            'seguro' => (float) $r->seguro,
+            'flete' => (float) $r->flete,
+            'tributos' => null,
+            'montoTotalOperacion' => (float) $r->montoTotalOperacion,
+            'totalNoGravado' => 0.0,
+            'totalNoOnerosas' => 0.0,
+            'totalPagar' => (float) $r->totalPagar,
+            'totalLetras' => $r->totalLetras,
+            'saldoFavor' => 0.0,
+            'condicionOperacion' => (int) ($r->condicionOperacion ?? 1),
+            'pagos' => null,
+            'codIncoterms' => null,   // CAT-031: si se capturara incoterm, iría aquí
+            'descIncoterms' => null,
+            'numPagoElectronico' => null,
+            'observaciones' => null,
+        ];
+    }
+}

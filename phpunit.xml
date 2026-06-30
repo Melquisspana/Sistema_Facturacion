@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- DTE: el suite arranca SIEMPRE con firma/transmisión en estado seguro
+             (deshabilitado/paralelo), sin importar el .env real de la máquina. Los
+             tests que necesitan firmar/transmitir lo habilitan con config()->set. -->
+        <env name="DTE_FIRMA_ENABLED" value="false"/>
+        <env name="DTE_FIRMADOR_MOCK" value="false"/>
+        <env name="MH_MOCK" value="false"/>
+        <env name="DTE_TRANSMISION_ENABLED" value="false"/>
+        <env name="DTE_TRANSMISION_TEST_ENABLED" value="false"/>
+        <env name="DTE_TRANSMISION_DRY_RUN" value="true"/>
+        <env name="DTE_TRANSMISION_REAL_CONFIRMATION" value="false"/>
+        <env name="DTE_TRANSMISION_ALLOW_PRODUCTION" value="false"/>
+        <env name="DTE_AUTH_TEST_REAL_ENABLED" value="false"/>
+        <env name="DTE_AUTH_TEST_PROD_ENABLED" value="false"/>
+        <env name="DTE_MODO_OPERACION" value="paralelo"/>
+        <env name="DTE_SISTEMA_ACTUAL_ACTIVO" value="true"/>
+        <env name="DTE_TRANSMISION_AMBIENTE" value="testing"/>
+    </php>
+</phpunit>
