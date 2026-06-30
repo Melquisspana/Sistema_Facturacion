@@ -1,0 +1,13 @@
+{
+    "version": 2,
+    "ambiente": "00",
+    "versionApp": 2,
+    "estado": "PROCESADO",
+    "codigoGeneracion": "B4306D78-75F5-4001-BF48-CC1E8830E87D",
+    "selloRecibido": "202625D3A736363D4BE9AE5094EC49FD3F8EAW7F",
+    "fhProcesamiento": "25/06/2026 16:43:28",
+    "clasificaMsg": "10",
+    "codigoMsg": "001",
+    "descripcionMsg": "RECIBIDO",
+    "observaciones": []
+}

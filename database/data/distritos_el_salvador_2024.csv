@@ -1,0 +1,263 @@
+codigo_departamento,municipio,distrito
+01,Ahuachapán Norte,Atiquizaya
+01,Ahuachapán Norte,El Refugio
+01,Ahuachapán Norte,San Lorenzo
+01,Ahuachapán Norte,Turín
+01,Ahuachapán Centro,Ahuachapán
+01,Ahuachapán Centro,Apaneca
+01,Ahuachapán Centro,Concepción de Ataco
+01,Ahuachapán Centro,Tacuba
+01,Ahuachapán Sur,Guaymango
+01,Ahuachapán Sur,Jujutla
+01,Ahuachapán Sur,San Francisco Menéndez
+01,Ahuachapán Sur,San Pedro Puxtla
+02,Santa Ana Norte,Masahuat
+02,Santa Ana Norte,Metapán
+02,Santa Ana Norte,Santa Rosa Guachipilín
+02,Santa Ana Norte,Texistepeque
+02,Santa Ana Centro,Santa Ana
+02,Santa Ana Este,Coatepeque
+02,Santa Ana Este,El Congo
+02,Santa Ana Oeste,Candelaria de la Frontera
+02,Santa Ana Oeste,Chalchuapa
+02,Santa Ana Oeste,El Porvenir
+02,Santa Ana Oeste,San Antonio Pajonal
+02,Santa Ana Oeste,San Sebastián Salitrillo
+02,Santa Ana Oeste,Santiago de la Frontera
+03,Sonsonate Norte,Juayúa
+03,Sonsonate Norte,Nahuizalco
+03,Sonsonate Norte,Salcoatitán
+03,Sonsonate Norte,Santa Catarina Masahuat
+03,Sonsonate Centro,Nahulingo
+03,Sonsonate Centro,San Antonio del Monte
+03,Sonsonate Centro,Sonsonate
+03,Sonsonate Centro,Santo Domingo de Guzmán
+03,Sonsonate Centro,Sonzacate
+03,Sonsonate Este,Armenia
+03,Sonsonate Este,Caluco
+03,Sonsonate Este,Cuisnahuat
+03,Sonsonate Este,Izalco
+03,Sonsonate Este,San Julián
+03,Sonsonate Este,Santa Isabel Ishuatán
+03,Sonsonate Oeste,Acajutla
+04,Chalatenango Norte,La Palma
+04,Chalatenango Norte,Citalá
+04,Chalatenango Norte,San Ignacio
+04,Chalatenango Centro,Agua Caliente
+04,Chalatenango Centro,Dulce Nombre de María
+04,Chalatenango Centro,El Paraíso
+04,Chalatenango Centro,La Reina
+04,Chalatenango Centro,Nueva Concepción
+04,Chalatenango Centro,San Fernando
+04,Chalatenango Centro,San Francisco Morazán
+04,Chalatenango Centro,San Rafael
+04,Chalatenango Centro,Santa Rita
+04,Chalatenango Centro,Tejutla
+04,Chalatenango Sur,Arcatao
+04,Chalatenango Sur,Azacualpa
+04,Chalatenango Sur,Chalatenango
+04,Chalatenango Sur,Comalapa
+04,Chalatenango Sur,Concepción Quezaltepeque
+04,Chalatenango Sur,El Carrizal
+04,Chalatenango Sur,La Laguna
+04,Chalatenango Sur,Las Flores
+04,Chalatenango Sur,Las Vueltas
+04,Chalatenango Sur,Nombre de Jesús
+04,Chalatenango Sur,Nueva Trinidad
+04,Chalatenango Sur,Ojos de Agua
+04,Chalatenango Sur,Potonico
+04,Chalatenango Sur,San Antonio de la Cruz
+04,Chalatenango Sur,San Antonio Los Ranchos
+04,Chalatenango Sur,San Francisco Lempa
+04,Chalatenango Sur,San Isidro Labrador
+04,Chalatenango Sur,San José Cancasque
+04,Chalatenango Sur,San Luis del Carmen
+04,Chalatenango Sur,San Miguel de Mercedes
+05,La Libertad Norte,Quezaltepeque
+05,La Libertad Norte,San Matías
+05,La Libertad Norte,San Pablo Tacachico
+05,La Libertad Centro,Ciudad Arce
+05,La Libertad Centro,San Juan Opico
+05,La Libertad Oeste,Colón
+05,La Libertad Oeste,Jayaque
+05,La Libertad Oeste,Sacacoyo
+05,La Libertad Oeste,Talnique
+05,La Libertad Oeste,Tepecoyo
+05,La Libertad Este,Antiguo Cuscatlán
+05,La Libertad Este,Huizúcar
+05,La Libertad Este,Nuevo Cuscatlán
+05,La Libertad Este,San José Villanueva
+05,La Libertad Este,Zaragoza
+05,La Libertad Costa,Chiltiupán
+05,La Libertad Costa,Jicalapa
+05,La Libertad Costa,La Libertad
+05,La Libertad Costa,Tamanique
+05,La Libertad Costa,Teotepeque
+05,La Libertad Sur,Comasagua
+05,La Libertad Sur,Santa Tecla
+06,San Salvador Norte,Aguilares
+06,San Salvador Norte,El Paisnal
+06,San Salvador Norte,Guazapa
+06,San Salvador Oeste,Apopa
+06,San Salvador Oeste,Nejapa
+06,San Salvador Este,Cuscatancingo
+06,San Salvador Este,Ciudad Delgado
+06,San Salvador Este,Ilopango
+06,San Salvador Este,San Martín
+06,San Salvador Este,Soyapango
+06,San Salvador Este,Tonacatepeque
+06,San Salvador Centro,Ayutuxtepeque
+06,San Salvador Centro,Mejicanos
+06,San Salvador Centro,San Marcos
+06,San Salvador Centro,San Salvador
+06,San Salvador Centro,Santiago Texacuangos
+06,San Salvador Centro,Santo Tomás
+06,San Salvador Sur,Panchimalco
+06,San Salvador Sur,Rosario de Mora
+07,Cuscatlán Norte,Oratorio de Concepción
+07,Cuscatlán Norte,San Bartolomé Perulapía
+07,Cuscatlán Norte,San José Guayabal
+07,Cuscatlán Norte,San Pedro Perulapán
+07,Cuscatlán Norte,Suchitoto
+07,Cuscatlán Sur,Candelaria
+07,Cuscatlán Sur,Cojutepeque
+07,Cuscatlán Sur,El Carmen
+07,Cuscatlán Sur,El Rosario
+07,Cuscatlán Sur,Monte San Juan
+07,Cuscatlán Sur,San Cristóbal
+07,Cuscatlán Sur,San Rafael Cedros
+07,Cuscatlán Sur,San Ramón
+07,Cuscatlán Sur,Santa Cruz Analquito
+07,Cuscatlán Sur,Santa Cruz Michapa
+07,Cuscatlán Sur,Tenancingo
+08,La Paz Oeste,Cuyultitán
+08,La Paz Oeste,Olocuilta
+08,La Paz Oeste,San Francisco Chinameca
+08,La Paz Oeste,San Juan Talpa
+08,La Paz Oeste,San Luis Talpa
+08,La Paz Oeste,San Pedro Masahuat
+08,La Paz Oeste,Tapalhuaca
+08,La Paz Centro,El Rosario
+08,La Paz Centro,Jerusalén
+08,La Paz Centro,Mercedes La Ceiba
+08,La Paz Centro,Paraíso de Osorio
+08,La Paz Centro,San Antonio Masahuat
+08,La Paz Centro,San Emigdio
+08,La Paz Centro,San Juan Tepezontes
+08,La Paz Centro,San Luis La Herradura
+08,La Paz Centro,San Miguel Tepezontes
+08,La Paz Centro,San Pedro Nonualco
+08,La Paz Centro,Santa María Ostuma
+08,La Paz Centro,Santiago Nonualco
+08,La Paz Este,San Juan Nonualco
+08,La Paz Este,San Rafael Obrajuelo
+08,La Paz Este,Zacatecoluca
+09,Cabañas Oeste,Cinquera
+09,Cabañas Oeste,Ilobasco
+09,Cabañas Oeste,Jutiapa
+09,Cabañas Oeste,Tejutepeque
+09,Cabañas Este,Dolores
+09,Cabañas Este,Guacotecti
+09,Cabañas Este,Sensuntepeque
+09,Cabañas Este,San Isidro
+09,Cabañas Este,Victoria
+10,San Vicente Norte,Apastepeque
+10,San Vicente Norte,San Esteban Catarina
+10,San Vicente Norte,San Ildefonso
+10,San Vicente Norte,San Lorenzo
+10,San Vicente Norte,San Sebastián
+10,San Vicente Norte,Santa Clara
+10,San Vicente Norte,Santo Domingo
+10,San Vicente Sur,Guadalupe
+10,San Vicente Sur,San Cayetano Istepeque
+10,San Vicente Sur,San Vicente
+10,San Vicente Sur,Tecoluca
+10,San Vicente Sur,Tepetitán
+10,San Vicente Sur,Verapaz
+11,Usulután Norte,Alegría
+11,Usulután Norte,Berlín
+11,Usulután Norte,El Triunfo
+11,Usulután Norte,Estanzuelas
+11,Usulután Norte,Jucuapa
+11,Usulután Norte,Mercedes Umaña
+11,Usulután Norte,Nueva Granada
+11,Usulután Norte,San Buenaventura
+11,Usulután Norte,Santiago de María
+11,Usulután Este,California
+11,Usulután Este,Concepción Batres
+11,Usulután Este,Ereguayquín
+11,Usulután Este,Jucuarán
+11,Usulután Este,Ozatlán
+11,Usulután Este,San Dionisio
+11,Usulután Este,Santa Elena
+11,Usulután Este,Santa María
+11,Usulután Este,Tecapán
+11,Usulután Este,Usulután
+11,Usulután Oeste,Jiquilisco
+11,Usulután Oeste,Puerto El Triunfo
+11,Usulután Oeste,San Francisco Javier
+11,Usulután Oeste,San Agustín
+12,San Miguel Norte,Carolina
+12,San Miguel Norte,Chapeltique
+12,San Miguel Norte,Ciudad Barrios
+12,San Miguel Norte,Nuevo Edén de San Juan
+12,San Miguel Norte,San Antonio
+12,San Miguel Norte,San Gerardo
+12,San Miguel Norte,San Luis de la Reina
+12,San Miguel Norte,Sesori
+12,San Miguel Centro,Chirilagua
+12,San Miguel Centro,Comacarán
+12,San Miguel Centro,Moncagua
+12,San Miguel Centro,Quelepa
+12,San Miguel Centro,Uluazapa
+12,San Miguel Centro,San Miguel
+12,San Miguel Oeste,Chinameca
+12,San Miguel Oeste,El Tránsito
+12,San Miguel Oeste,Lolotique
+12,San Miguel Oeste,Nueva Guadalupe
+12,San Miguel Oeste,San Jorge
+12,San Miguel Oeste,San Rafael Oriente
+13,Morazán Norte,Arambala
+13,Morazán Norte,Cacaopera
+13,Morazán Norte,Corinto
+13,Morazán Norte,El Rosario
+13,Morazán Norte,Joateca
+13,Morazán Norte,Jocoaitique
+13,Morazán Norte,Meanguera
+13,Morazán Norte,Perquín
+13,Morazán Norte,San Fernando
+13,Morazán Norte,San Isidro
+13,Morazán Norte,Torola
+13,Morazán Sur,Chilanga
+13,Morazán Sur,Delicias de Concepción
+13,Morazán Sur,El Divisadero
+13,Morazán Sur,Gualococti
+13,Morazán Sur,Guatajiagua
+13,Morazán Sur,Jocoro
+13,Morazán Sur,Lolotiquillo
+13,Morazán Sur,Osicala
+13,Morazán Sur,San Carlos
+13,Morazán Sur,San Francisco Gotera
+13,Morazán Sur,San Simón
+13,Morazán Sur,Sensembra
+13,Morazán Sur,Sociedad
+13,Morazán Sur,Yamabal
+13,Morazán Sur,Yoloaiquín
+14,La Unión Norte,Anamorós
+14,La Unión Norte,Bolívar
+14,La Unión Norte,Concepción de Oriente
+14,La Unión Norte,El Sauce
+14,La Unión Norte,Lislique
+14,La Unión Norte,Nueva Esparta
+14,La Unión Norte,Pasaquina
+14,La Unión Norte,Polorós
+14,La Unión Norte,San José
+14,La Unión Norte,Santa Rosa de Lima
+14,La Unión Sur,Conchagua
+14,La Unión Sur,El Carmen
+14,La Unión Sur,Intipucá
+14,La Unión Sur,La Unión
+14,La Unión Sur,Meanguera del Golfo
+14,La Unión Sur,San Alejo
+14,La Unión Sur,Yayantique
+14,La Unión Sur,Yucuaiquín

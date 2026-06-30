@@ -1,0 +1,150 @@
+{
+    "identificacion": {
+        "version": 3,
+        "ambiente": "00",
+        "tipoDte": "05",
+        "numeroControl": "DTE-05-M001P001-000000000000019",
+        "codigoGeneracion": "F41B191D-C1EB-42AF-831B-9666A5F2F386",
+        "tipoModelo": 1,
+        "tipoOperacion": 1,
+        "tipoContingencia": null,
+        "motivoContin": null,
+        "fecEmi": "2026-06-26",
+        "horEmi": "06:15:00",
+        "tipoMoneda": "USD"
+    },
+    "documentoRelacionado": [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 2,
+            "numeroDocumento": "6B70F9AC-EF80-402A-AFEB-11B2BAFDD3D1",
+            "fechaEmision": "2026-06-26"
+        }
+    ],
+    "emisor": {
+        "nit": "10132512610012",
+        "nrc": "1014765",
+        "nombre": "Elsa Fidelina Hernández Cañas",
+        "codActividad": "10730",
+        "descActividad": "Fabricación de cacao, chocolates y productos de confitería",
+        "nombreComercial": "Dulces La Negrita",
+        "tipoEstablecimiento": "02",
+        "direccion": {
+            "departamento": "08",
+            "municipio": "23",
+            "complemento": "km 28 1/2 carretera al aeropuerto frente a maquila internacional olocuilta la paz"
+        },
+        "telefono": "71276473",
+        "correo": "dulceslanegrita@yahoo.com"
+    },
+    "receptor": {
+        "nit": "06141101690011",
+        "nrc": "1937",
+        "nombre": "Calleja, S.A. de C.V.",
+        "codActividad": "47190",
+        "descActividad": "Venta al por menor de otros productos en comercios no especializados",
+        "nombreComercial": "Súper Selectos Cara Sucia",
+        "direccion": {
+            "departamento": "01",
+            "municipio": "15",
+            "complemento": "Carr. A la Front.La Hachadura,  Cara Sucia"
+        },
+        "telefono": "67652343",
+        "correo": "dte@superselectos.com.sv"
+    },
+    "ventaTercero": null,
+    "cuerpoDocumento": [
+        {
+            "numItem": 1,
+            "tipoItem": 1,
+            "numeroDocumento": "6B70F9AC-EF80-402A-AFEB-11B2BAFDD3D1",
+            "cantidad": 4,
+            "codigo": "106753",
+            "codTributo": null,
+            "uniMedida": 59,
+            "descripcion": "COCO RALLADO",
+            "precioUni": 1,
+            "montoDescu": 0,
+            "ventaNoSuj": 0,
+            "ventaExenta": 0,
+            "ventaGravada": 4,
+            "tributos": [
+                "20"
+            ]
+        },
+        {
+            "numItem": 2,
+            "tipoItem": 1,
+            "numeroDocumento": "6B70F9AC-EF80-402A-AFEB-11B2BAFDD3D1",
+            "cantidad": 6,
+            "codigo": "79875",
+            "codTributo": null,
+            "uniMedida": 59,
+            "descripcion": "DULCE DE NANCE",
+            "precioUni": 0.95,
+            "montoDescu": 0,
+            "ventaNoSuj": 0,
+            "ventaExenta": 0,
+            "ventaGravada": 5.7,
+            "tributos": [
+                "20"
+            ]
+        },
+        {
+            "numItem": 3,
+            "tipoItem": 1,
+            "numeroDocumento": "6B70F9AC-EF80-402A-AFEB-11B2BAFDD3D1",
+            "cantidad": 10,
+            "codigo": "DUL-001",
+            "codTributo": null,
+            "uniMedida": 59,
+            "descripcion": "Pepitoria",
+            "precioUni": 0.5,
+            "montoDescu": 0,
+            "ventaNoSuj": 0,
+            "ventaExenta": 0,
+            "ventaGravada": 5,
+            "tributos": [
+                "20"
+            ]
+        }
+    ],
+    "resumen": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 14.7,
+        "subTotalVentas": 14.7,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0,
+        "totalDescu": 0,
+        "tributos": [
+            {
+                "codigo": "20",
+                "descripcion": "Impuesto al Valor Agregado 13%",
+                "valor": 1.91
+            }
+        ],
+        "subTotal": 14.7,
+        "ivaPerci1": 0,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": 16.61,
+        "totalLetras": "DIECISÉIS 61/100 DÓLARES",
+        "condicionOperacion": 1
+    },
+    "extension": {
+        "nombEntrega": null,
+        "docuEntrega": null,
+        "nombRecibe": null,
+        "docuRecibe": null,
+        "observaciones": null
+    },
+    "apendice": [
+        {
+            "campo": "ordenCompra",
+            "etiqueta": "Orden de compra",
+            "valor": "42342342356"
+        }
+    ]
+}

@@ -1,0 +1,134 @@
+{
+    "identificacion": {
+        "version": 3,
+        "ambiente": "01",
+        "tipoDte": "05",
+        "numeroControl": "DTE-05-M001P001-000000000000345",
+        "codigoGeneracion": "2B10FBDA-A69F-461A-9DCF-C0B42516B730",
+        "tipoModelo": 1,
+        "tipoOperacion": 1,
+        "tipoContingencia": null,
+        "motivoContin": null,
+        "fecEmi": "2026-06-19",
+        "horEmi": "08:48:12",
+        "tipoMoneda": "USD"
+    },
+    "documentoRelacionado": [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 2,
+            "numeroDocumento": "DDD83493-853C-4B86-A8C5-6CF491C69FBF",
+            "fechaEmision": "2026-06-15"
+        }
+    ],
+    "emisor": {
+        "nit": "10132512610012",
+        "nrc": "1014765",
+        "nombre": "Elsa Fidelina Hernandez Cañas",
+        "codActividad": "10730",
+        "descActividad": "Fabricacion de cacao  chocolates y productos de confiteria / venta al por menor de otros productos N.C.P.",
+        "nombreComercial": "Dulces La Negrita",
+        "tipoEstablecimiento": "02",
+        "direccion": {
+            "departamento": "08",
+            "municipio": "23",
+            "complemento": "Carr. a Comalapa km 28/5, cton. Cupinco, frente a maquila internacional hacienda Santa Barbara, Olocuilta la Paz"
+        },
+        "telefono": "71276473",
+        "correo": "dulceslanegrita@yahoo.com"
+    },
+    "receptor": {
+        "nit": "06141101690011",
+        "nrc": "1937",
+        "nombre": "Calleja SA de CV",
+        "codActividad": "47111",
+        "descActividad": "Venta en supermercados",
+        "nombreComercial": "Súper Selectos Ilobasco",
+        "direccion": {
+            "departamento": "09",
+            "municipio": "10",
+            "complemento": "4a. Calle Poniente y 3a. Av. Sur,"
+        },
+        "telefono": "2267-3708",
+        "correo": "dte@superselectos.com.sv"
+    },
+    "ventaTercero": null,
+    "cuerpoDocumento": [
+        {
+            "numItem": 1,
+            "tipoItem": 1,
+            "numeroDocumento": "DDD83493-853C-4B86-A8C5-6CF491C69FBF",
+            "cantidad": 3,
+            "codigo": "010105001",
+            "codTributo": null,
+            "uniMedida": 99,
+            "descripcion": "Mani Dulce   7412201700147",
+            "precioUni": 1.04,
+            "montoDescu": 0,
+            "ventaNoSuj": 0,
+            "ventaExenta": 0,
+            "ventaGravada": 3.12,
+            "tributos": [
+                "20"
+            ]
+        },
+        {
+            "numItem": 2,
+            "tipoItem": 1,
+            "numeroDocumento": "DDD83493-853C-4B86-A8C5-6CF491C69FBF",
+            "cantidad": 2,
+            "codigo": "010109001",
+            "codTributo": null,
+            "uniMedida": 99,
+            "descripcion": "Canillitas   7412201700031",
+            "precioUni": 1.05,
+            "montoDescu": 0,
+            "ventaNoSuj": 0,
+            "ventaExenta": 0,
+            "ventaGravada": 2.1,
+            "tributos": [
+                "20"
+            ]
+        }
+    ],
+    "resumen": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 5.22,
+        "subTotalVentas": 5.22,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0.26,
+        "totalDescu": 0.26,
+        "tributos": [
+            {
+                "codigo": "20",
+                "descripcion": "Impuesto al Valor Agregado 13%",
+                "valor": 0.64
+            }
+        ],
+        "subTotal": 4.96,
+        "ivaPerci1": 0,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": 5.6,
+        "totalLetras": "CINCO DOLARES CON 60/100 CENTAVOS.",
+        "condicionOperacion": 1
+    },
+    "extension": {
+        "nombEntrega": null,
+        "docuEntrega": null,
+        "nombRecibe": null,
+        "docuRecibe": null,
+        "observaciones": null
+    },
+    "apendice": [
+        {
+            "campo": "OrdenCompra",
+            "etiqueta": "Número de Orden de Compra",
+            "valor": "26060214001727"
+        }
+    ],
+    "selloRecepcion": "20268264AF7ECDFD4B6EAA495FC686C38AF3CWT0",
+    "firma": "eyJhbGciOiJSUzUxMiJ9.ew0KICAiaWRlbnRpZmljYWNpb24iIDogew0KICAgICJ2ZXJzaW9uIiA6IDMsDQogICAgImFtYmllbnRlIiA6ICIwMSIsDQogICAgInRpcG9EdGUiIDogIjA1IiwNCiAgICAibnVtZXJvQ29udHJvbCIgOiAiRFRFLTA1LU0wMDFQMDAxLTAwMDAwMDAwMDAwMDM0NSIsDQogICAgImNvZGlnb0dlbmVyYWNpb24iIDogIjJCMTBGQkRBLUE2OUYtNDYxQS05RENGLUMwQjQyNTE2QjczMCIsDQogICAgInRpcG9Nb2RlbG8iIDogMSwNCiAgICAidGlwb09wZXJhY2lvbiIgOiAxLA0KICAgICJ0aXBvQ29udGluZ2VuY2lhIiA6IG51bGwsDQogICAgIm1vdGl2b0NvbnRpbiIgOiBudWxsLA0KICAgICJmZWNFbWkiIDogIjIwMjYtMDYtMTkiLA0KICAgICJob3JFbWkiIDogIjA4OjQ4OjEyIiwNCiAgICAidGlwb01vbmVkYSIgOiAiVVNEIg0KICB9LA0KICAiZG9jdW1lbnRvUmVsYWNpb25hZG8iIDogWyB7DQogICAgInRpcG9Eb2N1bWVudG8iIDogIjAzIiwNCiAgICAidGlwb0dlbmVyYWNpb24iIDogMiwNCiAgICAibnVtZXJvRG9jdW1lbnRvIiA6ICJEREQ4MzQ5My04NTNDLTRCODYtQThDNS02Q0Y0OTFDNjlGQkYiLA0KICAgICJmZWNoYUVtaXNpb24iIDogIjIwMjYtMDYtMTUiDQogIH0gXSwNCiAgImVtaXNvciIgOiB7DQogICAgIm5pdCIgOiAiMTAxMzI1MTI2MTAwMTIiLA0KICAgICJucmMiIDogIjEwMTQ3NjUiLA0KICAgICJub21icmUiIDogIkVsc2EgRmlkZWxpbmEgSGVybmFuZGV6IENhw7FhcyIsDQogICAgImNvZEFjdGl2aWRhZCIgOiAiMTA3MzAiLA0KICAgICJkZXNjQWN0aXZpZGFkIiA6ICJGYWJyaWNhY2lvbiBkZSBjYWNhbyAgY2hvY29sYXRlcyB5IHByb2R1Y3RvcyBkZSBjb25maXRlcmlhIC8gdmVudGEgYWwgcG9yIG1lbm9yIGRlIG90cm9zIHByb2R1Y3RvcyBOLkMuUC4iLA0KICAgICJub21icmVDb21lcmNpYWwiIDogIkR1bGNlcyBMYSBOZWdyaXRhIiwNCiAgICAidGlwb0VzdGFibGVjaW1pZW50byIgOiAiMDIiLA0KICAgICJkaXJlY2Npb24iIDogew0KICAgICAgImRlcGFydGFtZW50byIgOiAiMDgiLA0KICAgICAgIm11bmljaXBpbyIgOiAiMjMiLA0KICAgICAgImNvbXBsZW1lbnRvIiA6ICJDYXJyLiBhIENvbWFsYXBhIGttIDI4LzUsIGN0b24uIEN1cGluY28sIGZyZW50ZSBhIG1hcXVpbGEgaW50ZXJuYWNpb25hbCBoYWNpZW5kYSBTYW50YSBCYXJiYXJhLCBPbG9jdWlsdGEgbGEgUGF6Ig0KICAgIH0sDQogICAgInRlbGVmb25vIiA6ICI3MTI3NjQ3MyIsDQogICAgImNvcnJlbyIgOiAiZHVsY2VzbGFuZWdyaXRhQHlhaG9vLmNvbSINCiAgfSwNCiAgInJlY2VwdG9yIiA6IHsNCiAgICAibml0IiA6ICIwNjE0MTEwMTY5MDAxMSIsDQogICAgIm5yYyIgOiAiMTkzNyIsDQogICAgIm5vbWJyZSIgOiAiQ2FsbGVqYSBTQSBkZSBDViIsDQogICAgImNvZEFjdGl2aWRhZCIgOiAiNDcxMTEiLA0KICAgICJkZXNjQWN0aXZpZGFkIiA6ICJWZW50YSBlbiBzdXBlcm1lcmNhZG9zIiwNCiAgICAibm9tYnJlQ29tZXJjaWFsIiA6ICJTw7pwZXIgU2VsZWN0b3MgSWxvYmFzY28iLA0KICAgICJkaXJlY2Npb24iIDogew0KICAgICAgImRlcGFydGFtZW50byIgOiAiMDkiLA0KICAgICAgIm11bmljaXBpbyIgOiAiMTAiLA0KICAgICAgImNvbXBsZW1lbnRvIiA6ICI0YS4gQ2FsbGUgUG9uaWVudGUgeSAzYS4gQXYuIFN1ciwiDQogICAgfSwNCiAgICAidGVsZWZvbm8iIDogIjIyNjctMzcwOCIsDQogICAgImNvcnJlbyIgOiAiZHRlQHN1cGVyc2VsZWN0b3MuY29tLnN2Ig0KICB9LA0KICAidmVudGFUZXJjZXJvIiA6IG51bGwsDQogICJjdWVycG9Eb2N1bWVudG8iIDogWyB7DQogICAgIm51bUl0ZW0iIDogMSwNCiAgICAidGlwb0l0ZW0iIDogMSwNCiAgICAibnVtZXJvRG9jdW1lbnRvIiA6ICJEREQ4MzQ5My04NTNDLTRCODYtQThDNS02Q0Y0OTFDNjlGQkYiLA0KICAgICJjYW50aWRhZCIgOiAzLA0KICAgICJjb2RpZ28iIDogIjAxMDEwNTAwMSIsDQogICAgImNvZFRyaWJ1dG8iIDogbnVsbCwNCiAgICAidW5pTWVkaWRhIiA6IDk5LA0KICAgICJkZXNjcmlwY2lvbiIgOiAiTWFuaSBEdWxjZSAgIDc0MTIyMDE3MDAxNDciLA0KICAgICJwcmVjaW9VbmkiIDogMS4wNCwNCiAgICAibW9udG9EZXNjdSIgOiAwLA0KICAgICJ2ZW50YU5vU3VqIiA6IDAsDQogICAgInZlbnRhRXhlbnRhIiA6IDAsDQogICAgInZlbnRhR3JhdmFkYSIgOiAzLjEyLA0KICAgICJ0cmlidXRvcyIgOiBbICIyMCIgXQ0KICB9LCB7DQogICAgIm51bUl0ZW0iIDogMiwNCiAgICAidGlwb0l0ZW0iIDogMSwNCiAgICAibnVtZXJvRG9jdW1lbnRvIiA6ICJEREQ4MzQ5My04NTNDLTRCODYtQThDNS02Q0Y0OTFDNjlGQkYiLA0KICAgICJjYW50aWRhZCIgOiAyLA0KICAgICJjb2RpZ28iIDogIjAxMDEwOTAwMSIsDQogICAgImNvZFRyaWJ1dG8iIDogbnVsbCwNCiAgICAidW5pTWVkaWRhIiA6IDk5LA0KICAgICJkZXNjcmlwY2lvbiIgOiAiQ2FuaWxsaXRhcyAgIDc0MTIyMDE3MDAwMzEiLA0KICAgICJwcmVjaW9VbmkiIDogMS4wNSwNCiAgICAibW9udG9EZXNjdSIgOiAwLA0KICAgICJ2ZW50YU5vU3VqIiA6IDAsDQogICAgInZlbnRhRXhlbnRhIiA6IDAsDQogICAgInZlbnRhR3JhdmFkYSIgOiAyLjEsDQogICAgInRyaWJ1dG9zIiA6IFsgIjIwIiBdDQogIH0gXSwNCiAgInJlc3VtZW4iIDogew0KICAgICJ0b3RhbE5vU3VqIiA6IDAsDQogICAgInRvdGFsRXhlbnRhIiA6IDAsDQogICAgInRvdGFsR3JhdmFkYSIgOiA1LjIyLA0KICAgICJzdWJUb3RhbFZlbnRhcyIgOiA1LjIyLA0KICAgICJkZXNjdU5vU3VqIiA6IDAsDQogICAgImRlc2N1RXhlbnRhIiA6IDAsDQogICAgImRlc2N1R3JhdmFkYSIgOiAwLjI2LA0KICAgICJ0b3RhbERlc2N1IiA6IDAuMjYsDQogICAgInRyaWJ1dG9zIiA6IFsgew0KICAgICAgImNvZGlnbyIgOiAiMjAiLA0KICAgICAgImRlc2NyaXBjaW9uIiA6ICJJbXB1ZXN0byBhbCBWYWxvciBBZ3JlZ2FkbyAxMyUiLA0KICAgICAgInZhbG9yIiA6IDAuNjQNCiAgICB9IF0sDQogICAgInN1YlRvdGFsIiA6IDQuOTYsDQogICAgIml2YVBlcmNpMSIgOiAwLA0KICAgICJpdmFSZXRlMSIgOiAwLA0KICAgICJyZXRlUmVudGEiIDogMCwNCiAgICAibW9udG9Ub3RhbE9wZXJhY2lvbiIgOiA1LjYsDQogICAgInRvdGFsTGV0cmFzIiA6ICJDSU5DTyBET0xBUkVTIENPTiA2MC8xMDAgQ0VOVEFWT1MuIiwNCiAgICAiY29uZGljaW9uT3BlcmFjaW9uIiA6IDENCiAgfSwNCiAgImV4dGVuc2lvbiIgOiB7DQogICAgIm5vbWJFbnRyZWdhIiA6IG51bGwsDQogICAgImRvY3VFbnRyZWdhIiA6IG51bGwsDQogICAgIm5vbWJSZWNpYmUiIDogbnVsbCwNCiAgICAiZG9jdVJlY2liZSIgOiBudWxsLA0KICAgICJvYnNlcnZhY2lvbmVzIiA6IG51bGwNCiAgfSwNCiAgImFwZW5kaWNlIiA6IFsgew0KICAgICJjYW1wbyIgOiAiT3JkZW5Db21wcmEiLA0KICAgICJldGlxdWV0YSIgOiAiTsO6bWVybyBkZSBPcmRlbiBkZSBDb21wcmEiLA0KICAgICJ2YWxvciIgOiAiMjYwNjAyMTQwMDE3MjciDQogIH0gXQ0KfQ.LglaHkfkTPRN4e-sTHdPmGjoGFxBC4xBc6UrxFf-rQsHPkmDiunf5e9umlUFuDiBGhYxiXVXfWVo3cInLfjqN-M9BTytF68YKsD1C_YEmtWUBY3cYcoeC-lbTOwp-dRRUCmOhbiyfeKOokQqVDEH89Xc0pNXWtt2ILdwQEz-Tu69WZwChBUhwxZrySm7HmBQLy7vP_oAaI_wWYbM_UAamfcqbjoXNIt1tYAoM-Btp5cGf66rSYIH02I-Hh4jM6DgBTm_NPAFN_2kP-ea6C369KueRsHxUyuQM1xyZc_Fs4Wei1XgYSSss0OG8WWjEXI_Dn38fpWUZHuTmRoWWhjeHQ"
+}
