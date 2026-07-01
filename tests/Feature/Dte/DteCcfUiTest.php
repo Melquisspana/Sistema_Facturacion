@@ -249,15 +249,41 @@ class DteCcfUiTest extends TestCase
         $this->assertSame('5.65', $dte->total_pagar);
     }
 
-    public function test_establecimiento_y_punto_venta_del_emisor_cargan(): void
+    public function test_con_varios_establecimientos_los_selects_siguen_visibles_y_requeridos(): void
     {
-        $this->emisor();
+        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
+        $estab1 = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        $estab2 = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M002', 'nombre' => 'Sucursal Centro', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $estab1->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $estab2->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+        Cliente::factory()->contribuyente()->create();
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.create-ccf'))
             ->assertOk()
-            ->assertSee('Casa Matriz')   // establecimiento del emisor
-            ->assertSee('Caja 1');       // punto de venta del emisor
+            ->assertSee('Establecimiento emisor')       // selects visibles
+            ->assertSee('Punto de venta emisor')
+            ->assertSee('— Seleccione —')                // placeholder del select
+            ->assertSee('Casa Matriz')
+            ->assertSee('Sucursal Centro');
+    }
+
+    public function test_un_establecimiento_con_varios_pv_oculta_estab_pero_muestra_pv(): void
+    {
+        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+        Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.create-ccf'))
+            ->assertOk()
+            ->assertDontSee('Establecimiento emisor')    // establecimiento único → auto/oculto
+            ->assertSee('type="hidden" name="establecimiento_id" value="'.$estab->id.'"', false)
+            ->assertSee('Punto de venta emisor')         // varios PV → visible y a elegir
+            ->assertSee('Caja 1')
+            ->assertSee('Caja 2');
     }
 
     public function test_sin_establecimiento_o_punto_venta_muestra_mensaje(): void
@@ -369,17 +395,45 @@ class DteCcfUiTest extends TestCase
             ->assertDontSee('name="descuento_global"', false);
     }
 
-    public function test_formulario_muestra_labels_de_emisor(): void
+    public function test_emisor_unico_se_autoselecciona_y_oculta_ambos_selects(): void
     {
-        $this->emisor();
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         Cliente::factory()->contribuyente()->create();
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.create-ccf'))
             ->assertOk()
-            ->assertSee('Establecimiento emisor')
-            ->assertSee('Punto de venta emisor')
-            ->assertSee('no a la sala del cliente');
+            // Ni labels ni placeholders de select: el usuario no debe tocar estos campos.
+            ->assertDontSee('Establecimiento emisor')
+            ->assertDontSee('Punto de venta emisor')
+            ->assertDontSee('— Seleccione —')
+            ->assertSee('se asignan automáticamente')
+            // Los IDs viajan en inputs ocultos para que el backend los valide/asigne.
+            ->assertSee('type="hidden" name="establecimiento_id" value="'.$estab->id.'"', false)
+            ->assertSee('type="hidden" name="punto_venta_id" value="'.$pv->id.'"', false);
+    }
+
+    public function test_emisor_unico_crea_borrador_con_ids_autoseleccionados(): void
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        // Simula el envío del formulario con los inputs ocultos (sin selección manual).
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.store-ccf'), [
+                'tipo_dte' => '03',
+                'cliente_id' => $cliente->id,
+                'establecimiento_id' => $estab->id,
+                'punto_venta_id' => $pv->id,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('dtes', [
+            'cliente_id' => $cliente->id,
+            'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id,
+            'estado' => 'borrador',
+        ]);
     }
 
     public function test_crear_ccf_toma_descuento_default_del_cliente(): void
