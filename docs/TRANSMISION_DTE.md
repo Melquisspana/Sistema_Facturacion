@@ -8,6 +8,31 @@
 > Fuente: *Manual Técnico para la Integración Tecnológica del Sistema de Transmisión v2*
 > (`docs/referencias/`). Los servicios son **REST**; todo en **UTF-8**, **TLS 1.2+**.
 
+## Hito — primera transmisión real a apitest (30-jun-2026)
+
+> **Punto estable.** Se validó de extremo a extremo la transmisión REAL contra el
+> ambiente de pruebas del MH (`apitest.dtes.mh.gob.sv`) y luego se **restauró el modo
+> seguro**. No se transmitió nada a producción.
+
+- **DTE `id=71`** (CCF, cliente Calleja S.A. de C.V., total $42.78) **ACEPTADO por apitest**.
+- **Sello de recepción real:** `2026D04751ECD4324D039CEAFD9A3516AAA7JESF`.
+- **`respuesta_mh` guardada** (BD + `storage/app/dte/respuestas/…json`): `estado=PROCESADO`,
+  `codigoMsg=001`, `descripcionMsg=RECIBIDO`, `fhProcesamiento=30/06/2026 22:07:54`.
+  `Dte::aceptadoRealmentePorMh()` = **true** (sello real, no `MOCK`).
+- **Flags restaurados a modo seguro** tras la prueba: `DTE_FIRMADOR_MOCK=true`,
+  `MH_MOCK=true`, `DTE_TRANSMISION_TEST_ENABLED=false`. **Producción sigue bloqueada**
+  (`DTE_TRANSMISION_ALLOW_PRODUCTION=false`, `DTE_TRANSMISION_REAL_CONFIRMATION=false`,
+  modo `paralelo`).
+- **PPQ y correos intactos**: `dte:transmitir` no envía correo; no se disparó envío automático.
+
+**Procedimiento seguro usado** (repetible): diagnóstico read-only → `dte:auth-test` +
+`dte:firma-post-test` → verificar certificado real (POST directo al firmador, sin persistir)
+→ `dte:firmar {id}` con `DTE_FIRMADOR_MOCK=false` puntual (restaurar) → `dte:transmitir-dry-run {id}`
+→ abrir los 3 flags (`DTE_FIRMADOR_MOCK`/`MH_MOCK`/`DTE_TRANSMISION_TEST_ENABLED`) →
+`config:clear` → `dte:transmitir {id}` → **restaurar los 3 flags + `config:clear`**. Cada
+cambio de flag requiere `config:clear` para tomar efecto. Los cambios persistentes reales
+quedan solo en el DTE #71 (firma + aceptación).
+
 ## 0. Botón manual "Firmar y transmitir" — MODO MOCK (punto estable)
 
 > Estado: **operativo SOLO en modo MOCK** (firma y aceptación **simuladas**).
