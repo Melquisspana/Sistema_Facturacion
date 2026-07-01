@@ -91,6 +91,10 @@ Route::middleware('auth')->group(function () {
         // Acción MANUAL única: firma local + transmisión (DtePolicy::firmarTransmitir). Idempotente.
         // En modo MOCK (DTE_FIRMADOR_MOCK / MH_MOCK) simula firma y aceptación sin firmador ni red.
         Route::post('{dte}/firmar-transmitir', [DteController::class, 'firmarTransmitir'])->name('firmar-transmitir');
+        // Invalidación (evento anulardte): SOLO mock + dry-run visual desde la UI. La
+        // transmisión REAL a apitest se hace únicamente por consola (dte:invalidacion-real).
+        Route::post('{dte}/invalidacion/dry-run', [DteController::class, 'dryRunInvalidacion'])->name('invalidacion.dry-run');
+        Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])->name('invalidacion.mock');
         Route::get('{dte}/editar', [DteController::class, 'edit'])->name('edit');
         Route::post('{dte}/generar', [DteController::class, 'generar'])->name('generar');
         Route::post('{dte}/anular', [DteController::class, 'anular'])->name('anular');

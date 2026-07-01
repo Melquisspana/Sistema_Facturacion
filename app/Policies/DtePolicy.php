@@ -112,4 +112,29 @@ class DtePolicy
             && blank($dte->sello_recepcion)
             && ! $dte->esAnulado();
     }
+
+    /**
+     * Ver el bloque de invalidación (evento anulardte) en la ficha: panel de candados,
+     * dry-run visual y, si aplica, la evidencia del evento mock. Solo gestores y solo si
+     * el DTE es candidato (aceptado realmente por el MH) o ya tiene un evento de
+     * invalidación registrado (para mostrar la evidencia). Es solo lectura.
+     */
+    public function verInvalidacion(User $user, Dte $dte): bool
+    {
+        return $user->hasAnyRole(self::GESTORES)
+            && ($dte->aceptadoRealmentePorMh() || $dte->tieneEventoInvalidacion());
+    }
+
+    /**
+     * Firmar el evento de invalidación en MODO MOCK (Fase C): persiste columnas dedicadas
+     * SIN transmitir a Hacienda ni cambiar el estado del DTE. Solo gestores, solo un DTE
+     * aceptado realmente por el MH y sin evento de invalidación previo (no se invalida dos
+     * veces). La transmisión REAL a apitest queda fuera de la UI (solo por consola).
+     */
+    public function invalidarMock(User $user, Dte $dte): bool
+    {
+        return $user->hasAnyRole(self::GESTORES)
+            && $dte->aceptadoRealmentePorMh()
+            && ! $dte->tieneEventoInvalidacion();
+    }
 }

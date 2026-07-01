@@ -7,8 +7,11 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
 use App\Enums\TipoNotaCredito;
+use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
+use App\Enums\TipoAnulacionMh;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
 use App\Exceptions\Dte\DteFirmaException;
+use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteJsonException;
 use App\Exceptions\Dte\DteJsonInvalidoException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
@@ -33,6 +36,8 @@ use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\DteInvalidacionMockService;
+use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\PrecioProductoResolver;
@@ -263,7 +268,7 @@ class DteController extends Controller
         return redirect()->route('facturacion.edit', $nc)->with('status', $this->mensajeNotaCredito($nc));
     }
 
-    public function show(Dte $dte, DteTransmisionService $transmision): View
+    public function show(Dte $dte, DteTransmisionService $transmision, DteInvalidacionService $invalidacionService): View
     {
         $this->authorize('view', $dte);
 
@@ -287,7 +292,22 @@ class DteController extends Controller
             ];
         }
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico'));
+        // Invalidación (evento anulardte): panel de candados + evidencia. SOLO LECTURA aquí;
+        // evaluarCandados no firma, no transmite, no toca BD. La UI solo ofrece mock/dry-run.
+        $invalidacion = null;
+        if (auth()->user()?->can('verInvalidacion', $dte)) {
+            $evento = $this->eventoInvalidacionDesdeConfig(TipoAnulacionMh::RescindirOperacion);
+            $invalidacion = [
+                'puede_mock' => auth()->user()->can('invalidarMock', $dte),
+                'mock_activo' => (bool) config('dte.invalidacion.mock', false),
+                'ya_invalidado' => $dte->tieneEventoInvalidacion(),
+                'candados' => $invalidacionService->evaluarCandados($dte, $evento, false, false),
+                'dry_run' => session('dry_run_invalidacion'),
+                'tipos' => TipoAnulacionMh::opciones(),
+            ];
+        }
+
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion'));
     }
 
     /**
@@ -556,6 +576,101 @@ class DteController extends Controller
             ->route('facturacion.show', $dte)
             ->with('dry_run', $resumen)
             ->with('status', 'Dry-run ejecutado (solo diagnóstico). NO se transmitió nada a Hacienda.');
+    }
+
+    /**
+     * DRY-RUN visual de la INVALIDACIÓN (evento anulardte): arma el evento con los datos
+     * de config + form, lo valida contra el schema y muestra a qué endpoint iría, el estado
+     * de los candados y el evento serializado. Solo lectura: NO firma, NO transmite, NO
+     * toca BD, NO muestra secretos (el `documento`/JWS va como marcador). Solo gestores.
+     */
+    public function dryRunInvalidacion(Request $request, Dte $dte, DteInvalidacionService $invalidacionService): RedirectResponse
+    {
+        $this->authorize('verInvalidacion', $dte);
+
+        $evento = $this->eventoInvalidacionDesdeRequest($request);
+
+        try {
+            $resumen = $invalidacionService->dryRun($dte, $evento);
+        } catch (DteInvalidacionException $e) {
+            return redirect()
+                ->route('facturacion.show', $dte)
+                ->with('error', 'No se puede preparar el dry-run de invalidación: '.$e->getMessage());
+        }
+
+        return redirect()
+            ->route('facturacion.show', $dte)
+            ->with('dry_run_invalidacion', $resumen)
+            ->with('status', 'Dry-run de invalidación ejecutado (solo diagnóstico). NO se firmó ni transmitió nada.');
+    }
+
+    /**
+     * Firma el evento de invalidación en MODO MOCK (Fase C): persiste columnas dedicadas
+     * (JSON/JWS ficticios + sello MOCK) SIN transmitir a Hacienda, SIN cambiar el estado del
+     * DTE y SIN tocar la evidencia de recepción original. La transmisión REAL a apitest NO
+     * está disponible desde la UI: se hace solo por consola (dte:invalidacion-real).
+     */
+    public function invalidarMock(Request $request, Dte $dte, DteInvalidacionMockService $mockService): RedirectResponse
+    {
+        $this->authorize('invalidarMock', $dte);
+
+        $evento = $this->eventoInvalidacionDesdeRequest($request);
+        $confirmar = $request->boolean('confirmar_sin_flag');
+
+        try {
+            $r = $mockService->firmarMock($dte, $evento, persistir: true, permitirSinMock: $confirmar);
+        } catch (DteInvalidacionException $e) {
+            return redirect()
+                ->route('facturacion.show', $dte)
+                ->with('error', 'No se pudo firmar la invalidación en MOCK: '.$e->getMessage());
+        }
+
+        return redirect()
+            ->route('facturacion.show', $dte)
+            ->with('status', 'Evento de invalidación firmado en MODO PRUEBA (MOCK). Sello: '.$r['sello_invalidacion']
+                .'. NO se transmitió nada a Hacienda y el estado del DTE ("'.$r['estado_dte'].'") no cambió.');
+    }
+
+    /**
+     * Valida los campos del formulario de invalidación (tipo CAT-024, motivo, reemplazo) y
+     * construye el EventoInvalidacionData con el responsable/solicitante de config.
+     */
+    private function eventoInvalidacionDesdeRequest(Request $request): EventoInvalidacionData
+    {
+        $datos = $request->validate([
+            'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoAnulacionMh::cases()))],
+            'motivo' => ['nullable', 'string', 'max:1000', \Illuminate\Validation\Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::Otro->value)],
+            'reemplazo' => ['nullable', 'string', 'max:100', \Illuminate\Validation\Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::ErrorInformacion->value)],
+        ], [
+            'motivo.required' => 'El motivo en texto es obligatorio para el tipo 3 (Otro).',
+            'reemplazo.required' => 'El código de generación del documento de reemplazo es obligatorio para el tipo 1 (Error en la información).',
+        ]);
+
+        return $this->eventoInvalidacionDesdeConfig(
+            TipoAnulacionMh::from((int) $datos['tipo']),
+            $datos['motivo'] ?? null,
+            $datos['reemplazo'] ?? null,
+        );
+    }
+
+    /**
+     * Arma el EventoInvalidacionData tomando responsable/solicitante de config('dte.invalidacion.*')
+     * (mismos datos que usa el comando dte:invalidacion-mock). El tipo/motivo/reemplazo los
+     * aporta quien invoca.
+     */
+    private function eventoInvalidacionDesdeConfig(TipoAnulacionMh $tipo, ?string $motivo = null, ?string $reemplazo = null): EventoInvalidacionData
+    {
+        return new EventoInvalidacionData(
+            tipoAnulacion: $tipo,
+            nombreResponsable: config('dte.invalidacion.responsable.nombre') ?: null,
+            tipoDocResponsable: config('dte.invalidacion.responsable.tipo_doc') ?: null,
+            numDocResponsable: config('dte.invalidacion.responsable.num_doc') ?: null,
+            nombreSolicita: config('dte.invalidacion.solicita.nombre') ?: null,
+            tipoDocSolicita: config('dte.invalidacion.solicita.tipo_doc') ?: null,
+            numDocSolicita: config('dte.invalidacion.solicita.num_doc') ?: null,
+            motivoAnulacion: $motivo,
+            codigoGeneracionReemplazo: $reemplazo,
+        );
     }
 
     /**
