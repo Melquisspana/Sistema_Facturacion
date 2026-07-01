@@ -170,6 +170,46 @@ return [
     ],
 
     /*
+    | Evento de INVALIDACIÓN oficial (anulación de un DTE ya aceptado por el MH).
+    | FASE DE PREPARACIÓN: solo se genera y valida el evento JSON; NO se firma ni se
+    | transmite a /fesv/anulardte todavía. Los datos del responsable/solicitante son
+    | obligatorios en el schema y hoy NO están en la BD: se leen de .env.
+    |
+    | TODO (pendiente de confirmar en el Manual Técnico del MH, no está en texto en el
+    | repo): qué tipoAnulacion (CAT-024) corresponde para una NC tipo 05 aceptada y si
+    | aplica ventana de tiempo. Mientras no se confirme, el tipo se pasa EXPLÍCITO.
+    */
+    'invalidacion' => [
+        // Versión del schema del evento (invalidacion-schema-v3.json).
+        'version' => (int) env('DTE_INVALIDACION_VERSION', 3),
+        // MODO MOCK (Fase C): firma SIMULADA del evento, sin firmador real y sin
+        // transmitir. Genera un JWS ficticio y un sello de invalidación marcado. NO
+        // vale ante Hacienda. La firma/transmisión real llega en fases posteriores.
+        'mock' => (bool) env('DTE_INVALIDACION_MOCK', false),
+        // CANDADO de la transmisión REAL del evento a /fesv/anulardte (Fase D). Debe ser
+        // true (además del mock apagado y los flags del comando) para transmitir de
+        // verdad contra apitest. Nunca habilita producción. Default false.
+        'real_confirmation' => (bool) env('DTE_INVALIDACION_REAL_CONFIRMATION', false),
+        // Overrides de los códigos MH del emisor SOLO si se confirma que difieren de
+        // los internos (M001/P001). Vacío = usar los internos del establecimiento/PV.
+        'cod_estable_mh' => env('DTE_INVALIDACION_COD_ESTABLE_MH', ''),
+        'cod_punto_venta_mh' => env('DTE_INVALIDACION_COD_PUNTO_VENTA_MH', ''),
+        // Datos de quien REALIZA el evento (responsable). Obligatorios en el schema.
+        // TODO: completar con datos reales antes de invalidar de verdad.
+        'responsable' => [
+            'nombre' => env('DTE_INVALIDACION_RESP_NOMBRE', ''),
+            'tipo_doc' => env('DTE_INVALIDACION_RESP_TIPO_DOC', ''),   // CAT-022 (36=NIT, 13=DUI)
+            'num_doc' => env('DTE_INVALIDACION_RESP_NUM_DOC', ''),
+        ],
+        // Datos de quien SOLICITA el evento. Obligatorios en el schema.
+        'solicita' => [
+            'nombre' => env('DTE_INVALIDACION_SOL_NOMBRE', ''),
+            'tipo_doc' => env('DTE_INVALIDACION_SOL_TIPO_DOC', ''),
+            'num_doc' => env('DTE_INVALIDACION_SOL_NUM_DOC', ''),
+        ],
+    ],
+
+    /*
     | Credenciales y secretos: SIEMPRE desde .env, nunca en el repositorio.
     | Vacías en Fase 1.
     */
@@ -310,5 +350,10 @@ return [
         'firmados' => 'dte/firmados',
         'pdf' => 'dte/pdf',
         'respuestas' => 'dte/respuestas',
+        // Evento de invalidación (JSON, JWS firmado y respuesta del MH), separados de
+        // los archivos del DTE original.
+        'invalidacion_json' => 'dte/invalidacion/json',
+        'invalidacion_firmados' => 'dte/invalidacion/firmados',
+        'invalidacion_respuestas' => 'dte/invalidacion/respuestas',
     ],
 ];
