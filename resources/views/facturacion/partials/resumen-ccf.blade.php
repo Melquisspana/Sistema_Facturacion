@@ -7,7 +7,15 @@
 
     Parámetros: $dte (requerido), $esAgenteRetencion (opcional).
 --}}
-@php $esFex = $dte->tipo_dte === \App\Enums\TipoDte::FacturaExportacion; @endphp
+@php
+    $esFex = $dte->tipo_dte === \App\Enums\TipoDte::FacturaExportacion;
+    // Productos agregados en el orden fijo de la orden de compra (barcode/nombre);
+    // los que no están en la lista quedan al final por nombre. Solo afecta la
+    // presentación del panel, no el numero_linea ni los cálculos.
+    $lineasOrdenadas = $dte->lineas
+        ->sortBy(fn ($l) => [\App\Support\Dte\OrdenProductosOc::rank($l->codigo_barra, $l->descripcion), mb_strtoupper((string) $l->descripcion)])
+        ->values();
+@endphp
 
 <div class="space-y-6">
     {{-- Productos agregados --}}
@@ -18,7 +26,7 @@
         </div>
 
         <ul class="divide-y divide-gray-100 -mx-1">
-            @forelse ($dte->lineas as $linea)
+            @forelse ($lineasOrdenadas as $linea)
                 <li class="px-1 py-3">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
