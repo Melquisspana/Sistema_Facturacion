@@ -483,6 +483,11 @@
                 </div>
             @endif
 
+            {{-- Invalidación oficial (evento anulardte): SOLO mock + dry-run visual (gestores). --}}
+            @if ($invalidacion ?? false)
+                @include('facturacion.partials.invalidacion', ['dte' => $dte, 'invalidacion' => $invalidacion])
+            @endif
+
             {{-- Aviso de anulación interna --}}
             @if ($dte->esAnulado())
                 <div class="bg-rose-50 border border-rose-300 rounded-lg p-4 text-sm text-rose-800">
