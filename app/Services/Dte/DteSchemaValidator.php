@@ -53,6 +53,48 @@ class DteSchemaValidator
         }
 
         $schemaJson = (string) $this->repo->leer($tipo);
+
+        return $this->validarContraSchema($datos, $schemaJson);
+    }
+
+    /**
+     * Valida el array del EVENTO DE INVALIDACIÓN contra `invalidacion-schema-v3.json`.
+     * El evento de invalidación NO es un tipo de DTE, por eso tiene su propio método:
+     * lee el schema directamente de resources/dte/schemas/invalidacion/.
+     *
+     * @param  array<string, mixed>  $datos
+     * @return array{estado: string, valido: bool, disponible: bool, errores: array<int, string>, mensaje: string}
+     */
+    public function validarInvalidacion(array $datos): array
+    {
+        $version = (int) config('dte.invalidacion.version', 3);
+        $ruta = resource_path('dte/schemas/invalidacion/invalidacion-schema-v'.$version.'.json');
+        if (! is_file($ruta)) {
+            return $this->resultado('sin_schema', false, true, [], 'No hay schema de invalidación colocado ('.basename($ruta).').');
+        }
+
+        if (! $this->disponible()) {
+            return $this->resultado(
+                'sin_libreria',
+                false,
+                false,
+                [],
+                'Validación contra schema pendiente: falta la librería de JSON Schema. '
+                .'Instalá opis/json-schema (draft-07): composer require opis/json-schema'
+            );
+        }
+
+        return $this->validarContraSchema($datos, (string) file_get_contents($ruta));
+    }
+
+    /**
+     * Núcleo de validación: valida un array PHP contra un schema JSON crudo.
+     *
+     * @param  array<string, mixed>  $datos
+     * @return array{estado: string, valido: bool, disponible: bool, errores: array<int, string>, mensaje: string}
+     */
+    private function validarContraSchema(array $datos, string $schemaJson): array
+    {
         // Convierte arrays asociativos a stdClass y conserva tipos (number/integer).
         $payload = json_decode(json_encode($datos));
 

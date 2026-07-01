@@ -39,6 +39,16 @@ class DteObserver
         'motivo_anulacion',
         'observacion_anulacion',
         'fecha_anulacion',
+        // Evento de invalidación oficial (metadatos, no contenido del DTE original).
+        'codigo_generacion_invalidacion',
+        'tipo_anulacion',
+        'json_invalidacion_path',
+        'jws_invalidacion_path',
+        'sello_invalidacion',
+        'respuesta_mh_invalidacion',
+        'respuesta_mh_invalidacion_path',
+        'fecha_invalidacion',
+        'fecha_procesamiento_invalidacion',
         'updated_at',
     ];
 

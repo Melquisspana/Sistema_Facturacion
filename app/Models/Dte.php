@@ -38,6 +38,9 @@ class Dte extends Model
         'cod_incoterms', 'desc_incoterms',
         'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'moneda',
         'motivo_anulacion', 'observacion_anulacion', 'fecha_anulacion', 'invalidado_by',
+        'codigo_generacion_invalidacion', 'tipo_anulacion', 'json_invalidacion_path', 'jws_invalidacion_path',
+        'sello_invalidacion', 'respuesta_mh_invalidacion', 'respuesta_mh_invalidacion_path',
+        'fecha_invalidacion', 'fecha_procesamiento_invalidacion',
         'total_no_sujeto', 'total_exento', 'total_gravado', 'total_exportacion',
         'descuento_no_sujeto', 'descuento_exento', 'descuento_gravado',
         'descuento_global', 'descuento_porcentaje_aplicado', 'total_descuento', 'subtotal', 'iva',
@@ -57,6 +60,10 @@ class Dte extends Model
             'tipo_nota_credito' => TipoNotaCredito::class,
             'motivo_anulacion' => MotivoAnulacion::class,
             'fecha_anulacion' => 'datetime',
+            'tipo_anulacion' => \App\Enums\TipoAnulacionMh::class,
+            'respuesta_mh_invalidacion' => 'array',
+            'fecha_invalidacion' => 'datetime',
+            'fecha_procesamiento_invalidacion' => 'datetime',
             'fecha_emision' => 'date',
             'fecha_procesamiento_mh' => 'datetime',
             'respuesta_mh' => 'array',
@@ -93,6 +100,16 @@ class Dte extends Model
     public function esAnulado(): bool
     {
         return $this->estado === EstadoDte::Invalidado;
+    }
+
+    /**
+     * ¿Ya tiene un evento de invalidación oficial registrado? (sello de invalidación
+     * presente — en mock, ficticio marcado — o estado ya invalidado). Sirve de candado
+     * de idempotencia para no invalidar dos veces.
+     */
+    public function tieneEventoInvalidacion(): bool
+    {
+        return filled($this->sello_invalidacion) || $this->esAnulado();
     }
 
     /**

@@ -343,6 +343,45 @@ class DteFirmaService
     }
 
     /**
+     * Firma REAL de un JSON arbitrario con el firmador local del MH y devuelve el JWS.
+     * Pensado para EVENTOS que no son un DTE con estado/almacenamiento propio (p. ej. el
+     * evento de invalidación). NO toca BD, NO cambia estado, NO guarda archivos: solo
+     * firma y devuelve. La contraseña se lee de .env y NUNCA se imprime.
+     *
+     * No aplica el modo mock (dte.firma.mock): el mock del evento de invalidación vive en
+     * su propio servicio de Fase C. Este método es exclusivamente la firma REAL.
+     *
+     * @param  array<string, mixed>  $json
+     *
+     * @throws DteFirmaException             si faltan credenciales o el firmador rechaza
+     * @throws DteFirmaDeshabilitadaException si la firma no está habilitada
+     */
+    public function firmarJson(array $json): string
+    {
+        if (! (bool) config('dte.firma.enabled', false)) {
+            throw new DteFirmaDeshabilitadaException(
+                'La firma está deshabilitada (dte.firma.enabled=false). No se firmó el evento.'
+            );
+        }
+
+        $nit = trim((string) config('dte.firma.nit', ''));
+        $password = (string) config('dte.firma.cert_password', '');
+        if ($nit === '') {
+            throw new DteFirmaException('Falta el NIT del emisor para firmar (configure DTE_FIRMA_NIT en .env).');
+        }
+        if ($password === '') {
+            throw new DteFirmaException('Falta la contraseña del certificado para firmar (configure DTE_CERT_PASSWORD en .env).');
+        }
+
+        $jws = $this->enviarAlFirmador($nit, $password, $json);
+        if (trim($jws) === '') {
+            throw new DteFirmaException('El firmador no devolvió un documento firmado (JWS vacío).');
+        }
+
+        return $jws;
+    }
+
+    /**
      * Firma SIMULADA (modo mock local). Genera un JWS FICTICIO claramente marcado y
      * lo guarda igual que la firma real (json_firmado_path), pero SIN firmador, SIN
      * certificado y SIN claves. No cambia el estado ni transmite (mismo contrato que
