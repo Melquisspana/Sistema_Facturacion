@@ -33,6 +33,33 @@
 cambio de flag requiere `config:clear` para tomar efecto. Los cambios persistentes reales
 quedan solo en el DTE #71 (firma + aceptación).
 
+## Hito — primera Nota de Crédito real a apitest (30-jun-2026)
+
+> **Punto estable.** Primera **Nota de Crédito (tipo 05)** propia transmitida y **ACEPTADA
+> realmente por apitest**, referenciando el CCF #71 ya aceptado. Modo seguro restaurado
+> al terminar. No se transmitió nada a producción.
+
+- **DTE `id=74`** (Nota de Crédito tipo 05, devolución parcial: 1 × «DULCE DE MIEL»,
+  total **$1.02**) **ACEPTADO por apitest**.
+- **Referencia al CCF #71 aceptado**: `documentoRelacionado` apunta al `codigoGeneracion`
+  real del CCF #71 (`CF903852-05A2-4881-8305-DEC18DC386C7`, tipoDocumento `03`,
+  tipoGeneracion `2`). El descuento del #71 (5% global) se acredita proporcionalmente.
+- **Sello de recepción real:** `2026A77BCED2A5C249999ECD1C51427B05A5ERRH`.
+- **`respuesta_mh` guardada** (BD + `storage/app/dte/respuestas/…json`): `estado=PROCESADO`,
+  `codigoMsg=001`, `descripcionMsg=RECIBIDO`, `ambiente=00`, `fhProcesamiento=30/06/2026 22:48:44`,
+  sin observaciones. `Dte::aceptadoRealmentePorMh()` = **true** (sello real, no `MOCK`).
+- **JWS real reutilizado**: firmado antes con `alg=RS512` (no se re-firmó; `DTE_FIRMADOR_MOCK`
+  quedó en `true`). Se abrieron **solo** `MH_MOCK=false` + `DTE_TRANSMISION_TEST_ENABLED=true`.
+- **Flags restaurados a modo seguro** tras la prueba: `MH_MOCK=true`,
+  `DTE_TRANSMISION_TEST_ENABLED=false`, `DTE_FIRMADOR_MOCK=true` (`.env` verificado idéntico
+  al respaldo). **Producción sigue bloqueada** (`DTE_TRANSMISION_ALLOW_PRODUCTION=false`,
+  `DTE_TRANSMISION_REAL_CONFIRMATION=false`, modo `paralelo`).
+- **PPQ, correos y CCF #71 intactos**: sin **envío automático de correo**
+  (`correo.auto_envio=false`, 0 envíos encolados para la NC #74); el CCF #71 no se modificó
+  (solo se referenció); no se tocaron totales, cliente, productos ni correlativo de la NC.
+- Estructura validada contra `fe-nc-v3` y comparada con la referencia de oro
+  (`comparar_nc.php`): **0 diferencias estructurales**.
+
 ## 0. Botón manual "Firmar y transmitir" — MODO MOCK (punto estable)
 
 > Estado: **operativo SOLO en modo MOCK** (firma y aceptación **simuladas**).
