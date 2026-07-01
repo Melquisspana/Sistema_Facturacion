@@ -456,6 +456,42 @@ class DteBorradorService
     }
 
     /**
+     * Fija la cantidad de un producto en el borrador de forma IDEMPOTENTE por producto
+     * (no duplica): si el producto ya es una línea, actualiza su cantidad; si no existe
+     * y cantidad > 0, la agrega; si la cantidad es null/0 y la línea existe, la elimina.
+     * Reusa la resolución de precio, la validación y el recálculo existentes; no cambia
+     * ninguna regla fiscal.
+     *
+     * @return array{accion: string, linea: ?DteLinea}
+     *
+     * @throws DocumentoInmutableException
+     */
+    public function establecerCantidadProducto(Dte $dte, Producto $producto, ?int $cantidad): array
+    {
+        $this->verificarEditable($dte);
+
+        $linea = $dte->lineas()->where('producto_id', $producto->id)->first();
+
+        // Sin cantidad (null/0): quitar la línea si estaba; si no, no hacer nada.
+        if ($cantidad === null || $cantidad <= 0) {
+            if ($linea) {
+                $this->eliminarLinea($linea);
+
+                return ['accion' => 'eliminada', 'linea' => null];
+            }
+
+            return ['accion' => 'sin_cambio', 'linea' => null];
+        }
+
+        // Con cantidad: actualizar la línea existente o crear una nueva (nunca duplicar).
+        if ($linea) {
+            return ['accion' => 'actualizada', 'linea' => $this->actualizarLinea($linea, ['cantidad' => (string) $cantidad])];
+        }
+
+        return ['accion' => 'agregada', 'linea' => $this->agregarLineaDesdeProducto($dte, $producto, $cantidad)];
+    }
+
+    /**
      * Elimina una línea y recalcula (renumerando las restantes en recalcular()).
      *
      * @throws DocumentoInmutableException

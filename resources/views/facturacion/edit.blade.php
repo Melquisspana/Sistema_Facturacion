@@ -116,20 +116,23 @@
                                                 @if ($p['sin_precio'])
                                                     <td colspan="2" class="px-3 py-2 text-xs text-gray-400">No se puede agregar sin precio.</td>
                                                 @else
+                                                    @php $qty = $cantidadesPorProducto[$p['id']] ?? null; @endphp
                                                     <td colspan="2" class="px-3 py-2">
-                                                        <form method="POST" action="{{ route('facturacion.lineas.store', $dte) }}"
+                                                        {{-- Auto-agregar: al escribir una cantidad (>0) se agrega/actualiza la línea;
+                                                             0 o vacío la quita. Idempotente por producto (no duplica). El botón es respaldo. --}}
+                                                        <form method="POST" action="{{ route('facturacion.productos.cantidad', [$dte, $p['id']]) }}"
                                                               class="flex items-end gap-2">
                                                             @csrf
-                                                            <input type="hidden" name="producto_id" value="{{ $p['id'] }}">
                                                             <div>
                                                                 <label class="sr-only" for="cant-add-{{ $p['id'] }}">Cantidad</label>
-                                                                {{-- Cantidad entera: min 1, step 1 (sin decimales). --}}
-                                                                <input id="cant-add-{{ $p['id'] }}" type="number" name="cantidad" value="1" step="1" min="1"
-                                                                       inputmode="numeric"
-                                                                       class="block w-20 border-gray-300 rounded-md shadow-sm text-sm" required>
+                                                                {{-- Cantidad entera: step 1, min 0 (0/vacío quita la línea). --}}
+                                                                <input id="cant-add-{{ $p['id'] }}" type="number" name="cantidad"
+                                                                       value="{{ $qty ?? '' }}" step="1" min="0" inputmode="numeric" placeholder="0"
+                                                                       onchange="this.form.requestSubmit()"
+                                                                       class="block w-20 border-gray-300 rounded-md shadow-sm text-sm {{ $qty ? 'ring-1 ring-indigo-300 bg-indigo-50/50' : '' }}">
                                                             </div>
-                                                            <button class="px-3 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
-                                                                Agregar
+                                                            <button class="px-3 py-2 {{ $qty ? 'bg-gray-600 hover:bg-gray-700' : 'bg-indigo-600 hover:bg-indigo-700' }} text-white text-sm rounded-md">
+                                                                {{ $qty ? 'Actualizar' : 'Agregar' }}
                                                             </button>
                                                         </form>
                                                     </td>

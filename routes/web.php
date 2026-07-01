@@ -113,6 +113,12 @@ Route::middleware('auth')->group(function () {
             ->name('acreditar')
             ->withoutScopedBindings();
 
+        // Fijar la cantidad de un producto en el borrador (auto-agregar/actualizar/quitar,
+        // idempotente por producto). {producto} no es hijo de {dte}: sin scoped binding.
+        Route::post('{dte}/productos/{producto}/cantidad', [DteController::class, 'setCantidadProducto'])
+            ->name('productos.cantidad')
+            ->withoutScopedBindings();
+
         // Líneas del borrador.
         Route::post('{dte}/lineas', [DteController::class, 'storeLinea'])->name('lineas.store');
         Route::patch('{dte}/lineas/{linea}', [DteController::class, 'updateLinea'])->name('lineas.update');

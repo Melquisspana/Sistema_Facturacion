@@ -772,7 +772,14 @@ class DteController extends Controller
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
         $umbralRetencion = number_format((float) config('dte.retencion_iva_umbral', 100), 2, '.', '');
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion'));
+        // Cantidad ya agregada por producto (para prellenar el input del catálogo y saber
+        // si el botón es "Agregar" o "Actualizar"). producto_id => cantidad entera.
+        $cantidadesPorProducto = $dte->lineas
+            ->filter(fn (DteLinea $l) => $l->producto_id !== null)
+            ->mapWithKeys(fn (DteLinea $l) => [$l->producto_id => (int) $l->cantidad])
+            ->all();
+
+        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto'));
     }
 
     /**
@@ -818,15 +825,17 @@ class DteController extends Controller
                     'es_especial' => $esEspecial,
                     'origen_label' => $origenLabel,
                     'sin_precio' => $sinPrecio,
+                    // Posición en la orden de compra (barcode/nombre); fuera de la lista al final.
+                    'oc_rank' => \App\Support\Dte\OrdenProductosOc::rank($p->codigo_barra, $p->nombre),
                     'filtro' => mb_strtolower(trim(($p->codigo ?? '').' '.($p->codigo_barra ?? '').' '.$p->nombre)),
                 ];
             });
 
         return $items
             ->sortBy([
-                ['sin_precio', 'asc'],   // con precio primero
-                ['es_especial', 'desc'], // especiales antes que generales
-                ['nombre', 'asc'],
+                ['sin_precio', 'asc'],   // los sin precio (no agregables) al final
+                ['oc_rank', 'asc'],      // orden fijo de la orden de compra
+                ['nombre', 'asc'],       // desempate y fuera-de-lista por nombre
             ])
             ->values()
             ->all();
@@ -1131,6 +1140,51 @@ class DteController extends Controller
         }
 
         return back()->with('status', 'Producto agregado a la nota de crédito por avería.');
+    }
+
+    /**
+     * Fija la cantidad de un producto en el borrador (auto-agregar por cantidad):
+     * cantidad > 0 agrega o actualiza la línea (idempotente por producto, no duplica);
+     * cantidad 0/vacía quita la línea si existía. Reusa DteBorradorService; no cambia
+     * reglas fiscales, no firma ni transmite.
+     */
+    public function setCantidadProducto(Request $request, Dte $dte, Producto $producto): RedirectResponse
+    {
+        $this->authorize('update', $dte);
+
+        // En una NC los productos entran por acreditación o por el catálogo de avería.
+        if ($dte->tipo_dte === TipoDte::NotaCredito) {
+            return back()->withErrors(['cantidad' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
+        }
+
+        $request->validate(['cantidad' => ['nullable', 'integer', 'min:0', 'max:999999']]);
+
+        $raw = $request->input('cantidad');
+        $cantidad = ($raw === null || $raw === '') ? null : (int) $raw;
+
+        // Al agregar/actualizar con cantidad, el producto debe tener precio aplicable
+        // (mismo criterio que storeLinea). Sin precio no se agrega.
+        if ($cantidad !== null && $cantidad > 0) {
+            $r = app(PrecioProductoResolver::class)->resolverConOrigen($producto, $dte->cliente_id, $dte->cliente_sucursal_id);
+            if ($r['precio'] === null || ! is_numeric($r['precio']) || (float) $r['precio'] <= 0) {
+                return back()->withErrors(['cantidad' => 'El producto no tiene un precio aplicable para este cliente; no se puede agregar.']);
+            }
+        }
+
+        try {
+            $res = $this->borradores->establecerCantidadProducto($dte, $producto, $cantidad);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors());
+        }
+
+        $mensaje = match ($res['accion']) {
+            'agregada' => 'Producto agregado.',
+            'actualizada' => 'Cantidad actualizada.',
+            'eliminada' => 'Producto quitado del borrador.',
+            default => null,
+        };
+
+        return $mensaje ? back()->with('status', $mensaje) : back();
     }
 
     public function storeLinea(AgregarLineaDteRequest $request, Dte $dte): RedirectResponse
