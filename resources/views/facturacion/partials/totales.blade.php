@@ -10,7 +10,11 @@
       - $esAgenteRetencion (opcional): para precisar la nota de retención no
         aplicada. null = desconocido (la nota se muestra igual); false = no es
         agente (se omite la nota de umbral).
+      - $compacto (opcional, default false): si true, apila los 3 bloques en una
+        sola columna (para el panel lateral del editor). SOLO cambia el layout;
+        no altera textos ni cálculos.
 --}}
+@php $compacto = $compacto ?? false; @endphp
 @php
     $esFactura = $dte->tipo_dte === \App\Enums\TipoDte::Factura;
     $esFex = $dte->tipo_dte === \App\Enums\TipoDte::FacturaExportacion;
@@ -29,7 +33,7 @@
     $totalLabel = $esNc ? 'Total a acreditar' : 'Total a pagar';
 @endphp
 
-<div class="bg-white shadow sm:rounded-lg p-6">
+<div class="bg-white shadow sm:rounded-lg {{ $compacto ? 'p-4' : 'p-6' }}">
     <div class="flex items-center justify-between mb-4">
         <h3 class="font-semibold text-gray-700">Totales</h3>
         @if ($dte->esAnulado())
@@ -39,7 +43,7 @@
         @endif
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+    <div class="grid {{ $compacto ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3' }} gap-4 text-sm">
 
         {{-- Bloque 1: Resumen de ventas --}}
         <div class="rounded-lg border border-gray-200 p-4">
