@@ -11,8 +11,10 @@ use App\Exceptions\Dte\DteNoSerializableException;
 use App\Exceptions\Dte\GeneracionException;
 use App\Models\Correlativo;
 use App\Models\Dte;
+use App\Models\DteLinea;
 use App\Models\User;
 use App\Support\Dinero;
+use App\Support\Dte\OrdenProductosOc;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -54,6 +56,12 @@ class DteGeneracionService
             $dte->numero_interno = $this->formatearNumeroInterno($dte, $numero);
             $dte->save();
 
+            // Congela el orden de las líneas según la orden de compra (solo CCF) y
+            // reasigna numero_linea 1..n ANTES de transicionar (aún en borrador: el
+            // observer permite editar líneas). Así el JSON oficial y el PDF quedan en el
+            // mismo orden. No cambia cantidades, precios ni totales.
+            $this->reordenarLineasSegunOc($dte);
+
             // Transición de estado + bitácora (única vía válida).
             $this->maquina->transicionar($dte, EstadoDte::Generado, $usuario, 'Generación del documento');
 
@@ -93,6 +101,41 @@ class DteGeneracionService
         } catch (DteJsonException $e) {
             throw new GeneracionException('El documento no se generó: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Ordena las líneas del CCF según la orden de compra (código de barras / nombre;
+     * lo no listado al final) y reasigna numero_linea 1..n, de modo que el JSON oficial
+     * (numItem) y el PDF salgan en ese mismo orden. Solo aplica a documentos NUEVOS que
+     * se están generando desde borrador (aún editables) y solo al CCF; las notas de
+     * crédito y otros tipos conservan su orden. No modifica cantidades, precios ni totales.
+     *
+     * Público para poder verificarlo de forma aislada; en el flujo real lo invoca
+     * {@see generar()} sobre el borrador antes de transicionar a generado.
+     */
+    public function reordenarLineasSegunOc(Dte $dte): void
+    {
+        if ($dte->tipo_dte !== TipoDte::CreditoFiscal) {
+            return;
+        }
+
+        $ordenadas = $dte->lineas()->get()
+            ->sortBy(fn (DteLinea $l) => [
+                OrdenProductosOc::rank($l->codigo_barra, $l->descripcion),
+                mb_strtoupper((string) $l->descripcion),
+            ])
+            ->values();
+
+        $numero = 1;
+        foreach ($ordenadas as $linea) {
+            if ((int) $linea->numero_linea !== $numero) {
+                $linea->numero_linea = $numero;
+                $linea->save();
+            }
+            $numero++;
+        }
+
+        $dte->load('lineas'); // recargar en el nuevo orden para el JSON oficial / PDF
     }
 
     /**
