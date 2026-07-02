@@ -1,5 +1,8 @@
 * text=auto eol=lf
 
+# Los scripts .bat de Windows deben conservar CRLF para ejecutarse bien en cmd.exe.
+*.bat text eol=crlf
+
 *.blade.php diff=html
 *.css diff=css
 *.html diff=html
