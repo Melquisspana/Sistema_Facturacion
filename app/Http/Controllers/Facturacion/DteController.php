@@ -900,11 +900,14 @@ class DteController extends Controller
         }
 
         $envio = $this->encolarEnvio($dte, $emails, $request->user()?->id);
-        if ($envio === null) {
-            return back()->with('status', 'Ya hay un envío pendiente para esos destinatarios; no se duplicó.');
-        }
+        // Éxito (encolado nuevo o ya en cola): el envío corre en segundo plano (cola), la
+        // respuesta NO espera al SMTP. Se redirige EN LA MISMA PESTAÑA al PDF para imprimir
+        // (sin window.open, que el navegador puede bloquear). Solo se abre el PDF si encoló.
+        $mensaje = $envio === null
+            ? 'El correo ya estaba en cola para esos destinatarios. Abriendo PDF para imprimir.'
+            : 'Correo en cola para envío a: '.implode(', ', $emails).'. Abriendo PDF para imprimir.';
 
-        return back()->with('status', 'Correo encolado para: '.implode(', ', $emails).'.');
+        return redirect()->route('facturacion.pdf', $dte)->with('status', $mensaje);
     }
 
     /** Reenvía el documento con los destinatarios de un envío previo (nuevo registro). */

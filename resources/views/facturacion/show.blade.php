@@ -27,23 +27,13 @@
                         <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline text-sm">Ver PDF preliminar</a>
                         <a href="{{ route('facturacion.pdf.descargar', $dte) }}" class="text-indigo-600 hover:underline text-sm">Descargar PDF preliminar</a>
 
-                        {{-- Envío rápido de un clic al correo del cliente/sala (solo gestores, no borrador). --}}
+                        {{-- Solo el estado; la acción de enviar vive en la sección "Correo del cliente". --}}
                         @can('enviarCorreo', $dte)
-                            @php
-                                $correoClienteQuick = $dte->clienteSucursal?->correo ?: $dte->cliente?->correo;
-                                $yaEnviadoQuick = $dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
-                            @endphp
-                            @if (filled($correoClienteQuick))
-                                <form method="POST" action="{{ route('facturacion.correo.cliente', $dte) }}" class="inline-flex"
-                                      onsubmit="return confirm('¿Enviar este documento por correo a {{ $correoClienteQuick }}?');">
-                                    @csrf
-                                    <button class="text-indigo-600 hover:underline text-sm">Enviar por correo</button>
-                                </form>
-                                @if ($yaEnviadoQuick)
-                                    <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Enviado por correo</span>
-                                @endif
-                            @else
-                                <span class="text-sm text-amber-600" title="Configurá el correo del cliente/sala para poder enviar">Sin correo del cliente</span>
+                            @if ($dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true)))
+                                <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+                                    Enviado por correo
+                                </span>
                             @endif
                         @endcan
 
@@ -157,85 +147,104 @@
                         default => ['No enviado', '⚪', 'bg-gray-100 text-gray-600'],
                     };
                     $destinatariosUltimo = $ultimo?->destinatariosTexto();
+                    $yaEnviado = $envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
                     $mailerDriver = config('mail.default');
                     $mailerReal = ! in_array(config("mail.mailers.$mailerDriver.transport", $mailerDriver), ['log', 'array'], true);
                 @endphp
-                <div class="bg-white shadow sm:rounded-lg p-6">
-                    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-                        <h3 class="font-semibold text-gray-700">Correo del cliente</h3>
+                <div class="bg-white shadow sm:rounded-lg overflow-hidden">
+                    {{-- Header compacto: título + estado --}}
+                    <div class="flex items-center justify-between gap-2 px-5 py-3 border-b border-gray-100 bg-gray-50/70">
+                        <div class="flex items-center gap-2">
+                            <svg class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z"/><path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z"/></svg>
+                            <h3 class="font-semibold text-gray-700">Correo del cliente</h3>
+                        </div>
                         <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {{ $estadoEnvio[2] }}">{{ $estadoEnvio[1] }} {{ $estadoEnvio[0] }}</span>
                     </div>
 
-                    @unless ($mailerReal)
-                        <div class="mb-4 rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
-                            <strong>Modo prueba (MAIL_MAILER={{ $mailerDriver }}):</strong> el correo <strong>NO se envía realmente</strong>; se escribe en <code>storage/logs/laravel.log</code>. Los envíos quedan como <em>Simulado</em>, no como enviados reales.
-                        </div>
-                    @endunless
+                    <div class="p-5 space-y-4">
+                        @unless ($mailerReal)
+                            <div class="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-800">
+                                <strong>Modo prueba (MAIL_MAILER={{ $mailerDriver }}):</strong> el correo <strong>no se envía realmente</strong>; se escribe en <code>storage/logs/laravel.log</code> y queda como <em>Simulado</em>.
+                            </div>
+                        @endunless
 
-                    @if ($ultimo)
-                        <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm mb-4">
-                            <div class="sm:col-span-2"><dt class="text-gray-500">Destinatarios</dt><dd class="text-gray-800 break-all">{{ $destinatariosUltimo }}</dd></div>
-                            <div><dt class="text-gray-500">Fecha</dt><dd>{{ $ultimo->created_at->format('d/m/Y H:i') }}</dd></div>
-                            @if ($ultimo->error)
-                                <div class="sm:col-span-3"><dt class="text-gray-500">{{ $ultimo->estado === 'simulado' ? 'Nota' : 'Error SMTP' }}</dt><dd class="{{ $ultimo->estado === 'simulado' ? 'text-violet-700' : 'text-rose-600' }} break-all">{{ $ultimo->error }}</dd></div>
+                        {{-- Destinatario principal + resumen del último envío --}}
+                        <div class="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3">
+                            <div class="text-xs uppercase tracking-wide text-gray-400">Destinatario principal</div>
+                            <div class="font-medium text-gray-800 break-all">{{ $correoDefault ?: 'Sin correo configurado en el cliente/sala' }}</div>
+                            @if ($ultimo)
+                                <div class="mt-1 text-xs text-gray-500 break-all">
+                                    Último envío: {{ $ultimo->created_at->format('d/m/Y H:i') }} · {{ $destinatariosUltimo }}
+                                    @if ($ultimo->error)
+                                        <span class="{{ $ultimo->estado === 'simulado' ? 'text-violet-600' : 'text-rose-600' }}"> · {{ $ultimo->estado === 'simulado' ? 'Nota' : 'Error' }}: {{ \Illuminate\Support\Str::limit($ultimo->error, 120) }}</span>
+                                    @endif
+                                </div>
                             @endif
-                        </dl>
-                    @endif
-
-                    <form method="POST" action="{{ route('facturacion.correo.enviar', $dte) }}" class="space-y-2">
-                        @csrf
-                        <label for="destinatarios" class="block text-sm text-gray-600">Destinatarios <span class="text-gray-400">(uno por línea o separados por coma)</span></label>
-                        <textarea id="destinatarios" name="destinatarios" rows="3" required
-                                  placeholder="cliente@correo.com&#10;contabilidad@empresa.com"
-                                  class="w-full rounded-md border-gray-300 text-sm">{{ old('destinatarios', $correoDefault) }}</textarea>
-                        @error('destinatarios')<p class="text-xs text-rose-600">{{ $message }}</p>@enderror
-                        <div class="flex items-center justify-between flex-wrap gap-2">
-                            <p class="text-xs text-gray-400">Adjunta el PDF{{ $dte->json_generado_path ? ' y el JSON oficial' : '' }}. El envío se encola (no espera al SMTP).</p>
-                            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">{{ $ultimo ? 'Enviar nuevamente' : 'Enviar por correo' }}</button>
                         </div>
-                    </form>
 
-                    @if ($envios->isNotEmpty())
-                        <div class="mt-5 overflow-x-auto">
-                            <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Historial de envíos</h4>
-                            <table class="min-w-full text-sm">
-                                <thead>
-                                    <tr class="text-left text-xs uppercase text-gray-500 border-b">
-                                        <th class="py-2 pr-3">Fecha</th>
-                                        <th class="py-2 pr-3">Destinatarios</th>
-                                        <th class="py-2 pr-3">Estado</th>
-                                        <th class="py-2 pr-3">Adjuntos</th>
-                                        <th class="py-2 pr-3">Por</th>
-                                        <th class="py-2 pr-3"></th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100">
-                                    @foreach ($envios as $e)
-                                        <tr>
-                                            <td class="py-2 pr-3 whitespace-nowrap">{{ $e->created_at->format('d/m/Y H:i') }}</td>
-                                            <td class="py-2 pr-3 break-all">{{ $e->destinatariosTexto() }}</td>
-                                            <td class="py-2 pr-3 whitespace-nowrap">
-                                                @php
-                                                    $clase = ['enviado' => 'bg-green-100 text-green-700', 'simulado' => 'bg-violet-100 text-violet-700', 'pendiente' => 'bg-amber-100 text-amber-700', 'error' => 'bg-rose-100 text-rose-700'][$e->estado] ?? 'bg-gray-100 text-gray-600';
-                                                    $etiqueta = ['enviado' => 'Enviado', 'simulado' => 'Simulado', 'pendiente' => 'Pendiente', 'error' => 'Fallido'][$e->estado] ?? ucfirst($e->estado);
-                                                @endphp
-                                                <span class="inline-block rounded px-2 py-0.5 text-xs {{ $clase }}">{{ $etiqueta }}</span>
-                                                @if ($e->error)<span class="ml-1 cursor-help {{ $e->estado === 'simulado' ? 'text-violet-500' : 'text-rose-500' }}" title="{{ $e->error }}">ⓘ</span>@endif
-                                            </td>
-                                            <td class="py-2 pr-3 text-gray-600">{{ $e->adjuntos ?? '—' }}</td>
-                                            <td class="py-2 pr-3 text-gray-600">{{ $e->usuario?->name ?? 'Automático' }}</td>
-                                            <td class="py-2 pr-3 text-right">
-                                                <form method="POST" action="{{ route('facturacion.correo.reenviar', [$dte, $e]) }}">
-                                                    @csrf
-                                                    <button class="text-indigo-600 hover:underline text-xs">Reenviar</button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
+                        {{-- Form compacto: textarea bajo + botón a la derecha --}}
+                        <form method="POST" action="{{ route('facturacion.correo.enviar', $dte) }}" class="space-y-1.5">
+                            @csrf
+                            <label for="destinatarios" class="block text-sm text-gray-600">Destinatarios <span class="text-gray-400">(uno por línea o separados por coma)</span></label>
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <textarea id="destinatarios" name="destinatarios" rows="2" required
+                                          placeholder="cliente@correo.com, contabilidad@empresa.com"
+                                          class="flex-1 rounded-md border-gray-300 text-sm">{{ old('destinatarios', $correoDefault) }}</textarea>
+                                <button type="submit" class="shrink-0 self-start sm:self-stretch inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                                    {{ $yaEnviado ? 'Reenviar y abrir PDF' : 'Enviar correo y abrir PDF' }}
+                                </button>
+                            </div>
+                            @error('destinatarios')<p class="text-xs text-rose-600">{{ $message }}</p>@enderror
+                            <p class="text-xs text-gray-400">Adjunta el PDF{{ $dte->json_generado_path ? ' y el JSON oficial' : '' }}. El correo queda <strong>en cola</strong> (no espera al SMTP) y se abre el PDF para imprimir.</p>
+                        </form>
+
+                        {{-- Historial compacto y plegable --}}
+                        @if ($envios->isNotEmpty())
+                            <details class="group">
+                                <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600 select-none">
+                                    Historial de envíos ({{ $envios->count() }})
+                                </summary>
+                                <div class="mt-2 overflow-x-auto">
+                                    <table class="min-w-full text-sm">
+                                        <thead>
+                                            <tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-100">
+                                                <th class="py-1.5 pr-3">Fecha</th>
+                                                <th class="py-1.5 pr-3">Destinatarios</th>
+                                                <th class="py-1.5 pr-3">Estado</th>
+                                                <th class="py-1.5 pr-3">Adjuntos</th>
+                                                <th class="py-1.5 pr-3">Por</th>
+                                                <th class="py-1.5 pr-3"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-50">
+                                            @foreach ($envios as $e)
+                                                <tr>
+                                                    <td class="py-1.5 pr-3 whitespace-nowrap text-gray-600">{{ $e->created_at->format('d/m/Y H:i') }}</td>
+                                                    <td class="py-1.5 pr-3 break-all text-gray-600">{{ $e->destinatariosTexto() }}</td>
+                                                    <td class="py-1.5 pr-3 whitespace-nowrap">
+                                                        @php
+                                                            $clase = ['enviado' => 'bg-green-100 text-green-700', 'simulado' => 'bg-violet-100 text-violet-700', 'pendiente' => 'bg-amber-100 text-amber-700', 'error' => 'bg-rose-100 text-rose-700'][$e->estado] ?? 'bg-gray-100 text-gray-600';
+                                                            $etiqueta = ['enviado' => 'Enviado', 'simulado' => 'Simulado', 'pendiente' => 'Pendiente', 'error' => 'Fallido'][$e->estado] ?? ucfirst($e->estado);
+                                                        @endphp
+                                                        <span class="inline-block rounded px-2 py-0.5 text-xs {{ $clase }}">{{ $etiqueta }}</span>
+                                                        @if ($e->error)<span class="ml-1 cursor-help {{ $e->estado === 'simulado' ? 'text-violet-500' : 'text-rose-500' }}" title="{{ $e->error }}">ⓘ</span>@endif
+                                                    </td>
+                                                    <td class="py-1.5 pr-3 text-gray-500">{{ $e->adjuntos ?? '—' }}</td>
+                                                    <td class="py-1.5 pr-3 text-gray-500">{{ $e->usuario?->name ?? 'Automático' }}</td>
+                                                    <td class="py-1.5 pr-3 text-right">
+                                                        <form method="POST" action="{{ route('facturacion.correo.reenviar', [$dte, $e]) }}">
+                                                            @csrf
+                                                            <button class="text-indigo-600 hover:underline text-xs">Reenviar</button>
+                                                        </form>
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        @endif
+                    </div>
                 </div>
             @endcan
 

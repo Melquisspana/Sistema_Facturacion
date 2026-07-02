@@ -89,41 +89,95 @@ class DteCorreoClienteRapidoTest extends TestCase
         return route('facturacion.correo.cliente', $dte);
     }
 
-    // --- Visibilidad del botón ---
+    // --- UI: un solo control de envío ---
 
-    public function test_no_muestra_boton_en_borrador(): void
+    public function test_no_muestra_seccion_de_correo_en_borrador(): void
     {
         $dte = $this->ccf(EstadoDte::Borrador, 'cliente@calleja.com');
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $dte))
             ->assertOk()
-            ->assertDontSee('Enviar por correo'); // ni el botón rápido ni la tarjeta (policy: no borrador)
+            ->assertDontSee('Correo del cliente')
+            ->assertDontSee('Enviar correo');
     }
 
-    public function test_muestra_boton_rapido_en_generado_con_correo(): void
+    public function test_solo_hay_un_boton_de_envio_y_no_en_el_encabezado(): void
+    {
+        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+
+        $content = $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.show', $dte))
+            ->assertOk()
+            ->getContent();
+
+        // El botón de envío aparece UNA sola vez (en la sección "Correo del cliente").
+        $this->assertSame(1, substr_count($content, 'Enviar correo'));
+        // Ya no existe el link/acción rápida del encabezado superior.
+        $this->assertStringNotContainsString('Enviar por correo', $content);
+        $this->assertStringNotContainsString(route('facturacion.correo.cliente', $dte), $content);
+    }
+
+    public function test_si_ya_fue_enviado_muestra_badge_y_boton_reenviar(): void
+    {
+        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+        $dte->envios()->create([
+            'destinatario' => 'cliente@calleja.com', 'destinatarios' => ['cliente@calleja.com'],
+            'estado' => 'enviado', 'adjuntos' => 'PDF, JSON',
+        ]);
+
+        $content = $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.show', $dte->refresh()))
+            ->assertOk()
+            ->assertSee('Enviado por correo')   // badge en el encabezado
+            ->assertSee('Reenviar y abrir PDF') // el botón principal pasa a reenviar
+            ->getContent();
+
+        // Ya enviado: el botón principal dice "Reenviar y abrir PDF", no "Enviar correo".
+        $this->assertSame(0, substr_count($content, 'Enviar correo'));
+    }
+
+    // --- Flujo: al enviar, redirigir al PDF para imprimir ---
+
+    public function test_enviar_correo_valido_encola_y_redirige_al_pdf(): void
+    {
+        Queue::fake();
+        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.correo.enviar', $dte), ['destinatarios' => 'cliente@calleja.com'])
+            ->assertRedirect(route('facturacion.pdf', $dte)) // redirect directo al PDF (misma pestaña)
+            ->assertSessionHas('status');
+
+        // Encola (no espera al SMTP): el job queda en la cola, no se ejecuta en la request.
+        Queue::assertPushed(EnviarDteCorreo::class);
+    }
+
+    public function test_correo_invalido_no_redirige_al_pdf(): void
+    {
+        Queue::fake();
+        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+
+        $resp = $this->actingAs($this->usuario('facturacion'))
+            ->from(route('facturacion.show', $dte))
+            ->post(route('facturacion.correo.enviar', $dte), ['destinatarios' => 'no-es-correo']);
+
+        $resp->assertSessionHasErrors('destinatarios');
+        $resp->assertRedirect(route('facturacion.show', $dte)); // vuelve a la ficha, NO al PDF
+        Queue::assertNothingPushed();
+    }
+
+    public function test_el_boton_de_la_ficha_dice_abrir_pdf(): void
     {
         $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $dte))
             ->assertOk()
-            ->assertSee('Enviar por correo')
-            ->assertSee($this->rutaCliente($dte)); // la acción del botón rápido del encabezado
+            ->assertSee('Enviar correo y abrir PDF');
     }
 
-    public function test_generado_sin_correo_muestra_aviso_y_no_boton_rapido(): void
-    {
-        $dte = $this->ccf(EstadoDte::Generado, null);
-
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.show', $dte))
-            ->assertOk()
-            ->assertSee('Sin correo del cliente')
-            ->assertDontSee($this->rutaCliente($dte)); // el botón rápido no se renderiza sin correo
-    }
-
-    // --- Comportamiento del envío ---
+    // --- Comportamiento del envío (ruta rápida correo.cliente; backend sin cambios) ---
 
     public function test_bloquea_si_no_hay_correo(): void
     {
