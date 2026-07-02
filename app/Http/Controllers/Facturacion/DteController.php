@@ -272,7 +272,7 @@ class DteController extends Controller
     {
         $this->authorize('view', $dte);
 
-        $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor']);
+        $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios']);
 
         // Solo para precisar la nota de retención en los totales (no recalcula nada).
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
@@ -924,6 +924,37 @@ class DteController extends Controller
         }
 
         return back()->with('status', 'Reenvío encolado para: '.implode(', ', $emails).'.');
+    }
+
+    /**
+     * Envío RÁPIDO (un clic) del documento al correo del cliente/sala. Resuelve el
+     * destinatario (sala → cliente); si no hay uno válido, muestra un mensaje claro y NO
+     * intenta enviar. Reusa el MISMO pipeline encolado que enviarCorreo (PDF + JSON/JWS,
+     * historial DteEnvio, job en cola). No transmite a Hacienda ni cambia el estado.
+     */
+    public function enviarCorreoCliente(Dte $dte, DteJsonService $jsonService): RedirectResponse
+    {
+        $this->authorize('enviarCorreo', $dte); // gestor + no borrador (DtePolicy)
+
+        $email = $dte->clienteSucursal?->correo ?: $dte->cliente?->correo;
+        $email = is_string($email) ? strtolower(trim($email)) : '';
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $quien = $dte->clienteSucursal ? 'La sala/cliente' : 'El cliente';
+
+            return back()->with('error', $quien.' no tiene un correo válido configurado. Agregá el correo para poder enviar el documento.');
+        }
+
+        // El correo no sale incompleto: garantizar el JSON oficial (se genera si falta).
+        if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
+            return back()->with('error', $error);
+        }
+
+        $envio = $this->encolarEnvio($dte, [$email], request()->user()?->id);
+        if ($envio === null) {
+            return back()->with('status', 'Ya hay un envío pendiente para '.$email.'; no se duplicó.');
+        }
+
+        return back()->with('status', 'Documento encolado para envío por correo a '.$email.'.');
     }
 
     /**

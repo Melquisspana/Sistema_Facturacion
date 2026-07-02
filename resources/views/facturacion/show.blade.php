@@ -22,10 +22,31 @@
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-3 flex-wrap">
                         <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="text-gray-600 hover:underline text-sm">Imprimir</a>
                         <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline text-sm">Ver PDF preliminar</a>
                         <a href="{{ route('facturacion.pdf.descargar', $dte) }}" class="text-indigo-600 hover:underline text-sm">Descargar PDF preliminar</a>
+
+                        {{-- Envío rápido de un clic al correo del cliente/sala (solo gestores, no borrador). --}}
+                        @can('enviarCorreo', $dte)
+                            @php
+                                $correoClienteQuick = $dte->clienteSucursal?->correo ?: $dte->cliente?->correo;
+                                $yaEnviadoQuick = $dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
+                            @endphp
+                            @if (filled($correoClienteQuick))
+                                <form method="POST" action="{{ route('facturacion.correo.cliente', $dte) }}" class="inline-flex"
+                                      onsubmit="return confirm('¿Enviar este documento por correo a {{ $correoClienteQuick }}?');">
+                                    @csrf
+                                    <button class="text-indigo-600 hover:underline text-sm">Enviar por correo</button>
+                                </form>
+                                @if ($yaEnviadoQuick)
+                                    <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Enviado por correo</span>
+                                @endif
+                            @else
+                                <span class="text-sm text-amber-600" title="Configurá el correo del cliente/sala para poder enviar">Sin correo del cliente</span>
+                            @endif
+                        @endcan
+
                         @can('update', $dte)
                             <a href="{{ route('facturacion.edit', $dte) }}" class="text-indigo-600 hover:underline text-sm">Editar</a>
                         @endcan
