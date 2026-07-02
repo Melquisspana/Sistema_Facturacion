@@ -177,6 +177,20 @@ class DteCorreoClienteRapidoTest extends TestCase
             ->assertSee('Enviar correo y abrir PDF');
     }
 
+    public function test_la_ficha_recarga_al_volver_con_atras(): void
+    {
+        // Script pageshow: al volver desde el PDF con "Atrás" (bfcache/history) recarga la
+        // ficha para mostrar el estado real del correo ("Enviado"), no el cacheado.
+        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.show', $dte))
+            ->assertOk()
+            ->assertSee('data-show-back-reload', false)
+            ->assertSee('pageshow', false)
+            ->assertSee('back_forward', false);
+    }
+
     // --- Comportamiento del envío (ruta rápida correo.cliente; backend sin cambios) ---
 
     public function test_bloquea_si_no_hay_correo(): void
