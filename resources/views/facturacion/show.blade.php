@@ -640,4 +640,16 @@
             </div>
         </div>
     </div>
+
+    {{-- Al volver con "Atrás" desde el PDF (bfcache / history back), recargar la ficha para
+         mostrar el estado real del correo (evita ver "No enviado" cacheado). Solo en esta vista.
+         No toca backend, envío ni cola: solo refresca la página. --}}
+    <script data-show-back-reload>
+        window.addEventListener('pageshow', function (event) {
+            var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+            if (event.persisted || (nav && nav.type === 'back_forward')) {
+                window.location.reload();
+            }
+        });
+    </script>
 </x-app-layout>
