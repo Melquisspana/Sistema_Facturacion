@@ -100,6 +100,8 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/anular', [DteController::class, 'anular'])->name('anular');
         // Envío por correo al cliente (PDF + JSON/JWS), encolado. No transmite a Hacienda.
         Route::post('{dte}/correo', [DteController::class, 'enviarCorreo'])->name('correo.enviar');
+        // Envío rápido de un clic al correo del cliente/sala (mismo pipeline encolado).
+        Route::post('{dte}/correo/cliente', [DteController::class, 'enviarCorreoCliente'])->name('correo.cliente');
         Route::post('{dte}/correo/{envio}/reenviar', [DteController::class, 'reenviarCorreo'])->name('correo.reenviar');
         Route::delete('{dte}', [DteController::class, 'destroy'])->name('destroy');
 
