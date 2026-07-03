@@ -25,6 +25,7 @@ use Tests\TestCase;
  */
 class DteSeguridadCheckTest extends TestCase
 {
+    use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
     private const PW = 'SECRETO_QUE_NO_DEBE_APARECER';
@@ -39,11 +40,9 @@ class DteSeguridadCheckTest extends TestCase
     {
         parent::setUp();
         Storage::fake('local');
-        $this->seed(CatalogosMhSeeder::class);
+        $this->seedCatalogosDte();
 
-        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'nit' => '0614-000000-000-0', 'ambiente' => '00', 'activo' => true]);
-        $this->estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Matriz', 'activo' => true]);
-        $this->pv = PuntoVenta::create(['establecimiento_id' => $this->estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        ['estab' => $this->estab, 'pv' => $this->pv] = $this->crearEmisorDte();
         Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
     }
 

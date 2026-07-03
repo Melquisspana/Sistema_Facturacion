@@ -27,6 +27,7 @@ use Tests\TestCase;
  */
 class DteListadoTest extends TestCase
 {
+    use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -38,7 +39,7 @@ class DteListadoTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        $this->seed(CatalogosMhSeeder::class);
+        $this->seedCatalogosDte();
         $this->borradores = app(DteBorradorService::class);
     }
 
@@ -50,9 +51,7 @@ class DteListadoTest extends TestCase
     /** @return array{estab: Establecimiento, pv: PuntoVenta} */
     private function emisor(): array
     {
-        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
-        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
-        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
         foreach (['01', '03', '05', '11'] as $t) {
             Correlativo::create(['tipo_dte' => $t, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
         }
@@ -172,8 +171,11 @@ class DteListadoTest extends TestCase
         $emisor = $this->emisor();
         $ccf = $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create()));
 
+        // La columna "Número" prioriza el número de control oficial (la generación ahora
+        // asigna numeración con el JSON atómico) y cae al interno si no existe.
         $this->assertNotNull($ccf->numero_interno);
-        $this->ver()->assertOk()->assertSee($ccf->numero_interno);
+        $this->assertNotNull($ccf->numero_control);
+        $this->ver()->assertOk()->assertSee($ccf->numero_control);
     }
 
     // --- Relación NC ↔ CCF ---
