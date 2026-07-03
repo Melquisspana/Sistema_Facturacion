@@ -22,11 +22,12 @@ class ClienteFactory extends Factory
             'nombre' => $this->faker->name(),
             'correo' => $this->faker->safeEmail(),
             'telefono' => $this->faker->numerify('2###-####'),
+            'direccion' => $this->faker->streetAddress(), // el JSON del MH exige complemento no vacío
             'activo' => true,
         ];
     }
 
-    /** Contribuyente nacional (recibe CCF): NIT + NRC. */
+    /** Contribuyente nacional (recibe CCF): NIT + NRC + ubicación/actividad (receptor válido). */
     public function contribuyente(): static
     {
         return $this->state(fn () => [
@@ -36,6 +37,10 @@ class ClienteFactory extends Factory
             'num_documento' => '0614-010101-101-1',
             'nrc' => '123456-7',
             'nombre' => $this->faker->company(),
+            // Datos que exige el receptor de un CCF/NC (si los catálogos ya están seedeados).
+            'actividad_economica_id' => \App\Models\ActividadEconomica::query()->value('id'),
+            'departamento_id' => \App\Models\Departamento::query()->value('id'),
+            'municipio_id' => \App\Models\Municipio::query()->value('id'),
         ]);
     }
 
@@ -48,6 +53,8 @@ class ClienteFactory extends Factory
             'tipo_documento' => TipoDocumentoCliente::Pasaporte->value,
             'num_documento' => $this->faker->bothify('P########'),
             'nombre' => $this->faker->company(),
+            // País extranjero (≠ El Salvador 9300): lo exige el receptor de exportación.
+            'pais_id' => \App\Models\Pais::query()->where('codigo', '!=', '9300')->value('id'),
         ]);
     }
 }

@@ -22,7 +22,10 @@ class ProductoFactory extends Factory
             'nombre' => $this->faker->words(3, true),
             'descripcion' => $this->faker->optional()->sentence(),
             'tipo_producto' => TipoProducto::Bien->value,
-            'unidad_medida_id' => UnidadMedida::query()->inRandomOrder()->value('id'),
+            // Unidad CON código CAT-014 (p. ej. '59'); las unidades sin código no se pueden
+            // serializar en el JSON oficial. Si no hay ninguna con código, cae a cualquiera.
+            'unidad_medida_id' => UnidadMedida::query()->whereNotNull('codigo')->value('id')
+                ?? UnidadMedida::query()->value('id'),
             'precio_unitario' => $this->faker->randomFloat(2, 0.25, 50),
             'tipo_impuesto' => TipoImpuesto::Gravado->value,
             'maneja_inventario' => false,
