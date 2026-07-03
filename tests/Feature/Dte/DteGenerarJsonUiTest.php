@@ -106,6 +106,17 @@ class DteGenerarJsonUiTest extends TestCase
         $dte = $this->ccfBorrador();
         app(DteGeneracionService::class)->generar($dte);
 
+        // Documento "viejo" SIN JSON ni numeración (la generación ahora los crea de forma
+        // atómica): el botón de la UI existe justo para ese backfill (policy generarJson).
+        $dte->refresh();
+        if ($dte->json_generado_path) {
+            Storage::disk('local')->delete($dte->json_generado_path);
+        }
+        $dte->json_generado_path = null;
+        $dte->numero_control = null;
+        $dte->codigo_generacion = null;
+        $dte->saveQuietly();
+
         return $dte->refresh();
     }
 
@@ -118,7 +129,8 @@ class DteGenerarJsonUiTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
-            ->assertSee('Generar JSON oficial preliminar');
+            ->assertSee('JSON oficial pendiente')
+            ->assertSee('Generar JSON oficial');
     }
 
     public function test_boton_no_aparece_si_ya_tiene_json(): void

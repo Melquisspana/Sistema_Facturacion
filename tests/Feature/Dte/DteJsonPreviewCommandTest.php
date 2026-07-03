@@ -6,7 +6,6 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\ActividadEconomica;
-use App\Models\CatalogoMh;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Departamento;
@@ -19,21 +18,21 @@ use App\Models\PuntoVenta;
 use App\Models\UnidadMedida;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class DteJsonPreviewCommandTest extends TestCase
 {
+    use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->seed(CatalogosMhSeeder::class);
-        // El serializador valida la unidad contra CAT-014 en catalogos_mh.
-        CatalogoMh::create(['cat' => '014', 'codigo' => '59', 'valor' => 'Unidad']);
+        // Catálogos completos, incluida la tabla catalogos_mh (CAT-014/019...) que el
+        // serializador exige para unidad y descActividad.
+        $this->seedCatalogosDte();
     }
 
     private function ccfGenerado(): Dte
@@ -46,7 +45,8 @@ class DteJsonPreviewCommandTest extends TestCase
             'razon_social' => 'Dulces La Negrita', 'nombre_comercial' => 'La Negrita',
             'nit' => '0614-000000-000-0', 'nrc' => '111111-1',
             'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id,
-            'direccion' => 'Calle Principal', 'ambiente' => '00', 'activo' => true,
+            'direccion' => 'Calle Principal', 'telefono' => '2200-0000', 'correo' => 'fact@negrita.sv',
+            'ambiente' => '00', 'activo' => true,
         ]);
         $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Matriz', 'tipo_establecimiento' => '01', 'activo' => true]);
         $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
@@ -65,6 +65,17 @@ class DteJsonPreviewCommandTest extends TestCase
         ]);
         $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 10);
         app(DteGeneracionService::class)->generar($dte);
+
+        // Documento "viejo" SIN JSON ni numeración (la generación ahora los crea de forma
+        // atómica): el preview prueba la numeración fake y los errores de numeración vacía.
+        $dte->refresh();
+        if ($dte->json_generado_path) {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($dte->json_generado_path);
+        }
+        $dte->json_generado_path = null;
+        $dte->numero_control = null;
+        $dte->codigo_generacion = null;
+        $dte->saveQuietly();
 
         return $dte->refresh();
     }

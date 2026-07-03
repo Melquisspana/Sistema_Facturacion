@@ -24,6 +24,7 @@ use Tests\TestCase;
 
 class ValidacionPreJsonTest extends TestCase
 {
+    use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -33,7 +34,7 @@ class ValidacionPreJsonTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->seed(CatalogosMhSeeder::class);
+        $this->seedCatalogosDte(); // incluye catalogos_mh (CAT-014...) que exige el serializador
         $this->borradores = app(DteBorradorService::class);
         $this->validacion = app(ValidacionPreJsonService::class);
     }
@@ -48,7 +49,8 @@ class ValidacionPreJsonTest extends TestCase
         $empresa = Empresa::create([
             'razon_social' => 'Dulces La Negrita', 'nit' => '0614-000000-000-0', 'nrc' => '111111-1',
             'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id,
-            'direccion' => 'Calle Principal', 'ambiente' => '00', 'activo' => true,
+            'direccion' => 'Calle Principal', 'telefono' => '2200-0000', 'correo' => 'fact@negrita.sv',
+            'ambiente' => '00', 'activo' => true,
         ]);
         $estab = Establecimiento::create([
             'empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz',

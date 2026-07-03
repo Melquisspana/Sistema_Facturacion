@@ -82,6 +82,17 @@ class DteJsonServiceTest extends TestCase
         $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 10);
         app(DteGeneracionService::class)->generar($dte);
 
+        // Documento "viejo" SIN JSON ni numeración (la generación ahora los crea de forma
+        // atómica): estos tests prueban justamente el servicio que los asigna.
+        $dte->refresh();
+        if ($dte->json_generado_path) {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($dte->json_generado_path);
+        }
+        $dte->json_generado_path = null;
+        $dte->numero_control = null;
+        $dte->codigo_generacion = null;
+        $dte->saveQuietly();
+
         return $dte->refresh();
     }
 
