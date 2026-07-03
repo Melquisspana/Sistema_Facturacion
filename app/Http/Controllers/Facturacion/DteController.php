@@ -47,6 +47,7 @@ use App\Models\DteEnvio;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -79,6 +80,13 @@ class DteController extends Controller
         ];
 
         $dtes = Dte::query()
+            ->select('dtes.*')
+            // Estado del ÚLTIMO envío de correo por documento (badge del listado), como
+            // subquery para no caer en N+1. Solo lectura.
+            ->addSelect(['ultimo_envio_estado' => DteEnvio::select('estado')
+                ->whereColumn('dte_id', 'dtes.id')
+                ->latest('id')
+                ->limit(1)])
             ->with(['cliente', 'clienteSucursal', 'dteRelacionado.cliente', 'dteRelacionado.clienteSucursal'])
             ->when($filtros['tipo_dte'], fn ($qb, $v) => $qb->where('tipo_dte', $v))
             ->when($filtros['estado'], fn ($qb, $v) => $qb->where('estado', $v))
@@ -292,6 +300,15 @@ class DteController extends Controller
             ];
         }
 
+        // Aviso operativo SOLO para gestores: correos en cola sin procesar hace >5 min
+        // (worker probablemente apagado). Lectura simple de la tabla jobs; no toca la cola.
+        $correosAtascados = 0;
+        if (auth()->user()?->can('verEstadoTecnico', $dte)) {
+            $correosAtascados = (int) DB::table('jobs')
+                ->where('created_at', '<=', now()->subMinutes(5)->getTimestamp())
+                ->count();
+        }
+
         // Invalidación (evento anulardte): panel de candados + evidencia. SOLO LECTURA aquí;
         // evaluarCandados no firma, no transmite, no toca BD. La UI solo ofrece mock/dry-run.
         $invalidacion = null;
@@ -307,7 +324,7 @@ class DteController extends Controller
             ];
         }
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion'));
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados'));
     }
 
     /**

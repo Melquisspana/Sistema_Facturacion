@@ -19,6 +19,15 @@
                 </div>
             @endif
 
+            {{-- Aviso operativo (solo gestores): correos en cola sin procesar hace >5 min.
+                 Solo lectura de la tabla jobs; el controlador lo calcula únicamente para gestores. --}}
+            @if (($correosAtascados ?? 0) > 0)
+                <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
+                    <strong>⚠ Hay {{ $correosAtascados }} {{ $correosAtascados === 1 ? 'correo' : 'correos' }} en cola sin procesar.</strong>
+                    El worker parece apagado; abrí <code class="font-mono">start-queue.bat</code> para que salgan.
+                </div>
+            @endif
+
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>

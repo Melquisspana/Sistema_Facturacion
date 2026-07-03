@@ -24,6 +24,19 @@
                         'rechazado' => 'bg-red-100 text-red-700',
                         'invalidado' => 'bg-rose-100 text-rose-700',
                     ];
+                    // Estado del último envío de correo (mismos colores del card "Correo del cliente").
+                    $correoClases = [
+                        'enviado' => 'bg-green-100 text-green-700',
+                        'simulado' => 'bg-violet-100 text-violet-700',
+                        'pendiente' => 'bg-amber-100 text-amber-700',
+                        'error' => 'bg-rose-100 text-rose-700',
+                    ];
+                    $correoEtiquetas = [
+                        'enviado' => 'Enviado',
+                        'simulado' => 'Simulado',
+                        'pendiente' => 'Pendiente',
+                        'error' => 'Fallido',
+                    ];
                     $tiposOpciones = [
                         \App\Enums\TipoDte::CreditoFiscal->value => 'CCF',
                         \App\Enums\TipoDte::Factura->value => 'Factura consumidor final',
@@ -130,6 +143,7 @@
                                 <th class="px-3 py-2">Relacionado</th>
                                 <th class="px-3 py-2">Cliente / sala</th>
                                 <th class="px-3 py-2">Estado</th>
+                                <th class="px-3 py-2">Correo</th>
                                 <th class="px-3 py-2">Fecha</th>
                                 <th class="px-3 py-2">Orden compra</th>
                                 <th class="px-3 py-2 text-right">Total</th>
@@ -169,6 +183,16 @@
                                             {{ $dte->estado->label() }}
                                         </span>
                                     </td>
+                                    {{-- Último envío de correo (subquery ultimo_envio_estado; solo lectura) --}}
+                                    <td class="px-3 py-2">
+                                        @if ($dte->ultimo_envio_estado)
+                                            <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $correoClases[$dte->ultimo_envio_estado] ?? 'bg-gray-100 text-gray-600' }}">
+                                                {{ $correoEtiquetas[$dte->ultimo_envio_estado] ?? ucfirst($dte->ultimo_envio_estado) }}
+                                            </span>
+                                        @else
+                                            <span class="text-gray-400">—</span>
+                                        @endif
+                                    </td>
                                     <td class="px-3 py-2">{{ $dte->fecha_emision?->format('d/m/Y') }}</td>
                                     <td class="px-3 py-2">{{ $dte->numero_orden_compra ?? '—' }}</td>
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($dte->total_pagar, 2) }}</td>
@@ -187,7 +211,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="9" class="px-3 py-6 text-center text-gray-400">No hay documentos con esos filtros.</td></tr>
+                                <tr><td colspan="10" class="px-3 py-6 text-center text-gray-400">No hay documentos con esos filtros.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
