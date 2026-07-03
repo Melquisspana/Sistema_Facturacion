@@ -25,6 +25,7 @@ use Tests\TestCase;
 
 class DteNotaCreditoUiTest extends TestCase
 {
+    use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -37,7 +38,7 @@ class DteNotaCreditoUiTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        $this->seed(CatalogosMhSeeder::class);
+        $this->seedCatalogosDte();
         $this->borradores = app(DteBorradorService::class);
     }
 
@@ -49,9 +50,7 @@ class DteNotaCreditoUiTest extends TestCase
     /** @return array{estab: Establecimiento, pv: PuntoVenta} */
     private function emisor(): array
     {
-        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
-        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
-        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
         Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
         Correlativo::create(['tipo_dte' => '05', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
 

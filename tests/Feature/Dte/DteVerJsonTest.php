@@ -14,11 +14,11 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -28,6 +28,7 @@ use Tests\TestCase;
  */
 class DteVerJsonTest extends TestCase
 {
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -46,15 +47,13 @@ class DteVerJsonTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        $this->seed(CatalogosMhSeeder::class);
+        $this->seedCatalogosDte();
         Storage::fake('local'); // disco configurado en dte.storage.disk
 
         $this->borradores = app(DteBorradorService::class);
         $this->generacion = app(DteGeneracionService::class);
 
-        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'nit' => '0614-000000-000-0', 'ambiente' => '00', 'activo' => true]);
-        $this->estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
-        $this->pv = PuntoVenta::create(['establecimiento_id' => $this->estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        ['estab' => $this->estab, 'pv' => $this->pv] = $this->crearEmisorDte();
         Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
     }
 
@@ -143,7 +142,11 @@ class DteVerJsonTest extends TestCase
 
     public function test_show_no_muestra_botones_sin_json(): void
     {
-        $ccf = $this->ccfGenerado(); // sin json_generado_path
+        // La generación ahora crea el JSON oficial; para el escenario "sin JSON" (documento
+        // viejo) lo quitamos explícitamente.
+        $ccf = $this->ccfGenerado();
+        $ccf->json_generado_path = null;
+        $ccf->saveQuietly();
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $ccf))
