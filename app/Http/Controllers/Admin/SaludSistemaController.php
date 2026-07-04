@@ -12,7 +12,9 @@ use App\Models\Dte;
 use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
 use App\Models\User;
+use App\Support\WorkerHeartbeat;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
@@ -33,6 +35,7 @@ class SaludSistemaController extends Controller
 
         $seguridad = $this->seguridad();
         $backups = $this->backups();
+        $cola = $this->cola();
         $datos = $this->datos();
         $alertas = $this->alertas();
         $auditoria = $this->auditoriaReciente();
@@ -52,7 +55,35 @@ class SaludSistemaController extends Controller
             $general = ['texto' => 'Sistema listo para pruebas internas', 'estado' => 'ok'];
         }
 
-        return view('admin.salud-sistema', compact('general', 'seguridad', 'backups', 'datos', 'alertas', 'auditoria'));
+        return view('admin.salud-sistema', compact('general', 'seguridad', 'backups', 'cola', 'datos', 'alertas', 'auditoria'));
+    }
+
+    /**
+     * Estado del worker de colas (heartbeat) + correos pendientes/fallidos. SOLO lectura:
+     * no se muestra en el estado general para no marcar "atención" en dev cuando el worker
+     * está apagado a propósito; es un aviso informativo del área de administración.
+     *
+     * @return array<string, mixed>
+     */
+    private function cola(): array
+    {
+        $hb = WorkerHeartbeat::estado();
+        $mapa = ['activo' => 'ok', 'inactivo' => 'advertencia', 'sin_datos' => 'info'];
+
+        $texto = match ($hb['estado']) {
+            'activo' => 'Worker activo — último pulso '.$hb['hace'].'.',
+            'inactivo' => 'Worker posiblemente detenido — último pulso '.$hb['hace'].'. Abrí start-queue.bat.',
+            default => 'Sin datos todavía: el worker aún no ha reportado actividad (corré start-queue.bat).',
+        };
+
+        return [
+            'estado' => $mapa[$hb['estado']] ?? 'info',
+            'texto' => $texto,
+            'ultimo' => $hb['ultimo']?->format('d/m/Y H:i:s'),
+            'pendientes' => (int) DB::table('jobs')->count(),
+            'fallidos' => (int) DB::table('failed_jobs')->count(),
+            'driver' => (string) config('queue.default'),
+        ];
     }
 
     /** @return array<int, array<string, mixed>> */
