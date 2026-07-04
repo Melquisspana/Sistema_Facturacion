@@ -5,7 +5,19 @@
         </h2>
     </x-slot>
 
-    @php $esFex = $dte->tipo_dte === \App\Enums\TipoDte::FacturaExportacion; @endphp
+    @php
+        $esFex = $dte->tipo_dte === \App\Enums\TipoDte::FacturaExportacion;
+
+        // Generar: botón deshabilitado sin líneas + confirm con resumen del documento.
+        $sinLineas = $dte->lineas->isEmpty();
+        $confirmGenerar = 'Generar '.$dte->tipo_dte->label().":\n\n"
+            .'Cliente: '.($dte->cliente?->nombre ?? 'Consumidor final')."\n"
+            .'Sala: '.($dte->clienteSucursal?->nombre ?? '—')."\n"
+            .'Orden de compra: '.($dte->numero_orden_compra ?? '—')."\n"
+            .'Productos: '.$dte->lineas->count()."\n"
+            .'Total a pagar: $'.number_format((float) $dte->total_pagar, 2)."\n\n"
+            .'Se consume el correlativo interno y el documento ya no podrá editarse. ¿Continuar?';
+    @endphp
     <div class="py-6">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-4">
 
@@ -22,6 +34,16 @@
                             <li>{{ $error }}</li>
                         @endforeach
                     </ul>
+                </div>
+            @endif
+
+            {{-- Aviso SUAVE de OC duplicada: solo advierte (con link); no bloquea generar. --}}
+            @if ($ocDuplicada ?? null)
+                <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
+                    <strong>⚠ La orden de compra {{ $dte->numero_orden_compra }} ya se usó en el CCF
+                    <a href="{{ route('facturacion.show', $ocDuplicada) }}" class="underline font-semibold">
+                        {{ $ocDuplicada->numero_control ?? $ocDuplicada->numero_interno ?? ('#'.$ocDuplicada->id) }}</a>.</strong>
+                    Verificá que no estés facturando dos veces la misma orden. Podés generar igual si es correcto.
                 </div>
             @endif
 
@@ -47,9 +69,11 @@
                     </div>
                     @can('update', $dte)
                         <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
-                              onsubmit="return confirm('¿Generar el documento? Ya no podrá editarse.');">
+                              onsubmit="return confirm(@js($confirmGenerar));">
                             @csrf
-                            <button class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700">
+                            <button @disabled($sinLineas)
+                                    @if ($sinLineas) title="Agregá al menos un producto para generar." @endif
+                                    class="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-md {{ $sinLineas ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
                                 Generar
                             </button>
                         </form>
@@ -150,7 +174,7 @@
                 {{-- Panel lateral: resumen del CCF (productos agregados + totales + Generar), sticky. --}}
                 <div class="order-1 lg:order-2 @cannot('update', $dte) lg:col-span-3 @endcannot">
                     <div class="lg:sticky lg:top-6">
-                        @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null])
+                        @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'confirmGenerar' => $confirmGenerar])
                     </div>
                 </div>
             </div>
