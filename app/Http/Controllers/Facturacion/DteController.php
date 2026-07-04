@@ -884,6 +884,33 @@ class DteController extends Controller
             ->with('status', 'Borrador eliminado.');
     }
 
+    /**
+     * DUPLICA un CCF en un borrador NUEVO editable (mismos cliente/sala/emisor/condición/
+     * OC/observaciones y copia snapshot de las líneas). No modifica el original ni copia
+     * numeración, correlativo, JSON/firma, sello/respuesta MH, correos ni anulaciones.
+     * Si la OC copiada ya se usó, el aviso suave de OC duplicada aparece en la edición.
+     */
+    public function duplicar(Request $request, Dte $dte): RedirectResponse
+    {
+        $this->authorize('create', Dte::class);
+
+        if ($dte->tipo_dte !== TipoDte::CreditoFiscal) {
+            return back()->with('error', 'Solo se puede duplicar un Comprobante de Crédito Fiscal (CCF).');
+        }
+
+        try {
+            $nuevo = $this->borradores->duplicarCcf($dte, $request->user());
+        } catch (OrdenCompraRequeridaException $e) {
+            return back()->with('error', 'No se pudo duplicar: '.$e->getMessage());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->with('error', 'No se pudo duplicar: '.implode(' ', collect($e->errors())->flatten()->all()));
+        }
+
+        return redirect()
+            ->route('facturacion.edit', $nuevo)
+            ->with('status', 'CCF duplicado como borrador #'.$nuevo->id.' (a partir de '.($dte->numero_control ?? $dte->numero_interno ?? ('#'.$dte->id)).'). Revisá cantidades y orden de compra antes de generar.');
+    }
+
     public function anular(Request $request, Dte $dte, DteAnulacionService $anulacion): RedirectResponse
     {
         $this->authorize('anular', $dte); // gestor + estado generado (DtePolicy)

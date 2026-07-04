@@ -46,6 +46,17 @@
                             @endif
                         @endcan
 
+                        {{-- Duplicar CCF: nuevo borrador con los mismos datos y líneas (no toca este documento). --}}
+                        @if ($dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal && ! $dte->esEditable())
+                            @can('create', App\Models\Dte::class)
+                                <form method="POST" action="{{ route('facturacion.duplicar', $dte) }}" class="inline-flex"
+                                      onsubmit="return confirm('¿Duplicar este CCF como un borrador nuevo? Este documento no se modifica.');">
+                                    @csrf
+                                    <button class="text-indigo-600 hover:underline text-sm">Duplicar</button>
+                                </form>
+                            @endcan
+                        @endif
+
                         @can('update', $dte)
                             <a href="{{ route('facturacion.edit', $dte) }}" class="text-indigo-600 hover:underline text-sm">Editar</a>
                         @endcan

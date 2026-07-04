@@ -113,6 +113,63 @@ class DteBorradorService
     }
 
     /**
+     * DUPLICA un CCF: crea un borrador NUEVO con los mismos datos base (cliente, sala,
+     * emisor, condición, orden de compra, observaciones, % de descuento) y una copia
+     * SNAPSHOT de las líneas (productos, cantidades, precios y descuentos congelados del
+     * original, aunque el producto haya cambiado de precio o esté inactivo).
+     *
+     * NO toca el original y NO copia nada fiscal/operativo: ni numeración (interna u
+     * oficial), ni correlativo, ni JSON/JWS, ni firma, ni sello/respuesta MH, ni envíos
+     * de correo, ni anulación/invalidación. El duplicado nace en borrador con la fecha
+     * de hoy y sus totales se recalculan (la retención se decide sola al recalcular).
+     *
+     * @throws ValidationException si el original no es un CCF
+     * @throws OrdenCompraRequeridaException si el cliente/sala ahora exige OC y el original no tenía
+     */
+    public function duplicarCcf(Dte $original, ?User $usuario = null): Dte
+    {
+        if ($original->tipo_dte !== TipoDte::CreditoFiscal) {
+            throw ValidationException::withMessages([
+                'duplicar' => 'Solo se puede duplicar un Comprobante de Crédito Fiscal (CCF).',
+            ]);
+        }
+
+        return DB::transaction(function () use ($original, $usuario) {
+            $nuevo = $this->crearBorrador([
+                'tipo_dte' => TipoDte::CreditoFiscal,
+                'cliente_id' => $original->cliente_id,
+                'cliente_sucursal_id' => $original->cliente_sucursal_id,
+                'establecimiento_id' => $original->establecimiento_id,
+                'punto_venta_id' => $original->punto_venta_id,
+                // El cast del modelo devuelve el enum CondicionPago; la validación espera el valor.
+                'condicion_operacion' => $original->condicion_operacion instanceof \BackedEnum
+                    ? $original->condicion_operacion->value
+                    : $original->condicion_operacion,
+                'numero_orden_compra' => $original->numero_orden_compra,
+                'observaciones' => $original->observaciones,
+            ], $usuario);
+
+            // Fidelidad: mismo % de descuento del ORIGINAL (crearBorrador resuelve el
+            // vigente del cliente/sala, que pudo haber cambiado).
+            $nuevo->descuento_porcentaje_aplicado = $original->descuento_porcentaje_aplicado;
+            $nuevo->save();
+
+            // Copia snapshot de las líneas (sin dte_linea_original_id: eso es de las NC).
+            $numero = 1;
+            foreach ($original->lineas()->get() as $linea) {
+                $copia = $linea->replicate(['dte_id', 'numero_linea', 'dte_linea_original_id']);
+                $copia->dte_id = $nuevo->id;
+                $copia->numero_linea = $numero++;
+                $copia->save();
+            }
+
+            $this->recalcular($nuevo);
+
+            return $nuevo->refresh();
+        });
+    }
+
+    /**
      * Crea una NOTA DE CRÉDITO (05) en borrador relacionada a un documento original.
      *
      * Reglas (alcance actual):
