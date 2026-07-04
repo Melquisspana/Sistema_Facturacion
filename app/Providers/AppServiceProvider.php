@@ -4,7 +4,9 @@ namespace App\Providers;
 
 use App\Support\WorkerHeartbeat;
 use Illuminate\Queue\Events\Looping;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -27,5 +29,13 @@ class AppServiceProvider extends ServiceProvider
         // proceso worker; en peticiones web queda registrado pero no se ejecuta. Observación
         // pura: no toca la cola, el envío ni la firma/transmisión.
         Event::listen(Looping::class, static fn () => WorkerHeartbeat::pulse());
+
+        // Contador de trabajos fallidos para el navbar (badge junto a "Salud del sistema").
+        // Solo se consulta para administradores (que ven ese enlace); para el resto es 0 sin
+        // tocar la BD. Solo lectura de failed_jobs; no reintenta ni borra nada.
+        View::composer('layouts.navigation', static function ($view) {
+            $esAdmin = (bool) auth()->user()?->hasRole('administrador');
+            $view->with('jobsFallidos', $esAdmin ? (int) DB::table('failed_jobs')->count() : 0);
+        });
     }
 }
