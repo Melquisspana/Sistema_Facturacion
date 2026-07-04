@@ -97,6 +97,9 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])->name('invalidacion.mock');
         Route::get('{dte}/editar', [DteController::class, 'edit'])->name('edit');
         Route::post('{dte}/generar', [DteController::class, 'generar'])->name('generar');
+        // Duplicar CCF: crea un borrador nuevo con los mismos datos base y líneas
+        // (snapshot). No modifica el original ni copia numeración/firma/sello/correos.
+        Route::post('{dte}/duplicar', [DteController::class, 'duplicar'])->name('duplicar');
         Route::post('{dte}/anular', [DteController::class, 'anular'])->name('anular');
         // Envío por correo al cliente (PDF + JSON/JWS), encolado. No transmite a Hacienda.
         Route::post('{dte}/correo', [DteController::class, 'enviarCorreo'])->name('correo.enviar');
