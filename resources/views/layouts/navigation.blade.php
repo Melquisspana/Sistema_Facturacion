@@ -51,6 +51,12 @@
                         </x-nav-link>
                         <x-nav-link :href="route('admin.salud-sistema')" :active="request()->routeIs('admin.salud-sistema')">
                             {{ __('Salud del sistema') }}
+                            @if (($jobsFallidos ?? 0) > 0)
+                                <span class="ms-1 inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
+                                      title="{{ $jobsFallidos }} trabajos en cola fallidos (correos/DTE). Revisá Salud del sistema.">
+                                    {{ $jobsFallidos }}
+                                </span>
+                            @endif
                         </x-nav-link>
                     @endrole
                     @if (auth()->user()->hasAnyRole(['administrador', 'contador']))
