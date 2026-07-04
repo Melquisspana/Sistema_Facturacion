@@ -92,6 +92,22 @@
                 </div>
             </div>
 
+            {{-- Cola de correos / worker --}}
+            <div class="bg-white shadow sm:rounded-lg p-6">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 class="font-semibold text-gray-700">Cola de correos (worker)</h3>
+                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$cola['estado']] }}">{{ $badgeTexto[$cola['estado']] }}</span>
+                </div>
+                <p class="text-sm text-gray-700">{{ $cola['texto'] }}</p>
+                <dl class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><dt class="text-gray-500">Último pulso</dt><dd class="font-mono text-gray-800">{{ $cola['ultimo'] ?? '—' }}</dd></div>
+                    <div><dt class="text-gray-500">Correos en cola</dt><dd class="font-mono {{ $cola['pendientes'] > 0 ? 'text-amber-700' : 'text-gray-800' }}">{{ $cola['pendientes'] }}</dd></div>
+                    <div><dt class="text-gray-500">Correos fallidos</dt><dd class="font-mono {{ $cola['fallidos'] > 0 ? 'text-rose-700' : 'text-gray-800' }}">{{ $cola['fallidos'] }}</dd></div>
+                    <div><dt class="text-gray-500">Driver de cola</dt><dd class="font-mono text-gray-800">{{ $cola['driver'] }}</dd></div>
+                </dl>
+                <p class="text-xs text-gray-400 mt-2">El worker debe estar corriendo (<span class="font-mono">start-queue.bat</span> / <span class="font-mono">php artisan queue:work</span>) para que salgan los correos. Solo lectura: no toca la cola.</p>
+            </div>
+
             {{-- Datos --}}
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <h3 class="font-semibold text-gray-700 mb-4">Datos principales</h3>
