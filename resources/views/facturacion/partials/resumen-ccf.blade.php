@@ -70,17 +70,30 @@
     {{-- Totales (compacto: apilado vertical para el panel). Reusa el partial único. --}}
     @include('facturacion.partials.totales', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'compacto' => true])
 
-    {{-- Generar: consume el correlativo y deja de ser editable. --}}
+    {{-- Generar: consume el correlativo y deja de ser editable. Deshabilitado sin líneas;
+         el confirm con resumen viene de la vista (fallback genérico si no se pasa). --}}
     @can('update', $dte)
+        @php
+            $sinLineasPanel = $dte->lineas->isEmpty();
+            $confirmPanel = $confirmGenerar ?? '¿Generar el documento? Ya no podrá editarse.';
+        @endphp
         <div class="bg-white shadow sm:rounded-lg p-4">
             <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
-                  onsubmit="return confirm('¿Generar el documento? Ya no podrá editarse.');">
+                  onsubmit="return confirm(@js($confirmPanel));">
                 @csrf
-                <button class="w-full inline-flex items-center justify-center px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700">
+                <button @disabled($sinLineasPanel)
+                        @if ($sinLineasPanel) title="Agregá al menos un producto para generar." @endif
+                        class="w-full inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-medium rounded-md {{ $sinLineasPanel ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
                     Generar documento
                 </button>
             </form>
-            <p class="mt-2 text-xs text-gray-400">Al generar se asigna el correlativo interno y el documento deja de ser editable. No firma ni transmite.</p>
+            <p class="mt-2 text-xs text-gray-400">
+                @if ($sinLineasPanel)
+                    Agregá al menos un producto para generar.
+                @else
+                    Al generar se asigna el correlativo interno y el documento deja de ser editable. No firma ni transmite.
+                @endif
+            </p>
         </div>
     @endcan
 </div>

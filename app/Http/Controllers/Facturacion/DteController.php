@@ -796,7 +796,22 @@ class DteController extends Controller
             ->mapWithKeys(fn (DteLinea $l) => [$l->producto_id => (int) $l->cantidad])
             ->all();
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto'));
+        // Aviso SUAVE de OC duplicada: la misma orden de compra ya usada en otro CCF del
+        // mismo cliente que ya fue emitido (no borrador) y sigue vigente (no invalidado/
+        // anulado). Solo advierte con link; NO bloquea generar (hay casos legítimos).
+        $ocDuplicada = null;
+        if ($dte->tipo_dte === TipoDte::CreditoFiscal && filled($dte->numero_orden_compra)) {
+            $ocDuplicada = Dte::query()
+                ->where('id', '!=', $dte->id)
+                ->where('tipo_dte', TipoDte::CreditoFiscal->value)
+                ->where('cliente_id', $dte->cliente_id)
+                ->where('numero_orden_compra', $dte->numero_orden_compra)
+                ->whereNotIn('estado', [EstadoDte::Borrador->value, EstadoDte::Invalidado->value])
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada'));
     }
 
     /**
