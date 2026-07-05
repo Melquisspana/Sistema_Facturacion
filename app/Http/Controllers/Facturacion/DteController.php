@@ -1280,6 +1280,48 @@ class DteController extends Controller
         return $mensaje ? back()->with('status', $mensaje) : back();
     }
 
+    /**
+     * Modo ESCÁNER: busca el producto por código de barras EXACTO y lo agrega al
+     * borrador; si ya estaba en las líneas, SUMA 1 a su cantidad (no duplica línea).
+     * Reusa establecerCantidadProducto (misma idempotencia, snapshot de precio y
+     * recálculo de totales que el catálogo manual); no cambia reglas fiscales.
+     */
+    public function escanearProducto(Request $request, Dte $dte): RedirectResponse
+    {
+        $this->authorize('update', $dte);
+
+        // En una NC los productos entran por acreditación o por el catálogo de avería.
+        if ($dte->tipo_dte === TipoDte::NotaCredito) {
+            return back()->withErrors(['codigo_barra' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
+        }
+
+        $datos = $request->validate(['codigo_barra' => ['required', 'string', 'max:60']]);
+        $codigo = trim($datos['codigo_barra']);
+
+        $producto = Producto::where('codigo_barra', $codigo)->first();
+        if (! $producto) {
+            return back()->withErrors(['codigo_barra' => 'No se encontró ningún producto con el código de barras "'.$codigo.'".']);
+        }
+        if (! $producto->activo) {
+            return back()->withErrors(['codigo_barra' => 'El producto "'.$producto->nombre.'" está inactivo; no se puede agregar.']);
+        }
+
+        // Mismo criterio que storeLinea/setCantidadProducto: sin precio aplicable no se agrega.
+        $r = app(PrecioProductoResolver::class)->resolverConOrigen($producto, $dte->cliente_id, $dte->cliente_sucursal_id);
+        if ($r['precio'] === null || ! is_numeric($r['precio']) || (float) $r['precio'] <= 0) {
+            return back()->withErrors(['codigo_barra' => 'El producto "'.$producto->nombre.'" no tiene un precio aplicable para este cliente; no se puede agregar.']);
+        }
+
+        $cantidadActual = (int) ($dte->lineas()->where('producto_id', $producto->id)->value('cantidad') ?? 0);
+        $this->borradores->establecerCantidadProducto($dte, $producto, $cantidadActual + 1);
+
+        $mensaje = $cantidadActual > 0
+            ? 'Escaneado: '.$producto->nombre.' — cantidad actualizada a '.($cantidadActual + 1).'.'
+            : 'Escaneado: '.$producto->nombre.' agregado (cantidad 1).';
+
+        return back()->with('status', $mensaje);
+    }
+
     public function storeLinea(AgregarLineaDteRequest $request, Dte $dte): RedirectResponse
     {
         $this->authorize('update', $dte);
