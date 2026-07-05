@@ -14,10 +14,14 @@ REM  - No muestra contrasenas ni secretos.
 REM ==========================================================================
 setlocal EnableDelayedExpansion
 
-set "PROJECT_DIR=C:\laragon\www\Facturacion"
+REM --- Carpeta del proyecto = carpeta padre de este script (scripts\..). ---
+cd /d "%~dp0.."
+set "PROJECT_DIR=%CD%"
 set "BACKUP_DIR=%PROJECT_DIR%\storage\app\private\Dulces La Negrita"
-REM Ajustar si cambia la version de MySQL en Laragon:
-set "MYSQL_BIN=C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe"
+REM MySQL de Laragon (ultima version instalada); si no se detecta, usar el del PATH.
+set "MYSQL_BIN="
+for /d %%D in ("C:\laragon\bin\mysql\mysql-*") do set "MYSQL_BIN=%%D\bin\mysql.exe"
+if not defined MYSQL_BIN set "MYSQL_BIN=mysql"
 set "REAL_DB=dulces_negrita"
 set "TEMP_DB=dulces_negrita_restore_test"
 set "WORK_DIR=%TEMP%\restore_test_%RANDOM%"
@@ -40,8 +44,9 @@ if /I not "%CONFIRM%"=="SI" (
     goto :fin
 )
 
-if not exist "%MYSQL_BIN%" (
-    echo ERROR: no se encontro mysql.exe en "%MYSQL_BIN%". Ajuste MYSQL_BIN en este .bat.
+REM Detectado por autodeteccion; solo validamos la ruta si no caimos al PATH ("mysql").
+if /I not "%MYSQL_BIN%"=="mysql" if not exist "%MYSQL_BIN%" (
+    echo ERROR: no se encontro mysql.exe en "%MYSQL_BIN%". Ubique MySQL de Laragon o ajuste MYSQL_BIN.
     goto :fin
 )
 
