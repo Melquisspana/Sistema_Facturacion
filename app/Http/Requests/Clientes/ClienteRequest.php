@@ -21,11 +21,11 @@ use Illuminate\Validation\Rule;
  * - Exportación (FEX): país extranjero; departamento/municipio no aplican;
  *   dirección o complemento obligatorio; NRC NO requerido.
  *
- * Código de país de El Salvador en CAT-020: 9300.
+ * Código de país de El Salvador en CAT-020: SV.
  */
 class ClienteRequest extends FormRequest
 {
-    private const PAIS_EL_SALVADOR = '9300';
+    private const PAIS_EL_SALVADOR = 'SV';
 
     public function authorize(): bool
     {

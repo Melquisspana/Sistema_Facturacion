@@ -4,6 +4,7 @@ namespace Tests\Concerns;
 
 use App\Enums\TipoEstablecimiento;
 use App\Models\ActividadEconomica;
+use App\Models\CatalogoMh;
 use App\Models\Departamento;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
@@ -40,6 +41,12 @@ trait PreparaEmisorDte
     {
         $depto = Departamento::query()->first();
         $muni = Municipio::query()->where('departamento_id', $depto?->id)->first() ?? Municipio::query()->first();
+        // MunicipioSeeder (liviano) no trae el código CAT-013 (se completa al importar el
+        // catálogo oficial); lo respaldamos con un código real ya importado en catalogos_mh
+        // para que la Factura de Exportación (que sí exige este campo) pueda generarse en pruebas.
+        if ($muni && blank($muni->codigo)) {
+            $muni->update(['codigo' => CatalogoMh::where('cat', '013')->value('codigo') ?? '10']);
+        }
         $actividad = ActividadEconomica::query()->first();
 
         $empresa = Empresa::create([

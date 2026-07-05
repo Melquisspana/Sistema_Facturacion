@@ -137,8 +137,8 @@ class ClienteController extends Controller
             'municipios' => Municipio::where('activo', true)->orderBy('nombre')->get(),
             'distritos' => \App\Models\Distrito::where('activo', true)->orderBy('municipio')->orderBy('nombre')
                 ->get(['id', 'nombre', 'municipio', 'departamento_id']),
-            // Para preseleccionar El Salvador en clientes nacionales (CAT-020: 9300).
-            'paisElSalvadorId' => Pais::where('codigo', '9300')->value('id'),
+            // Para preseleccionar El Salvador en clientes nacionales (CAT-020: SV).
+            'paisElSalvadorId' => Pais::where('codigo', 'SV')->value('id'),
         ];
     }
 }

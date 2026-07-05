@@ -43,7 +43,7 @@ class ClienteRequestTest extends TestCase
     {
         $sansal = Departamento::where('codigo', '06')->firstOrFail();
         $muni = Municipio::where('departamento_id', $sansal->id)->where('nombre', 'San Salvador')->firstOrFail();
-        $sv = Pais::where('codigo', '9300')->firstOrFail();
+        $sv = Pais::where('codigo', 'SV')->firstOrFail();
 
         return [
             'nombre' => 'Juan Pérez',
@@ -101,7 +101,7 @@ class ClienteRequestTest extends TestCase
 
     public function test_nacional_exige_pais_el_salvador(): void
     {
-        $usa = Pais::where('codigo', '9320')->firstOrFail();
+        $usa = Pais::where('codigo', 'US')->firstOrFail();
         $data = array_merge($this->baseNacional(), [
             'tipo_cliente' => 'consumidor_final',
             'pais_id' => $usa->id, // país extranjero en cliente nacional
@@ -152,7 +152,7 @@ class ClienteRequestTest extends TestCase
 
     public function test_exportacion_valida_pasa(): void
     {
-        $usa = Pais::where('codigo', '9320')->firstOrFail();
+        $usa = Pais::where('codigo', 'US')->firstOrFail();
         $data = [
             'tipo_cliente' => 'exportacion',
             'tipo_persona' => 'juridica',
@@ -169,7 +169,7 @@ class ClienteRequestTest extends TestCase
 
     public function test_exportacion_sin_direccion_falla(): void
     {
-        $usa = Pais::where('codigo', '9320')->firstOrFail();
+        $usa = Pais::where('codigo', 'US')->firstOrFail();
         $data = [
             'tipo_cliente' => 'exportacion',
             'tipo_persona' => 'juridica',
@@ -185,7 +185,7 @@ class ClienteRequestTest extends TestCase
 
     public function test_exportacion_no_acepta_pais_el_salvador(): void
     {
-        $sv = Pais::where('codigo', '9300')->firstOrFail();
+        $sv = Pais::where('codigo', 'SV')->firstOrFail();
         $data = [
             'tipo_cliente' => 'exportacion',
             'tipo_persona' => 'juridica',

@@ -37,7 +37,7 @@ class ClienteCrudTest extends TestCase
     {
         $sansal = Departamento::where('codigo', '06')->firstOrFail();
         $muni = Municipio::where('departamento_id', $sansal->id)->where('nombre', 'San Salvador')->firstOrFail();
-        $sv = Pais::where('codigo', '9300')->firstOrFail();
+        $sv = Pais::where('codigo', 'SV')->firstOrFail();
 
         return array_merge([
             'tipo_cliente' => 'consumidor_final',

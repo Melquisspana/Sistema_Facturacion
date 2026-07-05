@@ -107,12 +107,16 @@ class DteGeneracionTest extends TestCase
 
     public function test_generar_exportacion_borrador_valido(): void
     {
-        // Pendiente (problema APARTE, no de setup de test): la generación de la Factura de
-        // Exportación (11) falla en el schema porque la tabla `paises` usa códigos numéricos
-        // del MH (p. ej. 9040 Costa Rica) mientras `catalogos_mh` CAT-020 usa códigos ISO
-        // (CR), así que `nombrePais` queda vacío. Se debe alinear el mapeo país↔CAT-020 en el
-        // serializador de exportación (fuera del alcance de este fix de catálogos en tests).
-        $this->markTestSkipped('FEX 11: desalineación paises↔CAT-020 en el serializador (fix aparte).');
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $this->correlativo('11', $estab, $pv);
+        $cliente = Cliente::factory()->exportacion()->create();
+        $dte = $this->borradorConLinea(TipoDte::FacturaExportacion, $estab, $pv, $cliente);
+
+        $this->generacion->generar($dte);
+
+        $dte->refresh();
+        $this->assertSame(EstadoDte::Generado, $dte->estado);
+        $this->assertStringStartsWith('INT-11-', $dte->numero_interno);
     }
 
     public function test_no_generar_sin_lineas(): void

@@ -50,7 +50,7 @@ class DatosInicialesNegritaSeeder extends Seeder
         // Garantiza que existan los catálogos base (CatalogosMhSeeder es idempotente).
         $this->call(CatalogosMhSeeder::class);
 
-        $elSalvador = Pais::where('codigo', '9300')->first();
+        $elSalvador = Pais::where('codigo', 'SV')->first();
         $municipio = Municipio::where('nombre', 'like', '%Olocuilta%')->first();
         $departamento = $municipio?->departamento ?? Departamento::where('nombre', 'like', '%Paz%')->first();
         $actividad = ActividadEconomica::query()->orderBy('id')->first();
@@ -184,7 +184,8 @@ class DatosInicialesNegritaSeeder extends Seeder
 
     private function clienteExportacion(): void
     {
-        $extranjero = Pais::where('codigo', '!=', '9300')->orderBy('id')->first();
+        $extranjero = Pais::where('codigo', '!=', 'SV')->orderBy('id')->first();
+        $actividad = ActividadEconomica::query()->orderBy('id')->first();
 
         Cliente::updateOrCreate(
             ['num_documento' => 'EXP-0001'],
@@ -196,6 +197,8 @@ class DatosInicialesNegritaSeeder extends Seeder
                 'nombre' => 'Importadora Centroamericana, Inc.',
                 'nombre_comercial' => 'ImpoCentro',
                 'pais_id' => $extranjero?->id,
+                // El schema oficial de exportación exige descActividad del receptor (CAT-019).
+                'actividad_economica_id' => $actividad?->id,
                 'direccion' => 'Ciudad de Guatemala',
                 'correo' => 'import@impocentro.com',
                 'requiere_orden_compra' => false,

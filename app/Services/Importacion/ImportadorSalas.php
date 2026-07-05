@@ -53,7 +53,7 @@ class ImportadorSalas
             return $resultado;
         }
 
-        $elSalvador = Pais::where('codigo', '9300')->value('id');
+        $elSalvador = Pais::where('codigo', 'SV')->value('id');
 
         foreach ($filas as $registro) {
             $resultado->leidas++;

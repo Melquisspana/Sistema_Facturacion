@@ -30,7 +30,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
             ['cat' => '014', 'codigo' => '59', 'valor' => 'Unidad'],
             ['cat' => '015', 'codigo' => '20', 'valor' => 'Impuesto al Valor Agregado 13%'],
             ['cat' => '019', 'codigo' => '10730', 'valor' => 'Elaboración de cacao, chocolate y confitería'],
-            ['cat' => '020', 'codigo' => '9320', 'valor' => 'GUATEMALA'],
+            ['cat' => '020', 'codigo' => 'GT', 'valor' => 'GUATEMALA'],
         ]);
     }
 
@@ -106,7 +106,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
     {
         $receptor = new ReceptorDteData(
             tipoDocumento: '37', numDocumento: 'EXT-001', nombre: 'Importadora CA',
-            actividadEconomica: '10730', pais: '9320', direccion: 'Ciudad de Guatemala', tipoPersona: '1',
+            actividadEconomica: '10730', pais: 'GT', direccion: 'Ciudad de Guatemala', tipoPersona: '1',
         );
         $resumen = new ResumenDteData(
             totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '100.00',
@@ -123,7 +123,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
         $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::FacturaExportacion);
 
-        $this->assertSame('9320', $oficial['receptor']['codPais']);
+        $this->assertSame('GT', $oficial['receptor']['codPais']);
         $this->assertSame('GUATEMALA', $oficial['receptor']['nombrePais']);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
