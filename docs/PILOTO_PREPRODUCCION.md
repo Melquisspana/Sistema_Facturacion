@@ -327,7 +327,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 
 | Caso | Fecha | Operador | Documento nuevo (N°) | Documento Conta Portable | Total nuevo | Total Conta | ✅/❌ | Notas / diferencia |
 |------|-------|----------|----------------------|--------------------------|-------------|-------------|-------|--------------------|
-| 1 CCF sin retención | | | | | | | | |
+| 1 CCF sin retención | 2026-07-05 | sistema (captura) | INT-03-M001P001-…044 | _pendiente_ | 52.09 | _pendiente_ | ⏳ lado nuevo capturado | Falta comparar contra Conta Portable. Detalle en §13.1 |
 | 2 CCF con retención | | | | | | | | |
 | 3 CCF Calleja OC+sala | | | | | | | | |
 | 4 Duplicar CCF | | | | | | | | |
@@ -340,6 +340,39 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 
 **Criterio para "pasar a producción":** los 10 casos en ✅ en al menos **2 días
 distintos** de operación real, sin diferencias de total > $0.01 ni errores de flujo.
+
+### 13.1 Caso 1 — CCF sin retención (captura del sistema nuevo · 2026-07-05)
+
+Primera corrida del Caso 1 en el **sistema nuevo**, en **modo paralelo** (sin transmitir a
+Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0** jobs fallidos,
+backup reciente, `APP_DEBUG=false`.
+
+**Documento nuevo:** CCF interno #88 · N° interno `INT-03-M001P001-000000000000044` ·
+numeroControl `DTE-03-M001P001-000000000000044` · estado **Generado** · **sin sello**
+(no transmitido) · JSON oficial preliminar validado contra `fe-ccf-v4`.
+
+| Campo | Valor del sistema nuevo | Conta Portable |
+|-------|-------------------------|:--------------:|
+| Cliente (receptor) | Villarreal de De la Torre · NIT 0614-010101-101-1 · NRC 123456-7 | _pendiente_ |
+| Sala / sucursal | (sin sala; cliente directo) | _pendiente_ |
+| Orden de compra | no requiere | _pendiente_ |
+| Producto 1 | CANILLITAS · cant 20 · precio **sin IVA** 1.0500 · gravado 21.00 | _pendiente_ |
+| Producto 2 | MANI DULCE · cant 15 · precio **sin IVA** 1.0400 · gravado 15.60 | _pendiente_ |
+| Producto 3 | DULCE DE MIEL · cant 10 · precio **sin IVA** 0.9500 · gravado 9.50 | _pendiente_ |
+| Total gravado (sin IVA) | **46.10** | _pendiente_ |
+| IVA 13% (resumen.tributos) | **5.99** | _pendiente_ |
+| Retención IVA 1% | **0.00** (cliente no es agente de retención) | _pendiente_ |
+| Total a pagar | **52.09** | _pendiente_ |
+| Total en letras | CINCUENTA Y DOS 09/100 DÓLARES | _pendiente_ |
+| PDF | preliminar OK: cliente, 3 productos, totales 46.10 / 5.99 / 52.09; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR (está generado) | _pendiente_ |
+| Estado DTE | Generado (badge unificado) · sin transmisión real | _pendiente_ |
+
+**Cómo cerrar el caso (operador):** emitir la MISMA operación en Conta Portable, llenar la
+columna derecha y marcar ✅ si todo coincide (total dentro de ± $0.01) o ❌ con la
+diferencia. Actualizar también la fila del Caso 1 en la tabla de §13.
+
+> El precio base es **SIN IVA** (así lo usa el CCF: el IVA se calcula aparte). No se
+> transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 ---
 
