@@ -34,7 +34,7 @@ class ClienteSucursalController extends Controller
         $this->authorize('update', $cliente);
 
         $datos = $request->validated();
-        $datos['pais_id'] = Pais::where('codigo', '9300')->value('id'); // El Salvador
+        $datos['pais_id'] = Pais::where('codigo', 'SV')->value('id'); // El Salvador
         $cliente->sucursales()->create($datos);
 
         return redirect()

@@ -50,6 +50,12 @@ class MapeadorDteSalidaTest extends TestCase
         $actividad = ActividadEconomica::first();
         $depto = Departamento::first();
         $muni = Municipio::where('departamento_id', $depto->id)->first();
+        // MunicipioSeeder (liviano) no trae el código CAT-013 (se completa al importar el
+        // catálogo oficial); lo respaldamos con un código real ya importado en catalogos_mh
+        // para que la Factura de Exportación (que sí exige este campo) pueda generarse en pruebas.
+        if ($muni && blank($muni->codigo)) {
+            $muni->update(['codigo' => \App\Models\CatalogoMh::where('cat', '013')->value('codigo') ?? '10']);
+        }
 
         $empresa = Empresa::create([
             'razon_social' => 'Dulces La Negrita', 'nombre_comercial' => 'La Negrita',
@@ -137,14 +143,8 @@ class MapeadorDteSalidaTest extends TestCase
 
     public function test_mapea_exportacion_con_receptor_extranjero_flete_y_seguro(): void
     {
-        // Pendiente (problema APARTE, preexistente): la generación FEX (11) falla en el
-        // schema porque `paises` usa códigos MH (9040) y catalogos_mh CAT-020 usa ISO (CR),
-        // así que nombrePais queda vacío. Fix del serializador de exportación, fuera del
-        // alcance del setup de tests.
-        $this->markTestSkipped('FEX 11: desalineación paises↔CAT-020 en el serializador (fix aparte).');
-
         $emisor = $this->emisor();
-        $pais = Pais::where('codigo', '!=', '9300')->first();
+        $pais = Pais::where('codigo', '!=', 'SV')->first();
         $cliente = Cliente::factory()->exportacion()->create(['pais_id' => $pais->id]);
         $fex = $this->generarBorrador(TipoDte::FacturaExportacion, $emisor, $cliente, ['flete' => 5, 'seguro' => 2]);
 

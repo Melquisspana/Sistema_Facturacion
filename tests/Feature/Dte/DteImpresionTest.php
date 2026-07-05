@@ -110,11 +110,14 @@ class DteImpresionTest extends TestCase
 
     public function test_imprimir_exportacion_generada(): void
     {
-        // Pendiente (problema APARTE, preexistente): la generación FEX (11) falla en el
-        // schema porque `paises` usa códigos MH (9040) y catalogos_mh CAT-020 usa ISO (CR),
-        // así que nombrePais queda vacío. Fix del serializador de exportación, fuera del
-        // alcance del setup de tests.
-        $this->markTestSkipped('FEX 11: desalineación paises↔CAT-020 en el serializador (fix aparte).');
+        $cliente = Cliente::factory()->exportacion()->create(['nombre' => 'Sweet Imports LLC']);
+        $fex = $this->generar($this->borradorConLinea(TipoDte::FacturaExportacion, $cliente));
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.imprimir', $fex))
+            ->assertOk()
+            ->assertSee($fex->numero_interno)
+            ->assertSee('Sweet Imports LLC');
     }
 
     public function test_imprimir_nota_credito_generada(): void

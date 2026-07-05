@@ -53,8 +53,10 @@ class ClienteFactory extends Factory
             'tipo_documento' => TipoDocumentoCliente::Pasaporte->value,
             'num_documento' => $this->faker->bothify('P########'),
             'nombre' => $this->faker->company(),
-            // País extranjero (≠ El Salvador 9300): lo exige el receptor de exportación.
-            'pais_id' => \App\Models\Pais::query()->where('codigo', '!=', '9300')->value('id'),
+            // País extranjero (≠ El Salvador SV): lo exige el receptor de exportación.
+            'pais_id' => \App\Models\Pais::query()->where('codigo', '!=', 'SV')->value('id'),
+            // El schema oficial de exportación exige descActividad del receptor (CAT-019).
+            'actividad_economica_id' => \App\Models\ActividadEconomica::query()->value('id'),
         ]);
     }
 }
