@@ -327,7 +327,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 
 | Caso | Fecha | Operador | Documento nuevo (N°) | Documento Conta Portable | Total nuevo | Total Conta | ✅/❌ | Notas / diferencia |
 |------|-------|----------|----------------------|--------------------------|-------------|-------------|-------|--------------------|
-| 1 CCF sin retención | 2026-07-05 | sistema (captura) | INT-03-M001P001-…044 | _pendiente_ | 52.09 | _pendiente_ | ⏳ lado nuevo capturado | Falta comparar contra Conta Portable. Detalle en §13.1 |
+| 1 CCF sin retención | 2026-07-05 | operador | INT-03-M001P001-…044 | Conta Portable (misma operación) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.1 |
 | 2 CCF con retención | | | | | | | | |
 | 3 CCF Calleja OC+sala | | | | | | | | |
 | 4 Duplicar CCF | | | | | | | | |
@@ -341,7 +341,10 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 **Criterio para "pasar a producción":** los 10 casos en ✅ en al menos **2 días
 distintos** de operación real, sin diferencias de total > $0.01 ni errores de flujo.
 
-### 13.1 Caso 1 — CCF sin retención (captura del sistema nuevo · 2026-07-05)
+### 13.1 Caso 1 — CCF sin retención · **✅ APROBADO** (2026-07-05)
+
+**Resultado:** comparado contra Conta Portable (misma operación) → **coincide**.
+Sistema nuevo **$52.09** = Conta Portable **$52.09** · diferencia **$0.00** · **APROBADO**.
 
 Primera corrida del Caso 1 en el **sistema nuevo**, en **modo paralelo** (sin transmitir a
 Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0** jobs fallidos,
@@ -362,14 +365,14 @@ numeroControl `DTE-03-M001P001-000000000000044` · estado **Generado** · **sin 
 | Total gravado (sin IVA) | **46.10** | _pendiente_ |
 | IVA 13% (resumen.tributos) | **5.99** | _pendiente_ |
 | Retención IVA 1% | **0.00** (cliente no es agente de retención) | _pendiente_ |
-| Total a pagar | **52.09** | _pendiente_ |
-| Total en letras | CINCUENTA Y DOS 09/100 DÓLARES | _pendiente_ |
-| PDF | preliminar OK: cliente, 3 productos, totales 46.10 / 5.99 / 52.09; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR (está generado) | _pendiente_ |
-| Estado DTE | Generado (badge unificado) · sin transmisión real | _pendiente_ |
+| Total a pagar | **52.09** | **52.09** ✓ |
+| Total en letras | CINCUENTA Y DOS 09/100 DÓLARES | coincide |
+| PDF | preliminar OK: cliente, 3 productos, totales 46.10 / 5.99 / 52.09; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR (está generado) | coincide |
+| Estado DTE | Generado (badge unificado) · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
 
-**Cómo cerrar el caso (operador):** emitir la MISMA operación en Conta Portable, llenar la
-columna derecha y marcar ✅ si todo coincide (total dentro de ± $0.01) o ❌ con la
-diferencia. Actualizar también la fila del Caso 1 en la tabla de §13.
+**Resultado del caso:** ✅ **APROBADO** — todos los campos coinciden; total idéntico
+(**$52.09** = **$52.09**, diferencia **$0.00**). Conta Portable emitió la misma operación
+oficialmente; el sistema nuevo solo comparó (sin transmitir a Hacienda).
 
 > El precio base es **SIN IVA** (así lo usa el CCF: el IVA se calcula aparte). No se
 > transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
