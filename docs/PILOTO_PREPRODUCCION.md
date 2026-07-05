@@ -37,10 +37,14 @@ Revisar en este orden. Si algo falla, resolver antes de facturar en el piloto.
 | 3 | **Sin jobs fallidos** | Contador en la barra superior / `php artisan queue:failed` | Contador en **0** (o reintentados, ver §14) |
 | 4 | **Salud del sistema sin alertas rojas de datos** | `/admin/salud-sistema` | Sin borradores basura ni NC sin tipo; alertas de entorno conocidas (APP_DEBUG, etc.) |
 | 5 | **Conta Portable disponible** | Abrir Conta Portable | Se puede emitir normalmente |
-| 6 | **Modos seguros** (informativo) | `php artisan dte:modo-operacion` | **PARALELO SEGURO**: firma/transmisión reales bloqueadas |
+| 6 | **Modos seguros** (visible siempre) | Franja superior del navbar (badge **DTE: …**), o `php artisan dte:modo-operacion` | Badge verde **PARALELO SEGURO**: firma/transmisión reales bloqueadas |
 
-> El sistema nuevo **no** debe transmitir en el piloto. Si `dte:modo-operacion` no dice
-> paralelo seguro, **no sigas** y avisá antes de continuar.
+> El sistema nuevo **no** debe transmitir en el piloto. El badge del navbar (visible en
+> toda pantalla para administrador/facturación) debe decir **PARALELO SEGURO** en verde.
+> Si aparece en **rojo** ("…LISTO", transmisión real posible) o dice `dte:modo-operacion`
+> distinto de paralelo seguro, **no sigas** y avisá antes de continuar. El chip
+> **PRUEBAS / MOCK** junto al badge es normal durante el piloto (firma/transmisión
+> simuladas); más detalle en **Salud del sistema → "Transmisión DTE"**.
 
 ---
 
@@ -377,9 +381,10 @@ Marcar al **empezar** el día del piloto:
 - [ ] **Backup reciente** — hay un `.zip` de hoy en `storage\app\private\Dulces La Negrita\`.
 - [ ] **Sin jobs fallidos** — contador de la barra en 0 (o reintentados).
 - [ ] **Salud del sistema** — sin alertas rojas de datos (las de entorno son conocidas).
-- [ ] **Firma/transmisión** — modo **PARALELO SEGURO** (`dte:modo-operacion`); el sistema
-      nuevo **no** transmite. (La firma/transmisión reales, cuando apliquen, van solo por
-      consola y con sus candados.)
+- [ ] **Firma/transmisión** — badge del navbar en verde **PARALELO SEGURO** (o
+      `dte:modo-operacion`); el sistema nuevo **no** transmite. Si el badge aparece
+      **rojo**, parar de inmediato. (La firma/transmisión reales, cuando apliquen, van
+      solo por consola y con sus candados.)
 - [ ] **Conta Portable disponible** — es el sistema oficial durante el piloto.
 
 Al **terminar** el día:

@@ -12,6 +12,7 @@ use App\Models\Dte;
 use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
 use App\Models\User;
+use App\Services\Dte\DteTransmisionService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ class SaludSistemaController extends Controller
 {
     private const EMAIL_ADMIN_TEMPORAL = 'admin@dulceslanegrita.test';
 
-    public function index(): View
+    public function index(DteTransmisionService $transmision): View
     {
         // Acceso solo administrador (además del middleware de ruta).
         abort_unless(request()->user()?->hasRole('administrador'), 403);
@@ -39,6 +40,10 @@ class SaludSistemaController extends Controller
         $datos = $this->datos();
         $alertas = $this->alertas();
         $auditoria = $this->auditoriaReciente();
+        // Modo de operación DTE (paralelo/respaldo/principal) + mocks activos. SOLO
+        // LECTURA: reutiliza evaluarCandados(), no transmite, no muestra secretos. No se
+        // mezcla con $general (igual que "cola"): no altera el banner de listo/no listo.
+        $transmisionDte = $transmision->estadoOperativo();
 
         // Estado general: critico > advertencia > ok.
         $niveles = collect($seguridad)->pluck('estado')
@@ -55,7 +60,7 @@ class SaludSistemaController extends Controller
             $general = ['texto' => 'Sistema listo para pruebas internas', 'estado' => 'ok'];
         }
 
-        return view('admin.salud-sistema', compact('general', 'seguridad', 'backups', 'cola', 'datos', 'alertas', 'auditoria'));
+        return view('admin.salud-sistema', compact('general', 'seguridad', 'backups', 'cola', 'datos', 'alertas', 'auditoria', 'transmisionDte'));
     }
 
     /**

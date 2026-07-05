@@ -405,6 +405,60 @@ class DteTransmisionService
     }
 
     /**
+     * Resumen del modo de operación pensado para PANTALLA (badge del navbar / panel
+     * "Salud del sistema"): mismo cálculo que `dte:modo-operacion` (reutiliza
+     * evaluarCandados(), sin candados nuevos ni lógica fiscal). SOLO LECTURA: no
+     * transmite, no hace HTTP, no muestra secretos.
+     *
+     * @return array{
+     *     etiqueta: string, color: string, detalle: string,
+     *     transmision_real_posible: bool,
+     *     mocks: array{firma: bool, transmision: bool, invalidacion: bool, alguno: bool},
+     *     candados: array{bloqueado: bool, razones: array<int, string>, flags: array<string, bool>}
+     * }
+     */
+    public function estadoOperativo(): array
+    {
+        $c = $this->evaluarCandados();
+        $modo = $c['flags']['modo_operacion'];
+
+        // Misma terminología que `dte:modo-operacion` (no se inventa vocabulario nuevo).
+        $etiqueta = match ($modo) {
+            'paralelo' => 'PARALELO SEGURO',
+            'respaldo' => $c['bloqueado'] ? 'RESPALDO BLOQUEADO' : 'RESPALDO LISTO',
+            'principal' => $c['bloqueado'] ? 'PRINCIPAL BLOQUEADO' : 'PRINCIPAL LISTO',
+            default => strtoupper($modo).' BLOQUEADO',
+        };
+
+        // "LISTO" significa que evaluarCandados() NO bloqueó: una transmisión real
+        // sería posible ahora mismo. Es el único estado que merece alerta fuerte (rojo).
+        $transmisionRealPosible = ! $c['bloqueado'];
+        $color = $transmisionRealPosible ? 'critico' : ($modo === 'paralelo' ? 'ok' : 'advertencia');
+
+        $detalle = $transmisionRealPosible
+            ? 'El sistema puede transmitir documentos REALES a Hacienda ahora mismo (modo '.$modo.').'
+            : ($modo === 'paralelo'
+                ? 'Conta Portable es el sistema oficial; este sistema NO transmite (solo genera JSON, firma local y dry-run).'
+                : implode(' ', $c['razones']));
+
+        $mocks = [
+            'firma' => (bool) config('dte.firma.mock', false),
+            'transmision' => (bool) config('dte.transmision.mock', false),
+            'invalidacion' => (bool) config('dte.invalidacion.mock', false),
+        ];
+        $mocks['alguno'] = $mocks['firma'] || $mocks['transmision'] || $mocks['invalidacion'];
+
+        return [
+            'etiqueta' => $etiqueta,
+            'color' => $color,
+            'detalle' => $detalle,
+            'transmision_real_posible' => $transmisionRealPosible,
+            'mocks' => $mocks,
+            'candados' => $c,
+        ];
+    }
+
+    /**
      * Modo DRY-RUN formal: valida precondiciones y arma el payload final, pero NO
      * hace HTTP, NO guarda sello, NO cambia estado, NO transmite. Devuelve un resumen
      * SEGURO (sin token, sin contraseña, sin el JWS completo).
