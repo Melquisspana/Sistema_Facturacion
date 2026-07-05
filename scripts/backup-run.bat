@@ -9,14 +9,15 @@ REM  Programado: ver docs\BACKUPS_WINDOWS.md
 REM ==========================================================================
 setlocal
 
-REM --- Carpeta del proyecto (donde esta "artisan") ---
-set "PROJECT_DIR=C:\laragon\www\Facturacion"
+REM --- Carpeta del proyecto = carpeta padre de este script (scripts\..). ---
+cd /d "%~dp0.."
+set "PROJECT_DIR=%CD%"
 
-REM --- PHP de Laragon. Ajustar si cambia la version de PHP. ---
-set "PHP_BIN=C:\laragon\bin\php\php-8.3.30-Win32-vs16-x64\php.exe"
-if not exist "%PHP_BIN%" set "PHP_BIN=php"
-
-cd /d "%PROJECT_DIR%"
+REM --- PHP de Laragon (ultima version instalada); si no, el del PATH. ---
+set "PHP_BIN="
+for /d %%D in ("C:\laragon\bin\php\php-*") do set "PHP_BIN=%%D\php.exe"
+if not defined PHP_BIN set "PHP_BIN=php"
+if not exist "%PHP_BIN%" if /i not "%PHP_BIN%"=="php" set "PHP_BIN=php"
 
 echo [%date% %time%] Iniciando backup:run ...
 "%PHP_BIN%" artisan backup:run
