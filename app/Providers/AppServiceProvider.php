@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Dte\DteTransmisionService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,13 @@ class AppServiceProvider extends ServiceProvider
         View::composer('layouts.navigation', static function ($view) {
             $esAdmin = (bool) auth()->user()?->hasRole('administrador');
             $view->with('jobsFallidos', $esAdmin ? (int) DB::table('failed_jobs')->count() : 0);
+
+            // Badge de modo DTE (paralelo/respaldo/principal) visible para quienes facturan
+            // (administrador/facturación), para que quede claro en TODA pantalla si el
+            // sistema nuevo podría transmitir real o sigue en modo paralelo/preproducción.
+            // Solo lectura: reutiliza evaluarCandados(), no transmite ni muestra secretos.
+            $esGestor = (bool) auth()->user()?->hasAnyRole(['administrador', 'facturacion']);
+            $view->with('modoDte', $esGestor ? app(DteTransmisionService::class)->estadoOperativo() : null);
         });
     }
 }

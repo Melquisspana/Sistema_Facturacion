@@ -108,6 +108,39 @@
                 <p class="text-xs text-gray-400 mt-2">El worker debe estar corriendo (<span class="font-mono">start-queue.bat</span> / <span class="font-mono">php artisan queue:work</span>) para que salgan los correos. Solo lectura: no toca la cola.</p>
             </div>
 
+            {{-- Transmisión DTE / modo de operación --}}
+            <div class="bg-white shadow sm:rounded-lg p-6">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 class="font-semibold text-gray-700">Transmisión DTE (modo de operación)</h3>
+                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$transmisionDte['color']] }}">{{ $transmisionDte['etiqueta'] }}</span>
+                </div>
+                <p class="text-sm text-gray-700">{{ $transmisionDte['detalle'] }}</p>
+                @if ($transmisionDte['transmision_real_posible'])
+                    <p class="text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3 mt-3">
+                        ⚠ El sistema puede transmitir documentos REALES a Hacienda ahora mismo. Si esto es
+                        inesperado durante el piloto, revisá <span class="font-mono">DTE_MODO_OPERACION</span>
+                        y los candados de <span class="font-mono">.env</span> de inmediato.
+                    </p>
+                @else
+                    <p class="text-xs text-green-700 mt-2">Conta Portable sigue siendo el sistema oficial mientras dure el piloto.</p>
+                @endif
+                <dl class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><dt class="text-gray-500">Modo</dt><dd class="font-mono text-gray-800">{{ $transmisionDte['candados']['flags']['modo_operacion'] }}</dd></div>
+                    <div><dt class="text-gray-500">Transmisión habilitada</dt><dd class="font-mono text-gray-800">{{ $transmisionDte['candados']['flags']['enabled'] ? 'sí' : 'no' }}</dd></div>
+                    <div><dt class="text-gray-500">Dry-run</dt><dd class="font-mono text-gray-800">{{ $transmisionDte['candados']['flags']['dry_run'] ? 'sí' : 'no' }}</dd></div>
+                    <div><dt class="text-gray-500">Confirmación real</dt><dd class="font-mono text-gray-800">{{ $transmisionDte['candados']['flags']['real_confirmation'] ? 'sí' : 'no' }}</dd></div>
+                </dl>
+                <div class="mt-3">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Modo prueba / mock (no transmite/firma de verdad)</p>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <span class="inline-flex px-2 py-0.5 rounded-full {{ $transmisionDte['mocks']['firma'] ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500' }}">Firma: {{ $transmisionDte['mocks']['firma'] ? 'MOCK' : 'apagado' }}</span>
+                        <span class="inline-flex px-2 py-0.5 rounded-full {{ $transmisionDte['mocks']['transmision'] ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500' }}">Transmisión: {{ $transmisionDte['mocks']['transmision'] ? 'MOCK' : 'apagado' }}</span>
+                        <span class="inline-flex px-2 py-0.5 rounded-full {{ $transmisionDte['mocks']['invalidacion'] ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500' }}">Invalidación: {{ $transmisionDte['mocks']['invalidacion'] ? 'MOCK' : 'apagado' }}</span>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">Solo lectura: no transmite, no firma, no muestra secretos. Detalle por documento en su ficha (panel "Estado técnico DTE").</p>
+            </div>
+
             {{-- Datos --}}
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <h3 class="font-semibold text-gray-700 mb-4">Datos principales</h3>

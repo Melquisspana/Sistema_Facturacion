@@ -1,4 +1,32 @@
+@php
+    // Clases literales (JIT de Tailwind no interpola variables): mismo mapeo de colores
+    // que usa el panel "Salud del sistema" (ok/advertencia/critico).
+    $modoDteBadge = [
+        'ok' => 'bg-green-100 text-green-700',
+        'advertencia' => 'bg-amber-100 text-amber-700',
+        'critico' => 'bg-rose-100 text-rose-700 animate-pulse',
+    ];
+@endphp
 <nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
+    @if ($modoDte)
+        {{-- Aviso SOLO para quienes facturan (administrador/facturación): deja claro si el
+             sistema está en modo paralelo/preproducción (seguro) o si una transmisión real
+             sería posible ahora mismo (alerta roja). Solo lectura, sin secretos. --}}
+        <div class="px-4 sm:px-6 lg:px-8 py-1.5 text-xs flex flex-wrap items-center gap-2 border-b {{ $modoDte['transmision_real_posible'] ? 'bg-rose-50 border-rose-200' : 'bg-gray-50 border-gray-100' }}"
+             title="{{ $modoDte['detalle'] }}">
+            <span class="font-semibold text-gray-500">DTE:</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
+                {{ $modoDte['etiqueta'] }}
+            </span>
+            @if ($modoDte['mocks']['alguno'])
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700"
+                      title="Firma/transmisión/invalidación en modo MOCK: simulan el resultado sin usar credenciales ni transmitir de verdad.">
+                    PRUEBAS / MOCK
+                </span>
+            @endif
+            <span class="text-gray-400">{{ $modoDte['detalle'] }}</span>
+        </div>
+    @endif
     <!-- Primary Navigation Menu -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">

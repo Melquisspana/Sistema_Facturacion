@@ -266,6 +266,15 @@ todos los demás candados están OK**. Con `DTE_SISTEMA_ACTUAL_ACTIVO=true` y mo
 - Diagnóstico: `php artisan dte:modo-operacion` (modo + candados) y
   `php artisan dte:preflight-real {id}` (checklist BLOQUEADO/LISTO; refleja el modo y si
   el sistema actual está en uso). Ninguno transmite ni muestra secretos.
+- **Sin terminal:** el mismo cálculo (`DteTransmisionService::estadoOperativo()`, que
+  reutiliza `evaluarCandados()`) se ve en pantalla en dos lugares:
+  - **Franja del navbar** (administrador/facturación, toda pantalla): badge
+    `PARALELO SEGURO` (verde) / `RESPALDO|PRINCIPAL BLOQUEADO` (ámbar) /
+    `RESPALDO|PRINCIPAL LISTO` (rojo, parpadeante — transmisión real posible AHORA) +
+    chip `PRUEBAS / MOCK` si firma/transmisión/invalidación están en modo simulado.
+  - **Panel "Salud del sistema" → "Transmisión DTE"** (solo administrador): mismo
+    estado con detalle de candados (enabled/dry-run/confirmación) y de los 3 mocks.
+  Ambos son de solo lectura: no transmiten, no firman, no muestran secretos.
 
 ## 8. Advertencias
 
