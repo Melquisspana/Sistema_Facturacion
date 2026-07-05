@@ -28,7 +28,9 @@ use Illuminate\Support\Facades\DB;
  */
 class ReconciliarCatalogoNacionalCommand extends Command
 {
-    protected $signature = 'productos:reconciliar-nacional {--apply : Aplica los cambios (por defecto es dry-run, no muta nada)}';
+    protected $signature = 'productos:reconciliar-nacional
+        {--apply : Aplica los cambios (por defecto es dry-run, no muta nada)}
+        {--precios-especiales-calleja : Además desactiva (activo=false) los precios especiales ACTIVOS de Calleja de los productos que Calleja ya no compra (MIX + archivados). No toca los de otros clientes.}';
 
     protected $description = 'Deja activos los productos nacionales (precio SIN IVA) y archiva los que ya no se venden';
 
@@ -68,11 +70,20 @@ class ReconciliarCatalogoNacionalCommand extends Command
     public function handle(): int
     {
         $apply = (bool) $this->option('apply');
+        $preciosCalleja = (bool) $this->option('precios-especiales-calleja');
         $this->line($apply ? 'Aplicando reconciliación del catálogo nacional…' : 'DRY-RUN (no se cambia nada). Usá --apply para aplicar.');
         $this->newLine();
 
-        // Cliente Calleja (para la guarda de "uso en otros clientes").
+        // Cliente Calleja (para la guarda de "uso en otros clientes" y para los precios especiales).
         $callejaId = Cliente::where('nombre', 'like', '%Calleja%')->where('activo', true)->orderBy('id')->value('id');
+
+        // Guarda de seguridad: la opción de precios de Calleja NO corre sin un Calleja resuelto,
+        // para no arriesgar tocar precios especiales de otros clientes.
+        if ($preciosCalleja && $callejaId === null) {
+            $this->error('No se encontró un cliente Calleja activo: no se tocará ningún precio especial. Abortando esa parte.');
+
+            return self::FAILURE;
+        }
 
         $acciones = [];
         $activarBarras = array_merge(array_keys(self::NACIONALES), self::MANTENER_ACTIVOS);
@@ -150,8 +161,39 @@ class ReconciliarCatalogoNacionalCommand extends Command
                 }
             }
 
+            // 4) (Opcional) Desactivar precios especiales de Calleja de productos que Calleja
+            //    ya no compra (MIX + archivados). SOLO cliente_id = Calleja; nunca otros clientes.
+            //    NO se borran (activo=false); el snapshot en líneas de DTE ya generadas no se altera.
+            $accionesPrecios = [];
+            if ($preciosCalleja) {
+                $barrasObsoletosCalleja = array_merge(self::MANTENER_ACTIVOS, self::ARCHIVAR); // MIX + los 3 archivados
+                $prodIds = Producto::whereIn('codigo_barra', $barrasObsoletosCalleja)->pluck('id');
+
+                $precios = ProductoPrecioCliente::with('producto')
+                    ->where('cliente_id', $callejaId)      // exclusivamente Calleja
+                    ->whereIn('producto_id', $prodIds)
+                    ->where('activo', true)
+                    ->orderBy('producto_id')
+                    ->get();
+
+                foreach ($precios as $pp) {
+                    $pp->activo = false;
+                    $pp->save();
+                    $accionesPrecios[] = ['DESACTIVAR precio especial', $pp->producto?->nombre ?? ('#'.$pp->producto_id), 'Calleja · '.number_format((float) $pp->precio, 4)];
+                }
+                if ($accionesPrecios === []) {
+                    $accionesPrecios[] = ['OK (sin cambios)', '—', 'Calleja no tiene precios especiales activos en esos productos'];
+                }
+            }
+
             // Estado PROYECTADO (leído dentro de la transacción, antes de decidir commit/rollback).
             $this->table(['Acción', 'Producto / código', 'Detalle'], $acciones);
+
+            if ($preciosCalleja) {
+                $this->newLine();
+                $this->info('=== Precios especiales de Calleja a desactivar (productos que Calleja ya no compra) ===');
+                $this->table(['Acción', 'Producto', 'Detalle'], $accionesPrecios);
+            }
 
             $this->newLine();
             $this->info('=== Productos que quedan ACTIVOS ('.Producto::whereIn('codigo_barra', $activarBarras)->where('activo', true)->count().') ===');
@@ -176,7 +218,11 @@ class ReconciliarCatalogoNacionalCommand extends Command
         }
 
         $this->newLine();
-        $this->line('Precios especiales: NO se tocaron (Calleja u otros). Recomendación aparte: desactivar los de MIX y de los archivados si Calleja ya no los compra.');
+        if ($preciosCalleja) {
+            $this->line('Precios especiales: solo se desactivan los de CALLEJA de MIX + archivados. Los de otros clientes quedan intactos.');
+        } else {
+            $this->line('Precios especiales: NO se tocaron. Para desactivar los de Calleja de MIX + archivados, agregá --precios-especiales-calleja.');
+        }
         $this->line($apply ? 'Cambios APLICADOS (auditados en activity log).' : 'DRY-RUN: no se aplicó nada. Repetí con --apply para aplicar.');
 
         return self::SUCCESS;

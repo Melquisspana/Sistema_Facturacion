@@ -160,4 +160,125 @@ class ReconciliarCatalogoNacionalTest extends TestCase
 
         $this->assertSame($estado1, $estado2, 'segunda corrida no cambia nada');
     }
+
+    // --- Precios especiales de Calleja (--precios-especiales-calleja) ---
+
+    /**
+     * Crea Calleja + los 4 productos (MIX + 3 archivados) con precio especial de Calleja,
+     * y un producto con precio especial de OTRO cliente para verificar que no se toca.
+     *
+     * @return array{calleja: Cliente, otro: Cliente, ppc: array<string, ProductoPrecioCliente>}
+     */
+    private function sembrarPreciosCalleja(): array
+    {
+        $calleja = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
+        $otro = Cliente::factory()->contribuyente()->create(['nombre' => 'Tienda Los Andes']);
+
+        $defs = [
+            'mix' => ['7412201700135', 'MIX', '1.0400'],
+            'ani' => ['7412201700192', 'DULCES DE ANIS', '1.0000'],
+            'cdc' => ['7412201700048', 'CONSERVA DE COCO', '1.0000'],
+            'maz' => ['7412201700115', 'MAZAPÁN', '1.0000'],
+        ];
+        $ppc = [];
+        foreach ($defs as $k => [$barra, $nombre, $precio]) {
+            $p = $this->producto('P-'.strtoupper($k), $barra, $nombre, $precio);
+            $ppc[$k] = ProductoPrecioCliente::create([
+                'producto_id' => $p->id, 'cliente_id' => $calleja->id, 'precio' => $precio, 'activo' => true,
+            ]);
+        }
+        // Precio especial de OTRO cliente para MIX: debe quedar intacto.
+        $ppc['otro_mix'] = ProductoPrecioCliente::create([
+            'producto_id' => Producto::where('codigo_barra', '7412201700135')->value('id'),
+            'cliente_id' => $otro->id, 'precio' => '1.1000', 'activo' => true,
+        ]);
+
+        return ['calleja' => $calleja, 'otro' => $otro, 'ppc' => $ppc];
+    }
+
+    public function test_dry_run_no_desactiva_precios_especiales(): void
+    {
+        $d = $this->sembrarPreciosCalleja();
+
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja')
+            ->expectsOutputToContain('DRY-RUN')
+            ->assertExitCode(0);
+
+        foreach (['mix', 'ani', 'cdc', 'maz'] as $k) {
+            $this->assertTrue(ProductoPrecioCliente::find($d['ppc'][$k]->id)->activo, "$k sigue activo en dry-run");
+        }
+    }
+
+    public function test_apply_desactiva_los_cuatro_precios_de_calleja(): void
+    {
+        $d = $this->sembrarPreciosCalleja();
+
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja --apply')->assertExitCode(0);
+
+        // Los 4 precios especiales de Calleja quedan inactivos (no borrados).
+        foreach (['mix', 'ani', 'cdc', 'maz'] as $k) {
+            $pp = ProductoPrecioCliente::find($d['ppc'][$k]->id);
+            $this->assertNotNull($pp, "$k no borrado");
+            $this->assertFalse($pp->activo, "$k desactivado");
+        }
+    }
+
+    public function test_no_toca_precios_de_otros_clientes(): void
+    {
+        $d = $this->sembrarPreciosCalleja();
+
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja --apply')->assertExitCode(0);
+
+        // El precio especial de MIX del OTRO cliente queda intacto.
+        $this->assertTrue(ProductoPrecioCliente::find($d['ppc']['otro_mix']->id)->activo, 'otro cliente intacto');
+    }
+
+    public function test_mix_sigue_activo_como_producto_al_desactivar_su_precio_calleja(): void
+    {
+        $this->sembrarPreciosCalleja();
+
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja --apply')->assertExitCode(0);
+
+        // MIX (producto) sigue activo; solo se desactivó su precio especial de Calleja.
+        $this->assertTrue(Producto::where('codigo_barra', '7412201700135')->value('activo'), 'MIX producto activo');
+    }
+
+    public function test_precios_calleja_es_idempotente(): void
+    {
+        $d = $this->sembrarPreciosCalleja();
+
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja --apply')->assertExitCode(0);
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja --apply')->assertExitCode(0);
+
+        foreach (['mix', 'ani', 'cdc', 'maz'] as $k) {
+            $this->assertFalse(ProductoPrecioCliente::find($d['ppc'][$k]->id)->activo);
+        }
+        $this->assertTrue(ProductoPrecioCliente::find($d['ppc']['otro_mix']->id)->activo);
+    }
+
+    public function test_sin_calleja_no_toca_ningun_precio_especial(): void
+    {
+        // Sin cliente Calleja, la opción falla de forma segura y no toca nada.
+        $otro = Cliente::factory()->contribuyente()->create(['nombre' => 'Tienda Los Andes']);
+        $p = $this->producto('P-MIX', '7412201700135', 'MIX', '1.0400');
+        $pp = ProductoPrecioCliente::create(['producto_id' => $p->id, 'cliente_id' => $otro->id, 'precio' => '1.1000', 'activo' => true]);
+
+        $this->artisan('productos:reconciliar-nacional --precios-especiales-calleja --apply')
+            ->expectsOutputToContain('No se encontró un cliente Calleja')
+            ->assertExitCode(1);
+
+        $this->assertTrue(ProductoPrecioCliente::find($pp->id)->activo, 'nada se tocó sin Calleja');
+    }
+
+    public function test_sin_el_flag_no_toca_precios_especiales(): void
+    {
+        $d = $this->sembrarPreciosCalleja();
+
+        // Reconciliación de productos SIN el flag: los precios especiales quedan intactos.
+        $this->artisan('productos:reconciliar-nacional --apply')->assertExitCode(0);
+
+        foreach (['mix', 'ani', 'cdc', 'maz', 'otro_mix'] as $k) {
+            $this->assertTrue(ProductoPrecioCliente::find($d['ppc'][$k]->id)->activo, "$k intacto sin flag");
+        }
+    }
 }
