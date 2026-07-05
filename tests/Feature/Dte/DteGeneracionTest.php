@@ -119,6 +119,23 @@ class DteGeneracionTest extends TestCase
         $this->assertStringStartsWith('INT-11-', $dte->numero_interno);
     }
 
+    public function test_no_generar_exportacion_sin_actividad_del_receptor(): void
+    {
+        // El esquema FEX exige descActividad del receptor: sin actividad económica el
+        // documento debe fallar ANTES de generar, con un mensaje claro (no llegar al schema).
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $this->correlativo('11', $estab, $pv);
+        $cliente = Cliente::factory()->exportacion()->create(['actividad_economica_id' => null]);
+        $dte = $this->borradorConLinea(TipoDte::FacturaExportacion, $estab, $pv, $cliente);
+
+        $this->expectException(GeneracionException::class);
+        $this->expectExceptionMessage('actividad económica');
+
+        $this->generacion->generar($dte);
+
+        $this->assertSame(EstadoDte::Borrador, $dte->refresh()->estado);
+    }
+
     public function test_no_generar_sin_lineas(): void
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();

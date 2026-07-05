@@ -160,11 +160,40 @@ class ClienteRequestTest extends TestCase
             'num_documento' => 'P1234567',
             'nombre' => 'Sweet Imports LLC',
             'pais_id' => $usa->id,
+            // El esquema FEX exige descActividad del receptor (CAT-019).
+            'actividad_economica_id' => ActividadEconomica::firstOrFail()->id,
             'direccion' => '123 Main St, Miami, FL',
             'activo' => '1',
         ];
 
         $this->assertSame([], $this->validar($data));
+    }
+
+    public function test_exportacion_requiere_actividad_economica(): void
+    {
+        $usa = Pais::where('codigo', 'US')->firstOrFail();
+        $data = [
+            'tipo_cliente' => 'exportacion',
+            'tipo_persona' => 'juridica',
+            'tipo_documento' => '03',
+            'num_documento' => 'P1234567',
+            'nombre' => 'Sweet Imports LLC',
+            'pais_id' => $usa->id,
+            'direccion' => '123 Main St, Miami, FL',
+            'activo' => '1',
+            // sin actividad_economica_id
+        ];
+
+        $this->assertArrayHasKey('actividad_economica_id', $this->validar($data));
+    }
+
+    public function test_consumidor_final_no_requiere_actividad_economica(): void
+    {
+        // La nueva obligatoriedad de actividad para exportación NO debe afectar a los
+        // clientes nacionales (consumidor final): siguen pudiendo guardarse sin actividad.
+        $data = array_merge($this->baseNacional(), ['tipo_cliente' => 'consumidor_final']);
+
+        $this->assertArrayNotHasKey('actividad_economica_id', $this->validar($data));
     }
 
     public function test_exportacion_sin_direccion_falla(): void

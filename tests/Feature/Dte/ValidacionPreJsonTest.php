@@ -96,6 +96,57 @@ class ValidacionPreJsonTest extends TestCase
         return $dte->refresh();
     }
 
+    private function clienteExportacion(array $override = []): Cliente
+    {
+        return Cliente::factory()->exportacion()->create($override);
+    }
+
+    private function fexBorrador(array $emisor, Cliente $cliente): Dte
+    {
+        $dte = $this->borradores->crearBorrador([
+            'tipo_dte' => TipoDte::FacturaExportacion,
+            'cliente_id' => $cliente,
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+        ]);
+        $this->borradores->agregarLineaDesdeProducto($dte, $this->productoConUnidad(), cantidad: 2);
+
+        return $dte->refresh();
+    }
+
+    public function test_fex_sin_actividad_del_receptor_falla(): void
+    {
+        $emisor = $this->emisor();
+        $fex = $this->fexBorrador($emisor, $this->clienteExportacion(['actividad_economica_id' => null]));
+
+        $this->assertContains(
+            'El receptor de exportación debe tener actividad económica (CAT-019).',
+            $this->validacion->validar($fex)
+        );
+    }
+
+    public function test_fex_sin_pais_del_receptor_falla(): void
+    {
+        $emisor = $this->emisor();
+        $fex = $this->fexBorrador($emisor, $this->clienteExportacion(['pais_id' => null]));
+
+        $this->assertContains(
+            'El receptor de exportación debe tener país.',
+            $this->validacion->validar($fex)
+        );
+    }
+
+    public function test_fex_con_receptor_completo_no_reporta_faltantes_del_receptor(): void
+    {
+        $emisor = $this->emisor();
+        // La factory de exportación ya asigna país extranjero y actividad económica.
+        $fex = $this->fexBorrador($emisor, $this->clienteExportacion());
+
+        $problemas = $this->validacion->validar($fex);
+        $this->assertNotContains('El receptor de exportación debe tener actividad económica (CAT-019).', $problemas);
+        $this->assertNotContains('El receptor de exportación debe tener país.', $problemas);
+    }
+
     public function test_valida_pasa_con_ccf_generado_completo(): void
     {
         $emisor = $this->emisor();
