@@ -68,7 +68,7 @@
                     @if ($dte->tipo_nota_credito)
                         <div><dt class="text-gray-500">Tipo de NC</dt><dd>{{ $dte->tipo_nota_credito->label() }}</dd></div>
                     @endif
-                    <div><dt class="text-gray-500">Estado</dt><dd>{{ $dte->estado->label() }}</dd></div>
+                    <div><dt class="text-gray-500">Estado</dt><dd><x-estado-dte-badge :estado="$dte->estado" /></dd></div>
                     <div><dt class="text-gray-500">Número interno</dt><dd class="font-mono">{{ $dte->numero_interno ?? '—' }}</dd></div>
                     @if ($dte->numero_control)
                         <div><dt class="text-gray-500">Número de control</dt><dd class="font-mono">{{ $dte->numero_control }}</dd></div>

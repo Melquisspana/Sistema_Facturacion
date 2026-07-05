@@ -14,17 +14,11 @@
                 @endif
 
                 @php
-                    // Clases literales para que el JIT de Tailwind las incluya (no interpolar).
-                    $estadoClases = [
-                        'borrador' => 'bg-gray-100 text-gray-700',
-                        'generado' => 'bg-blue-100 text-blue-700',
-                        'firmado' => 'bg-indigo-100 text-indigo-700',
-                        'enviado' => 'bg-amber-100 text-amber-700',
-                        'aceptado' => 'bg-green-100 text-green-700',
-                        'rechazado' => 'bg-red-100 text-red-700',
-                        'invalidado' => 'bg-rose-100 text-rose-700',
-                    ];
+                    // El badge de estado del DTE vive en <x-estado-dte-badge> (mismo componente
+                    // que ficha/edición, para no duplicar el mapeo de color en cada vista).
+
                     // Estado del último envío de correo (mismos colores del card "Correo del cliente").
+                    // Clases literales para que el JIT de Tailwind las incluya (no interpolar).
                     $correoClases = [
                         'enviado' => 'bg-green-100 text-green-700',
                         'simulado' => 'bg-violet-100 text-violet-700',
@@ -179,9 +173,7 @@
                                         @endif
                                     </td>
                                     <td class="px-3 py-2">
-                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $estadoClases[$dte->estado->value] ?? 'bg-gray-100 text-gray-700' }}">
-                                            {{ $dte->estado->label() }}
-                                        </span>
+                                        <x-estado-dte-badge :estado="$dte->estado" />
                                     </td>
                                     {{-- Último envío de correo (subquery ultimo_envio_estado; solo lectura) --}}
                                     <td class="px-3 py-2">

@@ -56,9 +56,7 @@
                             @if ($dte->clienteSucursal?->nombre)
                                 <span class="text-indigo-600 text-sm">— {{ $dte->clienteSucursal->nombre }}</span>
                             @endif
-                            <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
-                                {{ $dte->estado->label() }}
-                            </span>
+                            <x-estado-dte-badge :estado="$dte->estado" />
                         </div>
                         <dl class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
                             <div><dt class="inline text-gray-400">Fecha:</dt> <dd class="inline">{{ $dte->fecha_emision?->format('d/m/Y') ?? '—' }}</dd></div>

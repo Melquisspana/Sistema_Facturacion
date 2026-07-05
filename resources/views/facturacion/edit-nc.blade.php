@@ -50,7 +50,7 @@
                         </dd>
                     </div>
                     <div><dt class="text-gray-500">Cliente</dt><dd>{{ $nc->cliente?->nombre ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500">Estado</dt><dd>{{ $nc->estado->label() }}</dd></div>
+                    <div><dt class="text-gray-500">Estado</dt><dd><x-estado-dte-badge :estado="$nc->estado" /></dd></div>
                     <div class="md:col-span-4"><dt class="text-gray-500">Motivo</dt><dd>{{ $nc->motivo ?? '—' }}</dd></div>
                 </dl>
             </div>
