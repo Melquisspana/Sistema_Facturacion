@@ -92,6 +92,25 @@
                             <span class="text-xs text-gray-400">{{ count($productosDisponibles) }} producto(s) activos</span>
                         </div>
 
+                        {{-- Modo escáner: pegar/escanear un código de barras y Enter agrega el producto
+                             (o suma 1 a la cantidad si ya estaba en las líneas). No duplica línea. --}}
+                        <div class="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+                            <form method="POST" action="{{ route('facturacion.productos.escanear', $dte) }}">
+                                @csrf
+                                <label for="escanear-barra" class="block text-sm font-medium text-indigo-900 mb-1">
+                                    Escanear código de barras
+                                </label>
+                                <input id="escanear-barra" name="codigo_barra" type="text" autocomplete="off" autofocus
+                                       placeholder="Escaneá o escribí el código y presioná Enter…"
+                                       onkeydown="if (event.key === 'Enter') { event.preventDefault(); this.form.requestSubmit(); }"
+                                       class="block w-full border-indigo-300 rounded-lg shadow-sm py-2.5 text-base focus:border-indigo-500 focus:ring-indigo-500">
+                                <p class="mt-1 text-xs text-indigo-700">Cada escaneo suma 1 a la cantidad si el producto ya está agregado.</p>
+                                @error('codigo_barra')
+                                    <p class="mt-1 text-xs text-rose-600 font-medium">{{ $message }}</p>
+                                @enderror
+                            </form>
+                        </div>
+
                         {{-- Buscador grande y prominente (el listado ya está visible; filtrar es opcional). --}}
                         <div class="mb-4">
                             <x-input-label for="filtro-productos" value="Filtrar por nombre, código interno o código de barra" class="sr-only" />

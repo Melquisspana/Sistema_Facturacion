@@ -123,6 +123,8 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/productos/{producto}/cantidad', [DteController::class, 'setCantidadProducto'])
             ->name('productos.cantidad')
             ->withoutScopedBindings();
+        // Modo escáner: agrega por código de barras exacto (o suma 1 si ya está en líneas).
+        Route::post('{dte}/productos/escanear', [DteController::class, 'escanearProducto'])->name('productos.escanear');
 
         // Líneas del borrador.
         Route::post('{dte}/lineas', [DteController::class, 'storeLinea'])->name('lineas.store');
