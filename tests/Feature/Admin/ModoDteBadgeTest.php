@@ -63,18 +63,38 @@ class ModoDteBadgeTest extends TestCase
             ->assertDontSee('PARALELO SEGURO');
     }
 
-    public function test_badge_pasa_a_rojo_si_la_transmision_real_queda_habilitada(): void
+    public function test_badge_pasa_a_rojo_solo_si_transmision_real_a_produccion_queda_habilitada(): void
     {
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.enabled', true);
         config()->set('dte.transmision.real_confirmation', true);
         config()->set('dte.transmision.dry_run', false);
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.allow_production', true);
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('PRINCIPAL LISTO')
-            ->assertSee('REALES a Hacienda');
+            ->assertSee('REALES a Hacienda (PRODUCCIÓN)');
+    }
+
+    public function test_paralelo_con_via_de_pruebas_no_muestra_alerta_de_produccion(): void
+    {
+        // Bug reportado: modo paralelo + dry-run + vía de pruebas (apitest) no debe gritar
+        // "transmite REALES a Hacienda". Queda ámbar apitest, sin la alerta roja.
+        config()->set('dte.transmision.modo_operacion', 'paralelo');
+        config()->set('dte.transmision.dry_run', true);
+        config()->set('dte.transmision.real_confirmation', false);
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.test_enabled', true);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('PARALELO SEGURO')
+            ->assertSee('apitest')
+            ->assertDontSee('REALES a Hacienda (PRODUCCIÓN)');
     }
 
     public function test_chip_de_mock_aparece_cuando_hay_algun_mock_activo(): void

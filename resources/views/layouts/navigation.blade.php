@@ -6,13 +6,20 @@
         'advertencia' => 'bg-amber-100 text-amber-700',
         'critico' => 'bg-rose-100 text-rose-700 animate-pulse',
     ];
+    // Fondo de la franja según el color (rojo solo para transmisión real a PRODUCCIÓN).
+    $modoDteFranja = [
+        'ok' => 'bg-gray-50 border-gray-100',
+        'advertencia' => 'bg-amber-50 border-amber-200',
+        'critico' => 'bg-rose-50 border-rose-200',
+    ];
 @endphp
 <nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
     @if ($modoDte)
         {{-- Aviso SOLO para quienes facturan (administrador/facturación): deja claro si el
-             sistema está en modo paralelo/preproducción (seguro) o si una transmisión real
-             sería posible ahora mismo (alerta roja). Solo lectura, sin secretos. --}}
-        <div class="px-4 sm:px-6 lg:px-8 py-1.5 text-xs flex flex-wrap items-center gap-2 border-b {{ $modoDte['transmision_real_posible'] ? 'bg-rose-50 border-rose-200' : 'bg-gray-50 border-gray-100' }}"
+             sistema está en modo paralelo/preproducción (seguro), si apitest/pruebas está
+             habilitado (ámbar) o si una transmisión real a producción sería posible ahora
+             (roja). Solo lectura, sin secretos. --}}
+        <div class="px-4 sm:px-6 lg:px-8 py-1.5 text-xs flex flex-wrap items-center gap-2 border-b {{ $modoDteFranja[$modoDte['color']] ?? 'bg-gray-50 border-gray-100' }}"
              title="{{ $modoDte['detalle'] }}">
             <span class="font-semibold text-gray-500">DTE:</span>
             <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">

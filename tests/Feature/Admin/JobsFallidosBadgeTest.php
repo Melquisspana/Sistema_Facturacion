@@ -95,15 +95,23 @@ class JobsFallidosBadgeTest extends TestCase
 
     public function test_los_fallidos_no_cambian_el_estado_general(): void
     {
-        // El estado general se calcula de seguridad/backups/alertas, no de la cola.
-        // Con y sin fallidos el banner general es el mismo (en test: backups crítico).
+        // El estado general se calcula de seguridad/backups/alertas, no de la cola. Se
+        // compara el banner ANTES/DESPUÉS (no un texto fijo: depende de backups/admins,
+        // que varían según el entorno real de la máquina).
         $admin = $this->usuario('administrador');
 
-        $general = fn () => $this->actingAs($admin)->get(route('admin.salud-sistema'))
-            ->assertOk()->assertSee('Sistema NO listo para producción');
+        $banner = function () use ($admin): string {
+            $html = $this->actingAs($admin)->get(route('admin.salud-sistema'))->assertOk()->getContent();
+            preg_match('/text-2xl font-bold">([^<]+)</', (string) $html, $m);
 
-        $general();          // baseline (0 fallidos)
+            return trim($m[1] ?? '');
+        };
+
+        $antes = $banner();      // baseline (0 fallidos)
         $this->fallidos(5);
-        $general();          // con fallidos: el general no cambia
+        $despues = $banner();    // con fallidos: el general no cambia
+
+        $this->assertNotSame('', $antes);
+        $this->assertSame($antes, $despues, 'Los jobs fallidos no deben alterar el banner general.');
     }
 }

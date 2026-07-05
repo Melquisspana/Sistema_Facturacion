@@ -40,11 +40,16 @@ Revisar en este orden. Si algo falla, resolver antes de facturar en el piloto.
 | 6 | **Modos seguros** (visible siempre) | Franja superior del navbar (badge **DTE: …**), o `php artisan dte:modo-operacion` | Badge verde **PARALELO SEGURO**: firma/transmisión reales bloqueadas |
 
 > El sistema nuevo **no** debe transmitir en el piloto. El badge del navbar (visible en
-> toda pantalla para administrador/facturación) debe decir **PARALELO SEGURO** en verde.
-> Si aparece en **rojo** ("…LISTO", transmisión real posible) o dice `dte:modo-operacion`
-> distinto de paralelo seguro, **no sigas** y avisá antes de continuar. El chip
-> **PRUEBAS / MOCK** junto al badge es normal durante el piloto (firma/transmisión
-> simuladas); más detalle en **Salud del sistema → "Transmisión DTE"**.
+> toda pantalla para administrador/facturación) debe decir **PARALELO SEGURO**.
+> Colores del badge/franja:
+> - **Verde** = paralelo, sin transmisión: ideal para el piloto.
+> - **Ámbar** = transmisión a **apitest (pruebas)** habilitada (`DTE_TRANSMISION_TEST_ENABLED`);
+>   envía a Hacienda **de pruebas**, NO a producción. No es peligroso, pero para un piloto
+>   "limpio" conviene apagarlo (`DTE_TRANSMISION_TEST_ENABLED=false`) y que quede verde.
+> - **Rojo** = transmisión real a **PRODUCCIÓN** posible ahora mismo → **parar** y avisar.
+>
+> El chip **PRUEBAS / MOCK** junto al badge es normal durante el piloto (firma/transmisión
+> simuladas). Más detalle en **Salud del sistema → "Transmisión DTE"**.
 
 ---
 
