@@ -59,37 +59,68 @@ class SaludSistemaTransmisionDteTest extends TestCase
             ->assertSee('Firma: MOCK');
     }
 
-    public function test_muestra_alerta_roja_si_transmision_real_queda_posible(): void
+    public function test_muestra_alerta_roja_solo_si_transmision_real_a_produccion_queda_posible(): void
     {
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.enabled', true);
         config()->set('dte.transmision.real_confirmation', true);
         config()->set('dte.transmision.dry_run', false);
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.allow_production', true);
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('admin.salud-sistema'))
             ->assertOk()
             ->assertSee('PRINCIPAL LISTO')
-            ->assertSee('puede transmitir documentos REALES a Hacienda ahora mismo');
+            ->assertSee('REALES a Hacienda (PRODUCCIÓN) ahora mismo');
+    }
+
+    public function test_via_de_pruebas_apitest_muestra_ambar_no_alerta_roja(): void
+    {
+        // Bug reportado: paralelo + dry-run + vía de pruebas apitest NO debe mostrar la
+        // alerta roja de producción; muestra el aviso ámbar de apitest.
+        config()->set('dte.transmision.modo_operacion', 'paralelo');
+        config()->set('dte.transmision.dry_run', true);
+        config()->set('dte.transmision.real_confirmation', false);
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.test_enabled', true);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('admin.salud-sistema'))
+            ->assertOk()
+            ->assertSee('PARALELO SEGURO')
+            ->assertSee('PRUEBAS (apitest)')
+            ->assertDontSee('REALES a Hacienda (PRODUCCIÓN) ahora mismo');
+    }
+
+    /** Extrae el texto del banner "Estado general" del panel (robusto ante backups/admins). */
+    private function bannerGeneral(User $admin): string
+    {
+        $html = $this->actingAs($admin)->get(route('admin.salud-sistema'))->assertOk()->getContent();
+        preg_match('/text-2xl font-bold">([^<]+)</', (string) $html, $m);
+
+        return trim($m[1] ?? '');
     }
 
     public function test_la_seccion_no_altera_el_estado_general(): void
     {
         // El estado general se calcula de seguridad/backups/alertas; la transmisión DTE
-        // (paralelo o principal) es informativa aparte, igual que la cola de correos.
+        // (paralelo o principal) es informativa aparte, igual que la cola de correos. Se
+        // compara el banner ANTES/DESPUÉS (no un texto fijo, que depende de backups/admins).
         $admin = $this->usuario('administrador');
-
-        $general = fn () => $this->actingAs($admin)->get(route('admin.salud-sistema'))
-            ->assertOk()->assertSee('Sistema NO listo para producción');
-
-        $general(); // baseline: paralelo
+        $antes = $this->bannerGeneral($admin);
 
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.enabled', true);
         config()->set('dte.transmision.real_confirmation', true);
         config()->set('dte.transmision.dry_run', false);
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.allow_production', true);
 
-        $general(); // con transmisión real "posible": el general no cambia
+        $despues = $this->bannerGeneral($admin);
+
+        $this->assertNotSame('', $antes);
+        $this->assertSame($antes, $despues, 'La sección Transmisión DTE no debe alterar el banner general.');
     }
 
     public function test_solo_administrador_ve_el_panel(): void

@@ -117,9 +117,15 @@
                 <p class="text-sm text-gray-700">{{ $transmisionDte['detalle'] }}</p>
                 @if ($transmisionDte['transmision_real_posible'])
                     <p class="text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3 mt-3">
-                        ⚠ El sistema puede transmitir documentos REALES a Hacienda ahora mismo. Si esto es
+                        ⚠ El sistema puede transmitir documentos REALES a Hacienda (PRODUCCIÓN) ahora mismo. Si esto es
                         inesperado durante el piloto, revisá <span class="font-mono">DTE_MODO_OPERACION</span>
                         y los candados de <span class="font-mono">.env</span> de inmediato.
+                    </p>
+                @elseif ($transmisionDte['apitest_posible'])
+                    <p class="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 mt-3">
+                        Transmisión al ambiente de <strong>PRUEBAS (apitest)</strong> habilitada: envía a Hacienda de
+                        pruebas, <strong>NO a producción</strong>. Fuera del piloto conviene apagarla
+                        (<span class="font-mono">DTE_TRANSMISION_TEST_ENABLED=false</span>).
                     </p>
                 @else
                     <p class="text-xs text-green-700 mt-2">Conta Portable sigue siendo el sistema oficial mientras dure el piloto.</p>

@@ -420,7 +420,9 @@ class DteTransmisionService
     public function estadoOperativo(): array
     {
         $c = $this->evaluarCandados();
-        $modo = $c['flags']['modo_operacion'];
+        $flags = $c['flags'];
+        $modo = $flags['modo_operacion'];
+        $esProduccion = (bool) ($flags['es_produccion'] ?? false);
 
         // Misma terminología que `dte:modo-operacion` (no se inventa vocabulario nuevo).
         $etiqueta = match ($modo) {
@@ -430,16 +432,34 @@ class DteTransmisionService
             default => strtoupper($modo).' BLOQUEADO',
         };
 
-        // "LISTO" significa que evaluarCandados() NO bloqueó: una transmisión real
-        // sería posible ahora mismo. Es el único estado que merece alerta fuerte (rojo).
-        $transmisionRealPosible = ! $c['bloqueado'];
-        $color = $transmisionRealPosible ? 'critico' : ($modo === 'paralelo' ? 'ok' : 'advertencia');
+        // evaluarCandados() NO bloqueó → una transmisión real es posible AHORA. Hay que
+        // distinguir el DESTINO, porque no es lo mismo mandar a producción que a apitest:
+        //  - PRODUCCIÓN: documentos fiscales reales → único caso de alerta ROJA.
+        //  - apitest (pruebas): ambiente de prueba del MH; NO produce documentos válidos.
+        //    La vía dedicada de pruebas (DTE_TRANSMISION_TEST_ENABLED) abre apitest aun en
+        //    modo paralelo, por eso mirar solo `bloqueado` daba un falso "transmite REAL".
+        $abierto = ! $c['bloqueado'];
+        $produccionRealPosible = $abierto && $esProduccion;
+        $apitestPosible = $abierto && ! $esProduccion;
 
-        $detalle = $transmisionRealPosible
-            ? 'El sistema puede transmitir documentos REALES a Hacienda ahora mismo (modo '.$modo.').'
-            : ($modo === 'paralelo'
-                ? 'Conta Portable es el sistema oficial; este sistema NO transmite (solo genera JSON, firma local y dry-run).'
-                : implode(' ', $c['razones']));
+        // Rojo (crítico) SOLO si se puede transmitir a PRODUCCIÓN ahora mismo. Apitest es
+        // ámbar (habilitado pero no es producción). Bloqueado en paralelo es verde.
+        if ($produccionRealPosible) {
+            $color = 'critico';
+            $detalle = 'El sistema puede transmitir documentos REALES a Hacienda (PRODUCCIÓN) ahora mismo (modo '.$modo.').';
+        } elseif ($apitestPosible) {
+            $color = 'advertencia';
+            $detalle = 'Transmisión al ambiente de PRUEBAS (apitest) habilitada: envía a Hacienda de pruebas, NO a producción. Fuera del piloto conviene dejarla apagada (DTE_TRANSMISION_TEST_ENABLED=false).';
+        } elseif ($modo === 'paralelo') {
+            $color = 'ok';
+            $detalle = 'Conta Portable es el sistema oficial; este sistema NO transmite (solo genera JSON, firma local y dry-run).';
+        } else {
+            $color = 'advertencia';
+            // Bloqueado en respaldo/principal: mostrar por qué (incluye dry-run/confirmación).
+            $detalle = $c['razones'] !== []
+                ? 'Transmisión real bloqueada: '.implode(' ', $c['razones'])
+                : 'Transmisión real bloqueada por candados de seguridad.';
+        }
 
         $mocks = [
             'firma' => (bool) config('dte.firma.mock', false),
@@ -452,7 +472,11 @@ class DteTransmisionService
             'etiqueta' => $etiqueta,
             'color' => $color,
             'detalle' => $detalle,
-            'transmision_real_posible' => $transmisionRealPosible,
+            // Única condición de alerta ROJA: transmisión real a PRODUCCIÓN posible ahora.
+            'transmision_real_posible' => $produccionRealPosible,
+            // Transmisión a apitest (pruebas) posible: es HTTP real, pero al ambiente de
+            // pruebas del MH; no equivale a emitir documentos fiscales de producción.
+            'apitest_posible' => $apitestPosible,
             'mocks' => $mocks,
             'candados' => $c,
         ];

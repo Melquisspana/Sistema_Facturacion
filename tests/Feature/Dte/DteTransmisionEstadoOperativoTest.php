@@ -41,9 +41,29 @@ class DteTransmisionEstadoOperativoTest extends TestCase
         $this->assertFalse($estado['transmision_real_posible']);
     }
 
-    public function test_modo_principal_con_todos_los_candados_abiertos_es_critico_rojo(): void
+    public function test_produccion_con_todos_los_candados_abiertos_es_critico_rojo(): void
     {
-        // Único combo que hace evaluarCandados() bloqueado=false (transmisión real posible).
+        // ÚNICO caso de alerta roja: transmisión real a PRODUCCIÓN posible ahora mismo.
+        config()->set('dte.transmision.modo_operacion', 'principal');
+        config()->set('dte.transmision.enabled', true);
+        config()->set('dte.transmision.real_confirmation', true);
+        config()->set('dte.transmision.dry_run', false);
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.allow_production', true);
+
+        $estado = $this->servicio()->estadoOperativo();
+
+        $this->assertSame('PRINCIPAL LISTO', $estado['etiqueta']);
+        $this->assertSame('critico', $estado['color']);
+        $this->assertTrue($estado['transmision_real_posible']);
+        $this->assertFalse($estado['apitest_posible']);
+        $this->assertStringContainsString('PRODUCCIÓN', $estado['detalle']);
+    }
+
+    public function test_principal_en_testing_con_candados_abiertos_es_apitest_ambar_no_rojo(): void
+    {
+        // Todos los candados abiertos pero en TESTING → apitest, no producción: ámbar,
+        // nunca la alerta roja de "transmite REAL a producción".
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.enabled', true);
         config()->set('dte.transmision.real_confirmation', true);
@@ -52,10 +72,49 @@ class DteTransmisionEstadoOperativoTest extends TestCase
 
         $estado = $this->servicio()->estadoOperativo();
 
-        $this->assertSame('PRINCIPAL LISTO', $estado['etiqueta']);
-        $this->assertSame('critico', $estado['color']);
-        $this->assertTrue($estado['transmision_real_posible']);
-        $this->assertStringContainsString('REALES a Hacienda', $estado['detalle']);
+        $this->assertSame('advertencia', $estado['color']);
+        $this->assertFalse($estado['transmision_real_posible']); // NO es alerta roja
+        $this->assertTrue($estado['apitest_posible']);
+        $this->assertStringContainsString('apitest', $estado['detalle']);
+    }
+
+    public function test_paralelo_con_via_de_pruebas_apitest_no_dispara_alerta_de_produccion(): void
+    {
+        // Escenario reportado: modo paralelo + dry-run sí + confirmación no, pero con la
+        // vía dedicada de pruebas encendida (DTE_TRANSMISION_TEST_ENABLED). Antes daba un
+        // falso "puede transmitir REALES a Hacienda"; ahora es ámbar apitest, no rojo.
+        config()->set('dte.transmision.modo_operacion', 'paralelo');
+        config()->set('dte.transmision.dry_run', true);
+        config()->set('dte.transmision.real_confirmation', false);
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.test_enabled', true);
+
+        $estado = $this->servicio()->estadoOperativo();
+
+        $this->assertSame('PARALELO SEGURO', $estado['etiqueta']);
+        $this->assertFalse($estado['transmision_real_posible']); // sin alerta roja de producción
+        $this->assertTrue($estado['apitest_posible']);
+        $this->assertSame('advertencia', $estado['color']);
+        $this->assertStringNotContainsString('PRODUCCIÓN', $estado['detalle']);
+    }
+
+    public function test_paralelo_con_dry_run_y_sin_via_de_pruebas_es_verde_sin_alertas(): void
+    {
+        // El estado que el operador espera ver "seguro" en el piloto.
+        config()->set('dte.transmision.modo_operacion', 'paralelo');
+        config()->set('dte.transmision.enabled', true);       // interruptor encendido…
+        config()->set('dte.transmision.dry_run', true);       // …pero dry-run activo
+        config()->set('dte.transmision.real_confirmation', false);
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.test_enabled', false); // sin vía de pruebas
+
+        $estado = $this->servicio()->estadoOperativo();
+
+        $this->assertSame('PARALELO SEGURO', $estado['etiqueta']);
+        $this->assertSame('ok', $estado['color']);
+        $this->assertFalse($estado['transmision_real_posible']);
+        $this->assertFalse($estado['apitest_posible']);
+        $this->assertStringContainsString('NO transmite', $estado['detalle']);
     }
 
     public function test_modo_principal_bloqueado_por_dry_run_no_es_critico(): void
@@ -70,6 +129,7 @@ class DteTransmisionEstadoOperativoTest extends TestCase
         $this->assertSame('PRINCIPAL BLOQUEADO', $estado['etiqueta']);
         $this->assertSame('advertencia', $estado['color']);
         $this->assertFalse($estado['transmision_real_posible']);
+        $this->assertFalse($estado['apitest_posible']);
     }
 
     public function test_modo_desconocido_se_reporta_bloqueado(): void
