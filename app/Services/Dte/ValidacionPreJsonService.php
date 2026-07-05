@@ -173,6 +173,11 @@ class ValidacionPreJsonService
                 if (blank($cliente->pais_id)) {
                     $problemas[] = 'El receptor de exportación debe tener país.';
                 }
+                // El esquema oficial FEX exige descActividad del receptor (CAT-019): sin
+                // actividad económica la generación fallaría contra el schema del MH.
+                if (blank($cliente->actividad_economica_id)) {
+                    $problemas[] = 'El receptor de exportación debe tener actividad económica (CAT-019).';
+                }
                 break;
 
             case TipoDte::Factura:

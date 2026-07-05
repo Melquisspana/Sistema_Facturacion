@@ -19,7 +19,8 @@ use Illuminate\Validation\Rule;
  * - Consumidor final (nacional, Factura): país El Salvador, departamento y
  *   municipio; NRC NO requerido; documento opcional (DUI/NIT/otro).
  * - Exportación (FEX): país extranjero; departamento/municipio no aplican;
- *   dirección o complemento obligatorio; NRC NO requerido.
+ *   dirección o complemento obligatorio; actividad económica obligatoria (el
+ *   esquema oficial exige descActividad del receptor); NRC NO requerido.
  *
  * Código de país de El Salvador en CAT-020: SV.
  */
@@ -71,8 +72,10 @@ class ClienteRequest extends FormRequest
             ],
             'nombre' => ['required', 'string', 'max:255'],
             'nombre_comercial' => ['nullable', 'string', 'max:255'],
+            // La actividad económica es obligatoria para contribuyente (CCF) y para
+            // exportación (el esquema FEX exige descActividad del receptor, CAT-019).
             'actividad_economica_id' => [
-                $esContribuyente ? 'required' : 'nullable',
+                ($esContribuyente || $esExportacion) ? 'required' : 'nullable',
                 'exists:actividades_economicas,id',
             ],
             // Distrito (división 2024). Nullable para no bloquear clientes ya cargados;
@@ -172,7 +175,7 @@ class ClienteRequest extends FormRequest
             'num_documento.required_with' => 'El número de documento es obligatorio cuando se indica un tipo de documento.',
             'num_documento.unique' => 'Ya existe un cliente con ese número de documento.',
             'codigo.unique' => 'Ya existe un cliente con ese código interno.',
-            'actividad_economica_id.required' => 'La actividad económica es obligatoria para un contribuyente.',
+            'actividad_economica_id.required' => 'La actividad económica es obligatoria para clientes contribuyentes y de exportación.',
         ];
     }
 
