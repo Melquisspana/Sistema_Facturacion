@@ -128,7 +128,41 @@ Arranque **gradual y con red**, no todo de golpe:
 
 ---
 
-## 6. Alcance y seguridad
+## 6. Registro de preflight ejecutado (2026-07-06)
+
+Ejecución del checklist de arranque (§2), solo lectura salvo las pruebas técnicas anotadas. No
+se transmitió nada a Hacienda; el modo se mantuvo **PARALELO SEGURO** en todo momento.
+
+| Chequeo | Resultado |
+|---|---|
+| Backup reciente | ✅ `.zip` de hoy en `storage\app\private\Dulces La Negrita\` |
+| Worker activo | ✅ heartbeat activo (último pulso pocos segundos) |
+| 0 jobs fallidos | ✅ pendientes 0 · fallidos 0 |
+| Modo PARALELO SEGURO | ✅ paralelo · transmisión real bloqueada |
+| APP_DEBUG=false | ✅ |
+| **Firmador real local** | ✅ **vivo y firma real** (ver prueba técnica abajo) |
+| **SMTP** | ✅ **send-test enviado** al correo de prueba controlado (ver abajo) |
+| Conta Portable | confirmación manual del operador |
+
+**Prueba técnica de firmador (real local, sin mock):**
+- Health check `GET .../firmardocumento/status` → **HTTP 200** ("Application is running").
+- Se generó un **CCF throwaway** (interno **#101**, `DTE-03-M001P001-000000000000051`, cliente
+  contribuyente de prueba, 1 línea) **solo** para probar la firma — **no** es del piloto.
+- Firma real con el **NIT del emisor** (`DTE_FIRMA_NIT`, desde `.env`) → **`firmo=true`**,
+  estado Generado→**Firmado**, **JWS real** (3 partes, sin marcador MOCK), **sin sello**
+  (**no transmitido**). Confirma que el firmador tiene la llave del emisor cargada y firma.
+- El documento #101 queda como **evidencia técnica** (firmado, no transmitido); no se usa para
+  el piloto ni se emite.
+
+**Send-test SMTP:**
+- Se encoló el correo del CCF #101 **únicamente** al correo de prueba controlado
+  (`melquicedeespana@gmail.com`, **no** al cliente). Registro **DteEnvio #23**.
+- Flujo de cola verificado: **jobs 0 → 1 → 0**, **0 fallidos**; `DteEnvio` quedó **enviado**
+  (`error=null`) por SMTP (Gmail). Falta solo la verificación visual del buzón por el operador.
+
+---
+
+## 7. Alcance y seguridad
 
 - Este documento **no toca** código, facturación, DTE, firma, transmisión, correo, colas ni
   PDF: es solo un procedimiento operativo para el Día 2 y el arranque.
