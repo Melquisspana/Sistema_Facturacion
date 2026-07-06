@@ -354,4 +354,42 @@ class DteNotaCreditoAveriaTest extends TestCase
         $this->assertCount(1, $nc->refresh()->lineas);
         $this->assertNull(DteLinea::where('dte_id', $nc->id)->first()->producto_id);
     }
+
+    /**
+     * La NC por pronto pago (concepto manual) debe poder GENERARSE: el concepto no
+     * tiene producto ni unidad física, pero el esquema del MH exige CAT-014 en toda
+     * línea, así que el concepto toma la unidad 99 ("Otra"). Reproduce el Caso 8 del
+     * piloto: concepto gravado $5.00 → IVA 0.65 → total 5.65, sin descuento ni retención.
+     */
+    public function test_pronto_pago_genera_con_unidad_otra_y_totales_correctos(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $ccf = $this->ccfGenerado($emisor, $cliente, $this->producto());
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'pronto_pago', 'motivo' => 'Pronto pago'])
+            ->assertRedirect();
+        $nc = Dte::where('tipo_dte', '05')->where('tipo_nota_credito', 'pronto_pago')->firstOrFail();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.conceptos.store', $nc), ['descripcion' => 'Descuento por pronto pago', 'monto' => 5.00])
+            ->assertRedirect();
+
+        // El concepto lleva unidad CAT-014 "99" (Otra) y no es un producto físico.
+        $linea = DteLinea::where('dte_id', $nc->id)->firstOrFail();
+        $this->assertSame('99', $linea->unidad_codigo);
+        $this->assertNull($linea->producto_id);
+
+        // Se genera sin el error "no tiene unidad de medida (CAT-014)".
+        app(DteGeneracionService::class)->generar($nc->refresh());
+
+        $nc->refresh();
+        $this->assertSame('generado', $nc->estado->value);
+        $this->assertSame('5.00', $nc->total_gravado);
+        $this->assertSame('0.00', $nc->descuento_global); // pronto pago no hereda descuento
+        $this->assertSame('0.65', $nc->iva);
+        $this->assertFalse((bool) $nc->aplica_retencion_iva); // la NC no retiene
+        $this->assertSame('5.65', $nc->total_pagar);
+    }
 }

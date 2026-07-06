@@ -304,6 +304,10 @@ class DteBorradorService
                 'descripcion' => $validado['descripcion'],
                 'tipo_producto' => TipoProducto::Servicio->value, // concepto, no bien físico
                 'tipo_impuesto' => $tipoImpuesto,
+                // Un concepto manual (pronto pago / descuento / ajuste) no tiene producto
+                // ni unidad física, pero el esquema del MH exige una unidad de medida
+                // (CAT-014) en TODA línea. Se usa el código 99 = "Otra".
+                'unidad_codigo' => '99',
             ]);
             $linea->dte_id = $nc->id;
             $linea->numero_linea = $this->siguienteNumeroLinea($nc);
