@@ -329,7 +329,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 |------|-------|----------|----------------------|--------------------------|-------------|-------------|-------|--------------------|
 | 1 CCF sin retención | 2026-07-05 | operador | INT-03-M001P001-…044 | Conta Portable (misma operación) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.1 |
 | 2 CCF con retención | 2026-07-05 | operador | INT-03-M001P001-…045 | Conta Portable (misma operación) | 117.15 | 117.15 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.2 |
-| 3 CCF Calleja OC+sala | | | | | | | | |
+| 3 CCF Calleja OC+sala | 2026-07-05 | sistema (captura) | INT-03-M001P001-…046 | _pendiente_ | 122.36 | _pendiente_ | ⏳ lado nuevo capturado | Con OC, sala, precios especiales, descuento 5% y retención. Detalle en §13.3 |
 | 4 Duplicar CCF | | | | | | | | |
 | 5 Correo + PDF | | | | | | | | |
 | 6 NC devolución | | | | | | | | |
@@ -414,6 +414,49 @@ numeroControl `DTE-03-M001P001-000000000000045` · estado **Generado** · **sin 
 **retención**; total idéntico (**$117.15** = **$117.15**, diferencia **$0.00**). Conta
 Portable emitió la misma operación oficialmente; el sistema nuevo solo comparó (sin
 transmitir a Hacienda).
+
+### 13.3 Caso 3 — CCF Calleja con OC y sala (captura del sistema nuevo · 2026-07-05) · ⏳ PENDIENTE
+
+Corrida del Caso 3 en el **sistema nuevo**, en **modo paralelo** (sin transmitir a
+Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0** jobs fallidos,
+backup reciente (hoy), `APP_DEBUG=false`.
+
+**Cliente/sala/OC (indicados por el operador):** Calleja (id 10) · sala **Súper Selectos
+Aguilares** (id 199) · OC **OC-PILOTO-0001** · productos que Calleja usa (con precios
+especiales). Valida OC en apéndice, ubicación de la sala, **descuento global 5%** de
+Calleja y **retención**.
+
+**Documento nuevo:** CCF interno #90 · N° interno `INT-03-M001P001-000000000000046` ·
+numeroControl `DTE-03-M001P001-000000000000046` · estado **Generado** · **sin sello**
+(no transmitido) · JSON oficial preliminar validado contra `fe-ccf-v4`.
+
+| Campo | Valor del sistema nuevo | Conta Portable |
+|-------|-------------------------|:--------------:|
+| Razón social (receptor) | Calleja, S.A. de C.V. · NIT 0614-110169-001-1 · NRC 1937 · **agente de retención** | _pendiente_ |
+| Nombre comercial / sala | Súper Selectos Aguilares | _pendiente_ |
+| Depto / municipio / distrito de la sala | San Salvador / San Salvador / San Salvador (cód. 06 / 23 / 14) | _pendiente_ |
+| Orden de compra (apéndice) | OC-PILOTO-0001 | _pendiente_ |
+| Producto 1 | CANILLITAS · cant 60 · **precio especial** 1.0500 · gravado 63.00 | _pendiente_ |
+| Producto 2 | MANI DULCE · cant 50 · **precio especial** 1.0400 · gravado 52.00 | _pendiente_ |
+| Subtotal gravado bruto (sin IVA) | **115.00** | _pendiente_ |
+| Descuento global 5% (Calleja) | **5.75** → gravado neto **109.25** | _pendiente_ |
+| IVA 13% (sobre neto) | **14.20** | _pendiente_ |
+| Retención IVA 1% (sobre neto, base 109.25 > $100) | **1.09** | _pendiente_ |
+| Monto total operación | 123.45 (neto + IVA) | _pendiente_ |
+| Total a pagar | **122.36** (123.45 − 1.09 retención) | _pendiente_ |
+| Total en letras | CIENTO VEINTIDÓS 36/100 DÓLARES | _pendiente_ |
+| PDF | preliminar OK: Calleja, sala, OC, 2 productos, 115.00 / 5.75 / 109.25 / 14.20 / 1.09 / 122.36; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR | _pendiente_ |
+| Estado DTE | Generado (badge unificado) · sin transmisión real | _pendiente_ |
+
+**Cómo cerrar el caso (operador):** emitir la MISMA operación en Conta Portable (mismo
+cliente/sala/OC/productos/cantidades), llenar la columna derecha y marcar ✅ si todo
+coincide (total dentro de ± $0.01) o ❌ con la diferencia. Actualizar también la fila del
+Caso 3 en la tabla de §13. **Queda PENDIENTE hasta esa confirmación.**
+
+> Este caso usa **precios especiales** de Calleja + **descuento global 5%** + **retención**
+> (base gravada neta 109.25 > $100) + **OC en apéndice** + datos de la **sala** (nombre
+> comercial y ubicación). Precio base **sin IVA**. No se transmitió nada a Hacienda; Conta
+> Portable sigue siendo el emisor oficial.
 
 > Retención automática: solo CCF, receptor **agente de retención**, y base gravada **neta**
 > > $100 (umbral configurable). El total a pagar descuenta la retención. Precio base **sin
