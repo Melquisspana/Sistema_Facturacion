@@ -3,6 +3,7 @@
 namespace App\Services\Dte\Serializadores;
 
 use App\DataTransferObjects\Dte\Salida\DteSalidaData;
+use App\Enums\TipoPersona;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Services\Dte\Serializadores\Concerns\MapeaCatalogosMh;
 
@@ -90,7 +91,10 @@ class SerializadorExportacionMh implements SerializadorMh
             'codPais' => (string) ($codPais ?? ''),
             'nombrePais' => $this->nombrePais($codPais),
             'complemento' => (string) ($r?->direccion ?: '—'),
-            'tipoPersona' => (int) ($r?->tipoPersona ?? 1),
+            // tipoPersona del receptor según el MH (1 natural / 2 jurídica). El DTO trae el
+            // valor string del enum ('natural'/'juridica'); castearlo con (int) daría 0, por eso
+            // se resuelve vía el enum. Por defecto natural (1) si no viene.
+            'tipoPersona' => (TipoPersona::tryFrom((string) ($r?->tipoPersona ?? '')) ?? TipoPersona::Natural)->codigoMh(),
             'telefono' => $r?->telefono,
             'correo' => $r?->correo,
         ];

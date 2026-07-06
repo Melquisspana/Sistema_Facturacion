@@ -128,6 +128,62 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
+    /**
+     * El receptor de una FEX trae el tipo de persona como VALOR del enum ('juridica'
+     * /'natural'), no como número. Debe serializarse al código del MH (2 jurídica /
+     * 1 natural), no castearse con (int) —que daría 0—.
+     */
+    public function test_exportacion_tipo_persona_juridica_se_serializa_como_2(): void
+    {
+        // País/actividad sembrados en el catálogo de prueba (GT/10730), como el test hermano;
+        // el sujeto de la prueba es tipoPersona, que debe salir 2 aunque llegue como 'juridica'.
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '37', numDocumento: 'EXP-PILOTO-001', nombre: 'Cliente Piloto Exportación',
+            actividadEconomica: '10730', pais: 'GT', direccion: 'Ciudad de Guatemala',
+            tipoPersona: 'juridica',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '100.00',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '100.00',
+            montoTotalOperacion: '100.00', totalPagar: '100.00', totalLetras: 'CIEN 00/100',
+            flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $this->emisor(), resumen: $resumen,
+            lineas: [$this->lineaExportacion()], receptor: $receptor, apendice: [],
+        );
+
+        $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::FacturaExportacion);
+
+        $this->assertSame(2, $oficial['receptor']['tipoPersona']); // jurídica, NO 0
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    public function test_exportacion_tipo_persona_natural_se_serializa_como_1(): void
+    {
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '37', numDocumento: 'EXT-002', nombre: 'Comprador Natural',
+            actividadEconomica: '46900', pais: 'US', direccion: 'Miami', tipoPersona: 'natural',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $this->emisor(),
+            resumen: new ResumenDteData(
+                totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '100.00',
+                descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+                iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '100.00',
+                montoTotalOperacion: '100.00', totalPagar: '100.00', totalLetras: 'CIEN 00/100',
+                flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+            ),
+            lineas: [$this->lineaExportacion()], receptor: $receptor, apendice: [],
+        );
+
+        $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
+
+        $this->assertSame(1, $oficial['receptor']['tipoPersona']);
+    }
+
     public function test_exportacion_sin_pais_falla_claro(): void
     {
         $receptor = new ReceptorDteData(tipoDocumento: '37', numDocumento: 'EXT-001', nombre: 'X', actividadEconomica: '10730', pais: null);
