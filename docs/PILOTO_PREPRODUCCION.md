@@ -328,7 +328,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | Caso | Fecha | Operador | Documento nuevo (N°) | Documento Conta Portable | Total nuevo | Total Conta | ✅/❌ | Notas / diferencia |
 |------|-------|----------|----------------------|--------------------------|-------------|-------------|-------|--------------------|
 | 1 CCF sin retención | 2026-07-05 | operador | INT-03-M001P001-…044 | Conta Portable (misma operación) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.1 |
-| 2 CCF con retención | | | | | | | | |
+| 2 CCF con retención | 2026-07-05 | sistema (captura) | INT-03-M001P001-…045 | _pendiente_ | 117.15 | _pendiente_ | ⏳ lado nuevo capturado | Falta comparar contra Conta Portable. Detalle en §13.2 |
 | 3 CCF Calleja OC+sala | | | | | | | | |
 | 4 Duplicar CCF | | | | | | | | |
 | 5 Correo + PDF | | | | | | | | |
@@ -376,6 +376,45 @@ oficialmente; el sistema nuevo solo comparó (sin transmitir a Hacienda).
 
 > El precio base es **SIN IVA** (así lo usa el CCF: el IVA se calcula aparte). No se
 > transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
+
+### 13.2 Caso 2 — CCF con retención (captura del sistema nuevo · 2026-07-05) · ⏳ PENDIENTE
+
+Corrida del Caso 2 en el **sistema nuevo**, en **modo paralelo** (sin transmitir a
+Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0** jobs fallidos,
+backup reciente (hoy), `APP_DEBUG=false`.
+
+**Cliente usado:** dedicado del piloto, creado para este caso (contribuyente **agente de
+retención**, sin orden de compra, sin precios especiales) — se usó porque el único agente de
+retención existente era Calleja (complejo, es el del Caso 3).
+
+**Documento nuevo:** CCF interno #89 · N° interno `INT-03-M001P001-000000000000045` ·
+numeroControl `DTE-03-M001P001-000000000000045` · estado **Generado** · **sin sello**
+(no transmitido) · JSON oficial preliminar validado contra `fe-ccf-v4`.
+
+| Campo | Valor del sistema nuevo | Conta Portable |
+|-------|-------------------------|:--------------:|
+| Cliente (receptor) | Distribuidora Mayorista Piloto, S.A. de C.V. · NIT 0614-200520-103-8 · NRC 234567-8 · **agente de retención** | _pendiente_ |
+| Sala / sucursal | (sin sala; cliente directo) | _pendiente_ |
+| Orden de compra | no requiere | _pendiente_ |
+| Producto 1 | CANILLITAS · cant 60 · precio **sin IVA** 1.0500 · gravado 63.00 | _pendiente_ |
+| Producto 2 | MANI DULCE · cant 40 · precio **sin IVA** 1.0400 · gravado 41.60 | _pendiente_ |
+| Subtotal gravado (sin IVA) | **104.60** | _pendiente_ |
+| IVA 13% (resumen.tributos) | **13.60** | _pendiente_ |
+| Retención IVA 1% (resumen.ivaRete) | **1.05** (base gravada neta 104.60 > umbral $100) | _pendiente_ |
+| Monto total operación | 118.20 (gravado + IVA) | _pendiente_ |
+| Total a pagar | **117.15** (118.20 − 1.05 retención) | _pendiente_ |
+| Total en letras | CIENTO DIECISIETE 15/100 DÓLARES | _pendiente_ |
+| PDF | preliminar OK: cliente, 2 productos, totales 104.60 / 13.60 / 1.05 / 117.15; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR | _pendiente_ |
+| Estado DTE | Generado (badge unificado) · sin transmisión real | _pendiente_ |
+
+**Cómo cerrar el caso (operador):** emitir la MISMA operación en Conta Portable, llenar la
+columna derecha y marcar ✅ si todo coincide (total dentro de ± $0.01) o ❌ con la
+diferencia. Actualizar también la fila del Caso 2 en la tabla de §13. **Queda PENDIENTE
+hasta esa confirmación.**
+
+> Retención automática: solo CCF, receptor **agente de retención**, y base gravada **neta**
+> > $100 (umbral configurable). El total a pagar descuenta la retención. Precio base **sin
+> IVA**. No se transmitió nada a Hacienda.
 
 ---
 
