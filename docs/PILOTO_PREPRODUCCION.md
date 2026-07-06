@@ -332,7 +332,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 3 CCF Calleja OC+sala | 2026-07-05 | operador | INT-03-M001P001-…046 | Conta Portable (misma operación) | 122.36 | 122.36 | ✅ APROBADO | Diferencia $0.00. Con OC, sala, precios especiales, descuento 5% y retención. Detalle en §13.3 |
 | 4 Duplicar CCF | 2026-07-06 | operador | INT-03-M001P001-…047 (dup de …044) | vs Caso 1 (aprobado) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Duplicado reproduce Caso 1; original intacto. Detalle en §13.4 |
 | 5 Correo + PDF | 2026-07-06 | operador | CCF #91 (…047) · envío #21 | correo de prueba | n/a | n/a | ✅ APROBADO | Correo recibido, PDF adjunto abre; job 0→1→0, 0 fallidos. Detalle en §13.5 |
-| 6 NC devolución | | | | | | | | |
+| 6 NC devolución | 2026-07-06 | operador | INT-05-M001P001-…021 (ref CCF #71 …035) | _pendiente_ | 11.01 | _pendiente_ | ⏳ pendiente | Devolución parcial de CCF #71 (real-aceptado). Acredita 2 líneas (CANILLITAS ×5, COCO RALLADO ×5). Detalle en §13.6 |
 | 7 NC avería | | | | | | | | |
 | 8 NC pronto pago | | | | | | | | |
 | 9 Invalidación | | | | | | | | |
@@ -536,6 +536,68 @@ nada a Hacienda; el envío fue a un correo de prueba controlado, no al cliente.
 > Retención automática: solo CCF, receptor **agente de retención**, y base gravada **neta**
 > > $100 (umbral configurable). El total a pagar descuenta la retención. Precio base **sin
 > IVA**. No se transmitió nada a Hacienda.
+
+### 13.6 Caso 6 — Nota de crédito por devolución · ⏳ **PENDIENTE** (comparar con Conta Portable)
+
+**Resultado:** ⏳ **pendiente** — la NC se generó correctamente en el **sistema nuevo** (modo
+paralelo, sin transmitir). Queda **pendiente** la comparación campo por campo contra Conta
+Portable antes de aprobar.
+
+Valida el flujo de **Nota de crédito por devolución** en el **sistema nuevo**, en **modo
+paralelo** (sin transmitir a Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker
+**activo**, **0** jobs fallidos, backup reciente, `APP_DEBUG=false`.
+
+**CCF original (relacionado):** se usó un CCF **real-aceptado por Hacienda** (apitest),
+requisito de la NC — **CCF #71** · numeroControl `DTE-03-M001P001-000000000000035` ·
+codigoGeneracion `CF903852-05A2-4881-8305-DEC18DC386C7` · cliente **Calleja** (sala Súper
+Selectos Bethoven). Los CCF del piloto (#88–91) son solo _generado_ (nunca transmitidos en
+paralelo), por eso no sirven como origen de una NC real; se eligió un CCF real-aceptado
+previo (Opción A confirmada por el operador).
+
+**Documento nuevo:** NC interna **#95** · N° interno `INT-05-M001P001-000000000000021` ·
+numeroControl `DTE-05-M001P001-000000000000021` · codigoGeneracion
+`183D643C-E655-4BB8-8DDB-7834E4763028` · estado **Generado** · **sin sello** (no
+transmitido) · estructura **NC v3** (tipo 05).
+
+**Devolución acreditada (solo líneas del CCF #71):**
+
+| Campo | Valor del sistema nuevo | Conta Portable |
+|-------|-------------------------|:--------------:|
+| Tipo de NC | Devolución de productos | _pendiente_ |
+| Documento relacionado | CCF #71 · `DTE-03-M001P001-000000000000035` (tipoGen 2, codGen coincide ✓) | _pendiente_ |
+| Receptor | Calleja, S.A. de C.V. · NIT 0614-110169-001-1 · NRC 1937 · sala Súper Selectos Bethoven | _pendiente_ |
+| Producto 1 | CANILLITAS · cant **5** (de 12 facturadas) · precio 1.0500 · gravado 5.25 | _pendiente_ |
+| Producto 2 | COCO RALLADO · cant **5** (de 13 facturadas) · precio 1.0000 · gravado 5.00 | _pendiente_ |
+| Total gravado bruto | **10.25** | _pendiente_ |
+| Descuento global 5% (heredado del CCF) | **0.51** → neto **9.74** | _pendiente_ |
+| IVA 13% (resumen.tributos) | **1.27** | _pendiente_ |
+| Retención IVA 1% | **0.00** (la NC no aplica retención) | _pendiente_ |
+| Total a acreditar | **11.01** | _pendiente_ |
+| Total en letras | ONCE 01/100 DÓLARES | _pendiente_ |
+| PDF | preliminar OK: NC 05, Calleja, 2 productos, documento original `…035`, motivo, 10.25 / 0.51 / 9.74 / 1.27 / 11.01; marcas "NO TRANSMITIDO / SIN SELLO"; 1 página | _pendiente_ |
+| Estado DTE | Generado · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
+
+**Candados verificados (✓):**
+
+| Verificación | Resultado |
+|--------------|-----------|
+| La NC exige CCF **aceptado realmente por Hacienda** | ✓ (se usó CCF #71 real-aceptado; los del piloto _generado_ no habrían dejado generar) |
+| Solo acredita **líneas del propio CCF** | ✓ (CANILLITAS y COCO RALLADO son del CCF #71) |
+| No deja acreditar **más que lo facturado** | ✓ (intento CANILLITAS ×99 → `SaldoAcreditableExcedidoException`) |
+| NC queda **relacionada** al CCF (documentoRelacionado) | ✓ (codGen del CCF #71 coincide en el JSON) |
+| IVA / descuento **recalculados** en la NC (v3) | ✓ (descuento 5% heredado, IVA sobre neto) |
+| **No** transmite ni cambia el CCF original | ✓ (NC sin sello; CCF #71 intacto) |
+
+**Resultado del caso:** ⏳ **PENDIENTE** — la NC #95 se generó correctamente, quedó
+**relacionada** al CCF #71 real-aceptado, acredita solo líneas del CCF, respeta el saldo
+facturado (over-limit bloqueado) y recalcula IVA/descuento. Falta la **comparación contra
+Conta Portable** (columnas _pendiente_) para aprobar. No se transmitió nada a Hacienda.
+
+> La NC de **devolución** solo acredita **líneas del CCF original** (a diferencia de la de
+> avería, que permite catálogo libre). El origen debe ser un CCF **real-aceptado por
+> Hacienda**; en el piloto paralelo se validó el **cálculo y el documento**, no la
+> transmisión. Estructura **NC v3** (IVA en resumen.tributos, descuento global, ventaGravada
+> bruta). No se transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 ---
 
