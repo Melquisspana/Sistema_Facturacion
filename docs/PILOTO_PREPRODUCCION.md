@@ -65,8 +65,11 @@ quedaron corregidos y verificados con tests:
 
 ### Pendientes antes de producción (no bloquean el piloto)
 
-- **Unidad BOLSA sin CAT-014 válido**: asignar un código de unidad de medida válido antes de
-  usar productos con esa presentación.
+- ✅ **Unidad BOLSA con CAT-014 — RESUELTO**: la unidad **Bolsa** ahora tiene código CAT-014
+  **99 ("Otra")** (el catálogo no tiene un código propio de bolsa). **No** se reasignaron
+  productos: los actuales siguen con **Unidad (59)**; **documentos históricos intactos** (nada
+  usaba Bolsa). Con tests verdes (línea Bolsa→`uniMedida=99` válida en CCF/NC/FEX + test del
+  seeder). Reasignar productos a Bolsa queda como decisión de negocio aparte.
 - **Criterio de salida**: repetir los **10 casos ✅** en al menos **2 días** distintos de
   operación real (hoy quedaron aprobados en un día), sin diferencias de total > $0.01.
 
