@@ -26,10 +26,10 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 | 7 NC avería | ✅ **APROBADO** | INT-05-…023 (ref CCF #66) | 3.38 | Coincide con Conta ($3.38, ±$0.00); avería ahora hereda descuento 5% del CCF |
 | 8 NC pronto pago | ✅ **APROBADO** | INT-05-…024 (ref CCF #71) | 5.65 | Coincide con Conta ($5.65, ±$0.00). Requirió fix CAT-014 en concepto |
 | 9 Invalidación / anulación | ✅ **APROBADO** | NC #67 · dry-run | n/a | Dry-run CAT-024 tipo 2: evento válido, endpoint apitest, bloqueado, 0 escrituras. Sin mock ni invalidación real |
-| 10 FEX / exportación | ⚠️ **PENDIENTE — HALLAZGO** | INT-11-…001 (cliente #16) | 36.60 | Generado (IVA 0%); **bug latente**: `tipoPersona=0` en JSON FEX (esperado 2). A resolver antes de FEX real |
+| 10 FEX / exportación | ⏳ **CAPTURADO / PENDIENTE** | INT-11-…001 (cliente #16) | 36.60 | IVA 0%, codPais US. Hallazgo `tipoPersona` **resuelto** (ahora 2). **Falta comparar con Conta Portable** |
 
-**Resumen:** **9 aprobados** (1–9) · **1 capturado con hallazgo a resolver** (10: `tipoPersona`
-en FEX).
+**Resumen:** **9 aprobados** (1–9) · **1 capturado, pendiente de comparación** (10: hallazgo
+`tipoPersona` **resuelto**; falta comparar con Conta Portable).
 
 ### Pendientes visuales/técnicos ya resueltos
 
@@ -55,10 +55,9 @@ en FEX).
 - ✅ **Caso 7 (NC avería) — aprobado**: se ajustó la lógica para que la avería **herede el
   descuento global (5%)** del CCF relacionado (como Conta Portable). NC #97 → **$3.38** = Conta
   **$3.38**, diferencia $0.00, **APROBADO**. Detalle en §13.8.
-- ⚠️ **Caso 10 (FEX) — hallazgo a resolver**: el JSON del FEX serializa **`tipoPersona=0`**
-  (esperado 2 jurídica / 1 natural). Causa: `SerializadorExportacionMh` hace `(int)` sobre el
-  valor **string** del enum `TipoPersona` (`'juridica'`→0). Bug latente que bloquearía la
-  transmisión real. Ajuste **pendiente** (no realizado). Detalle en §13.11.
+- ⏳ **Caso 10 (FEX) — hallazgo resuelto, pendiente comparación**: el bug `tipoPersona=0` se
+  **corrigió** (ahora **2** para jurídica); FEX #100 mantiene codPais US, IVA 0 y total 36.60.
+  Falta **comparar el total contra Conta Portable** para aprobar. Detalle en §13.11.
 
 ### Riesgos / bloqueos
 
@@ -401,7 +400,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…023 (ref CCF #66 …031) | Conta Portable (misma operación) | 3.38 | 3.38 | ✅ APROBADO | Diferencia $0.00. Ajuste: avería ahora hereda descuento 5% del CCF (NC #97 corrige a #96). Detalle en §13.8 |
 | 8 NC pronto pago | 2026-07-06 | operador | INT-05-M001P001-…024 (ref CCF #71 …035) | Conta Portable (misma operación) | 5.65 | 5.65 | ✅ APROBADO | Diferencia $0.00. Concepto manual $5.00 gravado + IVA (sin producto). Requirió fix: concepto toma unidad CAT-014 99. Detalle en §13.9 |
 | 9 Invalidación | 2026-07-06 | operador | NC #67 (…019) · dry-run | anulación en Conta (misma operación) | n/a | n/a | ✅ APROBADO | Dry-run CAT-024 tipo 2: evento válido (schema v3), endpoint apitest, transmisión bloqueada, **0 escrituras**. Solo mock/dry-run por diseño. Detalle en §13.10 |
-| 10 FEX exportación | 2026-07-06 | operador | INT-11-M001P001-…001 | _pendiente_ | 36.60 | _pendiente_ | ⚠️ PENDIENTE — HALLAZGO | FEX generado (IVA 0%, total 36.60) pero **`tipoPersona=0`** en JSON (debería 2). Bug latente serializador FEX. Detalle en §13.11 |
+| 10 FEX exportación | 2026-07-06 | operador | INT-11-M001P001-…001 | _pendiente_ | 36.60 | _pendiente_ | ⏳ PENDIENTE (hallazgo resuelto) | FEX IVA 0%, total 36.60, codPais US. Hallazgo `tipoPersona` **RESUELTO** (ahora 2). Falta comparar con Conta. Detalle en §13.11 |
 
 **Criterio para "pasar a producción":** los 10 casos en ✅ en al menos **2 días
 distintos** de operación real, sin diferencias de total > $0.01 ni errores de flujo.
@@ -931,12 +930,13 @@ ni invalidó nada real; Conta Portable sigue siendo el emisor oficial.
 > (Fase C, persiste columnas dedicadas con sello ficticio `MOCK-INVAL-…`, sin transmitir ni
 > cambiar estado). En este caso se usó **solo el dry-run**. No se tocó lógica ni datos.
 
-### 13.11 Caso 10 — FEX / exportación · ⚠️ **PENDIENTE — HALLAZGO** (2026-07-06)
+### 13.11 Caso 10 — FEX / exportación · ⏳ **PENDIENTE** (hallazgo resuelto) (2026-07-06)
 
 **Resultado:** el FEX (tipo 11) se **generó** correctamente en paralelo con IVA 0% y total
-**$36.60**, pero el JSON oficial serializa **`tipoPersona = 0`** para un receptor jurídico
-(debería ser **2**). Es un **bug latente** que bloquearía la transmisión real. El caso queda
-**pendiente** hasta resolver ese hallazgo y comparar contra Conta Portable.
+**$36.60**. El hallazgo del JSON (`tipoPersona = 0` para receptor jurídico) quedó **RESUELTO**:
+tras el fix, FEX #100 serializa **`tipoPersona = 2`**, manteniendo **codPais = US**, **IVA 0**
+y **total 36.60**. El caso queda **pendiente solo de comparar el total contra Conta Portable**
+para aprobar.
 
 Valida el flujo de **Factura de Exportación (11)** en el **sistema nuevo**, en **modo
 paralelo** (sin transmitir). Preflight OK: modo **PARALELO SEGURO**, backup de hoy,
@@ -982,30 +982,35 @@ numeroControl `DTE-11-M001P001-000000000000001` (primer FEX) · codigoGeneracion
 | Clientes existentes intactos | ✓ (#9/#2/#6 no tocados; solo se creó #16) |
 | 0 jobs fallidos | ✓ |
 
-**⚠️ Hallazgo a resolver (bug latente del serializador FEX):**
+**✅ Hallazgo RESUELTO (bug del serializador FEX):**
 
-- El JSON del receptor trae **`tipoPersona = 0`** para una empresa **jurídica**; el MH espera
-  **1 (natural)** o **2 (jurídica)**.
-- Causa: el enum `TipoPersona` guarda **strings** (`'natural'`/`'juridica'`);
-  `MapeadorDteSalida` pasa ese string y `SerializadorExportacionMh` hace
-  `'tipoPersona' => (int) ($r?->tipoPersona ?? 1)` → **`(int)'juridica' = 0`**. Afecta a
+- **Antes:** el JSON del receptor traía **`tipoPersona = 0`** para una empresa **jurídica**; el
+  MH espera **1 (natural)** o **2 (jurídica)**. Causa: el enum `TipoPersona` guarda **strings**
+  (`'natural'`/`'juridica'`) y `SerializadorExportacionMh` hacía
+  `'tipoPersona' => (int) ($r?->tipoPersona ?? 1)` → **`(int)'juridica' = 0`**. Afectaba a
   **todo FEX**.
-- Impacto: el schema **local** lo dejó pasar, pero en **transmisión real** el MH probablemente
-  lo rechazaría. **Bloquea la aprobación** del Caso 10 hasta corregirlo (análogo al fix CAT-014
-  del Caso 8). **No** se ha tocado la lógica.
+- **Fix aplicado** (commit `Fix FEX tipoPersona serialization for juridical receivers`): se
+  agregó `TipoPersona::codigoMh()` (natural=1, jurídica=2) y el serializador resuelve el valor
+  vía el enum en vez de castear el string. **Solo FEX** estaba afectado (CCF/Factura/NC no
+  llevan `tipoPersona`). Se agregaron tests FEX jurídica (=2) y natural (=1). **No** se tocó
+  CCF/NC, firma, transmisión, correo, colas, PDF ni datos de cliente.
+- **Verificado:** FEX #100 ahora serializa **`tipoPersona = 2`**, con **codPais = US**,
+  **IVA 0** (`tributos = null`) y **total 36.60** intactos. Suite relevante **299 verdes**.
 
 **Observación menor (cosmética):** `descActividad` en el JSON usa la etiqueta CAT-019 del código
 46900 ("Venta al por mayor de otros productos") mientras el PDF usa el nombre del registro del
 cliente ("…variedad de artículos sin especialización"). Mismo código, distinto texto.
 
-**Resultado del caso:** ⚠️ **PENDIENTE — HALLAZGO.** El FEX se genera con país/actividad/IVA
-0%/total correctos y PDF limpio, pero el **`tipoPersona=0`** en el JSON es un bug latente que
-debe resolverse antes de considerar el FEX apto para transmisión real y antes de aprobar el
-caso. No se transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
+**Resultado del caso:** ⏳ **PENDIENTE (hallazgo resuelto).** El FEX se genera con
+país/actividad/IVA 0%/total correctos y PDF limpio; el hallazgo `tipoPersona=0` quedó
+**resuelto** (ahora **2** para jurídica), con codPais US, IVA 0 y total 36.60 intactos. Falta
+**comparar el total ($36.60) contra Conta Portable** para aprobar. No se transmitió nada a
+Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 > FEX (11): IVA **0%**, receptor extranjero con **país (CAT-020)** + **actividad (CAT-019)**.
-> Se creó un cliente de exportación nuevo (#16) para el piloto. Pendiente: corregir
-> `tipoPersona` en el serializador FEX. No se tocó lógica en este caso; no se transmitió nada.
+> Se creó un cliente de exportación nuevo (#16) para el piloto. El hallazgo `tipoPersona` del
+> serializador FEX quedó **corregido y verificado** (ahora 2 para jurídica). Falta solo la
+> comparación con Conta Portable. No se transmitió nada a Hacienda.
 
 ---
 
