@@ -23,13 +23,12 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 | 4 Duplicar CCF | ✅ **APROBADO** | INT-03-…047 | 52.09 | Reproduce Caso 1; original intacto |
 | 5 Correo + PDF | ✅ **APROBADO** | CCF #91 · envío #21 | n/a | Correo llegó, PDF adjunto abre, 0 fallidos |
 | 6 NC devolución | ✅ **APROBADO** | INT-05-…021 (ref CCF #71) | 11.01 | Coincide con Conta Portable (±$0.00) |
-| 7 NC avería | ✅ **RESUELTO (tras ajuste)** | INT-05-…023 (ref CCF #66) | 3.38 | Coincide con Conta ($3.38, ±$0.00); avería ahora hereda descuento 5% del CCF. Aprobable |
+| 7 NC avería | ✅ **APROBADO** | INT-05-…023 (ref CCF #66) | 3.38 | Coincide con Conta ($3.38, ±$0.00); avería ahora hereda descuento 5% del CCF |
 | 8 NC pronto pago | ⛔ **NO INICIADO** | — | — | Definir cómo probar |
 | 9 Invalidación / anulación | ⛔ **NO INICIADO** | — | — | Solo mock + dry-run visual (real solo por consola) |
 | 10 FEX / exportación | ⛔ **NO INICIADO** | — | — | Cliente exportación completo (país + actividad) |
 
-**Resumen:** **6 aprobados** (1–6) · **1 resuelto tras ajuste, aprobable** (7: avería ahora
-hereda el descuento 5% del CCF, coincide con Conta) · **3 no iniciados** (8–10).
+**Resumen:** **7 aprobados** (1–7) · **3 no iniciados** (8–10).
 
 ### Pendientes visuales/técnicos ya resueltos
 
@@ -52,9 +51,9 @@ hereda el descuento 5% del CCF, coincide con Conta) · **3 no iniciados** (8–1
 
 ### Pendientes antes de producción
 
-- ✅ **Caso 7 (NC avería) — resuelto**: se ajustó la lógica para que la avería **herede el
+- ✅ **Caso 7 (NC avería) — aprobado**: se ajustó la lógica para que la avería **herede el
   descuento global (5%)** del CCF relacionado (como Conta Portable). NC #97 → **$3.38** = Conta
-  **$3.38**. Queda **aprobable** a confirmación del operador. Detalle en §13.8.
+  **$3.38**, diferencia $0.00, **APROBADO**. Detalle en §13.8.
 - ⛔ **Definir cómo probar los casos 8–10**: NC pronto pago (conceptos manuales),
   invalidación/anulación (solo mock + dry-run visual; la real es solo por consola) y FEX
   (cliente de exportación completo con país + actividad).
@@ -397,7 +396,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 4 Duplicar CCF | 2026-07-06 | operador | INT-03-M001P001-…047 (dup de …044) | vs Caso 1 (aprobado) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Duplicado reproduce Caso 1; original intacto. Detalle en §13.4 |
 | 5 Correo + PDF | 2026-07-06 | operador | CCF #91 (…047) · envío #21 | correo de prueba | n/a | n/a | ✅ APROBADO | Correo recibido, PDF adjunto abre; job 0→1→0, 0 fallidos. Detalle en §13.5 |
 | 6 NC devolución | 2026-07-06 | operador | INT-05-M001P001-…021 (ref CCF #71 …035) | Conta Portable (misma operación) | 11.01 | 11.01 | ✅ APROBADO | Diferencia $0.00. Devolución parcial de CCF #71 (CANILLITAS ×5, COCO RALLADO ×5). Detalle en §13.6 |
-| 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…023 (ref CCF #66 …031) | Conta Portable (misma operación) | 3.38 | 3.38 | ✅ RESUELTO (tras ajuste) | Diferencia $0.00. Ajuste: avería ahora hereda descuento 5% del CCF (NC #97 corrige a #96). Aprobable. Detalle en §13.8 |
+| 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…023 (ref CCF #66 …031) | Conta Portable (misma operación) | 3.38 | 3.38 | ✅ APROBADO | Diferencia $0.00. Ajuste: avería ahora hereda descuento 5% del CCF (NC #97 corrige a #96). Detalle en §13.8 |
 | 8 NC pronto pago | | | | | | | | |
 | 9 Invalidación | | | | | | | | |
 | 10 FEX exportación | | | | | | | | |
@@ -711,11 +710,11 @@ dry-run) → 10 (requiere definir el cliente de exportación). Antes de cada cas
 §1 (PARALELO SEGURO, worker, backup, 0 fallidos) y confirmar con el operador los datos de
 entrada. **No** se crean clientes/datos sin confirmación explícita.
 
-### 13.8 Caso 7 — Nota de crédito por avería · ✅ **RESUELTO tras ajuste — coincide $3.38** (2026-07-06)
+### 13.8 Caso 7 — Nota de crédito por avería · ✅ **APROBADO** (2026-07-06)
 
 **Resultado:** tras el ajuste de lógica, el sistema nuevo aplica el **descuento 5%** del CCF
-también en la NC por avería → **$3.38** = Conta Portable **$3.38** · diferencia **$0.00**.
-La diferencia de $0.18 (captura previa) quedó **resuelta**. Listo para aprobación del operador.
+también en la NC por avería → **$3.38** = Conta Portable **$3.38** · diferencia **$0.00** ·
+**APROBADO**. La diferencia de $0.18 (captura previa NC #96) quedó **resuelta**.
 
 Valida el flujo de **Nota de crédito por avería** en el **sistema nuevo**, en **modo
 paralelo** (sin transmitir a Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker
@@ -782,11 +781,11 @@ Selectos Cara Sucia) · **real-aceptado por Hacienda** (sello `202613B8…`, fec
 | IVA 13% | 0.41 | 0.39 | 0.39 |
 | **Total** | 3.56 | **3.38** | **3.38** |
 
-**Resultado del caso:** ✅ **RESUELTO tras ajuste** — la avería ahora **hereda el descuento
-global del CCF** relacionado (regla de negocio alineada con Conta Portable). La NC #97 coincide
-con Conta Portable (**$3.38** = **$3.38**, diferencia **$0.00**), mantiene la relación al CCF
-#66 real-aceptado, respeta el saldo y no transmite. Queda **aprobable** a confirmación final
-del operador. No se transmitió nada a Hacienda; el CCF #66 quedó intacto.
+**Resultado del caso:** ✅ **APROBADO** — la avería ahora **hereda el descuento global del CCF**
+relacionado (regla de negocio alineada con Conta Portable). La NC #97 coincide con Conta
+Portable (**$3.38** = **$3.38**, diferencia **$0.00**), mantiene la relación al CCF #66
+real-aceptado, respeta el saldo y no transmite. Confirmado por el operador. No se transmitió
+nada a Hacienda; el CCF #66 quedó intacto.
 
 > **Ajuste de regla de negocio:** la NC por **avería** ahora aplica el **descuento global** del
 > CCF relacionado (como Conta Portable). Solo cambió `porcentajeDescuentoVigente()` (una
