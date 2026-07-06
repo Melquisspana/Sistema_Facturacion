@@ -26,6 +26,10 @@ class DtePdfService
         ]);
 
         $emisor = $this->emisor($dte);
+        // Relaciones del emisor para el encabezado (solo presentación): actividad económica
+        // y ubicación en 3 niveles. El emisor puede resolverse a una empresa distinta a la
+        // del establecimiento, por eso se cargan sobre la instancia ya resuelta.
+        $emisor?->loadMissing(['actividadEconomica', 'departamento', 'municipio', 'distrito']);
         $logoSrc = $this->logoSrc();
         $qrDataUri = $this->qrOficial($dte); // solo si hay sello (datos oficiales)
 

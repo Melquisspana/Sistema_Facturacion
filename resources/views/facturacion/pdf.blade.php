@@ -15,6 +15,8 @@
     $emDir       = $emisor?->direccion        ?: ($cfgCo['direccion']['complemento'] ?? null);
     $emTel       = $emisor?->telefono         ?: ($cfgCo['contacto']['telefono'] ?? null);
     $emCorreo    = $emisor?->correo           ?: ($cfgCo['contacto']['correo'] ?? null);
+    // Actividad económica del emisor (dato real; respaldo a config; si no existe, no se muestra).
+    $emActividad = $emisor?->actividadEconomica?->nombre ?: ($cfgCo['actividad_economica']['descripcion'] ?? null);
 
     // Encabezado: la MARCA (nombre comercial) va grande; el nombre LEGAL (razón social)
     // como sub-línea. El dato legal correcto para el JSON sigue en razon_social.
@@ -41,7 +43,9 @@
         }
         return $ubic($s);
     };
-    $emUbic  = $ubic($emisor);
+    // Ubicación del emisor en 3 niveles y ORDEN Departamento, Municipio, Distrito
+    // (mismo criterio que el receptor). Si algún nivel no existe, se omite.
+    $emUbic = implode(', ', array_filter([$emisor?->departamento?->nombre, $emisor?->municipio?->nombre, $emisor?->distrito?->nombre])) ?: null;
 
     // Ubicación administrativa de la sala, por campos (división 2024 con respaldo al esquema previo).
     $salaDepto = $suc?->distrito?->departamento?->nombre ?? $suc?->departamento?->nombre;
@@ -127,7 +131,7 @@
         .logo-fb { width: 56px; height: 56px; border-radius: 8px; background: #20242C; color: #fff; text-align: center; font-size: 24px; font-weight: bold; padding-top: 15px; }
         .razon { font-size: 14.5px; font-weight: bold; color: #20242C; line-height: 1.12; }
         .comercial { color: #6E2142; font-weight: bold; font-size: 9.3px; }
-        .emi { font-size: 8px; color: #4A4F58; margin-top: 1px; }
+        .emi { font-size: 8px; color: #4A4F58; margin-top: 2.5px; line-height: 1.32; }
         .emi .k { color: #9AA0A8; }
 
         /* Caja de datos del DTE (derecha) — mismo lenguaje que las demás secciones */
@@ -244,6 +248,7 @@
                         <div class="razon">{{ $emMarca ?? '—' }}</div>
                         @if ($emLegal)<div class="comercial">{{ $emLegal }}</div>@endif
                         <div class="emi"><span class="k">NIT</span> {{ $emNit ?? '—' }} · <span class="k">NRC</span> {{ $emNrc ?? '—' }}</div>
+                        @if ($emActividad)<div class="emi"><span class="k">Actividad</span> {{ $emActividad }}</div>@endif
                         @if ($emUbic || $emDir)<div class="emi">@if($emUbic){{ $emUbic }}@endif @if($emDir)· {{ $emDir }}@endif</div>@endif
                         <div class="emi">Estab.: {{ $dte->establecimiento?->nombre ?? '—' }}@if($dte->establecimiento?->codigo) ({{ $dte->establecimiento->codigo }})@endif · PV: {{ $dte->puntoVenta?->nombre ?? '—' }}@if($dte->puntoVenta?->codigo) ({{ $dte->puntoVenta->codigo }})@endif</div>
                         @if ($emTel || $emCorreo)<div class="emi">@if($emTel){{ $emTel }}@endif@if($emCorreo) · {{ $emCorreo }}@endif</div>@endif
