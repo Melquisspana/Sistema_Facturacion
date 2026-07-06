@@ -42,8 +42,6 @@
         return $ubic($s);
     };
     $emUbic  = $ubic($emisor);
-    $cliUbic = $ubic($cli);
-    $sucUbic = $ubicSala($suc);
 
     // Ubicación administrativa de la sala, por campos (división 2024 con respaldo al esquema previo).
     $salaDepto = $suc?->distrito?->departamento?->nombre ?? $suc?->departamento?->nombre;
@@ -54,6 +52,13 @@
         $salaMuni  ? 'Municipio: '.$salaMuni : null,
         $salaDist  ? 'Distrito: '.$salaDist : null,
     ]));
+
+    // Ubicación del RECEPTOR en 3 niveles y ORDEN Departamento, Municipio, Distrito.
+    // Para un cliente con sala (p. ej. Calleja) es la ubicación de la SALA (la que va al
+    // JSON fiscal); sin sala, la del propio cliente. Solo presentación; no cambia datos.
+    $recUbic = $suc
+        ? (implode(', ', array_filter([$salaDepto, $salaMuni, $salaDist])) ?: null)
+        : (implode(', ', array_filter([$cli?->departamento?->nombre, $cli?->municipio?->nombre, $cli?->distrito?->nombre])) ?: null);
 
     // Valor en letras: mismo helper que el JSON (NumeroALetras), con respaldo al campo persistido.
     $valorLetras = $dte->total_letras ?: \App\Support\Dte\NumeroALetras::convertir($dte->total_pagar ?? 0);
@@ -98,8 +103,8 @@
     <title>{{ $preliminar ? 'Representación gráfica PRELIMINAR' : 'DTE' }} — {{ $dte->tipo_dte->label() }}</title>
     <style>
         * { box-sizing: border-box; }
-        @page { margin: 26px 30px; }
-        body { font-family: "DejaVu Sans", sans-serif; color: #20242C; font-size: 9.3px; margin: 0; line-height: 1.34; }
+        @page { margin: 32px 34px; }
+        body { font-family: "DejaVu Sans", sans-serif; color: #20242C; font-size: 9.3px; margin: 0; line-height: 1.38; }
         table { width: 100%; border-collapse: collapse; }
         .mono { font-family: "DejaVu Sans Mono", monospace; }
         .muted { color: #6B7280; }
@@ -116,7 +121,7 @@
         .st-void { background: #FBEDF0; color: #8A2440; border-color: #E3B7C2; border-left-color: #B0334F; }
 
         /* Encabezado */
-        .topline { border-top: 2px solid #6E2142; margin-bottom: 8px; }
+        .topline { border-top: 2px solid #6E2142; margin-bottom: 11px; }
         .head td { vertical-align: top; padding: 0; }
         .logo { width: 56px; height: 56px; border-radius: 8px; border: 1px solid #E7DFD6; }
         .logo-fb { width: 56px; height: 56px; border-radius: 8px; background: #20242C; color: #fff; text-align: center; font-size: 24px; font-weight: bold; padding-top: 15px; }
@@ -145,10 +150,10 @@
         .qrbox .qb { padding: 12px 6px; color: #6B7280; font-size: 7.5px; line-height: 1.35; }
 
         /* Secciones (un solo lenguaje: borde fino + cabecera gris + cuerpo) */
-        .sec { border: 1px solid #C9CDD4; border-radius: 5px; margin-bottom: 7px; }
-        .sec.rec { margin-top: 9px; }
-        .sec-h { background: #F2F3F5; border-bottom: 1px solid #D4D8DE; padding: 3.5px 9px; font-size: 7px; letter-spacing: 1px; text-transform: uppercase; color: #6B7280; font-weight: bold; }
-        .sec-b { padding: 8px 9px; }
+        .sec { border: 1px solid #C9CDD4; border-radius: 5px; margin-bottom: 10px; }
+        .sec.rec { margin-top: 13px; }
+        .sec-h { background: #F2F3F5; border-bottom: 1px solid #D4D8DE; padding: 4px 9px; font-size: 7px; letter-spacing: 1px; text-transform: uppercase; color: #6B7280; font-weight: bold; }
+        .sec-b { padding: 10px 10px; }
         .sec-b td { vertical-align: top; font-size: 9px; padding: 2px 0; }
         .rec-name { font-size: 12.5px; font-weight: bold; color: #20242C; }
         .rec-com { color: #6E2142; font-weight: bold; font-size: 9px; }
@@ -168,7 +173,7 @@
         /* Tabla de productos */
         .items thead th { background: #20242C; color: #F3F4F6; font-size: 7.3px; text-transform: uppercase; letter-spacing: .3px; padding: 5px 6px; text-align: left; }
         .items thead th.r { text-align: right; }
-        .items tbody td { padding: 4.5px 6px; border-bottom: 1px solid #EAECEF; font-size: 9.2px; vertical-align: top; }
+        .items tbody td { padding: 6.5px 6px; border-bottom: 1px solid #EAECEF; font-size: 9.2px; vertical-align: top; }
         .items tbody tr:nth-child(even) td { background: #F8F9FA; }
         .items .r { text-align: right; }
         .items .ci { color: #9AA0A8; width: 16px; }
@@ -179,19 +184,19 @@
         .dash { color: #C9CDD4; }
 
         /* Totales */
-        .botwrap { margin-top: 11px; }
+        .botwrap { margin-top: 16px; }
         .botwrap td { vertical-align: top; }
         .letras { border: 1px solid #C9CDD4; border-radius: 5px; padding: 6px 9px; font-size: 8.6px; }
         .letras .k { font-size: 6.5px; letter-spacing: .8px; text-transform: uppercase; color: #9AA0A8; }
         .cond-line { font-size: 8.6px; margin-top: 6px; }
         .cond-line .k { color: #8A9099; }
-        .firmas2 { margin-top: 9px; }
+        .firmas2 { margin-top: 15px; }
         .firmas2 td { vertical-align: top; }
         .firmas2 .gap2 { width: 14px; }
-        .fl { margin-top: 7px; }
+        .fl { margin-top: 11px; }
         .fl .flk { font-size: 7px; text-transform: uppercase; letter-spacing: .4px; color: #8A9099; }
         .fl .fline { display: block; border-bottom: 1px solid #B6BBC2; height: 12px; }
-        .tot td { padding: 3px 10px; font-size: 9.3px; }
+        .tot td { padding: 4.5px 10px; font-size: 9.3px; }
         .tot tr.sub td { font-weight: bold; color: #20242C; }
         .tot .k { color: #4A4F58; }
         .tot .v { text-align: right; font-family: "DejaVu Sans Mono", monospace; font-weight: bold; color: #20242C; }
@@ -204,7 +209,7 @@
         .grand .gv { text-align: right; font-family: "DejaVu Sans Mono", monospace; font-weight: bold; font-size: 14.5px; }
 
         /* Estado técnico (una línea) */
-        .tech { border: 1px solid #E5E8EC; border-radius: 4px; padding: 3px 8px; background: #F8F9FA; color: #6B7280; font-size: 7px; margin-top: 7px; }
+        .tech { border: 1px solid #E5E8EC; border-radius: 4px; padding: 4px 8px; background: #F8F9FA; color: #6B7280; font-size: 7px; margin-top: 12px; }
         .tech .th { text-transform: uppercase; letter-spacing: .6px; color: #9AA0A8; font-weight: bold; }
         .tech strong { color: #3A4150; }
 
@@ -291,7 +296,7 @@
                         @if ($cli?->actividadEconomica?->nombre)<div class="f"><span class="k">Actividad:</span> {{ $cli->actividadEconomica->nombre }}</div>@endif
                     </td>
                     <td style="width: 50%;">
-                        @if ($cliUbic)<div class="f"><span class="k">Ubicación:</span> {{ $cliUbic }}</div>@endif
+                        @if ($recUbic)<div class="f"><span class="k">Ubicación:</span> {{ $recUbic }}</div>@endif
                         @if ($cli?->direccion)<div class="f"><span class="k">Dirección:</span> {{ $cli->direccion }}@if($cli->complemento_direccion) — {{ $cli->complemento_direccion }}@endif</div>@endif
                     </td>
                 </tr>
