@@ -18,7 +18,7 @@ class DtePdfService
     public function pdf(Dte $dte): \Barryvdh\DomPDF\PDF
     {
         $dte->loadMissing([
-            'cliente.departamento', 'cliente.municipio',
+            'cliente.departamento', 'cliente.municipio', 'cliente.distrito',
             'clienteSucursal.departamento', 'clienteSucursal.municipio', 'clienteSucursal.distrito.departamento',
             'lineas',
             'establecimiento.empresa.departamento', 'establecimiento.empresa.municipio',
