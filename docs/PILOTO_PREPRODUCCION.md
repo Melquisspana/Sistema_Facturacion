@@ -23,7 +23,7 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 | 4 Duplicar CCF | ✅ **APROBADO** | INT-03-…047 | 52.09 | Reproduce Caso 1; original intacto |
 | 5 Correo + PDF | ✅ **APROBADO** | CCF #91 · envío #21 | n/a | Correo llegó, PDF adjunto abre, 0 fallidos |
 | 6 NC devolución | ⏳ **CAPTURADO / PENDIENTE** | INT-05-…021 (ref CCF #71) | 11.01 | Generado y validado; **falta comparar con Conta Portable** |
-| 7 NC avería | ⛔ **NO INICIADO** | — | — | Definir cómo probar |
+| 7 NC avería | ⏳ **CAPTURADO / PENDIENTE** | INT-05-…022 (ref CCF #66) | 3.56 | Generado; catálogo libre, sin descuento; **falta comparar con Conta Portable** |
 | 8 NC pronto pago | ⛔ **NO INICIADO** | — | — | Definir cómo probar |
 | 9 Invalidación / anulación | ⛔ **NO INICIADO** | — | — | Solo mock + dry-run visual (real solo por consola) |
 | 10 FEX / exportación | ⛔ **NO INICIADO** | — | — | Cliente exportación completo (país + actividad) |
@@ -395,7 +395,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 4 Duplicar CCF | 2026-07-06 | operador | INT-03-M001P001-…047 (dup de …044) | vs Caso 1 (aprobado) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Duplicado reproduce Caso 1; original intacto. Detalle en §13.4 |
 | 5 Correo + PDF | 2026-07-06 | operador | CCF #91 (…047) · envío #21 | correo de prueba | n/a | n/a | ✅ APROBADO | Correo recibido, PDF adjunto abre; job 0→1→0, 0 fallidos. Detalle en §13.5 |
 | 6 NC devolución | 2026-07-06 | operador | INT-05-M001P001-…021 (ref CCF #71 …035) | _pendiente_ | 11.01 | _pendiente_ | ⏳ pendiente | Devolución parcial de CCF #71 (real-aceptado). Acredita 2 líneas (CANILLITAS ×5, COCO RALLADO ×5). Detalle en §13.6 |
-| 7 NC avería | | | | | | | | |
+| 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…022 (ref CCF #66 …031) | _pendiente_ | 3.56 | _pendiente_ | ⏳ pendiente | Avería, catálogo libre (CANILLITAS ×3). **Sin** descuento (avería no hereda). Detalle en §13.8 |
 | 8 NC pronto pago | | | | | | | | |
 | 9 Invalidación | | | | | | | | |
 | 10 FEX exportación | | | | | | | | |
@@ -708,6 +708,69 @@ piloto; hay que reutilizar un CCF real-aceptado previo.
 dry-run) → 10 (requiere definir el cliente de exportación). Antes de cada caso: preflight de
 §1 (PARALELO SEGURO, worker, backup, 0 fallidos) y confirmar con el operador los datos de
 entrada. **No** se crean clientes/datos sin confirmación explícita.
+
+### 13.8 Caso 7 — Nota de crédito por avería · ⏳ **PENDIENTE** (comparar con Conta Portable)
+
+**Resultado:** ⏳ **pendiente** — la NC por avería se generó correctamente en el **sistema
+nuevo** (modo paralelo, sin transmitir). Queda **pendiente** la comparación campo por campo
+contra Conta Portable antes de aprobar.
+
+Valida el flujo de **Nota de crédito por avería** en el **sistema nuevo**, en **modo
+paralelo** (sin transmitir a Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker
+**activo**, **0** jobs fallidos, **backup de hoy** (`2026-07-06-…`, código 0), `APP_DEBUG=false`.
+
+**CCF original (relacionado):** CCF **#66** · numeroControl `DTE-03-M001P001-000000000000031`
+· codigoGeneracion `6B70F9AC-EF80-402A-AFEB-11B2BAFDD3D1` · cliente **Calleja** (sala Súper
+Selectos Cara Sucia) · **real-aceptado por Hacienda** (sello `202613B8…`, fecha proc.
+2026-06-26) · saldo disponible **67.28** al momento de la prueba.
+
+**Documento nuevo:** NC interna **#96** · N° interno `INT-05-M001P001-000000000000022` ·
+numeroControl `DTE-05-M001P001-000000000000022` · codigoGeneracion
+`84E59B68-E2BA-4849-A00F-140EBF68357F` · estado **Generado** · **sin sello** (no
+transmitido) · estructura **NC v3** (tipo 05).
+
+> **Hallazgo (por diseño):** la NC por **avería** usa **catálogo libre**
+> (`agregarProductoNotaCreditoAveria` → línea nueva al precio resuelto, `dte_linea_original_id`
+> nulo) y **NO hereda el descuento global 5%** del CCF (a diferencia de la **devolución**, que
+> copia la línea original y **prorratea** su descuento). Por eso esta NC va **sin descuento**.
+> Confirmado en código, no se alteró el flujo.
+
+| Campo | Valor del sistema nuevo | Conta Portable |
+|-------|-------------------------|:--------------:|
+| Tipo de NC | Avería | _pendiente_ |
+| Documento relacionado | CCF #66 · `DTE-03-M001P001-000000000000031` (tipoDoc 03, tipoGen 2, codGen coincide ✓) | _pendiente_ |
+| Receptor | Calleja, S.A. de C.V. · NIT 0614-110169-001-1 · NRC 1937 · sala Súper Selectos Cara Sucia | _pendiente_ |
+| Producto (catálogo libre) | CANILLITAS · cant **3** · precio 1.0500 · gravado 3.15 | _pendiente_ |
+| Total gravado | **3.15** | _pendiente_ |
+| Descuento global | **0.00** (avería no hereda descuento) | _pendiente_ |
+| IVA 13% (resumen.tributos) | **0.41** | _pendiente_ |
+| Retención IVA 1% | **0.00** (la NC no aplica retención) | _pendiente_ |
+| Total a acreditar | **3.56** | _pendiente_ |
+| Total en letras | TRES 56/100 DÓLARES | _pendiente_ |
+| PDF | preliminar OK: NC 05, Calleja, 1 producto, documento original `…031`, motivo, 3.15 / 0.00 / 0.41 / 3.56; marcas "NO TRANSMITIDO / SIN SELLO"; 1 página | _pendiente_ |
+| Estado DTE | Generado · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
+
+**Candados verificados (✓):**
+
+| Verificación | Resultado |
+|--------------|-----------|
+| La NC exige CCF **aceptado realmente por Hacienda** | ✓ (se usó CCF #66 real-aceptado) |
+| Avería admite **catálogo libre** (no solo líneas del CCF) | ✓ (`dte_linea_original_id` nulo; producto agregado por avería) |
+| Gravado de la NC **≤ saldo disponible** del CCF | ✓ (3.15 ≪ 67.28) |
+| NC queda **relacionada** al CCF (documentoRelacionado) | ✓ (codGen del CCF #66 coincide en el JSON) |
+| **No** transmite ni cambia el CCF original | ✓ (NC sin sello; CCF #66 intacto: estado aceptado, sello y total 88.00 sin cambios) |
+| **0 jobs fallidos** durante el flujo | ✓ (jobs 0 / failed 0) |
+
+**Resultado del caso:** ⏳ **PENDIENTE** — la NC #96 se generó correctamente, quedó
+**relacionada** al CCF #66 real-aceptado, usó **catálogo libre** (propio de avería), respetó
+el saldo disponible y no aplicó descuento (avería no hereda). Falta la **comparación contra
+Conta Portable** (columnas _pendiente_) para aprobar. No se transmitió nada a Hacienda; el
+CCF #66 quedó intacto.
+
+> La NC por **avería** permite **cualquier producto activo** del catálogo (no se limita a las
+> líneas del CCF) y **no hereda el descuento** del CCF; el único tope es que el gravado total
+> **no supere el saldo disponible** del CCF relacionado (real-aceptado). Estructura **NC v3**.
+> No se transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 ---
 
