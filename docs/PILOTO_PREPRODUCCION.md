@@ -9,6 +9,68 @@ pasar a producción completa.
 
 ---
 
+## Estado del piloto (cierre al 2026-07-06)
+
+Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
+
+### Casos — avance
+
+| Caso | Estado | Documento nuevo | Total | Nota |
+|------|--------|-----------------|-------|------|
+| 1 CCF sin retención | ✅ **APROBADO** | INT-03-…044 | 52.09 | Coincide con Conta Portable (±$0.00) |
+| 2 CCF con retención | ✅ **APROBADO** | INT-03-…045 | 117.15 | Retención 1% correcta |
+| 3 Calleja OC + sala | ✅ **APROBADO** | INT-03-…046 | 122.36 | OC, sala, precio especial, descuento 5%, retención |
+| 4 Duplicar CCF | ✅ **APROBADO** | INT-03-…047 | 52.09 | Reproduce Caso 1; original intacto |
+| 5 Correo + PDF | ✅ **APROBADO** | CCF #91 · envío #21 | n/a | Correo llegó, PDF adjunto abre, 0 fallidos |
+| 6 NC devolución | ⏳ **CAPTURADO / PENDIENTE** | INT-05-…021 (ref CCF #71) | 11.01 | Generado y validado; **falta comparar con Conta Portable** |
+| 7 NC avería | ⛔ **NO INICIADO** | — | — | Definir cómo probar |
+| 8 NC pronto pago | ⛔ **NO INICIADO** | — | — | Definir cómo probar |
+| 9 Invalidación / anulación | ⛔ **NO INICIADO** | — | — | Solo mock + dry-run visual (real solo por consola) |
+| 10 FEX / exportación | ⛔ **NO INICIADO** | — | — | Cliente exportación completo (país + actividad) |
+
+**Resumen:** **5 aprobados** · **1 capturado pendiente de comparación** · **4 no iniciados**.
+
+### Pendientes visuales/técnicos ya resueltos
+
+- ✅ **PDF CCF pulido visualmente**: ubicación del receptor en **3 niveles** (Departamento
+  / Municipio / Distrito) con sala para Calleja; **logo transparente** más grande;
+  **encabezado del emisor** mejorado (actividad económica real + ubicación completa +
+  tipografía más equilibrada, sin salto a segunda página).
+- ✅ **Modo paralelo seguro activo**: badge **PARALELO SEGURO** en navbar y en Salud del
+  sistema; firma/transmisión reales bloqueadas por candados. Indicador de modo corregido
+  (ya no da falsa alarma roja con apitest).
+- ✅ **Worker / colas / correos verificados**: worker de colas operativo (arranque
+  automático en Windows), correo SMTP con **PDF + JSON** adjuntos, sin jobs fallidos.
+- ✅ **Backups y restauración probados**: backup con spatie/laravel-backup + scripts
+  portables; restauración validada contra base **temporal** (nunca la real).
+- ✅ **Catálogo nacional reconciliado**: 14 productos nacionales activos con precios **sin
+  IVA**; obsoletos desactivados (no borrados); precios especiales de Calleja obsoletos
+  desactivados.
+- ✅ **Seguridad / entorno**: checklist de preproducción (`docs/SEGURIDAD_PREPRODUCCION.md`)
+  y de piloto revisados; `APP_DEBUG=false`.
+
+### Pendientes antes de producción
+
+- ⏳ **Comparar la NC de devolución (Caso 6, $11.01) contra Conta Portable** — es el único
+  caso capturado sin comparar. Al confirmar, aprobar §13.6.
+- ⛔ **Definir cómo probar los casos 7–10**: NC avería (catálogo libre, tope de saldo),
+  NC pronto pago (conceptos manuales), invalidación/anulación (solo mock + dry-run visual;
+  la real es solo por consola) y FEX (cliente de exportación completo con país + actividad).
+
+### Riesgos / bloqueos
+
+- **Doble transmisión**: mitigado — el sistema nuevo **no** transmite en el piloto (modo
+  paralelo, candados). Conta Portable sigue siendo el **emisor oficial**.
+- **Origen real para NC**: la NC exige un CCF **aceptado realmente por Hacienda**; los CCF
+  del piloto son solo _generado_. Para casos 6–8 se reutilizan CCF real-aceptados previos
+  (apitest). Tener claro cuál CCF usar antes de cada NC.
+- **Unidad BOLSA sin CAT-014 válido**: pendiente asignar un código de unidad de medida
+  válido antes de usar productos con esa presentación.
+- **Criterio de salida**: pasar a producción exige los **10 casos ✅** en al menos **2
+  días** distintos, sin diferencias de total > $0.01 ni errores de flujo (ver §13).
+
+---
+
 ## 0. Regla de oro del piloto (leer primero)
 
 - **Conta Portable sigue siendo el sistema oficial.** Lo que se factura de verdad
