@@ -26,10 +26,11 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 | 7 NC avería | ✅ **APROBADO** | INT-05-…023 (ref CCF #66) | 3.38 | Coincide con Conta ($3.38, ±$0.00); avería ahora hereda descuento 5% del CCF |
 | 8 NC pronto pago | ✅ **APROBADO** | INT-05-…024 (ref CCF #71) | 5.65 | Coincide con Conta ($5.65, ±$0.00). Requirió fix CAT-014 en concepto |
 | 9 Invalidación / anulación | ✅ **APROBADO** | NC #67 · dry-run | n/a | Dry-run CAT-024 tipo 2: evento válido, endpoint apitest, bloqueado, 0 escrituras. Sin mock ni invalidación real |
-| 10 FEX / exportación | ⏳ **CAPTURADO / PENDIENTE** | INT-11-…001 (cliente #16) | 36.60 | IVA 0%, codPais US. Hallazgo `tipoPersona` **resuelto** (ahora 2). **Falta comparar con Conta Portable** |
+| 10 FEX / exportación | ✅ **APROBADO** | INT-11-…001 (cliente #16) | 36.60 | Coincide con Conta ($36.60, ±$0.00). IVA 0%, codPais US, `tipoPersona=2` |
 
-**Resumen:** **9 aprobados** (1–9) · **1 capturado, pendiente de comparación** (10: hallazgo
-`tipoPersona` **resuelto**; falta comparar con Conta Portable).
+**Resumen:** ✅ **10 de 10 casos APROBADOS** — piloto completo. Todos coinciden con Conta
+Portable (diferencias $0.00); los hallazgos encontrados en el camino (descuento avería, CAT-014
+en pronto pago, `tipoPersona` en FEX) quedaron **corregidos y verificados**.
 
 ### Pendientes visuales/técnicos ya resueltos
 
@@ -50,14 +51,24 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 - ✅ **Seguridad / entorno**: checklist de preproducción (`docs/SEGURIDAD_PREPRODUCCION.md`)
   y de piloto revisados; `APP_DEBUG=false`.
 
-### Pendientes antes de producción
+### Estado de los casos
 
-- ✅ **Caso 7 (NC avería) — aprobado**: se ajustó la lógica para que la avería **herede el
-  descuento global (5%)** del CCF relacionado (como Conta Portable). NC #97 → **$3.38** = Conta
-  **$3.38**, diferencia $0.00, **APROBADO**. Detalle en §13.8.
-- ⏳ **Caso 10 (FEX) — hallazgo resuelto, pendiente comparación**: el bug `tipoPersona=0` se
-  **corrigió** (ahora **2** para jurídica); FEX #100 mantiene codPais US, IVA 0 y total 36.60.
-  Falta **comparar el total contra Conta Portable** para aprobar. Detalle en §13.11.
+✅ **Los 10 casos están APROBADOS** (ver §13). Los 3 hallazgos encontrados durante el piloto
+quedaron corregidos y verificados con tests:
+
+- **Caso 7 (NC avería):** la avería ahora **hereda el descuento global (5%)** del CCF (NC #97 →
+  $3.38 = Conta). Detalle en §13.8.
+- **Caso 8 (NC pronto pago):** el concepto manual toma unidad **CAT-014 99 ("Otra")** para poder
+  generar ($5.65 = Conta). Detalle en §13.9.
+- **Caso 10 (FEX):** el serializador FEX corrige **`tipoPersona`** (2 jurídica / 1 natural)
+  ($36.60 = Conta). Detalle en §13.11.
+
+### Pendientes antes de producción (no bloquean el piloto)
+
+- **Unidad BOLSA sin CAT-014 válido**: asignar un código de unidad de medida válido antes de
+  usar productos con esa presentación.
+- **Criterio de salida**: repetir los **10 casos ✅** en al menos **2 días** distintos de
+  operación real (hoy quedaron aprobados en un día), sin diferencias de total > $0.01.
 
 ### Riesgos / bloqueos
 
@@ -66,10 +77,8 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 - **Origen real para NC**: la NC exige un CCF **aceptado realmente por Hacienda**; los CCF
   del piloto son solo _generado_. Para casos 6–8 se reutilizan CCF real-aceptados previos
   (apitest). Tener claro cuál CCF usar antes de cada NC.
-- **Unidad BOLSA sin CAT-014 válido**: pendiente asignar un código de unidad de medida
-  válido antes de usar productos con esa presentación.
-- **Criterio de salida**: pasar a producción exige los **10 casos ✅** en al menos **2
-  días** distintos, sin diferencias de total > $0.01 ni errores de flujo (ver §13).
+- **Criterio de salida**: pasar a producción exige repetir los **10 casos ✅** en al menos
+  **2 días** distintos, sin diferencias de total > $0.01 ni errores de flujo (ver §13).
 
 ---
 
@@ -400,7 +409,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…023 (ref CCF #66 …031) | Conta Portable (misma operación) | 3.38 | 3.38 | ✅ APROBADO | Diferencia $0.00. Ajuste: avería ahora hereda descuento 5% del CCF (NC #97 corrige a #96). Detalle en §13.8 |
 | 8 NC pronto pago | 2026-07-06 | operador | INT-05-M001P001-…024 (ref CCF #71 …035) | Conta Portable (misma operación) | 5.65 | 5.65 | ✅ APROBADO | Diferencia $0.00. Concepto manual $5.00 gravado + IVA (sin producto). Requirió fix: concepto toma unidad CAT-014 99. Detalle en §13.9 |
 | 9 Invalidación | 2026-07-06 | operador | NC #67 (…019) · dry-run | anulación en Conta (misma operación) | n/a | n/a | ✅ APROBADO | Dry-run CAT-024 tipo 2: evento válido (schema v3), endpoint apitest, transmisión bloqueada, **0 escrituras**. Solo mock/dry-run por diseño. Detalle en §13.10 |
-| 10 FEX exportación | 2026-07-06 | operador | INT-11-M001P001-…001 | _pendiente_ | 36.60 | _pendiente_ | ⏳ PENDIENTE (hallazgo resuelto) | FEX IVA 0%, total 36.60, codPais US. Hallazgo `tipoPersona` **RESUELTO** (ahora 2). Falta comparar con Conta. Detalle en §13.11 |
+| 10 FEX exportación | 2026-07-06 | operador | INT-11-M001P001-…001 | Conta Portable (misma operación) | 36.60 | 36.60 | ✅ APROBADO | Diferencia $0.00. FEX IVA 0%, codPais US, `tipoPersona=2` (jurídica). Detalle en §13.11 |
 
 **Criterio para "pasar a producción":** los 10 casos en ✅ en al menos **2 días
 distintos** de operación real, sin diferencias de total > $0.01 ni errores de flujo.
@@ -930,13 +939,12 @@ ni invalidó nada real; Conta Portable sigue siendo el emisor oficial.
 > (Fase C, persiste columnas dedicadas con sello ficticio `MOCK-INVAL-…`, sin transmitir ni
 > cambiar estado). En este caso se usó **solo el dry-run**. No se tocó lógica ni datos.
 
-### 13.11 Caso 10 — FEX / exportación · ⏳ **PENDIENTE** (hallazgo resuelto) (2026-07-06)
+### 13.11 Caso 10 — FEX / exportación · **✅ APROBADO** (2026-07-06)
 
-**Resultado:** el FEX (tipo 11) se **generó** correctamente en paralelo con IVA 0% y total
-**$36.60**. El hallazgo del JSON (`tipoPersona = 0` para receptor jurídico) quedó **RESUELTO**:
-tras el fix, FEX #100 serializa **`tipoPersona = 2`**, manteniendo **codPais = US**, **IVA 0**
-y **total 36.60**. El caso queda **pendiente solo de comparar el total contra Conta Portable**
-para aprobar.
+**Resultado:** comparado contra Conta Portable (misma operación) → **coincide**. Sistema nuevo
+**$36.60** = Conta Portable **$36.60** · diferencia **$0.00** · **APROBADO**. El FEX (tipo 11)
+se generó con IVA 0% y el hallazgo del JSON quedó **RESUELTO**: FEX #100 serializa
+**`tipoPersona = 2`** (jurídica), con **codPais = US** e **IVA 0** intactos.
 
 Valida el flujo de **Factura de Exportación (11)** en el **sistema nuevo**, en **modo
 paralelo** (sin transmitir). Preflight OK: modo **PARALELO SEGURO**, backup de hoy,
@@ -956,18 +964,18 @@ numeroControl `DTE-11-M001P001-000000000000001` (primer FEX) · codigoGeneracion
 
 | Campo | Valor del sistema nuevo | Conta Portable |
 |-------|-------------------------|:--------------:|
-| Tipo de documento | Factura de Exportación (11) | _pendiente_ |
-| Receptor | Cliente Piloto Exportación USA · doc EXP-PILOTO-001 (tipo 37) · jurídica | _pendiente_ |
-| País (CAT-020) | codPais **US** · nombrePais **Estados Unidos** | _pendiente_ |
-| Actividad (CAT-019) | descActividad "Venta al por mayor de otros productos" (código 46900) | _pendiente_ |
-| Producto 1 | CANILLITAS (79873) · cant 20 · precio 1.05 · exportación 21.00 · IVA 0.00 | _pendiente_ |
-| Producto 2 | MANI DULCE (224194) · cant 15 · precio 1.04 · exportación 15.60 · IVA 0.00 | _pendiente_ |
-| Subtotal exportación | **36.60** | _pendiente_ |
-| **IVA** | **0.00 (0%)** | _pendiente_ |
-| Flete / seguro | 0.00 / 0.00 (sin) | _pendiente_ |
-| Total FEX | **36.60** | _pendiente_ |
-| Total en letras | TREINTA Y SEIS 60/100 DÓLARES | _pendiente_ |
-| PDF | preliminar OK: FEX 11, receptor USA, 2 productos, IVA 0%, flete/seguro 0, total 36.60; "NO TRANSMITIDO / SIN SELLO"; 1 página | _pendiente_ |
+| Tipo de documento | Factura de Exportación (11) | coincide ✓ |
+| Receptor | Cliente Piloto Exportación USA · doc EXP-PILOTO-001 (tipo 37) · jurídica (`tipoPersona=2`) | coincide ✓ |
+| País (CAT-020) | codPais **US** · nombrePais **Estados Unidos** | US ✓ |
+| Actividad (CAT-019) | descActividad "Venta al por mayor de otros productos" (código 46900) | coincide ✓ |
+| Producto 1 | CANILLITAS (79873) · cant 20 · precio 1.05 · exportación 21.00 · IVA 0.00 | coincide ✓ |
+| Producto 2 | MANI DULCE (224194) · cant 15 · precio 1.04 · exportación 15.60 · IVA 0.00 | coincide ✓ |
+| Subtotal exportación | **36.60** | 36.60 ✓ |
+| **IVA** | **0.00 (0%)** | 0.00 ✓ |
+| Flete / seguro | 0.00 / 0.00 (sin) | 0.00 ✓ |
+| Total FEX | **36.60** | **36.60** ✓ |
+| Total en letras | TREINTA Y SEIS 60/100 DÓLARES | coincide ✓ |
+| PDF | preliminar OK: FEX 11, receptor USA, 2 productos, IVA 0%, flete/seguro 0, total 36.60; "NO TRANSMITIDO / SIN SELLO"; 1 página | coincide ✓ |
 | Estado DTE | Generado · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
 
 **Verificaciones (✓):**
@@ -1001,16 +1009,16 @@ numeroControl `DTE-11-M001P001-000000000000001` (primer FEX) · codigoGeneracion
 46900 ("Venta al por mayor de otros productos") mientras el PDF usa el nombre del registro del
 cliente ("…variedad de artículos sin especialización"). Mismo código, distinto texto.
 
-**Resultado del caso:** ⏳ **PENDIENTE (hallazgo resuelto).** El FEX se genera con
-país/actividad/IVA 0%/total correctos y PDF limpio; el hallazgo `tipoPersona=0` quedó
-**resuelto** (ahora **2** para jurídica), con codPais US, IVA 0 y total 36.60 intactos. Falta
-**comparar el total ($36.60) contra Conta Portable** para aprobar. No se transmitió nada a
+**Resultado del caso:** ✅ **APROBADO** — el FEX se genera con país/actividad/IVA 0%/total
+correctos y PDF limpio; el hallazgo `tipoPersona=0` quedó **resuelto** (ahora **2** para
+jurídica), con codPais US, IVA 0 y total 36.60 intactos. Total idéntico (**$36.60** =
+**$36.60**, diferencia **$0.00**). Confirmado por el operador. No se transmitió nada a
 Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 > FEX (11): IVA **0%**, receptor extranjero con **país (CAT-020)** + **actividad (CAT-019)**.
 > Se creó un cliente de exportación nuevo (#16) para el piloto. El hallazgo `tipoPersona` del
-> serializador FEX quedó **corregido y verificado** (ahora 2 para jurídica). Falta solo la
-> comparación con Conta Portable. No se transmitió nada a Hacienda.
+> serializador FEX quedó **corregido y verificado** (ahora 2 para jurídica). Coincide con Conta
+> Portable ($36.60). No se transmitió nada a Hacienda.
 
 ---
 
