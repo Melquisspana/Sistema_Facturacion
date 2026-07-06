@@ -25,10 +25,10 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 | 6 NC devolución | ✅ **APROBADO** | INT-05-…021 (ref CCF #71) | 11.01 | Coincide con Conta Portable (±$0.00) |
 | 7 NC avería | ✅ **APROBADO** | INT-05-…023 (ref CCF #66) | 3.38 | Coincide con Conta ($3.38, ±$0.00); avería ahora hereda descuento 5% del CCF |
 | 8 NC pronto pago | ✅ **APROBADO** | INT-05-…024 (ref CCF #71) | 5.65 | Coincide con Conta ($5.65, ±$0.00). Requirió fix CAT-014 en concepto |
-| 9 Invalidación / anulación | ⛔ **NO INICIADO** | — | — | Solo mock + dry-run visual (real solo por consola) |
+| 9 Invalidación / anulación | ✅ **APROBADO** | NC #67 · dry-run | n/a | Dry-run CAT-024 tipo 2: evento válido, endpoint apitest, bloqueado, 0 escrituras. Sin mock ni invalidación real |
 | 10 FEX / exportación | ⛔ **NO INICIADO** | — | — | Cliente exportación completo (país + actividad) |
 
-**Resumen:** **8 aprobados** (1–8) · **2 no iniciados** (9–10).
+**Resumen:** **9 aprobados** (1–9) · **1 no iniciado** (10).
 
 ### Pendientes visuales/técnicos ya resueltos
 
@@ -54,8 +54,7 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 - ✅ **Caso 7 (NC avería) — aprobado**: se ajustó la lógica para que la avería **herede el
   descuento global (5%)** del CCF relacionado (como Conta Portable). NC #97 → **$3.38** = Conta
   **$3.38**, diferencia $0.00, **APROBADO**. Detalle en §13.8.
-- ⛔ **Definir cómo probar los casos 9–10**: invalidación/anulación (solo mock + dry-run
-  visual; la real es solo por consola) y FEX (cliente de exportación completo con país +
+- ⛔ **Definir cómo probar el caso 10**: FEX (cliente de exportación completo con país +
   actividad).
 
 ### Riesgos / bloqueos
@@ -398,7 +397,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 6 NC devolución | 2026-07-06 | operador | INT-05-M001P001-…021 (ref CCF #71 …035) | Conta Portable (misma operación) | 11.01 | 11.01 | ✅ APROBADO | Diferencia $0.00. Devolución parcial de CCF #71 (CANILLITAS ×5, COCO RALLADO ×5). Detalle en §13.6 |
 | 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…023 (ref CCF #66 …031) | Conta Portable (misma operación) | 3.38 | 3.38 | ✅ APROBADO | Diferencia $0.00. Ajuste: avería ahora hereda descuento 5% del CCF (NC #97 corrige a #96). Detalle en §13.8 |
 | 8 NC pronto pago | 2026-07-06 | operador | INT-05-M001P001-…024 (ref CCF #71 …035) | Conta Portable (misma operación) | 5.65 | 5.65 | ✅ APROBADO | Diferencia $0.00. Concepto manual $5.00 gravado + IVA (sin producto). Requirió fix: concepto toma unidad CAT-014 99. Detalle en §13.9 |
-| 9 Invalidación | | | | | | | | |
+| 9 Invalidación | 2026-07-06 | operador | NC #67 (…019) · dry-run | anulación en Conta (misma operación) | n/a | n/a | ✅ APROBADO | Dry-run CAT-024 tipo 2: evento válido (schema v3), endpoint apitest, transmisión bloqueada, **0 escrituras**. Solo mock/dry-run por diseño. Detalle en §13.10 |
 | 10 FEX exportación | | | | | | | | |
 
 **Criterio para "pasar a producción":** los 10 casos en ✅ en al menos **2 días
@@ -874,6 +873,60 @@ base sin IVA en Conta). No se transmitió nada a Hacienda.
 > **no** hereda el descuento del CCF y **no** aplica retención. El concepto toma la unidad
 > CAT-014 **99 ("Otra")**. Estructura **NC v3**. No se transmitió nada a Hacienda; Conta
 > Portable sigue siendo el emisor oficial.
+
+### 13.10 Caso 9 — Invalidación / anulación (dry-run) · **✅ APROBADO** (2026-07-06)
+
+**Resultado:** el flujo de invalidación oficial (evento CAT-024) se validó de forma **100%
+segura** con un **dry-run** de solo lectura sobre una NC real-aceptada. El evento se **arma
+correctamente**, **pasa el schema v3**, muestra el **endpoint apitest** y queda con la
+**transmisión bloqueada**, **sin escribir nada** (BD ni storage) y **sin cambiar estado** ·
+**APROBADO**.
+
+> **Alcance del caso (por diseño):** en la interfaz la invalidación es **solo mock + dry-run
+> visual**; la invalidación **real** ante Hacienda es **solo por consola** y bloqueada por
+> candados (`dte:invalidacion-real --transmitir-real --confirmo-invalidar`). Para este caso se
+> ejecutó **solo el dry-run** (read-only). **No** se corrió el mock (que persistiría columnas),
+> **no** se invalidó nada real y **no** se usó la anulación interna (que cambia estado).
+
+**Preflight OK:** modo **PARALELO SEGURO**, `DTE_INVALIDACION_MOCK=false`, responsable/
+solicitante configurados, `APP_DEBUG=false`.
+
+**Documento usado:** NC interna **#67** · numeroControl `DTE-05-M001P001-000000000000019` ·
+codigoGeneracion `F41B191D-C1EB-42AF-831B-9666A5F2F386` · **real-aceptada por Hacienda** (sello
+`2026EFC8F4E4BA…`, fecha proc. 2026-06-26) · **sin evento de invalidación previo**. Se eligió
+una NC real-aceptada que **no** es origen de otros casos del piloto (a diferencia de los CCF
+#66/#71).
+
+**Parámetros del evento:** CAT-024 **tipo 2 — "Rescindir de la operación realizada"** (no
+requiere documento de reemplazo ni motivo en texto).
+
+| Verificación | Resultado |
+|--------------|-----------|
+| Evento armado en memoria | ✓ (versión 3, ambiente 00, codGen del evento efímero `EF458D92-…`) |
+| Documento a invalidar correcto | ✓ (tipoDte 05, codGen `F41B191D-…`, numeroControl `…019`, sello recibido coincide) |
+| Motivo CAT-024 | ✓ (tipoAnulacion 2, sin `codigoGeneracionR`, sin motivo texto — correcto para tipo 2) |
+| Responsable / solicitante | ✓ (desde config: Elsa Fidelina, tipoDoc 36, NIT) |
+| **Schema `invalidacion-schema-v3`** | ✓ **válido**, 0 errores |
+| **Endpoint mostrado** | ✓ `https://apitest.dtes.mh.gob.sv/fesv/anulardte` (**apitest**, no producción) |
+| **Transmisión real** | ✓ **bloqueada** (`transmitiria=false`; razones: falta `--transmitir-real` y `--confirmo-invalidar`) |
+| **Escrituras en BD** | ✓ **0** — ninguna columna cambió; `updated_at` idéntico antes/después (2026-06-26 06:17:15) |
+| **Escrituras en storage** | ✓ **0** — no se crearon JSON/JWS de invalidación para #67 |
+| **Estado NC #67** | ✓ **intacto** (sigue `aceptado`; `sello_invalidacion`/`tipo_anulacion` en null; sello de recepción original intacto) |
+| `tieneEventoInvalidacion()` antes/después | ✓ **no / no** (no se marcó el documento) |
+
+**Comparación con Conta Portable:** el criterio del caso es que el **tipo/motivo de anulación
+(CAT-024) y el documento relacionado** coincidan con la anulación real hecha en Conta Portable
+—no una transmisión—. El dry-run refleja los datos correctos sin alterar el documento.
+
+**Resultado del caso:** ✅ **APROBADO** — el dry-run demuestra que el evento de invalidación se
+construye y valida correctamente (schema v3), apunta a **apitest** con la **transmisión
+bloqueada**, y **no persiste nada** (BD y storage sin cambios, NC #67 intacta). No se transmitió
+ni invalidó nada real; Conta Portable sigue siendo el emisor oficial.
+
+> La invalidación **real** ante Hacienda (evento CAT-024 → `/fesv/anulardte`) queda **solo por
+> consola** con sus candados. Desde la interfaz solo hay **dry-run** (read-only) y **mock**
+> (Fase C, persiste columnas dedicadas con sello ficticio `MOCK-INVAL-…`, sin transmitir ni
+> cambiar estado). En este caso se usó **solo el dry-run**. No se tocó lógica ni datos.
 
 ---
 
