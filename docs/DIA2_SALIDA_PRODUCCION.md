@@ -158,7 +158,20 @@ se transmitió nada a Hacienda; el modo se mantuvo **PARALELO SEGURO** en todo m
 - Se encoló el correo del CCF #101 **únicamente** al correo de prueba controlado
   (`melquicedeespana@gmail.com`, **no** al cliente). Registro **DteEnvio #23**.
 - Flujo de cola verificado: **jobs 0 → 1 → 0**, **0 fallidos**; `DteEnvio` quedó **enviado**
-  (`error=null`) por SMTP (Gmail). Falta solo la verificación visual del buzón por el operador.
+  (`error=null`) por SMTP (Gmail). Verificado por el operador: **el correo llegó** con PDF+JSON.
+
+### Registro de casos — Día 2 (2026-07-06)
+
+Segunda jornada de comparación contra Conta Portable (modo **PARALELO SEGURO**, sin transmitir).
+
+| Caso | Documento nuevo | Total nuevo | Total Conta | Dif. | Estado |
+|------|-----------------|-------------|-------------|------|--------|
+| 1 CCF normal (sin retención) | CCF #104 · `DTE-03-…053` | 52.09 | 52.09 | $0.00 | ✅ APROBADO |
+
+**Caso 1 — detalle:** receptor Villarreal de De la Torre; CANILLITAS ×20 + MANI DULCE ×15 +
+DULCE DE MIEL ×10; gravado 46.10, IVA 5.99, retención 0.00, **total 52.09** = Conta **52.09**
+(diferencia $0.00). JSON tipoDte 03 v4 válido; PDF preliminar OK; **sin sello** (no transmitido);
+jobs 0 / fallidos 0. **✅ APROBADO.**
 
 ---
 
