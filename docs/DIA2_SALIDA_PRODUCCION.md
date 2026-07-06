@@ -170,6 +170,8 @@ Segunda jornada de comparación contra Conta Portable (modo **PARALELO SEGURO**,
 | 2 CCF Calleja OC + sala | CCF #105 · `DTE-03-…054` | 122.36 | 122.36 | $0.00 | ✅ APROBADO |
 | 3 NC devolución (ref CCF #71) | NC #106 · `DTE-05-…025` | 11.01 | 11.01 | $0.00 | ✅ APROBADO |
 | 4 NC pronto pago (ref CCF #66) | NC #107 · `DTE-05-…026` | 5.65 | 5.65 | $0.00 | ✅ APROBADO |
+| 5 FEX / exportación | FEX #108 · `DTE-11-…002` | 36.60 | 36.60 | $0.00 | ✅ APROBADO |
+| 6 Correo + PDF | DteEnvio #23 (CCF #101) | n/a | n/a | — | ✅ APROBADO (en preflight) |
 
 **Caso 1 — detalle:** receptor Villarreal de De la Torre; CANILLITAS ×20 + MANI DULCE ×15 +
 DULCE DE MIEL ×10; gravado 46.10, IVA 5.99, retención 0.00, **total 52.09** = Conta **52.09**
@@ -193,6 +195,58 @@ codGen `6B70F9AC-…` coincide); **concepto manual** "Descuento por pronto pago"
 físico, unidad CAT-014 **99**); base gravada 5.00, descuento 0.00, IVA 0.65, retención 0.00,
 **total 5.65** = Conta **5.65** (diferencia $0.00). Estructura NC v3; CCF #66 **intacto**; **sin
 sello** (no transmitido); jobs 0 / fallidos 0. **✅ APROBADO.**
+
+**Caso 5 — detalle:** **FEX (11)** con cliente de exportación **#16** (Cliente Piloto
+Exportación USA); CANILLITAS ×20 + MANI DULCE ×15, sin flete ni seguro; **codPais US**
+(CAT-020), **actividad CAT-019 46900**, **`tipoPersona=2`** (jurídica), **IVA 0%**
+(`tributos=null`), **total 36.60** = Conta **36.60** (diferencia $0.00). JSON tipoDte 11 v3
+válido; PDF preliminar OK; **sin sello** (no transmitido); jobs 0 / fallidos 0. **✅ APROBADO.**
+
+**Caso 6 (correo + PDF) — detalle:** validado en el **preflight** (§6): correo del CCF #101
+encolado al correo de prueba controlado (**DteEnvio #23**), flujo de cola **0 → 1 → 0**, **0
+fallidos**, `DteEnvio` **enviado** con **PDF + JSON**; el operador confirmó la llegada al buzón.
+**✅ APROBADO.**
+
+### Cierre del Día 2 (2026-07-06)
+
+**Resultado: 6 de 6 casos APROBADOS**, todos con diferencia **$0.00** contra Conta Portable. No
+se transmitió nada a Hacienda; el modo se mantuvo **PARALELO SEGURO** toda la jornada.
+
+**Estado final del sistema (verificado al cierre):**
+
+| Chequeo | Estado |
+|---|---|
+| Modo | ✅ **PARALELO SEGURO** (transmisión real bloqueada) |
+| Worker de colas | ✅ activo |
+| Jobs pendientes / fallidos | ✅ 0 / 0 |
+| APP_DEBUG | ✅ false |
+| **Firmador real local** | ✅ **DISPONIBLE** (HTTP 200) · firma real verificada (CCF throwaway #101) |
+| **SMTP** | ✅ send-test **enviado** (DteEnvio #23), correo recibido con PDF+JSON |
+| Backup del día | ✅ `.zip` de hoy presente |
+
+**Cobertura de familias (Día 2):** CCF normal (Caso 1) · CCF Calleja OC+sala con retención
+(Caso 2) · NC devolución (Caso 3) · NC pronto pago (Caso 4) · FEX/exportación (Caso 5) ·
+correo+PDF (Caso 6). Los 3 fixes del piloto quedaron reconfirmados en vivo: descuento heredado
+en devolución (Caso 3), unidad CAT-014 99 en pronto pago (Caso 4) y `tipoPersona=2` en FEX
+(Caso 5).
+
+### Recomendación go / no-go
+
+**Lectura técnica: ✅ GO.** Todos los casos del Día 2 coincidieron con Conta Portable
+(diferencias $0.00), el **firmador real local** firma correctamente, el **SMTP** entrega con
+adjuntos, **0 jobs fallidos**, backup del día y **PARALELO SEGURO** sin transmisión accidental.
+
+**Salvedad del criterio "2 días distintos":** esta 2ª jornada se ejecutó el **2026-07-06**, el
+mismo día calendario que la mayor parte del piloto (Casos 4–10; los Casos 1–3 fueron 2026-07-05).
+Para cerrar el criterio sin ambigüedad, hay dos caminos válidos (decisión de negocio/operación):
+1. **Recomendado:** correr **una confirmación más en un día calendario distinto** (p. ej. el
+   próximo día hábil) — reconfirma correlativos y el cambio de fecha antes del rol principal.
+2. Dar por cumplido el criterio si negocio acepta que el piloto ya abarcó **07-05 y 07-06** más
+   esta ronda completa; en ese caso, **GO** al arranque gradual de la sección 5 (1–2 documentos
+   reales, Conta Portable como respaldo, revisando Salud del sistema tras cada envío).
+
+El paso de "modo paralelo" a "emitir real" sigue siendo un cambio de configuración candado; se
+hace **solo** cuando se confirme el go y con la coordinación de correlativos/ambiente resuelta.
 
 ---
 
