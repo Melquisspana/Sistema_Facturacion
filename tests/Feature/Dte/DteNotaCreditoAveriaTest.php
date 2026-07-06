@@ -248,8 +248,41 @@ class DteNotaCreditoAveriaTest extends TestCase
             ->post(route('facturacion.averia.store', $nc), ['producto_id' => $producto->id, 'cantidad' => 2])
             ->assertRedirect();
 
-        $this->assertSame('20.00', $nc->refresh()->total_gravado);
+        // CCF sin descuento global → la avería tampoco aplica descuento (sigue igual).
+        $this->assertSame('0.00', $nc->refresh()->descuento_global);
+        $this->assertSame('20.00', $nc->total_gravado);
         $this->assertSame('22.60', $nc->total_pagar); // 20 + IVA 2.60
+    }
+
+    /**
+     * La NC por avería relacionada a un CCF con descuento global (5%) hereda ese
+     * mismo descuento (como Conta Portable). Reproduce el Caso 7 del piloto:
+     * CANILLITAS ×3 @1.05 → gravado 3.15, descuento 0.16, base 2.99, IVA 0.39, total 3.38.
+     */
+    public function test_averia_hereda_descuento_global_del_ccf_relacionado(): void
+    {
+        $emisor = $this->emisor();
+        // Cliente con 5% de descuento global → el CCF nace con descuento_porcentaje_aplicado 5.
+        $cliente = Cliente::factory()->contribuyente()->create(['descuento_global_default' => 5]);
+        $producto = $this->producto(1.05);
+        $ccf = $this->ccfGenerado($emisor, $cliente, $producto);
+        $this->assertSame('5.00', $ccf->descuento_porcentaje_aplicado);
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'motivo' => 'Avería'])
+            ->assertRedirect();
+        $nc = Dte::where('tipo_dte', '05')->where('tipo_nota_credito', 'averia')->firstOrFail();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.averia.store', $nc), ['producto_id' => $producto->id, 'cantidad' => 3])
+            ->assertRedirect();
+
+        $nc->refresh();
+        $this->assertSame('5.00', $nc->descuento_porcentaje_aplicado); // heredado del CCF
+        $this->assertSame('3.15', $nc->total_gravado);   // bruto 3×1.05
+        $this->assertSame('0.16', $nc->descuento_global); // 5% de 3.15
+        $this->assertSame('0.39', $nc->iva);             // 13% de la base neta 2.99
+        $this->assertSame('3.38', $nc->total_pagar);      // 2.99 + 0.39
     }
 
     // --- Devolución/faltante siguen limitadas al CCF original ---

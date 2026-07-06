@@ -688,16 +688,19 @@ class DteBorradorService
      * Porcentaje de descuento vigente para el documento: prioridad sucursal →
      * cliente → 0.
      *
-     * Notas de crédito POR PRODUCTOS (devolución/faltante): acreditan SOLO líneas del CCF
-     * relacionado, así que heredan el MISMO descuento global del CCF original (su
-     * descuento_porcentaje_aplicado), aplicado como descuento GLOBAL del resumen (ventaGravada
-     * bruto, descuGravada en el resumen), tal como la NC v3 aceptada por el MH. Avería /
-     * concepto / pronto pago no heredan (0%).
+     * Notas de crédito POR PRODUCTOS (devolución/faltante) y POR AVERÍA: heredan el MISMO
+     * descuento global del CCF relacionado (su descuento_porcentaje_aplicado), aplicado como
+     * descuento GLOBAL del resumen (ventaGravada bruto, descuGravada en el resumen), tal como
+     * la NC v3 aceptada por el MH. La avería usa catálogo libre, pero al estar relacionada a un
+     * CCF con descuento global debe reflejar el mismo descuento (igual que Conta Portable).
+     * Concepto / pronto pago (por monto) no heredan (0%).
      */
     private function porcentajeDescuentoVigente(Dte $dte): string
     {
         if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            if (($dte->tipo_nota_credito?->esPorProductos() ?? false) && $dte->dteRelacionado !== null) {
+            $heredaDescuento = ($dte->tipo_nota_credito?->esPorProductos() ?? false)
+                || ($dte->tipo_nota_credito?->esPorAveria() ?? false);
+            if ($heredaDescuento && $dte->dteRelacionado !== null) {
                 $pct = (float) ($dte->dteRelacionado->descuento_porcentaje_aplicado ?? 0);
 
                 return number_format(max(0.0, min(100.0, $pct)), 2, '.', '');
