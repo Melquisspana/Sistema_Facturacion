@@ -28,6 +28,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         parent::setUp();
         CatalogoMh::insert([
             ['cat' => '014', 'codigo' => '59', 'valor' => 'Unidad'],
+            ['cat' => '014', 'codigo' => '99', 'valor' => 'Otra'], // Bolsa se mapea a 99 (Otra)
             ['cat' => '015', 'codigo' => '20', 'valor' => 'Impuesto al Valor Agregado 13%'],
             ['cat' => '019', 'codigo' => '10730', 'valor' => 'Elaboración de cacao, chocolate y confitería'],
             ['cat' => '020', 'codigo' => 'GT', 'valor' => 'GUATEMALA'],
@@ -182,6 +183,59 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
 
         $this->assertSame(1, $oficial['receptor']['tipoPersona']);
+    }
+
+    /**
+     * Una línea cuya unidad es "Bolsa" (que en CAT-014 se mapea al código 99 "Otra")
+     * debe serializar `uniMedida = 99` y validar contra el schema, tanto en NC (05)
+     * como en FEX (11). Ambos serializadores usan el helper compartido uniMedida().
+     */
+    public function test_linea_unidad_bolsa_codigo_99_valida_en_nc_y_fex(): void
+    {
+        // NC (05) con línea en unidad Bolsa (código CAT-014 99).
+        $lineaNcBolsa = new LineaDteData(
+            numeroLinea: 1, descripcion: 'Producto en bolsa', cantidad: '10', precioUnitario: '10.000000',
+            totalLinea: '113.00', tipoItem: 1, codigo: 'P-1', unidadMedida: '99',
+            ventaGravada: '100.00', iva: '13.00',
+        );
+        $relacionado = new DocumentoRelacionadoDteData(
+            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '7C73BB9A-86FA-4904-B0F2-546A41EA59E0', fechaEmision: '2026-06-16',
+        );
+        $nc = new DteSalidaData(
+            identificacion: $this->ident('05', 3), emisor: $this->emisor(), resumen: $this->resumenCcf(),
+            lineas: [$lineaNcBolsa], receptor: $this->receptorContribuyente(),
+            apendice: [], documentoRelacionado: [$relacionado],
+        );
+        $ncOficial = app(SerializadorNotaCreditoMh::class)->serializar($nc);
+        $ncRes = app(DteSchemaValidator::class)->validar($ncOficial, TipoDte::NotaCredito);
+        $this->assertSame(99, $ncOficial['cuerpoDocumento'][0]['uniMedida']);
+        $this->assertTrue($ncRes['valido'], 'NC errores: '.implode(' | ', $ncRes['errores']));
+
+        // FEX (11) con línea en unidad Bolsa.
+        $lineaFexBolsa = new LineaDteData(
+            numeroLinea: 1, descripcion: 'Producto exportado en bolsa', cantidad: '10', precioUnitario: '10.000000',
+            totalLinea: '100.00', tipoItem: 1, codigo: 'P-1', unidadMedida: '99',
+            ventaExportacion: '100.00',
+        );
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '37', numDocumento: 'EXT-001', nombre: 'Importadora CA',
+            actividadEconomica: '10730', pais: 'GT', direccion: 'Ciudad de Guatemala', tipoPersona: 'juridica',
+        );
+        $resumenFex = new ResumenDteData(
+            totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '100.00',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '100.00',
+            montoTotalOperacion: '100.00', totalPagar: '100.00', totalLetras: 'CIEN 00/100',
+            flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+        );
+        $fex = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $this->emisor(), resumen: $resumenFex,
+            lineas: [$lineaFexBolsa], receptor: $receptor, apendice: [],
+        );
+        $fexOficial = app(SerializadorExportacionMh::class)->serializar($fex);
+        $fexRes = app(DteSchemaValidator::class)->validar($fexOficial, TipoDte::FacturaExportacion);
+        $this->assertSame(99, $fexOficial['cuerpoDocumento'][0]['uniMedida']);
+        $this->assertTrue($fexRes['valido'], 'FEX errores: '.implode(' | ', $fexRes['errores']));
     }
 
     public function test_exportacion_sin_pais_falla_claro(): void

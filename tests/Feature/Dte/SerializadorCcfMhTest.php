@@ -26,6 +26,7 @@ class SerializadorCcfMhTest extends TestCase
         parent::setUp();
         // Catálogos mínimos que usa el serializador.
         CatalogoMh::create(['cat' => '014', 'codigo' => '59', 'valor' => 'Unidad']);
+        CatalogoMh::create(['cat' => '014', 'codigo' => '99', 'valor' => 'Otra']); // Bolsa se mapea a 99
         CatalogoMh::create(['cat' => '015', 'codigo' => '20', 'valor' => 'Impuesto al Valor Agregado 13%']);
         CatalogoMh::create(['cat' => '019', 'codigo' => '47190', 'valor' => 'Venta al por menor de otros productos']);
     }
@@ -83,6 +84,26 @@ class SerializadorCcfMhTest extends TestCase
         $this->assertSame(['20'], $a['cuerpoDocumento'][0]['tributos']); // IVA CAT-015
         $this->assertSame(113.0, $a['resumen']['totalPagar']);           // número, no string
         $this->assertSame('20', $a['resumen']['tributos'][0]['codigo']);
+    }
+
+    /**
+     * Una línea de CCF cuya unidad es "Bolsa" (código CAT-014 99 "Otra", porque el
+     * catálogo no tiene bolsa propia) serializa uniMedida = 99 y valida. El CCF usa su
+     * propio método unidadMedida(), por eso se prueba aparte de NC/FEX.
+     */
+    public function test_unidad_bolsa_codigo_99_se_serializa_en_ccf(): void
+    {
+        $lineaBolsa = [new LineaDteData(
+            numeroLinea: 1, descripcion: 'Dulce en bolsa', cantidad: '10', precioUnitario: '10.000000',
+            totalLinea: '113.00', tipoItem: 1, codigo: 'DUL-1', codigoBarra: null, unidadMedida: '99',
+            descuento: '0.00', ventaGravada: '100.00', iva: '13.00',
+        )];
+
+        $a = app(SerializadorCcfMh::class)->serializar($this->salida(lineas: $lineaBolsa));
+        $res = app(DteSchemaValidator::class)->validar($a, TipoDte::CreditoFiscal);
+
+        $this->assertSame(99, $a['cuerpoDocumento'][0]['uniMedida']);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
     public function test_orden_de_compra_va_en_apendice(): void
