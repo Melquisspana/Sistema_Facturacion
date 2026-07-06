@@ -661,6 +661,54 @@ Conta Portable** (columnas _pendiente_) para aprobar. No se transmitió nada a H
 > transmisión. Estructura **NC v3** (IVA en resumen.tributos, descuento global, ventaGravada
 > bruta). No se transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
+### 13.7 Estrategia para los casos pendientes (7–10)
+
+Plan seguro para ejecutar los casos que faltan, **sin transmitir a Hacienda** (modo
+paralelo). Todo se genera y se compara; nada se firma/transmite real desde la interfaz.
+
+**Regla que aplica a las notas de crédito (7 y 8):** por diseño del sistema, **toda NC (05)
+— devolución, avería y pronto pago por igual — exige un CCF relacionado _aceptado
+realmente por Hacienda_ para poder generar**, y su total gravado **no puede superar el
+saldo disponible** de ese CCF (`ValidacionPreJsonService`). No basta un CCF _generado_ del
+piloto; hay que reutilizar un CCF real-aceptado previo.
+
+**CCF real-aceptados disponibles (origen para NC), todos Calleja:**
+
+| CCF | numeroControl | Gravado | Ya acreditado (real) | Saldo disponible |
+|-----|---------------|---------|----------------------|------------------|
+| #48 | …030 | 1.05 | 1.05 | **0.00** (agotado) |
+| #66 | …031 | 81.98 | 14.70 | **67.28** |
+| #71 | …035 | 39.85 | 0.00 | **39.85** |
+
+> En modo paralelo, una NC solo _generada_ (no transmitida) **no consume saldo**; solo las
+> NC real-aceptadas lo descuentan. Por eso se pueden apilar NC de prueba sobre el mismo CCF.
+
+**Estrategia por caso:**
+
+| Caso | Documento base | ¿Origen real? | Cómo se hace seguro | Datos que debe dar el operador | Comparación vs Conta Portable | Recomendación |
+|------|----------------|---------------|---------------------|-------------------------------|-------------------------------|---------------|
+| **7 NC avería** | CCF real-aceptado (#66 o #71) | Sí (origen); NC en paralelo | Modo paralelo; solo generar + PDF; **catálogo libre** pero gravado ≤ saldo | CCF origen, productos averiados libres + cantidades, monto ≤ saldo | Productos/cantidades/IVA/total, tope de saldo, relación al CCF | **Ahora** |
+| **8 NC pronto pago** | CCF real-aceptado (#66 o #71) | Sí (origen); NC en paralelo | Modo paralelo; **conceptos manuales** (sin producto), monto + IVA | CCF origen, concepto(s) y monto (base), ≤ saldo | Concepto/base/IVA/total y relación al CCF | **Ahora** |
+| **9 Invalidación** | DTE/NC real-aceptado **sin evento previo** | Sí (para mock/dry-run) | **Solo mock + dry-run** en la UI; la real es **solo por consola**, apitest, nunca producción | Documento a invalidar (p. ej. #66/#71), tipo CAT-024, motivo, reemplazo si aplica | Tipo/motivo de anulación y documento relacionado | **Ahora** (mock/dry-run) |
+| **10 FEX exportación** | Ninguno (documento primario) | No (100% paralelo) | Modo paralelo; solo generar + PDF | Cliente exportación **completo** (país CAT-020 + actividad CAT-019), productos, flete/seguro | País/actividad/**IVA 0%**/flete/seguro/total | **Preparar antes:** definir/confirmar el cliente de exportación |
+
+**Riesgos y mitigaciones:**
+
+- **Transmitir real por error:** mitigado por el modo **PARALELO SEGURO** y los candados; en
+  la UI nunca se pulsa "firmar/transmitir". La invalidación real queda **solo por consola**.
+- **Tocar documentos reales:** las NC nuevas son documentos propios; el CCF origen **no se
+  modifica**. El mock de invalidación usa columnas dedicadas y **no** toca el sello original
+  ni el estado.
+- **Agotar el saldo del CCF:** en paralelo las NC de prueba no consumen saldo; aun así,
+  mantener el gravado de cada NC ≤ saldo disponible para que la validación deje generar.
+- **BOLSA sin CAT-014:** si algún producto de prueba usa esa presentación, asignar antes un
+  código de unidad válido (pendiente técnico).
+
+**Orden sugerido:** 7 → 8 (reutilizan #66/#71 y la misma mecánica de saldo) → 9 (mock +
+dry-run) → 10 (requiere definir el cliente de exportación). Antes de cada caso: preflight de
+§1 (PARALELO SEGURO, worker, backup, 0 fallidos) y confirmar con el operador los datos de
+entrada. **No** se crean clientes/datos sin confirmación explícita.
+
 ---
 
 ## 14. Plan B — volver a Conta Portable
