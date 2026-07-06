@@ -330,7 +330,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 1 CCF sin retención | 2026-07-05 | operador | INT-03-M001P001-…044 | Conta Portable (misma operación) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.1 |
 | 2 CCF con retención | 2026-07-05 | operador | INT-03-M001P001-…045 | Conta Portable (misma operación) | 117.15 | 117.15 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.2 |
 | 3 CCF Calleja OC+sala | 2026-07-05 | operador | INT-03-M001P001-…046 | Conta Portable (misma operación) | 122.36 | 122.36 | ✅ APROBADO | Diferencia $0.00. Con OC, sala, precios especiales, descuento 5% y retención. Detalle en §13.3 |
-| 4 Duplicar CCF | | | | | | | | |
+| 4 Duplicar CCF | 2026-07-06 | operador | INT-03-M001P001-…047 (dup de …044) | vs Caso 1 (aprobado) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Duplicado reproduce Caso 1; original intacto. Detalle en §13.4 |
 | 5 Correo + PDF | | | | | | | | |
 | 6 NC devolución | | | | | | | | |
 | 7 NC avería | | | | | | | | |
@@ -455,6 +455,43 @@ numeroControl `DTE-03-M001P001-000000000000046` · estado **Generado** · **sin 
 OC, precios especiales, **descuento 5%** y **retención**); total idéntico (**$122.36** =
 **$122.36**, diferencia **$0.00**). Conta Portable emitió la misma operación oficialmente;
 el sistema nuevo solo comparó (sin transmitir a Hacienda).
+
+### 13.4 Caso 4 — Duplicar CCF y generar desde el duplicado · **✅ APROBADO** (2026-07-06)
+
+**Resultado:** el duplicado reproduce el Caso 1 → **coincide**. Total duplicado **$52.09** =
+Caso 1 **$52.09** · diferencia **$0.00** · original **#88 intacto** · **APROBADO**.
+
+Valida el flujo **Duplicar CCF** en el **sistema nuevo**, en **modo paralelo** (sin
+transmitir a Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0**
+jobs fallidos, backup reciente, `APP_DEBUG=false`. No es una comparación contra Conta
+Portable nueva: el criterio es que el duplicado **reproduzca el Caso 1** (ya aprobado).
+
+**Base:** CCF del Caso 1 → **#88** (`INT-03-M001P001-000000000000044`, total $52.09).
+**Duplicado:** borrador **#91** → generado como `INT-03-M001P001-000000000000047`
+(`DTE-03-M001P001-000000000000047`), **sin sello** (no transmitido).
+
+**Verificaciones del flujo (todas ✓):**
+
+| Verificación | Resultado |
+|--------------|-----------|
+| El duplicado queda como **borrador editable** | ✓ (estado borrador, editable) |
+| **No** copia numeración/firma/sello/JSON fiscal | ✓ (numero_control, codigo_generacion, sello, json_generado, json_firmado = vacíos) |
+| **No** copia correos ni estado de Hacienda | ✓ (0 envíos; sin respuesta_mh; estado fresco) |
+| **Sí** copia cliente, productos, cantidades, precios y totales | ✓ (cliente Villarreal; 3 líneas 1.05/1.04/0.95; gravado 46.10 · IVA 5.99 · total 52.09) |
+| Al **generar** consume **nuevo correlativo** | ✓ (46 → 47) |
+| **codigoGeneracion** nuevo, distinto al original | ✓ |
+| El **original #88 queda intacto** | ✓ (sigue `…044`, estado generado, total 52.09, sin cambios) |
+| **PDF** del duplicado generado | ✓ (cliente, 3 productos, 46.10/5.99/52.09, "NO TRANSMITIDO / SIN SELLO", sin marca BORRADOR, numeroControl `…047`) |
+| **Total** del duplicado = Caso 1 | ✓ **$52.09** = **$52.09** · diferencia **$0.00** |
+
+**Resultado del caso:** ✅ **APROBADO** — el duplicado reproduce el Caso 1 (total **$52.09**
+= **$52.09**, diferencia **$0.00**), el **original #88 quedó intacto**, el duplicado #91
+generó **nuevo correlativo** y **no** heredó firma/sello/transmisión/correos ni estado
+fiscal. No se transmitió nada a Hacienda.
+
+> No se modificó el CCF original. El duplicado es un borrador nuevo, sin datos fiscales
+> heredados; al generarlo tomó su propia numeración/codigoGeneracion. No se transmitió nada
+> a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 > Este caso usa **precios especiales** de Calleja + **descuento global 5%** + **retención**
 > (base gravada neta 109.25 > $100) + **OC en apéndice** + datos de la **sala** (nombre
