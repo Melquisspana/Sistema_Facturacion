@@ -24,11 +24,12 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 | 5 Correo + PDF | ✅ **APROBADO** | CCF #91 · envío #21 | n/a | Correo llegó, PDF adjunto abre, 0 fallidos |
 | 6 NC devolución | ✅ **APROBADO** | INT-05-…021 (ref CCF #71) | 11.01 | Coincide con Conta Portable (±$0.00) |
 | 7 NC avería | ✅ **APROBADO** | INT-05-…023 (ref CCF #66) | 3.38 | Coincide con Conta ($3.38, ±$0.00); avería ahora hereda descuento 5% del CCF |
-| 8 NC pronto pago | ⛔ **NO INICIADO** | — | — | Definir cómo probar |
+| 8 NC pronto pago | ⏳ **CAPTURADO / PENDIENTE** | INT-05-…024 (ref CCF #71) | 5.65 | Generado (tras fix CAT-014 en concepto); **falta comparar con Conta Portable** |
 | 9 Invalidación / anulación | ⛔ **NO INICIADO** | — | — | Solo mock + dry-run visual (real solo por consola) |
 | 10 FEX / exportación | ⛔ **NO INICIADO** | — | — | Cliente exportación completo (país + actividad) |
 
-**Resumen:** **7 aprobados** (1–7) · **3 no iniciados** (8–10).
+**Resumen:** **7 aprobados** (1–7) · **1 capturado pendiente de comparación** (8) · **2 no
+iniciados** (9–10).
 
 ### Pendientes visuales/técnicos ya resueltos
 
@@ -54,9 +55,11 @@ Resumen del avance del piloto. Detalle caso por caso en la **sección 13**.
 - ✅ **Caso 7 (NC avería) — aprobado**: se ajustó la lógica para que la avería **herede el
   descuento global (5%)** del CCF relacionado (como Conta Portable). NC #97 → **$3.38** = Conta
   **$3.38**, diferencia $0.00, **APROBADO**. Detalle en §13.8.
-- ⛔ **Definir cómo probar los casos 8–10**: NC pronto pago (conceptos manuales),
-  invalidación/anulación (solo mock + dry-run visual; la real es solo por consola) y FEX
-  (cliente de exportación completo con país + actividad).
+- ⏳ **Comparar la NC de pronto pago (Caso 8, $5.65) contra Conta Portable** — capturada,
+  pendiente de comparar (el operador la carga en Conta con el monto como base sin IVA).
+- ⛔ **Definir cómo probar los casos 9–10**: invalidación/anulación (solo mock + dry-run
+  visual; la real es solo por consola) y FEX (cliente de exportación completo con país +
+  actividad).
 
 ### Riesgos / bloqueos
 
@@ -397,7 +400,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 5 Correo + PDF | 2026-07-06 | operador | CCF #91 (…047) · envío #21 | correo de prueba | n/a | n/a | ✅ APROBADO | Correo recibido, PDF adjunto abre; job 0→1→0, 0 fallidos. Detalle en §13.5 |
 | 6 NC devolución | 2026-07-06 | operador | INT-05-M001P001-…021 (ref CCF #71 …035) | Conta Portable (misma operación) | 11.01 | 11.01 | ✅ APROBADO | Diferencia $0.00. Devolución parcial de CCF #71 (CANILLITAS ×5, COCO RALLADO ×5). Detalle en §13.6 |
 | 7 NC avería | 2026-07-06 | operador | INT-05-M001P001-…023 (ref CCF #66 …031) | Conta Portable (misma operación) | 3.38 | 3.38 | ✅ APROBADO | Diferencia $0.00. Ajuste: avería ahora hereda descuento 5% del CCF (NC #97 corrige a #96). Detalle en §13.8 |
-| 8 NC pronto pago | | | | | | | | |
+| 8 NC pronto pago | 2026-07-06 | operador | INT-05-M001P001-…024 (ref CCF #71 …035) | _pendiente_ | 5.65 | _pendiente_ | ⏳ pendiente | Concepto manual $5.00 gravado + IVA (sin producto). Requirió fix: concepto toma unidad CAT-014 99. Detalle en §13.9 |
 | 9 Invalidación | | | | | | | | |
 | 10 FEX exportación | | | | | | | | |
 
@@ -793,6 +796,86 @@ nada a Hacienda; el CCF #66 quedó intacto.
 > correo, colas ni el PDF (el PDF solo refleja los totales recalculados). El fix aplica a
 > **nuevos borradores/generaciones**, no migra documentos históricos. Estructura **NC v3**. No
 > se transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
+
+### 13.9 Caso 8 — Nota de crédito por pronto pago · ⏳ **PENDIENTE** (comparar con Conta Portable)
+
+**Resultado:** ⏳ **pendiente** — la NC por pronto pago se generó correctamente en el **sistema
+nuevo** (modo paralelo, sin transmitir), tras un **fix mínimo** (ver abajo). Queda **pendiente**
+la comparación campo por campo contra Conta Portable antes de aprobar.
+
+Valida el flujo de **Nota de crédito por pronto pago** (concepto manual, sin producto físico)
+en el **sistema nuevo**, en **modo paralelo** (sin transmitir a Hacienda). Preflight OK: modo
+**PARALELO SEGURO**, worker **activo**, **0** jobs fallidos, **backup de hoy**, `APP_DEBUG=false`.
+
+> **Fix requerido durante el caso (autorizado):** el concepto manual de la NC por pronto pago
+> se creaba **sin unidad de medida (CAT-014)**, y el esquema del MH la exige en toda línea, así
+> que la generación fallaba (`La línea 1 no tiene unidad de medida (CAT-014)`). Nunca se había
+> detectado porque ningún test **generaba** un pronto pago. Se ajustó
+> `agregarConceptoNotaCredito()` para que el concepto tome la unidad **99 ("Otra")** de CAT-014
+> (+ test que genera end-to-end). **No** se tocó CCF, devolución, avería, PPQ, firma,
+> transmisión, correo, colas ni el PDF (que solo refleja los totales). Solo afecta nuevos
+> borradores/generaciones; no migra históricos.
+
+**Historia del caso (dos NC):**
+- **NC #98** (`…—`): borrador **pre-fix**, no se pudo generar (concepto sin CAT-014). Se dejó
+  como evidencia del bloqueo (no se mutó).
+- **NC #99** (`…024`, total **$5.65`): **post-fix**, generada correctamente.
+
+**CCF original (relacionado):** CCF **#71** · numeroControl `DTE-03-M001P001-000000000000035`
+· codigoGeneracion `CF903852-05A2-4881-8305-DEC18DC386C7` · cliente **Calleja** (sala Súper
+Selectos Bethoven) · **real-aceptado por Hacienda** · saldo disponible **39.85** al momento.
+
+**Documento nuevo:** NC interna **#99** · N° interno `INT-05-M001P001-000000000000024` ·
+numeroControl `DTE-05-M001P001-000000000000024` · codigoGeneracion
+`B429F2A4-74B5-421B-B7B5-13D8FF1777F1` · estado **Generado** · **sin sello** (no transmitido)
+· estructura **NC v3** (tipo 05).
+
+| Campo | Valor del sistema nuevo | Conta Portable |
+|-------|-------------------------|:--------------:|
+| Tipo de NC | Pronto pago | _pendiente_ |
+| Documento relacionado | CCF #71 · `DTE-03-M001P001-000000000000035` (tipoDoc 03, tipoGen 2, codGen coincide ✓) | _pendiente_ |
+| Receptor | Calleja, S.A. de C.V. · NIT 0614-110169-001-1 · NRC 1937 · sala Súper Selectos Bethoven | _pendiente_ |
+| Concepto (manual, sin producto físico) | "Descuento por pronto pago" · sin `producto_id` · unidad CAT-014 **99 (Otra)** | _pendiente_ |
+| Monto gravado (base SIN IVA) | **5.00** | _pendiente_ |
+| Descuento global | **0.00** (pronto pago no hereda) | _pendiente_ |
+| IVA 13% (resumen.tributos) | **0.65** | _pendiente_ |
+| Retención IVA 1% | **0.00** (la NC no aplica retención) | _pendiente_ |
+| Total a acreditar | **5.65** | _pendiente_ |
+| Total en letras | CINCO 65/100 DÓLARES | _pendiente_ |
+| PDF | preliminar OK: NC 05, Calleja, concepto sin producto (código "—", present. 99), documento original `…035`, motivo, 5.00 / 0.00 / 0.65 / 5.65; marcas "NO TRANSMITIDO / SIN SELLO"; 1 página | _pendiente_ |
+| Estado DTE | Generado · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
+
+**Candados verificados (✓):**
+
+| Verificación | Resultado |
+|--------------|-----------|
+| La NC exige CCF **aceptado realmente por Hacienda** | ✓ (se usó CCF #71 real-aceptado) |
+| Pronto pago usa **concepto manual** (sin producto físico) | ✓ (`producto_id` nulo; 0 líneas de producto) |
+| Pronto pago **no hereda** el descuento del CCF | ✓ (descuento global 0.00, aunque el CCF tiene 5%) |
+| NC **no aplica retención** | ✓ (retención 0.00) |
+| Gravado de la NC **≤ saldo disponible** del CCF | ✓ (5.00 ≪ 39.85) |
+| NC queda **relacionada** al CCF (documentoRelacionado) | ✓ (codGen del CCF #71 coincide en el JSON) |
+| **No** transmite ni cambia el CCF original | ✓ (NC sin sello; CCF #71 intacto) |
+| **0 jobs fallidos** durante el flujo | ✓ (jobs 0 / failed 0) |
+
+**Nota de comparación (importante):** el sistema trata el monto del concepto como **base
+gravada SIN IVA** y le suma el 13% (total 5.65). El operador comparará cargando en Conta
+Portable el **mismo monto como base sin IVA**. Si Conta lo maneja como monto **con IVA
+incluido**, hay que revisar el criterio antes de aprobar.
+
+**Observación cosmética (no bloquea):** en el PDF la columna "PRESENT." del concepto muestra el
+**código** `99` en vez de la etiqueta "Otra" (no hay relación de unidad para resolver el
+nombre). Es solo presentación; el valor fiscal CAT-014 es correcto. Se puede pulir aparte.
+
+**Resultado del caso:** ⏳ **PENDIENTE** — la NC #99 se generó correctamente (concepto manual
+sin producto, unidad CAT-014 99, relacionada al CCF #71 real-aceptado, sin descuento ni
+retención, gravado ≤ saldo, sin transmitir, CCF intacto). Falta la **comparación contra Conta
+Portable** (columnas _pendiente_) para aprobar. No se transmitió nada a Hacienda.
+
+> La NC por **pronto pago** es un ajuste **por monto/concepto manual** (sin producto físico);
+> **no** hereda el descuento del CCF y **no** aplica retención. El concepto toma la unidad
+> CAT-014 **99 ("Otra")**. Estructura **NC v3**. No se transmitió nada a Hacienda; Conta
+> Portable sigue siendo el emisor oficial.
 
 ---
 
