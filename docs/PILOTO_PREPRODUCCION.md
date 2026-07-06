@@ -329,7 +329,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 |------|-------|----------|----------------------|--------------------------|-------------|-------------|-------|--------------------|
 | 1 CCF sin retención | 2026-07-05 | operador | INT-03-M001P001-…044 | Conta Portable (misma operación) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.1 |
 | 2 CCF con retención | 2026-07-05 | operador | INT-03-M001P001-…045 | Conta Portable (misma operación) | 117.15 | 117.15 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.2 |
-| 3 CCF Calleja OC+sala | 2026-07-05 | sistema (captura) | INT-03-M001P001-…046 | _pendiente_ | 122.36 | _pendiente_ | ⏳ lado nuevo capturado | Con OC, sala, precios especiales, descuento 5% y retención. Detalle en §13.3 |
+| 3 CCF Calleja OC+sala | 2026-07-05 | operador | INT-03-M001P001-…046 | Conta Portable (misma operación) | 122.36 | 122.36 | ✅ APROBADO | Diferencia $0.00. Con OC, sala, precios especiales, descuento 5% y retención. Detalle en §13.3 |
 | 4 Duplicar CCF | | | | | | | | |
 | 5 Correo + PDF | | | | | | | | |
 | 6 NC devolución | | | | | | | | |
@@ -415,7 +415,10 @@ numeroControl `DTE-03-M001P001-000000000000045` · estado **Generado** · **sin 
 Portable emitió la misma operación oficialmente; el sistema nuevo solo comparó (sin
 transmitir a Hacienda).
 
-### 13.3 Caso 3 — CCF Calleja con OC y sala (captura del sistema nuevo · 2026-07-05) · ⏳ PENDIENTE
+### 13.3 Caso 3 — CCF Calleja con OC y sala · **✅ APROBADO** (2026-07-05)
+
+**Resultado:** comparado contra Conta Portable (misma operación) → **coincide**.
+Sistema nuevo **$122.36** = Conta Portable **$122.36** · diferencia **$0.00** · **APROBADO**.
 
 Corrida del Caso 3 en el **sistema nuevo**, en **modo paralelo** (sin transmitir a
 Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0** jobs fallidos,
@@ -443,15 +446,15 @@ numeroControl `DTE-03-M001P001-000000000000046` · estado **Generado** · **sin 
 | IVA 13% (sobre neto) | **14.20** | _pendiente_ |
 | Retención IVA 1% (sobre neto, base 109.25 > $100) | **1.09** | _pendiente_ |
 | Monto total operación | 123.45 (neto + IVA) | _pendiente_ |
-| Total a pagar | **122.36** (123.45 − 1.09 retención) | _pendiente_ |
-| Total en letras | CIENTO VEINTIDÓS 36/100 DÓLARES | _pendiente_ |
-| PDF | preliminar OK: Calleja, sala, OC, 2 productos, 115.00 / 5.75 / 109.25 / 14.20 / 1.09 / 122.36; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR | _pendiente_ |
-| Estado DTE | Generado (badge unificado) · sin transmisión real | _pendiente_ |
+| Total a pagar | **122.36** (123.45 − 1.09 retención) | **122.36** ✓ |
+| Total en letras | CIENTO VEINTIDÓS 36/100 DÓLARES | coincide |
+| PDF | preliminar OK: Calleja, sala, OC, 2 productos, 115.00 / 5.75 / 109.25 / 14.20 / 1.09 / 122.36; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR | coincide |
+| Estado DTE | Generado (badge unificado) · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
 
-**Cómo cerrar el caso (operador):** emitir la MISMA operación en Conta Portable (mismo
-cliente/sala/OC/productos/cantidades), llenar la columna derecha y marcar ✅ si todo
-coincide (total dentro de ± $0.01) o ❌ con la diferencia. Actualizar también la fila del
-Caso 3 en la tabla de §13. **Queda PENDIENTE hasta esa confirmación.**
+**Resultado del caso:** ✅ **APROBADO** — todos los campos coinciden (razón social, sala,
+OC, precios especiales, **descuento 5%** y **retención**); total idéntico (**$122.36** =
+**$122.36**, diferencia **$0.00**). Conta Portable emitió la misma operación oficialmente;
+el sistema nuevo solo comparó (sin transmitir a Hacienda).
 
 > Este caso usa **precios especiales** de Calleja + **descuento global 5%** + **retención**
 > (base gravada neta 109.25 > $100) + **OC en apéndice** + datos de la **sala** (nombre
