@@ -167,11 +167,18 @@ Segunda jornada de comparación contra Conta Portable (modo **PARALELO SEGURO**,
 | Caso | Documento nuevo | Total nuevo | Total Conta | Dif. | Estado |
 |------|-----------------|-------------|-------------|------|--------|
 | 1 CCF normal (sin retención) | CCF #104 · `DTE-03-…053` | 52.09 | 52.09 | $0.00 | ✅ APROBADO |
+| 2 CCF Calleja OC + sala | CCF #105 · `DTE-03-…054` | 122.36 | 122.36 | $0.00 | ✅ APROBADO |
 
 **Caso 1 — detalle:** receptor Villarreal de De la Torre; CANILLITAS ×20 + MANI DULCE ×15 +
 DULCE DE MIEL ×10; gravado 46.10, IVA 5.99, retención 0.00, **total 52.09** = Conta **52.09**
 (diferencia $0.00). JSON tipoDte 03 v4 válido; PDF preliminar OK; **sin sello** (no transmitido);
 jobs 0 / fallidos 0. **✅ APROBADO.**
+
+**Caso 2 — detalle:** Calleja (#10) · sala **Súper Selectos Aguilares** (#199) · OC
+**OC-DIA2-0001** (en apéndice); CANILLITAS ×60 + MANI DULCE ×50; gravado bruto 115.00, descuento
+5% -5.75, neto 109.25, IVA 14.20, **retención IVA 1% 1.09**, **total 122.36** = Conta **122.36**
+(diferencia $0.00). JSON tipoDte 03 v4 válido; PDF con sala/OC/descuento/retención; **sin sello**
+(no transmitido); jobs 0 / fallidos 0. **✅ APROBADO.**
 
 ---
 
