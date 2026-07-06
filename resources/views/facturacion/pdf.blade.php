@@ -127,11 +127,12 @@
         /* Encabezado */
         .topline { border-top: 2px solid #6E2142; margin-bottom: 11px; }
         .head td { vertical-align: top; padding: 0; }
-        .logo { width: 56px; height: 56px; border-radius: 8px; border: 1px solid #E7DFD6; }
-        .logo-fb { width: 56px; height: 56px; border-radius: 8px; background: #20242C; color: #fff; text-align: center; font-size: 24px; font-weight: bold; padding-top: 15px; }
-        .razon { font-size: 14.5px; font-weight: bold; color: #20242C; line-height: 1.12; }
-        .comercial { color: #6E2142; font-weight: bold; font-size: 9.3px; }
-        .emi { font-size: 8px; color: #4A4F58; margin-top: 2.5px; line-height: 1.32; }
+        /* Logo transparente (retrato 2:3): más grande y sin marco. */
+        .logo { width: 64px; height: 96px; }
+        .logo-fb { width: 60px; height: 60px; border-radius: 8px; background: #20242C; color: #fff; text-align: center; font-size: 26px; font-weight: bold; padding-top: 16px; }
+        .razon { font-size: 16.5px; font-weight: bold; color: #20242C; line-height: 1.12; }
+        .comercial { color: #6E2142; font-weight: bold; font-size: 10.5px; }
+        .emi { font-size: 8.8px; color: #4A4F58; margin-top: 3px; line-height: 1.34; }
         .emi .k { color: #9AA0A8; }
 
         /* Caja de datos del DTE (derecha) — mismo lenguaje que las demás secciones */
