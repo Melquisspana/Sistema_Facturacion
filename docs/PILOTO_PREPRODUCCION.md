@@ -328,7 +328,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | Caso | Fecha | Operador | Documento nuevo (N°) | Documento Conta Portable | Total nuevo | Total Conta | ✅/❌ | Notas / diferencia |
 |------|-------|----------|----------------------|--------------------------|-------------|-------------|-------|--------------------|
 | 1 CCF sin retención | 2026-07-05 | operador | INT-03-M001P001-…044 | Conta Portable (misma operación) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.1 |
-| 2 CCF con retención | 2026-07-05 | sistema (captura) | INT-03-M001P001-…045 | _pendiente_ | 117.15 | _pendiente_ | ⏳ lado nuevo capturado | Falta comparar contra Conta Portable. Detalle en §13.2 |
+| 2 CCF con retención | 2026-07-05 | operador | INT-03-M001P001-…045 | Conta Portable (misma operación) | 117.15 | 117.15 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.2 |
 | 3 CCF Calleja OC+sala | | | | | | | | |
 | 4 Duplicar CCF | | | | | | | | |
 | 5 Correo + PDF | | | | | | | | |
@@ -377,7 +377,10 @@ oficialmente; el sistema nuevo solo comparó (sin transmitir a Hacienda).
 > El precio base es **SIN IVA** (así lo usa el CCF: el IVA se calcula aparte). No se
 > transmitió nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
-### 13.2 Caso 2 — CCF con retención (captura del sistema nuevo · 2026-07-05) · ⏳ PENDIENTE
+### 13.2 Caso 2 — CCF con retención · **✅ APROBADO** (2026-07-05)
+
+**Resultado:** comparado contra Conta Portable (misma operación) → **coincide**.
+Sistema nuevo **$117.15** = Conta Portable **$117.15** · diferencia **$0.00** · **APROBADO**.
 
 Corrida del Caso 2 en el **sistema nuevo**, en **modo paralelo** (sin transmitir a
 Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**, **0** jobs fallidos,
@@ -402,15 +405,15 @@ numeroControl `DTE-03-M001P001-000000000000045` · estado **Generado** · **sin 
 | IVA 13% (resumen.tributos) | **13.60** | _pendiente_ |
 | Retención IVA 1% (resumen.ivaRete) | **1.05** (base gravada neta 104.60 > umbral $100) | _pendiente_ |
 | Monto total operación | 118.20 (gravado + IVA) | _pendiente_ |
-| Total a pagar | **117.15** (118.20 − 1.05 retención) | _pendiente_ |
-| Total en letras | CIENTO DIECISIETE 15/100 DÓLARES | _pendiente_ |
-| PDF | preliminar OK: cliente, 2 productos, totales 104.60 / 13.60 / 1.05 / 117.15; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR | _pendiente_ |
-| Estado DTE | Generado (badge unificado) · sin transmisión real | _pendiente_ |
+| Total a pagar | **117.15** (118.20 − 1.05 retención) | **117.15** ✓ |
+| Total en letras | CIENTO DIECISIETE 15/100 DÓLARES | coincide |
+| PDF | preliminar OK: cliente, 2 productos, totales 104.60 / 13.60 / 1.05 / 117.15; marcas "NO TRANSMITIDO / SIN SELLO"; sin marca BORRADOR | coincide |
+| Estado DTE | Generado (badge unificado) · sin transmisión real | n/a (Conta Portable es el emisor oficial) |
 
-**Cómo cerrar el caso (operador):** emitir la MISMA operación en Conta Portable, llenar la
-columna derecha y marcar ✅ si todo coincide (total dentro de ± $0.01) o ❌ con la
-diferencia. Actualizar también la fila del Caso 2 en la tabla de §13. **Queda PENDIENTE
-hasta esa confirmación.**
+**Resultado del caso:** ✅ **APROBADO** — todos los campos coinciden, incluida la
+**retención**; total idéntico (**$117.15** = **$117.15**, diferencia **$0.00**). Conta
+Portable emitió la misma operación oficialmente; el sistema nuevo solo comparó (sin
+transmitir a Hacienda).
 
 > Retención automática: solo CCF, receptor **agente de retención**, y base gravada **neta**
 > > $100 (umbral configurable). El total a pagar descuenta la retención. Precio base **sin
