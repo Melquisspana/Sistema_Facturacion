@@ -168,6 +168,7 @@ Segunda jornada de comparación contra Conta Portable (modo **PARALELO SEGURO**,
 |------|-----------------|-------------|-------------|------|--------|
 | 1 CCF normal (sin retención) | CCF #104 · `DTE-03-…053` | 52.09 | 52.09 | $0.00 | ✅ APROBADO |
 | 2 CCF Calleja OC + sala | CCF #105 · `DTE-03-…054` | 122.36 | 122.36 | $0.00 | ✅ APROBADO |
+| 3 NC devolución (ref CCF #71) | NC #106 · `DTE-05-…025` | 11.01 | 11.01 | $0.00 | ✅ APROBADO |
 
 **Caso 1 — detalle:** receptor Villarreal de De la Torre; CANILLITAS ×20 + MANI DULCE ×15 +
 DULCE DE MIEL ×10; gravado 46.10, IVA 5.99, retención 0.00, **total 52.09** = Conta **52.09**
@@ -179,6 +180,12 @@ jobs 0 / fallidos 0. **✅ APROBADO.**
 5% -5.75, neto 109.25, IVA 14.20, **retención IVA 1% 1.09**, **total 122.36** = Conta **122.36**
 (diferencia $0.00). JSON tipoDte 03 v4 válido; PDF con sala/OC/descuento/retención; **sin sello**
 (no transmitido); jobs 0 / fallidos 0. **✅ APROBADO.**
+
+**Caso 3 — detalle:** NC por **devolución** relacionada al CCF **#71** (real-aceptado, `…035`,
+codGen `CF903852-…` coincide); acredita CANILLITAS ×5 + COCO RALLADO ×5 (líneas del CCF); gravado
+bruto 10.25, **descuento 5% heredado** -0.51, neto 9.74, IVA v3 1.27, retención 0.00, **total
+11.01** = Conta **11.01** (diferencia $0.00). Estructura NC v3; PDF con documento relacionado y
+motivo; CCF #71 **intacto**; **sin sello** (no transmitido); jobs 0 / fallidos 0. **✅ APROBADO.**
 
 ---
 
