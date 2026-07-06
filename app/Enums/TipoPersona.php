@@ -18,6 +18,19 @@ enum TipoPersona: string
         };
     }
 
+    /**
+     * Código del tipo de persona según el esquema del MH: 1 = natural, 2 = jurídica.
+     * El valor del enum es un string ('natural'/'juridica'), NO un número; castearlo
+     * con (int) daría 0, por eso el mapeo es explícito.
+     */
+    public function codigoMh(): int
+    {
+        return match ($this) {
+            self::Natural => 1,
+            self::Juridica => 2,
+        };
+    }
+
     /** @return array<string, string> [valor => label] para selects. */
     public static function opciones(): array
     {
