@@ -331,7 +331,7 @@ Llenar una fila por cada caso probado (podés copiar esta tabla a una planilla):
 | 2 CCF con retención | 2026-07-05 | operador | INT-03-M001P001-…045 | Conta Portable (misma operación) | 117.15 | 117.15 | ✅ APROBADO | Diferencia $0.00. Detalle en §13.2 |
 | 3 CCF Calleja OC+sala | 2026-07-05 | operador | INT-03-M001P001-…046 | Conta Portable (misma operación) | 122.36 | 122.36 | ✅ APROBADO | Diferencia $0.00. Con OC, sala, precios especiales, descuento 5% y retención. Detalle en §13.3 |
 | 4 Duplicar CCF | 2026-07-06 | operador | INT-03-M001P001-…047 (dup de …044) | vs Caso 1 (aprobado) | 52.09 | 52.09 | ✅ APROBADO | Diferencia $0.00. Duplicado reproduce Caso 1; original intacto. Detalle en §13.4 |
-| 5 Correo + PDF | | | | | | | | |
+| 5 Correo + PDF | 2026-07-06 | operador | CCF #91 (…047) · envío #21 | correo de prueba | n/a | n/a | ✅ APROBADO | Correo recibido, PDF adjunto abre; job 0→1→0, 0 fallidos. Detalle en §13.5 |
 | 6 NC devolución | | | | | | | | |
 | 7 NC avería | | | | | | | | |
 | 8 NC pronto pago | | | | | | | | |
@@ -488,6 +488,41 @@ Portable nueva: el criterio es que el duplicado **reproduzca el Caso 1** (ya apr
 = **$52.09**, diferencia **$0.00**), el **original #88 quedó intacto**, el duplicado #91
 generó **nuevo correlativo** y **no** heredó firma/sello/transmisión/correos ni estado
 fiscal. No se transmitió nada a Hacienda.
+
+### 13.5 Caso 5 — Enviar correo y abrir PDF para imprimir · **✅ APROBADO** (2026-07-06)
+
+**Resultado:** verificado por el operador → el **correo llegó** a la casilla de prueba, el
+**PDF adjunto abre** correctamente, y el flujo **envío + worker + cola + PDF** funcionó
+(job 0→1→0, **0 fallidos**) · **APROBADO**.
+
+Valida el flujo operativo de **correo + PDF** en el **sistema nuevo**, en **modo paralelo**
+(sin transmitir a Hacienda). Preflight OK: modo **PARALELO SEGURO**, worker **activo**,
+**0** jobs fallidos, backup reciente, `APP_DEBUG=false`.
+
+**Documento / destinatario:** CCF **#91** (`DTE-03-M001P001-000000000000047`, Caso 4) ·
+enviado **únicamente** a un **correo de prueba controlado** (`melquicedeespana@gmail.com`),
+**no** al correo del cliente ni a ningún otro. Envío registrado como **DteEnvio #21**.
+
+**Verificaciones del flujo (todas ✓):**
+
+| Verificación | Resultado |
+|--------------|-----------|
+| El job de correo **entra a la cola** | ✓ (jobs 0 → 1 al encolar) |
+| El worker lo **procesa y sale de la cola** | ✓ (jobs vuelve a 0) |
+| **0 jobs fallidos** después | ✓ (failed_jobs = 0) |
+| El envío queda **enviado** (worker corrió el job) | ✓ (`DteEnvio #21` estado `enviado`, `error: null`) |
+| **Un solo destinatario**, el de prueba | ✓ (`melquicedeespana@gmail.com`; sin otros) |
+| Correo enviado **de verdad** por SMTP (Gmail) con PDF+JSON | ✓ (mailer smtp; sin error) |
+| **PDF abre para imprimir** | ✓ (`facturacion.pdf` renderiza; ~4.7 MB) |
+| El DTE queda **marcado como correo enviado** | ✓ (`DteEnvio` persistido; la ficha `show` carga `envios` y lo lee fresco al volver — PRG, sin recarga manual) |
+
+**Resultado del caso:** ✅ **APROBADO** — el operador confirmó que **el correo llegó** a la
+casilla de prueba con el **PDF adjunto**, que **abre correctamente**, y que el flujo de
+**envío + worker + cola + PDF** funcionó sin fallos (job 0→1→0, 0 fallidos). No se transmitió
+nada a Hacienda; el envío fue a un correo de prueba controlado, no al cliente.
+
+> El correo se envió a un **correo de prueba controlado**, no al cliente. No se transmitió
+> nada a Hacienda; Conta Portable sigue siendo el emisor oficial.
 
 > No se modificó el CCF original. El duplicado es un borrador nuevo, sin datos fiscales
 > heredados; al generarlo tomó su propia numeración/codigoGeneracion. No se transmitió nada
