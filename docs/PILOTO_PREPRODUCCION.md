@@ -72,6 +72,7 @@ quedaron corregidos y verificados con tests:
   seeder). Reasignar productos a Bolsa queda como decisión de negocio aparte.
 - **Criterio de salida**: repetir los **10 casos ✅** en al menos **2 días** distintos de
   operación real (hoy quedaron aprobados en un día), sin diferencias de total > $0.01.
+  Guía de la 2ª jornada + go/no-go: `docs/DIA2_SALIDA_PRODUCCION.md`.
 
 ### Riesgos / bloqueos
 
