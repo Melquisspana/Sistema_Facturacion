@@ -384,6 +384,17 @@ class DteTransmisionService
         ];
     }
 
+    /**
+     * ¿Es posible emitir REAL a producción AHORA MISMO? (candados abiertos + ambiente
+     * de producción). SOLO LECTURA. La usa la guardia de la UI para exigir la frase
+     * manual "EMITIR PRODUCCION" únicamente cuando una emisión real sería posible; en
+     * modo seguro (paralelo/mock/dry-run/apitest) devuelve false y no estorba.
+     */
+    public function emisionRealPosible(): bool
+    {
+        return (bool) $this->estadoOperativo()['transmision_real_posible'];
+    }
+
     /** ¿El DTE cumple las precondiciones para un dry-run (sin transmitir)? */
     public function puedeDryRun(Dte $dte): bool
     {
@@ -474,6 +485,10 @@ class DteTransmisionService
             'detalle' => $detalle,
             // Única condición de alerta ROJA: transmisión real a PRODUCCIÓN posible ahora.
             'transmision_real_posible' => $produccionRealPosible,
+            // MODO SEGURO: NO es posible emitir real a producción ahora (paralelo, mock, dry-run,
+            // candados cerrados o ambiente de pruebas). Es lo contrario de transmision_real_posible;
+            // se expone con nombre propio para las pantallas (aviso + guardia de botones).
+            'modo_seguro' => ! $produccionRealPosible,
             // Transmisión a apitest (pruebas) posible: es HTTP real, pero al ambiente de
             // pruebas del MH; no equivale a emitir documentos fiscales de producción.
             'apitest_posible' => $apitestPosible,

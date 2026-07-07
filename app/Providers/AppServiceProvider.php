@@ -45,5 +45,15 @@ class AppServiceProvider extends ServiceProvider
             $esGestor = (bool) auth()->user()?->hasAnyRole(['administrador', 'facturacion']);
             $view->with('modoDte', $esGestor ? app(DteTransmisionService::class)->estadoOperativo() : null);
         });
+
+        // Mismo estado operativo DTE para las pantallas de facturación (ficha + creación),
+        // así el aviso "MODO PARALELO SEGURO — NO EMITE PRODUCCIÓN" y la guardia de botones
+        // están disponibles sin recalcular en cada controlador. Solo gestores; solo lectura.
+        View::composer('facturacion.*', static function ($view) {
+            if (! array_key_exists('modoDte', $view->getData())) {
+                $esGestor = (bool) auth()->user()?->hasAnyRole(['administrador', 'facturacion']);
+                $view->with('modoDte', $esGestor ? app(DteTransmisionService::class)->estadoOperativo() : null);
+            }
+        });
     }
 }

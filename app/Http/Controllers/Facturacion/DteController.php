@@ -470,6 +470,7 @@ class DteController extends Controller
      * ni PPQ.
      */
     public function firmarTransmitir(
+        Request $request,
         Dte $dte,
         DteJsonService $jsonService,
         DteFirmaService $firma,
@@ -482,6 +483,18 @@ class DteController extends Controller
         // 0. Idempotencia dura: si ya está aceptado o ya tiene sello, no se hace nada.
         if ($dte->estado === EstadoDte::Aceptado || filled($dte->sello_recepcion)) {
             return $volver->with('status', 'El documento ya fue aceptado; no se vuelve a firmar ni transmitir.');
+        }
+
+        // 0.1 GUARDIA DE EMISIÓN REAL A PRODUCCIÓN: si los candados permiten transmitir de
+        // verdad a producción, exigir la frase EXACTA escrita a mano. En MODO SEGURO
+        // (paralelo/mock/dry-run/apitest) esto NO aplica (emisionRealPosible=false) y el
+        // flujo sigue con su doble confirmación normal, sin estorbar. Antes de firmar/transmitir.
+        if ($transmision->emisionRealPosible()
+            && trim((string) $request->input('confirmacion_emision', '')) !== 'EMITIR PRODUCCION') {
+            Log::warning('DTE firmar-transmitir: emisión real bloqueada por falta de frase', ['dte_id' => $dte->id]);
+
+            return $volver->with('error', 'Emisión a PRODUCCIÓN bloqueada: para emitir REAL, escribí exactamente '
+                .'la frase EMITIR PRODUCCION en el campo de confirmación. No se firmó ni transmitió nada.');
         }
 
         Log::info('DTE firmar-transmitir: inicio', [

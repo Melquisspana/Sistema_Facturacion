@@ -5,6 +5,7 @@
 
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            <x-modo-dte-aviso :modo="$modoDte ?? null" />
             <div class="bg-white shadow sm:rounded-lg p-6">
 
                 @if ($errors->any())
