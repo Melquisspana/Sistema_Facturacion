@@ -23,8 +23,14 @@
              title="{{ $modoDte['detalle'] }}">
             <span class="font-semibold text-gray-500">DTE:</span>
             <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
-                {{ $modoDte['etiqueta'] }}
+                MODO {{ $modoDte['etiqueta'] }}
             </span>
+            @if (! empty($modoDte['modo_seguro']))
+                {{-- Refuerzo textual explícito: en modo seguro el sistema nuevo NO emite a producción. --}}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full font-bold bg-green-600 text-white">
+                    NO EMITE PRODUCCIÓN
+                </span>
+            @endif
             @if ($modoDte['mocks']['alguno'])
                 <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700"
                       title="Firma/transmisión/invalidación en modo MOCK: simulan el resultado sin usar credenciales ni transmitir de verdad.">

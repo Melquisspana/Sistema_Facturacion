@@ -19,6 +19,9 @@
                 </div>
             @endif
 
+            {{-- Aviso de MODO DTE (solo gestores): seguro (no emite producción) vs. emisión real posible. --}}
+            <x-modo-dte-aviso :modo="$modoDte ?? null" />
+
             {{-- Aviso operativo (solo gestores): correos en cola sin procesar hace >5 min.
                  Solo lectura de la tabla jobs; el controlador lo calcula únicamente para gestores. --}}
             @if (($correosAtascados ?? 0) > 0)
@@ -346,13 +349,24 @@
                     $modoMock = (bool) config('dte.firma.mock') || (bool) config('dte.transmision.mock');
                     $yaFirmado = $dte->estado === \App\Enums\EstadoDte::Firmado;
                     $etiquetaBoton = $yaFirmado ? 'Reintentar transmisión' : 'Firmar y transmitir';
+                    // ¿Puede emitir REAL a producción ahora? (candados abiertos + ambiente producción).
+                    // En modo seguro es false y solo aplica la doble confirmación normal.
+                    $emisionReal = ! empty($modoDte['transmision_real_posible']);
                 @endphp
-                <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 {{ $modoMock ? 'border-amber-400' : 'border-emerald-500' }}">
-                    <div class="flex items-center justify-between mb-2">
+                <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 {{ $emisionReal ? 'border-rose-600' : ($modoMock ? 'border-amber-400' : 'border-emerald-500') }}">
+                    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
                         <h3 class="font-semibold text-gray-700">Firmar y transmitir</h3>
-                        @if ($modoMock)
+                        @if ($emisionReal)
+                            <span class="inline-flex items-center rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold text-white animate-pulse">
+                                EMISIÓN REAL A PRODUCCIÓN
+                            </span>
+                        @elseif ($modoMock)
                             <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
                                 MODO PRUEBA (MOCK)
+                            </span>
+                        @else
+                            <span class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                                MODO SEGURO — no emite producción
                             </span>
                         @endif
                     </div>
@@ -361,15 +375,23 @@
                             El documento ya está <strong>firmado localmente</strong>. Esta acción solo reintenta la
                             transmisión (no vuelve a firmar ni consume correlativo).
                         @else
-                            Acción manual: genera el JSON si falta, firma el documento y lo transmite a Hacienda en un
-                            solo paso. Es <strong>idempotente</strong>: no re-firma si ya hay firma ni retransmite si ya
-                            fue aceptado.
+                            Acción manual: genera el JSON si falta, firma el documento y lo transmite en un solo paso.
+                            Es <strong>idempotente</strong>: no re-firma si ya hay firma ni retransmite si ya fue aceptado.
                         @endif
                     </p>
 
-                    @if ($modoMock)
+                    @if ($emisionReal)
+                        <div class="mt-3 bg-rose-50 border border-rose-300 rounded-md p-3 text-xs text-rose-800 font-semibold">
+                            ⚠ EMISIÓN REAL A PRODUCCIÓN HABILITADA
+                            <p class="mt-1 font-normal">
+                                Los candados están abiertos y el ambiente es de <strong>producción</strong>: esta acción
+                                transmite el documento a Hacienda <strong>de verdad</strong>. Para continuar, escribí la
+                                frase exacta <span class="font-mono font-bold">EMITIR PRODUCCION</span>.
+                            </p>
+                        </div>
+                    @elseif ($modoMock)
                         <div class="mt-3 bg-amber-50 border border-amber-300 rounded-md p-3 text-xs text-amber-800 font-semibold">
-                            MODO PRUEBA / MOCK — NO VÁLIDO ANTE HACIENDA
+                            SIMULACIÓN (MOCK) — NO EMITE A HACIENDA
                             <p class="mt-1 font-normal">
                                 La firma y la aceptación son <strong>simuladas</strong> (sin firmador real ni envío a Hacienda),
                                 para validar el flujo en local. El sello será ficticio (<span class="font-mono">MOCK-SIMULADO-…</span>).
@@ -378,15 +400,42 @@
                     @endif
 
                     <form method="POST" action="{{ route('facturacion.firmar-transmitir', $dte) }}" class="mt-4"
-                          onsubmit="return confirm('{{ $modoMock
-                              ? '¿Firmar y transmitir en MODO PRUEBA (MOCK)? La aceptación será simulada, no se envía nada a Hacienda.'
-                              : '¿Firmar y transmitir este documento a Hacienda? Esta acción es real.' }}');">
+                          onsubmit="return dteConfirmarEmision(this, {{ $emisionReal ? 'true' : 'false' }});">
                         @csrf
-                        <button class="inline-flex items-center px-4 py-2 {{ $modoMock ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700' }} text-white text-sm rounded-md">
-                            {{ $etiquetaBoton }}{{ $modoMock ? ' (prueba)' : '' }}
+                        @if ($emisionReal)
+                            <div class="mb-3">
+                                <label class="block text-xs font-semibold text-rose-700 mb-1">
+                                    Escribí exactamente para emitir real: <span class="font-mono">EMITIR PRODUCCION</span>
+                                </label>
+                                <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false"
+                                       placeholder="EMITIR PRODUCCION"
+                                       class="w-72 rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
+                            </div>
+                        @endif
+                        <button class="inline-flex items-center px-4 py-2 {{ $emisionReal ? 'bg-rose-600 hover:bg-rose-700' : ($modoMock ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700') }} text-white text-sm rounded-md font-medium">
+                            {{ $emisionReal ? 'EMITIR A PRODUCCIÓN' : $etiquetaBoton }}{{ (! $emisionReal && $modoMock) ? ' (prueba)' : '' }}
                         </button>
                     </form>
                 </div>
+
+                {{-- Guardia de UI (defensa en profundidad; el servidor RE-VALIDA la frase y los candados).
+                     Modo seguro: doble confirmación. Producción real: frase exacta + confirmación. --}}
+                <script>
+                    function dteConfirmarEmision(form, esReal) {
+                        if (esReal) {
+                            var val = ((form.confirmacion_emision && form.confirmacion_emision.value) || '').trim();
+                            if (val !== 'EMITIR PRODUCCION') {
+                                alert('Para EMITIR REAL debés escribir exactamente la frase: EMITIR PRODUCCION');
+                                return false;
+                            }
+                            return confirm('¿EMITIR REAL A PRODUCCIÓN? Esto transmite el documento a Hacienda de verdad y no se deshace fácilmente.');
+                        }
+                        if (!confirm('¿Firmar y transmitir este documento? (SIMULACIÓN — no se envía nada real a Hacienda).')) {
+                            return false;
+                        }
+                        return confirm('Confirmá una vez más: ejecutar firmar/transmitir en MODO SEGURO.');
+                    }
+                </script>
             @endcan
 
             {{-- DTE firmado localmente (solo si existe el JWS firmado) --}}
