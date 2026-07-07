@@ -37,6 +37,9 @@ class DteColaCorreosUiTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // El listado principal muestra SOLO producción (ambiente 01): los CCF de estas pruebas
+        // (badge de correo en el listado) deben nacer en producción para aparecer.
+        config(['dte.ambiente' => '01']);
 
         $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
         $this->estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Matriz', 'activo' => true]);

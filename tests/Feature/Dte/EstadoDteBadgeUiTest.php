@@ -44,6 +44,9 @@ class EstadoDteBadgeUiTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // El listado principal muestra SOLO producción (ambiente 01): estos CCF deben nacer
+        // en producción para que su badge aparezca en el listado.
+        config(['dte.ambiente' => '01']);
     }
 
     private function usuario(string $rol = 'facturacion'): User

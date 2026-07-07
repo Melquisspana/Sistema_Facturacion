@@ -38,6 +38,9 @@ class DteNotaCreditoUiTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // El listado principal muestra SOLO producción (ambiente 01): estos DTEs deben nacer
+        // en producción para aparecer en el listado verificado.
+        config(['dte.ambiente' => '01']);
         $this->seedCatalogosDte();
         $this->borradores = app(DteBorradorService::class);
     }
@@ -51,8 +54,8 @@ class DteNotaCreditoUiTest extends TestCase
     private function emisor(): array
     {
         ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
-        Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
-        Correlativo::create(['tipo_dte' => '05', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
+        Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '01', 'ultimo_numero' => 0, 'activo' => true]);
+        Correlativo::create(['tipo_dte' => '05', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '01', 'ultimo_numero' => 0, 'activo' => true]);
 
         return compact('estab', 'pv');
     }

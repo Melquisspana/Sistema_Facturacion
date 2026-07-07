@@ -90,6 +90,25 @@ class Dte extends Model
         ];
     }
 
+    /**
+     * Documentos de PRODUCCIÓN real (ambiente MH '01'). Es el filtro del listado
+     * principal: solo lo emitido en producción (hoy, desde el CCF 1078). Los borradores
+     * de producción también entran (ambiente 01), no solo los ya aceptados.
+     */
+    public function scopeProduccion(Builder $q): Builder
+    {
+        return $q->where('ambiente', AmbienteHacienda::Produccion->value);
+    }
+
+    /**
+     * Documentos de PRUEBA / piloto / simulación (ambiente MH '00'). No se muestran en
+     * el listado principal; su acceso vive escondido en el panel de Auditoría.
+     */
+    public function scopePruebas(Builder $q): Builder
+    {
+        return $q->where('ambiente', AmbienteHacienda::Pruebas->value);
+    }
+
     /** Único estado editable. */
     public function esEditable(): bool
     {

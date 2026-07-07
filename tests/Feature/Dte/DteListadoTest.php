@@ -39,6 +39,9 @@ class DteListadoTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // El listado principal muestra SOLO producción (ambiente 01): estos DTEs de prueba
+        // deben nacer en producción para aparecer en el listado que se está verificando.
+        config(['dte.ambiente' => '01']);
         $this->seedCatalogosDte();
         $this->borradores = app(DteBorradorService::class);
     }
@@ -53,7 +56,7 @@ class DteListadoTest extends TestCase
     {
         ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
         foreach (['01', '03', '05', '11'] as $t) {
-            Correlativo::create(['tipo_dte' => $t, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
+            Correlativo::create(['tipo_dte' => $t, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '01', 'ultimo_numero' => 0, 'activo' => true]);
         }
 
         return compact('estab', 'pv');

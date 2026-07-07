@@ -40,6 +40,16 @@
                     </div>
                 </form>
 
+                {{-- Acceso ESCONDIDO a los documentos de prueba/simulación (ambiente 00). No está
+                     en el listado principal de facturación; solo aquí, para administrador/contador. --}}
+                <div class="mb-6 flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
+                    <span class="text-sm text-gray-600">Documentos de <strong>prueba / simulación</strong> (ambiente 00), fuera del listado de producción.</span>
+                    <a href="{{ route('auditoria.documentos_prueba') }}"
+                       class="inline-flex items-center px-3 py-1.5 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700">
+                        Ver documentos de prueba/simulación
+                    </a>
+                </div>
+
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead>
