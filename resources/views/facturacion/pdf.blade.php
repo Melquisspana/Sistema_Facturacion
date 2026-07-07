@@ -147,6 +147,9 @@
         .dbox-t tr.key td { background: #FAFBFC; }
         .dbox-t tr.key .v { font-size: 9.2px; }
         .dbox-t .v.live { color: #235C42; }
+        /* Sello de recepción: 40 chars sin guiones; se muestra COMPLETO y se parte en
+           varias líneas (word-break) para no cortarse ni salirse de la caja. */
+        .dbox-t .v.sello { word-break: break-all; }
         .qrcell { text-align: center; padding-left: 8px; }
         .qrcell img { width: 74px; height: 74px; }
         /* Caja QR con el mismo lenguaje que la caja del DTE (cabecera gris + cuerpo). */
@@ -268,7 +271,7 @@
                         <tr class="key"><td class="k">N° interno</td><td class="v mono">{{ $dte->numero_interno ?? '—' }}</td></tr>
                         <tr class="key"><td class="k">Fecha</td><td class="v">{{ $dte->fecha_emision?->format('d/m/Y') }}@if($dte->hora_emision) {{ $dte->hora_emision }}@endif</td></tr>
                         @if ($tieneSello)
-                            <tr class="key"><td class="k">Sello rec.</td><td class="v live mono">{{ \Illuminate\Support\Str::limit($dte->sello_recepcion, 22) }}</td></tr>
+                            <tr class="key"><td class="k">Sello rec.</td><td class="v live mono sello">{{ $dte->sello_recepcion }}</td></tr>
                         @else
                             <tr class="key"><td class="k">Estado</td><td class="v">{{ $dte->estado->label() }}</td></tr>
                         @endif

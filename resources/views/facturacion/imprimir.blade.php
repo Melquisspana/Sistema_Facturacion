@@ -164,6 +164,8 @@
         .dbox-row .v{ font-size:11px; font-weight:600; color:var(--ink); text-align:right; overflow-wrap:anywhere; }
         .dbox-row.key .v{ font-size:11.5px; }
         .dbox-row.live .v{ color:var(--ok); }
+        /* Sello de recepción completo (40 chars sin guiones): se parte en varias líneas. */
+        .dbox-row .v.sello{ word-break:break-all; }
         .pend{ color:#9AA0A8; font-style:italic; font-weight:500; }
         .qr{ width:74px; flex:none; text-align:center; }
         .qr img{ width:74px; height:74px; border:1px solid var(--line); border-radius:6px; }
@@ -315,7 +317,7 @@
                 <div class="dbox-row key"><span class="k">N° interno</span><span class="v mono">{{ $dte->numero_interno ?? '—' }}</span></div>
                 <div class="dbox-row key"><span class="k">Fecha</span><span class="v">{{ $dte->fecha_emision?->format('d/m/Y') }}@if($dte->hora_emision) {{ $dte->hora_emision }}@endif</span></div>
                 @if ($tieneSello)
-                    <div class="dbox-row key live"><span class="k">Sello rec.</span><span class="v mono">{{ \Illuminate\Support\Str::limit($dte->sello_recepcion, 20) }}</span></div>
+                    <div class="dbox-row key live"><span class="k">Sello rec.</span><span class="v mono sello">{{ $dte->sello_recepcion }}</span></div>
                 @else
                     <div class="dbox-row key"><span class="k">Estado</span><span class="v">{{ $dte->estado->label() }}</span></div>
                 @endif
