@@ -120,7 +120,49 @@ class PpqGmailService
             $debug['detalle'][] = $det;
         }
 
+        // Un correo puede MENCIONAR el número buscado (asunto/cuerpo/PDF indexado) sin ser
+        // ese DTE, y un mismo DTE reenviado llega como varios correos: nos quedamos solo con
+        // los DTE cuyo control REAL termina en lo buscado y contamos cada DTE una sola vez.
+        $fichas = $this->filtrarPorNumeroYDeduplicar($fichas, $numero);
+        $debug['fichas'] = count($fichas);
+
         return ['fichas' => $fichas, 'debug' => $debug];
+    }
+
+    /**
+     * Deja solo las fichas que REALMENTE corresponden al número buscado y elimina los
+     * duplicados (reenvíos del mismo DTE):
+     *  - Filtro: el número de control real del JSON debe TERMINAR en los dígitos buscados
+     *    (descarta correos que solo mencionan el número, como un Excel de cobro o un QUEDAN).
+     *  - Dedup: por código de generación (único por DTE); si falta, por el número de control.
+     *    Así un CCF enviado/reenviado 4 veces cuenta como UNA sola ficha.
+     *
+     * @param  array<int, array<string, mixed>>  $fichas
+     * @return array<int, array<string, mixed>>
+     */
+    private function filtrarPorNumeroYDeduplicar(array $fichas, string $numero): array
+    {
+        $buscado = preg_replace('/\D/', '', $numero);
+        $salida = [];
+        $vistos = [];
+
+        foreach ($fichas as $ficha) {
+            $control = (string) ($ficha['ccf']['numeroControl'] ?? '');
+            $controlDigitos = preg_replace('/\D/', '', $control);
+
+            if ($buscado !== '' && $controlDigitos !== '' && ! str_ends_with($controlDigitos, $buscado)) {
+                continue;
+            }
+
+            $clave = ((string) ($ficha['ccf']['codigoGeneracion'] ?? '')) ?: $controlDigitos;
+            if ($clave !== '' && isset($vistos[$clave])) {
+                continue;
+            }
+            $vistos[$clave] = true;
+            $salida[] = $ficha;
+        }
+
+        return array_values($salida);
     }
 
     /**

@@ -178,16 +178,24 @@ class GmailClient
         return ['numero' => $numero, 'variantes' => $variantes, 'consultas' => $consultas];
     }
 
-    /** @return array<int, string> variantes de número a buscar (crudo, dígitos, padded 15/16) */
+    /**
+     * Variantes de número a buscar, MÁS ESPECÍFICO PRIMERO. Las variantes padded (nº de
+     * control completo, 15/16 dígitos) casan con un ÚNICO DTE, así que se prueban antes
+     * que el número corto —que Gmail tokeniza y puede chocar con el Excel de cobro u otros
+     * correos que lo mencionen (ej. "1078" que también aparece en un QUEDAN)—. El número
+     * corto tal cual queda de ÚLTIMO, solo como respaldo.
+     *
+     * @return array<int, string> variantes de número (padded 15/16, dígitos, crudo)
+     */
     public function variantesNumero(string $numero): array
     {
         $digitos = preg_replace('/\D/', '', $numero);
         $sinCeros = ltrim($digitos, '0') ?: '0';
         $set = [
-            $numero,
-            $digitos,
-            str_pad($sinCeros, 15, '0', STR_PAD_LEFT),
-            str_pad($sinCeros, 16, '0', STR_PAD_LEFT),
+            str_pad($sinCeros, 15, '0', STR_PAD_LEFT), // padded a 15 (la que casa con el control real)
+            str_pad($sinCeros, 16, '0', STR_PAD_LEFT), // padded a 16 (longitud alterna)
+            $digitos,                                   // solo dígitos, sin padding
+            $numero,                                    // crudo tal cual lo escribió el usuario
         ];
 
         return array_values(array_unique(array_filter($set, fn ($v) => $v !== '')));
