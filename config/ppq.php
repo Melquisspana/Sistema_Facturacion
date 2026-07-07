@@ -43,6 +43,10 @@ return [
         'redirect_uri' => env('GMAIL_REDIRECT_URI', ''),
         // Búsqueda de los DTE enviados (Gmail query). Se le agrega el nº buscado.
         'enviados_query' => env('PPQ_GMAIL_ENVIADOS_QUERY', 'in:sent'),
+        // Filtro de adjunto de DTE real (JSON o PDF): se añade a la búsqueda para que un
+        // número corto que también aparece en Excel de cobro/plantillas NO gane sobre el
+        // correo del DTE. Si ninguna variante lo cumple, se reintenta sin este filtro.
+        'dte_adjunto_query' => env('PPQ_GMAIL_DTE_ADJUNTO_QUERY', '(filename:json OR filename:pdf)'),
         // Label donde Calleja deja los albaranes.
         'label_albaranes' => env('PPQ_GMAIL_LABEL', 'Calleja_Albaranes'),
         // Carpeta donde se guardan los PDF/JSON descargados de los correos.

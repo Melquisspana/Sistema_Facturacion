@@ -76,13 +76,38 @@ class GmailClient
      * Igual que buscarEnviados pero informa QUÉ variante/QUÉ query devolvió el
      * resultado (para el debug de la búsqueda normal).
      *
+     * Estrategia en dos pasos para no quedarse con correos que solo MENCIONAN el
+     * número (Excel de cobro, plantillas de QUEDAN/NC) en lugar del DTE:
+     *  1. PRECISO: cada variante exige un adjunto de DTE (JSON o PDF). Así la variante
+     *     padded (nº de control completo) puede ganar aunque el número corto choque
+     *     con un Excel de Prontos Pagos que lo lleva en una celda.
+     *  2. FALLBACK: si NINGUNA variante trajo un correo con JSON/PDF, se reintenta sin
+     *     el filtro, solo para poder DIAGNOSTICAR ("correo encontrado pero sin adjunto
+     *     DTE legible") en vez de reportar que no hay nada.
+     *
      * @return array{variante: ?string, query: ?string, resultados: array<int, array<string, mixed>>, intentos: array<int, array{query: string, total: int}>}
      */
     public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
     {
         $base = trim((string) config('ppq.gmail.enviados_query', 'in:sent'));
+        $filtroDte = trim((string) config('ppq.gmail.dte_adjunto_query', '(filename:json OR filename:pdf)'));
+        $variantes = $this->variantesNumero($numero);
         $intentos = [];
-        foreach ($this->variantesNumero($numero) as $variante) {
+
+        // Paso 1: exigir adjunto de DTE (descarta Excel/plantillas de cobro).
+        if ($filtroDte !== '') {
+            foreach ($variantes as $variante) {
+                $q = trim($base.' '.$variante.' '.$filtroDte);
+                $res = $this->listar($q, $limite);
+                $intentos[] = ['query' => $q, 'total' => count($res)];
+                if ($res !== []) {
+                    return ['variante' => $variante, 'query' => $q, 'resultados' => $res, 'intentos' => $intentos];
+                }
+            }
+        }
+
+        // Paso 2 (fallback): sin filtro, para diagnosticar correos sin adjunto DTE.
+        foreach ($variantes as $variante) {
             $q = trim($base.' '.$variante);
             $res = $this->listar($q, $limite);
             $intentos[] = ['query' => $q, 'total' => count($res)];
@@ -231,7 +256,7 @@ class GmailClient
     // ---------------------------------------------------------------- internos
 
     /** @return array<int, array{id: string, snippet: string}> */
-    private function listar(string $q, int $limite): array
+    protected function listar(string $q, int $limite): array
     {
         $gmail = new Gmail($this->clienteAutenticado());
         $lista = $gmail->users_messages->listUsersMessages('me', ['q' => $q, 'maxResults' => $limite]);

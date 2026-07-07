@@ -391,6 +391,113 @@ class PpqModuloTest extends TestCase
         $this->assertContains('0000000000001011', $variantes);    // padded a 16
     }
 
+    /**
+     * Doble de GmailClient con un "buzón" simulado. `listar()` imita a Gmail:
+     *  - solo devuelve un correo si el query menciona un número que el correo contiene
+     *    COMO TOKEN COMPLETO (Gmail no matchea "1078" dentro de "000000000001078"),
+     *  - si el query trae el filtro `filename:json`, excluye correos sin adjunto DTE.
+     *
+     * @param  array<int, array{id: string, numeros: array<int, string>, dte: bool}>  $buzon
+     */
+    private function gmailFake(array $buzon): \App\Services\Ppq\GmailClient
+    {
+        return new class($buzon) extends \App\Services\Ppq\GmailClient
+        {
+            /** @param array<int, array{id: string, numeros: array<int, string>, dte: bool}> $buzon */
+            public function __construct(private array $buzon) {}
+
+            protected function listar(string $q, int $limite): array
+            {
+                $exigeDte = str_contains($q, 'filename:json') || str_contains($q, 'filename:pdf');
+                $salida = [];
+                foreach ($this->buzon as $correo) {
+                    $mencionado = false;
+                    foreach ($correo['numeros'] as $n) {
+                        // Token completo: sin otro dígito pegado antes/después (como Gmail).
+                        if (preg_match('/(?<!\d)'.preg_quote($n, '/').'(?!\d)/', $q)) {
+                            $mencionado = true;
+                            break;
+                        }
+                    }
+                    if (! $mencionado || ($exigeDte && ! $correo['dte'])) {
+                        continue;
+                    }
+                    $salida[] = ['id' => $correo['id'], 'snippet' => '', 'asunto' => $correo['id'], 'fecha' => ''];
+                }
+
+                return $salida;
+            }
+        };
+    }
+
+    public function test_busqueda_prefiere_el_dte_padded_sobre_excel_de_cobro(): void
+    {
+        // "1078" aparece en 4 Excel de cobro (sin JSON) y el DTE real solo bajo su nº de
+        // control completo. El número corto NO debe ganar: se elige el DTE por la padded.
+        $client = $this->gmailFake([
+            ['id' => 'excel-1', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'excel-2', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'excel-3', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'plantilla-nc', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'dte-1078', 'numeros' => ['000000000001078'], 'dte' => true],
+        ]);
+
+        $r = $client->buscarEnviadosDetallado('1078');
+
+        $this->assertSame('000000000001078', $r['variante']);          // ganó la padded, no "1078"
+        $this->assertStringContainsString('filename:json', $r['query']); // vía el filtro de adjunto DTE
+        $ids = array_column($r['resultados'], 'id');
+        $this->assertSame(['dte-1078'], $ids);                          // solo el DTE, ningún Excel
+    }
+
+    public function test_busqueda_1077_y_1078_resuelven_el_dte_real(): void
+    {
+        // 1077: choca con 1 Excel de QUEDAN; el DTE está bajo el control padded.
+        $c1077 = $this->gmailFake([
+            ['id' => 'quedan-1077', 'numeros' => ['1077'], 'dte' => false],
+            ['id' => 'dte-1077', 'numeros' => ['000000000001077'], 'dte' => true],
+        ]);
+        $this->assertSame(['dte-1077'], array_column($c1077->buscarEnviadosDetallado('1077')['resultados'], 'id'));
+
+        // 1078: choca con 4 Excel; el DTE está bajo el control padded.
+        $c1078 = $this->gmailFake([
+            ['id' => 'excel-a', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'excel-b', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'excel-c', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'excel-d', 'numeros' => ['1078'], 'dte' => false],
+            ['id' => 'dte-1078', 'numeros' => ['000000000001078'], 'dte' => true],
+        ]);
+        $this->assertSame(['dte-1078'], array_column($c1078->buscarEnviadosDetallado('1078')['resultados'], 'id'));
+    }
+
+    public function test_busqueda_normal_no_se_rompe_cuando_no_hay_excel_que_choque(): void
+    {
+        // Caso sano de siempre: el correo del DTE trae JSON y matchea por su variante.
+        // No debe cambiar el comportamiento (sigue encontrando el DTE).
+        $client = $this->gmailFake([
+            ['id' => 'dte-0986', 'numeros' => ['0986', '000000000000986'], 'dte' => true],
+        ]);
+
+        $r = $client->buscarEnviadosDetallado('0986');
+
+        $this->assertSame(['dte-0986'], array_column($r['resultados'], 'id'));
+        $this->assertStringContainsString('filename:json', $r['query']); // encontrado con el filtro
+    }
+
+    public function test_busqueda_sin_adjunto_dte_cae_al_fallback_para_diagnostico(): void
+    {
+        // Solo hay un Excel (sin JSON/PDF): el filtro no encuentra nada, pero el fallback
+        // devuelve el correo para poder mostrar "encontrado pero sin adjunto DTE legible".
+        $client = $this->gmailFake([
+            ['id' => 'solo-excel', 'numeros' => ['9999'], 'dte' => false],
+        ]);
+
+        $r = $client->buscarEnviadosDetallado('9999');
+
+        $this->assertSame(['solo-excel'], array_column($r['resultados'], 'id')); // lo trae el fallback
+        $this->assertStringNotContainsString('filename:json', $r['query']);       // sin filtro (paso 2)
+    }
+
     public function test_no_admite_cambios_si_el_lote_no_es_editable(): void
     {
         $admin = $this->usuario('administrador');
