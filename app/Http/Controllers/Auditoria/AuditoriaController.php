@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auditoria;
 
 use App\Http\Controllers\Controller;
+use App\Models\Dte;
+use App\Models\DteEnvio;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -36,5 +38,44 @@ class AuditoriaController extends Controller
             'logNames' => Activity::query()->select('log_name')->distinct()->pluck('log_name')->filter()->values(),
             'filtros' => compact('causerId', 'logName', 'desde', 'hasta'),
         ]);
+    }
+
+    /**
+     * Listado ESCONDIDO de documentos de PRUEBA / piloto / simulación (ambiente 00).
+     * No aparece en el listado principal de facturación (que solo muestra producción):
+     * su acceso vive aquí, en Auditoría, y solo para administrador/contador. Solo lectura.
+     */
+    public function documentosPrueba(Request $request): View
+    {
+        abort_unless($request->user()->hasAnyRole(['administrador', 'contador']), 403);
+
+        $filtros = [
+            'q' => trim((string) $request->input('q', '')),
+            'tipo_dte' => $request->input('tipo_dte'),
+            'estado' => $request->input('estado'),
+        ];
+
+        $dtes = Dte::query()
+            ->select('dtes.*')
+            ->pruebas() // ambiente 00 (pruebas/piloto/simulación) — nunca producción
+            ->addSelect(['ultimo_envio_estado' => DteEnvio::select('estado')
+                ->whereColumn('dte_id', 'dtes.id')
+                ->latest('id')
+                ->limit(1)])
+            ->with(['cliente', 'clienteSucursal', 'dteRelacionado.cliente', 'dteRelacionado.clienteSucursal'])
+            ->when($filtros['tipo_dte'], fn ($qb, $v) => $qb->where('tipo_dte', $v))
+            ->when($filtros['estado'], fn ($qb, $v) => $qb->where('estado', $v))
+            ->when($filtros['q'] !== '', function ($qb) use ($filtros) {
+                $t = $filtros['q'];
+                $qb->where(fn ($w) => $w->where('numero_interno', 'like', "%{$t}%")
+                    ->orWhere('numero_control', 'like', "%{$t}%")
+                    ->orWhere('numero_orden_compra', 'like', "%{$t}%"));
+            })
+            ->orderByDesc('fecha_emision')
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString();
+
+        return view('auditoria.documentos-prueba', compact('dtes', 'filtros'));
     }
 }

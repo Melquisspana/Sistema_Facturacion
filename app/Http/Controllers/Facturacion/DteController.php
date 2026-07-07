@@ -81,6 +81,10 @@ class DteController extends Controller
 
         $dtes = Dte::query()
             ->select('dtes.*')
+            // Listado principal = SOLO documentos reales de PRODUCCIÓN (ambiente 01), desde el
+            // CCF 1078 en adelante. Las pruebas/piloto/simulación (ambiente 00) quedan fuera; su
+            // acceso vive escondido en el panel de Auditoría. Sin toggle aquí a propósito.
+            ->produccion()
             // Estado del ÚLTIMO envío de correo por documento (badge del listado), como
             // subquery para no caer en N+1. Solo lectura.
             ->addSelect(['ultimo_envio_estado' => DteEnvio::select('estado')

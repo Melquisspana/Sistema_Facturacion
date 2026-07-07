@@ -54,6 +54,9 @@ Route::middleware('auth')->group(function () {
 
     // Auditoría general — solo administrador y contador (gate en el controlador).
     Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
+    // Listado ESCONDIDO de documentos de prueba/simulación (ambiente 00). No aparece en el
+    // listado principal de facturación; se accede solo desde el panel de Auditoría (admin/contador).
+    Route::get('auditoria/documentos-prueba', [AuditoriaController::class, 'documentosPrueba'])->name('auditoria.documentos_prueba');
 
     /*
     | Facturación — borradores DTE. Por ahora solo CCF (tipo 03).
