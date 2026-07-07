@@ -385,10 +385,12 @@ class PpqModuloTest extends TestCase
     {
         $variantes = app(\App\Services\Ppq\GmailClient::class)->variantesNumero('1011');
 
-        // El usuario escribe solo "1011"; el sistema genera las variantes que Gmail necesita.
-        $this->assertSame('1011', $variantes[0]);                 // se prueba primero el crudo
-        $this->assertContains('000000000001011', $variantes);     // padded a 15 (la que matchea)
+        // El usuario escribe solo "1011"; el sistema genera las variantes que Gmail necesita
+        // y prueba primero la MÁS específica (padded al control completo), dejando el número
+        // corto de último para que no gane sobre correos que solo mencionan "1011".
+        $this->assertSame('000000000001011', $variantes[0]);      // más específica primero (padded 15)
         $this->assertContains('0000000000001011', $variantes);    // padded a 16
+        $this->assertSame('1011', end($variantes));               // el número corto queda de último
     }
 
     /**
@@ -496,6 +498,82 @@ class PpqModuloTest extends TestCase
 
         $this->assertSame(['solo-excel'], array_column($r['resultados'], 'id')); // lo trae el fallback
         $this->assertStringNotContainsString('filename:json', $r['query']);       // sin filtro (paso 2)
+    }
+
+    /**
+     * Doble de GmailClient para el flujo COMPLETO de resolverCcf: la búsqueda devuelve
+     * varios correos (todos con JSON adjunto, así el filtro filename:json NO los descarta)
+     * y `adjuntos()` entrega el JSON del DTE que le corresponde a cada correo. Deja que el
+     * parser/decoder reales trabajen sobre ese JSON.
+     *
+     * @param  array<int, array{id: string, json: array<string, mixed>}>  $correos
+     */
+    private function gmailFakeConAdjuntos(array $correos): \App\Services\Ppq\GmailClient
+    {
+        return new class($correos) extends \App\Services\Ppq\GmailClient
+        {
+            /** @param array<int, array{id: string, json: array<string, mixed>}> $correos */
+            public function __construct(private array $correos) {}
+
+            public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
+            {
+                $resultados = array_map(
+                    fn ($c) => ['id' => $c['id'], 'snippet' => '', 'asunto' => $c['id'], 'fecha' => ''],
+                    $this->correos,
+                );
+
+                return ['variante' => $numero, 'query' => 'in:sent '.$numero, 'resultados' => $resultados, 'intentos' => []];
+            }
+
+            public function adjuntos(string $messageId): array
+            {
+                foreach ($this->correos as $c) {
+                    if ($c['id'] === $messageId) {
+                        return [['filename' => 'dte.json', 'mime' => 'application/json', 'data' => json_encode($c['json'])]];
+                    }
+                }
+
+                return [];
+            }
+
+            public function buscarAlbaranes(string $filtroTexto = '', int $limite = 20): array
+            {
+                return [];
+            }
+        };
+    }
+
+    public function test_resolver_ccf_filtra_menciones_y_deduplica_reenvios(): void
+    {
+        // Buscar "1078" trae 4 correos con JSON: el CCF real, un REENVÍO del mismo CCF
+        // (mismo código de generación), y dos DTE ajenos que solo MENCIONAN 1078 (su
+        // control real es 1077 y 9999). Debe quedar UNA sola ficha: el CCF 1078.
+        $json = fn (string $control, string $codigo) => [
+            'identificacion' => ['numeroControl' => $control, 'codigoGeneracion' => $codigo, 'tipoDte' => '03', 'fecEmi' => '2026-07-07'],
+            'resumen' => ['totalPagar' => 168.88],
+            'receptor' => ['nombreComercial' => 'Selectos Test'],
+        ];
+        $gmail = $this->gmailFakeConAdjuntos([
+            ['id' => 'dte-1078',        'json' => $json('DTE-03-M001P001-000000000001078', 'GEN-A')],
+            ['id' => 'dte-1078-resend', 'json' => $json('DTE-03-M001P001-000000000001078', 'GEN-A')], // reenvío
+            ['id' => 'dte-1077',        'json' => $json('DTE-03-M001P001-000000000001077', 'GEN-C')], // ajeno
+            ['id' => 'dte-9999',        'json' => $json('DTE-03-M001P001-000000000009999', 'GEN-D')], // ajeno
+        ]);
+
+        $service = new \App\Services\Ppq\PpqGmailService(
+            $gmail,
+            new \App\Services\Ppq\DteCorreoParser(),
+            new \App\Services\Ppq\JsonAdjuntoDecoder(),
+            new \App\Services\Ppq\AlbaranParser(),
+        );
+
+        $res = $service->resolverCcf('1078');
+
+        $this->assertCount(1, $res['fichas']);
+        $this->assertSame('DTE-03-M001P001-000000000001078', $res['fichas'][0]['ccf']['numeroControl']);
+        $this->assertSame('GEN-A', $res['fichas'][0]['ccf']['codigoGeneracion']);
+        $this->assertSame(1, $res['debug']['fichas']);      // el debug refleja el conteo ya filtrado
+        $this->assertSame(4, $res['debug']['correos']);     // pero se inspeccionaron los 4 correos
     }
 
     public function test_no_admite_cambios_si_el_lote_no_es_editable(): void
