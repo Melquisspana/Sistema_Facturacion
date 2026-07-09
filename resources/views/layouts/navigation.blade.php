@@ -79,6 +79,12 @@
                             <x-dropdown-link :href="route('ppq.index')">Buscar CCF / NC</x-dropdown-link>
                             <x-dropdown-link :href="route('ppq.lotes.index')">Historial PPQ</x-dropdown-link>
                         </x-nav-dropdown>
+                        <x-nav-dropdown label="Exportaciones" :active="request()->routeIs('exportaciones.*')">
+                            <x-dropdown-link :href="route('exportaciones.index')">Listas de empaque</x-dropdown-link>
+                            <x-dropdown-link :href="route('exportaciones.create')">Nueva lista de empaque</x-dropdown-link>
+                            <x-dropdown-link :href="route('exportaciones.clientes.index')">Clientes y precios</x-dropdown-link>
+                            <x-dropdown-link :href="route('exportaciones.productos.index')">Catálogo de productos</x-dropdown-link>
+                        </x-nav-dropdown>
                     @endhasanyrole
                     @role('administrador')
                         <x-nav-link :href="route('configuracion.empresa.edit')" :active="request()->routeIs('configuracion.*')">
@@ -179,6 +185,11 @@
                 <div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-gray-400">Prontos Pagos</div>
                 <x-responsive-nav-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index')">Buscar CCF / NC</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-responsive-nav-link>
+
+                <div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-gray-400">Exportaciones</div>
+                <x-responsive-nav-link :href="route('exportaciones.index')" :active="request()->routeIs('exportaciones.index')">Listas de empaque</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('exportaciones.clientes.index')" :active="request()->routeIs('exportaciones.clientes.*')">Clientes y precios</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('exportaciones.productos.index')" :active="request()->routeIs('exportaciones.productos.*')">Catálogo de productos</x-responsive-nav-link>
             @endhasanyrole
         </div>
 

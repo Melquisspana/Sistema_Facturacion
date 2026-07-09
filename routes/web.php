@@ -160,6 +160,52 @@ Route::middleware('auth')->group(function () {
             Route::get('gmail/debug', [\App\Http\Controllers\Ppq\PpqGmailController::class, 'debug'])->name('gmail.debug');
         });
     });
+
+    /*
+    | Exportaciones / Lista de Empaque — módulo administrativo paralelo: catálogo
+    | de productos de exportación y generación del Excel desde la plantilla.
+    | NO emite DTE, no toca correlativos, firma, transmisión ni correo.
+    */
+    Route::prefix('exportaciones')->name('exportaciones.')->middleware('role:administrador|contador|facturacion')->group(function () {
+        // Catálogo de productos de exportación (antes de {exportacion} para no chocar).
+        Route::get('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'index'])->name('productos.index');
+        Route::get('productos/crear', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'create'])->name('productos.create');
+        Route::post('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'store'])->name('productos.store');
+        // Importación del catálogo inicial desde el Excel plantilla (hoja "Lista").
+        Route::get('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importarForm'])->name('productos.importar');
+        Route::post('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importar'])->name('productos.importar.run');
+        Route::get('productos/{producto}/editar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'edit'])->name('productos.edit');
+        Route::put('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'update'])->name('productos.update');
+        Route::patch('productos/{producto}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'toggleActivo'])->name('productos.toggle-activo');
+        Route::delete('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'destroy'])->name('productos.destroy');
+
+        // Clientes de exportación y su lista de precios/productos permitidos.
+        Route::get('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'index'])->name('clientes.index');
+        Route::get('clientes/crear', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'create'])->name('clientes.create');
+        Route::post('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'store'])->name('clientes.store');
+        Route::get('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'show'])->name('clientes.show');
+        Route::get('clientes/{cliente}/editar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'edit'])->name('clientes.edit');
+        Route::put('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'update'])->name('clientes.update');
+        Route::patch('clientes/{cliente}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'toggleActivo'])->name('clientes.toggle-activo');
+        Route::delete('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroy'])->name('clientes.destroy');
+        // Lista de precios del cliente (asignaciones producto+precio, únicas por cliente).
+        Route::post('clientes/{cliente}/productos', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'storeProducto'])->name('clientes.productos.store');
+        Route::post('clientes/{cliente}/productos/asignar-catalogo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'asignarCatalogo'])->name('clientes.productos.asignar-catalogo');
+        Route::patch('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'updateProducto'])->name('clientes.productos.update');
+        Route::delete('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroyProducto'])->name('clientes.productos.destroy');
+
+        // Exportaciones / listas de empaque.
+        Route::get('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'index'])->name('index');
+        Route::get('crear', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'store'])->name('store');
+        Route::get('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'show'])->name('show');
+        Route::get('{exportacion}/editar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'edit'])->name('edit');
+        Route::put('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'update'])->name('update');
+        // Excel de lista de empaque desde la plantilla oficial (phpspreadsheet, sin IA).
+        Route::get('{exportacion}/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excel'])->name('excel');
+        Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->name('duplicar');
+        Route::delete('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'destroy'])->name('destroy');
+    });
 });
 
 // Importación/exportación administrativa (CSV) — solo administrador.
