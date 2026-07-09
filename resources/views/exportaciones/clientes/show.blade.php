@@ -39,7 +39,15 @@
             {{-- Lista de precios del cliente --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
-                    <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Productos y precios del cliente</h3>
+                    <div>
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Productos, presentaciones y precios del cliente</h3>
+                        <label class="mt-1 inline-flex items-center gap-2 text-xs text-gray-500">
+                            <input type="checkbox" class="rounded border-gray-300"
+                                   onchange="window.location = '{{ route('exportaciones.clientes.show', $cliente) }}' + (this.checked ? '?habilitados=1' : '')"
+                                   @checked($soloHabilitados)>
+                            Ver solo lo habilitado para este cliente
+                        </label>
+                    </div>
                     <div class="flex flex-wrap items-center gap-2">
                         @if ($otrosClientes->isNotEmpty())
                             <button type="button" onclick="document.getElementById('copiar-precios').classList.toggle('hidden')"
@@ -129,9 +137,11 @@
                     <table class="min-w-full text-sm">
                         <thead>
                             <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
-                                <th class="py-3 px-4">Producto</th>
-                                <th class="py-3 px-4">Empaque</th>
+                                <th class="py-3 px-4">Producto (es / en)</th>
+                                <th class="py-3 px-4">Unidad / empaque</th>
                                 <th class="py-3 px-4 text-right">Unid./caja</th>
+                                <th class="py-3 px-4 text-right">g/unid.</th>
+                                <th class="py-3 px-4 text-right">oz/unid.</th>
                                 <th class="py-3 px-4 text-right">Precio base</th>
                                 <th class="py-3 px-4 text-right">Precio cliente</th>
                                 <th class="py-3 px-4 text-right">Precio unidad</th>
@@ -148,6 +158,8 @@
                                     </td>
                                     <td class="py-3 px-4 text-gray-600">{{ $asignacion->producto?->unidad ?? '—' }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ $asignacion->producto?->unidades_por_caja }}</td>
+                                    <td class="py-3 px-4 text-right text-gray-600">{{ $asignacion->producto?->gramos_por_unidad !== null ? number_format((float) $asignacion->producto->gramos_por_unidad, 2) : '—' }}</td>
+                                    <td class="py-3 px-4 text-right text-gray-600">{{ $asignacion->producto?->onzas_por_unidad !== null ? number_format((float) $asignacion->producto->onzas_por_unidad, 2) : '—' }}</td>
                                     <td class="py-3 px-4 text-right text-gray-400">
                                         {{ $asignacion->producto?->precio_caja !== null ? '$'.number_format((float) $asignacion->producto->precio_caja, 2) : '—' }}
                                     </td>
@@ -183,7 +195,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="8" class="py-10 text-center text-gray-400">Este cliente no tiene productos asignados. Asignale productos con su precio, usá "Asignar todo el catálogo" o copiá los precios de otro cliente.</td></tr>
+                                <tr><td colspan="10" class="py-10 text-center text-gray-400">{{ $soloHabilitados ? 'Este cliente no tiene productos habilitados.' : 'Este cliente no tiene productos asignados. Asignale productos con su precio, usá "Asignar todo el catálogo" o copiá los precios de otro cliente.' }}</td></tr>
                             @endforelse
                         </tbody>
                     </table>

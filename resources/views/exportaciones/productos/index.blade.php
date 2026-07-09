@@ -42,6 +42,7 @@
                                 <th class="py-3 px-4 text-right">Precio unidad</th>
                                 <th class="py-3 px-4 text-right">Neto kg</th>
                                 <th class="py-3 px-4 text-right">Bruto kg</th>
+                                <th class="py-3 px-4">Clientes</th>
                                 <th class="py-3 px-4 text-center">Activo</th>
                                 <th class="py-3 px-4 text-right">Acciones</th>
                             </tr>
@@ -60,6 +61,17 @@
                                     <td class="py-3 px-4 text-right text-gray-600" title="Precio base ÷ unidades por caja (calculado)">{{ $producto->precioPorUnidad() !== null ? '$'.number_format($producto->precioPorUnidad(), 2) : '—' }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format((float) $producto->peso_neto_caja_kg, 2) }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format((float) $producto->peso_bruto_caja_kg, 2) }}</td>
+                                    <td class="py-3 px-4">
+                                        @forelse ($producto->asignaciones as $asignacion)
+                                            <a href="{{ route('exportaciones.clientes.show', $asignacion->exportacion_cliente_id) }}"
+                                               class="inline-block m-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700 hover:bg-indigo-100"
+                                               title="Precio de este cliente: ${{ number_format((float) $asignacion->precio_caja, 2) }}">
+                                                {{ \Illuminate\Support\Str::limit($asignacion->cliente?->nombre, 22) }}
+                                            </a>
+                                        @empty
+                                            <span class="text-xs text-gray-400">sin asignar</span>
+                                        @endforelse
+                                    </td>
                                     <td class="py-3 px-4 text-center">
                                         <form method="POST" action="{{ route('exportaciones.productos.toggle-activo', $producto) }}">
                                             @csrf @method('PATCH')
@@ -82,7 +94,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="10" class="py-10 text-center text-gray-400">
+                                    <td colspan="11" class="py-10 text-center text-gray-400">
                                         No hay productos de exportación.
                                         <a href="{{ route('exportaciones.productos.importar') }}" class="text-indigo-600 hover:underline">Importá el catálogo desde la plantilla</a>
                                         o <a href="{{ route('exportaciones.productos.create') }}" class="text-indigo-600 hover:underline">creá el primero</a>.

@@ -46,10 +46,15 @@ class ExportacionClienteController extends Controller
             ->with('status', 'Cliente de exportación creado. Ahora asignale productos y precios.');
     }
 
-    /** Detalle del cliente: gestión de su lista de productos/precios. */
-    public function show(ExportacionCliente $cliente): View
+    /** Detalle del cliente: gestión de su lista de productos/precios/presentaciones. */
+    public function show(Request $request, ExportacionCliente $cliente): View
     {
-        $cliente->load(['productos.producto:id,nombre_es,nombre_en,unidad,unidades_por_caja,precio_caja,activo']);
+        // Filtro "solo habilitados": ver únicamente lo que el cliente tiene activo.
+        $soloHabilitados = $request->boolean('habilitados');
+        $cliente->load([
+            'productos' => fn ($q) => $q->when($soloHabilitados, fn ($w) => $w->where('activo', true)),
+            'productos.producto:id,nombre_es,nombre_en,unidad,unidades_por_caja,gramos_por_unidad,onzas_por_unidad,precio_caja,activo',
+        ]);
 
         $asignados = $cliente->productos->pluck('exportacion_producto_id');
         $disponibles = ExportacionProducto::where('activo', true)
@@ -68,6 +73,7 @@ class ExportacionClienteController extends Controller
             'cliente' => $cliente,
             'disponibles' => $disponibles,
             'otrosClientes' => $otrosClientes,
+            'soloHabilitados' => $soloHabilitados,
         ]);
     }
 
