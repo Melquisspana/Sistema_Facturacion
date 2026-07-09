@@ -240,7 +240,7 @@ class ExportacionController extends Controller
     {
         return ExportacionProducto::where('activo', true)
             ->orderBy('nombre_es')
-            ->get(['id', 'nombre_es', 'nombre_en', 'unidades_por_caja', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
+            ->get(['id', 'nombre_es', 'nombre_en', 'unidad', 'unidades_por_caja', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
     }
 
     private function clientesParaFormulario(): \Illuminate\Support\Collection

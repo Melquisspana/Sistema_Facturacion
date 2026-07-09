@@ -14,6 +14,8 @@
     $productosJs = $productos->map(fn ($p) => [
         'id' => (string) $p->id,
         'nombre' => $p->nombre_es,
+        'nombre_en' => (string) $p->nombre_en,
+        'unidad' => (string) $p->unidad,
         'upc' => (int) $p->unidades_por_caja,
         'precio_base' => $p->precio_caja !== null ? (float) $p->precio_caja : null,
         'neto' => (float) $p->peso_neto_caja_kg,
@@ -37,11 +39,17 @@
                 // Datos de solo lectura para la vista previa (snapshot para existentes;
                 // para filas nuevas los resuelve Alpine según el cliente elegido).
                 'nombre' => $item?->nombre_es ?? '',
+                'nombre_en' => $item?->nombre_en ?? '',
+                'unidad' => $item?->unidad ?? '',
                 'upc' => $item?->unidades_por_caja ?? 0,
                 'precio' => $item !== null ? (float) $item->precio_caja : 0,
                 'neto' => $item !== null ? (float) $item->peso_neto_caja_kg : 0,
                 'bruto' => $item !== null ? (float) $item->peso_bruto_caja_kg : 0,
                 'fuente' => $item !== null ? 'snapshot' : '',
+                // Estado transitorio del buscador (combobox) de la fila.
+                'busqueda' => '',
+                'abierto' => false,
+                'resaltado' => 0,
             ];
         })
         ->values();
@@ -179,17 +187,45 @@
                                     </div>
                                 </template>
                                 <template x-if="!fila.id">
-                                    <div>
-                                        <select :name="`items[${idx}][exportacion_producto_id]`" x-model="fila.exportacion_producto_id"
-                                                @change="aplicarProducto(fila)" required
-                                                x-init="$nextTick(() => $el.value = fila.exportacion_producto_id)"
-                                                class="w-full rounded-md border-gray-300 text-sm">
-                                            <option value="">— elegí un producto —</option>
-                                            <template x-for="p in disponibles()" :key="p.id">
-                                                <option :value="p.id" x-text="etiquetaProducto(p)"></option>
+                                    {{-- Buscador tipo combobox: filtra por nombre es/en, unidades, empaque y precios. --}}
+                                    <div class="relative" @click.outside="fila.abierto = false">
+                                        <input type="hidden" :name="`items[${idx}][exportacion_producto_id]`" :value="fila.exportacion_producto_id">
+                                        <input type="text" autocomplete="off" spellcheck="false"
+                                               :value="fila.abierto ? fila.busqueda : (fila.nombre || '')"
+                                               @input="fila.busqueda = $event.target.value; fila.abierto = true; fila.resaltado = 0"
+                                               @focus="fila.busqueda = ''; fila.abierto = true; fila.resaltado = 0"
+                                               @keydown.down.prevent="fila.abierto = true; fila.resaltado = Math.min(fila.resaltado + 1, filtrados(fila).length - 1)"
+                                               @keydown.up.prevent="fila.resaltado = Math.max(fila.resaltado - 1, 0)"
+                                               @keydown.enter.prevent="elegirResaltado(fila)"
+                                               @keydown.escape="fila.abierto = false"
+                                               placeholder="Escribí para buscar producto…"
+                                               class="w-full rounded-md border-gray-300 text-sm">
+
+                                        {{-- Resultados --}}
+                                        <div x-show="fila.abierto" x-cloak
+                                             class="absolute left-0 z-20 mt-1 w-full min-w-[26rem] max-h-80 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                                            <template x-for="(p, i) in filtrados(fila)" :key="p.id">
+                                                <button type="button" @click="seleccionar(fila, p)" @mouseenter="fila.resaltado = i"
+                                                        :class="i === fila.resaltado ? 'bg-indigo-50' : ''"
+                                                        class="block w-full border-b border-gray-50 px-3 py-2 text-left text-sm">
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-medium text-gray-800" x-text="p.nombre"></span>
+                                                        <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700" x-show="p.fuente === 'base'">precio base</span>
+                                                    </div>
+                                                    <div class="text-xs text-gray-400" x-show="p.nombre_en" x-text="p.nombre_en"></div>
+                                                    <div class="text-xs text-gray-500" x-text="`${p.upc} unidades · ${p.unidad || 'sin empaque'}`"></div>
+                                                    <div class="text-xs text-gray-600" x-text="`${dinero(p.precio)} caja · ${p.upc >= 1 ? dinero(p.precio / p.upc) : '—'} unidad`"></div>
+                                                </button>
                                             </template>
-                                        </select>
-                                        <p class="mt-0.5 text-xs text-amber-600" x-show="fila.exportacion_producto_id && fila.fuente === 'base'" x-cloak>
+                                            <div x-show="filtrados(fila).length === 0" class="px-3 py-3 text-center text-xs text-gray-400">
+                                                Sin resultados. Probá con otro texto, o activá "Mostrar todo el catálogo".
+                                            </div>
+                                        </div>
+
+                                        {{-- Producto elegido: detalle legible bajo el buscador. --}}
+                                        <p class="mt-0.5 text-xs text-gray-500" x-show="fila.exportacion_producto_id && !fila.abierto" x-cloak
+                                           x-text="`${fila.upc} unidades · ${fila.unidad || 'sin empaque'} · ${dinero(fila.precio)} caja · ${fila.upc >= 1 ? dinero(fila.precio / fila.upc) : '—'} unidad`"></p>
+                                        <p class="mt-0.5 text-xs text-amber-600" x-show="fila.exportacion_producto_id && !fila.abierto && fila.fuente === 'base'" x-cloak>
                                             Sin precio propio del cliente: usa el precio base del catálogo.
                                         </p>
                                     </div>
@@ -282,7 +318,9 @@
                         this.aplicarProducto(f);
                     } else {
                         f.exportacion_producto_id = '';
-                        f.nombre = ''; f.upc = 0; f.precio = 0; f.neto = 0; f.bruto = 0; f.fuente = '';
+                        f.nombre = ''; f.nombre_en = ''; f.unidad = ''; f.upc = 0;
+                        f.precio = 0; f.neto = 0; f.bruto = 0; f.fuente = '';
+                        f.busqueda = ''; f.abierto = false; f.resaltado = 0;
                     }
                 });
             },
@@ -309,7 +347,8 @@
                     id: null,
                     exportacion_producto_id: '',
                     cantidad_cajas: 1,
-                    nombre: '', upc: 0, precio: 0, neto: 0, bruto: 0, fuente: '',
+                    nombre: '', nombre_en: '', unidad: '', upc: 0, precio: 0, neto: 0, bruto: 0, fuente: '',
+                    busqueda: '', abierto: false, resaltado: 0,
                 });
             },
             quitar(idx) {
@@ -324,6 +363,8 @@
                     const c = this.clienteActual();
                     const precioCliente = c ? c.precios[p.id] : undefined;
                     fila.nombre = p.nombre;
+                    fila.nombre_en = p.nombre_en || '';
+                    fila.unidad = p.unidad || '';
                     fila.upc = p.upc;
                     fila.neto = p.neto;
                     fila.bruto = p.bruto;
@@ -331,12 +372,37 @@
                     fila.fuente = precioCliente !== undefined ? 'cliente' : 'base';
                 }
             },
-            // Etiqueta del selector: nombre + precio caja + precio por unidad calculado.
-            etiquetaProducto(p) {
-                let etiqueta = p.nombre + ' — ' + this.dinero(p.precio) + ' caja';
-                if (p.upc >= 1) etiqueta += ' · ' + this.dinero(p.precio / p.upc) + '/unid.';
-                if (p.fuente === 'base') etiqueta += ' (precio base)';
-                return etiqueta;
+            // --- Buscador (combobox) por fila ---
+            normalizar(s) {
+                // Sin acentos ni mayúsculas: "marañón" encuentra "maranon" y viceversa.
+                return String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            },
+            // Filtra por nombre es/en, unidades por caja, empaque y precios (caja y unidad).
+            // Cada palabra escrita debe aparecer en algún campo. Máximo 40 resultados.
+            filtrados(fila) {
+                const lista = this.disponibles();
+                const q = this.normalizar(fila.busqueda).trim();
+                if (q === '') return lista.slice(0, 40);
+                const tokens = q.split(/\s+/);
+                return lista.filter(p => {
+                    const pajar = this.normalizar(
+                        `${p.nombre} ${p.nombre_en} ${p.unidad} ${p.upc} `
+                        + `${(Number(p.precio) || 0).toFixed(2)} `
+                        + `${p.upc >= 1 ? (p.precio / p.upc).toFixed(2) : ''}`
+                    );
+                    return tokens.every(t => pajar.includes(t));
+                }).slice(0, 40);
+            },
+            seleccionar(fila, p) {
+                fila.exportacion_producto_id = p.id;
+                this.aplicarProducto(fila);
+                fila.abierto = false;
+                fila.busqueda = '';
+            },
+            elegirResaltado(fila) {
+                if (!fila.abierto) return;
+                const lista = this.filtrados(fila);
+                if (lista.length > 0) this.seleccionar(fila, lista[Math.min(fila.resaltado, lista.length - 1)]);
             },
             get totalCajas() { return this.filas.reduce((s, f) => s + (Number(f.cantidad_cajas) || 0), 0); },
             get valorTotal() { return this.filas.reduce((s, f) => s + f.precio * (Number(f.cantidad_cajas) || 0), 0); },
