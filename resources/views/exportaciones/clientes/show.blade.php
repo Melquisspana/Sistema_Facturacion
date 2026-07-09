@@ -40,21 +40,65 @@
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
                     <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Productos y precios del cliente</h3>
-                    @if ($disponibles->isNotEmpty())
-                        <form method="POST" action="{{ route('exportaciones.clientes.productos.asignar-catalogo', $cliente) }}"
-                              onsubmit="return confirm('¿Asignar todos los productos activos del catálogo que faltan, con su precio base? Después podés ajustar los precios uno por uno.');">
-                            @csrf
-                            <button class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-                                    title="Agrega todo el catálogo activo que falte usando el precio base como punto de partida">
-                                Asignar todo el catálogo (precio base)
+                    <div class="flex flex-wrap items-center gap-2">
+                        @if ($otrosClientes->isNotEmpty())
+                            <button type="button" onclick="document.getElementById('copiar-precios').classList.toggle('hidden')"
+                                    class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200">
+                                Copiar precios desde otro cliente
                             </button>
-                        </form>
-                    @endif
+                        @endif
+                        @if ($disponibles->isNotEmpty())
+                            <form method="POST" action="{{ route('exportaciones.clientes.productos.asignar-catalogo', $cliente) }}"
+                                  onsubmit="return confirm('¿Asignar todos los productos activos del catálogo que faltan, con su precio base? Los que no tienen precio base (o está en $0) quedan fuera. Después podés ajustar los precios uno por uno.');">
+                                @csrf
+                                <button class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                                        title="Agrega todo el catálogo activo que falte usando el precio base como punto de partida">
+                                    Asignar todo el catálogo (precio base)
+                                </button>
+                            </form>
+                        @endif
+                    </div>
                 </div>
+
+                {{-- Copiar precios desde otro cliente (oculto hasta pulsar el botón). --}}
+                @if ($otrosClientes->isNotEmpty())
+                    <form id="copiar-precios" method="POST" action="{{ route('exportaciones.clientes.productos.copiar', $cliente) }}"
+                          class="{{ $errors->has('origen_id') || $errors->has('modo') ? '' : 'hidden' }} px-6 py-4 bg-indigo-50 border-b border-indigo-100"
+                          onsubmit="return confirm('¿Copiar los productos/precios activos del cliente origen hacia «{{ $cliente->nombre }}»? Las exportaciones ya creadas no cambian.');">
+                        @csrf
+                        <div class="flex flex-wrap items-end gap-4">
+                        <div class="grow max-w-md">
+                            <label class="block text-xs font-medium text-gray-600">Cliente origen</label>
+                            <select name="origen_id" required class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                                <option value="">— elegí el cliente origen —</option>
+                                @foreach ($otrosClientes as $otro)
+                                    <option value="{{ $otro->id }}" @selected((string) old('origen_id') === (string) $otro->id)>
+                                        {{ $otro->nombre }} ({{ $otro->productos_count }} productos)
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('origen_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                        <div class="space-y-1 text-sm text-gray-700">
+                            <label class="flex items-center gap-2">
+                                <input type="radio" name="modo" value="conservar" class="border-gray-300" @checked(old('modo', 'conservar') === 'conservar')>
+                                No sobrescribir existentes (solo agrega los que faltan)
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input type="radio" name="modo" value="sobrescribir" class="border-gray-300" @checked(old('modo') === 'sobrescribir')>
+                                Sobrescribir precios existentes
+                            </label>
+                            @error('modo') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                        <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Copiar precios</button>
+                        </div>
+                    </form>
+                @endif
 
                 {{-- Agregar producto --}}
                 <form method="POST" action="{{ route('exportaciones.clientes.productos.store', $cliente) }}"
-                      class="flex flex-wrap items-end gap-3 px-6 py-4 bg-gray-50 border-b border-gray-100">
+                      class="flex flex-wrap items-end gap-3 px-6 py-4 bg-gray-50 border-b border-gray-100"
+                      onsubmit="return confirmarPrecioCero(this);">
                     @csrf
                     <div class="grow max-w-md">
                         <label class="block text-xs font-medium text-gray-500">Producto del catálogo</label>
@@ -62,7 +106,7 @@
                             <option value="">— elegí un producto —</option>
                             @foreach ($disponibles as $producto)
                                 <option value="{{ $producto->id }}" @selected((string) old('exportacion_producto_id') === (string) $producto->id)>
-                                    {{ $producto->nombre_es }}{{ $producto->precio_caja !== null ? ' (base $'.number_format((float) $producto->precio_caja, 2).')' : '' }}
+                                    {{ $producto->nombre_es }}{{ $producto->precio_caja !== null ? ' (base $'.number_format((float) $producto->precio_caja, 2).($producto->precioPorUnidad() !== null ? ' · $'.number_format($producto->precioPorUnidad(), 2).'/unid.' : '').')' : '' }}
                                 </option>
                             @endforeach
                         </select>
@@ -74,6 +118,7 @@
                                class="mt-1 w-32 rounded-md border-gray-300 text-sm text-right">
                         @error('precio_caja') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                     </div>
+                    <input type="hidden" name="confirmar_cero" value="0">
                     <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Asignar</button>
                     @if ($disponibles->isEmpty())
                         <p class="text-xs text-gray-400">Todo el catálogo activo ya está asignado a este cliente.</p>
@@ -89,6 +134,7 @@
                                 <th class="py-3 px-4 text-right">Unid./caja</th>
                                 <th class="py-3 px-4 text-right">Precio base</th>
                                 <th class="py-3 px-4 text-right">Precio cliente</th>
+                                <th class="py-3 px-4 text-right">Precio unidad</th>
                                 <th class="py-3 px-4 text-center">Activo</th>
                                 <th class="py-3 px-4 text-right">Acciones</th>
                             </tr>
@@ -106,12 +152,18 @@
                                         {{ $asignacion->producto?->precio_caja !== null ? '$'.number_format((float) $asignacion->producto->precio_caja, 2) : '—' }}
                                     </td>
                                     <td class="py-3 px-4 text-right">
-                                        <form method="POST" action="{{ route('exportaciones.clientes.productos.update', [$cliente, $asignacion]) }}" class="flex items-center justify-end gap-2">
+                                        <form method="POST" action="{{ route('exportaciones.clientes.productos.update', [$cliente, $asignacion]) }}"
+                                              class="flex items-center justify-end gap-2" onsubmit="return confirmarPrecioCero(this);">
                                             @csrf @method('PATCH')
+                                            <input type="hidden" name="confirmar_cero" value="0">
                                             <input type="number" name="precio_caja" value="{{ $asignacion->precio_caja }}" required min="0" step="0.01"
                                                    class="w-28 rounded-md border-gray-300 text-sm text-right font-semibold">
                                             <button class="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200" title="Guardar precio">Guardar</button>
                                         </form>
+                                    </td>
+                                    <td class="py-3 px-4 text-right text-gray-600"
+                                        title="Precio del cliente ÷ unidades por caja (calculado)">
+                                        {{ $asignacion->precioPorUnidad() !== null ? '$'.number_format($asignacion->precioPorUnidad(), 2) : '—' }}
                                     </td>
                                     <td class="py-3 px-4 text-center">
                                         <form method="POST" action="{{ route('exportaciones.clientes.productos.update', [$cliente, $asignacion]) }}">
@@ -131,7 +183,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="7" class="py-10 text-center text-gray-400">Este cliente no tiene productos asignados. Asignale productos con su precio, o usá "Asignar todo el catálogo".</td></tr>
+                                <tr><td colspan="8" class="py-10 text-center text-gray-400">Este cliente no tiene productos asignados. Asignale productos con su precio, usá "Asignar todo el catálogo" o copiá los precios de otro cliente.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -142,7 +194,22 @@
                 Regla: si a otro cliente solo le cambia el PRECIO, es el mismo producto con precio específico aquí.
                 Si cambia empaque, presentación, unidades por caja, gramos o pesos, crealo como otra presentación en el
                 <a href="{{ route('exportaciones.productos.index') }}" class="text-indigo-600 hover:underline">catálogo maestro</a>.
+                El precio por unidad es calculado (precio caja ÷ unidades por caja); no se guarda.
             </p>
         </div>
     </div>
+
+    <script>
+        // Precio $0.00 solo pasa si el usuario lo confirma (el servidor también lo exige).
+        function confirmarPrecioCero(form) {
+            const precio = parseFloat(form.precio_caja.value);
+            if (precio === 0) {
+                if (!confirm('El precio quedó en $0.00. ¿Confirmás que es intencional?')) return false;
+                form.confirmar_cero.value = '1';
+            } else {
+                form.confirmar_cero.value = '0';
+            }
+            return true;
+        }
+    </script>
 </x-app-layout>

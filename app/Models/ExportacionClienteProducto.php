@@ -40,4 +40,18 @@ class ExportacionClienteProducto extends Model
     {
         return $this->belongsTo(ExportacionProducto::class, 'exportacion_producto_id');
     }
+
+    /**
+     * Precio del CLIENTE por unidad/bolsa (precio_caja / unidades_por_caja del
+     * producto). Calculado, no se guarda, para evitar inconsistencias.
+     */
+    public function precioPorUnidad(): ?float
+    {
+        $unidades = (int) ($this->producto?->unidades_por_caja ?? 0);
+        if ($unidades < 1) {
+            return null;
+        }
+
+        return round((float) $this->precio_caja / $unidades, 2);
+    }
 }

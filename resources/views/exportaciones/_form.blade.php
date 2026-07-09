@@ -159,6 +159,7 @@
                         <th class="py-2 px-3 text-right">Cajas</th>
                         <th class="py-2 px-3 text-right">Unid./caja</th>
                         <th class="py-2 px-3 text-right">Precio caja</th>
+                        <th class="py-2 px-3 text-right">Precio unidad</th>
                         <th class="py-2 px-3 text-right">Valor</th>
                         <th class="py-2 px-3 text-right">Neto kg</th>
                         <th class="py-2 px-3 text-right">Bruto kg</th>
@@ -185,7 +186,7 @@
                                                 class="w-full rounded-md border-gray-300 text-sm">
                                             <option value="">— elegí un producto —</option>
                                             <template x-for="p in disponibles()" :key="p.id">
-                                                <option :value="p.id" x-text="p.nombre + (p.fuente === 'base' ? ' (precio base)' : '')"></option>
+                                                <option :value="p.id" x-text="etiquetaProducto(p)"></option>
                                             </template>
                                         </select>
                                         <p class="mt-0.5 text-xs text-amber-600" x-show="fila.exportacion_producto_id && fila.fuente === 'base'" x-cloak>
@@ -203,6 +204,8 @@
                             <td class="py-2 px-3 text-right text-gray-600">
                                 <span x-text="dinero(fila.precio)"></span>
                             </td>
+                            <td class="py-2 px-3 text-right text-gray-600" title="Precio caja ÷ unidades por caja"
+                                x-text="fila.upc >= 1 ? dinero(fila.precio / fila.upc) : '—'"></td>
                             <td class="py-2 px-3 text-right font-medium text-gray-800" x-text="dinero(fila.precio * (fila.cantidad_cajas || 0))"></td>
                             <td class="py-2 px-3 text-right text-gray-600" x-text="peso(fila.neto * (fila.cantidad_cajas || 0))"></td>
                             <td class="py-2 px-3 text-right text-gray-600" x-text="peso(fila.bruto * (fila.cantidad_cajas || 0))"></td>
@@ -212,13 +215,14 @@
                         </tr>
                     </template>
                     <tr x-show="filas.length === 0">
-                        <td colspan="8" class="py-6 text-center text-gray-400" x-text="clienteId ? 'Sin productos. Usá “+ Agregar producto”.' : 'Elegí primero el cliente de exportación.'"></td>
+                        <td colspan="9" class="py-6 text-center text-gray-400" x-text="clienteId ? 'Sin productos. Usá “+ Agregar producto”.' : 'Elegí primero el cliente de exportación.'"></td>
                     </tr>
                 </tbody>
                 <tfoot>
                     <tr class="border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
                         <td class="py-2 px-3">Totales</td>
                         <td class="py-2 px-3 text-right" x-text="totalCajas"></td>
+                        <td class="py-2 px-3"></td>
                         <td class="py-2 px-3"></td>
                         <td class="py-2 px-3"></td>
                         <td class="py-2 px-3 text-right" x-text="dinero(valorTotal)"></td>
@@ -326,6 +330,13 @@
                     fila.precio = precioCliente !== undefined ? precioCliente : (p.precio_base ?? 0);
                     fila.fuente = precioCliente !== undefined ? 'cliente' : 'base';
                 }
+            },
+            // Etiqueta del selector: nombre + precio caja + precio por unidad calculado.
+            etiquetaProducto(p) {
+                let etiqueta = p.nombre + ' — ' + this.dinero(p.precio) + ' caja';
+                if (p.upc >= 1) etiqueta += ' · ' + this.dinero(p.precio / p.upc) + '/unid.';
+                if (p.fuente === 'base') etiqueta += ' (precio base)';
+                return etiqueta;
             },
             get totalCajas() { return this.filas.reduce((s, f) => s + (Number(f.cantidad_cajas) || 0), 0); },
             get valorTotal() { return this.filas.reduce((s, f) => s + f.precio * (Number(f.cantidad_cajas) || 0), 0); },
