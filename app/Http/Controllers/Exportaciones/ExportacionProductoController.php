@@ -19,6 +19,8 @@ class ExportacionProductoController extends Controller
     public function index(Request $request): View
     {
         $productos = ExportacionProducto::query()
+            // Para mostrar en qué clientes está asignado cada producto/presentación.
+            ->with(['asignaciones' => fn ($q) => $q->where('activo', true), 'asignaciones.cliente:id,nombre'])
             ->when($request->filled('q'), function ($q) use ($request) {
                 $buscar = '%'.$request->string('q').'%';
                 $q->where(fn ($w) => $w->where('nombre_es', 'like', $buscar)

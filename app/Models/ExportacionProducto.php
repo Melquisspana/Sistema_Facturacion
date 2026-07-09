@@ -52,6 +52,12 @@ class ExportacionProducto extends Model
         return $this->hasMany(ExportacionItem::class);
     }
 
+    /** Asignaciones producto→cliente (lista de precios por cliente). */
+    public function asignaciones(): HasMany
+    {
+        return $this->hasMany(ExportacionClienteProducto::class);
+    }
+
     /** Campos que se copian como snapshot al agregar el producto a una exportación. */
     public function datosSnapshot(): array
     {
