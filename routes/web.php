@@ -191,6 +191,8 @@ Route::middleware('auth')->group(function () {
         // Lista de precios del cliente (asignaciones producto+precio, únicas por cliente).
         Route::post('clientes/{cliente}/productos', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'storeProducto'])->name('clientes.productos.store');
         Route::post('clientes/{cliente}/productos/asignar-catalogo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'asignarCatalogo'])->name('clientes.productos.asignar-catalogo');
+        // Copiar productos/precios activos desde otro cliente (conservar u sobrescribir).
+        Route::post('clientes/{cliente}/productos/copiar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'copiarPrecios'])->name('clientes.productos.copiar');
         Route::patch('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'updateProducto'])->name('clientes.productos.update');
         Route::delete('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroyProducto'])->name('clientes.productos.destroy');
 

@@ -39,6 +39,7 @@
                                 <th class="py-3 px-4 text-right">Unid./caja</th>
                                 <th class="py-3 px-4 text-right">g/unid.</th>
                                 <th class="py-3 px-4 text-right">Precio base</th>
+                                <th class="py-3 px-4 text-right">Precio unidad</th>
                                 <th class="py-3 px-4 text-right">Neto kg</th>
                                 <th class="py-3 px-4 text-right">Bruto kg</th>
                                 <th class="py-3 px-4 text-center">Activo</th>
@@ -56,6 +57,7 @@
                                     <td class="py-3 px-4 text-right text-gray-600">{{ $producto->unidades_por_caja }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format((float) $producto->gramos_por_unidad, 2) }}</td>
                                     <td class="py-3 px-4 text-right font-semibold text-gray-800">{{ $producto->precio_caja !== null ? '$'.number_format((float) $producto->precio_caja, 2) : '—' }}</td>
+                                    <td class="py-3 px-4 text-right text-gray-600" title="Precio base ÷ unidades por caja (calculado)">{{ $producto->precioPorUnidad() !== null ? '$'.number_format($producto->precioPorUnidad(), 2) : '—' }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format((float) $producto->peso_neto_caja_kg, 2) }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format((float) $producto->peso_bruto_caja_kg, 2) }}</td>
                                     <td class="py-3 px-4 text-center">
@@ -80,7 +82,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="9" class="py-10 text-center text-gray-400">
+                                    <td colspan="10" class="py-10 text-center text-gray-400">
                                         No hay productos de exportación.
                                         <a href="{{ route('exportaciones.productos.importar') }}" class="text-indigo-600 hover:underline">Importá el catálogo desde la plantilla</a>
                                         o <a href="{{ route('exportaciones.productos.create') }}" class="text-indigo-600 hover:underline">creá el primero</a>.

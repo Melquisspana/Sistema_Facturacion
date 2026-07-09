@@ -75,4 +75,17 @@ class ExportacionProducto extends Model
     {
         return trim($this->nombre_es).' \\ '.trim($this->nombre_en);
     }
+
+    /**
+     * Precio BASE por unidad/bolsa (precio_caja / unidades_por_caja). Calculado,
+     * no se guarda, para que nunca quede inconsistente con el precio de caja.
+     */
+    public function precioPorUnidad(): ?float
+    {
+        if ($this->precio_caja === null || (int) $this->unidades_por_caja < 1) {
+            return null;
+        }
+
+        return round((float) $this->precio_caja / $this->unidades_por_caja, 2);
+    }
 }

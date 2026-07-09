@@ -69,6 +69,16 @@ class ExportacionItem extends Model
         return $this->cantidad_cajas * $this->unidades_por_caja;
     }
 
+    /** Precio por unidad/bolsa del SNAPSHOT (precio usado / unidades por caja). */
+    public function precioPorUnidad(): ?float
+    {
+        if ((int) $this->unidades_por_caja < 1) {
+            return null;
+        }
+
+        return round((float) $this->precio_caja / $this->unidades_por_caja, 2);
+    }
+
     public function valorTotal(): float
     {
         return round($this->cantidad_cajas * (float) $this->precio_caja, 2);

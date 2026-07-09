@@ -80,6 +80,7 @@
                                 <th class="py-3 px-4 text-right">Unid./caja</th>
                                 <th class="py-3 px-4 text-right">Total unid.</th>
                                 <th class="py-3 px-4 text-right">Precio caja</th>
+                                <th class="py-3 px-4 text-right">Precio unidad</th>
                                 <th class="py-3 px-4 text-right">Valor total</th>
                                 <th class="py-3 px-4 text-right">Neto kg</th>
                                 <th class="py-3 px-4 text-right">Bruto kg</th>
@@ -99,6 +100,7 @@
                                     <td class="py-3 px-4 text-right text-gray-600">{{ $item->unidades_por_caja }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format($item->totalUnidades()) }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">${{ number_format((float) $item->precio_caja, 2) }}</td>
+                                    <td class="py-3 px-4 text-right text-gray-600" title="Precio caja ÷ unidades por caja (snapshot)">{{ $item->precioPorUnidad() !== null ? '$'.number_format($item->precioPorUnidad(), 2) : '—' }}</td>
                                     <td class="py-3 px-4 text-right font-medium text-gray-800">${{ number_format($item->valorTotal(), 2) }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format($item->pesoNetoTotalKg(), 1) }}</td>
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format($item->pesoBrutoTotalKg(), 1) }}</td>
@@ -106,7 +108,7 @@
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format($item->pesoBrutoTotalLb(), 1) }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="11" class="py-10 text-center text-gray-400">Sin productos. <a href="{{ route('exportaciones.edit', $exportacion) }}" class="text-indigo-600 hover:underline">Agregalos editando la lista</a>.</td></tr>
+                                <tr><td colspan="12" class="py-10 text-center text-gray-400">Sin productos. <a href="{{ route('exportaciones.edit', $exportacion) }}" class="text-indigo-600 hover:underline">Agregalos editando la lista</a>.</td></tr>
                             @endforelse
                         </tbody>
                         @if ($exportacion->items->isNotEmpty())
@@ -115,6 +117,7 @@
                                     <td class="py-3 px-4 text-right">{{ $exportacion->totalCajas() }}</td>
                                     <td class="py-3 px-4" colspan="3">Totales</td>
                                     <td class="py-3 px-4 text-right">{{ number_format($exportacion->totalUnidades()) }}</td>
+                                    <td class="py-3 px-4"></td>
                                     <td class="py-3 px-4"></td>
                                     <td class="py-3 px-4 text-right">${{ number_format($exportacion->valorTotal(), 2) }}</td>
                                     <td class="py-3 px-4 text-right">{{ number_format($exportacion->pesoNetoTotalKg(), 1) }}</td>

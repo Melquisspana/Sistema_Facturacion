@@ -55,11 +55,19 @@ class ExportacionClienteController extends Controller
         $disponibles = ExportacionProducto::where('activo', true)
             ->whereNotIn('id', $asignados)
             ->orderBy('nombre_es')
-            ->get(['id', 'nombre_es', 'precio_caja']);
+            ->get(['id', 'nombre_es', 'unidades_por_caja', 'precio_caja']);
+
+        // Posibles orígenes para "copiar precios desde otro cliente".
+        $otrosClientes = ExportacionCliente::where('id', '!=', $cliente->id)
+            ->withCount(['productos as productos_count' => fn ($q) => $q->where('activo', true)])
+            ->having('productos_count', '>', 0)
+            ->orderBy('nombre')
+            ->get(['id', 'nombre']);
 
         return view('exportaciones.clientes.show', [
             'cliente' => $cliente,
             'disponibles' => $disponibles,
+            'otrosClientes' => $otrosClientes,
         ]);
     }
 
@@ -115,6 +123,8 @@ class ExportacionClienteController extends Controller
             'precio_caja' => 'precio por caja',
         ]);
 
+        $this->validarPrecioCero($request, (float) $datos['precio_caja']);
+
         $cliente->productos()->create($datos + ['activo' => true]);
 
         return redirect()
@@ -137,10 +147,25 @@ class ExportacionClienteController extends Controller
             'precio_caja' => ['required', 'numeric', 'min:0'],
         ], [], ['precio_caja' => 'precio por caja']);
 
+        $this->validarPrecioCero($request, (float) $datos['precio_caja']);
+
         // Solo cambia la lista de precios: exportaciones ya creadas conservan su snapshot.
         $asignacion->update($datos);
 
         return back()->with('status', 'Precio actualizado.');
+    }
+
+    /**
+     * Precio $0.00 solo con confirmación explícita (evita ceros por dedazo).
+     * Negativos ya los bloquea la regla min:0.
+     */
+    private function validarPrecioCero(Request $request, float $precio): void
+    {
+        if ($precio == 0.0 && ! $request->boolean('confirmar_cero')) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'precio_caja' => 'El precio quedó en $0.00: confirmá que es intencional para guardarlo.',
+            ]);
+        }
     }
 
     public function destroyProducto(ExportacionCliente $cliente, ExportacionClienteProducto $asignacion): RedirectResponse
@@ -151,7 +176,11 @@ class ExportacionClienteController extends Controller
         return back()->with('status', 'Producto quitado de la lista del cliente.');
     }
 
-    /** Asigna de un golpe todo el catálogo activo que falte, usando el precio base. */
+    /**
+     * Asigna de un golpe todo el catálogo activo que falte, usando el precio base.
+     * Productos sin precio base (o con base $0) quedan FUERA: nunca se crean
+     * precios en cero silenciosamente; se asignan a mano confirmando el precio.
+     */
     public function asignarCatalogo(ExportacionCliente $cliente): RedirectResponse
     {
         $asignados = $cliente->productos()->pluck('exportacion_producto_id');
@@ -161,7 +190,7 @@ class ExportacionClienteController extends Controller
 
         $sinPrecioBase = 0;
         foreach ($faltantes as $producto) {
-            if ($producto->precio_caja === null) {
+            if ($producto->precio_caja === null || (float) $producto->precio_caja <= 0) {
                 $sinPrecioBase++;
 
                 continue;
@@ -175,9 +204,66 @@ class ExportacionClienteController extends Controller
 
         $mensaje = 'Catálogo asignado: '.($faltantes->count() - $sinPrecioBase).' productos agregados con su precio base.';
         if ($sinPrecioBase > 0) {
-            $mensaje .= " {$sinPrecioBase} sin precio base quedaron fuera: asignalos manualmente con precio.";
+            $mensaje .= " {$sinPrecioBase} sin precio base (o con base $0) quedaron fuera: asignalos manualmente con su precio.";
         }
 
         return back()->with('status', $mensaje);
+    }
+
+    /**
+     * Copia los productos/precios ACTIVOS de otro cliente a este. Por defecto NO
+     * sobrescribe los que ya existen en el destino; con modo "sobrescribir"
+     * actualiza el precio de los existentes. Nunca toca snapshots de
+     * exportaciones ya creadas (solo cambia la lista de precios).
+     */
+    public function copiarPrecios(Request $request, ExportacionCliente $cliente): RedirectResponse
+    {
+        $datos = $request->validate([
+            'origen_id' => [
+                'required',
+                'integer',
+                Rule::exists('exportacion_clientes', 'id'),
+                Rule::notIn([$cliente->id]),
+            ],
+            'modo' => ['required', Rule::in(['conservar', 'sobrescribir'])],
+        ], [
+            'origen_id.not_in' => 'El cliente origen debe ser distinto al destino.',
+        ], [
+            'origen_id' => 'cliente origen',
+            'modo' => 'modo de copia',
+        ]);
+
+        $origen = ExportacionCliente::findOrFail($datos['origen_id']);
+        $existentes = $cliente->productos()->get()->keyBy('exportacion_producto_id');
+
+        $copiados = 0;
+        $sobrescritos = 0;
+        $omitidos = 0;
+        foreach ($origen->productos()->where('activo', true)->get() as $asignacion) {
+            $existente = $existentes->get($asignacion->exportacion_producto_id);
+            if ($existente === null) {
+                $cliente->productos()->create([
+                    'exportacion_producto_id' => $asignacion->exportacion_producto_id,
+                    'precio_caja' => $asignacion->precio_caja,
+                    'activo' => true,
+                ]);
+                $copiados++;
+            } elseif ($datos['modo'] === 'sobrescribir') {
+                $existente->update(['precio_caja' => $asignacion->precio_caja]);
+                $sobrescritos++;
+            } else {
+                $omitidos++;
+            }
+        }
+
+        $mensaje = "Precios copiados desde «{$origen->nombre}»: {$copiados} nuevos";
+        $mensaje .= $datos['modo'] === 'sobrescribir'
+            ? ", {$sobrescritos} sobrescritos."
+            : ", {$omitidos} ya existían y se conservaron.";
+        $mensaje .= ' Las exportaciones ya creadas no cambian (snapshot).';
+
+        return redirect()
+            ->route('exportaciones.clientes.show', $cliente)
+            ->with('status', $mensaje);
     }
 }
