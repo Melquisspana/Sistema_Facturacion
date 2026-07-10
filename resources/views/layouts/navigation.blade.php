@@ -6,216 +6,196 @@
         'advertencia' => 'bg-amber-100 text-amber-700',
         'critico' => 'bg-rose-100 text-rose-700 animate-pulse',
     ];
-    // Fondo de la franja según el color (rojo solo para transmisión real a PRODUCCIÓN).
-    $modoDteFranja = [
-        'ok' => 'bg-gray-50 border-gray-100',
-        'advertencia' => 'bg-amber-50 border-amber-200',
-        'critico' => 'bg-rose-50 border-rose-200',
-    ];
+
+    $usuario = auth()->user();
+    $esAdmin = $usuario->hasRole('administrador');
+    $veAuditoria = $usuario->hasAnyRole(['administrador', 'contador']);
+    $veOperativos = $usuario->hasAnyRole(['administrador', 'contador', 'facturacion']); // PPQ y Exportaciones
+    $veClientes = $usuario->can('viewAny', App\Models\Cliente::class);
+    $veProductos = $usuario->can('viewAny', App\Models\Producto::class);
+    $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
+
+    // Activos por item (rutas actuales, sin cambios de lógica).
+    $enInvalidaciones = request()->routeIs('facturacion.index') && request('estado') === 'invalidado';
+    $enCrearCcf = request()->routeIs('facturacion.create-ccf');
+    $enNotasCredito = request()->routeIs('facturacion.create-nota-credito');
+    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enCrearCcf && ! $enNotasCredito;
+
+    $enNuevaLista = request()->routeIs('exportaciones.create');
+    $enExpClientes = request()->routeIs('exportaciones.clientes.*');
+    $enExpProductos = request()->routeIs('exportaciones.productos.*');
+    $enListasEmpaque = request()->routeIs('exportaciones.*') && ! $enNuevaLista && ! $enExpClientes && ! $enExpProductos;
 @endphp
-<nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
-    @if ($modoDte)
-        {{-- Aviso SOLO para quienes facturan (administrador/facturación): deja claro si el
-             sistema está en modo paralelo/preproducción (seguro), si apitest/pruebas está
-             habilitado (ámbar) o si una transmisión real a producción sería posible ahora
-             (roja). Solo lectura, sin secretos. --}}
-        <div class="px-4 sm:px-6 lg:px-8 py-1.5 text-xs flex flex-wrap items-center gap-2 border-b {{ $modoDteFranja[$modoDte['color']] ?? 'bg-gray-50 border-gray-100' }}"
-             title="{{ $modoDte['detalle'] }}">
-            <span class="font-semibold text-gray-500">DTE:</span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
-                MODO {{ $modoDte['etiqueta'] }}
-            </span>
-            @if (! empty($modoDte['modo_seguro']))
-                {{-- Refuerzo textual explícito: en modo seguro el sistema nuevo NO emite a producción. --}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full font-bold bg-green-600 text-white">
-                    NO EMITE PRODUCCIÓN
-                </span>
-            @endif
-            @if ($modoDte['mocks']['alguno'])
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700"
-                      title="Firma/transmisión/invalidación en modo MOCK: simulan el resultado sin usar credenciales ni transmitir de verdad.">
-                    PRUEBAS / MOCK
-                </span>
-            @endif
-            <span class="text-gray-400">{{ $modoDte['detalle'] }}</span>
-        </div>
-    @endif
-    <!-- Primary Navigation Menu -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-            <div class="flex">
-                <!-- Logo -->
-                <div class="shrink-0 flex items-center">
-                    <a href="{{ route('dashboard') }}">
-                        <x-application-logo class="block h-9 w-auto fill-current text-gray-800" />
-                    </a>
-                </div>
 
-                <!-- Navigation Links -->
-                <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                    <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                        {{ __('Dashboard') }}
-                    </x-nav-link>
-                    @can('viewAny', App\Models\Cliente::class)
-                        <x-nav-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">
-                            {{ __('Clientes') }}
-                        </x-nav-link>
-                    @endcan
-                    @can('viewAny', App\Models\Producto::class)
-                        <x-nav-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">
-                            {{ __('Productos') }}
-                        </x-nav-link>
-                    @endcan
-                    @can('viewAny', App\Models\Dte::class)
-                        <x-nav-dropdown label="Facturación" :active="request()->routeIs('facturacion.*')">
-                            <x-dropdown-link :href="route('facturacion.index')">CCF / Facturas</x-dropdown-link>
-                            <x-dropdown-link :href="route('facturacion.create-ccf')">Crear CCF</x-dropdown-link>
-                            <x-dropdown-link :href="route('facturacion.create-nota-credito')">Notas de crédito</x-dropdown-link>
-                            <x-dropdown-link :href="route('facturacion.index', ['estado' => 'invalidado'])">Invalidaciones</x-dropdown-link>
-                        </x-nav-dropdown>
-                    @endcan
-                    @hasanyrole('administrador|contador|facturacion')
-                        <x-nav-dropdown label="Prontos Pagos" :active="request()->routeIs('ppq.*')">
-                            <x-dropdown-link :href="route('ppq.index')">Buscar CCF / NC</x-dropdown-link>
-                            <x-dropdown-link :href="route('ppq.lotes.index')">Historial PPQ</x-dropdown-link>
-                        </x-nav-dropdown>
-                        <x-nav-dropdown label="Exportaciones" :active="request()->routeIs('exportaciones.*')">
-                            <x-dropdown-link :href="route('exportaciones.index')">Listas de empaque</x-dropdown-link>
-                            <x-dropdown-link :href="route('exportaciones.create')">Nueva lista de empaque</x-dropdown-link>
-                            <x-dropdown-link :href="route('exportaciones.clientes.index')">Clientes y precios</x-dropdown-link>
-                            <x-dropdown-link :href="route('exportaciones.productos.index')">Catálogo de productos</x-dropdown-link>
-                        </x-nav-dropdown>
-                    @endhasanyrole
-                    @role('administrador')
-                        <x-nav-link :href="route('configuracion.empresa.edit')" :active="request()->routeIs('configuracion.*')">
-                            {{ __('Configuración') }}
-                        </x-nav-link>
-                        <x-nav-link :href="route('usuarios.index')" :active="request()->routeIs('usuarios.*')">
-                            {{ __('Usuarios') }}
-                        </x-nav-link>
-                        <x-nav-link :href="route('importaciones.index')" :active="request()->routeIs('importaciones.*')">
-                            {{ __('Importaciones') }}
-                        </x-nav-link>
-                        <x-nav-link :href="route('admin.salud-sistema')" :active="request()->routeIs('admin.salud-sistema')">
-                            {{ __('Salud del sistema') }}
-                            @if (($jobsFallidos ?? 0) > 0)
-                                <span class="ms-1 inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
-                                      title="{{ $jobsFallidos }} trabajos en cola fallidos (correos/DTE). Revisá Salud del sistema.">
-                                    {{ $jobsFallidos }}
-                                </span>
-                            @endif
-                        </x-nav-link>
-                    @endrole
-                    @if (auth()->user()->hasAnyRole(['administrador', 'contador']))
-                        <x-nav-link :href="route('auditoria.index')" :active="request()->routeIs('auditoria.*')">
-                            {{ __('Auditoría') }}
-                        </x-nav-link>
+{{-- Navegación: topbar fija (logo + usuario; los badges de modo DTE aparecen SOLO
+     en pantallas de Facturación) y sidebar izquierda agrupada por secciones
+     (off-canvas en móvil). Solo UX/layout: mismas rutas, mismos roles/permisos,
+     sin lógica de negocio nueva. --}}
+<div x-data="{ sidebarAbierta: false }">
+
+    {{-- ===== Topbar ===== --}}
+    <nav class="fixed inset-x-0 top-0 z-40 h-16 border-b border-gray-200 bg-white">
+        <div class="flex h-16 items-center gap-3 px-4 sm:px-6">
+            {{-- Hamburguesa (solo móvil) --}}
+            <button @click="sidebarAbierta = ! sidebarAbierta"
+                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 lg:hidden">
+                <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                    <path x-show="! sidebarAbierta" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                    <path x-show="sidebarAbierta" x-cloak stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+
+            <a href="{{ route('dashboard') }}" class="flex shrink-0 items-center gap-2">
+                <x-application-logo class="block h-9 w-auto fill-current text-gray-800" />
+                <span class="hidden text-sm font-semibold text-gray-800 sm:block">{{ config('app.name') }}</span>
+            </a>
+
+            {{-- Badges de modo DTE: SOLO en pantallas de Facturación/DTE (no en el resto
+                 del sistema). No cambia ningún candado ni validación; es solo dónde se
+                 muestra el aviso. Las vistas de facturación además llevan su propio
+                 banner detallado (<x-modo-dte-aviso>), que no se toca. --}}
+            @if ($modoDte && request()->routeIs('facturacion.*'))
+                <div class="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" title="{{ $modoDte['detalle'] }}">
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
+                        MODO {{ $modoDte['etiqueta'] }}
+                    </span>
+                    @if (! empty($modoDte['modo_seguro']))
+                        {{-- Refuerzo textual explícito: en modo seguro el sistema nuevo NO emite a producción. --}}
+                        <span class="inline-flex items-center rounded-full bg-green-600 px-2 py-0.5 font-bold text-white">
+                            NO EMITE PRODUCCIÓN
+                        </span>
                     @endif
+                    @if ($modoDte['mocks']['alguno'])
+                        <span class="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700"
+                              title="Firma/transmisión/invalidación en modo MOCK: simulan el resultado sin usar credenciales ni transmitir de verdad.">
+                            PRUEBAS / MOCK
+                        </span>
+                    @endif
+                    <span class="hidden truncate text-gray-400 xl:inline">{{ $modoDte['detalle'] }}</span>
                 </div>
-            </div>
+            @endif
 
-            <!-- Settings Dropdown -->
-            <div class="hidden sm:flex sm:items-center sm:ms-6">
+            {{-- Usuario / logout --}}
+            <div class="ms-auto flex items-center">
                 <x-dropdown align="right" width="48">
                     <x-slot name="trigger">
-                        <button class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 bg-white hover:text-gray-700 focus:outline-none transition ease-in-out duration-150">
-                            <div>{{ Auth::user()->name }}</div>
-
+                        <button class="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none">
+                            <div>{{ $usuario->name }}</div>
                             <div class="ms-1">
-                                <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                <svg class="h-4 w-4 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                                 </svg>
                             </div>
                         </button>
                     </x-slot>
-
                     <x-slot name="content">
-                        <x-dropdown-link :href="route('profile.edit')">
-                            {{ __('Profile') }}
-                        </x-dropdown-link>
-
-                        <!-- Authentication -->
+                        <x-dropdown-link :href="route('profile.edit')">{{ __('Profile') }}</x-dropdown-link>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
-
                             <x-dropdown-link :href="route('logout')"
-                                    onclick="event.preventDefault();
-                                                this.closest('form').submit();">
+                                    onclick="event.preventDefault(); this.closest('form').submit();">
                                 {{ __('Log Out') }}
                             </x-dropdown-link>
                         </form>
                     </x-slot>
                 </x-dropdown>
             </div>
-
-            <!-- Hamburger -->
-            <div class="-me-2 flex items-center sm:hidden">
-                <button @click="open = ! open" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 focus:text-gray-500 transition duration-150 ease-in-out">
-                    <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-                        <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                        <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
         </div>
-    </div>
+    </nav>
 
-    <!-- Responsive Navigation Menu -->
-    <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden">
-        <div class="pt-2 pb-3 space-y-1">
-            <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                {{ __('Dashboard') }}
-            </x-responsive-nav-link>
-            @can('viewAny', App\Models\Cliente::class)
-                <x-responsive-nav-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">{{ __('Clientes') }}</x-responsive-nav-link>
-            @endcan
-            @can('viewAny', App\Models\Producto::class)
-                <x-responsive-nav-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">{{ __('Productos') }}</x-responsive-nav-link>
-            @endcan
+    {{-- Fondo oscuro al abrir la sidebar en móvil --}}
+    <div x-show="sidebarAbierta" x-cloak @click="sidebarAbierta = false"
+         class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden"></div>
 
-            @can('viewAny', App\Models\Dte::class)
-                <div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-gray-400">Facturación</div>
-                <x-responsive-nav-link :href="route('facturacion.index')" :active="request()->routeIs('facturacion.index')">CCF / Facturas</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('facturacion.create-ccf')">Crear CCF</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('facturacion.create-nota-credito')">Notas de crédito</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('facturacion.index', ['estado' => 'invalidado'])">Invalidaciones</x-responsive-nav-link>
-            @endcan
+    {{-- ===== Sidebar ===== --}}
+    <aside class="fixed bottom-0 left-0 top-16 z-30 w-64 -translate-x-full transform overflow-y-auto border-r border-gray-200 bg-white transition-transform duration-150 lg:translate-x-0"
+           :class="sidebarAbierta ? 'translate-x-0' : '-translate-x-full'">
+        @php
+            // Título de grupo uniforme (más legible: gris medio, mayúsculas espaciadas).
+            $tituloGrupo = 'mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500';
+        @endphp
+        <nav class="space-y-6 px-3 py-5">
 
-            @hasanyrole('administrador|contador|facturacion')
-                <div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-gray-400">Prontos Pagos</div>
-                <x-responsive-nav-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index')">Buscar CCF / NC</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-responsive-nav-link>
-
-                <div class="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-gray-400">Exportaciones</div>
-                <x-responsive-nav-link :href="route('exportaciones.index')" :active="request()->routeIs('exportaciones.index')">Listas de empaque</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('exportaciones.clientes.index')" :active="request()->routeIs('exportaciones.clientes.*')">Clientes y precios</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('exportaciones.productos.index')" :active="request()->routeIs('exportaciones.productos.*')">Catálogo de productos</x-responsive-nav-link>
-            @endhasanyrole
-        </div>
-
-        <!-- Responsive Settings Options -->
-        <div class="pt-4 pb-1 border-t border-gray-200">
-            <div class="px-4">
-                <div class="font-medium text-base text-gray-800">{{ Auth::user()->name }}</div>
-                <div class="font-medium text-sm text-gray-500">{{ Auth::user()->email }}</div>
+            <div>
+                <p class="{{ $tituloGrupo }}">Inicio</p>
+                <div class="space-y-0.5">
+                    <x-sidebar-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">Dashboard</x-sidebar-link>
+                </div>
             </div>
 
-            <div class="mt-3 space-y-1">
-                <x-responsive-nav-link :href="route('profile.edit')">
-                    {{ __('Profile') }}
-                </x-responsive-nav-link>
+            @if ($veClientes || $veProductos)
+                <div>
+                    <p class="{{ $tituloGrupo }}">Comercial</p>
+                    <div class="space-y-0.5">
+                        @if ($veClientes)
+                            <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes</x-sidebar-link>
+                        @endif
+                        @if ($veProductos)
+                            <x-sidebar-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">Productos</x-sidebar-link>
+                        @endif
+                    </div>
+                </div>
+            @endif
 
-                <!-- Authentication -->
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
+            @if ($veFacturacion)
+                <div>
+                    <p class="{{ $tituloGrupo }}">Facturación</p>
+                    <div class="space-y-0.5">
+                        <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">CCF / Facturas</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.create-ccf')" :active="$enCrearCcf">Crear CCF</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.create-nota-credito')" :active="$enNotasCredito">Notas de crédito</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.index', ['estado' => 'invalidado'])" :active="$enInvalidaciones">Invalidaciones</x-sidebar-link>
+                    </div>
+                </div>
+            @endif
 
-                    <x-responsive-nav-link :href="route('logout')"
-                            onclick="event.preventDefault();
-                                        this.closest('form').submit();">
-                        {{ __('Log Out') }}
-                    </x-responsive-nav-link>
-                </form>
-            </div>
-        </div>
-    </div>
-</nav>
+            @if ($veOperativos)
+                <div>
+                    <p class="{{ $tituloGrupo }}">Prontos Pagos</p>
+                    <div class="space-y-0.5">
+                        <x-sidebar-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index', 'ppq.albaranes_por_fecha')">Buscar CCF / NC</x-sidebar-link>
+                        <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
+                    </div>
+                </div>
+
+                <div>
+                    <p class="{{ $tituloGrupo }}">Exportaciones</p>
+                    <div class="space-y-0.5">
+                        <x-sidebar-link :href="route('exportaciones.index')" :active="$enListasEmpaque">Listas de empaque</x-sidebar-link>
+                        <x-sidebar-link :href="route('exportaciones.create')" :active="$enNuevaLista">Nueva lista de empaque</x-sidebar-link>
+                        <x-sidebar-link :href="route('exportaciones.clientes.index')" :active="$enExpClientes">Clientes y precios</x-sidebar-link>
+                        <x-sidebar-link :href="route('exportaciones.productos.index')" :active="$enExpProductos">Catálogo de productos</x-sidebar-link>
+                    </div>
+                </div>
+            @endif
+
+            @if ($esAdmin || $veAuditoria)
+                <div>
+                    <p class="{{ $tituloGrupo }}">Administración</p>
+                    <div class="space-y-0.5">
+                        @if ($esAdmin)
+                            <x-sidebar-link :href="route('configuracion.empresa.edit')" :active="request()->routeIs('configuracion.*')">Configuración</x-sidebar-link>
+                            <x-sidebar-link :href="route('usuarios.index')" :active="request()->routeIs('usuarios.*')">Usuarios</x-sidebar-link>
+                            <x-sidebar-link :href="route('importaciones.index')" :active="request()->routeIs('importaciones.*')">Importaciones</x-sidebar-link>
+                            <x-sidebar-link :href="route('admin.salud-sistema')" :active="request()->routeIs('admin.salud-sistema')">
+                                <span>Salud del sistema</span>
+                                @if (($jobsFallidos ?? 0) > 0)
+                                    <span class="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
+                                          title="{{ $jobsFallidos }} trabajos en cola fallidos (correos/DTE). Revisá Salud del sistema.">
+                                        {{ $jobsFallidos }}
+                                    </span>
+                                @endif
+                            </x-sidebar-link>
+                        @endif
+                        @if ($veAuditoria)
+                            <x-sidebar-link :href="route('auditoria.index')" :active="request()->routeIs('auditoria.*')">Auditoría</x-sidebar-link>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
+            {{-- Futuro (Inventario, Documentos recibidos, Reportes): agregar aquí su
+                 sección cuando existan rutas reales; no se muestran enlaces rotos. --}}
+        </nav>
+    </aside>
+</div>
