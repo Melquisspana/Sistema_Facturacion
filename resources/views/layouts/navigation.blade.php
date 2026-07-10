@@ -21,7 +21,8 @@
     $enCrearCcf = request()->routeIs('facturacion.create-ccf');
     $enNotasCredito = request()->routeIs('facturacion.create-nota-credito');
     $enPreparar = request()->routeIs('facturacion.preparar-produccion');
-    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enCrearCcf && ! $enNotasCredito && ! $enPreparar;
+    $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
+    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enCrearCcf && ! $enNotasCredito && ! $enPreparar && ! $enReporteContadora;
 
     $enNuevaLista = request()->routeIs('exportaciones.create');
     $enExpClientes = request()->routeIs('exportaciones.clientes.*');
@@ -149,6 +150,9 @@
                         <x-sidebar-link :href="route('facturacion.index', ['estado' => 'invalidado'])" :active="$enInvalidaciones">Invalidaciones</x-sidebar-link>
                         @if ($esGestorDte)
                             <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
+                        @endif
+                        @if ($veOperativos)
+                            <x-sidebar-link :href="route('facturacion.reporte-contadora')" :active="$enReporteContadora">Reporte contadora</x-sidebar-link>
                         @endif
                     </div>
                 </div>

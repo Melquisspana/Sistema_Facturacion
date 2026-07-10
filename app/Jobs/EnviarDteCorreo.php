@@ -52,7 +52,16 @@ class EnviarDteCorreo implements ShouldQueue
             [$extra, $nombres] = $this->adjuntos($dte);
             $plantilla = Configuracion::get('correo.plantilla');
 
-            Mail::to($destinatarios)->send(new DteCorreo($dte, $bytes, $extra, $plantilla));
+            // Copia a contabilidad (BCC) DENTRO del mismo envío, solo si está activada
+            // la preferencia y hay un correo válido configurado. No es un envío aparte
+            // ni automático: viaja como copia oculta del correo que el usuario ya manda.
+            $bccContabilidad = $this->correoContabilidad();
+
+            $mail = Mail::to($destinatarios);
+            if ($bccContabilidad !== null) {
+                $mail->bcc($bccContabilidad);
+            }
+            $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla));
 
             // Si el mailer activo NO es real (log/array), el correo NO sale por SMTP: se marca
             // como SIMULADO (no "enviado"), para no mentir en el historial. Los adjuntos se
@@ -63,12 +72,27 @@ class EnviarDteCorreo implements ShouldQueue
                 'adjuntos' => implode(', ', array_merge(['PDF'], $nombres)),
                 'error' => $real ? null : 'Correo NO enviado realmente: MAIL_MAILER='.config('mail.default').' (driver no SMTP; el correo se escribió en laravel.log).',
             ]);
-            $this->auditar($envio);
+            $this->auditar($envio, $bccContabilidad);
         } catch (\Throwable $e) {
             // El error SMTP queda registrado; el reenvío es manual (no auto-retry).
             $this->marcarError($envio, $e->getMessage());
             $this->auditar($envio);
         }
+    }
+
+    /**
+     * Correo de contabilidad para la copia BCC, o null si no aplica. Solo devuelve
+     * un correo cuando la preferencia está activa Y hay una dirección VÁLIDA. No
+     * envía nada por sí mismo; solo resuelve el destinatario oculto.
+     */
+    private function correoContabilidad(): ?string
+    {
+        if (! Configuracion::getBool('contabilidad.enviar_copia', false)) {
+            return null;
+        }
+        $correo = strtolower(trim((string) Configuracion::get('contabilidad.correo')));
+
+        return ($correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL)) ? $correo : null;
     }
 
     /** Si el job falla de forma fatal (deserialización, timeout duro), deja el error. */
@@ -122,13 +146,17 @@ class EnviarDteCorreo implements ShouldQueue
         return ! in_array($transport, ['log', 'array'], true);
     }
 
-    private function auditar(DteEnvio $envio): void
+    private function auditar(DteEnvio $envio, ?string $bccContabilidad = null): void
     {
         $mensaje = match ($envio->estado) {
             'enviado' => 'envió el DTE por correo',
             'simulado' => 'registró envío SIMULADO del DTE (mailer no real, no salió por SMTP)',
             default => 'falló el envío del DTE por correo',
         };
+        // Deja constancia en la auditoría de correo si viajó copia (BCC) a contabilidad.
+        if ($bccContabilidad !== null && in_array($envio->estado, ['enviado', 'simulado'], true)) {
+            $mensaje .= ' (con copia a contabilidad)';
+        }
 
         activity('dte_correo')
             ->performedOn($envio->dte)
@@ -138,6 +166,7 @@ class EnviarDteCorreo implements ShouldQueue
                 'destinatarios' => $envio->destinatariosTexto(),
                 'estado' => $envio->estado,
                 'auto' => $envio->user_id === null,
+                'copia_contabilidad' => $bccContabilidad,
             ])
             ->log($mensaje);
     }
