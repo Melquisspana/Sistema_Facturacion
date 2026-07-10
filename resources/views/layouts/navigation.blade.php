@@ -168,6 +168,15 @@
                 </div>
 
                 <div>
+                    <p class="{{ $tituloGrupo }}">Documentos recibidos</p>
+                    <div class="space-y-0.5">
+                        <x-sidebar-link :href="route('documentos-recibidos.index')" :active="request()->routeIs('documentos-recibidos.*') && request('vista', 'bandeja') === 'bandeja'">Bandeja recibidos</x-sidebar-link>
+                        <x-sidebar-link :href="route('documentos-recibidos.index', ['vista' => 'pendientes'])" :active="request()->routeIs('documentos-recibidos.*') && request('vista') === 'pendientes'">Pendientes contabilidad</x-sidebar-link>
+                        <x-sidebar-link :href="route('documentos-recibidos.index', ['vista' => 'enviados'])" :active="request()->routeIs('documentos-recibidos.*') && request('vista') === 'enviados'">Enviados a contabilidad</x-sidebar-link>
+                    </div>
+                </div>
+
+                <div>
                     <p class="{{ $tituloGrupo }}">Exportaciones</p>
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('exportaciones.index')" :active="$enListasEmpaque">Listas de empaque</x-sidebar-link>
