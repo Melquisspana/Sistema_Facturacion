@@ -177,7 +177,11 @@ class DteColaCorreosUiTest extends TestCase
             ->get(route('facturacion.index'))
             ->assertOk()
             ->assertSee('Correo')       // la columna existe
-            ->assertDontSee('Pendiente')
+            // Sin envíos, la celda Correo muestra el guion y NO renderiza el badge de
+            // estado. Se afirma la ausencia del badge por su markup (clase única del
+            // listado), no por la palabra "Pendiente", que ahora también aparece en el
+            // menú lateral ("Pendientes contabilidad") sin relación con este badge.
+            ->assertDontSee('px-2 py-0.5 rounded-full text-xs')
             ->assertDontSee('Fallido')
             ->assertDontSee('Simulado');
     }

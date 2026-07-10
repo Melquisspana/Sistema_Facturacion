@@ -17,7 +17,19 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Fuente de correo de "Documentos recibidos" (INDEPENDIENTE de Gmail/PPQ):
+        // driver 'imap' → lector IMAP de solo lectura (Yahoo); cualquier otro valor,
+        // o falta de soporte/credenciales, cae al Null (revisión deshabilitada).
+        $this->app->bind(
+            \App\Services\DocumentosRecibidos\Contracts\MailboxClient::class,
+            static function () {
+                $driver = strtolower((string) config('documentos_recibidos.mail.driver', 'none'));
+
+                return $driver === 'imap'
+                    ? new \App\Services\DocumentosRecibidos\ImapMailboxClient()
+                    : new \App\Services\DocumentosRecibidos\NullMailboxClient();
+            }
+        );
     }
 
     /**
