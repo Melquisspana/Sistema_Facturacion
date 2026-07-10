@@ -4,6 +4,7 @@
         ['ruta' => 'configuracion.establecimientos.index', 'patron' => 'configuracion.establecimientos.*', 'titulo' => 'Establecimientos'],
         ['ruta' => 'configuracion.puntos-venta.index', 'patron' => 'configuracion.puntos-venta.*', 'titulo' => 'Puntos de venta'],
         ['ruta' => 'configuracion.correlativos.index', 'patron' => 'configuracion.correlativos.*', 'titulo' => 'Correlativos'],
+        ['ruta' => 'configuracion.contabilidad.edit', 'patron' => 'configuracion.contabilidad.*', 'titulo' => 'Contabilidad'],
     ];
 @endphp
 

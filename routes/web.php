@@ -86,6 +86,13 @@ Route::middleware('auth')->group(function () {
         Route::post('preparar-produccion/backup', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'backup'])
             ->middleware('role:administrador')->name('preparar-produccion.backup');
 
+        // Reporte contadora (SOLO lectura + Excel; no emite, no transmite, no toca
+        // correlativos). Debe ir ANTES de `{dte}`. Contador/facturación/administrador.
+        Route::get('reporte-contadora', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'index'])
+            ->middleware('role:administrador|contador|facturacion')->name('reporte-contadora');
+        Route::get('reporte-contadora/exportar', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'exportar'])
+            ->middleware('role:administrador|contador|facturacion')->name('reporte-contadora.exportar');
+
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');
         // Representación gráfica PRELIMINAR en PDF (solo lectura; DtePolicy::view). NO transmite.
@@ -262,6 +269,11 @@ Route::middleware(['auth', 'role:administrador'])
         // Correo de DTE (auto-envío, adjuntar JWS, plantilla).
         Route::get('correo', [CorreoController::class, 'edit'])->name('correo.edit');
         Route::put('correo', [CorreoController::class, 'update'])->name('correo.update');
+
+        // Contabilidad: correo de contabilidad + copia (BCC) en el envío manual de DTE.
+        // Guardar NO envía nada; la copia viaja dentro del envío existente.
+        Route::get('contabilidad', [\App\Http\Controllers\Configuracion\ContabilidadController::class, 'edit'])->name('contabilidad.edit');
+        Route::put('contabilidad', [\App\Http\Controllers\Configuracion\ContabilidadController::class, 'update'])->name('contabilidad.update');
 
         // Establecimientos.
         Route::get('establecimientos', [EstablecimientoController::class, 'index'])->name('establecimientos.index');
