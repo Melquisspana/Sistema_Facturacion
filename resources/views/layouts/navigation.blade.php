@@ -11,6 +11,7 @@
     $esAdmin = $usuario->hasRole('administrador');
     $veAuditoria = $usuario->hasAnyRole(['administrador', 'contador']);
     $veOperativos = $usuario->hasAnyRole(['administrador', 'contador', 'facturacion']); // PPQ y Exportaciones
+    $esGestorDte = $usuario->hasAnyRole(['administrador', 'facturacion']); // acciones/prep de emisión
     $veClientes = $usuario->can('viewAny', App\Models\Cliente::class);
     $veProductos = $usuario->can('viewAny', App\Models\Producto::class);
     $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
@@ -19,7 +20,8 @@
     $enInvalidaciones = request()->routeIs('facturacion.index') && request('estado') === 'invalidado';
     $enCrearCcf = request()->routeIs('facturacion.create-ccf');
     $enNotasCredito = request()->routeIs('facturacion.create-nota-credito');
-    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enCrearCcf && ! $enNotasCredito;
+    $enPreparar = request()->routeIs('facturacion.preparar-produccion');
+    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enCrearCcf && ! $enNotasCredito && ! $enPreparar;
 
     $enNuevaLista = request()->routeIs('exportaciones.create');
     $enExpClientes = request()->routeIs('exportaciones.clientes.*');
@@ -145,6 +147,9 @@
                         <x-sidebar-link :href="route('facturacion.create-ccf')" :active="$enCrearCcf">Crear CCF</x-sidebar-link>
                         <x-sidebar-link :href="route('facturacion.create-nota-credito')" :active="$enNotasCredito">Notas de crédito</x-sidebar-link>
                         <x-sidebar-link :href="route('facturacion.index', ['estado' => 'invalidado'])" :active="$enInvalidaciones">Invalidaciones</x-sidebar-link>
+                        @if ($esGestorDte)
+                            <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
+                        @endif
                     </div>
                 </div>
             @endif

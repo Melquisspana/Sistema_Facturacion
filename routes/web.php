@@ -76,6 +76,16 @@ Route::middleware('auth')->group(function () {
         Route::get('nota-credito/crear', [DteController::class, 'createNotaCredito'])->name('create-nota-credito');
         Route::post('nota-credito', [DteController::class, 'storeNotaCreditoIndependiente'])->name('store-nota-credito');
 
+        // Checklist "Preparar emisión real" — SOLO lectura/preparación (no emite, no
+        // firma, no transmite, no mueve correlativos). Debe ir ANTES de `{dte}`.
+        // Gestores ven el checklist; el backup solo-BD es admin-only.
+        Route::get('preparar-produccion', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'index'])
+            ->middleware('role:administrador|facturacion')->name('preparar-produccion');
+        Route::get('preparar-produccion/firmador', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'firmador'])
+            ->middleware('role:administrador|facturacion')->name('preparar-produccion.firmador');
+        Route::post('preparar-produccion/backup', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'backup'])
+            ->middleware('role:administrador')->name('preparar-produccion.backup');
+
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');
         // Representación gráfica PRELIMINAR en PDF (solo lectura; DtePolicy::view). NO transmite.
