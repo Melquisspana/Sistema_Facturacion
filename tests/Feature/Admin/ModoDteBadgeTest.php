@@ -10,8 +10,9 @@ use Tests\TestCase;
 
 /**
  * Badge del navbar con el modo de operación DTE (paralelo/respaldo/principal) + mocks.
- * Visible SOLO para quienes facturan (administrador/facturación); solo lectura, no
- * transmite ni muestra secretos. No afecta la generación de borradores ni el piloto.
+ * Visible SOLO en pantallas de Facturación/DTE (no en el resto del sistema) y SOLO para
+ * quienes facturan (administrador/facturación). Solo lectura: no transmite ni muestra
+ * secretos, y NO cambia ningún candado ni validación de emisión.
  */
 class ModoDteBadgeTest extends TestCase
 {
@@ -31,26 +32,43 @@ class ModoDteBadgeTest extends TestCase
         return User::factory()->create()->assignRole($rol);
     }
 
-    public function test_administrador_ve_el_badge_paralelo_seguro(): void
+    /** Pantalla de Facturación donde el badge SÍ debe verse (la lista de CCF/Facturas). */
+    private function pantallaFacturacion(): string
+    {
+        return route('facturacion.index');
+    }
+
+    public function test_administrador_ve_el_badge_paralelo_seguro_en_facturacion(): void
     {
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertSee('PARALELO SEGURO');
     }
 
-    public function test_facturacion_tambien_ve_el_badge(): void
+    public function test_facturacion_tambien_ve_el_badge_en_facturacion(): void
     {
         $this->actingAs($this->usuario('facturacion'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertSee('PARALELO SEGURO');
+    }
+
+    public function test_el_badge_no_aparece_fuera_de_facturacion(): void
+    {
+        // Nuevo comportamiento: aunque sea admin, el dashboard (y demás pantallas no DTE)
+        // ya NO muestran el badge de modo. Solo cambia dónde se ve; los candados server-side
+        // siguen intactos.
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('PARALELO SEGURO');
     }
 
     public function test_consulta_no_ve_el_badge(): void
     {
         $this->actingAs($this->usuario('consulta'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertDontSee('PARALELO SEGURO');
     }
@@ -58,7 +76,7 @@ class ModoDteBadgeTest extends TestCase
     public function test_contador_no_ve_el_badge(): void
     {
         $this->actingAs($this->usuario('contador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertDontSee('PARALELO SEGURO');
     }
@@ -73,7 +91,7 @@ class ModoDteBadgeTest extends TestCase
         config()->set('dte.transmision.allow_production', true);
 
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertSee('PRINCIPAL LISTO')
             ->assertSee('REALES a Hacienda (PRODUCCIÓN)');
@@ -90,7 +108,7 @@ class ModoDteBadgeTest extends TestCase
         config()->set('dte.transmision.test_enabled', true);
 
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertSee('PARALELO SEGURO')
             ->assertSee('apitest')
@@ -102,7 +120,7 @@ class ModoDteBadgeTest extends TestCase
         config()->set('dte.transmision.mock', true);
 
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertSee('PRUEBAS / MOCK');
     }
@@ -110,7 +128,7 @@ class ModoDteBadgeTest extends TestCase
     public function test_sin_mocks_no_aparece_el_chip(): void
     {
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertDontSee('PRUEBAS / MOCK');
     }
@@ -122,7 +140,7 @@ class ModoDteBadgeTest extends TestCase
         config()->set('dte.transmision.token', 'TOKEN_SECRETO_X');
 
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('dashboard'))
+            ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertDontSee('PASSWORD_SECRETO_X')
             ->assertDontSee('TOKEN_SECRETO_X')
