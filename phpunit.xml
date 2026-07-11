@@ -48,5 +48,12 @@
         <env name="DTE_MODO_OPERACION" value="paralelo"/>
         <env name="DTE_SISTEMA_ACTUAL_ACTIVO" value="true"/>
         <env name="DTE_TRANSMISION_AMBIENTE" value="testing"/>
+        <!-- Documentos recibidos: el suite NUNCA debe conectar al buzón real (Yahoo/IMAP).
+             Fuente forzada a 'none' y credenciales vacías, sin importar el .env de la máquina;
+             los tests usan un MailboxClient mockeado. -->
+        <env name="DOCUMENTOS_RECIBIDOS_MAIL_DRIVER" value="none"/>
+        <env name="DOCUMENTOS_RECIBIDOS_MAIL_HOST" value=""/>
+        <env name="DOCUMENTOS_RECIBIDOS_MAIL_USERNAME" value=""/>
+        <env name="DOCUMENTOS_RECIBIDOS_MAIL_PASSWORD" value=""/>
     </php>
 </phpunit>

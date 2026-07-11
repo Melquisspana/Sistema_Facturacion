@@ -24,6 +24,7 @@ class DocumentoRecibido extends Model
         'asunto',
         'remitente',
         'fecha_correo',
+        'fecha_dte',
         'tipo_documento',
         'numero_control',
         'codigo_generacion',
@@ -42,6 +43,7 @@ class DocumentoRecibido extends Model
     {
         return [
             'fecha_correo' => 'datetime',
+            'fecha_dte' => 'date',
             'total' => 'decimal:2',
             'tiene_pdf' => 'boolean',
             'tiene_json' => 'boolean',

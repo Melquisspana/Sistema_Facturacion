@@ -153,16 +153,21 @@ Route::middleware('auth')->group(function () {
     });
 
     /*
-    | Documentos recibidos — CCF/facturas que LLEGAN por correo (somos receptor).
-    | Fase 1 SOLO lectura/preparación: no reenvía, no envía correos, no modifica
-    | correos en Gmail, no borra, no toca DTE emitidos ni correlativos.
+    | Documentos recibidos — CCF/facturas de proveedores que LLEGAN por correo.
+    | Herramienta interna para preparar lo que se le manda a la contadora. SOLO
+    | lectura/preparación: no reenvía, no envía correos, no modifica el buzón, no
+    | borra, no toca DTE emitidos ni correlativos.
     */
     Route::prefix('documentos-recibidos')->name('documentos-recibidos.')->middleware('role:administrador|contador|facturacion')->group(function () {
         Route::get('/', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'index'])->name('index');
-        // Revisión MANUAL de Gmail (solo lectura). No marca leído, no mueve, no borra.
+        // Excel de recibidos respetando los filtros actuales (solo lectura, sin envío).
+        Route::get('exportar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'exportar'])->name('exportar');
+        // Revisión MANUAL del buzón Yahoo/IMAP (solo lectura). No marca leído, no mueve, no borra.
         Route::post('sincronizar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'sincronizar'])->name('sincronizar');
         Route::patch('{documento}/pendiente', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarPendiente'])->name('pendiente');
         Route::patch('{documento}/ignorar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarIgnorado'])->name('ignorar');
+        // Marcar enviado a contabilidad MANUALMENTE (estado interno; NO envía correo).
+        Route::patch('{documento}/enviado', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarEnviado'])->name('enviado');
     });
 
     /*
