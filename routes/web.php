@@ -171,6 +171,17 @@ Route::middleware('auth')->group(function () {
     });
 
     /*
+    | Contabilidad — herramienta INTERNA para preparar lo que se le manda a la
+    | contadora (ella no entra al sistema). Paquete mensual = compras (recibidos) +
+    | ventas (reporte contadora) en un ZIP. SOLO lectura: no envía correos, no toca
+    | DTE emitidos, correlativos ni el buzón.
+    */
+    Route::prefix('contabilidad')->name('contabilidad.')->middleware('role:administrador|contador|facturacion')->group(function () {
+        Route::get('paquete', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'index'])->name('paquete');
+        Route::post('paquete/generar', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'generar'])->name('paquete.generar');
+    });
+
+    /*
     | Prontos Pagos (PPQ) — gestión de cobro de Calleja. Solo consulta CCF/NC ya
     | emitidos, los agrupa en lotes y (fase siguiente) genera el Excel. NO emite DTE.
     | Roles que gestionan cobros: administrador, contador, facturación.

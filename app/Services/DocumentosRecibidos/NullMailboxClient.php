@@ -21,7 +21,7 @@ class NullMailboxClient implements MailboxClient
         return 'Correo no configurado (Yahoo/IMAP)';
     }
 
-    public function mensajesConAdjuntos(int $limite = 30): array
+    public function mensajesConAdjuntos(int $limite = 30, ?\Illuminate\Support\Carbon $desde = null): array
     {
         return [];
     }

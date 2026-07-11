@@ -10,6 +10,7 @@ use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\ParserDocumentoRecibido;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
@@ -126,6 +127,58 @@ class DocumentosRecibidosTest extends TestCase
         $r = app(SincronizadorDocumentosRecibidos::class)->sincronizar();
         $this->assertFalse($r['disponible']);
         $this->assertNotNull($r['error']);
+    }
+
+    public function test_revision_incremental_busca_desde_el_ultimo_documento(): void
+    {
+        // Último documento guardado con fecha_correo 10/07.
+        $this->doc(['fecha_correo' => Carbon::parse('2026-07-10 09:00:00')]);
+
+        $buzon = \Mockery::mock(MailboxClient::class);
+        $buzon->shouldReceive('disponible')->andReturn(true);
+        $buzon->shouldReceive('fuente')->andReturn('IMAP x');
+        // Se EXIGE que $desde sea el 2026-07-10 (inicio de ese día, inclusive).
+        $buzon->shouldReceive('mensajesConAdjuntos')
+            ->once()
+            ->with(\Mockery::type('int'), \Mockery::on(fn ($d) => $d instanceof Carbon && $d->format('Y-m-d') === '2026-07-10'))
+            ->andReturn([]);
+        $sync = $this->sincronizadorCon($buzon);
+
+        $r = $sync->sincronizar(); // incremental por defecto
+        $this->assertTrue($r['incremental']);
+        $this->assertSame('2026-07-10', $r['desde']);
+    }
+
+    public function test_sin_registros_usa_rango_inicial_de_30_dias(): void
+    {
+        $buzon = \Mockery::mock(MailboxClient::class);
+        $buzon->shouldReceive('disponible')->andReturn(true);
+        $buzon->shouldReceive('fuente')->andReturn('IMAP x');
+        $buzon->shouldReceive('mensajesConAdjuntos')
+            ->once()
+            ->with(\Mockery::type('int'), \Mockery::on(fn ($d) => $d instanceof Carbon && $d->between(now()->subDays(31), now()->subDays(29))))
+            ->andReturn([]);
+        $sync = $this->sincronizadorCon($buzon);
+
+        $r = $sync->sincronizar();
+        $this->assertSame(now()->subDays(30)->format('Y-m-d'), $r['desde']);
+    }
+
+    public function test_modo_historico_no_pasa_fecha_desde(): void
+    {
+        $this->doc(['fecha_correo' => now()]);
+        $buzon = \Mockery::mock(MailboxClient::class);
+        $buzon->shouldReceive('disponible')->andReturn(true);
+        $buzon->shouldReceive('fuente')->andReturn('IMAP x');
+        $buzon->shouldReceive('mensajesConAdjuntos')
+            ->once()
+            ->with(\Mockery::type('int'), null)
+            ->andReturn([]);
+        $sync = $this->sincronizadorCon($buzon);
+
+        $r = $sync->sincronizar(incremental: false);
+        $this->assertFalse($r['incremental']);
+        $this->assertNull($r['desde']);
     }
 
     public function test_el_modulo_no_referencia_gmailclient(): void
@@ -257,5 +310,26 @@ class DocumentosRecibidosTest extends TestCase
         $this->actingAs($this->usuario('consulta'))
             ->get(route('documentos-recibidos.index'))
             ->assertForbidden();
+    }
+
+    public function test_backfill_fecha_dte_desde_json_guardado_sin_tocar_yahoo(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+        \Illuminate\Support\Facades\Storage::disk('local')->put('documentos-recibidos/v1/d.json', json_encode($this->jsonDte('COD-V', 'DTE-03-VIEJO-1')));
+
+        // Registro VIEJO con JSON guardado y fecha_dte NULL.
+        $conJson = $this->doc(['gmail_message_id' => 'v1', 'fecha_dte' => null, 'estado' => 'enviado',
+            'metadata_json' => ['archivos' => ['documentos-recibidos/v1/d.json']]]);
+        // Registro sin JSON: queda NULL y se reporta.
+        $sinJson = $this->doc(['gmail_message_id' => 'v2', 'fecha_dte' => null, 'metadata_json' => ['archivos' => []]]);
+
+        $this->artisan('documentos-recibidos:backfill-fecha-dte')->assertSuccessful();
+
+        // fecEmi del JSON (2026-07-10) se guardó; estado NO cambió.
+        $conJson->refresh();
+        $this->assertSame('2026-07-10', $conJson->fecha_dte->format('Y-m-d'));
+        $this->assertSame('enviado', $conJson->estado);
+        // Sin JSON: sigue en NULL.
+        $this->assertNull($sinJson->refresh()->fecha_dte);
     }
 }

@@ -12,10 +12,21 @@
                     @csrf
                     <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                             @disabled(! $fuenteDisponible)
-                            title="Lee el buzón Yahoo/IMAP (solo lectura): no marca leído, no mueve ni borra correos.">
-                        {{ $fuenteDisponible ? 'Revisar correos' : 'Configurar correo Yahoo/IMAP' }}
+                            title="Revisión rápida: lee solo desde la fecha del último documento guardado (solo lectura; no marca leído, no mueve ni borra).">
+                        {{ $fuenteDisponible ? 'Revisar correos recientes' : 'Configurar correo Yahoo/IMAP' }}
                     </button>
                 </form>
+                @if ($fuenteDisponible)
+                    <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}"
+                          onsubmit="return confirm('Revisar el histórico completo puede tardar porque revisa correos antiguos. ¿Continuar?');">
+                        @csrf
+                        <input type="hidden" name="historico" value="1">
+                        <button class="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                                title="Revisa todo el buzón. Puede tardar porque revisa correos antiguos.">
+                            Revisar histórico
+                        </button>
+                    </form>
+                @endif
             </div>
         </div>
     </x-slot>

@@ -42,23 +42,33 @@ class SincronizadorDocumentosRecibidos
     /**
      * Revisa el buzón y crea registros locales para los correos con DTE nuevos.
      *
-     * @return array{disponible: bool, revisados: int, nuevos: int, duplicados: int, sin_datos: int, error: ?string}
+     * INCREMENTAL (default): busca solo DESDE la fecha del último documento guardado
+     * (prefiere fecha_correo; si no, created_at), inclusive ese mismo día. Si no hay
+     * ningún registro, usa un rango inicial razonable (últimos 30 días). El modo
+     * HISTÓRICO ($incremental=false) revisa todo el buzón (más lento).
+     *
+     * @return array{disponible: bool, carpeta: string, desde: ?string, incremental: bool, revisados: int, nuevos: int, duplicados: int, sin_datos: int, error: ?string}
      */
-    public function sincronizar(): array
+    public function sincronizar(bool $incremental = true): array
     {
+        $carpeta = (string) config('documentos_recibidos.mail.folder', 'INBOX');
+        $base = ['disponible' => true, 'carpeta' => $carpeta, 'desde' => null, 'incremental' => $incremental,
+            'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'sin_datos' => 0, 'error' => null];
+
         if (! $this->buzon->disponible()) {
-            return ['disponible' => false, 'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'sin_datos' => 0,
-                'error' => 'El correo de documentos recibidos (Yahoo/IMAP) no está configurado. Configurá las variables DOCUMENTOS_RECIBIDOS_MAIL_* para habilitar la revisión.'];
+            return array_merge($base, ['disponible' => false,
+                'error' => 'El correo de documentos recibidos (Yahoo/IMAP) no está configurado. Configurá las variables DOCUMENTOS_RECIBIDOS_MAIL_* para habilitar la revisión.']);
         }
 
-        $resumen = ['disponible' => true, 'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'sin_datos' => 0, 'error' => null];
+        // Fecha incremental: desde el último documento (o últimos 30 días si no hay).
+        $desde = $incremental ? $this->fechaDesde() : null;
+        $resumen = array_merge($base, ['desde' => $desde?->format('Y-m-d')]);
 
         try {
             $limite = (int) config('documentos_recibidos.limite', 30);
-            $mensajes = $this->buzon->mensajesConAdjuntos($limite);
+            $mensajes = $this->buzon->mensajesConAdjuntos($limite, $desde);
         } catch (Throwable $e) {
-            return ['disponible' => true, 'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'sin_datos' => 0,
-                'error' => 'No se pudo leer el correo: '.$e->getMessage()];
+            return array_merge($resumen, ['error' => 'No se pudo leer el correo: '.$e->getMessage()]);
         }
 
         foreach ($mensajes as $mensaje) {
@@ -189,6 +199,23 @@ class SincronizadorDocumentosRecibidos
     private function carpeta(string $id): string
     {
         return preg_replace('/[^A-Za-z0-9._-]+/', '_', $id) ?: 'msg';
+    }
+
+    /**
+     * Día desde el que revisar (incremental): el del último documento guardado
+     * (prefiere fecha_correo; si no, created_at), al inicio del día para incluirlo
+     * completo. Sin registros: últimos 30 días.
+     */
+    private function fechaDesde(): Carbon
+    {
+        $ultimo = DocumentoRecibido::orderByRaw('COALESCE(fecha_correo, created_at) DESC')->first();
+        if ($ultimo === null) {
+            return now()->subDays(30)->startOfDay();
+        }
+
+        $ref = $ultimo->fecha_correo ?? $ultimo->created_at;
+
+        return Carbon::parse($ref)->startOfDay();
     }
 
     private function fecha(?string $raw): ?Carbon
