@@ -179,6 +179,8 @@ Route::middleware('auth')->group(function () {
     Route::prefix('contabilidad')->name('contabilidad.')->middleware('role:administrador|contador|facturacion')->group(function () {
         Route::get('paquete', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'index'])->name('paquete');
         Route::post('paquete/generar', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'generar'])->name('paquete.generar');
+        // Envío MANUAL del paquete a contabilidad (requiere frase exacta). No cambia estados.
+        Route::post('paquete/enviar', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'enviar'])->name('paquete.enviar');
     });
 
     /*
