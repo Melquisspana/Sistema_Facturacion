@@ -64,6 +64,20 @@ class ExportacionItem extends Model
         return trim($this->nombre_es).' \\ '.trim($this->nombre_en);
     }
 
+    /**
+     * Descripción para la factura de exportación: "nombre_es / nombre_en - N units"
+     * (N = unidades por caja del snapshot). Si no hay unidades por caja, se omite
+     * el sufijo " - N units". Ej.: "Caja de dulce de nance / Yellow cherry candy - 144 units".
+     */
+    public function descripcionFactura(): string
+    {
+        $base = trim($this->nombre_es).' / '.trim($this->nombre_en);
+
+        return (int) $this->unidades_por_caja >= 1
+            ? $base.' - '.(int) $this->unidades_por_caja.' units'
+            : $base;
+    }
+
     public function totalUnidades(): int
     {
         return $this->cantidad_cajas * $this->unidades_por_caja;
