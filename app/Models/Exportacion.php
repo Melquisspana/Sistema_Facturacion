@@ -47,6 +47,30 @@ class Exportacion extends Model
         return $this->belongsTo(ExportacionCliente::class, 'exportacion_cliente_id');
     }
 
+    public function estaAprobada(): bool
+    {
+        return $this->estado === 'aprobada';
+    }
+
+    /**
+     * Líneas para PREPARAR la factura de exportación, calculadas EN VIVO desde el
+     * snapshot de los items (no relee precios del catálogo). Es un ayudante para
+     * copiar/armar la factura en Conta Portable: NO es un DTE ni se persiste.
+     *
+     * @return list<array{descripcion: string, cantidad: int, precio_unitario: float, total: float}>
+     */
+    public function lineasFactura(): array
+    {
+        return $this->items
+            ->map(fn (ExportacionItem $i) => [
+                'descripcion' => $i->descripcionFactura(),
+                'cantidad' => (int) $i->cantidad_cajas,
+                'precio_unitario' => (float) $i->precio_caja,
+                'total' => $i->valorTotal(),
+            ])
+            ->all();
+    }
+
     public function totalCajas(): int
     {
         return (int) $this->items->sum('cantidad_cajas');

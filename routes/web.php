@@ -253,6 +253,12 @@ Route::middleware('auth')->group(function () {
         Route::put('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'update'])->name('update');
         // Excel de lista de empaque desde la plantilla oficial (phpspreadsheet, sin IA).
         Route::get('{exportacion}/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excel'])->name('excel');
+        // Aprobación de la lista (revisada por la dueña). No emite nada.
+        Route::patch('{exportacion}/aprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'aprobar'])->name('aprobar');
+        Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->name('desaprobar');
+        // Ayuda para preparar la factura de exportación (solo lectura; NO es DTE, no emite).
+        Route::get('{exportacion}/preparar-factura', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'prepararFactura'])->name('preparar-factura');
+        Route::get('{exportacion}/preparar-factura/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excelFactura'])->name('preparar-factura.excel');
         Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->name('duplicar');
         Route::delete('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'destroy'])->name('destroy');
     });

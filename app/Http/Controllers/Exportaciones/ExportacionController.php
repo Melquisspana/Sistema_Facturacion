@@ -7,6 +7,7 @@ use App\Http\Requests\Exportaciones\ExportacionRequest;
 use App\Models\Exportacion;
 use App\Models\ExportacionItem;
 use App\Models\ExportacionProducto;
+use App\Services\Exportaciones\FacturaExportacionExcel;
 use App\Services\Exportaciones\ListaEmpaqueExcelService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -153,6 +154,59 @@ class ExportacionController extends Controller
         return redirect()
             ->route('exportaciones.show', $copia)
             ->with('status', "Exportación duplicada desde la #{$exportacion->id}. Revisá fecha y factura.");
+    }
+
+    /** Marca la lista como APROBADA (revisada por la dueña). No emite nada. */
+    public function aprobar(Exportacion $exportacion): RedirectResponse
+    {
+        $exportacion->update(['estado' => 'aprobada']);
+
+        return redirect()
+            ->route('exportaciones.show', $exportacion)
+            ->with('status', 'Lista de empaque marcada como aprobada.');
+    }
+
+    /** Revierte la aprobación (vuelve a borrador). No emite nada. */
+    public function desaprobar(Exportacion $exportacion): RedirectResponse
+    {
+        $exportacion->update(['estado' => 'borrador']);
+
+        return redirect()
+            ->route('exportaciones.show', $exportacion)
+            ->with('status', 'Lista de empaque devuelta a borrador.');
+    }
+
+    /**
+     * Vista de AYUDA para preparar la factura de exportación: arma las líneas
+     * (descripción es/en - units, cantidad, precio unitario, total) desde el
+     * snapshot de la lista. SOLO LECTURA: no es un DTE, no emite, no transmite,
+     * no toca correlativos, no persiste nada ni toca Conta Portable.
+     */
+    public function prepararFactura(Exportacion $exportacion): View|RedirectResponse
+    {
+        $exportacion->load('items');
+
+        if ($exportacion->items->isEmpty()) {
+            return redirect()
+                ->route('exportaciones.show', $exportacion)
+                ->with('error', 'La lista no tiene productos para preparar la factura.');
+        }
+
+        return view('exportaciones.preparar-factura', ['exportacion' => $exportacion]);
+    }
+
+    /** Descarga el Excel SIMPLE (4 columnas) para copiar los datos a mano. No emite nada. */
+    public function excelFactura(Exportacion $exportacion, FacturaExportacionExcel $service): BinaryFileResponse|RedirectResponse
+    {
+        $exportacion->load('items');
+
+        if ($exportacion->items->isEmpty()) {
+            return redirect()
+                ->route('exportaciones.show', $exportacion)
+                ->with('error', 'La lista no tiene productos para generar el Excel.');
+        }
+
+        return response()->download($service->generar($exportacion), $service->nombreArchivo($exportacion))->deleteFileAfterSend();
     }
 
     /** Descarga el Excel generado desde la plantilla oficial (solo hoja "Lista"). */
