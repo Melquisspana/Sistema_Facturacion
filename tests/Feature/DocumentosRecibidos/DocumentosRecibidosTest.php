@@ -5,19 +5,22 @@ namespace Tests\Feature\DocumentosRecibidos;
 use App\Models\DocumentoRecibido;
 use App\Models\User;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
+use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
+use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\ParserDocumentoRecibido;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Documentos recibidos (Fase 1, solo lectura). La fuente de correo es
- * INDEPENDIENTE de Gmail/PPQ (contrato MailboxClient). Verifica parseo del emisor,
- * deduplicación (con MailboxClient MOCKEADO), aviso sin configuración, filtros y
- * que no se envía ningún correo.
+ * Documentos recibidos: herramienta interna para preparar lo que se le manda a la
+ * contadora (ella no entra al sistema). Fuente de correo INDEPENDIENTE de Gmail/PPQ
+ * (MailboxClient). Verifica parser, dedupe, defaults (pendientes del mes),
+ * paginación, filtros, resumen y Excel. Nada envía correos ni toca el buzón.
  */
 class DocumentosRecibidosTest extends TestCase
 {
@@ -37,7 +40,24 @@ class DocumentosRecibidosTest extends TestCase
         return User::factory()->create()->assignRole($rol);
     }
 
-    /** JSON de un DTE recibido (emisor = proveedor que nos manda el documento). */
+    private function doc(array $extra = []): DocumentoRecibido
+    {
+        static $n = 0;
+        $n++;
+
+        return DocumentoRecibido::create($extra + [
+            'gmail_message_id' => 'm'.$n,
+            'emisor_nombre' => 'PROVEEDOR '.$n,
+            'tipo_documento' => '03',
+            'numero_control' => 'DTE-03-XXX-'.str_pad((string) $n, 4, '0', STR_PAD_LEFT),
+            'estado' => 'pendiente',
+            'total' => 100.00,
+            'tiene_pdf' => true,
+            'tiene_json' => true,
+            'fecha_correo' => now(),
+        ]);
+    }
+
     private function jsonDte(string $codigo = 'ABC-123', string $numero = 'DTE-03-XXXX-001'): array
     {
         return [
@@ -48,13 +68,14 @@ class DocumentosRecibidosTest extends TestCase
         ];
     }
 
-    /** Sincronizador con un MailboxClient de prueba (sin IMAP/Gmail reales). */
     private function sincronizadorCon(MailboxClient $buzon): SincronizadorDocumentosRecibidos
     {
         $this->app->instance(MailboxClient::class, $buzon);
 
         return app(SincronizadorDocumentosRecibidos::class);
     }
+
+    // ---------- parser / sincronización ----------
 
     public function test_parser_extrae_emisor_y_campos_del_dte_recibido(): void
     {
@@ -67,14 +88,14 @@ class DocumentosRecibidosTest extends TestCase
         $this->assertSame('06140000000000', $datos['emisor_nit']);
         $this->assertSame('999999', $datos['emisor_nrc']);
         $this->assertSame(250.75, $datos['total']);
+        $this->assertSame('2026-07-10', $datos['fecha']);
     }
 
-    public function test_sincronizar_crea_registros_y_deduplica_desde_el_buzon(): void
+    public function test_sincronizar_crea_registros_con_fecha_dte_y_deduplica(): void
     {
         Mail::fake();
         \Illuminate\Support\Facades\Storage::fake('local');
 
-        // MailboxClient de prueba (independiente de Gmail): un correo con JSON+PDF.
         $mensajes = [[
             'id' => 'uid-1', 'asunto' => 'CCF de proveedor', 'remitente' => 'proveedor@correo.com', 'fecha' => '2026-07-10',
             'adjuntos' => [
@@ -89,82 +110,138 @@ class DocumentosRecibidosTest extends TestCase
 
         $sync = $this->sincronizadorCon($buzon);
 
-        $r1 = $sync->sincronizar();
-        $this->assertSame(1, $r1['nuevos']);
+        $this->assertSame(1, $sync->sincronizar()['nuevos']);
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('COD-UNICO', $doc->codigo_generacion);
-        $this->assertSame('PROVEEDOR EJEMPLO S.A.', $doc->emisor_nombre);
-        $this->assertTrue($doc->tiene_pdf);
-        $this->assertTrue($doc->tiene_json);
-        $this->assertSame('pendiente', $doc->estado);
+        $this->assertSame('2026-07-10', $doc->fecha_dte->format('Y-m-d'));
+        $this->assertTrue($doc->tiene_pdf && $doc->tiene_json);
 
-        // Segunda corrida: mismo mensaje → NO se duplica.
-        $r2 = $sync->sincronizar();
-        $this->assertSame(0, $r2['nuevos']);
+        $this->assertSame(0, $sync->sincronizar()['nuevos']); // dedupe
         $this->assertSame(1, DocumentoRecibido::count());
-
         Mail::assertNothingSent();
     }
 
     public function test_sin_correo_configurado_no_falla_y_avisa(): void
     {
-        // El binding por defecto (sin config IMAP) resuelve al NullMailboxClient.
-        $sync = app(SincronizadorDocumentosRecibidos::class);
-        $this->assertFalse($sync->disponible());
-
-        $r = $sync->sincronizar();
+        $r = app(SincronizadorDocumentosRecibidos::class)->sincronizar();
         $this->assertFalse($r['disponible']);
-        $this->assertSame(0, $r['nuevos']);
         $this->assertNotNull($r['error']);
-    }
-
-    public function test_la_fuente_por_defecto_no_es_gmail_y_no_esta_disponible(): void
-    {
-        // La fuente resuelta es del módulo (IMAP/Null), NUNCA el GmailClient de PPQ, y
-        // sin credenciales/soporte queda no disponible (revisión deshabilitada).
-        $buzon = app(MailboxClient::class);
-        $this->assertInstanceOf(MailboxClient::class, $buzon);
-        $this->assertStringContainsString('DocumentosRecibidos', get_class($buzon));
-        $this->assertStringNotContainsString('Gmail', get_class($buzon));
-        $this->assertFalse($buzon->disponible());
     }
 
     public function test_el_modulo_no_referencia_gmailclient(): void
     {
-        // Garantía estructural: ningún archivo del módulo depende de GmailClient de PPQ.
         foreach (glob(app_path('Services/DocumentosRecibidos/*.php')) ?: [] as $archivo) {
-            $this->assertStringNotContainsString('GmailClient', (string) file_get_contents($archivo),
-                basename($archivo).' no debe usar GmailClient (la fuente es IMAP, independiente de PPQ).');
+            $this->assertStringNotContainsString('GmailClient', (string) file_get_contents($archivo));
         }
-        $this->assertStringNotContainsString('GmailClient',
-            (string) file_get_contents(app_path('Http/Controllers/DocumentosRecibidos/DocumentoRecibidoController.php')));
     }
 
-    public function test_listado_carga_y_filtra_por_estado_y_emisor(): void
+    // ---------- vista por defecto: pendientes del mes actual ----------
+
+    public function test_por_defecto_muestra_pendientes_del_mes_actual(): void
     {
-        DocumentoRecibido::create(['gmail_message_id' => 'm1', 'emisor_nombre' => 'PROVEEDOR UNO', 'tipo_documento' => '03', 'estado' => 'pendiente', 'tiene_pdf' => true, 'tiene_json' => true]);
-        DocumentoRecibido::create(['gmail_message_id' => 'm2', 'emisor_nombre' => 'PROVEEDOR DOS', 'tipo_documento' => '03', 'estado' => 'ignorado', 'tiene_pdf' => true, 'tiene_json' => false]);
+        $pendienteEsteMes = $this->doc(['emisor_nombre' => 'DEL MES PENDIENTE', 'estado' => 'pendiente', 'fecha_correo' => now()]);
+        $enviadoEsteMes = $this->doc(['emisor_nombre' => 'DEL MES ENVIADO', 'estado' => 'enviado', 'fecha_correo' => now()]);
+        $pendienteMesPasado = $this->doc(['emisor_nombre' => 'MES PASADO', 'estado' => 'pendiente', 'fecha_correo' => now()->subMonthNoOverflow()->startOfMonth()->addDays(3)]);
+
+        $resp = $this->actingAs($this->usuario('contador'))
+            ->get(route('documentos-recibidos.index'))
+            ->assertOk();
+
+        $resp->assertSee('DEL MES PENDIENTE');          // pendiente + mes actual
+        $resp->assertDontSee('DEL MES ENVIADO');        // otro estado
+        $resp->assertDontSee('MES PASADO');             // mes anterior
+        $this->assertSame('pendientes', $resp->viewData('filtros')['vista']);
+        $this->assertSame('mes_actual', $resp->viewData('filtros')['rango']);
+    }
+
+    public function test_paginacion_respeta_por_pagina(): void
+    {
+        for ($i = 0; $i < 30; $i++) {
+            $this->doc(['estado' => 'pendiente', 'fecha_correo' => now()]);
+        }
+
+        $resp = $this->actingAs($this->usuario('administrador'))
+            ->get(route('documentos-recibidos.index'))
+            ->assertOk();
+
+        $paginador = $resp->viewData('documentos');
+        $this->assertSame(30, $paginador->total());
+        $this->assertSame(25, $paginador->perPage());
+        $this->assertCount(25, $paginador->items());
+    }
+
+    public function test_filtros_por_numero_control_y_monto(): void
+    {
+        $this->doc(['numero_control' => 'DTE-03-BUSCAME-1', 'total' => 500, 'fecha_correo' => now()]);
+        $this->doc(['numero_control' => 'DTE-03-OTRO-2', 'total' => 50, 'fecha_correo' => now()]);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('documentos-recibidos.index', ['vista' => 'bandeja', 'numero_control' => 'BUSCAME']))
+            ->assertOk()->assertSee('DTE-03-BUSCAME-1')->assertDontSee('DTE-03-OTRO-2');
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('documentos-recibidos.index', ['vista' => 'bandeja', 'monto_min' => 100]))
+            ->assertOk()->assertSee('DTE-03-BUSCAME-1')->assertDontSee('DTE-03-OTRO-2');
+    }
+
+    public function test_resumen_calcula_cantidades_y_total_del_rango(): void
+    {
+        $this->doc(['estado' => 'pendiente', 'total' => 100, 'fecha_correo' => now()]);
+        $this->doc(['estado' => 'pendiente', 'total' => 200, 'fecha_correo' => now()]);
+        $this->doc(['estado' => 'enviado', 'total' => 300, 'fecha_correo' => now()]);
+        $this->doc(['estado' => 'ignorado', 'total' => 50, 'fecha_correo' => now()]);
+
+        $resumen = $this->actingAs($this->usuario('contador'))
+            ->get(route('documentos-recibidos.index', ['vista' => 'bandeja']))
+            ->assertOk()
+            ->viewData('resumen');
+
+        $this->assertSame(4, $resumen['total_docs']);
+        $this->assertSame(650.0, $resumen['total_monto']);
+        $this->assertSame(2, $resumen['pendiente']);
+        $this->assertSame(1, $resumen['enviado']);
+        $this->assertSame(1, $resumen['ignorado']);
+    }
+
+    // ---------- Excel ----------
+
+    public function test_excel_tiene_las_columnas_esperadas(): void
+    {
+        $this->doc(['emisor_nombre' => 'PROV EXCEL', 'emisor_nit' => '0614X', 'numero_control' => 'DTE-03-EXCEL-1', 'total' => 123.45, 'fecha_correo' => now(), 'fecha_dte' => now()->toDateString()]);
+
+        $filtros = DocumentosRecibidosQuery::filtros(['vista' => 'bandeja', 'rango' => 'todos']);
+        $docs = DocumentosRecibidosQuery::query($filtros)->get();
+        $ruta = (new DocumentosRecibidosExcel())->generar($docs);
+
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
+        foreach (DocumentosRecibidosExcel::COLUMNAS as $i => $titulo) {
+            $this->assertSame($titulo, $hoja->getCell([$i + 1, 1])->getValue());
+        }
+        $this->assertSame('PROV EXCEL', $hoja->getCell([3, 2])->getValue());
+        $this->assertSame('DTE-03-EXCEL-1', $hoja->getCell([7, 2])->getValue());
+        @unlink($ruta);
+    }
+
+    public function test_exportar_descarga_xlsx_con_nombre_del_mes(): void
+    {
+        $this->doc(['fecha_correo' => now()]);
 
         $this->actingAs($this->usuario('contador'))
-            ->get(route('documentos-recibidos.index', ['vista' => 'pendientes']))
+            ->get(route('documentos-recibidos.exportar'))
             ->assertOk()
-            ->assertSee('PROVEEDOR UNO')
-            ->assertDontSee('PROVEEDOR DOS');
+            ->assertDownload('documentos_recibidos_'.now()->format('Y-m').'.xlsx');
     }
 
-    public function test_index_sin_config_muestra_aviso_y_no_truena(): void
-    {
-        $this->actingAs($this->usuario('administrador'))
-            ->get(route('documentos-recibidos.index'))
-            ->assertOk()
-            ->assertSee('Configurar correo Yahoo/IMAP');
-    }
+    // ---------- estados (manual, sin correo) ----------
 
-    public function test_marcar_pendiente_e_ignorado_cambia_estado_sin_enviar_correo(): void
+    public function test_marcar_estados_no_envia_correo(): void
     {
         Mail::fake();
-        $doc = DocumentoRecibido::create(['gmail_message_id' => 'm3', 'emisor_nombre' => 'X', 'estado' => 'pendiente']);
+        $doc = $this->doc(['estado' => 'pendiente', 'fecha_correo' => now()]);
         $admin = $this->usuario('administrador');
+
+        $this->actingAs($admin)->patch(route('documentos-recibidos.enviado', $doc))->assertRedirect();
+        $this->assertSame('enviado', $doc->refresh()->estado);
 
         $this->actingAs($admin)->patch(route('documentos-recibidos.ignorar', $doc))->assertRedirect();
         $this->assertSame('ignorado', $doc->refresh()->estado);

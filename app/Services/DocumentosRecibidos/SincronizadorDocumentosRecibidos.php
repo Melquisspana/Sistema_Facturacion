@@ -137,6 +137,8 @@ class SincronizadorDocumentosRecibidos
             'asunto' => $mensaje['asunto'] ?? null,
             'remitente' => $mensaje['remitente'] ?? null,
             'fecha_correo' => $this->fecha($mensaje['fecha'] ?? null),
+            // Fecha de emisión del DTE (fecEmi del JSON), si vino.
+            'fecha_dte' => $this->fecha($datos['fecha'] ?? null),
             'tipo_documento' => $datos['tipo_documento'] ?? null,
             'numero_control' => $datos['numero_control'] ?? null,
             'codigo_generacion' => $codigo,

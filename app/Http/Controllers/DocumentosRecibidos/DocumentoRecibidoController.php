@@ -4,60 +4,35 @@ namespace App\Http\Controllers\DocumentosRecibidos;
 
 use App\Http\Controllers\Controller;
 use App\Models\DocumentoRecibido;
+use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
+use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * Documentos recibidos (CCF/facturas que nos llegan por correo). Fase 1: solo
- * lectura/listado + preparación. NO reenvía, NO envía correos, NO modifica correos
- * en Gmail, NO borra nada, NO toca DTE emitidos ni correlativos.
+ * Documentos recibidos (CCF/facturas de proveedores que llegan por correo).
+ * Herramienta INTERNA para preparar lo que se le manda a la contadora (ella no
+ * entra al sistema). Fase actual: solo lectura/listado/preparación + Excel. NO
+ * reenvía, NO envía correos, NO modifica el buzón, NO toca DTE emitidos.
  */
 class DocumentoRecibidoController extends Controller
 {
-    /** Pestañas del módulo (bandeja / pendientes / enviados). */
-    private const VISTAS = ['bandeja', 'pendientes', 'enviados', 'ignorados'];
-
     public function index(Request $request, SincronizadorDocumentosRecibidos $sync): View
     {
-        $vista = (string) $request->query('vista', 'bandeja');
-        if (! in_array($vista, self::VISTAS, true)) {
-            $vista = 'bandeja';
-        }
+        // Por defecto: pendientes del mes actual (para que no se llene con el histórico).
+        $filtros = DocumentosRecibidosQuery::filtros($request->all());
 
-        $q = DocumentoRecibido::query();
-
-        // La pestaña define el estado base.
-        match ($vista) {
-            'pendientes' => $q->where('estado', 'pendiente'),
-            'enviados' => $q->where('estado', 'enviado'),
-            'ignorados' => $q->where('estado', 'ignorado'),
-            default => null, // bandeja = todos
-        };
-
-        // Filtros.
-        if ($request->filled('emisor')) {
-            $q->where('emisor_nombre', 'like', '%'.$request->string('emisor').'%');
-        }
-        if ($request->filled('tipo_documento')) {
-            $q->where('tipo_documento', $request->string('tipo_documento'));
-        }
-        if ($request->filled('estado') && in_array($request->string('estado')->value(), DocumentoRecibido::ESTADOS, true)) {
-            $q->where('estado', $request->string('estado'));
-        }
-        if ($request->filled('fecha_desde')) {
-            $q->whereDate('fecha_correo', '>=', $request->date('fecha_desde'));
-        }
-        if ($request->filled('fecha_hasta')) {
-            $q->whereDate('fecha_correo', '<=', $request->date('fecha_hasta'));
-        }
-
-        $documentos = $q->orderByDesc('fecha_correo')->orderByDesc('id')->paginate(25)->withQueryString();
+        $documentos = DocumentosRecibidosQuery::query($filtros)
+            ->orderByDesc('fecha_correo')->orderByDesc('id')
+            ->paginate($filtros['por_pagina'])->withQueryString();
 
         return view('documentos-recibidos.index', [
             'documentos' => $documentos,
-            'vista' => $vista,
+            'filtros' => $filtros,
+            'resumen' => $this->resumen($filtros),
             'fuenteDisponible' => $sync->disponible(),
             'fuente' => $sync->fuente(),
             'conteos' => [
@@ -66,6 +41,21 @@ class DocumentoRecibidoController extends Controller
                 'ignorado' => DocumentoRecibido::where('estado', 'ignorado')->count(),
             ],
         ]);
+    }
+
+    /** Descarga el Excel de recibidos respetando los filtros actuales. */
+    public function exportar(Request $request, DocumentosRecibidosExcel $excel): BinaryFileResponse
+    {
+        $filtros = DocumentosRecibidosQuery::filtros($request->all());
+
+        $documentos = DocumentosRecibidosQuery::query($filtros)
+            ->orderByDesc('fecha_correo')->orderByDesc('id')->get();
+
+        $ruta = $excel->generar($documentos);
+
+        return response()
+            ->download($ruta, $excel->nombreArchivo(DocumentosRecibidosQuery::etiquetaArchivo($filtros)))
+            ->deleteFileAfterSend();
     }
 
     /**
@@ -98,5 +88,37 @@ class DocumentoRecibidoController extends Controller
         $documento->update(['estado' => 'ignorado']);
 
         return back()->with('status', 'Documento marcado como ignorado.');
+    }
+
+    /**
+     * Marca el documento como enviado a contabilidad MANUALMENTE (estado interno).
+     * NO envía ningún correo: solo registra que ya se lo hiciste llegar por fuera.
+     * El envío automático a contabilidad llega en una fase posterior.
+     */
+    public function marcarEnviado(DocumentoRecibido $documento): RedirectResponse
+    {
+        $documento->update(['estado' => 'enviado']);
+
+        return back()->with('status', 'Documento marcado como enviado a contabilidad (manual, no se envió correo).');
+    }
+
+    /**
+     * Resumen del rango/filtro actual (sin el filtro de estado de la pestaña): total
+     * de documentos, monto total y desglose por estado. Solo lectura.
+     *
+     * @param  array<string, mixed>  $filtros
+     * @return array<string, mixed>
+     */
+    private function resumen(array $filtros): array
+    {
+        $base = DocumentosRecibidosQuery::query($filtros, aplicarEstado: false);
+
+        return [
+            'total_docs' => (clone $base)->count(),
+            'total_monto' => (float) (clone $base)->sum('total'),
+            'pendiente' => (clone $base)->where('estado', 'pendiente')->count(),
+            'enviado' => (clone $base)->where('estado', 'enviado')->count(),
+            'ignorado' => (clone $base)->where('estado', 'ignorado')->count(),
+        ];
     }
 }

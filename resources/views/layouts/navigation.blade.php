@@ -151,9 +151,6 @@
                         @if ($esGestorDte)
                             <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
                         @endif
-                        @if ($veOperativos)
-                            <x-sidebar-link :href="route('facturacion.reporte-contadora')" :active="$enReporteContadora">Reporte contadora</x-sidebar-link>
-                        @endif
                     </div>
                 </div>
             @endif
@@ -168,11 +165,13 @@
                 </div>
 
                 <div>
-                    <p class="{{ $tituloGrupo }}">Documentos recibidos</p>
+                    <p class="{{ $tituloGrupo }}">Contabilidad</p>
                     <div class="space-y-0.5">
-                        <x-sidebar-link :href="route('documentos-recibidos.index')" :active="request()->routeIs('documentos-recibidos.*') && request('vista', 'bandeja') === 'bandeja'">Bandeja recibidos</x-sidebar-link>
-                        <x-sidebar-link :href="route('documentos-recibidos.index', ['vista' => 'pendientes'])" :active="request()->routeIs('documentos-recibidos.*') && request('vista') === 'pendientes'">Pendientes contabilidad</x-sidebar-link>
-                        <x-sidebar-link :href="route('documentos-recibidos.index', ['vista' => 'enviados'])" :active="request()->routeIs('documentos-recibidos.*') && request('vista') === 'enviados'">Enviados a contabilidad</x-sidebar-link>
+                        {{-- Compras: CCF/facturas de proveedores recibidas por correo (con sus
+                             filtros por estado dentro de la pantalla). Ventas: reporte de lo que
+                             emitimos, que se le manda a la contadora. Solo navegación. --}}
+                        <x-sidebar-link :href="route('documentos-recibidos.index')" :active="request()->routeIs('documentos-recibidos.*')">Compras</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.reporte-contadora')" :active="$enReporteContadora">Ventas</x-sidebar-link>
                     </div>
                 </div>
 
