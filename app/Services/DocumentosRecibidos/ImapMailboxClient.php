@@ -50,7 +50,7 @@ class ImapMailboxClient implements MailboxClient
             : 'Correo Yahoo/IMAP sin configurar';
     }
 
-    public function mensajesConAdjuntos(int $limite = 30): array
+    public function mensajesConAdjuntos(int $limite = 30, ?\Illuminate\Support\Carbon $desde = null): array
     {
         if (! $this->disponible()) {
             return [];
@@ -62,8 +62,13 @@ class ImapMailboxClient implements MailboxClient
         }
 
         try {
-            $criterio = (string) ($this->cfg['search'] ?? 'ALL');
-            $ids = @imap_search($conn, $criterio !== '' ? $criterio : 'ALL', SE_UID) ?: [];
+            // Incremental: solo correos DESDE ese día inclusive (SINCE, granularidad de
+            // día). Sin $desde: el criterio base de config (histórico). Formato IMAP
+            // de fecha: "10-Jul-2026".
+            $criterio = $desde !== null
+                ? 'SINCE "'.$desde->format('d-M-Y').'"'
+                : ((string) ($this->cfg['search'] ?? 'ALL') ?: 'ALL');
+            $ids = @imap_search($conn, $criterio, SE_UID) ?: [];
             // Más recientes primero, acotado al límite.
             rsort($ids);
             $ids = array_slice($ids, 0, max(1, $limite));

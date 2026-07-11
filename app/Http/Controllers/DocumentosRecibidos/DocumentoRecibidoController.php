@@ -61,17 +61,23 @@ class DocumentoRecibidoController extends Controller
     /**
      * Revisa el buzón (Yahoo/IMAP) MANUALMENTE y crea registros nuevos. Solo
      * lectura: no marca leído, no mueve, no borra, no reenvía.
+     *
+     * Por defecto INCREMENTAL (desde la fecha del último documento guardado); con
+     * ?historico=1 revisa todo el buzón (más lento).
      */
-    public function sincronizar(SincronizadorDocumentosRecibidos $sync): RedirectResponse
+    public function sincronizar(Request $request, SincronizadorDocumentosRecibidos $sync): RedirectResponse
     {
-        $r = $sync->sincronizar();
+        $incremental = ! $request->boolean('historico');
+        $r = $sync->sincronizar($incremental);
 
         if (! $r['disponible'] || $r['error'] !== null) {
             return back()->with('error', $r['error'] ?? 'No se pudo revisar el correo.');
         }
 
-        return back()->with('status', "Revisión completada: {$r['revisados']} correos, {$r['nuevos']} nuevos, "
-            ."{$r['duplicados']} ya registrados, {$r['sin_datos']} sin DTE legible. No se modificó ningún correo.");
+        $desde = $r['incremental'] ? ('desde el '.($r['desde'] ?? '—')) : 'todo el histórico';
+        return back()->with('status', "Revisión completada (carpeta {$r['carpeta']}, {$desde}): "
+            ."{$r['revisados']} correos revisados, {$r['nuevos']} nuevos, {$r['duplicados']} ya registrados, "
+            ."{$r['sin_datos']} sin DTE legible. No se modificó ningún correo.");
     }
 
     /** Marca el documento como pendiente para contabilidad. */
