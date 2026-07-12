@@ -52,6 +52,8 @@ class PreparacionProduccionController extends Controller
             'correlativo' => $this->correlativo(),
             'backup' => $this->ultimoBackup(),
             'puedeBackup' => (bool) $request->user()?->hasRole('administrador'),
+            'worker' => WorkerHeartbeat::estado(),
+            'higiene' => $this->higiene(),
         ]);
     }
 
@@ -222,16 +224,21 @@ class PreparacionProduccionController extends Controller
             if ($zips->isNotEmpty()) {
                 $f = $zips->first();
                 $fecha = Carbon::createFromTimestamp($f->getMTime());
-                $reciente = $fecha->gt(now()->subDay());
+                // Para emitir real se exige un backup DE HOY (mismo día calendario).
+                $esHoy = $fecha->isToday();
 
                 return [
                     'ruta' => $rutaMostrada,
                     'existe' => true,
-                    'estado' => $reciente ? 'ok' : 'advertencia',
+                    // Rojo (crítico) si el backup NO es de hoy: falta respaldo del día.
+                    'estado' => $esHoy ? 'ok' : 'critico',
+                    'es_hoy' => $esHoy,
                     'nombre' => $f->getFilename(),
                     'fecha' => $fecha->format('d/m/Y H:i'),
                     'tamano' => $this->humano($f->getSize()),
-                    'detalle' => $reciente ? 'Backup reciente (menos de 1 día).' : 'El último backup tiene más de 1 día.',
+                    'detalle' => $esHoy
+                        ? 'Backup de HOY disponible.'
+                        : 'El último backup NO es de hoy: generá un backup del día antes de emitir real.',
                 ];
             }
         }
@@ -239,9 +246,65 @@ class PreparacionProduccionController extends Controller
         return [
             'ruta' => $rutaMostrada,
             'existe' => false,
-            'estado' => 'advertencia',
-            'detalle' => 'No se encontró ningún backup en '.$rutaMostrada.'.',
+            'estado' => 'critico',
+            'es_hoy' => false,
+            'detalle' => 'No se encontró ningún backup en '.$rutaMostrada.'. Generá uno antes de emitir real.',
         ];
+    }
+
+    /**
+     * HIGIENE de configuración para "paralelo limpio": SOLO REPORTE. Lista flags que
+     * conviene cerrar antes de operar en paralelo seguro. NO lee secretos (solo
+     * booleanos) y NO modifica .env ni nada: es informativo. El operador decide.
+     *
+     * @return array<int, array{clave: string, label: string, actual: string, recomendado: string, ok: bool, motivo: string, env: string}>
+     */
+    private function higiene(): array
+    {
+        $modoParalelo = strtolower(trim((string) config('dte.transmision.modo_operacion', 'paralelo'))) === 'paralelo';
+
+        $firmaEnabled = (bool) config('dte.firma.enabled', false);
+        $firmaMock = (bool) config('dte.firma.mock', false);
+        $invalConfirm = (bool) config('dte.invalidacion.real_confirmation', false);
+        $invalMock = (bool) config('dte.invalidacion.mock', false);
+        $transEnabled = (bool) config('dte.transmision.enabled', false);
+
+        $items = [];
+
+        // Firma local real habilitada mientras se opera en paralelo (residual de una emisión).
+        $items[] = [
+            'clave' => 'firma_enabled',
+            'label' => 'Firma local real',
+            'actual' => $firmaEnabled ? ($firmaMock ? 'habilitada (mock)' : 'HABILITADA (real)') : 'deshabilitada',
+            'recomendado' => 'deshabilitada en paralelo',
+            'ok' => ! ($firmaEnabled && ! $firmaMock && $modoParalelo),
+            'motivo' => 'Con firma real habilitada en modo paralelo, un firmar/transmitir usaría el firmador real. En paralelo limpio conviene apagarla.',
+            'env' => 'DTE_FIRMA_ENABLED',
+        ];
+
+        // Candado de invalidación real abierto (apitest/consola), conviene cerrarlo por higiene.
+        $items[] = [
+            'clave' => 'invalidacion_real',
+            'label' => 'Confirmación de invalidación real',
+            'actual' => $invalConfirm ? 'abierta' : 'cerrada',
+            'recomendado' => 'cerrada',
+            'ok' => ! ($invalConfirm && ! $invalMock),
+            'motivo' => 'La confirmación de invalidación real está abierta. Solo afecta apitest por consola, pero conviene cerrarla por higiene.',
+            'env' => 'DTE_INVALIDACION_REAL_CONFIRMATION',
+        ];
+
+        // Transmisión habilitada (aunque quede neutralizada por mock/dry-run/paralelo): informativo.
+        $items[] = [
+            'clave' => 'transmision_enabled',
+            'label' => 'Transmisión habilitada (interruptor)',
+            'actual' => $transEnabled ? 'encendido' : 'apagado',
+            'recomendado' => 'informativo',
+            'ok' => true,
+            'motivo' => 'El interruptor puede estar encendido sin riesgo: los candados (mock, dry-run y paralelo) siguen bloqueando la transmisión real.',
+            'env' => 'DTE_TRANSMISION_ENABLED',
+        ];
+
+        return $items;
     }
 
     private function humano(int $bytes): string
