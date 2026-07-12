@@ -6,6 +6,7 @@ use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Http\Controllers\Controller;
+use App\Models\Configuracion;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Services\Dte\DteFirmaService;
@@ -188,6 +189,21 @@ class PreparacionProduccionController extends Controller
             ->where('activo', true)
             ->first();
 
+        // Contador INTERNO del sistema nuevo (fila correlativo ambiente 01). Su
+        // "siguiente" (p. ej. 1079) está DESACTUALIZADO frente a Conta Portable.
+        $internoUltimo = $corr?->ultimo_numero;
+        $internoProximo = $corr?->siguiente_numero;
+
+        // Último CCF real EXTERNO confirmado en Conta Portable (dato operativo que
+        // confirma el operador). Se guarda como clave simple de configuración; NO es
+        // un correlativo ni lo mueve. Default 1093 (último confirmado hasta hoy).
+        $externoUltimo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
+        // Próximo real OPERATIVO correcto = último externo + 1 (p. ej. 1094).
+        $operativoProximo = $externoUltimo + 1;
+
+        // ¿El contador interno quedó desalineado frente a lo real externo?
+        $desalineado = $internoProximo !== null && $internoProximo !== $operativoProximo;
+
         return [
             'ultimo' => $ultimo ? [
                 'numero_control' => $ultimo->numero_control,
@@ -201,6 +217,12 @@ class PreparacionProduccionController extends Controller
                 'ultimo_numero' => $corr->ultimo_numero,
                 'siguiente' => $corr->siguiente_numero,
             ] : null,
+            // Vista corregida de la numeración real (interno vs externo vs operativo).
+            'interno_ultimo' => $internoUltimo,       // 1078 — última emisión propia del sistema
+            'interno_proximo' => $internoProximo,     // 1079 — contador interno (DESACTUALIZADO)
+            'externo_ultimo' => $externoUltimo,       // 1093 — último real externo (Conta Portable)
+            'operativo_proximo' => $operativoProximo, // 1094 — próximo real correcto
+            'desalineado' => $desalineado,
         ];
     }
 

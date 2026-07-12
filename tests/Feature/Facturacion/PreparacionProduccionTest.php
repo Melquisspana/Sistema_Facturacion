@@ -124,24 +124,57 @@ class PreparacionProduccionTest extends TestCase
                 'ultimo_numero' => 1078, 'activo' => true,
             ]);
         }
-        $proximo = $corr->ultimo_numero + 1;
+        $internoProximo = $corr->ultimo_numero + 1;       // 1079 (contador interno)
 
         $html = $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertOk()
-            // Barrera anti-Conta con la frase exacta y el próximo correlativo.
-            ->assertSee('Confirmo que Conta Portable está detenido o alineado', false)
-            ->assertSee('NO emitió el correlativo '.$proximo, false)
-            ->assertSee('NO continuar', false)
+            // Las 3 cifras: interno 1078, externo (Conta) 1093, próximo operativo 1094.
+            ->assertSee((string) $corr->ultimo_numero)     // 1078 interno
+            ->assertSee('1093')                            // externo confirmado (default)
+            ->assertSee('1094')                            // próximo operativo correcto
+            // Aviso de desalineación (contador interno 1079 != operativo 1094).
+            ->assertSee('desalineado', false)
+            ->assertSee('alinear el correlativo', false)
+            // Barrera anti-Conta con el texto dinámico nuevo.
+            ->assertSee('Confirmo que Conta Portable quedó detenido/alineado', false)
+            ->assertSee('último CCF real externo es 1093', false)
+            ->assertSee('el próximo será 1094', false)
             // Higiene de configuración (solo reporte, no cambia .env).
             ->assertSee('Higiene de configuración')
             ->assertSee('no cambia', false)
             ->getContent();
 
+        // El contador interno (1079) sigue visible pero marcado como desactualizado.
+        $this->assertStringContainsString((string) $internoProximo, $html);
         // El worker en tests no late: debe avisar que los correos/jobs no saldrán.
         $this->assertStringContainsString('no saldrán', $html);
         // Sigue sin exponer el campo de la frase real de emisión.
         $this->assertStringNotContainsString('confirmacion_emision', $html);
+    }
+
+    public function test_ultimo_externo_configurable_actualiza_proximo_operativo(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        if (! Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->exists()) {
+            Correlativo::create([
+                'tipo_dte' => '03', 'establecimiento_id' => Establecimiento::firstOrFail()->id,
+                'punto_venta_id' => null, 'ambiente' => '01', 'serie' => 'M001P001',
+                'ultimo_numero' => 1078, 'activo' => true,
+            ]);
+        }
+        // Confirmar otro último externo (p. ej. Conta llegó a 1100) => próximo 1101,
+        // SIN tocar el correlativo (solo una clave de configuración).
+        \App\Models\Configuracion::set('produccion.ultimo_ccf_externo', '1100');
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.preparar-produccion'))
+            ->assertOk()
+            ->assertSee('1100')  // externo confirmado
+            ->assertSee('1101'); // próximo operativo = externo + 1
+
+        // No se movió el correlativo interno.
+        $this->assertSame(1078, (int) Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->value('ultimo_numero'));
     }
 
     public function test_el_backup_solo_bd_es_admin_only(): void
