@@ -120,30 +120,53 @@
                             <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
                         </div>
 
-                        {{-- Emisor --}}
-                        <div>
-                            <x-input-label for="establecimiento_id" value="Establecimiento emisor *" />
-                            <select id="establecimiento_id" name="establecimiento_id" x-model="establecimientoId"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                <option value="">— Seleccione —</option>
-                                @foreach ($establecimientos as $est)
-                                    <option value="{{ $est->id }}">{{ $est->codigo }} — {{ $est->nombre }}</option>
-                                @endforeach
-                            </select>
-                            <x-input-error :messages="$errors->get('establecimiento_id')" class="mt-1" />
-                        </div>
-                        <div>
-                            <x-input-label for="punto_venta_id" value="Punto de venta emisor *" />
-                            <select id="punto_venta_id" name="punto_venta_id" x-model="puntoVentaId"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                <option value="">— Seleccione —</option>
-                                @foreach ($puntosVenta as $pv)
-                                    <option value="{{ $pv->id }}">{{ $pv->codigo }} — {{ $pv->nombre }}</option>
-                                @endforeach
-                            </select>
-                            <x-input-error :messages="$errors->get('punto_venta_id')" class="mt-1" />
-                        </div>
-                        <div class="md:col-span-2 -mt-2">
+                        {{-- Emisor. Si hay UN solo establecimiento / punto de venta, se autoselecciona
+                             y se oculta el select (se envía por hidden). Con varios, se muestran los selects. --}}
+                        @php
+                            $unicoEst = $establecimientos->count() === 1 ? $establecimientos->first() : null;
+                            $unicoPv = $puntosVenta->count() === 1 ? $puntosVenta->first() : null;
+                        @endphp
+
+                        @if ($unicoEst)
+                            <input type="hidden" name="establecimiento_id" value="{{ $unicoEst->id }}">
+                        @else
+                            <div>
+                                <x-input-label for="establecimiento_id" value="Establecimiento emisor *" />
+                                <select id="establecimiento_id" name="establecimiento_id" x-model="establecimientoId"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                    <option value="">— Seleccione —</option>
+                                    @foreach ($establecimientos as $est)
+                                        <option value="{{ $est->id }}">{{ $est->codigo }} — {{ $est->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('establecimiento_id')" class="mt-1" />
+                            </div>
+                        @endif
+
+                        @if ($unicoPv)
+                            <input type="hidden" name="punto_venta_id" value="{{ $unicoPv->id }}">
+                        @else
+                            <div>
+                                <x-input-label for="punto_venta_id" value="Punto de venta emisor *" />
+                                <select id="punto_venta_id" name="punto_venta_id" x-model="puntoVentaId"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                    <option value="">— Seleccione —</option>
+                                    @foreach ($puntosVenta as $pv)
+                                        <option value="{{ $pv->id }}">{{ $pv->codigo }} — {{ $pv->nombre }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('punto_venta_id')" class="mt-1" />
+                            </div>
+                        @endif
+
+                        <div class="md:col-span-2 -mt-2 space-y-1">
+                            @if ($unicoEst || $unicoPv)
+                                <p class="text-sm text-gray-600">
+                                    @if ($unicoEst)Emisor: <span class="font-medium text-gray-800">{{ $unicoEst->codigo }}</span>@endif
+                                    @if ($unicoEst && $unicoPv) · @endif
+                                    @if ($unicoPv)Punto de venta: <span class="font-medium text-gray-800">{{ $unicoPv->codigo }}</span>@endif
+                                </p>
+                            @endif
                             <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no a la sala del cliente. El correlativo se asigna al generar.</p>
                         </div>
 

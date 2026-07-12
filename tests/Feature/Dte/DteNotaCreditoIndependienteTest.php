@@ -214,18 +214,41 @@ class DteNotaCreditoIndependienteTest extends TestCase
         return $this->aceptarCcf($dte);
     }
 
-    public function test_formulario_nc_es_similar_a_ccf(): void
+    public function test_formulario_nc_con_un_emisor_oculta_selects_y_autoselecciona(): void
     {
-        $this->emisor();
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor(); // crea 1 establecimiento + 1 PV
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.create-nota-credito'))
             ->assertOk()
             ->assertSee('Cliente (contribuyente) / sala')
-            ->assertSee('Establecimiento emisor')
-            ->assertSee('Punto de venta emisor')
+            // Un solo establecimiento y un solo PV → selects ocultos y autoseleccionados.
+            ->assertDontSee('Establecimiento emisor')
+            ->assertDontSee('Punto de venta emisor')
+            ->assertSee('type="hidden" name="establecimiento_id" value="'.$estab->id.'"', false)
+            ->assertSee('type="hidden" name="punto_venta_id" value="'.$pv->id.'"', false)
+            ->assertSee($estab->codigo) // texto discreto "Emisor: M001 · Punto de venta: P001"
             ->assertSee('Tipo de nota de crédito')
             ->assertSee('CCF relacionado');
+    }
+
+    public function test_formulario_nc_con_varios_establecimientos_muestra_selects(): void
+    {
+        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
+        $e1 = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        $e2 = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M002', 'nombre' => 'Sucursal Centro', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $e1->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
+        PuntoVenta::create(['establecimiento_id' => $e2->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+        Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.create-nota-credito'))
+            ->assertOk()
+            // Con varios establecimientos/PV, los selects vuelven a mostrarse.
+            ->assertSee('Establecimiento emisor')
+            ->assertSee('Punto de venta emisor')
+            ->assertSee('Casa Matriz')
+            ->assertSee('Sucursal Centro');
     }
 
     public function test_ccf_no_permite_oficina_central(): void

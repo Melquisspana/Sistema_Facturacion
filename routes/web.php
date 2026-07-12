@@ -64,6 +64,8 @@ Route::middleware('auth')->group(function () {
     */
     Route::prefix('facturacion')->name('facturacion.')->scopeBindings()->group(function () {
         Route::get('/', [DteController::class, 'index'])->name('index');
+        // Invalidaciones: lista de documentos aceptados que se pueden invalidar (antes de {dte}).
+        Route::get('invalidaciones', [DteController::class, 'invalidaciones'])->name('invalidaciones');
         Route::get('ccf/crear', [DteController::class, 'createCcf'])->name('create-ccf');
         Route::post('ccf', [DteController::class, 'storeCcf'])->name('store-ccf');
         Route::get('factura/crear', [DteController::class, 'createFactura'])->name('create-factura');
