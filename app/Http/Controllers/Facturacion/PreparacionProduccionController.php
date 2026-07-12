@@ -198,11 +198,16 @@ class PreparacionProduccionController extends Controller
         // confirma el operador). Se guarda como clave simple de configuración; NO es
         // un correlativo ni lo mueve. Default 1093 (último confirmado hasta hoy).
         $externoUltimo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
-        // Próximo real OPERATIVO correcto = último externo + 1 (p. ej. 1094).
-        $operativoProximo = $externoUltimo + 1;
 
-        // ¿El contador interno quedó desalineado frente a lo real externo?
-        $desalineado = $internoProximo !== null && $internoProximo !== $operativoProximo;
+        // Último real OPERATIVO = el MAYOR entre el interno del sistema y el externo de
+        // Conta. Cuando el sistema nuevo ya emitió (interno >= externo), manda el interno.
+        $operativoUltimo = max((int) $internoUltimo, $externoUltimo);
+        $operativoProximo = $operativoUltimo + 1;
+
+        // Desalineado SOLO si Conta va por DELANTE del contador interno (externo > interno):
+        // ahí sí habría que alinear. Si el interno ya alcanzó/superó al externo, NO hay
+        // desalineación (el sistema nuevo lleva la numeración).
+        $desalineado = $externoUltimo > (int) $internoUltimo;
 
         return [
             'ultimo' => $ultimo ? [
@@ -218,10 +223,11 @@ class PreparacionProduccionController extends Controller
                 'siguiente' => $corr->siguiente_numero,
             ] : null,
             // Vista corregida de la numeración real (interno vs externo vs operativo).
-            'interno_ultimo' => $internoUltimo,       // 1078 — última emisión propia del sistema
-            'interno_proximo' => $internoProximo,     // 1079 — contador interno (DESACTUALIZADO)
-            'externo_ultimo' => $externoUltimo,       // 1093 — último real externo (Conta Portable)
-            'operativo_proximo' => $operativoProximo, // 1094 — próximo real correcto
+            'interno_ultimo' => $internoUltimo,       // p.ej. 1094 — última emisión propia del sistema
+            'interno_proximo' => $internoProximo,     // p.ej. 1095 — contador interno
+            'externo_ultimo' => $externoUltimo,       // p.ej. 1093 — último real externo (Conta Portable)
+            'operativo_ultimo' => $operativoUltimo,   // max(interno, externo) — último real operativo
+            'operativo_proximo' => $operativoProximo, // operativo + 1 — próximo real correcto
             'desalineado' => $desalineado,
         ];
     }

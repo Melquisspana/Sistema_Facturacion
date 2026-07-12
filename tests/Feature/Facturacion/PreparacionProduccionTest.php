@@ -133,12 +133,12 @@ class PreparacionProduccionTest extends TestCase
             ->assertSee((string) $corr->ultimo_numero)     // 1078 interno
             ->assertSee('1093')                            // externo confirmado (default)
             ->assertSee('1094')                            // próximo operativo correcto
-            // Aviso de desalineación (contador interno 1079 != operativo 1094).
-            ->assertSee('desalineado', false)
+            // Interno (1078) va por DETRÁS del externo (1093) => desalineado.
+            ->assertSee('va por delante', false)
             ->assertSee('alinear el correlativo', false)
-            // Barrera anti-Conta con el texto dinámico nuevo.
+            // Barrera anti-Conta con el texto dinámico (operativo = max(interno, externo)).
             ->assertSee('Confirmo que Conta Portable quedó detenido/alineado', false)
-            ->assertSee('último CCF real externo es 1093', false)
+            ->assertSee('operativo es 1093', false)
             ->assertSee('el próximo será 1094', false)
             // Higiene de configuración (solo reporte, no cambia .env).
             ->assertSee('Higiene de configuración')
@@ -151,6 +151,27 @@ class PreparacionProduccionTest extends TestCase
         $this->assertStringContainsString('no saldrán', $html);
         // Sigue sin exponer el campo de la frase real de emisión.
         $this->assertStringNotContainsString('confirmacion_emision', $html);
+    }
+
+    public function test_correlativo_alineado_cuando_interno_alcanza_o_supera_externo(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        // El sistema nuevo ya emitió: contador interno 1094 >= externo Conta 1093.
+        Correlativo::updateOrCreate(
+            ['tipo_dte' => '03', 'ambiente' => '01'],
+            ['establecimiento_id' => Establecimiento::firstOrFail()->id, 'punto_venta_id' => null,
+             'serie' => 'M001P001', 'ultimo_numero' => 1094, 'activo' => true]
+        );
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.preparar-produccion'))
+            ->assertOk()
+            ->assertSee('1095')                              // próximo operativo = 1094 + 1
+            ->assertSee('operativo es 1094', false)          // barrera dinámica (max = interno)
+            ->assertSee('Numeración alineada', false)        // sin desalineación
+            // No debe decir que hay que alinear / que Conta va por delante.
+            ->assertDontSee('va por delante', false)
+            ->assertDontSee('se debe alinear el correlativo', false);
     }
 
     public function test_ultimo_externo_configurable_actualiza_proximo_operativo(): void

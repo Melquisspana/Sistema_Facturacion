@@ -37,13 +37,18 @@ class PreflightEmisionProduccion
         $checks[] = $this->check('ambiente', 'Ambiente producción (01) activo', $ambienteOk,
             $ambienteOk ? 'dte.ambiente=01' : 'dte.ambiente='.config('dte.ambiente').' (no es producción)');
 
-        // Próximo correlativo CCF producción alineado (= último externo confirmado + 1).
+        // Correlativo alineado: el contador interno NO debe ir por detrás del último
+        // externo confirmado de Conta. El próximo operativo = max(interno, externo) + 1.
         $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
-        $esperado = $externo + 1;
         $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->where('activo', true)->first();
-        $corrOk = $corr !== null && (int) $corr->siguiente_numero === $esperado;
-        $checks[] = $this->check('correlativo', "Próximo correlativo CCF producción = {$esperado}", $corrOk,
-            $corr ? "próximo {$corr->siguiente_numero} (esperado {$esperado})" : 'no hay correlativo de producción');
+        $interno = (int) ($corr?->ultimo_numero ?? -1);
+        $operativoProximo = max($interno, $externo) + 1;
+        // OK si existe y el interno alcanzó/superó al externo (no está desalineado por detrás).
+        $corrOk = $corr !== null && $interno >= $externo;
+        $checks[] = $this->check('correlativo', "Próximo correlativo CCF producción = {$operativoProximo}", $corrOk,
+            $corr ? "interno {$interno} · externo {$externo} · próximo {$operativoProximo}"
+                    .($corrOk ? '' : ' (Conta va por delante: alinear)')
+                  : 'no hay correlativo de producción');
 
         // Worker/cola activo (heartbeat).
         $worker = WorkerHeartbeat::estado();

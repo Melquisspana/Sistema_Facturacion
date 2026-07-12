@@ -122,6 +122,50 @@ class DteController extends Controller
         return view('facturacion.index', compact('dtes', 'filtros', 'clientes'));
     }
 
+    /**
+     * Pantalla INVALIDACIONES: lista de documentos que SÍ se pueden invalidar
+     * (CCF y NC aceptados REALMENTE por Hacienda), con filtros. SOLO LECTURA: no
+     * invalida ni transmite nada; cada documento enlaza a su ficha, donde vive el
+     * panel de invalidación (dry-run/mock; la transmisión real es por consola).
+     */
+    public function invalidaciones(Request $request): View
+    {
+        $this->authorize('viewAny', Dte::class);
+
+        $filtros = [
+            'q' => trim((string) $request->input('q', '')),
+            'tipo_dte' => $request->input('tipo_dte'),
+            'fecha_desde' => $request->input('fecha_desde'),
+            'fecha_hasta' => $request->input('fecha_hasta'),
+        ];
+
+        $dtes = Dte::query()
+            ->produccion()
+            // Invalidable = aceptado REAL por el MH (con sello) y aún no invalidado.
+            ->where('estado', EstadoDte::Aceptado->value)
+            ->whereNotNull('sello_recepcion')
+            ->whereIn('tipo_dte', [TipoDte::CreditoFiscal->value, TipoDte::NotaCredito->value])
+            ->with(['cliente', 'clienteSucursal', 'dteRelacionado'])
+            ->when($filtros['tipo_dte'], fn ($qb, $v) => $qb->where('tipo_dte', $v))
+            ->when($filtros['fecha_desde'], fn ($qb, $v) => $qb->whereDate('fecha_emision', '>=', $v))
+            ->when($filtros['fecha_hasta'], fn ($qb, $v) => $qb->whereDate('fecha_emision', '<=', $v))
+            ->when($filtros['q'] !== '', function ($qb) use ($filtros) {
+                $t = $filtros['q'];
+                $qb->where(function ($w) use ($t) {
+                    $w->where('numero_control', 'like', "%{$t}%")
+                        ->orWhere('numero_interno', 'like', "%{$t}%")
+                        ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', "%{$t}%")->orWhere('nombre_comercial', 'like', "%{$t}%"))
+                        ->orWhereHas('clienteSucursal', fn ($s) => $s->where('nombre', 'like', "%{$t}%"));
+                });
+            })
+            ->orderByDesc('fecha_emision')
+            ->orderByDesc('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('facturacion.invalidaciones', compact('dtes', 'filtros'));
+    }
+
     public function createCcf(): View
     {
         $this->authorize('create', Dte::class);

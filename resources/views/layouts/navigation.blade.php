@@ -17,7 +17,7 @@
     $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
 
     // Activos por item (rutas actuales, sin cambios de lógica).
-    $enInvalidaciones = request()->routeIs('facturacion.index') && request('estado') === 'invalidado';
+    $enInvalidaciones = request()->routeIs('facturacion.invalidaciones');
     $enCrearCcf = request()->routeIs('facturacion.create-ccf');
     $enNotasCredito = request()->routeIs('facturacion.create-nota-credito');
     $enPreparar = request()->routeIs('facturacion.preparar-produccion');
@@ -147,7 +147,7 @@
                         <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">CCF / Facturas</x-sidebar-link>
                         <x-sidebar-link :href="route('facturacion.create-ccf')" :active="$enCrearCcf">Crear CCF</x-sidebar-link>
                         <x-sidebar-link :href="route('facturacion.create-nota-credito')" :active="$enNotasCredito">Notas de crédito</x-sidebar-link>
-                        <x-sidebar-link :href="route('facturacion.index', ['estado' => 'invalidado'])" :active="$enInvalidaciones">Invalidaciones</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.invalidaciones')" :active="$enInvalidaciones">Invalidaciones</x-sidebar-link>
                         @if ($esGestorDte)
                             <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
                         @endif

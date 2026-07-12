@@ -35,6 +35,9 @@
         <!-- DTE: el suite arranca SIEMPRE con firma/transmisión en estado seguro
              (deshabilitado/paralelo), sin importar el .env real de la máquina. Los
              tests que necesitan firmar/transmitir lo habilitan con config()->set. -->
+        <!-- Ambiente MH de PRUEBAS (00): el suite no depende del .env real, que puede
+             estar en producción (01). Los correlativos de test se crean en ambiente 00. -->
+        <env name="DTE_AMBIENTE" value="00"/>
         <env name="DTE_FIRMA_ENABLED" value="false"/>
         <env name="DTE_FIRMADOR_MOCK" value="false"/>
         <env name="MH_MOCK" value="false"/>
