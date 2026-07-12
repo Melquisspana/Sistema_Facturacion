@@ -18,6 +18,7 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteStateMachine;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -104,6 +105,80 @@ class DteNotaCreditoTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $this->service->crearNotaCredito($ccf);
+    }
+
+    public function test_produccion_bloquea_nc_contra_ccf_sin_aceptacion_real_mh(): void
+    {
+        // CCF en PRODUCCIÓN (ambiente 01) marcado Aceptado pero SIN aceptación real:
+        // sello MOCK y sin fecha de procesamiento del MH. No cumple aceptadoRealMh().
+        $ccf = $this->ccfProduccion(aceptacionReal: false);
+        $this->assertSame(EstadoDte::Aceptado, $ccf->estado);              // estado genérico OK
+        $this->assertFalse(Dte::whereKey($ccf->id)->aceptadoRealMh()->exists()); // pero no real
+
+        $this->expectException(ValidationException::class);
+        $this->service->crearNotaCredito($ccf, ['motivo' => 'Devolución']);
+    }
+
+    public function test_produccion_permite_nc_contra_ccf_con_aceptacion_real_mh(): void
+    {
+        // CCF en PRODUCCIÓN (ambiente 01) con aceptación REAL (sello no-mock + fecha MH).
+        $ccf = $this->ccfProduccion(aceptacionReal: true);
+        $this->assertTrue(Dte::whereKey($ccf->id)->aceptadoRealMh()->exists());
+
+        $nc = $this->service->crearNotaCredito($ccf, ['motivo' => 'Devolución parcial']);
+
+        $this->assertSame(TipoDte::NotaCredito, $nc->tipo_dte);
+        $this->assertSame($ccf->id, $nc->dte_relacionado_id);
+        $this->assertSame('01', $nc->ambiente->value); // la NC hereda producción
+    }
+
+    public function test_ambiente_pruebas_conserva_comportamiento_con_ccf_aceptado_mock(): void
+    {
+        // En PRUEBAS (ambiente 00) NO se exige aceptación real: un CCF Aceptado con
+        // sello MOCK sigue permitiendo crear la NC (comportamiento actual intacto).
+        $ccf = $this->ccfEmitido(); // ambiente 00
+        $ccf->forceFill([
+            'sello_recepcion' => 'MOCK-SIMULADO-0987654321',
+            'fecha_procesamiento_mh' => null,
+        ])->save();
+        $this->assertSame('00', $ccf->ambiente->value);
+
+        $nc = $this->service->crearNotaCredito($ccf->refresh(), ['motivo' => 'Prueba local']);
+
+        $this->assertSame(TipoDte::NotaCredito, $nc->tipo_dte);
+        $this->assertSame('00', $nc->ambiente->value);
+    }
+
+    /**
+     * CCF de PRODUCCIÓN (ambiente 01). El ambiente se fija mientras aún es borrador
+     * (editable); luego se acepta con sello REAL (no-mock + fecha MH) o sin aceptación
+     * real (sello mock + sin fecha MH) según el caso. No toca correlativos de prod real.
+     */
+    private function ccfProduccion(bool $aceptacionReal): Dte
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $ccf = $this->service->crearBorrador([
+            'tipo_dte' => TipoDte::CreditoFiscal,
+            'cliente_id' => Cliente::factory()->contribuyente()->create(),
+            'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id,
+        ]);
+        // Ambiente producción mientras es borrador (el observer bloquea cambiarlo luego).
+        $ccf->forceFill(['ambiente' => '01'])->save();
+
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $this->service->agregarLineaDesdeProducto($ccf, $producto, cantidad: 10);
+
+        // Emitido (Generado) y luego Aceptado. sello/fecha son campos permitidos fuera de borrador.
+        app(DteStateMachine::class)->transicionar($ccf, EstadoDte::Generado);
+        $ccf->numero_control = $ccf->numero_control ?: ('DTE-03-M001P001-'.str_pad((string) $ccf->id, 15, '0', STR_PAD_LEFT));
+        $ccf->codigo_generacion = $ccf->codigo_generacion ?: strtoupper((string) Str::uuid());
+        $ccf->sello_recepcion = $aceptacionReal ? '2026'.strtoupper(Str::random(36)) : 'MOCK-SIMULADO-1234567890';
+        $ccf->fecha_procesamiento_mh = $aceptacionReal ? now() : null;
+        $ccf->estado = EstadoDte::Aceptado;
+        $ccf->save();
+
+        return $ccf->refresh();
     }
 
     public function test_no_permite_nota_credito_con_cliente_distinto(): void

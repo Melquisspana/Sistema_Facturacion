@@ -4,6 +4,7 @@ namespace App\Services\Dte;
 
 use App\DataTransferObjects\Dte\LineaDocumento;
 use App\DataTransferObjects\Dte\ResultadoCalculo;
+use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -203,6 +204,17 @@ class DteBorradorService
         if ($original->estado !== EstadoDte::Aceptado) {
             throw ValidationException::withMessages([
                 'dte_relacionado_id' => 'Solo se puede crear una nota de crédito desde un CCF ACEPTADO por Hacienda (estado actual: '.$original->estado->label().').',
+            ]);
+        }
+        // En PRODUCCIÓN (ambiente 01) no basta el estado Aceptado genérico: el CCF debe
+        // tener aceptación REAL de Hacienda (sello oficial no-mock + fecha de procesamiento
+        // MH). En pruebas/mock (ambiente 00) se conserva el comportamiento actual (basta
+        // Aceptado), para no bloquear los flujos de prueba. Reutiliza el MISMO scope
+        // aceptadoRealMh() para no divergir de criterio.
+        if (($original->ambiente?->value ?? null) === AmbienteHacienda::Produccion->value
+            && ! Dte::whereKey($original->id)->aceptadoRealMh()->exists()) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'En producción, la nota de crédito solo puede crearse desde un CCF con aceptación REAL de Hacienda (sello oficial). Este CCF de producción no tiene una aceptación real registrada.',
             ]);
         }
         if (array_key_exists('cliente_id', $datos)
