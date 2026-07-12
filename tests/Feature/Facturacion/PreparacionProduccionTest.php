@@ -113,6 +113,37 @@ class PreparacionProduccionTest extends TestCase
         $this->assertSame($antesDtes, Dte::count());           // no se emitió nada
     }
 
+    public function test_muestra_barrera_anti_conta_correlativo_grande_y_worker(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->first();
+        if (! $corr) {
+            $corr = Correlativo::create([
+                'tipo_dte' => '03', 'establecimiento_id' => Establecimiento::firstOrFail()->id,
+                'punto_venta_id' => null, 'ambiente' => '01', 'serie' => 'M001P001',
+                'ultimo_numero' => 1078, 'activo' => true,
+            ]);
+        }
+        $proximo = $corr->ultimo_numero + 1;
+
+        $html = $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.preparar-produccion'))
+            ->assertOk()
+            // Barrera anti-Conta con la frase exacta y el próximo correlativo.
+            ->assertSee('Confirmo que Conta Portable está detenido o alineado', false)
+            ->assertSee('NO emitió el correlativo '.$proximo, false)
+            ->assertSee('NO continuar', false)
+            // Higiene de configuración (solo reporte, no cambia .env).
+            ->assertSee('Higiene de configuración')
+            ->assertSee('no cambia', false)
+            ->getContent();
+
+        // El worker en tests no late: debe avisar que los correos/jobs no saldrán.
+        $this->assertStringContainsString('no saldrán', $html);
+        // Sigue sin exponer el campo de la frase real de emisión.
+        $this->assertStringNotContainsString('confirmacion_emision', $html);
+    }
+
     public function test_el_backup_solo_bd_es_admin_only(): void
     {
         // Facturación (no admin) no puede generar backup.
