@@ -114,6 +114,21 @@ class DtePolicy
     }
 
     /**
+     * Acción REAL "Generar y transmitir producción" (CCF). A diferencia de
+     * firmarTransmitir, admite arrancar desde BORRADOR (genera primero). Gestores,
+     * CCF no aceptado/anulado. La emisión real la blindan además el preflight, la
+     * barrera anti-Conta y la frase EMITIR PRODUCCION (en el controlador).
+     */
+    public function generarTransmitirProduccion(User $user, Dte $dte): bool
+    {
+        return $user->hasAnyRole(self::GESTORES)
+            && $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
+            && in_array($dte->estado, [\App\Enums\EstadoDte::Borrador, \App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
+            && blank($dte->sello_recepcion)
+            && ! $dte->esAnulado();
+    }
+
+    /**
      * Ver el bloque de invalidación (evento anulardte) en la ficha: panel de candados,
      * dry-run visual y, si aplica, la evidencia del evento mock. Solo gestores y solo si
      * el DTE es candidato (aceptado realmente por el MH) o ya tiene un evento de
