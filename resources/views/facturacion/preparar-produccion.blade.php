@@ -14,8 +14,11 @@
     @endphp
 
     @php
-        $proximoNum = $correlativo['proximo']['siguiente'] ?? null;
-        $ultimoNum = $correlativo['proximo']['ultimo_numero'] ?? null;
+        $internoUltimo = $correlativo['interno_ultimo'] ?? null;      // 1078
+        $internoProximo = $correlativo['interno_proximo'] ?? null;    // 1079 (desactualizado)
+        $externoUltimo = $correlativo['externo_ultimo'] ?? null;      // 1093
+        $operativoProximo = $correlativo['operativo_proximo'] ?? null; // 1094
+        $desalineado = !empty($correlativo['desalineado']);
         $workerActivo = ($worker['estado'] ?? null) === 'activo';
     @endphp
 
@@ -37,32 +40,42 @@
                     haciéndose desde la ficha del documento, con su doble confirmación y la frase de seguridad.</p>
             </div>
 
-            {{-- 0) Correlativo en GRANDE + barrera anti-Conta Portable (obligatoria) --}}
+            {{-- 0) Correlativo real (interno vs externo vs operativo) + barrera anti-Conta --}}
             <section class="bg-white shadow-sm ring-2 ring-rose-200 sm:rounded-xl p-6 space-y-4">
-                <h3 class="text-sm font-semibold uppercase tracking-wide text-rose-600">Correlativo y barrera anti-Conta Portable</h3>
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-rose-600">Correlativo real y barrera anti-Conta Portable</h3>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div class="rounded-lg bg-gray-50 ring-1 ring-gray-200 p-5 text-center">
-                        <p class="text-xs uppercase tracking-wide text-gray-400">Último real aceptado</p>
-                        <p class="mt-1 text-4xl font-bold tabular-nums text-gray-800">{{ $ultimoNum !== null ? $ultimoNum : '—' }}</p>
+                        <p class="text-xs uppercase tracking-wide text-gray-400">Último real interno<br>(sistema nuevo)</p>
+                        <p class="mt-1 text-4xl font-bold tabular-nums text-gray-800">{{ $internoUltimo !== null ? $internoUltimo : '—' }}</p>
                     </div>
-                    <div class="rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-5 text-center">
-                        <p class="text-xs uppercase tracking-wide text-indigo-500">Próximo esperado</p>
-                        <p class="mt-1 text-4xl font-bold tabular-nums text-indigo-700">{{ $proximoNum !== null ? $proximoNum : '—' }}</p>
+                    <div class="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-5 text-center">
+                        <p class="text-xs uppercase tracking-wide text-amber-600">Último real externo<br>(Conta Portable)</p>
+                        <p class="mt-1 text-4xl font-bold tabular-nums text-amber-700">{{ $externoUltimo !== null ? $externoUltimo : '—' }}</p>
+                    </div>
+                    <div class="rounded-lg bg-indigo-50 ring-2 ring-indigo-300 p-5 text-center">
+                        <p class="text-xs uppercase tracking-wide text-indigo-600">Próximo real correcto</p>
+                        <p class="mt-1 text-4xl font-bold tabular-nums text-indigo-700">{{ $operativoProximo !== null ? $operativoProximo : '—' }}</p>
                     </div>
                 </div>
 
-                <div class="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-800">
-                    ⚠️ Si Conta Portable ya emitió este correlativo{{ $proximoNum !== null ? ' ('.$proximoNum.')' : '' }}, NO continuar.
-                </div>
+                {{-- Aviso de desalineación: el contador interno (p. ej. 1079) NO es el próximo operativo real. --}}
+                @if ($desalineado)
+                    <div class="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-800">
+                        ⚠️ El contador interno del sistema está <span class="underline">desalineado</span> con Conta Portable
+                        (muestra próximo {{ $internoProximo ?? '—' }}, pero el real es {{ $operativoProximo ?? '—' }}).
+                        Antes de emitir producción real, se debe alinear el correlativo para que el próximo sea {{ $operativoProximo ?? '—' }}.
+                        <span class="block mt-1 font-normal text-rose-700">No emitas producción real hasta alinear (aún no se alinea nada).</span>
+                    </div>
+                @endif
 
                 <label class="flex items-start gap-3 rounded-md border-2 p-4 cursor-pointer transition"
                        :class="barreraConta ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-white'">
                     <input type="checkbox" x-model="barreraConta" class="mt-0.5 h-5 w-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500">
                     <span class="text-sm text-gray-800">
-                        <span class="font-semibold">Confirmo que Conta Portable está detenido o alineado y NO emitió el correlativo{{ $proximoNum !== null ? ' '.$proximoNum : '' }}.</span>
+                        <span class="font-semibold">Confirmo que Conta Portable quedó detenido/alineado y que el último CCF real externo es {{ $externoUltimo ?? '—' }}; el próximo será {{ $operativoProximo ?? '—' }}.</span>
                         <span class="block mt-1 text-xs text-gray-500">
-                            Esta barrera es una confirmación manual adicional. No abre producción por sí sola ni cambia ningún candado:
+                            Esta barrera es una confirmación manual adicional. No abre producción por sí sola ni cambia ningún candado ni correlativo:
                             solo desbloquea los pasos de preparación de esta pantalla. La emisión real sigue exigiendo su frase y candados aparte.
                         </span>
                     </span>
@@ -192,18 +205,20 @@
                         @endif
                     </div>
                     <div class="rounded-md bg-gray-50 p-4">
-                        <p class="text-xs uppercase tracking-wide text-gray-400">Próximo correlativo esperado (CCF producción)</p>
+                        <p class="text-xs uppercase tracking-wide text-gray-400">Contador interno del sistema <span class="text-rose-500 font-semibold">(desactualizado)</span></p>
                         @if ($correlativo['proximo'])
                             <p class="mt-1 font-mono font-medium text-gray-800">{{ $correlativo['proximo']['serie'] }} · nº {{ $correlativo['proximo']['siguiente'] }}</p>
-                            <p class="text-xs text-gray-500">Último asignado en el sistema: {{ $correlativo['proximo']['ultimo_numero'] }}.</p>
+                            <p class="text-xs text-gray-500">Último asignado internamente: {{ $correlativo['proximo']['ultimo_numero'] }}. <span class="text-rose-600">No es el próximo operativo real</span> (ver arriba: {{ $operativoProximo ?? '—' }}).</p>
                         @else
                             <p class="mt-1 text-gray-500">No hay correlativo de CCF de producción configurado.</p>
                         @endif
                     </div>
                 </div>
                 <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-                    Confirmá manualmente que <span class="font-semibold">Conta Portable está detenido o alineado</span> antes de emitir desde este sistema:
-                    el próximo número real debe continuar la numeración sin chocar con lo que Conta ya emitió.
+                    El <span class="font-semibold">próximo número real operativo</span> es
+                    <span class="font-semibold">{{ $operativoProximo ?? '—' }}</span> (último externo en Conta Portable
+                    {{ $externoUltimo ?? '—' }} + 1), no el {{ $internoProximo ?? '—' }} del contador interno.
+                    Antes de emitir producción real se debe alinear el correlativo (con tu OK; aún no se alinea nada).
                 </div>
             </section>
 
