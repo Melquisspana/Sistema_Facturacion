@@ -123,6 +123,8 @@
         .st-info { background: #F3F4F6; color: #3A4150; border-color: #D4D8DE; border-left-color: #6B7280; }
         .st-live { background: #EEF5F0; color: #235C42; border-color: #BFE0CD; border-left-color: #2F6B4E; }
         .st-void { background: #FBEDF0; color: #8A2440; border-color: #E3B7C2; border-left-color: #B0334F; }
+        /* Aviso PRELIMINAR: discreto, una sola línea pequeña, sin barra grande. */
+        .st-prelim { font-size: 7px; letter-spacing: .4px; color: #9AA0A8; text-transform: uppercase; margin-bottom: 4px; }
 
         /* Encabezado */
         .topline { border-top: 2px solid #6E2142; margin-bottom: 11px; }
@@ -227,15 +229,17 @@
 </head>
 <body>
 
-    {{-- CINTA DE ESTADO (compacta, una línea) --}}
+    {{-- CINTA DE ESTADO --}}
     @if ($dte->estado === EstadoDte::Invalidado)
         <div class="st st-void"><b>DOCUMENTO ANULADO / INVALIDADO INTERNAMENTE</b>@if ($dte->motivo_anulacion) · {{ $dte->motivo_anulacion->label() }}@endif</div>
     @elseif ($tieneSello)
-        <div class="st st-live"><b>ACEPTADO POR HACIENDA</b> · Sello de recepción registrado · Representación gráfica del DTE emitido.</div>
+        {{-- Aceptado por Hacienda: PDF LIMPIO para entregar/imprimir (el sello y el QR ya lo acreditan). Sin cinta de estado. --}}
+    @elseif ($dte->estado === EstadoDte::Rechazado)
+        @php $motivoRechazo = data_get($dte->respuesta_mh, 'descripcionMsg'); @endphp
+        <div class="st st-void"><b>RECHAZADO POR HACIENDA</b>@if ($motivoRechazo) · {{ \Illuminate\Support\Str::limit($motivoRechazo, 90) }}@endif</div>
     @else
-        <div class="st st-warn"><b>DOCUMENTO NO TRANSMITIDO A HACIENDA · SIN SELLO DE RECEPCIÓN</b> · Representación gráfica PRELIMINAR — no equivale a un DTE emitido.</div>
-        @if ($firmadoLocal)<div class="st st-info">FIRMADO LOCALMENTE / SIN TRANSMISIÓN / NO ENVIADO A HACIENDA</div>@endif
-        @if ($esBorrador)<div class="st st-info">BORRADOR — no válido como documento fiscal.</div>@endif
+        {{-- Borrador / Generado / Firmado, aún NO aceptado: aviso pequeño y discreto (una línea). --}}
+        <div class="st-prelim">Preliminar · no válido fiscalmente</div>
     @endif
 
     <div class="topline"></div>
