@@ -40,6 +40,7 @@ use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
 use App\Services\Dte\DteTransmisionService;
+use App\Services\Dte\PreflightEmisionProduccion;
 use App\Services\Dte\PrecioProductoResolver;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -280,7 +281,7 @@ class DteController extends Controller
         return redirect()->route('facturacion.edit', $nc)->with('status', $this->mensajeNotaCredito($nc));
     }
 
-    public function show(Dte $dte, DteTransmisionService $transmision, DteInvalidacionService $invalidacionService): View
+    public function show(Dte $dte, DteTransmisionService $transmision, DteInvalidacionService $invalidacionService, PreflightEmisionProduccion $preflightProduccion): View
     {
         $this->authorize('view', $dte);
 
@@ -328,7 +329,21 @@ class DteController extends Controller
             ];
         }
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados'));
+        // "Generar y transmitir producción": preflight + resumen SOLO para CCF aún no
+        // aceptado y solo para gestores. En ambiente != 01 el preflight corta barato
+        // (no le pega al firmador). SOLO LECTURA: no emite ni transmite nada.
+        $emisionProduccion = null;
+        if ($dte->tipo_dte === TipoDte::CreditoFiscal
+            && $dte->estado !== EstadoDte::Aceptado
+            && blank($dte->sello_recepcion)
+            && auth()->user()?->can('generarTransmitirProduccion', $dte)) {
+            $emisionProduccion = [
+                'preflight' => $preflightProduccion->evaluar($dte),
+                'resumen' => $preflightProduccion->resumen($dte),
+            ];
+        }
+
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion'));
     }
 
     /**
@@ -510,9 +525,35 @@ class DteController extends Controller
             'mock_transmision' => (bool) config('dte.transmision.mock'),
         ]);
 
+        // Núcleo compartido: asegura JSON, firma (si generado) y transmite.
+        $res = $this->procesarFirmaTransmision($dte, $jsonService, $firma, $transmision);
+        if (isset($res['error'])) {
+            return $volver->with('error', $res['error']);
+        }
+
+        $dte->refresh();
+
+        Log::info('DTE firmar-transmitir: fin', [
+            'dte_id' => $dte->id,
+            'resultado' => $res['resultado']['resultado'],
+            'estado_final' => $dte->estado->value,
+        ]);
+
+        return $this->respuestaFirmarTransmitir($volver, $res['resultado']);
+    }
+
+    /**
+     * Núcleo compartido de firma + transmisión, reusado por firmarTransmitir() y por
+     * generarTransmitirProduccion(). Asegura el JSON, firma SOLO si el documento está
+     * generado (idempotente) y transmite el firmado. NO envía correo.
+     *
+     * @return array{error: string}|array{resultado: array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones?: array<int, string>}}
+     */
+    private function procesarFirmaTransmision(Dte $dte, DteJsonService $jsonService, DteFirmaService $firma, DteTransmisionService $transmision): array
+    {
         // 1. Asegurar el JSON oficial (genera si falta, reusando la misma garantía del correo).
         if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
-            return $volver->with('error', 'No se puede firmar/transmitir: '.$error);
+            return ['error' => 'No se puede firmar/transmitir: '.$error];
         }
 
         // 2. Firmar SOLO si aún está generado; si ya está firmado se salta y se reintenta el envío.
@@ -522,35 +563,102 @@ class DteController extends Controller
                 $dte->refresh();
             }
         } catch (DteFirmaDeshabilitadaException|DteFirmaException $e) {
-            Log::warning('DTE firmar-transmitir: fallo en firma', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
+            Log::warning('DTE firma: fallo', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
-            return $volver->with('error', 'No se pudo firmar el documento: '.$e->getMessage().' Podés reintentar.');
+            return ['error' => 'No se pudo firmar el documento: '.$e->getMessage().' Podés reintentar.'];
         }
 
         // 3. Transmitir el documento firmado.
         try {
             $r = $transmision->transmitir($dte);
         } catch (DteTransmisionDeshabilitadaException $e) {
-            Log::warning('DTE firmar-transmitir: transmisión bloqueada', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
+            Log::warning('DTE transmisión bloqueada', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
-            return $volver->with('error', 'Firmado, pero la transmisión está bloqueada por candados de seguridad: '
-                .$e->getMessage().' El documento queda firmado; podés reintentar.');
+            return ['error' => 'Firmado, pero la transmisión está bloqueada por candados de seguridad: '
+                .$e->getMessage().' El documento queda firmado; podés reintentar.'];
         } catch (DteTransmisionException $e) {
-            Log::warning('DTE firmar-transmitir: fallo en transmisión', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
+            Log::warning('DTE fallo en transmisión', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
-            return $volver->with('error', 'Firmado, pero no se pudo transmitir: '.$e->getMessage()
-                .' El documento queda firmado; podés reintentar.');
+            return ['error' => 'Firmado, pero no se pudo transmitir: '.$e->getMessage()
+                .' El documento queda firmado; podés reintentar.'];
+        }
+
+        return ['resultado' => $r];
+    }
+
+    /**
+     * ACCIÓN REAL DE PRODUCCIÓN: "Generar y transmitir producción". Explícita y
+     * separada del botón normal "Generar" (que sigue siendo local/seguro). Corre el
+     * preflight de producción, exige la barrera anti-Conta y la frase EMITIR PRODUCCION,
+     * y ejecuta: generar (si borrador) → firmar real → transmitir → guardar respuesta.
+     * NO envía correo (eso queda como acción manual aparte).
+     */
+    public function generarTransmitirProduccion(
+        Request $request,
+        Dte $dte,
+        DteJsonService $jsonService,
+        DteFirmaService $firma,
+        DteTransmisionService $transmision,
+        DteGeneracionService $generacion,
+        PreflightEmisionProduccion $preflight,
+    ): RedirectResponse {
+        $this->authorize('generarTransmitirProduccion', $dte);
+
+        $volver = redirect()->route('facturacion.show', $dte);
+
+        // 0. Idempotencia dura: si ya está aceptado o ya tiene sello, no se repite nada.
+        if ($dte->estado === EstadoDte::Aceptado || filled($dte->sello_recepcion)) {
+            return $volver->with('status', 'El documento ya fue aceptado; no se vuelve a generar/firmar/transmitir.');
+        }
+
+        $dte->loadMissing('lineas', 'cliente', 'clienteSucursal');
+
+        // 1. Preflight de producción (servidor): si falta algo, bloquea y explica.
+        $pf = $preflight->evaluar($dte);
+        if (! $pf['puede']) {
+            return $volver->with('error', 'Emisión a producción bloqueada por el preflight. Falta: '
+                .implode('; ', $pf['faltantes']).'. No se generó, firmó ni transmitió nada.');
+        }
+
+        // 2. Barrera anti-Conta (casilla del modal) obligatoria.
+        if (! $request->boolean('barrera_conta')) {
+            return $volver->with('error', 'Confirmá la barrera anti-Conta Portable antes de emitir. No se hizo nada.');
+        }
+
+        // 3. Frase exacta EMITIR PRODUCCION (además de la guardia del navegador).
+        if (trim((string) $request->input('confirmacion_emision', '')) !== 'EMITIR PRODUCCION') {
+            Log::warning('DTE generar-transmitir-produccion: frase faltante', ['dte_id' => $dte->id]);
+
+            return $volver->with('error', 'Emisión a PRODUCCIÓN bloqueada: escribí exactamente la frase '
+                .'EMITIR PRODUCCION. No se generó, firmó ni transmitió nada.');
+        }
+
+        Log::info('DTE generar-transmitir-produccion: inicio', [
+            'dte_id' => $dte->id, 'estado' => $dte->estado->value,
+        ]);
+
+        // 4. Generar SOLO si todavía es borrador (asigna correlativo + numeración + JSON).
+        if ($dte->estado === EstadoDte::Borrador) {
+            try {
+                $generacion->generar($dte, $request->user());
+                $dte->refresh();
+            } catch (GeneracionException $e) {
+                return $volver->with('error', 'No se pudo generar el documento: '.$e->getMessage().' No se transmitió nada.');
+            }
+        }
+
+        // 5. Firmar (real) + transmitir (núcleo compartido). NO envía correo.
+        $res = $this->procesarFirmaTransmision($dte, $jsonService, $firma, $transmision);
+        if (isset($res['error'])) {
+            return $volver->with('error', $res['error']);
         }
 
         $dte->refresh();
-
-        Log::info('DTE firmar-transmitir: fin', [
-            'dte_id' => $dte->id,
-            'resultado' => $r['resultado'],
-            'estado_final' => $dte->estado->value,
+        Log::info('DTE generar-transmitir-produccion: fin', [
+            'dte_id' => $dte->id, 'resultado' => $res['resultado']['resultado'], 'estado_final' => $dte->estado->value,
         ]);
 
-        return $this->respuestaFirmarTransmitir($volver, $r);
+        return $this->respuestaFirmarTransmitir($volver, $res['resultado']);
     }
 
     /**

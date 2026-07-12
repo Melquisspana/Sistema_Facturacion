@@ -343,6 +343,113 @@
                 </div>
             @endif
 
+            {{-- Acción REAL de PRODUCCIÓN, explícita y separada: "Generar y transmitir producción".
+                 Preflight de seguridad + barrera anti-Conta + frase EMITIR PRODUCCION. No envía correo. --}}
+            @if (! empty($emisionProduccion))
+                @php
+                    $pf = $emisionProduccion['preflight'];
+                    $rp = $emisionProduccion['resumen'];
+                @endphp
+                <div x-data="{ open: false }" class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-indigo-600">
+                    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+                        <h3 class="font-semibold text-gray-700">Generar y transmitir producción</h3>
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $pf['puede'] ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700' }}">
+                            {{ $pf['puede'] ? 'Preflight OK' : 'Preflight bloqueado' }}
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-500">
+                        Acción única y explícita: <strong>genera</strong> (si es borrador), <strong>firma</strong> con el firmador real
+                        y <strong>transmite a Hacienda producción</strong>. El correo al cliente queda separado y manual.
+                        El botón normal “Generar” no transmite: sigue siendo local/seguro.
+                    </p>
+
+                    {{-- Checklist del preflight (cada precondición) --}}
+                    <ul class="mt-3 space-y-1 text-sm">
+                        @foreach ($pf['checks'] as $c)
+                            <li class="flex items-start gap-2">
+                                <span class="mt-0.5 inline-block h-4 w-4 shrink-0 rounded-full text-center text-xs leading-4 {{ $c['ok'] ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700' }}">{{ $c['ok'] ? '✓' : '✗' }}</span>
+                                <span class="{{ $c['ok'] ? 'text-gray-600' : 'text-rose-700 font-medium' }}">{{ $c['label'] }} <span class="text-xs text-gray-400">— {{ $c['detalle'] }}</span></span>
+                            </li>
+                        @endforeach
+                    </ul>
+
+                    <div class="mt-4">
+                        @if ($pf['puede'])
+                            <button type="button" @click="open = true"
+                                    class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-md font-medium">
+                                Generar y transmitir producción
+                            </button>
+                        @else
+                            <button type="button" disabled title="Faltan precondiciones del preflight"
+                                    class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-md font-medium cursor-not-allowed">
+                                Generar y transmitir producción
+                            </button>
+                            <p class="mt-1 text-xs text-rose-600">Falta: {{ implode('; ', $pf['faltantes']) }}.</p>
+                        @endif
+                    </div>
+
+                    {{-- Modal de confirmación: resumen + barrera + frase EMITIR PRODUCCION --}}
+                    @if ($pf['puede'])
+                        <div x-show="open" x-cloak class="fixed inset-0 z-50 overflow-y-auto">
+                            <div class="flex min-h-full items-center justify-center p-4">
+                                <div class="fixed inset-0 bg-gray-900/50" @click="open = false"></div>
+                                <div class="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg p-6">
+                                    <h3 class="text-lg font-semibold text-rose-700">Confirmar emisión a PRODUCCIÓN</h3>
+                                    <div class="mt-2 rounded-md bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800 font-semibold">
+                                        Esta acción <span class="underline">genera, firma y transmite a Hacienda producción</span>. No se deshace fácilmente.
+                                    </div>
+
+                                    <dl class="mt-4 divide-y divide-gray-100 text-sm">
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Cliente</dt><dd class="font-medium text-gray-900">{{ $rp['cliente'] ?? '—' }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Sala</dt><dd class="font-medium text-gray-900">{{ $rp['sala'] ?? '—' }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Orden de compra</dt><dd class="font-medium text-gray-900">{{ $rp['oc'] ?? '—' }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Próximo número oficial</dt><dd class="font-mono font-semibold text-indigo-700">{{ $rp['proximo_numero'] }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total gravado</dt><dd class="font-medium text-gray-900">${{ number_format($rp['total_gravado'], 2) }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">IVA</dt><dd class="font-medium text-gray-900">${{ number_format($rp['iva'], 2) }}</dd></div>
+                                        @if ($rp['aplica_retencion'])
+                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Retención IVA</dt><dd class="font-medium text-gray-900">-${{ number_format($rp['retencion'], 2) }}</dd></div>
+                                        @endif
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total a pagar</dt><dd class="font-semibold text-gray-900">${{ number_format($rp['total_pagar'], 2) }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Correo destino</dt><dd class="font-medium text-gray-900">{{ $rp['correo_destino'] ?? '(sin correo — se enviará aparte)' }}</dd></div>
+                                    </dl>
+
+                                    <form method="POST" action="{{ route('facturacion.generar-transmitir-produccion', $dte) }}" class="mt-4"
+                                          onsubmit="return dteConfirmarProduccion(this);">
+                                        @csrf
+                                        <label class="flex items-start gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" name="barrera_conta" value="1" class="mt-0.5 rounded border-gray-300">
+                                            <span>Confirmo que Conta Portable quedó detenido/alineado y que el último CCF real externo es {{ $rp['proximo_numero'] - 1 }}; el próximo será {{ $rp['proximo_numero'] }}.</span>
+                                        </label>
+                                        <label class="mt-3 block text-xs font-semibold text-rose-700">Escribí exactamente: <span class="font-mono">EMITIR PRODUCCION</span></label>
+                                        <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false" placeholder="EMITIR PRODUCCION"
+                                               class="mt-1 w-full rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
+                                        <div class="mt-5 flex items-center justify-end gap-3">
+                                            <button type="button" @click="open = false" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancelar</button>
+                                            <button type="submit" class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Generar y transmitir a producción</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+
+                <script>
+                    function dteConfirmarProduccion(form) {
+                        if (!form.barrera_conta.checked) {
+                            alert('Marcá la confirmación de Conta Portable (barrera) antes de emitir.');
+                            return false;
+                        }
+                        var val = ((form.confirmacion_emision && form.confirmacion_emision.value) || '').trim();
+                        if (val !== 'EMITIR PRODUCCION') {
+                            alert('Para emitir a producción debés escribir exactamente: EMITIR PRODUCCION');
+                            return false;
+                        }
+                        return confirm('¿GENERAR, FIRMAR Y TRANSMITIR a Hacienda producción? Esto es real y no se deshace fácilmente.');
+                    }
+                </script>
+            @endif
+
             {{-- Acción MANUAL única: firmar y transmitir (gestores; estado generado/firmado, sin sello) --}}
             @can('firmarTransmitir', $dte)
                 @php

@@ -111,6 +111,9 @@ Route::middleware('auth')->group(function () {
         // Acción MANUAL única: firma local + transmisión (DtePolicy::firmarTransmitir). Idempotente.
         // En modo MOCK (DTE_FIRMADOR_MOCK / MH_MOCK) simula firma y aceptación sin firmador ni red.
         Route::post('{dte}/firmar-transmitir', [DteController::class, 'firmarTransmitir'])->name('firmar-transmitir');
+        // Acción REAL de producción, explícita y separada: preflight + generar (si borrador)
+        // + firmar + transmitir. Exige barrera anti-Conta + frase EMITIR PRODUCCION. No envía correo.
+        Route::post('{dte}/generar-transmitir-produccion', [DteController::class, 'generarTransmitirProduccion'])->name('generar-transmitir-produccion');
         // Invalidación (evento anulardte): SOLO mock + dry-run visual desde la UI. La
         // transmisión REAL a apitest se hace únicamente por consola (dte:invalidacion-real).
         Route::post('{dte}/invalidacion/dry-run', [DteController::class, 'dryRunInvalidacion'])->name('invalidacion.dry-run');
