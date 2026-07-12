@@ -196,23 +196,62 @@ class DtePdfPreliminarTest extends TestCase
 
     // --- Contenido / marcas ---
 
-    public function test_sin_sello_muestra_sin_sello_de_recepcion(): void
+    public function test_preliminar_sin_sello_muestra_aviso_discreto(): void
     {
         $html = $this->html($this->ccfGenerado());
 
-        $this->assertStringContainsString('SIN SELLO DE RECEPCIÓN', $html);
-        $this->assertStringContainsString('DOCUMENTO NO TRANSMITIDO A HACIENDA', $html);
-        $this->assertStringContainsString('PRELIMINAR', $html);
+        // Aviso pequeño y discreto (una sola línea), NO las dos barras grandes viejas.
+        $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringNotContainsString('DOCUMENTO NO TRANSMITIDO A HACIENDA', $html);
+        $this->assertStringNotContainsString('no válido como documento fiscal', $html);
         // No debe parecer emitido oficialmente.
         $this->assertStringNotContainsString('DTE aceptado', $html);
     }
 
-    public function test_firmado_localmente_muestra_marca(): void
+    public function test_firmado_no_aceptado_tambien_es_discreto(): void
     {
         $html = $this->html($this->ccfFirmado());
 
-        $this->assertStringContainsString('FIRMADO LOCALMENTE / SIN TRANSMISIÓN / NO ENVIADO A HACIENDA', $html);
-        $this->assertStringContainsString('NO ENVIADO A HACIENDA', $html);
+        // Firmado pero sin aceptar: mismo aviso discreto, sin la barra "FIRMADO LOCALMENTE".
+        $this->assertStringContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringNotContainsString('FIRMADO LOCALMENTE / SIN TRANSMISIÓN', $html);
+        // El estado interno se sigue viendo en la sección técnica.
+        $this->assertStringContainsString('Firmado localmente: <strong>sí</strong>', $html);
+    }
+
+    public function test_aceptado_con_sello_se_ve_limpio(): void
+    {
+        $ccf = $this->ccfGenerado();
+        $ccf->forceFill([
+            'estado' => EstadoDte::Aceptado,
+            'sello_recepcion' => '2026SELLOREALXYZ0000',
+            'fecha_procesamiento_mh' => now(),
+        ])->save();
+
+        $html = $this->html($ccf->refresh());
+
+        // PDF limpio para entregar/imprimir: sin avisos de preliminar / no transmitido / borrador.
+        $this->assertStringNotContainsString('Preliminar · no válido fiscalmente', $html);
+        $this->assertStringNotContainsString('DOCUMENTO NO TRANSMITIDO A HACIENDA', $html);
+        $this->assertStringNotContainsString('no válido como documento fiscal', $html);
+        // El sello de recepción sí se muestra.
+        $this->assertStringContainsString('2026SELLOREALXYZ0000', $html);
+    }
+
+    public function test_rechazado_muestra_aviso_compacto(): void
+    {
+        $ccf = $this->ccfGenerado();
+        $ccf->forceFill([
+            'estado' => EstadoDte::Rechazado,
+            'respuesta_mh' => ['descripcionMsg' => 'Documento rechazado de prueba'],
+        ])->save();
+
+        $html = $this->html($ccf->refresh());
+
+        $this->assertStringContainsString('RECHAZADO POR HACIENDA', $html);
+        $this->assertStringContainsString('Documento rechazado de prueba', $html);
+        // Sin la barra de "no transmitido".
+        $this->assertStringNotContainsString('DOCUMENTO NO TRANSMITIDO A HACIENDA', $html);
     }
 
     public function test_seccion_tecnica_refleja_estado_interno(): void
