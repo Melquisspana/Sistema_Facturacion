@@ -108,7 +108,7 @@
     <style>
         * { box-sizing: border-box; }
         @page { margin: 32px 34px; }
-        body { font-family: "DejaVu Sans", sans-serif; color: #20242C; font-size: 9.3px; margin: 0; line-height: 1.38; }
+        body { font-family: "DejaVu Sans", sans-serif; color: #20242C; font-size: 9.3px; margin: 0; line-height: 1.3; }
         table { width: 100%; border-collapse: collapse; }
         .mono { font-family: "DejaVu Sans Mono", monospace; }
         .muted { color: #6B7280; }
@@ -181,9 +181,9 @@
         .strip .miss { font-style: italic; font-weight: bold; color: #9A5B0E; }
 
         /* Tabla de productos */
-        .items thead th { background: #20242C; color: #F3F4F6; font-size: 7.3px; text-transform: uppercase; letter-spacing: .3px; padding: 5px 6px; text-align: left; }
+        .items thead th { background: #20242C; color: #F3F4F6; font-size: 7.3px; text-transform: uppercase; letter-spacing: .3px; padding: 4px 6px; text-align: left; }
         .items thead th.r { text-align: right; }
-        .items tbody td { padding: 6.5px 6px; border-bottom: 1px solid #EAECEF; font-size: 9.2px; vertical-align: top; }
+        .items tbody td { padding: 3.4px 6px; border-bottom: 1px solid #EAECEF; font-size: 9px; vertical-align: top; line-height: 1.22; }
         .items tbody tr:nth-child(even) td { background: #F8F9FA; }
         .items .r { text-align: right; }
         .items .ci { color: #9AA0A8; width: 16px; }
@@ -192,21 +192,26 @@
         .items .pn { font-weight: bold; color: #20242C; }
         .items .num { font-family: "DejaVu Sans Mono", monospace; }
         .dash { color: #C9CDD4; }
+        /* Regla de máximo 10 líneas por página: cada bloque de 10 va en su página.
+           El 2º bloque en adelante empieza con salto de página; no se parte internamente. */
+        .items-cont { page-break-before: always; }
+        .items-blk { page-break-inside: avoid; }
+        .cont-hdr { margin: 0 0 6px; padding: 3px 8px; background: #F2F3F5; border: 1px solid #D4D8DE; border-radius: 4px; font-size: 7px; letter-spacing: .6px; text-transform: uppercase; color: #6B7280; }
 
         /* Totales */
-        .botwrap { margin-top: 16px; }
+        .botwrap { margin-top: 9px; }
         .botwrap td { vertical-align: top; }
-        .letras { border: 1px solid #C9CDD4; border-radius: 5px; padding: 6px 9px; font-size: 8.6px; }
+        .letras { border: 1px solid #C9CDD4; border-radius: 5px; padding: 5px 9px; font-size: 8.6px; }
         .letras .k { font-size: 6.5px; letter-spacing: .8px; text-transform: uppercase; color: #9AA0A8; }
-        .cond-line { font-size: 8.6px; margin-top: 6px; }
+        .cond-line { font-size: 8.6px; margin-top: 4px; }
         .cond-line .k { color: #8A9099; }
-        .firmas2 { margin-top: 15px; }
+        .firmas2 { margin-top: 9px; }
         .firmas2 td { vertical-align: top; }
         .firmas2 .gap2 { width: 14px; }
-        .fl { margin-top: 11px; }
+        .fl { margin-top: 7px; }
         .fl .flk { font-size: 7px; text-transform: uppercase; letter-spacing: .4px; color: #8A9099; }
-        .fl .fline { display: block; border-bottom: 1px solid #B6BBC2; height: 12px; }
-        .tot td { padding: 4.5px 10px; font-size: 9.3px; }
+        .fl .fline { display: block; border-bottom: 1px solid #B6BBC2; height: 10px; }
+        .tot td { padding: 3px 10px; font-size: 9.3px; }
         .tot tr.sub td { font-weight: bold; color: #20242C; }
         .tot .k { color: #4A4F58; }
         .tot .v { text-align: right; font-family: "DejaVu Sans Mono", monospace; font-weight: bold; color: #20242C; }
@@ -219,7 +224,7 @@
         .grand .gv { text-align: right; font-family: "DejaVu Sans Mono", monospace; font-weight: bold; font-size: 14.5px; }
 
         /* Estado técnico (una línea) */
-        .tech { border: 1px solid #E5E8EC; border-radius: 4px; padding: 4px 8px; background: #F8F9FA; color: #6B7280; font-size: 7px; margin-top: 12px; }
+        .tech { border: 1px solid #E5E8EC; border-radius: 4px; padding: 4px 8px; background: #F8F9FA; color: #6B7280; font-size: 7px; margin-top: 8px; }
         .tech .th { text-transform: uppercase; letter-spacing: .6px; color: #9AA0A8; font-weight: bold; }
         .tech strong { color: #3A4150; }
 
@@ -346,59 +351,77 @@
         </div>
     @endif
 
-    {{-- PRODUCTOS --}}
-    <table class="items">
-        <thead>
-            <tr>
-                <th class="ci">#</th>
-                <th>Código</th>
-                <th>Producto / descripción</th>
-                <th class="r">Cant.</th>
-                <th>Present.</th>
-                <th class="r">Precio</th>
-                <th class="r">Desc.</th>
-                @if ($hayNoSujeto)<th class="r">No suj.</th>@endif
-                @if ($hayExento)<th class="r">Exento</th>@endif
-                <th class="r">{{ $baseLabel }}</th>
-                <th class="r">IVA</th>
-                <th class="r">Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            @forelse ($dte->lineas as $linea)
-                @php
-                    $cb = trim((string) $linea->codigo_barra);
-                    $cc = trim((string) $linea->codigo);
-                    $pres = trim((string) ($linea->unidad_nombre ?: $linea->unidad_codigo));
-                @endphp
+    {{-- PRODUCTOS — regla fija: MÁXIMO 10 líneas por página. Cada bloque de 10 va en su
+         propia página (con su encabezado de columnas); el 11º producto en adelante salta
+         a la página siguiente. Solo maquetación: no cambia montos ni textos fiscales. --}}
+    @php $bloquesLineas = $dte->lineas->chunk(10); @endphp
+    @forelse ($bloquesLineas as $iBloque => $bloque)
+        @if ($iBloque > 0)
+            <div class="cont-hdr items-cont">Continuación · {{ $dte->numero_control ?: $dte->numero_interno }} · líneas {{ $iBloque * 10 + 1 }}–{{ $iBloque * 10 + $bloque->count() }}</div>
+        @endif
+        <table class="items {{ $iBloque > 0 ? 'items-blk' : '' }}">
+            <thead>
                 <tr>
-                    <td class="ci">{{ $linea->numero_linea }}</td>
-                    <td>
-                        {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras. --}}
-                        @if ($cb !== '')
-                            <span class="cod">{{ $cb }}</span>
-                        @elseif ($cc !== '')
-                            <span class="cod">{{ $cc }}</span>
-                        @else
-                            <span class="dash">—</span>
-                        @endif
-                    </td>
-                    <td><span class="pn">{{ $linea->descripcion }}</span></td>
-                    <td class="r num">{{ rtrim(rtrim($linea->cantidad, '0'), '.') }}</td>
-                    <td>{{ $pres !== '' ? $pres : '—' }}</td>
-                    <td class="r num">${{ number_format($linea->precio_unitario, 2) }}</td>
-                    <td class="r num">@if((float)$linea->descuento_monto > 0)-${{ number_format($linea->descuento_monto, 2) }}@else<span class="dash">—</span>@endif</td>
-                    @if ($hayNoSujeto)<td class="r num">${{ number_format($linea->venta_no_sujeta, 2) }}</td>@endif
-                    @if ($hayExento)<td class="r num">${{ number_format($linea->venta_exenta, 2) }}</td>@endif
-                    <td class="r num">${{ number_format($esFex ? $linea->venta_exportacion : $linea->venta_gravada, 2) }}</td>
-                    <td class="r num">${{ number_format($linea->iva_linea, 2) }}</td>
-                    <td class="r num"><strong>${{ number_format($linea->total_linea, 2) }}</strong></td>
+                    <th class="ci">#</th>
+                    <th>Código</th>
+                    <th>Producto / descripción</th>
+                    <th class="r">Cant.</th>
+                    <th>Present.</th>
+                    <th class="r">Precio</th>
+                    <th class="r">Desc.</th>
+                    @if ($hayNoSujeto)<th class="r">No suj.</th>@endif
+                    @if ($hayExento)<th class="r">Exento</th>@endif
+                    <th class="r">{{ $baseLabel }}</th>
+                    <th class="r">IVA</th>
+                    <th class="r">Total</th>
                 </tr>
-            @empty
+            </thead>
+            <tbody>
+                @foreach ($bloque as $linea)
+                    @php
+                        $cb = trim((string) $linea->codigo_barra);
+                        $cc = trim((string) $linea->codigo);
+                        $pres = trim((string) ($linea->unidad_nombre ?: $linea->unidad_codigo));
+                    @endphp
+                    <tr>
+                        <td class="ci">{{ $linea->numero_linea }}</td>
+                        <td>
+                            {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras. --}}
+                            @if ($cb !== '')
+                                <span class="cod">{{ $cb }}</span>
+                            @elseif ($cc !== '')
+                                <span class="cod">{{ $cc }}</span>
+                            @else
+                                <span class="dash">—</span>
+                            @endif
+                        </td>
+                        <td><span class="pn">{{ $linea->descripcion }}</span></td>
+                        <td class="r num">{{ rtrim(rtrim($linea->cantidad, '0'), '.') }}</td>
+                        <td>{{ $pres !== '' ? $pres : '—' }}</td>
+                        <td class="r num">${{ number_format($linea->precio_unitario, 2) }}</td>
+                        <td class="r num">@if((float)$linea->descuento_monto > 0)-${{ number_format($linea->descuento_monto, 2) }}@else<span class="dash">—</span>@endif</td>
+                        @if ($hayNoSujeto)<td class="r num">${{ number_format($linea->venta_no_sujeta, 2) }}</td>@endif
+                        @if ($hayExento)<td class="r num">${{ number_format($linea->venta_exenta, 2) }}</td>@endif
+                        <td class="r num">${{ number_format($esFex ? $linea->venta_exportacion : $linea->venta_gravada, 2) }}</td>
+                        <td class="r num">${{ number_format($linea->iva_linea, 2) }}</td>
+                        <td class="r num"><strong>${{ number_format($linea->total_linea, 2) }}</strong></td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @empty
+        <table class="items">
+            <thead>
+                <tr>
+                    <th class="ci">#</th><th>Código</th><th>Producto / descripción</th><th class="r">Cant.</th><th>Present.</th>
+                    <th class="r">Precio</th><th class="r">Desc.</th>@if ($hayNoSujeto)<th class="r">No suj.</th>@endif@if ($hayExento)<th class="r">Exento</th>@endif<th class="r">{{ $baseLabel }}</th><th class="r">IVA</th><th class="r">Total</th>
+                </tr>
+            </thead>
+            <tbody>
                 <tr><td colspan="{{ $colspan }}" style="text-align:center;color:#9AA0A8;padding:10px;">Sin líneas.</td></tr>
-            @endforelse
-        </tbody>
-    </table>
+            </tbody>
+        </table>
+    @endforelse
 
     {{-- BLOQUE INFERIOR: letras / condición / firmas  +  totales fiscales --}}
     <table class="botwrap nobreak">
