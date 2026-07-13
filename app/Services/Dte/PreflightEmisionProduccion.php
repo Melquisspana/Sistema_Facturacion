@@ -112,12 +112,17 @@ class PreflightEmisionProduccion
     public function resumen(Dte $dte): array
     {
         $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
+        $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->where('activo', true)->first();
+        $interno = (int) ($corr?->ultimo_numero ?? 0);
+        // Último operativo = max(interno, externo); el número que tomará este CCF = operativo + 1.
+        $operativoUltimo = max($interno, $externo);
 
         return [
             'cliente' => $dte->cliente?->nombre,
             'sala' => $dte->clienteSucursal?->nombre,
             'oc' => $dte->numero_orden_compra,
-            'proximo_numero' => $externo + 1,
+            'operativo_ultimo' => $operativoUltimo,
+            'proximo_numero' => $operativoUltimo + 1,
             'total_gravado' => (float) $dte->total_gravado,
             'iva' => (float) $dte->iva,
             'retencion' => (float) $dte->iva_retenido,
