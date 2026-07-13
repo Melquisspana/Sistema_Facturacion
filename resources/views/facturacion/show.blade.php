@@ -31,6 +31,42 @@
                 </div>
             @endif
 
+            {{-- Tarjeta de ESTADO (clara, de un vistazo). Solo lectura. --}}
+            @php
+                $correoEnviado = $dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
+                $correoFallo = ! $correoEnviado && $dte->envios->contains(fn ($e) => $e->estado === 'error');
+                $listoEmitir = ! empty($emisionProduccion['preflight']['puede']);
+                [$stTxt, $stColor, $stSub] = match (true) {
+                    $dte->estado === \App\Enums\EstadoDte::Invalidado => ['Invalidado', 'rose', 'Documento anulado/invalidado internamente.'],
+                    $dte->estado === \App\Enums\EstadoDte::Rechazado  => ['Rechazado por Hacienda', 'rose', 'Revisá el motivo en la respuesta del MH.'],
+                    $dte->estado === \App\Enums\EstadoDte::Aceptado   => ['Aceptado por Hacienda', 'green', $correoEnviado ? 'Correo enviado al cliente.' : 'Pendiente de enviar el correo al cliente.'],
+                    $dte->estado === \App\Enums\EstadoDte::Firmado    => ['Firmado (pendiente de transmitir)', 'indigo', 'Firmado localmente; falta transmitir a Hacienda.'],
+                    $dte->estado === \App\Enums\EstadoDte::Generado   => [$listoEmitir ? 'Listo para emitir' : 'Generado', 'indigo', 'Número reservado y JSON generado; falta firmar y transmitir.'],
+                    default                                          => [$listoEmitir ? 'Listo para emitir' : 'Borrador', 'gray', 'En preparación; sin número ni JSON oficial todavía.'],
+                };
+                $stMap = [
+                    'gray'   => 'bg-gray-100 text-gray-700 ring-gray-200',
+                    'indigo' => 'bg-indigo-100 text-indigo-700 ring-indigo-200',
+                    'green'  => 'bg-green-100 text-green-700 ring-green-200',
+                    'amber'  => 'bg-amber-100 text-amber-700 ring-amber-200',
+                    'rose'   => 'bg-rose-100 text-rose-700 ring-rose-200',
+                ];
+            @endphp
+            <div class="bg-white shadow sm:rounded-lg p-4 flex flex-wrap items-center gap-3">
+                <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ring-1 {{ $stMap[$stColor] }}">{{ $stTxt }}</span>
+                <span class="text-sm text-gray-500">{{ $stSub }}</span>
+                <div class="ms-auto flex items-center gap-2">
+                    @if ($dte->estado === \App\Enums\EstadoDte::Aceptado)
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {{ $correoEnviado ? 'bg-green-100 text-green-700' : ($correoFallo ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700') }}">
+                            {{ $correoEnviado ? 'Correo enviado' : ($correoFallo ? 'Correo falló' : 'Pendiente de correo') }}
+                        </span>
+                        @if (! empty($enReporteContadora))
+                            <span class="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-700" title="Aparece en Facturación → Reporte contadora (ventas reales)">En Reporte contadora</span>
+                        @endif
+                    @endif
+                </div>
+            </div>
+
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>
@@ -195,6 +231,14 @@
                         <div class="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3">
                             <div class="text-xs uppercase tracking-wide text-gray-400">Destinatario principal</div>
                             <div class="font-medium text-gray-800 break-all">{{ $correoDefault ?: 'Sin correo configurado en el cliente/sala' }}</div>
+                            {{-- Copia a contabilidad (BCC) según Configuración > Contabilidad. Solo indicador. --}}
+                            @if (! empty($copiaContabilidad['activa']) && ! empty($copiaContabilidad['correo']))
+                                <div class="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-sky-50 ring-1 ring-sky-200 px-2.5 py-0.5 text-xs text-sky-700">
+                                    📎 Copia a contabilidad (BCC): <span class="font-medium break-all">{{ $copiaContabilidad['correo'] }}</span>
+                                </div>
+                            @else
+                                <div class="mt-1.5 text-xs text-gray-400">Copia a contabilidad: desactivada (Configuración → Contabilidad).</div>
+                            @endif
                             @if ($ultimo)
                                 <div class="mt-1 text-xs text-gray-500 break-all">
                                     Último envío: {{ $ultimo->created_at->format('d/m/Y H:i') }} · {{ $destinatariosUltimo }}
@@ -350,17 +394,19 @@
                     $pf = $emisionProduccion['preflight'];
                     $rp = $emisionProduccion['resumen'];
                 @endphp
-                <div x-data="{ open: false }" class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-indigo-600">
+                <div x-data="{ open: false, enviando: false }" class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-indigo-600">
                     <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-                        <h3 class="font-semibold text-gray-700">Generar y transmitir producción</h3>
+                        <div>
+                            <h3 class="font-semibold text-gray-800 text-lg">Emitir a Hacienda</h3>
+                            <p class="text-xs text-gray-500">Genera, firma y transmite en producción — en un solo paso.</p>
+                        </div>
                         <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $pf['puede'] ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700' }}">
-                            {{ $pf['puede'] ? 'Preflight OK' : 'Preflight bloqueado' }}
+                            {{ $pf['puede'] ? 'Preflight OK · listo' : 'Preflight bloqueado' }}
                         </span>
                     </div>
                     <p class="text-sm text-gray-500">
-                        Acción única y explícita: <strong>genera</strong> (si es borrador), <strong>firma</strong> con el firmador real
-                        y <strong>transmite a Hacienda producción</strong>. El correo al cliente queda separado y manual.
-                        El botón normal “Generar” no transmite: sigue siendo local/seguro.
+                        El correo al cliente queda <strong>separado</strong> (se envía después de aceptado). El botón normal
+                        “Generar” es solo local y no transmite.
                     </p>
 
                     {{-- Checklist del preflight (cada precondición) --}}
@@ -376,13 +422,14 @@
                     <div class="mt-4">
                         @if ($pf['puede'])
                             <button type="button" @click="open = true"
-                                    class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-md font-medium">
-                                Generar y transmitir producción
+                                    class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-md font-semibold">
+                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.897 28.897 0 0015.293-7.155.75.75 0 000-1.114A28.897 28.897 0 003.105 2.289z"/></svg>
+                                Emitir a Hacienda
                             </button>
                         @else
                             <button type="button" disabled title="Faltan precondiciones del preflight"
-                                    class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-md font-medium cursor-not-allowed">
-                                Generar y transmitir producción
+                                    class="inline-flex items-center px-5 py-2.5 bg-gray-100 text-gray-400 text-sm rounded-md font-semibold cursor-not-allowed">
+                                Emitir a Hacienda
                             </button>
                             <p class="mt-1 text-xs text-rose-600">Falta: {{ implode('; ', $pf['faltantes']) }}.</p>
                         @endif
@@ -395,15 +442,22 @@
                                 <div class="fixed inset-0 bg-gray-900/50" @click="open = false"></div>
                                 <div class="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg p-6">
                                     <h3 class="text-lg font-semibold text-rose-700">Confirmar emisión a PRODUCCIÓN</h3>
-                                    <div class="mt-2 rounded-md bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800 font-semibold">
-                                        Esta acción <span class="underline">genera, firma y transmite a Hacienda producción</span>. No se deshace fácilmente.
+
+                                    {{-- Número grande que tomará este CCF --}}
+                                    <div class="mt-3 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4 text-center">
+                                        <p class="text-xs uppercase tracking-wide text-indigo-500">Este CCF será el número</p>
+                                        <p class="mt-0.5 text-4xl font-bold tabular-nums text-indigo-700">{{ $rp['proximo_numero'] }}</p>
+                                        <p class="mt-0.5 text-xs text-gray-500">Último operativo: {{ $rp['operativo_ultimo'] ?? ($rp['proximo_numero'] - 1) }}</p>
                                     </div>
 
-                                    <dl class="mt-4 divide-y divide-gray-100 text-sm">
+                                    <div class="mt-3 rounded-md bg-rose-600 p-3 text-sm text-white font-semibold text-center">
+                                        ⚠ Esto se enviará a Hacienda <span class="underline">de verdad</span> (producción). No se deshace fácilmente.
+                                    </div>
+
+                                    <dl class="mt-3 divide-y divide-gray-100 text-sm">
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Cliente</dt><dd class="font-medium text-gray-900">{{ $rp['cliente'] ?? '—' }}</dd></div>
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Sala</dt><dd class="font-medium text-gray-900">{{ $rp['sala'] ?? '—' }}</dd></div>
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Orden de compra</dt><dd class="font-medium text-gray-900">{{ $rp['oc'] ?? '—' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Próximo número oficial</dt><dd class="font-mono font-semibold text-indigo-700">{{ $rp['proximo_numero'] }}</dd></div>
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total gravado</dt><dd class="font-medium text-gray-900">${{ number_format($rp['total_gravado'], 2) }}</dd></div>
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">IVA</dt><dd class="font-medium text-gray-900">${{ number_format($rp['iva'], 2) }}</dd></div>
                                         @if ($rp['aplica_retencion'])
@@ -413,19 +467,25 @@
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Correo destino</dt><dd class="font-medium text-gray-900">{{ $rp['correo_destino'] ?? '(sin correo — se enviará aparte)' }}</dd></div>
                                     </dl>
 
+                                    {{-- Valida (frase/barrera/confirm) y solo si pasa marca "enviando" (deshabilita el botón
+                                         y evita doble submit). Si no pasa, previene el envío y deja el botón activo. --}}
                                     <form method="POST" action="{{ route('facturacion.generar-transmitir-produccion', $dte) }}" class="mt-4"
-                                          onsubmit="return dteConfirmarProduccion(this);">
+                                          @submit="dteConfirmarProduccion($event.target) ? (enviando = true) : $event.preventDefault()">
                                         @csrf
                                         <label class="flex items-start gap-2 text-sm text-gray-700">
                                             <input type="checkbox" name="barrera_conta" value="1" class="mt-0.5 rounded border-gray-300">
-                                            <span>Confirmo que Conta Portable quedó detenido/alineado y que el último CCF real externo es {{ $rp['proximo_numero'] - 1 }}; el próximo será {{ $rp['proximo_numero'] }}.</span>
+                                            <span>Confirmo que Conta Portable quedó detenido/alineado y que el último CCF real operativo es {{ $rp['operativo_ultimo'] ?? ($rp['proximo_numero'] - 1) }}; el próximo será {{ $rp['proximo_numero'] }}.</span>
                                         </label>
                                         <label class="mt-3 block text-xs font-semibold text-rose-700">Escribí exactamente: <span class="font-mono">EMITIR PRODUCCION</span></label>
                                         <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false" placeholder="EMITIR PRODUCCION"
                                                class="mt-1 w-full rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
                                         <div class="mt-5 flex items-center justify-end gap-3">
-                                            <button type="button" @click="open = false" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancelar</button>
-                                            <button type="submit" class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Generar y transmitir a producción</button>
+                                            <button type="button" @click="open = false" :disabled="enviando" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
+                                            <button type="submit" :disabled="enviando"
+                                                    class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed">
+                                                <span x-show="!enviando">Emitir a Hacienda ahora</span>
+                                                <span x-show="enviando" x-cloak>Procesando…</span>
+                                            </button>
                                         </div>
                                     </form>
                                 </div>
@@ -459,7 +519,23 @@
                     // ¿Puede emitir REAL a producción ahora? (candados abiertos + ambiente producción).
                     // En modo seguro es false y solo aplica la doble confirmación normal.
                     $emisionReal = ! empty($modoDte['transmision_real_posible']);
+                    // En PRODUCCIÓN REAL con el flujo "Emitir a Hacienda" disponible, este panel
+                    // manual pasa a ser "Avanzado" (colapsado): el camino principal es el botón de
+                    // arriba. En mock/apitest/paralelo se muestra abierto como siempre.
+                    $colapsarAvanzado = $emisionReal && ! empty($emisionProduccion);
                 @endphp
+                @if ($colapsarAvanzado)
+                    <details class="group rounded-lg border border-dashed border-gray-300 bg-gray-50/60">
+                        <summary class="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-gray-600 hover:text-gray-800">
+                            Avanzado · emisión manual paso a paso
+                            <span class="ml-1 font-normal text-gray-400">(Generar / Firmar y transmitir)</span>
+                            <p class="mt-0.5 text-xs font-normal text-gray-400">
+                                Para pruebas o si necesitás hacerlo por pasos. Normalmente usá
+                                <span class="font-semibold text-gray-500">“Emitir a Hacienda”</span> de arriba.
+                            </p>
+                        </summary>
+                        <div class="px-5 pb-5 pt-1">
+                @endif
                 <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 {{ $emisionReal ? 'border-rose-600' : ($modoMock ? 'border-amber-400' : 'border-emerald-500') }}">
                     <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
                         <h3 class="font-semibold text-gray-700">Firmar y transmitir</h3>
@@ -543,6 +619,10 @@
                         return confirm('Confirmá una vez más: ejecutar firmar/transmitir en MODO SEGURO.');
                     }
                 </script>
+                @if ($colapsarAvanzado)
+                        </div>
+                    </details>
+                @endif
             @endcan
 
             {{-- DTE firmado localmente (solo si existe el JWS firmado) --}}

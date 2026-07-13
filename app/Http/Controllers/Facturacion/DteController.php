@@ -387,7 +387,17 @@ class DteController extends Controller
             ];
         }
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion'));
+        // Indicadores SOLO LECTURA para la ficha (no cambian nada):
+        //  - copia a contabilidad activa (BCC en el envío manual del correo).
+        //  - si el documento ya cae en el Reporte contadora (aceptado REAL ambiente 01).
+        $copiaContabilidad = [
+            'activa' => \App\Models\Configuracion::getBool('contabilidad.enviar_copia', false),
+            'correo' => \App\Models\Configuracion::get('contabilidad.correo'),
+        ];
+        $enReporteContadora = $dte->estado === EstadoDte::Aceptado
+            && Dte::whereKey($dte->id)->aceptadoRealMh()->exists();
+
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora'));
     }
 
     /**
