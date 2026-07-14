@@ -102,8 +102,16 @@ class PpqGmailService
                 // Las NC (tipo 05) NO traen albarán por correo y comparten OC con el
                 // CCF original: no buscamos albarán automático (se captura a mano).
                 $esNc = ($ccf['tipoDte'] ?? null) === '05';
-                $albaran = (! $esNc && $ccf['ordenCompra']) ? $this->buscarAlbaranPorOc((string) $ccf['ordenCompra']) : null;
+                $albaran = (! $esNc && $ccf['ordenCompra'])
+                    ? $this->buscarAlbaranPorOc((string) $ccf['ordenCompra'], $ccf['fecha'] ?? null, isset($ccf['monto']) ? (float) $ccf['monto'] : null)
+                    : null;
                 $det['albaran_debug'] = $albaran['debug'] ?? null;
+                // Enriquecer el mapa auxiliar de PPQ con el nombre real del receptor del CCF.
+                \App\Models\PpqSala::recordar(
+                    \App\Support\OrdenCompra::salaDesde($ccf['ordenCompra'] ?? null),
+                    $ccf['salaNombre'] ?? null,
+                    'ccf_json',
+                );
                 $fichas[] = [
                     'origen' => 'gmail',
                     'gmail_message_id' => $correo['id'],
@@ -168,16 +176,35 @@ class PpqGmailService
     /**
      * Busca el albarán correspondiente a una OC en el label Calleja_Albaranes.
      *
+     * Estrategia:
+     *  1. Búsqueda directa por OC (Gmail indexa el texto del PDF).
+     *  2. Variantes de OC (con/sin ceros) por si el índice no casa el número exacto.
+     *  3. FALLBACK por fecha+sala+monto: si hay fecha del CCF, lista los albaranes de ese
+     *     día y elige el que calza en SALA (código de la OC) y MONTO (si se conoce). Así
+     *     ya no hace falta buscar a mano cuando el índice de Gmail no encuentra la OC.
+     * No duplica: la persistencia posterior usa firstOrCreate por número+OC.
+     *
      * @return array<string, mixed>|null
      */
-    public function buscarAlbaranPorOc(string $oc): ?array
+    public function buscarAlbaranPorOc(string $oc, ?string $fecha = null, ?float $monto = null): ?array
     {
         $oc = trim($oc);
-        $correos = $this->gmail->buscarAlbaranes($oc, 5);
-        if ($correos === []) {
-            return null;
+
+        // 1) y 2) Búsqueda directa por OC y variantes.
+        $correo = null;
+        foreach ($this->variantesOc($oc) as $variante) {
+            $correos = $this->gmail->buscarAlbaranes($variante, 5);
+            if ($correos !== []) {
+                $correo = $correos[0];
+                break;
+            }
         }
-        $correo = $correos[0];
+
+        // 3) Fallback por fecha+sala+monto (solo lectura de Gmail).
+        if ($correo === null) {
+            return $this->albaranPorFechaSalaMonto($oc, $fecha, $monto);
+        }
+
         $adjuntos = $this->gmail->adjuntos($correo['id']);
 
         $debug = [
@@ -214,9 +241,70 @@ class PpqGmailService
             'numero_albaran' => \App\Support\Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null),
             'orden_compra' => ($datosPdf['oc'] ?? null) ?: $oc,
             'sala' => \App\Support\OrdenCompra::salaDesde($oc),
+            'nombre_sala' => $datosPdf['nombre_sala'] ?? null,
             'monto' => $datosPdf['monto'] ?? null,
             'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
             'debug' => $debug,
+        ];
+    }
+
+    /**
+     * Variantes de OC para la búsqueda en Gmail (el índice puede no casar el número exacto):
+     * la OC tal cual y sin ceros a la izquierda. Solo dígitos. Sin duplicados.
+     *
+     * @return array<int, string>
+     */
+    private function variantesOc(string $oc): array
+    {
+        $digitos = preg_replace('/\D/', '', $oc);
+        $set = array_filter([$digitos, ltrim($digitos, '0')], fn ($v) => $v !== '');
+
+        return array_values(array_unique($set));
+    }
+
+    /**
+     * FALLBACK del albarán por fecha + sala + monto cuando la búsqueda por OC no encontró
+     * nada. Lista los albaranes del día del CCF y elige el candidato cuya SALA (código de la
+     * OC) coincide y cuyo MONTO es el más cercano al del CCF (si se conoce). Devuelve null si
+     * no hay fecha o ningún candidato de la misma sala. NO adivina entre salas distintas.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function albaranPorFechaSalaMonto(string $oc, ?string $fecha, ?float $monto): ?array
+    {
+        $fechaValida = $fecha ? rescue(fn () => \Illuminate\Support\Carbon::parse($fecha)->toDateString(), null, false) : null;
+        if ($fechaValida === null) {
+            return null;
+        }
+
+        $salaOc = \App\Support\OrdenCompra::salaDesde($oc);
+        $candidatos = collect($this->albaranesDeFecha($fechaValida))
+            // Solo candidatos de la MISMA sala (por el nº de albarán o por su OC).
+            ->filter(function (array $c) use ($salaOc) {
+                $salaCand = \App\Support\Albaran::salaDesdeNumero($c['numero_albaran'] ?? null) ?: ($c['sala'] ?? null);
+
+                return $salaOc !== null && \App\Support\Sala::normalizar($salaCand) === $salaOc;
+            })
+            ->values();
+
+        if ($candidatos->isEmpty()) {
+            return null;
+        }
+
+        // Con monto conocido, el candidato de monto más cercano; si no, el primero de la sala.
+        $elegido = $monto !== null
+            ? $candidatos->sortBy(fn (array $c) => abs(((float) ($c['monto'] ?? 0)) - $monto))->first()
+            : $candidatos->first();
+
+        return [
+            'gmail_message_id' => $elegido['gmail_message_id'] ?? null,
+            'numero_albaran' => $elegido['numero_albaran'] ?? null,
+            'orden_compra' => $elegido['orden_compra'] ?: $oc,
+            'sala' => $salaOc,
+            'nombre_sala' => $elegido['nombre_sala'] ?? null,
+            'monto' => $elegido['monto'] ?? null,
+            'fecha' => $elegido['fecha'] ?? $fechaValida,
+            'debug' => ['fallback' => 'fecha+sala+monto', 'fecha' => $fechaValida, 'sala' => $salaOc, 'candidatos' => $candidatos->count()],
         ];
     }
 
@@ -267,13 +355,16 @@ class PpqGmailService
 
         $oc = $datosPdf['oc'] ?? null;
         $numero = \App\Support\Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null);
+        // Sala desde la OC si se pudo parsear; si no, del 2º segmento del número de albarán.
+        $sala = \App\Support\OrdenCompra::salaDesde($oc) ?: \App\Support\Albaran::salaDesdeNumero($numero);
 
         return [
             'gmail_message_id' => $correo['id'],
             'numero_albaran' => $numero,
             'orden_compra' => $oc,
-            // Sala desde la OC si se pudo parsear; si no, del 2º segmento del número.
-            'sala' => \App\Support\OrdenCompra::salaDesde($oc) ?: \App\Support\Albaran::salaDesdeNumero($numero),
+            'sala' => $sala,
+            // Nombre de sala: del texto del PDF si viene; si no, del mapa auxiliar por código.
+            'nombre_sala' => ($datosPdf['nombre_sala'] ?? null) ?: \App\Support\Sala::nombre($sala),
             'monto' => $datosPdf['monto'] ?? null,
             'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
             'asunto' => $correo['asunto'] ?? null,

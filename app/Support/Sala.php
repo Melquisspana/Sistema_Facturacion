@@ -36,7 +36,11 @@ class Sala
                 $query->where('cliente_id', $cliente);
             }
 
-            self::$cache[$codigo] = $query->value('nombre');
+            // Fiscal primero (cliente_sucursales por código); si no resuelve —lo normal en
+            // Calleja, cuyas sucursales tienen `codigo` nulo—, se cae al mapa auxiliar de PPQ
+            // (nombres que ya vimos en JSON de CCF o altas manuales). El mapa NO es fiscal.
+            self::$cache[$codigo] = $query->value('nombre')
+                ?? \App\Models\PpqSala::nombre($codigo);
         }
 
         return self::$cache[$codigo];
@@ -86,6 +90,7 @@ class Sala
     public static function olvidarCache(): void
     {
         self::$cache = [];
+        \App\Models\PpqSala::olvidarCache();
     }
 
     /** Normaliza un código a 4 dígitos con cero inicial; null si no es de 1-4 dígitos. */

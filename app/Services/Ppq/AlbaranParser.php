@@ -14,7 +14,7 @@ class AlbaranParser
     private const KEYWORDS_MONTO = 'total|monto|valor|neto|importe|a\s*pagar|gran\s*total';
 
     /**
-     * @return array{numero: ?string, fecha: ?string, oc: ?string, monto: ?float, debug: array<string, mixed>}
+     * @return array{numero: ?string, fecha: ?string, oc: ?string, monto: ?float, nombre_sala: ?string, debug: array<string, mixed>}
      */
     public function desdePdf(string $pdfBytes): array
     {
@@ -31,7 +31,7 @@ class AlbaranParser
     }
 
     /**
-     * @return array{numero: ?string, fecha: ?string, oc: ?string, monto: ?float, debug: array<string, mixed>}
+     * @return array{numero: ?string, fecha: ?string, oc: ?string, monto: ?float, nombre_sala: ?string, debug: array<string, mixed>}
      */
     public function desdeTexto(string $texto, ?string $error = null): array
     {
@@ -53,8 +53,24 @@ class AlbaranParser
         // como "36/00/6359", cuyo "mes" 00 no es válido).
         $fecha = $this->buscar($texto, '#\b((?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:\d{4}|\d{2}))\b#', $debug, 'fecha');
         $monto = $this->monto($texto, $debug);
+        // Nombre de sala si el PDF lo trae en texto ("SÚPER SELECTOS …"). Best-effort:
+        // en muchos albaranes va en el logo/imagen y NO se puede extraer -> null.
+        $nombreSala = $this->nombreSala($texto, $debug);
 
-        return ['numero' => $numero, 'fecha' => $fecha, 'oc' => $oc, 'monto' => $monto, 'debug' => $debug];
+        return ['numero' => $numero, 'fecha' => $fecha, 'oc' => $oc, 'monto' => $monto, 'nombre_sala' => $nombreSala, 'debug' => $debug];
+    }
+
+    /**
+     * Nombre comercial de la sala si aparece en el texto del PDF (ej. "SÚPER SELECTOS
+     * SANTO TOMAS"). Devuelve null si no está (lo habitual: el nombre va en el logo).
+     */
+    private function nombreSala(string $texto, array &$debug): ?string
+    {
+        $ok = preg_match('/(S[UÚ]PER\s+SELECTOS[\p{L}\s\.\-]{1,40})/iu', $texto, $m);
+        $nombre = $ok ? trim(preg_replace('/\s+/', ' ', $m[1])) : null;
+        $debug['regex']['nombre_sala'] = ['match' => $nombre];
+
+        return $nombre;
     }
 
     /** Aplica una regex, registra en debug y devuelve el grupo 1 o null. */

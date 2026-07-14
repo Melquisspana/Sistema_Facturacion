@@ -42,7 +42,8 @@
                     <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Orden de compra</span>
                     <span class="inline-flex items-center rounded-md bg-gray-50 ring-1 ring-gray-200 px-2.5 py-1 font-mono text-xs text-gray-700">{{ $doc['numero_orden_compra'] ?? '—' }}</span>
                     <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 sm:ml-3">Sala / CD</span>
-                    <span class="inline-flex items-center rounded-md bg-indigo-50 ring-1 ring-indigo-200 px-3 py-1 font-mono text-sm font-bold text-indigo-700">{{ $salaEtq ?? '—' }}</span>
+                    <span class="inline-flex items-center rounded-md bg-indigo-50 ring-1 ring-indigo-200 px-3 py-1 font-mono text-sm font-bold text-indigo-700">{{ $sala ?? '—' }}</span>
+                    <span class="text-sm {{ ($docSalaNombre ?? null) ? 'font-medium text-gray-800' : 'text-amber-600' }}">{{ \App\Support\Sala::descripcion($sala, $docSalaNombre ?? null) }}</span>
                 </div>
             </div>
 
@@ -76,26 +77,35 @@
                     @forelse ($candidatos as $c)
                         @php
                             $cSala = $c['sala'] ?? \App\Support\OrdenCompra::salaDesde($c['orden_compra'] ?? null);
-                            $cSalaEtq = \App\Support\Sala::etiqueta($cSala);
+                            // Sala "real" del albarán según su propio número (2º segmento): sirve para
+                            // detectar que el albarán es de otra sala distinta a la del documento.
+                            $cSalaAlb = \App\Support\Albaran::salaDesdeNumero($c['numero_albaran'] ?? null) ?: $cSala;
+                            $cSalaEtq = \App\Support\Sala::descripcion($cSala, $c['nombre_sala'] ?? null);
                             $cMonto = $c['monto'] !== null ? '$'.number_format((float) $c['monto'], 2) : '—';
                             $cFecha = $c['fecha'] ? \App\Support\Albaran::fecha($c['fecha']) : null;
-                            $mismaSala = $cSala && $sala && $cSala === $sala;
+                            $mismaSala = $cSalaAlb && $sala && $cSalaAlb === $sala;
+                            $otraSala = $cSalaAlb && $sala && $cSalaAlb !== $sala;
                         @endphp
-                        <div class="px-5 py-4 border-b border-gray-100 {{ $mismaSala ? 'bg-indigo-50/40' : '' }}">
+                        <div class="px-5 py-4 border-b border-gray-100 {{ $mismaSala ? 'bg-indigo-50/40' : ($otraSala ? 'bg-orange-50/40' : '') }}">
                             <div class="flex flex-wrap items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <span class="font-mono text-sm font-semibold text-gray-800">{{ $c['numero_albaran'] ?: '(sin número)' }}</span>
                                         @if ($mismaSala)
                                             <span class="rounded bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">misma sala</span>
+                                        @elseif ($otraSala)
+                                            <span class="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">⚠ otra sala ({{ $cSalaAlb }})</span>
                                         @endif
                                     </div>
                                     <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                                         <span>Fecha: <span class="text-gray-700">{{ $cFecha ? \Illuminate\Support\Carbon::parse($cFecha)->format('d/m/Y') : '—' }}</span></span>
                                         <span>OC: <span class="font-mono text-gray-700">{{ $c['orden_compra'] ?: '—' }}</span></span>
-                                        <span>Sala / CD: <span class="font-mono text-gray-700">{{ $cSalaEtq ?? '—' }}</span></span>
+                                        <span>Sala / CD: <span class="text-gray-700">{{ $cSalaEtq ?? '—' }}</span></span>
                                         <span>Monto: <span class="font-semibold text-gray-800">{{ $cMonto }}</span></span>
                                     </div>
+                                    @if ($otraSala)
+                                        <p class="mt-1 text-xs text-orange-700">Este albarán parece ser de la sala <span class="font-mono font-semibold">{{ $cSalaAlb }}</span>, no de la <span class="font-mono font-semibold">{{ $sala }}</span> del documento. Verificá antes de vincular.</p>
+                                    @endif
                                     <p class="mt-1 text-xs text-gray-400 truncate" title="{{ $c['asunto'] }}">{{ $c['asunto'] ?: '(sin asunto)' }}</p>
                                 </div>
                                 <div class="shrink-0">
@@ -112,6 +122,7 @@
                                             <input type="hidden" name="numero_albaran" value="{{ $c['numero_albaran'] }}">
                                             <input type="hidden" name="fecha_albaran" value="{{ $cFecha }}">
                                             <input type="hidden" name="monto_albaran" value="{{ $c['monto'] }}">
+                                            <input type="hidden" name="sala_nombre" value="{{ $docSalaNombre }}">
                                             <select name="lote" class="rounded-md border-gray-300 text-sm py-1">
                                                 @foreach ($lotesAbiertos as $l)
                                                     <option value="{{ $l->id }}">#{{ $l->id }} · {{ Str::limit($l->referencia, 20) }}</option>
@@ -140,6 +151,7 @@
                             <input type="hidden" name="{{ $name }}" value="{{ $value }}">
                         @endforeach
                         <input type="hidden" name="sin_albaran" value="1">
+                        <input type="hidden" name="sala_nombre" value="{{ $docSalaNombre }}">
                         <label class="text-xs text-gray-500">Agregar a:</label>
                         <select name="lote" class="rounded-md border-gray-300 text-sm py-1">
                             @foreach ($lotesAbiertos as $l)
