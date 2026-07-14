@@ -109,7 +109,7 @@ class PpqBusquedaController extends Controller
      * albaranes del label Calleja_Albaranes recibidos ese día para que el usuario
      * elija el correcto y lo vincule al documento. Conserva el contexto del CCF/NC.
      */
-    public function albaranesPorFecha(Request $request, \App\Services\Ppq\PpqGmailService $gmail): View
+    public function albaranesPorFecha(Request $request, \App\Services\Ppq\PpqGmailService $gmail, \App\Services\Ppq\SalaResolver $salaResolver): View
     {
         // Contexto del documento que se está conciliando (se reenvía a "agregar").
         $doc = $request->only([
@@ -120,11 +120,19 @@ class PpqBusquedaController extends Controller
         $fecha = $request->input('fecha') ?: ($doc['fecha_documento'] ?? null);
         $fechaValida = $fecha ? rescue(fn () => \Illuminate\Support\Carbon::parse($fecha)->toDateString(), null, false) : null;
 
+        // Nombre comercial del documento (para snapshotearlo al vincular): DTE local o mapa.
+        $docSalaNombre = $salaResolver->nombre(
+            $doc['numero_orden_compra'] ?? null,
+            $doc['codigo_generacion'] ?? null,
+            $doc['numero_control'] ?? null,
+        );
+
         $gmailDisponible = $gmail->disponible();
         $candidatos = ($gmailDisponible && $fechaValida) ? $gmail->albaranesDeFecha($fechaValida) : null;
 
         return view('ppq.albaran-por-fecha', [
             'doc' => $doc,
+            'docSalaNombre' => $docSalaNombre,
             'fecha' => $fechaValida,
             'candidatos' => $candidatos,
             'gmailDisponible' => $gmailDisponible,

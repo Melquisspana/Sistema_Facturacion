@@ -34,7 +34,9 @@
         $difTotal = $lote->diferenciaTotal();
         $sinAlb = $lote->cantidadSinAlbaran();
         $conDif = $lote->cantidadConDiferencia();
-        $estadoLote = \App\Support\PpqConciliacion::estadoLote($sinAlb, $conDif);
+        $sinMonto = $lote->cantidadAlbaranSinMonto();
+        $otraSala = $lote->cantidadOtraSala();
+        $estadoLote = \App\Support\PpqConciliacion::estadoLote($sinAlb, $conDif, $sinMonto, $otraSala);
         $money = fn ($v) => ((float) $v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
         $difBox = match ($estadoLote['key']) {
             'cuadra' => 'bg-green-50 ring-green-200',
@@ -144,12 +146,14 @@
                                     $sala = $item->salaCodigo();
                                     $salaNombre = $item->salaNombre();
                                     $salaDescripcion = $item->salaDescripcion();
-                                    $estado = \App\Support\PpqConciliacion::estado($item->monto_dte, $item->monto_albaran);
+                                    $estado = $item->conciliacionEstado();
+                                    $mismatch = $item->salaMismatch();
                                     $alerta = in_array($estado['key'], ['pequena', 'posible_nc'], true);
                                     $tip = match ($estado['key']) {
                                         'coincide' => 'El monto del albarán coincide con el del CCF/NC.',
                                         'pequena' => 'Diferencia pequeña entre el albarán y el CCF/NC ($'.number_format((float) $item->diferencia, 2).').',
                                         'posible_nc' => 'El monto difiere ($'.number_format((float) $item->diferencia, 2).'): posible nota de crédito o devolución.',
+                                        'albaran_sin_monto' => 'Hay un albarán vinculado pero sin monto capturado; capturá el monto para conciliar.',
                                         default => 'Documento sin albarán vinculado.',
                                     };
                                 @endphp
@@ -191,6 +195,11 @@
                                         </span>
                                         @if (! $item->sin_albaran && $item->monto_albaran !== null)
                                             <span class="mt-1 block text-[11px] {{ abs((float) $item->diferencia) >= 0.01 ? 'text-red-600 font-medium' : 'text-gray-400' }}">Dif {{ $money($item->diferencia) }}</span>
+                                        @endif
+                                        @if ($mismatch)
+                                            <span class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium {{ $mismatch['clase'] }} cursor-help" title="{{ $mismatch['detalle'] }}">
+                                                ⚠ {{ $mismatch['label'] }} ({{ $mismatch['sala_albaran'] }})
+                                            </span>
                                         @endif
                                         {{-- Estado de pago: solo "pagado" si el TXT de Calleja lo confirma --}}
                                         <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium {{ $item->estadoPagoClase() }}" @if ($item->fecha_pago) title="Pago {{ \App\Support\Fecha::dmy($item->fecha_pago) }}" @endif>{{ $item->estadoPagoLabel() }}</span>

@@ -69,10 +69,10 @@ class PpqItemController extends Controller
             $albaran = $this->registrarAlbaran($datos + ['numero_orden_compra' => $dte->numero_orden_compra], $esNc ? 'manual' : 'gmail');
         }
 
-        $salaNombre = \App\Support\Sala::nombrePreferido(
-            \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra),
-            $dte->clienteSucursal?->nombre,
-        );
+        $salaCodigo = \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra);
+        $salaNombre = \App\Support\Sala::nombrePreferido($salaCodigo, $dte->clienteSucursal?->nombre);
+        // Enriquecer el mapa auxiliar de PPQ (no fiscal) para futuros documentos de esta sala.
+        \App\Models\PpqSala::recordar($salaCodigo, $salaNombre, 'local');
 
         $lote->items()->create([
             'dte_id' => $dte->id,
@@ -151,6 +151,13 @@ class PpqItemController extends Controller
                 $d['numero_control'],
             );
         }
+        // Enriquecer el mapa auxiliar de PPQ (no fiscal). Si el nombre vino del formulario
+        // (revisado por quien concilia) se marca 'manual' para que no lo pise una fuente auto.
+        \App\Models\PpqSala::recordar(
+            \App\Support\OrdenCompra::salaDesde($d['numero_orden_compra'] ?? null),
+            $salaNombre,
+            filled($d['sala_nombre'] ?? null) ? 'manual' : 'gmail',
+        );
 
         $lote->items()->create([
             'origen' => 'gmail',

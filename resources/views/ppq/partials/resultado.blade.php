@@ -10,13 +10,15 @@
     $montoCcf = $montoNum === null ? '—' : ($esNc ? '−$'.number_format(abs($montoNum), 2) : '$'.number_format($montoNum, 2));
 
     // El albarán automático solo aplica al CCF; la NC lo captura a mano.
-    $hayAlbaran = ! $esNc && $r['estado']['key'] !== 'sin_albaran';
+    $hayAlbaran = ! $esNc && ! in_array($r['estado']['key'], ['sin_albaran'], true);
     $montoAlb = $r['albaranMonto'] !== null ? '$'.number_format((float) $r['albaranMonto'], 2) : '—';
     $difTxt = $r['diferencia'] !== null ? '$'.number_format((float) $r['diferencia'], 2) : '—';
     $sala = $r['sala'] ? str_pad($r['sala'], 4, '0', STR_PAD_LEFT) : null;
     // Nombre comercial de la sala: vía la sucursal relacionada al CCF o por el código.
     $salaNombre = \App\Support\Sala::nombrePreferido($sala, $r['salaNombre'] ?? null);
     $salaDescripcion = \App\Support\Sala::descripcion($sala, $r['salaNombre'] ?? null);
+    // Aviso SEPARADO: el albarán encontrado parece de otra sala (posible albarán equivocado).
+    $mismatch = $hayAlbaran ? \App\Support\PpqConciliacion::salaMismatch($sala, $r['salaAlbaran'] ?? null) : null;
 
     $difColor = match ($r['estado']['key']) {
         'coincide' => 'text-green-700',
@@ -202,6 +204,15 @@
                     {{ $r['estado']['label'] }}
                 </span>
             </div>
+
+            @if ($mismatch)
+                <div class="mb-4 rounded-md bg-orange-50 ring-1 ring-orange-200 px-3 py-2 text-xs text-orange-800">
+                    <span class="font-semibold">⚠ Albarán encontrado pero parece ser de otra sala.</span>
+                    Documento: sala <span class="font-mono font-semibold">{{ $mismatch['sala_doc'] }}</span> ·
+                    albarán: sala <span class="font-mono font-semibold">{{ $mismatch['sala_albaran'] }}</span>.
+                    Verificá antes de vincular (esto es aparte de la diferencia de monto).
+                </div>
+            @endif
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div class="rounded-lg bg-gray-50 ring-1 ring-gray-200 px-4 py-3">

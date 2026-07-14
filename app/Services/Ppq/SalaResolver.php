@@ -46,6 +46,13 @@ class SalaResolver
             }
         }
 
+        // Sin DTE local (documento de otro sistema): último recurso, el mapa auxiliar de
+        // PPQ por código de sala (derivado de la OC). Nombres ya vistos en JSON/altas.
+        $mapa = \App\Support\Sala::nombre(\App\Support\OrdenCompra::salaDesde($oc));
+        if (filled($mapa)) {
+            return $this->cache[$clave] = $mapa;
+        }
+
         return $this->cache[$clave] = null;
     }
 }

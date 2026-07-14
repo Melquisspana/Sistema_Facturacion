@@ -89,6 +89,39 @@ class PpqItem extends Model
         return \App\Support\Sala::descripcion($this->salaCodigo(), $this->salaNombre());
     }
 
+    /** ¿Hay un albarán vinculado a este item (no marcado "sin albarán")? */
+    public function tieneAlbaran(): bool
+    {
+        return ! $this->sin_albaran && $this->ppq_albaran_id !== null;
+    }
+
+    /** Código de sala (4 dígitos) embebido en el número del albarán vinculado (2º segmento). */
+    public function salaAlbaranCodigo(): ?string
+    {
+        return \App\Support\Albaran::salaDesdeNumero($this->albaran?->numero_albaran);
+    }
+
+    /**
+     * Aviso si el albarán vinculado parece ser de OTRA sala que la del documento (posible
+     * albarán equivocado). Null si coinciden o no hay datos. Separado de la diferencia de monto.
+     *
+     * @return array<string, string>|null
+     */
+    public function salaMismatch(): ?array
+    {
+        if (! $this->tieneAlbaran()) {
+            return null;
+        }
+
+        return \App\Support\PpqConciliacion::salaMismatch($this->salaCodigo(), $this->salaAlbaranCodigo());
+    }
+
+    /** Estado de conciliación (monto) de este item, distinguiendo "albarán sin monto". */
+    public function conciliacionEstado(): array
+    {
+        return \App\Support\PpqConciliacion::estado($this->monto_dte, $this->monto_albaran, $this->tieneAlbaran());
+    }
+
     /** ¿El documento es una Nota de Crédito (tipo 05)? Resta en el cobro. */
     public function esNc(): bool
     {

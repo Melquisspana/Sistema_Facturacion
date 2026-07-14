@@ -81,10 +81,22 @@ class PpqLote extends Model
         return round($this->totalMontoDte() - $this->totalMontoAlbaran(), 2);
     }
 
-    /** Items sin albarán vinculado (marcados como tales o sin monto de albarán). */
+    /** Items realmente sin albarán vinculado (marcados así o sin ningún albarán). */
     public function cantidadSinAlbaran(): int
     {
-        return $this->items->filter(fn (PpqItem $i) => $i->sin_albaran || $i->monto_albaran === null)->count();
+        return $this->items->filter(fn (PpqItem $i) => ! $i->tieneAlbaran())->count();
+    }
+
+    /** Items con albarán vinculado pero SIN monto capturado (dato incompleto, no "sin albarán"). */
+    public function cantidadAlbaranSinMonto(): int
+    {
+        return $this->items->filter(fn (PpqItem $i) => $i->tieneAlbaran() && $i->monto_albaran === null)->count();
+    }
+
+    /** Items cuyo albarán parece ser de otra sala que la del documento (posible equivocación). */
+    public function cantidadOtraSala(): int
+    {
+        return $this->items->filter(fn (PpqItem $i) => $i->salaMismatch() !== null)->count();
     }
 
     /** Items con albarán cuyo monto difiere del CCF/NC más allá de la tolerancia. */
