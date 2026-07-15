@@ -3,6 +3,7 @@
     use App\Enums\EstadoDte;
 
     $logoSrc = $logoSrc ?? null;
+    $datosExportacion = $datosExportacion ?? null;
 
     $esFex = $dte->tipo_dte === TipoDte::FacturaExportacion;
     $esNc  = $dte->tipo_dte === TipoDte::NotaCredito;
@@ -374,6 +375,25 @@
                         @if ($tieneOc)<span class="oc">{{ $dte->numero_orden_compra }}</span>@else<span class="miss">Requerida — pendiente</span>@endif
                     @endif
                     @if ($dte->dte_relacionado_id)<span class="sep">|</span> <span class="k">Documento original:</span> <span class="mono">{{ $dte->dteRelacionado?->numero_control ?? $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}</span>@endif
+                </div>
+            </div>
+        @endif
+
+        {{-- DATOS DE EXPORTACIÓN (solo FEX tipo 11). Solo presentación. --}}
+        @if ($esFex && $datosExportacion)
+            <div class="sec">
+                <div class="strip" style="border-top:0;border-radius:7px;">
+                    <span class="ap">Datos de exportación</span>
+                    <span class="sep">|</span>
+                    <span class="k">Tipo ítem:</span> {{ $datosExportacion['tipo_item'] }}
+                    <span class="sep">|</span>
+                    <span class="k">Recinto fiscal:</span> {{ $datosExportacion['recinto_fiscal'] ?? '—' }}
+                    <span class="sep">|</span>
+                    <span class="k">Tipo régimen:</span> {{ $datosExportacion['tipo_regimen'] ?? '—' }}
+                    <span class="sep">|</span>
+                    <span class="k">Régimen:</span> {{ $datosExportacion['regimen'] ?? '—' }}
+                    <span class="sep">|</span>
+                    <span class="k">Incoterm:</span> {{ $datosExportacion['incoterm'] ?? '—' }}
                 </div>
             </div>
         @endif

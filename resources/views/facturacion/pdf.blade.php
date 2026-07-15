@@ -5,6 +5,7 @@
     // Solo presentación: estas variables pueden no venir si se renderiza la vista directo.
     $logoSrc = $logoSrc ?? null;
     $qrDataUri = $qrDataUri ?? null;
+    $datosExportacion = $datosExportacion ?? null;
 
     // Datos del emisor: empresa real → respaldo config/company → '—'. No inventa.
     $cfgCo = config('company');
@@ -348,6 +349,26 @@
                     @if ($tieneOc)<span class="oc">{{ $dte->numero_orden_compra }}</span>@else<span class="miss">Requerida — pendiente</span>@endif
                 @endif
                 @if ($esNc && $dte->dte_relacionado_id)<span class="sep">|</span> <span class="k">Documento original:</span> <span class="mono">{{ $dte->dteRelacionado?->numero_control ?? $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}</span>@endif
+            </div>
+        </div>
+    @endif
+
+    {{-- DATOS DE EXPORTACIÓN (solo FEX tipo 11): recinto fiscal, régimen e incoterm ya
+         guardados en el DTE. Solo presentación; no afecta a CCF/NC/Factura consumidor final. --}}
+    @if ($esFex && $datosExportacion)
+        <div class="sec nobreak" style="margin-bottom:6px;">
+            <div class="strip" style="border-top:0;">
+                <span class="k" style="text-transform:uppercase;letter-spacing:.8px;font-size:6.5px;">Datos de exportación</span>
+                <span class="sep">|</span>
+                <span class="k">Tipo ítem:</span> {{ $datosExportacion['tipo_item'] }}
+                <span class="sep">|</span>
+                <span class="k">Recinto fiscal:</span> {{ $datosExportacion['recinto_fiscal'] ?? '—' }}
+                <span class="sep">|</span>
+                <span class="k">Tipo régimen:</span> {{ $datosExportacion['tipo_regimen'] ?? '—' }}
+                <span class="sep">|</span>
+                <span class="k">Régimen:</span> {{ $datosExportacion['regimen'] ?? '—' }}
+                <span class="sep">|</span>
+                <span class="k">Incoterm:</span> {{ $datosExportacion['incoterm'] ?? '—' }}
             </div>
         </div>
     @endif
