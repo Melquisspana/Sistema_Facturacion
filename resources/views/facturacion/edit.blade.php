@@ -37,6 +37,9 @@
                 </div>
             @endif
 
+            {{-- Mensajes en vivo del editor AJAX (éxito/error sin recargar). Vacío por defecto. --}}
+            <div id="ccf-flash" role="status" aria-live="polite" class="hidden rounded-md border p-3 text-sm"></div>
+
             {{-- Aviso SUAVE de OC duplicada: solo advierte (con link); no bloquea generar. --}}
             @if ($ocDuplicada ?? null)
                 <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
@@ -69,7 +72,7 @@
                         <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
                               onsubmit="return confirm(@js($confirmGenerar));">
                             @csrf
-                            <button @disabled($sinLineas)
+                            <button data-generar-btn @disabled($sinLineas)
                                     @if ($sinLineas) title="Agregá al menos un producto para generar." @endif
                                     class="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-md {{ $sinLineas ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
                                 Generar
@@ -95,12 +98,13 @@
                         {{-- Modo escáner: pegar/escanear un código de barras y Enter agrega el producto
                              (o suma 1 a la cantidad si ya estaba en las líneas). No duplica línea. --}}
                         <div class="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
-                            <form method="POST" action="{{ route('facturacion.productos.escanear', $dte) }}">
+                            <form method="POST" action="{{ route('facturacion.productos.escanear', $dte) }}" data-ajax="scanner">
                                 @csrf
                                 <label for="escanear-barra" class="block text-sm font-medium text-indigo-900 mb-1">
                                     Escanear código de barras
                                 </label>
-                                <input id="escanear-barra" name="codigo_barra" type="text" autocomplete="off" autofocus
+                                <input id="escanear-barra" name="codigo_barra" type="text" autofocus
+                                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                        placeholder="Escaneá o escribí el código y presioná Enter…"
                                        onkeydown="if (event.key === 'Enter') { event.preventDefault(); this.form.requestSubmit(); }"
                                        class="block w-full border-indigo-300 rounded-lg shadow-sm py-2.5 text-base focus:border-indigo-500 focus:ring-indigo-500">
@@ -162,13 +166,14 @@
                                                         {{-- Auto-agregar: al escribir una cantidad (>0) se agrega/actualiza la línea;
                                                              0 o vacío la quita. Idempotente por producto (no duplica). El botón es respaldo. --}}
                                                         <form method="POST" action="{{ route('facturacion.productos.cantidad', [$dte, $p['id']]) }}"
-                                                              class="flex items-end gap-2">
+                                                              data-ajax="cantidad" data-producto="{{ $p['id'] }}" class="flex items-end gap-2">
                                                             @csrf
                                                             <div>
                                                                 <label class="sr-only" for="cant-add-{{ $p['id'] }}">Cantidad</label>
                                                                 {{-- Cantidad entera: step 1, min 0 (0/vacío quita la línea). --}}
                                                                 <input id="cant-add-{{ $p['id'] }}" type="number" name="cantidad"
                                                                        value="{{ $qty ?? '' }}" step="1" min="0" inputmode="numeric" placeholder="0"
+                                                                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                                                        onchange="this.form.requestSubmit()"
                                                                        class="block w-20 border-gray-300 rounded-md shadow-sm text-sm {{ $qty ? 'ring-1 ring-indigo-300 bg-indigo-50/50' : '' }}">
                                                             </div>
@@ -190,7 +195,7 @@
 
                 {{-- Panel lateral: resumen del CCF (productos agregados + totales + Generar), sticky. --}}
                 <div class="order-1 lg:order-2 @cannot('update', $dte) lg:col-span-3 @endcannot">
-                    <div class="lg:sticky lg:top-6">
+                    <div class="lg:sticky lg:top-6" id="resumen-panel">
                         @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'confirmGenerar' => $confirmGenerar])
                     </div>
                 </div>
