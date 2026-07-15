@@ -67,8 +67,12 @@ class CrearBorradorRequest extends FormRequest
      * Coherencia cliente ↔ tipo de documento. Reutilizable por el servicio.
      * - CCF (03): requiere cliente contribuyente.
      * - Factura de exportación (11): requiere cliente de exportación.
-     * - Factura (01): cliente opcional, sin restricción de tipo (decisión actual;
-     *   pendiente afinar si se exige consumidor final/nacional).
+     * - Factura (01): cliente opcional, sin restricción de tipo. La exigencia de
+     *   receptor identificado por monto (si la normativa lo requiere) se evalúa más
+     *   adelante, en generación (ValidacionPreJsonService), donde ya existe el total;
+     *   acá en el borrador el total aún no está definido. Ver
+     *   config('dte.factura_consumidor_final.receptor_obligatorio_desde') — hoy null
+     *   (pendiente de confirmar el monto contra la normativa vigente).
      *
      * @param  array<string, mixed>  $datos
      */
