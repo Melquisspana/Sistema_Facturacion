@@ -44,6 +44,15 @@ class DteFirmarCommand extends Command
             return self::FAILURE;
         }
 
+        // GUARDIA: Factura de exportación (11) sigue "en revisión" (incoterms, régimen
+        // y recinto fiscal aún no se capturan/serializan). Mismo criterio que la guardia
+        // de Factura consumidor final. Solo lectura de candados: NO llama al firmador.
+        if ($dte->tipo_dte === TipoDte::FacturaExportacion && $transmision->emisionRealPosible()) {
+            $this->error('Factura de exportación está en revisión y no puede firmarse en producción todavía.');
+
+            return self::FAILURE;
+        }
+
         try {
             $r = $firma->firmar($dte, (bool) $this->option('force'));
         } catch (DteFirmaDeshabilitadaException $e) {

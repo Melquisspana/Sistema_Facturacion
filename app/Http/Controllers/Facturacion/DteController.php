@@ -591,6 +591,18 @@ class DteController extends Controller
             return $volver->with('error', 'Factura consumidor final está en revisión y no puede transmitirse en producción todavía.');
         }
 
+        // 0.06 GUARDIA: Factura de exportación (11) sigue "en revisión" (incoterms,
+        // régimen y recinto fiscal aún no se capturan/serializan; ver auditoría FEX).
+        // Mismo criterio que la guardia 0.05: bloquea la vía genérica firmarTransmitir
+        // solo cuando una emisión real a producción sería posible ahora mismo; en modo
+        // seguro (paralelo/mock/dry-run/apitest) no aplica. NO toca generarTransmitirProduccion
+        // (ya es CCF-only) ni el preflight dedicado.
+        if ($dte->tipo_dte === TipoDte::FacturaExportacion && $transmision->emisionRealPosible()) {
+            Log::warning('DTE firmar-transmitir: Factura de exportación bloqueada en producción real (en revisión)', ['dte_id' => $dte->id]);
+
+            return $volver->with('error', 'Factura de exportación está en revisión y no puede transmitirse en producción todavía.');
+        }
+
         // 0.1 GUARDIA DE EMISIÓN REAL A PRODUCCIÓN: si los candados permiten transmitir de
         // verdad a producción, exigir la frase EXACTA escrita a mano. En MODO SEGURO
         // (paralelo/mock/dry-run/apitest) esto NO aplica (emisionRealPosible=false) y el
