@@ -23,8 +23,10 @@ use Tests\TestCase;
  * Envío del paquete mensual a contabilidad. Herramienta INTERNA: manda UN correo con
  * el ZIP al correo configurado, solo tras confirmación con frase exacta.
  *
- * SEGURIDAD: no toca DTE emitidos, correlativos, firmador, transmisión a Hacienda ni
- * el buzón Yahoo/IMAP; no marca documentos como enviados. Si falla, no cambia estados.
+ * SEGURIDAD: no toca DTE emitidos, correlativos, firmador ni transmisión a Hacienda; las
+ * ventas son solo lectura. No toca el buzón Yahoo/IMAP. Si el envío es exitoso, marca
+ * como "enviado" solo las compras (documentos_recibidos) del rango que estaban
+ * "pendiente" (no toca "ignorado" ni las ya "enviado"). Si falla, no cambia estados.
  */
 class EnviarPaqueteContabilidadTest extends TestCase
 {
@@ -52,12 +54,12 @@ class EnviarPaqueteContabilidadTest extends TestCase
         Configuracion::set('contabilidad.correo', self::CORREO);
     }
 
-    private function compra(string $fecha, float $total): DocumentoRecibido
+    private function compra(string $fecha, float $total, array $extra = []): DocumentoRecibido
     {
         static $n = 0;
         $n++;
 
-        return DocumentoRecibido::create([
+        return DocumentoRecibido::create($extra + [
             'gmail_message_id' => 'c'.$n,
             'emisor_nombre' => 'PROVEEDOR '.$n,
             'tipo_documento' => '03',
@@ -238,6 +240,113 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->first();
         $this->assertNotNull($log);
         $this->assertSame('fallido', $log->getExtraProperty('estado'));
+    }
+
+    public function test_marca_compras_pendientes_del_rango_como_enviadas_tras_envio_exitoso(): void
+    {
+        Mail::fake();
+        $this->conCorreo();
+        $dentro1 = $this->compra('2026-07-05', 100);
+        $dentro2 = $this->compra('2026-07-20', 50);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('status');
+
+        $this->assertSame('enviado', $dentro1->fresh()->estado);
+        $this->assertSame('enviado', $dentro2->fresh()->estado);
+
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->first();
+        $this->assertSame(2, $log->getExtraProperty('compras_marcadas_enviadas'));
+    }
+
+    public function test_no_marca_compras_fuera_del_rango(): void
+    {
+        Mail::fake();
+        $this->conCorreo();
+        $dentro = $this->compra('2026-07-05', 100);
+        $fuera = $this->compra('2026-06-20', 999); // mes anterior: fuera del rango enviado
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('status');
+
+        $this->assertSame('enviado', $dentro->fresh()->estado);
+        $this->assertSame('pendiente', $fuera->fresh()->estado);
+    }
+
+    public function test_no_marca_compras_ignoradas(): void
+    {
+        Mail::fake();
+        $this->conCorreo();
+        $pendiente = $this->compra('2026-07-05', 100);
+        $ignorada = $this->compra('2026-07-06', 30, ['estado' => 'ignorado']);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('status');
+
+        $this->assertSame('enviado', $pendiente->fresh()->estado);
+        $this->assertSame('ignorado', $ignorada->fresh()->estado);
+    }
+
+    public function test_no_toca_compras_ya_enviadas(): void
+    {
+        Mail::fake();
+        $this->conCorreo();
+        $yaEnviada = $this->compra('2026-07-06', 30, ['estado' => 'enviado']);
+        $updatedAtOriginal = $yaEnviada->updated_at;
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('status');
+
+        $yaEnviada->refresh();
+        $this->assertSame('enviado', $yaEnviada->estado);
+        $this->assertEquals($updatedAtOriginal, $yaEnviada->updated_at);
+    }
+
+    public function test_no_marca_nada_si_incluir_compras_es_falso(): void
+    {
+        Mail::fake();
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->conCorreo();
+        $compra = $this->compra('2026-07-05', 100);
+        $this->venta('2026-07-10', 200);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_compras' => 0]))
+            ->assertSessionHas('status');
+
+        $this->assertSame('pendiente', $compra->fresh()->estado);
+
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->first();
+        $this->assertSame(0, $log->getExtraProperty('compras_marcadas_enviadas'));
+    }
+
+    public function test_no_toca_ventas_dte_tras_envio_exitoso(): void
+    {
+        Mail::fake();
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->conCorreo();
+        $this->compra('2026-07-05', 100);
+        $venta = $this->venta('2026-07-10', 200);
+        $estadoOriginal = $venta->estado;
+        $selloOriginal = $venta->sello_recepcion;
+        $codigoOriginal = $venta->codigo_generacion;
+        $totalOriginal = $venta->total_pagar;
+        $updatedAtOriginal = $venta->updated_at;
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('status');
+
+        $venta->refresh();
+        $this->assertSame($estadoOriginal, $venta->estado);
+        $this->assertSame($selloOriginal, $venta->sello_recepcion);
+        $this->assertSame($codigoOriginal, $venta->codigo_generacion);
+        $this->assertSame($totalOriginal, $venta->total_pagar);
+        $this->assertEquals($updatedAtOriginal, $venta->updated_at);
     }
 
     public function test_no_toca_yahoo_imap_al_enviar(): void
