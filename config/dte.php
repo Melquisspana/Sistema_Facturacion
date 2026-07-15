@@ -244,17 +244,17 @@ return [
     'retencion_iva_umbral' => 100,
 
     /*
-    | Factura de consumidor final (01): monto desde el cual debería exigirse receptor
-    | identificado (nombre + documento), según la normativa vigente de identificación
-    | obligatoria del consumidor final. PENDIENTE DE CONFIRMAR: el monto exacto NO se
-    | ha verificado contra una fuente oficial (Ley de IVA / DGII), por eso queda en
-    | null. Mientras sea null, el receptor sigue siendo SIEMPRE opcional (comportamiento
-    | actual, sin cambios) y esto NO habilita producción para el tipo 01 (bloqueada por
-    | otros candados ya existentes). NO poner aquí un número sin confirmar la cifra
-    | vigente con una fuente oficial.
+    | Factura de consumidor final (01): monto a partir del cual se exige receptor
+    | identificado (nombre + documento). Confirmado: $25,000.00. Es un umbral ESTRICTO
+    | ("mayor que", no "mayor o igual"): exactamente $25,000.00 NO exige receptor;
+    | $25,000.01 SÍ lo exige (ValidacionPreJsonService usa total_pagar > este valor).
+    | Pendiente aparte (no relacionado a este umbral): si la factura se usará para
+    | deducción de costos/gastos del cliente, hoy no hay campo/checkbox para eso.
+    | Esto NO habilita producción para el tipo 01 (bloqueada por otros candados ya
+    | existentes).
     */
     'factura_consumidor_final' => [
-        'receptor_obligatorio_desde' => null,
+        'receptor_obligatorio_desde' => 25000.00,
     ],
 
     /*
