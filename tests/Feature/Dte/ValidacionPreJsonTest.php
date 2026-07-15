@@ -115,10 +115,10 @@ class ValidacionPreJsonTest extends TestCase
     }
 
     /**
-     * Factura consumidor final (01) con `cantidad` unidades de un producto a $10
-     * (IVA incluido, precio_unitario ya es el final): total_pagar = 10 * cantidad.
+     * Factura consumidor final (01) con UNA línea cuyo precio_unitario (IVA incluido,
+     * ya es el precio final) define el total_pagar exacto: total_pagar = $precioUnitario.
      */
-    private function facturaBorrador(array $emisor, ?Cliente $cliente, int $cantidad): Dte
+    private function facturaBorrador(array $emisor, ?Cliente $cliente, string $precioUnitario): Dte
     {
         $datos = [
             'tipo_dte' => TipoDte::Factura,
@@ -129,77 +129,67 @@ class ValidacionPreJsonTest extends TestCase
             $datos['cliente_id'] = $cliente;
         }
         $dte = $this->borradores->crearBorrador($datos);
-        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
-        $this->borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: $cantidad);
+        $producto = Producto::factory()->create(['precio_unitario' => $precioUnitario, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $this->borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 1);
 
         return $dte->refresh();
     }
 
-    // --- Factura consumidor final (01): estructura de receptor por monto (umbral aún sin confirmar) ---
+    // --- Factura consumidor final (01): receptor obligatorio por monto (umbral confirmado $25,000.00, estricto) ---
 
-    public function test_factura_sin_receptor_no_falla_si_umbral_no_esta_configurado(): void
+    public function test_factura_sin_receptor_no_falla_con_total_exactamente_en_el_umbral(): void
     {
-        // config('dte.factura_consumidor_final.receptor_obligatorio_desde') es null por defecto:
-        // comportamiento actual sin cambios, sin importar el monto.
+        // Umbral ESTRICTO ("mayor que"): exactamente $25,000.00 NO exige receptor.
         $emisor = $this->emisor();
-        $factura = $this->facturaBorrador($emisor, null, cantidad: 10); // total_pagar = 100.00
+        $factura = $this->facturaBorrador($emisor, null, '25000.00');
 
+        $this->assertSame('25000.00', $factura->total_pagar);
         $problemas = $this->validacion->validar($factura);
         $this->assertNotContains(
-            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            'El receptor es obligatorio: el total supera el monto configurado para exigir identificación del consumidor final.',
             $problemas
         );
     }
 
-    public function test_factura_sin_receptor_falla_si_el_total_alcanza_el_umbral_configurado(): void
+    public function test_factura_sin_receptor_falla_con_total_apenas_sobre_el_umbral(): void
     {
-        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
         $emisor = $this->emisor();
-        $factura = $this->facturaBorrador($emisor, null, cantidad: 10); // total_pagar = 100.00 (>= 100)
+        $factura = $this->facturaBorrador($emisor, null, '25000.01');
 
+        $this->assertSame('25000.01', $factura->total_pagar);
         $this->assertContains(
-            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            'El receptor es obligatorio: el total supera el monto configurado para exigir identificación del consumidor final.',
             $this->validacion->validar($factura)
-        );
-    }
-
-    public function test_factura_sin_receptor_no_falla_si_el_total_no_alcanza_el_umbral_configurado(): void
-    {
-        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
-        $emisor = $this->emisor();
-        $factura = $this->facturaBorrador($emisor, null, cantidad: 2); // total_pagar = 20.00 (< 100)
-
-        $problemas = $this->validacion->validar($factura);
-        $this->assertNotContains(
-            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
-            $problemas
         );
     }
 
     public function test_factura_con_receptor_identificado_no_falla_aunque_supere_el_umbral(): void
     {
-        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
         $emisor = $this->emisor();
-        $factura = $this->facturaBorrador($emisor, $this->clienteContribuyente($emisor), cantidad: 10); // total_pagar = 100.00
+        $factura = $this->facturaBorrador($emisor, $this->clienteContribuyente($emisor), '30000.00');
 
         $problemas = $this->validacion->validar($factura);
         $this->assertNotContains(
-            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            'El receptor es obligatorio: el total supera el monto configurado para exigir identificación del consumidor final.',
             $problemas
         );
     }
 
     public function test_ccf_no_se_ve_afectado_por_el_umbral_de_factura(): void
     {
-        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
         $emisor = $this->emisor();
         $ccf = $this->ccfBorradorCompleto($emisor); // CCF ya exige cliente por su propia regla
 
         $problemas = $this->validacion->validar($ccf);
         $this->assertNotContains(
-            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            'El receptor es obligatorio: el total supera el monto configurado para exigir identificación del consumidor final.',
             $problemas
         );
+    }
+
+    public function test_config_del_umbral_de_factura_queda_en_25000_y_no_en_null(): void
+    {
+        $this->assertSame(25000.00, config('dte.factura_consumidor_final.receptor_obligatorio_desde'));
     }
 
     public function test_fex_sin_actividad_del_receptor_falla(): void

@@ -181,17 +181,15 @@ class ValidacionPreJsonService
                 break;
 
             case TipoDte::Factura:
-                // Factura 01: receptor opcional (consumidor final) por defecto. Estructura
-                // preparada para exigirlo desde cierto monto según la normativa vigente de
-                // identificación obligatoria del consumidor final, pero el umbral real está
-                // PENDIENTE DE CONFIRMAR contra una fuente oficial (ver config/dte.php
-                // 'factura_consumidor_final.receptor_obligatorio_desde'). Mientras esa config
-                // sea null (valor por defecto), este bloque NO exige nada (comportamiento
-                // actual sin cambios). Si en el futuro se confirma y configura un monto real,
-                // exige receptor cuando el total alcance o supere ese monto.
+                // Factura 01: receptor opcional (consumidor final) por debajo del umbral
+                // confirmado (config/dte.php 'factura_consumidor_final.receptor_obligatorio_desde',
+                // hoy $25,000.00). Umbral ESTRICTO ("mayor que", no "mayor o igual"): total
+                // exactamente igual al umbral NO exige receptor; solo lo exige si el total lo
+                // SUPERA. Si la config quedara en null, este bloque no exige nada (compatibilidad
+                // con el modo "sin umbral configurado").
                 $umbral = config('dte.factura_consumidor_final.receptor_obligatorio_desde');
-                if ($umbral !== null && ! $cliente && Dinero::comparar((string) $dte->total_pagar, (string) $umbral) >= 0) {
-                    $problemas[] = 'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.';
+                if ($umbral !== null && ! $cliente && Dinero::comparar((string) $dte->total_pagar, (string) $umbral) > 0) {
+                    $problemas[] = 'El receptor es obligatorio: el total supera el monto configurado para exigir identificación del consumidor final.';
                 }
                 break;
 
