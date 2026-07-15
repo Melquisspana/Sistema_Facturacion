@@ -25,6 +25,7 @@
 
     $esFex = $dte->tipo_dte === TipoDte::FacturaExportacion;
     $esNc = $dte->tipo_dte === TipoDte::NotaCredito;
+    $esFactura = $dte->tipo_dte === TipoDte::Factura;
     $baseLabel = $esFex ? 'Exportación' : 'Gravado';
 
     $hayExento   = (float) $dte->total_exento > 0;
@@ -306,7 +307,7 @@
     <div class="sec rec nobreak">
         <div class="sec-h">Receptor</div>
         <div class="sec-b">
-            <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif
+            <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif@if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
             <table style="margin-top:3px;">
                 <tr>
                     <td style="width: 50%; padding-right: 10px;">
@@ -474,6 +475,9 @@
                             <tr><td class="k">Seguro</td><td class="v">${{ number_format($dte->seguro, 2) }}</td></tr>
                         @else
                             <tr><td class="k">Impuesto al Valor Agregado 13% (IVA)</td><td class="v">${{ number_format($dte->iva, 2) }}</td></tr>
+                        @endif
+                        @if ($esFactura)
+                            <tr><td colspan="2" class="tiny muted" style="font-style:italic;padding-top:2px;">Precios con IVA incluido.</td></tr>
                         @endif
                         <tr class="sub"><td class="k">Monto total de la operación</td><td class="v">${{ number_format($dte->monto_total_operacion, 2) }}</td></tr>
                         {{-- Retenciones --}}

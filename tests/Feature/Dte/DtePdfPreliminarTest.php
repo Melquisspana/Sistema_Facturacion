@@ -51,6 +51,7 @@ class DtePdfPreliminarTest extends TestCase
 
         ['estab' => $this->estab, 'pv' => $this->pv, 'empresa' => $this->empresa] = $this->crearEmisorDte();
         Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
+        Correlativo::create(['tipo_dte' => '01', 'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
     }
 
     private function usuario(string $rol): User
@@ -83,6 +84,21 @@ class DtePdfPreliminarTest extends TestCase
         $dte = $this->ccfGenerado();
         $dte->json_firmado_path = 'dte/firmados/dte-03-'.$dte->id.'.jws';
         $dte->save();
+
+        return $dte->refresh();
+    }
+
+    /** Factura consumidor final SIN cliente (venta a consumidor final sin identificar). */
+    private function facturaGenerada(): Dte
+    {
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $borradores = app(DteBorradorService::class);
+        $dte = $borradores->crearBorrador([
+            'tipo_dte' => TipoDte::Factura,
+            'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id,
+        ]);
+        $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 10);
+        app(DteGeneracionService::class)->generar($dte);
 
         return $dte->refresh();
     }
@@ -368,5 +384,29 @@ class DtePdfPreliminarTest extends TestCase
         $ccf->refresh();
         $this->assertSame(EstadoDte::Generado, $ccf->estado);
         $this->assertNull($ccf->sello_recepcion);
+    }
+
+    // --- Factura consumidor final: claridad visual (sin cliente, IVA incluido) ---
+
+    public function test_factura_sin_cliente_muestra_consumidor_final_sin_identificar(): void
+    {
+        $html = $this->html($this->facturaGenerada());
+
+        $this->assertStringContainsString('Consumidor final', $html);
+        $this->assertStringContainsString('Consumidor final sin identificar.', $html);
+    }
+
+    public function test_factura_muestra_nota_de_iva_incluido(): void
+    {
+        $html = $this->html($this->facturaGenerada());
+
+        $this->assertStringContainsString('Precios con IVA incluido.', $html);
+    }
+
+    public function test_ccf_no_muestra_nota_de_iva_incluido(): void
+    {
+        $html = $this->html($this->ccfGenerado());
+
+        $this->assertStringNotContainsString('Precios con IVA incluido.', $html);
     }
 }

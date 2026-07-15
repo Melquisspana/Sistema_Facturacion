@@ -94,7 +94,8 @@ class DteImpresionTest extends TestCase
             ->assertSee($ccf->numero_interno)
             ->assertSee('Calleja S.A. de C.V.')
             ->assertSee('Dulce de leche artesanal')
-            ->assertSee('113.00'); // total con IVA
+            ->assertSee('113.00') // total con IVA
+            ->assertDontSee('Precios con IVA incluido.'); // nota exclusiva de Factura consumidor final
     }
 
     public function test_imprimir_factura_generada(): void
@@ -105,7 +106,10 @@ class DteImpresionTest extends TestCase
             ->get(route('facturacion.imprimir', $factura))
             ->assertOk()
             ->assertSee('Factura')
-            ->assertSee($factura->numero_interno);
+            ->assertSee($factura->numero_interno)
+            ->assertSee('Consumidor final')
+            ->assertSee('Consumidor final sin identificar.')
+            ->assertSee('Precios con IVA incluido.');
     }
 
     public function test_imprimir_exportacion_generada(): void
