@@ -186,6 +186,44 @@ class DteNotaCreditoIndependienteTest extends TestCase
             ->assertDontSee($mock->numero_interno);  // CCF mock NO se ofrece
     }
 
+    /**
+     * Pantalla standalone "Nueva nota de crédito": solo debe ofrecer CCF ACEPTADOS por
+     * Hacienda (nunca uno solo generado/no aceptado), mostrar el aviso de que la NC se
+     * emite contra un CCF aceptado, exponer número de control/fecha/total del CCF, y no
+     * sugerir en ningún texto visible que exista una "NC independiente" o "sin documento
+     * relacionado" (ese flujo no existe en la práctica: DteBorradorService::crearNotaCredito
+     * exige el CCF siempre).
+     */
+    public function test_pantalla_standalone_solo_ofrece_ccf_aceptados_y_muestra_datos_clave(): void
+    {
+        $emisor = $this->emisor();
+        $aceptado = $this->ccfGenerado($emisor); // aceptado REAL (sello real + fecha_procesamiento_mh)
+
+        // CCF generado pero NO aceptado: no debe aparecer como opción.
+        $noAceptado = $this->borradores->crearBorrador([
+            'tipo_dte' => TipoDte::CreditoFiscal,
+            'cliente_id' => Cliente::factory()->contribuyente()->create(),
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+        ]);
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $this->borradores->agregarLineaDesdeProducto($noAceptado, $producto, cantidad: 10);
+        app(DteGeneracionService::class)->generar($noAceptado);
+        $noAceptado->refresh();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.create-nota-credito'))
+            ->assertOk()
+            ->assertSee('La nota de crédito se emite contra un CCF aceptado por Hacienda.')
+            ->assertSee($aceptado->numero_control)
+            ->assertSee($aceptado->fecha_emision->format('d/m/Y'))
+            ->assertSee(number_format((float) $aceptado->total_pagar, 2))
+            ->assertDontSee($noAceptado->numero_control)
+            ->assertDontSee('NC independiente')
+            ->assertDontSee('sin documento relacionado')
+            ->assertDontSee('independiente');
+    }
+
     public function test_consulta_no_puede_crear_nc_independiente(): void
     {
         $this->actingAs($this->usuario('consulta'))

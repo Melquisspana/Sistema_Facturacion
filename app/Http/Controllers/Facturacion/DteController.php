@@ -1790,7 +1790,7 @@ class DteController extends Controller
             ->with('cliente:id,nombre,num_documento,nrc')
             ->orderByDesc('id')
             ->limit(200)
-            ->get(['id', 'numero_interno', 'cliente_id', 'cliente_sucursal_id', 'numero_orden_compra', 'fecha_emision', 'total_pagar', 'establecimiento_id', 'punto_venta_id']);
+            ->get(['id', 'numero_interno', 'numero_control', 'cliente_id', 'cliente_sucursal_id', 'numero_orden_compra', 'fecha_emision', 'total_pagar', 'establecimiento_id', 'punto_venta_id']);
 
         // Tipos de NC que afectan productos del CCF (exigen documento relacionado).
         $tiposPorProductos = [];
@@ -1813,6 +1813,7 @@ class DteController extends Controller
             'opcionesCcf' => $ccfs->map(fn (Dte $c) => [
                 'id' => $c->id,
                 'numero' => $c->numero_interno ?? ('#'.$c->id),
+                'numero_control' => $c->numero_control,
                 'cliente_id' => $c->cliente_id,
                 'cliente_sucursal_id' => $c->cliente_sucursal_id,
                 'cliente_nombre' => $c->cliente?->nombre,

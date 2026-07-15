@@ -24,10 +24,10 @@
                     </div>
                 @endif
 
-                <p class="mb-4 text-sm text-gray-500">
-                    <strong>Toda</strong> nota de crédito (devolución, faltante, avería, pronto pago, ajuste) <strong>exige
-                    un CCF aceptado relacionado</strong>. El cliente, la sala y la orden de compra se toman de él.
-                </p>
+                <div class="mb-4 rounded-md bg-indigo-50 border border-indigo-200 p-4 text-sm text-indigo-900">
+                    <p class="font-medium">La nota de crédito se emite contra un CCF aceptado por Hacienda.</p>
+                    <p class="mt-1 text-indigo-800">El CCF relacionado es <strong>obligatorio</strong> para cualquier tipo de nota (devolución, faltante, avería, pronto pago, ajuste). El cliente, la sala y la orden de compra se toman de él.</p>
+                </div>
 
                 <form method="POST" action="{{ route('facturacion.store-nota-credito') }}"
                       x-data="{
@@ -88,12 +88,64 @@
                     @csrf
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {{-- Cliente / sala --}}
-                        <div class="md:col-span-2" @click.outside="abierto = false">
-                            <x-input-label for="cliente_buscar" value="Cliente (contribuyente) / sala *" />
-                            <input type="hidden" name="cliente_id" :value="clienteId">
-                            <input type="hidden" name="cliente_sucursal_id" :value="sucursalId">
-                            <div class="relative mt-1">
+                        {{-- Tipo + CCF relacionado: se eligen PRIMERO. El cliente se completa
+                             automáticamente a partir del CCF elegido (ver bloque más abajo). --}}
+                        <div>
+                            <x-input-label for="tipo" value="Tipo de nota de crédito *" />
+                            <select id="tipo" name="tipo" x-model="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                @foreach ($tiposNc as $valor => $label)
+                                    <option value="{{ $valor }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
+                        </div>
+                        <div>
+                            <x-input-label for="dte_relacionado_id" value="CCF aceptado relacionado *" />
+                            <select id="dte_relacionado_id" name="dte_relacionado_id" x-model="ccfId" @change="onCcfChange()"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione un CCF aceptado por Hacienda —</option>
+                                @foreach ($opcionesCcf as $ccf)
+                                    <option value="{{ $ccf['id'] }}">{{ $ccf['numero_control'] ?? $ccf['numero'] }} — {{ $ccf['cliente_nombre'] ?? 'Cliente' }} — {{ $ccf['fecha'] }} — ${{ $ccf['total'] }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-400">Solo aparecen CCF ACEPTADOS por Hacienda: es obligatorio vincular uno.</p>
+                            <x-input-error :messages="$errors->get('dte_relacionado_id')" class="mt-1" />
+                        </div>
+
+                        {{-- Resumen del CCF elegido --}}
+                        <div class="md:col-span-2 rounded-md bg-indigo-50 border border-indigo-200 p-3 text-sm" x-show="ccfId !== ''" x-cloak>
+                            <p class="font-medium text-indigo-900 mb-1.5">CCF relacionado</p>
+                            <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
+                                <div><dt class="text-gray-500 text-xs">Cliente</dt><dd class="font-medium text-gray-800" x-text="ccf?.cliente_nombre"></dd></div>
+                                <div><dt class="text-gray-500 text-xs">N° de control</dt><dd class="font-medium text-gray-800 font-mono" x-text="ccf?.numero_control"></dd></div>
+                                <div><dt class="text-gray-500 text-xs">Fecha</dt><dd class="font-medium text-gray-800" x-text="ccf?.fecha"></dd></div>
+                                <div><dt class="text-gray-500 text-xs">Total original</dt><dd class="font-medium text-gray-800" x-text="'$' + ccf?.total"></dd></div>
+                            </dl>
+                        </div>
+
+                        {{-- Orden de compra vinculada (informativa, copiada del CCF) --}}
+                        <div class="md:col-span-2 rounded-md bg-gray-50 border border-gray-200 p-3 text-sm" x-show="ccfId !== ''" x-cloak>
+                            <template x-if="ordenCompra">
+                                <span><span class="text-gray-500">Orden de compra vinculada:</span> <span class="font-medium" x-text="ordenCompra"></span></span>
+                            </template>
+                            <template x-if="!ordenCompra">
+                                <span class="text-gray-500">El CCF relacionado no tiene orden de compra.</span>
+                            </template>
+                        </div>
+
+                        {{-- Cliente / sala: SE COMPLETA SOLO al elegir el CCF de arriba (ver
+                             "Resumen del CCF elegido"). Este buscador es opcional y solo ayuda a
+                             ubicar el CCF por cliente; no filtra el select de CCF ni decide el
+                             cliente final. Se oculta una vez que hay un CCF elegido para no
+                             sugerir que se pueda cambiar el cliente por separado. --}}
+                        <input type="hidden" name="cliente_id" :value="clienteId">
+                        <input type="hidden" name="cliente_sucursal_id" :value="sucursalId">
+                        <x-input-error :messages="$errors->get('cliente_id')" class="md:col-span-2 -mb-2" />
+                        <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="md:col-span-2 -mb-2" />
+                        <div class="md:col-span-2" x-show="ccfId === ''" @click.outside="abierto = false">
+                            <x-input-label for="cliente_buscar" value="Cliente (contribuyente) / sala" />
+                            <p class="text-xs text-gray-400 mb-1">Opcional: el cliente definitivo lo determina el CCF que elijas arriba; buscá aquí solo si te ayuda a ubicarlo.</p>
+                            <div class="relative">
                                 <input id="cliente_buscar" type="text" x-model="buscar" autocomplete="off"
                                        @focus="abierto = true" @input="abierto = true"
                                        placeholder="Buscar por razón social, sala/sucursal, NIT o NRC…"
@@ -115,9 +167,6 @@
                                     <li x-show="filtrados.length === 0" class="px-3 py-2 text-gray-400">Sin coincidencias.</li>
                                 </ul>
                             </div>
-                            <p class="mt-1 text-xs text-gray-400">El receptor fiscal es el cliente; la sala (ej. «Oficina Central») queda como referencia.</p>
-                            <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
-                            <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
                         </div>
 
                         {{-- Emisor. Si hay UN solo establecimiento / punto de venta, se autoselecciona
@@ -168,39 +217,6 @@
                                 </p>
                             @endif
                             <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no a la sala del cliente. El correlativo se asigna al generar.</p>
-                        </div>
-
-                        {{-- Tipo + CCF relacionado --}}
-                        <div>
-                            <x-input-label for="tipo" value="Tipo de nota de crédito *" />
-                            <select id="tipo" name="tipo" x-model="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                @foreach ($tiposNc as $valor => $label)
-                                    <option value="{{ $valor }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
-                        </div>
-                        <div>
-                            <x-input-label for="dte_relacionado_id" value="CCF aceptado relacionado *" />
-                            <select id="dte_relacionado_id" name="dte_relacionado_id" x-model="ccfId" @change="onCcfChange()"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                <option value="">— Seleccione un CCF aceptado —</option>
-                                @foreach ($opcionesCcf as $ccf)
-                                    <option value="{{ $ccf['id'] }}">{{ $ccf['numero'] }} — {{ $ccf['cliente_nombre'] ?? 'Cliente' }} — ${{ $ccf['total'] }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-400">Obligatorio: toda nota de crédito debe vincularse a un CCF aceptado por Hacienda.</p>
-                            <x-input-error :messages="$errors->get('dte_relacionado_id')" class="mt-1" />
-                        </div>
-
-                        {{-- Orden de compra vinculada (informativa, copiada del CCF) --}}
-                        <div class="md:col-span-2 rounded-md bg-gray-50 border border-gray-200 p-3 text-sm" x-show="ccfId !== ''" x-cloak>
-                            <template x-if="ordenCompra">
-                                <span><span class="text-gray-500">Orden de compra vinculada:</span> <span class="font-medium" x-text="ordenCompra"></span></span>
-                            </template>
-                            <template x-if="!ordenCompra">
-                                <span class="text-gray-500">El CCF relacionado no tiene orden de compra.</span>
-                            </template>
                         </div>
 
                         {{-- Informativos cliente/sala --}}
