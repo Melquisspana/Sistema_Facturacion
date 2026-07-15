@@ -134,6 +134,21 @@
                 </dl>
             </div>
 
+            {{-- Datos de exportación (solo FEX tipo 11): ya guardados en el DTE, no
+                 recalcula nada. No aparece para CCF/NC/Factura consumidor final. --}}
+            @if ($datosExportacion ?? null)
+                <div class="bg-white shadow sm:rounded-lg p-6">
+                    <h3 class="font-semibold text-gray-700 mb-3">Datos de exportación</h3>
+                    <dl class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                        <div><dt class="text-gray-500">Tipo ítem exportación</dt><dd>{{ $datosExportacion['tipo_item'] }}</dd></div>
+                        <div><dt class="text-gray-500">Recinto fiscal</dt><dd>{{ $datosExportacion['recinto_fiscal'] ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500">Tipo régimen</dt><dd>{{ $datosExportacion['tipo_regimen'] ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500">Régimen</dt><dd>{{ $datosExportacion['regimen'] ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500">Incoterm</dt><dd>{{ $datosExportacion['incoterm'] ?? '—' }}</dd></div>
+                    </dl>
+                </div>
+            @endif
+
             {{-- Líneas y Totales: contenido real del documento, arriba y bien visible
                  (antes quedaban al final de la ficha, después de todos los paneles técnicos). --}}
             <div class="bg-white shadow sm:rounded-lg p-6">

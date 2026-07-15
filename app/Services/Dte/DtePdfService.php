@@ -4,6 +4,7 @@ namespace App\Services\Dte;
 
 use App\Models\Dte;
 use App\Models\Empresa;
+use App\Support\Dte\DatosExportacionPresentacion;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
@@ -32,8 +33,9 @@ class DtePdfService
         $emisor?->loadMissing(['actividadEconomica', 'departamento', 'municipio', 'distrito']);
         $logoSrc = $this->logoSrc();
         $qrDataUri = $this->qrOficial($dte); // solo si hay sello (datos oficiales)
+        $datosExportacion = DatosExportacionPresentacion::resolver($dte);
 
-        return Pdf::loadView('facturacion.pdf', compact('dte', 'emisor', 'logoSrc', 'qrDataUri'))->setPaper('letter');
+        return Pdf::loadView('facturacion.pdf', compact('dte', 'emisor', 'logoSrc', 'qrDataUri', 'datosExportacion'))->setPaper('letter');
     }
 
     /** Bytes del PDF (para adjuntar en correo). */

@@ -421,7 +421,11 @@ class DteController extends Controller
         $enReporteContadora = $dte->estado === EstadoDte::Aceptado
             && Dte::whereKey($dte->id)->aceptadoRealMh()->exists();
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora'));
+        // Datos FEX (tipo 11) ya guardados en el DTE, resueltos a etiquetas legibles.
+        // Solo presentación: null si no es exportación.
+        $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
+
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion'));
     }
 
     /**
@@ -444,8 +448,9 @@ class DteController extends Controller
         // Mismo criterio que el PDF: usa la empresa REAL (no el emisor placeholder).
         $emisor = $this->resolverEmisorParaPdf($dte);
         $logoSrc = $this->logoSrcPdf();
+        $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
 
-        return view('facturacion.imprimir', compact('dte', 'emisor', 'logoSrc'));
+        return view('facturacion.imprimir', compact('dte', 'emisor', 'logoSrc', 'datosExportacion'));
     }
 
     /**
