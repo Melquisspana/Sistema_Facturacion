@@ -88,8 +88,7 @@
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Generar paquete</h3>
                 <p class="mt-1 text-xs text-gray-500">
                     Genera <code>documentos_contabilidad_{{ $rango['etiqueta'] }}.zip</code> con los Excel de compras y ventas,
-                    y los PDF/JSON de compras ya guardados. Los adjuntos de <span class="font-medium">ventas</span> (emitidos)
-                    se agregarán en una fase posterior.
+                    los PDF/JSON de compras ya guardados y el PDF/JSON de cada venta (documento emitido) del rango.
                 </p>
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                     <form method="POST" action="{{ route('contabilidad.paquete.generar') }}">

@@ -12,7 +12,7 @@ Adjunto el paquete de documentos para contabilidad correspondiente al periodo
 @endif
 
 El detalle completo va en el archivo ZIP adjunto (Excel de compras y ventas, y los
-PDF/JSON de compras).
+PDF/JSON de cada documento).
 
 Gracias,
 Dulces La Negrita
