@@ -102,9 +102,29 @@ class DteCorreoClienteRapidoTest extends TestCase
             ->assertDontSee('Enviar correo');
     }
 
+    public function test_generado_muestra_aviso_y_oculta_el_envio(): void
+    {
+        // Generado (no aceptado todavía): la sección "Correo del cliente" existe (la
+        // política enviarCorreo sigue permitiéndolo desde generado en adelante) pero
+        // la UI oculta el formulario y muestra el aviso en su lugar.
+        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+
+        $content = $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.show', $dte))
+            ->assertOk()
+            ->assertSee('Correo del cliente')
+            ->assertSee('El correo al cliente se habilita cuando el DTE esté aceptado por Hacienda.')
+            ->getContent();
+
+        $this->assertStringNotContainsString('Enviar correo y abrir PDF', $content);
+        $this->assertStringNotContainsString('name="destinatarios"', $content);
+    }
+
     public function test_solo_hay_un_boton_de_envio_y_no_en_el_encabezado(): void
     {
-        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+        // El botón de enviar/reenviar solo se ofrece con el DTE ACEPTADO (ver
+        // sección "Correo del cliente" condicionada al estado en show.blade.php).
+        $dte = $this->ccf(EstadoDte::Aceptado, 'cliente@calleja.com');
 
         $content = $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $dte))
@@ -120,7 +140,8 @@ class DteCorreoClienteRapidoTest extends TestCase
 
     public function test_si_ya_fue_enviado_muestra_badge_y_boton_reenviar(): void
     {
-        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+        // Botón de reenviar: solo visible con el DTE ACEPTADO.
+        $dte = $this->ccf(EstadoDte::Aceptado, 'cliente@calleja.com');
         $dte->envios()->create([
             'destinatario' => 'cliente@calleja.com', 'destinatarios' => ['cliente@calleja.com'],
             'estado' => 'enviado', 'adjuntos' => 'PDF, JSON',
@@ -169,7 +190,8 @@ class DteCorreoClienteRapidoTest extends TestCase
 
     public function test_el_boton_de_la_ficha_dice_abrir_pdf(): void
     {
-        $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
+        // El botón normal de enviar solo aparece con el DTE ACEPTADO.
+        $dte = $this->ccf(EstadoDte::Aceptado, 'cliente@calleja.com');
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $dte))
