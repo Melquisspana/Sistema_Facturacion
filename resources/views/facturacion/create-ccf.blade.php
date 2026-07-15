@@ -246,7 +246,7 @@
                     </div>
 
                     <div class="flex items-center gap-3">
-                        <x-primary-button>Crear borrador</x-primary-button>
+                        <x-primary-button>Crear CCF</x-primary-button>
                         <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
                     </div>
                 </form>
