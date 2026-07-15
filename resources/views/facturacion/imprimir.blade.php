@@ -7,6 +7,7 @@
     $esFex = $dte->tipo_dte === TipoDte::FacturaExportacion;
     $esNc  = $dte->tipo_dte === TipoDte::NotaCredito;
     $esCcf = $dte->tipo_dte === TipoDte::CreditoFiscal;
+    $esFactura = $dte->tipo_dte === TipoDte::Factura;
     $esBorrador = $dte->estado === EstadoDte::Borrador;
     $esAnulado  = $dte->estado === EstadoDte::Invalidado;
 
@@ -334,7 +335,7 @@
         <div class="sec">
             <div class="sec-h">Receptor</div>
             <div class="sec-b">
-                <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif
+                <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif@if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
                 <div class="rec-grid">
                     <div>
                         @if ($cli?->num_documento)<div class="f"><span class="k">Documento:</span> <span class="mono">{{ $cli->num_documento }}</span>@if($cli?->nrc) · <span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span>@endif</div>@elseif($cli?->nrc)<div class="f"><span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span></div>@endif
@@ -474,6 +475,9 @@
                         <tr><td class="k">Seguro</td><td class="v">${{ number_format($dte->seguro, 2) }}</td></tr>
                     @else
                         <tr><td class="k">IVA 13%</td><td class="v">${{ number_format($dte->iva, 2) }}</td></tr>
+                    @endif
+                    @if ($esFactura)
+                        <tr><td colspan="2" class="tiny muted" style="font-style:italic;padding-top:2px;">Precios con IVA incluido.</td></tr>
                     @endif
                     <tr class="sub"><td class="k">Monto total de la operación</td><td class="v">${{ number_format($dte->monto_total_operacion, 2) }}</td></tr>
                     @if ((float)$dte->iva_retenido > 0)

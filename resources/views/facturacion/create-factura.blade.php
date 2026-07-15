@@ -39,10 +39,10 @@
                     </div>
                 @endif
 
-                <p class="mb-4 text-sm text-gray-500">
-                    En la Factura (tipo 01) el precio del producto <strong>ya incluye IVA</strong>; el IVA no se suma aparte.
-                    El cliente es opcional y no se pide orden de compra ni retención.
-                </p>
+                <div class="mb-4 rounded-md bg-indigo-50 border border-indigo-200 p-4 text-sm text-indigo-900">
+                    <p class="font-medium">Los precios de consumidor final incluyen IVA.</p>
+                    <p class="mt-1 text-indigo-800">Podés dejar el cliente vacío para consumidor final sin identificar. No se pide orden de compra ni retención en este tipo de documento.</p>
+                </div>
 
                 <form method="POST" action="{{ route('facturacion.store-factura') }}"
                       x-data="{
