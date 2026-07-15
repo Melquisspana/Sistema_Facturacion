@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Ppq;
 
 use App\Enums\EstadoPpq;
+use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Http\Controllers\Controller;
 use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
@@ -28,10 +29,21 @@ class PpqBusquedaController extends Controller
         $filtros['tipo'] = $tipo;
         $hayFiltros = collect($filtros)->except('tipo')->filter(fn ($v) => filled($v))->isNotEmpty();
 
-        // Fuente PRINCIPAL: Gmail (correos enviados). Si no está conectado, se cae a
-        // la BD local como respaldo (puede no tener todos los documentos).
+        // Fuente PRINCIPAL: Gmail (correos enviados). Si no está conectado, o se
+        // desconecta a mitad de la búsqueda (token revocado por Google), se cae a
+        // la BD local como respaldo (puede no tener todos los documentos) y se
+        // avisa con un banner en vez de romper con 500.
         $gmailDisponible = $gmail->disponible();
-        $resolucion = ($gmailDisponible && $q !== '') ? $gmail->resolverCcf($q) : null;
+        $gmailError = null;
+        $resolucion = null;
+        if ($gmailDisponible && $q !== '') {
+            try {
+                $resolucion = $gmail->resolverCcf($q);
+            } catch (GmailDesconectadoException $e) {
+                $gmailDisponible = false;
+                $gmailError = $e->getMessage();
+            }
+        }
         $fichasGmail = $resolucion['fichas'] ?? null;
         $gmailDebug = $resolucion['debug'] ?? null;
 
@@ -94,6 +106,7 @@ class PpqBusquedaController extends Controller
             'fichasGmail' => $fichasGmail,
             'gmailDebug' => $gmailDebug,
             'gmailDisponible' => $gmailDisponible,
+            'gmailError' => $gmailError,
             'gmailConfigurado' => app(\App\Services\Ppq\GmailClient::class)->configurado(),
             'yaUsados' => $yaUsados,
             'albaranesPorDte' => $albaranesPorDte,
@@ -128,7 +141,16 @@ class PpqBusquedaController extends Controller
         );
 
         $gmailDisponible = $gmail->disponible();
-        $candidatos = ($gmailDisponible && $fechaValida) ? $gmail->albaranesDeFecha($fechaValida) : null;
+        $gmailError = null;
+        $candidatos = null;
+        if ($gmailDisponible && $fechaValida) {
+            try {
+                $candidatos = $gmail->albaranesDeFecha($fechaValida);
+            } catch (GmailDesconectadoException $e) {
+                $gmailDisponible = false;
+                $gmailError = $e->getMessage();
+            }
+        }
 
         return view('ppq.albaran-por-fecha', [
             'doc' => $doc,
@@ -136,6 +158,7 @@ class PpqBusquedaController extends Controller
             'fecha' => $fechaValida,
             'candidatos' => $candidatos,
             'gmailDisponible' => $gmailDisponible,
+            'gmailError' => $gmailError,
             'lotesAbiertos' => $this->lotesAbiertos(),
         ]);
     }

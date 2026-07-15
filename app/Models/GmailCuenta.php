@@ -45,4 +45,18 @@ class GmailCuenta extends Model
     {
         return filled($this->refresh_token) || filled($this->access_token);
     }
+
+    /**
+     * Google revocó/expiró el token (invalid_grant, 401, 403): limpia el
+     * access_token y el refresh_token para que conectada() refleje que hay
+     * que reautorizar. Conserva email/conectado_por como referencia histórica.
+     */
+    public function marcarDesconectada(): void
+    {
+        $this->forceFill([
+            'access_token' => null,
+            'refresh_token' => null,
+            'expires_at' => null,
+        ])->save();
+    }
 }

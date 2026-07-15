@@ -78,9 +78,9 @@
                 <p class="text-xs text-green-600">● Buscando en Gmail (correos enviados + Calleja_Albaranes).</p>
             @elseif ($gmailConfigurado)
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center justify-between">
-                    <span>Gmail está configurado pero no conectado.</span>
+                    <span>{{ $gmailError ?? 'Gmail está configurado pero no conectado.' }} Mostrando datos locales (respaldo).</span>
                     @role('administrador')
-                        <a href="{{ route('ppq.gmail.conectar') }}" class="rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700">Conectar Gmail</a>
+                        <a href="{{ route('ppq.gmail.conectar') }}" class="rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700">Reconectar Gmail</a>
                     @endrole
                 </div>
             @else

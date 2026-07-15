@@ -64,7 +64,9 @@
 
             {{-- Resultados --}}
             @if (! $gmailDisponible)
-                <div class="bg-white shadow-sm ring-1 ring-amber-200 sm:rounded-xl p-6 text-sm text-amber-800">Gmail no está conectado; no se puede buscar el albarán por fecha. Podés agregar el documento sin albarán abajo.</div>
+                <div class="bg-white shadow-sm ring-1 ring-amber-200 sm:rounded-xl p-6 text-sm text-amber-800">
+                    {{ $gmailError ?? 'Gmail no está conectado; no se puede buscar el albarán por fecha.' }} Podés agregar el documento sin albarán abajo.
+                </div>
             @elseif (is_null($candidatos))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-8 text-center text-gray-400">Elegí una fecha y presioná <strong>Buscar albaranes</strong>.</div>
             @else
