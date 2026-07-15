@@ -196,6 +196,77 @@
                             <x-input-error :messages="$errors->get('seguro')" class="mt-1" />
                         </div>
 
+                        <div>
+                            <x-input-label for="tipo_item_expor" value="Tipo de ítem exportado *" />
+                            <select id="tipo_item_expor" name="tipo_item_expor"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione —</option>
+                                @foreach ($tiposItemExpor as $tipo)
+                                    <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor') == $tipo->value)>
+                                        {{ $tipo->label() }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('tipo_item_expor')" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <x-input-label for="recinto_fiscal" value="Recinto fiscal *" />
+                            <select id="recinto_fiscal" name="recinto_fiscal"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione —</option>
+                                @foreach ($recintosFiscales as $r)
+                                    <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal') == $r->codigo)>
+                                        {{ $r->valor }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('recinto_fiscal')" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <x-input-label for="tipo_regimen" value="Tipo de régimen *" />
+                            <select id="tipo_regimen" name="tipo_regimen"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione —</option>
+                                @foreach ($tiposRegimen as $tr)
+                                    <option value="{{ $tr->codigo }}" @selected(old('tipo_regimen') == $tr->codigo)>
+                                        {{ $tr->valor }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('tipo_regimen')" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <x-input-label for="regimen" value="Régimen de exportación *" />
+                            <select id="regimen" name="regimen"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione —</option>
+                                @foreach ($regimenes as $rg)
+                                    <option value="{{ $rg->codigo }}" @selected(old('regimen') == $rg->codigo)>
+                                        {{ $rg->valor }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('regimen')" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <x-input-label for="cod_incoterms" value="INCOTERM *" />
+                            <select id="cod_incoterms" name="cod_incoterms"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione —</option>
+                                @foreach ($incoterms as $inc)
+                                    <option value="{{ $inc->codigo }}" @selected(old('cod_incoterms') == $inc->codigo)>
+                                        {{ $inc->valor }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('cod_incoterms')" class="mt-1" />
+                            <p class="mt-1 text-xs text-gray-500">La descripción se resuelve automáticamente del catálogo al guardar.</p>
+                        </div>
+
                         {{-- Informativos: se toman del cliente y se congelan en el DTE --}}
                         <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm">
                             <span class="text-gray-500">Condición aplicada:</span>

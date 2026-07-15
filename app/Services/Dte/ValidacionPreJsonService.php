@@ -178,6 +178,21 @@ class ValidacionPreJsonService
                 if (blank($cliente->actividad_economica_id)) {
                     $problemas[] = 'El receptor de exportación debe tener actividad económica (CAT-019).';
                 }
+
+                // Defensa adicional: estos campos ya se exigen en CrearBorradorRequest al
+                // crear el borrador, pero se revalidan acá por si el DTE se creó antes de
+                // que existiera esta exigencia (borradores viejos) o se manipuló directo.
+                foreach ([
+                    'tipo_item_expor' => 'El tipo de ítem de exportación (bienes/servicios) es obligatorio.',
+                    'recinto_fiscal' => 'El recinto fiscal es obligatorio para la factura de exportación (CAT-027).',
+                    'tipo_regimen' => 'El tipo de régimen es obligatorio para la factura de exportación (CAT-033).',
+                    'regimen' => 'El régimen de exportación es obligatorio (CAT-028).',
+                    'cod_incoterms' => 'El INCOTERM es obligatorio para la factura de exportación (CAT-031).',
+                ] as $campo => $mensaje) {
+                    if (blank($dte->{$campo})) {
+                        $problemas[] = $mensaje;
+                    }
+                }
                 break;
 
             case TipoDte::Factura:

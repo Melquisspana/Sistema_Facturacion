@@ -98,12 +98,22 @@ class MapeadorDteSalidaTest extends TestCase
 
     private function generarBorrador(TipoDte $tipo, array $emisor, ?Cliente $cliente, array $extra = [], ?Producto $producto = null): Dte
     {
-        $dte = $this->borradores->crearBorrador(array_merge([
+        $base = [
             'tipo_dte' => $tipo,
             'cliente_id' => $cliente,
             'establecimiento_id' => $emisor['estab']->id,
             'punto_venta_id' => $emisor['pv']->id,
-        ], $extra));
+        ];
+        if ($tipo === TipoDte::FacturaExportacion) {
+            $base += [
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ];
+        }
+        $dte = $this->borradores->crearBorrador(array_merge($base, $extra));
         $this->borradores->agregarLineaDesdeProducto($dte, $producto ?? $this->producto(), cantidad: 10);
         $this->generacion->generar($dte);
 
@@ -157,6 +167,12 @@ class MapeadorDteSalidaTest extends TestCase
         $this->assertSame('100.00', $salida->resumen->totalExportacion);
         $this->assertSame('100.00', $salida->lineas[0]->ventaExportacion);
         $this->assertSame('0.00', $salida->resumen->iva); // exportación: IVA 0
+        $this->assertSame(1, $salida->emisor->tipoItemExpor);
+        $this->assertSame('01', $salida->emisor->recintoFiscal);
+        $this->assertSame('EX-1', $salida->emisor->tipoRegimen);
+        $this->assertSame('1000.000', $salida->emisor->regimen);
+        $this->assertSame('09', $salida->resumen->codIncoterms);
+        $this->assertSame('FOB-Libre a bordo', $salida->resumen->descIncoterms);
     }
 
     public function test_mapea_nota_credito_con_documento_relacionado(): void

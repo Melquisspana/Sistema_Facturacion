@@ -62,13 +62,24 @@ class DteDescuentoPorcentajeTest extends TestCase
 
     private function borrador(TipoDte $tipo, ?Cliente $cliente, array $emisor, ?ClienteSucursal $sucursal = null): Dte
     {
-        return $this->borradores->crearBorrador([
+        $datos = [
             'tipo_dte' => $tipo,
             'cliente_id' => $cliente,
             'cliente_sucursal_id' => $sucursal?->id,
             'establecimiento_id' => $emisor['estab']->id,
             'punto_venta_id' => $emisor['pv']->id,
-        ]);
+        ];
+        if ($tipo === TipoDte::FacturaExportacion) {
+            $datos += [
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ];
+        }
+
+        return $this->borradores->crearBorrador($datos);
     }
 
     // --- 5 significa 5%, no $5 ---

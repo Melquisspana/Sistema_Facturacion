@@ -6,6 +6,7 @@ use App\Enums\CondicionPago;
 use App\Enums\EstadoDte;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
+use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\TipoAnulacionMh;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Dte\ActualizarLineaDteRequest;
 use App\Http\Requests\Dte\AgregarLineaDteRequest;
 use App\Http\Requests\Dte\CrearBorradorRequest;
+use App\Models\CatalogoMh;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
@@ -1807,6 +1809,12 @@ class DteController extends Controller
             'clientes' => $this->clientesInformativos($clientes),
             'establecimientos' => Establecimiento::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']),
             'puntosVenta' => PuntoVenta::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre', 'establecimiento_id']),
+            // Campos FEX exigidos por el schema real del MH (fe-fex-v3.json), por-DTE.
+            'tiposItemExpor' => TipoItemExportacion::cases(),
+            'recintosFiscales' => CatalogoMh::where('cat', '027')->orderBy('codigo')->get(['codigo', 'valor']),
+            'tiposRegimen' => CatalogoMh::where('cat', '033')->orderBy('codigo')->get(['codigo', 'valor']),
+            'regimenes' => CatalogoMh::where('cat', '028')->orderBy('codigo')->get(['codigo', 'valor']),
+            'incoterms' => CatalogoMh::where('cat', '031')->orderBy('codigo')->get(['codigo', 'valor']),
         ];
     }
 

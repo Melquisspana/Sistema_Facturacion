@@ -88,6 +88,13 @@ class DteExportacionFirmarTransmitirBloqueadoTest extends TestCase
             'cliente_id' => Cliente::factory()->exportacion()->create(),
             'establecimiento_id' => $this->estab->id,
             'punto_venta_id' => $this->pv->id,
+            // Campos FEX exigidos desde la implementación de recinto/régimen/incoterms;
+            // códigos reales del catálogo importado por seedCatalogosDte().
+            'tipo_item_expor' => 1,
+            'recinto_fiscal' => '01',
+            'tipo_regimen' => 'EX-1',
+            'regimen' => '1000.000',
+            'cod_incoterms' => '09',
         ]);
         $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
         $this->borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 2);

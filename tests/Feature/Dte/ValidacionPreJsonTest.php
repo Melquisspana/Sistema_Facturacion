@@ -108,6 +108,11 @@ class ValidacionPreJsonTest extends TestCase
             'cliente_id' => $cliente,
             'establecimiento_id' => $emisor['estab']->id,
             'punto_venta_id' => $emisor['pv']->id,
+            'tipo_item_expor' => 1,
+            'recinto_fiscal' => '01',
+            'tipo_regimen' => 'EX-1',
+            'regimen' => '1000.000',
+            'cod_incoterms' => '09',
         ]);
         $this->borradores->agregarLineaDesdeProducto($dte, $this->productoConUnidad(), cantidad: 2);
 

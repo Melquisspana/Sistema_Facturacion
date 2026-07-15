@@ -29,5 +29,9 @@ final readonly class ResumenDteData
         public ?int $condicionOperacion = null,
         public string $porcentajeDescuento = '0.00',
         public ?string $formaPago = null,
+        // Factura de exportación (11) únicamente; por-DTE. El resto de tipos deja estos
+        // campos en null y sus serializadores no los leen.
+        public ?string $codIncoterms = null,
+        public ?string $descIncoterms = null,
     ) {}
 }

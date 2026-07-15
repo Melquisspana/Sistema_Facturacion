@@ -5,6 +5,7 @@ namespace App\Http\Requests\Dte;
 use App\Enums\CondicionPago;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
+use App\Enums\TipoItemExportacion;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Support\Dte\ResuelveEmisorUnico;
@@ -69,6 +70,15 @@ class CrearBorradorRequest extends FormRequest
             'flete' => ['nullable', 'numeric', 'min:0'],
             'seguro' => ['nullable', 'numeric', 'min:0'],
             'numero_orden_compra' => ['nullable', 'string', 'max:50'],
+            // Factura de exportación (11): la exigencia real (obligatorios para tipo 11)
+            // vive en validarCoherencia(); acá solo se valida FORMATO/pertenencia al
+            // catálogo cuando el campo viene, para que otros tipos de DTE no se vean
+            // afectados por reglas que no les aplican.
+            'tipo_item_expor' => ['nullable', Rule::in(array_map(fn (TipoItemExportacion $t) => $t->value, TipoItemExportacion::cases()))],
+            'recinto_fiscal' => ['nullable', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '027')],
+            'tipo_regimen' => ['nullable', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '033')],
+            'regimen' => ['nullable', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '028')],
+            'cod_incoterms' => ['nullable', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '031')],
         ];
     }
 
@@ -115,6 +125,22 @@ class CrearBorradorRequest extends FormRequest
                     $validator->errors()->add('cliente_id', 'La factura de exportación requiere un cliente.');
                 } elseif (! $cliente->tipo_cliente?->esExportacion()) {
                     $validator->errors()->add('cliente_id', 'La factura de exportación requiere un cliente de exportación.');
+                }
+
+                // El schema real del MH (fe-fex-v3.json) exige estos campos del emisor y del
+                // resumen para tipo 11 (recintoFiscal, tipoRegimen, regimen, codIncoterms,
+                // tipoItemExpor); antes se enviaban como null. descIncoterms se resuelve
+                // server-side desde el catálogo, no se le pide al usuario ni se valida acá.
+                foreach ([
+                    'tipo_item_expor' => 'El tipo de ítem de exportación (bienes/servicios) es obligatorio.',
+                    'recinto_fiscal' => 'El recinto fiscal es obligatorio para la factura de exportación.',
+                    'tipo_regimen' => 'El tipo de régimen es obligatorio para la factura de exportación.',
+                    'regimen' => 'El régimen de exportación es obligatorio.',
+                    'cod_incoterms' => 'El INCOTERM es obligatorio para la factura de exportación.',
+                ] as $campo => $mensaje) {
+                    if (blank($datos[$campo] ?? null)) {
+                        $validator->errors()->add($campo, $mensaje);
+                    }
                 }
             }
         });
