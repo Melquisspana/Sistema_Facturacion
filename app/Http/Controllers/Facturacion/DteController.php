@@ -1420,13 +1420,13 @@ class DteController extends Controller
      * cantidad 0/vacía quita la línea si existía. Reusa DteBorradorService; no cambia
      * reglas fiscales, no firma ni transmite.
      */
-    public function setCantidadProducto(Request $request, Dte $dte, Producto $producto): RedirectResponse
+    public function setCantidadProducto(Request $request, Dte $dte, Producto $producto): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $this->authorize('update', $dte);
 
         // En una NC los productos entran por acreditación o por el catálogo de avería.
         if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            return back()->withErrors(['cantidad' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
+            return $this->errorLineas($request, ['cantidad' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
         }
 
         $request->validate(['cantidad' => ['nullable', 'integer', 'min:0', 'max:999999']]);
@@ -1439,14 +1439,14 @@ class DteController extends Controller
         if ($cantidad !== null && $cantidad > 0) {
             $r = app(PrecioProductoResolver::class)->resolverConOrigen($producto, $dte->cliente_id, $dte->cliente_sucursal_id);
             if ($r['precio'] === null || ! is_numeric($r['precio']) || (float) $r['precio'] <= 0) {
-                return back()->withErrors(['cantidad' => 'El producto no tiene un precio aplicable para este cliente; no se puede agregar.']);
+                return $this->errorLineas($request, ['cantidad' => 'El producto no tiene un precio aplicable para este cliente; no se puede agregar.']);
             }
         }
 
         try {
             $res = $this->borradores->establecerCantidadProducto($dte, $producto, $cantidad);
         } catch (\Illuminate\Validation\ValidationException $e) {
-            return back()->withErrors($e->errors());
+            return $this->errorLineas($request, $e->errors());
         }
 
         $mensaje = match ($res['accion']) {
@@ -1456,7 +1456,7 @@ class DteController extends Controller
             default => null,
         };
 
-        return $mensaje ? back()->with('status', $mensaje) : back();
+        return $this->respuestaLineas($request, $dte, $mensaje);
     }
 
     /**
@@ -1465,13 +1465,13 @@ class DteController extends Controller
      * Reusa establecerCantidadProducto (misma idempotencia, snapshot de precio y
      * recálculo de totales que el catálogo manual); no cambia reglas fiscales.
      */
-    public function escanearProducto(Request $request, Dte $dte): RedirectResponse
+    public function escanearProducto(Request $request, Dte $dte): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $this->authorize('update', $dte);
 
         // En una NC los productos entran por acreditación o por el catálogo de avería.
         if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            return back()->withErrors(['codigo_barra' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
+            return $this->errorLineas($request, ['codigo_barra' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
         }
 
         $datos = $request->validate(['codigo_barra' => ['required', 'string', 'max:60']]);
@@ -1479,16 +1479,16 @@ class DteController extends Controller
 
         $producto = Producto::where('codigo_barra', $codigo)->first();
         if (! $producto) {
-            return back()->withErrors(['codigo_barra' => 'No se encontró ningún producto con el código de barras "'.$codigo.'".']);
+            return $this->errorLineas($request, ['codigo_barra' => 'No se encontró ningún producto con el código de barras "'.$codigo.'".']);
         }
         if (! $producto->activo) {
-            return back()->withErrors(['codigo_barra' => 'El producto "'.$producto->nombre.'" está inactivo; no se puede agregar.']);
+            return $this->errorLineas($request, ['codigo_barra' => 'El producto "'.$producto->nombre.'" está inactivo; no se puede agregar.']);
         }
 
         // Mismo criterio que storeLinea/setCantidadProducto: sin precio aplicable no se agrega.
         $r = app(PrecioProductoResolver::class)->resolverConOrigen($producto, $dte->cliente_id, $dte->cliente_sucursal_id);
         if ($r['precio'] === null || ! is_numeric($r['precio']) || (float) $r['precio'] <= 0) {
-            return back()->withErrors(['codigo_barra' => 'El producto "'.$producto->nombre.'" no tiene un precio aplicable para este cliente; no se puede agregar.']);
+            return $this->errorLineas($request, ['codigo_barra' => 'El producto "'.$producto->nombre.'" no tiene un precio aplicable para este cliente; no se puede agregar.']);
         }
 
         $cantidadActual = (int) ($dte->lineas()->where('producto_id', $producto->id)->value('cantidad') ?? 0);
@@ -1498,17 +1498,17 @@ class DteController extends Controller
             ? 'Escaneado: '.$producto->nombre.' — cantidad actualizada a '.($cantidadActual + 1).'.'
             : 'Escaneado: '.$producto->nombre.' agregado (cantidad 1).';
 
-        return back()->with('status', $mensaje);
+        return $this->respuestaLineas($request, $dte, $mensaje);
     }
 
-    public function storeLinea(AgregarLineaDteRequest $request, Dte $dte): RedirectResponse
+    public function storeLinea(AgregarLineaDteRequest $request, Dte $dte): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $this->authorize('update', $dte);
 
         // En una Nota de crédito los productos entran por acreditación (devolución/
         // faltante) o por el catálogo de avería, no por esta ruta.
         if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            return back()->withErrors(['producto_id' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
+            return $this->errorLineas($request, ['producto_id' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
         }
 
         $producto = Producto::findOrFail($request->integer('producto_id'));
@@ -1516,7 +1516,7 @@ class DteController extends Controller
         // No se permiten productos sin precio aplicable (general ni especial).
         $r = app(PrecioProductoResolver::class)->resolverConOrigen($producto, $dte->cliente_id, $dte->cliente_sucursal_id);
         if ($r['precio'] === null || ! is_numeric($r['precio']) || (float) $r['precio'] <= 0) {
-            return back()->withErrors(['producto_id' => 'El producto no tiene un precio aplicable para este cliente; no se puede agregar.']);
+            return $this->errorLineas($request, ['producto_id' => 'El producto no tiene un precio aplicable para este cliente; no se puede agregar.']);
         }
 
         // Flujo normal: cantidad entera; precio resuelto por cliente/sucursal;
@@ -1527,32 +1527,87 @@ class DteController extends Controller
             $request->integer('cantidad'),
         );
 
-        return back()->with('status', 'Línea agregada.');
+        return $this->respuestaLineas($request, $dte, 'Línea agregada.');
     }
 
-    public function updateLinea(ActualizarLineaDteRequest $request, Dte $dte, DteLinea $linea): RedirectResponse
+    public function updateLinea(ActualizarLineaDteRequest $request, Dte $dte, DteLinea $linea): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $this->authorize('update', $dte);
         $this->verificarLineaDelDte($dte, $linea);
 
         $this->borradores->actualizarLinea($linea, $request->validated());
 
-        return back()->with('status', 'Línea actualizada.');
+        return $this->respuestaLineas($request, $dte, 'Línea actualizada.');
     }
 
-    public function destroyLinea(Dte $dte, DteLinea $linea): RedirectResponse
+    public function destroyLinea(Request $request, Dte $dte, DteLinea $linea): RedirectResponse|\Illuminate\Http\JsonResponse
     {
         $this->authorize('update', $dte);
         $this->verificarLineaDelDte($dte, $linea);
 
         $this->borradores->eliminarLinea($linea);
 
-        return back()->with('status', 'Línea eliminada.');
+        return $this->respuestaLineas($request, $dte, 'Línea eliminada.');
     }
 
     private function verificarLineaDelDte(Dte $dte, DteLinea $linea): void
     {
         abort_unless($linea->dte_id === $dte->id, 404);
+    }
+
+    /**
+     * Respuesta de una acción sobre líneas del borrador (agregar/actualizar/quitar/escanear).
+     * Si la petición espera JSON (editor AJAX) devuelve el panel del carrito re-renderizado +
+     * las cantidades por producto para sincronizar el catálogo; si no, redirige como siempre
+     * (fallback sin JS). NO recalcula ni cambia lógica fiscal: solo empaqueta el estado del $dte.
+     */
+    private function respuestaLineas(Request $request, Dte $dte, ?string $mensaje = null): \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+    {
+        if (! $request->expectsJson()) {
+            return $mensaje ? back()->with('status', $mensaje) : back();
+        }
+
+        // FUENTE DE VERDAD: recargar el modelo COMPLETO desde la BD. Los servicios de
+        // borrador recalculan los totales sobre una instancia fresca del DTE, así que los
+        // atributos de ESTA instancia (total_pagar, total_gravado, iva…) quedaron viejos.
+        // `refresh()` trae los totales reales ya persistidos; sin esto el panel podría
+        // mostrar un total desfasado (p. ej. seguir contando una línea recién eliminada).
+        $dte->refresh();
+        $dte->load('lineas');
+        $html = view('facturacion.partials.resumen-ccf', [
+            'dte' => $dte,
+            'esAgenteRetencion' => $this->borradores->esAgenteRetencion($dte),
+        ])->render();
+
+        return response()->json([
+            'ok' => true,
+            'message' => $mensaje,
+            'resumen_html' => $html,
+            'cantidades' => $dte->lineas
+                ->filter(fn (DteLinea $l) => $l->producto_id !== null)
+                ->mapWithKeys(fn (DteLinea $l) => [$l->producto_id => (int) $l->cantidad])
+                ->all(),
+            'sin_lineas' => $dte->lineas->isEmpty(),
+        ]);
+    }
+
+    /**
+     * Error de una acción sobre líneas: JSON 422 con los mensajes (editor AJAX) o redirect
+     * con errores (fallback sin JS). Mismo contrato de validación en ambos casos.
+     *
+     * @param  array<string, string|array<int, string>>  $errors
+     */
+    private function errorLineas(Request $request, array $errors): \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => false,
+                'message' => collect($errors)->flatten()->first(),
+                'errors' => $errors,
+            ], 422);
+        }
+
+        return back()->withErrors($errors);
     }
 
     /**

@@ -86,7 +86,8 @@
                                             <form method="POST" action="{{ route('facturacion.acreditar', [$nc, $lo]) }}" class="flex items-end gap-2">
                                                 @csrf
                                                 <input type="number" name="cantidad" step="0.0001" min="0.0001" max="{{ $disponible }}"
-                                                       value="{{ rtrim(rtrim($disponible, '0'), '.') }}"
+                                                       value="{{ rtrim(rtrim($disponible, '0'), '.') }}" inputmode="decimal"
+                                                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                                        class="block w-24 border-gray-300 rounded-md shadow-sm text-sm" required>
                                                 <button class="px-3 py-2 bg-indigo-600 text-white text-xs rounded-md hover:bg-indigo-700">Acreditar</button>
                                             </form>
@@ -156,6 +157,7 @@
                                                         <label class="text-xs text-gray-500">Cantidad</label>
                                                         <input type="number" name="cantidad" value="1" step="1" min="1"
                                                                inputmode="numeric"
+                                                               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                                                class="block w-20 border-gray-300 rounded-md shadow-sm text-sm" required>
                                                     </div>
                                                     <button class="px-3 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">

@@ -25,7 +25,9 @@
             <span class="text-xs text-gray-400">{{ $dte->lineas->count() }} línea(s)</span>
         </div>
 
-        <ul class="divide-y divide-gray-100 -mx-1">
+        {{-- Lista con scroll propio: con muchos productos, el bloque de totales y el botón de
+             abajo quedan siempre visibles (el panel es sticky) sin tener que bajar. --}}
+        <ul class="divide-y divide-gray-100 -mx-1 max-h-[45vh] overflow-y-auto pr-1">
             @forelse ($lineasOrdenadas as $linea)
                 <li class="px-1 py-3">
                     <div class="flex items-start justify-between gap-2">
@@ -45,16 +47,19 @@
                     @can('update', $dte)
                         <div class="mt-2 flex items-center justify-between gap-2">
                             <form method="POST" action="{{ route('facturacion.lineas.update', [$dte, $linea]) }}"
-                                  class="flex items-center gap-1.5">
+                                  data-ajax="update" class="flex items-center gap-1.5">
                                 @csrf @method('PATCH')
                                 <label class="sr-only" for="cant-{{ $linea->id }}">Cantidad</label>
                                 <input id="cant-{{ $linea->id }}" type="number" name="cantidad"
                                        value="{{ (int) $linea->cantidad }}" step="1" min="1" inputmode="numeric"
+                                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                                       title="Se guarda solo al cambiar la cantidad"
                                        class="block w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
-                                <button class="text-indigo-600 hover:underline text-xs">Actualizar</button>
+                                {{-- Fallback discreto: con JS se guarda solo; sin JS este botón sigue funcionando. --}}
+                                <button class="text-gray-400 hover:text-gray-600 hover:underline text-xs" title="También se guarda solo al cambiar la cantidad">Actualizar</button>
                             </form>
                             <form method="POST" action="{{ route('facturacion.lineas.destroy', [$dte, $linea]) }}"
-                                  onsubmit="return confirm('¿Eliminar esta línea?');">
+                                  data-ajax="destroy" onsubmit="return confirm('¿Eliminar esta línea?');">
                                 @csrf @method('DELETE')
                                 <button class="text-red-600 hover:underline text-xs">Eliminar</button>
                             </form>
@@ -81,7 +86,7 @@
             <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
                   onsubmit="return confirm(@js($confirmPanel));">
                 @csrf
-                <button @disabled($sinLineasPanel)
+                <button data-generar-btn @disabled($sinLineasPanel)
                         @if ($sinLineasPanel) title="Agregá al menos un producto para generar." @endif
                         class="w-full inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-medium rounded-md {{ $sinLineasPanel ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
                     Generar documento
