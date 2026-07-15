@@ -233,8 +233,7 @@ class DteExportacionUiTest extends TestCase
             ->assertOk()
             ->assertDontSee('name="correlativo_id"', false)
             ->assertDontSee('name="descuento_global"', false)
-            ->assertSee('Establecimiento emisor')
-            ->assertSee('Punto de venta emisor')
+            // Emisor único (1 establecimiento/1 PV): selects ocultos, ver DteEmisorUnicoTest.
             ->assertSee('name="flete"', false)   // flete sí se mantiene
             ->assertSee('name="seguro"', false); // seguro sí se mantiene
     }

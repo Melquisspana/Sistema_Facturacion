@@ -189,12 +189,15 @@
                             </div>
                         @endif
 
-                        <div class="md:col-span-2 -mt-2">
-                            @if ($ocultarEstab && $ocultarPv)
-                                <p class="text-xs text-amber-600">El establecimiento y el punto de venta del emisor (Dulces La Negrita) se asignan automáticamente. El correlativo se asigna automáticamente al generar.</p>
-                            @else
-                                <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no a la sala del cliente. El correlativo se asigna automáticamente al generar.</p>
+                        <div class="md:col-span-2 -mt-2 space-y-1">
+                            @if ($ocultarEstab || $ocultarPv)
+                                <p class="text-sm text-gray-600">
+                                    @if ($ocultarEstab)Emisor: <span class="font-medium text-gray-800">{{ $estabUnico->nombre }}</span>@endif
+                                    @if ($ocultarEstab && $ocultarPv) · @endif
+                                    @if ($ocultarPv)Punto de venta: <span class="font-medium text-gray-800">{{ $pvUnico->nombre }}</span>@endif
+                                </p>
                             @endif
+                            <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no a la sala del cliente. El correlativo se asigna automáticamente al generar.</p>
                         </div>
 
                         {{-- Apéndice / Datos adicionales: aquí vive la orden de compra (regla Calleja). --}}

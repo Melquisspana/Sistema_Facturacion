@@ -7,6 +7,7 @@ use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Support\Dte\ResuelveEmisorUnico;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -29,6 +30,19 @@ class CrearBorradorRequest extends FormRequest
     {
         // El control por rol se aplicará en las rutas cuando exista la UI.
         return true;
+    }
+
+    /**
+     * Si no llega establecimiento_id/punto_venta_id y solo existe UNA opción activa
+     * válida, la resuelve ANTES de validar (ResuelveEmisorUnico). Si hay más de una
+     * opción y no se envió valor, no hace nada: `required` sigue exigiéndolo.
+     */
+    protected function prepareForValidation(): void
+    {
+        $this->merge(ResuelveEmisorUnico::resolver(
+            $this->input('establecimiento_id'),
+            $this->input('punto_venta_id'),
+        ));
     }
 
     /**
