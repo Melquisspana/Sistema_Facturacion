@@ -104,8 +104,8 @@ class PreflightEmisionProduccion
     }
 
     /**
-     * Resumen para el modal de confirmación (solo lectura). Cliente, sala, OC, próximo
-     * número oficial esperado, totales, retención y correo destino si existe.
+     * Resumen para el modal de confirmación (solo lectura). Cliente, sala, OC, número del
+     * documento a emitir, totales, retención y correo destino si existe.
      *
      * @return array<string, mixed>
      */
@@ -114,15 +114,28 @@ class PreflightEmisionProduccion
         $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
         $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->where('activo', true)->first();
         $interno = (int) ($corr?->ultimo_numero ?? 0);
-        // Último operativo = max(interno, externo); el número que tomará este CCF = operativo + 1.
+        // Último operativo = max(interno, externo).
         $operativoUltimo = max($interno, $externo);
+
+        // Número del documento que ESTA acción va a emitir: si el CCF ya fue generado (ya
+        // tiene numeroControl reservado), es el SUYO propio — no "operativo + 1", porque
+        // ese número ya fue consumido cuando se generó. Si todavía es borrador, sí es el
+        // próximo que el correlativo asignará al generarlo ahora.
+        $documentoActual = $dte->numero_control
+            ? (int) preg_replace('/\D+/', '', substr($dte->numero_control, -15))
+            : $operativoUltimo + 1;
 
         return [
             'cliente' => $dte->cliente?->nombre,
             'sala' => $dte->clienteSucursal?->nombre,
             'oc' => $dte->numero_orden_compra,
             'operativo_ultimo' => $operativoUltimo,
-            'proximo_numero' => $operativoUltimo + 1,
+            'externo_ultimo' => $externo,
+            'documento_actual' => $documentoActual,
+            'proximo_futuro' => $documentoActual + 1,
+            // Compat: antes significaba siempre "operativo + 1"; ahora es el número real
+            // de ESTE documento (coincide con documento_actual).
+            'proximo_numero' => $documentoActual,
             'total_gravado' => (float) $dte->total_gravado,
             'iva' => (float) $dte->iva,
             'retencion' => (float) $dte->iva_retenido,

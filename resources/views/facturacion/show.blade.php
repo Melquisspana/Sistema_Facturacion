@@ -465,11 +465,18 @@
                                 <div class="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg p-6">
                                     <h3 class="text-lg font-semibold text-rose-700">Confirmar emisión a PRODUCCIÓN</h3>
 
-                                    {{-- Número grande que tomará este CCF --}}
-                                    <div class="mt-3 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4 text-center">
-                                        <p class="text-xs uppercase tracking-wide text-indigo-500">Este CCF será el número</p>
-                                        <p class="mt-0.5 text-4xl font-bold tabular-nums text-indigo-700">{{ $rp['proximo_numero'] }}</p>
-                                        <p class="mt-0.5 text-xs text-gray-500">Último operativo: {{ $rp['operativo_ultimo'] ?? ($rp['proximo_numero'] - 1) }}</p>
+                                    {{-- Número del documento a emitir + contexto: distingue el documento actual
+                                         (ya reservado si el CCF ya fue generado) del último real de Conta y del
+                                         próximo que quedará libre DESPUÉS de aceptar este. --}}
+                                    <div class="mt-3 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4">
+                                        <div class="text-center">
+                                            <p class="text-xs uppercase tracking-wide text-indigo-500">Documento actual a emitir</p>
+                                            <p class="mt-0.5 text-4xl font-bold tabular-nums text-indigo-700">{{ $rp['documento_actual'] }}</p>
+                                        </div>
+                                        <dl class="mt-3 grid grid-cols-2 gap-2 border-t border-indigo-100 pt-3 text-xs text-gray-600">
+                                            <div><dt class="text-gray-400">Último real externo/Conta</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] }}</dd></div>
+                                            <div><dt class="text-gray-400">Próximo tras aceptar este</dt><dd class="font-semibold">{{ $rp['proximo_futuro'] }}</dd></div>
+                                        </dl>
                                     </div>
 
                                     <div class="mt-3 rounded-md bg-rose-600 p-3 text-sm text-white font-semibold text-center">
@@ -496,7 +503,7 @@
                                         @csrf
                                         <label class="flex items-start gap-2 text-sm text-gray-700">
                                             <input type="checkbox" name="barrera_conta" value="1" class="mt-0.5 rounded border-gray-300">
-                                            <span>Confirmo que Conta Portable quedó detenido/alineado y que el último CCF real operativo es {{ $rp['operativo_ultimo'] ?? ($rp['proximo_numero'] - 1) }}; el próximo será {{ $rp['proximo_numero'] }}.</span>
+                                            <span>Confirmo que Conta Portable quedó detenido/alineado. Documento actual a emitir: {{ $rp['documento_actual'] }}. Último real externo/Conta: {{ $rp['externo_ultimo'] }}. Próximo después de aceptar este documento: {{ $rp['proximo_futuro'] }}.</span>
                                         </label>
                                         <label class="mt-3 block text-xs font-semibold text-rose-700">Escribí exactamente: <span class="font-mono">EMITIR PRODUCCION</span></label>
                                         <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false" placeholder="EMITIR PRODUCCION"

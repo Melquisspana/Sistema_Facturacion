@@ -91,6 +91,11 @@ class PreflightEmisionProduccionTest extends TestCase
         return app(PreflightEmisionProduccion::class)->evaluar($ccf);
     }
 
+    private function resumen(Dte $ccf): array
+    {
+        return app(PreflightEmisionProduccion::class)->resumen($ccf);
+    }
+
     public function test_todo_verde_permite(): void
     {
         $this->todoVerde();
@@ -204,5 +209,42 @@ class PreflightEmisionProduccionTest extends TestCase
         $r = $this->evaluar($vacio->load('lineas', 'cliente'));
         $this->assertFalse($r['puede']);
         $this->assertContains('Documento completo (cliente, productos, total)', $r['faltantes']);
+    }
+
+    public function test_resumen_de_ccf_ya_generado_muestra_su_propio_numero_no_operativo_mas_uno(): void
+    {
+        // Caso real: CCF ya generado localmente como 1120 (el correlativo interno ya
+        // reservó ese número), pero el último real confirmado de Conta es 1119. El
+        // resumen NO debe decir "este CCF será el 1121" (operativo+1): 1121 es el
+        // próximo FUTURO, después de aceptar este; el documento actual es 1120.
+        $this->todoVerde();
+        Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->update(['ultimo_numero' => 1120]);
+        Configuracion::set('produccion.ultimo_ccf_externo', '1119');
+
+        $ccf = $this->ccf();
+        $ccf->forceFill(['numero_control' => 'DTE-03-M001P001-000000000001120', 'estado' => 'generado'])->save();
+
+        $r = $this->resumen($ccf->fresh()->load('lineas', 'cliente', 'clienteSucursal'));
+
+        $this->assertSame(1120, $r['documento_actual']);
+        $this->assertSame(1119, $r['externo_ultimo']);
+        $this->assertSame(1121, $r['proximo_futuro']);
+        // Compat: el campo viejo ahora también refleja el documento actual, no operativo+1.
+        $this->assertSame(1120, $r['proximo_numero']);
+    }
+
+    public function test_resumen_de_borrador_sigue_usando_operativo_mas_uno(): void
+    {
+        // Sin numeroControl todavía (borrador puro): el documento a emitir SÍ es el
+        // próximo que el correlativo asignará al generarlo — comportamiento sin cambios.
+        $this->todoVerde();
+        Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->update(['ultimo_numero' => 1093]);
+        Configuracion::set('produccion.ultimo_ccf_externo', '1093');
+
+        $r = $this->resumen($this->ccf()); // borrador recién creado, sin numero_control
+
+        $this->assertSame(1094, $r['documento_actual']);
+        $this->assertSame(1093, $r['externo_ultimo']);
+        $this->assertSame(1095, $r['proximo_futuro']);
     }
 }
