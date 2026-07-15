@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteStateMachine;
 use Database\Seeders\CatalogosMhSeeder;
+use Database\Seeders\CatalogosMhTablaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -33,6 +34,9 @@ class DteExportacionUiTest extends TestCase
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->seed(CatalogosMhSeeder::class);
+        // Necesario desde que recinto_fiscal/tipo_regimen/regimen/cod_incoterms se
+        // validan contra catalogos_mh (CAT-027/028/031/033) al crear una exportación.
+        $this->seed(CatalogosMhTablaSeeder::class);
     }
 
     private function usuario(string $rol): User
@@ -50,7 +54,14 @@ class DteExportacionUiTest extends TestCase
         return compact('estab', 'pv');
     }
 
-    /** @param array<string, mixed> $override */
+    /**
+     * Códigos REALES del catálogo oficial (importado por CatalogosMhTablaSeeder), usados
+     * como default en los tests que no son sobre estos campos en sí: CAT-027 '01' Terrestre
+     * San Bartolo, CAT-033 'EX-1' Exportación Definitiva, CAT-028 '1000.000' Exportación
+     * Definitiva Régimen Común, CAT-031 '09' FOB-Libre a bordo.
+     *
+     * @param  array<string, mixed>  $override
+     */
     private function datosFex(Cliente $cliente, Establecimiento $estab, PuntoVenta $pv, array $override = []): array
     {
         return array_merge([
@@ -62,6 +73,11 @@ class DteExportacionUiTest extends TestCase
             'descuento_global' => 0,
             'flete' => 0,
             'seguro' => 0,
+            'tipo_item_expor' => 1,
+            'recinto_fiscal' => '01',
+            'tipo_regimen' => 'EX-1',
+            'regimen' => '1000.000',
+            'cod_incoterms' => '09',
         ], $override);
     }
 
@@ -72,6 +88,11 @@ class DteExportacionUiTest extends TestCase
             'cliente_id' => $cliente,
             'establecimiento_id' => $estab->id,
             'punto_venta_id' => $pv->id,
+            'tipo_item_expor' => 1,
+            'recinto_fiscal' => '01',
+            'tipo_regimen' => 'EX-1',
+            'regimen' => '1000.000',
+            'cod_incoterms' => '09',
         ], $extra));
     }
 

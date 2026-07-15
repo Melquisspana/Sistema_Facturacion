@@ -23,5 +23,11 @@ final readonly class EmisorDteData
         public ?string $telefono = null,
         public ?string $correo = null,
         public ?string $tipoEstablecimiento = null,
+        // Factura de exportación (11) únicamente; por-DTE, no por-empresa. El resto de
+        // tipos de DTE deja estos campos en null y sus serializadores no los leen.
+        public ?int $tipoItemExpor = null,
+        public ?string $recintoFiscal = null,
+        public ?string $tipoRegimen = null,
+        public ?string $regimen = null,
     ) {}
 }

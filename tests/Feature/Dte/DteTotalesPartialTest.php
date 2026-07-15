@@ -67,12 +67,22 @@ class DteTotalesPartialTest extends TestCase
 
     private function borrador(TipoDte $tipo, ?Cliente $cliente, array $emisor, array $extra = []): Dte
     {
-        $dte = $this->borradores->crearBorrador(array_merge([
+        $base = [
             'tipo_dte' => $tipo,
             'cliente_id' => $cliente,
             'establecimiento_id' => $emisor['estab']->id,
             'punto_venta_id' => $emisor['pv']->id,
-        ], $extra));
+        ];
+        if ($tipo === TipoDte::FacturaExportacion) {
+            $base += [
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ];
+        }
+        $dte = $this->borradores->crearBorrador(array_merge($base, $extra));
         $this->borradores->agregarLineaDesdeProducto($dte, $this->producto(10), cantidad: 2);
 
         return $dte->refresh();

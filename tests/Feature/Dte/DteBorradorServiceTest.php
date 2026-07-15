@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteStateMachine;
 use Database\Seeders\CatalogosMhSeeder;
+use Database\Seeders\CatalogosMhTablaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -34,6 +35,9 @@ class DteBorradorServiceTest extends TestCase
     {
         parent::setUp();
         $this->seed(CatalogosMhSeeder::class);
+        // Necesario desde que recinto_fiscal/tipo_regimen/regimen/cod_incoterms se validan
+        // contra catalogos_mh (CAT-027/028/031/033) al crear una exportación (tipo 11).
+        $this->seed(CatalogosMhTablaSeeder::class);
         $this->service = app(DteBorradorService::class);
         $this->user = User::factory()->create();
     }
@@ -57,13 +61,25 @@ class DteBorradorServiceTest extends TestCase
     {
         ['estab' => $estab, 'pv' => $pv, 'correlativo' => $correlativo] = $this->emisor();
 
-        return $this->service->crearBorrador(array_merge([
+        $base = [
             'tipo_dte' => $tipo,
             'establecimiento_id' => $estab->id,
             'punto_venta_id' => $pv->id,
             'correlativo_id' => $correlativo->id,
             'cliente_id' => $cliente,
-        ], $extra), $this->user);
+        ];
+        if ($tipo === TipoDte::FacturaExportacion) {
+            // Códigos reales del catálogo importado por CatalogosMhTablaSeeder.
+            $base += [
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ];
+        }
+
+        return $this->service->crearBorrador(array_merge($base, $extra), $this->user);
     }
 
     public function test_crear_borrador_ccf(): void

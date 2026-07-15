@@ -35,7 +35,7 @@ class Dte extends Model
         'numero_control', 'numero_interno', 'codigo_generacion', 'sello_recepcion',
         'respuesta_mh', 'respuesta_mh_path', 'fecha_procesamiento_mh',
         'condicion_operacion', 'forma_pago', 'numero_orden_compra',
-        'cod_incoterms', 'desc_incoterms',
+        'cod_incoterms', 'desc_incoterms', 'tipo_item_expor', 'recinto_fiscal', 'tipo_regimen', 'regimen',
         'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'moneda',
         'motivo_anulacion', 'observacion_anulacion', 'fecha_anulacion', 'invalidado_by',
         'codigo_generacion_invalidacion', 'tipo_anulacion', 'json_invalidacion_path', 'jws_invalidacion_path',

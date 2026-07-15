@@ -3,6 +3,7 @@
 namespace App\Services\Dte\Serializadores;
 
 use App\DataTransferObjects\Dte\Salida\DteSalidaData;
+use App\Enums\TipoItemExportacion;
 use App\Enums\TipoPersona;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Services\Dte\Serializadores\Concerns\MapeaCatalogosMh;
@@ -63,10 +64,10 @@ class SerializadorExportacionMh implements SerializadorMh
             'correo' => $e->correo,
             'codEstable' => $e->codigoEstablecimiento ?: null,
             'codPuntoVenta' => $e->codigoPuntoVenta ?: null,
-            'tipoItemExpor' => 1,          // 1 = bienes (revisar contra CAT si se manejan servicios)
-            'recintoFiscal' => null,
-            'tipoRegimen' => null,
-            'regimen' => null,
+            'tipoItemExpor' => $e->tipoItemExpor ?? TipoItemExportacion::Bienes->value,
+            'recintoFiscal' => $e->recintoFiscal,
+            'tipoRegimen' => $e->tipoRegimen,
+            'regimen' => $e->regimen,
         ];
     }
 
@@ -156,8 +157,8 @@ class SerializadorExportacionMh implements SerializadorMh
             'saldoFavor' => 0.0,
             'condicionOperacion' => (int) ($r->condicionOperacion ?? 1),
             'pagos' => null,
-            'codIncoterms' => null,   // CAT-031: si se capturara incoterm, iría aquí
-            'descIncoterms' => null,
+            'codIncoterms' => $r->codIncoterms,   // CAT-031
+            'descIncoterms' => $r->descIncoterms,
             'numPagoElectronico' => null,
             'observaciones' => null,
         ];

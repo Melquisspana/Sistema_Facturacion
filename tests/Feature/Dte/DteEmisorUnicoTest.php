@@ -167,7 +167,15 @@ class DteEmisorUnicoTest extends TestCase
             ->assertDontSee('Punto de venta emisor');
 
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.store-exportacion'), ['tipo_dte' => '11', 'cliente_id' => $cliente->id])
+            ->post(route('facturacion.store-exportacion'), [
+                'tipo_dte' => '11',
+                'cliente_id' => $cliente->id,
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ])
             ->assertSessionDoesntHaveErrors()
             ->assertRedirect();
 

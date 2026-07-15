@@ -67,12 +67,22 @@ class DteGeneracionTest extends TestCase
 
     private function borradorConLinea(TipoDte $tipo, Establecimiento $estab, PuntoVenta $pv, ?Cliente $cliente, array $extra = []): Dte
     {
-        $dte = $this->borradores->crearBorrador(array_merge([
+        $base = [
             'tipo_dte' => $tipo,
             'cliente_id' => $cliente,
             'establecimiento_id' => $estab->id,
             'punto_venta_id' => $pv->id,
-        ], $extra));
+        ];
+        if ($tipo === TipoDte::FacturaExportacion) {
+            $base += [
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ];
+        }
+        $dte = $this->borradores->crearBorrador(array_merge($base, $extra));
 
         $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
         $this->borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 2);

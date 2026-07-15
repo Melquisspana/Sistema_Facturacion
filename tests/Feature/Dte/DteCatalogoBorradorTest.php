@@ -242,6 +242,11 @@ class DteCatalogoBorradorTest extends TestCase
             'cliente_id' => Cliente::factory()->exportacion()->create(),
             'establecimiento_id' => $emisor['estab']->id,
             'punto_venta_id' => $emisor['pv']->id,
+            'tipo_item_expor' => 1,
+            'recinto_fiscal' => '01',
+            'tipo_regimen' => 'EX-1',
+            'regimen' => '1000.000',
+            'cod_incoterms' => '09',
         ]);
         $this->producto(['nombre' => 'CANILLITAS']);
 

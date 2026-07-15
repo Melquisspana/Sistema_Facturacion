@@ -64,12 +64,23 @@ class DteTotalesUiTest extends TestCase
 
     private function borrador(TipoDte $tipo, ?Cliente $cliente, array $emisor): Dte
     {
-        return $this->borradores->crearBorrador([
+        $datos = [
             'tipo_dte' => $tipo,
             'cliente_id' => $cliente,
             'establecimiento_id' => $emisor['estab']->id,
             'punto_venta_id' => $emisor['pv']->id,
-        ]);
+        ];
+        if ($tipo === TipoDte::FacturaExportacion) {
+            $datos += [
+                'tipo_item_expor' => 1,
+                'recinto_fiscal' => '01',
+                'tipo_regimen' => 'EX-1',
+                'regimen' => '1000.000',
+                'cod_incoterms' => '09',
+            ];
+        }
+
+        return $this->borradores->crearBorrador($datos);
     }
 
     private function ver(Dte $dte)

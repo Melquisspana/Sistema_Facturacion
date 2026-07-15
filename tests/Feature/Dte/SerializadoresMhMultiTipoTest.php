@@ -130,6 +130,51 @@ class SerializadoresMhMultiTipoTest extends TestCase
     }
 
     /**
+     * Cubre el riesgo detectado en la auditoría FEX: recintoFiscal/tipoRegimen/regimen/
+     * codIncoterms/descIncoterms/tipoItemExpor se enviaban SIEMPRE como null aunque el
+     * schema real del MH los exige. Con los datos ya resueltos (por-DTE, cargados desde
+     * CAT-027/028/031/033), el serializador debe dejar de mandarlos null y el JSON debe
+     * seguir validando contra fe-fex-v3.json.
+     */
+    public function test_exportacion_serializa_recinto_regimen_e_incoterms_no_null(): void
+    {
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '37', numDocumento: 'EXT-001', nombre: 'Importadora CA',
+            actividadEconomica: '10730', pais: 'GT', direccion: 'Ciudad de Guatemala', tipoPersona: '1',
+        );
+        $emisor = new EmisorDteData(
+            nit: '06140000000011', nrc: '111111', nombre: 'Dulces La Negrita',
+            codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
+            actividadEconomica: '10730', departamento: '06', municipio: '14', direccion: 'Calle X',
+            telefono: '22000000', correo: 'e@negrita.sv', tipoEstablecimiento: '02',
+            tipoItemExpor: 1, recintoFiscal: '01', tipoRegimen: 'EX-1', regimen: '1000.000',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '100.00',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '100.00',
+            montoTotalOperacion: '100.00', totalPagar: '100.00', totalLetras: 'CIEN 00/100',
+            flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+            codIncoterms: '09', descIncoterms: 'FOB-Libre a bordo',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $emisor, resumen: $resumen,
+            lineas: [$this->lineaExportacion()], receptor: $receptor, apendice: [],
+        );
+
+        $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::FacturaExportacion);
+
+        $this->assertSame(1, $oficial['emisor']['tipoItemExpor']);
+        $this->assertSame('01', $oficial['emisor']['recintoFiscal']);
+        $this->assertSame('EX-1', $oficial['emisor']['tipoRegimen']);
+        $this->assertSame('1000.000', $oficial['emisor']['regimen']);
+        $this->assertSame('09', $oficial['resumen']['codIncoterms']);
+        $this->assertSame('FOB-Libre a bordo', $oficial['resumen']['descIncoterms']);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    /**
      * El receptor de una FEX trae el tipo de persona como VALOR del enum ('juridica'
      * /'natural'), no como número. Debe serializarse al código del MH (2 jurídica /
      * 1 natural), no castearse con (int) —que daría 0—.

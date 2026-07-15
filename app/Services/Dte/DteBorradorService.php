@@ -8,6 +8,7 @@ use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
+use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
 use App\Enums\TipoProducto;
 use App\Exceptions\Dte\DocumentoInmutableException;
@@ -15,6 +16,7 @@ use App\Exceptions\Dte\OrdenCompraRequeridaException;
 use App\Exceptions\Dte\SaldoAcreditableExcedidoException;
 use App\Http\Requests\Dte\AgregarLineaDteRequest;
 use App\Http\Requests\Dte\CrearBorradorRequest;
+use App\Models\CatalogoMh;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
@@ -103,6 +105,15 @@ class DteBorradorService
                 'flete' => $this->montoDe($datos['flete'] ?? 0),
                 'seguro' => $this->montoDe($datos['seguro'] ?? 0),
                 'aplica_retencion_iva' => false, // se decide al recalcular
+                // Factura de exportación (11): por-DTE, no por-emisor (puede cambiar de un
+                // envío a otro). desc_incoterms SIEMPRE se resuelve acá desde CAT-031 por
+                // código; no se acepta texto libre del formulario aunque llegara en $datos.
+                'tipo_item_expor' => $datos['tipo_item_expor'] ?? TipoItemExportacion::Bienes->value,
+                'recinto_fiscal' => $datos['recinto_fiscal'] ?? null,
+                'tipo_regimen' => $datos['tipo_regimen'] ?? null,
+                'regimen' => $datos['regimen'] ?? null,
+                'cod_incoterms' => $datos['cod_incoterms'] ?? null,
+                'desc_incoterms' => $this->descIncoterms($datos['cod_incoterms'] ?? null),
                 'created_by' => $usuario?->id ?? Auth::id(),
             ]);
 
@@ -908,5 +919,15 @@ class DteBorradorService
     private function montoDe(string|int|float $valor): string
     {
         return number_format((float) $valor, 2, '.', '');
+    }
+
+    /** Descripción del INCOTERM (CAT-031) por código; null si no se seleccionó ninguno. */
+    private function descIncoterms(?string $codIncoterms): ?string
+    {
+        if (blank($codIncoterms)) {
+            return null;
+        }
+
+        return CatalogoMh::where('cat', '031')->where('codigo', $codIncoterms)->value('valor');
     }
 }

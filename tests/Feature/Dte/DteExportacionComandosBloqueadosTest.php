@@ -82,6 +82,15 @@ class DteExportacionComandosBloqueadosTest extends TestCase
         if ($cliente) {
             $datos['cliente_id'] = $cliente->id;
         }
+        if ($tipo === TipoDte::FacturaExportacion) {
+            // Campos FEX exigidos desde la implementación de recinto/régimen/incoterms;
+            // códigos reales del catálogo importado por seedCatalogosDte().
+            $datos['tipo_item_expor'] = 1;
+            $datos['recinto_fiscal'] = '01';
+            $datos['tipo_regimen'] = 'EX-1';
+            $datos['regimen'] = '1000.000';
+            $datos['cod_incoterms'] = '09';
+        }
         $dte = $this->borradores->crearBorrador($datos);
         $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
         $this->borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 10);

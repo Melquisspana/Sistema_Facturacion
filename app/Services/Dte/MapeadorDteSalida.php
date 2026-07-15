@@ -106,6 +106,10 @@ class MapeadorDteSalida
             telefono: $emp?->telefono,
             correo: $emp?->correo,
             tipoEstablecimiento: $est?->tipo_establecimiento?->value,
+            tipoItemExpor: $dte->tipo_item_expor !== null ? (int) $dte->tipo_item_expor : null,
+            recintoFiscal: $dte->recinto_fiscal,
+            tipoRegimen: $dte->tipo_regimen,
+            regimen: $dte->regimen,
         );
     }
 
@@ -191,6 +195,8 @@ class MapeadorDteSalida
             condicionOperacion: $dte->condicion_operacion?->value,
             porcentajeDescuento: (string) ($dte->descuento_porcentaje_aplicado ?? '0.00'),
             formaPago: $dte->forma_pago,
+            codIncoterms: $dte->cod_incoterms,
+            descIncoterms: $dte->desc_incoterms,
         );
     }
 
