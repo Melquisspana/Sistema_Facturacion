@@ -301,9 +301,10 @@ class DteController extends Controller
     }
 
     /**
-     * Crea una Nota de crédito desde su flujo propio (no desde un CCF).
-     * El CCF relacionado es OPCIONAL aquí (salvo NC por productos, que lo exige
-     * el servicio). El cliente se toma del original si se vincula uno.
+     * Crea una Nota de crédito desde este formulario propio (independiente del flujo
+     * "NC desde el detalle de un CCF"). El CCF ACEPTADO relacionado es OBLIGATORIO para
+     * todos los tipos de NC (DteBorradorService::crearNotaCredito lo exige siempre); el
+     * cliente se toma del CCF vinculado.
      */
     public function storeNotaCreditoIndependiente(Request $request): RedirectResponse
     {
