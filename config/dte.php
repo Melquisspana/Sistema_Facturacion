@@ -244,6 +244,20 @@ return [
     'retencion_iva_umbral' => 100,
 
     /*
+    | Factura de consumidor final (01): monto desde el cual debería exigirse receptor
+    | identificado (nombre + documento), según la normativa vigente de identificación
+    | obligatoria del consumidor final. PENDIENTE DE CONFIRMAR: el monto exacto NO se
+    | ha verificado contra una fuente oficial (Ley de IVA / DGII), por eso queda en
+    | null. Mientras sea null, el receptor sigue siendo SIEMPRE opcional (comportamiento
+    | actual, sin cambios) y esto NO habilita producción para el tipo 01 (bloqueada por
+    | otros candados ya existentes). NO poner aquí un número sin confirmar la cifra
+    | vigente con una fuente oficial.
+    */
+    'factura_consumidor_final' => [
+        'receptor_obligatorio_desde' => null,
+    ],
+
+    /*
     | Condición de operación por defecto para CCF a contribuyentes cuando ni el
     | cliente ni la sucursal definen una (CAT-016: 1 contado, 2 crédito, 3 otro).
     | Editable.

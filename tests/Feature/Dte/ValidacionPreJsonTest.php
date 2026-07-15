@@ -57,7 +57,7 @@ class ValidacionPreJsonTest extends TestCase
             'tipo_establecimiento' => '01', 'activo' => true,
         ]);
         $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja 1', 'activo' => true]);
-        foreach (['03', '05'] as $t) {
+        foreach (['01', '03', '05'] as $t) {
             Correlativo::create(['tipo_dte' => $t, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
         }
 
@@ -112,6 +112,94 @@ class ValidacionPreJsonTest extends TestCase
         $this->borradores->agregarLineaDesdeProducto($dte, $this->productoConUnidad(), cantidad: 2);
 
         return $dte->refresh();
+    }
+
+    /**
+     * Factura consumidor final (01) con `cantidad` unidades de un producto a $10
+     * (IVA incluido, precio_unitario ya es el final): total_pagar = 10 * cantidad.
+     */
+    private function facturaBorrador(array $emisor, ?Cliente $cliente, int $cantidad): Dte
+    {
+        $datos = [
+            'tipo_dte' => TipoDte::Factura,
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+        ];
+        if ($cliente) {
+            $datos['cliente_id'] = $cliente;
+        }
+        $dte = $this->borradores->crearBorrador($datos);
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $this->borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: $cantidad);
+
+        return $dte->refresh();
+    }
+
+    // --- Factura consumidor final (01): estructura de receptor por monto (umbral aún sin confirmar) ---
+
+    public function test_factura_sin_receptor_no_falla_si_umbral_no_esta_configurado(): void
+    {
+        // config('dte.factura_consumidor_final.receptor_obligatorio_desde') es null por defecto:
+        // comportamiento actual sin cambios, sin importar el monto.
+        $emisor = $this->emisor();
+        $factura = $this->facturaBorrador($emisor, null, cantidad: 10); // total_pagar = 100.00
+
+        $problemas = $this->validacion->validar($factura);
+        $this->assertNotContains(
+            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            $problemas
+        );
+    }
+
+    public function test_factura_sin_receptor_falla_si_el_total_alcanza_el_umbral_configurado(): void
+    {
+        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
+        $emisor = $this->emisor();
+        $factura = $this->facturaBorrador($emisor, null, cantidad: 10); // total_pagar = 100.00 (>= 100)
+
+        $this->assertContains(
+            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            $this->validacion->validar($factura)
+        );
+    }
+
+    public function test_factura_sin_receptor_no_falla_si_el_total_no_alcanza_el_umbral_configurado(): void
+    {
+        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
+        $emisor = $this->emisor();
+        $factura = $this->facturaBorrador($emisor, null, cantidad: 2); // total_pagar = 20.00 (< 100)
+
+        $problemas = $this->validacion->validar($factura);
+        $this->assertNotContains(
+            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            $problemas
+        );
+    }
+
+    public function test_factura_con_receptor_identificado_no_falla_aunque_supere_el_umbral(): void
+    {
+        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
+        $emisor = $this->emisor();
+        $factura = $this->facturaBorrador($emisor, $this->clienteContribuyente($emisor), cantidad: 10); // total_pagar = 100.00
+
+        $problemas = $this->validacion->validar($factura);
+        $this->assertNotContains(
+            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            $problemas
+        );
+    }
+
+    public function test_ccf_no_se_ve_afectado_por_el_umbral_de_factura(): void
+    {
+        config(['dte.factura_consumidor_final.receptor_obligatorio_desde' => 100]);
+        $emisor = $this->emisor();
+        $ccf = $this->ccfBorradorCompleto($emisor); // CCF ya exige cliente por su propia regla
+
+        $problemas = $this->validacion->validar($ccf);
+        $this->assertNotContains(
+            'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.',
+            $problemas
+        );
     }
 
     public function test_fex_sin_actividad_del_receptor_falla(): void

@@ -42,6 +42,7 @@
                 <div class="mb-4 rounded-md bg-indigo-50 border border-indigo-200 p-4 text-sm text-indigo-900">
                     <p class="font-medium">Los precios de consumidor final incluyen IVA.</p>
                     <p class="mt-1 text-indigo-800">Podés dejar el cliente vacío para consumidor final sin identificar. No se pide orden de compra ni retención en este tipo de documento.</p>
+                    <p class="mt-2 text-xs text-indigo-700">La validación definitiva de identificación del receptor según monto está pendiente de confirmación normativa.</p>
                 </div>
 
                 <form method="POST" action="{{ route('facturacion.store-factura') }}"

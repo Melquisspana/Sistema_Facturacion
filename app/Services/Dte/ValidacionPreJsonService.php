@@ -181,8 +181,21 @@ class ValidacionPreJsonService
                 break;
 
             case TipoDte::Factura:
+                // Factura 01: receptor opcional (consumidor final) por defecto. Estructura
+                // preparada para exigirlo desde cierto monto según la normativa vigente de
+                // identificación obligatoria del consumidor final, pero el umbral real está
+                // PENDIENTE DE CONFIRMAR contra una fuente oficial (ver config/dte.php
+                // 'factura_consumidor_final.receptor_obligatorio_desde'). Mientras esa config
+                // sea null (valor por defecto), este bloque NO exige nada (comportamiento
+                // actual sin cambios). Si en el futuro se confirma y configura un monto real,
+                // exige receptor cuando el total alcance o supere ese monto.
+                $umbral = config('dte.factura_consumidor_final.receptor_obligatorio_desde');
+                if ($umbral !== null && ! $cliente && Dinero::comparar((string) $dte->total_pagar, (string) $umbral) >= 0) {
+                    $problemas[] = 'El receptor es obligatorio: el total alcanza o supera el monto configurado para exigir identificación del consumidor final.';
+                }
+                break;
+
             default:
-                // Factura 01: receptor opcional (consumidor final). Sin requisitos duros aquí.
                 break;
         }
     }
