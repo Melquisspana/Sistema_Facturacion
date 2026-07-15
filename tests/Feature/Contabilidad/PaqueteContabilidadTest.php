@@ -147,6 +147,32 @@ class PaqueteContabilidadTest extends TestCase
         $this->assertSame(1, $r['compras_json']);
     }
 
+    public function test_zip_incluye_pdf_y_json_de_ventas(): void
+    {
+        Storage::fake('local');
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $venta = $this->venta('2026-07-10', 200);
+        $venta->json_generado_path = 'dte/json/dte-03-'.$venta->id.'.json';
+        Storage::disk('local')->put($venta->json_generado_path, '{"identificacion":{"x":1}}');
+        $venta->save();
+
+        $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection(), new Collection([$venta]), false, true);
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($r['ruta']) === true);
+        $nombres = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $nombres[] = $zip->getNameIndex($i);
+        }
+        $zip->close();
+        @unlink($r['ruta']);
+
+        $this->assertContains('ventas/pdf/'.$venta->id.'_dte-03-'.$venta->id.'.pdf', $nombres);
+        $this->assertContains('ventas/json/'.$venta->id.'_dte-03-'.$venta->id.'.json', $nombres);
+        $this->assertSame(1, $r['ventas_pdf']);
+        $this->assertSame(1, $r['ventas_json']);
+    }
+
     public function test_zip_solo_compras_no_incluye_excel_de_ventas(): void
     {
         Storage::fake('local');
