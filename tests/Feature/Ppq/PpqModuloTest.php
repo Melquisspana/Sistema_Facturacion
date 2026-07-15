@@ -381,6 +381,115 @@ class PpqModuloTest extends TestCase
         $this->assertFalse(app(\App\Services\Ppq\GmailClient::class)->disponible());
     }
 
+    public function test_gmail_cuenta_marcar_desconectada_limpia_tokens_muertos(): void
+    {
+        $cuenta = \App\Models\GmailCuenta::create([
+            'email' => 'ppq@example.com',
+            'access_token' => json_encode(['access_token' => 'x']),
+            'refresh_token' => 'r',
+            'expires_at' => now()->addHour(),
+        ]);
+        $this->assertTrue($cuenta->conectada());
+
+        $cuenta->marcarDesconectada();
+        $cuenta->refresh();
+
+        $this->assertFalse($cuenta->conectada());
+        $this->assertNull($cuenta->access_token);
+        $this->assertNull($cuenta->refresh_token);
+        $this->assertSame('ppq@example.com', $cuenta->email); // se conserva como referencia
+    }
+
+    /** Config + fila de gmail_cuentas necesarias para que disponible() sea true. */
+    private function conectarGmailFalsa(): void
+    {
+        config([
+            'ppq.gmail.enabled' => true,
+            'ppq.gmail.client_id' => 'client-x',
+            'ppq.gmail.client_secret' => 'secret-x',
+            'ppq.gmail.redirect_uri' => 'https://ejemplo.test/ppq/gmail/callback',
+        ]);
+        \App\Models\GmailCuenta::create([
+            'email' => 'ppq@example.com',
+            'access_token' => json_encode(['access_token' => 'expirado']),
+            'refresh_token' => 'refresh-muerto',
+            'expires_at' => now()->subDay(),
+        ]);
+    }
+
+    /** Doble de GmailClient que simula un token muerto: cualquier búsqueda revienta con invalid_grant. */
+    private function gmailDesconectadoFake(): \App\Services\Ppq\GmailClient
+    {
+        return new class extends \App\Services\Ppq\GmailClient
+        {
+            public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
+            {
+                throw new \App\Exceptions\Ppq\GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.');
+            }
+        };
+    }
+
+    public function test_invalid_grant_no_rompe_la_busqueda_y_muestra_banner_de_reconectar_a_admin(): void
+    {
+        $this->conectarGmailFalsa();
+        $this->app->instance(\App\Services\Ppq\GmailClient::class, $this->gmailDesconectadoFake());
+        $admin = $this->usuario('administrador');
+
+        $resp = $this->actingAs($admin)->get(route('ppq.index', ['q' => '0940']));
+
+        $resp->assertOk(); // ya NO 500
+        $resp->assertSee('La conexión con Gmail expiró o fue revocada', false);
+        $resp->assertSee('Reconectar Gmail', false); // botón visible para admin
+    }
+
+    public function test_invalid_grant_banner_no_ofrece_reconectar_a_no_admin(): void
+    {
+        $this->conectarGmailFalsa();
+        $this->app->instance(\App\Services\Ppq\GmailClient::class, $this->gmailDesconectadoFake());
+        $facturacion = $this->usuario('facturacion');
+
+        $resp = $this->actingAs($facturacion)->get(route('ppq.index', ['q' => '0940']));
+
+        $resp->assertOk();
+        $resp->assertSee('La conexión con Gmail expiró o fue revocada', false);
+        $resp->assertDontSee('Reconectar Gmail', false);
+    }
+
+    public function test_resolver_ccf_no_traga_la_desconexion_de_gmail_a_mitad_de_busqueda(): void
+    {
+        // buscarEnviadosDetallado encuentra un correo, pero adjuntos() (dentro del loop
+        // por-correo, que ya tiene su propio try/catch genérico) revienta con el token
+        // muerto: debe SUBIR como GmailDesconectadoException, no quedar tragada como un
+        // simple "error" de ese correo puntual.
+        $gmail = new class extends \App\Services\Ppq\GmailClient
+        {
+            public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
+            {
+                return [
+                    'variante' => $numero,
+                    'query' => 'in:sent '.$numero,
+                    'resultados' => [['id' => 'correo-1', 'snippet' => '', 'asunto' => 'x', 'fecha' => '']],
+                    'intentos' => [],
+                ];
+            }
+
+            public function adjuntos(string $messageId): array
+            {
+                throw new \App\Exceptions\Ppq\GmailDesconectadoException('La conexión con Gmail expiró o fue revocada.');
+            }
+        };
+
+        $service = new \App\Services\Ppq\PpqGmailService(
+            $gmail,
+            new \App\Services\Ppq\DteCorreoParser(),
+            new \App\Services\Ppq\JsonAdjuntoDecoder(),
+            new \App\Services\Ppq\AlbaranParser(),
+        );
+
+        $this->expectException(\App\Exceptions\Ppq\GmailDesconectadoException::class);
+        $service->resolverCcf('0940');
+    }
+
     public function test_variantes_de_numero_incluyen_padded(): void
     {
         $variantes = app(\App\Services\Ppq\GmailClient::class)->variantesNumero('1011');

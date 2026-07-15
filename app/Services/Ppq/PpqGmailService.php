@@ -2,6 +2,8 @@
 
 namespace App\Services\Ppq;
 
+use App\Exceptions\Ppq\GmailDesconectadoException;
+
 /**
  * Orquesta el flujo real de PPQ sobre Gmail:
  *  1. Buscar el CCF/NC en correos ENVIADOS por su número (últimos 4 / control).
@@ -121,6 +123,11 @@ class PpqGmailService
                         ? round((float) $ccf['monto'] - (float) $albaran['monto'], 2)
                         : null,
                 ];
+            } catch (GmailDesconectadoException $e) {
+                // Gmail se desconectó a mitad de la búsqueda: no lo tratamos como un
+                // error puntual de ESTE correo, sino que dejamos que suba para que el
+                // llamador degrade a la búsqueda local (banner "Gmail desconectado").
+                throw $e;
             } catch (\Throwable $e) {
                 $det['error'] = 'Excepción al procesar el correo: '.$e->getMessage();
             }

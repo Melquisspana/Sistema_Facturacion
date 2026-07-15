@@ -2,8 +2,10 @@
 
 namespace App\Services\Ppq;
 
+use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Models\GmailCuenta;
 use Google\Client as GoogleClient;
+use Google\Service\Exception as GoogleServiceException;
 use Google\Service\Gmail;
 use Illuminate\Support\Carbon;
 
@@ -241,24 +243,26 @@ class GmailClient
      */
     public function adjuntos(string $messageId): array
     {
-        $gmail = new Gmail($this->clienteAutenticado());
-        $mensaje = $gmail->users_messages->get('me', $messageId, ['format' => 'full']);
-        $salida = [];
-        $this->recorrerPartes($mensaje->getPayload(), function ($parte) use (&$salida, $gmail, $messageId) {
-            $filename = $parte->getFilename();
-            $body = $parte->getBody();
-            if (! $filename || ! $body || ! $body->getAttachmentId()) {
-                return;
-            }
-            $adj = $gmail->users_messages_attachments->get('me', $messageId, $body->getAttachmentId());
-            $salida[] = [
-                'filename' => $filename,
-                'mime' => (string) $parte->getMimeType(),
-                'data' => $this->decodeUrl((string) $adj->getData()),
-            ];
-        });
+        return $this->ejecutarGoogle(function () use ($messageId) {
+            $gmail = new Gmail($this->clienteAutenticado());
+            $mensaje = $gmail->users_messages->get('me', $messageId, ['format' => 'full']);
+            $salida = [];
+            $this->recorrerPartes($mensaje->getPayload(), function ($parte) use (&$salida, $gmail, $messageId) {
+                $filename = $parte->getFilename();
+                $body = $parte->getBody();
+                if (! $filename || ! $body || ! $body->getAttachmentId()) {
+                    return;
+                }
+                $adj = $gmail->users_messages_attachments->get('me', $messageId, $body->getAttachmentId());
+                $salida[] = [
+                    'filename' => $filename,
+                    'mime' => (string) $parte->getMimeType(),
+                    'data' => $this->decodeUrl((string) $adj->getData()),
+                ];
+            });
 
-        return $salida;
+            return $salida;
+        });
     }
 
     // ---------------------------------------------------------------- internos
@@ -266,20 +270,22 @@ class GmailClient
     /** @return array<int, array{id: string, snippet: string}> */
     protected function listar(string $q, int $limite): array
     {
-        $gmail = new Gmail($this->clienteAutenticado());
-        $lista = $gmail->users_messages->listUsersMessages('me', ['q' => $q, 'maxResults' => $limite]);
-        $salida = [];
-        foreach ($lista->getMessages() ?? [] as $m) {
-            $full = $gmail->users_messages->get('me', $m->getId(), ['format' => 'metadata', 'metadataHeaders' => ['Subject', 'Date']]);
-            $salida[] = [
-                'id' => $m->getId(),
-                'snippet' => (string) $full->getSnippet(),
-                'asunto' => $this->header($full, 'Subject'),
-                'fecha' => $this->header($full, 'Date'),
-            ];
-        }
+        return $this->ejecutarGoogle(function () use ($q, $limite) {
+            $gmail = new Gmail($this->clienteAutenticado());
+            $lista = $gmail->users_messages->listUsersMessages('me', ['q' => $q, 'maxResults' => $limite]);
+            $salida = [];
+            foreach ($lista->getMessages() ?? [] as $m) {
+                $full = $gmail->users_messages->get('me', $m->getId(), ['format' => 'metadata', 'metadataHeaders' => ['Subject', 'Date']]);
+                $salida[] = [
+                    'id' => $m->getId(),
+                    'snippet' => (string) $full->getSnippet(),
+                    'asunto' => $this->header($full, 'Subject'),
+                    'fecha' => $this->header($full, 'Date'),
+                ];
+            }
 
-        return $salida;
+            return $salida;
+        });
     }
 
     private function clienteBase(): GoogleClient
@@ -300,7 +306,7 @@ class GmailClient
     {
         $cuenta = GmailCuenta::actual();
         if (! $cuenta || ! $cuenta->conectada()) {
-            throw new \RuntimeException('Gmail no está conectado. Autorizá la cuenta primero.');
+            throw new GmailDesconectadoException('Gmail no está conectado. Autorizá la cuenta primero.');
         }
 
         $client = $this->clienteBase();
@@ -310,15 +316,52 @@ class GmailClient
         }
 
         if ($client->isAccessTokenExpired() && filled($cuenta->refresh_token)) {
-            $nuevo = $client->fetchAccessTokenWithRefreshToken($cuenta->refresh_token);
-            if (! isset($nuevo['error'])) {
-                $nuevo['refresh_token'] ??= $cuenta->refresh_token; // Google no lo reenvía
-                $this->guardarToken($nuevo, $cuenta->email, $cuenta->conectado_por);
-                $client->setAccessToken($nuevo);
+            try {
+                $nuevo = $client->fetchAccessTokenWithRefreshToken($cuenta->refresh_token);
+            } catch (\Throwable $e) {
+                $this->marcarCuentaDesconectada();
+                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.', previous: $e);
             }
+            if (isset($nuevo['error'])) {
+                $this->marcarCuentaDesconectada();
+                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada ('.$nuevo['error'].'). Reconectá la cuenta.');
+            }
+            $nuevo['refresh_token'] ??= $cuenta->refresh_token; // Google no lo reenvía
+            $this->guardarToken($nuevo, $cuenta->email, $cuenta->conectado_por);
+            $client->setAccessToken($nuevo);
         }
 
         return $client;
+    }
+
+    /**
+     * Ejecuta una llamada real a la API de Gmail. Si Google responde que el
+     * token es inválido (invalid_grant/401/403), marca la cuenta como
+     * desconectada y convierte el error en GmailDesconectadoException para
+     * que el llamador pueda degradar a la búsqueda local en vez de un 500.
+     */
+    private function ejecutarGoogle(callable $fn): mixed
+    {
+        try {
+            return $fn();
+        } catch (GoogleServiceException $e) {
+            if ($this->esErrorAuth($e)) {
+                $this->marcarCuentaDesconectada();
+                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.', previous: $e);
+            }
+            throw $e;
+        }
+    }
+
+    private function esErrorAuth(GoogleServiceException $e): bool
+    {
+        return in_array($e->getCode(), [401, 403], true)
+            || str_contains(strtolower($e->getMessage()), 'invalid_grant');
+    }
+
+    private function marcarCuentaDesconectada(): void
+    {
+        GmailCuenta::actual()?->marcarDesconectada();
     }
 
     private function guardarToken(array $token, ?string $email, ?int $userId): GmailCuenta
