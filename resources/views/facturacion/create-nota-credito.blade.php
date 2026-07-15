@@ -225,7 +225,7 @@
                     <p class="text-xs text-gray-400">Pendiente confirmar reglas oficiales MH para NC sin documento relacionado.</p>
 
                     <div class="flex items-center gap-3">
-                        <x-primary-button>Crear borrador</x-primary-button>
+                        <x-primary-button>Crear nota de crédito</x-primary-button>
                         <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
                     </div>
                 </form>

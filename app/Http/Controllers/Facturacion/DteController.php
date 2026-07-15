@@ -94,7 +94,20 @@ class DteController extends Controller
                 ->limit(1)])
             ->with(['cliente', 'clienteSucursal', 'dteRelacionado.cliente', 'dteRelacionado.clienteSucursal'])
             ->when($filtros['tipo_dte'], fn ($qb, $v) => $qb->where('tipo_dte', $v))
-            ->when($filtros['estado'], fn ($qb, $v) => $qb->where('estado', $v))
+            ->when($filtros['estado'], function ($qb, $v) {
+                // "pendientes_emitir": documentos ya generados localmente (numerados/JSON) que
+                // todavía no tienen resultado de Hacienda. No es un estado real de EstadoDte,
+                // es un valor especial de filtro que agrupa generado+firmado+enviado.
+                if ($v === 'pendientes_emitir') {
+                    return $qb->whereIn('estado', [
+                        EstadoDte::Generado->value,
+                        EstadoDte::Firmado->value,
+                        EstadoDte::Enviado->value,
+                    ]);
+                }
+
+                return $qb->where('estado', $v);
+            })
             ->when($filtros['cliente_id'], fn ($qb, $v) => $qb->where('cliente_id', $v))
             ->when($filtros['cliente_sucursal_id'], fn ($qb, $v) => $qb->where('cliente_sucursal_id', $v))
             ->when($filtros['fecha_desde'], fn ($qb, $v) => $qb->whereDate('fecha_emision', '>=', $v))

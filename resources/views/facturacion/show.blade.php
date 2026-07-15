@@ -42,7 +42,7 @@
                     $dte->estado === \App\Enums\EstadoDte::Aceptado   => ['Aceptado por Hacienda', 'green', $correoEnviado ? 'Correo enviado al cliente.' : 'Pendiente de enviar el correo al cliente.'],
                     $dte->estado === \App\Enums\EstadoDte::Firmado    => ['Firmado (pendiente de transmitir)', 'indigo', 'Firmado localmente; falta transmitir a Hacienda.'],
                     $dte->estado === \App\Enums\EstadoDte::Generado   => [$listoEmitir ? 'Listo para emitir' : 'Generado', 'indigo', 'Número reservado y JSON generado; falta firmar y transmitir.'],
-                    default                                          => [$listoEmitir ? 'Listo para emitir' : 'Borrador', 'gray', 'En preparación; sin número ni JSON oficial todavía.'],
+                    default                                          => [$listoEmitir ? 'Listo para emitir' : 'En edición', 'gray', 'En preparación; sin número ni JSON oficial todavía.'],
                 };
                 $stMap = [
                     'gray'   => 'bg-gray-100 text-gray-700 ring-gray-200',
@@ -71,9 +71,10 @@
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>
                     <div class="flex items-center gap-3 flex-wrap">
+                        @php $pdfEtiqueta = $dte->estado === \App\Enums\EstadoDte::Aceptado ? 'PDF oficial' : 'PDF para revisión'; @endphp
                         <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="text-gray-600 hover:underline text-sm">Imprimir</a>
-                        <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline text-sm">Ver PDF preliminar</a>
-                        <a href="{{ route('facturacion.pdf.descargar', $dte) }}" class="text-indigo-600 hover:underline text-sm">Descargar PDF preliminar</a>
+                        <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline text-sm">Ver {{ $pdfEtiqueta }}</a>
+                        <a href="{{ route('facturacion.pdf.descargar', $dte) }}" class="text-indigo-600 hover:underline text-sm">Descargar {{ $pdfEtiqueta }}</a>
 
                         {{-- Solo el estado; la acción de enviar vive en la sección "Correo del cliente". --}}
                         @can('enviarCorreo', $dte)

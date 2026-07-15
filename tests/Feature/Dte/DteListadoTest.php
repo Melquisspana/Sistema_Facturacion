@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
@@ -123,6 +124,37 @@ class DteListadoTest extends TestCase
 
         $this->ver(['estado' => 'generado'])->assertOk()->assertSee('OCEST-GEN')->assertDontSee('OCEST-BOR');
         $this->ver(['estado' => 'borrador'])->assertOk()->assertSee('OCEST-BOR')->assertDontSee('OCEST-GEN');
+    }
+
+    /**
+     * "pendientes_emitir" no es un estado real de EstadoDte: es un valor especial que el
+     * chip del listado usa para agrupar generado+firmado+enviado (ya numerados/generados
+     * localmente, pero sin resultado final de Hacienda). No debe incluir borrador ni
+     * aceptado/rechazado/invalidado.
+     */
+    public function test_filtra_por_estado_pendientes_emitir(): void
+    {
+        $emisor = $this->emisor();
+
+        $this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-BOR']);
+        $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-GEN']));
+
+        $firmado = $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-FIR']));
+        $firmado->estado = EstadoDte::Firmado;
+        $firmado->save();
+
+        $enviado = $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-ENV']));
+        $enviado->estado = EstadoDte::Enviado;
+        $enviado->save();
+
+        $this->aceptarCcf($this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-ACE'])));
+
+        $this->ver(['estado' => 'pendientes_emitir'])->assertOk()
+            ->assertSee('OCPEND-GEN')
+            ->assertSee('OCPEND-FIR')
+            ->assertSee('OCPEND-ENV')
+            ->assertDontSee('OCPEND-BOR')
+            ->assertDontSee('OCPEND-ACE');
     }
 
     public function test_busca_por_orden_de_compra(): void

@@ -18,11 +18,11 @@
 
     // Activos por item (rutas actuales, sin cambios de lógica).
     $enInvalidaciones = request()->routeIs('facturacion.invalidaciones');
-    $enCrearCcf = request()->routeIs('facturacion.create-ccf');
-    $enNotasCredito = request()->routeIs('facturacion.create-nota-credito');
     $enPreparar = request()->routeIs('facturacion.preparar-produccion');
     $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
-    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enCrearCcf && ! $enNotasCredito && ! $enPreparar && ! $enReporteContadora;
+    // "Facturación" cubre el listado y las pantallas de creación (CCF, NC, factura,
+    // exportación), que ya no tienen enlace propio en el sidebar.
+    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enPreparar && ! $enReporteContadora;
 
     $enNuevaLista = request()->routeIs('exportaciones.create');
     $enExpClientes = request()->routeIs('exportaciones.clientes.*');
@@ -144,10 +144,8 @@
                 <div>
                     <p class="{{ $tituloGrupo }}">Facturación</p>
                     <div class="space-y-0.5">
-                        <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">CCF / Facturas</x-sidebar-link>
-                        <x-sidebar-link :href="route('facturacion.create-ccf')" :active="$enCrearCcf">Crear CCF</x-sidebar-link>
-                        <x-sidebar-link :href="route('facturacion.create-nota-credito')" :active="$enNotasCredito">Notas de crédito</x-sidebar-link>
-                        <x-sidebar-link :href="route('facturacion.invalidaciones')" :active="$enInvalidaciones">Invalidaciones</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">Facturación</x-sidebar-link>
+                        <x-sidebar-link :href="route('facturacion.invalidaciones')" :active="$enInvalidaciones">Invalidar</x-sidebar-link>
                         @if ($esGestorDte)
                             <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
                         @endif

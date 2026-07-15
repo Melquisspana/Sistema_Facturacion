@@ -141,7 +141,7 @@ class EstadoDteBadgeUiTest extends TestCase
             ->assertOk()
             ->getContent();
 
-        $this->assertStringContainsString('Borrador', $html);
+        $this->assertStringContainsString('En edición', $html);
         $this->assertStringContainsString(self::CLASES_POR_ESTADO['borrador'], $html);
     }
 
@@ -155,7 +155,7 @@ class EstadoDteBadgeUiTest extends TestCase
             ->assertOk()
             ->getContent();
 
-        $this->assertStringContainsString('Borrador', $html);
+        $this->assertStringContainsString('En edición', $html);
         $this->assertStringContainsString(self::CLASES_POR_ESTADO['borrador'], $html);
     }
 }

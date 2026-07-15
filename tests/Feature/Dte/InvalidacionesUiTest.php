@@ -60,7 +60,7 @@ class InvalidacionesUiTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.invalidaciones'))
             ->assertOk()
-            ->assertSee('Invalidaciones')
+            ->assertSee('Invalidar')
             ->assertSee('DTE-03-M001P001-000000000001094')
             ->assertSee('Calleja, S.A. de C.V.')
             // Acción hacia la ficha (donde vive el panel de invalidación).

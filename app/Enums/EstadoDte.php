@@ -25,7 +25,7 @@ enum EstadoDte: string
     public function label(): string
     {
         return match ($this) {
-            self::Borrador => 'Borrador',
+            self::Borrador => 'En edición',
             self::Generado => 'Generado',
             self::Firmado => 'Firmado',
             self::Enviado => 'Enviado',
