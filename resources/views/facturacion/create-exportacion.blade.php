@@ -6,6 +6,11 @@
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
             <x-modo-dte-aviso :modo="$modoDte ?? null" />
+
+            <div class="mb-4 rounded-md bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800">
+                <p class="font-medium">Flujo pendiente de validación para producción real. No emitir sin revisión técnica.</p>
+            </div>
+
             <div class="bg-white shadow sm:rounded-lg p-6">
 
                 @if ($errors->any())

@@ -41,12 +41,14 @@
                             Nueva nota de crédito
                         </a>
                         <a href="{{ route('facturacion.create-factura') }}"
-                           class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-md hover:bg-emerald-700">
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-white text-emerald-700 text-sm font-medium rounded-md border border-emerald-300 hover:bg-emerald-50">
                             Nueva factura consumidor final
+                            <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">En revisión</span>
                         </a>
                         <a href="{{ route('facturacion.create-exportacion') }}"
-                           class="inline-flex items-center px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-md hover:bg-sky-700">
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-white text-sky-700 text-sm font-medium rounded-md border border-sky-300 hover:bg-sky-50">
                             Nueva factura exportación
+                            <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">En revisión</span>
                         </a>
                     </div>
                 @endcan
