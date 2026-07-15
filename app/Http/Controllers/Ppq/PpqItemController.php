@@ -193,7 +193,7 @@ class PpqItemController extends Controller
      */
     private function registrarAlbaran(array $d, string $origen): PpqAlbaran
     {
-        return PpqAlbaran::firstOrCreate(
+        $albaran = PpqAlbaran::firstOrCreate(
             [
                 'numero_albaran' => \App\Support\Albaran::numeroLimpio($d['numero_albaran']),
                 'numero_orden_compra' => $d['numero_orden_compra'] ?? null,
@@ -205,6 +205,17 @@ class PpqItemController extends Controller
                 'gmail_message_id' => $d['gmail_message_id'] ?? null,
             ],
         );
+
+        // Autocorrección: el registro YA existía (mismo número+OC) pero quedó SIN
+        // monto — típicamente porque una corrida anterior del parser no pudo
+        // extraerlo (ej. un bug ya corregido). Si esta vez sí se resolvió un monto,
+        // se completa. NUNCA pisa un monto ya guardado (evita sorprender con un
+        // valor distinto si un reparseo posterior da otra cosa).
+        if ($albaran->monto_albaran === null && filled($d['monto_albaran'] ?? null)) {
+            $albaran->update(['monto_albaran' => $d['monto_albaran']]);
+        }
+
+        return $albaran;
     }
 
     public function destroy(PpqLote $lote, PpqItem $item): RedirectResponse

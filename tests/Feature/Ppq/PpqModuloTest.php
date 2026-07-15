@@ -685,6 +685,61 @@ class PpqModuloTest extends TestCase
         $this->assertSame(4, $res['debug']['correos']);     // pero se inspeccionaron los 4 correos
     }
 
+    public function test_reagregar_autocorrige_monto_albaran_que_habia_quedado_null(): void
+    {
+        // Caso real reportado (albarán de La Union, AC01/0230/00/2878, OC
+        // 26050230001794): quedó una fila ppq_albaranes VIEJA con monto NULL (de
+        // una corrida anterior del parser que no pudo extraerlo). Quitar y volver
+        // a agregar el CCF NO arreglaba nada porque firstOrCreate() devolvía esa
+        // misma fila sin actualizarla. Ahora debe autocorregirse.
+        $viejo = \App\Models\PpqAlbaran::create([
+            'numero_albaran' => 'AC01/0230/00/2878',
+            'numero_orden_compra' => '26050230001794',
+            'monto_albaran' => null,
+            'fecha_albaran' => '2026-06-03',
+            'origen' => 'gmail',
+        ]);
+
+        $admin = $this->usuario('administrador');
+        $lote = PpqLote::create(['referencia' => 'La Union', 'fecha' => now(), 'estado' => 'borrador']);
+
+        // Re-agregar como lo hace la búsqueda HOY (ya con el parser corregido: 138.87).
+        $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-M001P001-000000000000940',
+            'numero_orden_compra' => '26050230001794', 'monto_dte' => 168.00,
+            'numero_albaran' => 'AC01/0230/00/2878', 'monto_albaran' => 138.87,
+            'fecha_albaran' => '03/06/2026', 'sin_albaran' => '0',
+        ])->assertRedirect();
+
+        // La fila VIEJA se autocorrigió (mismo id, ya no NULL) — no se creó una duplicada.
+        $this->assertSame($viejo->id, \App\Models\PpqAlbaran::where('numero_albaran', 'AC01/0230/00/2878')->where('numero_orden_compra', '26050230001794')->sole()->id);
+        $this->assertSame('138.87', (string) $viejo->refresh()->monto_albaran);
+
+        // El item nuevo ya trae el monto (no queda "Albarán sin monto").
+        $item = PpqItem::where('ppq_lote_id', $lote->id)->firstOrFail();
+        $this->assertSame('138.87', (string) $item->monto_albaran);
+        $estado = \App\Support\PpqConciliacion::estado($item->monto_dte, $item->monto_albaran, $item->tieneAlbaran());
+        $this->assertNotSame('albaran_sin_monto', $estado['key']);
+    }
+
+    public function test_registrar_albaran_no_pisa_un_monto_ya_bueno(): void
+    {
+        // Si la fila YA tenía un monto correcto, un reparseo con otro valor NO debe pisarlo.
+        \App\Models\PpqAlbaran::create([
+            'numero_albaran' => 'AC01/0236/00/1', 'numero_orden_compra' => 'OC-X',
+            'monto_albaran' => 100.00, 'fecha_albaran' => '2026-06-01', 'origen' => 'gmail',
+        ]);
+        $lote = PpqLote::create(['referencia' => 'Y', 'fecha' => now(), 'estado' => 'borrador']);
+
+        $this->actingAs($this->usuario('administrador'))->post(route('ppq.lotes.items.store', $lote), [
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-Y', 'numero_orden_compra' => 'OC-X',
+            'monto_dte' => 100.0, 'numero_albaran' => 'AC01/0236/00/1', 'monto_albaran' => 999.99,
+            'sin_albaran' => '0',
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('ppq_albaranes', ['numero_albaran' => 'AC01/0236/00/1', 'monto_albaran' => 100.00]);
+    }
+
     public function test_no_admite_cambios_si_el_lote_no_es_editable(): void
     {
         $admin = $this->usuario('administrador');

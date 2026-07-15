@@ -83,12 +83,34 @@ class AlbaranParser
     }
 
     /**
-     * Busca el monto: primero anclado a una palabra clave (Total/Monto/…), si no,
-     * toma el mayor número con formato de dinero. Registra todos los candidatos.
+     * Busca el monto: primero la etiqueta "TOTAL ALBARAN" (inequívoca), si no está,
+     * anclado a una palabra clave genérica (Total/Monto/…), si no, toma el mayor
+     * número con formato de dinero. Registra todos los candidatos.
      */
     private function monto(string $texto, array &$debug): ?float
     {
         $numeroRe = '\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|\d+[.,]\d{2}';
+
+        // 0) PRIORITARIO: "TOTAL ALBARAN"/"TOTAL ALBARÁN" (con o sin dos puntos, con
+        //    o sin sufijo de moneda UD/USD) es la ÚNICA etiqueta que identifica sin
+        //    ambigüedad el monto del albarán. El cuadro de totales del PDF de Calleja
+        //    trae varias líneas "Total"-like (Base/IVA/R.E./Total) que NO son el monto
+        //    del albarán; si esta etiqueta aparece, se usa y NO se compite con ellas.
+        $reTotalAlbaran = '/TOTAL\s*ALBAR[AÁ]N\D{0,15}('.$numeroRe.')/iu';
+        $debug['regex']['monto_total_albaran'] = ['patron' => $reTotalAlbaran, 'matches' => []];
+        if (preg_match_all($reTotalAlbaran, $texto, $msTa)) {
+            $valoresTa = [];
+            foreach ($msTa[1] as $raw) {
+                $val = $this->normalizarMonto($raw);
+                $debug['regex']['monto_total_albaran']['matches'][] = ['raw' => $raw, 'val' => $val];
+                if ($val !== null) {
+                    $valoresTa[] = $val;
+                }
+            }
+            if ($valoresTa !== []) {
+                return max($valoresTa);
+            }
+        }
 
         // 1) Anclado a palabra clave.
         $reKw = '/(?:'.self::KEYWORDS_MONTO.')\D{0,20}('.$numeroRe.')/i';
