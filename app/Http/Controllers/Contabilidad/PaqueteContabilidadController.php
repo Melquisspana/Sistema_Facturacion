@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Contabilidad;
 use App\Http\Controllers\Controller;
 use App\Mail\PaqueteContabilidadCorreo;
 use App\Models\Configuracion;
+use App\Models\DocumentoRecibido;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\Reportes\ReporteContadoraQuery;
@@ -85,9 +86,12 @@ class PaqueteContabilidadController extends Controller
      * Envía el MISMO paquete mensual por correo a `contabilidad.correo`. Solo tras
      * confirmación con la frase exacta. Un único correo, sin BCC ni copias.
      *
-     * NO toca DTE emitidos, correlativos, firmador, transmisión a Hacienda ni el
-     * buzón Yahoo. NO marca documentos como enviados: solo manda el correo y registra
-     * auditoría. Si el envío falla: no cambia estados, no borra el ZIP y avisa claro.
+     * NO toca DTE emitidos, correlativos, firmador ni transmisión a Hacienda; las
+     * ventas son solo lectura para el ZIP. NO toca el buzón Yahoo. Si el envío
+     * termina EXITOSO, marca como "enviado" únicamente los `documentos_recibidos`
+     * (compras) incluidos en el rango que estaban en "pendiente" (no toca
+     * "ignorado" ni los que ya estaban "enviado"). Si el envío falla: no cambia
+     * ningún estado, no borra el ZIP y avisa claro.
      */
     public function enviar(Request $request, PaqueteContabilidadZip $zip): RedirectResponse
     {
@@ -142,11 +146,19 @@ class PaqueteContabilidadController extends Controller
             return back()->with('error', 'No se pudo enviar el paquete a contabilidad: '.$e->getMessage().' (no se cambió ningún estado).');
         }
 
-        // Éxito: registra auditoría y limpia el temporal. NO marca documentos como enviados.
-        $this->auditar('enviado', $correo, $rango, $resumen, $nombreZip, null);
+        // Éxito: marca como "enviado" solo las compras incluidas que estaban "pendiente"
+        // (no toca "ignorado" ni las ya "enviado"). Las ventas/DTE no se tocan nunca.
+        $marcadas = 0;
+        if ($incluirCompras && $compras->isNotEmpty()) {
+            $marcadas = DocumentoRecibido::whereIn('id', $compras->pluck('id'))
+                ->where('estado', 'pendiente')
+                ->update(['estado' => 'enviado']);
+        }
+
+        $this->auditar('enviado', $correo, $rango, $resumen, $nombreZip, null, $marcadas);
         @unlink($r['ruta']);
 
-        return back()->with('status', "Paquete {$rango['etiqueta']} enviado a {$correo} ({$resumen['compras_cantidad']} compras, {$resumen['ventas_cantidad']} ventas). No se cambió ningún estado ni documento.");
+        return back()->with('status', "Paquete {$rango['etiqueta']} enviado a {$correo} ({$resumen['compras_cantidad']} compras, {$resumen['ventas_cantidad']} ventas). {$marcadas} compra(s) marcada(s) como enviada(s). Las ventas no se modificaron.");
     }
 
     /** Correo de contabilidad configurado, o null si no existe o no es válido. */
@@ -158,7 +170,7 @@ class PaqueteContabilidadController extends Controller
     }
 
     /** Registra la auditoría del intento de envío (usuario, destino, rango, conteos, ZIP, estado). */
-    private function auditar(string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error): void
+    private function auditar(string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error, ?int $comprasMarcadas = null): void
     {
         activity('paquete_contabilidad')
             ->causedBy(auth()->user())
@@ -170,6 +182,7 @@ class PaqueteContabilidadController extends Controller
                 'compras_total' => $resumen['compras_total'],
                 'ventas_cantidad' => $resumen['ventas_cantidad'],
                 'ventas_total' => $resumen['ventas_total'],
+                'compras_marcadas_enviadas' => $comprasMarcadas,
                 'zip' => $nombreZip,
                 'estado' => $estado,
                 'error' => $error,
