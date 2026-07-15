@@ -140,7 +140,11 @@ class PreflightEmisionProduccion
                 continue;
             }
             $ts = Storage::disk('local')->lastModified($archivo);
-            if (Carbon::createFromTimestamp($ts)->isToday()) {
+            // OJO: sin la timezone de la app, createFromTimestamp() interpreta el epoch en
+            // UTC y isToday() compara contra "hoy" en UTC, no en America/El_Salvador — un
+            // backup real de hoy (hecho después de las 6pm hora local) queda marcado como
+            // "no es de hoy" porque en UTC ya es el día siguiente.
+            if (Carbon::createFromTimestamp($ts, config('app.timezone'))->isToday()) {
                 return true;
             }
         }

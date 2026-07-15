@@ -16,6 +16,7 @@ use App\Services\Dte\PreflightEmisionProduccion;
 use App\Support\WorkerHeartbeat;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -133,6 +134,35 @@ class PreflightEmisionProduccionTest extends TestCase
         $r = $this->evaluar($this->ccf());
         $this->assertFalse($r['puede']);
         $this->assertContains('Backup del día listo', $r['faltantes']);
+    }
+
+    public function test_backup_de_hoy_en_la_noche_se_detecta_aunque_en_utc_ya_sea_manana(): void
+    {
+        // Bug real: America/El_Salvador es UTC-6. Un backup hecho a las 10am local (16:00
+        // UTC, mismo día) y evaluado a las 9pm local (03:00 UTC del día SIGUIENTE) debía
+        // seguir contando como "de hoy" en hora local, pero Carbon::createFromTimestamp()
+        // sin timezone comparaba "hoy" en UTC y lo marcaba como de ayer.
+        //
+        // "Ahora" se congela ANTES de armar el resto del fixture (todoVerde() marca el
+        // pulso del worker con now()): así el pulso queda consistente con el "hoy" de este
+        // test y no falla por un umbral de heartbeat no relacionado.
+        Carbon::setTestNow(Carbon::create(2026, 7, 14, 21, 0, 0, 'America/El_Salvador'));
+
+        try {
+            $this->todoVerde();
+            Storage::fake('local'); // limpia el disco fake: solo queremos el backup de este test
+
+            $nombre = (string) config('backup.backup.name', config('app.name'));
+            Storage::disk('local')->put($nombre.'/hoy-de-manana.zip', 'x');
+            $mananaLocal = Carbon::create(2026, 7, 14, 10, 0, 0, 'America/El_Salvador');
+            touch(Storage::disk('local')->path($nombre.'/hoy-de-manana.zip'), $mananaLocal->timestamp);
+
+            $r = $this->evaluar($this->ccf());
+            $this->assertTrue($r['puede'], 'Faltantes: '.implode(', ', $r['faltantes']));
+            $this->assertNotContains('Backup del día listo', $r['faltantes']);
+        } finally {
+            Carbon::setTestNow(); // no filtrar el tiempo congelado a otros tests
+        }
     }
 
     public function test_bloquea_si_firmador_apagado(): void
