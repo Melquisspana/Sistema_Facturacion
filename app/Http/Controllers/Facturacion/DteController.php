@@ -310,6 +310,14 @@ class DteController extends Controller
     {
         $this->authorize('create', Dte::class);
 
+        // No usa CrearBorradorRequest (form propio), así que resuelve emisor único acá
+        // con la misma regla (ResuelveEmisorUnico): si no llega valor y solo hay una
+        // opción activa, la completa antes de validar; si hay ambigüedad, no toca nada.
+        $request->merge(\App\Support\Dte\ResuelveEmisorUnico::resolver(
+            $request->input('establecimiento_id'),
+            $request->input('punto_venta_id'),
+        ));
+
         $datos = $request->validate([
             'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],

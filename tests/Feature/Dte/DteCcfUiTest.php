@@ -407,7 +407,10 @@ class DteCcfUiTest extends TestCase
             ->assertDontSee('Establecimiento emisor')
             ->assertDontSee('Punto de venta emisor')
             ->assertDontSee('— Seleccione —')
-            ->assertSee('se asignan automáticamente')
+            ->assertSee('Emisor:')
+            ->assertSee($estab->nombre)
+            ->assertSee('Punto de venta:')
+            ->assertSee($pv->nombre)
             // Los IDs viajan en inputs ocultos para que el backend los valide/asigne.
             ->assertSee('type="hidden" name="establecimiento_id" value="'.$estab->id.'"', false)
             ->assertSee('type="hidden" name="punto_venta_id" value="'.$pv->id.'"', false);

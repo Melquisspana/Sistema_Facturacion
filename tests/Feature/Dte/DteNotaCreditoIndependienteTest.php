@@ -265,7 +265,11 @@ class DteNotaCreditoIndependienteTest extends TestCase
             ->assertDontSee('Punto de venta emisor')
             ->assertSee('type="hidden" name="establecimiento_id" value="'.$estab->id.'"', false)
             ->assertSee('type="hidden" name="punto_venta_id" value="'.$pv->id.'"', false)
-            ->assertSee($estab->codigo) // texto discreto "Emisor: M001 · Punto de venta: P001"
+            // texto discreto "Emisor: Casa Matriz · Punto de venta: Caja 1"
+            ->assertSee('Emisor:')
+            ->assertSee($estab->nombre)
+            ->assertSee('Punto de venta:')
+            ->assertSee($pv->nombre)
             ->assertSee('Tipo de nota de crédito')
             ->assertSee('CCF relacionado');
     }

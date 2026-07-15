@@ -169,15 +169,19 @@
                             </div>
                         </div>
 
-                        {{-- Emisor. Si hay UN solo establecimiento / punto de venta, se autoselecciona
-                             y se oculta el select (se envía por hidden). Con varios, se muestran los selects. --}}
+                        {{-- Emisor: si solo hay una opción real, se auto-selecciona y se ocultan los
+                             selects. Los IDs viajan igual en inputs ocultos y el backend los sigue
+                             resolviendo/validando (ResuelveEmisorUnico + required/exists). --}}
                         @php
-                            $unicoEst = $establecimientos->count() === 1 ? $establecimientos->first() : null;
-                            $unicoPv = $puntosVenta->count() === 1 ? $puntosVenta->first() : null;
+                            $estabUnico = $establecimientos->count() === 1 ? $establecimientos->first() : null;
+                            $pvsEmisor = $estabUnico ? $puntosVenta->where('establecimiento_id', $estabUnico->id)->values() : $puntosVenta;
+                            $pvUnico = ($estabUnico && $pvsEmisor->count() === 1) ? $pvsEmisor->first() : null;
+                            $ocultarEstab = (bool) $estabUnico;
+                            $ocultarPv = (bool) $pvUnico;
                         @endphp
 
-                        @if ($unicoEst)
-                            <input type="hidden" name="establecimiento_id" value="{{ $unicoEst->id }}">
+                        @if ($ocultarEstab)
+                            <input type="hidden" name="establecimiento_id" value="{{ $estabUnico->id }}">
                         @else
                             <div>
                                 <x-input-label for="establecimiento_id" value="Establecimiento emisor *" />
@@ -192,15 +196,15 @@
                             </div>
                         @endif
 
-                        @if ($unicoPv)
-                            <input type="hidden" name="punto_venta_id" value="{{ $unicoPv->id }}">
+                        @if ($ocultarPv)
+                            <input type="hidden" name="punto_venta_id" value="{{ $pvUnico->id }}">
                         @else
                             <div>
                                 <x-input-label for="punto_venta_id" value="Punto de venta emisor *" />
                                 <select id="punto_venta_id" name="punto_venta_id" x-model="puntoVentaId"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                     <option value="">— Seleccione —</option>
-                                    @foreach ($puntosVenta as $pv)
+                                    @foreach ($pvsEmisor as $pv)
                                         <option value="{{ $pv->id }}">{{ $pv->codigo }} — {{ $pv->nombre }}</option>
                                     @endforeach
                                 </select>
@@ -209,11 +213,11 @@
                         @endif
 
                         <div class="md:col-span-2 -mt-2 space-y-1">
-                            @if ($unicoEst || $unicoPv)
+                            @if ($ocultarEstab || $ocultarPv)
                                 <p class="text-sm text-gray-600">
-                                    @if ($unicoEst)Emisor: <span class="font-medium text-gray-800">{{ $unicoEst->codigo }}</span>@endif
-                                    @if ($unicoEst && $unicoPv) · @endif
-                                    @if ($unicoPv)Punto de venta: <span class="font-medium text-gray-800">{{ $unicoPv->codigo }}</span>@endif
+                                    @if ($ocultarEstab)Emisor: <span class="font-medium text-gray-800">{{ $estabUnico->nombre }}</span>@endif
+                                    @if ($ocultarEstab && $ocultarPv) · @endif
+                                    @if ($ocultarPv)Punto de venta: <span class="font-medium text-gray-800">{{ $pvUnico->nombre }}</span>@endif
                                 </p>
                             @endif
                             <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no a la sala del cliente. El correlativo se asigna al generar.</p>
