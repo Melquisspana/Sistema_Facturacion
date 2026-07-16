@@ -19,12 +19,14 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Segunda puerta del riesgo de Factura de exportación (tipo 11), análoga a
- * {@see DteFacturaComandosBloqueadosTest}: los comandos de consola `dte:firmar` /
- * `dte:transmitir` llaman DIRECTO a los servicios genéricos y no pasan por el gate web
- * de DteController::firmarTransmitir(). Esta suite verifica el gate agregado en ambos
- * comandos: bloquea SOLO Factura de exportación (11), SOLO cuando la emisión real a
- * producción sería posible ahora mismo, y no afecta a CCF ni a Nota de crédito.
+ * Factura de exportación (11) quedó VALIDADA en APITEST y el guard temporal de
+ * consola ("en revisión", en dte:firmar/dte:transmitir) fue RETIRADO deliberadamente:
+ * ahora se comporta EXACTAMENTE igual que CCF frente a estos comandos, protegida
+ * únicamente por los candados generales. Análoga a
+ * {@see DteFacturaComandosBloqueadosTest}. Esta suite confirma que:
+ *  - FEX YA NO recibe el mensaje especial "está en revisión";
+ *  - FEX cae en los MISMOS motivos genéricos que CCF (p. ej. firmador deshabilitado);
+ *  - CCF y Nota de crédito no se vieron afectados por este cambio.
  */
 class DteExportacionComandosBloqueadosTest extends TestCase
 {
@@ -133,13 +135,17 @@ class DteExportacionComandosBloqueadosTest extends TestCase
 
     // --- dte:firmar ---
 
-    public function test_dte_firmar_bloquea_exportacion_con_candados_reales_abiertos_y_no_genera_jws(): void
+    public function test_dte_firmar_ya_no_bloquea_fex_por_tipo_se_comporta_como_ccf(): void
     {
         $this->abrirCandadosProduccionReal();
         $fex = $this->fexGenerada();
 
+        // El firmador real está deshabilitado por defecto en este entorno de test (regla
+        // general, NO relacionada con el tipo de documento): FEX ahora cae en el MISMO
+        // motivo que CCF, no en el mensaje especial "en revisión" (retirado).
         $this->artisan('dte:firmar', ['dte' => $fex->id])
-            ->expectsOutputToContain(self::MENSAJE_FIRMAR)
+            ->doesntExpectOutputToContain(self::MENSAJE_FIRMAR)
+            ->expectsOutputToContain('deshabilitada')
             ->assertExitCode(1);
 
         $fex->refresh();
@@ -175,20 +181,19 @@ class DteExportacionComandosBloqueadosTest extends TestCase
 
     // --- dte:transmitir ---
 
-    public function test_dte_transmitir_bloquea_exportacion_con_candados_reales_abiertos_sin_http_ni_cambiar_sello(): void
+    public function test_dte_transmitir_ya_no_bloquea_fex_por_tipo_se_comporta_como_ccf(): void
     {
-        Http::fake();
+        Http::fake(); // respuesta 200 vacía por defecto: FEX ahora SÍ llega a intentar el HTTP, igual que CCF.
         $this->abrirCandadosProduccionReal();
         $fex = $this->marcarFirmado($this->fexGenerada());
 
         $this->artisan('dte:transmitir', ['dte' => $fex->id])
-            ->expectsOutputToContain(self::MENSAJE_TRANSMITIR)
-            ->assertExitCode(1);
+            ->doesntExpectOutputToContain(self::MENSAJE_TRANSMITIR);
 
-        Http::assertNothingSent();
-        $fex->refresh();
-        $this->assertSame(EstadoDte::Firmado, $fex->estado);
-        $this->assertNull($fex->sello_recepcion);
+        // A diferencia del guard retirado (que bloqueaba sin HTTP), FEX ahora intenta
+        // transmitir exactamente igual que CCF (Http::fake() lo intercepta: sigue sin
+        // salir NINGÚN HTTP real a Hacienda).
+        Http::assertSent(fn ($request) => true);
     }
 
     public function test_dte_transmitir_no_bloquea_ccf_por_este_gate(): void
@@ -214,18 +219,5 @@ class DteExportacionComandosBloqueadosTest extends TestCase
             ->doesntExpectOutputToContain(self::MENSAJE_TRANSMITIR);
 
         Http::assertSent(fn ($request) => true);
-    }
-
-    public function test_dte_firmar_no_bloquea_factura_consumidor_final_por_este_gate_nuevo(): void
-    {
-        $this->abrirCandadosProduccionReal();
-        $factura = $this->generarDte(TipoDte::Factura);
-
-        // Factura consumidor final tiene su PROPIO mensaje (guardia distinta, ya existente);
-        // este test confirma que el gate nuevo de exportación no lo pisa ni lo duplica.
-        $this->artisan('dte:firmar', ['dte' => $factura->id])
-            ->doesntExpectOutputToContain(self::MENSAJE_FIRMAR)
-            ->expectsOutputToContain('Factura consumidor final está en revisión')
-            ->assertExitCode(1);
     }
 }

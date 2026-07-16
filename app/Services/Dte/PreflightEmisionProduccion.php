@@ -142,6 +142,13 @@ class PreflightEmisionProduccion
             'aplica_retencion' => (bool) $dte->aplica_retencion,
             'total_pagar' => (float) $dte->total_pagar,
             'correo_destino' => $dte->clienteSucursal?->correo ?: $dte->cliente?->correo,
+            // Campos generales (compartidos con el resumen de Factura/FEX) para que el
+            // modal de confirmación pueda mostrarlos igual sin importar el tipo de DTE.
+            'tipo_dte' => $dte->tipo_dte->label(),
+            'ambiente' => $dte->ambiente->value,
+            'numero_control' => $dte->numero_control,
+            'url_efectiva' => (string) config('dte.transmision.url_base'),
+            'certificado_esperado' => (string) config('dte.transmision.ambiente') === 'produccion' ? 'Producción' : 'Pruebas',
         ];
     }
 

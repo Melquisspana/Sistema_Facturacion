@@ -24,6 +24,7 @@ use Tests\TestCase;
 class DteExportacionUiTest extends TestCase
 {
     use RefreshDatabase;
+    use \Tests\Concerns\PreparaEmisorDte;
 
     protected function setUp(): void
     {
@@ -326,5 +327,125 @@ class DteExportacionUiTest extends TestCase
         // cliente DESPUÉS no toca el valor ya guardado en el documento.
         $cliente->update(['descuento_global_default' => 99]);
         $this->assertSame('7.00', $dte->refresh()->descuento_porcentaje_aplicado);
+    }
+
+    // --- FEX habilitada operativamente: aparece como opción NORMAL, igual que CCF ---
+
+    public function test_pagina_creacion_no_muestra_avisos_de_flujo_pendiente_ni_bloqueado(): void
+    {
+        $this->emisor();
+        Cliente::factory()->exportacion()->create();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.create-exportacion'))
+            ->assertOk()
+            // Ninguno de los avisos "en revisión" / "validada en apitest" / "producción
+            // bloqueada" debe aparecer: FEX ya está habilitada al mismo nivel que CCF.
+            ->assertDontSee('Flujo pendiente de validación para producción real. No emitir sin revisión técnica.')
+            ->assertDontSee('Flujo validado en APITEST')
+            ->assertDontSee('Producción bloqueada')
+            ->assertDontSee('Validada en APITEST')
+            ->assertDontSee('En revisión');
+    }
+
+    public function test_listado_muestra_fex_como_opcion_normal_sin_badge(): void
+    {
+        $this->emisor();
+
+        $html = $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.index'))
+            ->assertOk()
+            ->getContent();
+
+        // Igual que "Nuevo CCF": el link existe, sin ningún badge/etiqueta especial.
+        $this->assertStringContainsString('Nueva factura exportación', $html);
+        $this->assertStringNotContainsString('En revisión', $html);
+        $this->assertStringNotContainsString('Validada en APITEST', $html);
+        $this->assertStringNotContainsString('Producción bloqueada', $html);
+    }
+
+    // --- Valores fiscales predeterminados (por código de catálogo, no por ID ni texto libre) ---
+
+    /** Confirma que, dentro del <select id="$selectId">, solo la opción value="$valor" trae "selected". */
+    private function assertOpcionSeleccionada(string $html, string $selectId, string $valor): void
+    {
+        $this->assertMatchesRegularExpression('/<select id="'.preg_quote($selectId, '/').'".*?<\/select>/s', $html);
+        preg_match('/<select id="'.preg_quote($selectId, '/').'".*?<\/select>/s', $html, $bloque);
+        preg_match_all('/<option value="([^"]*)"([^>]*)>/', $bloque[0], $opciones, PREG_SET_ORDER);
+
+        $this->assertNotEmpty($opciones, "No se encontraron <option> dentro de #{$selectId}");
+        foreach ($opciones as $opcion) {
+            [, $valorOpcion, $atributos] = $opcion;
+            if ($valorOpcion === $valor) {
+                $this->assertStringContainsString('selected', $atributos, "La opción '{$valor}' de #{$selectId} debería estar preseleccionada.");
+            } elseif ($valorOpcion !== '') {
+                $this->assertStringNotContainsString('selected', $atributos, "La opción '{$valorOpcion}' de #{$selectId} NO debería estar preseleccionada.");
+            }
+        }
+    }
+
+    public function test_formulario_precarga_valores_fiscales_predeterminados_por_codigo(): void
+    {
+        $this->emisor();
+        Cliente::factory()->exportacion()->create();
+
+        $html = $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.create-exportacion'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertOpcionSeleccionada($html, 'tipo_item_expor', '1');
+        $this->assertOpcionSeleccionada($html, 'recinto_fiscal', '01');
+        $this->assertOpcionSeleccionada($html, 'tipo_regimen', 'EX-1');
+        $this->assertOpcionSeleccionada($html, 'regimen', '1000.000');
+        $this->assertOpcionSeleccionada($html, 'cod_incoterms', '09');
+    }
+
+    public function test_formulario_permite_elegir_otros_valores_fiscales_distintos_del_default(): void
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $cliente = Cliente::factory()->exportacion()->create();
+
+        // Códigos REALES alternativos del catálogo oficial, distintos de los predeterminados:
+        // CAT-011 tipo 2 (Servicios), CAT-027 '02' (Marítima de Acajutla),
+        // CAT-033 'EX-2' (Exportación Temporal), CAT-028 '1040.000', CAT-031 '01' (EXW-En fábrica).
+        $datos = $this->datosFex($cliente, $estab, $pv, [
+            'tipo_item_expor' => 2,
+            'recinto_fiscal' => '02',
+            'tipo_regimen' => 'EX-2',
+            'regimen' => '1040.000',
+            'cod_incoterms' => '01',
+        ]);
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.store-exportacion'), $datos)
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $dte = Dte::where('tipo_dte', '11')->firstOrFail();
+        $this->assertSame(2, $dte->tipo_item_expor);
+        $this->assertSame('02', $dte->recinto_fiscal);
+        $this->assertSame('EX-2', $dte->tipo_regimen);
+        $this->assertSame('1040.000', $dte->regimen);
+        $this->assertSame('01', $dte->cod_incoterms);
+    }
+
+    // --- Guards de producción (deben seguir intactos: solo cambiaron textos/UX) ---
+
+    /**
+     * FEX ahora puede llegar al MISMO flujo de "Generar y transmitir producción" que
+     * CCF (antes exclusivo de CreditoFiscal en DtePolicy). Esto NO emite nada: solo
+     * confirma que la política de autorización ya no lo bloquea por tipo.
+     */
+    public function test_fex_puede_llegar_al_flujo_de_preparacion_productiva_del_ccf(): void
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
+        $cliente = Cliente::factory()->exportacion()->create();
+        // ambiente 01 explícito: la Policy exige que el DOCUMENTO sea de producción
+        // (no solo el sistema) para ser candidato a "Generar y transmitir producción".
+        $dte = $this->borradorFex($cliente, $estab, $pv, ['ambiente' => '01']);
+        $admin = $this->usuario('administrador');
+
+        $this->assertTrue($admin->can('generarTransmitirProduccion', $dte));
     }
 }

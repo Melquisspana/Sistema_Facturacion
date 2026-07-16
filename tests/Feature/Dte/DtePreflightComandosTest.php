@@ -148,31 +148,37 @@ class DtePreflightComandosTest extends TestCase
             ->assertExitCode(1);
     }
 
-    // --- Aunque el preflight nuevo exista, los guards de producción siguen bloqueando ---
+    // --- El preflight es SOLO diagnóstico: dte:firmar sigue protegido por sus PROPIOS
+    // candados generales (firma real deshabilitada por defecto en test), NO por un
+    // guard especial de tipo (retirado: Factura/FEX ya no "están en revisión"). ---
 
-    public function test_guard_de_firmar_sigue_bloqueando_factura_en_produccion_real_pese_al_preflight_nuevo(): void
+    public function test_preflight_no_habilita_firmar_factura_por_si_solo(): void
     {
         $this->todoVerdeComun();
         // Candados de producción real ABIERTOS (mismo criterio que emisionRealPosible()).
         config(['dte.transmision.mock' => false, 'dte.transmision.modo_operacion' => 'principal']);
         $factura = $this->facturaGenerada();
 
+        // Ya NO cae en el mensaje especial "en revisión" (retirado); sigue bloqueada por
+        // el candado GENERAL de firma real deshabilitada (mismo que protegería a un CCF).
         $this->artisan('dte:firmar', ['dte' => $factura->id])
-            ->expectsOutputToContain('Factura consumidor final está en revisión')
+            ->doesntExpectOutputToContain('en revisión')
+            ->expectsOutputToContain('deshabilitada')
             ->assertExitCode(1);
 
         $factura->refresh();
         $this->assertNull($factura->json_firmado_path);
     }
 
-    public function test_guard_de_firmar_sigue_bloqueando_fex_en_produccion_real_pese_al_preflight_nuevo(): void
+    public function test_preflight_no_habilita_firmar_fex_por_si_solo(): void
     {
         $this->todoVerdeComun();
         config(['dte.transmision.mock' => false, 'dte.transmision.modo_operacion' => 'principal']);
         $fex = $this->fexGenerada();
 
         $this->artisan('dte:firmar', ['dte' => $fex->id])
-            ->expectsOutputToContain('Factura de exportación está en revisión')
+            ->doesntExpectOutputToContain('en revisión')
+            ->expectsOutputToContain('deshabilitada')
             ->assertExitCode(1);
 
         $fex->refresh();

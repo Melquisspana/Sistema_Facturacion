@@ -103,6 +103,25 @@ class PreflightEmisionProduccionFactura
     }
 
     /**
+     * Resumen para el modal de confirmación (solo lectura). Consumidor final SIN
+     * identificar es un caso válido (cliente null); análogo a resumen() de CCF pero
+     * sin campos que no aplican a Factura (sala/OC/retención/correlativo externo).
+     *
+     * @return array<string, mixed>
+     */
+    public function resumen(Dte $dte): array
+    {
+        $documentoActual = $this->documentoActual($dte, '01');
+
+        return array_merge($this->infoGeneral($dte), [
+            'cliente' => $dte->cliente?->nombre ?? 'Consumidor final (sin identificar)',
+            'total_pagar' => (float) $dte->total_pagar,
+            'documento_actual' => $documentoActual,
+            'proximo_futuro' => $documentoActual + 1,
+        ]);
+    }
+
+    /**
      * El envío automático de correo al aceptar (correo.auto_envio) debe seguir siendo
      * una decisión manual explícita para Factura, no heredada en silencio del flujo
      * de CCF. Si está activo, el check queda en rojo con el detalle como advertencia

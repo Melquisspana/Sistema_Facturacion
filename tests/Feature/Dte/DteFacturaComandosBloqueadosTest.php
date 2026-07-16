@@ -19,13 +19,14 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Segunda puerta del riesgo #2 de la auditoría de Factura consumidor final: los
- * comandos de consola `dte:firmar` / `dte:transmitir` llaman DIRECTO a los servicios
- * genéricos (DteFirmaService::firmar() / DteTransmisionService::transmitir()) y no
- * pasan por el gate web de DteController::firmarTransmitir(). Esta suite verifica el
- * gate agregado en ambos comandos: bloquea SOLO Factura consumidor final (01), SOLO
- * cuando la emisión real a producción sería posible ahora mismo (mismo criterio que
- * el gate web), y no afecta a CCF ni a Nota de crédito.
+ * Factura consumidor final (01) quedó VALIDADA en APITEST y el guard temporal de
+ * consola ("en revisión", en dte:firmar/dte:transmitir) fue RETIRADO deliberadamente:
+ * ahora se comporta EXACTAMENTE igual que CCF frente a estos comandos, protegida
+ * únicamente por los candados generales (firmador real deshabilitado en este entorno
+ * de test, candados de transmisión, etc.). Esta suite confirma que:
+ *  - Factura YA NO recibe el mensaje especial "está en revisión";
+ *  - Factura cae en los MISMOS motivos genéricos que CCF (p. ej. firmador deshabilitado);
+ *  - CCF y Nota de crédito no se vieron afectados por este cambio.
  */
 class DteFacturaComandosBloqueadosTest extends TestCase
 {
@@ -125,13 +126,17 @@ class DteFacturaComandosBloqueadosTest extends TestCase
 
     // --- dte:firmar ---
 
-    public function test_dte_firmar_bloquea_factura_con_candados_reales_abiertos_y_no_genera_jws(): void
+    public function test_dte_firmar_ya_no_bloquea_factura_por_tipo_se_comporta_como_ccf(): void
     {
         $this->abrirCandadosProduccionReal();
         $factura = $this->facturaGenerada();
 
+        // El firmador real está deshabilitado por defecto en este entorno de test (regla
+        // general, NO relacionada con el tipo de documento): Factura ahora cae en el
+        // MISMO motivo que CCF, no en el mensaje especial "en revisión" (retirado).
         $this->artisan('dte:firmar', ['dte' => $factura->id])
-            ->expectsOutputToContain(self::MENSAJE_FIRMAR)
+            ->doesntExpectOutputToContain(self::MENSAJE_FIRMAR)
+            ->expectsOutputToContain('deshabilitada')
             ->assertExitCode(1);
 
         $factura->refresh();
@@ -167,20 +172,19 @@ class DteFacturaComandosBloqueadosTest extends TestCase
 
     // --- dte:transmitir ---
 
-    public function test_dte_transmitir_bloquea_factura_con_candados_reales_abiertos_sin_http_ni_cambiar_sello(): void
+    public function test_dte_transmitir_ya_no_bloquea_factura_por_tipo_se_comporta_como_ccf(): void
     {
-        Http::fake();
+        Http::fake(); // respuesta 200 vacía por defecto: Factura ahora SÍ llega a intentar el HTTP, igual que CCF.
         $this->abrirCandadosProduccionReal();
         $factura = $this->marcarFirmado($this->facturaGenerada());
 
         $this->artisan('dte:transmitir', ['dte' => $factura->id])
-            ->expectsOutputToContain(self::MENSAJE_TRANSMITIR)
-            ->assertExitCode(1);
+            ->doesntExpectOutputToContain(self::MENSAJE_TRANSMITIR);
 
-        Http::assertNothingSent();
-        $factura->refresh();
-        $this->assertSame(EstadoDte::Firmado, $factura->estado);
-        $this->assertNull($factura->sello_recepcion);
+        // A diferencia del guard retirado (que bloqueaba sin HTTP), Factura ahora
+        // intenta transmitir exactamente igual que CCF (Http::fake() lo intercepta:
+        // sigue sin salir NINGÚN HTTP real a Hacienda).
+        Http::assertSent(fn ($request) => true);
     }
 
     public function test_dte_transmitir_no_bloquea_ccf_por_este_gate(): void

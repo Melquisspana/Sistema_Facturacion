@@ -18,10 +18,6 @@
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
             <x-modo-dte-aviso :modo="$modoDte ?? null" />
 
-            <div class="mb-4 rounded-md bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800">
-                <p class="font-medium">Flujo pendiente de validación para producción real. No emitir sin revisión técnica.</p>
-            </div>
-
             <div class="bg-white shadow sm:rounded-lg p-6">
 
                 @if ($errors->any())
@@ -202,7 +198,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($tiposItemExpor as $tipo)
-                                    <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor') == $tipo->value)>
+                                    {{-- Predeterminado: Bienes (1), el caso más común; el usuario puede cambiarlo. --}}
+                                    <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor', '1') == $tipo->value)>
                                         {{ $tipo->label() }}
                                     </option>
                                 @endforeach
@@ -216,7 +213,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($recintosFiscales as $r)
-                                    <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal') == $r->codigo)>
+                                    {{-- Predeterminado: 01 (Terrestre San Bartolo), el más usado; el usuario puede cambiarlo. --}}
+                                    <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal', '01') == $r->codigo)>
                                         {{ $r->valor }}
                                     </option>
                                 @endforeach
@@ -230,7 +228,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($tiposRegimen as $tr)
-                                    <option value="{{ $tr->codigo }}" @selected(old('tipo_regimen') == $tr->codigo)>
+                                    {{-- Predeterminado: EX-1 (Exportación Definitiva), el más usado; el usuario puede cambiarlo. --}}
+                                    <option value="{{ $tr->codigo }}" @selected(old('tipo_regimen', 'EX-1') == $tr->codigo)>
                                         {{ $tr->valor }}
                                     </option>
                                 @endforeach
@@ -244,7 +243,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($regimenes as $rg)
-                                    <option value="{{ $rg->codigo }}" @selected(old('regimen') == $rg->codigo)>
+                                    {{-- Predeterminado: 1000.000 (Exportación Definitiva, Régimen Común); el usuario puede cambiarlo. --}}
+                                    <option value="{{ $rg->codigo }}" @selected(old('regimen', '1000.000') == $rg->codigo)>
                                         {{ $rg->valor }}
                                     </option>
                                 @endforeach
@@ -258,7 +258,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($incoterms as $inc)
-                                    <option value="{{ $inc->codigo }}" @selected(old('cod_incoterms') == $inc->codigo)>
+                                    {{-- Predeterminado: 09 (FOB-Libre a bordo), el más usado; el usuario puede cambiarlo. --}}
+                                    <option value="{{ $inc->codigo }}" @selected(old('cod_incoterms', '09') == $inc->codigo)>
                                         {{ $inc->valor }}
                                     </option>
                                 @endforeach
