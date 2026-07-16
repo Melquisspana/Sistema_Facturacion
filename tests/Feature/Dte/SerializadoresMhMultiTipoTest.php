@@ -295,6 +295,79 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $this->assertSame(100.0, $oficial['resumen']['totalGravada']); // venta de exportación
         $this->assertSame(100.0, $oficial['resumen']['montoTotalOperacion']);
         $this->assertSame(100.0, $oficial['resumen']['totalPagar']);
+        // Regresión: el tributo de exportación (C3, IVA 0%) no debe faltar (bug FEX #129,
+        // rechazo real MH código 005 "[cuerpoDocumento.1.tributos] DEBE PROPORCIONAR UN VALOR").
+        $this->assertSame(['C3'], $oficial['cuerpoDocumento'][0]['tributos']);
+        $this->assertCount(1, $oficial['resumen']['tributos']);
+        $this->assertSame('C3', $oficial['resumen']['tributos'][0]['codigo']);
+        $this->assertSame('Impuesto al Valor Agregado (exportaciones) 0%', $oficial['resumen']['tributos'][0]['descripcion']);
+        $this->assertSame(0.0, $oficial['resumen']['tributos'][0]['valor']);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    /**
+     * Reconstrucción EN MEMORIA equivalente al caso real de la FEX #129 rechazada por MH
+     * (código 005, "[cuerpoDocumento.1.tributos] DEBE PROPORCIONAR UN VALOR"): mismos datos
+     * que #128 (10 × 1.05, cliente Piloto Exportación USA, sin descuento). No toca el DTE
+     * #129 real ni su JSON/JWS en disco: solo verifica que, con el fix del tributo C3, un
+     * documento con los mismos datos serializaría con el arreglo de tributos correcto.
+     */
+    public function test_exportacion_reproduce_caso_real_dte129_rechazado_por_mh_codigo_005(): void
+    {
+        CatalogoMh::insert([
+            ['cat' => '019', 'codigo' => '46900', 'valor' => 'Venta al por mayor de una variedad de artículos sin especialización'],
+            ['cat' => '020', 'codigo' => 'US', 'valor' => 'ESTADOS UNIDOS'],
+        ]);
+
+        $emisor = new EmisorDteData(
+            nit: '10132512610012', nrc: '1014765', nombre: 'Elsa Fidelina Hernández Cañas',
+            codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
+            actividadEconomica: '10730', departamento: '08', municipio: '23', distrito: '05',
+            direccion: 'km 28 1/2 carretera al aeropuerto frente a maquila internacional olocuilta la paz',
+            telefono: '71276473', correo: 'dulceslanegrita@yahoo.com', tipoEstablecimiento: '02',
+            tipoItemExpor: 1, recintoFiscal: '01', tipoRegimen: 'EX-1', regimen: '1000.000',
+        );
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '37', numDocumento: 'EXP-PILOTO-001', nombre: 'Cliente Piloto Exportación USA',
+            actividadEconomica: '46900', pais: 'US', direccion: 'Miami, Florida, United States',
+            tipoPersona: 'juridica',
+        );
+        $linea = new LineaDteData(
+            numeroLinea: 1, descripcion: 'CANILLITAS', cantidad: '10', precioUnitario: '1.05',
+            totalLinea: '10.50', tipoItem: 1, codigo: '79873', unidadMedida: '59',
+            ventaExportacion: '10.50',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '10.50',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '10.50',
+            montoTotalOperacion: '10.50', totalPagar: '10.50', totalLetras: 'DIEZ 50/100 DÓLARES',
+            flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+            codIncoterms: '09', descIncoterms: 'FOB-Libre a bordo',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $emisor, resumen: $resumen,
+            lineas: [$linea], receptor: $receptor, apendice: [],
+        );
+
+        $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::FacturaExportacion);
+
+        $this->assertSame(['C3'], $oficial['cuerpoDocumento'][0]['tributos']);
+        $this->assertCount(1, $oficial['resumen']['tributos']);
+        $this->assertSame('C3', $oficial['resumen']['tributos'][0]['codigo']);
+        $this->assertSame('Impuesto al Valor Agregado (exportaciones) 0%', $oficial['resumen']['tributos'][0]['descripcion']);
+        $this->assertSame(0.0, $oficial['resumen']['tributos'][0]['valor']);
+        $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        $this->assertSame(1, $oficial['emisor']['tipoItemExpor']);
+        $this->assertSame('01', $oficial['emisor']['recintoFiscal']);
+        $this->assertSame('EX-1', $oficial['emisor']['tipoRegimen']);
+        $this->assertSame('1000.000', $oficial['emisor']['regimen']);
+        $this->assertSame('09', $oficial['resumen']['codIncoterms']);
+        $this->assertSame('FOB-Libre a bordo', $oficial['resumen']['descIncoterms']);
+        $this->assertSame(10.5, $oficial['resumen']['totalGravada']); // total_exportacion
+        $this->assertSame(10.5, $oficial['resumen']['montoTotalOperacion']);
+        $this->assertSame(10.5, $oficial['resumen']['totalPagar']);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 

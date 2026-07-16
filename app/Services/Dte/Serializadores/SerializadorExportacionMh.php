@@ -19,6 +19,15 @@ class SerializadorExportacionMh implements SerializadorMh
 {
     use MapeaCatalogosMh;
 
+    /**
+     * Tributo fijo de la Factura de Exportación (CAT-015): IVA a tasa 0%. Fijo por
+     * normativa (no depende de un cálculo variable por línea), por eso se declara
+     * aquí en vez de en la calculadora/DTO compartidos con CCF/Factura/NC.
+     */
+    private const CODIGO_TRIBUTO_EXPORTACION = 'C3';
+
+    private const DESCRIPCION_TRIBUTO_EXPORTACION = 'Impuesto al Valor Agregado (exportaciones) 0%';
+
     public function serializar(DteSalidaData $d): array
     {
         $problemas = [];
@@ -126,7 +135,7 @@ class SerializadorExportacionMh implements SerializadorMh
                 'precioUni' => (float) $l->precioUnitario,
                 'montoDescu' => (float) $l->descuento,
                 'ventaGravada' => (float) $l->ventaExportacion, // la venta de exportación va aquí
-                'tributos' => null,                              // IVA 0%
+                'tributos' => [self::CODIGO_TRIBUTO_EXPORTACION],
                 'noGravado' => 0.0,
             ];
         }
@@ -148,7 +157,11 @@ class SerializadorExportacionMh implements SerializadorMh
             'totalDescu' => $totalDescu,
             'seguro' => (float) $r->seguro,
             'flete' => (float) $r->flete,
-            'tributos' => null,
+            'tributos' => [[
+                'codigo' => self::CODIGO_TRIBUTO_EXPORTACION,
+                'descripcion' => self::DESCRIPCION_TRIBUTO_EXPORTACION,
+                'valor' => 0.00,
+            ]],
             'montoTotalOperacion' => (float) $r->montoTotalOperacion,
             'totalNoGravado' => 0.0,
             'totalNoOnerosas' => 0.0,
