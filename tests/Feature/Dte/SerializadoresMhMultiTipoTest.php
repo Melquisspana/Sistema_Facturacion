@@ -100,6 +100,93 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $this->assertSame(13.0, $oficial['resumen']['totalIva']); // IVA incluido
         // Regresión: el distrito del emisor no debe perderse al serializar (bug DTE #125).
         $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        // Regresión: ventaGravada/totalGravada deben ser BRUTOS (con IVA incluido), no la
+        // base neta interna (bug real DTE #126, rechazo MH código 003 "cálculo de total
+        // por ítem erróneo"). lineaGravada()/resumenCcf(): neto 100.00 + IVA 13.00 = 113.00.
+        $this->assertSame(113.0, $oficial['cuerpoDocumento'][0]['ventaGravada']);
+        $this->assertSame(113.0, $oficial['resumen']['totalGravada']);
+        $this->assertSame(113.0, $oficial['resumen']['subTotalVentas']);
+        $this->assertSame(113.0, $oficial['resumen']['subTotal']);
+        $this->assertSame(113.0, $oficial['resumen']['montoTotalOperacion']);
+        $this->assertSame(113.0, $oficial['resumen']['totalPagar']); // NO se suma el IVA otra vez
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    public function test_factura_reproduce_caso_real_dte126_rechazado_por_mh(): void
+    {
+        // Caso real: DTE #126, 10 × 1.05 (IVA incluido), sin descuento. MH rechazó
+        // con código 003 "cuerpoDocumento.item.1: El calculo de total por item es erroneo"
+        // porque ventaGravada llevaba la base neta (9.29) en vez del bruto (10.50).
+        $linea = new LineaDteData(
+            numeroLinea: 1, descripcion: 'CANILLITAS', cantidad: '10', precioUnitario: '1.05',
+            totalLinea: '10.50', tipoItem: 1, codigo: '79873', unidadMedida: '59',
+            ventaGravada: '9.29', iva: '1.21',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '9.29', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '0.00',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '1.21', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '10.50',
+            montoTotalOperacion: '10.50', totalPagar: '10.50', totalLetras: 'DIEZ 50/100 DÓLARES',
+            condicionOperacion: 1, porcentajeDescuento: '0.00',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('01', 2), emisor: $this->emisor(), resumen: $resumen,
+            lineas: [$linea], receptor: null, apendice: [],
+        );
+
+        $oficial = app(SerializadorFacturaMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::Factura);
+
+        $this->assertSame(1.05, $oficial['cuerpoDocumento'][0]['precioUni']);
+        $this->assertSame(10.0, $oficial['cuerpoDocumento'][0]['cantidad']);
+        $this->assertSame(0.0, $oficial['cuerpoDocumento'][0]['montoDescu']);
+        $this->assertSame(10.5, $oficial['cuerpoDocumento'][0]['ventaGravada']);
+        $this->assertSame(1.21, $oficial['cuerpoDocumento'][0]['ivaItem']);
+        $this->assertSame(10.5, $oficial['resumen']['totalGravada']);
+        $this->assertSame(10.5, $oficial['resumen']['subTotalVentas']);
+        $this->assertSame(10.5, $oficial['resumen']['subTotal']);
+        $this->assertSame(1.21, $oficial['resumen']['totalIva']);
+        $this->assertSame(10.5, $oficial['resumen']['montoTotalOperacion']);
+        $this->assertSame(10.5, $oficial['resumen']['totalPagar']);
+        $this->assertNull($oficial['receptor']);
+        $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    public function test_factura_con_descuento_de_linea_ventaGravada_bruta_menos_descuento(): void
+    {
+        // 1 × 11.30 (IVA incluido) − descuento 1.13 = 10.17 bruto; base 9.00, IVA 1.17.
+        $linea = new LineaDteData(
+            numeroLinea: 1, descripcion: 'Producto con descuento', cantidad: '1', precioUnitario: '11.30',
+            totalLinea: '10.17', tipoItem: 1, codigo: 'P-2', unidadMedida: '59',
+            descuento: '1.13', ventaGravada: '9.00', iva: '1.17',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '9.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '0.00',
+            descuentoGravado: '1.13', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '1.13',
+            iva: '1.17', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '10.17',
+            montoTotalOperacion: '10.17', totalPagar: '10.17', totalLetras: 'DIEZ 17/100 DÓLARES',
+            condicionOperacion: 1, porcentajeDescuento: '10.00',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('01', 2), emisor: $this->emisor(), resumen: $resumen,
+            lineas: [$linea], receptor: null, apendice: [],
+        );
+
+        $oficial = app(SerializadorFacturaMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::Factura);
+
+        // ventaGravada = cantidad × precioUni − montoDescu (bruto, con IVA incluido).
+        $this->assertSame(10.17, $oficial['cuerpoDocumento'][0]['ventaGravada']);
+        $this->assertSame(1.13, $oficial['cuerpoDocumento'][0]['montoDescu']);
+        $this->assertSame(1.17, $oficial['cuerpoDocumento'][0]['ivaItem']);
+        $this->assertSame(10.17, $oficial['resumen']['totalGravada']);
+        $this->assertSame(10.17, $oficial['resumen']['subTotalVentas']);
+        $this->assertSame(1.13, $oficial['resumen']['totalDescu']);
+        $this->assertSame(9.04, $oficial['resumen']['subTotal']); // 10.17 − 1.13
+        // El IVA no se suma dos veces: montoTotalOperacion/totalPagar quedan en el bruto ya calculado.
+        $this->assertSame(10.17, $oficial['resumen']['montoTotalOperacion']);
+        $this->assertSame(10.17, $oficial['resumen']['totalPagar']);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
@@ -121,6 +208,10 @@ class SerializadoresMhMultiTipoTest extends TestCase
         // Regresión: ni el distrito del emisor ni el del receptor deben perderse.
         $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
         $this->assertSame('0617', $oficial['receptor']['direccion']['distrito']);
+        // Mismos criterios de montos brutos que con receptor null (lineaGravada()/resumenCcf()).
+        $this->assertSame(113.0, $oficial['cuerpoDocumento'][0]['ventaGravada']);
+        $this->assertSame(113.0, $oficial['resumen']['totalGravada']);
+        $this->assertSame(113.0, $oficial['resumen']['totalPagar']);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
