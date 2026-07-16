@@ -127,6 +127,11 @@
         .st-void { background: #FBEDF0; color: #8A2440; border-color: #E3B7C2; border-left-color: #B0334F; }
         /* Aviso PRELIMINAR: discreto, una sola línea pequeña, sin barra grande. */
         .st-prelim { font-size: 7px; letter-spacing: .4px; color: #9AA0A8; text-transform: uppercase; margin-bottom: 4px; }
+        /* Ambiente de pruebas (ambiente=00): SIEMPRE visible, sin importar sello/estado. */
+        .st-testing { background: #FEF3C7; color: #7A4A0C; border: 1.5px solid #D97706; border-radius: 3px;
+            padding: 4px 9px; margin-bottom: 6px; font-size: 8.5px; font-weight: bold; text-align: center;
+            letter-spacing: .3px; text-transform: uppercase; }
+        .st-testing .sub { display: block; font-size: 7px; font-weight: normal; text-transform: none; letter-spacing: 0; margin-top: 1px; }
 
         /* Encabezado */
         .topline { border-top: 2px solid #6E2142; margin-bottom: 11px; }
@@ -235,6 +240,12 @@
     </style>
 </head>
 <body>
+
+    {{-- AMBIENTE DE PRUEBAS: única fuente de verdad es $dte->ambiente, NUNCA el sello.
+         Debe verse aunque el documento esté aceptado/firmado/generado/rechazado. --}}
+    @if ($dte->ambiente?->value === '00')
+        <div class="st-testing">AMBIENTE DE PRUEBAS<span class="sub">Documento sin validez fiscal en producción</span></div>
+    @endif
 
     {{-- CINTA DE ESTADO --}}
     @if ($dte->estado === EstadoDte::Invalidado)

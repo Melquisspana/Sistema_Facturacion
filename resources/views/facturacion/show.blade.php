@@ -19,6 +19,10 @@
                 </div>
             @endif
 
+            {{-- Ambiente de pruebas (ambiente=00): SIEMPRE visible para cualquier usuario,
+                 sin importar sello/estado. No confundir con el aviso de MODO DTE de abajo. --}}
+            <x-ambiente-pruebas-aviso :dte="$dte" />
+
             {{-- Aviso de MODO DTE (solo gestores): seguro (no emite producción) vs. emisión real posible. --}}
             <x-modo-dte-aviso :modo="$modoDte ?? null" />
 

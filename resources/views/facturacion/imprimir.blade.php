@@ -139,6 +139,12 @@
         .st.void{ border-left-color:#B0334F; background:#FBEDF0; border-color:#E3B7C2; }
         .st.void .dot{ background:#B0334F; }
 
+        /* Ambiente de pruebas (ambiente=00): SIEMPRE visible, sin importar sello/estado. */
+        .st-testing{ background:#FEF3C7; color:#7A4A0C; border:1.5px solid #D97706; border-radius:5px;
+            padding:6px 11px; margin-bottom:12px; font-size:11px; font-weight:bold; text-align:center;
+            letter-spacing:.3px; text-transform:uppercase; }
+        .st-testing .sub{ display:block; font-size:9px; font-weight:normal; text-transform:none; letter-spacing:0; margin-top:2px; }
+
         .topline{ border-top:2px solid var(--accent); margin-bottom:13px; }
 
         /* Encabezado */
@@ -279,6 +285,12 @@
     </div>
 
     <div class="sheet">
+
+        {{-- AMBIENTE DE PRUEBAS: única fuente de verdad es $dte->ambiente, NUNCA el sello.
+             Debe verse aunque el documento esté aceptado/firmado/generado/rechazado. --}}
+        @if ($dte->ambiente?->value === '00')
+            <div class="st-testing">AMBIENTE DE PRUEBAS<span class="sub">Documento sin validez fiscal en producción</span></div>
+        @endif
 
         {{-- CINTA DE ESTADO --}}
         @if ($esAnulado)
