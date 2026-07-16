@@ -50,7 +50,7 @@ class SerializadorFacturaMh implements SerializadorMh
             'codActividad' => (string) ($e->actividadEconomica ?? ''),
             'descActividad' => $this->descActividad($e->actividadEconomica),
             'nombreComercial' => $e->nombreComercial,
-            'direccion' => $this->direccion($e->departamento, $e->municipio, $e->direccion),
+            'direccion' => $this->direccion($e->departamento, $e->municipio, $e->direccion, $e->distrito),
             'telefono' => $e->telefono,
             'correo' => $e->correo,
             'codEstable' => $e->codigoEstablecimiento ?: null,
@@ -73,7 +73,7 @@ class SerializadorFacturaMh implements SerializadorMh
             'nombre' => $r->nombre,
             'codActividad' => $r->actividadEconomica,
             'descActividad' => $r->actividadEconomica ? $this->descActividad($r->actividadEconomica) : null,
-            'direccion' => $this->direccion($r->departamento, $r->municipio, $r->direccion ?: '—'),
+            'direccion' => $this->direccion($r->departamento, $r->municipio, $r->direccion ?: '—', $r->distrito),
             'telefono' => $r->telefono,
             'correo' => $r->correo,
         ];

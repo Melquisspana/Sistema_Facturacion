@@ -50,7 +50,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         return new EmisorDteData(
             nit: '06140000000011', nrc: '111111', nombre: 'Dulces La Negrita',
             codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
-            actividadEconomica: '10730', departamento: '06', municipio: '14', direccion: 'Calle X',
+            actividadEconomica: '10730', departamento: '06', municipio: '14', distrito: '05', direccion: 'Calle X',
             telefono: '22000000', correo: 'e@negrita.sv', tipoEstablecimiento: '02',
         );
     }
@@ -98,6 +98,29 @@ class SerializadoresMhMultiTipoTest extends TestCase
 
         $this->assertNull($oficial['receptor']);                 // consumidor final
         $this->assertSame(13.0, $oficial['resumen']['totalIva']); // IVA incluido
+        // Regresión: el distrito del emisor no debe perderse al serializar (bug DTE #125).
+        $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    public function test_factura_serializa_y_valida_con_receptor_identificado(): void
+    {
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '13', numDocumento: '000000000', nrc: null, nombre: 'Cliente Identificado',
+            actividadEconomica: '10730', departamento: '06', municipio: '17', distrito: '0617',
+            direccion: 'Colonia Escalón', telefono: '22001111', correo: 'cliente@ejemplo.sv',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('01', 2), emisor: $this->emisor(), resumen: $this->resumenCcf(),
+            lineas: [$this->lineaGravada()], receptor: $receptor, apendice: [],
+        );
+
+        $oficial = app(SerializadorFacturaMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::Factura);
+
+        // Regresión: ni el distrito del emisor ni el del receptor deben perderse.
+        $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        $this->assertSame('0617', $oficial['receptor']['direccion']['distrito']);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
