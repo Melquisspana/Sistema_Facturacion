@@ -43,6 +43,8 @@ use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\PreflightEmisionProduccion;
+use App\Services\Dte\PreflightEmisionProduccionExportacion;
+use App\Services\Dte\PreflightEmisionProduccionFactura;
 use App\Services\Dte\PrecioProductoResolver;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -349,8 +351,14 @@ class DteController extends Controller
         return redirect()->route('facturacion.edit', $nc)->with('status', $this->mensajeNotaCredito($nc));
     }
 
-    public function show(Dte $dte, DteTransmisionService $transmision, DteInvalidacionService $invalidacionService, PreflightEmisionProduccion $preflightProduccion): View
-    {
+    public function show(
+        Dte $dte,
+        DteTransmisionService $transmision,
+        DteInvalidacionService $invalidacionService,
+        PreflightEmisionProduccion $preflightProduccion,
+        PreflightEmisionProduccionFactura $preflightFactura,
+        PreflightEmisionProduccionExportacion $preflightExportacion,
+    ): View {
         $this->authorize('view', $dte);
 
         $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios']);
@@ -397,18 +405,22 @@ class DteController extends Controller
             ];
         }
 
-        // "Generar y transmitir producción": preflight + resumen SOLO para CCF aún no
-        // aceptado y solo para gestores. En ambiente != 01 el preflight corta barato
-        // (no le pega al firmador). SOLO LECTURA: no emite ni transmite nada.
+        // "Generar y transmitir producción": preflight + resumen para CCF/Factura/FEX
+        // aún no aceptados y solo para gestores. Cada tipo usa SU preflight específico
+        // (mismo criterio de seguridad, checks propios de cada uno). En ambiente != 01
+        // el preflight corta barato (no le pega al firmador). SOLO LECTURA: no emite
+        // ni transmite nada.
         $emisionProduccion = null;
-        if ($dte->tipo_dte === TipoDte::CreditoFiscal
-            && $dte->estado !== EstadoDte::Aceptado
+        if ($dte->estado !== EstadoDte::Aceptado
             && blank($dte->sello_recepcion)
             && auth()->user()?->can('generarTransmitirProduccion', $dte)) {
-            $emisionProduccion = [
-                'preflight' => $preflightProduccion->evaluar($dte),
-                'resumen' => $preflightProduccion->resumen($dte),
-            ];
+            $preflight = $this->preflightParaTipo($dte, $preflightProduccion, $preflightFactura, $preflightExportacion);
+            if ($preflight) {
+                $emisionProduccion = [
+                    'preflight' => $preflight->evaluar($dte),
+                    'resumen' => $preflight->resumen($dte),
+                ];
+            }
         }
 
         // Indicadores SOLO LECTURA para la ficha (no cambian nada):
@@ -587,29 +599,6 @@ class DteController extends Controller
             return $volver->with('status', 'El documento ya fue aceptado; no se vuelve a firmar ni transmitir.');
         }
 
-        // 0.05 GUARDIA: Factura consumidor final (01) sigue "en revisión" (nunca se probó
-        // firma/transmisión real con Hacienda para este tipo). Bloquea la vía genérica
-        // firmarTransmitir cuando una emisión real a producción sería posible ahora mismo;
-        // en modo seguro (paralelo/mock/dry-run/apitest) no aplica y el flujo sigue normal.
-        // NO toca generarTransmitirProduccion (ya es CCF-only) ni el preflight dedicado.
-        if ($dte->tipo_dte === TipoDte::Factura && $transmision->emisionRealPosible()) {
-            Log::warning('DTE firmar-transmitir: Factura consumidor final bloqueada en producción real (en revisión)', ['dte_id' => $dte->id]);
-
-            return $volver->with('error', 'Factura consumidor final está en revisión y no puede transmitirse en producción todavía.');
-        }
-
-        // 0.06 GUARDIA: Factura de exportación (11) sigue "en revisión" (incoterms,
-        // régimen y recinto fiscal aún no se capturan/serializan; ver auditoría FEX).
-        // Mismo criterio que la guardia 0.05: bloquea la vía genérica firmarTransmitir
-        // solo cuando una emisión real a producción sería posible ahora mismo; en modo
-        // seguro (paralelo/mock/dry-run/apitest) no aplica. NO toca generarTransmitirProduccion
-        // (ya es CCF-only) ni el preflight dedicado.
-        if ($dte->tipo_dte === TipoDte::FacturaExportacion && $transmision->emisionRealPosible()) {
-            Log::warning('DTE firmar-transmitir: Factura de exportación bloqueada en producción real (en revisión)', ['dte_id' => $dte->id]);
-
-            return $volver->with('error', 'Factura de exportación está en revisión y no puede transmitirse en producción todavía.');
-        }
-
         // 0.1 GUARDIA DE EMISIÓN REAL A PRODUCCIÓN: si los candados permiten transmitir de
         // verdad a producción, exigir la frase EXACTA escrita a mano. En MODO SEGURO
         // (paralelo/mock/dry-run/apitest) esto NO aplica (emisionRealPosible=false) y el
@@ -706,7 +695,9 @@ class DteController extends Controller
         DteFirmaService $firma,
         DteTransmisionService $transmision,
         DteGeneracionService $generacion,
-        PreflightEmisionProduccion $preflight,
+        PreflightEmisionProduccion $preflightCcf,
+        PreflightEmisionProduccionFactura $preflightFactura,
+        PreflightEmisionProduccionExportacion $preflightExportacion,
     ): RedirectResponse {
         $this->authorize('generarTransmitirProduccion', $dte);
 
@@ -719,16 +710,23 @@ class DteController extends Controller
 
         $dte->loadMissing('lineas', 'cliente', 'clienteSucursal');
 
-        // 1. Preflight de producción (servidor): si falta algo, bloquea y explica.
+        // 1. Preflight de producción ESPECÍFICO del tipo (servidor): CCF/Factura/FEX cada
+        // uno con sus propios checks. Si falta algo, bloquea y explica.
+        $preflight = $this->preflightParaTipo($dte, $preflightCcf, $preflightFactura, $preflightExportacion);
+        if (! $preflight) {
+            return $volver->with('error', 'Tipo de documento sin preflight de producción configurado. No se hizo nada.');
+        }
         $pf = $preflight->evaluar($dte);
         if (! $pf['puede']) {
             return $volver->with('error', 'Emisión a producción bloqueada por el preflight. Falta: '
                 .implode('; ', $pf['faltantes']).'. No se generó, firmó ni transmitió nada.');
         }
 
-        // 2. Barrera anti-Conta (casilla del modal) obligatoria.
+        // 2. Confirmación de revisión (casilla del modal) obligatoria — mismo mecanismo
+        // para los tres tipos; el texto en pantalla puede variar (Conta Portable es
+        // específico de CCF) pero la exigencia de marcarla es igual de estricta.
         if (! $request->boolean('barrera_conta')) {
-            return $volver->with('error', 'Confirmá la barrera anti-Conta Portable antes de emitir. No se hizo nada.');
+            return $volver->with('error', 'Confirmá la revisión del documento antes de emitir. No se hizo nada.');
         }
 
         // 3. Frase exacta EMITIR PRODUCCION (además de la guardia del navegador).
@@ -765,6 +763,27 @@ class DteController extends Controller
         ]);
 
         return $this->respuestaFirmarTransmitir($volver, $res['resultado']);
+    }
+
+    /**
+     * Resuelve el preflight de producción específico según el tipo del DTE. CCF usa
+     * el suyo (histórico, con reconciliación de correlativo externo/Conta); Factura y
+     * FEX usan los suyos propios (mismos checks de infraestructura vía
+     * ChecksProduccionComunes + validaciones fiscales propias de cada tipo). Ningún
+     * tipo sin mapear aquí puede usar la acción real (la Policy ya lo impide antes).
+     */
+    private function preflightParaTipo(
+        Dte $dte,
+        PreflightEmisionProduccion $preflightCcf,
+        PreflightEmisionProduccionFactura $preflightFactura,
+        PreflightEmisionProduccionExportacion $preflightExportacion,
+    ): PreflightEmisionProduccion|PreflightEmisionProduccionFactura|PreflightEmisionProduccionExportacion|null {
+        return match ($dte->tipo_dte) {
+            TipoDte::CreditoFiscal => $preflightCcf,
+            TipoDte::Factura => $preflightFactura,
+            TipoDte::FacturaExportacion => $preflightExportacion,
+            default => null,
+        };
     }
 
     /**

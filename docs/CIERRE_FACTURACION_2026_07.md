@@ -12,8 +12,8 @@
 |---|---|
 | **CCF (Comprobante de Crédito Fiscal)** | Real, operativo y aceptado en producción. Correlativo productivo actual: **1120**. |
 | **Nota de Crédito (05)** | Real, operativa y aceptada en producción. |
-| **Factura consumidor final (01)** | Validada y **aceptada por Hacienda en APITEST** (DTE #127). Bloqueada para producción real hasta decisión explícita — guard "en revisión" activo. |
-| **Factura de Exportación (11)** | Validada y **aceptada por Hacienda en APITEST** (DTE #130). Bloqueada para producción real hasta decisión explícita — guard "en revisión" activo. |
+| **Factura consumidor final (01)** | **Validada en APITEST** (DTE #127, aceptada por Hacienda), **habilitada en código bajo los mismos candados que protegen a CCF** y con su **correlativo productivo ya creado** (tipo 01/ambiente 01, `ultimo_numero=0`, primer número previsto **1**). Operativamente lista para producción, igual que CCF. **Todavía no se ha emitido ninguna Factura tipo 01 real en producción.** |
+| **Factura de Exportación (11)** | **Validada en APITEST** (DTE #130, aceptada por Hacienda), **habilitada en código bajo los mismos candados que protegen a CCF** y con su **correlativo productivo ya creado** (tipo 11/ambiente 01, `ultimo_numero=0`, primer número previsto **1**). Operativamente lista para producción, igual que CCF. **Todavía no se ha emitido ninguna FEX real en producción.** |
 
 ## 2. DTE de validación
 
@@ -48,13 +48,18 @@ b606a7d Fijar puerto 8080 del firmador
 - Próximo CCF de producción: **1121**.
 - Certificado productivo activo (verificado por MD5 conocido, sin exponer el archivo).
 - `DTE_AMBIENTE=01`, `DTE_TRANSMISION_AMBIENTE=produccion`, URL productiva `https://api.dtes.mh.gob.sv`.
-- Guards de producción para tipo 01 y FEX (tipo 11) **siguen activos** tanto en el flujo web (`DteController@firmarTransmitir`) como en consola (`DteFirmarCommand`, `DteTransmitirCommand`): bloquean firma/transmisión real en producción para ambos tipos mientras `emisionRealPosible()` sea verdadero, exigiendo revisión explícita.
-- La frase de confirmación manual para emisión real a producción sigue siendo exactamente `EMITIR PRODUCCION`.
-- Las credenciales de `testing` no tienen fallback a producción (fallan antes de cualquier HTTP si faltan).
+- **Habilitación operativa de tipo 01 y FEX (esta ronda):** los guards TEMPORALES específicos por tipo ("en revisión") fueron RETIRADOS de `DteController::firmarTransmitir()`, `DteFirmarCommand` y `DteTransmitirCommand`. Tipo 01 y FEX ahora siguen exactamente el mismo camino que CCF, protegidos por los candados GENERALES (nunca tocados):
+  - máquina de estados (`DtePolicy`: no se firma un documento rechazado/aceptado/anulado; no se retransmite un aceptado);
+  - frase exacta `EMITIR PRODUCCION` para cualquier emisión real (`DteController::firmarTransmitir`/`generarTransmitirProduccion`);
+  - preflight ESPECÍFICO por tipo integrado en "Generar y transmitir producción": CCF sigue usando `PreflightEmisionProduccion`, tipo 01 usa `PreflightEmisionProduccionFactura` (misma lógica de `dte:preflight-factura`), FEX usa `PreflightEmisionProduccionExportacion` (misma lógica de `dte:preflight-fex`) — antes esa pantalla estaba disponible solo para CCF (`DtePolicy::generarTransmitirProduccion` ahora acepta los tres tipos);
+  - credenciales de `testing` sin fallback a producción (fallan antes de cualquier HTTP si faltan) y viceversa;
+  - certificado y URL efectiva se siguen resolviendo por ambiente, no por tipo de documento.
+- **Todavía NO se ha emitido ninguna Factura tipo 01 ni FEX real en producción** — la habilitación es de código/candados, no una emisión.
+- Toda emisión real (cualquier tipo) sigue exigiendo escribir exactamente `EMITIR PRODUCCION`; sin la frase, o con una frase incorrecta, no se firma, no se transmite y no se envía correo.
 
 ## 6. Regla de negocio
 
-**No habilitar Factura consumidor final (01) ni Factura de Exportación (11) en producción hasta una decisión separada y explícita.** Los guards "en revisión" existentes deben quitarse deliberadamente, con autorización expresa, no como efecto secundario de otro cambio.
+Tipo 01 y FEX quedan operativamente listas (mismos candados que CCF, correlativo productivo propio), pero la primera emisión REAL en producción de cada tipo requiere una decisión y ejecución explícitas y separadas — no ocurre por default ni como efecto de este cambio. **La migración a la otra PC se realiza después de este commit.**
 
 ## 7. Hallazgo — RESUELTO
 
@@ -74,4 +79,16 @@ Durante la revisión de PDF/impresión de #127 y #130 se detectó que ni el PDF 
 - Arranque controlado en el nuevo entorno (Laragon, PHP, firmador local en puerto 8080, worker de cola).
 - Configurar acceso remoto.
 
-Esta fase **no se inicia en este documento ni en esta sesión** — queda pendiente de instrucción explícita por separado.
+Esta fase **no se inicia en este documento ni en esta sesión** — queda pendiente de instrucción explícita por separado, luego de este commit.
+
+## 9. Cierre de la habilitación productiva — Factura tipo 01 y FEX tipo 11
+
+Con el correlativo productivo creado para ambos tipos, Factura consumidor final (01) y Factura de Exportación (11) quedan **operativamente listas para producción bajo exactamente los mismos candados que CCF**:
+
+- **Correlativo productivo Factura (01/01):** fila creada, `establecimiento_id=1`, `punto_venta_id=1`, `ultimo_numero=0`, `activo=true`. Primer número que produciría: **1**.
+- **Correlativo productivo FEX (11/01):** fila creada, `establecimiento_id=1`, `punto_venta_id=1`, `ultimo_numero=0`, `activo=true`. Primer número que produciría: **1**.
+- Sin historial real previo para ninguno de los dos tipos en ambiente 01 (a diferencia de CCF, no hubo un sistema externo emitiéndolos en paralelo).
+- Firmador local operativo: proceso único, puerto 8080, responde `200` ("Application is running...!!").
+- Backup del día verificado y reconocido por el preflight de producción.
+- **Todavía no se ha emitido ninguna Factura tipo 01 ni FEX real en producción** — la habilitación es de código, candados y numeración; la primera emisión real sigue siendo una decisión y ejecución separadas.
+- Toda emisión productiva (cualquier tipo) exige escribir exactamente la frase `EMITIR PRODUCCION`; sin ella, o con una frase distinta, no se firma, no se transmite y no se envía correo.

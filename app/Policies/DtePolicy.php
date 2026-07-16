@@ -113,19 +113,31 @@ class DtePolicy
             && ! $dte->esAnulado();
     }
 
+    /** Tipos habilitados para la acción REAL "Generar y transmitir producción". */
+    private const TIPOS_EMISION_PRODUCCION = [
+        \App\Enums\TipoDte::CreditoFiscal,
+        \App\Enums\TipoDte::Factura,
+        \App\Enums\TipoDte::FacturaExportacion,
+    ];
+
     /**
-     * Acción REAL "Generar y transmitir producción" (CCF). A diferencia de
-     * firmarTransmitir, admite arrancar desde BORRADOR (genera primero). Gestores,
-     * CCF no aceptado/anulado. La emisión real la blindan además el preflight, la
-     * barrera anti-Conta y la frase EMITIR PRODUCCION (en el controlador).
+     * Acción REAL "Generar y transmitir producción". A diferencia de firmarTransmitir,
+     * admite arrancar desde BORRADOR (genera primero). Gestores, tipo habilitado
+     * (CCF/Factura/FEX), no aceptado/anulado, y el DOCUMENTO debe ser ambiente
+     * producción (01): un documento de pruebas (00) nunca es candidato a esta acción
+     * real, sin importar el ambiente configurado del sistema (defensa adicional; el
+     * preflight específico del tipo solo mira el ambiente del SISTEMA, no el del
+     * documento). La emisión real la blindan además el preflight específico del tipo,
+     * la barrera de confirmación y la frase EMITIR PRODUCCION (en el controlador).
      */
     public function generarTransmitirProduccion(User $user, Dte $dte): bool
     {
         return $user->hasAnyRole(self::GESTORES)
-            && $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
+            && in_array($dte->tipo_dte, self::TIPOS_EMISION_PRODUCCION, true)
             && in_array($dte->estado, [\App\Enums\EstadoDte::Borrador, \App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
-            && ! $dte->esAnulado();
+            && ! $dte->esAnulado()
+            && $dte->ambiente === \App\Enums\AmbienteHacienda::Produccion;
     }
 
     /**

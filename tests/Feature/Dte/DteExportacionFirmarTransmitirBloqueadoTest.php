@@ -21,15 +21,16 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Mismo riesgo que {@see DteFacturaFirmarTransmitirBloqueadoTest} pero para Factura de
- * exportación (tipo 11): la auditoría de FEX encontró que incoterms, régimen y recinto
- * fiscal (exigidos por el schema real del MH) nunca se capturan ni se serializan —
- * SerializadorExportacionMh los envía como null. Hasta que eso se resuelva, la vía
- * genérica firmarTransmitir() no debe poder transmitir un tipo 11 REAL a producción.
- * Esta suite verifica el gate agregado (guardia 0.06, mismo patrón que la 0.05 de
- * Factura consumidor final): bloquea SOLO Factura de exportación, SOLO cuando la
- * emisión real a producción sería posible ahora mismo, y no afecta a CCF ni a Nota de
- * crédito.
+ * Factura de exportación (tipo 11) quedó VALIDADA en APITEST (DTE #130 aceptado por
+ * Hacienda real, con distrito y tributo C3 corregidos) y el guard temporal "en
+ * revisión" (guardia 0.06 de DteController::firmarTransmitir) fue RETIRADO
+ * deliberadamente: FEX ahora sigue EXACTAMENTE el mismo camino que CCF hacia
+ * producción, protegida únicamente por los candados generales (guardia de frase
+ * EMITIR PRODUCCION, máquina de estados, credenciales/ambiente/certificado). Esta
+ * suite confirma que:
+ *  - FEX YA NO cae en el mensaje especial "está en revisión";
+ *  - sin la frase EMITIR PRODUCCION, cae en la MISMA guardia genérica que CCF;
+ *  - CCF y Nota de crédito no se vieron afectados por este cambio.
  */
 class DteExportacionFirmarTransmitirBloqueadoTest extends TestCase
 {
@@ -128,19 +129,25 @@ class DteExportacionFirmarTransmitirBloqueadoTest extends TestCase
         return $nc->refresh();
     }
 
-    public function test_exportacion_generada_se_bloquea_en_produccion_real_sin_invocar_firmador_ni_transmision(): void
+    public function test_fex_ya_no_cae_en_el_mensaje_especial_de_en_revision(): void
     {
         Http::fake();
         $this->abrirCandadosProduccionReal();
         $fex = $this->fexGenerada();
 
+        // Sin la frase EMITIR PRODUCCION: debe caer en la MISMA guardia genérica que
+        // protege a CCF (0.1), no en un mensaje especial de "en revisión" (retirado).
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.firmar-transmitir', $fex), ['confirmacion_emision' => 'EMITIR PRODUCCION'])
-            ->assertRedirect(route('facturacion.show', $fex))
-            ->assertSessionHas('error', 'Factura de exportación está en revisión y no puede transmitirse en producción todavía.');
+            ->post(route('facturacion.firmar-transmitir', $fex), [])
+            ->assertRedirect(route('facturacion.show', $fex));
 
-        // Ni el firmador ni la transmisión llegaron a invocarse (cero HTTP saliente).
+        // Cero HTTP saliente: la guardia de frase bloquea ANTES de firmar/transmitir.
         Http::assertNothingSent();
+
+        $error = session('error');
+        $this->assertStringContainsString('EMITIR PRODUCCION', $error);
+        $this->assertStringNotContainsString('en revisión', $error);
+        $this->assertStringNotContainsString('está en revisión y no puede transmitirse', $error);
 
         $fex->refresh();
         $this->assertSame(EstadoDte::Generado, $fex->estado);
@@ -188,27 +195,5 @@ class DteExportacionFirmarTransmitirBloqueadoTest extends TestCase
         $nc->refresh();
         $this->assertSame(EstadoDte::Generado, $nc->estado);
         $this->assertNull($nc->sello_recepcion);
-    }
-
-    public function test_factura_consumidor_final_sigue_bloqueada_por_su_propio_gate(): void
-    {
-        Http::fake();
-        $this->abrirCandadosProduccionReal();
-        $factura = $this->borradores->crearBorrador([
-            'tipo_dte' => TipoDte::Factura,
-            'establecimiento_id' => $this->estab->id,
-            'punto_venta_id' => $this->pv->id,
-        ]);
-        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
-        $this->borradores->agregarLineaDesdeProducto($factura, $producto, cantidad: 2);
-        app(DteGeneracionService::class)->generar($factura);
-        $factura->refresh();
-
-        $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.firmar-transmitir', $factura), ['confirmacion_emision' => 'EMITIR PRODUCCION'])
-            ->assertRedirect(route('facturacion.show', $factura))
-            ->assertSessionHas('error', 'Factura consumidor final está en revisión y no puede transmitirse en producción todavía.');
-
-        Http::assertNothingSent();
     }
 }

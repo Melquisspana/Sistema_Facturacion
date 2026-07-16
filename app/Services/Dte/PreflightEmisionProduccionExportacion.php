@@ -61,6 +61,27 @@ class PreflightEmisionProduccionExportacion
         ];
     }
 
+    /**
+     * Resumen para el modal de confirmación (solo lectura). Análogo a resumen() de
+     * CCF pero sin campos que no aplican a FEX (sala/retención/correlativo externo);
+     * incluye flete/seguro por ser específicos de exportación.
+     *
+     * @return array<string, mixed>
+     */
+    public function resumen(Dte $dte): array
+    {
+        $documentoActual = $this->documentoActual($dte, '11');
+
+        return array_merge($this->infoGeneral($dte), [
+            'cliente' => $dte->cliente?->nombre,
+            'total_pagar' => (float) $dte->total_pagar,
+            'documento_actual' => $documentoActual,
+            'proximo_futuro' => $documentoActual + 1,
+            'flete' => (float) $dte->flete,
+            'seguro' => (float) $dte->seguro,
+        ]);
+    }
+
     /** Correlativo de Exportación en producción: existe y está activo. */
     private function checkCorrelativo(): array
     {

@@ -3,6 +3,8 @@
 namespace App\Services\Dte\Concerns;
 
 use App\Models\Configuracion;
+use App\Models\Correlativo;
+use App\Models\Dte;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -106,5 +108,39 @@ trait ChecksProduccionComunes
     private function check(string $clave, string $label, bool $ok, string $detalle): array
     {
         return ['clave' => $clave, 'label' => $label, 'ok' => $ok, 'detalle' => $detalle];
+    }
+
+    /**
+     * Número de ESTE documento: el ya reservado (numeroControl) si el documento ya fue
+     * generado, o el próximo que asignará el correlativo de producción si todavía es
+     * borrador. Solo lectura: no consume ni modifica ningún correlativo.
+     */
+    private function documentoActual(Dte $dte, string $tipoDte): int
+    {
+        if ($dte->numero_control) {
+            return (int) preg_replace('/\D+/', '', substr($dte->numero_control, -15));
+        }
+        $corr = Correlativo::where('tipo_dte', $tipoDte)->where('ambiente', '01')->where('activo', true)->first();
+
+        return (int) ($corr?->ultimo_numero ?? 0) + 1;
+    }
+
+    /**
+     * Datos generales para el resumen de confirmación, comunes a cualquier tipo de DTE
+     * (tipo, ambiente, número de control, URL efectiva de transmisión, certificado
+     * esperado, correo destino). Solo lectura/presentación: no muestra credenciales.
+     *
+     * @return array<string, mixed>
+     */
+    private function infoGeneral(Dte $dte): array
+    {
+        return [
+            'tipo_dte' => $dte->tipo_dte->label(),
+            'ambiente' => $dte->ambiente->value,
+            'numero_control' => $dte->numero_control,
+            'url_efectiva' => (string) config('dte.transmision.url_base'),
+            'certificado_esperado' => (string) config('dte.transmision.ambiente') === 'produccion' ? 'Producción' : 'Pruebas',
+            'correo_destino' => $dte->clienteSucursal?->correo ?: $dte->cliente?->correo,
+        ];
     }
 }

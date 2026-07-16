@@ -21,14 +21,15 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Riesgo detectado en la auditoría de Factura consumidor final (tipo 01): la vía
- * genérica firmarTransmitir() no tenía ningún filtro por tipo de documento, así que
- * una Factura generada podía transmitirse REAL a Hacienda sin pasar por ninguno de
- * los candados/preflight dedicados que sí protegen a CCF (backup, worker, credenciales,
- * correlativo alineado). Esta suite verifica el gate agregado en
- * DteController::firmarTransmitir() (guardia 0.05, antes de la guardia de frase
- * EMITIR PRODUCCION): bloquea SOLO Factura, SOLO cuando la emisión real a producción
- * sería posible ahora mismo, y no afecta a CCF ni a Nota de crédito.
+ * Factura consumidor final (tipo 01) quedó VALIDADA en APITEST (DTE #127 aceptado
+ * por Hacienda real) y el guard temporal "en revisión" (guardia 0.05 de
+ * DteController::firmarTransmitir) fue RETIRADO deliberadamente: Factura ahora sigue
+ * EXACTAMENTE el mismo camino que CCF hacia producción, protegida únicamente por los
+ * candados generales (guardia de frase EMITIR PRODUCCION, máquina de estados,
+ * credenciales/ambiente/certificado). Esta suite confirma que:
+ *  - Factura YA NO cae en el mensaje especial "está en revisión";
+ *  - sin la frase EMITIR PRODUCCION, cae en la MISMA guardia genérica que CCF;
+ *  - CCF y Nota de crédito no se vieron afectados por este cambio.
  */
 class DteFacturaFirmarTransmitirBloqueadoTest extends TestCase
 {
@@ -123,19 +124,25 @@ class DteFacturaFirmarTransmitirBloqueadoTest extends TestCase
         return $nc->refresh();
     }
 
-    public function test_factura_generada_se_bloquea_en_produccion_real_sin_invocar_firmador_ni_transmision(): void
+    public function test_factura_ya_no_cae_en_el_mensaje_especial_de_en_revision(): void
     {
         Http::fake();
         $this->abrirCandadosProduccionReal();
         $factura = $this->facturaGenerada();
 
+        // Sin la frase EMITIR PRODUCCION: debe caer en la MISMA guardia genérica que
+        // protege a CCF (0.1), no en un mensaje especial de "en revisión" (retirado).
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.firmar-transmitir', $factura), ['confirmacion_emision' => 'EMITIR PRODUCCION'])
-            ->assertRedirect(route('facturacion.show', $factura))
-            ->assertSessionHas('error', 'Factura consumidor final está en revisión y no puede transmitirse en producción todavía.');
+            ->post(route('facturacion.firmar-transmitir', $factura), [])
+            ->assertRedirect(route('facturacion.show', $factura));
 
-        // Ni el firmador ni la transmisión llegaron a invocarse (cero HTTP saliente).
+        // Cero HTTP saliente: la guardia de frase bloquea ANTES de firmar/transmitir.
         Http::assertNothingSent();
+
+        $error = session('error');
+        $this->assertStringContainsString('EMITIR PRODUCCION', $error);
+        $this->assertStringNotContainsString('en revisión', $error);
+        $this->assertStringNotContainsString('está en revisión y no puede transmitirse', $error);
 
         $factura->refresh();
         $this->assertSame(EstadoDte::Generado, $factura->estado);

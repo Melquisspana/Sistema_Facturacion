@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
@@ -28,27 +27,6 @@ class DteTransmitirCommand extends Command
         $dte = Dte::find($this->argument('dte'));
         if (! $dte) {
             $this->error('No existe el DTE con id '.$this->argument('dte').'.');
-
-            return self::FAILURE;
-        }
-
-        // GUARDIA: Factura consumidor final (01) sigue "en revisión" (nunca se probó
-        // firma/transmisión real con Hacienda para este tipo). Bloquea esta vía de
-        // consola cuando una emisión real a producción sería posible ahora mismo; en
-        // modo seguro (paralelo/mock/dry-run/apitest) no aplica. Mismo criterio que el
-        // gate web de DteController::firmarTransmitir(). Solo lectura de candados: NO
-        // llama a transmitir().
-        if ($dte->tipo_dte === TipoDte::Factura && $transmision->emisionRealPosible()) {
-            $this->error('Factura consumidor final está en revisión y no puede transmitirse en producción todavía.');
-
-            return self::FAILURE;
-        }
-
-        // GUARDIA: Factura de exportación (11) sigue "en revisión" (incoterms, régimen
-        // y recinto fiscal aún no se capturan/serializan). Mismo criterio que la guardia
-        // de Factura consumidor final. Solo lectura de candados: NO llama a transmitir().
-        if ($dte->tipo_dte === TipoDte::FacturaExportacion && $transmision->emisionRealPosible()) {
-            $this->error('Factura de exportación está en revisión y no puede transmitirse en producción todavía.');
 
             return self::FAILURE;
         }

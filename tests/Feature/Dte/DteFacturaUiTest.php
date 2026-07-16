@@ -210,4 +210,53 @@ class DteFacturaUiTest extends TestCase
             ->get(route('facturacion.edit', $dte))
             ->assertForbidden();
     }
+
+    // --- Factura habilitada operativamente: aparece como opción NORMAL, igual que CCF ---
+
+    public function test_pagina_creacion_no_muestra_avisos_de_flujo_pendiente(): void
+    {
+        $this->emisor();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.create-factura'))
+            ->assertOk()
+            ->assertDontSee('Flujo pendiente de validación para producción real. No emitir sin revisión técnica.')
+            ->assertDontSee('En revisión')
+            ->assertDontSee('Validada en APITEST')
+            ->assertDontSee('Producción bloqueada');
+    }
+
+    public function test_listado_muestra_factura_como_opcion_normal_sin_badge(): void
+    {
+        $this->emisor();
+
+        $html = $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.index'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('Nueva factura consumidor final', $html);
+        $this->assertStringNotContainsString('En revisión', $html);
+    }
+
+    /**
+     * Factura ahora puede llegar al MISMO flujo de "Generar y transmitir producción"
+     * que CCF (antes exclusivo de CreditoFiscal en DtePolicy). No emite nada: solo
+     * confirma que la política de autorización ya no la bloquea por tipo.
+     */
+    public function test_factura_puede_llegar_al_flujo_de_preparacion_productiva_del_ccf(): void
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        // ambiente 01 explícito: la Policy exige que el DOCUMENTO sea de producción
+        // (no solo el sistema) para ser candidato a "Generar y transmitir producción".
+        $dte = app(DteBorradorService::class)->crearBorrador([
+            'tipo_dte' => TipoDte::Factura,
+            'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id,
+            'ambiente' => '01',
+        ]);
+        $admin = $this->usuario('administrador');
+
+        $this->assertTrue($admin->can('generarTransmitirProduccion', $dte));
+    }
 }

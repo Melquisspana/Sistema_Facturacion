@@ -483,18 +483,21 @@
                             <div class="flex min-h-full items-center justify-center p-4">
                                 <div class="fixed inset-0 bg-gray-900/50" @click="open = false"></div>
                                 <div class="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg p-6">
+                                    @php $esCcfModal = $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal; @endphp
                                     <h3 class="text-lg font-semibold text-rose-700">Confirmar emisión a PRODUCCIÓN</h3>
 
-                                    {{-- Número del documento a emitir + contexto: distingue el documento actual
-                                         (ya reservado si el CCF ya fue generado) del último real de Conta y del
-                                         próximo que quedará libre DESPUÉS de aceptar este. --}}
+                                    {{-- Número del documento a emitir + contexto. Para CCF distingue además el
+                                         último real de Conta Portable (reconciliación con el sistema externo);
+                                         los demás tipos no tienen ese sistema externo paralelo. --}}
                                     <div class="mt-3 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4">
                                         <div class="text-center">
                                             <p class="text-xs uppercase tracking-wide text-indigo-500">Documento actual a emitir</p>
                                             <p class="mt-0.5 text-4xl font-bold tabular-nums text-indigo-700">{{ $rp['documento_actual'] }}</p>
                                         </div>
                                         <dl class="mt-3 grid grid-cols-2 gap-2 border-t border-indigo-100 pt-3 text-xs text-gray-600">
-                                            <div><dt class="text-gray-400">Último real externo/Conta</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] }}</dd></div>
+                                            @if ($esCcfModal)
+                                                <div><dt class="text-gray-400">Último real externo/Conta</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] }}</dd></div>
+                                            @endif
                                             <div><dt class="text-gray-400">Próximo tras aceptar este</dt><dd class="font-semibold">{{ $rp['proximo_futuro'] }}</dd></div>
                                         </dl>
                                     </div>
@@ -504,16 +507,23 @@
                                     </div>
 
                                     <dl class="mt-3 divide-y divide-gray-100 text-sm">
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Cliente</dt><dd class="font-medium text-gray-900">{{ $rp['cliente'] ?? '—' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Sala</dt><dd class="font-medium text-gray-900">{{ $rp['sala'] ?? '—' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Orden de compra</dt><dd class="font-medium text-gray-900">{{ $rp['oc'] ?? '—' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total gravado</dt><dd class="font-medium text-gray-900">${{ number_format($rp['total_gravado'], 2) }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">IVA</dt><dd class="font-medium text-gray-900">${{ number_format($rp['iva'], 2) }}</dd></div>
-                                        @if ($rp['aplica_retencion'])
-                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Retención IVA</dt><dd class="font-medium text-gray-900">-${{ number_format($rp['retencion'], 2) }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Tipo de documento</dt><dd class="font-medium text-gray-900">{{ $rp['tipo_dte'] }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Ambiente</dt><dd class="font-medium text-gray-900">{{ $rp['ambiente'] }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">N.º de control</dt><dd class="font-medium text-gray-900 font-mono text-xs">{{ $rp['numero_control'] ?? '(se asigna al generar)' }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Cliente / receptor</dt><dd class="font-medium text-gray-900">{{ $rp['cliente'] ?? '—' }}</dd></div>
+                                        @if ($esCcfModal)
+                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Sala</dt><dd class="font-medium text-gray-900">{{ $rp['sala'] ?? '—' }}</dd></div>
+                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Orden de compra</dt><dd class="font-medium text-gray-900">{{ $rp['oc'] ?? '—' }}</dd></div>
+                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total gravado</dt><dd class="font-medium text-gray-900">${{ number_format($rp['total_gravado'], 2) }}</dd></div>
+                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">IVA</dt><dd class="font-medium text-gray-900">${{ number_format($rp['iva'], 2) }}</dd></div>
+                                            @if ($rp['aplica_retencion'])
+                                                <div class="flex justify-between py-1.5"><dt class="text-gray-500">Retención IVA</dt><dd class="font-medium text-gray-900">-${{ number_format($rp['retencion'], 2) }}</dd></div>
+                                            @endif
                                         @endif
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total a pagar</dt><dd class="font-semibold text-gray-900">${{ number_format($rp['total_pagar'], 2) }}</dd></div>
                                         <div class="flex justify-between py-1.5"><dt class="text-gray-500">Correo destino</dt><dd class="font-medium text-gray-900">{{ $rp['correo_destino'] ?? '(sin correo — se enviará aparte)' }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">URL efectiva</dt><dd class="font-medium text-gray-900 font-mono text-xs">{{ $rp['url_efectiva'] ?? '—' }}</dd></div>
+                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Certificado esperado</dt><dd class="font-medium text-gray-900">{{ $rp['certificado_esperado'] ?? '—' }}</dd></div>
                                     </dl>
 
                                     {{-- Valida (frase/barrera/confirm) y solo si pasa marca "enviando" (deshabilita el botón
@@ -523,7 +533,11 @@
                                         @csrf
                                         <label class="flex items-start gap-2 text-sm text-gray-700">
                                             <input type="checkbox" name="barrera_conta" value="1" class="mt-0.5 rounded border-gray-300">
-                                            <span>Confirmo que Conta Portable quedó detenido/alineado. Documento actual a emitir: {{ $rp['documento_actual'] }}. Último real externo/Conta: {{ $rp['externo_ultimo'] }}. Próximo después de aceptar este documento: {{ $rp['proximo_futuro'] }}.</span>
+                                            @if ($esCcfModal)
+                                                <span>Confirmo que Conta Portable quedó detenido/alineado. Documento actual a emitir: {{ $rp['documento_actual'] }}. Último real externo/Conta: {{ $rp['externo_ultimo'] }}. Próximo después de aceptar este documento: {{ $rp['proximo_futuro'] }}.</span>
+                                            @else
+                                                <span>Confirmo que revisé este documento (datos, totales y receptor) y que corresponde emitirlo en producción ahora. Documento actual a emitir: {{ $rp['documento_actual'] }}.</span>
+                                            @endif
                                         </label>
                                         <label class="mt-3 block text-xs font-semibold text-rose-700">Escribí exactamente: <span class="font-mono">EMITIR PRODUCCION</span></label>
                                         <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false" placeholder="EMITIR PRODUCCION"
