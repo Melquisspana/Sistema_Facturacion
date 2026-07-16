@@ -123,8 +123,11 @@ grandes (migraciones, importaciones): `scripts\backup-run.bat`.
 **No hace falta en modo paralelo seguro.** El firmador solo se usa cuando decidas
 **firmar** (`DTE_FIRMA_ENABLED=true`, que no se toca ahora). Cuando llegue ese día:
 
-- Arrancalo con **`firmador-auto.bat`** (usa el JDK 21 que trae el propio firmador;
-  no requiere Java instalado). Levanta el servicio en `http://localhost:8113`.
+- Arrancalo con **`firmador-auto.bat`** (arranque recomendado; usa el JDK 21 que
+  trae el propio firmador, no requiere Java instalado). El JAR trae 8113 por
+  defecto, pero el `.bat` fuerza `--server.port=8080`: la app y el firmador
+  deben usar **el mismo puerto** (`DTE_FIRMADOR_URL`), así que el servicio debe
+  responder en `http://localhost:8080`.
 - Verificá con el botón **"Probar firmador ahora"** en
   **Facturación → Preparar emisión real**.
 - Detalle del certificado y perfiles: `docs/FIRMADOR_LOCAL.md`.

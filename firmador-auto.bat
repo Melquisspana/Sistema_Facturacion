@@ -18,7 +18,7 @@ rem
 rem  Solo es util cuando decidas firmar (fase de emision). En modo
 rem  paralelo seguro el firmador puede estar apagado sin problema.
 rem
-rem  Health check (no firma): http://localhost:8113/firmardocumento/status
+rem  Health check (no firma): http://localhost:8080/firmardocumento/status
 rem ------------------------------------------------------------------
 
 rem Carpeta de trabajo del firmador (relativa a este .bat, en la raiz del proyecto).
@@ -42,7 +42,7 @@ echo ============================================================
 echo   FIRMADOR LOCAL MH - Facturacion
 echo.
 echo   Arrancando el servicio Java del firmador (perfil nonssl).
-echo   Status: http://localhost:8113/firmardocumento/status
+echo   Status: http://localhost:8080/firmardocumento/status
 echo.
 echo   Este proceso NO emite, NO transmite y NO toca .env.
 echo   Deja esta ventana abierta mientras firmas.
@@ -50,8 +50,9 @@ echo ============================================================
 echo.
 
 :loop
-rem Perfil nonssl = HTTP en localhost (recomendado). El firmador escucha en 8113.
-"%JAVA%" -Dspring.profiles.active=nonssl -jar "%JAR%"
+rem Perfil nonssl = HTTP en localhost (recomendado). El JAR trae 8113 por defecto;
+rem se fuerza 8080 porque es el puerto que la app espera (DTE_FIRMADOR_URL).
+"%JAVA%" -Dspring.profiles.active=nonssl -jar "%JAR%" --server.port=8080
 
 rem Si el firmador se detuvo (cierre, error o reinicio), esperar y relanzar.
 rem Backoff corto para no entrar en un bucle apretado ante un error persistente.
