@@ -5,6 +5,7 @@ namespace App\Services\Dte\Serializadores;
 use App\DataTransferObjects\Dte\Salida\DteSalidaData;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Services\Dte\Serializadores\Concerns\MapeaCatalogosMh;
+use App\Support\Dinero;
 
 /**
  * Serializa una Factura de consumidor final (01) al array oficial (fe-f-v2).
@@ -12,6 +13,13 @@ use App\Services\Dte\Serializadores\Concerns\MapeaCatalogosMh;
  * Particularidades: el receptor puede ser null (consumidor final); el IVA va
  * INCLUIDO (ivaItem por línea, totalIva en resumen) y no se itemiza en tributos.
  * Usa datos ya calculados; no recalcula impuestos; no firma/transmite.
+ *
+ * MH exige que ventaGravada/totalGravada sea el importe BRUTO (con IVA
+ * incluido) del ítem gravado, no la base neta separada del IVA que se usa
+ * internamente para contabilidad (rechazo real código 003 "cálculo de total
+ * por ítem erróneo"). Aquí se reconstruye el bruto sumando de vuelta el IVA
+ * (neto + ivaLinea); ivaItem/totalIva se mantienen informativos y no se
+ * suman de nuevo al total.
  */
 class SerializadorFacturaMh implements SerializadorMh
 {
@@ -92,6 +100,9 @@ class SerializadorFacturaMh implements SerializadorMh
                 $problemas[] = "Línea {$l->numeroLinea}: falta tipo de ítem (CAT-011).";
             }
 
+            // Bruto (con IVA incluido) esperado por MH para Factura; neto+iva = importe original.
+            $ventaGravadaBruta = Dinero::redondear(Dinero::sumar($l->ventaGravada, $l->iva), 2);
+
             $items[] = [
                 'numItem' => $l->numeroLinea,
                 'tipoItem' => (int) ($l->tipoItem ?? 0),
@@ -105,7 +116,7 @@ class SerializadorFacturaMh implements SerializadorMh
                 'montoDescu' => (float) $l->descuento,
                 'ventaNoSuj' => (float) $l->ventaNoSujeta,
                 'ventaExenta' => (float) $l->ventaExenta,
-                'ventaGravada' => (float) $l->ventaGravada,
+                'ventaGravada' => (float) $ventaGravadaBruta,
                 'tributos' => null, // IVA incluido: no se itemiza
                 'psv' => 0.0,
                 'noGravado' => 0.0,
@@ -120,7 +131,8 @@ class SerializadorFacturaMh implements SerializadorMh
     private function resumen(DteSalidaData $d): array
     {
         $r = $d->resumen;
-        $totalGravada = (float) $r->totalGravado;
+        // Bruto (con IVA incluido) esperado por MH; ver nota de clase.
+        $totalGravada = (float) Dinero::redondear(Dinero::sumar($r->totalGravado, $r->iva), 2);
         $totalExenta = (float) $r->totalExento;
         $totalNoSuj = (float) $r->totalNoSujeto;
         $subTotalVentas = round($totalGravada + $totalExenta + $totalNoSuj, 2);
