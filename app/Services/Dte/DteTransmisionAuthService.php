@@ -24,6 +24,8 @@ class DteTransmisionAuthService
 {
     private const CACHE_PREFIX = 'dte.transmision.token.';
 
+    private const MSG_TESTING_SIN_CREDENCIALES = 'Credenciales de apitest/homologación no configuradas.';
+
     /**
      * Devuelve el token de autorización ("Bearer ...") para transmitir.
      *
@@ -68,13 +70,15 @@ class DteTransmisionAuthService
      */
     public function diagnostico(): array
     {
+        $cred = $this->credencialesActuales();
+
         return [
             'ambiente' => $this->esProduccion() ? 'produccion' : 'testing',
             'url' => $this->authUrl(),
             'habilitada' => (bool) config('dte.transmision.enabled', false),
             'auth_test_real' => (bool) config('dte.transmision.auth_test_real_enabled', false),
-            'usuario_configurado' => filled(config('dte.transmision.usuario_api')),
-            'password_configurado' => filled(config('dte.transmision.password')),
+            'usuario_configurado' => filled($cred['usuario']),
+            'password_configurado' => filled($cred['password']),
             'token_manual_configurado' => filled(config('dte.transmision.token')),
             'token_cacheado' => is_string(Cache::get($this->cacheKey())),
             'vigencia_horas' => $this->esProduccion() ? 24 : 48,
@@ -99,13 +103,14 @@ class DteTransmisionAuthService
      */
     public function pruebaAuthTesting(): array
     {
+        $cred = $this->credencialesTesting();
         $r = [
             'bloqueado' => true,
             'razon' => null,
             'ambiente' => $this->esProduccion() ? 'produccion' : 'testing',
             'url' => $this->authUrl(),
-            'usuario_configurado' => filled(config('dte.transmision.usuario_api')),
-            'password_configurado' => filled(config('dte.transmision.password')),
+            'usuario_configurado' => filled($cred['usuario']),
+            'password_configurado' => filled($cred['password']),
             'token_obtenido' => false,
             'token_cacheado' => is_string(Cache::get($this->cacheKey())),
         ];
@@ -126,7 +131,7 @@ class DteTransmisionAuthService
             return $r;
         }
         if (! $r['usuario_configurado'] || ! $r['password_configurado']) {
-            $r['razon'] = 'Faltan credenciales de prueba (DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD).';
+            $r['razon'] = self::MSG_TESTING_SIN_CREDENCIALES;
 
             return $r;
         }
@@ -168,8 +173,9 @@ class DteTransmisionAuthService
      */
     public function inspeccionarRequest(): array
     {
-        $user = (string) config('dte.transmision.usuario_api', '');
-        $pwd = (string) config('dte.transmision.password', '');
+        $cred = $this->credencialesActuales();
+        $user = $cred['usuario'];
+        $pwd = $cred['password'];
 
         return [
             'metodo' => 'POST',
@@ -206,12 +212,13 @@ class DteTransmisionAuthService
     public function pruebaAuthProduccion(): array
     {
         $url = 'https://api.dtes.mh.gob.sv/'.ltrim((string) config('dte.transmision.endpoint_auth', '/seguridad/auth'), '/');
+        $cred = $this->credencialesProduccion();
         $r = [
             'bloqueado' => true,
             'razon' => null,
             'url' => $url,
-            'usuario_configurado' => filled(config('dte.transmision.usuario_api')),
-            'password_configurado' => filled(config('dte.transmision.password')),
+            'usuario_configurado' => filled($cred['usuario']),
+            'password_configurado' => filled($cred['password']),
             'login_aceptado' => false,
             'http_status' => null,
             'mensaje_mh' => null,
@@ -223,13 +230,13 @@ class DteTransmisionAuthService
             return $r;
         }
         if (! $r['usuario_configurado'] || ! $r['password_configurado']) {
-            $r['razon'] = 'Faltan credenciales (DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD).';
+            $r['razon'] = 'Faltan credenciales (DTE_PROD_USER / DTE_PROD_PASSWORD, o DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD como respaldo).';
 
             return $r;
         }
 
-        $user = (string) config('dte.transmision.usuario_api', '');
-        $pwd = (string) config('dte.transmision.password', '');
+        $user = $cred['usuario'];
+        $pwd = $cred['password'];
         $userAgent = (string) config('dte.transmision.user_agent', 'DTE/1.0');
 
         try {
@@ -272,13 +279,19 @@ class DteTransmisionAuthService
      */
     private function login(): string
     {
-        $user = (string) config('dte.transmision.usuario_api', '');
-        $pwd = (string) config('dte.transmision.password', '');
+        $cred = $this->credencialesActuales();
+        $user = $cred['usuario'];
+        $pwd = $cred['password'];
+
+        // Testing/apitest: SIN fallback a producción. Falla claro antes de cualquier HTTP.
+        if (! $this->esProduccion() && ($user === '' || $pwd === '')) {
+            throw new DteTransmisionException(self::MSG_TESTING_SIN_CREDENCIALES);
+        }
         if ($user === '') {
-            throw new DteTransmisionException('Falta el usuario de transmisión (configure DTE_TRANSMISION_USER en .env).');
+            throw new DteTransmisionException('Falta el usuario de transmisión (configure DTE_PROD_USER en .env; DTE_TRANSMISION_USER sirve de respaldo temporal).');
         }
         if ($pwd === '') {
-            throw new DteTransmisionException('Falta la contraseña de transmisión (configure DTE_TRANSMISION_PASSWORD en .env).');
+            throw new DteTransmisionException('Falta la contraseña de transmisión (configure DTE_PROD_PASSWORD en .env; DTE_TRANSMISION_PASSWORD sirve de respaldo temporal).');
         }
 
         $url = $this->authUrl();
@@ -341,6 +354,36 @@ class DteTransmisionAuthService
         $amb = strtolower((string) config('dte.transmision.ambiente', 'testing'));
 
         return in_array($amb, ['produccion', 'production', 'prod', '01'], true);
+    }
+
+    /** Credenciales de PRODUCCIÓN: caen de vuelta a DTE_TRANSMISION_USER/PASSWORD si DTE_PROD_* no están definidas. */
+    private function credencialesProduccion(): array
+    {
+        return [
+            'usuario' => (string) config('dte.transmision.usuario_produccion', ''),
+            'password' => (string) config('dte.transmision.password_produccion', ''),
+        ];
+    }
+
+    /** Credenciales de TESTING/apitest: SIN fallback a producción, nunca. */
+    private function credencialesTesting(): array
+    {
+        return [
+            'usuario' => (string) config('dte.transmision.usuario_testing', ''),
+            'password' => (string) config('dte.transmision.password_testing', ''),
+        ];
+    }
+
+    /**
+     * Par de credenciales según el ambiente ACTUAL de transmisión (dte.transmision.ambiente).
+     * Producción y testing/apitest son cuentas DISTINTAS en Hacienda: testing NUNCA cae
+     * de vuelta a las credenciales de producción, aunque estén configuradas.
+     *
+     * @return array{usuario: string, password: string}
+     */
+    private function credencialesActuales(): array
+    {
+        return $this->esProduccion() ? $this->credencialesProduccion() : $this->credencialesTesting();
     }
 
     /** ¿Auth habilitada por la vía dedicada de pruebas (testing + test_enabled)? */

@@ -167,6 +167,17 @@ return [
         'usuario_api' => env('DTE_TRANSMISION_USER', ''),
         'password' => env('DTE_TRANSMISION_PASSWORD', ''),
         'token' => env('DTE_TRANSMISION_TOKEN', ''),
+
+        // Credenciales SEPARADAS por ambiente (producción y apitest/homologación son
+        // cuentas DISTINTAS en Hacienda). Usadas por DteTransmisionAuthService para
+        // elegir el par correcto según dte.transmision.ambiente:
+        //  - producción: cae de vuelta a DTE_TRANSMISION_USER/PASSWORD (arriba) mientras
+        //    no se definan DTE_PROD_*, para no romper lo que ya funciona hoy con CCF real.
+        //  - testing: SIN fallback. Si faltan, el login se bloquea antes de cualquier HTTP.
+        'usuario_produccion' => env('DTE_PROD_USER', env('DTE_TRANSMISION_USER', '')),
+        'password_produccion' => env('DTE_PROD_PASSWORD', env('DTE_TRANSMISION_PASSWORD', '')),
+        'usuario_testing' => env('DTE_TEST_USER', ''),
+        'password_testing' => env('DTE_TEST_PASSWORD', ''),
     ],
 
     /*
