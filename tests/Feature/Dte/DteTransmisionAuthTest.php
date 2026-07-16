@@ -37,8 +37,9 @@ class DteTransmisionAuthTest extends TestCase
         config()->set('dte.transmision.ambiente', 'testing');
         config()->set('dte.transmision.url_base', 'https://auth.test');
         config()->set('dte.transmision.token', '');       // sin override → fuerza login
-        config()->set('dte.transmision.usuario_api', 'facturador01');
-        config()->set('dte.transmision.password', self::PW);
+        // Ambiente testing: el servicio lee usuario_testing/password_testing, NO usuario_api.
+        config()->set('dte.transmision.usuario_testing', 'facturador01');
+        config()->set('dte.transmision.password_testing', self::PW);
     }
 
     private function fakeAuthOk(): void
@@ -93,7 +94,7 @@ class DteTransmisionAuthTest extends TestCase
     public function test_falla_si_falta_user(): void
     {
         $this->habilitar();
-        config()->set('dte.transmision.usuario_api', '');
+        config()->set('dte.transmision.usuario_testing', '');
         Http::fake();
 
         $this->expectException(DteTransmisionException::class);
@@ -103,7 +104,7 @@ class DteTransmisionAuthTest extends TestCase
     public function test_falla_si_falta_password(): void
     {
         $this->habilitar();
-        config()->set('dte.transmision.password', '');
+        config()->set('dte.transmision.password_testing', '');
         Http::fake();
 
         $this->expectException(DteTransmisionException::class);
@@ -173,8 +174,8 @@ class DteTransmisionAuthTest extends TestCase
         config()->set('dte.transmision.auth_test_real_enabled', true);
         config()->set('dte.transmision.ambiente', 'testing');
         config()->set('dte.transmision.url_base', 'https://apitest.dtes.mh.gob.sv');
-        config()->set('dte.transmision.usuario_api', 'facturador01');
-        config()->set('dte.transmision.password', self::PW);
+        config()->set('dte.transmision.usuario_testing', 'facturador01');
+        config()->set('dte.transmision.password_testing', self::PW);
         config()->set('dte.transmision.token', ''); // sin override → login
     }
 
