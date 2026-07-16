@@ -57,7 +57,7 @@ class SerializadorExportacionMh implements SerializadorMh
             'direccion' => [
                 'departamento' => mb_substr((string) ($e->departamento ?? ''), 0, 2),
                 'municipio' => mb_substr((string) ($e->municipio ?? ''), 0, 2),
-                'distrito' => '',
+                'distrito' => (string) ($e->distrito ?? ''),
                 'complemento' => (string) ($e->direccion ?? ''),
             ],
             'telefono' => $e->telefono,

@@ -259,7 +259,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $emisor = new EmisorDteData(
             nit: '06140000000011', nrc: '111111', nombre: 'Dulces La Negrita',
             codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
-            actividadEconomica: '10730', departamento: '06', municipio: '14', direccion: 'Calle X',
+            actividadEconomica: '10730', departamento: '06', municipio: '14', distrito: '05', direccion: 'Calle X',
             telefono: '22000000', correo: 'e@negrita.sv', tipoEstablecimiento: '02',
             tipoItemExpor: 1, recintoFiscal: '01', tipoRegimen: 'EX-1', regimen: '1000.000',
         );
@@ -279,12 +279,85 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
         $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::FacturaExportacion);
 
+        // Regresión: el distrito del emisor no debe perderse al serializar (bug FEX #128,
+        // SerializadorExportacionMh hardcodeaba 'distrito' => '' en vez de leer $e->distrito).
+        $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        $this->assertNotNull($oficial['emisor']['direccion']['distrito']);
+        $this->assertNotSame('', $oficial['emisor']['direccion']['distrito']);
         $this->assertSame(1, $oficial['emisor']['tipoItemExpor']);
         $this->assertSame('01', $oficial['emisor']['recintoFiscal']);
         $this->assertSame('EX-1', $oficial['emisor']['tipoRegimen']);
         $this->assertSame('1000.000', $oficial['emisor']['regimen']);
         $this->assertSame('09', $oficial['resumen']['codIncoterms']);
         $this->assertSame('FOB-Libre a bordo', $oficial['resumen']['descIncoterms']);
+        $this->assertSame('GT', $oficial['receptor']['codPais']);
+        $this->assertSame('GUATEMALA', $oficial['receptor']['nombrePais']);
+        $this->assertSame(100.0, $oficial['resumen']['totalGravada']); // venta de exportación
+        $this->assertSame(100.0, $oficial['resumen']['montoTotalOperacion']);
+        $this->assertSame(100.0, $oficial['resumen']['totalPagar']);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    /**
+     * Reconstrucción EN MEMORIA equivalente al caso real de la FEX #128 (10 × 1.05,
+     * cliente Piloto Exportación USA, sin descuento). No toca el DTE #128 real ni su
+     * JSON en disco: solo verifica que, con el fix del distrito, un documento con los
+     * mismos datos serializaría correctamente.
+     */
+    public function test_exportacion_reproduce_caso_real_dte128_con_distrito_correcto(): void
+    {
+        CatalogoMh::insert([
+            ['cat' => '019', 'codigo' => '46900', 'valor' => 'Venta al por mayor de una variedad de artículos sin especialización'],
+            ['cat' => '020', 'codigo' => 'US', 'valor' => 'ESTADOS UNIDOS'],
+        ]);
+
+        $emisor = new EmisorDteData(
+            nit: '10132512610012', nrc: '1014765', nombre: 'Elsa Fidelina Hernández Cañas',
+            codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
+            actividadEconomica: '10730', departamento: '08', municipio: '23', distrito: '05',
+            direccion: 'km 28 1/2 carretera al aeropuerto frente a maquila internacional olocuilta la paz',
+            telefono: '71276473', correo: 'dulceslanegrita@yahoo.com', tipoEstablecimiento: '02',
+            tipoItemExpor: 1, recintoFiscal: '01', tipoRegimen: 'EX-1', regimen: '1000.000',
+        );
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '37', numDocumento: 'EXP-PILOTO-001', nombre: 'Cliente Piloto Exportación USA',
+            actividadEconomica: '46900', pais: 'US', direccion: 'Miami, Florida, United States',
+            tipoPersona: 'juridica',
+        );
+        $linea = new LineaDteData(
+            numeroLinea: 1, descripcion: 'CANILLITAS', cantidad: '10', precioUnitario: '1.05',
+            totalLinea: '10.50', tipoItem: 1, codigo: '79873', unidadMedida: '59',
+            ventaExportacion: '10.50',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '10.50',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '10.50',
+            montoTotalOperacion: '10.50', totalPagar: '10.50', totalLetras: 'DIEZ 50/100 DÓLARES',
+            flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+            codIncoterms: '09', descIncoterms: 'FOB-Libre a bordo',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $emisor, resumen: $resumen,
+            lineas: [$linea], receptor: $receptor, apendice: [],
+        );
+
+        $oficial = app(SerializadorExportacionMh::class)->serializar($salida);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::FacturaExportacion);
+
+        $this->assertSame('11', $oficial['identificacion']['tipoDte']);
+        $this->assertSame('00', $oficial['identificacion']['ambiente']);
+        $this->assertSame('05', $oficial['emisor']['direccion']['distrito']);
+        $this->assertSame(1, $oficial['emisor']['tipoItemExpor']);
+        $this->assertSame('01', $oficial['emisor']['recintoFiscal']);
+        $this->assertSame('EX-1', $oficial['emisor']['tipoRegimen']);
+        $this->assertSame('1000.000', $oficial['emisor']['regimen']);
+        $this->assertSame('09', $oficial['resumen']['codIncoterms']);
+        $this->assertSame('FOB-Libre a bordo', $oficial['resumen']['descIncoterms']);
+        $this->assertSame('US', $oficial['receptor']['codPais']);
+        $this->assertSame(10.5, $oficial['resumen']['totalGravada']); // total_exportacion
+        $this->assertSame(10.5, $oficial['resumen']['montoTotalOperacion']);
+        $this->assertSame(10.5, $oficial['resumen']['totalPagar']);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
