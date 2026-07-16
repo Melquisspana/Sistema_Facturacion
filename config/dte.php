@@ -67,7 +67,7 @@ return [
     | .../firmardocumento/status). No hay otra URL del firmador en el servicio.
     */
     'firmador' => [
-        'url' => env('DTE_FIRMADOR_URL', 'http://localhost:8113/firmardocumento'),
+        'url' => env('DTE_FIRMADOR_URL', 'http://localhost:8080/firmardocumento'),
     ],
 
     /*
