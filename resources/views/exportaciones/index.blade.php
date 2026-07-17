@@ -35,6 +35,7 @@
                                 <th class="py-3 px-4">Factura</th>
                                 <th class="py-3 px-4">Estado</th>
                                 <th class="py-3 px-4 text-center">Productos</th>
+                                <th class="py-3 px-4">FEX</th>
                                 <th class="py-3 px-4 text-right">Acciones</th>
                             </tr>
                         </thead>
@@ -54,6 +55,15 @@
                                         <span class="inline-flex items-center justify-center min-w-[1.75rem] rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{{ $exportacion->items_count }}</span>
                                     </td>
                                     <td class="py-3 px-4">
+                                        @if ($exportacion->dte_id)
+                                            <span class="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">FEX #{{ $exportacion->dte_id }}</span>
+                                        @elseif (! $exportacion->cliente?->cliente_id)
+                                            <span class="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Sin vincular</span>
+                                        @else
+                                            <span class="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Lista para FEX</span>
+                                        @endif
+                                    </td>
+                                    <td class="py-3 px-4">
                                         <div class="flex items-center justify-end gap-3">
                                             <a href="{{ route('exportaciones.show', $exportacion) }}" class="text-indigo-600 hover:underline">Ver</a>
                                             @if ($exportacion->items_count > 0)
@@ -66,7 +76,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="7" class="py-10 text-center text-gray-400">No hay exportaciones todavía. <a href="{{ route('exportaciones.create') }}" class="text-indigo-600 hover:underline">Creá la primera</a>.</td></tr>
+                                <tr><td colspan="8" class="py-10 text-center text-gray-400">No hay exportaciones todavía. <a href="{{ route('exportaciones.create') }}" class="text-indigo-600 hover:underline">Creá la primera</a>.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

@@ -27,6 +27,7 @@ class ExportacionController extends Controller
     {
         $exportaciones = Exportacion::query()
             ->withCount('items')
+            ->with('cliente:id,cliente_id')
             ->when($request->filled('q'), function ($q) use ($request) {
                 $buscar = '%'.$request->string('q').'%';
                 $q->where(fn ($w) => $w->where('cliente_nombre', 'like', $buscar)
@@ -73,7 +74,7 @@ class ExportacionController extends Controller
 
     public function show(Exportacion $exportacion): View
     {
-        $exportacion->load('items.producto:id,nombre_es,activo');
+        $exportacion->load(['items.producto:id,nombre_es,activo', 'cliente.cliente', 'dte']);
 
         return view('exportaciones.show', ['exportacion' => $exportacion]);
     }
@@ -121,8 +122,19 @@ class ExportacionController extends Controller
             ->with('aviso_precios', $this->mensajeAvisoPrecios($avisos));
     }
 
+    /**
+     * Bloquea la eliminación si la lista ya tiene una FEX vinculada (en cualquier
+     * estado: borrador, generada, firmada, enviada, aceptada o rechazada). Nunca
+     * borra el DTE al borrar la Lista; nunca se ejecuta silenciosamente.
+     */
     public function destroy(Exportacion $exportacion): RedirectResponse
     {
+        if ($exportacion->dte_id !== null) {
+            return redirect()
+                ->route('exportaciones.show', $exportacion)
+                ->with('error', 'No se puede eliminar: esta lista ya tiene una Factura de exportación vinculada (DTE #'.$exportacion->dte_id.'). Elimina primero la vinculación si corresponde, o conserva ambos documentos.');
+        }
+
         $exportacion->delete();
 
         return redirect()

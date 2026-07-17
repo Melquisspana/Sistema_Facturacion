@@ -118,4 +118,13 @@ class Cliente extends Model
     {
         return $this->hasMany(ClienteSucursal::class);
     }
+
+    /**
+     * Clientes administrativos de Exportaciones (Lista de Empaque) vinculados a
+     * este Cliente DTE. Normalmente 1 a 1, pero no es único a nivel de esquema.
+     */
+    public function exportacionClientes(): HasMany
+    {
+        return $this->hasMany(ExportacionCliente::class);
+    }
 }

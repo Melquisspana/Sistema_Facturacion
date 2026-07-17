@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\TipoDte;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -18,6 +20,7 @@ class Exportacion extends Model
 
     protected $fillable = [
         'exportacion_cliente_id',
+        'dte_id',
         'cliente_nombre',
         'cliente_direccion',
         'exportador_nombre',
@@ -50,6 +53,26 @@ class Exportacion extends Model
     public function estaAprobada(): bool
     {
         return $this->estado === 'aprobada';
+    }
+
+    /**
+     * Factura de Exportación (FEX) creada a partir de esta lista. Nullable: la
+     * mayoría de listas todavía no tienen una. NO se crea/copia nada todavía;
+     * esta relación solo prepara la infraestructura de vínculo.
+     */
+    public function dte(): BelongsTo
+    {
+        return $this->belongsTo(Dte::class);
+    }
+
+    /**
+     * True solo si hay un DTE vinculado Y es realmente una Factura de Exportación
+     * (tipo 11). Comprobación defensiva: dte_id podría en teoría apuntar a un
+     * registro que ya no exista o (por error futuro) a otro tipo de documento.
+     */
+    public function tieneFex(): bool
+    {
+        return $this->dte_id !== null && $this->dte?->tipo_dte === TipoDte::FacturaExportacion;
     }
 
     /**
