@@ -1029,7 +1029,7 @@ class DteController extends Controller
             return $this->editNotaCredito($dte);
         }
 
-        $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta']);
+        $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'exportacionOrigen']);
 
         // Catálogo de productos disponibles para agregar al borrador (ya visible,
         // con precio resuelto y filtro en vivo en la vista).
@@ -1597,6 +1597,22 @@ class DteController extends Controller
             $producto,
             $request->integer('cantidad'),
         );
+
+        return $this->respuestaLineas($request, $dte, 'Línea agregada.');
+    }
+
+    /**
+     * Agrega una línea SIN producto de catálogo (descripción libre) a una Factura
+     * de Exportación. Reservado a FEX: DteBorradorService::agregarLineaLibre()
+     * rechaza cualquier otro tipo de documento.
+     */
+    public function storeLineaLibre(Request $request, Dte $dte): RedirectResponse|\Illuminate\Http\JsonResponse
+    {
+        $this->authorize('update', $dte);
+
+        $this->borradores->agregarLineaLibre($dte, $request->only([
+            'descripcion', 'unidad_codigo', 'cantidad', 'precio_unitario', 'descuento_monto',
+        ]));
 
         return $this->respuestaLineas($request, $dte, 'Línea agregada.');
     }

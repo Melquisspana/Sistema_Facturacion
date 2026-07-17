@@ -506,6 +506,62 @@ class DteBorradorService
     }
 
     /**
+     * Agrega una línea SIN producto del catálogo nacional (producto_id queda NULL):
+     * descripción libre congelada. Reservado a Factura de Exportación (11) — pensado
+     * para copiar líneas desde una Lista de Empaque (cajas × precio por caja), donde
+     * el producto de exportación no es un `App\Models\Producto` del catálogo DTE.
+     *
+     * @param  array<string, mixed>  $datos  descripcion, unidad_codigo, cantidad, precio_unitario, descuento_monto?, tipo_producto?, tipo_impuesto?
+     *
+     * @throws DocumentoInmutableException
+     * @throws ValidationException
+     */
+    public function agregarLineaLibre(Dte $dte, array $datos): DteLinea
+    {
+        $this->verificarEditable($dte);
+
+        if ($dte->tipo_dte !== TipoDte::FacturaExportacion) {
+            throw ValidationException::withMessages([
+                'tipo_dte' => 'Las líneas sin producto de catálogo (descripción libre) solo se admiten en Factura de exportación (11).',
+            ]);
+        }
+
+        $validado = Validator::make($datos, [
+            'descripcion' => ['required', 'string', 'max:1000'],
+            'unidad_codigo' => ['required', 'string', 'max:3'],
+            'cantidad' => ['required'],
+            'precio_unitario' => ['required'],
+            'descuento_monto' => ['nullable', 'numeric', 'min:0'],
+            'tipo_producto' => ['nullable', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoProducto::cases()))],
+            'tipo_impuesto' => ['nullable', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoImpuesto::cases()))],
+        ])->validate();
+
+        $descuento = $this->montoDe($validado['descuento_monto'] ?? 0);
+        // Reusa la misma validación de negocio de cantidad/precio/descuento que las
+        // líneas por producto (entero ≥ 1, precio ≥ 0, descuento no mayor al importe).
+        AgregarLineaDteRequest::validarValores($validado['cantidad'], $validado['precio_unitario'], $descuento);
+
+        return DB::transaction(function () use ($dte, $validado, $descuento) {
+            $linea = new DteLinea([
+                'descripcion' => $validado['descripcion'],
+                'unidad_codigo' => $validado['unidad_codigo'],
+                'tipo_producto' => $validado['tipo_producto'] ?? TipoProducto::Bien->value,
+                'tipo_impuesto' => $validado['tipo_impuesto'] ?? TipoImpuesto::Gravado->value,
+            ]);
+            $linea->dte_id = $dte->id;
+            $linea->numero_linea = $this->siguienteNumeroLinea($dte);
+            $linea->cantidad = (string) $validado['cantidad'];
+            $linea->precio_unitario = (string) $validado['precio_unitario'];
+            $linea->descuento_monto = $descuento;
+            $linea->save();
+
+            $this->recalcular($dte);
+
+            return $linea->refresh();
+        });
+    }
+
+    /**
      * Actualiza campos capturables de una línea (cantidad, precio, descuento,
      * tipo de impuesto) y recalcula. El snapshot de identidad del producto no se toca.
      *
@@ -526,7 +582,9 @@ class DteBorradorService
         );
 
         return DB::transaction(function () use ($dte, $linea, $cambios) {
-            foreach (['cantidad', 'precio_unitario', 'descuento_monto', 'tipo_impuesto'] as $campo) {
+            // 'descripcion'/'unidad_codigo' solo llegan aquí para líneas SIN producto de
+            // catálogo (FEX libre); el FormRequest es quien restringe cuándo se aceptan.
+            foreach (['cantidad', 'precio_unitario', 'descuento_monto', 'tipo_impuesto', 'descripcion', 'unidad_codigo'] as $campo) {
                 if (array_key_exists($campo, $cambios)) {
                     $linea->{$campo} = $cambios[$campo];
                 }

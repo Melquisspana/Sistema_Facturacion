@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Exportaciones;
 
+use App\Exceptions\Exportaciones\FexYaExisteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Exportaciones\ExportacionRequest;
 use App\Models\Exportacion;
 use App\Models\ExportacionItem;
 use App\Models\ExportacionProducto;
+use App\Services\Exportaciones\CrearFexDesdeExportacionService;
 use App\Services\Exportaciones\FacturaExportacionExcel;
 use App\Services\Exportaciones\ListaEmpaqueExcelService;
 use Illuminate\Http\RedirectResponse;
@@ -219,6 +221,32 @@ class ExportacionController extends Controller
         }
 
         return response()->download($service->generar($exportacion), $service->nombreArchivo($exportacion))->deleteFileAfterSend();
+    }
+
+    /**
+     * Crea (o abre, si ya existe) la Factura de Exportación de esta Lista. Llama
+     * ÚNICAMENTE al servicio orquestador: ninguna lógica de copia de líneas vive
+     * acá. No genera JSON, no firma, no transmite, no consume correlativo por sí
+     * misma (eso ocurre recién al "Generar" el borrador, un paso posterior y
+     * manual del usuario).
+     */
+    public function crearFex(Exportacion $exportacion, Request $request, CrearFexDesdeExportacionService $service): RedirectResponse
+    {
+        try {
+            $dte = $service->crear($exportacion, $request->user());
+        } catch (FexYaExisteException $e) {
+            return redirect()
+                ->route('facturacion.edit', $e->dteId)
+                ->with('status', 'Esta lista ya tiene una Factura de exportación creada.');
+        } catch (ValidationException $e) {
+            return redirect()
+                ->route('exportaciones.show', $exportacion)
+                ->with('error', 'No se pudo crear la factura de exportación: '.implode(' ', collect($e->errors())->flatten()->all()));
+        }
+
+        return redirect()
+            ->route('facturacion.edit', $dte)
+            ->with('status', 'Factura de exportación creada desde la Lista de Empaque.');
     }
 
     /** Descarga el Excel generado desde la plantilla oficial (solo hoja "Lista"). */

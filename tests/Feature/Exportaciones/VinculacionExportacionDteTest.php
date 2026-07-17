@@ -176,11 +176,29 @@ class VinculacionExportacionDteTest extends TestCase
         $clienteDte = Cliente::factory()->exportacion()->create();
         $clienteExpo = $this->clienteExportacion(['cliente_id' => $clienteDte->id]);
         $lista = $this->lista($clienteExpo);
+        $lista->items()->create([
+            'nombre_es' => 'Canillitas 85 g', 'nombre_en' => 'Little canes 85 g',
+            'unidad' => 'Bolsa', 'unidades_por_caja' => 144, 'cantidad_cajas' => 10, 'precio_caja' => 18.00,
+            'gramos_por_unidad' => 85, 'onzas_por_unidad' => 3.00,
+            'peso_neto_caja_kg' => 12, 'peso_bruto_caja_kg' => 13, 'peso_neto_caja_lb' => 26, 'peso_bruto_caja_lb' => 28,
+        ]);
 
         $this->actingAs($this->usuario())
             ->get(route('exportaciones.show', $lista))
             ->assertOk()
             ->assertSee('Lista lista para crear FEX');
+    }
+
+    public function test_show_muestra_aviso_si_cliente_vinculado_pero_sin_lineas(): void
+    {
+        $clienteDte = Cliente::factory()->exportacion()->create();
+        $clienteExpo = $this->clienteExportacion(['cliente_id' => $clienteDte->id]);
+        $lista = $this->lista($clienteExpo);
+
+        $this->actingAs($this->usuario())
+            ->get(route('exportaciones.show', $lista))
+            ->assertOk()
+            ->assertSee('La Lista necesita productos antes de crear la FEX');
     }
 
     public function test_show_muestra_abrir_fex(): void
@@ -194,7 +212,7 @@ class VinculacionExportacionDteTest extends TestCase
         $this->actingAs($this->usuario())
             ->get(route('exportaciones.show', $lista))
             ->assertOk()
-            ->assertSee('Abrir FEX')
+            ->assertSee('Abrir factura de exportación')
             ->assertSee('FEX #'.$dte->id.' vinculada', false);
     }
 
