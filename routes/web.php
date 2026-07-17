@@ -153,6 +153,8 @@ Route::middleware('auth')->group(function () {
 
         // Líneas del borrador.
         Route::post('{dte}/lineas', [DteController::class, 'storeLinea'])->name('lineas.store');
+        // Línea SIN producto de catálogo (descripción libre): solo válida en FEX.
+        Route::post('{dte}/lineas-libres', [DteController::class, 'storeLineaLibre'])->name('lineas-libres.store');
         Route::patch('{dte}/lineas/{linea}', [DteController::class, 'updateLinea'])->name('lineas.update');
         Route::delete('{dte}/lineas/{linea}', [DteController::class, 'destroyLinea'])->name('lineas.destroy');
     });
@@ -264,6 +266,8 @@ Route::middleware('auth')->group(function () {
         // Aprobación de la lista (revisada por la dueña). No emite nada.
         Route::patch('{exportacion}/aprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'aprobar'])->name('aprobar');
         Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->name('desaprobar');
+        // Crea (o abre, si ya existe) la FEX de esta Lista. Llama solo al servicio orquestador.
+        Route::post('{exportacion}/crear-fex', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'crearFex'])->name('crear-fex');
         // Ayuda para preparar la factura de exportación (solo lectura; NO es DTE, no emite).
         Route::get('{exportacion}/preparar-factura', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'prepararFactura'])->name('preparar-factura');
         Route::get('{exportacion}/preparar-factura/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excelFactura'])->name('preparar-factura.excel');

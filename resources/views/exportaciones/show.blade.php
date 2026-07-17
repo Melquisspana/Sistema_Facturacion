@@ -39,11 +39,34 @@
                         Descargar Excel
                     </a>
                 @endif
+                {{-- Crear/abrir FEX: estados mutuamente excluyentes (nunca dos botones a la vez). --}}
                 @if ($exportacion->tieneFex())
                     <a href="{{ route('facturacion.show', $exportacion->dte) }}"
                        class="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">
-                        Abrir FEX
+                        Abrir factura de exportación
                     </a>
+                @elseif (! $exportacion->cliente?->cliente_id)
+                    <span class="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                          title="Vinculá un Cliente DTE antes de crear la FEX.">
+                        Cliente DTE no vinculado
+                    </span>
+                    @if ($exportacion->exportacion_cliente_id)
+                        <a href="{{ route('exportaciones.clientes.show', $exportacion->exportacion_cliente_id) }}"
+                           class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Vincular cliente DTE</a>
+                    @endif
+                @elseif ($exportacion->items->isEmpty())
+                    <span class="inline-flex items-center gap-1.5 rounded-md bg-gray-200 px-3 py-2 text-sm text-gray-500 cursor-not-allowed"
+                          title="La Lista necesita productos antes de crear la FEX.">
+                        Crear factura de exportación
+                    </span>
+                @else
+                    <form method="POST" action="{{ route('exportaciones.crear-fex', $exportacion) }}"
+                          onsubmit="return confirm('Se creará un borrador FEX copiando cajas y precios de esta Lista. No se firmará ni transmitirá.\n\n¿Continuar?');">
+                        @csrf
+                        <button class="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">
+                            Crear factura de exportación
+                        </button>
+                    </form>
                 @endif
             </div>
         </div>
@@ -93,18 +116,14 @@
                     <p class="mt-4 border-t border-gray-100 pt-3 text-sm text-gray-600">{{ $exportacion->observaciones }}</p>
                 @endif
 
-                {{-- Estado de vinculación con Cliente DTE / FEX. NO ejecuta ninguna creación todavía. --}}
+                {{-- Estado de vinculación con Cliente DTE / FEX (solo informativo; la acción vive arriba). --}}
                 <div class="mt-4 border-t border-gray-100 pt-3">
                     @if ($exportacion->tieneFex())
-                        <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                            FEX #{{ $exportacion->dte_id }} vinculada —
-                            <a href="{{ route('facturacion.show', $exportacion->dte) }}" class="underline">abrir FEX</a>
-                        </span>
+                        <span class="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">FEX #{{ $exportacion->dte_id }} vinculada</span>
                     @elseif (! $exportacion->cliente?->cliente_id)
                         <span class="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Cliente DTE no vinculado</span>
-                        @if ($exportacion->exportacion_cliente_id)
-                            <a href="{{ route('exportaciones.clientes.show', $exportacion->exportacion_cliente_id) }}" class="ms-2 text-xs text-indigo-600 hover:underline">Vincular cliente DTE</a>
-                        @endif
+                    @elseif ($exportacion->items->isEmpty())
+                        <span class="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">La Lista necesita productos antes de crear la FEX</span>
                     @else
                         <span class="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">Lista lista para crear FEX</span>
                     @endif

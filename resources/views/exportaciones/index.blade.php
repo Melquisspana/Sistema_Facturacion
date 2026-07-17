@@ -59,6 +59,8 @@
                                             <span class="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">FEX #{{ $exportacion->dte_id }}</span>
                                         @elseif (! $exportacion->cliente?->cliente_id)
                                             <span class="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Sin vincular</span>
+                                        @elseif ($exportacion->items_count === 0)
+                                            <span class="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Sin productos</span>
                                         @else
                                             <span class="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Lista para FEX</span>
                                         @endif

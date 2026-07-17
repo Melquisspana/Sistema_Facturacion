@@ -29,11 +29,13 @@
              abajo quedan siempre visibles (el panel es sticky) sin tener que bajar. --}}
         <ul class="divide-y divide-gray-100 -mx-1 max-h-[45vh] overflow-y-auto pr-1">
             @forelse ($lineasOrdenadas as $linea)
+                @php $esLibreFex = $esFex && $linea->producto_id === null; @endphp
                 <li class="px-1 py-3">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
                             <p class="font-medium text-gray-800 truncate" title="{{ $linea->descripcion }}">{{ $linea->descripcion }}</p>
-                            <p class="text-xs text-gray-500 font-mono">${{ number_format($linea->precio_unitario, 2) }} c/u
+                            <p class="text-xs text-gray-500 font-mono">${{ number_format($linea->precio_unitario, 2) }}
+                                {{ $esFex ? '/ caja' : 'c/u' }}
                                 @if (! $esFex && (float) $linea->iva_linea > 0)
                                     · IVA ${{ number_format($linea->iva_linea, 2) }}
                                 @endif
@@ -45,11 +47,37 @@
                     </div>
 
                     @can('update', $dte)
+                        {{-- Línea libre de FEX (sin producto de catálogo): además de cantidad, se
+                             puede editar descripción y precio por caja (no hay snapshot que proteger). --}}
+                        @if ($esLibreFex)
+                            <form method="POST" action="{{ route('facturacion.lineas.update', [$dte, $linea]) }}"
+                                  data-ajax="update" class="mt-2 space-y-1.5">
+                                @csrf @method('PATCH')
+                                <input type="text" name="descripcion" value="{{ $linea->descripcion }}" required maxlength="1000"
+                                       title="Descripción" class="block w-full border-gray-300 rounded-md shadow-sm text-xs py-1">
+                                <div class="flex items-center gap-1.5">
+                                    <label class="sr-only" for="cant-{{ $linea->id }}">Cajas</label>
+                                    <input id="cant-{{ $linea->id }}" type="number" name="cantidad"
+                                           value="{{ (int) $linea->cantidad }}" step="1" min="1" inputmode="numeric"
+                                           title="Cajas" class="block w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
+                                    <label class="sr-only" for="precio-{{ $linea->id }}">Precio por caja</label>
+                                    <input id="precio-{{ $linea->id }}" type="number" name="precio_unitario"
+                                           value="{{ number_format((float) $linea->precio_unitario, 2, '.', '') }}" step="0.01" min="0"
+                                           title="Precio por caja" class="block w-24 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
+                                    <button class="text-gray-400 hover:text-gray-600 hover:underline text-xs">Guardar</button>
+                                </div>
+                            </form>
+                            <form method="POST" action="{{ route('facturacion.lineas.destroy', [$dte, $linea]) }}"
+                                  data-ajax="destroy" onsubmit="return confirm('¿Eliminar esta línea?');" class="mt-1">
+                                @csrf @method('DELETE')
+                                <button class="text-red-600 hover:underline text-xs">Eliminar</button>
+                            </form>
+                        @else
                         <div class="mt-2 flex items-center justify-between gap-2">
                             <form method="POST" action="{{ route('facturacion.lineas.update', [$dte, $linea]) }}"
                                   data-ajax="update" class="flex items-center gap-1.5">
                                 @csrf @method('PATCH')
-                                <label class="sr-only" for="cant-{{ $linea->id }}">Cantidad</label>
+                                <label class="sr-only" for="cant-{{ $linea->id }}">{{ $esFex ? 'Cajas' : 'Cantidad' }}</label>
                                 <input id="cant-{{ $linea->id }}" type="number" name="cantidad"
                                        value="{{ (int) $linea->cantidad }}" step="1" min="1" inputmode="numeric"
                                        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
@@ -64,6 +92,7 @@
                                 <button class="text-red-600 hover:underline text-xs">Eliminar</button>
                             </form>
                         </div>
+                        @endif
                     @endcan
                 </li>
             @empty

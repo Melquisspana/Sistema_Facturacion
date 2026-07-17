@@ -66,6 +66,14 @@
                             <div><dt class="inline text-gray-400">Orden de compra:</dt> <dd class="inline">{{ $dte->numero_orden_compra ?? '—' }}</dd></div>
                             <div><dt class="inline text-gray-400">Emisor:</dt> <dd class="inline">{{ $dte->establecimiento?->nombre ?? '—' }} / {{ $dte->puntoVenta?->nombre ?? '—' }}</dd></div>
                             <div><dt class="inline text-gray-400">Retención IVA:</dt> <dd class="inline">{{ $dte->aplica_retencion_iva ? 'Sí' : 'No' }}</dd></div>
+                            @if ($esFex && $dte->exportacionOrigen)
+                                <div>
+                                    <dt class="inline text-gray-400">Origen:</dt>
+                                    <dd class="inline">Lista de Empaque
+                                        <a href="{{ route('exportaciones.show', $dte->exportacionOrigen) }}" class="text-indigo-600 hover:underline">#{{ $dte->exportacionOrigen->id }}</a>
+                                    </dd>
+                                </div>
+                            @endif
                         </dl>
                     </div>
                     @can('update', $dte)
@@ -187,6 +195,37 @@
                                         @endforeach
                                     </tbody>
                                 </table>
+                            </div>
+                        @endif
+
+                        @if ($esFex)
+                            {{-- Línea SIN producto de catálogo nacional: para ítems de exportación que no
+                                 están en el catálogo (p. ej. copiados de una Lista de Empaque). --}}
+                            <div class="mt-5 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                                <h4 class="text-sm font-medium text-amber-900 mb-2">Agregar línea libre (sin producto de catálogo)</h4>
+                                <form method="POST" action="{{ route('facturacion.lineas-libres.store', $dte) }}" class="flex flex-wrap items-end gap-3">
+                                    @csrf
+                                    <div class="grow min-w-[14rem]">
+                                        <label class="block text-xs font-medium text-gray-600">Descripción</label>
+                                        <input type="text" name="descripcion" required maxlength="1000"
+                                               class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-600">Cajas</label>
+                                        <input type="number" name="cantidad" required min="1" step="1"
+                                               class="mt-1 w-24 rounded-md border-gray-300 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-600">Precio por caja ($)</label>
+                                        <input type="number" name="precio_unitario" required min="0" step="0.01"
+                                               class="mt-1 w-28 rounded-md border-gray-300 text-sm">
+                                    </div>
+                                    <input type="hidden" name="unidad_codigo" value="99">
+                                    <button class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">Agregar</button>
+                                </form>
+                                @error('descripcion') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                                @error('cantidad') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                                @error('precio_unitario') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                             </div>
                         @endif
                     </div>
