@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -213,6 +214,15 @@ class Dte extends Model
     public function lineas(): HasMany
     {
         return $this->hasMany(DteLinea::class)->orderBy('numero_linea');
+    }
+
+    /**
+     * Lista de Empaque (módulo Exportaciones) desde la que se creó este DTE, si
+     * fue creado por ese camino. Nullable: la mayoría de DTE no vienen de ahí.
+     */
+    public function exportacionOrigen(): HasOne
+    {
+        return $this->hasOne(Exportacion::class, 'dte_id');
     }
 
     public function historial(): HasMany

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -17,6 +18,7 @@ class ExportacionCliente extends Model
     protected $table = 'exportacion_clientes';
 
     protected $fillable = [
+        'cliente_id',
         'nombre',
         'direccion',
         'fda_reg_number',
@@ -34,6 +36,12 @@ class ExportacionCliente extends Model
     public function productos(): HasMany
     {
         return $this->hasMany(ExportacionClienteProducto::class);
+    }
+
+    /** Cliente DTE real vinculado (receptor de la futura FEX). Nullable: puede no estar vinculado todavía. */
+    public function cliente(): BelongsTo
+    {
+        return $this->belongsTo(Cliente::class);
     }
 
     public function exportaciones(): HasMany

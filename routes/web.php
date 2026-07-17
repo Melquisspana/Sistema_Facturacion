@@ -241,6 +241,9 @@ Route::middleware('auth')->group(function () {
         Route::put('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'update'])->name('clientes.update');
         Route::patch('clientes/{cliente}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'toggleActivo'])->name('clientes.toggle-activo');
         Route::delete('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroy'])->name('clientes.destroy');
+        // Vínculo con el Cliente DTE real (solo guarda la relación; no crea clientes ni FEX).
+        Route::patch('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'vincularClienteDte'])->name('clientes.vincular-cliente-dte');
+        Route::delete('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'desvincularClienteDte'])->name('clientes.desvincular-cliente-dte');
         // Lista de precios del cliente (asignaciones producto+precio, únicas por cliente).
         Route::post('clientes/{cliente}/productos', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'storeProducto'])->name('clientes.productos.store');
         Route::post('clientes/{cliente}/productos/asignar-catalogo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'asignarCatalogo'])->name('clientes.productos.asignar-catalogo');

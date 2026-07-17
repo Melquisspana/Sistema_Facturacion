@@ -39,6 +39,12 @@
                         Descargar Excel
                     </a>
                 @endif
+                @if ($exportacion->tieneFex())
+                    <a href="{{ route('facturacion.show', $exportacion->dte) }}"
+                       class="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">
+                        Abrir FEX
+                    </a>
+                @endif
             </div>
         </div>
     </x-slot>
@@ -86,6 +92,23 @@
                 @if ($exportacion->observaciones)
                     <p class="mt-4 border-t border-gray-100 pt-3 text-sm text-gray-600">{{ $exportacion->observaciones }}</p>
                 @endif
+
+                {{-- Estado de vinculación con Cliente DTE / FEX. NO ejecuta ninguna creación todavía. --}}
+                <div class="mt-4 border-t border-gray-100 pt-3">
+                    @if ($exportacion->tieneFex())
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                            FEX #{{ $exportacion->dte_id }} vinculada —
+                            <a href="{{ route('facturacion.show', $exportacion->dte) }}" class="underline">abrir FEX</a>
+                        </span>
+                    @elseif (! $exportacion->cliente?->cliente_id)
+                        <span class="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Cliente DTE no vinculado</span>
+                        @if ($exportacion->exportacion_cliente_id)
+                            <a href="{{ route('exportaciones.clientes.show', $exportacion->exportacion_cliente_id) }}" class="ms-2 text-xs text-indigo-600 hover:underline">Vincular cliente DTE</a>
+                        @endif
+                    @else
+                        <span class="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">Lista lista para crear FEX</span>
+                    @endif
+                </div>
             </div>
 
             {{-- Productos --}}

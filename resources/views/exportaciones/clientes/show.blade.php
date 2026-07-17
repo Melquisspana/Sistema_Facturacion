@@ -36,6 +36,52 @@
                 </dl>
             </div>
 
+            {{-- Cliente DTE vinculado --}}
+            <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-4">Cliente DTE vinculado</h3>
+
+                @if ($cliente->cliente)
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p class="text-sm text-gray-800">
+                                <span class="inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 align-middle">Vinculado</span>
+                                <span class="ms-2 font-medium">{{ $cliente->cliente->nombre }}</span>
+                            </p>
+                            <p class="mt-1 text-xs text-gray-500">Doc.: {{ $cliente->cliente->num_documento ?? '—' }} · <a href="{{ route('clientes.edit', $cliente->cliente) }}" class="text-indigo-600 hover:underline">ver/editar cliente DTE</a></p>
+                        </div>
+                        <form method="POST" action="{{ route('exportaciones.clientes.desvincular-cliente-dte', $cliente) }}"
+                              onsubmit="return confirm('¿Quitar el vínculo con el Cliente DTE? Esto no borra ningún cliente ni factura.');">
+                            @csrf @method('DELETE')
+                            <button class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200">Quitar vínculo</button>
+                        </form>
+                    </div>
+                @else
+                    <p class="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        Cliente DTE no vinculado. Sin este vínculo todavía no se podrá crear una Factura de exportación (FEX) para este cliente.
+                    </p>
+                    <form method="POST" action="{{ route('exportaciones.clientes.vincular-cliente-dte', $cliente) }}" class="flex flex-wrap items-end gap-3">
+                        @csrf @method('PATCH')
+                        <div class="grow max-w-md">
+                            <label class="block text-xs font-medium text-gray-500">Cliente DTE (tipo exportación)</label>
+                            <select name="cliente_id" required class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                                <option value="">— buscar y elegir un cliente DTE —</option>
+                                @foreach ($clientesDte as $c)
+                                    <option value="{{ $c->id }}" @selected((string) old('cliente_id') === (string) $c->id)>
+                                        {{ $c->nombre }}{{ $c->num_documento ? ' ('.$c->num_documento.')' : '' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('cliente_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                            @if ($clientesDte->isEmpty())
+                                <p class="mt-1 text-xs text-gray-400">No hay clientes DTE de tipo exportación todavía.</p>
+                            @endif
+                        </div>
+                        <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Vincular</button>
+                        <a href="{{ route('clientes.create') }}" class="text-sm text-indigo-600 hover:underline">Crear cliente DTE</a>
+                    </form>
+                @endif
+            </div>
+
             {{-- Lista de precios del cliente --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
                 <div class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">

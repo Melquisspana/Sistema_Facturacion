@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Exportaciones;
 
+use App\Enums\TipoCliente;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Exportaciones\ExportacionClienteRequest;
+use App\Models\Cliente;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionClienteProducto;
 use App\Models\ExportacionProducto;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -74,6 +77,10 @@ class ExportacionClienteController extends Controller
             'disponibles' => $disponibles,
             'otrosClientes' => $otrosClientes,
             'soloHabilitados' => $soloHabilitados,
+            'clientesDte' => Cliente::where('tipo_cliente', TipoCliente::Exportacion)
+                ->where('activo', true)
+                ->orderBy('nombre')
+                ->get(['id', 'nombre', 'num_documento']),
         ]);
     }
 
@@ -107,6 +114,54 @@ class ExportacionClienteController extends Controller
         return redirect()
             ->route('exportaciones.clientes.index')
             ->with('status', 'Cliente de exportación eliminado.');
+    }
+
+    /**
+     * Vincula (o cambia el vínculo) con un Cliente DTE real existente. NO crea
+     * clientes DTE nuevos: solo guarda la relación con uno ya existente y de tipo
+     * exportación (el que exige el receptor de una FEX).
+     */
+    public function vincularClienteDte(Request $request, ExportacionCliente $cliente): RedirectResponse
+    {
+        $datos = $request->validate([
+            'cliente_id' => [
+                'required',
+                'integer',
+                Rule::exists('clientes', 'id')->where('tipo_cliente', TipoCliente::Exportacion->value),
+            ],
+        ], [
+            'cliente_id.exists' => 'El cliente DTE elegido no existe o no es de tipo exportación.',
+        ], [
+            'cliente_id' => 'cliente DTE',
+        ]);
+
+        $cliente->update(['cliente_id' => $datos['cliente_id']]);
+
+        return redirect()
+            ->route('exportaciones.clientes.show', $cliente)
+            ->with('status', 'Cliente DTE vinculado correctamente.');
+    }
+
+    /**
+     * Quita el vínculo con el Cliente DTE. Bloqueado si existe alguna Lista de
+     * este cliente administrativo con una FEX ya asociada (dte_id), para no dejar
+     * una FEX real huérfana de su receptor administrativo sin que nadie lo note.
+     */
+    public function desvincularClienteDte(ExportacionCliente $cliente): RedirectResponse
+    {
+        $tieneListasConFex = $cliente->exportaciones()->whereNotNull('dte_id')->exists();
+
+        if ($tieneListasConFex) {
+            throw ValidationException::withMessages([
+                'cliente_id' => 'No se puede quitar el vínculo: hay listas de este cliente con una Factura de exportación ya asociada.',
+            ]);
+        }
+
+        $cliente->update(['cliente_id' => null]);
+
+        return redirect()
+            ->route('exportaciones.clientes.show', $cliente)
+            ->with('status', 'Vínculo con el Cliente DTE eliminado.');
     }
 
     /** Asigna un producto del catálogo al cliente con su precio específico. */
