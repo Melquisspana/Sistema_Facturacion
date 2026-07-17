@@ -13,6 +13,12 @@
                 <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
             @endif
 
+            @if ($cliente->tieneDocumentoProvisional())
+                <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
+                    <strong>Documento provisional</strong> — debe corregirse antes de crear o emitir una FEX.
+                </div>
+            @endif
+
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-4">
                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $cliente->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">

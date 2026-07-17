@@ -41,6 +41,7 @@ class PreflightEmisionProduccionExportacion
             $this->checkCandados(),
             $this->checkCredenciales(),
             $this->checkClienteExportacion($dte),
+            $this->checkDocumentoNoProvisional($dte),
             $this->checkPaisActividad($dte),
             $this->checkTipoItemExpor($dte),
             $this->checkCatalogo('recinto_fiscal', 'Recinto fiscal (CAT-027)', $dte->recinto_fiscal, '027'),
@@ -90,6 +91,18 @@ class PreflightEmisionProduccionExportacion
 
         return $this->check('correlativo', 'Correlativo Exportación producción existe', $ok,
             $ok ? "activo, último número {$corr->ultimo_numero}" : 'no hay correlativo de producción para tipo 11');
+    }
+
+    /**
+     * El Cliente DTE no puede tener el documento provisional (valor centinela) al
+     * momento de emitir: evita que una FEX real salga con un documento inventado.
+     */
+    private function checkDocumentoNoProvisional(Dte $dte): array
+    {
+        $ok = ! ($dte->cliente?->tieneDocumentoProvisional() ?? false);
+
+        return $this->check('documento_no_provisional', 'Cliente sin documento provisional', $ok,
+            $ok ? 'documento real' : 'el Cliente DTE tiene un documento provisional. Ingrese el documento real antes de continuar.');
     }
 
     private function checkClienteExportacion(Dte $dte): array

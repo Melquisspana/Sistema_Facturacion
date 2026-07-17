@@ -159,6 +159,12 @@ class DteGeneracionService
             throw new GeneracionException('El documento debe tener establecimiento y punto de venta del emisor.');
         }
 
+        // FEX con Cliente DTE de documento provisional: no puede generarse hasta que
+        // el usuario coloque el documento real (evita que salga una FEX inventada).
+        if ($dte->tipo_dte === TipoDte::FacturaExportacion && ($dte->cliente?->tieneDocumentoProvisional() ?? false)) {
+            throw new GeneracionException('El Cliente DTE tiene un documento provisional. Ingrese el documento real antes de continuar.');
+        }
+
         $this->validarOrdenCompra($dte);
 
         // Debe existir un correlativo válido para consumir.

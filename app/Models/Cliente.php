@@ -127,4 +127,22 @@ class Cliente extends Model
     {
         return $this->hasMany(ExportacionCliente::class);
     }
+
+    /**
+     * Valor centinela EXACTO usado como documento provisional (nunca un documento
+     * real): 14 ceros, igual de largo que un NIT, para que pase las validaciones de
+     * formato mientras el usuario no tiene el documento verdadero del receptor.
+     */
+    public const DOCUMENTO_PROVISIONAL = '00000000000000';
+
+    /**
+     * True solo si es un Cliente de exportación con el valor centinela EXACTO como
+     * documento. No requiere columna nueva: se resuelve por el valor guardado, así
+     * que el bloqueo desaparece automáticamente en cuanto se guarda el documento real.
+     */
+    public function tieneDocumentoProvisional(): bool
+    {
+        return $this->tipo_cliente === TipoCliente::Exportacion
+            && $this->num_documento === self::DOCUMENTO_PROVISIONAL;
+    }
 }
