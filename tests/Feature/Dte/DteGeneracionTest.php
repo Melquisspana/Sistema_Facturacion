@@ -100,7 +100,7 @@ class DteGeneracionTest extends TestCase
 
         $dte->refresh();
         $this->assertSame(EstadoDte::Generado, $dte->estado);
-        $this->assertSame('INT-03-M001P001-000000000000001', $dte->numero_interno);
+        $this->assertSame('INT-03-00-M001P001-000000000000001', $dte->numero_interno);
     }
 
     public function test_generar_factura_borrador_valido(): void

@@ -121,6 +121,8 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/invalidacion/dry-run', [DteController::class, 'dryRunInvalidacion'])->name('invalidacion.dry-run');
         Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])->name('invalidacion.mock');
         Route::get('{dte}/editar', [DteController::class, 'edit'])->name('edit');
+        // Datos aduaneros de una FEX (11) en borrador: recinto fiscal, régimen, incoterm, etc.
+        Route::patch('{dte}/datos-aduaneros', [DteController::class, 'actualizarDatosAduaneros'])->name('datos-aduaneros.update');
         Route::post('{dte}/generar', [DteController::class, 'generar'])->name('generar');
         // Duplicar CCF: crea un borrador nuevo con los mismos datos base y líneas
         // (snapshot). No modifica el original ni copia numeración/firma/sello/correos.
@@ -268,9 +270,6 @@ Route::middleware('auth')->group(function () {
         Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->name('desaprobar');
         // Crea (o abre, si ya existe) la FEX de esta Lista. Llama solo al servicio orquestador.
         Route::post('{exportacion}/crear-fex', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'crearFex'])->name('crear-fex');
-        // Ayuda para preparar la factura de exportación (solo lectura; NO es DTE, no emite).
-        Route::get('{exportacion}/preparar-factura', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'prepararFactura'])->name('preparar-factura');
-        Route::get('{exportacion}/preparar-factura/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excelFactura'])->name('preparar-factura.excel');
         Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->name('duplicar');
         Route::delete('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'destroy'])->name('destroy');
     });

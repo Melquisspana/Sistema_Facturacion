@@ -6,6 +6,7 @@
     $logoSrc = $logoSrc ?? null;
     $qrDataUri = $qrDataUri ?? null;
     $datosExportacion = $datosExportacion ?? null;
+    $datosReceptor = $datosReceptor ?? null;
 
     // Datos del emisor: empresa real → respaldo config/company → '—'. No inventa.
     $cfgCo = config('company');
@@ -323,12 +324,15 @@
             <table style="margin-top:3px;">
                 <tr>
                     <td style="width: 50%; padding-right: 10px;">
+                        @if ($esFex && ($datosReceptor['destino'] ?? null))<div class="f"><span class="k">Destino:</span> {{ $datosReceptor['destino'] }}</div>@endif
                         @if ($cli?->num_documento)<div class="f"><span class="k">Documento:</span> <span class="mono">{{ $cli->num_documento }}</span>@if($cli?->nrc) · <span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span>@endif</div>@elseif($cli?->nrc)<div class="f"><span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span></div>@endif
                         @if ($cli?->actividadEconomica?->nombre)<div class="f"><span class="k">Actividad:</span> {{ $cli->actividadEconomica->nombre }}</div>@endif
                     </td>
                     <td style="width: 50%;">
+                        @if ($esFex && ($datosReceptor['correo'] ?? null))<div class="f"><span class="k">Correo:</span> {{ $datosReceptor['correo'] }}</div>@endif
                         @if ($recUbic)<div class="f"><span class="k">Ubicación:</span> {{ $recUbic }}</div>@endif
                         @if ($cli?->direccion)<div class="f"><span class="k">Dirección:</span> {{ $cli->direccion }}@if($cli->complemento_direccion) — {{ $cli->complemento_direccion }}@endif</div>@endif
+                        @if ($esFex && ($datosReceptor['telefono'] ?? null))<div class="f"><span class="k">Teléfono:</span> {{ $datosReceptor['telefono'] }}</div>@endif
                     </td>
                 </tr>
             </table>
@@ -414,7 +418,7 @@
                     @php
                         $cb = trim((string) $linea->codigo_barra);
                         $cc = trim((string) $linea->codigo);
-                        $pres = trim((string) ($linea->unidad_nombre ?: $linea->unidad_codigo));
+                        $pres = \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte);
                     @endphp
                     <tr>
                         <td class="ci">{{ $linea->numero_linea }}</td>

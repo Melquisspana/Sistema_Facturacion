@@ -361,7 +361,7 @@ class DteController extends Controller
     ): View {
         $this->authorize('view', $dte);
 
-        $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios']);
+        $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios']);
 
         // Solo para precisar la nota de retención en los totales (no recalcula nada).
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
@@ -436,8 +436,9 @@ class DteController extends Controller
         // Datos FEX (tipo 11) ya guardados en el DTE, resueltos a etiquetas legibles.
         // Solo presentación: null si no es exportación.
         $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
+        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion'));
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor'));
     }
 
     /**
@@ -449,7 +450,7 @@ class DteController extends Controller
         $this->authorize('view', $dte);
 
         $dte->load([
-            'cliente.departamento', 'cliente.municipio', 'cliente.actividadEconomica',
+            'cliente.departamento', 'cliente.municipio', 'cliente.actividadEconomica', 'cliente.pais',
             'clienteSucursal.departamento', 'clienteSucursal.municipio', 'clienteSucursal.distrito.departamento',
             'lineas',
             'establecimiento.empresa.departamento', 'establecimiento.empresa.municipio',
@@ -461,8 +462,9 @@ class DteController extends Controller
         $emisor = $this->resolverEmisorParaPdf($dte);
         $logoSrc = $this->logoSrcPdf();
         $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
+        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
 
-        return view('facturacion.imprimir', compact('dte', 'emisor', 'logoSrc', 'datosExportacion'));
+        return view('facturacion.imprimir', compact('dte', 'emisor', 'logoSrc', 'datosExportacion', 'datosReceptor'));
     }
 
     /**
@@ -1029,11 +1031,24 @@ class DteController extends Controller
             return $this->editNotaCredito($dte);
         }
 
-        $dte->load(['cliente', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'exportacionOrigen']);
+        $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'exportacionOrigen']);
 
         // Catálogo de productos disponibles para agregar al borrador (ya visible,
         // con precio resuelto y filtro en vivo en la vista).
         $productosDisponibles = $this->productosDisponibles($dte);
+
+        // Catálogos oficiales para la sección "Datos aduaneros" (solo FEX tipo 11,
+        // editable mientras siga en borrador). Solo lectura de catalogos_mh.
+        $catalogosAduaneros = $dte->tipo_dte === TipoDte::FacturaExportacion ? [
+            'tiposItemExpor' => TipoItemExportacion::cases(),
+            'recintosFiscales' => CatalogoMh::where('cat', '027')->orderBy('codigo')->get(['codigo', 'valor']),
+            'tiposRegimen' => CatalogoMh::where('cat', '033')->orderBy('codigo')->get(['codigo', 'valor']),
+            'regimenes' => CatalogoMh::where('cat', '028')->orderBy('codigo')->get(['codigo', 'valor']),
+            'incoterms' => CatalogoMh::where('cat', '031')->orderBy('codigo')->get(['codigo', 'valor']),
+        ] : null;
+
+        // Receptor (solo FEX): mismo panel compacto que ficha/PDF/impresión.
+        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
 
         // Info de retención para los totales (CCF): agente + umbral.
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
@@ -1061,7 +1076,26 @@ class DteController extends Controller
                 ->first();
         }
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada'));
+        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'catalogosAduaneros', 'datosReceptor'));
+    }
+
+    /**
+     * Actualiza los DATOS ADUANEROS (tipo de ítem, recinto fiscal, tipo de régimen,
+     * régimen, incoterm) de una Factura de exportación (11) en borrador. La misma
+     * política 'update' exige borrador + gestor; DteBorradorService valida además
+     * que el tipo sea 11 y que los códigos existan en su catálogo del MH.
+     */
+    public function actualizarDatosAduaneros(Request $request, Dte $dte): RedirectResponse
+    {
+        $this->authorize('update', $dte);
+
+        $this->borradores->actualizarDatosAduaneros($dte, $request->only([
+            'tipo_item_expor', 'recinto_fiscal', 'tipo_regimen', 'regimen', 'cod_incoterms',
+        ]));
+
+        return redirect()
+            ->route('facturacion.edit', $dte)
+            ->with('status', 'Datos aduaneros actualizados.');
     }
 
     /**
@@ -1357,6 +1391,21 @@ class DteController extends Controller
             $generacion->generar($dte, request()->user());
         } catch (GeneracionException $e) {
             return back()->withErrors(['generar' => $e->getMessage()]);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Conflicto de numeración a nivel de BD (p. ej. numero_interno/numero_control
+            // duplicado entre ambientes): la transacción de generar() ya revirtió todo
+            // (el documento sigue en borrador, sin correlativo consumido). Se registra el
+            // error real en logs y se devuelve al editor con un mensaje claro, en vez de
+            // dejar que se muestre como un 500 genérico. Cualquier otra excepción NO
+            // prevista sigue sin capturarse aquí (Laravel la registra y la maneja normal).
+            \Illuminate\Support\Facades\Log::error('No se pudo generar el DTE por un conflicto de numeración en BD.', [
+                'dte_id' => $dte->id,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->route('facturacion.edit', $dte)
+                ->withErrors(['generar' => 'No se pudo generar el documento por un conflicto interno de numeración. El borrador no fue afectado: puede intentar generar de nuevo. Si el problema persiste, contacte soporte técnico.']);
         }
 
         return redirect()

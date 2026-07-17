@@ -221,12 +221,23 @@ class DteGeneracionService
      * Número INTERNO/provisional: INT-{tipo}-{serie}-{correlativo a 15 dígitos}.
      * Ej.: INT-03-M001P001-000000000000001. No es el número de control del MH.
      */
+    /**
+     * El correlativo de cada AMBIENTE (00 pruebas / 01 producción) cuenta desde
+     * cero de forma independiente (son filas distintas de `correlativos`), pero
+     * `dtes.numero_interno` es único a nivel GLOBAL (no por ambiente). Sin el
+     * ambiente en el formato, el primer documento real de un tipo puede terminar
+     * con el MISMO numero_interno que un documento de prueba ya generado en esa
+     * misma posición, disparando UniqueConstraintViolationException (visto en
+     * producción con la FEX #131). Se incluye el ambiente para que ambas series
+     * nunca puedan coincidir.
+     */
     private function formatearNumeroInterno(Dte $dte, int $numero): string
     {
         $dte->loadMissing(['establecimiento', 'puntoVenta']);
         $serie = ($dte->establecimiento?->codigo ?? '').($dte->puntoVenta?->codigo ?? '');
+        $ambiente = $dte->ambiente?->value ?? (string) $dte->ambiente;
         $correlativo = str_pad((string) $numero, 15, '0', STR_PAD_LEFT);
 
-        return 'INT-'.$dte->tipo_dte->value.'-'.$serie.'-'.$correlativo;
+        return 'INT-'.$dte->tipo_dte->value.'-'.$ambiente.'-'.$serie.'-'.$correlativo;
     }
 }

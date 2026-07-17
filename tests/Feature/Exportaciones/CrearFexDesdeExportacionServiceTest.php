@@ -131,7 +131,8 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         $this->assertSame('180.00', $linea->total_linea); // 10 * 18.00
 
         $this->assertSame(1, $dte->tipo_item_expor);
-        $this->assertSame('01', $dte->recinto_fiscal);
+        // Recinto fiscal por defecto: Anguiatú (config('dte.exportacion.recinto_fiscal_default')).
+        $this->assertSame('08', $dte->recinto_fiscal);
         $this->assertSame('EX-1', $dte->tipo_regimen);
         $this->assertSame('1000.000', $dte->regimen);
         $this->assertSame('09', $dte->cod_incoterms);

@@ -149,7 +149,7 @@ class DteExportacionDatosVistaTest extends TestCase
             ->get(route('facturacion.show', $fex))
             ->assertOk()
             ->assertSee('Datos de exportación')
-            ->assertSee('Recinto fiscal')
+            ->assertSee('Aduana de salida')
             ->assertSee('01 — Terrestre San Bartolo')
             ->assertSee('EX-1 — Exportación Definitiva')
             ->assertSee('1000.000 — Exportación Definitiva, Régimen Común')

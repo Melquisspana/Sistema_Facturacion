@@ -269,6 +269,26 @@ return [
     ],
 
     /*
+    | Factura de exportación (11): valores por DEFECTO al crear un borrador NUEVO
+    | (manual o desde una Lista de Empaque). El usuario puede cambiarlos en el
+    | editor antes de generar (sección "Datos aduaneros"); NO se reasignan a FEX
+    | ya existentes. Códigos oficiales verificados en catalogos_mh:
+    |   - recinto_fiscal:  CAT-027 (08 = Terrestre Anguiatú)
+    |   - tipo_regimen:    CAT-033 (EX-1 = Exportación Definitiva)
+    |   - regimen:         CAT-028 (1000.000 = Exportación Definitiva, Régimen Común)
+    |   - cod_incoterms:   CAT-031 (09 = FOB-Libre a bordo)
+    | tipo_item_expor no viene de un catálogo del MH (valor fijo de 2 opciones,
+    | ver App\Enums\TipoItemExportacion).
+    */
+    'exportacion' => [
+        'tipo_item_expor_default' => 1, // Bienes
+        'recinto_fiscal_default' => env('DTE_FEX_RECINTO_FISCAL_DEFAULT', '08'), // Terrestre Anguiatú
+        'tipo_regimen_default' => env('DTE_FEX_TIPO_REGIMEN_DEFAULT', 'EX-1'),
+        'regimen_default' => env('DTE_FEX_REGIMEN_DEFAULT', '1000.000'),
+        'cod_incoterms_default' => env('DTE_FEX_COD_INCOTERMS_DEFAULT', '09'), // FOB
+    ],
+
+    /*
     | Condición de operación por defecto para CCF a contribuyentes cuando ni el
     | cliente ni la sucursal definen una (CAT-016: 1 contado, 2 crédito, 3 otro).
     | Editable.
