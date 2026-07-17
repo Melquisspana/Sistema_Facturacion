@@ -72,6 +72,15 @@ class CrearFexDesdeExportacionService
                 ]);
             }
 
+            // Documento provisional: no se puede crear NINGÚN borrador FEX con un
+            // Cliente DTE cuyo documento todavía es el valor centinela. El bloqueo
+            // debe existir desde la creación del borrador, no solo al firmar/transmitir.
+            if ($cliente->tieneDocumentoProvisional()) {
+                throw ValidationException::withMessages([
+                    'cliente_id' => 'El Cliente DTE tiene un documento provisional. Ingrese el documento real antes de continuar.',
+                ]);
+            }
+
             $exportacion->loadMissing('items');
             if ($exportacion->items->isEmpty()) {
                 throw ValidationException::withMessages([
