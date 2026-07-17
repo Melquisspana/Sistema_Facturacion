@@ -127,11 +127,13 @@ class CrearFexDesdeExportacionService
                 // tabla `exportaciones`); no se inventan datos, quedan en 0.
                 'flete' => 0,
                 'seguro' => 0,
-                'tipo_item_expor' => TipoItemExportacion::Bienes->value,
-                'recinto_fiscal' => '01',
-                'tipo_regimen' => 'EX-1',
-                'regimen' => '1000.000',
-                'cod_incoterms' => '09',
+                // Valores por defecto configurables (config('dte.exportacion')); el usuario
+                // puede cambiarlos en el editor antes de generar (sección Datos aduaneros).
+                'tipo_item_expor' => config('dte.exportacion.tipo_item_expor_default', TipoItemExportacion::Bienes->value),
+                'recinto_fiscal' => config('dte.exportacion.recinto_fiscal_default'),
+                'tipo_regimen' => config('dte.exportacion.tipo_regimen_default'),
+                'regimen' => config('dte.exportacion.regimen_default'),
+                'cod_incoterms' => config('dte.exportacion.cod_incoterms_default'),
             ], $usuario);
 
             foreach ($lineasFactura as $linea) {

@@ -90,6 +90,100 @@
                 </div>
             </div>
 
+            {{-- Receptor (solo FEX tipo 11): destino, documento, actividad, correo,
+                 dirección y teléfono (si existe). Solo presentación. --}}
+            @if ($datosReceptor ?? null)
+                <div class="bg-white shadow sm:rounded-lg p-4">
+                    <h3 class="font-semibold text-gray-700 mb-2">Receptor</h3>
+                    <p class="font-medium text-gray-900 mb-2">{{ $datosReceptor['nombre'] }}</p>
+                    <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                        <div class="space-y-2">
+                            <div><dt class="inline text-gray-500">Destino:</dt> <dd class="inline">{{ $datosReceptor['destino'] ?? '—' }}</dd></div>
+                            <div><dt class="inline text-gray-500">Documento:</dt> <dd class="inline">{{ $datosReceptor['documento'] ?? '—' }}</dd></div>
+                            <div><dt class="inline text-gray-500">Actividad:</dt> <dd class="inline">{{ $datosReceptor['actividad'] ?? '—' }}</dd></div>
+                        </div>
+                        <div class="space-y-2">
+                            <div><dt class="inline text-gray-500">Correo:</dt> <dd class="inline break-all">{{ $datosReceptor['correo'] ?? '—' }}</dd></div>
+                            <div><dt class="inline text-gray-500">Dirección:</dt> <dd class="inline">{{ $datosReceptor['direccion'] ?? '—' }}</dd></div>
+                            @if ($datosReceptor['telefono'] ?? null)
+                                <div><dt class="inline text-gray-500">Teléfono:</dt> <dd class="inline">{{ $datosReceptor['telefono'] }}</dd></div>
+                            @endif
+                        </div>
+                    </dl>
+                </div>
+            @endif
+
+            {{-- Datos aduaneros (solo FEX tipo 11, editable mientras siga en borrador):
+                 tipo de ítem, aduana/recinto de salida, tipo de régimen, régimen e
+                 incoterm. Guardar NO genera JSON, NO consume correlativo, NO firma. --}}
+            @if ($esFex && ($catalogosAduaneros ?? null))
+                @can('update', $dte)
+                    <div class="bg-white shadow sm:rounded-lg p-4">
+                        <h3 class="font-semibold text-gray-700 mb-1">Datos aduaneros</h3>
+                        <p class="text-xs text-gray-400 mb-3">Aplican al documento completo. Se pueden cambiar hasta generar la factura.</p>
+                        <form method="POST" action="{{ route('facturacion.datos-aduaneros.update', $dte) }}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                            @csrf
+                            @method('PATCH')
+                            <div>
+                                <x-input-label for="ad-tipo-item" value="Tipo de ítem exportado" />
+                                <select id="ad-tipo-item" name="tipo_item_expor" required
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    @foreach ($catalogosAduaneros['tiposItemExpor'] as $tipo)
+                                        <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor', $dte->tipo_item_expor) == $tipo->value)>{{ $tipo->label() }}</option>
+                                    @endforeach
+                                </select>
+                                @error('tipo_item_expor')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                            </div>
+                            <div>
+                                <x-input-label for="ad-recinto" value="Aduana / recinto de salida" />
+                                <select id="ad-recinto" name="recinto_fiscal" required
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    @foreach ($catalogosAduaneros['recintosFiscales'] as $r)
+                                        <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal', $dte->recinto_fiscal) == $r->codigo)>{{ $r->valor }}</option>
+                                    @endforeach
+                                </select>
+                                @error('recinto_fiscal')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                            </div>
+                            <div>
+                                <x-input-label for="ad-tipo-regimen" value="Tipo de régimen" />
+                                <select id="ad-tipo-regimen" name="tipo_regimen" required
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    @foreach ($catalogosAduaneros['tiposRegimen'] as $tr)
+                                        <option value="{{ $tr->codigo }}" @selected(old('tipo_regimen', $dte->tipo_regimen) == $tr->codigo)>{{ $tr->valor }}</option>
+                                    @endforeach
+                                </select>
+                                @error('tipo_regimen')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                            </div>
+                            <div>
+                                <x-input-label for="ad-regimen" value="Régimen" />
+                                <select id="ad-regimen" name="regimen" required
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    @foreach ($catalogosAduaneros['regimenes'] as $rg)
+                                        <option value="{{ $rg->codigo }}" @selected(old('regimen', $dte->regimen) == $rg->codigo)>{{ $rg->valor }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-xs text-gray-400">{{ \App\Support\Dte\DatosExportacionPresentacion::AYUDA_REGIMEN }} No es un monto.</p>
+                                @error('regimen')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                            </div>
+                            <div>
+                                <x-input-label for="ad-incoterm" value="Incoterm" />
+                                <select id="ad-incoterm" name="cod_incoterms" required
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    @foreach ($catalogosAduaneros['incoterms'] as $inc)
+                                        <option value="{{ $inc->codigo }}" @selected(old('cod_incoterms', $dte->cod_incoterms) == $inc->codigo)>{{ $inc->valor }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-xs text-gray-400">La descripción se resuelve automáticamente del catálogo al guardar.</p>
+                                @error('cod_incoterms')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                            </div>
+                            <div class="sm:col-span-2 lg:col-span-5">
+                                <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar datos aduaneros</button>
+                            </div>
+                        </form>
+                    </div>
+                @endcan
+            @endif
+
             {{-- Área de trabajo: productos (principal, ancho) + resumen (panel sticky).
                  En móvil el resumen va primero para que el total quede visible sin bajar. --}}
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

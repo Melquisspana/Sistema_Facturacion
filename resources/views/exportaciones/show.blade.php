@@ -26,13 +26,6 @@
                     </form>
                 @endif
                 @if ($exportacion->items->isNotEmpty())
-                    {{-- Ayuda para preparar la factura (solo lectura). Si no está aprobada, se confirma. --}}
-                    <a href="{{ route('exportaciones.preparar-factura', $exportacion) }}"
-                       @unless ($exportacion->estaAprobada()) onclick="return confirm('La lista todavía no está aprobada. ¿Preparar la factura igual?');" @endunless
-                       class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-                        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2.5 3A1.5 1.5 0 001 4.5v.793c.026.009.051.02.076.032L7.674 8.51c.206.1.446.1.652 0l6.598-3.185A.755.755 0 0115 5.293V4.5A1.5 1.5 0 0013.5 3h-11z"/><path d="M15 6.954l-5.694 2.75a2.25 2.25 0 01-1.951 0L1.66 6.954 1 6.638V11.5A1.5 1.5 0 002.5 13h11a1.5 1.5 0 001.5-1.5V6.638l-.66.316z"/></svg>
-                        Preparar factura de exportación
-                    </a>
                     <a href="{{ route('exportaciones.excel', $exportacion) }}"
                        class="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>

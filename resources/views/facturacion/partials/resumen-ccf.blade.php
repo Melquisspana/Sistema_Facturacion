@@ -29,13 +29,22 @@
              abajo quedan siempre visibles (el panel es sticky) sin tener que bajar. --}}
         <ul class="divide-y divide-gray-100 -mx-1 max-h-[45vh] overflow-y-auto pr-1">
             @forelse ($lineasOrdenadas as $linea)
-                @php $esLibreFex = $esFex && $linea->producto_id === null; @endphp
+                @php
+                    $esLibreFex = $esFex && $linea->producto_id === null;
+                    // Etiqueta de presentación visible (Caja/Cajas para unidad_codigo="99";
+                    // el nombre real de la unidad en cualquier otro caso). Solo presentación:
+                    // no cambia unidad_codigo guardado ni el JSON oficial.
+                    $presentacionLinea = $esFex ? \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte) : null;
+                @endphp
                 <li class="px-1 py-3">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
                             <p class="font-medium text-gray-800 truncate" title="{{ $linea->descripcion }}">{{ $linea->descripcion }}</p>
                             <p class="text-xs text-gray-500 font-mono">${{ number_format($linea->precio_unitario, 2) }}
                                 {{ $esFex ? '/ caja' : 'c/u' }}
+                                @if ($esFex)
+                                    · <span class="font-sans">{{ (int) $linea->cantidad }} {{ $presentacionLinea }}</span>
+                                @endif
                                 @if (! $esFex && (float) $linea->iva_linea > 0)
                                     · IVA ${{ number_format($linea->iva_linea, 2) }}
                                 @endif
@@ -56,10 +65,10 @@
                                 <input type="text" name="descripcion" value="{{ $linea->descripcion }}" required maxlength="1000"
                                        title="Descripción" class="block w-full border-gray-300 rounded-md shadow-sm text-xs py-1">
                                 <div class="flex items-center gap-1.5">
-                                    <label class="sr-only" for="cant-{{ $linea->id }}">Cajas</label>
+                                    <label class="text-xs text-gray-500" for="cant-{{ $linea->id }}">{{ $presentacionLinea }}</label>
                                     <input id="cant-{{ $linea->id }}" type="number" name="cantidad"
                                            value="{{ (int) $linea->cantidad }}" step="1" min="1" inputmode="numeric"
-                                           title="Cajas" class="block w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
+                                           title="{{ $presentacionLinea }}" class="block w-16 border-gray-300 rounded-md shadow-sm text-sm py-1" required>
                                     <label class="sr-only" for="precio-{{ $linea->id }}">Precio por caja</label>
                                     <input id="precio-{{ $linea->id }}" type="number" name="precio_unitario"
                                            value="{{ number_format((float) $linea->precio_unitario, 2, '.', '') }}" step="0.01" min="0"

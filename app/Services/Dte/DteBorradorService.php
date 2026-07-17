@@ -125,6 +125,54 @@ class DteBorradorService
     }
 
     /**
+     * Actualiza los DATOS ADUANEROS (tipo de ítem, recinto fiscal, tipo de régimen,
+     * régimen, incoterm) de una Factura de exportación (11) que sigue en borrador.
+     * Reservado a tipo 11 y solo mientras el documento sea editable (esEditable()):
+     * NO genera JSON, NO consume correlativo, NO cambia el estado.
+     *
+     * @param  array<string, mixed>  $datos  tipo_item_expor, recinto_fiscal, tipo_regimen, regimen, cod_incoterms
+     *
+     * @throws DocumentoInmutableException si el DTE no está en borrador
+     * @throws ValidationException si el DTE no es FEX o algún código no es válido
+     */
+    public function actualizarDatosAduaneros(Dte $dte, array $datos): Dte
+    {
+        $this->verificarEditable($dte);
+
+        if ($dte->tipo_dte !== TipoDte::FacturaExportacion) {
+            throw ValidationException::withMessages([
+                'tipo_dte' => 'Los datos aduaneros solo se editan en una Factura de exportación (11).',
+            ]);
+        }
+
+        $validado = Validator::make($datos, [
+            'tipo_item_expor' => ['required', \Illuminate\Validation\Rule::in(array_map(fn (TipoItemExportacion $t) => $t->value, TipoItemExportacion::cases()))],
+            'recinto_fiscal' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '027')],
+            'tipo_regimen' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '033')],
+            'regimen' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '028')],
+            'cod_incoterms' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '031')],
+        ], [
+            'recinto_fiscal.exists' => 'El recinto fiscal seleccionado no es válido (CAT-027).',
+            'tipo_regimen.exists' => 'El tipo de régimen seleccionado no es válido (CAT-033).',
+            'regimen.exists' => 'El régimen seleccionado no es válido (CAT-028).',
+            'cod_incoterms.exists' => 'El INCOTERM seleccionado no es válido (CAT-031).',
+        ])->validate();
+
+        return DB::transaction(function () use ($dte, $validado) {
+            $dte->tipo_item_expor = $validado['tipo_item_expor'];
+            $dte->recinto_fiscal = $validado['recinto_fiscal'];
+            $dte->tipo_regimen = $validado['tipo_regimen'];
+            $dte->regimen = $validado['regimen'];
+            $dte->cod_incoterms = $validado['cod_incoterms'];
+            // desc_incoterms SIEMPRE se resuelve server-side desde CAT-031; nunca texto libre.
+            $dte->desc_incoterms = $this->descIncoterms($validado['cod_incoterms']);
+            $dte->save();
+
+            return $dte->refresh();
+        });
+    }
+
+    /**
      * DUPLICA un CCF: crea un borrador NUEVO con los mismos datos base (cliente, sala,
      * emisor, condición, orden de compra, observaciones, % de descuento) y una copia
      * SNAPSHOT de las líneas (productos, cantidades, precios y descuentos congelados del

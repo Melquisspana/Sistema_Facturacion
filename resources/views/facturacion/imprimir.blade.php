@@ -4,6 +4,7 @@
 
     $logoSrc = $logoSrc ?? null;
     $datosExportacion = $datosExportacion ?? null;
+    $datosReceptor = $datosReceptor ?? null;
 
     $esFex = $dte->tipo_dte === TipoDte::FacturaExportacion;
     $esNc  = $dte->tipo_dte === TipoDte::NotaCredito;
@@ -351,12 +352,15 @@
                 <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif@if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
                 <div class="rec-grid">
                     <div>
+                        @if ($esFex && ($datosReceptor['destino'] ?? null))<div class="f"><span class="k">Destino:</span> {{ $datosReceptor['destino'] }}</div>@endif
                         @if ($cli?->num_documento)<div class="f"><span class="k">Documento:</span> <span class="mono">{{ $cli->num_documento }}</span>@if($cli?->nrc) · <span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span>@endif</div>@elseif($cli?->nrc)<div class="f"><span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span></div>@endif
                         @if ($cli?->actividadEconomica?->nombre)<div class="f"><span class="k">Actividad:</span> {{ $cli->actividadEconomica->nombre }}</div>@endif
                     </div>
                     <div>
+                        @if ($esFex && ($datosReceptor['correo'] ?? null))<div class="f"><span class="k">Correo:</span> {{ $datosReceptor['correo'] }}</div>@endif
                         @if ($cliUbic)<div class="f"><span class="k">Ubicación:</span> {{ $cliUbic }}</div>@endif
                         @if ($cli?->direccion)<div class="f"><span class="k">Dirección:</span> {{ $cli->direccion }}@if($cli->complemento_direccion) — {{ $cli->complemento_direccion }}@endif</div>@endif
+                        @if ($esFex && ($datosReceptor['telefono'] ?? null))<div class="f"><span class="k">Teléfono:</span> {{ $datosReceptor['telefono'] }}</div>@endif
                     </div>
                 </div>
                 @if ($suc)
@@ -434,7 +438,7 @@
                         @php
                             $cb = trim((string) $linea->codigo_barra);
                             $cc = trim((string) $linea->codigo);
-                            $pres = trim((string) ($linea->unidad_nombre ?: $linea->unidad_codigo));
+                            $pres = \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte);
                         @endphp
                         <tr>
                             <td class="ln">{{ $linea->numero_linea }}</td>

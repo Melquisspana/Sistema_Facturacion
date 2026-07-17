@@ -138,6 +138,30 @@
                 </dl>
             </div>
 
+            {{-- Receptor (solo FEX tipo 11): destino, documento, actividad, correo,
+                 dirección y teléfono (si existe). No aparece para CCF/NC/Factura
+                 consumidor final (esos ya muestran "Cliente" arriba). --}}
+            @if ($datosReceptor ?? null)
+                <div class="bg-white shadow sm:rounded-lg p-6">
+                    <h3 class="font-semibold text-gray-700 mb-3">Receptor</h3>
+                    <p class="font-medium text-gray-900 mb-3">{{ $datosReceptor['nombre'] }}</p>
+                    <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                        <div class="space-y-3">
+                            <div><dt class="text-gray-500">Destino</dt><dd>{{ $datosReceptor['destino'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">Documento</dt><dd>{{ $datosReceptor['documento'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">Actividad</dt><dd>{{ $datosReceptor['actividad'] ?? '—' }}</dd></div>
+                        </div>
+                        <div class="space-y-3">
+                            <div><dt class="text-gray-500">Correo</dt><dd class="break-all">{{ $datosReceptor['correo'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">Dirección</dt><dd>{{ $datosReceptor['direccion'] ?? '—' }}</dd></div>
+                            @if ($datosReceptor['telefono'] ?? null)
+                                <div><dt class="text-gray-500">Teléfono</dt><dd>{{ $datosReceptor['telefono'] }}</dd></div>
+                            @endif
+                        </div>
+                    </dl>
+                </div>
+            @endif
+
             {{-- Datos de exportación (solo FEX tipo 11): ya guardados en el DTE, no
                  recalcula nada. No aparece para CCF/NC/Factura consumidor final. --}}
             @if ($datosExportacion ?? null)
@@ -145,10 +169,33 @@
                     <h3 class="font-semibold text-gray-700 mb-3">Datos de exportación</h3>
                     <dl class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                         <div><dt class="text-gray-500">Tipo ítem exportación</dt><dd>{{ $datosExportacion['tipo_item'] }}</dd></div>
-                        <div><dt class="text-gray-500">Recinto fiscal</dt><dd>{{ $datosExportacion['recinto_fiscal'] ?? '—' }}</dd></div>
-                        <div><dt class="text-gray-500">Tipo régimen</dt><dd>{{ $datosExportacion['tipo_regimen'] ?? '—' }}</dd></div>
-                        <div><dt class="text-gray-500">Régimen</dt><dd>{{ $datosExportacion['regimen'] ?? '—' }}</dd></div>
-                        <div><dt class="text-gray-500">Incoterm</dt><dd>{{ $datosExportacion['incoterm'] ?? '—' }}</dd></div>
+                        <div>
+                            <dt class="text-gray-500">Aduana de salida</dt>
+                            <dd>{{ $datosExportacion['recinto_fiscal_valor'] ?? '—' }}
+                                @if ($datosExportacion['recinto_fiscal_codigo'] ?? null)<span class="block text-xs text-gray-400 font-mono">{{ $datosExportacion['recinto_fiscal'] }}</span>@endif
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Tipo de régimen</dt>
+                            <dd>{{ $datosExportacion['tipo_regimen_valor'] ?? '—' }}
+                                @if ($datosExportacion['tipo_regimen_codigo'] ?? null)<span class="block text-xs text-gray-400 font-mono">{{ $datosExportacion['tipo_regimen'] }}</span>@endif
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Régimen</dt>
+                            <dd>{{ $datosExportacion['regimen_valor'] ?? '—' }}
+                                @if ($datosExportacion['regimen_codigo'] ?? null)
+                                    <span class="block text-xs text-gray-400 font-mono">{{ $datosExportacion['regimen'] }}</span>
+                                    <span class="block text-xs text-gray-400">{{ \App\Support\Dte\DatosExportacionPresentacion::AYUDA_REGIMEN }} No es un monto.</span>
+                                @endif
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-gray-500">Incoterm</dt>
+                            <dd>{{ $datosExportacion['incoterm_valor'] ?? '—' }}
+                                @if ($datosExportacion['incoterm_codigo'] ?? null)<span class="block text-xs text-gray-400 font-mono">{{ $datosExportacion['incoterm'] }}</span>@endif
+                            </dd>
+                        </div>
                     </dl>
                 </div>
             @endif
@@ -165,6 +212,7 @@
                                 <th class="px-3 py-2">Descripción</th>
                                 <th class="px-3 py-2 text-right">Precio</th>
                                 <th class="px-3 py-2 text-right">Cantidad</th>
+                                @if ($datosExportacion ?? null)<th class="px-3 py-2">Presentación</th>@endif
                                 <th class="px-3 py-2 text-right">Descuento</th>
                                 <th class="px-3 py-2 text-right">Gravado</th>
                                 <th class="px-3 py-2 text-right">IVA</th>
@@ -178,13 +226,14 @@
                                     <td class="px-3 py-2 font-medium">{{ $linea->descripcion }}</td>
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->precio_unitario, 2) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">{{ rtrim(rtrim($linea->cantidad, '0'), '.') }}</td>
+                                    @if ($datosExportacion ?? null)<td class="px-3 py-2">{{ \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte) }}</td>@endif
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->descuento_monto, 2) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->venta_gravada, 2) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->iva_linea, 2) }}</td>
                                     <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->total_linea, 2) }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="8" class="px-3 py-6 text-center text-gray-400">Sin líneas.</td></tr>
+                                <tr><td colspan="{{ ($datosExportacion ?? null) ? 9 : 8 }}" class="px-3 py-6 text-center text-gray-400">Sin líneas.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

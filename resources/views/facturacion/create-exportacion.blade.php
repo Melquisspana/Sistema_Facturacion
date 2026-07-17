@@ -199,7 +199,7 @@
                                 <option value="">— Seleccione —</option>
                                 @foreach ($tiposItemExpor as $tipo)
                                     {{-- Predeterminado: Bienes (1), el caso más común; el usuario puede cambiarlo. --}}
-                                    <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor', '1') == $tipo->value)>
+                                    <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor', config('dte.exportacion.tipo_item_expor_default')) == $tipo->value)>
                                         {{ $tipo->label() }}
                                     </option>
                                 @endforeach
@@ -213,8 +213,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($recintosFiscales as $r)
-                                    {{-- Predeterminado: 01 (Terrestre San Bartolo), el más usado; el usuario puede cambiarlo. --}}
-                                    <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal', '01') == $r->codigo)>
+                                    {{-- Predeterminado: Anguiatú (config('dte.exportacion.recinto_fiscal_default')), el usuario puede cambiarlo. --}}
+                                    <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal', config('dte.exportacion.recinto_fiscal_default')) == $r->codigo)>
                                         {{ $r->valor }}
                                     </option>
                                 @endforeach
@@ -229,7 +229,7 @@
                                 <option value="">— Seleccione —</option>
                                 @foreach ($tiposRegimen as $tr)
                                     {{-- Predeterminado: EX-1 (Exportación Definitiva), el más usado; el usuario puede cambiarlo. --}}
-                                    <option value="{{ $tr->codigo }}" @selected(old('tipo_regimen', 'EX-1') == $tr->codigo)>
+                                    <option value="{{ $tr->codigo }}" @selected(old('tipo_regimen', config('dte.exportacion.tipo_regimen_default')) == $tr->codigo)>
                                         {{ $tr->valor }}
                                     </option>
                                 @endforeach
@@ -244,7 +244,7 @@
                                 <option value="">— Seleccione —</option>
                                 @foreach ($regimenes as $rg)
                                     {{-- Predeterminado: 1000.000 (Exportación Definitiva, Régimen Común); el usuario puede cambiarlo. --}}
-                                    <option value="{{ $rg->codigo }}" @selected(old('regimen', '1000.000') == $rg->codigo)>
+                                    <option value="{{ $rg->codigo }}" @selected(old('regimen', config('dte.exportacion.regimen_default')) == $rg->codigo)>
                                         {{ $rg->valor }}
                                     </option>
                                 @endforeach
@@ -259,7 +259,7 @@
                                 <option value="">— Seleccione —</option>
                                 @foreach ($incoterms as $inc)
                                     {{-- Predeterminado: 09 (FOB-Libre a bordo), el más usado; el usuario puede cambiarlo. --}}
-                                    <option value="{{ $inc->codigo }}" @selected(old('cod_incoterms', '09') == $inc->codigo)>
+                                    <option value="{{ $inc->codigo }}" @selected(old('cod_incoterms', config('dte.exportacion.cod_incoterms_default')) == $inc->codigo)>
                                         {{ $inc->valor }}
                                     </option>
                                 @endforeach

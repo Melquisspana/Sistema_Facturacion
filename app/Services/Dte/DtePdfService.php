@@ -19,7 +19,7 @@ class DtePdfService
     public function pdf(Dte $dte): \Barryvdh\DomPDF\PDF
     {
         $dte->loadMissing([
-            'cliente.departamento', 'cliente.municipio', 'cliente.distrito',
+            'cliente.departamento', 'cliente.municipio', 'cliente.distrito', 'cliente.actividadEconomica', 'cliente.pais',
             'clienteSucursal.departamento', 'clienteSucursal.municipio', 'clienteSucursal.distrito.departamento',
             'lineas',
             'establecimiento.empresa.departamento', 'establecimiento.empresa.municipio',
@@ -34,8 +34,9 @@ class DtePdfService
         $logoSrc = $this->logoSrc();
         $qrDataUri = $this->qrOficial($dte); // solo si hay sello (datos oficiales)
         $datosExportacion = DatosExportacionPresentacion::resolver($dte);
+        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
 
-        return Pdf::loadView('facturacion.pdf', compact('dte', 'emisor', 'logoSrc', 'qrDataUri', 'datosExportacion'))->setPaper('letter');
+        return Pdf::loadView('facturacion.pdf', compact('dte', 'emisor', 'logoSrc', 'qrDataUri', 'datosExportacion', 'datosReceptor'))->setPaper('letter');
     }
 
     /** Bytes del PDF (para adjuntar en correo). */
