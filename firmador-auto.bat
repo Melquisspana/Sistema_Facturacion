@@ -52,7 +52,7 @@ echo.
 :loop
 rem Perfil nonssl = HTTP en localhost (recomendado). El JAR trae 8113 por defecto;
 rem se fuerza 8080 porque es el puerto que la app espera (DTE_FIRMADOR_URL).
-"%JAVA%" -Dspring.profiles.active=nonssl -jar "%JAR%" --server.port=8080
+"%JAVA%" -Dspring.profiles.active=nonssl -jar "%JAR%" --server.port=8080 --server.address=127.0.0.1
 
 rem Si el firmador se detuvo (cierre, error o reinicio), esperar y relanzar.
 rem Backoff corto para no entrar en un bucle apretado ante un error persistente.
