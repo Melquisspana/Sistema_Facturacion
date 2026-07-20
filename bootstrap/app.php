@@ -4,6 +4,7 @@ use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,6 +17,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             SecurityHeaders::class,
         ]);
+
+        // Confiar en el proxy local (Tailscale Serve -> 127.0.0.1:80) para
+        // interpretar correctamente X-Forwarded-Proto/Host/Port/For.
+        $middleware->trustProxies(
+            at: '127.0.0.1',
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_HOST
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO
+        );
 
         // Alias de middleware de roles/permisos (spatie/laravel-permission).
         $middleware->alias([
