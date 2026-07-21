@@ -215,7 +215,7 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($recintosFiscales as $r)
-                                    {{-- Predeterminado: Anguiatú (config('dte.exportacion.recinto_fiscal_default')), el usuario puede cambiarlo. --}}
+                                    {{-- Predeterminado: San Bartolo (config('dte.exportacion.recinto_fiscal_default')), el usuario puede cambiarlo. --}}
                                     <option value="{{ $r->codigo }}" @selected(old('recinto_fiscal', config('dte.exportacion.recinto_fiscal_default')) == $r->codigo)>
                                         {{ $r->valor }}
                                     </option>

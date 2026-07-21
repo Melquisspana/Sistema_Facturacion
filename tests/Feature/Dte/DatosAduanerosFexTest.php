@@ -22,8 +22,8 @@ use Tests\TestCase;
 
 /**
  * Sección A del ticket "FEX #131": datos aduaneros editables en borrador,
- * bloqueados fuera de borrador, y Anguiatú como recinto fiscal por defecto de
- * una FEX nueva (manual o desde Lista de Empaque). NO toca la FEX #131 real:
+ * bloqueados fuera de borrador, y San Bartolo como recinto fiscal por defecto
+ * de una FEX nueva (manual o desde Lista de Empaque). NO toca la FEX #131 real:
  * usa exclusivamente la base de datos de pruebas (sqlite en memoria).
  */
 class DatosAduanerosFexTest extends TestCase
@@ -190,29 +190,29 @@ class DatosAduanerosFexTest extends TestCase
         $this->assertSame('01', $dte->fresh()->recinto_fiscal, 'Un DTE ya generado no debe poder cambiar sus datos aduaneros.');
     }
 
-    // --- Item 13: Anguiatú es el default de una FEX nueva ---
+    // --- Item 13: San Bartolo es el default de una FEX nueva ---
 
-    public function test_fex_creada_desde_lista_de_empaque_usa_anguiatu_como_recinto_por_defecto(): void
+    public function test_fex_creada_desde_lista_de_empaque_usa_san_bartolo_como_recinto_por_defecto(): void
     {
         ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
         Correlativo::create(['tipo_dte' => '11', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
 
         $cliente = Cliente::factory()->exportacion()->create();
-        $clienteExpo = ExportacionCliente::create(['nombre' => 'Cliente Anguiatú', 'cliente_id' => $cliente->id, 'activo' => true]);
+        $clienteExpo = ExportacionCliente::create(['nombre' => 'Cliente San Bartolo', 'cliente_id' => $cliente->id, 'activo' => true]);
         $lista = Exportacion::create(['exportacion_cliente_id' => $clienteExpo->id, 'cliente_nombre' => $clienteExpo->nombre, 'exportador_nombre' => 'Dulces La Negrita', 'fecha' => '2026-07-17', 'estado' => 'aprobada']);
         $lista->items()->create(['nombre_es' => 'Caja X', 'nombre_en' => 'Box X', 'unidad' => 'Bolsa', 'unidades_por_caja' => 10, 'cantidad_cajas' => 2, 'precio_caja' => 10.00, 'gramos_por_unidad' => 10, 'onzas_por_unidad' => 0.35, 'peso_neto_caja_kg' => 1, 'peso_bruto_caja_kg' => 1.1, 'peso_neto_caja_lb' => 2.2, 'peso_bruto_caja_lb' => 2.4]);
 
         $dte = app(CrearFexDesdeExportacionService::class)->crear($lista);
 
         $this->assertSame(config('dte.exportacion.recinto_fiscal_default'), $dte->recinto_fiscal);
-        $this->assertSame('08', $dte->recinto_fiscal);
+        $this->assertSame('01', $dte->recinto_fiscal);
         $this->assertSame(
-            CatalogoMh::where('cat', '027')->where('codigo', '08')->value('valor'),
-            'Terrestre Anguiatú'
+            CatalogoMh::where('cat', '027')->where('codigo', '01')->value('valor'),
+            'Terrestre San Bartolo'
         );
     }
 
-    public function test_formulario_manual_de_fex_preselecciona_anguiatu(): void
+    public function test_formulario_manual_de_fex_preselecciona_san_bartolo(): void
     {
         Cliente::factory()->exportacion()->create();
         ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
@@ -222,9 +222,9 @@ class DatosAduanerosFexTest extends TestCase
             ->assertOk()
             ->getContent();
 
-        // El option del recinto Anguiatú (08) debe venir marcado como seleccionado por defecto.
+        // El option del recinto San Bartolo (01) debe venir marcado como seleccionado por defecto.
         $this->assertMatchesRegularExpression(
-            '/<option value="08"\s+selected>\s*Terrestre Anguiat[uú]\s*<\/option>/u',
+            '/<option value="01"\s+selected>\s*Terrestre San Bartolo\s*<\/option>/u',
             $html
         );
     }

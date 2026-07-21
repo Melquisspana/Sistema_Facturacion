@@ -395,8 +395,8 @@ class DteExportacionUiTest extends TestCase
             ->getContent();
 
         $this->assertOpcionSeleccionada($html, 'tipo_item_expor', '1');
-        // Recinto fiscal por defecto: Anguiatú (config('dte.exportacion.recinto_fiscal_default')).
-        $this->assertOpcionSeleccionada($html, 'recinto_fiscal', '08');
+        // Recinto fiscal por defecto: San Bartolo (config('dte.exportacion.recinto_fiscal_default')).
+        $this->assertOpcionSeleccionada($html, 'recinto_fiscal', '01');
         $this->assertOpcionSeleccionada($html, 'tipo_regimen', 'EX-1');
         $this->assertOpcionSeleccionada($html, 'regimen', '1000.000');
         $this->assertOpcionSeleccionada($html, 'cod_incoterms', '09');
