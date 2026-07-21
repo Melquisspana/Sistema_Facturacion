@@ -284,6 +284,25 @@ class DteBorradorService
             ]);
         }
 
+        // Series independientes: la NC debe usar el MISMO establecimiento/punto de venta
+        // del CCF relacionado (ej. no permitir NC en P002 contra un CCF de P001, ni al
+        // revés). Si no llegan en $datos, se heredan directo del original más abajo (sin
+        // posibilidad de mismatch); esto solo actúa cuando SÍ llegó un valor explícito.
+        if (array_key_exists('establecimiento_id', $datos)
+            && $datos['establecimiento_id'] !== null
+            && (int) $datos['establecimiento_id'] !== (int) $original->establecimiento_id) {
+            throw ValidationException::withMessages([
+                'establecimiento_id' => 'La nota de crédito debe usar el mismo establecimiento del CCF relacionado.',
+            ]);
+        }
+        if (array_key_exists('punto_venta_id', $datos)
+            && $datos['punto_venta_id'] !== null
+            && (int) $datos['punto_venta_id'] !== (int) $original->punto_venta_id) {
+            throw ValidationException::withMessages([
+                'punto_venta_id' => 'La nota de crédito debe usar el mismo punto de venta del CCF relacionado.',
+            ]);
+        }
+
         // Cliente y sala: del original si existe; si no, de los datos (NC independiente).
         $clienteId = $original?->cliente_id ?? ($datos['cliente_id'] ?? null);
         $sucursalId = $original?->cliente_sucursal_id ?? ($datos['cliente_sucursal_id'] ?? null);

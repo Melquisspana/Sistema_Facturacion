@@ -41,6 +41,25 @@ return [
     'ambiente' => env('DTE_AMBIENTE', AmbienteHacienda::Pruebas->value),
 
     /*
+    | Punto de venta PREDETERMINADO del sistema nuevo, por CÓDIGO (no ID rígido).
+    | Existe para convivir con otro sistema externo que sigue usando su propio
+    | punto de venta (ej. Conta Portable en P001): todos los documentos NUEVOS
+    | de ESTE sistema deben resolver siempre al código configurado aquí, sin
+    | pedirle nunca al usuario que elija entre puntos de venta.
+    |
+    | Vacío/null (default) = comportamiento anterior: ResuelveEmisorUnico solo
+    | auto-resuelve si hay EXACTAMENTE un punto de venta activo; con más de uno
+    | y sin este valor, sigue exigiendo selección explícita (sin ambigüedad).
+    |
+    | Con un código configurado, la resolución es SIEMPRE ese punto de venta:
+    | jamás cae de vuelta a otro (P001 u otro) en silencio. Si el código no
+    | existe, está inactivo, o no pertenece al establecimiento resuelto, la
+    | resolución falla con un error claro (PuntoVentaPredeterminadoInvalidoException)
+    | en vez de adivinar.
+    */
+    'punto_venta_predeterminado' => env('DTE_PUNTO_VENTA_PREDETERMINADO'),
+
+    /*
     | Endpoints del Ministerio de Hacienda por ambiente. Vacíos por ahora;
     | se completarán con las URLs oficiales en la fase de integración.
     */

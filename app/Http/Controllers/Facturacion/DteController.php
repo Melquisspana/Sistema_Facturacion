@@ -314,13 +314,22 @@ class DteController extends Controller
     {
         $this->authorize('create', Dte::class);
 
-        // No usa CrearBorradorRequest (form propio), así que resuelve emisor único acá
-        // con la misma regla (ResuelveEmisorUnico): si no llega valor y solo hay una
-        // opción activa, la completa antes de validar; si hay ambigüedad, no toca nada.
-        $request->merge(\App\Support\Dte\ResuelveEmisorUnico::resolver(
-            $request->input('establecimiento_id'),
-            $request->input('punto_venta_id'),
-        ));
+        // No usa CrearBorradorRequest (form propio). Resuelve el CCF relacionado ANTES de
+        // fijar establecimiento_id/punto_venta_id: si hay CCF, la NC SIEMPRE hereda esos dos
+        // campos de él (series independientes, ver DteBorradorService::crearNotaCredito) sin
+        // importar lo que haya llegado del formulario/JS. Sin CCF, usa la misma regla general
+        // que los demás formularios (ResuelveEmisorUnico: predeterminado configurado / único
+        // activo).
+        $original = $request->filled('dte_relacionado_id')
+            ? Dte::find($request->integer('dte_relacionado_id'))
+            : null;
+
+        $request->merge($original !== null
+            ? ['establecimiento_id' => $original->establecimiento_id, 'punto_venta_id' => $original->punto_venta_id]
+            : \App\Support\Dte\ResuelveEmisorUnico::resolver(
+                $request->input('establecimiento_id'),
+                $request->input('punto_venta_id'),
+            ));
 
         $datos = $request->validate([
             'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
@@ -332,10 +341,6 @@ class DteController extends Controller
             'motivo' => ['nullable', 'string', 'max:1000'],
             // numero_orden_compra NO se acepta: se copia del CCF relacionado.
         ]);
-
-        $original = ! empty($datos['dte_relacionado_id'])
-            ? Dte::find($datos['dte_relacionado_id'])
-            : null;
 
         // Sin CCF relacionado, el cliente es obligatorio (la NC necesita receptor).
         if ($original === null && empty($datos['cliente_id'])) {

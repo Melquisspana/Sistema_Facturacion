@@ -1,10 +1,12 @@
 @php
     // Emisor: si solo hay una opción real, se auto-selecciona y se ocultan los selects
     // (el usuario no debe tener que tocarlos). Los IDs viajan igual en inputs ocultos y
-    // el backend los sigue validando/asignando (required + exists).
+    // el backend los sigue validando/asignando (required + exists). El punto de venta usa
+    // el predeterminado configurado (dte.punto_venta_predeterminado) si existe; si no,
+    // el único activo (comportamiento anterior). Ver ResuelveEmisorUnico.
     $estabUnico = $establecimientos->count() === 1 ? $establecimientos->first() : null;
     $pvsEmisor = $estabUnico ? $puntosVenta->where('establecimiento_id', $estabUnico->id)->values() : $puntosVenta;
-    $pvUnico = ($estabUnico && $pvsEmisor->count() === 1) ? $pvsEmisor->first() : null;
+    $pvUnico = $estabUnico ? \App\Support\Dte\ResuelveEmisorUnico::puntoVentaOculto($estabUnico->id) : null;
     $ocultarEstab = (bool) $estabUnico;
     $ocultarPv = (bool) $pvUnico;
 @endphp
