@@ -170,12 +170,16 @@
                         </div>
 
                         {{-- Emisor: si solo hay una opción real, se auto-selecciona y se ocultan los
-                             selects. Los IDs viajan igual en inputs ocultos y el backend los sigue
-                             resolviendo/validando (ResuelveEmisorUnico + required/exists). --}}
+                             selects. Los IDs viajan igual en inputs ocultos; el backend SIEMPRE
+                             recalcula estos valores desde el CCF relacionado antes de guardar (la NC
+                             debe coincidir con su original — ver storeNotaCreditoIndependiente() y
+                             DteBorradorService::crearNotaCredito()), así que lo que se muestre acá es
+                             solo informativo/UX. Sin CCF elegido, usa el predeterminado configurado
+                             (dte.punto_venta_predeterminado) o el único activo. --}}
                         @php
                             $estabUnico = $establecimientos->count() === 1 ? $establecimientos->first() : null;
                             $pvsEmisor = $estabUnico ? $puntosVenta->where('establecimiento_id', $estabUnico->id)->values() : $puntosVenta;
-                            $pvUnico = ($estabUnico && $pvsEmisor->count() === 1) ? $pvsEmisor->first() : null;
+                            $pvUnico = $estabUnico ? \App\Support\Dte\ResuelveEmisorUnico::puntoVentaOculto($estabUnico->id) : null;
                             $ocultarEstab = (bool) $estabUnico;
                             $ocultarPv = (bool) $pvUnico;
                         @endphp
