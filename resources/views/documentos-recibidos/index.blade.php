@@ -188,6 +188,7 @@
                                 <th class="py-3 px-3">Número de control</th>
                                 <th class="py-3 px-3 text-right">Total</th>
                                 <th class="py-3 px-3 text-center">Adjuntos</th>
+                                <th class="py-3 px-3 text-center">Clasificación</th>
                                 <th class="py-3 px-3 text-center">Estado</th>
                                 <th class="py-3 px-3 text-right">Acciones</th>
                             </tr>
@@ -195,6 +196,21 @@
                         <tbody class="divide-y divide-gray-100">
                             @php
                                 $badge = ['pendiente' => 'bg-amber-100 text-amber-700', 'enviado' => 'bg-green-100 text-green-700', 'ignorado' => 'bg-gray-100 text-gray-500'];
+                                // Motivo de datos faltantes (independiente de `estado`). Ver DocumentoRecibido::CLASIFICACIONES.
+                                $badgeClasificacion = [
+                                    'dte_valido' => 'bg-green-100 text-green-700',
+                                    'no_es_dte' => 'bg-gray-100 text-gray-500',
+                                    'json_invalido' => 'bg-red-100 text-red-700',
+                                    'tipo_no_soportado' => 'bg-amber-100 text-amber-700',
+                                    'falta_adjunto' => 'bg-amber-100 text-amber-700',
+                                ];
+                                // Cuando no hay total, el motivo (no la palabra "—") explica por qué.
+                                $sinTotalPorClasificacion = [
+                                    'no_es_dte' => 'No es DTE',
+                                    'json_invalido' => 'JSON inválido',
+                                    'tipo_no_soportado' => 'Tipo no soportado',
+                                    'falta_adjunto' => 'Falta JSON',
+                                ];
                             @endphp
                             @forelse ($documentos as $doc)
                                 <tr class="hover:bg-gray-50 {{ $doc->estado === 'ignorado' ? 'opacity-60' : '' }}">
@@ -206,10 +222,22 @@
                                     </td>
                                     <td class="py-2 px-3 text-gray-600">{{ $doc->tipoLabel() }}</td>
                                     <td class="py-2 px-3 font-mono text-xs text-gray-600">{{ $doc->numero_control ?? '—' }}</td>
-                                    <td class="py-2 px-3 text-right text-gray-700">{{ $doc->total !== null ? '$'.number_format((float) $doc->total, 2) : '—' }}</td>
+                                    <td class="py-2 px-3 text-right text-gray-700">
+                                        @if ($doc->total !== null)
+                                            <span title="{{ $doc->totalLabel() }}">${{ number_format((float) $doc->total, 2) }}</span>
+                                            @if ($doc->tipo_documento === '07')
+                                                <div class="text-xs text-gray-400">{{ $doc->totalLabel() }}</div>
+                                            @endif
+                                        @else
+                                            <span class="text-xs text-gray-400">{{ $sinTotalPorClasificacion[$doc->clasificacion] ?? '—' }}</span>
+                                        @endif
+                                    </td>
                                     <td class="py-2 px-3 text-center">
                                         <span class="inline-flex rounded px-1.5 py-0.5 text-xs {{ $doc->tiene_pdf ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-400' }}">PDF</span>
                                         <span class="inline-flex rounded px-1.5 py-0.5 text-xs {{ $doc->tiene_json ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-400' }}">JSON</span>
+                                    </td>
+                                    <td class="py-2 px-3 text-center">
+                                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badgeClasificacion[$doc->clasificacion] ?? 'bg-gray-100 text-gray-400' }}">{{ $doc->clasificacionLabel() }}</span>
                                     </td>
                                     <td class="py-2 px-3 text-center">
                                         <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badge[$doc->estado] ?? 'bg-gray-100 text-gray-600' }}">{{ ucfirst($doc->estado) }}</span>
@@ -239,7 +267,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="9" class="py-10 text-center text-gray-400">
+                                <tr><td colspan="10" class="py-10 text-center text-gray-400">
                                     No hay documentos para este filtro.
                                     @if ($fuenteDisponible) Usá "Revisar correos" para buscar nuevos, o cambiá el rango a "Todos". @endif
                                 </td></tr>
