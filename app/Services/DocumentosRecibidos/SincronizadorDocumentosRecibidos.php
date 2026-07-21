@@ -19,7 +19,8 @@ use Throwable;
  *  - Deduplica por id de mensaje y por código de generación (no reprocesa).
  *
  * Reutiliza el decodificador y el parser de adjuntos DTE (utilidades de parsing,
- * no fuentes de correo).
+ * no fuentes de correo), y el ClasificadorDocumentoRecibido (compartido con el
+ * comando de backfill) para decidir POR QUÉ un documento quedó sin datos DTE.
  */
 class SincronizadorDocumentosRecibidos
 {
@@ -27,6 +28,7 @@ class SincronizadorDocumentosRecibidos
         private readonly MailboxClient $buzon,
         private readonly JsonAdjuntoDecoder $decoder,
         private readonly ParserDocumentoRecibido $parser,
+        private readonly ClasificadorDocumentoRecibido $clasificador,
     ) {}
 
     public function disponible(): bool
@@ -109,20 +111,28 @@ class SincronizadorDocumentosRecibidos
         $tieneJson = false;
         $datos = [];
         $jsonAdjunto = null;
+        $pdfAdjunto = null;
+        $decodeFallido = null;
 
         foreach ($adjuntos as $a) {
-            $nombre = strtolower((string) ($a['filename'] ?? ''));
+            $nombre = (string) ($a['filename'] ?? '');
+            $nombreMin = strtolower($nombre);
             $mime = strtolower((string) ($a['mime'] ?? ''));
-            if (str_ends_with($nombre, '.pdf') || str_contains($mime, 'pdf')) {
+            if (str_ends_with($nombreMin, '.pdf') || str_contains($mime, 'pdf')) {
                 $tienePdf = true;
+                $pdfAdjunto ??= $nombre;
             }
-            if (str_ends_with($nombre, '.json') || str_contains($mime, 'json')) {
+            if (str_ends_with($nombreMin, '.json') || str_contains($mime, 'json')) {
                 $tieneJson = true;
+                // Sigue intentando con el siguiente .json si el anterior no decodificó.
                 if ($datos === []) {
-                    $dec = $this->decoder->decodificar((string) ($a['data'] ?? ''), $mime, (string) ($a['filename'] ?? ''));
+                    $dec = $this->decoder->decodificar((string) ($a['data'] ?? ''), $mime, $nombre);
                     if (! empty($dec['ok']) && is_array($dec['data'])) {
                         $datos = $this->parser->extraer($dec['data']);
-                        $jsonAdjunto = $a['filename'] ?? null;
+                        $jsonAdjunto = $nombre;
+                        $decodeFallido = null;
+                    } else {
+                        $decodeFallido = $this->clasificador->diagnosticoDecode($dec, $nombre);
                     }
                 }
             }
@@ -136,6 +146,10 @@ class SincronizadorDocumentosRecibidos
         if ($codigo !== null && DocumentoRecibido::where('codigo_generacion', $codigo)->exists()) {
             return 'duplicado';
         }
+
+        [$clasificacion, $diagnostico] = $this->clasificador->clasificar(
+            $tieneJson, $datos, $decodeFallido, (string) ($mensaje['asunto'] ?? ''), (string) $pdfAdjunto,
+        );
 
         // Guardar adjuntos localmente para el futuro envío a contabilidad (no se
         // reenvía nada ahora). Solo lectura del buzón; escritura en disco local.
@@ -160,6 +174,8 @@ class SincronizadorDocumentosRecibidos
             'tiene_pdf' => $tienePdf,
             'tiene_json' => $tieneJson,
             'estado' => 'pendiente',
+            'clasificacion' => $clasificacion,
+            'clasificacion_diagnostico' => $diagnostico,
             'metadata_json' => [
                 'fuente' => $this->buzon->fuente(),
                 'adjuntos' => array_map(fn ($a) => ['filename' => $a['filename'] ?? null, 'mime' => $a['mime'] ?? null], $adjuntos),
