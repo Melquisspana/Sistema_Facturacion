@@ -16,6 +16,7 @@ use App\Services\Dte\DteInvalidacionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 class DteInvalidacionRealTest extends TestCase
@@ -398,5 +399,70 @@ class DteInvalidacionRealTest extends TestCase
         Http::assertSent(function ($req) {
             return str_contains($req->url(), 'anulardte') && ($req->data()['documento'] ?? null) === 'FAKE.JWS.SIGNATURE';
         });
+    }
+
+    // ---------- Auditoría de la transmisión real (activity log, simétrico al mock) ----------
+
+    public function test_aceptado_registra_activity_log_con_datos_suficientes_y_sin_secretos(): void
+    {
+        $this->fakeHttp([
+            'estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-INVAL-REAL-XYZ',
+            'descripcionMsg' => 'Recibido', 'fhProcesamiento' => '01/07/2026 10:00:00',
+        ]);
+        $dte = $this->ncAceptada();
+
+        $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $log = Activity::where('log_name', 'dte_invalidacion')->latest('id')->first();
+        $this->assertNotNull($log, 'debe quedar un registro de auditoría de la transmisión real');
+        $this->assertSame($dte->id, $log->subject_id);
+        $this->assertStringContainsString('ACEPTÓ', $log->description);
+
+        $props = $log->properties->toArray();
+        $this->assertTrue($props['aceptado']);
+        $this->assertSame('aceptado', $props['resultado_mh']);
+        $this->assertSame(TipoAnulacionMh::RescindirOperacion->value, $props['tipo_anulacion']);
+        $this->assertSame('00', $props['ambiente']);
+        $this->assertSame('consola', $props['origen']); // corrido desde el test = fuera de una request web
+        $this->assertArrayHasKey('fecha', $props);
+        $this->assertArrayHasKey('codigo_generacion_evento', $props);
+
+        // Nunca contraseñas, tokens ni JSON/JWS completo en la auditoría.
+        $plano = json_encode($props);
+        $this->assertStringNotContainsString('FAKE-TOKEN', (string) $plano);
+        $this->assertStringNotContainsString('secreto', (string) $plano);
+        $this->assertStringNotContainsString('FAKE.JWS.SIGNATURE', (string) $plano);
+    }
+
+    public function test_rechazado_tambien_registra_activity_log(): void
+    {
+        $this->fakeHttp([
+            '_http' => 400, 'estado' => 'RECHAZADO', 'descripcionMsg' => 'Documento ya invalidado',
+        ]);
+        $dte = $this->ncAceptada();
+
+        $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $log = Activity::where('log_name', 'dte_invalidacion')->latest('id')->first();
+        $this->assertNotNull($log);
+        $this->assertStringContainsString('RECHAZÓ', $log->description);
+        $props = $log->properties->toArray();
+        $this->assertFalse($props['aceptado']);
+        $this->assertSame('rechazado', $props['resultado_mh']);
+    }
+
+    public function test_error_de_conexion_no_registra_activity_log(): void
+    {
+        Http::fake([
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200),
+            '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
+            '*anulardte*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'),
+        ]);
+        $dte = $this->ncAceptada();
+
+        $r = $this->servicio()->transmitir($dte, $this->evento(), true, true);
+
+        $this->assertSame('error_conexion', $r['resultado']);
+        $this->assertNull(Activity::where('log_name', 'dte_invalidacion')->latest('id')->first());
     }
 }

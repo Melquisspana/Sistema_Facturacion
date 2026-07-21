@@ -162,6 +162,7 @@ class DtePolicy
     {
         return $user->hasAnyRole(self::GESTORES)
             && $dte->aceptadoRealmentePorMh()
-            && ! $dte->tieneEventoInvalidacion();
+            && ! $dte->tieneEventoInvalidacion()
+            && ! $dte->estaProtegidoComoEvidencia();
     }
 }

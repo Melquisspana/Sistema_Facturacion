@@ -27,6 +27,34 @@
         </p>
     </div>
 
+    @if ($inv['protegido'] ?? false)
+        <div class="mb-4 bg-rose-50 border border-rose-300 rounded-md p-3 text-xs text-rose-800 font-semibold">
+            DOCUMENTO PROTEGIDO COMO EVIDENCIA APITEST
+            <p class="mt-1 font-normal">
+                Este DTE está en la lista de protección
+                (<span class="font-mono">dte.invalidacion.protegidos_numero_control</span> /
+                <span class="font-mono">protegidos_codigo_generacion</span>) y <strong>no puede invalidarse</strong>
+                por esta vía —ni mock ni real— mientras la protección siga activa. No hay forma de evadir esto
+                desde la web ni desde el comando.
+            </p>
+        </div>
+    @endif
+
+    @if ($inv['tiene_nc_relacionada'] ?? false)
+        <div class="mb-4 bg-orange-50 border border-orange-300 rounded-md p-3 text-xs text-orange-800 font-semibold">
+            ESTE DOCUMENTO YA TIENE UNA NOTA DE CRÉDITO RELACIONADA
+            <p class="mt-1 font-normal">
+                Invalidar oficialmente un documento que ya tiene una Nota de Crédito emitida en su contra puede
+                producir una <strong>doble corrección fiscal</strong> (la NC y el evento de invalidación cubriendo
+                la misma operación).
+                @if (($inv['notas_credito_relacionadas'] ?? collect())->isNotEmpty())
+                    NC relacionada(s): <span class="font-mono">{{ $inv['notas_credito_relacionadas']->pluck('numero_control')->implode(', ') }}</span>.
+                @endif
+                Requiere confirmación explícita para continuar.
+            </p>
+        </div>
+    @endif
+
     {{-- Evidencia del evento ya firmado (mock o real). Solo lectura. --}}
     @if ($inv['ya_invalidado'] && filled($selloInval))
         <div class="bg-gray-50 border border-gray-200 rounded-md p-4 mb-4">
@@ -65,6 +93,10 @@
         </div>
     @endif
 
+    @if (! $inv['puede_mock'] && ($inv['protegido'] ?? false))
+        <p class="text-xs text-rose-700 font-semibold">No se puede firmar ninguna invalidación (mock) para este documento: está protegido como evidencia.</p>
+    @endif
+
     {{-- Formulario de firma MOCK (solo candidatos: aceptado real por MH y sin evento previo). --}}
     @if ($inv['puede_mock'])
         <form method="POST" action="{{ route('facturacion.invalidacion.mock', $dte) }}"
@@ -90,13 +122,19 @@
                 <x-text-input id="inval_reemplazo" name="reemplazo" type="text" class="mt-1 block w-full font-mono" :value="old('reemplazo')" />
                 <x-input-error :messages="$errors->get('reemplazo')" class="mt-1" />
             </div>
-            <div class="flex items-center">
+            <div class="flex flex-col gap-2">
                 @unless ($inv['mock_activo'])
                     <label class="inline-flex items-center gap-2 text-xs text-gray-600">
                         <input type="checkbox" name="confirmar_sin_flag" value="1" class="rounded border-gray-300 text-amber-600 focus:ring-amber-500">
                         Ejecutar aunque el mock esté apagado (no transmite nada)
                     </label>
                 @endunless
+                @if ($inv['tiene_nc_relacionada'] ?? false)
+                    <label class="inline-flex items-center gap-2 text-xs text-orange-700 font-semibold">
+                        <input type="checkbox" id="inval_confirmar_nc" name="confirmar_nc_relacionada" value="1" required class="rounded border-orange-400 text-orange-600 focus:ring-orange-500">
+                        Entiendo el riesgo de doble corrección fiscal y confirmo invalidar de todas formas
+                    </label>
+                @endif
             </div>
             <div class="md:col-span-3 flex flex-wrap gap-3">
                 <button class="inline-flex items-center px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700">
@@ -113,11 +151,14 @@
         <form method="POST" action="{{ route('facturacion.invalidacion.dry-run', $dte) }}" id="inval_dry_run_form"
               onsubmit="this.querySelector('[name=tipo]').value = document.getElementById('inval_tipo').value;
                         this.querySelector('[name=motivo]').value = document.getElementById('inval_motivo').value;
-                        this.querySelector('[name=reemplazo]').value = document.getElementById('inval_reemplazo').value;">
+                        this.querySelector('[name=reemplazo]').value = document.getElementById('inval_reemplazo').value;
+                        var ncChk = document.getElementById('inval_confirmar_nc');
+                        this.querySelector('[name=confirmar_nc_relacionada]').value = (ncChk && ncChk.checked) ? '1' : '';">
             @csrf
             <input type="hidden" name="tipo">
             <input type="hidden" name="motivo">
             <input type="hidden" name="reemplazo">
+            <input type="hidden" name="confirmar_nc_relacionada">
         </form>
     @endif
 

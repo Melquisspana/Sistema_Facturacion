@@ -404,6 +404,11 @@ class DteController extends Controller
                 'puede_mock' => auth()->user()->can('invalidarMock', $dte),
                 'mock_activo' => (bool) config('dte.invalidacion.mock', false),
                 'ya_invalidado' => $dte->tieneEventoInvalidacion(),
+                'protegido' => $dte->estaProtegidoComoEvidencia(),
+                'tiene_nc_relacionada' => $dte->tieneNotaCreditoRelacionada(),
+                'notas_credito_relacionadas' => $dte->tieneNotaCreditoRelacionada()
+                    ? $dte->notasCreditoRelacionadas()->get(['id', 'numero_control', 'estado'])
+                    : collect(),
                 'candados' => $invalidacionService->evaluarCandados($dte, $evento, false, false),
                 'dry_run' => session('dry_run_invalidacion'),
                 'tipos' => TipoAnulacionMh::opciones(),
@@ -863,9 +868,10 @@ class DteController extends Controller
         $this->authorize('verInvalidacion', $dte);
 
         $evento = $this->eventoInvalidacionDesdeRequest($request);
+        $confirmarNc = $request->boolean('confirmar_nc_relacionada');
 
         try {
-            $resumen = $invalidacionService->dryRun($dte, $evento);
+            $resumen = $invalidacionService->dryRun($dte, $evento, confirmoNcRelacionada: $confirmarNc);
         } catch (DteInvalidacionException $e) {
             return redirect()
                 ->route('facturacion.show', $dte)
@@ -890,9 +896,10 @@ class DteController extends Controller
 
         $evento = $this->eventoInvalidacionDesdeRequest($request);
         $confirmar = $request->boolean('confirmar_sin_flag');
+        $confirmarNc = $request->boolean('confirmar_nc_relacionada');
 
         try {
-            $r = $mockService->firmarMock($dte, $evento, persistir: true, permitirSinMock: $confirmar);
+            $r = $mockService->firmarMock($dte, $evento, persistir: true, permitirSinMock: $confirmar, permitirNcRelacionada: $confirmarNc);
         } catch (DteInvalidacionException $e) {
             return redirect()
                 ->route('facturacion.show', $dte)

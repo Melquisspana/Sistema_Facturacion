@@ -237,6 +237,21 @@ return [
             'tipo_doc' => env('DTE_INVALIDACION_SOL_TIPO_DOC', ''),
             'num_doc' => env('DTE_INVALIDACION_SOL_NUM_DOC', ''),
         ],
+
+        // Documentos PROTEGIDOS como evidencia (p.ej. cierre de una fase de pruebas en
+        // APITEST): NUNCA pueden invalidarse por esta vía (mock ni real), sin excepción
+        // ni flag de override. Preferir número de control o código de generación
+        // (estables) sobre el id interno, que puede cambiar entre entornos/migraciones.
+        // Listas separadas por comas; vacío = nada protegido (comportamiento anterior).
+        // Ver App\Models\Dte::estaProtegidoComoEvidencia().
+        'protegidos_numero_control' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('DTE_INVALIDACION_PROTEGIDOS_NUMERO_CONTROL', ''))
+        ))),
+        'protegidos_codigo_generacion' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('DTE_INVALIDACION_PROTEGIDOS_CODIGO_GENERACION', ''))
+        ))),
     ],
 
     /*

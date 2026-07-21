@@ -26,7 +26,8 @@ class DteInvalidacionPreflightCommand extends Command
     protected $signature = 'dte:invalidacion-preflight {dte : ID del DTE aceptado a invalidar}
         {--tipo= : Tipo de anulación CAT-024 (1=Error info, 2=Rescindir, 3=Otro) — OBLIGATORIO y explícito}
         {--motivo= : Motivo en texto (obligatorio para tipo 3)}
-        {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}';
+        {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}
+        {--confirmo-nc-relacionada : Diagnostica como si ya se hubiera confirmado la NC relacionada}';
 
     protected $description = 'Checklist de preflight para la invalidación real (solo lectura). No firma ni transmite.';
 
@@ -73,15 +74,23 @@ class DteInvalidacionPreflightCommand extends Command
             $ok = $ok && $pasa;
         };
 
+        $confirmoNc = (bool) $this->option('confirmo-nc-relacionada');
+
         // --- Estado de la NC ---
         $add($dte->estado === EstadoDte::Aceptado, 'NC existe y está aceptada', 'estado: '.$dte->estado->value);
         $add($dte->aceptadoRealmentePorMh(), 'Aceptada realmente por MH', $dte->aceptadoRealmentePorMh() ? 'sí (sello real + fecha MH)' : 'NO');
         $add(blank($dte->sello_invalidacion), 'sello_invalidacion sigue null', blank($dte->sello_invalidacion) ? 'sí' : 'ya tiene: '.$dte->sello_invalidacion);
         $add(! $dte->tieneEventoInvalidacion(), 'Sin evento de invalidación previo', $dte->tieneEventoInvalidacion() ? 'YA tiene' : 'sí');
+        $add(! $dte->estaProtegidoComoEvidencia(), 'No protegido como evidencia',
+            $dte->estaProtegidoComoEvidencia() ? 'PROTEGIDO — no se puede invalidar por ninguna vía' : 'no protegido');
+        $add(! $dte->tieneNotaCreditoRelacionada() || $confirmoNc, 'Sin NC relacionada (o confirmado)',
+            $dte->tieneNotaCreditoRelacionada()
+                ? ($confirmoNc ? 'tiene NC relacionada — confirmado con --confirmo-nc-relacionada' : 'TIENE NC relacionada — posible doble corrección fiscal, falta --confirmo-nc-relacionada')
+                : 'no tiene NC relacionada');
 
         // --- Evento / schema / endpoint (dry-run interno) ---
         try {
-            $d = $inval->dryRun($dte, $evento, false, false);
+            $d = $inval->dryRun($dte, $evento, false, false, $confirmoNc);
             $add(str_contains($d['endpoint'], 'apitest.dtes.mh.gob.sv'), 'Endpoint apitest', $d['endpoint']);
             $add($d['schema']['valido'], 'Schema evento válido (v3)', $d['schema']['valido'] ? 'sí' : 'NO: '.implode(' | ', array_slice($d['schema']['errores'], 0, 4)));
             $candados = $d['candados'];
