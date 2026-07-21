@@ -307,7 +307,9 @@ return [
     | (manual o desde una Lista de Empaque). El usuario puede cambiarlos en el
     | editor antes de generar (sección "Datos aduaneros"); NO se reasignan a FEX
     | ya existentes. Códigos oficiales verificados en catalogos_mh:
-    |   - recinto_fiscal:  CAT-027 (08 = Terrestre Anguiatú)
+    |   - recinto_fiscal:  CAT-027 (01 = Terrestre San Bartolo; confirmado con FEX #130 y
+    |     #143 aceptadas realmente por el MH. 08 = Terrestre Anguiatú sigue siendo una
+    |     opción VÁLIDA del catálogo, solo dejó de ser el valor por defecto)
     |   - tipo_regimen:    CAT-033 (EX-1 = Exportación Definitiva)
     |   - regimen:         CAT-028 (1000.000 = Exportación Definitiva, Régimen Común)
     |   - cod_incoterms:   CAT-031 (09 = FOB-Libre a bordo)
@@ -316,7 +318,7 @@ return [
     */
     'exportacion' => [
         'tipo_item_expor_default' => 1, // Bienes
-        'recinto_fiscal_default' => env('DTE_FEX_RECINTO_FISCAL_DEFAULT', '08'), // Terrestre Anguiatú
+        'recinto_fiscal_default' => env('DTE_FEX_RECINTO_FISCAL_DEFAULT', '01'), // Terrestre San Bartolo
         'tipo_regimen_default' => env('DTE_FEX_TIPO_REGIMEN_DEFAULT', 'EX-1'),
         'regimen_default' => env('DTE_FEX_REGIMEN_DEFAULT', '1000.000'),
         'cod_incoterms_default' => env('DTE_FEX_COD_INCOTERMS_DEFAULT', '09'), // FOB
