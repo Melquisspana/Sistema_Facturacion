@@ -27,7 +27,8 @@ class DteInvalidacionMockCommand extends Command
         {--motivo= : Motivo en texto (obligatorio para tipo 3)}
         {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}
         {--guardar : Persiste columnas nuevas + JSON/JWS en storage}
-        {--confirmar : Permite correr el mock aunque DTE_INVALIDACION_MOCK=false (nunca transmite)}';
+        {--confirmar : Permite correr el mock aunque DTE_INVALIDACION_MOCK=false (nunca transmite)}
+        {--confirmo-nc-relacionada : Confirma continuar aunque el documento tenga una Nota de Crédito relacionada (riesgo de doble corrección fiscal)}';
 
     protected $description = 'Firma MOCK del evento de invalidación y persistencia en columnas dedicadas. No transmite ni cambia el estado del DTE.';
 
@@ -61,12 +62,18 @@ class DteInvalidacionMockCommand extends Command
 
         $this->warn('*** MOCK — NO se transmite a /fesv/anulardte, NO se cambia el estado del DTE ***');
 
+        if ($dte->tieneNotaCreditoRelacionada()) {
+            $this->warn('⚠ Este documento ya tiene una Nota de Crédito relacionada. Firmar la invalidación además '
+                .'puede producir una DOBLE CORRECCIÓN FISCAL. Requiere --confirmo-nc-relacionada.');
+        }
+
         try {
             $r = $servicio->firmarMock(
                 $dte,
                 $evento,
                 persistir: (bool) $this->option('guardar'),
                 permitirSinMock: (bool) $this->option('confirmar'),
+                permitirNcRelacionada: (bool) $this->option('confirmo-nc-relacionada'),
             );
         } catch (DteInvalidacionException $e) {
             $this->error($e->getMessage());

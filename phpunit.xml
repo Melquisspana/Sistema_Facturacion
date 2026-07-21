@@ -56,6 +56,11 @@
         <env name="DTE_MODO_OPERACION" value="paralelo"/>
         <env name="DTE_SISTEMA_ACTUAL_ACTIVO" value="true"/>
         <env name="DTE_TRANSMISION_AMBIENTE" value="testing"/>
+        <!-- Protección de evidencia (invalidación): el suite arranca SIN nada protegido,
+             sin importar el .env real de la máquina (que en APITEST sí protege #139/#140/
+             #142/#143). Los tests de la guarda lo fijan explícitamente con config()->set(). -->
+        <env name="DTE_INVALIDACION_PROTEGIDOS_NUMERO_CONTROL" value=""/>
+        <env name="DTE_INVALIDACION_PROTEGIDOS_CODIGO_GENERACION" value=""/>
         <!-- Documentos recibidos: el suite NUNCA debe conectar al buzón real (Yahoo/IMAP).
              Fuente forzada a 'none' y credenciales vacías, sin importar el .env de la máquina;
              los tests usan un MailboxClient mockeado. -->

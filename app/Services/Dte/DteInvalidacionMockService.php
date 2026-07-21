@@ -3,6 +3,7 @@
 namespace App\Services\Dte;
 
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
+use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
@@ -53,9 +54,9 @@ class DteInvalidacionMockService
      *
      * @throws DteInvalidacionException
      */
-    public function firmarMock(Dte $dte, EventoInvalidacionData $evento, bool $persistir = false, bool $permitirSinMock = false): array
+    public function firmarMock(Dte $dte, EventoInvalidacionData $evento, bool $persistir = false, bool $permitirSinMock = false, bool $permitirNcRelacionada = false): array
     {
-        $this->verificarCandados($dte, $permitirSinMock);
+        $this->verificarCandados($dte, $permitirSinMock, $permitirNcRelacionada);
 
         // 1) Serializar el evento (revalida aceptación real + reglas CAT-024).
         try {
@@ -109,8 +110,16 @@ class DteInvalidacionMockService
      *
      * @throws DteInvalidacionException
      */
-    private function verificarCandados(Dte $dte, bool $permitirSinMock): void
+    private function verificarCandados(Dte $dte, bool $permitirSinMock, bool $permitirNcRelacionada = false): void
     {
+        // Evidencia PROTEGIDA: primero y sin flag de override posible.
+        if ($dte->estaProtegidoComoEvidencia()) {
+            throw new DteEvidenciaProtegidaException(
+                'El DTE '.$dte->id.' ('.$dte->numero_control.') está PROTEGIDO como evidencia APITEST y NO puede '
+                .'invalidarse por esta vía (ni mock ni real), sin excepción. Revise '
+                ."config('dte.invalidacion.protegidos_numero_control' / 'protegidos_codigo_generacion')."
+            );
+        }
         if (! (bool) config('dte.invalidacion.mock', false) && ! $permitirSinMock) {
             throw new DteInvalidacionException(
                 'La Fase C corre en modo MOCK. DTE_INVALIDACION_MOCK=false: active el flag o confirme '
@@ -127,6 +136,13 @@ class DteInvalidacionMockService
             throw new DteInvalidacionException(
                 'El DTE ya tiene un evento de invalidación registrado (sello_invalidacion presente o estado invalidado). '
                 .'No se invalida dos veces.'
+            );
+        }
+        if ($dte->tieneNotaCreditoRelacionada() && ! $permitirNcRelacionada) {
+            throw new DteInvalidacionException(
+                'El documento tiene una Nota de Crédito relacionada (posible doble corrección fiscal): '
+                .'pase permitirNcRelacionada / --confirmo-nc-relacionada para invalidar de todas formas, '
+                .'bajo su responsabilidad.'
             );
         }
     }

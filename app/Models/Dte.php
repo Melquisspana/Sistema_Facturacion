@@ -211,6 +211,55 @@ class Dte extends Model
         return $this->hasMany(Dte::class, 'dte_relacionado_id');
     }
 
+    /**
+     * Notas de crédito (tipo 05) EMITIDAS contra este documento (no en borrador), vía
+     * `dte_relacionado_id`. Sirve para advertir de una posible DOBLE CORRECCIÓN FISCAL
+     * antes de invalidar oficialmente el documento original ante el MH: por sí sola
+     * NO bloquea nada (ver {@see \App\Services\Dte\DteInvalidacionService}).
+     */
+    public function notasCreditoRelacionadas(): HasMany
+    {
+        return $this->notas()
+            ->where('tipo_dte', TipoDte::NotaCredito->value)
+            ->where('estado', '!=', EstadoDte::Borrador->value);
+    }
+
+    /** ¿Tiene al menos una Nota de Crédito emitida en su contra? */
+    public function tieneNotaCreditoRelacionada(): bool
+    {
+        return $this->notasCreditoRelacionadas()->exists();
+    }
+
+    /**
+     * ¿Este documento está PROTEGIDO como evidencia (p.ej. cierre de una fase de
+     * pruebas en APITEST) y por tanto NUNCA debe invalidarse —ni mock ni real— por
+     * esta vía, sin excepción? Configurable por número de control o código de
+     * generación (más estables que el id interno entre entornos/migraciones) vía
+     * `config('dte.invalidacion.protegidos_numero_control' / 'protegidos_codigo_generacion')`.
+     * Sin nada configurado, ningún documento está protegido (comportamiento anterior).
+     */
+    public function estaProtegidoComoEvidencia(): bool
+    {
+        $numerosControl = self::normalizarListaProteccion(config('dte.invalidacion.protegidos_numero_control', []));
+        $codigosGeneracion = self::normalizarListaProteccion(config('dte.invalidacion.protegidos_codigo_generacion', []));
+
+        if (filled($this->numero_control) && in_array(strtoupper((string) $this->numero_control), $numerosControl, true)) {
+            return true;
+        }
+
+        return filled($this->codigo_generacion) && in_array(strtoupper((string) $this->codigo_generacion), $codigosGeneracion, true);
+    }
+
+    /** @return array<int, string> */
+    private static function normalizarListaProteccion(mixed $valores): array
+    {
+        return collect(is_array($valores) ? $valores : [])
+            ->map(fn ($v) => strtoupper(trim((string) $v)))
+            ->filter(fn ($v) => $v !== '')
+            ->values()
+            ->all();
+    }
+
     public function lineas(): HasMany
     {
         return $this->hasMany(DteLinea::class)->orderBy('numero_linea');

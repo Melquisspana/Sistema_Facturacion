@@ -4,11 +4,13 @@ namespace App\Services\Dte;
 
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\EstadoDte;
+use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -55,11 +57,11 @@ class DteInvalidacionService
      *
      * @throws DteInvalidacionException si el evento ni siquiera se puede construir
      */
-    public function dryRun(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal = false, bool $confirmoInvalidar = false): array
+    public function dryRun(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal = false, bool $confirmoInvalidar = false, bool $confirmoNcRelacionada = false): array
     {
         $eventoJson = $this->construirEvento($dte, $evento);
         $schema = $this->validador->validarInvalidacion($eventoJson);
-        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar);
+        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
 
         return [
             'transmitiria' => ! $candados['bloqueado'] && ($schema['estado'] ?? null) !== 'invalido',
@@ -90,9 +92,15 @@ class DteInvalidacionService
      *
      * @throws DteInvalidacionException
      */
-    public function transmitir(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar): array
+    public function transmitir(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar, bool $confirmoNcRelacionada = false): array
     {
-        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar);
+        // Guarda de EVIDENCIA: primera y más dura de todas, independiente de los demás
+        // candados y sin flag de override. Se verifica de nuevo aquí (no solo dentro de
+        // evaluarCandados) para que ningún refactor futuro de los candados pueda dejar
+        // pasar una transmisión real sobre un documento protegido.
+        $this->verificarNoProtegido($dte);
+
+        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
         if ($candados['bloqueado']) {
             throw new DteInvalidacionException('Transmisión de invalidación bloqueada: '.implode(' | ', $candados['razones']));
         }
@@ -152,9 +160,15 @@ class DteInvalidacionService
      *
      * @return array{bloqueado: bool, razones: array<int, string>}
      */
-    public function evaluarCandados(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar): array
+    public function evaluarCandados(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar, bool $confirmoNcRelacionada = false): array
     {
         $r = [];
+
+        // Evidencia PROTEGIDA: primero y sin flag de override. Ver estaProtegidoComoEvidencia().
+        if ($dte->estaProtegidoComoEvidencia()) {
+            $r[] = 'DTE PROTEGIDO como evidencia APITEST (config dte.invalidacion.protegidos_numero_control / '
+                .'protegidos_codigo_generacion): no puede invalidarse por esta vía, sin excepción.';
+        }
 
         // Confirmaciones explícitas del comando.
         if (! $transmitirReal) {
@@ -204,7 +218,34 @@ class DteInvalidacionService
             $r[] = 'La NC ya tiene un evento de invalidación o está invalidada.';
         }
 
+        // Nota de Crédito relacionada: NO es un bloqueo automático (no hay base fiscal
+        // confirmada para prohibirlo) sino una CONFIRMACIÓN REFORZADA: bloquea salvo que
+        // se pase --confirmo-nc-relacionada (comando) / el checkbox equivalente (UI),
+        // asumiendo el riesgo de una posible doble corrección fiscal (NC + invalidación
+        // cubriendo la misma operación).
+        if ($dte->tieneNotaCreditoRelacionada() && ! $confirmoNcRelacionada) {
+            $r[] = 'El documento tiene una Nota de Crédito relacionada (posible doble corrección fiscal): '
+                .'pase --confirmo-nc-relacionada para invalidar de todas formas, bajo su responsabilidad.';
+        }
+
         return ['bloqueado' => $r !== [], 'razones' => $r];
+    }
+
+    /**
+     * Guarda dura e incondicional: un documento marcado como evidencia PROTEGIDA nunca
+     * se transmite, sin importar el resto de candados ni ningún flag.
+     *
+     * @throws DteEvidenciaProtegidaException
+     */
+    private function verificarNoProtegido(Dte $dte): void
+    {
+        if ($dte->estaProtegidoComoEvidencia()) {
+            throw new DteEvidenciaProtegidaException(
+                'El DTE '.$dte->id.' ('.$dte->numero_control.') está PROTEGIDO como evidencia APITEST y NO puede '
+                .'invalidarse por esta vía (ni mock ni real), sin excepción. Revise '
+                ."config('dte.invalidacion.protegidos_numero_control' / 'protegidos_codigo_generacion')."
+            );
+        }
     }
 
     /**
@@ -294,6 +335,27 @@ class DteInvalidacionService
                 // Rechazado: se guarda la respuesta (motivo) SIN sello y SIN cambiar estado.
                 $dte->save();
             }
+
+            // Auditoría de la transmisión REAL (simétrica al log del mock): quién, qué DTE,
+            // tipo de anulación, resultado del MH, ambiente y si vino de consola o web.
+            // NUNCA guarda contraseñas, tokens ni el JSON/JWS firmado completo (esos ya
+            // viven aparte en disco, en rutas ya registradas en columnas dedicadas).
+            activity('dte_invalidacion')
+                ->performedOn($dte)
+                ->withProperties([
+                    'codigo_generacion_evento' => $codigoEvento,
+                    'tipo_anulacion' => $evento->tipoAnulacion->value,
+                    'resultado_mh' => $interpretado['resultado'],
+                    'http_status' => $interpretado['http_status'],
+                    'ambiente' => $dte->ambiente->value,
+                    'aceptado' => $aceptado,
+                    'origen' => app()->runningInConsole() ? 'consola' : 'web',
+                    'usuario' => optional(Auth::user())->name,
+                    'fecha' => $ahora->toIso8601String(),
+                ])
+                ->log($aceptado
+                    ? 'transmitió (REAL) el evento de invalidación — Hacienda lo ACEPTÓ'
+                    : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ');
         });
 
         return $this->resultado(

@@ -26,7 +26,8 @@ class DteInvalidacionRealCommand extends Command
         {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}
         {--dry-run : Muestra qué se enviaría sin firmar ni transmitir}
         {--transmitir-real : Confirmación 1/2 para transmitir de verdad}
-        {--confirmo-invalidar : Confirmación 2/2 para transmitir de verdad}';
+        {--confirmo-invalidar : Confirmación 2/2 para transmitir de verdad}
+        {--confirmo-nc-relacionada : Confirma continuar aunque el documento tenga una Nota de Crédito relacionada (riesgo de doble corrección fiscal)}';
 
     protected $description = 'Transmisión REAL del evento de invalidación a anulardte (apitest), candada. Use --dry-run primero.';
 
@@ -73,11 +74,20 @@ class DteInvalidacionRealCommand extends Command
 
         $transmitirReal = (bool) $this->option('transmitir-real');
         $confirmoInvalidar = (bool) $this->option('confirmo-invalidar');
+        $confirmoNcRelacionada = (bool) $this->option('confirmo-nc-relacionada');
+
+        // Advertencia visible e independiente de los candados: se muestra SIEMPRE que
+        // exista una NC relacionada, tanto en dry-run como antes de transmitir de verdad.
+        if ($dte->tieneNotaCreditoRelacionada()) {
+            $this->warn('⚠ Este documento ya tiene una Nota de Crédito relacionada. Invalidarlo oficialmente '
+                .'además puede producir una DOBLE CORRECCIÓN FISCAL (la NC y el evento de invalidación cubriendo '
+                .'la misma operación). Requiere --confirmo-nc-relacionada para transmitir.');
+        }
 
         // --- DRY-RUN (default seguro si no se pide transmitir) ---
         if ($this->option('dry-run') || ! $transmitirReal || ! $confirmoInvalidar) {
             try {
-                $d = $servicio->dryRun($dte, $evento, $transmitirReal, $confirmoInvalidar);
+                $d = $servicio->dryRun($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
             } catch (DteInvalidacionException $e) {
                 $this->error($e->getMessage());
 
@@ -115,7 +125,7 @@ class DteInvalidacionRealCommand extends Command
         // --- TRANSMISIÓN REAL (todos los candados los valida el servicio) ---
         $this->warn('*** TRANSMISIÓN REAL a /fesv/anulardte (apitest) ***');
         try {
-            $r = $servicio->transmitir($dte, $evento, $transmitirReal, $confirmoInvalidar);
+            $r = $servicio->transmitir($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
         } catch (DteInvalidacionException $e) {
             $this->error($e->getMessage());
 
