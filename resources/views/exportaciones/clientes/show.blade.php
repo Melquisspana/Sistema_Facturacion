@@ -2,8 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ $cliente->nombre }}
+                {{ $cliente->nombreLegal() }}
                 <span class="ms-2 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium align-middle {{ $cliente->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">{{ $cliente->activo ? 'Activo' : 'Inactivo' }}</span>
+                @if ($cliente->tieneDocumentoFiscalProvisional())
+                    <span class="ms-2 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium align-middle bg-red-100 text-red-700">Documento provisional</span>
+                @endif
             </h2>
             <div class="flex gap-2">
                 <a href="{{ route('exportaciones.clientes.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Volver</a>
@@ -18,43 +21,52 @@
                 <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
             @endif
 
-            {{-- Datos del cliente --}}
-            <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
-                <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-gray-400">Dirección</dt>
-                        <dd class="mt-0.5 text-gray-800">{{ $cliente->direccion ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-gray-400">FDA reg. number</dt>
-                        <dd class="mt-0.5 text-gray-800">{{ $cliente->fda_reg_number ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wide text-gray-400">Contacto</dt>
-                        <dd class="mt-0.5 text-gray-800">{{ $cliente->contacto ?? '—' }}</dd>
-                    </div>
-                </dl>
-            </div>
+            @if ($cliente->tieneDocumentoFiscalProvisional())
+                <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                    Documento fiscal provisional: no se puede generar una Factura de exportación (FEX) real para este
+                    cliente hasta ingresar el documento verdadero en el Cliente DTE vinculado.
+                </div>
+            @endif
 
-            {{-- Cliente DTE vinculado --}}
+            {{-- Cliente DTE vinculado: fuente de verdad de nombre legal, documento y dirección fiscal. --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-4">Cliente DTE vinculado</h3>
 
                 @if ($cliente->cliente)
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <p class="text-sm text-gray-800">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm grow">
+                            <div class="sm:col-span-2">
                                 <span class="inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 align-middle">Vinculado</span>
-                                <span class="ms-2 font-medium">{{ $cliente->cliente->nombre }}</span>
-                            </p>
-                            <p class="mt-1 text-xs text-gray-500">Doc.: {{ $cliente->cliente->num_documento ?? '—' }} · <a href="{{ route('clientes.edit', $cliente->cliente) }}" class="text-indigo-600 hover:underline">ver/editar cliente DTE</a></p>
-                        </div>
+                            </div>
+                            <div>
+                                <dt class="text-xs uppercase tracking-wide text-gray-400">Nombre legal</dt>
+                                <dd class="mt-0.5 font-medium text-gray-800">{{ $cliente->cliente->nombre }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs uppercase tracking-wide text-gray-400">Documento fiscal</dt>
+                                <dd class="mt-0.5 text-gray-800">
+                                    {{ $cliente->cliente->num_documento ?? '—' }}
+                                    @if ($cliente->tieneDocumentoFiscalProvisional())
+                                        <span class="ms-1 text-xs font-medium text-red-600">(provisional)</span>
+                                    @endif
+                                </dd>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <dt class="text-xs uppercase tracking-wide text-gray-400">Dirección fiscal</dt>
+                                <dd class="mt-0.5 text-gray-800">{{ $cliente->direccionFiscal() ?? '—' }}</dd>
+                            </div>
+                        </dl>
                         <form method="POST" action="{{ route('exportaciones.clientes.desvincular-cliente-dte', $cliente) }}"
                               onsubmit="return confirm('¿Quitar el vínculo con el Cliente DTE? Esto no borra ningún cliente ni factura.');">
                             @csrf @method('DELETE')
                             <button class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200">Quitar vínculo</button>
                         </form>
                     </div>
+                    <p class="mt-3 text-xs text-gray-400">
+                        Nombre legal, documento y dirección fiscal se editan en el
+                        <a href="{{ route('clientes.edit', $cliente->cliente) }}" class="text-indigo-600 hover:underline">Cliente DTE</a>,
+                        no acá: esta pantalla solo administra precios y datos propios del embarque.
+                    </p>
                 @else
                     <p class="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         Cliente DTE no vinculado. Sin este vínculo todavía no se podrá crear una Factura de exportación (FEX) para este cliente.
@@ -80,6 +92,31 @@
                         <a href="{{ route('clientes.create') }}" class="text-sm text-indigo-600 hover:underline">Crear cliente DTE</a>
                     </form>
                 @endif
+            </div>
+
+            {{-- Datos propios del perfil de exportación (NO fiscales). --}}
+            <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-4">Datos del perfil de exportación</h3>
+                <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                    @if ($cliente->nombre && $cliente->nombre !== $cliente->nombreLegal())
+                        <div>
+                            <dt class="text-xs uppercase tracking-wide text-gray-400">Nombre operativo</dt>
+                            <dd class="mt-0.5 text-gray-800">{{ $cliente->nombre }}</dd>
+                        </div>
+                    @endif
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-gray-400">Dirección de entrega/bodega</dt>
+                        <dd class="mt-0.5 text-gray-800">{{ $cliente->direccionEntregaBodega() ?? '— (igual a la fiscal, o sin definir)' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-gray-400">FDA reg. number</dt>
+                        <dd class="mt-0.5 text-gray-800">{{ $cliente->fda_reg_number ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-gray-400">Contacto</dt>
+                        <dd class="mt-0.5 text-gray-800">{{ $cliente->contacto ?? '—' }}</dd>
+                    </div>
+                </dl>
             </div>
 
             {{-- Lista de precios del cliente --}}
