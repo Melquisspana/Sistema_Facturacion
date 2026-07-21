@@ -42,8 +42,13 @@
                             @forelse ($clientes as $cliente)
                                 <tr class="hover:bg-gray-50 {{ $cliente->activo ? '' : 'opacity-60' }}">
                                     <td class="py-3 px-4">
-                                        <a href="{{ route('exportaciones.clientes.show', $cliente) }}" class="font-medium text-gray-800 hover:text-indigo-600">{{ $cliente->nombre }}</a>
-                                        <div class="text-xs text-gray-500">{{ $cliente->direccion ?? '—' }}</div>
+                                        <a href="{{ route('exportaciones.clientes.show', $cliente) }}" class="font-medium text-gray-800 hover:text-indigo-600">{{ $cliente->nombreLegal() }}</a>
+                                        @if ($cliente->tieneDocumentoFiscalProvisional())
+                                            <span class="ms-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 align-middle">Documento provisional</span>
+                                        @elseif (! $cliente->cliente)
+                                            <span class="ms-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 align-middle">Sin vincular</span>
+                                        @endif
+                                        <div class="text-xs text-gray-500">{{ $cliente->direccionFiscal() ?? $cliente->direccionEntregaBodega() ?? '—' }}</div>
                                     </td>
                                     <td class="py-3 px-4 text-gray-600">{{ $cliente->fda_reg_number ?? '—' }}</td>
                                     <td class="py-3 px-4 text-gray-600">{{ $cliente->contacto ?? '—' }}</td>

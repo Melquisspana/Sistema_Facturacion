@@ -25,6 +25,7 @@ class ExportacionClienteController extends Controller
     public function index(Request $request): View
     {
         $clientes = ExportacionCliente::query()
+            ->with('cliente:id,nombre,direccion,num_documento')
             ->withCount(['productos as productos_count' => fn ($q) => $q->where('activo', true)])
             ->when($request->filled('q'), fn ($q) => $q->where('nombre', 'like', '%'.$request->string('q').'%'))
             ->when(! $request->boolean('inactivos'), fn ($q) => $q->where('activo', true))
@@ -55,6 +56,7 @@ class ExportacionClienteController extends Controller
         // Filtro "solo habilitados": ver únicamente lo que el cliente tiene activo.
         $soloHabilitados = $request->boolean('habilitados');
         $cliente->load([
+            'cliente',
             'productos' => fn ($q) => $q->when($soloHabilitados, fn ($w) => $w->where('activo', true)),
             'productos.producto:id,nombre_es,nombre_en,unidad,unidades_por_caja,gramos_por_unidad,onzas_por_unidad,precio_caja,activo',
         ]);
@@ -66,11 +68,16 @@ class ExportacionClienteController extends Controller
             ->get(['id', 'nombre_es', 'unidades_por_caja', 'precio_caja']);
 
         // Posibles orígenes para "copiar precios desde otro cliente".
+        // Nota: el filtro de productos_count > 0 se hace en PHP (no con HAVING):
+        // HAVING sobre un alias de withCount() sin GROUP BY es válido en MySQL pero
+        // rompe en SQLite (motor de los tests) — la lista es chica, filtrar acá no
+        // tiene costo real.
         $otrosClientes = ExportacionCliente::where('id', '!=', $cliente->id)
             ->withCount(['productos as productos_count' => fn ($q) => $q->where('activo', true)])
-            ->having('productos_count', '>', 0)
             ->orderBy('nombre')
-            ->get(['id', 'nombre']);
+            ->get()
+            ->filter(fn ($c) => $c->productos_count > 0)
+            ->values();
 
         return view('exportaciones.clientes.show', [
             'cliente' => $cliente,

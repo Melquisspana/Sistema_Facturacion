@@ -1,15 +1,25 @@
 @php($c = $cliente ?? null)
+@if ($c?->cliente)
+    <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-500">
+        El nombre legal y la dirección fiscal de <strong>{{ $c->cliente->nombre }}</strong> vienen del
+        <a href="{{ route('clientes.edit', $c->cliente) }}" class="text-indigo-600 hover:underline">Cliente DTE vinculado</a>
+        y no se editan acá. Los campos de abajo son datos propios de este perfil de exportación.
+    </div>
+@endif
+
 <div>
-    <label class="block text-sm font-medium text-gray-700">Nombre *</label>
+    <label class="block text-sm font-medium text-gray-700">Nombre operativo *</label>
     <input type="text" name="nombre" value="{{ old('nombre', $c?->nombre) }}" required
            class="mt-1 w-full rounded-md border-gray-300 text-sm" placeholder="ej. CAROLINAS WHOLESALE LLC">
+    <p class="mt-1 text-xs text-gray-400">Alias interno para identificar este perfil. NO es el nombre legal (ese lo define el Cliente DTE vinculado).</p>
     @error('nombre') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
 </div>
 
 <div>
-    <label class="block text-sm font-medium text-gray-700">Dirección</label>
+    <label class="block text-sm font-medium text-gray-700">Dirección de entrega/bodega</label>
     <input type="text" name="direccion" value="{{ old('direccion', $c?->direccion) }}"
            class="mt-1 w-full rounded-md border-gray-300 text-sm" placeholder="ej. 11235 SOMERSET, BELTSVILLE, MD 20705 EEUU">
+    <p class="mt-1 text-xs text-gray-400">Opcional. Dejala vacía si es la misma dirección fiscal del Cliente DTE vinculado — no la repitas acá.</p>
     @error('direccion') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
 </div>
 
