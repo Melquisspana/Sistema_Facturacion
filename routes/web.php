@@ -267,6 +267,10 @@ Route::middleware('auth')->group(function () {
         // Aprobación de la lista (revisada por la dueña). No emite nada.
         Route::patch('{exportacion}/aprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'aprobar'])->name('aprobar');
         Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->name('desaprobar');
+        // Archivar: oculta del listado normal una Lista de PRUEBA (no real) sin borrarla
+        // ni tocar su FEX vinculada. Sigue accesible por URL directa o "Mostrar archivadas".
+        Route::patch('{exportacion}/archivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'archivar'])->name('archivar');
+        Route::patch('{exportacion}/desarchivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desarchivar'])->name('desarchivar');
         // Crea (o abre, si ya existe) la FEX de esta Lista. Llama solo al servicio orquestador.
         Route::post('{exportacion}/crear-fex', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'crearFex'])->name('crear-fex');
         Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->name('duplicar');

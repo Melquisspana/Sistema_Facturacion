@@ -26,9 +26,14 @@ class ExportacionController extends Controller
 {
     public function index(Request $request): View
     {
+        // Archivadas (pruebas/APITEST, no exportaciones reales): ocultas por
+        // defecto del listado normal, visibles solo con ?archivadas=1. NUNCA se
+        // borran ni se filtran de show()/rutas por id: el acceso directo (o desde
+        // el historial de una FEX) sigue funcionando siempre.
         $exportaciones = Exportacion::query()
             ->withCount('items')
             ->with('cliente:id,cliente_id')
+            ->when(! $request->boolean('archivadas'), fn ($q) => $q->where('archivada', false))
             ->when($request->filled('q'), function ($q) use ($request) {
                 $buscar = '%'.$request->string('q').'%';
                 $q->where(fn ($w) => $w->where('cliente_nombre', 'like', $buscar)
@@ -187,6 +192,32 @@ class ExportacionController extends Controller
         return redirect()
             ->route('exportaciones.show', $exportacion)
             ->with('status', 'Lista de empaque devuelta a borrador.');
+    }
+
+    /**
+     * Archiva una Lista de PRUEBA (no real): la oculta del listado normal sin
+     * borrarla ni tocar nada más. NO cambia `estado`, `dte_id`, items, precios
+     * ni totales — si tiene una FEX vinculada, esa relación queda exactamente
+     * igual (la FEX es evidencia real y no se toca). Sigue accesible por URL
+     * directa o con el filtro "Mostrar archivadas".
+     */
+    public function archivar(Exportacion $exportacion): RedirectResponse
+    {
+        $exportacion->update(['archivada' => true, 'archivada_en' => now()]);
+
+        return redirect()
+            ->route('exportaciones.show', $exportacion)
+            ->with('status', 'Lista de empaque archivada: ya no aparece en el listado normal. Seguís pudiendo verla por este enlace o con "Mostrar archivadas".');
+    }
+
+    /** Revierte el archivado (vuelve a aparecer en el listado normal). */
+    public function desarchivar(Exportacion $exportacion): RedirectResponse
+    {
+        $exportacion->update(['archivada' => false, 'archivada_en' => null]);
+
+        return redirect()
+            ->route('exportaciones.show', $exportacion)
+            ->with('status', 'Lista de empaque desarchivada.');
     }
 
     /**

@@ -18,9 +18,13 @@
                 <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
-            <form method="GET" class="mb-4 flex items-center gap-3">
+            <form method="GET" class="mb-4 flex flex-wrap items-center gap-3">
                 <input type="text" name="q" value="{{ request('q') }}" placeholder="Buscar por cliente o factura…"
                        class="w-72 rounded-md border-gray-300 text-sm">
+                <label class="inline-flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" name="archivadas" value="1" @checked(request()->boolean('archivadas')) class="rounded border-gray-300">
+                    Mostrar archivadas
+                </label>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Buscar</button>
             </form>
 
@@ -41,7 +45,7 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             @forelse ($exportaciones as $exportacion)
-                                <tr class="hover:bg-gray-50">
+                                <tr class="hover:bg-gray-50 {{ $exportacion->archivada ? 'opacity-60' : '' }}">
                                     <td class="py-3 px-4 text-gray-400">{{ $exportacion->id }}</td>
                                     <td class="py-3 px-4 text-gray-600">{{ $exportacion->fecha->format('d/m/Y') }}</td>
                                     <td class="py-3 px-4 font-medium text-gray-800">
@@ -50,6 +54,12 @@
                                     <td class="py-3 px-4 text-gray-600">{{ $exportacion->factura ?? '—' }}</td>
                                     <td class="py-3 px-4">
                                         <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $exportacion->estado === 'borrador' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-700' }}">{{ ucfirst($exportacion->estado) }}</span>
+                                        @if ($exportacion->archivada)
+                                            <span class="ms-1 inline-block rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-medium text-gray-600"
+                                                  title="Archivada el {{ optional($exportacion->archivada_en)->format('d/m/Y') }}">
+                                                {{ $exportacion->esPruebaApitest() ? 'Prueba APITEST / Archivada' : 'Archivada' }}
+                                            </span>
+                                        @endif
                                     </td>
                                     <td class="py-3 px-4 text-center">
                                         <span class="inline-flex items-center justify-center min-w-[1.75rem] rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{{ $exportacion->items_count }}</span>

@@ -4,6 +4,11 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 Lista de empaque #{{ $exportacion->id }}
                 <span class="ms-2 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium align-middle {{ $exportacion->estado === 'borrador' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-700' }}">{{ ucfirst($exportacion->estado) }}</span>
+                @if ($exportacion->archivada)
+                    <span class="ms-2 inline-block rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-medium align-middle text-gray-600">
+                        {{ $exportacion->esPruebaApitest() ? 'Prueba APITEST / Archivada' : 'Archivada' }}
+                    </span>
+                @endif
             </h2>
             <div class="flex flex-wrap gap-2">
                 <a href="{{ route('exportaciones.edit', $exportacion) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
@@ -23,6 +28,20 @@
                     <form method="POST" action="{{ route('exportaciones.aprobar', $exportacion) }}">
                         @csrf @method('PATCH')
                         <button class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">Marcar como aprobada</button>
+                    </form>
+                @endif
+                {{-- Archivar: solo oculta del listado normal. No borra nada ni toca la FEX vinculada. --}}
+                @if ($exportacion->archivada)
+                    <form method="POST" action="{{ route('exportaciones.desarchivar', $exportacion) }}">
+                        @csrf @method('PATCH')
+                        <button class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Desarchivar</button>
+                    </form>
+                @else
+                    <form method="POST" action="{{ route('exportaciones.archivar', $exportacion) }}"
+                          onsubmit="return confirm('¿Archivar esta lista de prueba? Se oculta del listado normal, pero NO se borra: seguís pudiendo abrirla por este enlace o con el filtro «Mostrar archivadas», y su vínculo con la FEX (si tiene) queda intacto.');">
+                        @csrf @method('PATCH')
+                        <button class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200"
+                                title="Oculta esta lista de prueba del listado normal, sin borrarla">Archivar lista de prueba</button>
                     </form>
                 @endif
                 @if ($exportacion->items->isNotEmpty())

@@ -30,13 +30,27 @@ class Exportacion extends Model
         'fda_reg_number',
         'observaciones',
         'estado',
+        'archivada',
+        'archivada_en',
     ];
 
     protected function casts(): array
     {
         return [
             'fecha' => 'date',
+            'archivada' => 'boolean',
+            'archivada_en' => 'datetime',
         ];
+    }
+
+    /**
+     * ¿Las observaciones marcan esta lista como una prueba (APITEST/no real)?
+     * Solo lectura de texto libre, para poder mostrar "Prueba APITEST" en el
+     * badge sin depender de una columna nueva dedicada a ese matiz.
+     */
+    public function esPruebaApitest(): bool
+    {
+        return str_contains(mb_strtoupper((string) $this->observaciones), 'APITEST');
     }
 
     public function items(): HasMany
