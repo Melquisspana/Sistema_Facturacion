@@ -1,3 +1,242 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================================
+   Tema oscuro — Dulces La Negrita / Sistema DTE
+   ============================================================================
+   El chrome compartido (topbar, sidebar, dashboard, botones/inputs/modal de
+   resources/views/components/*) usa clases dark: explícitas de Tailwind,
+   tomando los colores de tailwind.config.js (paleta ink y paper).
+
+   El resto de las ~150 pantallas de la app (facturación, exportaciones,
+   documentos recibidos, clientes, etc.) usa la MISMA paleta gris de Tailwind
+   de siempre (bg-white, text-gray-700, border-gray-200, ring-gray-200...) sin
+   ninguna clase dark: propia. En vez de editar cada vista, estos overrides
+   reteman esas clases exactas cuando <html> tiene la clase `dark`. Funciona
+   porque un selector de dos clases (".dark .bg-white") es siempre más
+   específico que la utilidad sola (".bg-white"), sin usar !important.
+
+   NUNCA se aplica esto al layout de impresión/PDF (resources/views/facturacion/
+   imprimir.blade.php) ni a los correos (resources/views/emails/*): esas
+   plantillas son documentos independientes con su propio <html>, nunca reciben
+   la clase `dark`, así que esta hoja de estilos no les afecta aunque comparta
+   el mismo bundle compilado.
+   ========================================================================= */
+
+:root {
+    --ink-950: #131417;
+    --ink-900: #1a1b20;
+    --ink-800: #202227;
+    --ink-700: #2a2c33;
+    --ink-600: #34363f;
+    --ink-500: #4a4d59;
+    --paper-100: #e9eaee;
+    --paper-300: #a3a6b1;
+    --paper-500: #6f7280;
+}
+
+/* ---- CAUSA RAÍZ del texto negro sobre fondo oscuro ----
+   Muchas celdas de tabla (Facturación, Productos, Clientes, etc.) no llevan
+   NINGUNA clase text-*: el texto queda con el negro por defecto del navegador,
+   que ninguno de los overrides de abajo puede tocar (no hay clase que
+   interceptar). `color` SÍ se hereda en CSS, así que fijarlo una vez en la raíz
+   (<html> tiene la clase `dark`) resuelve todos los casos de una sola vez: todo
+   elemento sin su propio text-* hereda paper-100. Los elementos que SÍ traen su
+   propia clase (badges, texto secundario gris, enlaces índigo) no se ven
+   afectados: una declaración explícita en el propio elemento siempre gana sobre
+   un valor heredado, sin importar especificidad. */
+.dark {
+    color: var(--paper-100);
+}
+
+/* Iconos nativos de <input type="date/time">: por defecto son negros y
+   desaparecen sobre fondo oscuro. */
+.dark input[type='date']::-webkit-calendar-picker-indicator,
+.dark input[type='time']::-webkit-calendar-picker-indicator,
+.dark input[type='datetime-local']::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+}
+
+/* Foco visible con teclado (accesibilidad), claro y oscuro. */
+:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+}
+
+/* Scrollbars discretas en modo oscuro. */
+.dark {
+    scrollbar-color: var(--ink-500) var(--ink-900);
+}
+.dark ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.dark ::-webkit-scrollbar-track {
+    background: var(--ink-900);
+}
+.dark ::-webkit-scrollbar-thumb {
+    background-color: var(--ink-500);
+    border-radius: 9999px;
+    border: 2px solid var(--ink-900);
+}
+
+/* Todo input/select/textarea de la app (incluidos los que vienen del plugin
+   @tailwindcss/forms, que fija bg blanco por defecto): una sola regla cubre
+   los formularios de las ~150 pantallas sin tocarlas una por una. */
+.dark input:not([type='checkbox']):not([type='radio']),
+.dark select,
+.dark textarea {
+    background-color: var(--ink-800);
+    border-color: var(--ink-500);
+    color: var(--paper-100);
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+    color: var(--paper-500);
+}
+.dark input:focus:not([type='checkbox']):not([type='radio']),
+.dark select:focus,
+.dark textarea:focus {
+    border-color: #818cf8;
+    --tw-ring-color: #818cf8;
+}
+.dark input[type='checkbox'],
+.dark input[type='radio'] {
+    background-color: var(--ink-800);
+    border-color: var(--ink-500);
+}
+
+/* ---- Superficies ---- */
+.dark .bg-white { background-color: var(--ink-800); }
+.dark .bg-gray-50 { background-color: var(--ink-900); }
+.dark .bg-gray-100 { background-color: var(--ink-700); }
+.dark .bg-gray-200 { background-color: var(--ink-600); }
+.dark .hover\:bg-gray-50:hover { background-color: var(--ink-700); }
+.dark .hover\:bg-gray-100:hover { background-color: var(--ink-600); }
+.dark .hover\:bg-gray-200:hover { background-color: var(--ink-500); }
+.dark .bg-indigo-50 { background-color: rgba(109, 118, 240, .18); }
+.dark .bg-indigo-600 { background-color: #6d76f0; }
+.dark .hover\:bg-indigo-700:hover { background-color: #5457e0; }
+.dark .bg-gray-800 { background-color: var(--ink-900); }
+.dark .hover\:bg-gray-700:hover { background-color: var(--ink-600); }
+.dark .active\:bg-gray-900:active { background-color: var(--ink-950); }
+
+/* ---- Texto ---- */
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700 { color: var(--paper-100); }
+.dark .text-gray-600,
+.dark .text-gray-500 { color: var(--paper-300); }
+.dark .text-gray-400 { color: var(--paper-500); }
+.dark .hover\:text-gray-700:hover,
+.dark .hover\:text-gray-900:hover { color: var(--paper-100); }
+.dark .text-indigo-600,
+.dark .text-indigo-700 { color: #8b93f8; }
+.dark .hover\:text-indigo-600:hover { color: #a5abfa; }
+
+/* ---- Bordes / separadores ---- */
+.dark .border-gray-200,
+.dark .border-gray-100 { border-color: var(--ink-600); }
+.dark .border-gray-300 { border-color: var(--ink-500); }
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--ink-600); }
+.dark .ring-gray-200,
+.dark .ring-1.ring-gray-200 { --tw-ring-color: var(--ink-600); }
+.dark .ring-black.ring-opacity-5 { --tw-ring-color: rgb(255 255 255 / 0.08); }
+.dark .shadow-sm,
+.dark .shadow,
+.dark .shadow-md,
+.dark .shadow-lg,
+.dark .shadow-xl { --tw-shadow-color: rgba(0, 0, 0, 0.4); }
+
+/* ---- Badges / avisos de color (éxito, advertencia, error, información) ----
+   Mismo criterio en todos: fondo translúcido del color + texto claro del
+   mismo color, para conservar el significado funcional (verde=ok, ámbar=
+   advertencia, rojo=error, azul/índigo=información) con buen contraste sobre
+   fondo oscuro. */
+.dark .bg-green-50 { background-color: rgba(16, 185, 129, .10); }
+.dark .bg-green-100 { background-color: rgba(16, 185, 129, .18); }
+.dark .border-green-200,
+.dark .border-green-300 { border-color: rgba(16, 185, 129, .35); }
+.dark .text-green-600,
+.dark .text-green-700,
+.dark .text-green-800 { color: #34d399; }
+
+.dark .bg-amber-50 { background-color: rgba(245, 158, 11, .10); }
+.dark .bg-amber-100 { background-color: rgba(245, 158, 11, .18); }
+.dark .border-amber-200,
+.dark .border-amber-300,
+.dark .border-amber-500 { border-color: rgba(245, 158, 11, .45); }
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800 { color: #fbbf24; }
+
+.dark .bg-red-50 { background-color: rgba(239, 68, 68, .10); }
+.dark .bg-red-100 { background-color: rgba(239, 68, 68, .18); }
+.dark .border-red-200,
+.dark .border-red-300 { border-color: rgba(239, 68, 68, .35); }
+.dark .text-red-600,
+.dark .text-red-700 { color: #f87171; }
+
+.dark .bg-rose-50 { background-color: rgba(244, 63, 94, .10); }
+.dark .bg-rose-100 { background-color: rgba(244, 63, 94, .18); }
+.dark .border-rose-300 { border-color: rgba(244, 63, 94, .35); }
+.dark .text-rose-700,
+.dark .text-rose-800 { color: #fb7185; }
+
+.dark .bg-blue-50 { background-color: rgba(56, 189, 248, .10); }
+.dark .bg-blue-100 { background-color: rgba(56, 189, 248, .18); }
+.dark .border-blue-200 { border-color: rgba(56, 189, 248, .35); }
+.dark .text-blue-700 { color: #38bdf8; }
+
+.dark .bg-sky-100 { background-color: rgba(56, 189, 248, .18); }
+.dark .text-sky-700 { color: #38bdf8; }
+
+.dark .bg-indigo-100 { background-color: rgba(129, 140, 248, .18); }
+.dark .text-indigo-700 { color: #a5abfa; }
+
+.dark .bg-violet-50 { background-color: rgba(139, 92, 246, .10); }
+.dark .bg-violet-100 { background-color: rgba(139, 92, 246, .18); }
+.dark .border-violet-200 { border-color: rgba(139, 92, 246, .35); }
+.dark .text-violet-500,
+.dark .text-violet-600,
+.dark .text-violet-700,
+.dark .text-violet-800 { color: #a78bfa; }
+
+.dark .bg-orange-50 { background-color: rgba(249, 115, 22, .10); }
+.dark .bg-orange-100 { background-color: rgba(249, 115, 22, .18); }
+.dark .border-orange-300,
+.dark .border-orange-400 { border-color: rgba(249, 115, 22, .40); }
+.dark .text-orange-600,
+.dark .text-orange-700,
+.dark .text-orange-800 { color: #fb923c; }
+
+.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, .10); }
+.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, .18); }
+.dark .border-emerald-200,
+.dark .border-emerald-300,
+.dark .border-emerald-500 { border-color: rgba(16, 185, 129, .40); }
+.dark .text-emerald-600,
+.dark .text-emerald-800 { color: #34d399; }
+.dark .bg-emerald-600 { background-color: #10b981; }
+.dark .hover\:bg-emerald-700:hover { background-color: #059669; }
+
+.dark .bg-yellow-100 { background-color: rgba(234, 179, 8, .18); }
+.dark .text-yellow-800 { color: #facc15; }
+
+/* ---- Fondos con modificador de opacidad (bg-color-NN/NN) ----
+   Tailwind genera una clase de nombre literal distinto para cada combinación
+   (ej. ".bg-gray-50\/60"): los overrides de arriba (".bg-gray-50") NO la
+   alcanzan. Es la causa exacta de que el panel de filtros de Facturación se
+   viera gris claro en tema oscuro. */
+.dark .bg-gray-50\/60,
+.dark .bg-gray-50\/70 { background-color: rgba(26, 27, 32, .6); }
+.dark .bg-amber-50\/60 { background-color: rgba(245, 158, 11, .08); }
+.dark .bg-indigo-50\/40,
+.dark .bg-indigo-50\/50,
+.dark .bg-indigo-50\/60 { background-color: rgba(109, 118, 240, .12); }
+.dark .bg-orange-50\/40 { background-color: rgba(249, 115, 22, .08); }
+.dark .bg-rose-50\/40 { background-color: rgba(244, 63, 94, .08); }
+
+/* ---- Overlay del sidebar móvil: ya es oscuro, se deja igual en ambos temas. ---- */

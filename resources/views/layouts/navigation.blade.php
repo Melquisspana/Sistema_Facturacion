@@ -37,11 +37,11 @@
 <div x-data="{ sidebarAbierta: false }">
 
     {{-- ===== Topbar ===== --}}
-    <nav class="fixed inset-x-0 top-0 z-40 h-16 border-b border-gray-200 bg-white">
+    <nav class="fixed inset-x-0 top-0 z-40 h-16 border-b border-gray-200 bg-white dark:border-ink-600 dark:bg-ink-900">
         <div class="flex h-16 items-center gap-3 px-4 sm:px-6">
             {{-- Hamburguesa (solo móvil) --}}
             <button @click="sidebarAbierta = ! sidebarAbierta"
-                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 lg:hidden">
+                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100 lg:hidden">
                 <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
                     <path x-show="! sidebarAbierta" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                     <path x-show="sidebarAbierta" x-cloak stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -49,8 +49,8 @@
             </button>
 
             <a href="{{ route('dashboard') }}" class="flex shrink-0 items-center gap-2">
-                <x-application-logo class="block h-9 w-auto fill-current text-gray-800" />
-                <span class="hidden text-sm font-semibold text-gray-800 sm:block">{{ config('app.name') }}</span>
+                <x-application-logo class="block h-9 w-auto fill-current text-gray-800 dark:text-paper-100" />
+                <span class="hidden text-sm font-semibold text-gray-800 dark:text-paper-100 sm:block">{{ config('app.name') }}</span>
             </a>
 
             {{-- Badges de modo DTE: SOLO en pantallas de Facturación/DTE (no en el resto
@@ -78,11 +78,12 @@
                 </div>
             @endif
 
-            {{-- Usuario / logout --}}
-            <div class="ms-auto flex items-center">
+            {{-- Tema + Usuario / logout --}}
+            <div class="ms-auto flex items-center gap-1">
+                <x-theme-toggle />
                 <x-dropdown align="right" width="48">
                     <x-slot name="trigger">
-                        <button class="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none">
+                        <button class="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none dark:bg-transparent dark:text-paper-300 dark:hover:text-paper-100">
                             <div>{{ $usuario->name }}</div>
                             <div class="ms-1">
                                 <svg class="h-4 w-4 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
@@ -111,16 +112,18 @@
          class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden"></div>
 
     {{-- ===== Sidebar ===== --}}
-    <aside class="fixed bottom-0 left-0 top-16 z-30 w-64 -translate-x-full transform overflow-y-auto border-r border-gray-200 bg-white transition-transform duration-150 lg:translate-x-0"
+    <aside class="fixed bottom-0 left-0 top-16 z-30 w-64 -translate-x-full transform overflow-y-auto border-r border-gray-200 bg-white transition-transform duration-150 dark:border-ink-600 dark:bg-ink-900 lg:translate-x-0"
            :class="sidebarAbierta ? 'translate-x-0' : '-translate-x-full'">
         @php
-            // Título de grupo uniforme (más legible: gris medio, mayúsculas espaciadas).
-            $tituloGrupo = 'mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500';
+            // Título de grupo uniforme: letra pequeña, mayúsculas espaciadas, contraste
+            // deliberadamente MENOR que el de un enlace (jerarquía: la categoría orienta,
+            // el enlace es lo que se clickea).
+            $tituloGrupo = 'mb-1.5 flex items-center gap-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-paper-500';
         @endphp
         <nav class="space-y-6 px-3 py-5">
 
             <div>
-                <p class="{{ $tituloGrupo }}">Inicio</p>
+                <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="inicio" />Inicio</p>
                 <div class="space-y-0.5">
                     <x-sidebar-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">Dashboard</x-sidebar-link>
                 </div>
@@ -128,10 +131,10 @@
 
             @if ($veClientes || $veProductos)
                 <div>
-                    <p class="{{ $tituloGrupo }}">Comercial</p>
+                    <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="comercial" />Comercial</p>
                     <div class="space-y-0.5">
                         @if ($veClientes)
-                            <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes</x-sidebar-link>
+                            <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes de facturación</x-sidebar-link>
                         @endif
                         @if ($veProductos)
                             <x-sidebar-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">Productos</x-sidebar-link>
@@ -142,7 +145,7 @@
 
             @if ($veFacturacion)
                 <div>
-                    <p class="{{ $tituloGrupo }}">Facturación</p>
+                    <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="facturacion" />Facturación</p>
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">Facturación</x-sidebar-link>
                         <x-sidebar-link :href="route('facturacion.invalidaciones')" :active="$enInvalidaciones">Invalidar</x-sidebar-link>
@@ -155,7 +158,7 @@
 
             @if ($veOperativos)
                 <div>
-                    <p class="{{ $tituloGrupo }}">Prontos Pagos</p>
+                    <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="ppq" />Prontos Pagos</p>
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index', 'ppq.albaranes_por_fecha')">Buscar CCF / NC</x-sidebar-link>
                         <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
@@ -163,7 +166,7 @@
                 </div>
 
                 <div>
-                    <p class="{{ $tituloGrupo }}">Contabilidad</p>
+                    <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="contabilidad" />Contabilidad</p>
                     <div class="space-y-0.5">
                         {{-- Compras: CCF/facturas de proveedores recibidas por correo (con sus
                              filtros por estado dentro de la pantalla). Ventas: reporte de lo que
@@ -175,11 +178,11 @@
                 </div>
 
                 <div>
-                    <p class="{{ $tituloGrupo }}">Exportaciones</p>
+                    <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="exportaciones" />Exportaciones</p>
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('exportaciones.index')" :active="$enListasEmpaque">Listas de empaque</x-sidebar-link>
                         <x-sidebar-link :href="route('exportaciones.create')" :active="$enNuevaLista">Nueva lista de empaque</x-sidebar-link>
-                        <x-sidebar-link :href="route('exportaciones.clientes.index')" :active="$enExpClientes">Clientes y precios</x-sidebar-link>
+                        <x-sidebar-link :href="route('exportaciones.clientes.index')" :active="$enExpClientes">Perfiles y precios de exportación</x-sidebar-link>
                         <x-sidebar-link :href="route('exportaciones.productos.index')" :active="$enExpProductos">Catálogo de productos</x-sidebar-link>
                     </div>
                 </div>
@@ -187,7 +190,7 @@
 
             @if ($esAdmin || $veAuditoria)
                 <div>
-                    <p class="{{ $tituloGrupo }}">Administración</p>
+                    <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="admin" />Administración</p>
                     <div class="space-y-0.5">
                         @if ($esAdmin)
                             <x-sidebar-link :href="route('configuracion.empresa.edit')" :active="request()->routeIs('configuracion.*')">Configuración</x-sidebar-link>
