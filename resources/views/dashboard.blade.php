@@ -18,10 +18,15 @@
                     <h1 class="text-2xl font-semibold text-gray-800 dark:text-paper-100">{{ $saludo }}, {{ auth()->user()->name }}</h1>
                     <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Resumen operativo de Dulces La Negrita &middot; {{ \Illuminate\Support\Str::ucfirst(now()->translatedFormat('l d \d\e F \d\e Y')) }}</p>
                 </div>
-                <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {{ $colorEstado[$estadoGeneral] }}">
-                    <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
-                    {{ $textoEstadoGeneral }}
-                </span>
+                <div class="flex flex-col items-end gap-1">
+                    <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {{ $colorEstado[$estadoGeneral] }}">
+                        <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+                        {{ $textoEstadoGeneral }}
+                    </span>
+                    @if ($motivoEstadoGeneral)
+                        <span class="text-xs text-rose-700 dark:text-rose-400">{{ $motivoEstadoGeneral }}</span>
+                    @endif
+                </div>
             </div>
 
             {{-- B: Tarjetas principales --}}
@@ -60,6 +65,9 @@
                     <p class="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold {{ $estadoGeneral === 'ok' ? 'text-green-700 dark:text-green-400' : ($estadoGeneral === 'advertencia' ? 'text-amber-700 dark:text-amber-400' : 'text-rose-700 dark:text-rose-400') }}">
                         {{ $textoEstadoGeneral }}
                     </p>
+                    @if ($motivoEstadoGeneral)
+                        <p class="mt-0.5 text-xs text-rose-700 dark:text-rose-400">{{ $motivoEstadoGeneral }}</p>
+                    @endif
                 </div>
             </div>
 

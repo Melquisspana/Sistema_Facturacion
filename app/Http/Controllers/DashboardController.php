@@ -70,12 +70,36 @@ class DashboardController extends Controller
             'estadoTecnico' => $estadoTecnico,
             'estadoGeneral' => $estadoGeneral,
             'textoEstadoGeneral' => $this->textoEstadoGeneral($estadoGeneral),
+            'motivoEstadoGeneral' => $this->motivoEstadoGeneral($diagnostico),
             'diagnostico' => $esGestorDte ? $diagnostico : null,
             'esAdmin' => $esAdmin,
             'esGestorDte' => $esGestorDte,
             'veOperativos' => $veOperativos,
             'veFacturacion' => $veFacturacion,
         ]);
+    }
+
+    /**
+     * Motivo visible del estado crítico: "1 problema crítico: Backup del día". Sin
+     * esto, el badge solo decía "Atención inmediata" y el operador tenía que adivinar
+     * cuál de los 10 checks disparó la alerta. Solo nombres de checks (sin secretos);
+     * null cuando no hay críticos (el detalle fino vive en el bloque Diagnóstico).
+     *
+     * @param  array{nivel: string, checks: array<int, array{clave: string, label: string, nivel: string, detalle: string}>}  $diagnostico
+     */
+    private function motivoEstadoGeneral(array $diagnostico): ?string
+    {
+        $criticos = array_values(array_filter($diagnostico['checks'], fn ($c) => $c['nivel'] === 'critico'));
+        if ($criticos === []) {
+            return null;
+        }
+
+        $n = count($criticos);
+        $labels = implode(', ', array_map(fn ($c) => $c['label'], $criticos));
+
+        return $n === 1
+            ? '1 problema crítico: '.$labels
+            : $n.' problemas críticos: '.$labels;
     }
 
     /**
