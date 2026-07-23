@@ -24,6 +24,22 @@
    el mismo bundle compilado.
    ========================================================================= */
 
+/* Fondo de <html>: la clase `dark` la pone el script anti-flash en el propio <html>
+   (ver layouts/app.blade.php y layouts/guest.blade.php), así que el variant `dark:` de
+   Tailwind (".dark .dark\:clase") NO matchea sobre ese mismo elemento — de ahí reglas
+   explícitas en vez de clases dark: en el <html>. Es la última capa de defensa: si algún
+   elemento posicionado sin contenedor propio (p. ej. un <label class="sr-only"> huérfano
+   dentro de una lista con scroll interno) llega a estirar el alto REAL del documento
+   (<html>.scrollHeight) más allá de lo que <body>/el wrapper del layout calculan, el
+   lienzo debajo nunca queda blanco. No aplica a imprimir/PDF ni a correos: esas plantillas
+   tienen su propio <html> y no cargan este bundle. */
+html {
+    background-color: #f3f4f6; /* gray-100 */
+}
+html.dark {
+    background-color: var(--ink-950);
+}
+
 :root {
     --ink-950: #131417;
     --ink-900: #1a1b20;

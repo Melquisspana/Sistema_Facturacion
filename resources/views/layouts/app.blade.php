@@ -24,7 +24,11 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <style>[x-cloak]{display:none !important;}</style>
     </head>
-    <body class="font-sans antialiased">
+    <body class="min-h-screen bg-gray-100 font-sans antialiased dark:bg-ink-950">
+        {{-- <html> y <body> ya llevan el mismo fondo (body arriba; html vía app.css): si
+             algún elemento absoluto sin contenedor propio (p. ej. un <label class="sr-only">
+             huérfano) empuja el alto REAL del documento (<html> scrollHeight) más allá de
+             este wrapper, el lienzo de abajo sigue siendo oscuro en vez de blanco. --}}
         <div class="min-h-screen bg-gray-100 dark:bg-ink-950">
             @include('layouts.navigation')
 

@@ -63,8 +63,10 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                {{-- C: Actividad reciente --}}
+            <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+                {{-- C: Actividad reciente. `items-start` en el grid evita el stretch por
+                     defecto de CSS grid (que igualaría esta tarjeta a la altura de toda
+                     la columna derecha); cada columna crece solo según su contenido. --}}
                 <div class="lg:col-span-2 {{ $card }} !p-0 overflow-hidden">
                     <div class="border-b border-gray-100 px-4 py-3 dark:border-ink-700 flex items-center justify-between gap-2">
                         <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">Documentos reales de producción</h3>
@@ -73,7 +75,9 @@
                         </span>
                     </div>
                     @if ($veFacturacion && $actividad->isNotEmpty())
-                        <div class="overflow-x-auto">
+                        {{-- max-h + overflow-y-auto: si hubiera muchos documentos, la tabla
+                             scrollea internamente en vez de estirar la tarjeta. --}}
+                        <div class="max-h-96 overflow-x-auto overflow-y-auto">
                             <table class="min-w-full text-sm">
                                 <thead>
                                     <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 dark:bg-ink-900 dark:text-paper-500">
