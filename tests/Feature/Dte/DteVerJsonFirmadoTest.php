@@ -40,7 +40,7 @@ class DteVerJsonFirmadoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -112,7 +112,7 @@ class DteVerJsonFirmadoTest extends TestCase
     {
         $ccf = $this->ccfFirmado();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.firmado', $ccf))
             ->assertForbidden();
     }

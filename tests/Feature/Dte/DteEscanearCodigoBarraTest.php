@@ -35,7 +35,7 @@ class DteEscanearCodigoBarraTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -187,7 +187,7 @@ class DteEscanearCodigoBarraTest extends TestCase
         $dte = $this->borrador();
         $this->producto('CANILLITAS', '7412201700031');
 
-        $this->escanear($this->usuario('consulta'), $dte, '7412201700031')->assertForbidden();
+        $this->escanear($this->usuario('jefatura'), $dte, '7412201700031')->assertForbidden();
 
         $this->assertDatabaseCount('dte_lineas', 0);
     }

@@ -18,7 +18,9 @@ class ClienteSucursalRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // la autorización por rol la decide el controlador (ClientePolicy)
+        // Gestionar salas/sucursales = gestionar el cliente (permiso clientes.gestionar,
+        // solo admin). Autoriza antes de validar; el controlador vuelve a autorizar.
+        return (bool) $this->user()?->can('clientes.gestionar');
     }
 
     public function rules(): array

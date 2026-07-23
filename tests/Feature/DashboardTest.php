@@ -29,7 +29,7 @@ class DashboardTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -231,7 +231,7 @@ class DashboardTest extends TestCase
 
     public function test_consulta_no_ve_acciones_de_creacion(): void
     {
-        $resp = $this->actingAs($this->usuario('consulta'))->get(route('dashboard'))->assertOk();
+        $resp = $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk();
 
         $resp->assertDontSee('Nuevo CCF');
         $resp->assertDontSee('Nueva Factura');
@@ -247,7 +247,7 @@ class DashboardTest extends TestCase
     public function test_solo_gestor_dte_ve_el_estado_tecnico(): void
     {
         $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->assertSee('Estado técnico');
-        $this->actingAs($this->usuario('consulta'))->get(route('dashboard'))->assertOk()->assertDontSee('Estado técnico');
+        $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk()->assertDontSee('Estado técnico');
     }
 
     // ---------- Nada sensible, nada de emisión real ----------
@@ -277,7 +277,7 @@ class DashboardTest extends TestCase
     {
         $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
             ->assertOk()->assertSee('Diagnóstico');
-        $this->actingAs($this->usuario('consulta'))->get(route('dashboard'))
+        $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))
             ->assertOk()->assertDontSee('Diagnóstico');
     }
 

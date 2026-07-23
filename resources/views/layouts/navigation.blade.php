@@ -7,11 +7,20 @@
         'critico' => 'bg-rose-100 text-rose-700 animate-pulse',
     ];
 
+    // Visibilidad por PERMISO (no por rol): los botones/enlaces se ocultan según lo
+    // que cada usuario puede hacer. La protección real vive en backend (policies +
+    // middleware permission:); esto es solo complemento visual.
     $usuario = auth()->user();
     $esAdmin = $usuario->hasRole('administrador');
-    $veAuditoria = $usuario->hasAnyRole(['administrador', 'contador']);
-    $veOperativos = $usuario->hasAnyRole(['administrador', 'contador', 'facturacion']); // PPQ y Exportaciones
-    $esGestorDte = $usuario->hasAnyRole(['administrador', 'facturacion']); // acciones/prep de emisión
+    $veAuditoria = $usuario->can('auditoria.ver');
+    $vePpq = $usuario->can('ppq.ver');
+    $puedeGestionarPpq = $usuario->can('ppq.gestionar');
+    $veExportaciones = $usuario->can('exportaciones.ver');
+    $puedeGestionarExportaciones = $usuario->can('exportaciones.gestionar');
+    $veCompras = $usuario->can('documentos-recibidos.ver');
+    $veReportes = $usuario->can('reportes.ver');
+    $veContabilidad = $veCompras || $veReportes; // grupo "Contabilidad" del sidebar
+    $vePreparacion = $usuario->can('preparacion.ver'); // checklist "Preparar emisión real"
     $veClientes = $usuario->can('viewAny', App\Models\Cliente::class);
     $veProductos = $usuario->can('viewAny', App\Models\Producto::class);
     $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
@@ -160,14 +169,14 @@
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">Facturación</x-sidebar-link>
                         <x-sidebar-link :href="route('facturacion.invalidaciones')" :active="$enInvalidaciones">Invalidar</x-sidebar-link>
-                        @if ($esGestorDte)
+                        @if ($vePreparacion)
                             <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
                         @endif
                     </div>
                 </div>
             @endif
 
-            @if ($veOperativos)
+            @if ($vePpq)
                 <div>
                     <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="ppq" />Prontos Pagos</p>
                     <div class="space-y-0.5">
@@ -175,24 +184,34 @@
                         <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
                     </div>
                 </div>
+            @endif
 
+            @if ($veContabilidad)
                 <div>
                     <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="contabilidad" />Contabilidad</p>
                     <div class="space-y-0.5">
                         {{-- Compras: CCF/facturas de proveedores recibidas por correo (con sus
                              filtros por estado dentro de la pantalla). Ventas: reporte de lo que
                              emitimos, que se le manda a la contadora. Solo navegación. --}}
-                        <x-sidebar-link :href="route('documentos-recibidos.index')" :active="request()->routeIs('documentos-recibidos.*')">Compras</x-sidebar-link>
-                        <x-sidebar-link :href="route('facturacion.reporte-contadora')" :active="$enReporteContadora">Ventas</x-sidebar-link>
-                        <x-sidebar-link :href="route('contabilidad.paquete')" :active="request()->routeIs('contabilidad.paquete*')">Paquete mensual</x-sidebar-link>
+                        @if ($veCompras)
+                            <x-sidebar-link :href="route('documentos-recibidos.index')" :active="request()->routeIs('documentos-recibidos.*')">Compras</x-sidebar-link>
+                        @endif
+                        @if ($veReportes)
+                            <x-sidebar-link :href="route('facturacion.reporte-contadora')" :active="$enReporteContadora">Ventas</x-sidebar-link>
+                            <x-sidebar-link :href="route('contabilidad.paquete')" :active="request()->routeIs('contabilidad.paquete*')">Paquete mensual</x-sidebar-link>
+                        @endif
                     </div>
                 </div>
+            @endif
 
+            @if ($veExportaciones)
                 <div>
                     <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="exportaciones" />Exportaciones</p>
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('exportaciones.index')" :active="$enListasEmpaque">Listas de empaque</x-sidebar-link>
-                        <x-sidebar-link :href="route('exportaciones.create')" :active="$enNuevaLista">Nueva lista de empaque</x-sidebar-link>
+                        @if ($puedeGestionarExportaciones)
+                            <x-sidebar-link :href="route('exportaciones.create')" :active="$enNuevaLista">Nueva lista de empaque</x-sidebar-link>
+                        @endif
                         <x-sidebar-link :href="route('exportaciones.clientes.index')" :active="$enExpClientes">Perfiles y precios de exportación</x-sidebar-link>
                         <x-sidebar-link :href="route('exportaciones.productos.index')" :active="$enExpProductos">Catálogo de productos</x-sidebar-link>
                     </div>

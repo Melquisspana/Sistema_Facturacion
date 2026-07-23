@@ -30,7 +30,7 @@ class DteExportacionUiTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -125,7 +125,7 @@ class DteExportacionUiTest extends TestCase
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         $cliente = Cliente::factory()->exportacion()->create();
-        $consulta = $this->usuario('consulta');
+        $consulta = $this->usuario('jefatura');
 
         $this->actingAs($consulta)->get(route('facturacion.create-exportacion'))->assertForbidden();
         $this->actingAs($consulta)->post(route('facturacion.store-exportacion'), $this->datosFex($cliente, $estab, $pv))->assertForbidden();

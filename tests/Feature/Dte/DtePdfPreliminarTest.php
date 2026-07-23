@@ -42,7 +42,7 @@ class DtePdfPreliminarTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -356,7 +356,7 @@ class DtePdfPreliminarTest extends TestCase
     {
         $ccf = $this->ccfGenerado();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.pdf', $ccf))
             ->assertOk();
     }

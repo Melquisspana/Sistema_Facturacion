@@ -36,7 +36,7 @@ class DteExportacionEditorLineaLibreTest extends TestCase
         parent::setUp();
         $this->seed(CatalogosMhSeeder::class);
         $this->seed(CatalogosMhTablaSeeder::class);
-        foreach (['administrador', 'facturacion', 'consulta'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();

@@ -4,7 +4,9 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Clientes de exportación</h2>
             <div class="flex gap-2">
                 <a href="{{ route('exportaciones.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Listas de empaque</a>
-                <a href="{{ route('exportaciones.clientes.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo cliente</a>
+                @can('exportaciones.gestionar')
+                    <a href="{{ route('exportaciones.clientes.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo cliente</a>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -56,27 +58,35 @@
                                         <span class="inline-flex items-center justify-center min-w-[1.75rem] rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{{ $cliente->productos_count }}</span>
                                     </td>
                                     <td class="py-3 px-4 text-center">
-                                        <form method="POST" action="{{ route('exportaciones.clientes.toggle-activo', $cliente) }}">
-                                            @csrf @method('PATCH')
-                                            <button class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $cliente->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">
+                                        @can('exportaciones.gestionar')
+                                            <form method="POST" action="{{ route('exportaciones.clientes.toggle-activo', $cliente) }}">
+                                                @csrf @method('PATCH')
+                                                <button class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $cliente->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">
+                                                    {{ $cliente->activo ? 'Activo' : 'Inactivo' }}
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $cliente->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">
                                                 {{ $cliente->activo ? 'Activo' : 'Inactivo' }}
-                                            </button>
-                                        </form>
+                                            </span>
+                                        @endcan
                                     </td>
                                     <td class="py-3 px-4">
                                         <div class="flex items-center justify-end gap-3">
                                             <a href="{{ route('exportaciones.clientes.show', $cliente) }}" class="text-indigo-600 hover:underline">Precios</a>
-                                            <a href="{{ route('exportaciones.clientes.edit', $cliente) }}" class="text-indigo-600 hover:underline">Editar</a>
-                                            <form method="POST" action="{{ route('exportaciones.clientes.destroy', $cliente) }}"
-                                                  onsubmit="return confirm('¿Eliminar este cliente y su lista de precios? Las exportaciones existentes conservan sus datos.');">
-                                                @csrf @method('DELETE')
-                                                <button class="text-red-600 hover:underline">Eliminar</button>
-                                            </form>
+                                            @can('exportaciones.gestionar')
+                                                <a href="{{ route('exportaciones.clientes.edit', $cliente) }}" class="text-indigo-600 hover:underline">Editar</a>
+                                                <form method="POST" action="{{ route('exportaciones.clientes.destroy', $cliente) }}"
+                                                      onsubmit="return confirm('¿Eliminar este cliente y su lista de precios? Las exportaciones existentes conservan sus datos.');">
+                                                    @csrf @method('DELETE')
+                                                    <button class="text-red-600 hover:underline">Eliminar</button>
+                                                </form>
+                                            @endcan
                                         </div>
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="py-10 text-center text-gray-400">No hay clientes de exportación. <a href="{{ route('exportaciones.clientes.create') }}" class="text-indigo-600 hover:underline">Creá el primero</a>.</td></tr>
+                                <tr><td colspan="6" class="py-10 text-center text-gray-400">No hay clientes de exportación.@can('exportaciones.gestionar') <a href="{{ route('exportaciones.clientes.create') }}" class="text-indigo-600 hover:underline">Creá el primero</a>.@endcan</td></tr>
                             @endforelse
                         </tbody>
                     </table>

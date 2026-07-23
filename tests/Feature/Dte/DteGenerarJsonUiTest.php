@@ -45,7 +45,7 @@ class DteGenerarJsonUiTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -159,7 +159,7 @@ class DteGenerarJsonUiTest extends TestCase
     {
         $ccf = $this->ccfGenerado();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Generar JSON oficial preliminar');
@@ -171,7 +171,7 @@ class DteGenerarJsonUiTest extends TestCase
     {
         $ccf = $this->ccfGenerado();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('facturacion.json.generar', $ccf))
             ->assertForbidden();
 
@@ -182,7 +182,7 @@ class DteGenerarJsonUiTest extends TestCase
     {
         $ccf = $this->ccfGenerado();
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->post(route('facturacion.json.generar', $ccf))
             ->assertForbidden();
 

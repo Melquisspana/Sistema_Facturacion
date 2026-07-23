@@ -68,11 +68,14 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('productos', ProductoController::class)->parameters(['productos' => 'producto']);
 
-    // Auditoría general — solo administrador y contador (gate en el controlador).
-    Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
-    // Listado ESCONDIDO de documentos de prueba/simulación (ambiente 00). No aparece en el
-    // listado principal de facturación; se accede solo desde el panel de Auditoría (admin/contador).
-    Route::get('auditoria/documentos-prueba', [AuditoriaController::class, 'documentosPrueba'])->name('auditoria.documentos_prueba');
+    // Auditoría general — permiso auditoria.ver (administrador y contabilidad). El
+    // controlador refuerza el mismo permiso (defensa en profundidad).
+    Route::middleware('permission:auditoria.ver')->group(function () {
+        Route::get('auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
+        // Listado ESCONDIDO de documentos de prueba/simulación (ambiente 00). No aparece en el
+        // listado principal de facturación; se accede solo desde el panel de Auditoría.
+        Route::get('auditoria/documentos-prueba', [AuditoriaController::class, 'documentosPrueba'])->name('auditoria.documentos_prueba');
+    });
 
     /*
     | Facturación — borradores DTE. Por ahora solo CCF (tipo 03).
@@ -98,18 +101,18 @@ Route::middleware('auth')->group(function () {
         // firma, no transmite, no mueve correlativos). Debe ir ANTES de `{dte}`.
         // Gestores ven el checklist; el backup solo-BD es admin-only.
         Route::get('preparar-produccion', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'index'])
-            ->middleware('role:administrador|facturacion')->name('preparar-produccion');
+            ->middleware('permission:preparacion.ver')->name('preparar-produccion');
         Route::get('preparar-produccion/firmador', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'firmador'])
-            ->middleware('role:administrador|facturacion')->name('preparar-produccion.firmador');
+            ->middleware('permission:preparacion.ver')->name('preparar-produccion.firmador');
         Route::post('preparar-produccion/backup', [\App\Http\Controllers\Facturacion\PreparacionProduccionController::class, 'backup'])
-            ->middleware('role:administrador')->name('preparar-produccion.backup');
+            ->middleware('permission:respaldos.ejecutar')->name('preparar-produccion.backup');
 
         // Reporte contadora (SOLO lectura + Excel; no emite, no transmite, no toca
-        // correlativos). Debe ir ANTES de `{dte}`. Contador/facturación/administrador.
+        // correlativos). Debe ir ANTES de `{dte}`. Cualquier rol con reportes.ver.
         Route::get('reporte-contadora', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'index'])
-            ->middleware('role:administrador|contador|facturacion')->name('reporte-contadora');
+            ->middleware('permission:reportes.ver')->name('reporte-contadora');
         Route::get('reporte-contadora/exportar', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'exportar'])
-            ->middleware('role:administrador|contador|facturacion')->name('reporte-contadora.exportar');
+            ->middleware('permission:reportes.ver')->name('reporte-contadora.exportar');
 
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');
@@ -134,8 +137,12 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/generar-transmitir-produccion', [DteController::class, 'generarTransmitirProduccion'])->name('generar-transmitir-produccion');
         // Invalidación (evento anulardte): SOLO mock + dry-run visual desde la UI. La
         // transmisión REAL a apitest se hace únicamente por consola (dte:invalidacion-real).
-        Route::post('{dte}/invalidacion/dry-run', [DteController::class, 'dryRunInvalidacion'])->name('invalidacion.dry-run');
-        Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])->name('invalidacion.mock');
+        // Acción sensible: SOLO administrador (permiso dte.invalidar). La DtePolicy la
+        // refuerza además con las guardas de estado/evidencia.
+        Route::post('{dte}/invalidacion/dry-run', [DteController::class, 'dryRunInvalidacion'])
+            ->middleware('permission:dte.invalidar')->name('invalidacion.dry-run');
+        Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])
+            ->middleware('permission:dte.invalidar')->name('invalidacion.mock');
         Route::get('{dte}/editar', [DteController::class, 'edit'])->name('edit');
         // Datos aduaneros de una FEX (11) en borrador: recinto fiscal, régimen, incoterm, etc.
         Route::patch('{dte}/datos-aduaneros', [DteController::class, 'actualizarDatosAduaneros'])->name('datos-aduaneros.update');
@@ -183,16 +190,21 @@ Route::middleware('auth')->group(function () {
     | lectura/preparación: no reenvía, no envía correos, no modifica el buzón, no
     | borra, no toca DTE emitidos ni correlativos.
     */
-    Route::prefix('documentos-recibidos')->name('documentos-recibidos.')->middleware('role:administrador|contador|facturacion')->group(function () {
+    Route::prefix('documentos-recibidos')->name('documentos-recibidos.')->middleware('permission:documentos-recibidos.ver')->group(function () {
         Route::get('/', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'index'])->name('index');
         // Excel de recibidos respetando los filtros actuales (solo lectura, sin envío).
         Route::get('exportar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'exportar'])->name('exportar');
-        // Revisión MANUAL del buzón Yahoo/IMAP (solo lectura). No marca leído, no mueve, no borra.
-        Route::post('sincronizar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'sincronizar'])->name('sincronizar');
-        Route::patch('{documento}/pendiente', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarPendiente'])->name('pendiente');
-        Route::patch('{documento}/ignorar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarIgnorado'])->name('ignorar');
-        // Marcar enviado a contabilidad MANUALMENTE (estado interno; NO envía correo).
-        Route::patch('{documento}/enviado', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarEnviado'])->name('enviado');
+
+        // Escritura: sincronización del buzón Yahoo/IMAP y cambios de estado interno.
+        // SOLO administrador (permiso documentos-recibidos.gestionar).
+        Route::middleware('permission:documentos-recibidos.gestionar')->group(function () {
+            // Revisión MANUAL del buzón Yahoo/IMAP (solo lectura del buzón). No marca leído, no mueve, no borra.
+            Route::post('sincronizar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'sincronizar'])->name('sincronizar');
+            Route::patch('{documento}/pendiente', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarPendiente'])->name('pendiente');
+            Route::patch('{documento}/ignorar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarIgnorado'])->name('ignorar');
+            // Marcar enviado a contabilidad MANUALMENTE (estado interno; NO envía correo).
+            Route::patch('{documento}/enviado', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarEnviado'])->name('enviado');
+        });
     });
 
     /*
@@ -201,11 +213,13 @@ Route::middleware('auth')->group(function () {
     | ventas (reporte contadora) en un ZIP. SOLO lectura: no envía correos, no toca
     | DTE emitidos, correlativos ni el buzón.
     */
-    Route::prefix('contabilidad')->name('contabilidad.')->middleware('role:administrador|contador|facturacion')->group(function () {
+    Route::prefix('contabilidad')->name('contabilidad.')->middleware('permission:reportes.ver')->group(function () {
         Route::get('paquete', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'index'])->name('paquete');
         Route::post('paquete/generar', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'generar'])->name('paquete.generar');
         // Envío MANUAL del paquete a contabilidad (requiere frase exacta). No cambia estados.
-        Route::post('paquete/enviar', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'enviar'])->name('paquete.enviar');
+        // Solo administrador y contabilidad (permiso contabilidad.enviar); facturación NO.
+        Route::post('paquete/enviar', [\App\Http\Controllers\Contabilidad\PaqueteContabilidadController::class, 'enviar'])
+            ->middleware('permission:contabilidad.enviar')->name('paquete.enviar');
     });
 
     /*
@@ -213,20 +227,36 @@ Route::middleware('auth')->group(function () {
     | emitidos, los agrupa en lotes y (fase siguiente) genera el Excel. NO emite DTE.
     | Roles que gestionan cobros: administrador, contador, facturación.
     */
-    Route::prefix('ppq')->name('ppq.')->middleware('role:administrador|contador|facturacion')->group(function () {
+    Route::prefix('ppq')->name('ppq.')->middleware('permission:ppq.ver')->group(function () {
         Route::get('/', [\App\Http\Controllers\Ppq\PpqBusquedaController::class, 'index'])->name('index');
         // Búsqueda manual de albarán por fecha (cuando no se encontró por OC).
         Route::get('albaranes/por-fecha', [\App\Http\Controllers\Ppq\PpqBusquedaController::class, 'albaranesPorFecha'])->name('albaranes_por_fecha');
-        Route::resource('lotes', \App\Http\Controllers\Ppq\PpqLoteController::class)->parameters(['lotes' => 'lote']);
-        Route::post('lotes/{lote}/items', [\App\Http\Controllers\Ppq\PpqItemController::class, 'store'])->name('lotes.items.store');
-        Route::delete('lotes/{lote}/items/{item}', [\App\Http\Controllers\Ppq\PpqItemController::class, 'destroy'])->name('lotes.items.destroy');
+        // Lectura de lotes (índice, ficha) y su Excel: cualquier rol con ppq.ver.
+        Route::get('lotes', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'index'])->name('lotes.index');
+        // `crear` (escritura) DEBE declararse antes de `{lote}` para que la URL literal
+        // no la capture la ruta de detalle.
+        Route::get('lotes/crear', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'create'])
+            ->middleware('permission:ppq.gestionar')->name('lotes.create');
+        Route::get('lotes/{lote}', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'show'])->name('lotes.show');
         // Excel de Calleja desde un lote (phpspreadsheet).
         Route::get('lotes/{lote}/excel', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'excel'])->name('lotes.excel');
-        // Conciliación del lote contra el TXT de pagos de Calleja (solo lectura).
-        Route::post('lotes/{lote}/conciliar', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'conciliar'])->name('lotes.conciliar');
+
+        // Escritura de PPQ (crear/editar/eliminar lotes e items, conciliar): solo
+        // administrador y facturación (permiso ppq.gestionar). Jefatura/contabilidad
+        // quedan en solo lectura.
+        Route::middleware('permission:ppq.gestionar')->group(function () {
+            Route::post('lotes', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'store'])->name('lotes.store');
+            Route::get('lotes/{lote}/editar', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'edit'])->name('lotes.edit');
+            Route::put('lotes/{lote}', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'update'])->name('lotes.update');
+            Route::delete('lotes/{lote}', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'destroy'])->name('lotes.destroy');
+            Route::post('lotes/{lote}/items', [\App\Http\Controllers\Ppq\PpqItemController::class, 'store'])->name('lotes.items.store');
+            Route::delete('lotes/{lote}/items/{item}', [\App\Http\Controllers\Ppq\PpqItemController::class, 'destroy'])->name('lotes.items.destroy');
+            // Conciliación del lote contra el TXT de pagos de Calleja.
+            Route::post('lotes/{lote}/conciliar', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'conciliar'])->name('lotes.conciliar');
+        });
 
         // Conexión OAuth de Gmail (solo administrador). Nunca muestra tokens.
-        Route::middleware('role:administrador')->group(function () {
+        Route::middleware('permission:ppq.gmail')->group(function () {
             Route::get('gmail/conectar', [\App\Http\Controllers\Ppq\PpqGmailController::class, 'conectar'])->name('gmail.conectar');
             Route::get('gmail/callback', [\App\Http\Controllers\Ppq\PpqGmailController::class, 'callback'])->name('gmail.callback');
             Route::delete('gmail', [\App\Http\Controllers\Ppq\PpqGmailController::class, 'desconectar'])->name('gmail.desconectar');
@@ -239,64 +269,69 @@ Route::middleware('auth')->group(function () {
     | de productos de exportación y generación del Excel desde la plantilla.
     | NO emite DTE, no toca correlativos, firma, transmisión ni correo.
     */
-    Route::prefix('exportaciones')->name('exportaciones.')->middleware('role:administrador|contador|facturacion')->group(function () {
+    // Lectura para cualquier rol con exportaciones.ver; la escritura lleva además
+    // exportaciones.gestionar (inline en cada ruta que muta) para dejar a jefatura/
+    // contabilidad en solo lectura sin alterar el orden literal-antes-de-parámetro.
+    Route::prefix('exportaciones')->name('exportaciones.')->middleware('permission:exportaciones.ver')->group(function () {
+        $gestionar = 'permission:exportaciones.gestionar';
+
         // Catálogo de productos de exportación (antes de {exportacion} para no chocar).
         Route::get('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'index'])->name('productos.index');
-        Route::get('productos/crear', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'create'])->name('productos.create');
-        Route::post('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'store'])->name('productos.store');
+        Route::get('productos/crear', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'create'])->middleware($gestionar)->name('productos.create');
+        Route::post('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'store'])->middleware($gestionar)->name('productos.store');
         // Importación del catálogo inicial desde el Excel plantilla (hoja "Lista").
-        Route::get('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importarForm'])->name('productos.importar');
-        Route::post('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importar'])->name('productos.importar.run');
-        Route::get('productos/{producto}/editar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'edit'])->name('productos.edit');
-        Route::put('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'update'])->name('productos.update');
-        Route::patch('productos/{producto}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'toggleActivo'])->name('productos.toggle-activo');
-        Route::delete('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'destroy'])->name('productos.destroy');
+        Route::get('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importarForm'])->middleware($gestionar)->name('productos.importar');
+        Route::post('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importar'])->middleware($gestionar)->name('productos.importar.run');
+        Route::get('productos/{producto}/editar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'edit'])->middleware($gestionar)->name('productos.edit');
+        Route::put('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'update'])->middleware($gestionar)->name('productos.update');
+        Route::patch('productos/{producto}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'toggleActivo'])->middleware($gestionar)->name('productos.toggle-activo');
+        Route::delete('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'destroy'])->middleware($gestionar)->name('productos.destroy');
 
         // Clientes de exportación y su lista de precios/productos permitidos.
         Route::get('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'index'])->name('clientes.index');
-        Route::get('clientes/crear', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'create'])->name('clientes.create');
-        Route::post('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'store'])->name('clientes.store');
+        Route::get('clientes/crear', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'create'])->middleware($gestionar)->name('clientes.create');
+        Route::post('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'store'])->middleware($gestionar)->name('clientes.store');
         Route::get('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'show'])->name('clientes.show');
-        Route::get('clientes/{cliente}/editar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'edit'])->name('clientes.edit');
-        Route::put('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'update'])->name('clientes.update');
-        Route::patch('clientes/{cliente}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'toggleActivo'])->name('clientes.toggle-activo');
-        Route::delete('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroy'])->name('clientes.destroy');
+        Route::get('clientes/{cliente}/editar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'edit'])->middleware($gestionar)->name('clientes.edit');
+        Route::put('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'update'])->middleware($gestionar)->name('clientes.update');
+        Route::patch('clientes/{cliente}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'toggleActivo'])->middleware($gestionar)->name('clientes.toggle-activo');
+        Route::delete('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroy'])->middleware($gestionar)->name('clientes.destroy');
         // Vínculo con el Cliente DTE real (solo guarda la relación; no crea clientes ni FEX).
-        Route::patch('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'vincularClienteDte'])->name('clientes.vincular-cliente-dte');
-        Route::delete('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'desvincularClienteDte'])->name('clientes.desvincular-cliente-dte');
+        Route::patch('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'vincularClienteDte'])->middleware($gestionar)->name('clientes.vincular-cliente-dte');
+        Route::delete('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'desvincularClienteDte'])->middleware($gestionar)->name('clientes.desvincular-cliente-dte');
         // Lista de precios del cliente (asignaciones producto+precio, únicas por cliente).
-        Route::post('clientes/{cliente}/productos', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'storeProducto'])->name('clientes.productos.store');
-        Route::post('clientes/{cliente}/productos/asignar-catalogo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'asignarCatalogo'])->name('clientes.productos.asignar-catalogo');
+        Route::post('clientes/{cliente}/productos', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'storeProducto'])->middleware($gestionar)->name('clientes.productos.store');
+        Route::post('clientes/{cliente}/productos/asignar-catalogo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'asignarCatalogo'])->middleware($gestionar)->name('clientes.productos.asignar-catalogo');
         // Copiar productos/precios activos desde otro cliente (conservar u sobrescribir).
-        Route::post('clientes/{cliente}/productos/copiar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'copiarPrecios'])->name('clientes.productos.copiar');
-        Route::patch('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'updateProducto'])->name('clientes.productos.update');
-        Route::delete('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroyProducto'])->name('clientes.productos.destroy');
+        Route::post('clientes/{cliente}/productos/copiar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'copiarPrecios'])->middleware($gestionar)->name('clientes.productos.copiar');
+        Route::patch('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'updateProducto'])->middleware($gestionar)->name('clientes.productos.update');
+        Route::delete('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroyProducto'])->middleware($gestionar)->name('clientes.productos.destroy');
 
         // Exportaciones / listas de empaque.
         Route::get('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'index'])->name('index');
-        Route::get('crear', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'create'])->name('create');
-        Route::post('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'store'])->name('store');
+        Route::get('crear', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'create'])->middleware($gestionar)->name('create');
+        Route::post('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'store'])->middleware($gestionar)->name('store');
         Route::get('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'show'])->name('show');
-        Route::get('{exportacion}/editar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'edit'])->name('edit');
-        Route::put('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'update'])->name('update');
+        Route::get('{exportacion}/editar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'edit'])->middleware($gestionar)->name('edit');
+        Route::put('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'update'])->middleware($gestionar)->name('update');
         // Excel de lista de empaque desde la plantilla oficial (phpspreadsheet, sin IA).
         Route::get('{exportacion}/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excel'])->name('excel');
         // Aprobación de la lista (revisada por la dueña). No emite nada.
-        Route::patch('{exportacion}/aprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'aprobar'])->name('aprobar');
-        Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->name('desaprobar');
+        Route::patch('{exportacion}/aprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'aprobar'])->middleware($gestionar)->name('aprobar');
+        Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->middleware($gestionar)->name('desaprobar');
         // Archivar: oculta del listado normal una Lista de PRUEBA (no real) sin borrarla
         // ni tocar su FEX vinculada. Sigue accesible por URL directa o "Mostrar archivadas".
-        Route::patch('{exportacion}/archivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'archivar'])->name('archivar');
-        Route::patch('{exportacion}/desarchivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desarchivar'])->name('desarchivar');
+        Route::patch('{exportacion}/archivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'archivar'])->middleware($gestionar)->name('archivar');
+        Route::patch('{exportacion}/desarchivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desarchivar'])->middleware($gestionar)->name('desarchivar');
         // Crea (o abre, si ya existe) la FEX de esta Lista. Llama solo al servicio orquestador.
-        Route::post('{exportacion}/crear-fex', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'crearFex'])->name('crear-fex');
-        Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->name('duplicar');
-        Route::delete('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'destroy'])->name('destroy');
+        Route::post('{exportacion}/crear-fex', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'crearFex'])->middleware($gestionar)->name('crear-fex');
+        Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->middleware($gestionar)->name('duplicar');
+        Route::delete('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'destroy'])->middleware($gestionar)->name('destroy');
     });
 });
 
 // Importación/exportación administrativa (CSV) — solo administrador.
-Route::middleware(['auth', 'role:administrador'])
+Route::middleware(['auth', 'permission:importaciones.gestionar'])
     ->prefix('importaciones')
     ->name('importaciones.')
     ->group(function () {
@@ -310,12 +345,12 @@ Route::middleware(['auth', 'role:administrador'])
     });
 
 // Salud del sistema / Preparación para empresa — solo administrador (panel de solo lectura).
-Route::middleware(['auth', 'role:administrador'])
+Route::middleware(['auth', 'permission:sistema.salud'])
     ->get('admin/salud-sistema', [\App\Http\Controllers\Admin\SaludSistemaController::class, 'index'])
     ->name('admin.salud-sistema');
 
 // Gestión de usuarios — solo administrador.
-Route::middleware(['auth', 'role:administrador'])->group(function () {
+Route::middleware(['auth', 'permission:usuarios.gestionar'])->group(function () {
     Route::patch('usuarios/{usuario}/toggle-activo', [UserController::class, 'toggleActivo'])->name('usuarios.toggle-activo');
     Route::get('usuarios/{usuario}/password', [UserController::class, 'editPassword'])->name('usuarios.password.edit');
     Route::put('usuarios/{usuario}/password', [UserController::class, 'updatePassword'])->name('usuarios.password.update');
@@ -326,7 +361,7 @@ Route::middleware(['auth', 'role:administrador'])->group(function () {
 | Configuración del sistema — SOLO administrador.
 | Empresa emisora, establecimientos, puntos de venta y correlativos.
 */
-Route::middleware(['auth', 'role:administrador'])
+Route::middleware(['auth', 'permission:configuracion.gestionar'])
     ->prefix('configuracion')
     ->name('configuracion.')
     ->group(function () {

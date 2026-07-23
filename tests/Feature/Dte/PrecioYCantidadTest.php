@@ -30,7 +30,7 @@ class PrecioYCantidadTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -217,7 +217,7 @@ class PrecioYCantidadTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create();
         $producto = $this->productoGravado(0.50);
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('productos.precios.store', $producto), ['cliente_id' => $cliente->id, 'precio' => 0.45, 'activo' => '1'])
             ->assertForbidden();
     }

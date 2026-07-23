@@ -30,7 +30,7 @@ class ReporteContadoraTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -64,9 +64,10 @@ class ReporteContadoraTest extends TestCase
         ]);
     }
 
-    public function test_el_reporte_carga_para_gestores_y_contador(): void
+    public function test_el_reporte_carga_para_todos_los_roles_con_reportes_ver(): void
     {
-        foreach (['administrador', 'contador', 'facturacion'] as $rol) {
+        // Todos los roles tienen reportes.ver (incluye jefatura de solo lectura).
+        foreach (['administrador', 'contabilidad', 'facturacion', 'jefatura'] as $rol) {
             $this->actingAs($this->usuario($rol))
                 ->get(route('facturacion.reporte-contadora'))
                 ->assertOk()
@@ -75,11 +76,9 @@ class ReporteContadoraTest extends TestCase
         }
     }
 
-    public function test_consulta_no_accede(): void
+    public function test_invitado_no_accede(): void
     {
-        $this->actingAs($this->usuario('consulta'))
-            ->get(route('facturacion.reporte-contadora'))
-            ->assertForbidden();
+        $this->get(route('facturacion.reporte-contadora'))->assertRedirect(route('login'));
     }
 
     public function test_por_defecto_excluye_ambiente_00_y_mock(): void
@@ -88,7 +87,7 @@ class ReporteContadoraTest extends TestCase
         $pruebas = $this->crearDte('00', '2026SELLOPRUEBA1', true);          // ambiente 00 (excluir)
         $mock = $this->crearDte('01', 'MOCK-SIMULADO-ABCD', true);           // sello mock (excluir)
 
-        $html = $this->actingAs($this->usuario('contador'))
+        $html = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.reporte-contadora'))
             ->assertOk()
             ->getContent();
@@ -125,7 +124,7 @@ class ReporteContadoraTest extends TestCase
     {
         $this->crearDte('01', '2026SELLOREAL0003', true);
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.reporte-contadora.exportar'))
             ->assertOk()
             ->assertDownload();

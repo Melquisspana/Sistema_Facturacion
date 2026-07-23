@@ -7,6 +7,7 @@ use App\Models\ActividadEconomica;
 use App\Models\Departamento;
 use App\Models\Municipio;
 use App\Models\Pais;
+use App\Models\User;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Redirector;
@@ -17,10 +18,15 @@ class ClienteRequestTest extends TestCase
 {
     use RefreshDatabase;
 
+    private User $admin;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->seed(CatalogosMhSeeder::class);
+        // Estas pruebas verifican las REGLAS de validación; se resuelven con un admin
+        // (que tiene clientes.gestionar) para pasar la autorización del Form Request.
+        $this->admin = User::factory()->create()->assignRole('administrador');
     }
 
     /** Ejecuta el Form Request y devuelve los errores (vacío si pasó). */
@@ -29,6 +35,7 @@ class ClienteRequestTest extends TestCase
         $request = ClienteRequest::create('/clientes', 'POST', $data);
         $request->setContainer($this->app);
         $request->setRedirector($this->app->make(Redirector::class));
+        $request->setUserResolver(fn () => $this->admin);
 
         try {
             $request->validateResolved();

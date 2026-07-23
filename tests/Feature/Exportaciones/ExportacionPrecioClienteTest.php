@@ -25,7 +25,7 @@ class ExportacionPrecioClienteTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'contador', 'consulta'] as $rol) {
+        foreach (['administrador', 'facturacion', 'contabilidad', 'jefatura'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -204,11 +204,16 @@ class ExportacionPrecioClienteTest extends TestCase
         $this->assertSame(1, $cliente->productos()->count());
     }
 
-    public function test_rol_consulta_no_accede_al_modulo(): void
+    public function test_jefatura_lee_pero_no_gestiona_el_modulo(): void
     {
-        $usuario = User::factory()->create()->assignRole('consulta');
+        // Nueva política: jefatura tiene lectura de exportaciones (no gestión).
+        $jefa = User::factory()->create()->assignRole('jefatura');
 
-        $this->actingAs($usuario)->get(route('exportaciones.index'))->assertForbidden();
-        $this->actingAs($usuario)->get(route('exportaciones.clientes.index'))->assertForbidden();
+        $this->actingAs($jefa)->get(route('exportaciones.index'))->assertOk();
+        $this->actingAs($jefa)->get(route('exportaciones.clientes.index'))->assertOk();
+
+        // Pero no puede crear (la gestión es de administrador y facturación).
+        $this->actingAs($jefa)->get(route('exportaciones.clientes.create'))->assertForbidden();
+        $this->actingAs($jefa)->post(route('exportaciones.clientes.store'), [])->assertForbidden();
     }
 }

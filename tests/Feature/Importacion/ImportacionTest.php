@@ -28,7 +28,7 @@ class ImportacionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -357,14 +357,14 @@ class ImportacionTest extends TestCase
         // Invitado primero (sin sesión activa).
         $this->get(route('importaciones.index'))->assertRedirect('/login');
         $this->actingAs($this->usuario('facturacion'))->get(route('importaciones.index'))->assertForbidden();
-        $this->actingAs($this->usuario('consulta'))->get(route('importaciones.index'))->assertForbidden();
+        $this->actingAs($this->usuario('jefatura'))->get(route('importaciones.index'))->assertForbidden();
         $this->actingAs($this->usuario('administrador'))->get(route('importaciones.index'))->assertOk();
     }
 
     public function test_solo_admin_descarga_plantilla_de_salas(): void
     {
         $this->get(route('importaciones.salas.plantilla'))->assertRedirect('/login');
-        $this->actingAs($this->usuario('consulta'))->get(route('importaciones.salas.plantilla'))->assertForbidden();
+        $this->actingAs($this->usuario('jefatura'))->get(route('importaciones.salas.plantilla'))->assertForbidden();
 
         $respuesta = $this->actingAs($this->usuario('administrador'))->get(route('importaciones.salas.plantilla'));
         $respuesta->assertOk();

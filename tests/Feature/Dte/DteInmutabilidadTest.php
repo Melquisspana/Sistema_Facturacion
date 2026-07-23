@@ -26,7 +26,7 @@ class DteInmutabilidadTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -179,8 +179,8 @@ class DteInmutabilidadTest extends TestCase
 
     public function test_policy_lectores_no_editan_pero_ven(): void
     {
-        $consulta = $this->usuario('consulta');
-        $contador = $this->usuario('contador');
+        $consulta = $this->usuario('jefatura');
+        $contador = $this->usuario('contabilidad');
         $borrador = $this->crearDte('borrador');
 
         $this->assertTrue(Gate::forUser($consulta)->allows('view', $borrador));

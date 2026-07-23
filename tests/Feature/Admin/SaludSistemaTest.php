@@ -26,7 +26,7 @@ class SaludSistemaTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -52,8 +52,8 @@ class SaludSistemaTest extends TestCase
 
     public function test_consulta_y_contador_no_pueden_ver(): void
     {
-        $this->actingAs($this->usuario('consulta'))->ver()->assertForbidden();
-        $this->actingAs($this->usuario('contador'))->ver()->assertForbidden();
+        $this->actingAs($this->usuario('jefatura'))->ver()->assertForbidden();
+        $this->actingAs($this->usuario('contabilidad'))->ver()->assertForbidden();
         $this->actingAs($this->usuario('facturacion'))->ver()->assertForbidden();
     }
 
@@ -165,7 +165,7 @@ class SaludSistemaTest extends TestCase
         $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
             ->assertOk()->assertSee('Salud del sistema');
 
-        $this->actingAs($this->usuario('consulta'))->get(route('dashboard'))
+        $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))
             ->assertOk()->assertDontSee('Salud del sistema');
     }
 

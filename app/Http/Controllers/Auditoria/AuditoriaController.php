@@ -14,8 +14,8 @@ class AuditoriaController extends Controller
 {
     public function index(Request $request): View
     {
-        // Solo administrador y contador pueden ver la auditoría.
-        abort_unless($request->user()->hasAnyRole(['administrador', 'contador']), 403);
+        // Solo quien tenga el permiso auditoria.ver (administrador y contabilidad).
+        abort_unless($request->user()->can('auditoria.ver'), 403);
 
         $causerId = $request->input('causer_id');
         $logName = $request->input('log_name');
@@ -47,7 +47,7 @@ class AuditoriaController extends Controller
      */
     public function documentosPrueba(Request $request): View
     {
-        abort_unless($request->user()->hasAnyRole(['administrador', 'contador']), 403);
+        abort_unless($request->user()->can('auditoria.ver'), 403);
 
         $filtros = [
             'q' => trim((string) $request->input('q', '')),

@@ -37,7 +37,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -185,7 +185,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $this->compra('2026-07-05', 100);
         $this->venta('2026-07-10', 200);
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->post(route('contabilidad.paquete.enviar'), $this->payload())
             ->assertSessionHas('status');
 
@@ -371,13 +371,13 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $this->assertSame($antes, DocumentoRecibido::count());
     }
 
-    public function test_consulta_no_puede_enviar(): void
+    public function test_jefatura_no_puede_enviar(): void
     {
         Mail::fake();
         $this->conCorreo();
         $this->compra('2026-07-05', 100);
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('contabilidad.paquete.enviar'), $this->payload())
             ->assertForbidden();
 

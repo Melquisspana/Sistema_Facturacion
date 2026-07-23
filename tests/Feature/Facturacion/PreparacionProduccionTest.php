@@ -27,7 +27,7 @@ class PreparacionProduccionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -60,11 +60,11 @@ class PreparacionProduccionTest extends TestCase
 
     public function test_consulta_y_contador_no_acceden(): void
     {
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertForbidden();
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertForbidden();
     }

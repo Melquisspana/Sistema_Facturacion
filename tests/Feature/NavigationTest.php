@@ -21,7 +21,7 @@ class NavigationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -70,14 +70,20 @@ class NavigationTest extends TestCase
         $resp->assertSee('aria-current="page"', false);
     }
 
-    public function test_consulta_no_ve_secciones_operativas_ni_administracion(): void
+    public function test_jefatura_ve_secciones_operativas_de_lectura_pero_no_administracion(): void
     {
-        $resp = $this->actingAs($this->usuario('consulta'))->get(route('dashboard'))->assertOk();
+        // Nueva política: jefatura tiene lectura amplia (ve PPQ, Contabilidad y
+        // Exportaciones), pero NO la sección Administración (usuarios/config/salud/
+        // auditoría) ni los botones de gestión dentro de esos módulos.
+        $resp = $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk();
 
-        $resp->assertDontSee('Prontos Pagos');
-        $resp->assertDontSee('Contabilidad');
-        $resp->assertDontSee('Exportaciones');
+        $resp->assertSee('Prontos Pagos');
+        $resp->assertSee('Contabilidad');
+        $resp->assertSee('Exportaciones');
         $resp->assertDontSee('Administración');
+        // Sin enlaces de administración.
+        $resp->assertDontSee(route('usuarios.index'), false);
+        $resp->assertDontSee(route('admin.salud-sistema'), false);
     }
 
     public function test_administrador_ve_administracion_con_badge_de_jobs_fallidos(): void

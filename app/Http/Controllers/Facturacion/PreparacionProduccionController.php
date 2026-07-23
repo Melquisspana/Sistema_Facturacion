@@ -40,7 +40,7 @@ class PreparacionProduccionController extends Controller
 
     public function index(Request $request, DteTransmisionService $transmision): View
     {
-        abort_unless($request->user()?->hasAnyRole(['administrador', 'facturacion']), 403);
+        abort_unless($request->user()?->can('preparacion.ver'), 403);
 
         // Estado operativo DTE (modo/candados/mocks). SOLO LECTURA: reutiliza
         // evaluarCandados(); no transmite ni muestra secretos.
@@ -53,7 +53,7 @@ class PreparacionProduccionController extends Controller
             'servicios' => $this->servicios(),
             'correlativo' => $this->correlativo(),
             'backup' => $this->ultimoBackup(),
-            'puedeBackup' => (bool) $request->user()?->hasRole('administrador'),
+            'puedeBackup' => (bool) $request->user()?->can('respaldos.ejecutar'),
             'worker' => WorkerHeartbeat::estado(),
             'higiene' => $this->higiene(),
         ]);
@@ -66,7 +66,7 @@ class PreparacionProduccionController extends Controller
      */
     public function firmador(Request $request, DteFirmaService $firma): JsonResponse
     {
-        abort_unless($request->user()?->hasAnyRole(['administrador', 'facturacion']), 403);
+        abort_unless($request->user()?->can('preparacion.ver'), 403);
 
         return response()->json($firma->healthCheck());
     }
@@ -81,7 +81,7 @@ class PreparacionProduccionController extends Controller
      */
     public function backup(Request $request): RedirectResponse
     {
-        abort_unless($request->user()?->hasRole('administrador'), 403);
+        abort_unless($request->user()?->can('respaldos.ejecutar'), 403);
 
         try {
             $codigo = Artisan::call('backup:mysql-diario', ['--origen' => 'manual']);

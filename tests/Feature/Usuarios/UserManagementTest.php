@@ -16,7 +16,7 @@ class UserManagementTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -76,7 +76,7 @@ class UserManagementTest extends TestCase
     public function test_admin_puede_ver_todas_las_pantallas(): void
     {
         $admin = $this->admin();
-        $otro = User::factory()->create()->assignRole('consulta');
+        $otro = User::factory()->create()->assignRole('jefatura');
 
         $this->actingAs($admin)->get(route('usuarios.index'))->assertOk()->assertSee('Nuevo usuario');
         $this->actingAs($admin)->get(route('usuarios.create'))->assertOk()->assertSee('Rol');
@@ -115,7 +115,7 @@ class UserManagementTest extends TestCase
         $this->actingAs($admin)->put(route('usuarios.update', $admin), [
             'name' => $admin->name,
             'email' => $admin->email,
-            'rol' => 'consulta',
+            'rol' => 'jefatura',
             'activo' => '1',
         ]);
 
@@ -151,7 +151,7 @@ class UserManagementTest extends TestCase
     public function test_admin_cambia_password(): void
     {
         $admin = $this->admin();
-        $usuario = User::factory()->create()->assignRole('consulta');
+        $usuario = User::factory()->create()->assignRole('jefatura');
 
         $this->actingAs($admin)->put(route('usuarios.password.update', $usuario), [
             'password' => 'Nuev0#Passw0rd!',
