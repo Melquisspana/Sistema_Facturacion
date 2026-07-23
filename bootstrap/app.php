@@ -14,9 +14,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Cabeceras de seguridad en todas las respuestas web.
+        // Cabeceras de seguridad en todas las respuestas web + SSO de Cloudflare
+        // Access (no-op salvo dominio público con SSO habilitado por config; el
+        // login local de facturacion.test/localhost/Tailscale no se toca).
         $middleware->web(append: [
             SecurityHeaders::class,
+            \App\Http\Middleware\CloudflareAccessSso::class,
         ]);
 
         // Confiar en el proxy local (Tailscale Serve -> 127.0.0.1:80) para
