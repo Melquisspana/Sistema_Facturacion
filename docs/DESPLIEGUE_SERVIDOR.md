@@ -109,6 +109,87 @@ netstat -ano | findstr ":8080 "
 - **8080**: firmador Java local (tarea programada) debe estar escuchando — confirmar
   además con el botón "Probar firmador ahora" en `/facturacion/preparar-produccion`.
 
+## 8.1 Dominio público (Apache + Cloudflare Tunnel + Access)
+
+### VirtualHost de Apache
+
+Copiar la plantilla `docs\apache\facturacion-dulceslanegrita.conf.example` a la
+carpeta de vhosts de Apache del servidor, ajustar `DocumentRoot` a la ruta real
+de `Facturacion\public`, y validar antes de reiniciar:
+
+```cmd
+httpd -t
+httpd -S
+```
+
+`httpd -t` debe decir `Syntax OK`; `httpd -S` debe listar
+`facturacion.dulceslanegrita.com` apuntando al vhost nuevo. Después reiniciar el
+servicio de Apache (o desde Laragon si está abierto — el servicio funciona sin
+abrir Laragon).
+
+### Cloudflare Tunnel
+
+- El túnel (`cloudflared`) debe apuntar **únicamente** a `http://127.0.0.1:80`.
+- **NUNCA** publicar por el túnel los puertos `3306` (MySQL) ni `8080/8113`
+  (firmador): no crear rutas adicionales en el túnel para esos servicios.
+- El token del túnel vive solo en la configuración de cloudflared del servidor;
+  no se guarda en el repo, en `.env` de Laravel ni en la documentación.
+
+### SSO con Cloudflare Access (login único)
+
+Con Access delante del dominio ya no hay doble login: el middleware valida el
+JWT firmado que Cloudflare envía (`Cf-Access-Jwt-Assertion`) y abre la sesión
+local del usuario cuyo email coincida (debe existir en Usuarios y estar activo;
+nunca se crean usuarios ni se asignan roles automáticamente).
+
+Variables a definir en el `.env` **del servidor** (ninguna es un secreto, pero
+`.env` no se versiona igualmente):
+
+```env
+CLOUDFLARE_ACCESS_ENABLED=true
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=<equipo>.cloudflareaccess.com
+CLOUDFLARE_ACCESS_AUD=<aud-tag-de-la-aplicacion-access>
+CLOUDFLARE_ACCESS_AUTO_LOGIN=true
+CLOUDFLARE_ACCESS_ALLOWED_HOST=facturacion.dulceslanegrita.com
+```
+
+Dónde obtenerlas (sin copiar tokens ni secretos):
+- **TEAM_DOMAIN**: Zero Trust → Settings → Custom Pages ("team domain"), p. ej.
+  `miequipo.cloudflareaccess.com` (sin `https://`).
+- **AUD**: Zero Trust → Access → Applications → (la aplicación que protege
+  `facturacion.dulceslanegrita.com`) → Overview → campo **Application Audience
+  (AUD) Tag**. Es un identificador público de la app, no una credencial.
+
+En el mismo `.env` del servidor conviene además marcar la cookie de sesión como
+segura (el dominio público siempre es HTTPS):
+
+```env
+SESSION_SECURE_COOKIE=true
+```
+
+Después de editar `.env`: `php artisan config:clear` (o `config:cache`).
+
+> **Revocación**: quitarle el acceso a alguien en Cloudflare Access NO cierra una
+> sesión de Laravel que ya estaba abierta (sigue viva hasta expirar o hasta un
+> logout). Para un corte inmediato, desactivar también el usuario en el módulo
+> Usuarios (`activo = no`): las pantallas protegidas dejan de servirle en el
+> siguiente request de login y el SSO ya no le abrirá sesión nueva.
+
+Comportamiento resultante:
+- `https://facturacion.dulceslanegrita.com` → pasa por Access → entra directo al
+  dashboard (sin login de Laravel) si el email del usuario existe y está activo.
+- Email sin usuario local o usuario inactivo → 403 neutro (se registra en el log
+  con el email enmascarado).
+- `facturacion.test`, `localhost`, IP local y Tailscale → login local normal.
+- Menú de usuario en el dominio público: opción extra "Cerrar sesión (también
+  Cloudflare)" que cierra la sesión local y la cookie de Access.
+
+**Deshabilitar / rollback al login local**: poner
+`CLOUDFLARE_ACCESS_ENABLED=false` (o eliminar la variable) + `php artisan
+config:clear`. El dominio público vuelve a mostrar el login local de Laravel
+detrás de Access (doble login), sin ningún otro efecto. Las claves públicas del
+team se cachean 1 hora; el rollback no depende de esa caché.
+
 ## 9. Preflight de invalidación (solo lectura, sin transmitir)
 
 Antes de dar por cerrado el despliegue, correr el preflight de invalidación contra

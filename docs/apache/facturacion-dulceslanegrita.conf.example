@@ -1,0 +1,36 @@
+# ============================================================================
+# Plantilla de VirtualHost Apache para el dominio publico del sistema DTE.
+#
+#   Cloudflare Tunnel (cloudflared) -> http://127.0.0.1:80 -> este vhost.
+#
+# COPIAR (no editar esta plantilla en el repo) a la carpeta de vhosts de la
+# instalacion de Apache del servidor, ajustar la ruta del proyecto, y luego:
+#
+#   httpd -t          # validar sintaxis
+#   httpd -S          # confirmar que el ServerName resuelve a este vhost
+#   (reiniciar Apache: servicio de Windows o desde Laragon si esta abierto)
+#
+# Seguridad de red:
+#  - cloudflared debe apuntar SOLO a http://127.0.0.1:80 (nunca a 3306 ni 8080).
+#  - MySQL (3306) y el firmador (8080/8113) NUNCA se exponen: escuchan solo en
+#    127.0.0.1 y no tienen vhost ni tunel.
+#  - HTTPS lo termina Cloudflare; entre cloudflared y Apache el trafico es local
+#    (127.0.0.1), por eso este vhost es :80 sin certificado propio.
+# ============================================================================
+
+<VirtualHost *:80>
+    ServerName facturacion.dulceslanegrita.com
+
+    # Ajustar a la ruta REAL del proyecto en el servidor:
+    DocumentRoot "C:/laragon/www/Facturacion/public"
+
+    <Directory "C:/laragon/www/Facturacion/public">
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    # Logs propios del dominio publico (utiles para auditar accesos del tunel).
+    ErrorLog "logs/facturacion-dulceslanegrita-error.log"
+    CustomLog "logs/facturacion-dulceslanegrita-access.log" common
+</VirtualHost>
