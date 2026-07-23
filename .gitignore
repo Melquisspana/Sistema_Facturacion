@@ -32,3 +32,6 @@ Thumbs.db
 *.pem
 # Volcado del certificado de firma del MH (credencial sensible)
 /cert.txt
+
+# Backups locales (dumps .sql manuales/automáticos, zips, .bak): nunca versionar
+/backups/
