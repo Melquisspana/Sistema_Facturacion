@@ -86,10 +86,13 @@ class DteController extends Controller
 
         $dtes = Dte::query()
             ->select('dtes.*')
-            // Listado principal = SOLO documentos reales de PRODUCCIÓN (ambiente 01), desde el
-            // CCF 1078 en adelante. Las pruebas/piloto/simulación (ambiente 00) quedan fuera; su
-            // acceso vive escondido en el panel de Auditoría. Sin toggle aquí a propósito.
-            ->produccion()
+            // Listado OPERATIVO: muestra el ambiente ACTIVO de ESTA instalación (config
+            // ('dte.ambiente')) — '00' en desarrollo/APITEST, '01' en el servidor de
+            // producción — con TODOS sus estados (borrador incluido), para poder seguir
+            // trabajando. Nunca mezcla ambos ambientes en la misma vista por defecto. El
+            // filtro fijo a SIEMPRE producción real es exclusivo del Dashboard (negocio);
+            // acá forzarlo ocultaría los borradores/generados recién creados en desarrollo.
+            ->ambienteOperativoActual()
             // Estado del ÚLTIMO envío de correo por documento (badge del listado), como
             // subquery para no caer en N+1. Solo lectura.
             ->addSelect(['ultimo_envio_estado' => DteEnvio::select('estado')
@@ -99,14 +102,24 @@ class DteController extends Controller
             ->with(['cliente', 'clienteSucursal', 'dteRelacionado.cliente', 'dteRelacionado.clienteSucursal'])
             ->when($filtros['tipo_dte'], fn ($qb, $v) => $qb->where('tipo_dte', $v))
             ->when($filtros['estado'], function ($qb, $v) {
-                // "pendientes_emitir": documentos ya generados localmente (numerados/JSON) que
-                // todavía no tienen resultado de Hacienda. No es un estado real de EstadoDte,
-                // es un valor especial de filtro que agrupa generado+firmado+enviado.
-                if ($v === 'pendientes_emitir') {
+                // "pendientes": documento todavía no tiene un resultado FINAL de Hacienda (ni
+                // aceptado ni rechazado) ni fue invalidado. No es un estado real de EstadoDte,
+                // es un valor especial de filtro que agrupa borrador+generado+firmado+enviado.
+                if ($v === 'pendientes') {
                     return $qb->whereIn('estado', [
+                        EstadoDte::Borrador->value,
                         EstadoDte::Generado->value,
                         EstadoDte::Firmado->value,
                         EstadoDte::Enviado->value,
+                    ]);
+                }
+
+                // "rechazados_invalidados": agrupa ambos estados finales negativos (rechazado
+                // por Hacienda o invalidado/anulado internamente) en un solo acceso rápido.
+                if ($v === 'rechazados_invalidados') {
+                    return $qb->whereIn('estado', [
+                        EstadoDte::Rechazado->value,
+                        EstadoDte::Invalidado->value,
                     ]);
                 }
 
@@ -136,7 +149,12 @@ class DteController extends Controller
 
         $clientes = Cliente::where('activo', true)->orderBy('nombre')->get(['id', 'nombre']);
 
-        return view('facturacion.index', compact('dtes', 'filtros', 'clientes'));
+        // Etiqueta clara del ambiente que se está listando (nunca "producción" fijo:
+        // depende del ambiente activo de esta instalación).
+        $ambienteListado = \App\Enums\AmbienteHacienda::tryFrom((string) config('dte.ambiente'))?->label()
+            ?? (string) config('dte.ambiente');
+
+        return view('facturacion.index', compact('dtes', 'filtros', 'clientes', 'ambienteListado'));
     }
 
     /**
