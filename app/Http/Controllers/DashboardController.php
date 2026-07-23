@@ -69,12 +69,31 @@ class DashboardController extends Controller
             'actividad' => $actividad,
             'estadoTecnico' => $estadoTecnico,
             'estadoGeneral' => $estadoGeneral,
+            'textoEstadoGeneral' => $this->textoEstadoGeneral($estadoGeneral),
             'diagnostico' => $esGestorDte ? $diagnostico : null,
             'esAdmin' => $esAdmin,
             'esGestorDte' => $esGestorDte,
             'veOperativos' => $veOperativos,
             'veFacturacion' => $veFacturacion,
         ]);
+    }
+
+    /**
+     * Texto del badge de estado general. "Atención inmediata" queda reservado para
+     * crítico real (backup vencido, jobs fallidos, etc.). Para "advertencia" se
+     * distingue el entorno: en un servidor de producción real (APP_ENV=production)
+     * una advertencia sí merece revisión ("Advertencia operativa"); en desarrollo/
+     * local, advertencias como transmisión deshabilitada o dry-run activo son el
+     * estado ESPERADO durante la preparación, no un problema ("Operación segura de
+     * desarrollo") — evita que el equipo se acostumbre a ignorar una alerta roja.
+     */
+    private function textoEstadoGeneral(string $estado): string
+    {
+        return match ($estado) {
+            'critico' => 'Atención inmediata',
+            'advertencia' => config('app.env') === 'production' ? 'Advertencia operativa' : 'Operación segura de desarrollo',
+            default => 'Todo en orden',
+        };
     }
 
     private function saludo(): string
@@ -90,18 +109,30 @@ class DashboardController extends Controller
      * Tarjetas principales. Cacheadas 60s por usuario (ver index()): son conteos
      * livianos, pero no hay razón para repetirlos en cada recarga rápida.
      *
+     * "DTE aceptados (mes)" y "Ventas del mes" son cifras de NEGOCIO: siempre cuentan
+     * ambiente PRODUCCIÓN ('01') con estado Aceptado, sin importar el ambiente activo
+     * de ESTA instalación (config('dte.ambiente')). Un administrador viendo el panel
+     * desde una instalación en modo pruebas/APITEST nunca debe ver esos números
+     * inflados con documentos de prueba, ni tampoco perder de vista un documento real
+     * de producción (como el DTE #145) solo porque la instalación local está en '00'.
+     * `documentos_pendientes`/`listas_recientes` no son DTE (DocumentoRecibido/
+     * Exportacion no tienen concepto de ambiente MH), así que no aplica filtrarlos.
+     *
      * @return array<string, mixed>
      */
     private function calcularStats(bool $veFacturacion, bool $veOperativos, int $jobsFallidos): array
     {
         $inicioMes = now()->startOfMonth()->toDateString();
+        $ambienteProduccion = AmbienteHacienda::Produccion->value;
 
         $dteAceptadosMes = $ventasMes = null;
         if ($veFacturacion) {
             $dteAceptadosMes = Dte::where('estado', EstadoDte::Aceptado->value)
+                ->where('ambiente', $ambienteProduccion)
                 ->where('fecha_emision', '>=', $inicioMes)->count();
 
             $ventasMes = (float) Dte::where('estado', EstadoDte::Aceptado->value)
+                ->where('ambiente', $ambienteProduccion)
                 ->whereIn('tipo_dte', [TipoDte::Factura->value, TipoDte::CreditoFiscal->value, TipoDte::FacturaExportacion->value])
                 ->where('fecha_emision', '>=', $inicioMes)
                 ->sum('total_pagar');
@@ -117,15 +148,18 @@ class DashboardController extends Controller
     }
 
     /**
-     * Últimos DTE con algún movimiento real (enviados/aceptados/rechazados): un
-     * borrador nunca aparece acá, no es "actividad" todavía. Un solo SELECT con
-     * LIMIT 8 y el cliente precargado (evita N+1 en la tabla).
+     * Documentos REALES de producción: ambiente '01' (fijo, no el ambiente activo de
+     * esta instalación) y estado Aceptado (fijo, no enviado/rechazado/generado/
+     * firmado). Nunca deben aparecer ni sumar acá documentos APITEST, rechazados,
+     * borradores, ni documentos aceptados todavía no confirmados por Hacienda. Un solo
+     * SELECT con LIMIT 8 y el cliente precargado (evita N+1 en la tabla).
      */
     private function actividadReciente(): Collection
     {
         return Dte::query()
+            ->where('ambiente', AmbienteHacienda::Produccion->value)
+            ->where('estado', EstadoDte::Aceptado->value)
             ->with('cliente:id,nombre')
-            ->whereIn('estado', [EstadoDte::Enviado->value, EstadoDte::Aceptado->value, EstadoDte::Rechazado->value])
             ->orderByDesc('fecha_emision')
             ->orderByDesc('id')
             ->limit(8)

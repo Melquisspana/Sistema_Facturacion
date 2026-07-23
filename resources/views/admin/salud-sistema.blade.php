@@ -53,59 +53,27 @@
                 </div>
             </div>
 
-            {{-- Backups --}}
+            {{-- Diagnóstico operativo (BD, worker, jobs, backup, firmador, transmisión, ambiente/PV, correlativos P002, storage, migraciones) --}}
             <div class="bg-white shadow sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-700 mb-4">Backups</h3>
-                <p class="text-sm text-gray-500 mb-3">Ruta esperada: <span class="font-mono">{{ $backups['ruta'] }}</span></p>
-
-                <div class="rounded-lg border border-gray-200 p-4 mb-4">
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-sm text-gray-500">Último backup</span>
-                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$backups['ultimo']['estado']] }}">{{ $badgeTexto[$backups['ultimo']['estado']] }}</span>
-                    </div>
-                    @if ($backups['ultimo']['nombre'])
-                        <div class="font-mono text-gray-800 text-sm break-all">{{ $backups['ultimo']['nombre'] }}</div>
-                        <p class="text-xs text-gray-500 mt-1">Fecha: {{ $backups['ultimo']['fecha'] }} · Tamaño: {{ $backups['ultimo']['tamano'] }}</p>
-                    @endif
-                    <p class="text-xs text-gray-400 mt-1">{{ $backups['ultimo']['detalle'] }}</p>
+                <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+                    <h3 class="font-semibold text-gray-700">Diagnóstico operativo</h3>
+                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$diagnostico['nivel'] === 'correcto' ? 'ok' : $diagnostico['nivel']] }}">
+                        {{ $badgeTexto[$diagnostico['nivel'] === 'correcto' ? 'ok' : $diagnostico['nivel']] }}
+                    </span>
                 </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Scripts</p>
-                        @foreach ($backups['scripts'] as $s)
-                            <div class="flex items-center justify-between text-sm py-1">
-                                <span class="font-mono text-gray-700">{{ $s['label'] }}</span>
-                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$s['estado']] }}">{{ $s['valor'] }}</span>
-                            </div>
-                        @endforeach
-                    </div>
-                    <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Documentación</p>
-                        @foreach ($backups['docs'] as $d)
-                            <div class="flex items-center justify-between text-sm py-1">
-                                <span class="font-mono text-gray-700">{{ $d['label'] }}</span>
-                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$d['estado']] }}">{{ $d['valor'] }}</span>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-            </div>
-
-            {{-- Cola de correos / worker --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
-                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-                    <h3 class="font-semibold text-gray-700">Cola de correos (worker)</h3>
-                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$cola['estado']] }}">{{ $badgeTexto[$cola['estado']] }}</span>
-                </div>
-                <p class="text-sm text-gray-700">{{ $cola['texto'] }}</p>
-                <dl class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    <div><dt class="text-gray-500">Último pulso</dt><dd class="font-mono text-gray-800">{{ $cola['ultimo'] ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500">Correos en cola</dt><dd class="font-mono {{ $cola['pendientes'] > 0 ? 'text-amber-700' : 'text-gray-800' }}">{{ $cola['pendientes'] }}</dd></div>
-                    <div><dt class="text-gray-500">Correos fallidos</dt><dd class="font-mono {{ $cola['fallidos'] > 0 ? 'text-rose-700' : 'text-gray-800' }}">{{ $cola['fallidos'] }}</dd></div>
-                    <div><dt class="text-gray-500">Driver de cola</dt><dd class="font-mono text-gray-800">{{ $cola['driver'] }}</dd></div>
-                </dl>
-                <p class="text-xs text-gray-400 mt-2">El worker debe estar corriendo (<span class="font-mono">start-queue.bat</span> / <span class="font-mono">php artisan queue:work</span>) para que salgan los correos. Solo lectura: no toca la cola.</p>
+                <p class="text-xs text-gray-400 mb-4">Mismo diagnóstico que el Dashboard — nunca hace red (BD/config/cache). Pasá el mouse sobre cada estado para ver el detalle.</p>
+                <ul class="divide-y divide-gray-100">
+                    @foreach ($diagnostico['checks'] as $c)
+                        @php $nivelVista = $c['nivel'] === 'correcto' ? 'ok' : $c['nivel']; @endphp
+                        <li class="flex items-start justify-between gap-2 py-2 text-sm">
+                            <span class="text-gray-700">{{ $c['label'] }}</span>
+                            <span class="shrink-0 inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$nivelVista] }}" title="{{ $c['detalle'] }}">
+                                {{ $badgeTexto[$nivelVista] }}
+                            </span>
+                        </li>
+                        <li class="pb-2 -mt-1 text-xs text-gray-400">{{ $c['detalle'] }}</li>
+                    @endforeach
+                </ul>
             </div>
 
             {{-- Transmisión DTE / modo de operación --}}
@@ -128,7 +96,7 @@
                         (<span class="font-mono">DTE_TRANSMISION_TEST_ENABLED=false</span>).
                     </p>
                 @else
-                    <p class="text-xs text-green-700 mt-2">Conta Portable sigue siendo el sistema oficial mientras dure el piloto.</p>
+                    <p class="text-xs text-green-700 mt-2">Modo paralelo seguro: este sistema no transmite producción (solo genera JSON, firma local y dry-run).</p>
                 @endif
                 <dl class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                     <div><dt class="text-gray-500">Modo</dt><dd class="font-mono text-gray-800">{{ $transmisionDte['candados']['flags']['modo_operacion'] }}</dd></div>

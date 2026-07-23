@@ -95,7 +95,7 @@ class WorkerHeartbeatTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('admin.salud-sistema'))
             ->assertOk()
-            ->assertSee('Cola de correos (worker)')
+            ->assertSee('Diagnóstico operativo')
             ->assertSee('Worker activo');
     }
 
@@ -106,7 +106,7 @@ class WorkerHeartbeatTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('admin.salud-sistema'))
             ->assertOk()
-            ->assertSee('Worker posiblemente detenido');
+            ->assertSee('parece detenido');
     }
 
     public function test_panel_muestra_sin_datos_si_no_hubo_pulso(): void
@@ -114,7 +114,7 @@ class WorkerHeartbeatTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('admin.salud-sistema'))
             ->assertOk()
-            ->assertSee('Sin datos todavía');
+            ->assertSee('Sin datos de actividad reciente del worker');
     }
 
     // --- diagnostico(): combina heartbeat + jobs/failed_jobs en 4 estados, sin ---

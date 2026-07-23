@@ -1,6 +1,5 @@
 @php
     $colorEstado = ['ok' => 'bg-green-100 text-green-700', 'advertencia' => 'bg-amber-100 text-amber-700', 'critico' => 'bg-rose-100 text-rose-700'];
-    $textoEstado = ['ok' => 'Todo en orden', 'advertencia' => 'Requiere atención', 'critico' => 'Atención inmediata'];
     $card = 'bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-4 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
     // El diagnóstico usa 'correcto' (no 'ok'); se traduce solo para reusar $colorEstado.
     $colorDiagnostico = ['correcto' => $colorEstado['ok'], 'advertencia' => $colorEstado['advertencia'], 'critico' => $colorEstado['critico']];
@@ -21,7 +20,7 @@
                 </div>
                 <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {{ $colorEstado[$estadoGeneral] }}">
                     <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
-                    {{ $textoEstado[$estadoGeneral] }}
+                    {{ $textoEstadoGeneral }}
                 </span>
             </div>
 
@@ -59,7 +58,7 @@
                 <div class="{{ $card }}">
                     <p class="text-xs text-gray-400 dark:text-paper-500">Estado del sistema</p>
                     <p class="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold {{ $estadoGeneral === 'ok' ? 'text-green-700 dark:text-green-400' : ($estadoGeneral === 'advertencia' ? 'text-amber-700 dark:text-amber-400' : 'text-rose-700 dark:text-rose-400') }}">
-                        {{ $textoEstado[$estadoGeneral] }}
+                        {{ $textoEstadoGeneral }}
                     </p>
                 </div>
             </div>
@@ -67,8 +66,11 @@
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 {{-- C: Actividad reciente --}}
                 <div class="lg:col-span-2 {{ $card }} !p-0 overflow-hidden">
-                    <div class="border-b border-gray-100 px-4 py-3 dark:border-ink-700">
-                        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">Actividad reciente</h3>
+                    <div class="border-b border-gray-100 px-4 py-3 dark:border-ink-700 flex items-center justify-between gap-2">
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">Documentos reales de producción</h3>
+                        <span class="text-xs text-gray-400 dark:text-paper-500" title="Solo documentos aceptados por Hacienda en ambiente de producción (01); nunca se mezclan pruebas APITEST.">
+                            Ambiente: Producción
+                        </span>
                     </div>
                     @if ($veFacturacion && $actividad->isNotEmpty())
                         <div class="overflow-x-auto">
