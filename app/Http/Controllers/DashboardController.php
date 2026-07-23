@@ -33,8 +33,10 @@ class DashboardController extends Controller
     {
         $usuario = $request->user();
         $esAdmin = (bool) $usuario->hasRole('administrador');
-        $esGestorDte = (bool) $usuario->hasAnyRole(['administrador', 'facturacion']);
-        $veOperativos = (bool) $usuario->hasAnyRole(['administrador', 'contador', 'facturacion']);
+        // Estado técnico/diagnóstico y modo DTE: solo quien puede emitir (admin/facturación).
+        $esGestorDte = (bool) $usuario->can('dte.emitir');
+        // Tarjetas operativas (compras pendientes, listas recientes): cualquier lector.
+        $veOperativos = (bool) $usuario->can('documentos-recibidos.ver');
         $veFacturacion = (bool) $usuario->can('viewAny', Dte::class);
 
         $jobsFallidos = (int) DB::table('failed_jobs')->count();

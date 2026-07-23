@@ -33,7 +33,7 @@ class DteInvalidacionUiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -85,11 +85,11 @@ class DteInvalidacionUiTest extends TestCase
 
     // --- Visibilidad del bloque ---
 
-    public function test_gestor_ve_el_bloque_de_invalidacion_en_una_nc_aceptada(): void
+    public function test_administrador_ve_el_bloque_de_invalidacion_en_una_nc_aceptada(): void
     {
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.show', $nc))
             ->assertOk()
             ->assertSee('Invalidación oficial (evento anulardte)')
@@ -97,15 +97,21 @@ class DteInvalidacionUiTest extends TestCase
             ->assertSee('NO SE TRANSMITE A HACIENDA DESDE LA WEB');
     }
 
-    public function test_lector_no_ve_el_bloque_de_invalidacion(): void
+    /**
+     * La invalidación es SOLO del administrador: ni jefatura, ni facturación, ni
+     * contabilidad ven el bloque (aunque facturación sí gestione/emita DTE).
+     */
+    public function test_no_administradores_no_ven_el_bloque_de_invalidacion(): void
     {
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('consulta'))
-            ->get(route('facturacion.show', $nc))
-            ->assertOk()
-            ->assertDontSee('Invalidación oficial (evento anulardte)')
-            ->assertDontSee('Firmar invalidación (MOCK)');
+        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+            $this->actingAs($this->usuario($rol))
+                ->get(route('facturacion.show', $nc))
+                ->assertOk()
+                ->assertDontSee('Invalidación oficial (evento anulardte)')
+                ->assertDontSee('Firmar invalidación (MOCK)');
+        }
     }
 
     // --- Dry-run visual (solo lectura) ---
@@ -114,7 +120,7 @@ class DteInvalidacionUiTest extends TestCase
     {
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.dry-run', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
             ->assertRedirect(route('facturacion.show', $nc))
             ->assertSessionHas('dry_run_invalidacion');
@@ -134,7 +140,7 @@ class DteInvalidacionUiTest extends TestCase
         $nc = $this->ncAceptada();
         $selloOriginal = $nc->sello_recepcion;
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
             ->assertRedirect(route('facturacion.show', $nc))
             ->assertSessionHas('status');
@@ -153,7 +159,7 @@ class DteInvalidacionUiTest extends TestCase
         config()->set('dte.invalidacion.mock', false);
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
             ->assertRedirect(route('facturacion.show', $nc))
             ->assertSessionHas('error');
@@ -167,7 +173,7 @@ class DteInvalidacionUiTest extends TestCase
         config()->set('dte.invalidacion.mock', false);
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), [
                 'tipo' => TipoAnulacionMh::RescindirOperacion->value,
                 'confirmar_sin_flag' => '1',
@@ -185,7 +191,7 @@ class DteInvalidacionUiTest extends TestCase
     {
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::Otro->value])
             ->assertSessionHasErrors('motivo');
 
@@ -197,7 +203,7 @@ class DteInvalidacionUiTest extends TestCase
     {
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::ErrorInformacion->value])
             ->assertSessionHasErrors('reemplazo');
     }
@@ -208,7 +214,7 @@ class DteInvalidacionUiTest extends TestCase
     {
         $nc = $this->ncAceptada(aceptada: false); // generado, sin sello real
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
             ->assertForbidden();
     }
@@ -217,28 +223,31 @@ class DteInvalidacionUiTest extends TestCase
     {
         $nc = $this->ncAceptada();
         // Primera invalidación mock.
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value]);
         $nc->refresh();
         $this->assertTrue($nc->tieneEventoInvalidacion());
 
         // Segunda: bloqueada por policy (ya tiene evento).
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
             ->assertForbidden();
     }
 
-    public function test_lector_no_puede_dry_run_ni_mock(): void
+    public function test_no_administradores_no_pueden_dry_run_ni_mock(): void
     {
         $nc = $this->ncAceptada();
 
-        $this->actingAs($this->usuario('consulta'))
-            ->post(route('facturacion.invalidacion.dry-run', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
-            ->assertForbidden();
+        // Ni jefatura, ni facturación, ni contabilidad pueden invalidar (solo admin).
+        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+            $this->actingAs($this->usuario($rol))
+                ->post(route('facturacion.invalidacion.dry-run', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
+                ->assertForbidden();
 
-        $this->actingAs($this->usuario('consulta'))
-            ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
-            ->assertForbidden();
+            $this->actingAs($this->usuario($rol))
+                ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::RescindirOperacion->value])
+                ->assertForbidden();
+        }
 
         Http::assertNothingSent();
     }

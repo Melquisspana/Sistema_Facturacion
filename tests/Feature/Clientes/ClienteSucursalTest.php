@@ -19,7 +19,7 @@ class ClienteSucursalTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -51,7 +51,7 @@ class ClienteSucursalTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal(['distrito_id' => '', 'departamento_id' => '']))
             ->assertSessionHasErrors(['departamento_id', 'distrito_id']);
 
@@ -63,7 +63,7 @@ class ClienteSucursalTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create();
         $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
             ->assertRedirect(route('clientes.show', $cliente));
 
@@ -80,7 +80,7 @@ class ClienteSucursalTest extends TestCase
         $olocuilta = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
         $sanSalvador = \App\Models\Departamento::where('codigo', '06')->firstOrFail();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal([
                 'departamento_id' => $sanSalvador->id,
                 'distrito_id' => $olocuilta->id,
@@ -111,11 +111,11 @@ class ClienteSucursalTest extends TestCase
         $this->assertCount(3, $calleja->refresh()->sucursales);
     }
 
-    public function test_facturacion_puede_crear_sucursal(): void
+    public function test_administrador_puede_crear_sucursal(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
             ->assertRedirect(route('clientes.show', $cliente));
 
@@ -124,6 +124,18 @@ class ClienteSucursalTest extends TestCase
             'nombre' => 'Selectos Santa Rosa',
             'requiere_orden_compra' => null, // heredó del cliente
         ]);
+    }
+
+    public function test_facturacion_no_puede_crear_sucursal(): void
+    {
+        // Nueva política: facturación es SOLO lectura en clientes/salas.
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('cliente_sucursales', 0);
     }
 
     public function test_sucursal_puede_requerir_orden_compra_propia(): void
@@ -143,7 +155,7 @@ class ClienteSucursalTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
             ->assertForbidden();
 
@@ -167,7 +179,7 @@ class ClienteSucursalTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create();
         $sucursal = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'activo' => true]);
 
-        $this->actingAs($this->usuario('facturacion'))
+        $this->actingAs($this->usuario('administrador'))
             ->patch(route('clientes.sucursales.toggle-activo', [$cliente, $sucursal]))
             ->assertRedirect();
 

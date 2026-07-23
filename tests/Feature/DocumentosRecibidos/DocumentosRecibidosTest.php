@@ -30,7 +30,7 @@ class DocumentosRecibidosTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -196,7 +196,7 @@ class DocumentosRecibidosTest extends TestCase
         $enviadoEsteMes = $this->doc(['emisor_nombre' => 'DEL MES ENVIADO', 'estado' => 'enviado', 'fecha_correo' => now()]);
         $pendienteMesPasado = $this->doc(['emisor_nombre' => 'MES PASADO', 'estado' => 'pendiente', 'fecha_correo' => now()->subMonthNoOverflow()->startOfMonth()->addDays(3)]);
 
-        $resp = $this->actingAs($this->usuario('contador'))
+        $resp = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('documentos-recibidos.index'))
             ->assertOk();
 
@@ -244,7 +244,7 @@ class DocumentosRecibidosTest extends TestCase
         $this->doc(['estado' => 'enviado', 'total' => 300, 'fecha_correo' => now()]);
         $this->doc(['estado' => 'ignorado', 'total' => 50, 'fecha_correo' => now()]);
 
-        $resumen = $this->actingAs($this->usuario('contador'))
+        $resumen = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('documentos-recibidos.index', ['vista' => 'bandeja']))
             ->assertOk()
             ->viewData('resumen');
@@ -279,7 +279,7 @@ class DocumentosRecibidosTest extends TestCase
     {
         $this->doc(['fecha_correo' => now()]);
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('documentos-recibidos.exportar'))
             ->assertOk()
             ->assertDownload('documentos_recibidos_'.now()->format('Y-m').'.xlsx');
@@ -305,11 +305,23 @@ class DocumentosRecibidosTest extends TestCase
         Mail::assertNothingSent();
     }
 
-    public function test_consulta_no_accede(): void
+    public function test_jefatura_lee_pero_no_sincroniza(): void
     {
-        $this->actingAs($this->usuario('consulta'))
-            ->get(route('documentos-recibidos.index'))
-            ->assertForbidden();
+        // Nueva política: jefatura tiene lectura de compras; la sincronización del
+        // buzón Yahoo y los cambios de estado son solo del administrador.
+        $jefa = $this->usuario('jefatura');
+
+        $this->actingAs($jefa)->get(route('documentos-recibidos.index'))->assertOk();
+        $this->actingAs($jefa)->post(route('documentos-recibidos.sincronizar'))->assertForbidden();
+    }
+
+    public function test_facturacion_lee_pero_no_sincroniza(): void
+    {
+        // Facturación ve compras en consulta, pero no sincroniza (solo administrador).
+        $fact = $this->usuario('facturacion');
+
+        $this->actingAs($fact)->get(route('documentos-recibidos.index'))->assertOk();
+        $this->actingAs($fact)->post(route('documentos-recibidos.sincronizar'))->assertForbidden();
     }
 
     public function test_backfill_fecha_dte_desde_json_guardado_sin_tocar_yahoo(): void

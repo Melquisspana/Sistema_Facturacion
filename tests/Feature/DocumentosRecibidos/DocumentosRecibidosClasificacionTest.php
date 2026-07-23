@@ -28,7 +28,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -293,7 +293,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
             'total' => 146.88, 'tiene_pdf' => true, 'tiene_json' => true, 'fecha_correo' => now(),
         ]);
 
-        $resp = $this->actingAs($this->usuario('contador'))
+        $resp = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('documentos-recibidos.index', ['vista' => 'bandeja']))
             ->assertOk();
 

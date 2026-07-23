@@ -4,8 +4,10 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Productos de exportación</h2>
             <div class="flex gap-2">
                 <a href="{{ route('exportaciones.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Listas de empaque</a>
-                <a href="{{ route('exportaciones.productos.importar') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Importar desde plantilla</a>
-                <a href="{{ route('exportaciones.productos.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo producto</a>
+                @can('exportaciones.gestionar')
+                    <a href="{{ route('exportaciones.productos.importar') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Importar desde plantilla</a>
+                    <a href="{{ route('exportaciones.productos.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo producto</a>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -73,22 +75,32 @@
                                         @endforelse
                                     </td>
                                     <td class="py-3 px-4 text-center">
-                                        <form method="POST" action="{{ route('exportaciones.productos.toggle-activo', $producto) }}">
-                                            @csrf @method('PATCH')
-                                            <button class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $producto->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}"
-                                                    title="Cambiar estado">
+                                        @can('exportaciones.gestionar')
+                                            <form method="POST" action="{{ route('exportaciones.productos.toggle-activo', $producto) }}">
+                                                @csrf @method('PATCH')
+                                                <button class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $producto->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}"
+                                                        title="Cambiar estado">
+                                                    {{ $producto->activo ? 'Activo' : 'Inactivo' }}
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $producto->activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">
                                                 {{ $producto->activo ? 'Activo' : 'Inactivo' }}
-                                            </button>
-                                        </form>
+                                            </span>
+                                        @endcan
                                     </td>
                                     <td class="py-3 px-4">
                                         <div class="flex items-center justify-end gap-3">
-                                            <a href="{{ route('exportaciones.productos.edit', $producto) }}" class="text-indigo-600 hover:underline">Editar</a>
-                                            <form method="POST" action="{{ route('exportaciones.productos.destroy', $producto) }}"
-                                                  onsubmit="return confirm('¿Eliminar este producto del catálogo? Las exportaciones existentes conservan sus datos.');">
-                                                @csrf @method('DELETE')
-                                                <button class="text-red-600 hover:underline">Eliminar</button>
-                                            </form>
+                                            @can('exportaciones.gestionar')
+                                                <a href="{{ route('exportaciones.productos.edit', $producto) }}" class="text-indigo-600 hover:underline">Editar</a>
+                                                <form method="POST" action="{{ route('exportaciones.productos.destroy', $producto) }}"
+                                                      onsubmit="return confirm('¿Eliminar este producto del catálogo? Las exportaciones existentes conservan sus datos.');">
+                                                    @csrf @method('DELETE')
+                                                    <button class="text-red-600 hover:underline">Eliminar</button>
+                                                </form>
+                                            @else
+                                                <span class="text-xs text-gray-400">—</span>
+                                            @endcan
                                         </div>
                                     </td>
                                 </tr>
@@ -96,8 +108,10 @@
                                 <tr>
                                     <td colspan="11" class="py-10 text-center text-gray-400">
                                         No hay productos de exportación.
-                                        <a href="{{ route('exportaciones.productos.importar') }}" class="text-indigo-600 hover:underline">Importá el catálogo desde la plantilla</a>
-                                        o <a href="{{ route('exportaciones.productos.create') }}" class="text-indigo-600 hover:underline">creá el primero</a>.
+                                        @can('exportaciones.gestionar')
+                                            <a href="{{ route('exportaciones.productos.importar') }}" class="text-indigo-600 hover:underline">Importá el catálogo desde la plantilla</a>
+                                            o <a href="{{ route('exportaciones.productos.create') }}" class="text-indigo-600 hover:underline">creá el primero</a>.
+                                        @endcan
                                     </td>
                                 </tr>
                             @endforelse

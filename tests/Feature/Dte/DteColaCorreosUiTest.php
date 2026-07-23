@@ -33,7 +33,7 @@ class DteColaCorreosUiTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -115,7 +115,7 @@ class DteColaCorreosUiTest extends TestCase
         $this->jobPendiente(10);
         $dte = $this->ccf();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.show', $dte))
             ->assertOk()
             ->assertDontSee('start-queue.bat');

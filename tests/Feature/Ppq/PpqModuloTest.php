@@ -22,7 +22,7 @@ class PpqModuloTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'contador', 'consulta'] as $rol) {
+        foreach (['administrador', 'facturacion', 'contabilidad', 'jefatura'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -165,11 +165,17 @@ class PpqModuloTest extends TestCase
         @unlink($ruta);
     }
 
-    public function test_consulta_no_accede_y_roles_de_cobro_si(): void
+    public function test_roles_ven_ppq_pero_solo_gestores_escriben(): void
     {
-        $this->actingAs($this->usuario('consulta'))->get(route('ppq.index'))->assertForbidden();
+        // Lectura: los cuatro roles pueden ver PPQ (jefatura y contabilidad incluidas).
+        $this->actingAs($this->usuario('jefatura'))->get(route('ppq.index'))->assertOk();
         $this->actingAs($this->usuario('facturacion'))->get(route('ppq.index'))->assertOk();
-        $this->actingAs($this->usuario('contador'))->get(route('ppq.lotes.index'))->assertOk();
+        $this->actingAs($this->usuario('contabilidad'))->get(route('ppq.lotes.index'))->assertOk();
+
+        // Escritura (crear lote): solo administrador y facturación.
+        $datos = ['referencia' => 'PPQ Lectura', 'fecha' => now()->format('Y-m-d'), 'estado' => 'borrador'];
+        $this->actingAs($this->usuario('jefatura'))->post(route('ppq.lotes.store'), $datos)->assertForbidden();
+        $this->actingAs($this->usuario('contabilidad'))->post(route('ppq.lotes.store'), $datos)->assertForbidden();
     }
 
     public function test_crea_lote(): void

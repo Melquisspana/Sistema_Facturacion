@@ -142,7 +142,7 @@
             </a>
 
             @if ($loteFijo === null && $lotesAbiertos->isEmpty())
-                <a href="{{ route('ppq.lotes.create') }}" class="text-sm font-medium text-indigo-600 hover:underline">Crear un PPQ para agregar esta NC →</a>
+                @can('ppq.gestionar')<a href="{{ route('ppq.lotes.create') }}" class="text-sm font-medium text-indigo-600 hover:underline">Crear un PPQ para agregar esta NC →</a>@endcan
             @else
                 <form method="POST" action="" onsubmit="this.action='{{ url('ppq/lotes') }}/'+this.lote.value+'/items'">
                     @csrf
@@ -255,7 +255,7 @@
                 </a>
             @endunless
             @if ($loteFijo === null && $lotesAbiertos->isEmpty())
-                <a href="{{ route('ppq.lotes.create') }}" class="text-sm font-medium text-indigo-600 hover:underline">Crear un PPQ para agregarlo →</a>
+                @can('ppq.gestionar')<a href="{{ route('ppq.lotes.create') }}" class="text-sm font-medium text-indigo-600 hover:underline">Crear un PPQ para agregarlo →</a>@endcan
             @else
                 <form method="POST" action="" class="flex flex-wrap items-center justify-end gap-2"
                       onsubmit="this.action='{{ url('ppq/lotes') }}/'+this.lote.value+'/items'">

@@ -129,8 +129,11 @@
                                 <a href="{{ route('facturacion.create-ccf') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400">Nuevo CCF</a>
                                 <a href="{{ route('facturacion.create-factura') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Nueva Factura</a>
                             @endif
-                            @if ($veOperativos)
+                            {{-- Crear lista de empaque es ESCRITURA: solo con permiso de gestión. --}}
+                            @can('exportaciones.gestionar')
                                 <a href="{{ route('exportaciones.create') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Nueva lista de empaque</a>
+                            @endcan
+                            @if ($veOperativos)
                                 <a href="{{ route('documentos-recibidos.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Compras</a>
                                 <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Buscar CCF / NC</a>
                             @endif

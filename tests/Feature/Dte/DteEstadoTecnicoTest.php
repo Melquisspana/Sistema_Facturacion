@@ -39,7 +39,7 @@ class DteEstadoTecnicoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -111,7 +111,7 @@ class DteEstadoTecnicoTest extends TestCase
     {
         $ccf = $this->ccfFirmado();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Estado técnico DTE')
@@ -125,7 +125,7 @@ class DteEstadoTecnicoTest extends TestCase
     {
         $ccf = $this->ccfFirmado();
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
             ->assertDontSee('Estado técnico DTE');
@@ -175,7 +175,7 @@ class DteEstadoTecnicoTest extends TestCase
         Http::fake();
         $ccf = $this->ccfFirmado();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('facturacion.dry-run', $ccf))
             ->assertForbidden();
 

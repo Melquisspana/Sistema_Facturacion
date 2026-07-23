@@ -43,7 +43,7 @@ class DteCorreoClienteRapidoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -307,7 +307,7 @@ class DteCorreoClienteRapidoTest extends TestCase
         Queue::fake();
         $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
 
-        $this->actingAs($this->usuario('consulta'))->post($this->rutaCliente($dte))->assertForbidden();
+        $this->actingAs($this->usuario('jefatura'))->post($this->rutaCliente($dte))->assertForbidden();
         Queue::assertNothingPushed();
     }
 }

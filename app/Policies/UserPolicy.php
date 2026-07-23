@@ -6,30 +6,30 @@ use App\Models\User;
 
 class UserPolicy
 {
-    /** Solo administrador gestiona usuarios. */
+    /** La gestión de usuarios la controla el permiso usuarios.gestionar (solo admin). */
     public function viewAny(User $user): bool
     {
-        return $user->hasRole('administrador');
+        return $user->can('usuarios.gestionar');
     }
 
     public function view(User $user, User $modelo): bool
     {
-        return $user->hasRole('administrador');
+        return $user->can('usuarios.gestionar');
     }
 
     public function create(User $user): bool
     {
-        return $user->hasRole('administrador');
+        return $user->can('usuarios.gestionar');
     }
 
     public function update(User $user, User $modelo): bool
     {
-        return $user->hasRole('administrador');
+        return $user->can('usuarios.gestionar');
     }
 
     public function delete(User $user, User $modelo): bool
     {
-        // Administrador, pero nunca a sí mismo.
-        return $user->hasRole('administrador') && $user->id !== $modelo->id;
+        // Con permiso de gestión, pero nunca a sí mismo (guarda de método intacta).
+        return $user->can('usuarios.gestionar') && $user->id !== $modelo->id;
     }
 }

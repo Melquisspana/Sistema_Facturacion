@@ -21,7 +21,7 @@ class ExportacionFormularioTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'contador', 'consulta'] as $rol) {
+        foreach (['administrador', 'facturacion', 'contabilidad', 'jefatura'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();

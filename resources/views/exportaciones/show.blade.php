@@ -11,6 +11,7 @@
                 @endif
             </h2>
             <div class="flex flex-wrap gap-2">
+                @can('exportaciones.gestionar')
                 <a href="{{ route('exportaciones.edit', $exportacion) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
                 <form method="POST" action="{{ route('exportaciones.duplicar', $exportacion) }}">
                     @csrf
@@ -44,6 +45,7 @@
                                 title="Oculta esta lista de prueba del listado normal, sin borrarla">Archivar lista de prueba</button>
                     </form>
                 @endif
+                @endcan
                 @if ($exportacion->items->isNotEmpty())
                     <a href="{{ route('exportaciones.excel', $exportacion) }}"
                        class="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
@@ -71,7 +73,7 @@
                           title="La Lista necesita productos antes de crear la FEX.">
                         Crear factura de exportación
                     </span>
-                @else
+                @elseif (auth()->user()->can('exportaciones.gestionar'))
                     <form method="POST" action="{{ route('exportaciones.crear-fex', $exportacion) }}"
                           onsubmit="return confirm('Se creará un borrador FEX copiando cajas y precios de esta Lista. No se firmará ni transmitirá.\n\n¿Continuar?');">
                         @csrf
@@ -182,7 +184,7 @@
                                     <td class="py-3 px-4 text-right text-gray-600">{{ number_format($item->pesoBrutoTotalLb(), 1) }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="12" class="py-10 text-center text-gray-400">Sin productos. <a href="{{ route('exportaciones.edit', $exportacion) }}" class="text-indigo-600 hover:underline">Agregalos editando la lista</a>.</td></tr>
+                                <tr><td colspan="12" class="py-10 text-center text-gray-400">Sin productos.@can('exportaciones.gestionar') <a href="{{ route('exportaciones.edit', $exportacion) }}" class="text-indigo-600 hover:underline">Agregalos editando la lista</a>.@endcan</td></tr>
                             @endforelse
                         </tbody>
                         @if ($exportacion->items->isNotEmpty())
@@ -207,11 +209,13 @@
 
             <div class="flex justify-between">
                 <a href="{{ route('exportaciones.index') }}" class="text-sm text-indigo-600 hover:underline">← Volver al listado</a>
-                <form method="POST" action="{{ route('exportaciones.destroy', $exportacion) }}"
-                      onsubmit="return confirm('¿Eliminar esta lista de empaque? Esta acción no se puede deshacer.');">
-                    @csrf @method('DELETE')
-                    <button class="text-sm text-red-600 hover:underline">Eliminar lista de empaque</button>
-                </form>
+                @can('exportaciones.gestionar')
+                    <form method="POST" action="{{ route('exportaciones.destroy', $exportacion) }}"
+                          onsubmit="return confirm('¿Eliminar esta lista de empaque? Esta acción no se puede deshacer.');">
+                        @csrf @method('DELETE')
+                        <button class="text-sm text-red-600 hover:underline">Eliminar lista de empaque</button>
+                    </form>
+                @endcan
             </div>
         </div>
     </div>

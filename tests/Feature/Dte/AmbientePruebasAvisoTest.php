@@ -44,7 +44,7 @@ class AmbientePruebasAvisoTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -186,7 +186,7 @@ class AmbientePruebasAvisoTest extends TestCase
         $this->assertSame('01', $nc->ambiente->value);
         $this->assertStringNotContainsString(self::AVISO, $this->pdfHtml($nc));
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.imprimir', $nc))
             ->assertOk()->assertDontSee(self::AVISO);
     }

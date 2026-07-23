@@ -8,25 +8,28 @@
                     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
                     Exportar Excel
                 </a>
-                <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}">
-                    @csrf
-                    <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                            @disabled(! $fuenteDisponible)
-                            title="Revisión rápida: lee solo desde la fecha del último documento guardado (solo lectura; no marca leído, no mueve ni borra).">
-                        {{ $fuenteDisponible ? 'Revisar correos recientes' : 'Configurar correo Yahoo/IMAP' }}
-                    </button>
-                </form>
-                @if ($fuenteDisponible)
-                    <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}"
-                          onsubmit="return confirm('Revisar el histórico completo puede tardar porque revisa correos antiguos. ¿Continuar?');">
+                {{-- Sincronización del buzón Yahoo/IMAP: SOLO administrador (documentos-recibidos.gestionar). --}}
+                @can('documentos-recibidos.gestionar')
+                    <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}">
                         @csrf
-                        <input type="hidden" name="historico" value="1">
-                        <button class="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-                                title="Revisa todo el buzón. Puede tardar porque revisa correos antiguos.">
-                            Revisar histórico
+                        <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                                @disabled(! $fuenteDisponible)
+                                title="Revisión rápida: lee solo desde la fecha del último documento guardado (solo lectura; no marca leído, no mueve ni borra).">
+                            {{ $fuenteDisponible ? 'Revisar correos recientes' : 'Configurar correo Yahoo/IMAP' }}
                         </button>
                     </form>
-                @endif
+                    @if ($fuenteDisponible)
+                        <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}"
+                              onsubmit="return confirm('Revisar el histórico completo puede tardar porque revisa correos antiguos. ¿Continuar?');">
+                            @csrf
+                            <input type="hidden" name="historico" value="1">
+                            <button class="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                                    title="Revisa todo el buzón. Puede tardar porque revisa correos antiguos.">
+                                Revisar histórico
+                            </button>
+                        </form>
+                    @endif
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -243,26 +246,31 @@
                                         <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badge[$doc->estado] ?? 'bg-gray-100 text-gray-600' }}">{{ ucfirst($doc->estado) }}</span>
                                     </td>
                                     <td class="py-2 px-3">
+                                        {{-- Cambios de estado interno: SOLO administrador (documentos-recibidos.gestionar). --}}
                                         <div class="flex items-center justify-end gap-2">
-                                            @if ($doc->estado !== 'pendiente')
-                                                <form method="POST" action="{{ route('documentos-recibidos.pendiente', $doc) }}">
-                                                    @csrf @method('PATCH')
-                                                    <button class="text-indigo-600 hover:underline text-xs">Pendiente</button>
-                                                </form>
-                                            @endif
-                                            @if ($doc->estado !== 'enviado')
-                                                <form method="POST" action="{{ route('documentos-recibidos.enviado', $doc) }}"
-                                                      title="Marca que ya se lo hiciste llegar a contabilidad por fuera. No envía correo.">
-                                                    @csrf @method('PATCH')
-                                                    <button class="text-green-700 hover:underline text-xs">Marcar enviado</button>
-                                                </form>
-                                            @endif
-                                            @if ($doc->estado !== 'ignorado')
-                                                <form method="POST" action="{{ route('documentos-recibidos.ignorar', $doc) }}">
-                                                    @csrf @method('PATCH')
-                                                    <button class="text-gray-500 hover:underline text-xs">Ignorar</button>
-                                                </form>
-                                            @endif
+                                            @can('documentos-recibidos.gestionar')
+                                                @if ($doc->estado !== 'pendiente')
+                                                    <form method="POST" action="{{ route('documentos-recibidos.pendiente', $doc) }}">
+                                                        @csrf @method('PATCH')
+                                                        <button class="text-indigo-600 hover:underline text-xs">Pendiente</button>
+                                                    </form>
+                                                @endif
+                                                @if ($doc->estado !== 'enviado')
+                                                    <form method="POST" action="{{ route('documentos-recibidos.enviado', $doc) }}"
+                                                          title="Marca que ya se lo hiciste llegar a contabilidad por fuera. No envía correo.">
+                                                        @csrf @method('PATCH')
+                                                        <button class="text-green-700 hover:underline text-xs">Marcar enviado</button>
+                                                    </form>
+                                                @endif
+                                                @if ($doc->estado !== 'ignorado')
+                                                    <form method="POST" action="{{ route('documentos-recibidos.ignorar', $doc) }}">
+                                                        @csrf @method('PATCH')
+                                                        <button class="text-gray-500 hover:underline text-xs">Ignorar</button>
+                                                    </form>
+                                                @endif
+                                            @else
+                                                <span class="text-xs text-gray-400">—</span>
+                                            @endcan
                                         </div>
                                     </td>
                                 </tr>

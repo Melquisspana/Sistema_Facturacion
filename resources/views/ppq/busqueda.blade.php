@@ -30,7 +30,9 @@
             @elseif ($lotesAbiertos->isEmpty())
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center justify-between">
                     <span>No hay ningún PPQ abierto. Creá uno primero para poder agregarle los CCF/NC que busqués.</span>
-                    <a href="{{ route('ppq.lotes.create') }}" class="ml-3 shrink-0 rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700">Crear PPQ →</a>
+                    @can('ppq.gestionar')
+                        <a href="{{ route('ppq.lotes.create') }}" class="ml-3 shrink-0 rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700">Crear PPQ →</a>
+                    @endcan
                 </div>
             @endif
 

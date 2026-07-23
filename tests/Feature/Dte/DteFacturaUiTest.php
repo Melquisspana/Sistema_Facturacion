@@ -28,7 +28,7 @@ class DteFacturaUiTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -96,7 +96,7 @@ class DteFacturaUiTest extends TestCase
     public function test_consulta_no_puede_crear_factura(): void
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
-        $consulta = $this->usuario('consulta');
+        $consulta = $this->usuario('jefatura');
 
         $this->actingAs($consulta)->get(route('facturacion.create-factura'))->assertForbidden();
         $this->actingAs($consulta)->post(route('facturacion.store-factura'), $this->datosFactura($estab, $pv))->assertForbidden();

@@ -34,7 +34,7 @@ class DteAnulacionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -109,7 +109,7 @@ class DteAnulacionTest extends TestCase
     {
         $ccf = $this->ccfGenerado($this->emisor());
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('facturacion.anular', $ccf), ['motivo_anulacion' => 'otro'])
             ->assertForbidden();
 

@@ -19,7 +19,7 @@ class ProductoCrudTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -52,7 +52,7 @@ class ProductoCrudTest extends TestCase
 
     public function test_consulta_puede_listar_pero_no_crear(): void
     {
-        $consulta = $this->usuario('consulta');
+        $consulta = $this->usuario('jefatura');
 
         $this->actingAs($consulta)->get(route('productos.index'))->assertOk();
         $this->actingAs($consulta)->get(route('productos.create'))->assertForbidden();
@@ -63,7 +63,7 @@ class ProductoCrudTest extends TestCase
 
     public function test_contador_no_puede_crear(): void
     {
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->post(route('productos.store'), $this->datosProductoValido())
             ->assertForbidden();
     }
@@ -89,13 +89,18 @@ class ProductoCrudTest extends TestCase
         ]);
     }
 
-    public function test_facturacion_puede_crear(): void
+    public function test_facturacion_solo_ve_no_crea(): void
     {
-        $this->actingAs($this->usuario('facturacion'))
-            ->post(route('productos.store'), $this->datosProductoValido())
-            ->assertRedirect();
+        // Nueva política: facturación es SOLO lectura en productos (la gestión es admin).
+        $facturacion = $this->usuario('facturacion');
 
-        $this->assertDatabaseCount('productos', 1);
+        $this->actingAs($facturacion)->get(route('productos.index'))->assertOk();
+        $this->actingAs($facturacion)->get(route('productos.create'))->assertForbidden();
+        $this->actingAs($facturacion)
+            ->post(route('productos.store'), $this->datosProductoValido())
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('productos', 0);
     }
 
     public function test_codigo_duplicado_es_rechazado(): void
@@ -203,7 +208,7 @@ class ProductoCrudTest extends TestCase
     {
         $producto = Producto::factory()->create();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->delete(route('productos.destroy', $producto))
             ->assertForbidden();
     }

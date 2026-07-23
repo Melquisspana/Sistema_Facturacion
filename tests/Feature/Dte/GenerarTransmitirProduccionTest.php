@@ -34,7 +34,7 @@ class GenerarTransmitirProduccionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -219,12 +219,12 @@ class GenerarTransmitirProduccionTest extends TestCase
         $this->assertSame('DTE-03-M001P001-000000000001078', $ccf1078->numero_control);
     }
 
-    public function test_consulta_no_puede(): void
+    public function test_jefatura_no_puede(): void
     {
         $this->preflightVerde();
         $ccf = $this->ccf('generado');
 
-        $this->actingAs(User::factory()->create()->assignRole('consulta'))
+        $this->actingAs(User::factory()->create()->assignRole('jefatura'))
             ->post(route('facturacion.generar-transmitir-produccion', $ccf), ['barrera_conta' => 1, 'confirmacion_emision' => 'EMITIR PRODUCCION'])
             ->assertForbidden();
     }

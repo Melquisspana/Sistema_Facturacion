@@ -37,7 +37,7 @@ class DteImpresionTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -142,7 +142,7 @@ class DteImpresionTest extends TestCase
         $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), cantidad: 4);
         $nc = $this->generar($nc);
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('facturacion.imprimir', $nc))
             ->assertOk()
             ->assertSee($nc->numero_interno)

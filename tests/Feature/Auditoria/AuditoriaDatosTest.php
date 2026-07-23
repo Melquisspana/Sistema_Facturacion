@@ -29,7 +29,7 @@ class AuditoriaDatosTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -188,7 +188,7 @@ class AuditoriaDatosTest extends TestCase
         $cliente = $this->calleja();
         $producto = Producto::factory()->create(['precio_unitario' => 1.00]);
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->post(route('productos.precios.store', $producto), ['cliente_id' => $cliente->id, 'precio' => 0.50, 'activo' => '1'])
             ->assertForbidden();
     }
@@ -197,9 +197,9 @@ class AuditoriaDatosTest extends TestCase
     {
         $cliente = $this->calleja();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('clientes.sucursales.create', $cliente))->assertForbidden();
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('clientes.sucursales.create', $cliente))->assertForbidden();
     }
 }

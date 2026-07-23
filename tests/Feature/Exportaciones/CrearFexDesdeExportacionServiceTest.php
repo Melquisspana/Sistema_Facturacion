@@ -41,7 +41,7 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         parent::setUp();
         $this->seed(CatalogosMhSeeder::class);
         $this->seed(CatalogosMhTablaSeeder::class);
-        foreach (['administrador', 'facturacion', 'contador', 'consulta'] as $rol) {
+        foreach (['administrador', 'facturacion', 'contabilidad', 'jefatura'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();

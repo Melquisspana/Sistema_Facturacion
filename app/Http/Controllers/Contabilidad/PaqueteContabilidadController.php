@@ -47,8 +47,11 @@ class PaqueteContabilidadController extends Controller
         ];
 
         $correo = $this->correoContabilidad();
-        // El botón "Enviar a contabilidad" solo se habilita si hay correo válido y
-        // alguna fuente incluida tiene documentos en el rango.
+        // El botón "Enviar a contabilidad" solo se habilita si el usuario tiene el
+        // permiso contabilidad.enviar (admin/contabilidad; facturación NO), hay correo
+        // válido y alguna fuente incluida tiene documentos en el rango. El backend lo
+        // refuerza con permission:contabilidad.enviar en la ruta.
+        $puedeEnviarPermiso = (bool) $request->user()?->can('contabilidad.enviar');
         $hayCompras = $incluirCompras && $resumen['compras_cantidad'] > 0;
         $hayVentas = $incluirVentas && $resumen['ventas_cantidad'] > 0;
 
@@ -58,7 +61,7 @@ class PaqueteContabilidadController extends Controller
             'incluirVentas' => $incluirVentas,
             'resumen' => $resumen,
             'correoContabilidad' => $correo,
-            'puedeEnviar' => $correo !== null && ($hayCompras || $hayVentas),
+            'puedeEnviar' => $puedeEnviarPermiso && $correo !== null && ($hayCompras || $hayVentas),
             'fraseEnvio' => self::FRASE_ENVIO,
         ]);
     }

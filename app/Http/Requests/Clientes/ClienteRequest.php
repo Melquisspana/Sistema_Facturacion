@@ -30,8 +30,10 @@ class ClienteRequest extends FormRequest
 
     public function authorize(): bool
     {
-        // El acceso por rol/permiso se impondrá en las rutas (PASO 3).
-        return true;
+        // Gestión de clientes (crear/editar): permiso clientes.gestionar (solo admin).
+        // Autoriza ANTES de validar, así un rol sin permiso recibe 403 y no una
+        // validación 302. El controlador vuelve a autorizar (defensa en profundidad).
+        return (bool) $this->user()?->can('clientes.gestionar');
     }
 
     public function rules(): array

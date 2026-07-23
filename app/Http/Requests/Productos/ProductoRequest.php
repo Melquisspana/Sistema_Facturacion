@@ -11,8 +11,10 @@ class ProductoRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // El acceso por rol lo decide ProductoPolicy en el controlador.
-        return true;
+        // Gestión de productos (crear/editar): permiso productos.gestionar (solo admin).
+        // Autoriza ANTES de validar, así un rol sin permiso recibe 403 y no una
+        // validación 302. El controlador vuelve a autorizar (defensa en profundidad).
+        return (bool) $this->user()?->can('productos.gestionar');
     }
 
     public function rules(): array

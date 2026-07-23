@@ -34,7 +34,7 @@ class DteAutoAgregarProductoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -162,7 +162,7 @@ class DteAutoAgregarProductoTest extends TestCase
         $dte = $this->borrador(Cliente::factory()->contribuyente()->create());
         $p = $this->producto('CANILLITAS', '7412201700031');
 
-        $this->setCantidad($this->usuario('consulta'), $dte, $p, 2)->assertForbidden();
+        $this->setCantidad($this->usuario('jefatura'), $dte, $p, 2)->assertForbidden();
         $this->assertDatabaseCount('dte_lineas', 0);
     }
 

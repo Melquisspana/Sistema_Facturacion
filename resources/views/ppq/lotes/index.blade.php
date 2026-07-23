@@ -4,7 +4,9 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Historial PPQ</h2>
             <div class="flex gap-2">
                 <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
-                <a href="{{ route('ppq.lotes.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo PPQ</a>
+                @can('ppq.gestionar')
+                    <a href="{{ route('ppq.lotes.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo PPQ</a>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -70,7 +72,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="8" class="py-10 text-center text-gray-400">No hay lotes todavía. <a href="{{ route('ppq.lotes.create') }}" class="text-indigo-600 hover:underline">Creá el primero</a>.</td></tr>
+                                <tr><td colspan="8" class="py-10 text-center text-gray-400">No hay lotes todavía.@can('ppq.gestionar') <a href="{{ route('ppq.lotes.create') }}" class="text-indigo-600 hover:underline">Creá el primero</a>.@endcan</td></tr>
                             @endforelse
                         </tbody>
                     </table>

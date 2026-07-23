@@ -29,7 +29,7 @@ class DteCcfUiTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -111,7 +111,7 @@ class DteCcfUiTest extends TestCase
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
-        $consulta = $this->usuario('consulta');
+        $consulta = $this->usuario('jefatura');
 
         $this->actingAs($consulta)->get(route('facturacion.create-ccf'))->assertForbidden();
         $this->actingAs($consulta)->post(route('facturacion.store-ccf'), $this->datosCcf($cliente, $estab, $pv))->assertForbidden();

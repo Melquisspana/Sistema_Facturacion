@@ -112,7 +112,7 @@
                                 </div>
                                 <div class="shrink-0">
                                     @if ($lotesAbiertos->isEmpty())
-                                        <a href="{{ route('ppq.lotes.create') }}" class="text-sm text-indigo-600 hover:underline">Crear PPQ →</a>
+                                        @can('ppq.gestionar')<a href="{{ route('ppq.lotes.create') }}" class="text-sm text-indigo-600 hover:underline">Crear PPQ →</a>@endcan
                                     @else
                                         <form method="POST" action="" class="flex flex-wrap items-center justify-end gap-2"
                                               onsubmit="this.action='{{ url('ppq/lotes') }}/'+this.lote.value+'/items'">

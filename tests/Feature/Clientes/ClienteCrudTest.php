@@ -21,7 +21,7 @@ class ClienteCrudTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -54,20 +54,20 @@ class ClienteCrudTest extends TestCase
         $this->get(route('clientes.index'))->assertRedirect('/login');
     }
 
-    public function test_consulta_puede_listar_pero_no_crear(): void
+    public function test_jefatura_puede_listar_pero_no_crear(): void
     {
-        $consulta = $this->usuario('consulta');
+        $jefatura = $this->usuario('jefatura');
 
-        $this->actingAs($consulta)->get(route('clientes.index'))->assertOk();
-        $this->actingAs($consulta)->get(route('clientes.create'))->assertForbidden();
-        $this->actingAs($consulta)->post(route('clientes.store'), $this->datosClienteValido())->assertForbidden();
+        $this->actingAs($jefatura)->get(route('clientes.index'))->assertOk();
+        $this->actingAs($jefatura)->get(route('clientes.create'))->assertForbidden();
+        $this->actingAs($jefatura)->post(route('clientes.store'), $this->datosClienteValido())->assertForbidden();
 
         $this->assertDatabaseCount('clientes', 0);
     }
 
-    public function test_contador_no_puede_crear(): void
+    public function test_contabilidad_no_puede_crear(): void
     {
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->post(route('clientes.store'), $this->datosClienteValido())
             ->assertForbidden();
     }
@@ -93,13 +93,18 @@ class ClienteCrudTest extends TestCase
         ]);
     }
 
-    public function test_facturacion_puede_crear(): void
+    public function test_facturacion_solo_ve_no_crea(): void
     {
-        $this->actingAs($this->usuario('facturacion'))
-            ->post(route('clientes.store'), $this->datosClienteValido())
-            ->assertRedirect();
+        // Nueva política: facturación es SOLO lectura en clientes (la gestión es admin).
+        $facturacion = $this->usuario('facturacion');
 
-        $this->assertDatabaseCount('clientes', 1);
+        $this->actingAs($facturacion)->get(route('clientes.index'))->assertOk();
+        $this->actingAs($facturacion)->get(route('clientes.create'))->assertForbidden();
+        $this->actingAs($facturacion)
+            ->post(route('clientes.store'), $this->datosClienteValido())
+            ->assertForbidden();
+
+        $this->assertDatabaseCount('clientes', 0);
     }
 
     public function test_administrador_edita_cliente(): void
@@ -134,11 +139,11 @@ class ClienteCrudTest extends TestCase
         $this->assertSoftDeleted('clientes', ['id' => $cliente->id]);
     }
 
-    public function test_consulta_no_puede_eliminar(): void
+    public function test_jefatura_no_puede_eliminar(): void
     {
         $cliente = Cliente::factory()->create();
 
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->delete(route('clientes.destroy', $cliente))
             ->assertForbidden();
 

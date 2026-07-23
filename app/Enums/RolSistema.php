@@ -4,25 +4,30 @@ namespace App\Enums;
 
 /**
  * Roles base del sistema. Centraliza los nombres para evitar "strings mágicos"
- * en seeders, middleware y policies.
- *
- * Los permisos granulares por rol se definirán en la fase de seguridad/usuarios.
+ * en seeders, middleware y policies. Los permisos concretos de cada rol viven en
+ * {@see PermisoSistema} (fuente única de verdad); aquí solo se nombran los roles.
  */
 enum RolSistema: string
 {
     case Administrador = 'administrador';
+    case Jefatura = 'jefatura';
     case Facturacion = 'facturacion';
-    case Consulta = 'consulta';
-    case Contador = 'contador';
+    case Contabilidad = 'contabilidad';
 
     public function label(): string
     {
         return match ($this) {
             self::Administrador => 'Administrador',
+            self::Jefatura => 'Jefatura',
             self::Facturacion => 'Facturación',
-            self::Consulta => 'Consulta',
-            self::Contador => 'Contador',
+            self::Contabilidad => 'Contabilidad',
         };
+    }
+
+    /** @return array<int, string> Permisos que corresponden a este rol. */
+    public function permisos(): array
+    {
+        return PermisoSistema::paraRol($this);
     }
 
     /** @return array<int, string> Nombres de todos los roles. */

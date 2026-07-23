@@ -36,7 +36,7 @@ class DteGeneracionTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -266,8 +266,8 @@ class DteGeneracionTest extends TestCase
         $this->correlativo('03', $estab, $pv);
         $dte = $this->borradorConLinea(TipoDte::CreditoFiscal, $estab, $pv, Cliente::factory()->contribuyente()->create());
 
-        $this->actingAs($this->usuario('consulta'))->post(route('facturacion.generar', $dte))->assertForbidden();
-        $this->actingAs($this->usuario('contador'))->post(route('facturacion.generar', $dte))->assertForbidden();
+        $this->actingAs($this->usuario('jefatura'))->post(route('facturacion.generar', $dte))->assertForbidden();
+        $this->actingAs($this->usuario('contabilidad'))->post(route('facturacion.generar', $dte))->assertForbidden();
 
         $this->assertSame(EstadoDte::Borrador, $dte->refresh()->estado);
     }

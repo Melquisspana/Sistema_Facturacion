@@ -31,7 +31,7 @@ class PaqueteContabilidadTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -88,7 +88,7 @@ class PaqueteContabilidadTest extends TestCase
         $this->compra('2026-07-06', 50);
         $this->venta('2026-07-10', 200);
 
-        $resumen = $this->actingAs($this->usuario('contador'))
+        $resumen = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
             ->assertOk()
             ->assertSee('interno')
@@ -199,7 +199,7 @@ class PaqueteContabilidadTest extends TestCase
         $this->seed(DatosInicialesNegritaSeeder::class);
         $this->compra('2026-07-05', 100);
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->post(route('contabilidad.paquete.generar'), ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 1, 'incluir_ventas' => 1])
             ->assertOk()
             ->assertDownload('documentos_contabilidad_2026-07.zip');
@@ -241,10 +241,22 @@ class PaqueteContabilidadTest extends TestCase
         $this->assertSame('pendiente', DocumentoRecibido::first()->estado);
     }
 
-    public function test_consulta_no_accede(): void
+    public function test_jefatura_ve_el_paquete_pero_no_lo_envia(): void
     {
-        $this->actingAs($this->usuario('consulta'))
-            ->get(route('contabilidad.paquete'))
-            ->assertForbidden();
+        // Nueva política: jefatura tiene reportes.ver (ve el paquete), pero no puede
+        // enviarlo (contabilidad.enviar es solo de administrador y contabilidad).
+        $jefa = $this->usuario('jefatura');
+
+        $this->actingAs($jefa)->get(route('contabilidad.paquete'))->assertOk();
+        $this->actingAs($jefa)->post(route('contabilidad.paquete.enviar'), [])->assertForbidden();
+    }
+
+    public function test_facturacion_ve_el_paquete_pero_no_lo_envia(): void
+    {
+        // Facturación puede ver reportes, pero NO enviar el paquete a contabilidad.
+        $fact = $this->usuario('facturacion');
+
+        $this->actingAs($fact)->get(route('contabilidad.paquete'))->assertOk();
+        $this->actingAs($fact)->post(route('contabilidad.paquete.enviar'), [])->assertForbidden();
     }
 }

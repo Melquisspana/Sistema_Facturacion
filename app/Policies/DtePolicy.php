@@ -7,43 +7,37 @@ use App\Models\User;
 
 class DtePolicy
 {
-    /** Roles que pueden gestionar documentos. */
-    private const GESTORES = ['administrador', 'facturacion'];
-
-    /** Roles que pueden ver/listar. */
-    private const LECTORES = ['administrador', 'facturacion', 'consulta', 'contador'];
-
     public function viewAny(User $user): bool
     {
-        return $user->hasAnyRole(self::LECTORES);
+        return $user->can('dte.ver');
     }
 
     public function view(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::LECTORES);
+        return $user->can('dte.ver');
     }
 
     public function create(User $user): bool
     {
-        return $user->hasAnyRole(self::GESTORES);
+        return $user->can('dte.gestionar');
     }
 
-    /** Solo se edita un borrador, y solo por un gestor. */
+    /** Solo se edita un borrador, y solo con permiso de gestión. */
     public function update(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES) && $dte->esEditable();
+        return $user->can('dte.gestionar') && $dte->esEditable();
     }
 
-    /** Solo se elimina un borrador, y solo por un gestor. */
+    /** Solo se elimina un borrador, y solo con permiso de gestión. */
     public function delete(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES) && $dte->esEditable();
+        return $user->can('dte.gestionar') && $dte->esEditable();
     }
 
-    /** Anulación interna: solo un gestor y solo un documento GENERADO. */
+    /** Anulación interna: solo con permiso de gestión y solo un documento GENERADO. */
     public function anular(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES) && $dte->estado === \App\Enums\EstadoDte::Generado;
+        return $user->can('dte.gestionar') && $dte->estado === \App\Enums\EstadoDte::Generado;
     }
 
     /**
@@ -53,7 +47,7 @@ class DtePolicy
      */
     public function verJson(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES) && filled($dte->json_generado_path);
+        return $user->can('dte.emitir') && filled($dte->json_generado_path);
     }
 
     /**
@@ -63,7 +57,7 @@ class DtePolicy
      */
     public function verJsonFirmado(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES) && filled($dte->json_firmado_path);
+        return $user->can('dte.emitir') && filled($dte->json_firmado_path);
     }
 
     /**
@@ -73,7 +67,7 @@ class DtePolicy
      */
     public function verEstadoTecnico(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES);
+        return $user->can('dte.emitir');
     }
 
     /**
@@ -83,7 +77,7 @@ class DtePolicy
      */
     public function generarJson(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES)
+        return $user->can('dte.emitir')
             && $dte->estado === \App\Enums\EstadoDte::Generado
             && blank($dte->json_generado_path);
     }
@@ -95,7 +89,7 @@ class DtePolicy
      */
     public function enviarCorreo(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES) && ! $dte->esEditable();
+        return $user->can('dte.enviar-correo') && ! $dte->esEditable();
     }
 
     /**
@@ -107,7 +101,7 @@ class DtePolicy
      */
     public function firmarTransmitir(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES)
+        return $user->can('dte.emitir')
             && in_array($dte->estado, [\App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
             && ! $dte->esAnulado();
@@ -132,7 +126,7 @@ class DtePolicy
      */
     public function generarTransmitirProduccion(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES)
+        return $user->can('dte.emitir')
             && in_array($dte->tipo_dte, self::TIPOS_EMISION_PRODUCCION, true)
             && in_array($dte->estado, [\App\Enums\EstadoDte::Borrador, \App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
@@ -148,7 +142,7 @@ class DtePolicy
      */
     public function verInvalidacion(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES)
+        return $user->can('dte.invalidar')
             && ($dte->aceptadoRealmentePorMh() || $dte->tieneEventoInvalidacion());
     }
 
@@ -160,7 +154,7 @@ class DtePolicy
      */
     public function invalidarMock(User $user, Dte $dte): bool
     {
-        return $user->hasAnyRole(self::GESTORES)
+        return $user->can('dte.invalidar')
             && $dte->aceptadoRealmentePorMh()
             && ! $dte->tieneEventoInvalidacion()
             && ! $dte->estaProtegidoComoEvidencia();

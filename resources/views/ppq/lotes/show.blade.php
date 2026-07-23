@@ -4,7 +4,7 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Lote PPQ #{{ $lote->id }} — {{ $lote->referencia }}</h2>
             <div class="flex gap-2">
                 <a href="{{ route('ppq.lotes.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Historial</a>
-                @if ($lote->esEditable())
+                @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                     <a href="{{ route('ppq.index', ['lote' => $lote->id]) }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar / agregar CCF</a>
                 @else
                     <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
@@ -16,7 +16,9 @@
                     </a>
                 @endif
                 @if ($lote->esEditable())
-                    <a href="{{ route('ppq.lotes.edit', $lote) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
+                    @can('ppq.gestionar')
+                        <a href="{{ route('ppq.lotes.edit', $lote) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Editar</a>
+                    @endcan
                 @endif
             </div>
         </div>
@@ -97,8 +99,8 @@
                 @endif
             </div>
 
-            {{-- Conciliación contra el TXT de pagos de Calleja (solo lectura) --}}
-            @if ($lote->items->isNotEmpty())
+            {{-- Conciliación contra el TXT de pagos de Calleja. Solo gestores de PPQ. --}}
+            @if ($lote->items->isNotEmpty() && auth()->user()->can('ppq.gestionar'))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
                     <h3 class="text-sm font-semibold text-gray-700">Conciliar pagos (archivo TXT de Calleja)</h3>
                     <p class="mt-1 text-xs text-gray-500">Subí el archivo <span class="font-mono">.txt</span> que manda Calleja. Marca cada CCF como <span class="font-medium text-green-700">pagado/conciliado</span> solo si aparece en el TXT (tipo CF) y las NC como aplicadas; el resto queda pendiente. No modifica el Excel oficial.</p>
@@ -205,7 +207,7 @@
                                         <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium {{ $item->estadoPagoClase() }}" @if ($item->fecha_pago) title="Pago {{ \App\Support\Fecha::dmy($item->fecha_pago) }}" @endif>{{ $item->estadoPagoLabel() }}</span>
                                     </td>
                                     <td class="py-2 px-3 text-right">
-                                        @if ($lote->esEditable())
+                                        @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                                             <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm('¿Quitar este documento del lote?')">
                                                 @csrf @method('DELETE')
                                                 <button class="text-red-600 hover:underline text-xs">quitar</button>
@@ -234,7 +236,7 @@
                 </div>
             </div>
 
-            @if ($lote->esEditable())
+            @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                 <div class="flex justify-end">
                     <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote?')">
                         @csrf @method('DELETE')

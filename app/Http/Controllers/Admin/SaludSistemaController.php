@@ -37,8 +37,8 @@ class SaludSistemaController extends Controller
 
     public function index(DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService): View
     {
-        // Acceso solo administrador (además del middleware de ruta).
-        abort_unless(request()->user()?->hasRole('administrador'), 403);
+        // Acceso solo administrador (permiso sistema.salud; además del middleware de ruta).
+        abort_unless(request()->user()?->can('sistema.salud'), 403);
 
         $seguridad = $this->seguridad();
         $diagnostico = $diagnosticoService->evaluar();

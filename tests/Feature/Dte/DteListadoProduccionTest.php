@@ -35,7 +35,7 @@ class DteListadoProduccionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['administrador', 'facturacion', 'consulta', 'contador'] as $rol) {
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -189,7 +189,7 @@ class DteListadoProduccionTest extends TestCase
     {
         $this->prueba();
 
-        $this->actingAs($this->usuario('contador'))
+        $this->actingAs($this->usuario('contabilidad'))
             ->get(route('auditoria.documentos_prueba'))
             ->assertOk()
             ->assertSee('Cliente Prueba SA');
@@ -204,7 +204,7 @@ class DteListadoProduccionTest extends TestCase
 
     public function test_consulta_no_accede_al_listado_de_pruebas(): void
     {
-        $this->actingAs($this->usuario('consulta'))
+        $this->actingAs($this->usuario('jefatura'))
             ->get(route('auditoria.documentos_prueba'))
             ->assertForbidden();
     }

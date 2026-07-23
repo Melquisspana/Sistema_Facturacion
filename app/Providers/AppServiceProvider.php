@@ -54,7 +54,7 @@ class AppServiceProvider extends ServiceProvider
             // (administrador/facturación), para que quede claro en TODA pantalla si el
             // sistema nuevo podría transmitir real o sigue en modo paralelo/preproducción.
             // Solo lectura: reutiliza evaluarCandados(), no transmite ni muestra secretos.
-            $esGestor = (bool) auth()->user()?->hasAnyRole(['administrador', 'facturacion']);
+            $esGestor = (bool) auth()->user()?->can('dte.emitir');
             $view->with('modoDte', $esGestor ? app(DteTransmisionService::class)->estadoOperativo() : null);
         });
 
@@ -63,7 +63,7 @@ class AppServiceProvider extends ServiceProvider
         // están disponibles sin recalcular en cada controlador. Solo gestores; solo lectura.
         View::composer('facturacion.*', static function ($view) {
             if (! array_key_exists('modoDte', $view->getData())) {
-                $esGestor = (bool) auth()->user()?->hasAnyRole(['administrador', 'facturacion']);
+                $esGestor = (bool) auth()->user()?->can('dte.emitir');
                 $view->with('modoDte', $esGestor ? app(DteTransmisionService::class)->estadoOperativo() : null);
             }
         });
