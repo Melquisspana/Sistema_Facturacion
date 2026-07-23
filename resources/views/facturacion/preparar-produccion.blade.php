@@ -14,15 +14,12 @@
     @endphp
 
     @php
-        $internoUltimo = $correlativo['interno_ultimo'] ?? null;        // p.ej. 1094 (última emisión propia)
-        $externoUltimo = $correlativo['externo_ultimo'] ?? null;        // p.ej. 1093 (último confirmado Conta)
-        $operativoUltimo = $correlativo['operativo_ultimo'] ?? null;    // max(interno, externo) = 1094
-        $operativoProximo = $correlativo['operativo_proximo'] ?? null;  // 1095
-        $desalineado = !empty($correlativo['desalineado']);
         $workerActivo = ($worker['estado'] ?? null) === 'activo';
+        $sistemaNuevo = $correlativo['sistema_nuevo'] ?? ['establecimiento' => '—', 'punto_venta' => '—', 'proximos' => []];
+        $conta = $correlativo['conta'] ?? ['establecimiento' => 'M001', 'punto_venta' => 'P001', 'ultimo_ccf_externo' => null];
     @endphp
 
-    <div class="py-8" x-data="{ barreraConta: false }">
+    <div class="py-8">
         <div class="max-w-5xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             @if (session('status'))
@@ -40,56 +37,31 @@
                     haciéndose desde la ficha del documento, con su doble confirmación y la frase de seguridad.</p>
             </div>
 
-            {{-- 0) Correlativo real (interno vs externo vs operativo) + barrera anti-Conta --}}
-            <section class="bg-white shadow-sm ring-2 ring-rose-200 sm:rounded-xl p-6 space-y-4">
-                <h3 class="text-sm font-semibold uppercase tracking-wide text-rose-600">Correlativo real y barrera anti-Conta Portable</h3>
+            {{-- 0) Correlativo del sistema nuevo (P002) + Conta (P001) como contingencia independiente --}}
+            <section class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 space-y-4">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Correlativos de producción</h3>
 
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div class="rounded-lg bg-gray-50 ring-1 ring-gray-200 p-4 text-center">
-                        <p class="text-xs uppercase tracking-wide text-gray-400">Último interno<br>(sistema nuevo)</p>
-                        <p class="mt-1 text-3xl font-bold tabular-nums text-gray-800">{{ $internoUltimo !== null ? $internoUltimo : '—' }}</p>
-                    </div>
-                    <div class="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-4 text-center">
-                        <p class="text-xs uppercase tracking-wide text-amber-600">Último externo<br>(Conta Portable)</p>
-                        <p class="mt-1 text-3xl font-bold tabular-nums text-amber-700">{{ $externoUltimo !== null ? $externoUltimo : '—' }}</p>
-                    </div>
-                    <div class="rounded-lg bg-gray-50 ring-1 ring-gray-200 p-4 text-center">
-                        <p class="text-xs uppercase tracking-wide text-gray-500">Último operativo<br>máx(interno, externo)</p>
-                        <p class="mt-1 text-3xl font-bold tabular-nums text-gray-800">{{ $operativoUltimo !== null ? $operativoUltimo : '—' }}</p>
-                    </div>
-                    <div class="rounded-lg bg-indigo-50 ring-2 ring-indigo-300 p-4 text-center">
-                        <p class="text-xs uppercase tracking-wide text-indigo-600">Próximo real correcto</p>
-                        <p class="mt-1 text-3xl font-bold tabular-nums text-indigo-700">{{ $operativoProximo !== null ? $operativoProximo : '—' }}</p>
+                <div class="rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4">
+                    <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">
+                        Sistema nuevo: {{ $sistemaNuevo['establecimiento'] }}/{{ $sistemaNuevo['punto_venta'] }}
+                    </p>
+                    <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        @forelse ($sistemaNuevo['proximos'] as $tipo => $p)
+                            <div class="rounded-lg bg-white ring-1 ring-indigo-100 p-3 text-center">
+                                <p class="text-xs uppercase tracking-wide text-gray-400">{{ $p['label'] }} ({{ $tipo }})</p>
+                                <p class="mt-1 text-2xl font-bold tabular-nums text-indigo-700">{{ $p['proximo'] ?? '—' }}</p>
+                                <p class="text-xs text-gray-400">último {{ $p['ultimo'] ?? '—' }}</p>
+                            </div>
+                        @empty
+                            <p class="col-span-full text-sm text-gray-500">No se pudo resolver el punto de venta predeterminado.</p>
+                        @endforelse
                     </div>
                 </div>
 
-                {{-- Desalineación SOLO si Conta va por delante del contador interno (externo > interno). --}}
-                @if ($desalineado)
-                    <div class="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm font-semibold text-rose-800">
-                        ⚠️ Conta Portable ({{ $externoUltimo ?? '—' }}) va por <span class="underline">delante</span> del contador interno del sistema ({{ $internoUltimo ?? '—' }}).
-                        Antes de emitir producción real, se debe alinear el correlativo para que el próximo sea {{ $operativoProximo ?? '—' }}.
-                        <span class="block mt-1 font-normal text-rose-700">No emitas producción real hasta alinear (aún no se alinea nada).</span>
-                    </div>
-                @else
-                    <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-                        Numeración alineada: el sistema nuevo lleva la delantera (interno {{ $internoUltimo ?? '—' }} ≥ externo {{ $externoUltimo ?? '—' }}). El próximo real es <span class="font-semibold">{{ $operativoProximo ?? '—' }}</span>.
-                    </div>
-                @endif
-
-                <label class="flex items-start gap-3 rounded-md border-2 p-4 cursor-pointer transition"
-                       :class="barreraConta ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-white'">
-                    <input type="checkbox" x-model="barreraConta" class="mt-0.5 h-5 w-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500">
-                    <span class="text-sm text-gray-800">
-                        <span class="font-semibold">Confirmo que Conta Portable quedó detenido/alineado y que el último CCF real operativo es {{ $operativoUltimo ?? '—' }}; el próximo será {{ $operativoProximo ?? '—' }}.</span>
-                        <span class="block mt-1 text-xs text-gray-500">
-                            Esta barrera es una confirmación manual adicional. No abre producción por sí sola ni cambia ningún candado ni correlativo:
-                            solo desbloquea los pasos de preparación de esta pantalla. La emisión real sigue exigiendo su frase y candados aparte.
-                        </span>
-                    </span>
-                </label>
-
-                <div x-show="!barreraConta" x-cloak class="text-xs text-rose-600">
-                    Marcá la barrera anti-Conta para ver los pasos de preparación para emisión real.
+                <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                    <span class="font-semibold">Conta: {{ $conta['establecimiento'] }}/{{ $conta['punto_venta'] }}, contingencia independiente.</span>
+                    Último CCF real confirmado ahí: {{ $conta['ultimo_ccf_externo'] ?? '—' }}. Es un sistema aparte
+                    (solo informativo aquí); ya no se compara ni se exige alinear contra el sistema nuevo para poder emitir.
                 </div>
             </section>
 
@@ -195,47 +167,20 @@
                 </div>
             </section>
 
-            {{-- 4) Correlativo --}}
+            {{-- 4) Último CCF real aceptado --}}
             <section class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 space-y-3">
-                <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">4. Correlativo</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div class="rounded-md bg-gray-50 p-4">
-                        <p class="text-xs uppercase tracking-wide text-gray-400">Último CCF real aceptado (producción)</p>
-                        @if ($correlativo['ultimo'])
-                            <p class="mt-1 font-mono font-medium text-gray-800">{{ $correlativo['ultimo']['numero_control'] }}</p>
-                            <p class="text-xs text-gray-500">
-                                {{ $correlativo['ultimo']['fecha'] ?? '—' }} · total ${{ $correlativo['ultimo']['total'] }}
-                                @if ($correlativo['ultimo']['sello']) · sello {{ $correlativo['ultimo']['sello'] }} @endif
-                            </p>
-                        @else
-                            <p class="mt-1 text-gray-500">Todavía no hay CCF real aceptado en este sistema.</p>
-                        @endif
-                    </div>
-                    <div class="rounded-md bg-gray-50 p-4">
-                        <p class="text-xs uppercase tracking-wide text-gray-400">Contador interno del sistema
-                            @if ($desalineado)<span class="text-rose-500 font-semibold">(por detrás de Conta)</span>@else<span class="text-emerald-600 font-semibold">(alineado)</span>@endif
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">4. Último CCF real aceptado</h3>
+                <div class="rounded-md bg-gray-50 p-4 text-sm">
+                    @if ($correlativo['ultimo'])
+                        <p class="font-mono font-medium text-gray-800">{{ $correlativo['ultimo']['numero_control'] }}</p>
+                        <p class="text-xs text-gray-500">
+                            {{ $correlativo['ultimo']['fecha'] ?? '—' }} · total ${{ $correlativo['ultimo']['total'] }}
+                            @if ($correlativo['ultimo']['sello']) · sello {{ $correlativo['ultimo']['sello'] }} @endif
                         </p>
-                        @if ($correlativo['proximo'])
-                            <p class="mt-1 font-mono font-medium text-gray-800">{{ $correlativo['proximo']['serie'] }} · nº {{ $correlativo['proximo']['siguiente'] }}</p>
-                            <p class="text-xs text-gray-500">Último asignado internamente: {{ $correlativo['proximo']['ultimo_numero'] }}.
-                                @if ($desalineado)<span class="text-rose-600">Conta va por delante; el próximo operativo real es {{ $operativoProximo ?? '—' }}.</span>@else Coincide con el próximo real operativo ({{ $operativoProximo ?? '—' }}).@endif
-                            </p>
-                        @else
-                            <p class="mt-1 text-gray-500">No hay correlativo de CCF de producción configurado.</p>
-                        @endif
-                    </div>
+                    @else
+                        <p class="text-gray-500">Todavía no hay CCF real aceptado en este sistema.</p>
+                    @endif
                 </div>
-                @if ($desalineado)
-                    <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-                        El <span class="font-semibold">próximo número real operativo</span> es
-                        <span class="font-semibold">{{ $operativoProximo ?? '—' }}</span> (último externo en Conta Portable
-                        {{ $externoUltimo ?? '—' }} + 1). Antes de emitir producción real se debe alinear el correlativo (con tu OK; aún no se alinea nada).
-                    </div>
-                @else
-                    <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-                        Numeración al día: el próximo número real operativo es <span class="font-semibold">{{ $operativoProximo ?? '—' }}</span> (el sistema nuevo lleva la delantera). No hace falta alinear.
-                    </div>
-                @endif
             </section>
 
             {{-- 5) Higiene de configuración (SOLO REPORTE — no cambia .env ni nada) --}}
@@ -266,8 +211,11 @@
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="text-sm">
                         @if ($backup['existe'])
-                            <p class="font-medium text-gray-800">Último backup: {{ $backup['nombre'] }}</p>
-                            <p class="text-xs text-gray-500">{{ $backup['fecha'] }} · {{ $backup['tamano'] }} · {{ $backup['detalle'] }}</p>
+                            <p class="font-medium text-gray-800">Último backup: {{ $backup['nombre'] ?? '—' }}</p>
+                            <p class="text-xs text-gray-500">{{ $backup['fecha'] }} · {{ $backup['tamano'] ?? '—' }} · {{ $backup['detalle'] }}</p>
+                            @if (!empty($backup['sha256']))
+                                <p class="text-xs text-gray-400 font-mono">sha256 {{ $backup['sha256'] }}</p>
+                            @endif
                         @else
                             <p class="font-medium text-gray-800">Sin backups encontrados</p>
                             <p class="text-xs text-gray-500">{{ $backup['detalle'] }}</p>
@@ -296,17 +244,10 @@
                 @endif
             </section>
 
-            {{-- Aviso cuando la barrera no está confirmada: los pasos quedan bloqueados. --}}
-            <div x-show="!barreraConta" x-cloak class="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                <span class="font-semibold">Pasos de preparación bloqueados.</span>
-                Confirmá la barrera anti-Conta Portable (arriba) para ver el flujo recomendado de emisión real.
-            </div>
-
-            {{-- 7) Flujo recomendado — solo visible tras confirmar la barrera anti-Conta --}}
-            <section x-show="barreraConta" x-cloak class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
+            {{-- 7) Flujo recomendado --}}
+            <section class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">7. Flujo recomendado</h3>
                 <ol class="mt-3 space-y-1.5 text-sm text-gray-700 list-decimal list-inside">
-                    <li>Confirmar que Conta Portable está detenido o alineado.</li>
                     <li>Generar backup de base de datos.</li>
                     <li>Verificar que el worker/cola esté activo.</li>
                     <li>Verificar que el firmador Java responda.</li>

@@ -5,9 +5,9 @@ namespace App\Services\Dte;
 use App\Enums\TipoCliente;
 use App\Enums\TipoItemExportacion;
 use App\Models\CatalogoMh;
-use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Services\Dte\Concerns\ChecksProduccionComunes;
+use App\Support\Dte\CorrelativoSistemaNuevo;
 
 /**
  * Preflight de READINESS (checklist, NO habilita nada) para Factura de
@@ -83,14 +83,14 @@ class PreflightEmisionProduccionExportacion
         ]);
     }
 
-    /** Correlativo de Exportación en producción: existe y está activo. */
+    /** Correlativo de Exportación en producción del SISTEMA NUEVO (P002): existe y está activo. */
     private function checkCorrelativo(): array
     {
-        $corr = Correlativo::where('tipo_dte', '11')->where('ambiente', '01')->where('activo', true)->first();
+        $corr = CorrelativoSistemaNuevo::correlativo('11', '01');
         $ok = $corr !== null;
 
-        return $this->check('correlativo', 'Correlativo Exportación producción existe', $ok,
-            $ok ? "activo, último número {$corr->ultimo_numero}" : 'no hay correlativo de producción para tipo 11');
+        return $this->check('correlativo', 'Correlativo Exportación producción (P002) existe', $ok,
+            $ok ? "activo, último número {$corr->ultimo_numero}, próximo ".($corr->ultimo_numero + 1) : 'no hay correlativo de producción para tipo 11 en el punto de venta predeterminado (P002)');
     }
 
     /**

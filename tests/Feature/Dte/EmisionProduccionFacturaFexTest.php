@@ -300,9 +300,11 @@ class EmisionProduccionFacturaFexTest extends TestCase
         \App\Models\Configuracion::set('produccion.auth_prod_validada', true);
         \App\Models\Configuracion::set('correo.auto_envio', false);
         \App\Support\WorkerHeartbeat::pulse();
-        \Illuminate\Support\Facades\Storage::fake('local');
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        \Illuminate\Support\Facades\Storage::disk('local')->put($nombre.'/hoy.zip', 'x');
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
         Http::fake([rtrim((string) config('dte.firmador.url'), '/').'/status' => Http::response('OK', 200)]);
 
         // Correlativo tipo 01/11 productivo (ambiente 01) deliberadamente AUSENTE:
@@ -328,7 +330,7 @@ class EmisionProduccionFacturaFexTest extends TestCase
             ->assertSessionHas('error');
 
         $error = (string) session('error');
-        $this->assertStringContainsString('Correlativo Factura producción existe', $error);
+        $this->assertStringContainsString('Correlativo Factura producción (P002) existe', $error);
         // La única llamada HTTP posible es el health-check GET del firmador (parte del
         // preflight); nunca un POST de firma o de recepción a Hacienda.
         Http::assertSent(fn ($r) => $r->method() === 'GET' && str_contains($r->url(), '/status'));

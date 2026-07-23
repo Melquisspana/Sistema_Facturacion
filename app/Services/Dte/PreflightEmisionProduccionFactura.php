@@ -4,10 +4,10 @@ namespace App\Services\Dte;
 
 use App\Enums\TipoDte;
 use App\Models\Configuracion;
-use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Services\Dte\Concerns\ChecksProduccionComunes;
 use App\Support\Dinero;
+use App\Support\Dte\CorrelativoSistemaNuevo;
 
 /**
  * Preflight de READINESS (checklist, NO habilita nada) para Factura consumidor
@@ -60,14 +60,14 @@ class PreflightEmisionProduccionFactura
         ];
     }
 
-    /** Correlativo de Factura en producción: existe y está activo (sin reconciliación externa; a diferencia de CCF, Factura nunca la emitió Conta Portable en paralelo). */
+    /** Correlativo de Factura en producción del SISTEMA NUEVO (P002): existe y está activo. */
     private function checkCorrelativo(): array
     {
-        $corr = Correlativo::where('tipo_dte', '01')->where('ambiente', '01')->where('activo', true)->first();
+        $corr = CorrelativoSistemaNuevo::correlativo('01', '01');
         $ok = $corr !== null;
 
-        return $this->check('correlativo', 'Correlativo Factura producción existe', $ok,
-            $ok ? "activo, último número {$corr->ultimo_numero}" : 'no hay correlativo de producción para tipo 01');
+        return $this->check('correlativo', 'Correlativo Factura producción (P002) existe', $ok,
+            $ok ? "activo, último número {$corr->ultimo_numero}, próximo ".($corr->ultimo_numero + 1) : 'no hay correlativo de producción para tipo 01 en el punto de venta predeterminado (P002)');
     }
 
     /** Documento completo: líneas y total > 0 (el cliente es OPCIONAL: consumidor final). */

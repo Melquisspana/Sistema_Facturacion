@@ -7,18 +7,19 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Http\Controllers\Controller;
 use App\Models\Configuracion;
-use App\Models\Correlativo;
 use App\Models\Dte;
+use App\Models\Establecimiento;
+use App\Models\PuntoVenta;
+use App\Models\RespaldoEjecucion;
 use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteTransmisionService;
+use App\Support\Dte\CorrelativoSistemaNuevo;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\View\View;
 use Throwable;
 
@@ -71,30 +72,29 @@ class PreparacionProduccionController extends Controller
     }
 
     /**
-     * Genera un backup SOLO de base de datos antes de emitir (spatie/laravel-backup).
-     * Es admin-only y deliberadamente inofensivo: `--only-db` (no zipea la app) y
-     * `--disable-notifications` (NO envía ningún correo). No emite ni transmite nada
-     * ni toca correlativos. Sincrónico para no depender del worker.
+     * Genera un backup de base de datos VERIFICADO (mysqldump + SHA-256 + registro en
+     * respaldo_ejecuciones) antes de emitir. Es admin-only y deliberadamente inofensivo:
+     * no emite ni transmite nada ni toca correlativos. Sincrónico para no depender del
+     * worker. Es el MISMO mecanismo que alimenta el check "Backup del día listo" de
+     * esta pantalla (coherente con lo que el checklist realmente mide); el zip completo
+     * de spatie/laravel-backup sigue corriendo aparte, en su propio horario.
      */
     public function backup(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->hasRole('administrador'), 403);
 
         try {
-            $codigo = Artisan::call('backup:run', [
-                '--only-db' => true,
-                '--disable-notifications' => true,
-            ]);
+            $codigo = Artisan::call('backup:mysql-diario', ['--origen' => 'manual']);
             $salida = trim((string) Artisan::output());
 
             if ($codigo === 0) {
-                return back()->with('status', 'Backup de base de datos generado. Verificá el "último backup" abajo.');
+                return back()->with('status', 'Backup de base de datos generado y verificado. Revisá el "último backup" abajo.');
             }
 
-            return back()->with('error', 'El backup terminó con código '.$codigo.'. Revisá scripts/backup-run.bat. Detalle: '.$this->cola($salida));
+            return back()->with('error', 'El backup terminó con código '.$codigo.'. Detalle: '.$this->cola($salida));
         } catch (Throwable $e) {
             return back()->with('error', 'No se pudo generar el backup de BD: '.$e->getMessage()
-                .' Podés usar scripts/backup-run.bat manualmente. No se emitió ni transmitió nada.');
+                .' No se emitió ni transmitió nada.');
         }
     }
 
@@ -170,8 +170,12 @@ class PreparacionProduccionController extends Controller
     }
 
     /**
-     * Correlativo de PRODUCCIÓN: último CCF real aceptado por el MH y próximo número
-     * esperado. SOLO LECTURA: no reserva ni incrementa nada.
+     * Correlativo de PRODUCCIÓN del SISTEMA NUEVO (punto de venta predeterminado, hoy
+     * P002) por cada tipo de DTE, más el último CCF real aceptado. SOLO LECTURA: no
+     * reserva ni incrementa nada.
+     *
+     * Conta Portable (P001) es una CONTINGENCIA INDEPENDIENTE: se muestra aparte, solo
+     * informativa, y ya NO se compara ni se exige "alinear" contra el sistema nuevo.
      *
      * @return array<string, mixed>
      */
@@ -184,30 +188,29 @@ class PreparacionProduccionController extends Controller
             ->orderByDesc('id')
             ->first();
 
-        $corr = Correlativo::where('tipo_dte', TipoDte::CreditoFiscal->value)
-            ->where('ambiente', AmbienteHacienda::Produccion->value)
-            ->where('activo', true)
-            ->first();
+        $resuelto = CorrelativoSistemaNuevo::establecimientoYPuntoVenta();
+        $establecimiento = $resuelto['establecimiento_id'] ? Establecimiento::find($resuelto['establecimiento_id']) : null;
+        $puntoVenta = $resuelto['punto_venta_id'] ? PuntoVenta::find($resuelto['punto_venta_id']) : null;
 
-        // Contador INTERNO del sistema nuevo (fila correlativo ambiente 01). Su
-        // "siguiente" (p. ej. 1079) está DESACTUALIZADO frente a Conta Portable.
-        $internoUltimo = $corr?->ultimo_numero;
-        $internoProximo = $corr?->siguiente_numero;
+        $tipos = [
+            TipoDte::Factura->value => 'Factura',
+            TipoDte::CreditoFiscal->value => 'Crédito Fiscal (CCF)',
+            TipoDte::NotaCredito->value => 'Nota de Crédito',
+            TipoDte::FacturaExportacion->value => 'Factura de Exportación',
+        ];
+        $proximos = [];
+        foreach ($tipos as $tipo => $label) {
+            $corr = CorrelativoSistemaNuevo::correlativo($tipo, AmbienteHacienda::Produccion->value);
+            $proximos[$tipo] = [
+                'label' => $label,
+                'ultimo' => $corr?->ultimo_numero,
+                'proximo' => $corr ? $corr->ultimo_numero + 1 : null,
+            ];
+        }
 
-        // Último CCF real EXTERNO confirmado en Conta Portable (dato operativo que
-        // confirma el operador). Se guarda como clave simple de configuración; NO es
-        // un correlativo ni lo mueve. Default 1093 (último confirmado hasta hoy).
+        // Último CCF real EXTERNO confirmado en Conta Portable — dato puramente
+        // informativo (contingencia P001), NO participa en ningún cálculo de readiness.
         $externoUltimo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
-
-        // Último real OPERATIVO = el MAYOR entre el interno del sistema y el externo de
-        // Conta. Cuando el sistema nuevo ya emitió (interno >= externo), manda el interno.
-        $operativoUltimo = max((int) $internoUltimo, $externoUltimo);
-        $operativoProximo = $operativoUltimo + 1;
-
-        // Desalineado SOLO si Conta va por DELANTE del contador interno (externo > interno):
-        // ahí sí habría que alinear. Si el interno ya alcanzó/superó al externo, NO hay
-        // desalineación (el sistema nuevo lleva la numeración).
-        $desalineado = $externoUltimo > (int) $internoUltimo;
 
         return [
             'ultimo' => $ultimo ? [
@@ -217,66 +220,54 @@ class PreparacionProduccionController extends Controller
                 // El sello de recepción es público (no secreto); se muestra abreviado.
                 'sello' => $ultimo->sello_recepcion ? mb_substr((string) $ultimo->sello_recepcion, 0, 20).'…' : null,
             ] : null,
-            'proximo' => $corr ? [
-                'serie' => $corr->serie,
-                'ultimo_numero' => $corr->ultimo_numero,
-                'siguiente' => $corr->siguiente_numero,
-            ] : null,
-            // Vista corregida de la numeración real (interno vs externo vs operativo).
-            'interno_ultimo' => $internoUltimo,       // p.ej. 1094 — última emisión propia del sistema
-            'interno_proximo' => $internoProximo,     // p.ej. 1095 — contador interno
-            'externo_ultimo' => $externoUltimo,       // p.ej. 1093 — último real externo (Conta Portable)
-            'operativo_ultimo' => $operativoUltimo,   // max(interno, externo) — último real operativo
-            'operativo_proximo' => $operativoProximo, // operativo + 1 — próximo real correcto
-            'desalineado' => $desalineado,
+            'sistema_nuevo' => [
+                'establecimiento' => $establecimiento?->codigo ?? '—',
+                'punto_venta' => $puntoVenta?->codigo ?? '—',
+                'proximos' => $proximos,
+            ],
+            'conta' => [
+                'establecimiento' => 'M001',
+                'punto_venta' => 'P001',
+                'ultimo_ccf_externo' => $externoUltimo,
+            ],
         ];
     }
 
     /**
-     * Último backup encontrado (spatie deja los .zip en storage/app/private/{name}).
-     * SOLO LECTURA de disco: no genera nada.
+     * Último backup registrado en `respaldo_ejecuciones` (backup diario verificado:
+     * mysqldump + SHA-256). SOLO LECTURA de BD: no genera nada.
      *
      * @return array<string, mixed>
      */
     private function ultimoBackup(): array
     {
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        $dir = storage_path('app'.DIRECTORY_SEPARATOR.'private'.DIRECTORY_SEPARATOR.$nombre);
-        $rutaMostrada = 'storage/app/private/'.$nombre;
+        $ultimo = RespaldoEjecucion::ultima();
+        $esHoy = RespaldoEjecucion::hayValidoHoy();
 
-        if (File::isDirectory($dir)) {
-            $zips = collect(File::files($dir))
-                ->filter(fn ($f) => strtolower($f->getExtension()) === 'zip')
-                ->sortByDesc(fn ($f) => $f->getMTime())
-                ->values();
-            if ($zips->isNotEmpty()) {
-                $f = $zips->first();
-                $fecha = Carbon::createFromTimestamp($f->getMTime());
-                // Para emitir real se exige un backup DE HOY (mismo día calendario).
-                $esHoy = $fecha->isToday();
-
-                return [
-                    'ruta' => $rutaMostrada,
-                    'existe' => true,
-                    // Rojo (crítico) si el backup NO es de hoy: falta respaldo del día.
-                    'estado' => $esHoy ? 'ok' : 'critico',
-                    'es_hoy' => $esHoy,
-                    'nombre' => $f->getFilename(),
-                    'fecha' => $fecha->format('d/m/Y H:i'),
-                    'tamano' => $this->humano($f->getSize()),
-                    'detalle' => $esHoy
-                        ? 'Backup de HOY disponible.'
-                        : 'El último backup NO es de hoy: generá un backup del día antes de emitir real.',
-                ];
-            }
+        if ($ultimo === null) {
+            return [
+                'existe' => false,
+                'estado' => 'critico',
+                'es_hoy' => false,
+                'detalle' => 'Todavía no se registró ningún backup diario. Generá uno antes de emitir real.',
+            ];
         }
 
         return [
-            'ruta' => $rutaMostrada,
-            'existe' => false,
-            'estado' => 'critico',
-            'es_hoy' => false,
-            'detalle' => 'No se encontró ningún backup en '.$rutaMostrada.'. Generá uno antes de emitir real.',
+            'existe' => true,
+            // Rojo (crítico) si NO hay un backup válido de HOY, aunque exista uno viejo.
+            'estado' => $esHoy ? 'ok' : 'critico',
+            'es_hoy' => $esHoy,
+            'nombre' => $ultimo->archivo_ruta,
+            'fecha' => optional($ultimo->terminado_en)->format('d/m/Y H:i'),
+            'tamano' => $ultimo->archivo_tamano_bytes ? $this->humano($ultimo->archivo_tamano_bytes) : null,
+            'sha256' => $ultimo->sha256,
+            'exitoso' => (bool) $ultimo->exitoso,
+            'detalle' => $esHoy
+                ? 'Backup de HOY disponible y verificado (sha256 registrado).'
+                : ($ultimo->exitoso
+                    ? 'El último backup exitoso NO es de hoy: generá uno del día antes de emitir real.'
+                    : 'El último backup registrado FALLÓ ('.$ultimo->mensaje.'): generá uno nuevo antes de emitir real.'),
         ];
     }
 

@@ -90,8 +90,11 @@ class EmisionProduccionSimulacionIntegralTest extends TestCase
         // escribiría en la cache (fresca) de ESTE test, dejando el check "worker" en rojo.
         \App\Support\WorkerHeartbeat::olvidar();
         \App\Support\WorkerHeartbeat::pulse();
-        $nombreBackup = (string) config('backup.backup.name', config('app.name'));
-        Storage::disk('local')->put($nombreBackup.'/hoy.zip', 'x');
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
 
         Http::fake(); // respaldo: si algo intentara HTTP real, queda interceptado (no debería pasar)
         Mail::fake();
@@ -166,7 +169,7 @@ class EmisionProduccionSimulacionIntegralTest extends TestCase
             : app(PreflightEmisionProduccionExportacion::class)->evaluar($dte);
         $labels = array_column($preflight['checks'], 'label');
         $this->assertContains(
-            $tipoDte === '01' ? 'Correlativo Factura producción existe' : 'Correlativo Exportación producción existe',
+            $tipoDte === '01' ? 'Correlativo Factura producción (P002) existe' : 'Correlativo Exportación producción (P002) existe',
             $labels
         );
 

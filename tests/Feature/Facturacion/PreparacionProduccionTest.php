@@ -113,7 +113,7 @@ class PreparacionProduccionTest extends TestCase
         $this->assertSame($antesDtes, Dte::count());           // no se emitió nada
     }
 
-    public function test_muestra_barrera_anti_conta_correlativo_grande_y_worker(): void
+    public function test_muestra_sistema_nuevo_y_conta_como_independientes(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
         $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->first();
@@ -124,57 +124,53 @@ class PreparacionProduccionTest extends TestCase
                 'ultimo_numero' => 1078, 'activo' => true,
             ]);
         }
-        $internoProximo = $corr->ultimo_numero + 1;       // 1079 (contador interno)
+        $proximoP002 = $corr->ultimo_numero + 1; // 1079 — SIN comparar contra Conta
 
         $html = $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertOk()
-            // Las 3 cifras: interno 1078, externo (Conta) 1093, próximo operativo 1094.
-            ->assertSee((string) $corr->ultimo_numero)     // 1078 interno
-            ->assertSee('1093')                            // externo confirmado (default)
-            ->assertSee('1094')                            // próximo operativo correcto
-            // Interno (1078) va por DETRÁS del externo (1093) => desalineado.
-            ->assertSee('va por delante', false)
-            ->assertSee('alinear el correlativo', false)
-            // Barrera anti-Conta con el texto dinámico (operativo = max(interno, externo)).
-            ->assertSee('Confirmo que Conta Portable quedó detenido/alineado', false)
-            ->assertSee('operativo es 1093', false)
-            ->assertSee('el próximo será 1094', false)
+            ->assertSee('Sistema nuevo', false)
+            ->assertSee('Conta: M001/P001, contingencia independiente', false)
+            ->assertSee((string) $proximoP002)
+            ->assertSee('1093') // último externo confirmado en Conta (default), solo informativo
+            // Ya NO existe ningún lenguaje de alineación/barrera contra Conta.
+            ->assertDontSee('va por delante', false)
+            ->assertDontSee('alinear el correlativo', false)
+            ->assertDontSee('Confirmo que Conta Portable quedó detenido', false)
+            ->assertDontSee('barrera anti-Conta', false)
             // Higiene de configuración (solo reporte, no cambia .env).
             ->assertSee('Higiene de configuración')
             ->assertSee('no cambia', false)
             ->getContent();
 
-        // El contador interno (1079) sigue visible pero marcado como desactualizado.
-        $this->assertStringContainsString((string) $internoProximo, $html);
         // El worker en tests no late: debe avisar que los correos/jobs no saldrán.
         $this->assertStringContainsString('no saldrán', $html);
         // Sigue sin exponer el campo de la frase real de emisión.
         $this->assertStringNotContainsString('confirmacion_emision', $html);
     }
 
-    public function test_correlativo_alineado_cuando_interno_alcanza_o_supera_externo(): void
+    public function test_proximo_p002_no_depende_del_correlativo_de_conta(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
-        // El sistema nuevo ya emitió: contador interno 1094 >= externo Conta 1093.
+        // P001 (Conta) mucho más adelante que P002 (sistema nuevo): ya NO afecta el
+        // próximo de P002 ni produce ningún aviso de desalineación.
         Correlativo::updateOrCreate(
             ['tipo_dte' => '03', 'ambiente' => '01'],
             ['establecimiento_id' => Establecimiento::firstOrFail()->id, 'punto_venta_id' => null,
-             'serie' => 'M001P001', 'ultimo_numero' => 1094, 'activo' => true]
+             'serie' => 'M001P001', 'ultimo_numero' => 502, 'activo' => true]
         );
+        \App\Models\Configuracion::set('produccion.ultimo_ccf_externo', '9999');
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertOk()
-            ->assertSee('1095')                              // próximo operativo = 1094 + 1
-            ->assertSee('operativo es 1094', false)          // barrera dinámica (max = interno)
-            ->assertSee('Numeración alineada', false)        // sin desalineación
-            // No debe decir que hay que alinear / que Conta va por delante.
+            ->assertSee('503')    // próximo de P002 = 502 + 1, sin importar Conta
             ->assertDontSee('va por delante', false)
-            ->assertDontSee('se debe alinear el correlativo', false);
+            ->assertDontSee('se debe alinear el correlativo', false)
+            ->assertDontSee('Numeración alineada', false);
     }
 
-    public function test_ultimo_externo_configurable_actualiza_proximo_operativo(): void
+    public function test_ultimo_externo_configurable_no_afecta_proximo_de_p002(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
         if (! Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->exists()) {
@@ -184,15 +180,15 @@ class PreparacionProduccionTest extends TestCase
                 'ultimo_numero' => 1078, 'activo' => true,
             ]);
         }
-        // Confirmar otro último externo (p. ej. Conta llegó a 1100) => próximo 1101,
-        // SIN tocar el correlativo (solo una clave de configuración).
+        // Confirmar otro último externo (p. ej. Conta llegó a 1100): es solo una clave
+        // de configuración informativa, NUNCA toca el correlativo de P002 ni su próximo.
         \App\Models\Configuracion::set('produccion.ultimo_ccf_externo', '1100');
 
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertOk()
-            ->assertSee('1100')  // externo confirmado
-            ->assertSee('1101'); // próximo operativo = externo + 1
+            ->assertSee('1100')  // externo confirmado, solo informativo
+            ->assertSee('1079'); // próximo de P002 = 1078 + 1 (SIN relación con el externo)
 
         // No se movió el correlativo interno.
         $this->assertSame(1078, (int) Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->value('ultimo_numero'));
@@ -208,11 +204,11 @@ class PreparacionProduccionTest extends TestCase
 
     public function test_backup_admin_corre_solo_bd_sin_notificaciones_y_no_emite(): void
     {
-        // Se mockea el comando para no correr un backup real en el test; se verifica
-        // que se invoque SOLO base de datos y SIN notificaciones (nada de correos).
+        // Se mockea el comando para no correr un backup real (mysqldump) en el test;
+        // se verifica que se invoque el backup diario verificado con origen=manual.
         Artisan::shouldReceive('call')
             ->once()
-            ->with('backup:run', ['--only-db' => true, '--disable-notifications' => true])
+            ->with('backup:mysql-diario', ['--origen' => 'manual'])
             ->andReturn(0);
         Artisan::shouldReceive('output')->andReturn('Backup completed');
 
