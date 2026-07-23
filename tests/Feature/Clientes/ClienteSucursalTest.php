@@ -47,6 +47,104 @@ class ClienteSucursalTest extends TestCase
         ], $override);
     }
 
+    /**
+     * El municipio (CAT-013) es el que el serializador toma de la sala para
+     * `receptor.direccion.municipio`. Antes el formulario no lo enviaba nunca y
+     * toda sala creada desde la UI quedaba con municipio_id NULL.
+     */
+    public function test_sucursal_guarda_municipio_fiscal(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $municipio = \App\Models\Municipio::where('departamento_id', $distrito->departamento_id)
+            ->where('nombre', 'Olocuilta')->firstOrFail();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal([
+                'municipio_id' => $municipio->id,
+            ]))
+            ->assertRedirect(route('clientes.show', $cliente));
+
+        $this->assertDatabaseHas('cliente_sucursales', [
+            'cliente_id' => $cliente->id,
+            'municipio_id' => $municipio->id,
+            'distrito_id' => $distrito->id,
+        ]);
+    }
+
+    public function test_municipio_fiscal_debe_pertenecer_al_departamento(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        // La sala se declara en La Paz (Olocuilta) pero con un municipio de San Salvador.
+        $sanSalvador = \App\Models\Departamento::where('codigo', '06')->firstOrFail();
+        $municipioAjeno = \App\Models\Municipio::where('departamento_id', $sanSalvador->id)
+            ->where('nombre', 'San Salvador')->firstOrFail();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal([
+                'municipio_id' => $municipioAjeno->id,
+            ]))
+            ->assertSessionHasErrors('municipio_id');
+
+        $this->assertDatabaseCount('cliente_sucursales', 0);
+    }
+
+    /** El municipio es opcional: el catálogo sembrado no cubre todo el país. */
+    public function test_sucursal_se_guarda_sin_municipio_fiscal(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal([
+                'municipio_id' => '', // "— Sin municipio —"
+            ]))
+            ->assertRedirect(route('clientes.show', $cliente));
+
+        $this->assertDatabaseHas('cliente_sucursales', [
+            'cliente_id' => $cliente->id,
+            'municipio_id' => null,
+        ]);
+    }
+
+    /** Editar una sala existente no debe perder el municipio que ya tenía. */
+    public function test_editar_sucursal_conserva_municipio_fiscal(): void
+    {
+        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $municipio = \App\Models\Municipio::where('departamento_id', $distrito->departamento_id)
+            ->where('nombre', 'Olocuilta')->firstOrFail();
+
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $sucursal = ClienteSucursal::factory()->create([
+            'cliente_id' => $cliente->id,
+            'departamento_id' => $distrito->departamento_id,
+            'municipio_id' => $municipio->id,
+            'distrito_id' => $distrito->id,
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->put(route('clientes.sucursales.update', [$cliente, $sucursal]), $this->datosSucursal([
+                'nombre' => 'Selectos Olocuilta',
+                'municipio_id' => $municipio->id,
+            ]))
+            ->assertRedirect(route('clientes.show', $cliente));
+
+        $this->assertDatabaseHas('cliente_sucursales', [
+            'id' => $sucursal->id,
+            'nombre' => 'Selectos Olocuilta',
+            'municipio_id' => $municipio->id,
+        ]);
+    }
+
+    public function test_formulario_de_sala_ofrece_municipio_fiscal(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('clientes.sucursales.create', $cliente))
+            ->assertOk()
+            ->assertSee('Municipio fiscal (CAT-013)');
+    }
+
     public function test_sucursal_exige_distrito(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();

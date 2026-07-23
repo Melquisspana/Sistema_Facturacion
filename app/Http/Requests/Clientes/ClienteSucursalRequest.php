@@ -11,6 +11,11 @@ use Illuminate\Validation\Rule;
  * Ubicación administrativa (división 2024): departamento → municipio → distrito.
  * El distrito es OBLIGATORIO (requisito legal) y debe pertenecer al departamento.
  *
+ * `municipio_id` es el catálogo CAT-013 y va aparte de la cadena 2024: es el dato
+ * que el serializador toma de la sala para `receptor.direccion.municipio`. Es
+ * OPCIONAL (el catálogo sembrado no cubre todos los departamentos y hay salas
+ * viejas sin él), pero si viene debe pertenecer al departamento elegido.
+ *
  * requiere_orden_compra es ternario: vacío = heredar del cliente (null),
  * "1" = sí, "0" = no.
  */
@@ -37,7 +42,13 @@ class ClienteSucursalRequest extends FormRequest
                     fn ($q) => $q->where('departamento_id', $this->input('departamento_id'))
                 ),
             ],
-            'municipio_id' => ['nullable', 'exists:municipios,id'],
+            // CAT-013. Opcional, pero si se envía debe ser del mismo departamento.
+            'municipio_id' => [
+                'nullable',
+                Rule::exists('municipios', 'id')->where(
+                    fn ($q) => $q->where('departamento_id', $this->input('departamento_id'))
+                ),
+            ],
             'telefono' => ['nullable', 'string', 'max:30'],
             'correo' => ['nullable', 'email', 'max:255'],
             'requiere_orden_compra' => ['nullable', 'boolean'],
@@ -54,6 +65,12 @@ class ClienteSucursalRequest extends FormRequest
             'requiere_orden_compra' => ($oc === '' || $oc === null) ? null : $this->boolean('requiere_orden_compra'),
             'activo' => $this->boolean('activo'),
         ]);
+
+        // "— Sin municipio —" llega como cadena vacía: normalizar a null para que
+        // la regla `nullable` aplique y no se dispare `exists` contra ''.
+        if ($this->input('municipio_id') === '') {
+            $this->merge(['municipio_id' => null]);
+        }
     }
 
     public function messages(): array
@@ -63,6 +80,7 @@ class ClienteSucursalRequest extends FormRequest
             'departamento_id.required' => 'El departamento es obligatorio.',
             'distrito_id.required' => 'El distrito es obligatorio.',
             'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',
+            'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
         ];
     }
 }
