@@ -10,8 +10,10 @@ use Tests\TestCase;
 
 /**
  * Sección "Transmisión DTE" del panel Salud del sistema: modo de operación + mocks.
- * Solo lectura (reutiliza evaluarCandados()); no transmite, no muestra secretos, y NO
- * se mezcla con el banner "Estado general" (mismo criterio que la sección "cola").
+ * Solo lectura (reutiliza evaluarCandados()); no transmite, no muestra secretos. Su
+ * color SÍ se combina en el banner "Estado general" (vía DiagnosticoSistemaService,
+ * compartido con el Dashboard): si la transmisión real a producción queda posible
+ * ahora mismo, eso es un "atención inmediata" real.
  */
 class SaludSistemaTransmisionDteTest extends TestCase
 {
@@ -38,7 +40,7 @@ class SaludSistemaTransmisionDteTest extends TestCase
             ->assertOk()
             ->assertSee('Transmisión DTE (modo de operación)')
             ->assertSee('PARALELO SEGURO')
-            ->assertSee('Conta Portable sigue siendo el sistema oficial');
+            ->assertSee('Modo paralelo seguro: este sistema no transmite producción');
     }
 
     public function test_muestra_los_tres_mocks_apagados_por_defecto(): void
@@ -102,13 +104,23 @@ class SaludSistemaTransmisionDteTest extends TestCase
         return trim($m[1] ?? '');
     }
 
-    public function test_la_seccion_no_altera_el_estado_general(): void
+    public function test_transmision_real_a_produccion_posible_hace_critico_el_estado_general(): void
     {
-        // El estado general se calcula de seguridad/backups/alertas; la transmisión DTE
-        // (paralelo o principal) es informativa aparte, igual que la cola de correos. Se
-        // compara el banner ANTES/DESPUÉS (no un texto fijo, que depende de backups/admins).
+        // Cambio de diseño deliberado (DiagnosticoSistemaService, reutilizado también
+        // por el Dashboard): la transmisión SÍ se evalúa junto con el resto de señales
+        // para el banner general — si el sistema puede transmitir REAL a producción
+        // ahora mismo, eso es "atención inmediata" real, no un dato meramente informativo.
+        config(['app.debug' => false]);
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
         $admin = $this->usuario('administrador');
+
         $antes = $this->bannerGeneral($admin);
+        $this->assertStringNotContainsString('Atención inmediata', $antes);
 
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.enabled', true);
@@ -118,9 +130,7 @@ class SaludSistemaTransmisionDteTest extends TestCase
         config()->set('dte.transmision.allow_production', true);
 
         $despues = $this->bannerGeneral($admin);
-
-        $this->assertNotSame('', $antes);
-        $this->assertSame($antes, $despues, 'La sección Transmisión DTE no debe alterar el banner general.');
+        $this->assertStringContainsString('Atención inmediata', $despues);
     }
 
     public function test_solo_administrador_ve_el_panel(): void

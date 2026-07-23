@@ -27,7 +27,7 @@ class DteTransmisionEstadoOperativoTest extends TestCase
         $this->assertSame('PARALELO SEGURO', $estado['etiqueta']);
         $this->assertSame('ok', $estado['color']);
         $this->assertFalse($estado['transmision_real_posible']);
-        $this->assertStringContainsString('Conta Portable', $estado['detalle']);
+        $this->assertStringContainsString('Modo paralelo seguro', $estado['detalle']);
     }
 
     public function test_modo_respaldo_sin_confirmacion_queda_bloqueado_ambar(): void

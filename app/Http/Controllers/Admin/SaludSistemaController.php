@@ -13,10 +13,7 @@ use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
 use App\Models\User;
 use App\Services\Dte\DteTransmisionService;
-use App\Support\WorkerHeartbeat;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
+use App\Services\Sistema\DiagnosticoSistemaService;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
 
@@ -24,71 +21,54 @@ use Spatie\Activitylog\Models\Activity;
  * Panel SOLO LECTURA "Salud del sistema / Preparación para empresa".
  * No toca facturación ni cálculos: solo lee config, archivos, conteos y auditoría.
  * No expone secretos (.env, APP_KEY, DB_PASSWORD).
+ *
+ * El diagnóstico OPERATIVO (BD, worker, jobs fallidos, backup, firmador, transmisión,
+ * ambiente/punto de venta P002, correlativos P002, storage link, migraciones) se
+ * reutiliza EXACTAMENTE de {@see DiagnosticoSistemaService} (el mismo que usa el
+ * Dashboard): esta pantalla ya NO calcula su propia versión de "cola"/"backups" (esas
+ * quedaban desactualizadas — el backup se detectaba por archivo, no por el registro
+ * real de `respaldo_ejecuciones`). Lo que SÍ aporta esta pantalla, que el Dashboard no
+ * tiene, es higiene de seguridad (admin temporal, cantidad de administradores),
+ * inventario de datos de negocio y alertas de integridad de datos — eso se conserva.
  */
 class SaludSistemaController extends Controller
 {
     private const EMAIL_ADMIN_TEMPORAL = 'admin@dulceslanegrita.test';
 
-    public function index(DteTransmisionService $transmision): View
+    public function index(DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService): View
     {
         // Acceso solo administrador (además del middleware de ruta).
         abort_unless(request()->user()?->hasRole('administrador'), 403);
 
         $seguridad = $this->seguridad();
-        $backups = $this->backups();
-        $cola = $this->cola();
+        $diagnostico = $diagnosticoService->evaluar();
         $datos = $this->datos();
         $alertas = $this->alertas();
         $auditoria = $this->auditoriaReciente();
         // Modo de operación DTE (paralelo/respaldo/principal) + mocks activos. SOLO
-        // LECTURA: reutiliza evaluarCandados(), no transmite, no muestra secretos. No se
-        // mezcla con $general (igual que "cola"): no altera el banner de listo/no listo.
+        // LECTURA: reutiliza evaluarCandados(), no transmite, no muestra secretos.
         $transmisionDte = $transmision->estadoOperativo();
 
-        // Estado general: critico > advertencia > ok.
+        // Estado general: critico > advertencia > ok. Incluye el diagnóstico operativo
+        // (antes solo miraba seguridad + backups/scripts + alertas de datos).
         $niveles = collect($seguridad)->pluck('estado')
-            ->merge([$backups['ultimo']['estado']])
-            ->merge(collect($backups['scripts'])->pluck('estado'))
-            ->merge(collect($backups['docs'])->pluck('estado'))
+            ->merge(collect($diagnostico['checks'])->pluck('nivel')->map(fn ($n) => $n === 'correcto' ? 'ok' : $n))
             ->merge(collect($alertas)->where('count', '>', 0)->pluck('estado'));
 
         if ($niveles->contains('critico')) {
-            $general = ['texto' => 'Sistema NO listo para producción', 'estado' => 'critico'];
+            $general = ['texto' => 'Atención inmediata: hay un problema real que revisar', 'estado' => 'critico'];
         } elseif ($niveles->contains('advertencia')) {
-            $general = ['texto' => 'Sistema requiere atención', 'estado' => 'advertencia'];
+            // En un servidor de producción real (APP_ENV=production) una advertencia
+            // merece revisión operativa; en desarrollo/local (transmisión deshabilitada,
+            // dry-run, un solo administrador de prueba, etc.) es el estado ESPERADO
+            // durante la preparación, no un problema.
+            $texto = config('app.env') === 'production' ? 'Advertencia operativa' : 'Operación segura de desarrollo';
+            $general = ['texto' => $texto, 'estado' => 'advertencia'];
         } else {
-            $general = ['texto' => 'Sistema listo para pruebas internas', 'estado' => 'ok'];
+            $general = ['texto' => 'Todo correcto', 'estado' => 'ok'];
         }
 
-        return view('admin.salud-sistema', compact('general', 'seguridad', 'backups', 'cola', 'datos', 'alertas', 'auditoria', 'transmisionDte'));
-    }
-
-    /**
-     * Estado del worker de colas (heartbeat) + correos pendientes/fallidos. SOLO lectura:
-     * no se muestra en el estado general para no marcar "atención" en dev cuando el worker
-     * está apagado a propósito; es un aviso informativo del área de administración.
-     *
-     * @return array<string, mixed>
-     */
-    private function cola(): array
-    {
-        $hb = WorkerHeartbeat::estado();
-        $mapa = ['activo' => 'ok', 'inactivo' => 'advertencia', 'sin_datos' => 'info'];
-
-        $texto = match ($hb['estado']) {
-            'activo' => 'Worker activo — último pulso '.$hb['hace'].'.',
-            'inactivo' => 'Worker posiblemente detenido — último pulso '.$hb['hace'].'. Abrí start-queue.bat.',
-            default => 'Sin datos todavía: el worker aún no ha reportado actividad (corré start-queue.bat).',
-        };
-
-        return [
-            'estado' => $mapa[$hb['estado']] ?? 'info',
-            'texto' => $texto,
-            'ultimo' => $hb['ultimo']?->format('d/m/Y H:i:s'),
-            'pendientes' => (int) DB::table('jobs')->count(),
-            'fallidos' => (int) DB::table('failed_jobs')->count(),
-            'driver' => (string) config('queue.default'),
-        ];
+        return view('admin.salud-sistema', compact('general', 'seguridad', 'diagnostico', 'datos', 'alertas', 'auditoria', 'transmisionDte'));
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -132,45 +112,6 @@ class SaludSistemaController extends Controller
                 'estado' => 'info', 'detalle' => 'Cantidad de usuarios inactivos.',
             ],
         ];
-    }
-
-    /** @return array<string, mixed> */
-    private function backups(): array
-    {
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        $dir = storage_path('app'.DIRECTORY_SEPARATOR.'private'.DIRECTORY_SEPARATOR.$nombre);
-        $rutaMostrada = 'storage/app/private/'.$nombre;
-
-        $ultimo = ['estado' => 'critico', 'detalle' => 'No se encontró ningún backup.', 'nombre' => null, 'fecha' => null, 'tamano' => null];
-        if (File::isDirectory($dir)) {
-            $zips = collect(File::files($dir))->filter(fn ($f) => strtolower($f->getExtension()) === 'zip')
-                ->sortByDesc(fn ($f) => $f->getMTime())->values();
-            if ($zips->isNotEmpty()) {
-                $f = $zips->first();
-                $fecha = Carbon::createFromTimestamp($f->getMTime());
-                $reciente = $fecha->gt(now()->subDay());
-                $ultimo = [
-                    'estado' => $reciente ? 'ok' : 'advertencia',
-                    'detalle' => $reciente ? 'Backup reciente (menos de 1 día).' : 'El último backup tiene más de 1 día.',
-                    'nombre' => $f->getFilename(),
-                    'fecha' => $fecha->format('d/m/Y H:i'),
-                    'tamano' => $this->humano($f->getSize()),
-                ];
-            }
-        }
-
-        $scripts = [];
-        foreach (['scripts/backup-run.bat', 'scripts/backup-clean.bat', 'scripts/backup-restore-test.bat'] as $rel) {
-            $existe = File::exists(base_path($rel));
-            $scripts[] = ['label' => $rel, 'valor' => $existe ? 'presente' : 'falta', 'estado' => $existe ? 'ok' : 'advertencia'];
-        }
-        $docs = [];
-        foreach (['docs/BACKUPS_WINDOWS.md', 'docs/RESTORE_BACKUP_WINDOWS.md'] as $rel) {
-            $existe = File::exists(base_path($rel));
-            $docs[] = ['label' => $rel, 'valor' => $existe ? 'presente' : 'falta', 'estado' => $existe ? 'ok' : 'advertencia'];
-        }
-
-        return ['ruta' => $rutaMostrada, 'ultimo' => $ultimo, 'scripts' => $scripts, 'docs' => $docs];
     }
 
     /** @return array<int, array{label: string, valor: int}> */
@@ -270,14 +211,5 @@ class SaludSistemaController extends Controller
             'modelo' => $a->subject_type ? class_basename($a->subject_type).($a->subject_id ? ' #'.$a->subject_id : '') : '—',
             'fecha' => $a->created_at?->format('d/m/Y H:i'),
         ]);
-    }
-
-    private function humano(int $bytes): string
-    {
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 1).' MB';
-        }
-
-        return number_format($bytes / 1024, 1).' KB';
     }
 }

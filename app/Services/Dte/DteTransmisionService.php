@@ -463,7 +463,7 @@ class DteTransmisionService
             $detalle = 'Transmisión al ambiente de PRUEBAS (apitest) habilitada: envía a Hacienda de pruebas, NO a producción. Fuera del piloto conviene dejarla apagada (DTE_TRANSMISION_TEST_ENABLED=false).';
         } elseif ($modo === 'paralelo') {
             $color = 'ok';
-            $detalle = 'Conta Portable es el sistema oficial; este sistema NO transmite (solo genera JSON, firma local y dry-run).';
+            $detalle = 'Modo paralelo seguro: este sistema NO transmite producción (solo genera JSON, firma local y dry-run).';
         } else {
             $color = 'advertencia';
             // Bloqueado en respaldo/principal: mostrar por qué (incluye dry-run/confirmación).

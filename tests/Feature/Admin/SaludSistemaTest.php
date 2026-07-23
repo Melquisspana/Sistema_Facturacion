@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -24,9 +23,6 @@ class SaludSistemaTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @var array<int, string> */
-    private array $temporales = [];
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -35,12 +31,6 @@ class SaludSistemaTest extends TestCase
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->seed(CatalogosMhSeeder::class);
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ($this->temporales as $ruta) { @unlink($ruta); }
-        parent::tearDown();
     }
 
     private function usuario(string $rol): User
@@ -74,7 +64,7 @@ class SaludSistemaTest extends TestCase
             ->assertSee('Salud del sistema')
             ->assertSee('Estado general')
             ->assertSee('Seguridad')
-            ->assertSee('Backups')
+            ->assertSee('Diagnóstico operativo')
             ->assertSee('Datos principales')
             ->assertSee('Alertas de datos')
             ->assertSee('Auditoría reciente');
@@ -116,30 +106,28 @@ class SaludSistemaTest extends TestCase
             ->assertSee('Notas de crédito');
     }
 
-    // --- Backups ---
+    // --- Backup (vía DiagnosticoSistemaService: registro real en respaldo_ejecuciones) ---
 
-    public function test_detecta_backup_mas_reciente_si_existe(): void
+    public function test_detecta_backup_valido_de_hoy(): void
     {
-        $dir = storage_path('app'.DIRECTORY_SEPARATOR.'private'.DIRECTORY_SEPARATOR.config('backup.backup.name', config('app.name')));
-        File::ensureDirectoryExists($dir);
-        $zip = $dir.DIRECTORY_SEPARATOR.'2026-06-17-02-00-00.zip';
-        File::put($zip, 'contenido de prueba');
-        $this->temporales[] = $zip;
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
 
         $this->actingAs($this->usuario('administrador'))->ver()
             ->assertOk()
-            ->assertSee('2026-06-17-02-00-00.zip')
-            ->assertSee('Último backup');
+            ->assertSee('Backup del día')
+            ->assertSee('backup automático/manual válido de hoy');
     }
 
-    public function test_detecta_scripts_de_backup_existentes(): void
+    public function test_sin_backup_de_hoy_se_ve_critico(): void
     {
-        // Los scripts reales están en el repo (scripts\*.bat).
         $this->actingAs($this->usuario('administrador'))->ver()
             ->assertOk()
-            ->assertSee('scripts/backup-run.bat')
-            ->assertSee('scripts/backup-restore-test.bat')
-            ->assertSee('docs/BACKUPS_WINDOWS.md');
+            ->assertSee('Backup del día')
+            ->assertSee('No hay un backup válido registrado hoy');
     }
 
     // --- Alertas ---
@@ -189,5 +177,81 @@ class SaludSistemaTest extends TestCase
             ->assertOk()
             ->assertDontSee(config('app.key'))
             ->assertDontSee('DB_PASSWORD');
+    }
+
+    // --- Clasificación general: correcto / advertencia / crítico (vía DiagnosticoSistemaService) ---
+
+    public function test_diagnostico_operativo_todo_correcto(): void
+    {
+        // El banner GENERAL mezcla también "Seguridad" (APP_ENV/admins), que en
+        // cualquier entorno de pruebas o desarrollo casi nunca es 100% "correcto" (p.
+        // ej. APP_ENV nunca es 'production' fuera del servidor real — eso es
+        // información válida, no un bug). Esta prueba aísla el DIAGNÓSTICO OPERATIVO
+        // (el mismo que usa el Dashboard) y confirma que, con todo en verde, su nivel
+        // es 'correcto' sin ningún check individual en advertencia/crítico.
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+
+        $resp = $this->actingAs($this->usuario('administrador'))->ver()->assertOk();
+
+        $diagnostico = $resp->viewData('diagnostico');
+        $this->assertSame('correcto', $diagnostico['nivel'], implode(' | ', array_map(
+            fn ($c) => $c['clave'].'='.$c['nivel'], $diagnostico['checks']
+        )));
+    }
+
+    public function test_estado_general_advertencia_no_es_critico(): void
+    {
+        // Todo operativo en verde, pero un único administrador activo: eso es una
+        // advertencia real de seguridad (conviene tener respaldo), NUNCA crítico.
+        config(['app.debug' => false]);
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+        $admin = $this->usuario('administrador'); // único admin activo => advertencia de seguridad
+
+        $resp = $this->actingAs($admin)->ver()->assertOk();
+        $resp->assertSee('Administradores activos');
+        $resp->assertDontSee('Atención inmediata: hay un problema real que revisar');
+    }
+
+    public function test_estado_general_critico_por_backup_vencido(): void
+    {
+        \App\Support\WorkerHeartbeat::pulse();
+        // Sin ningún RespaldoEjecucion (nunca corrió el backup): crítico real.
+        $this->actingAs($this->usuario('administrador'))->ver()
+            ->assertOk()
+            ->assertSee('Atención inmediata: hay un problema real que revisar');
+    }
+
+    public function test_no_muestra_lenguaje_viejo_de_conta_p001(): void
+    {
+        $this->actingAs($this->usuario('administrador'))->ver()
+            ->assertOk()
+            ->assertDontSee('Conta Portable');
+    }
+
+    public function test_cola_vacia_o_transmision_deshabilitada_no_generan_falso_critico(): void
+    {
+        // Ambiente de desarrollo típico: transmisión deshabilitada, dry-run activo,
+        // cola vacía, worker activo, backup de hoy. Nada de esto debe ser "crítico".
+        config(['app.debug' => false, 'dte.transmision.enabled' => false, 'dte.transmision.dry_run' => true]);
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))->ver()
+            ->assertOk()
+            ->assertDontSee('Atención inmediata: hay un problema real que revisar');
     }
 }

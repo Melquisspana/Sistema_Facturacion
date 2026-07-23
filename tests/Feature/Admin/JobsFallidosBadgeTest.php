@@ -12,7 +12,8 @@ use Tests\TestCase;
 /**
  * Contador visible de trabajos fallidos en el navbar (badge junto a "Salud del sistema",
  * solo administradores) + su conteo en el panel Salud del sistema. Solo lectura de
- * failed_jobs: no reintenta ni borra; no afecta el estado general del panel.
+ * failed_jobs: no reintenta ni borra. SÍ afecta el estado general del panel (vía
+ * DiagnosticoSistemaService): failed_jobs > 0 es siempre un crítico real.
  */
 class JobsFallidosBadgeTest extends TestCase
 {
@@ -89,15 +90,17 @@ class JobsFallidosBadgeTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('admin.salud-sistema'))
             ->assertOk()
-            ->assertSee('Correos fallidos')
-            ->assertSee('4');
+            ->assertSee('Trabajos fallidos')
+            ->assertSee('Hay 4 trabajo(s) fallido(s)');
     }
 
-    public function test_los_fallidos_no_cambian_el_estado_general(): void
+    public function test_los_fallidos_ahora_hacen_critico_el_estado_general(): void
     {
-        // El estado general se calcula de seguridad/backups/alertas, no de la cola. Se
-        // compara el banner ANTES/DESPUÉS (no un texto fijo: depende de backups/admins,
-        // que varían según el entorno real de la máquina).
+        // Cambio de diseño deliberado (DiagnosticoSistemaService): failed_jobs > 0 es
+        // SIEMPRE un disparador de "atención inmediata" real, ya no un dato meramente
+        // informativo de la cola. Se aísla de APP_DEBUG (advertencia real aparte) para
+        // que la prueba sea sobre esto específicamente.
+        config(['app.debug' => false]);
         $admin = $this->usuario('administrador');
 
         $banner = function () use ($admin): string {
@@ -109,9 +112,9 @@ class JobsFallidosBadgeTest extends TestCase
 
         $antes = $banner();      // baseline (0 fallidos)
         $this->fallidos(5);
-        $despues = $banner();    // con fallidos: el general no cambia
+        $despues = $banner();    // con fallidos: ahora SÍ debe reflejar un problema real
 
         $this->assertNotSame('', $antes);
-        $this->assertSame($antes, $despues, 'Los jobs fallidos no deben alterar el banner general.');
+        $this->assertStringContainsString('Atención inmediata', $despues);
     }
 }
