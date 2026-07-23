@@ -47,6 +47,17 @@ return [
             'report' => false,
         ],
 
+        // Dumps `.sql` del backup diario (App\Console\Commands\BackupMysqlDiarioCommand).
+        // Carpeta backups/ en la raíz del proyecto (donde ya viven los dumps manuales
+        // existentes); NO se versiona en git. Distinto del disco 'local' de arriba
+        // (que spatie/laravel-backup usa para su propio zip completo app+BD).
+        'backups' => [
+            'driver' => 'local',
+            'root' => env('BACKUP_DIARIO_ROOT', base_path('backups')),
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

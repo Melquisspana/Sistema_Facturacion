@@ -188,3 +188,39 @@ Recomendado: mantener al menos **una copia off-site** y, si es posible, cifrar e
   ver sección 4).
 - Programación interna de Laravel (`routes/console.php`): ya existe; solo corre si
   alguna tarea de Windows ejecuta `schedule:run` (ver 4.3).
+
+---
+
+## 10. Backup diario VERIFICADO (nuevo, `backup:mysql-diario`)
+
+Aparte del zip de spatie (arriba), existe un mecanismo **nuevo y más estricto**,
+pensado específicamente para que el checklist de "Preparar emisión real" tenga una
+fuente confiable de "¿hay backup de hoy?":
+
+- Comando: `php artisan backup:mysql-diario` (`--origen=automatico|manual`).
+- Usa `mysqldump` directo (`--single-transaction --routines --triggers --events`),
+  **no** zip: guarda un `.sql` en `backups\` (raíz del proyecto) con prefijo `auto-`.
+- Verifica que el archivo exista, tenga tamaño > 0, y termine con la marca
+  `Dump completed` que `mysqldump` agrega al terminar bien (si algo falla, borra el
+  archivo parcial). Calcula SHA-256 y registra el resultado en la tabla
+  `respaldo_ejecuciones` (BD) — esa tabla, no el disco, es la fuente de verdad que
+  usa el readiness ("Backup del día listo").
+- Retención configurable (`BACKUP_DIARIO_DIAS_RETENCION`, default 30 días): borra
+  **solo** archivos `auto-*.sql` vencidos; nunca toca dumps manuales/protegidos ya
+  presentes en `backups\` (cualquier archivo sin ese prefijo).
+- La contraseña de BD **nunca** va en el argv del proceso: viaja por la variable de
+  entorno `MYSQL_PWD` del proceso hijo, y nunca se imprime ni se loguea.
+- Ejecutable manualmente como contingencia: `php artisan backup:mysql-diario --origen=manual`,
+  o desde el botón "Generar backup solo de BD" de la pantalla "Preparar emisión real".
+
+Script: `scripts\windows\backup-diario.bat`. Tarea programada
+**"DTE Backup Diario"** (diaria, 2:00 a.m.): se registra con
+`scripts\windows\registrar-tareas-windows.ps1` (ver `docs\WORKER_WINDOWS.md`), o a mano:
+```cmd
+schtasks /Create /TN "DTE Backup Diario" /TR "C:\laragon\www\Facturacion\scripts\windows\backup-diario.bat auto" /SC DAILY /ST 02:00 /RL HIGHEST /F
+```
+
+Este mecanismo es **independiente** del zip de spatie (sección 1-9): ambos pueden
+convivir. El zip de spatie sigue siendo útil como respaldo completo (app + BD); el
+`backup:mysql-diario` es el que el sistema usa para decidir si el checklist de
+producción está "listo".
