@@ -96,7 +96,14 @@ El diagnóstico distingue 4 casos (no solo "cola vacía sí/no"):
 ## 5. Desinstalar / revertir las tareas
 
 Si hay que revertir el registro de tareas (rollback de un despliegue, cambio de
-servidor, etc.), con PowerShell como Administrador:
+servidor, etc.), la vía rápida es el mismo script de registro con `-Desinstalar`
+(PowerShell como Administrador):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\registrar-tareas-windows.ps1 -Desinstalar
+```
+
+O manualmente, tarea por tarea:
 
 ```powershell
 Unregister-ScheduledTask -TaskName "DTE Queue Worker" -Confirm:$false

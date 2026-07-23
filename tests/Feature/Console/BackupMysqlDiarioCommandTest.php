@@ -7,6 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 /**
@@ -23,6 +24,9 @@ class BackupMysqlDiarioCommandTest extends TestCase
     {
         parent::setUp();
         Storage::fake('backups');
+        // Los reintentos ante fallo intermitente esperan segundos reales entre intentos:
+        // en tests la espera se simula para no alargar la suite.
+        Sleep::fake();
     }
 
     private function dumpValido(): string
@@ -92,6 +96,73 @@ class BackupMysqlDiarioCommandTest extends TestCase
         $this->assertFalse($r->exitoso);
         $this->assertStringContainsString('código 2', $r->mensaje);
         $this->assertEmpty(Storage::disk('backups')->allFiles());
+    }
+
+    public function test_fallo_con_exit_2_registra_el_stderr_para_diagnostico(): void
+    {
+        // El caso REAL intermitente: mysqldump no logra crear el socket TCP. Antes el
+        // registro solo decía "terminó con código 2" (indiagnosticable); ahora debe
+        // incluir el stderr para saber POR QUÉ falló.
+        Process::fake(['*' => Process::result(
+            output: '',
+            errorOutput: "mysqldump: Got error: 2004: Can't create TCP/IP socket (10106) when trying to connect",
+            exitCode: 2,
+        )]);
+
+        $this->artisan('backup:mysql-diario')->assertExitCode(1);
+
+        $r = RespaldoEjecucion::first();
+        $this->assertFalse($r->exitoso);
+        $this->assertStringContainsString('código 2', $r->mensaje);
+        $this->assertStringContainsString("Can't create TCP/IP socket", $r->mensaje);
+    }
+
+    public function test_stderr_registrado_nunca_contiene_la_contrasena(): void
+    {
+        config(['database.connections.mysql.password' => 'secreto-super-fake']);
+        // Defensa en profundidad: aunque mysqldump llegara a volcar la contraseña en
+        // stderr, el registro debe guardarla enmascarada.
+        Process::fake(['*' => Process::result(
+            output: '',
+            errorOutput: 'mysqldump: Access denied for user root using password secreto-super-fake',
+            exitCode: 2,
+        )]);
+
+        $this->artisan('backup:mysql-diario')->assertExitCode(1);
+
+        $r = RespaldoEjecucion::first();
+        $this->assertStringNotContainsString('secreto-super-fake', $r->mensaje);
+        $this->assertStringContainsString('[oculto]', $r->mensaje);
+    }
+
+    public function test_fallo_intermitente_se_recupera_con_reintento_automatico(): void
+    {
+        // Primer intento: fallo de socket (el caso intermitente); segundo: éxito. El
+        // backup debe terminar OK sin intervención manual y dejar rastro del reintento.
+        Process::fake(['*' => Process::sequence()
+            ->push(Process::result(output: '', errorOutput: "Can't create TCP/IP socket (10106)", exitCode: 2))
+            ->push(Process::result(output: $this->dumpValido(), exitCode: 0)),
+        ]);
+
+        $this->artisan('backup:mysql-diario')->assertExitCode(0);
+
+        $this->assertSame(1, RespaldoEjecucion::count());
+        $r = RespaldoEjecucion::first();
+        $this->assertTrue($r->exitoso);
+        $this->assertStringContainsString('reintento 2 exitoso', $r->mensaje);
+        Storage::disk('backups')->assertExists($r->archivo_ruta);
+    }
+
+    public function test_agota_los_reintentos_y_registra_un_solo_fallo(): void
+    {
+        config(['backup_diario.reintentos' => 2]);
+        Process::fake(['*' => Process::result(output: '', errorOutput: 'fallo persistente', exitCode: 2)]);
+
+        $this->artisan('backup:mysql-diario')->assertExitCode(1);
+
+        // Un solo registro de fallo (no uno por intento) y con la cantidad de intentos.
+        $this->assertSame(1, RespaldoEjecucion::count());
+        $this->assertStringContainsString('3 intento(s)', RespaldoEjecucion::first()->mensaje);
     }
 
     public function test_nunca_ejecuta_mysqldump_real_la_contrasena_no_va_en_el_argv(): void
