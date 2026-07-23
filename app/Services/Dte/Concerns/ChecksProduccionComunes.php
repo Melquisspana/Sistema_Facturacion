@@ -3,11 +3,10 @@
 namespace App\Services\Dte\Concerns;
 
 use App\Models\Configuracion;
-use App\Models\Correlativo;
 use App\Models\Dte;
+use App\Models\RespaldoEjecucion;
+use App\Support\Dte\CorrelativoSistemaNuevo;
 use App\Support\WorkerHeartbeat;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Checks de infraestructura de producción compartidos por los preflights de
@@ -34,20 +33,18 @@ trait ChecksProduccionComunes
     /** @return array{clave: string, label: string, ok: bool, detalle: string} */
     private function checkWorker(): array
     {
-        $worker = WorkerHeartbeat::estado();
-        $workerOk = ($worker['estado'] ?? null) === 'activo';
+        $worker = WorkerHeartbeat::diagnostico();
 
-        return $this->check('worker', 'Worker/cola activo', $workerOk,
-            $workerOk ? 'último pulso '.($worker['hace'] ?? '—') : 'worker apagado ('.($worker['estado'] ?? '—').')');
+        return $this->check('worker', 'Worker/cola activo', $worker['nivel'] === 'correcto', $worker['mensaje']);
     }
 
     /** @return array{clave: string, label: string, ok: bool, detalle: string} */
     private function checkBackup(): array
     {
-        $backupOk = $this->hayBackupDelDia();
+        $backupOk = RespaldoEjecucion::hayValidoHoy();
 
         return $this->check('backup', 'Backup del día listo', $backupOk,
-            $backupOk ? 'existe backup de hoy' : 'no hay backup de hoy');
+            $backupOk ? 'existe un backup automático/manual válido de hoy' : 'no hay un backup válido registrado hoy');
     }
 
     /**
@@ -88,22 +85,6 @@ trait ChecksProduccionComunes
             $credOk ? 'validadas' : 'sin validar (correr dte:auth-test --prod y confirmar)');
     }
 
-    private function hayBackupDelDia(): bool
-    {
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        foreach (Storage::disk('local')->files($nombre) as $archivo) {
-            if (! str_ends_with(strtolower($archivo), '.zip')) {
-                continue;
-            }
-            $ts = Storage::disk('local')->lastModified($archivo);
-            if (Carbon::createFromTimestamp($ts, config('app.timezone'))->isToday()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /** @return array{clave: string, label: string, ok: bool, detalle: string} */
     private function check(string $clave, string $label, bool $ok, string $detalle): array
     {
@@ -120,9 +101,8 @@ trait ChecksProduccionComunes
         if ($dte->numero_control) {
             return (int) preg_replace('/\D+/', '', substr($dte->numero_control, -15));
         }
-        $corr = Correlativo::where('tipo_dte', $tipoDte)->where('ambiente', '01')->where('activo', true)->first();
 
-        return (int) ($corr?->ultimo_numero ?? 0) + 1;
+        return (int) (CorrelativoSistemaNuevo::correlativo($tipoDte, '01')?->ultimo_numero ?? 0) + 1;
     }
 
     /**

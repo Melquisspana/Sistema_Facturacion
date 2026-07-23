@@ -61,9 +61,11 @@ class DtePreflightComandosTest extends TestCase
         Configuracion::set('produccion.auth_prod_validada', true);
         Configuracion::set('correo.auto_envio', false);
         WorkerHeartbeat::pulse();
-        Storage::fake('local');
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        Storage::disk('local')->put($nombre.'/hoy.zip', 'x');
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
         Http::fake([rtrim((string) config('dte.firmador.url'), '/').'/status' => Http::response('OK', 200)]);
     }
 

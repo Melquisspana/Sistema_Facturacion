@@ -735,8 +735,8 @@ class DteController extends Controller
         }
 
         // 2. Confirmación de revisión (casilla del modal) obligatoria — mismo mecanismo
-        // para los tres tipos; el texto en pantalla puede variar (Conta Portable es
-        // específico de CCF) pero la exigencia de marcarla es igual de estricta.
+        // para los tres tipos; el texto en pantalla puede variar levemente pero la
+        // exigencia de marcarla es igual de estricta.
         if (! $request->boolean('barrera_conta')) {
             return $volver->with('error', 'Confirmá la revisión del documento antes de emitir. No se hizo nada.');
         }

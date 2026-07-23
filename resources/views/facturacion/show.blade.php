@@ -535,17 +535,18 @@
                                     @php $esCcfModal = $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal; @endphp
                                     <h3 class="text-lg font-semibold text-rose-700">Confirmar emisión a PRODUCCIÓN</h3>
 
-                                    {{-- Número del documento a emitir + contexto. Para CCF distingue además el
-                                         último real de Conta Portable (reconciliación con el sistema externo);
-                                         los demás tipos no tienen ese sistema externo paralelo. --}}
+                                    {{-- Número del documento a emitir (correlativo del SISTEMA NUEVO, P002). Para
+                                         CCF se muestra además el último real en Conta Portable (P001) como dato
+                                         puramente INFORMATIVO — es una contingencia independiente, no participa
+                                         en el cálculo de este número ni requiere alinearse con ella. --}}
                                     <div class="mt-3 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4">
                                         <div class="text-center">
-                                            <p class="text-xs uppercase tracking-wide text-indigo-500">Documento actual a emitir</p>
+                                            <p class="text-xs uppercase tracking-wide text-indigo-500">Documento actual a emitir (sistema nuevo)</p>
                                             <p class="mt-0.5 text-4xl font-bold tabular-nums text-indigo-700">{{ $rp['documento_actual'] }}</p>
                                         </div>
                                         <dl class="mt-3 grid grid-cols-2 gap-2 border-t border-indigo-100 pt-3 text-xs text-gray-600">
                                             @if ($esCcfModal)
-                                                <div><dt class="text-gray-400">Último real externo/Conta</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] }}</dd></div>
+                                                <div><dt class="text-gray-400">Último real en Conta (P001, informativo)</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] }}</dd></div>
                                             @endif
                                             <div><dt class="text-gray-400">Próximo tras aceptar este</dt><dd class="font-semibold">{{ $rp['proximo_futuro'] }}</dd></div>
                                         </dl>
@@ -583,7 +584,7 @@
                                         <label class="flex items-start gap-2 text-sm text-gray-700">
                                             <input type="checkbox" name="barrera_conta" value="1" class="mt-0.5 rounded border-gray-300">
                                             @if ($esCcfModal)
-                                                <span>Confirmo que Conta Portable quedó detenido/alineado. Documento actual a emitir: {{ $rp['documento_actual'] }}. Último real externo/Conta: {{ $rp['externo_ultimo'] }}. Próximo después de aceptar este documento: {{ $rp['proximo_futuro'] }}.</span>
+                                                <span>Confirmo que revisé este documento (datos, totales y receptor) y que corresponde emitirlo en producción ahora, con el correlativo del sistema nuevo (P002). Documento actual a emitir: {{ $rp['documento_actual'] }}. Próximo después de aceptar este documento: {{ $rp['proximo_futuro'] }}.</span>
                                             @else
                                                 <span>Confirmo que revisé este documento (datos, totales y receptor) y que corresponde emitirlo en producción ahora. Documento actual a emitir: {{ $rp['documento_actual'] }}.</span>
                                             @endif
@@ -609,7 +610,7 @@
                 <script>
                     function dteConfirmarProduccion(form) {
                         if (!form.barrera_conta.checked) {
-                            alert('Marcá la confirmación de Conta Portable (barrera) antes de emitir.');
+                            alert('Marcá la confirmación de revisión antes de emitir.');
                             return false;
                         }
                         var val = ((form.confirmacion_emision && form.confirmacion_emision.value) || '').trim();

@@ -4,11 +4,10 @@ namespace App\Services\Dte;
 
 use App\Enums\TipoDte;
 use App\Models\Configuracion;
-use App\Models\Correlativo;
 use App\Models\Dte;
+use App\Models\RespaldoEjecucion;
+use App\Support\Dte\CorrelativoSistemaNuevo;
 use App\Support\WorkerHeartbeat;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Preflight de EMISIÓN REAL A PRODUCCIÓN de un CCF. SOLO LECTURA: no emite, no
@@ -37,29 +36,27 @@ class PreflightEmisionProduccion
         $checks[] = $this->check('ambiente', 'Ambiente producción (01) activo', $ambienteOk,
             $ambienteOk ? 'dte.ambiente=01' : 'dte.ambiente='.config('dte.ambiente').' (no es producción)');
 
-        // Correlativo alineado: el contador interno NO debe ir por detrás del último
-        // externo confirmado de Conta. El próximo operativo = max(interno, externo) + 1.
-        $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
-        $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->where('activo', true)->first();
-        $interno = (int) ($corr?->ultimo_numero ?? -1);
-        $operativoProximo = max($interno, $externo) + 1;
-        // OK si existe y el interno alcanzó/superó al externo (no está desalineado por detrás).
-        $corrOk = $corr !== null && $interno >= $externo;
-        $checks[] = $this->check('correlativo', "Próximo correlativo CCF producción = {$operativoProximo}", $corrOk,
-            $corr ? "interno {$interno} · externo {$externo} · próximo {$operativoProximo}"
-                    .($corrOk ? '' : ' (Conta va por delante: alinear)')
-                  : 'no hay correlativo de producción');
+        // Correlativo del SISTEMA NUEVO (punto de venta predeterminado, hoy P002).
+        // Conta Portable (P001) es una contingencia INDEPENDIENTE: ya no se compara ni
+        // se exige "alinear" contra ella para poder emitir.
+        $corr = CorrelativoSistemaNuevo::correlativo('03', '01');
+        $proximo = CorrelativoSistemaNuevo::proximoNumero('03', '01');
+        $corrOk = $corr !== null;
+        $checks[] = $this->check('correlativo', $corrOk ? "Próximo correlativo CCF producción (sistema nuevo) = {$proximo}" : 'Correlativo CCF producción (sistema nuevo)', $corrOk,
+            $corrOk ? "P002 · último {$corr->ultimo_numero} · próximo {$proximo}"
+                : 'no se encontró correlativo activo de producción para el punto de venta predeterminado (P002)');
 
-        // Worker/cola activo (heartbeat).
-        $worker = WorkerHeartbeat::estado();
-        $workerOk = ($worker['estado'] ?? null) === 'activo';
-        $checks[] = $this->check('worker', 'Worker/cola activo', $workerOk,
-            $workerOk ? 'último pulso '.($worker['hace'] ?? '—') : 'worker apagado ('.($worker['estado'] ?? '—').')');
+        // Worker/cola: diagnóstico combinado (heartbeat + jobs pendientes/fallidos), no
+        // solo "cola vacía sí/no". Ver WorkerHeartbeat::diagnostico().
+        $worker = WorkerHeartbeat::diagnostico();
+        $workerOk = $worker['nivel'] === 'correcto';
+        $checks[] = $this->check('worker', 'Worker/cola activo', $workerOk, $worker['mensaje']);
 
-        // Backup del día (mismo disco/nombre que spatie/laravel-backup).
-        $backupOk = $this->hayBackupDelDia();
+        // Backup del día: registro real del backup diario verificado (respaldo_ejecuciones),
+        // no un escaneo de archivos por fecha de modificación.
+        $backupOk = RespaldoEjecucion::hayValidoHoy();
         $checks[] = $this->check('backup', 'Backup del día listo', $backupOk,
-            $backupOk ? 'existe backup de hoy' : 'no hay backup de hoy');
+            $backupOk ? 'existe un backup automático/manual válido de hoy' : 'no hay un backup válido registrado hoy');
 
         // Firmador activo (health check EN VIVO) — solo en ambiente producción, para no
         // pegarle al firmador en modo paralelo/render normal.
@@ -111,25 +108,27 @@ class PreflightEmisionProduccion
      */
     public function resumen(Dte $dte): array
     {
-        $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
-        $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->where('activo', true)->first();
+        // Correlativo del SISTEMA NUEVO (P002). Conta (P001) se muestra aparte, solo
+        // informativo, y ya no participa en el cálculo del número de este documento.
+        $corr = CorrelativoSistemaNuevo::correlativo('03', '01');
         $interno = (int) ($corr?->ultimo_numero ?? 0);
-        // Último operativo = max(interno, externo).
-        $operativoUltimo = max($interno, $externo);
+        $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
 
         // Número del documento que ESTA acción va a emitir: si el CCF ya fue generado (ya
-        // tiene numeroControl reservado), es el SUYO propio — no "operativo + 1", porque
+        // tiene numeroControl reservado), es el SUYO propio — no "interno + 1", porque
         // ese número ya fue consumido cuando se generó. Si todavía es borrador, sí es el
-        // próximo que el correlativo asignará al generarlo ahora.
+        // próximo que el correlativo de P002 asignará al generarlo ahora.
         $documentoActual = $dte->numero_control
             ? (int) preg_replace('/\D+/', '', substr($dte->numero_control, -15))
-            : $operativoUltimo + 1;
+            : $interno + 1;
 
         return [
             'cliente' => $dte->cliente?->nombre,
             'sala' => $dte->clienteSucursal?->nombre,
             'oc' => $dte->numero_orden_compra,
-            'operativo_ultimo' => $operativoUltimo,
+            'operativo_ultimo' => $interno,
+            // Informativo únicamente (Conta Portable, contingencia independiente):
+            // ya NO se usa para calcular documento_actual/proximo_futuro.
             'externo_ultimo' => $externo,
             'documento_actual' => $documentoActual,
             'proximo_futuro' => $documentoActual + 1,
@@ -150,26 +149,6 @@ class PreflightEmisionProduccion
             'url_efectiva' => (string) config('dte.transmision.url_base'),
             'certificado_esperado' => (string) config('dte.transmision.ambiente') === 'produccion' ? 'Producción' : 'Pruebas',
         ];
-    }
-
-    private function hayBackupDelDia(): bool
-    {
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        foreach (Storage::disk('local')->files($nombre) as $archivo) {
-            if (! str_ends_with(strtolower($archivo), '.zip')) {
-                continue;
-            }
-            $ts = Storage::disk('local')->lastModified($archivo);
-            // OJO: sin la timezone de la app, createFromTimestamp() interpreta el epoch en
-            // UTC y isToday() compara contra "hoy" en UTC, no en America/El_Salvador — un
-            // backup real de hoy (hecho después de las 6pm hora local) queda marcado como
-            // "no es de hoy" porque en UTC ya es el día siguiente.
-            if (Carbon::createFromTimestamp($ts, config('app.timezone'))->isToday()) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

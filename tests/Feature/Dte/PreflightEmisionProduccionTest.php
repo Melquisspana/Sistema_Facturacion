@@ -80,9 +80,11 @@ class PreflightEmisionProduccionTest extends TestCase
             'ambiente' => '01', 'serie' => null, 'ultimo_numero' => 1093, 'activo' => true,
         ]);
         WorkerHeartbeat::pulse();
-        Storage::fake('local');
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        Storage::disk('local')->put($nombre.'/hoy.zip', 'x');
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
         Http::fake([rtrim((string) config('dte.firmador.url'), '/').'/status' => Http::response('OK', 200)]);
     }
 
@@ -113,14 +115,24 @@ class PreflightEmisionProduccionTest extends TestCase
         $this->assertContains('Ambiente producción (01) activo', $r['faltantes']);
     }
 
-    public function test_bloquea_si_correlativo_no_es_1094(): void
+    public function test_no_exige_alineacion_con_conta_solo_que_exista_correlativo_de_p002(): void
     {
+        // El correlativo de P002 (sistema nuevo) es independiente de Conta Portable
+        // (P001): ya no se compara contra "produccion.ultimo_ccf_externo" ni se exige
+        // "alinear". Un número interno bajo (ej. 1078) YA NO bloquea nada por sí solo.
         $this->todoVerde();
-        // Correlativo desalineado (último 1078 → próximo 1079, no 1094).
         Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->update(['ultimo_numero' => 1078]);
         $r = $this->evaluar($this->ccf());
+        $this->assertTrue($r['puede'], 'Faltantes: '.implode(', ', $r['faltantes']));
+    }
+
+    public function test_bloquea_si_no_hay_correlativo_activo_de_produccion(): void
+    {
+        $this->todoVerde();
+        Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->update(['activo' => false]);
+        $r = $this->evaluar($this->ccf());
         $this->assertFalse($r['puede']);
-        $this->assertContains('Próximo correlativo CCF producción = 1094', $r['faltantes']);
+        $this->assertContains('Correlativo CCF producción (sistema nuevo)', $r['faltantes']);
     }
 
     public function test_bloquea_si_worker_apagado(): void
@@ -134,40 +146,26 @@ class PreflightEmisionProduccionTest extends TestCase
 
     public function test_bloquea_si_no_hay_backup_del_dia(): void
     {
+        // todoVerde() ya registró un backup válido de hoy: lo marcamos fallido para
+        // dejar el check en rojo, sin tocar archivos (fuente de verdad = BD).
         $this->todoVerde();
-        Storage::fake('local'); // borra el zip de hoy
+        \App\Models\RespaldoEjecucion::query()->update(['exitoso' => false]);
         $r = $this->evaluar($this->ccf());
         $this->assertFalse($r['puede']);
         $this->assertContains('Backup del día listo', $r['faltantes']);
     }
 
-    public function test_backup_de_hoy_en_la_noche_se_detecta_aunque_en_utc_ya_sea_manana(): void
+    public function test_backup_valido_de_ayer_no_cuenta_como_de_hoy(): void
     {
-        // Bug real: America/El_Salvador es UTC-6. Un backup hecho a las 10am local (16:00
-        // UTC, mismo día) y evaluado a las 9pm local (03:00 UTC del día SIGUIENTE) debía
-        // seguir contando como "de hoy" en hora local, pero Carbon::createFromTimestamp()
-        // sin timezone comparaba "hoy" en UTC y lo marcaba como de ayer.
-        //
-        // "Ahora" se congela ANTES de armar el resto del fixture (todoVerde() marca el
-        // pulso del worker con now()): así el pulso queda consistente con el "hoy" de este
-        // test y no falla por un umbral de heartbeat no relacionado.
-        Carbon::setTestNow(Carbon::create(2026, 7, 14, 21, 0, 0, 'America/El_Salvador'));
+        // Regresión: la fuente de verdad es el registro en BD (respaldo_ejecuciones),
+        // no un escaneo de archivos por fecha de modificación (ver RespaldoEjecucionTest
+        // para la cobertura de zona horaria de app.timezone).
+        $this->todoVerde();
+        \App\Models\RespaldoEjecucion::query()->update(['terminado_en' => now()->subDay()]);
 
-        try {
-            $this->todoVerde();
-            Storage::fake('local'); // limpia el disco fake: solo queremos el backup de este test
-
-            $nombre = (string) config('backup.backup.name', config('app.name'));
-            Storage::disk('local')->put($nombre.'/hoy-de-manana.zip', 'x');
-            $mananaLocal = Carbon::create(2026, 7, 14, 10, 0, 0, 'America/El_Salvador');
-            touch(Storage::disk('local')->path($nombre.'/hoy-de-manana.zip'), $mananaLocal->timestamp);
-
-            $r = $this->evaluar($this->ccf());
-            $this->assertTrue($r['puede'], 'Faltantes: '.implode(', ', $r['faltantes']));
-            $this->assertNotContains('Backup del día listo', $r['faltantes']);
-        } finally {
-            Carbon::setTestNow(); // no filtrar el tiempo congelado a otros tests
-        }
+        $r = $this->evaluar($this->ccf());
+        $this->assertFalse($r['puede']);
+        $this->assertContains('Backup del día listo', $r['faltantes']);
     }
 
     public function test_bloquea_si_firmador_apagado(): void

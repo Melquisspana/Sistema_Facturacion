@@ -68,9 +68,11 @@ class PreflightEmisionProduccionFacturaTest extends TestCase
             'ambiente' => '01', 'ultimo_numero' => 0, 'activo' => true,
         ]);
         WorkerHeartbeat::pulse();
-        Storage::fake('local');
-        $nombre = (string) config('backup.backup.name', config('app.name'));
-        Storage::disk('local')->put($nombre.'/hoy.zip', 'x');
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
         Http::fake([rtrim((string) config('dte.firmador.url'), '/').'/status' => Http::response('OK', 200)]);
     }
 
@@ -112,7 +114,7 @@ class PreflightEmisionProduccionFacturaTest extends TestCase
         $r = $this->evaluar($this->facturaBorrador(null, '100.00'));
 
         $this->assertFalse($r['puede']);
-        $this->assertContains('Correlativo Factura producción existe', $r['faltantes']);
+        $this->assertContains('Correlativo Factura producción (P002) existe', $r['faltantes']);
     }
 
     public function test_bloquea_si_worker_apagado(): void
@@ -128,7 +130,7 @@ class PreflightEmisionProduccionFacturaTest extends TestCase
     public function test_bloquea_si_no_hay_backup_del_dia(): void
     {
         $this->todoVerde();
-        Storage::fake('local');
+        \App\Models\RespaldoEjecucion::query()->update(['exitoso' => false]);
         $r = $this->evaluar($this->facturaBorrador(null, '100.00'));
 
         $this->assertFalse($r['puede']);
