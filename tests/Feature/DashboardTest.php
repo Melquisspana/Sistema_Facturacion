@@ -319,6 +319,68 @@ class DashboardTest extends TestCase
             ->assertOk()->assertSee('Atención inmediata');
     }
 
+    public function test_estado_critico_muestra_el_motivo_no_solo_atencion_inmediata(): void
+    {
+        // El caso real reportado: solo "Atención inmediata" sin decir POR QUÉ obligaba a
+        // adivinar cuál de los 10 checks disparó la alerta. Sin backup de hoy, el badge
+        // debe nombrar el check crítico.
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Atención inmediata')
+            ->assertSee('1 problema crítico: Backup del día');
+    }
+
+    public function test_varios_criticos_se_enumeran_en_el_motivo(): void
+    {
+        // Sin backup de hoy + un job fallido: varios críticos (jobs fallidos, backup, y
+        // el worker también pasa a crítico con failed_jobs > 0), todos nombrados. No se
+        // fija el número exacto para no acoplar el test al detalle de cada check.
+        \Illuminate\Support\Facades\DB::table('failed_jobs')->insert([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+            'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
+        ]);
+
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        $resp->assertSee('problemas críticos:');
+        $resp->assertSee('Trabajos fallidos');
+        $resp->assertSee('Backup del día');
+    }
+
+    public function test_sin_criticos_no_se_muestra_motivo(): void
+    {
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()->assertDontSee('problema crítico');
+    }
+
+    public function test_backup_manual_fallido_no_deja_critico_si_hay_otro_valido_hoy(): void
+    {
+        // El caso real de hoy: dos intentos manuales fallidos (error intermitente de
+        // socket) + un backup exitoso el mismo día. El sistema NO debe quedar en
+        // "Atención inmediata": hay un backup válido del día.
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => false,
+            'archivo_ruta' => null, 'archivo_tamano_bytes' => null,
+            'sha256' => null, 'mensaje' => 'mysqldump terminó con código 2.', 'origen' => 'manual',
+        ]);
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-hoy.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('b', 64), 'mensaje' => 'ok', 'origen' => 'manual',
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()->assertDontSee('Atención inmediata');
+    }
+
     // ---------- Rutas existentes siguen funcionando ----------
 
     public function test_rutas_de_navegacion_existentes_siguen_respondiendo(): void
