@@ -2,6 +2,8 @@
     $colorEstado = ['ok' => 'bg-green-100 text-green-700', 'advertencia' => 'bg-amber-100 text-amber-700', 'critico' => 'bg-rose-100 text-rose-700'];
     $textoEstado = ['ok' => 'Todo en orden', 'advertencia' => 'Requiere atención', 'critico' => 'Atención inmediata'];
     $card = 'bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-4 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
+    // El diagnóstico usa 'correcto' (no 'ok'); se traduce solo para reusar $colorEstado.
+    $colorDiagnostico = ['correcto' => $colorEstado['ok'], 'advertencia' => $colorEstado['advertencia'], 'critico' => $colorEstado['critico']];
 @endphp
 <x-app-layout>
     <x-slot name="header">
@@ -166,6 +168,24 @@
                             @if ($estadoTecnico['modo'])
                                 <p class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-400 dark:border-ink-700 dark:text-paper-500">{{ $estadoTecnico['modo']['detalle'] }}</p>
                             @endif
+                        </div>
+                    @endif
+
+                    {{-- F: Diagnóstico del sistema (por qué el badge de arriba dice lo que dice) --}}
+                    @if ($diagnostico)
+                        <div class="{{ $card }}">
+                            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">Diagnóstico</h3>
+                            <ul class="space-y-2 text-sm">
+                                @foreach ($diagnostico['checks'] as $c)
+                                    <li class="flex items-start justify-between gap-2">
+                                        <span class="text-gray-600 dark:text-paper-300">{{ $c['label'] }}</span>
+                                        <span class="shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold {{ $colorDiagnostico[$c['nivel']] ?? $colorDiagnostico['advertencia'] }}"
+                                              title="{{ $c['detalle'] }}">
+                                            {{ ucfirst($c['nivel']) }}
+                                        </span>
+                                    </li>
+                                @endforeach
+                            </ul>
                         </div>
                     @endif
                 </div>
