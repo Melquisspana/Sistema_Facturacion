@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Latido (heartbeat) del worker de colas. Cada iteración del daemon `queue:work`
@@ -70,5 +71,48 @@ class WorkerHeartbeat
     {
         self::$ultimoPulsoProceso = null;
         Cache::forget(self::CACHE_KEY);
+    }
+
+    /**
+     * Diagnóstico de 4 estados: combina el heartbeat con `jobs`/`failed_jobs` para NO
+     * depender solamente de "la cola está vacía" ni decir "apagado" cuando no hay forma
+     * confiable de comprobarlo. Reglas (en orden):
+     *  - `jobs_fallidos > 0` → SIEMPRE `critico` (hay evidencia real de un problema),
+     *    sin importar el resto.
+     *  - heartbeat `activo` → `correcto` (con o sin trabajos pendientes).
+     *  - `inactivo` + pendientes > 0 → `critico` (el worker parece haberse detenido
+     *    justo con trabajo esperando).
+     *  - `inactivo` + cola vacía → `advertencia` (no urgente: no hay nada esperando).
+     *  - `sin_datos` + pendientes > 0 → `critico` (nadie confirma que se estén
+     *    procesando esos trabajos).
+     *  - `sin_datos` + cola vacía → `advertencia`, nunca "apagado" ni verde falso: se
+     *    explicita que no hay manera confiable de confirmarlo todavía.
+     *
+     * @return array{estado: string, ultimo: ?Carbon, hace: ?string, jobs_pendientes: int, jobs_fallidos: int, nivel: string, mensaje: string}
+     */
+    public static function diagnostico(): array
+    {
+        $hb = self::estado();
+        $pendientes = (int) DB::table('jobs')->count();
+        $fallidos = (int) DB::table('failed_jobs')->count();
+
+        [$nivel, $mensaje] = match (true) {
+            $fallidos > 0 => ['critico', "Hay {$fallidos} trabajo(s) fallido(s) en failed_jobs: revisar antes de continuar."],
+            $hb['estado'] === 'activo' => ['correcto', 'Worker activo — último pulso '.$hb['hace'].'.'],
+            $hb['estado'] === 'inactivo' && $pendientes > 0 => ['critico', 'El worker parece detenido y hay '.$pendientes.' trabajo(s) esperando en la cola.'],
+            $hb['estado'] === 'inactivo' => ['advertencia', 'El worker parece detenido (último pulso '.$hb['hace'].'), pero la cola está vacía: no es urgente.'],
+            $hb['estado'] === 'sin_datos' && $pendientes > 0 => ['critico', 'No hay heartbeat del worker y hay '.$pendientes.' trabajo(s) esperando: verificar que esté corriendo.'],
+            default => ['advertencia', 'Sin datos de actividad reciente del worker; la cola está vacía. No hay una forma confiable de confirmar si está corriendo o no todavía.'],
+        };
+
+        return [
+            'estado' => $hb['estado'],
+            'ultimo' => $hb['ultimo'],
+            'hace' => $hb['hace'],
+            'jobs_pendientes' => $pendientes,
+            'jobs_fallidos' => $fallidos,
+            'nivel' => $nivel,
+            'mensaje' => $mensaje,
+        ];
     }
 }

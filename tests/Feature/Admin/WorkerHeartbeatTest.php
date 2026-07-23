@@ -6,6 +6,7 @@ use App\Support\WorkerHeartbeat;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -114,5 +115,85 @@ class WorkerHeartbeatTest extends TestCase
             ->get(route('admin.salud-sistema'))
             ->assertOk()
             ->assertSee('Sin datos todavía');
+    }
+
+    // --- diagnostico(): combina heartbeat + jobs/failed_jobs en 4 estados, sin ---
+    // --- depender solamente de "la cola está vacía". ---
+
+    public function test_diagnostico_activo_es_correcto_con_o_sin_pendientes(): void
+    {
+        WorkerHeartbeat::pulse();
+        DB::table('jobs')->insert($this->jobFake());
+
+        $d = WorkerHeartbeat::diagnostico();
+
+        $this->assertSame('activo', $d['estado']);
+        $this->assertSame('correcto', $d['nivel']);
+        $this->assertSame(1, $d['jobs_pendientes']);
+    }
+
+    public function test_diagnostico_inactivo_con_pendientes_es_critico(): void
+    {
+        Cache::put(self::KEY, now()->subMinutes(10)->getTimestamp(), now()->addDay());
+        DB::table('jobs')->insert($this->jobFake());
+
+        $d = WorkerHeartbeat::diagnostico();
+
+        $this->assertSame('inactivo', $d['estado']);
+        $this->assertSame('critico', $d['nivel']);
+        $this->assertStringContainsString('esperando', $d['mensaje']);
+    }
+
+    public function test_diagnostico_inactivo_con_cola_vacia_es_advertencia_no_critico(): void
+    {
+        Cache::put(self::KEY, now()->subMinutes(10)->getTimestamp(), now()->addDay());
+
+        $d = WorkerHeartbeat::diagnostico();
+
+        $this->assertSame('inactivo', $d['estado']);
+        $this->assertSame('advertencia', $d['nivel']);
+    }
+
+    public function test_diagnostico_sin_datos_con_cola_vacia_es_advertencia_nunca_apagado_ni_verde_falso(): void
+    {
+        $d = WorkerHeartbeat::diagnostico();
+
+        $this->assertSame('sin_datos', $d['estado']);
+        $this->assertSame('advertencia', $d['nivel']);
+        $this->assertStringNotContainsString('apagado', $d['mensaje']);
+        $this->assertStringContainsString('no hay una forma confiable', mb_strtolower($d['mensaje']));
+    }
+
+    public function test_diagnostico_sin_datos_con_pendientes_es_critico(): void
+    {
+        DB::table('jobs')->insert($this->jobFake());
+
+        $d = WorkerHeartbeat::diagnostico();
+
+        $this->assertSame('sin_datos', $d['estado']);
+        $this->assertSame('critico', $d['nivel']);
+    }
+
+    public function test_diagnostico_jobs_fallidos_es_siempre_critico_aunque_worker_este_activo(): void
+    {
+        WorkerHeartbeat::pulse();
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+            'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
+        ]);
+
+        $d = WorkerHeartbeat::diagnostico();
+
+        $this->assertSame('critico', $d['nivel']);
+        $this->assertSame(1, $d['jobs_fallidos']);
+    }
+
+    /** @return array<string, mixed> */
+    private function jobFake(): array
+    {
+        return [
+            'queue' => 'default', 'payload' => '{}', 'attempts' => 0,
+            'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp(),
+        ];
     }
 }
