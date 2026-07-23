@@ -101,6 +101,17 @@
                                 {{ __('Log Out') }}
                             </x-dropdown-link>
                         </form>
+                        {{-- Cierre COMPLETO (Laravel + Cloudflare Access): solo tiene sentido en el
+                             dominio público protegido por Access; en hosts locales no se muestra. --}}
+                        @if (config('cloudflare_access.enabled') && strcasecmp(request()->getHost(), (string) config('cloudflare_access.allowed_host')) === 0)
+                            <form method="POST" action="{{ route('logout.completo') }}">
+                                @csrf
+                                <x-dropdown-link :href="route('logout.completo')"
+                                        onclick="event.preventDefault(); this.closest('form').submit();">
+                                    Cerrar sesión (también Cloudflare)
+                                </x-dropdown-link>
+                            </form>
+                        @endif
                     </x-slot>
                 </x-dropdown>
             </div>
