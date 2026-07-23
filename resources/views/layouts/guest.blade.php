@@ -23,7 +23,7 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <style>[x-cloak]{display:none !important;}</style>
     </head>
-    <body class="font-sans text-gray-900 antialiased dark:text-paper-100">
+    <body class="min-h-screen bg-gray-100 font-sans text-gray-900 antialiased dark:bg-ink-950 dark:text-paper-100">
         <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100 dark:bg-ink-950">
             <div class="flex items-center gap-2">
                 <a href="/">

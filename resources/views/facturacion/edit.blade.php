@@ -233,7 +233,11 @@
                         @if (count($productosDisponibles) === 0)
                             <p class="text-sm text-gray-400">No hay productos activos para agregar.</p>
                         @else
-                            <div class="overflow-x-auto max-h-[70vh] overflow-y-auto border border-gray-100 rounded-md">
+                            {{-- "relative": ancla aquí los <label class="sr-only"> de cada fila (uno
+                                 por input de cantidad) para que el contenedor los recorte con su
+                                 propio scroll, en vez de escaparse y estirar el alto real del
+                                 documento completo (causaba una franja blanca al final de la página). --}}
+                            <div class="relative overflow-x-auto max-h-[70vh] overflow-y-auto border border-gray-100 rounded-md">
                                 <table class="min-w-full divide-y divide-gray-200 text-sm">
                                     <thead class="bg-gray-50 sticky top-0 z-10">
                                         <tr class="text-left text-gray-500">

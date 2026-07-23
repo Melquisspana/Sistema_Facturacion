@@ -26,8 +26,11 @@
         </div>
 
         {{-- Lista con scroll propio: con muchos productos, el bloque de totales y el botón de
-             abajo quedan siempre visibles (el panel es sticky) sin tener que bajar. --}}
-        <ul class="divide-y divide-gray-100 -mx-1 max-h-[45vh] overflow-y-auto pr-1">
+             abajo quedan siempre visibles (el panel es sticky) sin tener que bajar.
+             "relative": ancla aquí los <label class="sr-only"> de cada línea para que este
+             contenedor los recorte con su propio scroll, en vez de escaparse y estirar el
+             alto real del documento completo. --}}
+        <ul class="relative divide-y divide-gray-100 -mx-1 max-h-[45vh] overflow-y-auto pr-1">
             @forelse ($lineasOrdenadas as $linea)
                 @php
                     $esLibreFex = $esFex && $linea->producto_id === null;
