@@ -99,6 +99,45 @@ class ExportacionArchivadaTest extends TestCase
         $resp->assertSee('Prueba APITEST / Archivada');
     }
 
+    public function test_filtro_archivadas_muestra_solo_las_archivadas(): void
+    {
+        $this->lista(['cliente_nombre' => 'CLIENTE ACTIVO FILTRO']);
+        $this->lista(['cliente_nombre' => 'CLIENTE ARCHIVADO FILTRO', 'archivada' => true, 'archivada_en' => now()]);
+
+        $resp = $this->actingAs($this->usuario())
+            ->get(route('exportaciones.index', ['filtro' => 'archivadas']))
+            ->assertOk();
+
+        $resp->assertSee('CLIENTE ARCHIVADO FILTRO');
+        $resp->assertDontSee('CLIENTE ACTIVO FILTRO');
+    }
+
+    public function test_filtro_todas_muestra_activas_y_archivadas(): void
+    {
+        $this->lista(['cliente_nombre' => 'CLIENTE ACTIVO FILTRO']);
+        $this->lista(['cliente_nombre' => 'CLIENTE ARCHIVADO FILTRO', 'archivada' => true, 'archivada_en' => now()]);
+
+        $resp = $this->actingAs($this->usuario())
+            ->get(route('exportaciones.index', ['filtro' => 'todas']))
+            ->assertOk();
+
+        $resp->assertSee('CLIENTE ACTIVO FILTRO');
+        $resp->assertSee('CLIENTE ARCHIVADO FILTRO');
+    }
+
+    public function test_filtro_invalido_cae_al_default_activas(): void
+    {
+        $this->lista(['cliente_nombre' => 'CLIENTE ACTIVO FILTRO']);
+        $this->lista(['cliente_nombre' => 'CLIENTE ARCHIVADO FILTRO', 'archivada' => true, 'archivada_en' => now()]);
+
+        $resp = $this->actingAs($this->usuario())
+            ->get(route('exportaciones.index', ['filtro' => 'lo-que-sea']))
+            ->assertOk();
+
+        $resp->assertSee('CLIENTE ACTIVO FILTRO');
+        $resp->assertDontSee('CLIENTE ARCHIVADO FILTRO');
+    }
+
     public function test_lista_archivada_sigue_accesible_por_url_directa(): void
     {
         $archivada = $this->lista(['archivada' => true, 'archivada_en' => now()]);
