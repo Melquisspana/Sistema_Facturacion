@@ -9,6 +9,7 @@ use App\Models\Dte;
 use App\Models\DocumentoRecibido;
 use App\Models\Exportacion;
 use App\Services\Dte\DteTransmisionService;
+use App\Services\Sistema\DiagnosticoSistemaService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -28,7 +29,7 @@ use Illuminate\View\View;
  */
 class DashboardController extends Controller
 {
-    public function index(Request $request, DteTransmisionService $transmision): View
+    public function index(Request $request, DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService): View
     {
         $usuario = $request->user();
         $esAdmin = (bool) $usuario->hasRole('administrador');
@@ -50,7 +51,17 @@ class DashboardController extends Controller
         $worker = WorkerHeartbeat::estado();
         $modo = $esGestorDte ? $transmision->estadoOperativo() : null;
         $estadoTecnico = $esGestorDte ? $this->estadoTecnico($modo, $worker, $jobsPendientes, $jobsFallidos) : null;
-        $estadoGeneral = $this->estadoGeneral($modo, $worker, $jobsFallidos);
+
+        // Diagnóstico real (BD, worker, backup, firmador, transmisión, correlativos
+        // P002, storage, migraciones): reemplaza el semáforo anterior, que solo miraba
+        // estadoOperativo()+worker+jobsFallidos (y este último apenas como advertencia).
+        // Nunca hace red: ver DiagnosticoSistemaService.
+        $diagnostico = $diagnosticoService->evaluar();
+        $estadoGeneral = match ($diagnostico['nivel']) {
+            'critico' => 'critico',
+            'advertencia' => 'advertencia',
+            default => 'ok',
+        };
 
         return view('dashboard', [
             'saludo' => $this->saludo(),
@@ -58,6 +69,7 @@ class DashboardController extends Controller
             'actividad' => $actividad,
             'estadoTecnico' => $estadoTecnico,
             'estadoGeneral' => $estadoGeneral,
+            'diagnostico' => $esGestorDte ? $diagnostico : null,
             'esAdmin' => $esAdmin,
             'esGestorDte' => $esGestorDte,
             'veOperativos' => $veOperativos,
@@ -145,27 +157,5 @@ class DashboardController extends Controller
             'firma_mock' => (bool) config('dte.firma.mock'),
             'modo' => $modo,
         ];
-    }
-
-    /**
-     * Semáforo general de la tarjeta "Estado del sistema": reutiliza EXACTAMENTE
-     * el mismo color que ya calcula DteTransmisionService::estadoOperativo() para
-     * el badge del topbar (nunca se reinterpreta ese criterio acá), sumando el
-     * worker y los jobs fallidos como señales adicionales de advertencia.
-     *
-     * @param  array<string, mixed>|null  $modo
-     * @param  array<string, mixed>  $worker
-     */
-    private function estadoGeneral(?array $modo, array $worker, int $jobsFallidos): string
-    {
-        if (($modo['color'] ?? null) === 'critico') {
-            return 'critico';
-        }
-
-        if (($modo['color'] ?? null) === 'advertencia' || $worker['estado'] === 'inactivo' || $jobsFallidos > 0) {
-            return 'advertencia';
-        }
-
-        return 'ok';
     }
 }

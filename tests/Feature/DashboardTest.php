@@ -183,6 +183,54 @@ class DashboardTest extends TestCase
         $this->assertTrue((bool) config('dte.transmision.dry_run'), 'DTE_TRANSMISION_DRY_RUN debe seguir activo.');
     }
 
+    // ---------- Diagnóstico real (Parte 4: dashboard y "atención inmediata") ----------
+
+    public function test_gestor_ve_el_bloque_de_diagnostico_consulta_no(): void
+    {
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()->assertSee('Diagnóstico');
+        $this->actingAs($this->usuario('consulta'))->get(route('dashboard'))
+            ->assertOk()->assertDontSee('Diagnóstico');
+    }
+
+    public function test_todo_en_orden_sin_datos_ni_problemas_reales(): void
+    {
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()->assertSee('Todo en orden');
+    }
+
+    public function test_failed_jobs_muestra_atencion_inmediata(): void
+    {
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+        \Illuminate\Support\Facades\DB::table('failed_jobs')->insert([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+            'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()->assertSee('Atención inmediata');
+    }
+
+    public function test_backup_vencido_muestra_atencion_inmediata_pero_cola_vacia_no(): void
+    {
+        // Sin ningún RespaldoEjecucion (nunca corrió el backup): crítico por backup,
+        // NO por cola vacía (el worker sin datos + cola vacía es solo advertencia).
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()->assertSee('Atención inmediata');
+    }
+
     // ---------- Rutas existentes siguen funcionando ----------
 
     public function test_rutas_de_navegacion_existentes_siguen_respondiendo(): void
