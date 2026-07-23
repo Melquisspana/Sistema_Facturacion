@@ -41,9 +41,9 @@ class DteTransmisionEstadoOperativoTest extends TestCase
         $this->assertFalse($estado['transmision_real_posible']);
     }
 
-    public function test_produccion_con_todos_los_candados_abiertos_es_critico_rojo(): void
+    public function test_produccion_principal_con_todos_los_candados_abiertos_es_estado_correcto(): void
     {
-        // ÚNICO caso de alerta roja: transmisión real a PRODUCCIÓN posible ahora mismo.
+        // En el sistema oficial, poder transmitir a producción es el estado esperado.
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.enabled', true);
         config()->set('dte.transmision.real_confirmation', true);
@@ -54,10 +54,11 @@ class DteTransmisionEstadoOperativoTest extends TestCase
         $estado = $this->servicio()->estadoOperativo();
 
         $this->assertSame('PRINCIPAL LISTO', $estado['etiqueta']);
-        $this->assertSame('critico', $estado['color']);
+        $this->assertSame('ok', $estado['color']);
         $this->assertTrue($estado['transmision_real_posible']);
         $this->assertFalse($estado['apitest_posible']);
-        $this->assertStringContainsString('PRODUCCIÓN', $estado['detalle']);
+        $this->assertStringContainsString('Producción activa', $estado['detalle']);
+        $this->assertStringContainsString('sistema principal', $estado['detalle']);
     }
 
     public function test_principal_en_testing_con_candados_abiertos_es_apitest_ambar_no_rojo(): void
