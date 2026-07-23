@@ -26,14 +26,21 @@ class ExportacionController extends Controller
 {
     public function index(Request $request): View
     {
-        // Archivadas (pruebas/APITEST, no exportaciones reales): ocultas por
-        // defecto del listado normal, visibles solo con ?archivadas=1. NUNCA se
+        // Filtro Activas / Archivadas / Todas. Archivadas = pruebas/APITEST, no
+        // exportaciones reales: ocultas por defecto del listado normal. NUNCA se
         // borran ni se filtran de show()/rutas por id: el acceso directo (o desde
-        // el historial de una FEX) sigue funcionando siempre.
+        // el historial de una FEX) sigue funcionando siempre. `?archivadas=1` se
+        // conserva como sinónimo de "todas" (enlaces/atajos previos a los chips).
+        $filtro = (string) $request->input('filtro', $request->boolean('archivadas') ? 'todas' : 'activas');
+        if (! in_array($filtro, ['activas', 'archivadas', 'todas'], true)) {
+            $filtro = 'activas';
+        }
+
         $exportaciones = Exportacion::query()
             ->withCount('items')
             ->with('cliente:id,cliente_id')
-            ->when(! $request->boolean('archivadas'), fn ($q) => $q->where('archivada', false))
+            ->when($filtro === 'activas', fn ($q) => $q->where('archivada', false))
+            ->when($filtro === 'archivadas', fn ($q) => $q->where('archivada', true))
             ->when($request->filled('q'), function ($q) use ($request) {
                 $buscar = '%'.$request->string('q').'%';
                 $q->where(fn ($w) => $w->where('cliente_nombre', 'like', $buscar)
@@ -44,7 +51,7 @@ class ExportacionController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        return view('exportaciones.index', ['exportaciones' => $exportaciones]);
+        return view('exportaciones.index', ['exportaciones' => $exportaciones, 'filtro' => $filtro]);
     }
 
     public function create(): View

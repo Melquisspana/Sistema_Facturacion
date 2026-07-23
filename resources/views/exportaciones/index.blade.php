@@ -18,13 +18,27 @@
                 <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
+            @php
+                $chip = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-colors duration-150';
+                $chipInactivo = $chip.' bg-white border-gray-200 text-gray-600 hover:bg-gray-50';
+                $chipActivo = $chip.' bg-indigo-600 border-indigo-600 text-white';
+            @endphp
+            <div class="mb-3 flex flex-wrap items-center gap-1.5">
+                <span class="text-xs font-medium text-gray-400 mr-0.5">Mostrar:</span>
+                <a href="{{ route('exportaciones.index', array_filter(['q' => request('q')])) }}"
+                   class="{{ $filtro === 'activas' ? $chipActivo : $chipInactivo }}">Activas</a>
+                <a href="{{ route('exportaciones.index', array_filter(['filtro' => 'archivadas', 'q' => request('q')])) }}"
+                   class="{{ $filtro === 'archivadas' ? $chipActivo : $chipInactivo }}">Archivadas</a>
+                <a href="{{ route('exportaciones.index', array_filter(['filtro' => 'todas', 'q' => request('q')])) }}"
+                   class="{{ $filtro === 'todas' ? $chipActivo : $chipInactivo }}">Todas</a>
+            </div>
+
             <form method="GET" class="mb-4 flex flex-wrap items-center gap-3">
+                @if ($filtro !== 'activas')
+                    <input type="hidden" name="filtro" value="{{ $filtro }}">
+                @endif
                 <input type="text" name="q" value="{{ request('q') }}" placeholder="Buscar por cliente o factura…"
                        class="w-72 rounded-md border-gray-300 text-sm">
-                <label class="inline-flex items-center gap-2 text-sm text-gray-600">
-                    <input type="checkbox" name="archivadas" value="1" @checked(request()->boolean('archivadas')) class="rounded border-gray-300">
-                    Mostrar archivadas
-                </label>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Buscar</button>
             </form>
 
