@@ -83,11 +83,13 @@
                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$transmisionDte['color']] }}">{{ $transmisionDte['etiqueta'] }}</span>
                 </div>
                 <p class="text-sm text-gray-700">{{ $transmisionDte['detalle'] }}</p>
-                @if ($transmisionDte['transmision_real_posible'])
+                @if ($transmisionDte['transmision_real_posible'] && $transmisionDte['candados']['flags']['modo_operacion'] !== 'principal')
                     <p class="text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3 mt-3">
-                        ⚠ El sistema puede transmitir documentos REALES a Hacienda (PRODUCCIÓN) ahora mismo. Si esto es
-                        inesperado durante el piloto, revisá <span class="font-mono">DTE_MODO_OPERACION</span>
-                        y los candados de <span class="font-mono">.env</span> de inmediato.
+                        ⚠ Producción habilitada desde un modo no principal. Revisá la configuración operativa.
+                    </p>
+                @elseif ($transmisionDte['transmision_real_posible'])
+                    <p class="text-sm font-semibold text-green-700 bg-green-50 border border-green-200 rounded-md p-3 mt-3">
+                        Producción activa. Este es el sistema principal y está listo para emitir DTE reales.
                     </p>
                 @elseif ($transmisionDte['apitest_posible'])
                     <p class="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 mt-3">

@@ -453,11 +453,15 @@ class DteTransmisionService
         $produccionRealPosible = $abierto && $esProduccion;
         $apitestPosible = $abierto && ! $esProduccion;
 
-        // Rojo (crítico) SOLO si se puede transmitir a PRODUCCIÓN ahora mismo. Apitest es
-        // ámbar (habilitado pero no es producción). Bloqueado en paralelo es verde.
-        if ($produccionRealPosible) {
+        // En el sistema oficial, producción habilitada es el estado operativo esperado.
+        // Solo se conserva el rojo cuando otro modo puede transmitir producción de forma inesperada.
+        if ($produccionRealPosible && $modo === 'principal') {
+            $color = 'ok';
+            $puntoVenta = (string) (config('dte.punto_venta_predeterminado') ?: 'automático');
+            $detalle = 'Producción activa · sistema principal · transmisión real habilitada · punto de venta '.$puntoVenta.'.';
+        } elseif ($produccionRealPosible) {
             $color = 'critico';
-            $detalle = 'El sistema puede transmitir documentos REALES a Hacienda (PRODUCCIÓN) ahora mismo (modo '.$modo.').';
+            $detalle = 'Producción habilitada desde un modo no principal ('.$modo.'). Revisar la configuración operativa.';
         } elseif ($apitestPosible) {
             $color = 'advertencia';
             $detalle = 'Transmisión al ambiente de PRUEBAS (apitest) habilitada: envía a Hacienda de pruebas, NO a producción. Fuera del piloto conviene dejarla apagada (DTE_TRANSMISION_TEST_ENABLED=false).';

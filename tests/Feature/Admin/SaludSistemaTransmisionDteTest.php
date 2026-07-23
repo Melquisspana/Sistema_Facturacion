@@ -74,7 +74,9 @@ class SaludSistemaTransmisionDteTest extends TestCase
             ->get(route('admin.salud-sistema'))
             ->assertOk()
             ->assertSee('PRINCIPAL LISTO')
-            ->assertSee('REALES a Hacienda (PRODUCCIÓN) ahora mismo');
+            ->assertSee('Producción activa')
+            ->assertSee('Este es el sistema principal')
+            ->assertDontSee('revisá DTE_MODO_OPERACION');
     }
 
     public function test_via_de_pruebas_apitest_muestra_ambar_no_alerta_roja(): void

@@ -94,7 +94,7 @@ class ModoDteBadgeTest extends TestCase
             ->get($this->pantallaFacturacion())
             ->assertOk()
             ->assertSee('PRINCIPAL LISTO')
-            ->assertSee('REALES a Hacienda (PRODUCCIÓN)');
+            ->assertSee('Producción activa');
     }
 
     public function test_paralelo_con_via_de_pruebas_no_muestra_alerta_de_produccion(): void
