@@ -25,9 +25,12 @@
                           departamentoId: @js((string) old('departamento_id', $sucursal->departamento_id)),
                           municipioSel: @js((string) old('municipio_2024', $sucursal->distrito?->municipio)),
                           distritoId: @js((string) old('distrito_id', $sucursal->distrito_id)),
+                          municipioFiscalId: @js((string) old('municipio_id', $sucursal->municipio_id)),
                           distritos: @js($distritos->map(fn ($d) => ['id' => (string) $d->id, 'nombre' => $d->nombre, 'municipio' => $d->municipio, 'departamento_id' => (string) $d->departamento_id])->values()),
+                          municipiosFiscales: @js($municipios->map(fn ($m) => ['id' => (string) $m->id, 'nombre' => $m->nombre, 'departamento_id' => (string) $m->departamento_id])->values()),
                           get municipiosDelDepto() { return [...new Set(this.distritos.filter(d => d.departamento_id === this.departamentoId).map(d => d.municipio))].sort(); },
                           get distritosFiltrados() { return this.distritos.filter(d => d.departamento_id === this.departamentoId && d.municipio === this.municipioSel); },
+                          get municipiosFiscalesFiltrados() { return this.municipiosFiscales.filter(m => m.departamento_id === this.departamentoId); },
                       }"
                       class="space-y-6">
                     @csrf
@@ -59,7 +62,7 @@
                         <div>
                             <x-input-label for="departamento_id" value="Departamento *" />
                             <select id="departamento_id" name="departamento_id" x-model="departamentoId"
-                                    x-on:change="municipioSel=''; distritoId=''"
+                                    x-on:change="municipioSel=''; distritoId=''; municipioFiscalId=''"
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($departamentos as $depto)
@@ -70,7 +73,7 @@
                         </div>
 
                         <div>
-                            <x-input-label for="municipio_2024" value="Municipio *" />
+                            <x-input-label for="municipio_2024" value="Municipio (agrupación 2024) *" />
                             <select id="municipio_2024" name="municipio_2024" x-model="municipioSel"
                                     x-on:change="distritoId=''"
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
@@ -94,6 +97,32 @@
                             </select>
                             <x-input-error :messages="$errors->get('distrito_id')" class="mt-1" />
                             <p class="text-xs text-gray-400 mt-1" x-show="municipioSel === ''">Seleccione primero un municipio.</p>
+                        </div>
+
+                        {{-- Municipio fiscal (CAT-013): es el que viaja en el DTE como
+                             receptor.direccion.municipio cuando se factura a esta sala.
+                             Va aparte de la cadena 2024 porque el catálogo del MH sigue
+                             siendo el anterior a la reforma. Opcional: el catálogo sembrado
+                             no cubre todos los departamentos. --}}
+                        <div>
+                            <x-input-label for="municipio_id" value="Municipio fiscal (CAT-013)" />
+                            <select id="municipio_id" name="municipio_id" x-model="municipioFiscalId"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                <option value="">— Sin municipio —</option>
+                                <template x-for="m in municipiosFiscalesFiltrados" :key="m.id">
+                                    <option :value="m.id" x-text="m.nombre"></option>
+                                </template>
+                            </select>
+                            <x-input-error :messages="$errors->get('municipio_id')" class="mt-1" />
+                            <p class="text-xs text-gray-400 mt-1" x-show="departamentoId === ''" x-cloak>Seleccione primero un departamento.</p>
+                            <p class="text-xs text-amber-600 mt-1"
+                               x-show="departamentoId !== '' && municipiosFiscalesFiltrados.length === 0" x-cloak>
+                                El catálogo CAT-013 no tiene municipios cargados para este departamento.
+                            </p>
+                            <p class="text-xs text-amber-600 mt-1"
+                               x-show="municipioFiscalId === '' && municipiosFiscalesFiltrados.length > 0" x-cloak>
+                                Sin municipio fiscal, el CCF emitido a esta sala llevará el campo municipio vacío.
+                            </p>
                         </div>
 
                         <div>
