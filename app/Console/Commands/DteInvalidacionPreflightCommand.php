@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
+use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
 use App\Exceptions\Dte\DteInvalidacionException;
@@ -17,9 +18,11 @@ use Illuminate\Console\Command;
  * TODA la lista de verificación antes de intentar transmitir a `/fesv/anulardte`.
  *
  * NO firma para envío, NO transmite, NO cambia estado, NO persiste. Solo diagnostica:
- * estado de la NC, aceptación real, endpoint apitest, validez del schema, tipo
- * explícito, responsable/solicitante, disponibilidad del firmador y del token, y los
- * flags actuales. El único HTTP que hace es el health-check GET del firmador (status).
+ * estado del DTE, aceptación real, endpoint correcto según su ambiente (apitest '00' /
+ * producción '01'), validez del schema, tipo explícito, responsable/solicitante,
+ * disponibilidad del firmador y del token, y los flags actuales (incluido el candado
+ * dedicado de producción). El único HTTP que hace es el health-check GET del firmador
+ * (status).
  */
 class DteInvalidacionPreflightCommand extends Command
 {
@@ -76,9 +79,9 @@ class DteInvalidacionPreflightCommand extends Command
 
         $confirmoNc = (bool) $this->option('confirmo-nc-relacionada');
 
-        // --- Estado de la NC ---
-        $add($dte->estado === EstadoDte::Aceptado, 'NC existe y está aceptada', 'estado: '.$dte->estado->value);
-        $add($dte->aceptadoRealmentePorMh(), 'Aceptada realmente por MH', $dte->aceptadoRealmentePorMh() ? 'sí (sello real + fecha MH)' : 'NO');
+        // --- Estado del DTE ---
+        $add($dte->estado === EstadoDte::Aceptado, 'DTE existe y está aceptado', 'tipo '.$dte->tipo_dte->value.' · estado: '.$dte->estado->value);
+        $add($dte->aceptadoRealmentePorMh(), 'Aceptado realmente por MH', $dte->aceptadoRealmentePorMh() ? 'sí (sello real + fecha MH)' : 'NO');
         $add(blank($dte->sello_invalidacion), 'sello_invalidacion sigue null', blank($dte->sello_invalidacion) ? 'sí' : 'ya tiene: '.$dte->sello_invalidacion);
         $add(! $dte->tieneEventoInvalidacion(), 'Sin evento de invalidación previo', $dte->tieneEventoInvalidacion() ? 'YA tiene' : 'sí');
         $add(! $dte->estaProtegidoComoEvidencia(), 'No protegido como evidencia',
@@ -89,9 +92,13 @@ class DteInvalidacionPreflightCommand extends Command
                 : 'no tiene NC relacionada');
 
         // --- Evento / schema / endpoint (dry-run interno) ---
+        $esProduccion = $dte->ambiente === AmbienteHacienda::Produccion;
         try {
             $d = $inval->dryRun($dte, $evento, false, false, $confirmoNc);
-            $add(str_contains($d['endpoint'], 'apitest.dtes.mh.gob.sv'), 'Endpoint apitest', $d['endpoint']);
+            $endpointEsperado = $esProduccion
+                ? 'https://api.dtes.mh.gob.sv/fesv/anulardte'
+                : 'https://apitest.dtes.mh.gob.sv/fesv/anulardte';
+            $add($d['endpoint'] === $endpointEsperado, 'Endpoint correcto para el ambiente del DTE ('.$d['ambiente'].')', $d['endpoint']);
             $add($d['schema']['valido'], 'Schema evento válido (v3)', $d['schema']['valido'] ? 'sí' : 'NO: '.implode(' | ', array_slice($d['schema']['errores'], 0, 4)));
             $candados = $d['candados'];
             $motivo = $d['evento']['motivo'] ?? [];
@@ -100,6 +107,10 @@ class DteInvalidacionPreflightCommand extends Command
             $d = null;
             $candados = ['bloqueado' => true, 'razones' => [$e->getMessage()]];
             $motivo = [];
+        }
+        if ($esProduccion) {
+            $add((bool) config('dte.invalidacion.produccion_enabled', false), 'Producción habilitada (DTE_INVALIDACION_PRODUCCION_ENABLED)',
+                $this->b(config('dte.invalidacion.produccion_enabled')));
         }
 
         $add($tipoExplicito, 'Tipo de anulación explícito', $tipoExplicito ? $tipoDiag->value.' ('.$tipoDiag->label().')' : 'FALTA --tipo (obligatorio)');
@@ -132,6 +143,9 @@ class DteInvalidacionPreflightCommand extends Command
         $this->newLine();
         $this->line('Flags actuales:');
         $this->table(['Flag', 'Valor'], [
+            ['Ambiente del DTE (CAT-001)', $dte->ambiente->value.' ('.$dte->ambiente->label().')'],
+            ['Endpoint que se usaría', $d['endpoint'] ?? '—'],
+            ['DTE_INVALIDACION_PRODUCCION_ENABLED', $this->b(config('dte.invalidacion.produccion_enabled'))],
             ['DTE_INVALIDACION_MOCK', $this->b(config('dte.invalidacion.mock'))],
             ['DTE_INVALIDACION_REAL_CONFIRMATION', $this->b(config('dte.invalidacion.real_confirmation'))],
             ['DTE_FIRMA_ENABLED', $this->b($firmaEnabled)],
@@ -139,6 +153,7 @@ class DteInvalidacionPreflightCommand extends Command
             ['DTE_TRANSMISION_AMBIENTE', (string) config('dte.transmision.ambiente')],
             ['DTE_TRANSMISION_TEST_ENABLED', $this->b(config('dte.transmision.test_enabled'))],
             ['DTE_TEST_ANULACION_URL', (string) config('dte.ambientes.00.anulacion_url') ?: '(vacío → default apitest)'],
+            ['DTE_PROD_ANULACION_URL', (string) config('dte.ambientes.01.anulacion_url') ?: '(vacío → default producción real)'],
         ]);
 
         // --- Bloque motivo del evento ---
@@ -160,7 +175,7 @@ class DteInvalidacionPreflightCommand extends Command
         }
 
         $this->newLine();
-        $this->line('Confirmado: este preflight NO transmitió a /fesv/anulardte y NO cambió el estado de la NC.');
+        $this->line('Confirmado: este preflight NO transmitió a /fesv/anulardte y NO cambió el estado del DTE.');
         $this->line($ok ? 'Preflight: TODO OK ✔' : 'Preflight: hay verificaciones pendientes ✘');
 
         return $ok ? self::SUCCESS : self::FAILURE;

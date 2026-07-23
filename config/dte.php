@@ -216,10 +216,17 @@ return [
         // transmitir. Genera un JWS ficticio y un sello de invalidación marcado. NO
         // vale ante Hacienda. La firma/transmisión real llega en fases posteriores.
         'mock' => (bool) env('DTE_INVALIDACION_MOCK', false),
-        // CANDADO de la transmisión REAL del evento a /fesv/anulardte (Fase D). Debe ser
-        // true (además del mock apagado y los flags del comando) para transmitir de
-        // verdad contra apitest. Nunca habilita producción. Default false.
+        // CANDADO de la transmisión REAL del evento a /fesv/anulardte. Debe ser true
+        // (además del mock apagado y los flags del comando) para transmitir de verdad.
+        // Aplica tanto a apitest como a producción; producción exige ADEMÁS el candado
+        // dedicado 'produccion_enabled' de abajo. Default false.
         'real_confirmation' => (bool) env('DTE_INVALIDACION_REAL_CONFIRMATION', false),
+        // CANDADO DEDICADO de producción: por defecto false. Mientras sea false, la
+        // invalidación real de un DTE con ambiente='01' queda SIEMPRE bloqueada, sin
+        // importar el resto de candados. Con true, además se exige que el DTE tenga
+        // ambiente='01' y que el endpoint resuelto sea EXACTAMENTE
+        // https://api.dtes.mh.gob.sv/fesv/anulardte (ver DteInvalidacionService).
+        'produccion_enabled' => (bool) env('DTE_INVALIDACION_PRODUCCION_ENABLED', false),
         // Overrides de los códigos MH del emisor SOLO si se confirma que difieren de
         // los internos (M001/P001). Vacío = usar los internos del establecimiento/PV.
         'cod_estable_mh' => env('DTE_INVALIDACION_COD_ESTABLE_MH', ''),

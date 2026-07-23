@@ -53,7 +53,7 @@ class DteInvalidacionRealTest extends TestCase
         ]);
     }
 
-    private function ncAceptada(bool $aceptada = true): Dte
+    private function ncAceptada(bool $aceptada = true, string $ambiente = '00'): Dte
     {
         $empresa = Empresa::create([
             'razon_social' => 'Elsa Fidelina Hernández Cañas', 'nombre_comercial' => 'Dulces La Negrita',
@@ -70,7 +70,7 @@ class DteInvalidacionRealTest extends TestCase
         return Dte::create([
             'tipo_dte' => TipoDte::NotaCredito->value,
             'estado' => $aceptada ? EstadoDte::Aceptado->value : EstadoDte::Generado->value,
-            'ambiente' => '00',
+            'ambiente' => $ambiente,
             'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $cliente->id,
             'numero_control' => 'DTE-05-M001P001-000000000000020',
             'codigo_generacion' => self::NC_CODIGO_GENERACION,
@@ -112,11 +112,14 @@ class DteInvalidacionRealTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_bloquea_produccion(): void
+    public function test_bloquea_produccion_por_defecto(): void
     {
+        // El ambiente PROPIO del DTE (no una config operativa aparte) es lo que decide
+        // el destino; con produccion_enabled=false (default) un DTE ambiente='01' se
+        // bloquea sin importar el resto de candados. (Cobertura extendida de todas las
+        // combinaciones flag/URL en DteInvalidacionProduccionTest.)
         Http::fake();
-        config()->set('dte.transmision.ambiente', 'produccion');
-        $dte = $this->ncAceptada();
+        $dte = $this->ncAceptada(ambiente: '01');
 
         $this->expectException(DteInvalidacionException::class);
         try {
@@ -274,7 +277,7 @@ class DteInvalidacionRealTest extends TestCase
 
         // No bloqueado por el rechazo previo.
         $c = $this->servicio()->evaluarCandados($dte, $this->evento(), true, true);
-        $this->assertNotContains('La NC ya tiene un evento de invalidación o está invalidada.', $c['razones']);
+        $this->assertNotContains('El DTE ya tiene un evento de invalidación o está invalidado.', $c['razones']);
         $this->assertFalse($c['bloqueado']);
 
         // El reintento (ahora aceptado) invalida correctamente.
@@ -309,7 +312,7 @@ class DteInvalidacionRealTest extends TestCase
 
         $c = $this->servicio()->evaluarCandados($dte->refresh(), $this->evento(), true, true);
         $this->assertTrue($c['bloqueado']);
-        $this->assertContains('La NC ya tiene un evento de invalidación o está invalidada.', $c['razones']);
+        $this->assertContains('El DTE ya tiene un evento de invalidación o está invalidado.', $c['razones']);
 
         $this->expectException(DteInvalidacionException::class);
         try {

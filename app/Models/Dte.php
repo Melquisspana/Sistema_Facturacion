@@ -237,9 +237,19 @@ class Dte extends Model
      * generación (más estables que el id interno entre entornos/migraciones) vía
      * `config('dte.invalidacion.protegidos_numero_control' / 'protegidos_codigo_generacion')`.
      * Sin nada configurado, ningún documento está protegido (comportamiento anterior).
+     *
+     * La protección es un mecanismo ESPECÍFICO de apitest (ambiente '00': cierre de una
+     * fase de pruebas). Un DTE de PRODUCCIÓN (ambiente '01') nunca puede quedar
+     * protegido por esta vía, aunque su `numero_control` coincida con el de un
+     * documento de apitest (mismo establecimiento/punto de venta, otro ambiente): el
+     * ambiente forma parte de la identidad real del documento ante el MH.
      */
     public function estaProtegidoComoEvidencia(): bool
     {
+        if ($this->ambiente !== AmbienteHacienda::Pruebas) {
+            return false;
+        }
+
         $numerosControl = self::normalizarListaProteccion(config('dte.invalidacion.protegidos_numero_control', []));
         $codigosGeneracion = self::normalizarListaProteccion(config('dte.invalidacion.protegidos_codigo_generacion', []));
 

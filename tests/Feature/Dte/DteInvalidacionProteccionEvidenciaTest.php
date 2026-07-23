@@ -223,4 +223,83 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
             Http::assertNothingSent();
         }
     }
+
+    // ---------- 4) La protección distingue AMBIENTE (caso real #139 apitest vs #145 producción) ----------
+
+    /**
+     * Mismo número de control que {@see NC_NUMERO_CONTROL}, pero un CCF de PRODUCCIÓN
+     * (ambiente 01) — reproduce el caso real: el DTE #145 (CCF, ambiente 01) comparte
+     * numero_control con el DTE #139 (evidencia APITEST, ambiente 00).
+     */
+    private function ccfAceptadaProduccion(): Dte
+    {
+        $empresa = Empresa::create([
+            'razon_social' => 'Elsa Fidelina Hernández Cañas', 'nombre_comercial' => 'Dulces La Negrita',
+            'nit' => '10132512610012', 'nrc' => '1014765', 'telefono' => '71276473',
+            'correo' => 'dulceslanegrita@yahoo.com', 'ambiente' => '00', 'activo' => true,
+        ]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P002', 'nombre' => 'Caja 2', 'activo' => true]);
+        $cliente = Cliente::factory()->contribuyente()->create([
+            'nombre' => 'Calleja, S.A. de C.V.', 'num_documento' => '0614-110169-001-1',
+            'telefono' => '67652343', 'correo' => 'melquicedeespana@gmail.com',
+        ]);
+
+        return Dte::create([
+            'tipo_dte' => TipoDte::CreditoFiscal->value,
+            'estado' => EstadoDte::Aceptado->value,
+            'ambiente' => '01',
+            'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $cliente->id,
+            'numero_control' => self::NC_NUMERO_CONTROL,
+            'codigo_generacion' => '641929A0-FB67-4A1D-AA2E-6C2D33E6355C',
+            'sello_recepcion' => '2026386FB99EC82E45A3931C61E4A8EB331A5CIU',
+            'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => '2026386FB99EC82E45A3931C61E4A8EB331A5CIU'],
+            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
+        ]);
+    }
+
+    public function test_mismo_numero_control_en_ambiente_00_sigue_protegido(): void
+    {
+        // Regresión: el ambiente 00 (apitest) con el numero_control protegido debe
+        // seguir bloqueado exactamente igual que antes de este cambio.
+        $this->protegerPorNumeroControl();
+        $apitest = $this->ncAceptada(); // ambiente 00
+
+        $this->assertTrue($apitest->estaProtegidoComoEvidencia());
+        $this->expectException(DteEvidenciaProtegidaException::class);
+        app(DteInvalidacionMockService::class)->firmarMock($apitest, $this->evento(), persistir: true, permitirSinMock: true);
+    }
+
+    public function test_mismo_numero_control_en_ambiente_01_no_queda_protegido(): void
+    {
+        // El caso real #145: comparte numero_control con la evidencia APITEST (#139,
+        // ambiente 00), pero es un DTE de PRODUCCIÓN (ambiente 01) — NO debe bloquearse.
+        $this->protegerPorNumeroControl();
+        $produccion = $this->ccfAceptadaProduccion(); // ambiente 01, mismo numero_control
+
+        $this->assertFalse($produccion->estaProtegidoComoEvidencia());
+
+        $this->fakeHttp();
+        config()->set('dte.invalidacion.produccion_enabled', true);
+        config()->set('dte.ambientes.01.anulacion_url', 'https://api.dtes.mh.gob.sv/fesv/anulardte');
+        $c = app(DteInvalidacionService::class)->evaluarCandados($produccion, $this->evento(), true, true);
+        $this->assertNotContains(
+            'DTE PROTEGIDO como evidencia APITEST (config dte.invalidacion.protegidos_numero_control / '
+            .'protegidos_codigo_generacion): no puede invalidarse por esta vía, sin excepción.',
+            $c['razones']
+        );
+    }
+
+    public function test_no_se_quita_la_proteccion_global_por_agregar_el_filtro_de_ambiente(): void
+    {
+        // Un DTE ambiente 00 CUALQUIERA que SÍ está en la lista sigue protegido: el
+        // filtro de ambiente solo excluye producción, nunca "apaga" la protección de
+        // apitest en general.
+        $this->protegerPorNumeroControl();
+        $otroApitest = $this->ncAceptada();
+        $otroApitest->forceFill(['ambiente' => '00'])->saveQuietly();
+
+        $this->assertTrue($otroApitest->fresh()->estaProtegidoComoEvidencia());
+    }
 }

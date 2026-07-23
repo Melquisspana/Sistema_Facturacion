@@ -245,4 +245,39 @@ class SerializadorInvalidacionMhTest extends TestCase
             $this->assertStringContainsString('aceptado realmente por Hacienda', implode(' ', $e->problemas));
         }
     }
+
+    /**
+     * REGRESIÓN: el .env de esta máquina tiene DTE_INVALIDACION_RESP_NOMBRE /
+     * DTE_INVALIDACION_SOL_NOMBRE con "Elsa Fidelina HernÃ¡ndez CaÃ±as" — eso es
+     * doble-codificación UTF-8 (bytes UTF-8 reinterpretados como Windows-1252 y
+     * re-guardados como UTF-8) YA DENTRO del archivo .env, no un artefacto de la
+     * consola de Windows. Esta prueba NO toca el .env: confirma que, cuando el nombre
+     * llega CORRECTAMENTE codificado (como aquí, literal UTF-8 del propio archivo de
+     * test), el serializador y el JSON final (mismo json_encode con
+     * JSON_UNESCAPED_UNICODE que usa DteInvalidacionService::guardarArchivos) lo
+     * conservan intacto y no introducen mojibake. El .env sigue pendiente de corregir
+     * por separado (fuera del alcance de este cambio).
+     */
+    public function test_evento_serializado_conserva_utf8_correcto_en_nombre_responsable_y_solicitante(): void
+    {
+        $dte = $this->ncAceptada();
+        $nombre = 'Elsa Fidelina Hernández Cañas';
+        $evento = new EventoInvalidacionData(
+            tipoAnulacion: TipoAnulacionMh::RescindirOperacion,
+            nombreResponsable: $nombre, tipoDocResponsable: '36', numDocResponsable: '10132512610012',
+            nombreSolicita: $nombre, tipoDocSolicita: '36', numDocSolicita: '10132512610012',
+        );
+
+        $eventoJson = app(SerializadorInvalidacionMh::class)->serializar($dte, $evento);
+
+        $this->assertSame($nombre, $eventoJson['motivo']['nombreResponsable']);
+        $this->assertSame($nombre, $eventoJson['motivo']['nombreSolicita']);
+
+        $codificado = (string) json_encode($eventoJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $this->assertStringContainsString('Elsa Fidelina Hernández Cañas', $codificado);
+        // Patrón de mojibake típico de la doble codificación UTF-8/Windows-1252: NO debe
+        // aparecer en el JSON generado por el código (sí aparece hoy en el .env real).
+        $this->assertStringNotContainsString('Ã¡', $codificado);
+        $this->assertStringNotContainsString('Ã±', $codificado);
+    }
 }

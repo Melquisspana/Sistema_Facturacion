@@ -3,6 +3,7 @@
 namespace App\Services\Dte;
 
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
+use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteInvalidacionException;
@@ -17,21 +18,35 @@ use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * FASE D — Firma REAL del evento de invalidación y transmisión a `/fesv/anulardte`
- * (SOLO apitest), fuertemente candada. Reutiliza el firmador real ({@see DteFirmaService})
- * y el token de recepción ({@see DteTransmisionAuthService}).
+ * FASE D — Firma REAL del evento de invalidación y transmisión a `/fesv/anulardte`,
+ * fuertemente candada. Reutiliza el firmador real ({@see DteFirmaService}) y el token de
+ * recepción ({@see DteTransmisionAuthService}).
  *
- * NUNCA producción. Persiste la respuesta en COLUMNAS DEDICADAS de invalidación y, solo
- * si el MH ACEPTA, transiciona Aceptado → Invalidado. NO toca la evidencia de recepción
- * original (sello_recepcion / respuesta_mh / fecha_procesamiento_mh).
+ * El ambiente de destino lo determina el ambiente PROPIO del DTE ('00' apitest / '01'
+ * producción, CAT-001), no una config operativa aparte. Apitest sigue funcionando exactamente
+ * como antes. Producción queda bloqueada por defecto y SOLO se habilita si, ADEMÁS de todos
+ * los candados de apitest, se cumple el candado dedicado
+ * `dte.invalidacion.produccion_enabled` (env `DTE_INVALIDACION_PRODUCCION_ENABLED`) y el
+ * endpoint resuelto es EXACTAMENTE `https://api.dtes.mh.gob.sv/fesv/anulardte`.
+ *
+ * Persiste la respuesta en COLUMNAS DEDICADAS de invalidación y, solo si el MH ACEPTA,
+ * transiciona Aceptado → Invalidado. NO toca la evidencia de recepción original
+ * (sello_recepcion / respuesta_mh / fecha_procesamiento_mh).
  *
  * El envío real exige TODOS los candados: --transmitir-real + --confirmo-invalidar
  * (flags del comando), DTE_INVALIDACION_MOCK=false, DTE_INVALIDACION_REAL_CONFIRMATION=true,
- * firma real habilitada (no mock), ambiente apitest, responsable/solicitante completos,
- * NC aceptada realmente por el MH y sin evento de invalidación previo.
+ * firma real habilitada (no mock), endpoint exacto del ambiente propio del DTE (más
+ * produccion_enabled si el DTE es de ambiente '01'), responsable/solicitante completos,
+ * DTE aceptado realmente por el MH y sin evento de invalidación previo.
  */
 class DteInvalidacionService
 {
+    /** Único endpoint aceptado para un DTE de ambiente '00' (apitest). */
+    private const URL_APITEST = 'https://apitest.dtes.mh.gob.sv/fesv/anulardte';
+
+    /** Único endpoint aceptado para un DTE de ambiente '01' (producción real). */
+    private const URL_PRODUCCION = 'https://api.dtes.mh.gob.sv/fesv/anulardte';
+
     public function __construct(
         private readonly SerializadorInvalidacionMh $serializador,
         private readonly DteSchemaValidator $validador,
@@ -86,7 +101,8 @@ class DteInvalidacionService
     }
 
     /**
-     * Transmisión REAL del evento de invalidación a `/fesv/anulardte` (apitest).
+     * Transmisión REAL del evento de invalidación a `/fesv/anulardte` (apitest o
+     * producción, según el ambiente propio del DTE y sus candados).
      *
      * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, estado_dte: string, invalidado: bool}
      *
@@ -186,12 +202,22 @@ class DteInvalidacionService
             $r[] = 'DTE_INVALIDACION_REAL_CONFIRMATION=false.';
         }
 
-        // Nunca producción; solo apitest.
-        if ($this->esProduccion()) {
-            $r[] = 'Ambiente de producción no permitido para invalidación (solo apitest).';
-        }
-        if (! $this->urlEsApitest($dte)) {
-            $r[] = 'El endpoint de anulación no es apitest (apitest.dtes.mh.gob.sv).';
+        // Endpoint EXACTO y candado dedicado de producción, según el ambiente PROPIO
+        // del DTE (CAT-001: '00' apitest / '01' producción). Nunca se infiere de otra
+        // config operativa: el ambiente del propio documento manda.
+        $endpoint = $this->urlAnulacion($dte);
+        if ($dte->ambiente === AmbienteHacienda::Produccion) {
+            if (! (bool) config('dte.invalidacion.produccion_enabled', false)) {
+                $r[] = 'Producción no habilitada: DTE_INVALIDACION_PRODUCCION_ENABLED=false '
+                    .'(config dte.invalidacion.produccion_enabled).';
+            }
+            if ($endpoint !== self::URL_PRODUCCION) {
+                $r[] = 'El endpoint de anulación no es el productivo exacto ('.self::URL_PRODUCCION.'): '.$endpoint.'.';
+            }
+        } else {
+            if ($endpoint !== self::URL_APITEST) {
+                $r[] = 'El endpoint de anulación no es el de apitest exacto ('.self::URL_APITEST.'): '.$endpoint.'.';
+            }
         }
 
         // Firma REAL (no mock) habilitada.
@@ -212,10 +238,10 @@ class DteInvalidacionService
 
         // Estado del DTE.
         if (! $dte->aceptadoRealmentePorMh()) {
-            $r[] = 'La NC no está aceptada realmente por el MH.';
+            $r[] = 'El DTE no está aceptado realmente por el MH.';
         }
         if ($dte->tieneEventoInvalidacion()) {
-            $r[] = 'La NC ya tiene un evento de invalidación o está invalidada.';
+            $r[] = 'El DTE ya tiene un evento de invalidación o está invalidado.';
         }
 
         // Nota de Crédito relacionada: NO es un bloqueo automático (no hay base fiscal
@@ -419,27 +445,20 @@ class DteInvalidacionService
         ];
     }
 
-    /** URL de anulación por ambiente (DTE_TEST_ANULACION_URL); default seguro apitest. Sin barra final. */
+    /**
+     * URL de anulación configurada para el ambiente PROPIO del DTE
+     * (dte.ambientes.{00|01}.anulacion_url). Sin barra final. Si no hay nada configurado,
+     * cae a la URL OFICIAL del ambiente correspondiente (apitest para '00', producción
+     * real para '01'); nunca mezcla ambientes. El candado real de producción sigue siendo
+     * `dte.invalidacion.produccion_enabled`, evaluado aparte en {@see evaluarCandados()}.
+     */
     private function urlAnulacion(Dte $dte): string
     {
         $url = rtrim((string) config('dte.ambientes.'.$dte->ambiente->value.'.anulacion_url', ''), '/');
-        if ($url === '') {
-            // Nunca producción por defecto: cae a apitest.
-            $url = 'https://apitest.dtes.mh.gob.sv/fesv/anulardte';
+        if ($url !== '') {
+            return $url;
         }
 
-        return $url;
-    }
-
-    private function urlEsApitest(Dte $dte): bool
-    {
-        return str_contains($this->urlAnulacion($dte), 'apitest.dtes.mh.gob.sv');
-    }
-
-    private function esProduccion(): bool
-    {
-        $amb = strtolower((string) config('dte.transmision.ambiente', 'testing'));
-
-        return in_array($amb, ['produccion', 'production', 'prod', '01'], true);
+        return $dte->ambiente === AmbienteHacienda::Produccion ? self::URL_PRODUCCION : self::URL_APITEST;
     }
 }

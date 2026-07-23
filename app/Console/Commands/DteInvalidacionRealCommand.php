@@ -10,10 +10,13 @@ use App\Services\Dte\DteInvalidacionService;
 use Illuminate\Console\Command;
 
 /**
- * FASE D — Transmisión REAL del evento de invalidación a `/fesv/anulardte` (SOLO apitest),
- * fuertemente candada. Por defecto NO transmite: exige `--transmitir-real` +
- * `--confirmo-invalidar` y los flags de entorno (DTE_INVALIDACION_MOCK=false,
- * DTE_INVALIDACION_REAL_CONFIRMATION=true, firma real habilitada).
+ * FASE D — Transmisión REAL del evento de invalidación a `/fesv/anulardte`, fuertemente
+ * candada. El destino (apitest o producción) lo determina el ambiente PROPIO del DTE; para
+ * producción se exige ADEMÁS el candado dedicado `dte.invalidacion.produccion_enabled`
+ * (ver {@see \App\Services\Dte\DteInvalidacionService}). Por defecto NO transmite: exige
+ * `--transmitir-real` + `--confirmo-invalidar` y los flags de entorno
+ * (DTE_INVALIDACION_MOCK=false, DTE_INVALIDACION_REAL_CONFIRMATION=true, firma real
+ * habilitada).
  *
  * `--dry-run` muestra EXACTAMENTE qué se enviaría (evento, endpoint, cuerpo) y el estado
  * de todos los candados, SIN firmar ni transmitir.
@@ -29,7 +32,7 @@ class DteInvalidacionRealCommand extends Command
         {--confirmo-invalidar : Confirmación 2/2 para transmitir de verdad}
         {--confirmo-nc-relacionada : Confirma continuar aunque el documento tenga una Nota de Crédito relacionada (riesgo de doble corrección fiscal)}';
 
-    protected $description = 'Transmisión REAL del evento de invalidación a anulardte (apitest), candada. Use --dry-run primero.';
+    protected $description = 'Transmisión REAL del evento de invalidación a anulardte (apitest o producción según el DTE), candada. Use --dry-run primero.';
 
     public function handle(DteInvalidacionService $servicio): int
     {
@@ -123,7 +126,7 @@ class DteInvalidacionRealCommand extends Command
         }
 
         // --- TRANSMISIÓN REAL (todos los candados los valida el servicio) ---
-        $this->warn('*** TRANSMISIÓN REAL a /fesv/anulardte (apitest) ***');
+        $this->warn('*** TRANSMISIÓN REAL a /fesv/anulardte (ambiente '.$dte->ambiente->value.' - '.$dte->ambiente->label().') ***');
         try {
             $r = $servicio->transmitir($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
         } catch (DteInvalidacionException $e) {
