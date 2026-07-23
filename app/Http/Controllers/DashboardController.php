@@ -166,7 +166,11 @@ class DashboardController extends Controller
             'dte_aceptados_mes' => $dteAceptadosMes,
             'ventas_mes' => $ventasMes,
             'documentos_pendientes' => $veOperativos ? DocumentoRecibido::where('estado', 'pendiente')->count() : null,
-            'listas_recientes' => $veOperativos ? Exportacion::where('created_at', '>=', $inicioMes)->count() : null,
+            'listas_recientes' => $veOperativos
+                ? Exportacion::where('created_at', '>=', $inicioMes)
+                    ->where('archivada', false)
+                    ->count()
+                : null,
             'jobs_fallidos' => $jobsFallidos,
         ];
     }

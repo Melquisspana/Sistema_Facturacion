@@ -73,6 +73,45 @@ class PpqBusquedaController extends Controller
                     );
                 }
             }
+
+            // El JSON enviado por correo puede no incluir el sello devuelto
+            // posteriormente por Hacienda. Si falta, se completa desde el
+            // DTE local aceptado de producción, sin modificar el documento.
+            foreach ($fichasGmail as $i => $f) {
+                if (filled($f['ccf']['sello'] ?? null)) {
+                    continue;
+                }
+
+                $codigoGeneracion = trim((string) ($f['ccf']['codigoGeneracion'] ?? ''));
+                $numeroControl = trim((string) ($f['ccf']['numeroControl'] ?? ''));
+
+                if ($codigoGeneracion === '' && $numeroControl === '') {
+                    continue;
+                }
+
+                $dteLocal = \App\Models\Dte::query()
+                    ->where('estado', \App\Enums\EstadoDte::Aceptado->value)
+                    ->where('ambiente', \App\Enums\AmbienteHacienda::Produccion->value)
+                    ->where(function ($query) use ($codigoGeneracion, $numeroControl) {
+                        if ($codigoGeneracion !== '') {
+                            $query->where('codigo_generacion', $codigoGeneracion);
+                        }
+
+                        if ($numeroControl !== '') {
+                            $metodo = $codigoGeneracion !== '' ? 'orWhere' : 'where';
+                            $query->{$metodo}('numero_control', $numeroControl);
+                        }
+                    })
+                    ->whereNotNull('sello_recepcion')
+                    ->where('sello_recepcion', '!=', '')
+                    ->latest('id')
+                    ->first(['id', 'sello_recepcion']);
+
+                if ($dteLocal) {
+                    $fichasGmail[$i]['ccf']['sello'] = $dteLocal->sello_recepcion;
+                    $fichasGmail[$i]['dte_id'] = $dteLocal->id;
+                }
+            }
         }
 
         $resultados = (! $gmailDisponible && $hayFiltros) ? $busqueda->buscar($filtros) : null;
