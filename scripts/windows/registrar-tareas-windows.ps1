@@ -34,10 +34,26 @@
 #>
 
 param(
-    [string]$ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    [string]$ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+    # Rollback: elimina las dos tareas registradas por este script y termina.
+    # No toca archivos, BD ni .env (mismo alcance documentado en docs\WORKER_WINDOWS.md #5).
+    [switch]$Desinstalar
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Desinstalar) {
+    foreach ($nombre in @('DTE Queue Worker', 'DTE Backup Diario')) {
+        if (Get-ScheduledTask -TaskName $nombre -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $nombre -Confirm:$false
+            Write-Host "Tarea '$nombre' eliminada."
+        } else {
+            Write-Host "Tarea '$nombre' no existe (nada que eliminar)."
+        }
+    }
+    Write-Host 'Rollback de tareas completado. Si el worker sigue corriendo, cerrarlo desde el Administrador de tareas (php.exe queue:work).'
+    exit 0
+}
 
 function Registrar-TareaWorker {
     $nombre = 'DTE Queue Worker'

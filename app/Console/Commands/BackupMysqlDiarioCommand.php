@@ -7,6 +7,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 use Throwable;
 
 /**
@@ -43,18 +44,47 @@ class BackupMysqlDiarioCommand extends Command
 
         $this->line('Iniciando backup de BD ('.$origen.')...');
 
-        try {
-            $resultado = Process::timeout(300)->env($this->credencialesEnv())->run($this->comandoMysqldump());
-        } catch (Throwable $e) {
-            $this->registrar($iniciadoEn, false, null, null, null, 'Error al ejecutar mysqldump.', $origen);
-            $this->error('Falló el backup: no se pudo ejecutar mysqldump.');
+        // Reintentos: mysqldump lanzado desde el proceso web (Apache) falla a veces con
+        // el error INTERMITENTE del cliente MySQL "Can't create TCP/IP socket" (exit 2),
+        // documentado en este proyecto — el MISMO comando con los MISMOS argumentos
+        // funciona segundos después. Dump = solo lectura, reintentar es seguro.
+        $intentos = max(1, 1 + (int) config('backup_diario.reintentos', 2));
+        $espera = max(0, (int) config('backup_diario.reintentos_espera_segundos', 3));
+        $resultado = null;
+        $ultimoError = '';
 
-            return self::FAILURE;
+        for ($intento = 1; $intento <= $intentos; $intento++) {
+            if ($intento > 1) {
+                Sleep::for($espera)->seconds();
+                $this->line('Reintentando ('.$intento.'/'.$intentos.')...');
+            }
+
+            try {
+                $resultado = Process::timeout(300)->env($this->credencialesEnv())->run($this->comandoMysqldump());
+            } catch (Throwable $e) {
+                $resultado = null;
+                $ultimoError = 'No se pudo ejecutar mysqldump: '.$this->sanitizar($e->getMessage());
+
+                continue;
+            }
+
+            if ($resultado->successful()) {
+                break;
+            }
+
+            // stderr sanitizado (nunca la contraseña) y recortado: es la única pista
+            // real de POR QUÉ falló (antes se descartaba y el registro solo decía
+            // "terminó con código N", indiagnosticable).
+            $stderr = $this->sanitizar(trim($resultado->errorOutput()));
+            $ultimoError = 'mysqldump terminó con código '.$resultado->exitCode().'.'
+                .($stderr !== '' ? ' stderr: '.$this->recortar($stderr) : '');
         }
 
-        if (! $resultado->successful()) {
-            $this->registrar($iniciadoEn, false, null, null, null, 'mysqldump terminó con código '.$resultado->exitCode().'.', $origen);
-            $this->error('Falló el backup: mysqldump terminó con error (código '.$resultado->exitCode().').');
+        if ($resultado === null || ! $resultado->successful()) {
+            $detalle = $ultimoError !== '' ? $ultimoError : 'Error desconocido al ejecutar mysqldump.';
+            $detalle .= ' ('.$intentos.' intento(s)).';
+            $this->registrar($iniciadoEn, false, null, null, null, $detalle, $origen);
+            $this->error('Falló el backup: '.$detalle);
 
             return self::FAILURE;
         }
@@ -75,7 +105,10 @@ class BackupMysqlDiarioCommand extends Command
         }
 
         $sha256 = hash('sha256', $salida);
-        $this->registrar($iniciadoEn, true, $nombre, $tamano, $sha256, 'Backup completado correctamente.', $origen);
+        // Dejar rastro del reintento exitoso: sirve para dimensionar qué tan seguido
+        // ocurre el fallo intermitente de socket sin tener que revisar logs aparte.
+        $notaIntento = $intento > 1 ? ' (reintento '.$intento.' exitoso tras fallo intermitente).' : '';
+        $this->registrar($iniciadoEn, true, $nombre, $tamano, $sha256, 'Backup completado correctamente.'.$notaIntento, $origen);
         $eliminados = $this->aplicarRetencion($prefijo);
 
         $this->info('Backup completado: '.$nombre.' ('.$tamano.' bytes, sha256 '.$sha256.').');
@@ -120,6 +153,27 @@ class BackupMysqlDiarioCommand extends Command
         $password = (string) (config('database.connections.mysql.password') ?? '');
 
         return $password !== '' ? ['MYSQL_PWD' => $password] : [];
+    }
+
+    /**
+     * Elimina cualquier rastro de la contraseña de BD de un texto destinado a
+     * registro/pantalla. mysqldump normalmente no la imprime, pero es defensa en
+     * profundidad: NUNCA debe llegar un secreto a respaldo_ejecuciones ni al flash.
+     */
+    private function sanitizar(string $texto): string
+    {
+        $password = (string) (config('database.connections.mysql.password') ?? '');
+        if ($password !== '') {
+            $texto = str_replace($password, '[oculto]', $texto);
+        }
+
+        return $texto;
+    }
+
+    /** Recorta stderr largo para el registro (la columna es text, pero el flash no). */
+    private function recortar(string $texto): string
+    {
+        return mb_strlen($texto) > 500 ? mb_substr($texto, 0, 500).'…' : $texto;
     }
 
     private function terminaEnDumpCompleted(string $salida): bool
