@@ -92,13 +92,27 @@ class Dte extends Model
     }
 
     /**
-     * Documentos de PRODUCCIÓN real (ambiente MH '01'). Es el filtro del listado
-     * principal: solo lo emitido en producción (hoy, desde el CCF 1078). Los borradores
-     * de producción también entran (ambiente 01), no solo los ya aceptados.
+     * Documentos de PRODUCCIÓN real (ambiente MH '01'), SIEMPRE, sin importar el
+     * ambiente operativo de la instalación que consulta. Es el filtro de paneles
+     * administrativos de negocio (Dashboard) y de invalidación real: ahí un CCF de
+     * pruebas (ambiente 00) nunca debe contar ni aparecer.
      */
     public function scopeProduccion(Builder $q): Builder
     {
         return $q->where('ambiente', AmbienteHacienda::Produccion->value);
+    }
+
+    /**
+     * Documentos del AMBIENTE OPERATIVO ACTUAL de ESTA instalación (config('dte.ambiente')):
+     * '00' en desarrollo/APITEST, '01' en el servidor de producción. Es el filtro del
+     * listado principal de Facturación (borradores incluidos, para poder seguir
+     * trabajando): a diferencia de scopeProduccion(), NO fuerza siempre ambiente '01' —
+     * eso solo aplica al Dashboard (negocio), no a la pantalla operativa donde se crean
+     * y editan documentos.
+     */
+    public function scopeAmbienteOperativoActual(Builder $q): Builder
+    {
+        return $q->where('ambiente', (string) config('dte.ambiente'));
     }
 
     /**

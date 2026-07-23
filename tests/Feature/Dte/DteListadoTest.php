@@ -106,6 +106,20 @@ class DteListadoTest extends TestCase
         $this->ver(['tipo_dte' => '01'])->assertOk()->assertSee('OCTIPO-FAC')->assertDontSee('OCTIPO-CCF');
     }
 
+    public function test_filtra_por_tipo_factura_consumidor_final(): void
+    {
+        $emisor = $this->emisor();
+        $this->borradores->crearBorrador([
+            'tipo_dte' => TipoDte::Factura,
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+            'numero_orden_compra' => 'OCTIPO-FACCF',
+        ]);
+        $this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCTIPO-CCFDIST']);
+
+        $this->ver(['tipo_dte' => '01'])->assertOk()->assertSee('OCTIPO-FACCF')->assertDontSee('OCTIPO-CCFDIST');
+    }
+
     public function test_filtra_por_tipo_nota_credito(): void
     {
         $emisor = $this->emisor();
@@ -114,6 +128,24 @@ class DteListadoTest extends TestCase
 
         // Filtro NC: aparece la NC (cuyo cliente es GammaCorp); con tipo CCF aparece el CCF.
         $this->ver(['tipo_dte' => '05'])->assertOk()->assertSee('Nota de Crédito');
+    }
+
+    public function test_filtra_por_tipo_factura_exportacion(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = Cliente::factory()->exportacion()->create();
+        $this->borradores->crearBorrador([
+            'tipo_dte' => TipoDte::FacturaExportacion,
+            'cliente_id' => $cliente->id,
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+            'tipo_item_expor' => 1, 'recinto_fiscal' => '01', 'tipo_regimen' => 'EX-1', 'regimen' => '1000.000', 'cod_incoterms' => '09',
+        ]);
+        $this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCTIPO-CCFVSFEX']);
+
+        $resp = $this->ver(['tipo_dte' => '11'])->assertOk();
+        $resp->assertSee('Factura de Exportación');
+        $resp->assertDontSee('OCTIPO-CCFVSFEX');
     }
 
     public function test_filtra_por_estado_generado_y_borrador(): void
@@ -127,16 +159,16 @@ class DteListadoTest extends TestCase
     }
 
     /**
-     * "pendientes_emitir" no es un estado real de EstadoDte: es un valor especial que el
-     * chip del listado usa para agrupar generado+firmado+enviado (ya numerados/generados
-     * localmente, pero sin resultado final de Hacienda). No debe incluir borrador ni
-     * aceptado/rechazado/invalidado.
+     * "pendientes" no es un estado real de EstadoDte: es un valor especial que el chip
+     * del listado usa para agrupar borrador+generado+firmado+enviado (el documento aún
+     * no tiene un resultado FINAL de Hacienda). No debe incluir aceptado/rechazado/
+     * invalidado.
      */
-    public function test_filtra_por_estado_pendientes_emitir(): void
+    public function test_filtra_por_estado_pendientes(): void
     {
         $emisor = $this->emisor();
 
-        $this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-BOR']);
+        $borrador = $this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-BOR']);
         $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-GEN']));
 
         $firmado = $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-FIR']));
@@ -149,12 +181,77 @@ class DteListadoTest extends TestCase
 
         $this->aceptarCcf($this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCPEND-ACE'])));
 
-        $this->ver(['estado' => 'pendientes_emitir'])->assertOk()
+        $this->ver(['estado' => 'pendientes'])->assertOk()
+            ->assertSee('OCPEND-BOR')
             ->assertSee('OCPEND-GEN')
             ->assertSee('OCPEND-FIR')
             ->assertSee('OCPEND-ENV')
-            ->assertDontSee('OCPEND-BOR')
             ->assertDontSee('OCPEND-ACE');
+
+        // El borrador agrupado en "pendientes" sigue pudiendo abrirse y editarse.
+        $this->ver(['estado' => 'pendientes'])->assertOk()
+            ->assertSee(route('facturacion.edit', $borrador), false);
+    }
+
+    public function test_filtra_por_estado_aceptados(): void
+    {
+        $emisor = $this->emisor();
+        $this->aceptarCcf($this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCACE-SI'])));
+        $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCACE-NO']));
+
+        $this->ver(['estado' => 'aceptado'])->assertOk()
+            ->assertSee('OCACE-SI')
+            ->assertDontSee('OCACE-NO');
+    }
+
+    /**
+     * "rechazados_invalidados" agrupa ambos estados finales negativos (rechazado por
+     * Hacienda o invalidado/anulado internamente) en un solo acceso rápido.
+     */
+    public function test_filtra_por_estado_rechazados_invalidados(): void
+    {
+        $emisor = $this->emisor();
+
+        $rechazado = $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCRI-RECH']));
+        $rechazado->estado = EstadoDte::Rechazado;
+        $rechazado->save();
+
+        $invalidado = $this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCRI-INVAL']));
+        $invalidado->estado = EstadoDte::Invalidado;
+        $invalidado->save();
+
+        $this->aceptarCcf($this->generar($this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OCRI-ACE'])));
+
+        $this->ver(['estado' => 'rechazados_invalidados'])->assertOk()
+            ->assertSee('OCRI-RECH')
+            ->assertSee('OCRI-INVAL')
+            ->assertDontSee('OCRI-ACE');
+    }
+
+    public function test_combina_buscador_con_filtro_de_tipo(): void
+    {
+        // Tokens de orden de compra (solo aparecen en la tabla, no en el <select> de
+        // clientes): comparten el prefijo "OC-COMBOTIPO" para que el buscador (LIKE) los
+        // encuentre a ambos, pero cada uno es único para poder distinguirlos por tipo.
+        $emisor = $this->emisor();
+        $this->ccfBorrador($emisor, Cliente::factory()->contribuyente()->create(), ['numero_orden_compra' => 'OC-COMBOTIPO-CCF']);
+        $this->borradores->crearBorrador([
+            'tipo_dte' => TipoDte::Factura,
+            'cliente_id' => Cliente::factory()->contribuyente()->create(),
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+            'numero_orden_compra' => 'OC-COMBOTIPO-FAC',
+        ]);
+
+        // Buscador solo: ambos documentos coinciden por el prefijo compartido.
+        $this->ver(['q' => 'OC-COMBOTIPO'])->assertOk()
+            ->assertSee('OC-COMBOTIPO-CCF')
+            ->assertSee('OC-COMBOTIPO-FAC');
+
+        // Buscador + filtro de tipo CCF combinados: solo el CCF.
+        $this->ver(['q' => 'OC-COMBOTIPO', 'tipo_dte' => '03'])->assertOk()
+            ->assertSee('OC-COMBOTIPO-CCF')
+            ->assertDontSee('OC-COMBOTIPO-FAC');
     }
 
     public function test_busca_por_orden_de_compra(): void

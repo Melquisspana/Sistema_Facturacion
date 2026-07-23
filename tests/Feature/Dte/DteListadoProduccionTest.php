@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -14,9 +15,14 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Listado principal LIMPIO: muestra SOLO documentos de producción real (ambiente 01,
- * desde el CCF 1078). Las pruebas/piloto/simulación (ambiente 00) quedan fuera del
- * listado principal y su acceso vive ESCONDIDO en el panel de Auditoría (admin/contador).
+ * Listado principal de Facturación: muestra el AMBIENTE OPERATIVO ACTUAL de esta
+ * instalación (config('dte.ambiente')) — '00' en desarrollo/APITEST, '01' en el
+ * servidor de producción — con TODOS los estados (borrador incluido), para poder
+ * seguir trabajando. Nunca mezcla ambos ambientes en la misma vista por defecto.
+ *
+ * El filtro fijo a SIEMPRE producción real (ambiente '01', sin importar la
+ * instalación) es exclusivo del Dashboard/negocio — ver DashboardTest — y de la
+ * pantalla de invalidaciones; NO aplica a este listado operativo.
  */
 class DteListadoProduccionTest extends TestCase
 {
@@ -44,13 +50,13 @@ class DteListadoProduccionTest extends TestCase
         return User::factory()->create()->assignRole($rol);
     }
 
-    private function dte(string $ambiente, string $numeroControl, string $clienteNombre): Dte
+    private function dte(string $ambiente, string $estado, ?string $numeroControl, string $clienteNombre): Dte
     {
         return Dte::create([
             'establecimiento_id' => $this->estab->id,
             'punto_venta_id' => $this->pv->id,
             'tipo_dte' => '03',
-            'estado' => 'aceptado',
+            'estado' => $estado,
             'ambiente' => $ambiente,
             'cliente_id' => Cliente::factory()->contribuyente()->create(['nombre' => $clienteNombre])->id,
             'numero_control' => $numeroControl,
@@ -62,44 +68,99 @@ class DteListadoProduccionTest extends TestCase
 
     private function produccion(): Dte
     {
-        return $this->dte('01', 'DTE-03-M001P001-000000000001078', 'Cliente Producción SA');
+        return $this->dte('01', EstadoDte::Aceptado->value, 'DTE-03-M001P001-000000000001078', 'Cliente Producción SA');
     }
 
     private function prueba(): Dte
     {
-        return $this->dte('00', 'DTE-03-M001P001-000000000000013', 'Cliente Prueba SA');
+        return $this->dte('00', EstadoDte::Aceptado->value, 'DTE-03-M001P001-000000000000013', 'Cliente Prueba SA');
     }
 
-    // --- Listado principal = solo producción ---
+    // --- Listado principal = ambiente operativo ACTUAL de la instalación ---
 
-    public function test_listado_principal_muestra_produccion_y_oculta_pruebas(): void
+    public function test_en_desarrollo_el_listado_muestra_ambiente_00_y_oculta_01(): void
     {
-        $this->produccion();
-        $this->prueba();
+        config(['dte.ambiente' => '00']);
+        $dev = $this->prueba();
+        $prod = $this->produccion();
 
-        // Se asierta por número de control (solo aparece en filas de la tabla; el nombre de
-        // cliente NO sirve porque también sale en el <select> de filtro de clientes).
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.index'))
             ->assertOk()
-            ->assertSee('DTE-03-M001P001-000000000001078') // producción visible (1078)
-            ->assertDontSee('DTE-03-M001P001-000000000000013') // prueba oculta
-            ->assertSee('solo documentos de'); // nota "Mostrando solo documentos de producción"
+            ->assertSee($dev->numero_control)
+            ->assertDontSee($prod->numero_control)
+            ->assertSee('Pruebas'); // etiqueta de ambiente del listado
     }
 
-    public function test_listado_principal_no_ofrece_ver_pruebas(): void
+    public function test_en_produccion_el_listado_muestra_ambiente_01_y_oculta_00(): void
     {
-        $this->prueba();
+        config(['dte.ambiente' => '01']);
+        $dev = $this->prueba();
+        $prod = $this->produccion();
 
-        // A propósito NO hay botón/enlace para ver pruebas en el listado normal.
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.index'))
             ->assertOk()
-            ->assertDontSee('documentos de prueba', false)
-            ->assertDontSee(route('auditoria.documentos_prueba'), false);
+            ->assertSee($prod->numero_control)
+            ->assertDontSee($dev->numero_control)
+            ->assertSee('Producción'); // etiqueta de ambiente del listado
     }
 
-    // --- Acceso a pruebas ESCONDIDO en Auditoría ---
+    public function test_borrador_del_ambiente_actual_aparece_y_puede_editarse(): void
+    {
+        // Reproduce la regresión: un CCF recién creado (borrador, sin número de control
+        // todavía) en el ambiente activo de la instalación DEBE verse y poder editarse.
+        config(['dte.ambiente' => '00']);
+        $borrador = $this->dte('00', EstadoDte::Borrador->value, null, 'Cliente Borrador Dev SA');
+
+        $resp = $this->actingAs($this->usuario('facturacion'))->get(route('facturacion.index'))->assertOk();
+
+        $resp->assertSee('Cliente Borrador Dev SA');
+        $resp->assertSee(route('facturacion.edit', $borrador), false);
+    }
+
+    public function test_generado_del_ambiente_actual_aparece_en_desarrollo(): void
+    {
+        config(['dte.ambiente' => '00']);
+        $generado = $this->dte('00', EstadoDte::Generado->value, 'DTE-03-M001P002-000000000000004', 'Cliente Generado Dev SA');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.index'))
+            ->assertOk()
+            ->assertSee($generado->numero_control);
+    }
+
+    public function test_borrador_ambiente_01_aparece_cuando_la_instalacion_esta_en_produccion(): void
+    {
+        config(['dte.ambiente' => '01']);
+        $borrador = $this->dte('01', EstadoDte::Borrador->value, null, 'Cliente Borrador Prod SA');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('facturacion.index'))
+            ->assertOk()
+            ->assertSee('Cliente Borrador Prod SA');
+    }
+
+    public function test_todos_incluye_todos_los_estados_del_ambiente_actual(): void
+    {
+        config(['dte.ambiente' => '00']);
+        $borrador = $this->dte('00', EstadoDte::Borrador->value, null, 'Cliente Todos Borrador SA');
+        $generado = $this->dte('00', EstadoDte::Generado->value, 'DTE-03-M001P002-000000000000010', 'Cliente Todos Generado SA');
+        $aceptado = $this->dte('00', EstadoDte::Aceptado->value, 'DTE-03-M001P002-000000000000011', 'Cliente Todos Aceptado SA');
+        $rechazado = $this->dte('00', EstadoDte::Rechazado->value, 'DTE-03-M001P002-000000000000012', 'Cliente Todos Rechazado SA');
+        $invalidado = $this->dte('00', EstadoDte::Invalidado->value, 'DTE-03-M001P002-000000000000013', 'Cliente Todos Invalidado SA');
+
+        // Sin filtro de estado ("Todos"): deben aparecer los 5, del ambiente actual.
+        $resp = $this->actingAs($this->usuario('facturacion'))->get(route('facturacion.index'))->assertOk();
+
+        $resp->assertSee('Cliente Todos Borrador SA');
+        $resp->assertSee($generado->numero_control);
+        $resp->assertSee($aceptado->numero_control);
+        $resp->assertSee($rechazado->numero_control);
+        $resp->assertSee($invalidado->numero_control);
+    }
+
+    // --- Acceso a pruebas ESCONDIDO en Auditoría (sin cambios) ---
 
     public function test_auditoria_muestra_boton_a_documentos_de_prueba(): void
     {

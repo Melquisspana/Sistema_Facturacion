@@ -271,11 +271,13 @@ class DteListadoFiltrosUiTest extends TestCase
 
         $this->ver()->assertOk()
             ->assertSee('Todos')
-            ->assertSee('Aceptados')
-            ->assertSee('Pendientes de emitir')
-            ->assertSee('En edición')
+            ->assertSee('CCF')
+            ->assertSee('Facturas consumidor final')
             ->assertSee('Notas de crédito')
-            ->assertSee('Anulados');
+            ->assertSee('Facturas de exportación')
+            ->assertSee('Pendientes')
+            ->assertSee('Aceptados')
+            ->assertSee('Rechazados / invalidados');
     }
 
     public function test_el_acceso_rapido_activo_se_distingue_visualmente(): void

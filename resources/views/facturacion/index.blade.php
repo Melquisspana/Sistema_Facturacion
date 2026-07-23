@@ -76,19 +76,23 @@
                     </div>
                 @endcan
 
-                {{-- El listado muestra SOLO producción real (ambiente 01). Las pruebas/simulación
-                     viven escondidas en Auditoría; a propósito no hay botón para verlas aquí. --}}
-                <p class="mb-2 text-xs text-gray-400">Mostrando solo documentos de <strong class="text-gray-500">producción</strong> (ambiente 01), desde el CCF 1078.</p>
+                {{-- El listado muestra el ambiente OPERATIVO ACTUAL de esta instalación (00 en
+                     desarrollo/APITEST, 01 en el servidor de producción), con todos sus estados
+                     (borrador incluido). Nunca mezcla ambos ambientes en la misma vista. El otro
+                     ambiente vive escondido en Auditoría; a propósito no hay botón para verlo aquí. --}}
+                <p class="mb-2 text-xs text-gray-400">Mostrando documentos del ambiente <strong class="text-gray-500">{{ $ambienteListado }}</strong> (el activo de esta instalación).</p>
 
                 {{-- Accesos rápidos por tipo/estado (chips) --}}
                 <div class="flex flex-wrap items-center gap-1.5 mb-2">
                     <span class="text-xs font-medium text-gray-400 mr-0.5">Accesos rápidos:</span>
                     <a href="{{ route('facturacion.index') }}" class="{{ $estadoActual === '' && $tipoActual === '' ? $chipActivo : $chipInactivo }}">Todos</a>
-                    <a href="{{ route('facturacion.index', ['estado' => 'aceptado']) }}" class="{{ $estadoActual === 'aceptado' ? $chipActivo : $chipInactivo }}">Aceptados</a>
-                    <a href="{{ route('facturacion.index', ['estado' => 'pendientes_emitir']) }}" class="{{ $estadoActual === 'pendientes_emitir' ? $chipActivo : $chipInactivo }}">Pendientes de emitir</a>
-                    <a href="{{ route('facturacion.index', ['estado' => 'borrador']) }}" class="{{ $estadoActual === 'borrador' ? $chipActivo : $chipInactivo }}">En edición</a>
+                    <a href="{{ route('facturacion.index', ['tipo_dte' => '03']) }}" class="{{ $tipoActual === '03' ? $chipActivo : $chipInactivo }}">CCF</a>
+                    <a href="{{ route('facturacion.index', ['tipo_dte' => '01']) }}" class="{{ $tipoActual === '01' ? $chipActivo : $chipInactivo }}">Facturas consumidor final</a>
                     <a href="{{ route('facturacion.index', ['tipo_dte' => '05']) }}" class="{{ $tipoActual === '05' ? $chipActivo : $chipInactivo }}">Notas de crédito</a>
-                    <a href="{{ route('facturacion.index', ['estado' => 'invalidado']) }}" class="{{ $estadoActual === 'invalidado' ? $chipActivo : $chipInactivo }}">Anulados</a>
+                    <a href="{{ route('facturacion.index', ['tipo_dte' => '11']) }}" class="{{ $tipoActual === '11' ? $chipActivo : $chipInactivo }}">Facturas de exportación</a>
+                    <a href="{{ route('facturacion.index', ['estado' => 'pendientes']) }}" class="{{ $estadoActual === 'pendientes' ? $chipActivo : $chipInactivo }}">Pendientes</a>
+                    <a href="{{ route('facturacion.index', ['estado' => 'aceptado']) }}" class="{{ $estadoActual === 'aceptado' ? $chipActivo : $chipInactivo }}">Aceptados</a>
+                    <a href="{{ route('facturacion.index', ['estado' => 'rechazados_invalidados']) }}" class="{{ $estadoActual === 'rechazados_invalidados' ? $chipActivo : $chipInactivo }}">Rechazados / invalidados</a>
                 </div>
 
                 {{-- Buscador siempre visible + filtros avanzados colapsables --}}
