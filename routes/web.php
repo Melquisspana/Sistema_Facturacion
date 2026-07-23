@@ -16,9 +16,26 @@ use App\Http\Controllers\Configuracion\PuntoVentaController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
+// Raíz: nunca la página de bienvenida de Breeze. Invitado -> login; autenticado
+// -> dashboard. En el dominio público, el middleware CloudflareAccessSso ya corrió
+// antes: con identidad Cloudflare válida y usuario local habilitado, acá se llega
+// autenticado y se sigue directo al dashboard (sin doble login).
 Route::get('/', function () {
-    return view('welcome');
+    return redirect()->route(auth()->check() ? 'dashboard' : 'login');
 });
+
+// Cierre de sesión COMPLETO (Laravel + Cloudflare Access): cierra la sesión local
+// igual que el logout normal y redirige al endpoint de logout de Access del MISMO
+// host, que invalida la cookie de Cloudflare. En hosts locales (sin Access) esa
+// ruta no existe en el edge, por eso el enlace solo se muestra en el dominio
+// público (ver layouts/navigation). El logout local normal queda intacto.
+Route::post('/logout-completo', function (\Illuminate\Http\Request $request) {
+    \Illuminate\Support\Facades\Auth::guard('web')->logout();
+    $request->session()->invalidate();
+    $request->session()->regenerateToken();
+
+    return redirect('/cdn-cgi/access/logout');
+})->middleware('auth')->name('logout.completo');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
 
