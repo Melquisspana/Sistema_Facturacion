@@ -110,14 +110,14 @@ class DashboardController extends Controller
      * distingue el entorno: en un servidor de producción real (APP_ENV=production)
      * una advertencia sí merece revisión ("Advertencia operativa"); en desarrollo/
      * local, advertencias como transmisión deshabilitada o dry-run activo son el
-     * estado ESPERADO durante la preparación, no un problema ("Operación segura de
+     * estado ESPERADO durante la preparación, no un problema ("Entorno seguro de
      * desarrollo") — evita que el equipo se acostumbre a ignorar una alerta roja.
      */
     private function textoEstadoGeneral(string $estado): string
     {
         return match ($estado) {
             'critico' => 'Atención inmediata',
-            'advertencia' => config('app.env') === 'production' ? 'Advertencia operativa' : 'Operación segura de desarrollo',
+            'advertencia' => config('app.env') === 'production' ? 'Advertencia operativa' : 'Entorno seguro de desarrollo',
             default => 'Todo en orden',
         };
     }

@@ -189,6 +189,9 @@ class SaludSistemaTest extends TestCase
         // información válida, no un bug). Esta prueba aísla el DIAGNÓSTICO OPERATIVO
         // (el mismo que usa el Dashboard) y confirma que, con todo en verde, su nivel
         // es 'correcto' sin ningún check individual en advertencia/crítico.
+        // Reset del throttle de proceso: garantiza que este pulse() escriba el latido
+        // aunque otro test lo haya pulsado hace <15s (aislamiento independiente del orden).
+        \App\Support\WorkerHeartbeat::olvidar();
         \App\Support\WorkerHeartbeat::pulse();
         \App\Models\RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
@@ -220,6 +223,26 @@ class SaludSistemaTest extends TestCase
         $resp = $this->actingAs($admin)->ver()->assertOk();
         $resp->assertSee('Administradores activos');
         $resp->assertDontSee('Atención inmediata: hay un problema real que revisar');
+    }
+
+    public function test_advertencia_en_desarrollo_se_presenta_como_entorno_seguro(): void
+    {
+        // Mismo estado que el test anterior (advertencia, no crítico), pero verificando
+        // la PRESENTACIÓN en desarrollo: texto "Entorno seguro de desarrollo", pill
+        // "Desarrollo" y paleta azul (sky) informativa, sin lenguaje de alerta.
+        config(['app.debug' => false]);
+        \App\Support\WorkerHeartbeat::pulse();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+
+        $resp = $this->actingAs($this->usuario('administrador'))->ver()->assertOk();
+        $resp->assertSee('Entorno seguro de desarrollo');   // texto del estado general
+        $resp->assertSee('bg-sky-50 border-sky-300 text-sky-800'); // banner azul informativo
+        $resp->assertDontSee('Advertencia operativa');      // texto de producción
+        $resp->assertDontSee('Atención inmediata');         // lenguaje de crítico
     }
 
     public function test_estado_general_critico_por_backup_vencido(): void

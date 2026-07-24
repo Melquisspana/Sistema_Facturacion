@@ -294,6 +294,27 @@ class DashboardTest extends TestCase
             ->assertOk()->assertSee('Todo en orden');
     }
 
+    public function test_advertencia_en_desarrollo_se_ve_como_entorno_seguro_azul(): void
+    {
+        // Backup de hoy presente (sin crítico) y worker sin latido con cola vacía:
+        // el estado global queda en "advertencia", que en desarrollo es el estado
+        // seguro esperado. Debe verse como "Entorno seguro de desarrollo" en azul
+        // (sky), no como alerta naranja/roja.
+        \App\Support\WorkerHeartbeat::olvidar();
+        \App\Models\RespaldoEjecucion::create([
+            'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
+            'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
+            'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Entorno seguro de desarrollo')
+            ->assertSee('text-sky-700')            // color informativo aplicado
+            ->assertDontSee('Atención inmediata')  // no es crítico
+            ->assertDontSee('Advertencia operativa'); // no es el texto de producción
+    }
+
     public function test_failed_jobs_muestra_atencion_inmediata(): void
     {
         \App\Support\WorkerHeartbeat::pulse();
