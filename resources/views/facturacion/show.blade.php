@@ -458,7 +458,7 @@
             @if ($mostrarInvalidacion || $mostrarReversion)
                 <div>
                     <h3 class="font-semibold text-gray-700 mb-3">Corrección / reversión del documento</h3>
-                    <div class="grid grid-cols-1 {{ $dosBloques ? 'md:grid-cols-2' : '' }} gap-6 items-stretch">
+                    <div class="grid grid-cols-1 {{ $dosBloques ? 'md:grid-cols-2' : '' }} gap-6 items-start">
                         {{-- Bloque 1: Invalidación oficial (evento anulardte). Partial reutilizado. --}}
                         @if ($mostrarInvalidacion)
                             @include('facturacion.partials.invalidacion', ['dte' => $dte, 'invalidacion' => $invalidacion])
@@ -466,7 +466,7 @@
 
                         {{-- Bloque 2: Revertir con nota de crédito (solo CCF aceptado). --}}
                         @if ($mostrarReversion)
-                            <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-rose-400 h-full">
+                            <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-rose-400">
                                 <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
                                     <h3 class="font-semibold text-gray-700">Revertir con nota de crédito</h3>
                                     <span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800">Crea un borrador</span>

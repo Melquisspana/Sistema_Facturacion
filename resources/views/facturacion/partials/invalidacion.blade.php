@@ -21,7 +21,7 @@
     $bloqueadoReal = ($inv['candados']['bloqueado'] ?? true) || ! ($inv['puede_transmitir'] ?? false);
 @endphp
 
-<div class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-amber-400 h-full">
+<div class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-amber-400">
     <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h3 class="font-semibold text-gray-700">Invalidación oficial (evento anulardte)</h3>
         @if ($inv['ya_invalidado'] ?? false)
@@ -34,37 +34,9 @@
     </div>
 
     <p class="mb-4 text-sm text-gray-500">
-        Invalida el documento ante Hacienda enviando el evento al ambiente del propio documento.
-        Solo se marca como <strong>Invalidado</strong> si Hacienda ACEPTA; si rechaza o falla, el
-        documento conserva su estado y podés revertirlo con una nota de crédito. No se deshace.
+        Invalida el documento ante Hacienda. Solo se marca <strong>Invalidado</strong> si Hacienda ACEPTA;
+        si rechaza o falla, conserva su estado y podés revertirlo con una nota de crédito. No se deshace.
     </p>
-
-    @if ($inv['protegido'] ?? false)
-        <div class="mb-4 bg-rose-50 border border-rose-300 rounded-md p-3 text-xs text-rose-800 font-semibold">
-            DOCUMENTO PROTEGIDO COMO EVIDENCIA APITEST
-            <p class="mt-1 font-normal">
-                Este DTE está en la lista de protección
-                (<span class="font-mono">dte.invalidacion.protegidos_numero_control</span> /
-                <span class="font-mono">protegidos_codigo_generacion</span>) y <strong>no puede invalidarse</strong>
-                por esta vía —ni mock ni real— mientras la protección siga activa.
-            </p>
-        </div>
-    @endif
-
-    @if ($inv['tiene_nc_relacionada'] ?? false)
-        <div class="mb-4 bg-orange-50 border border-orange-300 rounded-md p-3 text-xs text-orange-800 font-semibold">
-            ESTE DOCUMENTO YA TIENE UNA NOTA DE CRÉDITO RELACIONADA
-            <p class="mt-1 font-normal">
-                Invalidar oficialmente un documento que ya tiene una Nota de Crédito emitida en su contra puede
-                producir una <strong>doble corrección fiscal</strong> (la NC y el evento de invalidación cubriendo
-                la misma operación).
-                @if (($inv['notas_credito_relacionadas'] ?? collect())->isNotEmpty())
-                    NC relacionada(s): <span class="font-mono">{{ $inv['notas_credito_relacionadas']->pluck('numero_control')->implode(', ') }}</span>.
-                @endif
-                Requiere confirmación explícita para continuar.
-            </p>
-        </div>
-    @endif
 
     {{-- Evidencia del evento ya firmado (mock o real). Solo lectura. --}}
     @if ($inv['ya_invalidado'] && filled($selloInval))
@@ -104,77 +76,106 @@
         </div>
     @endif
 
-    {{-- === Transmisión REAL a Hacienda (candado-gated). Se muestra para cualquier documento
-         aceptado sin evento previo; si está bloqueada (candados del entorno o documento no
-         candidato, p. ej. MOCK) el botón va deshabilitado y se listan las razones. === --}}
+    {{-- === Transmisión REAL a Hacienda (candado-gated). Bloqueada → resumen compacto +
+         razones plegadas + formulario plegado (botón deshabilitado). Habilitada → formulario
+         abierto. Los candados de backend se revalidan siempre (Form Request + servicio). === --}}
     @if (! ($inv['ya_invalidado'] ?? false))
-        <div class="mb-2 bg-rose-50 border border-rose-300 rounded-md p-3 text-xs text-rose-800 font-semibold">
-            TRANSMITE A HACIENDA DE VERDAD (evento anulardte)
-            <p class="mt-1 font-normal">
-                Esta acción envía la invalidación al ambiente del propio documento. El servidor revalida
-                todos los candados (aceptación real por el MH, flags, firma real, ambiente, frase exacta,
-                doble invalidación, evidencia protegida y NC relacionada) antes de transmitir.
-            </p>
-        </div>
-
         @if ($bloqueadoReal)
-            <div class="mb-3 bg-gray-50 border border-gray-200 rounded-md p-3">
-                <p class="text-xs font-semibold text-gray-600 mb-1">Bloqueada en este entorno. Razones:</p>
-                <ul class="text-xs text-gray-500 list-disc list-inside space-y-1">
-                    @foreach ($inv['candados']['razones'] as $razon)
-                        <li>{{ $razon }}</li>
-                    @endforeach
+            {{-- Mensajes para el usuario (no técnicos): las razones se derivan de las condiciones
+                 de negocio. El detalle técnico completo (flags/configs/parámetros) NO se muestra en
+                 la interfaz; queda en el servicio y la auditoría. Es solo presentación: no cambia
+                 candados, lógica ni permisos. --}}
+            @php
+                $razonesUsuario = [];
+                if ($inv['protegido'] ?? false) {
+                    $razonesUsuario[] = 'Este documento está protegido como evidencia de pruebas.';
+                }
+                if (! $dte->aceptadoRealmentePorMh()) {
+                    $razonesUsuario[] = 'Este documento no tiene una aceptación real de Hacienda (aceptación simulada).';
+                }
+                if ($inv['tiene_nc_relacionada'] ?? false) {
+                    $razonesUsuario[] = 'Este documento ya tiene una nota de crédito relacionada.';
+                }
+                // Documento apto pero bloqueado por el entorno (modo seguro): un único mensaje simple.
+                if (($inv['puede_transmitir'] ?? false) && ($inv['candados']['bloqueado'] ?? false)) {
+                    $razonesUsuario[] = 'La transmisión de invalidación está deshabilitada en este entorno de trabajo.';
+                }
+                if (empty($razonesUsuario)) {
+                    $razonesUsuario[] = 'La invalidación no está disponible en este momento.';
+                }
+            @endphp
+            <div class="rounded-md bg-gray-50 border border-gray-200 p-3">
+                <p class="text-sm font-semibold text-gray-700">Invalidación no disponible para este documento</p>
+                <ul class="mt-2 text-sm text-gray-600 list-disc list-inside space-y-1">
+                    @foreach ($razonesUsuario as $razon)<li>{{ $razon }}</li>@endforeach
                 </ul>
+                @if ($inv['tiene_nc_relacionada'] ?? false)
+                    <p class="mt-2 text-xs text-gray-500">
+                        Invalidarlo además de la nota de crédito podría causar una doble corrección fiscal. Revisá primero la nota relacionada.
+                    </p>
+                @endif
+            </div>
+        @else
+            <div class="mb-1 bg-rose-50 border border-rose-300 rounded-md p-3 text-xs text-rose-800 font-semibold">
+                TRANSMITE A HACIENDA DE VERDAD (evento anulardte) — solo se marca Invalidado si Hacienda ACEPTA. No se deshace.
             </div>
         @endif
 
-        <form method="POST" action="{{ route('facturacion.invalidacion.transmitir', $dte) }}"
-              class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end"
-              onsubmit="return dteConfirmarInvalidacionReal(this);">
-            @csrf
-            <div>
-                <x-input-label for="inval_real_tipo" value="Tipo de anulación (CAT-024) *" />
-                <select id="inval_real_tipo" name="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
-                    @foreach ($inv['tipos'] as $valor => $label)
-                        <option value="{{ $valor }}" @selected((int) old('tipo', \App\Enums\TipoAnulacionMh::RescindirOperacion->value) === $valor)>{{ $valor }} — {{ $label }}</option>
-                    @endforeach
-                </select>
-                <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
+        <details class="mt-3 group rounded-lg border border-gray-200" {{ $bloqueadoReal ? '' : 'open' }}>
+            <summary class="cursor-pointer select-none px-4 py-2 text-sm font-semibold text-gray-600 hover:text-gray-800">
+                Formulario de invalidación oficial
+                @if ($bloqueadoReal)<span class="ml-1 font-normal text-gray-400">(deshabilitado mientras esté bloqueada)</span>@endif
+            </summary>
+            <div class="px-4 pb-4 pt-1">
+                <form method="POST" action="{{ route('facturacion.invalidacion.transmitir', $dte) }}"
+                      class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end"
+                      onsubmit="return dteConfirmarInvalidacionReal(this);">
+                    @csrf
+                    <div>
+                        <x-input-label for="inval_real_tipo" value="Tipo de anulación (CAT-024) *" />
+                        <select id="inval_real_tipo" name="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
+                            @foreach ($inv['tipos'] as $valor => $label)
+                                <option value="{{ $valor }}" @selected((int) old('tipo', \App\Enums\TipoAnulacionMh::RescindirOperacion->value) === $valor)>{{ $valor }} — {{ $label }}</option>
+                            @endforeach
+                        </select>
+                        <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <x-input-label for="inval_real_motivo" value="Motivo en texto (obligatorio si tipo = 3)" />
+                        <x-text-input id="inval_real_motivo" name="motivo" type="text" class="mt-1 block w-full" :value="old('motivo')" />
+                        <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <x-input-label for="inval_real_reemplazo" value="Código de generación de reemplazo (obligatorio si tipo = 1)" />
+                        <x-text-input id="inval_real_reemplazo" name="reemplazo" type="text" class="mt-1 block w-full font-mono" :value="old('reemplazo')" />
+                        <x-input-error :messages="$errors->get('reemplazo')" class="mt-1" />
+                    </div>
+                    @if ($inv['tiene_nc_relacionada'] ?? false)
+                        <div class="md:col-span-3">
+                            <label class="inline-flex items-center gap-2 text-xs text-orange-700 font-semibold">
+                                <input type="checkbox" name="confirmar_nc_relacionada" value="1" class="rounded border-orange-400 text-orange-600 focus:ring-orange-500">
+                                Entiendo el riesgo de doble corrección fiscal y confirmo invalidar de todas formas
+                            </label>
+                        </div>
+                    @endif
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-semibold text-rose-700 mb-1">Escribí exactamente: <span class="font-mono">INVALIDAR DTE</span></label>
+                        <input type="text" name="confirmacion_invalidacion" autocomplete="off" spellcheck="false" placeholder="INVALIDAR DTE"
+                               class="w-72 rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
+                        <x-input-error :messages="$errors->get('confirmacion_invalidacion')" class="mt-1" />
+                    </div>
+                    <div class="md:col-span-3">
+                        <button type="submit" {{ $bloqueadoReal ? 'disabled' : '' }}
+                                class="inline-flex items-center px-4 py-2 text-white text-sm rounded-md font-medium {{ $bloqueadoReal ? 'bg-gray-300 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700' }}">
+                            Transmitir invalidación a Hacienda
+                        </button>
+                        @if ($bloqueadoReal)
+                            <p class="mt-1 text-xs text-gray-400">Botón deshabilitado: la transmisión real está candada en este entorno (ver razones arriba).</p>
+                        @endif
+                    </div>
+                </form>
             </div>
-            <div class="md:col-span-2">
-                <x-input-label for="inval_real_motivo" value="Motivo en texto (obligatorio si tipo = 3)" />
-                <x-text-input id="inval_real_motivo" name="motivo" type="text" class="mt-1 block w-full" :value="old('motivo')" />
-                <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
-            </div>
-            <div class="md:col-span-2">
-                <x-input-label for="inval_real_reemplazo" value="Código de generación de reemplazo (obligatorio si tipo = 1)" />
-                <x-text-input id="inval_real_reemplazo" name="reemplazo" type="text" class="mt-1 block w-full font-mono" :value="old('reemplazo')" />
-                <x-input-error :messages="$errors->get('reemplazo')" class="mt-1" />
-            </div>
-            @if ($inv['tiene_nc_relacionada'] ?? false)
-                <div class="md:col-span-3">
-                    <label class="inline-flex items-center gap-2 text-xs text-orange-700 font-semibold">
-                        <input type="checkbox" name="confirmar_nc_relacionada" value="1" class="rounded border-orange-400 text-orange-600 focus:ring-orange-500">
-                        Entiendo el riesgo de doble corrección fiscal y confirmo invalidar de todas formas
-                    </label>
-                </div>
-            @endif
-            <div class="md:col-span-3">
-                <label class="block text-xs font-semibold text-rose-700 mb-1">Escribí exactamente: <span class="font-mono">INVALIDAR DTE</span></label>
-                <input type="text" name="confirmacion_invalidacion" autocomplete="off" spellcheck="false" placeholder="INVALIDAR DTE"
-                       class="w-72 rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
-                <x-input-error :messages="$errors->get('confirmacion_invalidacion')" class="mt-1" />
-            </div>
-            <div class="md:col-span-3">
-                <button type="submit" {{ $bloqueadoReal ? 'disabled' : '' }}
-                        class="inline-flex items-center px-4 py-2 text-white text-sm rounded-md font-medium {{ $bloqueadoReal ? 'bg-gray-300 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700' }}">
-                    Transmitir invalidación a Hacienda
-                </button>
-                @if ($bloqueadoReal)
-                    <p class="mt-1 text-xs text-gray-400">Botón deshabilitado: revisá las razones de arriba. La transmisión real está candada en este entorno.</p>
-                @endif
-            </div>
-        </form>
+        </details>
 
         <script>
             function dteConfirmarInvalidacionReal(form) {
