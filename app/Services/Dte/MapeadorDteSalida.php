@@ -127,6 +127,13 @@ class MapeadorDteSalida
         $sala = $dte->clienteSucursal;
         $ubicacion = $sala ?? $cliente;
 
+        // Contacto efectivo: el de la sala cuando trae valor; si está vacío, el del
+        // cliente. `filled()` descarta null y cadenas vacías/espacios, así que una
+        // sala sin contacto no borra el del cliente. Sin sala (incl. exportación,
+        // que nunca la tiene) el resultado es exactamente el contacto del cliente.
+        $telefono = filled($sala?->telefono) ? $sala->telefono : $cliente->telefono;
+        $correo = filled($sala?->correo) ? $sala->correo : $cliente->correo;
+
         return new ReceptorDteData(
             tipoDocumento: $cliente->tipo_documento?->value,
             numDocumento: $cliente->num_documento,
@@ -140,8 +147,8 @@ class MapeadorDteSalida
             municipio: $ubicacion->municipio?->codigo,
             distrito: $ubicacion->distrito?->codigo,
             direccion: $ubicacion->direccion,
-            telefono: $cliente->telefono,
-            correo: $cliente->correo,
+            telefono: $telefono,
+            correo: $correo,
             tipoPersona: $cliente->tipo_persona?->value,
             sucursalNombre: $sala?->nombre,
         );
