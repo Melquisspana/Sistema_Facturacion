@@ -26,12 +26,12 @@
     $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
 
     // Activos por item (rutas actuales, sin cambios de lógica).
-    $enInvalidaciones = request()->routeIs('facturacion.invalidaciones');
     $enPreparar = request()->routeIs('facturacion.preparar-produccion');
     $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
     // "Facturación" cubre el listado y las pantallas de creación (CCF, NC, factura,
-    // exportación), que ya no tienen enlace propio en el sidebar.
-    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enInvalidaciones && ! $enPreparar && ! $enReporteContadora;
+    // exportación), que ya no tienen enlace propio en el sidebar. La invalidación ya no
+    // tiene enlace lateral: sus acciones viven dentro de la ficha de cada documento.
+    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enPreparar && ! $enReporteContadora;
 
     $enNuevaLista = request()->routeIs('exportaciones.create');
     $enExpClientes = request()->routeIs('exportaciones.clientes.*');
@@ -168,7 +168,6 @@
                     <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="facturacion" />Facturación</p>
                     <div class="space-y-0.5">
                         <x-sidebar-link :href="route('facturacion.index')" :active="$enCcfFacturas">Facturación</x-sidebar-link>
-                        <x-sidebar-link :href="route('facturacion.invalidaciones')" :active="$enInvalidaciones">Invalidar</x-sidebar-link>
                         @if ($vePreparacion)
                             <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
                         @endif

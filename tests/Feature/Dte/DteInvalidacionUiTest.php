@@ -38,7 +38,9 @@ class DteInvalidacionUiTest extends TestCase
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Storage::fake('local');
-        Http::fake(); // nada debe salir a la red desde la UI de invalidación
+        // NOTA: el fake HTTP se activa POR TEST (no global) para poder registrar stubs
+        // específicos del firmador/auth/anulardte con la precedencia correcta. Con un
+        // Http::fake() en setUp, su comodín gana sobre los stubs específicos del test.
 
         config()->set('dte.invalidacion.mock', true);
         // Responsable/solicitante REALES (el schema los exige); vienen de config en la UI.
@@ -93,8 +95,9 @@ class DteInvalidacionUiTest extends TestCase
             ->get(route('facturacion.show', $nc))
             ->assertOk()
             ->assertSee('Invalidación oficial (evento anulardte)')
-            ->assertSee('Firmar invalidación (MOCK)')
-            ->assertSee('NO SE TRANSMITE A HACIENDA DESDE LA WEB');
+            ->assertSee('Firmar invalidación (MOCK)')          // mock sigue disponible (avanzado)
+            ->assertSee('Transmitir invalidación a Hacienda')  // acción real (candada en este entorno)
+            ->assertSee('INVALIDAR DTE');                       // frase-barrera visible
     }
 
     /**
@@ -118,6 +121,7 @@ class DteInvalidacionUiTest extends TestCase
 
     public function test_dry_run_no_persiste_ni_transmite(): void
     {
+        Http::fake();
         $nc = $this->ncAceptada();
 
         $this->actingAs($this->usuario('administrador'))
@@ -137,6 +141,7 @@ class DteInvalidacionUiTest extends TestCase
 
     public function test_mock_persiste_columnas_sin_cambiar_estado_ni_evidencia(): void
     {
+        Http::fake();
         $nc = $this->ncAceptada();
         $selloOriginal = $nc->sello_recepcion;
 
@@ -236,6 +241,7 @@ class DteInvalidacionUiTest extends TestCase
 
     public function test_no_administradores_no_pueden_dry_run_ni_mock(): void
     {
+        Http::fake();
         $nc = $this->ncAceptada();
 
         // Ni jefatura, ni facturación, ni contabilidad pueden invalidar (solo admin).
@@ -252,13 +258,196 @@ class DteInvalidacionUiTest extends TestCase
         Http::assertNothingSent();
     }
 
-    // --- Seguridad: no hay transmisión real desde la web ---
+    // --- Transmisión REAL desde la web: existe pero está fuertemente candada ---
 
-    public function test_no_existe_ruta_de_transmision_real_de_invalidacion(): void
+    public function test_rutas_de_invalidacion_disponibles(): void
     {
         $this->assertTrue(Route::has('facturacion.invalidacion.mock'));
         $this->assertTrue(Route::has('facturacion.invalidacion.dry-run'));
+        // La transmisión real ahora SÍ existe en la web (candada); el nombre .real nunca existió.
+        $this->assertTrue(Route::has('facturacion.invalidacion.transmitir'));
         $this->assertFalse(Route::has('facturacion.invalidacion.real'));
-        $this->assertFalse(Route::has('facturacion.invalidacion.transmitir'));
+    }
+
+    /** Abre TODOS los candados del entorno (como el comando real contra apitest mockeado). */
+    private function abrirCandados(): void
+    {
+        config()->set('dte.invalidacion.mock', false);
+        config()->set('dte.invalidacion.real_confirmation', true);
+        config()->set('dte.firma.enabled', true);
+        config()->set('dte.firma.mock', false);
+        config()->set('dte.firma.nit', '10132512610012');
+        config()->set('dte.firma.cert_password', 'secreto');
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.test_enabled', true);
+        config()->set('dte.ambientes.00.anulacion_url', 'https://apitest.dtes.mh.gob.sv/fesv/anulardte');
+    }
+
+    /** Firmador + auth + anulardte mockeados (no sale nada real a la red). */
+    private function fakeHttp(array $anulardteResponse): void
+    {
+        Http::fake([
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200),
+            '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
+            '*anulardte*' => Http::response($anulardteResponse, $anulardteResponse['_http'] ?? 200),
+        ]);
+    }
+
+    private function payloadReal(array $override = []): array
+    {
+        return array_merge([
+            'tipo' => TipoAnulacionMh::RescindirOperacion->value,
+            'confirmacion_invalidacion' => 'INVALIDAR DTE',
+        ], $override);
+    }
+
+    public function test_modo_seguro_bloquea_y_no_hace_llamadas(): void
+    {
+        // setUp deja el mock activo → candados cerrados: aunque la frase sea correcta,
+        // el servicio bloquea y no transmite nada.
+        Http::fake();
+        $nc = $this->ncAceptada();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertRedirect(route('facturacion.show', $nc))
+            ->assertSessionHas('error');
+
+        Http::assertNothingSent();
+        $nc->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $nc->estado);
+        $this->assertNull($nc->sello_invalidacion);
+        $this->assertFalse($nc->tieneEventoInvalidacion());
+    }
+
+    public function test_frase_incorrecta_bloquea(): void
+    {
+        $this->abrirCandados();
+        Http::fake();
+        $nc = $this->ncAceptada();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal(['confirmacion_invalidacion' => 'INVALIDAR']))
+            ->assertSessionHasErrors('confirmacion_invalidacion');
+
+        Http::assertNothingSent();
+        $nc->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $nc->estado);
+        $this->assertFalse($nc->tieneEventoInvalidacion());
+    }
+
+    public function test_rol_sin_permiso_recibe_403(): void
+    {
+        $this->abrirCandados();
+        Http::fake();
+        $nc = $this->ncAceptada();
+
+        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+            $this->actingAs($this->usuario($rol))
+                ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+                ->assertForbidden();
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_aceptacion_simulada_cambia_aceptado_a_invalidado(): void
+    {
+        $this->abrirCandados();
+        $this->fakeHttp([
+            'estado' => 'PROCESADO',
+            'selloRecibido' => 'SELLO-INVAL-REAL-XYZ',
+            'descripcionMsg' => 'Recibido',
+            'fhProcesamiento' => '01/07/2026 10:00:00',
+        ]);
+        $nc = $this->ncAceptada();
+        $selloOriginal = $nc->sello_recepcion;
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertRedirect(route('facturacion.show', $nc))
+            ->assertSessionHas('status');
+
+        $nc->refresh();
+        $this->assertSame(EstadoDte::Invalidado, $nc->estado);
+        $this->assertSame('SELLO-INVAL-REAL-XYZ', $nc->sello_invalidacion);
+        // El sello de recepción ORIGINAL del DTE queda intacto.
+        $this->assertSame($selloOriginal, $nc->sello_recepcion);
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'anulardte'));
+    }
+
+    public function test_rechazo_conserva_aceptado(): void
+    {
+        $this->abrirCandados();
+        $this->fakeHttp([
+            '_http' => 400,
+            'estado' => 'RECHAZADO',
+            'descripcionMsg' => 'Documento ya invalidado',
+        ]);
+        $nc = $this->ncAceptada();
+        $selloOriginal = $nc->sello_recepcion;
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertRedirect(route('facturacion.show', $nc))
+            ->assertSessionHas('error');
+
+        $nc->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $nc->estado);       // estado conservado
+        $this->assertNull($nc->sello_invalidacion);                 // rechazo no trae sello
+        $this->assertSame($selloOriginal, $nc->sello_recepcion);    // evidencia original intacta
+        $this->assertIsArray($nc->respuesta_mh_invalidacion);       // pero sí guarda el motivo
+    }
+
+    public function test_doble_invalidacion_bloqueada(): void
+    {
+        $this->abrirCandados();
+        $this->fakeHttp([
+            'estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-INVAL-REAL-XYZ',
+            'descripcionMsg' => 'ok', 'fhProcesamiento' => '01/07/2026 10:00:00',
+        ]);
+        $nc = $this->ncAceptada();
+
+        // Primera invalidación real: acepta.
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal());
+        $nc->refresh();
+        $this->assertTrue($nc->tieneEventoInvalidacion());
+
+        // Segunda: la policy la bloquea (ya tiene evento) → 403.
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertForbidden();
+    }
+
+    public function test_evidencia_protegida_bloqueada(): void
+    {
+        $this->abrirCandados();
+        Http::fake();
+        $nc = $this->ncAceptada();
+        // Protegido como evidencia (por número de control): la policy lo bloquea → 403.
+        config()->set('dte.invalidacion.protegidos_numero_control', [$nc->numero_control]);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc->refresh()), $this->payloadReal())
+            ->assertForbidden();
+
+        Http::assertNothingSent();
+        $nc->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $nc->estado);
+    }
+
+    public function test_documento_no_candidato_no_puede_transmitir(): void
+    {
+        // Una NC solo GENERADA (sin aceptación real) no es candidata: 403, sin importar flags.
+        $this->abrirCandados();
+        Http::fake();
+        $nc = $this->ncAceptada(aceptada: false);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.invalidacion.transmitir', $nc), $this->payloadReal())
+            ->assertForbidden();
+
+        Http::assertNothingSent();
     }
 }

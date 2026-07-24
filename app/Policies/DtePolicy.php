@@ -22,6 +22,21 @@ class DtePolicy
         return $user->can('dte.gestionar');
     }
 
+    /**
+     * Revertir un CCF con una Nota de Crédito por devolución total (crea un borrador con
+     * todas las líneas). Requiere el MISMO permiso operativo que crear un DTE
+     * (`dte.gestionar`) —no disponible a perfiles de solo lectura— y que el documento sea
+     * un CCF ACEPTADO REALMENTE por Hacienda (no basta el estado local: sello real, no mock).
+     * La reversión nunca emite: deja un borrador para revisión manual.
+     */
+    public function revertirConNotaCredito(User $user, Dte $dte): bool
+    {
+        return $user->can('dte.gestionar')
+            && $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
+            && $dte->estado === \App\Enums\EstadoDte::Aceptado
+            && $dte->aceptadoRealmentePorMh();
+    }
+
     /** Solo se edita un borrador, y solo con permiso de gestión. */
     public function update(User $user, Dte $dte): bool
     {
@@ -136,14 +151,17 @@ class DtePolicy
 
     /**
      * Ver el bloque de invalidación (evento anulardte) en la ficha: panel de candados,
-     * dry-run visual y, si aplica, la evidencia del evento mock. Solo gestores y solo si
-     * el DTE es candidato (aceptado realmente por el MH) o ya tiene un evento de
-     * invalidación registrado (para mostrar la evidencia). Es solo lectura.
+     * dry-run visual y, si aplica, la evidencia del evento mock. Solo gestores (permiso
+     * `dte.invalidar`) y para cualquier documento en estado ACEPTADO (real o mock) o que ya
+     * tenga un evento registrado. Es SOLO LECTURA: mostrar la tarjeta no habilita transmitir.
+     * La transmisión real la sigue candando {@see transmitirInvalidacion()} + el servicio
+     * (que exige aceptación REAL por el MH): en un documento mock la tarjeta aparece pero
+     * con el formulario deshabilitado y las razones del bloqueo, en vez de ocultarse.
      */
     public function verInvalidacion(User $user, Dte $dte): bool
     {
         return $user->can('dte.invalidar')
-            && ($dte->aceptadoRealmentePorMh() || $dte->tieneEventoInvalidacion());
+            && ($dte->estado === \App\Enums\EstadoDte::Aceptado || $dte->tieneEventoInvalidacion());
     }
 
     /**
@@ -153,6 +171,23 @@ class DtePolicy
      * veces). La transmisión REAL a apitest queda fuera de la UI (solo por consola).
      */
     public function invalidarMock(User $user, Dte $dte): bool
+    {
+        return $user->can('dte.invalidar')
+            && $dte->aceptadoRealmentePorMh()
+            && ! $dte->tieneEventoInvalidacion()
+            && ! $dte->estaProtegidoComoEvidencia();
+    }
+
+    /**
+     * Transmitir el evento de invalidación REAL a Hacienda desde la web (evento anulardte).
+     * Mismas guardas de CANDIDATURA que el mock: permiso `dte.invalidar`, DTE aceptado
+     * realmente por el MH, sin evento previo y no protegido como evidencia. Los candados
+     * DUROS de la transmisión real (flags de entorno, firma real, endpoint/ambiente, frase
+     * exacta, NC relacionada, doble invalidación) los RE-valida en cada intento el servicio
+     * {@see \App\Services\Dte\DteInvalidacionService::evaluarCandados()} y la frase la valida
+     * el Form Request en servidor: esta ability solo decide si el bloque es aplicable.
+     */
+    public function transmitirInvalidacion(User $user, Dte $dte): bool
     {
         return $user->can('dte.invalidar')
             && $dte->aceptadoRealmentePorMh()

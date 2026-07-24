@@ -40,9 +40,11 @@
                 $correoEnviado = $dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
                 $correoFallo = ! $correoEnviado && $dte->envios->contains(fn ($e) => $e->estado === 'error');
                 $listoEmitir = ! empty($emisionProduccion['preflight']['puede']);
+                $aceptadoMock = \Illuminate\Support\Str::startsWith((string) $dte->sello_recepcion, 'MOCK');
                 [$stTxt, $stColor, $stSub] = match (true) {
                     $dte->estado === \App\Enums\EstadoDte::Invalidado => ['Invalidado', 'rose', 'Documento anulado/invalidado internamente.'],
                     $dte->estado === \App\Enums\EstadoDte::Rechazado  => ['Rechazado por Hacienda', 'rose', 'Revisá el motivo en la respuesta del MH.'],
+                    $dte->estado === \App\Enums\EstadoDte::Aceptado && $aceptadoMock => ['Aceptado simulado (MOCK)', 'amber', 'Aceptación simulada en modo prueba: no es válida ante Hacienda.'],
                     $dte->estado === \App\Enums\EstadoDte::Aceptado   => ['Aceptado por Hacienda', 'green', $correoEnviado ? 'Correo enviado al cliente.' : 'Pendiente de enviar el correo al cliente.'],
                     $dte->estado === \App\Enums\EstadoDte::Firmado    => ['Firmado (pendiente de transmitir)', 'indigo', 'Firmado localmente; falta transmitir a Hacienda.'],
                     $dte->estado === \App\Enums\EstadoDte::Generado   => [$listoEmitir ? 'Listo para emitir' : 'Generado', 'indigo', 'Número reservado y JSON generado; falta firmar y transmitir.'],
@@ -438,42 +440,104 @@
                 </div>
             @endcan
 
-            {{-- Crear nota de crédito SOLO desde un CCF ACEPTADO por Hacienda (regla de
-                 negocio): nunca desde generado/firmado, para no vincular una NC a un
-                 documento que aún no existe oficialmente ante el MH. --}}
-            @if ($dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
-                && $dte->estado === \App\Enums\EstadoDte::Aceptado)
-                @can('create', App\Models\Dte::class)
-                    <div class="bg-white shadow sm:rounded-lg p-4">
-                        <h3 class="font-semibold text-gray-700 mb-2">Crear nota de crédito</h3>
-                        <form method="POST" action="{{ route('facturacion.nota-credito.store', $dte) }}"
-                              class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end"
-                              onsubmit="return confirm('¿Crear una nota de crédito para este CCF?');">
-                            @csrf
-                            <div>
-                                <x-input-label for="tipo_nc" value="Tipo de nota de crédito *" />
-                                <select id="tipo_nc" name="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
-                                    <option value="">— Seleccione —</option>
-                                    @foreach (\App\Enums\TipoNotaCredito::opciones() as $valor => $label)
-                                        <option value="{{ $valor }}" @selected(old('tipo') === $valor)>{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
-                                <p class="mt-1 text-xs text-gray-400">Seleccione el tipo de nota de crédito. Devolución y faltante usan las líneas de este CCF. Avería permite otros productos. Pronto pago y ajustes usan conceptos manuales.</p>
+            {{-- Corrección / reversión del documento: dos acciones AL MISMO NIVEL para un
+                 documento ACEPTADO — (1) invalidación oficial (evento anulardte) y (2)
+                 reversión con nota de crédito. La invalidación aplica a CCF y NC; la
+                 reversión con NC es específica de un CCF aceptado. Las acciones viven aquí,
+                 dentro de la ficha (ya no en un listado aparte ni escondidas en "Zona
+                 peligrosa"). La reversión TOTAL con NC llega en una fase siguiente: por ahora
+                 su botón es un placeholder deshabilitado (no apunta a una ruta inexistente).
+                 El selector de tipos de NC sigue funcional para NC parciales/avería/ajuste. --}}
+            @php
+                $mostrarInvalidacion = (bool) ($invalidacion ?? false);
+                $mostrarReversion = $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
+                    && $dte->estado === \App\Enums\EstadoDte::Aceptado
+                    && auth()->user()?->can('create', App\Models\Dte::class);
+                $dosBloques = $mostrarInvalidacion && $mostrarReversion;
+            @endphp
+            @if ($mostrarInvalidacion || $mostrarReversion)
+                <div>
+                    <h3 class="font-semibold text-gray-700 mb-3">Corrección / reversión del documento</h3>
+                    <div class="grid grid-cols-1 {{ $dosBloques ? 'md:grid-cols-2' : '' }} gap-6 items-stretch">
+                        {{-- Bloque 1: Invalidación oficial (evento anulardte). Partial reutilizado. --}}
+                        @if ($mostrarInvalidacion)
+                            @include('facturacion.partials.invalidacion', ['dte' => $dte, 'invalidacion' => $invalidacion])
+                        @endif
+
+                        {{-- Bloque 2: Revertir con nota de crédito (solo CCF aceptado). --}}
+                        @if ($mostrarReversion)
+                            <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-rose-400 h-full">
+                                <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                    <h3 class="font-semibold text-gray-700">Revertir con nota de crédito</h3>
+                                    <span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800">Crea un borrador</span>
+                                </div>
+                                <p class="text-sm text-gray-500">
+                                    Cuando la invalidación oficial ya no proceda, revertí el CCF con una nota de crédito.
+                                    Se crea un <strong>borrador</strong>; nunca se emite, firma ni transmite automáticamente.
+                                </p>
+
+                                {{-- Reversión TOTAL: crea un borrador de devolución con TODAS las líneas del CCF
+                                     (saldo acreditable disponible). Solo visible con CCF aceptado REAL por Hacienda
+                                     (ability revertirConNotaCredito). No emite/firma/transmite. --}}
+                                <div class="mt-4">
+                                    @can('revertirConNotaCredito', $dte)
+                                        <form method="POST" action="{{ route('facturacion.nota-credito.revertir', $dte) }}"
+                                              onsubmit="return confirm('¿Crear un borrador de nota de crédito que revierte TODO el CCF? Se copian todas las líneas con saldo disponible. No se emite ni transmite: quedará en borrador para revisión.');">
+                                            @csrf
+                                            <button class="inline-flex items-center px-4 py-2 bg-rose-600 text-white text-sm rounded-md hover:bg-rose-700 font-medium">
+                                                Revertir CCF completo con NC
+                                            </button>
+                                        </form>
+                                        <p class="mt-1 text-xs text-gray-400">
+                                            Copia todas las líneas del CCF (cantidades, precios, descuentos e impuestos) a un
+                                            borrador de devolución, respetando el saldo acreditable. No emite nada.
+                                        </p>
+                                    @else
+                                        <button type="button" disabled title="Requiere aceptación real de Hacienda"
+                                                class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-md font-medium cursor-not-allowed">
+                                            Revertir CCF completo con NC
+                                        </button>
+                                        <p class="mt-1 text-xs text-gray-400">
+                                            Bloqueado: la reversión total requiere un CCF con <strong>aceptación real</strong> de Hacienda
+                                            (APITEST o producción). Una aceptación simulada (MOCK) no habilita esta acción.
+                                        </p>
+                                    @endcan
+                                </div>
+
+                                {{-- Otras notas de crédito: selector de tipo existente (parcial / avería / ajuste). --}}
+                                <div class="mt-5 border-t border-gray-100 pt-4">
+                                    <h4 class="text-sm font-semibold text-gray-600 mb-2">Otras notas de crédito (parcial / avería / ajuste)</h4>
+                                    <form method="POST" action="{{ route('facturacion.nota-credito.store', $dte) }}"
+                                          class="grid grid-cols-1 gap-3 items-end"
+                                          onsubmit="return confirm('¿Crear una nota de crédito para este CCF?');">
+                                        @csrf
+                                        <div>
+                                            <x-input-label for="tipo_nc" value="Tipo de nota de crédito *" />
+                                            <select id="tipo_nc" name="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
+                                                <option value="">— Seleccione —</option>
+                                                @foreach (\App\Enums\TipoNotaCredito::opciones() as $valor => $label)
+                                                    <option value="{{ $valor }}" @selected(old('tipo') === $valor)>{{ $label }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
+                                            <p class="mt-1 text-xs text-gray-400">Devolución y faltante usan las líneas de este CCF. Avería permite otros productos. Pronto pago y ajustes usan conceptos manuales.</p>
+                                        </div>
+                                        <div>
+                                            <x-input-label for="motivo" value="Motivo / observaciones (opcional)" />
+                                            <x-text-input id="motivo" name="motivo" type="text" class="mt-1 block w-full"
+                                                          placeholder="Ej. Devolución parcial de mercadería" :value="old('motivo')" />
+                                        </div>
+                                        <div>
+                                            <button class="inline-flex items-center px-4 py-2 bg-rose-600 text-white text-sm rounded-md hover:bg-rose-700">
+                                                Crear nota de crédito
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
-                            <div class="md:col-span-2">
-                                <x-input-label for="motivo" value="Motivo / observaciones (opcional)" />
-                                <x-text-input id="motivo" name="motivo" type="text" class="mt-1 block w-full"
-                                              placeholder="Ej. Devolución parcial de mercadería" :value="old('motivo')" />
-                            </div>
-                            <div class="md:col-span-3">
-                                <button class="inline-flex items-center px-4 py-2 bg-rose-600 text-white text-sm rounded-md hover:bg-rose-700">
-                                    Crear nota de crédito
-                                </button>
-                            </div>
-                        </form>
+                        @endif
                     </div>
-                @endcan
+                </div>
             @endif
 
             {{-- Acción REAL de PRODUCCIÓN, explícita y separada: "Generar y transmitir producción".
@@ -974,25 +1038,21 @@
                 </details>
             @endif
 
-            {{-- Zona peligrosa: invalidación oficial + anulación interna. Acordeón colapsado por
+            {{-- Zona peligrosa: anulación interna (la invalidación oficial vive ahora en la
+                 sección "Corrección / reversión del documento", arriba). Acordeón colapsado por
                  defecto, pero AUTO-ABIERTO si el documento ya está anulado/invalidado (para no
                  esconder esa información crítica). --}}
             @php
                 $puedeAnular = auth()->user()?->can('anular', $dte);
-                $hayZonaPeligrosa = ($invalidacion ?? false) || $dte->esAnulado() || $puedeAnular;
+                $hayZonaPeligrosa = $dte->esAnulado() || $puedeAnular;
             @endphp
             @if ($hayZonaPeligrosa)
                 <details class="group rounded-lg border border-rose-200 bg-rose-50/40" @if ($dte->esAnulado()) open @endif>
                     <summary class="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-rose-700 hover:text-rose-800">
                         ⚠ Zona peligrosa
-                        <span class="ml-1 font-normal text-rose-400">(anulación / invalidación)</span>
+                        <span class="ml-1 font-normal text-rose-400">(anulación interna)</span>
                     </summary>
                     <div class="px-5 pb-5 pt-1 space-y-6">
-                        {{-- Invalidación oficial (evento anulardte): SOLO mock + dry-run visual (gestores). --}}
-                        @if ($invalidacion ?? false)
-                            @include('facturacion.partials.invalidacion', ['dte' => $dte, 'invalidacion' => $invalidacion])
-                        @endif
-
                         {{-- Aviso de anulación interna --}}
                         @if ($dte->esAnulado())
                             <div class="bg-rose-50 border border-rose-300 rounded-lg p-4 text-sm text-rose-800">

@@ -10,6 +10,7 @@ use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\TipoAnulacionMh;
+use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
 use App\Exceptions\Dte\DteFirmaException;
 use App\Exceptions\Dte\DteInvalidacionException;
@@ -24,6 +25,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Dte\ActualizarLineaDteRequest;
 use App\Http\Requests\Dte\AgregarLineaDteRequest;
 use App\Http\Requests\Dte\CrearBorradorRequest;
+use App\Http\Requests\Dte\RevertirConNotaCreditoRequest;
+use App\Http\Requests\Dte\TransmitirInvalidacionRequest;
 use App\Models\CatalogoMh;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
@@ -55,6 +58,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -420,6 +424,7 @@ class DteController extends Controller
             $evento = $this->eventoInvalidacionDesdeConfig(TipoAnulacionMh::RescindirOperacion);
             $invalidacion = [
                 'puede_mock' => auth()->user()->can('invalidarMock', $dte),
+                'puede_transmitir' => auth()->user()->can('transmitirInvalidacion', $dte),
                 'mock_activo' => (bool) config('dte.invalidacion.mock', false),
                 'ya_invalidado' => $dte->tieneEventoInvalidacion(),
                 'protegido' => $dte->estaProtegidoComoEvidencia(),
@@ -427,7 +432,13 @@ class DteController extends Controller
                 'notas_credito_relacionadas' => $dte->tieneNotaCreditoRelacionada()
                     ? $dte->notasCreditoRelacionadas()->get(['id', 'numero_control', 'estado'])
                     : collect(),
-                'candados' => $invalidacionService->evaluarCandados($dte, $evento, false, false),
+                // Candados de la transmisión REAL evaluados como si el usuario pulsara el
+                // botón ahora (transmitirReal/confirmoInvalidar = true): así las razones
+                // reflejan solo los bloqueos reales del entorno (flags, firma, ambiente…),
+                // no las confirmaciones que el propio botón ya aporta. confirmoNcRelacionada
+                // se deja en false para que la NC relacionada aparezca como razón (el checkbox
+                // la resuelve al enviar). SOLO LECTURA: no firma ni transmite.
+                'candados' => $invalidacionService->evaluarCandados($dte, $evento, true, true, false),
                 'dry_run' => session('dry_run_invalidacion'),
                 'tipos' => TipoAnulacionMh::opciones(),
             ];
@@ -928,6 +939,61 @@ class DteController extends Controller
             ->route('facturacion.show', $dte)
             ->with('status', 'Evento de invalidación firmado en MODO PRUEBA (MOCK). Sello: '.$r['sello_invalidacion']
                 .'. NO se transmitió nada a Hacienda y el estado del DTE ("'.$r['estado_dte'].'") no cambió.');
+    }
+
+    /**
+     * Transmisión REAL del evento de invalidación a Hacienda (anulardte) desde la web.
+     *
+     * Reutiliza tal cual {@see DteInvalidacionService::transmitir()} (NO duplica su lógica):
+     * ese servicio RE-valida TODOS los candados (flags, firma real, ambiente/endpoint,
+     * doble invalidación, evidencia protegida, NC relacionada), solo transiciona
+     * Aceptado→Invalidado si Hacienda ACEPTA, conserva el estado en rechazo/fallo y registra
+     * la auditoría. La frase exacta INVALIDAR DTE y la candidatura las valida el Form Request
+     * en servidor. En el entorno actual (modo seguro) los candados la BLOQUEAN.
+     */
+    public function transmitirInvalidacion(TransmitirInvalidacionRequest $request, Dte $dte, DteInvalidacionService $invalidacionService): RedirectResponse
+    {
+        // Defensa en profundidad (el Form Request ya autorizó).
+        $this->authorize('transmitirInvalidacion', $dte);
+
+        $evento = $this->eventoInvalidacionDesdeConfig(
+            TipoAnulacionMh::from((int) $request->input('tipo')),
+            $request->input('motivo'),
+            $request->input('reemplazo'),
+        );
+
+        try {
+            $r = $invalidacionService->transmitir(
+                $dte,
+                $evento,
+                transmitirReal: true,
+                confirmoInvalidar: true,
+                confirmoNcRelacionada: $request->boolean('confirmar_nc_relacionada'),
+            );
+        } catch (DteEvidenciaProtegidaException|DteInvalidacionException $e) {
+            // Candado o evidencia protegida: nada se transmitió ni persistió (estado conservado).
+            return redirect()
+                ->route('facturacion.show', $dte)
+                ->with('error', 'No se pudo transmitir la invalidación: '.$e->getMessage());
+        }
+
+        // El servicio ya conservó el estado en rechazo/fallo y solo pasó a Invalidado si
+        // Hacienda aceptó. Nunca crea una NC automáticamente: la reversión es una acción aparte.
+        return match ($r['resultado']) {
+            'aceptado' => redirect()->route('facturacion.show', $dte)->with(
+                'status',
+                'Invalidación ACEPTADA por Hacienda. Sello de invalidación: '.$r['sello'].'. El documento quedó en estado "'.$r['estado_dte'].'".'
+            ),
+            'rechazado' => redirect()->route('facturacion.show', $dte)->with(
+                'error',
+                'Hacienda RECHAZÓ la invalidación: '.$r['mensaje'].'. El documento conserva su estado ("'.$r['estado_dte'].'"). '
+                .'Si la invalidación ya no procede, podés revertirlo con una nota de crédito.'
+            ),
+            default => redirect()->route('facturacion.show', $dte)->with(
+                'error',
+                'No se completó la invalidación ('.$r['resultado'].'): '.$r['mensaje'].'. El documento conserva su estado ("'.$r['estado_dte'].'"); podés reintentar.'
+            ),
+        };
     }
 
     /**
@@ -1463,6 +1529,29 @@ class DteController extends Controller
         $nc = $this->borradores->crearNotaCredito($dte, $datos, $request->user());
 
         return redirect()->route('facturacion.edit', $nc)->with('status', $this->mensajeNotaCredito($nc));
+    }
+
+    /**
+     * Reversión TOTAL de un CCF con una Nota de Crédito por devolución: crea un borrador
+     * relacionado con TODAS las líneas del CCF (saldo acreditable disponible). La
+     * autorización (permiso operativo + CCF aceptado real) la resuelve el Form Request vía
+     * DtePolicy::revertirConNotaCredito. Nunca emite, firma ni transmite: deja un borrador
+     * para revisión y emisión manual. Si no queda saldo, el servicio revierte todo y
+     * devuelve el error como campo.
+     */
+    public function revertirConNotaCredito(RevertirConNotaCreditoRequest $request, Dte $dte): RedirectResponse
+    {
+        try {
+            $nc = $this->borradores->revertirCcfCompleto($dte, $request->user());
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors());
+        }
+
+        return redirect()->route('facturacion.edit', $nc)->with(
+            'status',
+            'Borrador de reversión creado con todas las líneas del CCF (saldo acreditable disponible). '
+            .'Revisalo y emitilo manualmente: no se emitió, firmó ni transmitió nada.'
+        );
     }
 
     /** Mensaje de guía según la modalidad de la NC recién creada. */
