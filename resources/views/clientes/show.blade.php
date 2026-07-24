@@ -13,6 +13,40 @@
                 <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
             @endif
 
+            @php
+                $esContribuyente = $cliente->tipo_cliente === \App\Enums\TipoCliente::Contribuyente;
+                $sinSalas = $cliente->sucursales->isEmpty();
+                // Sin salas, la ubicación del propio cliente es la que valida
+                // ValidacionPreJsonService al generar el CCF/NC.
+                $sinUbicacionFiscal = blank($cliente->departamento_id) || blank($cliente->municipio_id);
+            @endphp
+
+            {{-- Bloqueante: contribuyente sin salas y sin ubicación propia no puede
+                 generar CCF/NC. Se avisa acá para que no se descubra al generar. --}}
+            @if ($esContribuyente && $sinSalas && $sinUbicacionFiscal)
+                <div class="rounded-md bg-red-50 border border-red-300 p-4 text-sm text-red-800">
+                    <p class="font-medium">Este cliente todavía no puede facturar.</p>
+                    <p class="mt-1">
+                        No tiene salas ni ubicación fiscal propia. Un CCF o nota de crédito necesita departamento y municipio,
+                        sea de la sala de entrega o del cliente.
+                    </p>
+                    @can('update', $cliente)
+                        <p class="mt-2 flex flex-wrap gap-4">
+                            <a href="{{ route('clientes.sucursales.create', $cliente) }}" class="font-medium text-red-700 hover:underline">Agregar la primera sala</a>
+                            <a href="{{ route('clientes.edit', $cliente) }}" class="font-medium text-red-700 hover:underline">Completar la ubicación del cliente</a>
+                        </p>
+                    @endcan
+                </div>
+            @elseif ($esContribuyente && $sinSalas)
+                <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800 flex items-center justify-between gap-4">
+                    <span>Este cliente todavía no tiene salas. Los documentos usarán la dirección del cliente.</span>
+                    @can('update', $cliente)
+                        <a href="{{ route('clientes.sucursales.create', $cliente) }}"
+                           class="whitespace-nowrap font-medium text-amber-700 hover:underline">Agregar la primera sala</a>
+                    @endcan
+                </div>
+            @endif
+
             @if ($cliente->tieneDocumentoProvisional())
                 <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
                     <strong>Documento provisional</strong> — debe corregirse antes de crear o emitir una FEX.
@@ -52,6 +86,8 @@
                         </dd>
                     </div>
                     <div><dt class="text-gray-500">Descuento global (%)</dt><dd class="font-mono">{{ number_format($cliente->descuento_global_default ?? 0, 2) }}%</dd></div>
+                    <div><dt class="text-gray-500">Condición de pago</dt><dd>{{ \App\Enums\CondicionPago::tryFrom((int) $cliente->condicion_operacion_default)?->label() ?? '— Sin definir —' }}</dd></div>
+                    <div><dt class="text-gray-500">Código interno</dt><dd class="font-mono">{{ $cliente->codigo ?? '—' }}</dd></div>
                     <div><dt class="text-gray-500">Nombre comercial</dt><dd>{{ $cliente->nombre_comercial ?? '—' }}</dd></div>
                     <div><dt class="text-gray-500">Actividad económica</dt><dd>{{ $cliente->actividadEconomica?->nombre ?? '—' }}</dd></div>
                     <div><dt class="text-gray-500">País</dt><dd>{{ $cliente->pais?->nombre ?? '—' }}</dd></div>
