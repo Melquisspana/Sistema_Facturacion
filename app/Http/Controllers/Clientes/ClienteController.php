@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Clientes;
 
+use App\Enums\CondicionPago;
 use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
@@ -58,6 +59,9 @@ class ClienteController extends Controller
     {
         $this->authorize('create', Cliente::class);
 
+        // El contacto (teléfono/correo) se captura principalmente en la sala; el
+        // cliente no lo precarga. El teléfono sugerido 77777777 vive en el alta de
+        // sala (ver ClienteSucursalController).
         return view('clientes.form', $this->datosFormulario(new Cliente(['activo' => true])));
     }
 
@@ -66,6 +70,14 @@ class ClienteController extends Controller
         $this->authorize('create', Cliente::class);
 
         $cliente = Cliente::create($request->validated());
+
+        // "Guardar y agregar primera sala": encadena el alta con el formulario de
+        // sucursal, que es donde vive la ubicación operativa del cliente.
+        if ($request->input('accion') === 'guardar_y_sala') {
+            return redirect()
+                ->route('clientes.sucursales.create', $cliente)
+                ->with('status', 'Cliente creado. Agregue la primera sala.');
+        }
 
         return redirect()
             ->route('clientes.show', $cliente)
@@ -127,10 +139,22 @@ class ClienteController extends Controller
     {
         return [
             'cliente' => $cliente,
+            // Un cliente ya guardado que todavía no tiene salas muestra su bloque de
+            // ubicación abierto (aunque esté vacío). NO implica marcar "sin salas":
+            // esa sigue siendo una decisión explícita del usuario.
+            'clienteSinSalas' => $cliente->exists && $cliente->sucursales()->doesntExist(),
+            // Compatibilidad: un cliente antiguo que ya tiene contacto u orden de
+            // compra propios los sigue mostrando, aunque el alta nueva los oculte.
+            'clienteTieneContacto' => $cliente->exists && (filled($cliente->telefono) || filled($cliente->correo)),
+            'clienteTieneOc' => $cliente->exists && (bool) $cliente->requiere_orden_compra,
             'tiposCliente' => TipoCliente::opciones(),
             'tiposPersona' => TipoPersona::opciones(),
             'tiposDocumento' => TipoDocumentoCliente::opciones(),
             'tamaniosContribuyente' => TamanioContribuyente::opciones(),
+            // CAT-016 para el select de condición de pago por defecto del cliente.
+            'condicionesPago' => collect(CondicionPago::cases())
+                ->mapWithKeys(fn (CondicionPago $c) => [$c->value => $c->label()])
+                ->all(),
             'actividades' => ActividadEconomica::where('activo', true)->orderBy('nombre')->get(),
             'paises' => Pais::where('activo', true)->orderBy('nombre')->get(),
             'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),

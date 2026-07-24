@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Clientes;
 
+use App\Enums\CondicionPago;
 use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
@@ -14,13 +15,22 @@ use Illuminate\Validation\Rule;
  * Validación de clientes (crear y actualizar).
  *
  * La obligatoriedad de los campos depende de `tipo_cliente`:
- * - Contribuyente (nacional, CCF): NRC, NIT, actividad económica, país El
- *   Salvador, departamento y municipio (municipio dentro del departamento).
- * - Consumidor final (nacional, Factura): país El Salvador, departamento y
- *   municipio; NRC NO requerido; documento opcional (DUI/NIT/otro).
+ * - Contribuyente (nacional, CCF): NRC, NIT, actividad económica y país El
+ *   Salvador. Departamento y municipio se exigen SOLO si declara que no tendrá
+ *   salas (ver `sin_salas`): en ese caso su propia ubicación es la que viaja en
+ *   el CCF. Si va a tener salas, la ubicación se carga en la sala y es la sala
+ *   la que valida `ValidacionPreJsonService` al generar.
+ * - Consumidor final (nacional, Factura): país El Salvador; departamento y
+ *   municipio OPCIONALES (la Factura 01 no valida ubicación del receptor), pero
+ *   si se indican el municipio debe pertenecer al departamento. NRC NO
+ *   requerido; documento opcional (DUI/NIT/otro).
  * - Exportación (FEX): país extranjero; departamento/municipio no aplican;
  *   dirección o complemento obligatorio; actividad económica obligatoria (el
  *   esquema oficial exige descActividad del receptor); NRC NO requerido.
+ *
+ * `sin_salas` es un campo SOLO del formulario (no existe la columna): declara que
+ * el cliente no tendrá salas. No se agrega a las reglas a propósito, para que
+ * nunca llegue a validated() ni a Cliente::create().
  *
  * Código de país de El Salvador en CAT-020: SV.
  */
@@ -102,6 +112,9 @@ class ClienteRequest extends FormRequest
             'tamanio_contribuyente' => ['nullable', Rule::in(array_column(TamanioContribuyente::cases(), 'value'))],
             // Porcentaje de descuento global (0–100), no monto.
             'descuento_global_default' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // Condición de operación por defecto (CAT-016). Opcional: sin valor, el
+            // documento cae al default de configuración. La sala puede sobreescribirla.
+            'condicion_operacion_default' => ['nullable', Rule::in(array_column(CondicionPago::cases(), 'value'))],
             // Calculado automáticamente desde el tamaño (ver prepareForValidation);
             // el request no puede forzar un valor distinto al tamaño.
             'es_agente_retencion' => ['boolean'],
@@ -128,9 +141,18 @@ class ClienteRequest extends FormRequest
         // País / ubicación según tipo de cliente.
         if ($esNacional) {
             $reglas['pais_id'] = ['required', Rule::exists('paises', 'id')->where('codigo', self::PAIS_EL_SALVADOR)];
-            $reglas['departamento_id'] = ['required', 'exists:departamentos,id'];
+
+            // Departamento y municipio se exigen al contribuyente SOLO cuando declara
+            // que no tendrá salas: ahí su propia ubicación es la que viaja en el CCF.
+            // Si va a tener salas, la ubicación se carga en la sala (y es la sala la
+            // que valida ValidacionPreJsonService al generar). El consumidor final
+            // nunca la necesita. En todos los casos, si se indica municipio debe
+            // pertenecer al departamento.
+            // `sin_salas` es solo del formulario: no se valida ni se persiste.
+            $exigeUbicacion = ($tipo?->requiereUbicacionNacional() ?? false) && $this->boolean('sin_salas');
+            $reglas['departamento_id'] = [$exigeUbicacion ? 'required' : 'nullable', 'exists:departamentos,id'];
             $reglas['municipio_id'] = [
-                'required',
+                $exigeUbicacion ? 'required' : 'nullable',
                 Rule::exists('municipios', 'id')->where(
                     fn ($q) => $q->where('departamento_id', $this->input('departamento_id'))
                 ),
@@ -172,6 +194,8 @@ class ClienteRequest extends FormRequest
             'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
             'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',
             'nrc.required' => 'El NRC es obligatorio para un cliente contribuyente.',
+            'departamento_id.required' => 'El departamento es obligatorio para un contribuyente sin salas.',
+            'municipio_id.required' => 'El municipio es obligatorio para un contribuyente sin salas.',
             'tipo_documento.required' => 'El tipo de documento es obligatorio para este tipo de cliente.',
             'num_documento.required' => 'El número de documento es obligatorio.',
             'num_documento.required_with' => 'El número de documento es obligatorio cuando se indica un tipo de documento.',

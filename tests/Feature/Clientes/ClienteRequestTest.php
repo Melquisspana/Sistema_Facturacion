@@ -79,6 +79,81 @@ class ClienteRequestTest extends TestCase
         $this->assertArrayNotHasKey('nrc', $this->validar($data));
     }
 
+    public function test_consumidor_final_no_requiere_departamento_ni_municipio(): void
+    {
+        // La Factura 01 no valida ubicación del receptor: el alta puede ser mínima.
+        $data = $this->baseNacional();
+        unset($data['departamento_id'], $data['municipio_id']);
+        $data['tipo_cliente'] = 'consumidor_final';
+
+        $this->assertSame([], $this->validar($data));
+    }
+
+    public function test_consumidor_final_con_municipio_de_otro_departamento_falla(): void
+    {
+        // Opcional no quiere decir incoherente: si se indica, debe cuadrar.
+        $laPaz = Departamento::where('codigo', '08')->firstOrFail();
+        $data = array_merge($this->baseNacional(), [
+            'tipo_cliente' => 'consumidor_final',
+            'departamento_id' => $laPaz->id,
+            'municipio_id' => Municipio::where('nombre', 'San Salvador')->firstOrFail()->id,
+        ]);
+
+        $this->assertArrayHasKey('municipio_id', $this->validar($data));
+    }
+
+    /** Base de contribuyente válido (sin la ubicación, que se agrega por caso). */
+    private function baseContribuyente(): array
+    {
+        return array_merge($this->baseNacional(), [
+            'tipo_cliente' => 'contribuyente',
+            'tipo_persona' => 'juridica',
+            'tipo_documento' => '36',
+            'num_documento' => '0614-010101-101-1',
+            'nrc' => '123456-7',
+            'actividad_economica_id' => ActividadEconomica::firstOrFail()->id,
+        ]);
+    }
+
+    public function test_contribuyente_marcado_sin_salas_requiere_departamento_y_municipio(): void
+    {
+        $data = array_merge($this->baseContribuyente(), ['sin_salas' => '1']);
+        unset($data['departamento_id'], $data['municipio_id']);
+
+        $errores = $this->validar($data);
+
+        $this->assertArrayHasKey('departamento_id', $errores);
+        $this->assertArrayHasKey('municipio_id', $errores);
+    }
+
+    public function test_contribuyente_que_tendra_salas_no_requiere_ubicacion(): void
+    {
+        // Sin marcar "sin salas": la ubicación se cargará en la sala.
+        $data = $this->baseContribuyente();
+        unset($data['departamento_id'], $data['municipio_id']);
+
+        $this->assertSame([], $this->validar($data));
+    }
+
+    public function test_sin_salas_no_afecta_al_consumidor_final(): void
+    {
+        $data = array_merge($this->baseNacional(), ['tipo_cliente' => 'consumidor_final', 'sin_salas' => '1']);
+        unset($data['departamento_id'], $data['municipio_id']);
+
+        $this->assertSame([], $this->validar($data));
+    }
+
+    public function test_condicion_operacion_default_acepta_cat016_y_rechaza_el_resto(): void
+    {
+        $base = array_merge($this->baseNacional(), ['tipo_cliente' => 'consumidor_final']);
+
+        $this->assertSame([], $this->validar(array_merge($base, ['condicion_operacion_default' => '2'])));
+        $this->assertArrayHasKey(
+            'condicion_operacion_default',
+            $this->validar(array_merge($base, ['condicion_operacion_default' => '9']))
+        );
+    }
+
     public function test_contribuyente_requiere_nrc_nit_y_actividad(): void
     {
         $data = array_merge($this->baseNacional(), ['tipo_cliente' => 'contribuyente']);
