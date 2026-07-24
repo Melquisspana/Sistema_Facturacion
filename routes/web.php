@@ -143,6 +143,12 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:dte.invalidar')->name('invalidacion.dry-run');
         Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])
             ->middleware('permission:dte.invalidar')->name('invalidacion.mock');
+        // Transmisión REAL del evento de invalidación a Hacienda (anulardte), reutilizando
+        // DteInvalidacionService::transmitir(). Fuertemente candada: en el entorno actual
+        // (modo seguro) los candados la BLOQUEAN. Exige la frase exacta INVALIDAR DTE
+        // (validada en servidor por TransmitirInvalidacionRequest). Solo administrador.
+        Route::post('{dte}/invalidacion/transmitir', [DteController::class, 'transmitirInvalidacion'])
+            ->middleware('permission:dte.invalidar')->name('invalidacion.transmitir');
         Route::get('{dte}/editar', [DteController::class, 'edit'])->name('edit');
         // Datos aduaneros de una FEX (11) en borrador: recinto fiscal, régimen, incoterm, etc.
         Route::patch('{dte}/datos-aduaneros', [DteController::class, 'actualizarDatosAduaneros'])->name('datos-aduaneros.update');
@@ -160,6 +166,10 @@ Route::middleware('auth')->group(function () {
 
         // Nota de crédito: crear desde un CCF original y acreditar líneas.
         Route::post('{dte}/nota-credito', [DteController::class, 'storeNotaCredito'])->name('nota-credito.store');
+        // Reversión TOTAL: crea un borrador de NC por devolución con TODAS las líneas del
+        // CCF (saldo acreditable disponible). No emite/firma/transmite ni toca el CCF.
+        // Autorización fina en DtePolicy::revertirConNotaCredito (vía RevertirConNotaCreditoRequest).
+        Route::post('{dte}/nota-credito/revertir', [DteController::class, 'revertirConNotaCredito'])->name('nota-credito.revertir');
         Route::post('{dte}/conceptos', [DteController::class, 'agregarConceptoNc'])->name('conceptos.store');
         // NC por avería: agregar producto libre del catálogo (no limitado al CCF original).
         Route::post('{dte}/averia', [DteController::class, 'agregarProductoAveria'])->name('averia.store');

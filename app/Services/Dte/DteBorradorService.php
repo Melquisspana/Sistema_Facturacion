@@ -354,6 +354,60 @@ class DteBorradorService
     }
 
     /**
+     * Reversión TOTAL de un CCF mediante una Nota de Crédito por DEVOLUCIÓN.
+     *
+     * Crea el borrador relacionado reutilizando {@see crearNotaCredito()} (que hereda
+     * cliente, sala, orden de compra, ambiente, establecimiento y punto de venta desde
+     * el CCF, y valida que sea un CCF ACEPTADO —real en producción—), y luego acredita
+     * AUTOMÁTICAMENTE cada línea del CCF por su SALDO ACREDITABLE DISPONIBLE reutilizando
+     * {@see acreditarLinea()}. Respeta notas de crédito parciales previas (solo copia el
+     * saldo que queda) y omite las líneas ya totalmente acreditadas.
+     *
+     * TODO ocurre dentro de una ÚNICA transacción: si cualquier línea falla, se revierte
+     * también la creación del borrador (no queda una NC a medias). Si NINGUNA línea tiene
+     * saldo, se hace rollback total con un mensaje claro.
+     *
+     * NO emite, genera, firma ni transmite, y NO toca el CCF original: la NC queda en
+     * estado Borrador para revisión y emisión manual.
+     *
+     * @throws \Illuminate\Validation\ValidationException si el CCF no es válido o ya no
+     *                                                    queda saldo acreditable en ninguna línea
+     */
+    public function revertirCcfCompleto(?Dte $original, ?User $usuario = null): Dte
+    {
+        return DB::transaction(function () use ($original, $usuario) {
+            $referencia = $original?->numero_control ?? $original?->numero_interno ?? ('#'.$original?->id);
+
+            // Borrador de devolución con TODAS las herencias y validaciones existentes.
+            $nc = $this->crearNotaCredito($original, [
+                'tipo' => TipoNotaCredito::DevolucionProducto->value,
+                'motivo' => 'Reversión total del CCF '.$referencia,
+            ], $usuario);
+
+            $lineasAcreditadas = 0;
+            foreach ($original->lineas as $lineaOriginal) {
+                $disponible = $this->saldoAcreditableDisponible($lineaOriginal);
+                if (Dinero::comparar($disponible, '0') <= 0) {
+                    continue; // línea ya totalmente acreditada por NC previas
+                }
+
+                $this->acreditarLinea($nc, $lineaOriginal, $disponible);
+                $lineasAcreditadas++;
+            }
+
+            if ($lineasAcreditadas === 0) {
+                // Rollback total: sin líneas con saldo no dejamos un borrador vacío.
+                throw ValidationException::withMessages([
+                    'dte_relacionado_id' => 'Este CCF ya no tiene saldo acreditable disponible: '
+                        .'todas sus líneas ya fueron revertidas por notas de crédito previas.',
+                ]);
+            }
+
+            return $nc->refresh();
+        });
+    }
+
+    /**
      * Agrega una LÍNEA MANUAL DE CONCEPTO a una NC por monto (pronto pago,
      * descuento posterior, ajuste comercial, otro). NO usa producto ni
      * dte_linea_original_id: es un ajuste por monto, no un producto físico.
@@ -516,12 +570,12 @@ class DteBorradorService
     }
 
     /**
-     * Verifica que la cantidad a acreditar no supere el saldo de la línea original
-     * (cantidad original − lo ya acreditado en cualquier NC).
-     *
-     * @throws SaldoAcreditableExcedidoException
+     * Saldo acreditable disponible de una línea del documento original: cantidad
+     * original − lo ya acreditado por notas de crédito NO invalidadas. Fuente única
+     * del cálculo de saldo, reutilizada por {@see validarSaldoAcreditable()} (acreditación
+     * puntual) y por {@see revertirCcfCompleto()} (reversión total).
      */
-    private function validarSaldoAcreditable(DteLinea $lineaOriginal, string $cantidad): void
+    private function saldoAcreditableDisponible(DteLinea $lineaOriginal): string
     {
         // Ignora las NC anuladas (invalidado): su acreditación vuelve a estar disponible.
         $yaAcreditado = Dinero::de(
@@ -529,9 +583,19 @@ class DteBorradorService
                 ->whereHas('dte', fn ($q) => $q->where('estado', '!=', EstadoDte::Invalidado->value))
                 ->sum('cantidad') ?? 0
         );
-        $disponible = Dinero::restar(Dinero::de($lineaOriginal->cantidad), $yaAcreditado);
 
-        if (Dinero::comparar($cantidad, $disponible) > 0) {
+        return Dinero::restar(Dinero::de($lineaOriginal->cantidad), $yaAcreditado);
+    }
+
+    /**
+     * Verifica que la cantidad a acreditar no supere el saldo de la línea original
+     * (cantidad original − lo ya acreditado en cualquier NC).
+     *
+     * @throws SaldoAcreditableExcedidoException
+     */
+    private function validarSaldoAcreditable(DteLinea $lineaOriginal, string $cantidad): void
+    {
+        if (Dinero::comparar($cantidad, $this->saldoAcreditableDisponible($lineaOriginal)) > 0) {
             throw new SaldoAcreditableExcedidoException(
                 'No se puede acreditar más que el saldo disponible de la línea original.'
             );
