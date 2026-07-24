@@ -62,7 +62,7 @@ class SaludSistemaController extends Controller
             // merece revisión operativa; en desarrollo/local (transmisión deshabilitada,
             // dry-run, un solo administrador de prueba, etc.) es el estado ESPERADO
             // durante la preparación, no un problema.
-            $texto = config('app.env') === 'production' ? 'Advertencia operativa' : 'Operación segura de desarrollo';
+            $texto = config('app.env') === 'production' ? 'Advertencia operativa' : 'Entorno seguro de desarrollo';
             $general = ['texto' => $texto, 'estado' => 'advertencia'];
         } else {
             $general = ['texto' => 'Todo correcto', 'estado' => 'ok'];

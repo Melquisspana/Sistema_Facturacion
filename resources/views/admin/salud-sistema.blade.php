@@ -17,20 +17,34 @@
             'advertencia' => 'bg-amber-50 border-amber-300 text-amber-800',
             'critico' => 'bg-rose-50 border-rose-300 text-rose-800',
         ];
+
+        // Presentación del estado GLOBAL. En desarrollo, una "advertencia" global es
+        // el estado seguro esperado (transmisión deshabilitada / dry-run): azul
+        // informativo en vez de ámbar de alerta. Producción conserva el ámbar. Los
+        // pills de cada check individual NO cambian. No toca niveles: crítico sigue
+        // rojo, ok sigue verde.
+        $generalBanner = $bannerClase[$general['estado']];
+        $generalBadge = $badge[$general['estado']];
+        $generalBadgeTexto = $badgeTexto[$general['estado']];
+        if ($general['estado'] === 'advertencia' && config('app.env') !== 'production') {
+            $generalBanner = 'bg-sky-50 border-sky-300 text-sky-800';
+            $generalBadge = 'bg-sky-100 text-sky-700';
+            $generalBadgeTexto = 'Desarrollo';
+        }
     @endphp
 
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             {{-- Estado general --}}
-            <div class="rounded-lg border p-5 {{ $bannerClase[$general['estado']] }}">
+            <div class="rounded-lg border p-5 {{ $generalBanner }}">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-xs uppercase tracking-wide opacity-70">Estado general</p>
                         <p class="text-2xl font-bold">{{ $general['texto'] }}</p>
                     </div>
-                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-semibold {{ $badge[$general['estado']] }}">
-                        {{ $badgeTexto[$general['estado']] }}
+                    <span class="inline-flex px-3 py-1 rounded-full text-sm font-semibold {{ $generalBadge }}">
+                        {{ $generalBadgeTexto }}
                     </span>
                 </div>
                 <p class="text-xs mt-2 opacity-70">Panel de solo lectura. No modifica datos ni cálculos. No muestra secretos (.env / claves).</p>

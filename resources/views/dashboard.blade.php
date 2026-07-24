@@ -62,7 +62,15 @@
                 @endif
                 <div class="{{ $card }}">
                     <p class="text-xs text-gray-400 dark:text-paper-500">Estado del sistema</p>
-                    <p class="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold {{ $estadoGeneral === 'ok' ? 'text-green-700 dark:text-green-400' : ($estadoGeneral === 'advertencia' ? 'text-amber-700 dark:text-amber-400' : 'text-rose-700 dark:text-rose-400') }}">
+                    @php
+                        // En desarrollo, una "advertencia" es el estado seguro esperado
+                        // (transmisión deshabilitada / dry-run): azul informativo, no ámbar.
+                        // En producción conserva el ámbar de alerta. ok=verde, crítico=rojo.
+                        $advertenciaClase = config('app.env') === 'production'
+                            ? 'text-amber-700 dark:text-amber-400'
+                            : 'text-sky-700 dark:text-sky-400';
+                    @endphp
+                    <p class="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold {{ $estadoGeneral === 'ok' ? 'text-green-700 dark:text-green-400' : ($estadoGeneral === 'advertencia' ? $advertenciaClase : 'text-rose-700 dark:text-rose-400') }}">
                         {{ $textoEstadoGeneral }}
                     </p>
                     @if ($motivoEstadoGeneral)
