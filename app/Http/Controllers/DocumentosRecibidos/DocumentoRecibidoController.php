@@ -77,7 +77,7 @@ class DocumentoRecibidoController extends Controller
         $desde = $r['incremental'] ? ('desde el '.($r['desde'] ?? '—')) : 'todo el histórico';
         return back()->with('status', "Revisión completada (carpeta {$r['carpeta']}, {$desde}): "
             ."{$r['revisados']} correos revisados, {$r['nuevos']} nuevos, {$r['duplicados']} ya registrados, "
-            ."{$r['sin_datos']} sin DTE legible. No se modificó ningún correo.");
+            ."{$r['descartados']} descartados (no-DTE), {$r['sin_datos']} sin DTE legible. No se modificó ningún correo.");
     }
 
     /** Marca el documento como pendiente para contabilidad. */

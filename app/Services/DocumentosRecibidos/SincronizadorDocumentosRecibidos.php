@@ -6,6 +6,7 @@ use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Ppq\JsonAdjuntoDecoder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 
@@ -29,6 +30,7 @@ class SincronizadorDocumentosRecibidos
         private readonly JsonAdjuntoDecoder $decoder,
         private readonly ParserDocumentoRecibido $parser,
         private readonly ClasificadorDocumentoRecibido $clasificador,
+        private readonly FiltroExclusionCorreo $filtro,
     ) {}
 
     public function disponible(): bool
@@ -49,13 +51,13 @@ class SincronizadorDocumentosRecibidos
      * ningún registro, usa un rango inicial razonable (últimos 30 días). El modo
      * HISTÓRICO ($incremental=false) revisa todo el buzón (más lento).
      *
-     * @return array{disponible: bool, carpeta: string, desde: ?string, incremental: bool, revisados: int, nuevos: int, duplicados: int, sin_datos: int, error: ?string}
+     * @return array{disponible: bool, carpeta: string, desde: ?string, incremental: bool, revisados: int, nuevos: int, duplicados: int, descartados: int, sin_datos: int, error: ?string}
      */
     public function sincronizar(bool $incremental = true): array
     {
         $carpeta = (string) config('documentos_recibidos.mail.folder', 'INBOX');
         $base = ['disponible' => true, 'carpeta' => $carpeta, 'desde' => null, 'incremental' => $incremental,
-            'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'sin_datos' => 0, 'error' => null];
+            'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'descartados' => 0, 'sin_datos' => 0, 'error' => null];
 
         if (! $this->buzon->disponible()) {
             return array_merge($base, ['disponible' => false,
@@ -86,6 +88,7 @@ class SincronizadorDocumentosRecibidos
                 match ($this->procesarMensaje($id, $mensaje)) {
                     'nuevo' => $resumen['nuevos']++,
                     'duplicado' => $resumen['duplicados']++,
+                    'descartado' => $resumen['descartados']++,
                     default => $resumen['sin_datos']++,
                 };
             } catch (Throwable) {
@@ -101,7 +104,7 @@ class SincronizadorDocumentosRecibidos
      * datos del DTE y crea el registro (o lo omite si ya existe por código).
      *
      * @param  array{asunto?: ?string, remitente?: ?string, fecha?: ?string, adjuntos?: array<int, array{filename?: string, mime?: string, data?: string}>}  $mensaje
-     * @return string 'nuevo' | 'duplicado' | 'sin_datos'
+     * @return string 'nuevo' | 'duplicado' | 'descartado' | 'sin_datos'
      */
     private function procesarMensaje(string $id, array $mensaje): string
     {
@@ -150,6 +153,27 @@ class SincronizadorDocumentosRecibidos
         [$clasificacion, $diagnostico] = $this->clasificador->clasificar(
             $tieneJson, $datos, $decodeFallido, (string) ($mensaje['asunto'] ?? ''), (string) $pdfAdjunto,
         );
+
+        // Exclusión de correos NO-DTE (estado de cuenta, orden de compra, PDF-only sin
+        // DTE): se evalúa DESPUÉS de clasificar y ANTES de guardar adjuntos o crear la
+        // fila. Un JSON DTE válido nunca llega aquí (clasificacion != 'no_es_dte'). No
+        // se toca el buzón; solo se registra en log el motivo (metadatos, sin contenido).
+        $nombresAdjuntos = array_values(array_filter(array_map(
+            fn ($a) => (string) ($a['filename'] ?? ''), $adjuntos
+        ), fn ($n) => $n !== ''));
+        $exclusion = $this->filtro->evaluar($clasificacion, (string) ($mensaje['asunto'] ?? ''), $nombresAdjuntos);
+        if ($exclusion !== null) {
+            Log::info('documentos_recibidos.correo_descartado', [
+                'message_id' => $id,
+                'remitente' => $mensaje['remitente'] ?? null,
+                'asunto' => $mensaje['asunto'] ?? null,
+                'adjuntos' => $nombresAdjuntos,
+                'regla' => $exclusion['regla'],
+                'motivo' => $exclusion['motivo'],
+            ]);
+
+            return 'descartado';
+        }
 
         // Guardar adjuntos localmente para el futuro envío a contabilidad (no se
         // reenvía nada ahora). Solo lectura del buzón; escritura en disco local.

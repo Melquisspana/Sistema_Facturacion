@@ -32,6 +32,10 @@ class DocumentosRecibidosClasificacionTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // Esta suite verifica CLASIFICACIÓN (que una fila no-DTE se clasifique bien),
+        // no la exclusión. Con la exclusión activa esos correos no-DTE se descartarían
+        // (probado aparte en DocumentosRecibidosExclusionTest), así que aquí se apaga.
+        config(['documentos_recibidos.exclusiones.activo' => false]);
     }
 
     private function usuario(string $rol): User
