@@ -8,6 +8,7 @@ use App\Enums\TipoImpuesto;
 use App\Jobs\EnviarDteCorreo;
 use App\Mail\DteCorreo;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Configuracion;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -246,6 +247,35 @@ class DteEnvioCorreoTest extends TestCase
         $this->assertNotNull($envio);
         $this->assertNull($envio->user_id);                 // automático
         $this->assertSame(['auto@cliente.com'], $envio->destinatarios);
+    }
+
+    public function test_auto_envio_usa_el_correo_de_la_sala_cuando_existe(): void
+    {
+        // La entrega resuelve sala ?: cliente (independiente del JSON del receptor):
+        // sigue funcionando y priorizando la sala tras el cambio del mapeador.
+        Queue::fake();
+        Configuracion::set('correo.auto_envio', true);
+
+        $cliente = Cliente::factory()->contribuyente()->create(['correo' => 'cliente@calleja.com']);
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'correo' => 'sala@calleja.com']);
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+
+        $b = app(DteBorradorService::class);
+        $dte = $b->crearBorrador([
+            'tipo_dte' => TipoDte::CreditoFiscal, 'cliente_id' => $cliente->id, 'cliente_sucursal_id' => $sala->id,
+            'establecimiento_id' => $this->estab->id, 'punto_venta_id' => $this->pv->id,
+        ]);
+        $b->agregarLineaDesdeProducto($dte, $producto, cantidad: 10);
+        app(DteGeneracionService::class)->generar($dte);
+        $dte->refresh();
+
+        $dte->sello_recepcion = 'SELLO-SALA';
+        $dte->estado = EstadoDte::Aceptado;
+        $dte->save();
+
+        Queue::assertPushed(EnviarDteCorreo::class);
+        $envio = DteEnvio::where('dte_id', $dte->id)->first();
+        $this->assertSame(['sala@calleja.com'], $envio->destinatarios);
     }
 
     public function test_no_auto_envia_si_esta_desactivado(): void

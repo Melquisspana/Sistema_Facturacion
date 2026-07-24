@@ -140,6 +140,130 @@ class MapeadorDteSalidaTest extends TestCase
         $this->assertSame('CIENTO TRECE 00/100 DÓLARES', $salida->resumen->totalLetras);
     }
 
+    public function test_receptor_usa_el_municipio_fiscal_de_la_sala_no_el_del_cliente(): void
+    {
+        // Demuestra que el municipio del receptor en el JSON sale del municipio fiscal
+        // (CAT-013) de la SALA — el campo que se conserva en el formulario —, no del
+        // municipio 2024 (que se quitó de la UI) ni del municipio del cliente.
+        $emisor = $this->emisor();
+        $depto = $emisor['depto'];
+
+        // Municipio fiscal de la sala, distinto del municipio del cliente y con código.
+        $muniCliente = $emisor['muni'];
+        $muniSala = Municipio::where('departamento_id', $depto->id)
+            ->where('id', '!=', $muniCliente->id)->firstOrFail();
+        $muniSala->update(['codigo' => '99']);
+
+        $cliente = $this->clienteContribuyente($emisor); // municipio_id = muniCliente
+        $distrito = \App\Models\Distrito::where('departamento_id', $depto->id)->first();
+        $sala = \App\Models\ClienteSucursal::factory()->create([
+            'cliente_id' => $cliente->id,
+            'nombre' => 'Sala Con Municipio Propio',
+            'departamento_id' => $depto->id,
+            'municipio_id' => $muniSala->id,
+            'distrito_id' => $distrito?->id,
+        ]);
+
+        $ccf = $this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
+        $salida = $this->mapeador->mapear($ccf);
+
+        $this->assertSame('99', $salida->receptor->municipio);
+        $this->assertNotSame($muniCliente->codigo, $salida->receptor->municipio);
+    }
+
+    public function test_receptor_usa_contacto_de_la_sala_cuando_lo_tiene(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
+        $sala = \App\Models\ClienteSucursal::factory()->create([
+            'cliente_id' => $cliente->id,
+            'departamento_id' => $emisor['depto']->id,
+            'municipio_id' => $emisor['muni']->id,
+            'telefono' => '2500-9999',
+            'correo' => 'sala@x.sv',
+        ]);
+
+        $ccf = $this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
+        $salida = $this->mapeador->mapear($ccf);
+
+        $this->assertSame('2500-9999', $salida->receptor->telefono);
+        $this->assertSame('sala@x.sv', $salida->receptor->correo);
+    }
+
+    public function test_receptor_usa_contacto_del_cliente_si_la_sala_no_lo_tiene(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
+        // Sala con contacto vacío (cadena vacía y null): no debe reemplazar al del cliente.
+        $sala = \App\Models\ClienteSucursal::factory()->create([
+            'cliente_id' => $cliente->id,
+            'departamento_id' => $emisor['depto']->id,
+            'municipio_id' => $emisor['muni']->id,
+            'telefono' => '',
+            'correo' => null,
+        ]);
+
+        $ccf = $this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
+        $salida = $this->mapeador->mapear($ccf);
+
+        $this->assertSame('2100-1111', $salida->receptor->telefono);
+        $this->assertSame('cliente@x.sv', $salida->receptor->correo);
+    }
+
+    public function test_nota_credito_aplica_la_misma_regla_de_contacto_de_sala(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
+        $sala = \App\Models\ClienteSucursal::factory()->create([
+            'cliente_id' => $cliente->id,
+            'departamento_id' => $emisor['depto']->id,
+            'municipio_id' => $emisor['muni']->id,
+            'telefono' => '2500-9999',
+            'correo' => 'sala@x.sv',
+        ]);
+
+        $ccf = $this->aceptarCcf($this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente, ['cliente_sucursal_id' => $sala->id]));
+        $nc = $this->borradores->crearNotaCredito($ccf);
+        $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), cantidad: 4);
+        $this->generacion->generar($nc);
+
+        $salida = $this->mapeador->mapear($nc->refresh());
+
+        $this->assertSame('2500-9999', $salida->receptor->telefono);
+        $this->assertSame('sala@x.sv', $salida->receptor->correo);
+    }
+
+    public function test_receptor_sin_sala_conserva_el_contacto_del_cliente(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
+
+        $ccf = $this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente); // sin sala
+
+        $salida = $this->mapeador->mapear($ccf);
+
+        $this->assertSame('2100-1111', $salida->receptor->telefono);
+        $this->assertSame('cliente@x.sv', $salida->receptor->correo);
+    }
+
+    public function test_exportacion_conserva_el_contacto_del_cliente(): void
+    {
+        // La FEX nunca tiene sala: el contacto sale del cliente, igual que antes.
+        $emisor = $this->emisor();
+        $pais = Pais::where('codigo', '!=', 'SV')->first();
+        $cliente = Cliente::factory()->exportacion()->create([
+            'pais_id' => $pais->id,
+            'telefono' => '2100-2222',
+            'correo' => 'expo@cliente.sv',
+        ]);
+        $fex = $this->generarBorrador(TipoDte::FacturaExportacion, $emisor, $cliente);
+
+        $salida = $this->mapeador->mapear($fex);
+
+        $this->assertSame('2100-2222', $salida->receptor->telefono);
+        $this->assertSame('expo@cliente.sv', $salida->receptor->correo);
+    }
+
     public function test_mapea_factura_01_sin_receptor(): void
     {
         $emisor = $this->emisor();
