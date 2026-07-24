@@ -145,6 +145,67 @@ class ClienteSucursalTest extends TestCase
             ->assertSee('Municipio fiscal (CAT-013)');
     }
 
+    public function test_formulario_de_sala_muestra_un_solo_municipio(): void
+    {
+        // El municipio 2024 dejó de tener su propio select (se deriva del distrito):
+        // el único municipio visible es el fiscal CAT-013.
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('clientes.sucursales.create', $cliente))
+            ->assertOk()
+            ->assertSee('Municipio fiscal (CAT-013)')
+            ->assertDontSee('agrupación 2024');
+    }
+
+    public function test_sala_precarga_telefono_por_defecto(): void
+    {
+        // El 77777777 sugerido vive ahora en el alta de sala.
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('clientes.sucursales.create', $cliente))
+            ->assertOk()
+            ->assertSee('77777777');
+    }
+
+    public function test_sala_creada_sin_municipio_2024_conserva_el_municipio_del_distrito(): void
+    {
+        // Se demuestra que quitar el campo municipio_2024 no pierde información:
+        // el municipio 2024 sigue derivándose del distrito guardado.
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+
+        $datos = $this->datosSucursal();
+        unset($datos['municipio_2024']); // el formulario ya no lo envía
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.sucursales.store', $cliente), $datos)
+            ->assertRedirect(route('clientes.show', $cliente));
+
+        $sucursal = $cliente->sucursales()->firstOrFail();
+        $this->assertSame($distrito->id, $sucursal->distrito_id);
+        // El municipio 2024 se recupera por relación, sin haberlo capturado.
+        $this->assertSame($distrito->municipio, $sucursal->distrito->municipio);
+    }
+
+    public function test_sala_guarda_contacto_y_orden_de_compra(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal([
+                'telefono' => '2250-4321',
+                'correo' => 'sala@cliente.sv',
+                'requiere_orden_compra' => '1',
+            ]))->assertRedirect(route('clientes.show', $cliente));
+
+        $sucursal = $cliente->sucursales()->firstOrFail();
+        $this->assertSame('2250-4321', $sucursal->telefono);
+        $this->assertSame('sala@cliente.sv', $sucursal->correo);
+        $this->assertTrue($sucursal->requiere_orden_compra);
+    }
+
     public function test_sucursal_exige_distrito(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();

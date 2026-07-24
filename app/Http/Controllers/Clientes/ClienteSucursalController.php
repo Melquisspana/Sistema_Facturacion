@@ -22,11 +22,17 @@ class ClienteSucursalController extends Controller
 {
     use AuthorizesRequests;
 
+    /** Teléfono sugerido al crear una sala (editable). Solo aplica al alta. */
+    private const TELEFONO_POR_DEFECTO = '77777777';
+
     public function create(Cliente $cliente): View
     {
         $this->authorize('update', $cliente);
 
-        return view('clientes.sucursales.form', $this->datosFormulario($cliente, new ClienteSucursal(['activo' => true])));
+        return view('clientes.sucursales.form', $this->datosFormulario(
+            $cliente,
+            new ClienteSucursal(['activo' => true, 'telefono' => self::TELEFONO_POR_DEFECTO])
+        ));
     }
 
     public function store(ClienteSucursalRequest $request, Cliente $cliente): RedirectResponse
