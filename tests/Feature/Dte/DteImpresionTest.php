@@ -174,6 +174,11 @@ class DteImpresionTest extends TestCase
             'cliente_id' => $cliente->id,
             'nombre' => 'Súper Selectos Olocuilta',
             'departamento_id' => $olocuilta->departamento_id,
+            // El receptor del CCF toma el municipio (CAT-013) de la sala: sin él, el
+            // JSON saldría con el campo vacío. La etiqueta impresa sigue viniendo del
+            // distrito (municipio 2024), así que las aserciones no cambian.
+            'municipio_id' => \App\Models\Municipio::where('departamento_id', $olocuilta->departamento_id)
+                ->where('nombre', 'Olocuilta')->firstOrFail()->id,
             'distrito_id' => $olocuilta->id,
             // El receptor del JSON usa la sala: el schema exige complemento no vacío.
             'direccion' => 'Km 30 Carretera a Olocuilta',

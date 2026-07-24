@@ -155,11 +155,14 @@ class ValidacionPreJsonService
                 if ($cliente->tipo_cliente !== TipoCliente::Contribuyente) {
                     $problemas[] = 'El receptor debe ser contribuyente.';
                 }
-                foreach (['num_documento' => 'documento', 'nrc' => 'NRC', 'actividad_economica_id' => 'actividad económica', 'departamento_id' => 'departamento', 'municipio_id' => 'municipio'] as $campo => $etiqueta) {
+                // Identidad fiscal: SIEMPRE del cliente (es el contribuyente con el NIT).
+                foreach (['num_documento' => 'documento', 'nrc' => 'NRC', 'actividad_economica_id' => 'actividad económica'] as $campo => $etiqueta) {
                     if (blank($cliente->{$campo})) {
                         $problemas[] = "Falta {$etiqueta} del receptor.";
                     }
                 }
+                // Ubicación: la que realmente va a viajar en el JSON.
+                $this->validarUbicacionReceptor($dte, $problemas);
                 break;
 
             case TipoDte::FacturaExportacion:
@@ -210,6 +213,36 @@ class ValidacionPreJsonService
 
             default:
                 break;
+        }
+    }
+
+    /**
+     * Ubicación del receptor de un CCF / Nota de crédito.
+     *
+     * Se valida sobre la MISMA unidad que serializa MapeadorDteSalida::receptor():
+     * la sala de entrega cuando el documento tiene una, y el propio cliente cuando
+     * no. Se toma como unidad completa (no se mezcla el departamento de una con el
+     * municipio del otro), igual que el mapeador.
+     *
+     * Consecuencia buscada: un contribuyente sin ubicación propia PUEDE facturar si
+     * la sala del documento está completa; sin sala, su ubicación fiscal vuelve a
+     * ser obligatoria.
+     *
+     * @param  array<int, string>  $problemas
+     */
+    private function validarUbicacionReceptor(Dte $dte, array &$problemas): void
+    {
+        $sala = $dte->clienteSucursal;
+        $ubicacion = $sala ?? $dte->cliente;
+
+        foreach (['departamento_id' => 'departamento', 'municipio_id' => 'municipio'] as $campo => $etiqueta) {
+            if (! blank($ubicacion?->{$campo})) {
+                continue;
+            }
+
+            $problemas[] = $sala
+                ? "Falta {$etiqueta} en la sala de entrega \"{$sala->nombre}\"."
+                : "Falta {$etiqueta} en la ubicación fiscal del receptor.";
         }
     }
 
