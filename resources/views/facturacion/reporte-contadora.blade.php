@@ -1,18 +1,10 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Reporte contadora</h2>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Ventas</h2>
     </x-slot>
 
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
-
-            {{-- Aviso de alcance --}}
-            <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-                Este reporte solo incluye documentos generados en <span class="font-semibold">este sistema</span>.
-                No incluye documentos hechos en Conta Portable salvo que luego se importen. Por defecto muestra solo
-                el ambiente de <span class="font-semibold">producción (01)</span> y documentos
-                <span class="font-semibold">aceptados</span> por Hacienda (excluye pruebas, mock y simulaciones).
-            </div>
 
             {{-- Filtros --}}
             <form method="GET" action="{{ route('facturacion.reporte-contadora') }}"

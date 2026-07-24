@@ -71,8 +71,9 @@ class ReporteContadoraTest extends TestCase
             $this->actingAs($this->usuario($rol))
                 ->get(route('facturacion.reporte-contadora'))
                 ->assertOk()
-                ->assertSee('Reporte contadora')
-                ->assertSee('No incluye documentos hechos en Conta Portable');
+                ->assertSee('Ventas')
+                // El aviso de alcance (Conta Portable / pruebas) se retiró de la interfaz.
+                ->assertDontSee('No incluye documentos hechos en Conta Portable');
         }
     }
 

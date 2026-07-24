@@ -44,14 +44,6 @@
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
-            {{-- Aviso: herramienta interna para preparar lo que se le manda a la contadora --}}
-            <div class="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800">
-                Herramienta interna para preparar los documentos que le enviás a contabilidad (la contadora no entra al
-                sistema). Estos son los CCF/facturas de proveedores que llegan al correo; los documentos que vos emitís
-                están en <a href="{{ route('facturacion.reporte-contadora') }}" class="font-medium underline">Facturación → Reporte contadora</a>.
-                El paquete mensual consolidado (emitidos + recibidos) llega en una fase posterior.
-            </div>
-
             @unless ($fuenteDisponible)
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
                     El correo de documentos recibidos (Yahoo/IMAP) no está configurado ({{ $fuente }}). La revisión
