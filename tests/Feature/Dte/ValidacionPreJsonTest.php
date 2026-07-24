@@ -230,6 +230,97 @@ class ValidacionPreJsonTest extends TestCase
         $this->assertNotContains('El receptor de exportación debe tener país.', $problemas);
     }
 
+    // --- Ubicación del receptor: se valida la unidad que realmente se serializa
+    //     (sala de entrega si el documento tiene una; si no, el cliente). ---
+
+    /** Sala con ubicación completa, del mismo catálogo que usa el emisor. */
+    private function salaCompleta(Cliente $cliente, array $emisor, array $override = []): \App\Models\ClienteSucursal
+    {
+        return \App\Models\ClienteSucursal::factory()->create(array_merge([
+            'cliente_id' => $cliente->id,
+            'departamento_id' => $emisor['depto']->id,
+            'municipio_id' => $emisor['muni']->id,
+        ], $override));
+    }
+
+    private function faltaUbicacion(array $problemas): bool
+    {
+        return (bool) collect($problemas)->first(
+            fn ($p) => str_contains($p, 'Falta departamento') || str_contains($p, 'Falta municipio')
+        );
+    }
+
+    public function test_ccf_con_cliente_sin_ubicacion_pero_sala_completa_pasa(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null]);
+        $sala = $this->salaCompleta($cliente, $emisor);
+
+        $ccf = $this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
+
+        $this->assertFalse($this->faltaUbicacion($this->validacion->validar($ccf)));
+    }
+
+    public function test_nota_credito_con_cliente_sin_ubicacion_pero_sala_completa_pasa(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null]);
+        $sala = $this->salaCompleta($cliente, $emisor);
+
+        $ccf = $this->aceptarCcf($this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]));
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'pronto_pago']);
+
+        $this->assertFalse($this->faltaUbicacion($this->validacion->validar($nc->refresh())));
+    }
+
+    public function test_ccf_con_sala_incompleta_falla_e_indica_la_sala(): void
+    {
+        $emisor = $this->emisor();
+        // El cliente SÍ tiene ubicación, pero la sala del documento no: no debe
+        // taparse con el dato del cliente, porque el JSON usa el de la sala.
+        $cliente = $this->clienteContribuyente($emisor);
+        $sala = $this->salaCompleta($cliente, $emisor, [
+            'nombre' => 'Sala Sin Ubicacion',
+            'departamento_id' => null,
+            'municipio_id' => null,
+        ]);
+
+        $ccf = $this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
+        $problemas = $this->validacion->validar($ccf);
+
+        $this->assertContains('Falta departamento en la sala de entrega "Sala Sin Ubicacion".', $problemas);
+        $this->assertContains('Falta municipio en la sala de entrega "Sala Sin Ubicacion".', $problemas);
+    }
+
+    public function test_ccf_sin_sala_y_cliente_sin_ubicacion_falla(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null]);
+
+        $problemas = $this->validacion->validar($this->ccfBorradorCompleto($emisor, $cliente));
+
+        $this->assertContains('Falta departamento en la ubicación fiscal del receptor.', $problemas);
+        $this->assertContains('Falta municipio en la ubicación fiscal del receptor.', $problemas);
+    }
+
+    public function test_ccf_sin_sala_y_cliente_con_ubicacion_pasa(): void
+    {
+        $emisor = $this->emisor();
+        $ccf = $this->ccfBorradorCompleto($emisor, $this->clienteContribuyente($emisor));
+
+        $this->assertFalse($this->faltaUbicacion($this->validacion->validar($ccf)));
+    }
+
+    public function test_fex_no_cambia_su_validacion_de_ubicacion(): void
+    {
+        // La exportación no valida departamento/municipio: sigue exigiendo país y
+        // actividad DEL CLIENTE, sin importar salas.
+        $emisor = $this->emisor();
+        $fex = $this->fexBorrador($emisor, $this->clienteExportacion());
+
+        $this->assertFalse($this->faltaUbicacion($this->validacion->validar($fex)));
+    }
+
     public function test_valida_pasa_con_ccf_generado_completo(): void
     {
         $emisor = $this->emisor();
