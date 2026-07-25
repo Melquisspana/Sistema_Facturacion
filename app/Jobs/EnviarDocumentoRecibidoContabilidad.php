@@ -6,6 +6,7 @@ use App\Mail\DocumentoRecibidoContabilidadCorreo;
 use App\Models\DocumentoRecibidoEnvio;
 use App\Models\User;
 use App\Services\DocumentosRecibidos\AdjuntosDocumentoRecibido;
+use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -37,6 +38,9 @@ class EnviarDocumentoRecibidoContabilidad implements ShouldQueue
 
     public function handle(AdjuntosDocumentoRecibido $adjuntos): void
     {
+        // Candado de correo real (política del entorno, no un colaborador intercambiable).
+        $candado = app(CandadoCorreoReal::class);
+
         $envio = DocumentoRecibidoEnvio::with('documento')->find($this->envioId);
         if (! $envio || $envio->estado === 'enviado') {
             return;
@@ -61,6 +65,10 @@ class EnviarDocumentoRecibidoContabilidad implements ShouldQueue
 
         $omitidos = array_map(fn (array $a) => $a['nombre'], $seleccion['omitidos']);
 
+        // CANDADO de correo real: fuera de producción (o con un mailer de prueba) NO se
+        // llama al transporte. Se registra SIMULADO y el documento SIGUE PENDIENTE.
+        $simular = $candado->debeSimular();
+
         try {
             $archivos = array_map(fn (array $a) => [
                 'contenido' => (string) Storage::disk('local')->get($a['ruta']),
@@ -68,16 +76,16 @@ class EnviarDocumentoRecibidoContabilidad implements ShouldQueue
                 'mime' => $a['mime'],
             ], $seleccion['enviados']);
 
-            Mail::to($destinatarios)->send(new DocumentoRecibidoContabilidadCorreo($documento, $archivos, $omitidos));
+            if (! $simular) {
+                Mail::to($destinatarios)->send(new DocumentoRecibidoContabilidadCorreo($documento, $archivos, $omitidos));
+            }
 
-            // Si el mailer activo NO es real (log/array) el correo no salió por SMTP: se
-            // marca SIMULADO, que NO cuenta como enviado (el documento sigue pendiente).
-            $real = $this->mailerEsReal();
+            $real = ! $simular;
             $envio->update([
                 'estado' => $real ? 'enviado' : 'simulado',
                 'adjuntos' => $adjuntos->nombres($seleccion['enviados']),
                 'adjuntos_omitidos' => $omitidos === [] ? null : implode(', ', $omitidos),
-                'error' => $real ? null : 'Correo NO enviado realmente: MAIL_MAILER='.config('mail.default').' (driver no SMTP; el correo se escribió en laravel.log).',
+                'error' => $real ? null : $candado->motivo(),
             ]);
 
             if ($real && $documento->estado === 'pendiente') {
@@ -107,23 +115,11 @@ class EnviarDocumentoRecibidoContabilidad implements ShouldQueue
         $envio->update(['estado' => 'error', 'error' => mb_substr($error, 0, 1000)]);
     }
 
-    /**
-     * ¿El mailer activo envía DE VERDAD por SMTP? Los drivers `log` y `array` NO envían:
-     * escriben/descartan. Misma regla que el envío de ventas, para no mentir en el historial.
-     */
-    private function mailerEsReal(): bool
-    {
-        $mailer = (string) config('mail.default');
-        $transport = (string) config("mail.mailers.$mailer.transport", $mailer);
-
-        return ! in_array($transport, ['log', 'array'], true);
-    }
-
     private function auditar(DocumentoRecibidoEnvio $envio): void
     {
         $mensaje = match ($envio->estado) {
             'enviado' => 'envió una compra a contabilidad por correo',
-            'simulado' => 'registró envío SIMULADO de una compra a contabilidad (mailer no real, no salió por SMTP)',
+            'simulado' => 'registró envío SIMULADO de una compra a contabilidad (candado de correo real: no salió por SMTP)',
             default => 'falló el envío de una compra a contabilidad',
         };
 

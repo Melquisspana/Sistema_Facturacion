@@ -181,7 +181,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_enviado_solo_cuando_el_job_termina_bien(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $doc = $this->compra();
         $envio = $this->envio($doc, 'pendiente');
@@ -238,7 +238,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_adjunta_los_archivos_originales_con_pdf_y_json_primero(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         // Orden en disco a propósito "al revés": la prioridad la pone el servicio.
         $doc = $this->compra(['otro.xml' => 100, 'dte.json' => 200, 'factura.pdf' => 300]);
@@ -258,7 +258,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_un_documento_sin_json_se_envia_solo_con_el_pdf(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $doc = $this->compra(['factura.pdf' => 1024], ['tiene_json' => false]);
         $envio = $this->envio($doc, 'pendiente');
@@ -276,7 +276,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_nunca_adjunta_un_archivo_que_no_existe_en_disco(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $doc = $this->compra(['factura.pdf' => 1024]);
         // Se agrega a metadata una ruta inexistente (no se inventa nada al enviar).
@@ -297,7 +297,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_un_adjunto_que_no_cabe_se_omite_sin_romper_el_envio(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         config(['documentos_recibidos.adjuntos_max_bytes' => 2048]);
         Mail::fake();
         $doc = $this->compra(['factura.pdf' => 1000, 'dte.json' => 500, 'anexo.xml' => 4000]);
@@ -351,7 +351,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_asunto_y_cuerpo_contable(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $doc = $this->compra();
         $envio = $this->envio($doc, 'pendiente');
@@ -426,7 +426,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_un_envio_exitoso_no_reactiva_un_documento_ignorado(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $doc = $this->compra(['factura.pdf' => 100], ['estado' => 'ignorado']);
         $envio = $this->envio($doc, 'pendiente');
@@ -472,7 +472,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     public function test_el_envio_no_cambia_clasificacion_total_ni_adjuntos(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $doc = $this->compra();
         $antes = [

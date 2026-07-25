@@ -9,6 +9,7 @@ use App\Models\DocumentoRecibido;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\Reportes\ReporteContadoraQuery;
+use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -126,6 +127,9 @@ class PaqueteContabilidadController extends Controller
      * Envía el MISMO paquete mensual por correo a `contabilidad.correo`. Solo tras
      * confirmación con la frase exacta. Un único correo, sin BCC ni copias.
      *
+     * Respeta el CANDADO de correo real ({@see CandadoCorreoReal}): fuera de producción
+     * no se llama al transporte, se audita como simulado y no se marca nada.
+     *
      * NO toca DTE emitidos, correlativos, firmador ni transmisión a Hacienda; las
      * ventas son solo lectura para el ZIP. NO toca el buzón Yahoo. Si el envío
      * termina EXITOSO, marca como "enviado" únicamente los `documentos_recibidos`
@@ -174,6 +178,18 @@ class PaqueteContabilidadController extends Controller
         // 4) Mismo ZIP que el paquete mensual.
         $r = $zip->generar($rango['etiqueta'], $compras, $ventas, $incluirCompras, $incluirVentas);
         $nombreZip = $zip->nombreArchivo($rango['etiqueta']);
+
+        // CANDADO de correo real: fuera de producción NO se llama al transporte. Se audita
+        // como 'simulado' y NO se marca ninguna compra como enviada (las ventas nunca se
+        // tocan en este flujo). El ZIP se generó igual, así que el ensayo es realista.
+        $candado = app(CandadoCorreoReal::class);
+        if ($candado->debeSimular()) {
+            $this->auditar('simulado', $correo, $rango, $resumen, $nombreZip, $candado->motivo(), 0);
+            @unlink($r['ruta']);
+
+            return back()->with('status', "Paquete {$rango['etiqueta']} NO enviado: ".$candado->motivo()
+                .' Se registró como simulado y no se marcó ninguna compra como enviada.');
+        }
 
         try {
             $bytes = (string) file_get_contents($r['ruta']);

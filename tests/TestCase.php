@@ -5,6 +5,7 @@ namespace Tests;
 use App\Enums\EstadoDte;
 use App\Models\Dte;
 use App\Services\Dte\DteStateMachine;
+use App\Support\Correo\CandadoCorreoReal;
 use Database\Seeders\RolesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -105,6 +106,37 @@ abstract class TestCase extends BaseTestCase
         }
 
         return null;
+    }
+
+    /**
+     * Declara que ESTE test simula PRODUCCIÓN a efectos del CORREO: el candado
+     * {@see CandadoCorreoReal} solo permite envío real cuando el
+     * entorno es `production`, así que sin esto todo envío queda 'simulado'.
+     *
+     * Sustituye el candado en el contenedor en vez de cambiar el entorno REAL de la app:
+     * con `app()->environment('production')` los comandos de base de datos (seeders,
+     * migraciones) pedirían confirmación interactiva y la suite quedaría inutilizable.
+     * Que `permiteEnvioReal()` lea de verdad el entorno se prueba aparte, en
+     * CandadoCorreoRealTest.
+     *
+     * El correo nunca sale de verdad: los tests usan Mail::fake().
+     */
+    protected function simularProduccionCorreo(): void
+    {
+        config(['mail.default' => 'smtp']); // transporte real configurado
+
+        $this->app->instance(CandadoCorreoReal::class, new class extends CandadoCorreoReal
+        {
+            public function permiteEnvioReal(): bool
+            {
+                return true;
+            }
+
+            public function entorno(): string
+            {
+                return 'production';
+            }
+        });
     }
 
     /**

@@ -80,6 +80,9 @@
                 </div>
             </form>
 
+            {{-- Candado de correo real: solo aparece fuera de producción. --}}
+            <x-correo-simulado-aviso />
+
             {{-- Filtros rápidos (no dependen del formulario: conservan el resto de la URL) --}}
             <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs uppercase tracking-wide text-gray-400">Rápidos</span>

@@ -135,6 +135,9 @@ class PreparacionProduccionController extends Controller
         $mailHost = (string) config('mail.mailers.smtp.host', '');
         $mailFrom = (string) config('mail.from.address', '');
         $smtpConfigurado = $mailFrom !== '' && ($mailer !== 'smtp' || $mailHost !== '');
+        // Candado de correo real: fuera de producción no sale ningún correo.
+        $candadoCorreo = app(\App\Support\Correo\CandadoCorreoReal::class);
+        $correoBloqueado = $candadoCorreo->debeSimular();
 
         return [
             [
@@ -161,10 +164,16 @@ class PreparacionProduccionController extends Controller
                 'detalle' => 'Confirmá conexión estable antes de emitir (no se prueba automáticamente en esta pantalla).',
             ],
             [
-                'clave' => 'smtp', 'label' => 'Correo (SMTP)', 'estado' => $smtpConfigurado ? 'ok' : 'advertencia',
-                'valor' => $mailer, 'detalle' => $smtpConfigurado
-                    ? 'Remitente '.$mailFrom.($mailer === 'smtp' ? ' · host '.$mailHost : ' · driver '.$mailer).'.'
-                    : 'Falta configurar el remitente/host de correo (no bloquea la emisión).',
+                'clave' => 'smtp', 'label' => 'Correo (SMTP)',
+                // Fuera de producción el candado de correo real bloquea CUALQUIER envío: la
+                // tarjeta lo dice explícitamente para no dar a entender que saldrían correos.
+                'estado' => $correoBloqueado ? 'info' : ($smtpConfigurado ? 'ok' : 'advertencia'),
+                'valor' => $correoBloqueado ? 'bloqueado ('.$candadoCorreo->entorno().')' : $mailer,
+                'detalle' => $correoBloqueado
+                    ? 'Candado de correo real: en entorno "'.$candadoCorreo->entorno().'" ningún envío sale por SMTP; se registran como simulados. Solo production envía de verdad.'
+                    : ($smtpConfigurado
+                        ? 'Remitente '.$mailFrom.($mailer === 'smtp' ? ' · host '.$mailHost : ' · driver '.$mailer).'.'
+                        : 'Falta configurar el remitente/host de correo (no bloquea la emisión).'),
             ],
         ];
     }

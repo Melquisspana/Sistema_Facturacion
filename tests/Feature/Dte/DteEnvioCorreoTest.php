@@ -115,7 +115,7 @@ class DteEnvioCorreoTest extends TestCase
 
     public function test_job_envia_y_marca_enviado_con_adjuntos(): void
     {
-        config(['mail.default' => 'smtp']); // mailer REAL → estado 'enviado'
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->ccf();
         $envio = $dte->envios()->create([
@@ -147,13 +147,36 @@ class DteEnvioCorreoTest extends TestCase
         $this->assertSame('simulado', $envio->estado);
         $this->assertFalse($envio->fueExitoso());
         $this->assertTrue($envio->esSimulado());
-        $this->assertStringContainsString('MAIL_MAILER=log', (string) $envio->error);
+        // Motivo del candado: fuera de producción el bloqueo por ENTORNO manda, incluso
+        // antes de mirar el driver (ver CandadoCorreoReal::motivo()).
+        $this->assertStringContainsString('NO enviado', (string) $envio->error);
+        $this->assertStringContainsString('production', (string) $envio->error);
         $this->assertStringContainsString('PDF', $envio->adjuntos); // los adjuntos sí se generan
+    }
+
+    public function test_con_mailer_de_prueba_en_produccion_el_motivo_es_el_driver(): void
+    {
+        // En producción con driver log/array el candado también simula, pero el motivo
+        // que se guarda es el del MAILER, no el del entorno.
+        $this->simularProduccionCorreo();
+        config(['mail.default' => 'log']);
+        Mail::fake();
+        $dte = $this->ccf();
+        $envio = $dte->envios()->create([
+            'destinatario' => 'a@a.com', 'destinatarios' => ['a@a.com'], 'estado' => 'pendiente',
+        ]);
+
+        (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
+
+        Mail::assertNothingSent();
+        $envio->refresh();
+        $this->assertSame('simulado', $envio->estado);
+        $this->assertStringContainsString('MAIL_MAILER=log', (string) $envio->error);
     }
 
     public function test_job_marca_error_si_smtp_falla(): void
     {
-        config(['mail.default' => 'smtp']);
+        $this->simularProduccionCorreo();
         $dte = $this->ccf();
         $envio = $dte->envios()->create([
             'destinatario' => 'a@a.com', 'destinatarios' => ['a@a.com'], 'estado' => 'pendiente',

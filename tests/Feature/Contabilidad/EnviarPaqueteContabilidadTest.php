@@ -179,6 +179,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_envia_un_solo_correo_a_contabilidad_con_zip_adjunto(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
         $this->conCorreo();
@@ -201,6 +202,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_registra_auditoria_del_envio(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->conCorreo();
         $this->compra('2026-07-05', 100);
@@ -218,6 +220,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_si_falla_el_envio_no_cambia_estados_y_audita_fallido(): void
     {
+        $this->simularProduccionCorreo(); // en producción el candado deja pasar el envío
         $this->seed(DatosInicialesNegritaSeeder::class);
         $this->conCorreo();
         $compra = $this->compra('2026-07-05', 100);
@@ -244,6 +247,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_marca_compras_pendientes_del_rango_como_enviadas_tras_envio_exitoso(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->conCorreo();
         $dentro1 = $this->compra('2026-07-05', 100);
@@ -262,6 +266,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_no_marca_compras_fuera_del_rango(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->conCorreo();
         $dentro = $this->compra('2026-07-05', 100);
@@ -277,6 +282,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_no_marca_compras_ignoradas(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->conCorreo();
         $pendiente = $this->compra('2026-07-05', 100);
@@ -292,6 +298,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_no_toca_compras_ya_enviadas(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->conCorreo();
         $yaEnviada = $this->compra('2026-07-06', 30, ['estado' => 'enviado']);
@@ -308,6 +315,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_no_marca_nada_si_incluir_compras_es_falso(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
         $this->conCorreo();
@@ -326,6 +334,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_no_toca_ventas_dte_tras_envio_exitoso(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
         $this->conCorreo();
@@ -351,6 +360,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
     public function test_no_toca_yahoo_imap_al_enviar(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->conCorreo();
         $this->compra('2026-07-05', 100);
@@ -369,6 +379,60 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
         // No se descargó nada nuevo del buzón.
         $this->assertSame($antes, DocumentoRecibido::count());
+    }
+
+    // ---------- Candado de correo real (fuera de producción no se envía) ----------
+
+    public function test_fuera_de_produccion_no_envia_ni_marca_compras(): void
+    {
+        // Entorno de pruebas (sin simularProduccionCorreo): el candado bloquea el envío.
+        Mail::fake();
+        $this->conCorreo();
+        $compra = $this->compra('2026-07-05', 100);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
+            ->assertSessionHas('status');
+
+        // No se llamó al transporte y la compra sigue pendiente.
+        Mail::assertNothingSent();
+        $this->assertSame('pendiente', $compra->fresh()->estado);
+
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->first();
+        $this->assertSame('simulado', $log->getExtraProperty('estado'));
+        $this->assertSame(0, $log->getExtraProperty('compras_marcadas_enviadas'));
+        $this->assertStringContainsString('entorno', (string) $log->getExtraProperty('error'));
+    }
+
+    public function test_fuera_de_produccion_no_toca_las_ventas(): void
+    {
+        Mail::fake();
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->conCorreo();
+        $this->compra('2026-07-05', 100);
+        $venta = $this->venta('2026-07-10', 200);
+        $antes = [$venta->estado, $venta->sello_recepcion, $venta->updated_at];
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('status');
+
+        $venta->refresh();
+        Mail::assertNothingSent();
+        $this->assertSame($antes[0], $venta->estado);
+        $this->assertSame($antes[1], $venta->sello_recepcion);
+        $this->assertEquals($antes[2], $venta->updated_at);
+    }
+
+    public function test_la_pantalla_avisa_que_el_correo_sera_simulado(): void
+    {
+        $this->conCorreo();
+        $this->compra('2026-07-05', 100);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee('el correo se registrará como simulado y no se enviará realmente');
     }
 
     public function test_jefatura_no_puede_enviar(): void

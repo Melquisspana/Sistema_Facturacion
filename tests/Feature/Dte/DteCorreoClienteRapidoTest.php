@@ -262,7 +262,7 @@ class DteCorreoClienteRapidoTest extends TestCase
 
     public function test_envia_email_con_pdf_adjunto(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real → estado 'enviado'
+        $this->simularProduccionCorreo();
         Mail::fake();
         Queue::fake();
         $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');

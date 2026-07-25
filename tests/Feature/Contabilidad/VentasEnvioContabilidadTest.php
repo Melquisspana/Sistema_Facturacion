@@ -180,7 +180,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_enviado_solo_cuando_el_job_termina_bien(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->venta();
         $envio = $this->envio($dte, DteEnvio::CANAL_CONTABILIDAD, 'pendiente');
@@ -390,7 +390,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_el_correo_a_contabilidad_tiene_asunto_y_cuerpo_propios(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->venta();
         $envio = $this->envio($dte, DteEnvio::CANAL_CONTABILIDAD, 'pendiente');
@@ -410,7 +410,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_el_correo_al_cliente_conserva_asunto_y_cuerpo_actuales(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->venta();
         $envio = $dte->envios()->create([
@@ -431,7 +431,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_un_envio_historico_sin_canal_conserva_el_correo_al_cliente(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->venta();
         $envio = $dte->envios()->create([
@@ -450,7 +450,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_contabilidad_no_recibe_el_correo_duplicado_por_bcc(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         Configuracion::set('contabilidad.enviar_copia', true); // copia BCC activada
         $dte = $this->venta();
@@ -464,7 +464,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_el_canal_cliente_conserva_el_bcc_a_contabilidad(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         Configuracion::set('contabilidad.enviar_copia', true);
         $dte = $this->venta();
@@ -482,7 +482,7 @@ class VentasEnvioContabilidadTest extends TestCase
 
     public function test_el_envio_no_toca_estado_fiscal_ni_correlativos(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->venta();
         $campos = ['estado', 'sello_recepcion', 'numero_control', 'codigo_generacion', 'fecha_procesamiento_mh', 'json_generado_path'];
