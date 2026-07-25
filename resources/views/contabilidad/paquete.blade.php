@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Paquete mensual para contabilidad</h2>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Paquete mensual</h2>
     </x-slot>
 
     @php
@@ -18,14 +18,6 @@
             @if (session('error'))
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
-
-            <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-                Este paquete es <span class="font-semibold">interno</span> para enviar a contabilidad. La contadora no
-                entra al sistema: podés generar y descargar el ZIP para mandarlo por fuera, o usar "Enviar a
-                contabilidad" para que el sistema mande el correo con el ZIP adjunto. Al confirmar un envío exitoso,
-                las <span class="font-semibold">compras</span> incluidas en el rango que estaban "pendiente" se
-                marcan como "enviado". Las ventas nunca se modifican.
-            </div>
 
             {{-- Filtros --}}
             <form method="GET" action="{{ route('contabilidad.paquete') }}" class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
@@ -75,15 +67,45 @@
                 <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="rounded-lg bg-sky-50 ring-1 ring-sky-200 p-4">
                         <p class="text-xs uppercase tracking-wide text-sky-600">Compras (recibidos)</p>
-                        <p class="mt-1 text-2xl font-semibold text-sky-800">{{ number_format($resumen['compras_cantidad']) }} <span class="text-sm font-normal text-sky-600">documentos</span></p>
+                        <p class="mt-1 text-2xl font-semibold text-sky-800">{{ number_format($resumen['compras_cantidad']) }} <span class="text-sm font-normal text-sky-600">incluidas</span></p>
                         <p class="text-sm text-sky-700">Total ${{ number_format($resumen['compras_total'], 2) }}</p>
+                        <p class="mt-1 text-xs text-sky-700/80">
+                            Sin PDF: <span class="font-semibold {{ $resumen['compras_sin_pdf'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['compras_sin_pdf']) }}</span>
+                            · Sin JSON: <span class="font-semibold {{ $resumen['compras_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['compras_sin_json']) }}</span>
+                        </p>
                     </div>
                     <div class="rounded-lg bg-green-50 ring-1 ring-green-200 p-4">
                         <p class="text-xs uppercase tracking-wide text-green-600">Ventas (emitidos)</p>
-                        <p class="mt-1 text-2xl font-semibold text-green-800">{{ number_format($resumen['ventas_cantidad']) }} <span class="text-sm font-normal text-green-600">documentos</span></p>
+                        <p class="mt-1 text-2xl font-semibold text-green-800">{{ number_format($resumen['ventas_cantidad']) }} <span class="text-sm font-normal text-green-600">incluidas</span></p>
                         <p class="text-sm text-green-700">Total ${{ number_format($resumen['ventas_total'], 2) }}</p>
+                        <p class="mt-1 text-xs text-green-700/80">
+                            Sin JSON generado: <span class="font-semibold {{ $resumen['ventas_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['ventas_sin_json']) }}</span>
+                        </p>
                     </div>
                 </div>
+
+                {{-- Destinatario configurado + último envío exitoso (leído del activity log; sin persistencia nueva). --}}
+                <dl class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-gray-100 pt-4 text-sm">
+                    <div>
+                        <dt class="text-gray-500">Destinatario de contabilidad</dt>
+                        <dd class="font-medium {{ $correoContabilidad ? 'text-gray-900' : 'text-gray-400' }}">{{ $correoContabilidad ?? 'No configurado' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Último envío del paquete</dt>
+                        @if ($ultimoEnvio)
+                            <dd class="font-medium text-gray-900">
+                                {{ optional($ultimoEnvio['fecha'])->format('d/m/Y H:i') }}
+                                @if ($ultimoEnvio['etiqueta']) · {{ $ultimoEnvio['etiqueta'] }} @endif
+                            </dd>
+                            <dd class="text-xs text-gray-500">
+                                @if ($ultimoEnvio['correo']) a {{ $ultimoEnvio['correo'] }} @endif
+                                @if ($ultimoEnvio['usuario']) · por {{ $ultimoEnvio['usuario'] }} @endif
+                            </dd>
+                        @else
+                            <dd class="text-gray-400">Sin envíos anteriores</dd>
+                        @endif
+                    </div>
+                </dl>
             </div>
 
             {{-- Generar --}}

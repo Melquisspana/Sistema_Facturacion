@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Contabilidad;
 
+use App\Models\Configuracion;
 use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
+use Spatie\Activitylog\Models\Activity;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -91,14 +93,101 @@ class PaqueteContabilidadTest extends TestCase
         $resumen = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
             ->assertOk()
-            ->assertSee('interno')
-            ->assertSee('La contadora no')
+            ->assertSee('Paquete mensual')          // título simplificado
+            ->assertDontSee('La contadora no')       // bloque naranja explicativo eliminado
             ->viewData('resumen');
 
         $this->assertSame(2, $resumen['compras_cantidad']);
         $this->assertSame(150.0, $resumen['compras_total']);
         $this->assertSame(1, $resumen['ventas_cantidad']);
         $this->assertSame(200.0, $resumen['ventas_total']);
+    }
+
+    // ---------- FASE B: resumen ampliado (solo datos existentes) ----------
+
+    public function test_resumen_cuenta_faltantes_de_pdf_y_json(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->compra('2026-07-05', 100);                                   // pdf + json
+        $this->compra('2026-07-06', 50, ['tiene_pdf' => false]);           // sin PDF
+        $this->compra('2026-07-07', 30, ['tiene_json' => false]);          // sin JSON
+        $venta1 = $this->venta('2026-07-10', 200);                          // sin JSON generado
+        $venta2 = $this->venta('2026-07-11', 300);
+        // json_generado_path no es fillable (lo escribe el servicio de generación): forceFill.
+        $venta2->forceFill(['json_generado_path' => 'dte/generados/venta2.json'])->save();
+
+        $resumen = $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()
+            ->viewData('resumen');
+
+        $this->assertSame(3, $resumen['compras_cantidad']);
+        $this->assertSame(2, $resumen['ventas_cantidad']);
+        $this->assertSame(1, $resumen['compras_sin_pdf']);
+        $this->assertSame(1, $resumen['compras_sin_json']);
+        $this->assertSame(1, $resumen['ventas_sin_json']); // solo venta1
+    }
+
+    public function test_destinatario_configurado_es_visible(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        Configuracion::set('contabilidad.correo', 'contadora@ejemplo.com');
+        Configuracion::olvidarCache();
+
+        $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee('contadora@ejemplo.com');
+    }
+
+    public function test_sin_correo_configurado_muestra_no_configurado(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        Configuracion::olvidarCache(); // sin correo configurado
+
+        $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee('No configurado');
+    }
+
+    public function test_ultimo_envio_exitoso_se_muestra(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $user = $this->usuario('contabilidad');
+
+        // Envío exitoso previo, registrado en el activity log ya existente (sin persistencia nueva).
+        activity('paquete_contabilidad')
+            ->causedBy($user)
+            ->withProperties([
+                'estado' => 'enviado', 'etiqueta' => '2026-06',
+                'correo_destino' => 'contadora@ejemplo.com', 'compras_cantidad' => 4, 'ventas_cantidad' => 2,
+            ])
+            ->log('Envío de paquete de contabilidad 2026-06: enviado');
+
+        $ultimo = $this->actingAs($user)
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee('2026-06')
+            ->assertSee('contadora@ejemplo.com')
+            ->viewData('ultimoEnvio');
+
+        $this->assertNotNull($ultimo);
+        $this->assertSame('2026-06', $ultimo['etiqueta']);
+        $this->assertSame('contadora@ejemplo.com', $ultimo['correo']);
+    }
+
+    public function test_sin_envios_anteriores(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+
+        $ultimo = $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee('Sin envíos anteriores')
+            ->viewData('ultimoEnvio');
+
+        $this->assertNull($ultimo);
     }
 
     public function test_resumen_respeta_el_rango(): void

@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
+use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
@@ -44,6 +45,11 @@ class PaqueteContabilidadController extends Controller
             'compras_total' => round((float) $compras->sum('total'), 2),
             'ventas_cantidad' => $ventas->count(),
             'ventas_total' => round((float) $ventas->sum('total_pagar'), 2),
+            // Faltantes de adjuntos (solo lectura de datos ya guardados): compras sin PDF /
+            // sin JSON (tiene_pdf/tiene_json) y ventas sin el JSON oficial (json_generado_path).
+            'compras_sin_pdf' => $compras->filter(fn ($d) => ! $d->tiene_pdf)->count(),
+            'compras_sin_json' => $compras->filter(fn ($d) => ! $d->tiene_json)->count(),
+            'ventas_sin_json' => $ventas->filter(fn ($d) => blank($d->json_generado_path))->count(),
         ];
 
         $correo = $this->correoContabilidad();
@@ -63,7 +69,38 @@ class PaqueteContabilidadController extends Controller
             'correoContabilidad' => $correo,
             'puedeEnviar' => $puedeEnviarPermiso && $correo !== null && ($hayCompras || $hayVentas),
             'fraseEnvio' => self::FRASE_ENVIO,
+            'ultimoEnvio' => $this->ultimoEnvioExitoso(),
         ]);
+    }
+
+    /**
+     * Último envío EXITOSO del paquete, leído del activity log ya existente
+     * ('paquete_contabilidad', estado 'enviado'). Solo lectura; no persiste nada nuevo.
+     * Devuelve null si no hay envíos previos.
+     *
+     * @return array{fecha: \Illuminate\Support\Carbon, etiqueta: ?string, correo: ?string, usuario: ?string, compras: mixed, ventas: mixed}|null
+     */
+    private function ultimoEnvioExitoso(): ?array
+    {
+        $act = Activity::query()
+            ->where('log_name', 'paquete_contabilidad')
+            ->where('properties->estado', 'enviado')
+            ->with('causer')
+            ->latest('id')
+            ->first();
+
+        if ($act === null) {
+            return null;
+        }
+
+        return [
+            'fecha' => $act->created_at,
+            'etiqueta' => $act->getExtraProperty('etiqueta'),
+            'correo' => $act->getExtraProperty('correo_destino'),
+            'usuario' => $act->causer?->name,
+            'compras' => $act->getExtraProperty('compras_cantidad'),
+            'ventas' => $act->getExtraProperty('ventas_cantidad'),
+        ];
     }
 
     public function generar(Request $request, PaqueteContabilidadZip $zip): BinaryFileResponse|RedirectResponse
