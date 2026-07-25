@@ -78,6 +78,7 @@ class ContabilidadCorreoTest extends TestCase
 
     public function test_el_envio_agrega_bcc_a_contabilidad_cuando_esta_activo_sin_enviar_real(): void
     {
+        $this->simularProduccionCorreo(); // el BCC solo viaja cuando el envío es real
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
         Configuracion::set('contabilidad.correo', 'contabilidad@empresa.com');
@@ -94,6 +95,7 @@ class ContabilidadCorreoTest extends TestCase
 
     public function test_sin_activar_la_copia_no_hay_bcc(): void
     {
+        $this->simularProduccionCorreo();
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
         Configuracion::set('contabilidad.enviar_copia', false);

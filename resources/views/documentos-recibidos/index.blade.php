@@ -44,6 +44,9 @@
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
+            {{-- Candado de correo real: solo aparece fuera de producción. --}}
+            <x-correo-simulado-aviso />
+
             @unless ($fuenteDisponible)
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
                     El correo de documentos recibidos (Yahoo/IMAP) no está configurado ({{ $fuente }}). La revisión

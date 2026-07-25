@@ -268,7 +268,7 @@ class EnvioDteCanalTest extends TestCase
 
     public function test_job_procesa_un_envio_historico_sin_canal(): void
     {
-        config(['mail.default' => 'smtp']); // mailer real
+        $this->simularProduccionCorreo();
         Mail::fake();
         $dte = $this->ccf();
         $historico = $dte->envios()->create([

@@ -7,6 +7,7 @@ use App\Models\Configuracion;
 use App\Models\DteEnvio;
 use App\Models\User;
 use App\Services\Dte\DtePdfService;
+use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -34,6 +35,9 @@ class EnviarDteCorreo implements ShouldQueue
 
     public function handle(DtePdfService $pdf): void
     {
+        // Candado de correo real (política del entorno, no un colaborador intercambiable).
+        $candado = app(CandadoCorreoReal::class);
+
         $envio = DteEnvio::with(['dte.cliente'])->find($this->envioId);
         if (! $envio || $envio->estado === 'enviado') {
             return;
@@ -52,28 +56,33 @@ class EnviarDteCorreo implements ShouldQueue
             [$extra, $nombres] = $this->adjuntos($dte);
             $plantilla = Configuracion::get('correo.plantilla');
 
+            // CANDADO de correo real: fuera de producción (o con un mailer de prueba) NO se
+            // llama al transporte. Se registra SIMULADO —el DTE conserva su estado— y el
+            // resto del trabajo (PDF, JSON/JWS, historial, auditoría) corre igual, para que
+            // el ensayo sea realista y cualquier fallo de armado siga saliendo como error.
+            $simular = $candado->debeSimular();
+
             // Copia a contabilidad (BCC) DENTRO del mismo envío, solo si está activada
             // la preferencia y hay un correo válido configurado. No es un envío aparte
             // ni automático: viaja como copia oculta del correo que el usuario ya manda.
             // Si el envío YA va dirigido a contabilidad (canal contabilidad), no se
             // agrega la copia: sería el mismo correo dos veces al mismo destinatario.
-            $bccContabilidad = $envio->esCanalContabilidad() ? null : $this->correoContabilidad();
+            // Simulando no hay copia que registrar: nada viajó.
+            $bccContabilidad = ($simular || $envio->esCanalContabilidad()) ? null : $this->correoContabilidad();
 
-            $mail = Mail::to($destinatarios);
-            if ($bccContabilidad !== null) {
-                $mail->bcc($bccContabilidad);
+            if (! $simular) {
+                $mail = Mail::to($destinatarios);
+                if ($bccContabilidad !== null) {
+                    $mail->bcc($bccContabilidad);
+                }
+                // El canal decide asunto y cuerpo (cliente vs contabilidad); los adjuntos son los mismos.
+                $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla, $envio->canal));
             }
-            // El canal decide asunto y cuerpo (cliente vs contabilidad); los adjuntos son los mismos.
-            $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla, $envio->canal));
 
-            // Si el mailer activo NO es real (log/array), el correo NO sale por SMTP: se marca
-            // como SIMULADO (no "enviado"), para no mentir en el historial. Los adjuntos se
-            // generan igual y, con el driver log, el correo queda escrito en laravel.log.
-            $real = $this->mailerEsReal();
             $envio->update([
-                'estado' => $real ? 'enviado' : 'simulado',
+                'estado' => $simular ? 'simulado' : 'enviado',
                 'adjuntos' => implode(', ', array_merge(['PDF'], $nombres)),
-                'error' => $real ? null : 'Correo NO enviado realmente: MAIL_MAILER='.config('mail.default').' (driver no SMTP; el correo se escribió en laravel.log).',
+                'error' => $simular ? $candado->motivo() : null,
             ]);
             $this->auditar($envio, $bccContabilidad);
         } catch (\Throwable $e) {
@@ -137,23 +146,11 @@ class EnviarDteCorreo implements ShouldQueue
         $envio->update(['estado' => 'error', 'error' => mb_substr($error, 0, 1000)]);
     }
 
-    /**
-     * ¿El mailer activo envía DE VERDAD por SMTP (u otro transporte real)? Los drivers `log`
-     * y `array` NO envían: escriben/descartan. Se usa para no marcar "enviado" en modo prueba.
-     */
-    private function mailerEsReal(): bool
-    {
-        $mailer = (string) config('mail.default');
-        $transport = (string) config("mail.mailers.$mailer.transport", $mailer);
-
-        return ! in_array($transport, ['log', 'array'], true);
-    }
-
     private function auditar(DteEnvio $envio, ?string $bccContabilidad = null): void
     {
         $mensaje = match ($envio->estado) {
             'enviado' => 'envió el DTE por correo',
-            'simulado' => 'registró envío SIMULADO del DTE (mailer no real, no salió por SMTP)',
+            'simulado' => 'registró envío SIMULADO del DTE (candado de correo real: no salió por SMTP)',
             default => 'falló el envío del DTE por correo',
         };
         // Deja constancia en la auditoría de correo si viajó copia (BCC) a contabilidad.

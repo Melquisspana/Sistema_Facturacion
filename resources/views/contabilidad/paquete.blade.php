@@ -115,6 +115,10 @@
                     Genera <code>documentos_contabilidad_{{ $rango['etiqueta'] }}.zip</code> con los Excel de compras y ventas,
                     los PDF/JSON de compras ya guardados y el PDF/JSON de cada venta (documento emitido) del rango.
                 </p>
+                {{-- Candado de correo real: solo aparece fuera de producción. --}}
+                <div class="mt-3">
+                    <x-correo-simulado-aviso />
+                </div>
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                     <form method="POST" action="{{ route('contabilidad.paquete.generar') }}">
                         @csrf

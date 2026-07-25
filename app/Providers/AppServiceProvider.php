@@ -37,6 +37,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // SEGUNDA BARRERA del candado de correo real ({@see \App\Support\Correo\CandadoCorreoReal}):
+        // fuera de producción se fuerza el mailer a `log`, así ni un flujo que se olvide de
+        // consultar el candado (o los correos propios de Laravel, como el reset de contraseña)
+        // puede llegar al SMTP real. En producción no se toca nada.
+        if (! $this->app->environment('production')) {
+            config(['mail.default' => 'log']);
+        }
+
         // Heartbeat del worker de colas: cada iteración del daemon `queue:work` dispara
         // Looping (aun estando ocioso) y marca "vivo" en cache. Solo se dispara dentro del
         // proceso worker; en peticiones web queda registrado pero no se ejecuta. Observación
