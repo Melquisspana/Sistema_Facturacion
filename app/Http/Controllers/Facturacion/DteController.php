@@ -45,6 +45,7 @@ use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
 use App\Services\Dte\DteTransmisionService;
+use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Dte\PreflightEmisionProduccion;
 use App\Services\Dte\PreflightEmisionProduccionExportacion;
 use App\Services\Dte\PreflightEmisionProduccionFactura;
@@ -72,7 +73,10 @@ class DteController extends Controller
 {
     use AuthorizesRequests;
 
-    public function __construct(private readonly DteBorradorService $borradores) {}
+    public function __construct(
+        private readonly DteBorradorService $borradores,
+        private readonly EnvioDteCorreoService $envioCorreo,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -1338,7 +1342,7 @@ class DteController extends Controller
             return back()->withErrors(['destinatarios' => $error])->withInput();
         }
 
-        $envio = $this->encolarEnvio($dte, $emails, $request->user()?->id);
+        $envio = $this->envioCorreo->encolar($dte, $emails, $request->user()?->id, DteEnvio::CANAL_CLIENTE);
         // Éxito (encolado nuevo o ya en cola): el envío corre en segundo plano (cola), la
         // respuesta NO espera al SMTP. Se redirige EN LA MISMA PESTAÑA al PDF para imprimir
         // (sin window.open, que el navegador puede bloquear). Solo se abre el PDF si encoló.
@@ -1360,7 +1364,8 @@ class DteController extends Controller
             return back()->with('error', 'El envío no tiene destinatarios para reenviar.');
         }
 
-        $envio = $this->encolarEnvio($dte, $emails, $request->user()?->id);
+        // El reenvío conserva el canal al cliente (es la acción del historial de la UI).
+        $envio = $this->envioCorreo->encolar($dte, $emails, $request->user()?->id, DteEnvio::CANAL_CLIENTE);
         if ($envio === null) {
             return back()->with('status', 'Ya hay un envío pendiente para esos destinatarios; no se duplicó.');
         }
@@ -1391,37 +1396,12 @@ class DteController extends Controller
             return back()->with('error', $error);
         }
 
-        $envio = $this->encolarEnvio($dte, [$email], request()->user()?->id);
+        $envio = $this->envioCorreo->encolar($dte, [$email], request()->user()?->id, DteEnvio::CANAL_CLIENTE);
         if ($envio === null) {
             return back()->with('status', 'Ya hay un envío pendiente para '.$email.'; no se duplicó.');
         }
 
         return back()->with('status', 'Documento encolado para envío por correo a '.$email.'.');
-    }
-
-    /**
-     * Crea el registro 'pendiente' y ENCOLA el envío (la UI no espera al SMTP).
-     * Anti-duplicado: si ya hay un envío PENDIENTE con los MISMOS destinatarios para este DTE,
-     * NO crea otro (devuelve null) para no encolar jobs repetidos.
-     */
-    private function encolarEnvio(Dte $dte, array $emails, ?int $userId): ?DteEnvio
-    {
-        $duplicado = $dte->envios()->where('estado', 'pendiente')->get()
-            ->first(fn (DteEnvio $e) => $this->mismosDestinatarios($e->destinatarios ?: array_filter([$e->destinatario]), $emails));
-        if ($duplicado !== null) {
-            return null;
-        }
-
-        $envio = $dte->envios()->create([
-            'destinatario' => $emails[0],
-            'destinatarios' => $emails,
-            'estado' => 'pendiente',
-            'user_id' => $userId,
-        ]);
-
-        \App\Jobs\EnviarDteCorreo::dispatch($envio->id);
-
-        return $envio;
     }
 
     /**
@@ -1449,14 +1429,6 @@ class DteController extends Controller
         }
 
         return null;
-    }
-
-    /** ¿Dos listas de destinatarios son el mismo conjunto (sin importar orden/duplicados)? */
-    private function mismosDestinatarios(array $a, array $b): bool
-    {
-        $norm = fn (array $x) => collect($x)->map(fn ($e) => strtolower(trim((string) $e)))->unique()->sort()->values()->all();
-
-        return $norm($a) === $norm($b);
     }
 
     /**

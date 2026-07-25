@@ -104,16 +104,15 @@ class DteObserver
             return;
         }
 
-        $envio = $dte->envios()->create([
-            'destinatario' => $correo,
-            'destinatarios' => [$correo],
-            'estado' => 'pendiente',
-            'user_id' => null, // envío automático (sistema)
-        ]);
-
-        // Con queue=database el job es transaccional (su fila se inserta dentro de la
-        // transacción de aceptación y se confirma con ella); el worker lo toma luego.
-        \App\Jobs\EnviarDteCorreo::dispatch($envio->id);
+        // Mismo pipeline que la UI (registro 'pendiente' + job). Con queue=database el job es
+        // transaccional (su fila se inserta dentro de la transacción de aceptación y se confirma
+        // con ella); el worker lo toma luego. user_id null = envío automático (sistema).
+        app(\App\Services\Dte\EnvioDteCorreoService::class)->encolar(
+            $dte,
+            [$correo],
+            null,
+            \App\Models\DteEnvio::CANAL_CLIENTE,
+        );
     }
 
     public function deleting(Dte $dte): void

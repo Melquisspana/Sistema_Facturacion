@@ -113,6 +113,15 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:reportes.ver')->name('reporte-contadora');
         Route::get('reporte-contadora/exportar', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'exportar'])
             ->middleware('permission:reportes.ver')->name('reporte-contadora.exportar');
+        // JSON oficial ya generado, para el registro contable (solo lectura; NO lo genera).
+        // Va por reportes.ver porque contabilidad no tiene dte.emitir (DtePolicy::verJson).
+        Route::get('reporte-contadora/{dte}/json', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'descargarJson'])
+            ->middleware('permission:reportes.ver')->name('reporte-contadora.json');
+        // Envío INDIVIDUAL de un documento aceptado a contabilidad (encolado, canal
+        // contabilidad). Solo administrador y contabilidad; facturación NO. No emite,
+        // no transmite, no toca correlativos ni el estado fiscal.
+        Route::post('reporte-contadora/{dte}/enviar-contabilidad', [\App\Http\Controllers\Facturacion\ReporteContadoraController::class, 'enviarContabilidad'])
+            ->middleware('permission:contabilidad.enviar')->name('reporte-contadora.enviar');
 
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');

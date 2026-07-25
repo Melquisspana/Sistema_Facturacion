@@ -55,13 +55,16 @@ class EnviarDteCorreo implements ShouldQueue
             // Copia a contabilidad (BCC) DENTRO del mismo envío, solo si está activada
             // la preferencia y hay un correo válido configurado. No es un envío aparte
             // ni automático: viaja como copia oculta del correo que el usuario ya manda.
-            $bccContabilidad = $this->correoContabilidad();
+            // Si el envío YA va dirigido a contabilidad (canal contabilidad), no se
+            // agrega la copia: sería el mismo correo dos veces al mismo destinatario.
+            $bccContabilidad = $envio->esCanalContabilidad() ? null : $this->correoContabilidad();
 
             $mail = Mail::to($destinatarios);
             if ($bccContabilidad !== null) {
                 $mail->bcc($bccContabilidad);
             }
-            $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla));
+            // El canal decide asunto y cuerpo (cliente vs contabilidad); los adjuntos son los mismos.
+            $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla, $envio->canal));
 
             // Si el mailer activo NO es real (log/array), el correo NO sale por SMTP: se marca
             // como SIMULADO (no "enviado"), para no mentir en el historial. Los adjuntos se
