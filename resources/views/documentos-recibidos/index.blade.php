@@ -280,17 +280,6 @@
                 @endif
             </div>
 
-            {{-- Preparado para fase futura (no activo todavía) --}}
-            <div class="rounded-md bg-gray-50 border border-gray-200 p-3 text-xs text-gray-500">
-                <span class="font-medium text-gray-600">Próxima fase (pendiente):</span>
-                paquete mensual para la contadora (ZIP con Excel de emitidos + recibidos y carpetas PDF/JSON), y envío a
-                contabilidad con confirmación explícita.
-                <span class="ms-2 inline-flex gap-2">
-                    <button type="button" disabled class="rounded bg-gray-200 px-2 py-1 text-gray-400 cursor-not-allowed">Descargar ZIP (pendiente)</button>
-                    <button type="button" disabled class="rounded bg-gray-200 px-2 py-1 text-gray-400 cursor-not-allowed">Enviar a contabilidad (pendiente)</button>
-                </span>
-            </div>
-
             <p class="text-xs text-gray-400">
                 Solo lectura y preparación. La revisión del buzón (Yahoo/IMAP) es de solo lectura (no marca leído, no
                 mueve ni borra correos) y no se envía ningún correo desde esta pantalla.

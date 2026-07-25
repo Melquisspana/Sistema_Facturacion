@@ -65,8 +65,9 @@
             {{-- Badges de modo DTE: SOLO en pantallas de Facturación/DTE (no en el resto
                  del sistema). No cambia ningún candado ni validación; es solo dónde se
                  muestra el aviso. Las vistas de facturación además llevan su propio
-                 banner detallado (<x-modo-dte-aviso>), que no se toca. --}}
-            @if ($modoDte && request()->routeIs('facturacion.*'))
+                 banner detallado (<x-modo-dte-aviso>), que no se toca. Se OCULTA en la
+                 pantalla contable de Ventas (Reporte contadora), donde no es relevante. --}}
+            @if ($modoDte && request()->routeIs('facturacion.*') && ! $enReporteContadora)
                 <div class="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" title="{{ $modoDte['detalle'] }}">
                     <span class="inline-flex items-center rounded-full px-2 py-0.5 font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
                         MODO {{ $modoDte['etiqueta'] }}

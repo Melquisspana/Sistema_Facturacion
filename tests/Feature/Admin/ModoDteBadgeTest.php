@@ -73,6 +73,16 @@ class ModoDteBadgeTest extends TestCase
             ->assertDontSee('PARALELO SEGURO');
     }
 
+    public function test_el_badge_no_aparece_en_ventas_pero_si_en_el_resto_de_facturacion(): void
+    {
+        // La pantalla contable de Ventas (Reporte contadora) OCULTA el badge de modo,
+        // aunque sea una ruta facturacion.*; el candado server-side no cambia. Regresión:
+        // NO se ocultó globalmente (sigue visible en el resto de Facturación).
+        $admin = $this->usuario('administrador');
+        $this->actingAs($admin)->get(route('facturacion.reporte-contadora'))->assertOk()->assertDontSee('PARALELO SEGURO');
+        $this->actingAs($admin)->get($this->pantallaFacturacion())->assertOk()->assertSee('PARALELO SEGURO');
+    }
+
     public function test_contador_no_ve_el_badge(): void
     {
         $this->actingAs($this->usuario('contabilidad'))
