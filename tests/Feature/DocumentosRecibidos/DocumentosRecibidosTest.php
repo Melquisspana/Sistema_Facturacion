@@ -293,9 +293,7 @@ class DocumentosRecibidosTest extends TestCase
         $doc = $this->doc(['estado' => 'pendiente', 'fecha_correo' => now()]);
         $admin = $this->usuario('administrador');
 
-        $this->actingAs($admin)->patch(route('documentos-recibidos.enviado', $doc))->assertRedirect();
-        $this->assertSame('enviado', $doc->refresh()->estado);
-
+        // Ya NO existe "marcar enviado" manual: el triage solo alterna ignorado/pendiente.
         $this->actingAs($admin)->patch(route('documentos-recibidos.ignorar', $doc))->assertRedirect();
         $this->assertSame('ignorado', $doc->refresh()->estado);
 
@@ -303,6 +301,19 @@ class DocumentosRecibidosTest extends TestCase
         $this->assertSame('pendiente', $doc->refresh()->estado);
 
         Mail::assertNothingSent();
+    }
+
+    public function test_ya_no_existe_la_ruta_de_marcar_enviado(): void
+    {
+        // Una compra solo pasa a 'enviado' cuando el envío por correo (individual o el
+        // paquete mensual) termina con éxito: no hay marcado manual.
+        $this->assertFalse(\Illuminate\Support\Facades\Route::has('documentos-recibidos.enviado'));
+
+        $doc = $this->doc(['estado' => 'pendiente', 'fecha_correo' => now()]);
+        $this->actingAs($this->usuario('administrador'))
+            ->patch('/documentos-recibidos/'.$doc->id.'/enviado')
+            ->assertNotFound();
+        $this->assertSame('pendiente', $doc->refresh()->estado);
     }
 
     public function test_jefatura_lee_pero_no_sincroniza(): void

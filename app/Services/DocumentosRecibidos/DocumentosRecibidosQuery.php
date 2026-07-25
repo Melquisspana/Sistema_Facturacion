@@ -3,6 +3,7 @@
 namespace App\Services\DocumentosRecibidos;
 
 use App\Models\DocumentoRecibido;
+use App\Models\DocumentoRecibidoEnvio;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
@@ -95,6 +96,17 @@ class DocumentosRecibidosQuery
     public static function query(array $f, bool $aplicarEstado = true): Builder
     {
         $q = DocumentoRecibido::query();
+
+        // Estado del ÚLTIMO envío individual a contabilidad (para el badge de la fila) y
+        // fecha del último envío EXITOSO. Solo 'enviado' cuenta como enviado: 'simulado',
+        // 'error' y 'pendiente' (en cola) dejan el documento como pendiente.
+        $q->addSelect(['envio_estado' => DocumentoRecibidoEnvio::select('estado')
+            ->whereColumn('documento_recibido_id', 'documentos_recibidos.id')->latest('id')->limit(1)]);
+        $q->addSelect(['envio_error' => DocumentoRecibidoEnvio::select('error')
+            ->whereColumn('documento_recibido_id', 'documentos_recibidos.id')->latest('id')->limit(1)]);
+        $q->addSelect(['envio_enviado_at' => DocumentoRecibidoEnvio::select('updated_at')
+            ->whereColumn('documento_recibido_id', 'documentos_recibidos.id')
+            ->where('estado', 'enviado')->latest('id')->limit(1)]);
 
         if ($aplicarEstado) {
             match ($f['vista']) {

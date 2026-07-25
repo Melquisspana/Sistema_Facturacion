@@ -3,20 +3,29 @@
 namespace App\Http\Controllers\DocumentosRecibidos;
 
 use App\Http\Controllers\Controller;
+use App\Models\Configuracion;
 use App\Models\DocumentoRecibido;
+use App\Services\DocumentosRecibidos\AdjuntosDocumentoRecibido;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
+use App\Services\DocumentosRecibidos\EnvioDocumentoRecibidoService;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Documentos recibidos (CCF/facturas de proveedores que llegan por correo).
  * Herramienta INTERNA para preparar lo que se le manda a la contadora (ella no
- * entra al sistema). Fase actual: solo lectura/listado/preparación + Excel. NO
- * reenvía, NO envía correos, NO modifica el buzón, NO toca DTE emitidos.
+ * entra al sistema): listado, Excel, apertura de los adjuntos guardados y envío
+ * INDIVIDUAL a contabilidad (encolado).
+ *
+ * El buzón Yahoo/IMAP sigue siendo estrictamente de SOLO LECTURA: el envío usa los
+ * archivos ya guardados en disco, nunca vuelve al buzón. NO toca DTE emitidos,
+ * correlativos, firma ni transmisión.
  */
 class DocumentoRecibidoController extends Controller
 {
@@ -97,15 +106,81 @@ class DocumentoRecibidoController extends Controller
     }
 
     /**
-     * Marca el documento como enviado a contabilidad MANUALMENTE (estado interno).
-     * NO envía ningún correo: solo registra que ya se lo hiciste llegar por fuera.
-     * El envío automático a contabilidad llega en una fase posterior.
+     * Envía ESTE documento recibido a contabilidad por correo (encolado), con los
+     * adjuntos originales ya guardados. No hay marcado manual: la compra solo pasa a
+     * "enviado" cuando el envío termina realmente bien (lo hace el job).
+     *
+     * Nunca toca el buzón Yahoo: los archivos se leen del disco local.
      */
-    public function marcarEnviado(DocumentoRecibido $documento): RedirectResponse
-    {
-        $documento->update(['estado' => 'enviado']);
+    public function enviarContabilidad(
+        Request $request,
+        DocumentoRecibido $documento,
+        EnvioDocumentoRecibidoService $envios,
+        AdjuntosDocumentoRecibido $adjuntos,
+    ): RedirectResponse {
+        $correo = $this->correoContabilidad();
+        if ($correo === null) {
+            return back()->with('error', 'No hay un correo de contabilidad válido. Configuralo en Configuración > Contabilidad.');
+        }
 
-        return back()->with('status', 'Documento marcado como enviado a contabilidad (manual, no se envió correo).');
+        // Sin ningún archivo que quepa no se manda un correo vacío: se avisa claro.
+        $seleccion = $adjuntos->seleccionar($documento);
+        if ($seleccion['enviados'] === []) {
+            $mensaje = $seleccion['omitidos'] === []
+                ? 'Este documento no tiene adjuntos guardados: no hay nada que enviar a contabilidad.'
+                : 'Ningún adjunto de este documento cabe en el límite de '.$this->mb($adjuntos->maxBytes()).' MB por correo. No se envió nada.';
+
+            return back()->with('error', $mensaje);
+        }
+
+        $envio = $envios->encolar($documento, [$correo], $request->user()?->id);
+        if ($envio === null) {
+            return back()->with('status', 'Ese documento ya está en cola para contabilidad; no se duplicó.');
+        }
+
+        $aviso = $seleccion['omitidos'] === [] ? '' : ' Se omitieron por tamaño: '.$adjuntos->nombres($seleccion['omitidos']).'.';
+
+        return back()->with('status', 'Documento en cola para envío a contabilidad ('.$correo.') con: '
+            .$adjuntos->nombres($seleccion['enviados']).'.'.$aviso);
+    }
+
+    /**
+     * Abre/descarga un adjunto YA GUARDADO del documento (pdf | json). Solo lectura de
+     * disco: no vuelve al buzón y no genera nada. Sin archivo guardado → 404.
+     */
+    public function descargarArchivo(DocumentoRecibido $documento, string $tipo): StreamedResponse
+    {
+        abort_unless(in_array($tipo, ['pdf', 'json'], true), 404);
+
+        $ruta = collect((array) data_get($documento->metadata_json, 'archivos', []))
+            ->first(fn ($r) => is_string($r)
+                && str_ends_with(strtolower($r), '.'.$tipo)
+                && Storage::disk('local')->exists($r));
+
+        abort_if($ruta === null, 404);
+
+        return response()->streamDownload(
+            fn () => print (string) Storage::disk('local')->get($ruta),
+            basename($ruta),
+            [
+                'Content-Type' => $tipo === 'pdf' ? 'application/pdf' : 'application/json',
+                // El PDF se abre en el navegador; el JSON se descarga.
+                'Content-Disposition' => ($tipo === 'pdf' ? 'inline' : 'attachment').'; filename="'.basename($ruta).'"',
+            ],
+        );
+    }
+
+    /** Correo de contabilidad configurado, o null si no existe o no es válido. */
+    private function correoContabilidad(): ?string
+    {
+        $correo = strtolower(trim((string) Configuracion::get('contabilidad.correo')));
+
+        return ($correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL)) ? $correo : null;
+    }
+
+    private function mb(int $bytes): string
+    {
+        return rtrim(rtrim(number_format($bytes / 1048576, 1, '.', ''), '0'), '.');
     }
 
     /**

@@ -254,10 +254,10 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         $this->assertSame('ignorado', $doc->estado);
         $this->assertSame('dte_valido', $doc->clasificacion); // no cambia al ignorar
 
-        $this->actingAs($admin)->patch(route('documentos-recibidos.enviado', $doc))->assertRedirect();
+        $this->actingAs($admin)->patch(route('documentos-recibidos.pendiente', $doc))->assertRedirect();
         $doc->refresh();
-        $this->assertSame('enviado', $doc->estado);
-        $this->assertSame('dte_valido', $doc->clasificacion); // no cambia al marcar enviado
+        $this->assertSame('pendiente', $doc->estado);
+        $this->assertSame('dte_valido', $doc->clasificacion); // no cambia al volver a pendiente
     }
 
     public function test_sincronizar_nunca_marca_ignorado_automaticamente(): void
@@ -521,5 +521,81 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         $this->assertSame('json_invalido', $doc->clasificacion);
         $this->assertNotNull($doc->clasificacion_diagnostico);
         $this->assertArrayNotHasKey('primeros_500', $doc->clasificacion_diagnostico);
+    }
+
+    // ---------- Backfill acotado: --solo-clasificacion ----------
+
+    public function test_solo_clasificacion_dry_run_reporta_unicamente_los_sin_clasificar(): void
+    {
+        Storage::fake('local');
+        $rutaNull = 'documentos-recibidos/20/dte.json';
+        $rutaYa = 'documentos-recibidos/21/dte.json';
+        Storage::disk('local')->put($rutaNull, json_encode($this->jsonCcf('COD-SC-1', 'DTE-03-SC-1')));
+        Storage::disk('local')->put($rutaYa, json_encode($this->jsonCcf('COD-SC-2', 'DTE-03-SC-2')));
+
+        $sinClasificar = DocumentoRecibido::create([
+            'gmail_message_id' => 'm-sc-null', 'estado' => 'pendiente', 'tiene_pdf' => true, 'tiene_json' => true,
+            'fecha_correo' => now(), 'metadata_json' => ['archivos' => [$rutaNull]],
+        ]);
+        // Ya clasificado (a propósito con un valor que NO coincide con lo calculable).
+        $yaClasificado = DocumentoRecibido::create([
+            'gmail_message_id' => 'm-sc-ya', 'estado' => 'pendiente', 'tiene_pdf' => true, 'tiene_json' => true,
+            'clasificacion' => 'no_es_dte', 'fecha_correo' => now(), 'metadata_json' => ['archivos' => [$rutaYa]],
+        ]);
+
+        Artisan::call('documentos-recibidos:reclasificar', ['--solo-clasificacion' => true]);
+        $salida = Artisan::output();
+
+        $this->assertStringContainsString('SOLO CLASIFICACIÓN', $salida);
+        $this->assertStringContainsString('SIN CLASIFICAR', $salida);
+        $this->assertStringContainsString('Revisados: 1', $salida);   // solo el NULL entra al análisis
+        $this->assertNull($sinClasificar->refresh()->clasificacion);   // dry-run: no escribe
+        $this->assertSame('no_es_dte', $yaClasificado->refresh()->clasificacion);
+    }
+
+    public function test_solo_clasificacion_apply_no_toca_los_ya_clasificados(): void
+    {
+        Storage::fake('local');
+        $rutaNull = 'documentos-recibidos/22/dte.json';
+        $rutaYa = 'documentos-recibidos/23/dte.json';
+        Storage::disk('local')->put($rutaNull, json_encode($this->jsonCcf('COD-SC-3', 'DTE-03-SC-3')));
+        Storage::disk('local')->put($rutaYa, json_encode($this->jsonCcf('COD-SC-4', 'DTE-03-SC-4')));
+
+        $sinClasificar = DocumentoRecibido::create([
+            'gmail_message_id' => 'm-sc-null-2', 'estado' => 'ignorado', 'tiene_pdf' => true, 'tiene_json' => true,
+            'total' => null, 'fecha_correo' => now(), 'metadata_json' => ['archivos' => [$rutaNull]],
+        ]);
+        $yaClasificado = DocumentoRecibido::create([
+            'gmail_message_id' => 'm-sc-ya-2', 'estado' => 'pendiente', 'tiene_pdf' => true, 'tiene_json' => true,
+            'clasificacion' => 'no_es_dte', 'fecha_correo' => now(), 'metadata_json' => ['archivos' => [$rutaYa]],
+        ]);
+
+        Artisan::call('documentos-recibidos:reclasificar', ['--solo-clasificacion' => true, '--apply' => true]);
+
+        // El NULL se clasifica; el ya clasificado queda EXACTAMENTE como estaba.
+        $this->assertSame('dte_valido', $sinClasificar->refresh()->clasificacion);
+        $this->assertSame('ignorado', $sinClasificar->estado);   // estado intacto
+        $this->assertSame('no_es_dte', $yaClasificado->refresh()->clasificacion);
+    }
+
+    public function test_solo_clasificacion_nunca_completa_el_total_del_tipo_07(): void
+    {
+        Storage::fake('local');
+        $ruta = 'documentos-recibidos/24/retencion.json';
+        Storage::disk('local')->put($ruta, json_encode($this->jsonRetencion('COD-SC-07', 'DTE-07-M001P002-000000000000340')));
+
+        $doc = DocumentoRecibido::create([
+            'gmail_message_id' => 'm-sc-07', 'tipo_documento' => '07', 'estado' => 'pendiente',
+            'tiene_pdf' => true, 'tiene_json' => true, 'total' => null, 'fecha_correo' => now(),
+            'metadata_json' => ['archivos' => [$ruta]],
+        ]);
+
+        Artisan::call('documentos-recibidos:reclasificar', ['--solo-clasificacion' => true, '--apply' => true]);
+        $salida = Artisan::output();
+
+        $doc->refresh();
+        $this->assertSame('dte_valido', $doc->clasificacion); // sí clasifica
+        $this->assertNull($doc->total);                        // pero NO toca el total
+        $this->assertStringContainsString('omitido (--solo-clasificacion)', $salida);
     }
 }

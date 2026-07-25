@@ -213,6 +213,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'index'])->name('index');
         // Excel de recibidos respetando los filtros actuales (solo lectura, sin envío).
         Route::get('exportar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'exportar'])->name('exportar');
+        // Abre/descarga un adjunto YA guardado (pdf | json). Solo lectura de disco.
+        Route::get('{documento}/archivo/{tipo}', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'descargarArchivo'])->name('archivo');
+
+        // Envío INDIVIDUAL de la compra a contabilidad (encolado, con los adjuntos ya
+        // guardados). Solo administrador y contabilidad (permiso contabilidad.enviar).
+        // No lee el buzón Yahoo, no toca DTE emitidos ni correlativos.
+        Route::post('{documento}/enviar-contabilidad', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'enviarContabilidad'])
+            ->middleware('permission:contabilidad.enviar')->name('enviar-contabilidad');
 
         // Escritura: sincronización del buzón Yahoo/IMAP y cambios de estado interno.
         // SOLO administrador (permiso documentos-recibidos.gestionar).
@@ -221,8 +229,8 @@ Route::middleware('auth')->group(function () {
             Route::post('sincronizar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'sincronizar'])->name('sincronizar');
             Route::patch('{documento}/pendiente', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarPendiente'])->name('pendiente');
             Route::patch('{documento}/ignorar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarIgnorado'])->name('ignorar');
-            // Marcar enviado a contabilidad MANUALMENTE (estado interno; NO envía correo).
-            Route::patch('{documento}/enviado', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarEnviado'])->name('enviado');
+            // Ya NO existe "marcar enviado" manual: una compra pasa a 'enviado' solo cuando
+            // el envío individual por correo, o el paquete mensual, termina con éxito.
         });
     });
 

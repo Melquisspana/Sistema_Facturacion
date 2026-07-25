@@ -26,9 +26,11 @@ use Illuminate\Support\Facades\Storage;
  */
 class ReclasificarDocumentosRecibidos extends Command
 {
-    protected $signature = 'documentos-recibidos:reclasificar {--apply : Aplica los cambios (por defecto es dry-run: solo reporta)}';
+    protected $signature = 'documentos-recibidos:reclasificar
+        {--apply : Aplica los cambios (por defecto es dry-run: solo reporta)}
+        {--solo-clasificacion : Toca SOLO clasificacion/clasificacion_diagnostico y SOLO donde clasificacion está NULL (nunca total)}';
 
-    protected $description = 'Reclasifica documentos recibidos existentes y completa el total del tipo 07 (resumen.totalSujetoRetencion) cuando falta. Dry-run por defecto.';
+    protected $description = 'Reclasifica documentos recibidos existentes y completa el total del tipo 07 (resumen.totalSujetoRetencion) cuando falta. Dry-run por defecto. Con --solo-clasificacion: solo clasifica los que están sin clasificar.';
 
     /** @var list<array{id: int, anterior: ?float, propuesto: ?float, accion: string}> */
     private array $detalleTipo07 = [];
@@ -36,6 +38,9 @@ class ReclasificarDocumentosRecibidos extends Command
     public function handle(JsonAdjuntoDecoder $decoder, ParserDocumentoRecibido $parser, ClasificadorDocumentoRecibido $clasificador): int
     {
         $aplicar = (bool) $this->option('apply');
+        // Modo acotado: SOLO los registros sin clasificar, y SOLO las dos columnas de
+        // clasificación (nunca `total`, `estado`, sello, número de control ni adjuntos).
+        $soloClasificacion = (bool) $this->option('solo-clasificacion');
 
         $conteos = array_fill_keys(DocumentoRecibido::CLASIFICACIONES, 0);
         $afectadosPorClasificacion = [];
@@ -46,8 +51,13 @@ class ReclasificarDocumentosRecibidos extends Command
         $actualizados = 0;
         $this->detalleTipo07 = [];
 
-        DocumentoRecibido::orderBy('id')->chunkById(200, function ($docs) use (
-            $decoder, $parser, $clasificador, $aplicar,
+        // Con --solo-clasificacion el recorrido se acota a los registros SIN clasificar.
+        $consulta = DocumentoRecibido::query()
+            ->when($soloClasificacion, fn ($q) => $q->whereNull('clasificacion'))
+            ->orderBy('id');
+
+        $consulta->chunkById(200, function ($docs) use (
+            $decoder, $parser, $clasificador, $aplicar, $soloClasificacion,
             &$conteos, &$afectadosPorClasificacion, &$totalCompletados,
             &$omitidosTotalYaPoblado, &$omitidosTotalSinDato, &$revisados, &$actualizados
         ) {
@@ -72,7 +82,11 @@ class ReclasificarDocumentosRecibidos extends Command
                 // documento que YA sabíamos que era 07 aunque su JSON ahora no decodifique).
                 $totalPropuesto = null;
                 $esTipo07 = $doc->tipo_documento === '07' || $analisis['tipo'] === '07';
-                if ($esTipo07) {
+                if ($esTipo07 && $soloClasificacion) {
+                    // --solo-clasificacion: el total NO se toca, ni siquiera si está NULL.
+                    $this->detalleTipo07[] = ['id' => $doc->id, 'anterior' => $doc->total !== null ? (float) $doc->total : null,
+                        'propuesto' => null, 'accion' => 'omitido (--solo-clasificacion)'];
+                } elseif ($esTipo07) {
                     $anterior = $doc->total !== null ? (float) $doc->total : null;
 
                     if ($anterior !== null) {
@@ -95,7 +109,7 @@ class ReclasificarDocumentosRecibidos extends Command
                     // Actualiza SOLO clasificación/diagnóstico y, si aplica, total.
                     // No toca estado, adjuntos ni ningún otro campo.
                     $update = ['clasificacion' => $clasificacion, 'clasificacion_diagnostico' => $diagnostico];
-                    if ($totalPropuesto !== null) {
+                    if ($totalPropuesto !== null && ! $soloClasificacion) {
                         $update['total'] = $totalPropuesto;
                     }
                     $doc->forceFill($update)->save();
@@ -104,7 +118,7 @@ class ReclasificarDocumentosRecibidos extends Command
             }
         });
 
-        $this->reportar($aplicar, $conteos, $afectadosPorClasificacion, $totalCompletados, $omitidosTotalYaPoblado, $omitidosTotalSinDato, $revisados, $actualizados);
+        $this->reportar($aplicar, $soloClasificacion, $conteos, $afectadosPorClasificacion, $totalCompletados, $omitidosTotalYaPoblado, $omitidosTotalSinDato, $revisados, $actualizados);
 
         return self::SUCCESS;
     }
@@ -118,6 +132,7 @@ class ReclasificarDocumentosRecibidos extends Command
      */
     private function reportar(
         bool $aplicar,
+        bool $soloClasificacion,
         array $conteos,
         array $afectadosPorClasificacion,
         array $totalCompletados,
@@ -126,11 +141,12 @@ class ReclasificarDocumentosRecibidos extends Command
         int $revisados,
         int $actualizados,
     ): void {
-        $this->info(($aplicar ? '[APLICADO] ' : '[DRY-RUN] ').'Reclasificación de documentos recibidos:');
+        $this->info(($aplicar ? '[APLICADO] ' : '[DRY-RUN] ').'Reclasificación de documentos recibidos'
+            .($soloClasificacion ? ' [SOLO CLASIFICACIÓN: únicamente registros con clasificacion NULL; total/estado/sello/número/adjuntos intactos]' : '').':');
 
         // 1) Clasificaciones propuestas.
         $this->line('');
-        $this->line('Clasificaciones propuestas:');
+        $this->line($soloClasificacion ? 'Clasificaciones propuestas para los SIN CLASIFICAR:' : 'Clasificaciones propuestas:');
         $this->table(['Clasificación', 'Cantidad'], collect($conteos)->map(fn ($c, $k) => [$k, $c])->values()->all());
 
         // 2) Diagnósticos propuestos (solo donde hay uno: json_invalido / tipo_no_soportado).
