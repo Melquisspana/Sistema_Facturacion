@@ -185,7 +185,7 @@
                                 <th class="py-3 px-3 text-center">Adjuntos</th>
                                 <th class="py-3 px-3 text-center">Clasificación</th>
                                 <th class="py-3 px-3 text-center">Estado</th>
-                                <th class="py-3 px-3 text-right">Acciones</th>
+                                <th class="py-3 px-3 text-right">Contabilidad y acciones</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -206,6 +206,16 @@
                                     'tipo_no_soportado' => 'Tipo no soportado',
                                     'falta_adjunto' => 'Falta JSON',
                                 ];
+                                // Estado del envío individual a contabilidad. SOLO 'enviado' cuenta
+                                // como enviado: simulado / error / en cola siguen pendientes.
+                                $envioBadge = [
+                                    '' => ['Pendiente', 'bg-gray-100 text-gray-600', 'Todavía no se envió a contabilidad.'],
+                                    'pendiente' => ['En cola', 'bg-amber-100 text-amber-800', 'El envío está en la cola: todavía no salió.'],
+                                    'enviado' => ['Enviado', 'bg-green-100 text-green-700', 'El correo salió correctamente.'],
+                                    'simulado' => ['Simulado', 'bg-amber-100 text-amber-800', 'El correo NO salió por SMTP (mailer en modo prueba): sigue pendiente.'],
+                                    'error' => ['Error', 'bg-red-100 text-red-700', 'El envío falló: sigue pendiente.'],
+                                ];
+                                $puedeEnviarContabilidad = auth()->user()?->can('contabilidad.enviar');
                             @endphp
                             @forelse ($documentos as $doc)
                                 <tr class="hover:bg-gray-50 {{ $doc->estado === 'ignorado' ? 'opacity-60' : '' }}">
@@ -237,32 +247,71 @@
                                     <td class="py-2 px-3 text-center">
                                         <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badge[$doc->estado] ?? 'bg-gray-100 text-gray-600' }}">{{ ucfirst($doc->estado) }}</span>
                                     </td>
-                                    <td class="py-2 px-3">
-                                        {{-- Cambios de estado interno: SOLO administrador (documentos-recibidos.gestionar). --}}
-                                        <div class="flex items-center justify-end gap-2">
-                                            @can('documentos-recibidos.gestionar')
-                                                @if ($doc->estado !== 'pendiente')
-                                                    <form method="POST" action="{{ route('documentos-recibidos.pendiente', $doc) }}">
-                                                        @csrf @method('PATCH')
-                                                        <button class="text-indigo-600 hover:underline text-xs">Pendiente</button>
+                                    {{-- Contabilidad y acciones: envío real (contabilidad.enviar), badge del
+                                         estado del envío y menú discreto con las descargas y el triage
+                                         interno (documentos-recibidos.gestionar). --}}
+                                    @php
+                                        $envio = $envioBadge[(string) ($doc->envio_estado ?? '')] ?? $envioBadge[''];
+                                        $envioExitoso = $doc->envio_estado === 'enviado';
+                                    @endphp
+                                    <td class="py-2 px-3 align-top">
+                                        <div class="flex items-start justify-end gap-3">
+                                            <div class="flex flex-col items-end gap-1">
+                                                @if ($puedeEnviarContabilidad)
+                                                    @php($accion = $envioExitoso ? 'Reenviar a contabilidad' : 'Enviar a contabilidad')
+                                                    <form method="POST" action="{{ route('documentos-recibidos.enviar-contabilidad', $doc) }}"
+                                                          onsubmit="return confirm('¿Enviar este documento recibido a contabilidad por correo?');">
+                                                        @csrf
+                                                        <button type="submit" aria-label="{{ $accion }}"
+                                                                title="{{ $accion }}: adjunta los archivos originales ya guardados (PDF/JSON)."
+                                                                class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700">
+                                                            {{ $envioExitoso ? 'Reenviar' : 'Enviar' }}
+                                                        </button>
                                                     </form>
                                                 @endif
-                                                @if ($doc->estado !== 'enviado')
-                                                    <form method="POST" action="{{ route('documentos-recibidos.enviado', $doc) }}"
-                                                          title="Marca que ya se lo hiciste llegar a contabilidad por fuera. No envía correo.">
-                                                        @csrf @method('PATCH')
-                                                        <button class="text-green-700 hover:underline text-xs">Marcar enviado</button>
-                                                    </form>
+
+                                                <span class="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium {{ $envio[1] }}"
+                                                      title="{{ $doc->envio_estado === 'error' && $doc->envio_error ? $doc->envio_error : $envio[2] }}">{{ $envio[0] }}</span>
+
+                                                @if ($envioExitoso && $doc->envio_enviado_at)
+                                                    <span class="text-[11px] whitespace-nowrap text-gray-400">{{ \Illuminate\Support\Carbon::parse($doc->envio_enviado_at)->format('d/m/Y H:i') }}</span>
                                                 @endif
-                                                @if ($doc->estado !== 'ignorado')
-                                                    <form method="POST" action="{{ route('documentos-recibidos.ignorar', $doc) }}">
-                                                        @csrf @method('PATCH')
-                                                        <button class="text-gray-500 hover:underline text-xs">Ignorar</button>
-                                                    </form>
-                                                @endif
-                                            @else
-                                                <span class="text-xs text-gray-400">—</span>
-                                            @endcan
+                                            </div>
+
+                                            <details class="text-left">
+                                                <summary title="Más acciones" aria-label="Más acciones"
+                                                         class="cursor-pointer list-none rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 [&::-webkit-details-marker]:hidden">⋮</summary>
+                                                <div class="mt-1 flex flex-col gap-1 whitespace-nowrap rounded-md bg-gray-50 p-2 ring-1 ring-gray-200">
+                                                    @if ($doc->tiene_pdf)
+                                                        <a href="{{ route('documentos-recibidos.archivo', [$doc, 'pdf']) }}" target="_blank" rel="noopener"
+                                                           class="text-xs font-medium text-gray-600 underline hover:text-gray-900">Abrir PDF</a>
+                                                    @else
+                                                        <span class="cursor-not-allowed text-xs text-gray-300" title="Este documento no tiene PDF guardado.">Abrir PDF</span>
+                                                    @endif
+
+                                                    @if ($doc->tiene_json)
+                                                        <a href="{{ route('documentos-recibidos.archivo', [$doc, 'json']) }}"
+                                                           class="text-xs font-medium text-gray-600 underline hover:text-gray-900">Abrir JSON</a>
+                                                    @else
+                                                        <span class="cursor-not-allowed text-xs text-gray-300" title="Este documento no tiene JSON guardado.">Abrir JSON</span>
+                                                    @endif
+
+                                                    @can('documentos-recibidos.gestionar')
+                                                        @if ($doc->estado !== 'ignorado')
+                                                            <form method="POST" action="{{ route('documentos-recibidos.ignorar', $doc) }}">
+                                                                @csrf @method('PATCH')
+                                                                <button class="text-xs text-gray-500 hover:underline">Ignorar</button>
+                                                            </form>
+                                                        @endif
+                                                        @if ($doc->estado !== 'pendiente')
+                                                            <form method="POST" action="{{ route('documentos-recibidos.pendiente', $doc) }}">
+                                                                @csrf @method('PATCH')
+                                                                <button class="text-xs text-indigo-600 hover:underline">Marcar pendiente</button>
+                                                            </form>
+                                                        @endif
+                                                    @endcan
+                                                </div>
+                                            </details>
                                         </div>
                                     </td>
                                 </tr>

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Documento (CCF/factura) recibido por correo, donde SOMOS EL RECEPTOR. Registro
@@ -70,6 +71,12 @@ class DocumentoRecibido extends Model
             'clasificacion_diagnostico' => 'array',
             'metadata_json' => 'array',
         ];
+    }
+
+    /** Historial de envíos a contabilidad (el más reciente primero). */
+    public function envios(): HasMany
+    {
+        return $this->hasMany(DocumentoRecibidoEnvio::class, 'documento_recibido_id')->latest();
     }
 
     /** Etiqueta legible del tipo de documento (CAT-002) si se conoce. */

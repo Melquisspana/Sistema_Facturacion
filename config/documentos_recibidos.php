@@ -34,6 +34,12 @@ return [
     // el futuro envío a contabilidad. No se sube nada ni se reenvía en esta fase.
     'storage_dir' => env('DOCUMENTOS_RECIBIDOS_STORAGE_DIR', 'documentos-recibidos'),
 
+    // Límite TOTAL de adjuntos por correo individual a contabilidad (15 MB). Los
+    // archivos se agregan por prioridad (PDF → JSON → otros) mientras quepan; lo que
+    // no cabe se reporta como omitido y NUNCA hace fallar el envío completo. No se
+    // parte ni se comprime nada automáticamente.
+    'adjuntos_max_bytes' => 15 * 1024 * 1024,
+
     /*
     | Exclusión de correos NO-DTE durante la sincronización.
     |
