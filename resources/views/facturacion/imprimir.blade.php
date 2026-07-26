@@ -88,7 +88,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $dte->tipo_dte->label() }} · {{ $dte->numero_interno ?? ('#'.$dte->id) }}</title>
+    {{-- Título de la pestaña/impresión: número fiscal si existe, si no la numeración del
+         sistema. Nunca el id técnico de la fila. El cuerpo del documento no cambia. --}}
+    <title>{{ $dte->tipo_dte->label() }} · {{ $dte->numero_interno ?? $dte->etiquetaNumeroSistema() }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">

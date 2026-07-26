@@ -1,7 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            Nota de crédito #{{ $nc->id }} (borrador)
+            {{ $nc->tituloDocumento() }}
+            <span class="ml-2 text-sm font-normal text-gray-500">N.º sistema: {{ $nc->etiquetaNumeroSistema() }}</span>
         </h2>
     </x-slot>
 

@@ -1,7 +1,7 @@
 <x-app-layout>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            Documento #{{ $dte->id }} — {{ $dte->tipo_dte->label() }}
+            {{ $dte->tituloDocumento() }}
         </h2>
     </x-slot>
 
@@ -115,12 +115,22 @@
                         <div><dt class="text-gray-500">Tipo de NC</dt><dd>{{ $dte->tipo_nota_credito->label() }}</dd></div>
                     @endif
                     <div><dt class="text-gray-500">Estado</dt><dd><x-estado-dte-badge :estado="$dte->estado" /></dd></div>
+                    {{-- Numeración COMERCIAL visible del sistema (compartida por todos los
+                         tipos). El id de la fila NO es un número comercial: se muestra
+                         aparte y etiquetado como técnico, solo para soporte/auditoría. --}}
+                    <div>
+                        <dt class="text-gray-500">N.º sistema</dt>
+                        <dd class="font-semibold">{{ $dte->etiquetaNumeroSistema() }}</dd>
+                    </div>
                     <div><dt class="text-gray-500">Número interno</dt><dd class="font-mono">{{ $dte->numero_interno ?? '—' }}</dd></div>
                     @if ($dte->numero_control)
                         <div><dt class="text-gray-500">Número de control</dt><dd class="font-mono">{{ $dte->numero_control }}</dd></div>
                     @endif
                     <div><dt class="text-gray-500">Fecha</dt><dd>{{ $dte->fecha_emision?->format('d/m/Y') }}</dd></div>
                     <div><dt class="text-gray-500">Orden de compra</dt><dd>{{ $dte->numero_orden_compra ?? '—' }}</dd></div>
+                    {{-- Identificador TÉCNICO de la fila: solo para soporte y auditoría,
+                         nunca como número de documento frente al cliente. --}}
+                    <div><dt class="text-gray-500">ID técnico (soporte)</dt><dd class="font-mono text-xs text-gray-400">{{ $dte->id }}</dd></div>
                     @if ($dte->dte_relacionado_id)
                         <div>
                             <dt class="text-gray-500">Documento original</dt>

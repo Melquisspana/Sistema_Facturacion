@@ -69,6 +69,7 @@ class Dte extends Model
             'fecha_procesamiento_mh' => 'datetime',
             'archivado' => 'boolean',
             'archivado_en' => 'datetime',
+            'numero_sistema' => 'integer',
             'respuesta_mh' => 'array',
             'aplica_retencion_iva' => 'boolean',
             'total_no_sujeto' => 'decimal:2',
@@ -209,6 +210,55 @@ class Dte extends Model
             && $sello !== ''
             && ! str_starts_with(strtoupper($sello), 'MOCK')
             && $this->fecha_procesamiento_mh !== null;
+    }
+
+    /** ¿Ya tiene numeración global visible del sistema? (solo producción generada). */
+    public function tieneNumeroSistema(): bool
+    {
+        return $this->numero_sistema !== null;
+    }
+
+    /**
+     * Numeración GLOBAL VISIBLE para pantalla: "N.º 7". Nunca expone `dtes.id`, que es
+     * solo la primary key técnica (para soporte/auditoría se muestra aparte y etiquetado).
+     *
+     * Sin número hay tres casos distintos que NO deben confundirse:
+     *  - PRUEBAS/APITEST → "no aplica (pruebas)": la serie visible es solo de producción,
+     *    así que estos documentos nunca tendrán número.
+     *  - borrador de producción → "pendiente": lo tomará al generarse.
+     *  - producción ya emitida sin número → "pendiente de asignar": son los documentos
+     *    anteriores a esta funcionalidad, a la espera del backfill confirmado a mano.
+     */
+    public function etiquetaNumeroSistema(): string
+    {
+        if ($this->tieneNumeroSistema()) {
+            return 'N.º '.$this->numero_sistema;
+        }
+
+        if ($this->ambiente?->esProduccion() !== true) {
+            return 'no aplica (pruebas)';
+        }
+
+        return $this->esEditable() ? 'pendiente' : 'pendiente de asignar';
+    }
+
+    /**
+     * Título del documento para encabezados: "Nota de Crédito N.º 7",
+     * "Nota de Crédito (borrador)" o, sin número posible, con la aclaración del caso.
+     */
+    public function tituloDocumento(): string
+    {
+        $tipo = $this->tipo_dte->label();
+
+        if ($this->tieneNumeroSistema()) {
+            return $tipo.' N.º '.$this->numero_sistema;
+        }
+
+        if ($this->esEditable()) {
+            return $tipo.' (borrador)';
+        }
+
+        return $tipo.($this->ambiente?->esProduccion() === true ? ' (sin N.º de sistema)' : ' (pruebas)');
     }
 
     /**
