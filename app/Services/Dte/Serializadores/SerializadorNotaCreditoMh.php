@@ -28,6 +28,9 @@ use App\Support\Dte\CodigoGeneracion;
  *  - receptor con `nit` directo (no tipoDocumento/numDocumento); sin `distrito` en direccion.
  *  - resumen con `subTotal`, `descuGravada`, `ivaPerci1`, `ivaRete1`, `reteRenta`,
  *    `montoTotalOperacion`; SIN `totalIva`, `totalPagar`, `totalNoGravado`, `pagos`.
+ *  - Al NO haber `totalPagar`, `montoTotalOperacion` es el ÚNICO total y va NETO de
+ *    retenciones: subTotal + tributos − ivaRete1 − reteRenta (distinto del CCF, donde
+ *    el monto es bruto y la retención se resta en `totalPagar`).
  *  - bloque `extension` con campos null.
  *  - documentoRelacionado OBLIGATORIO (CCF original); cada línea referencia su codigoGeneracion.
  *
@@ -210,15 +213,24 @@ class SerializadorNotaCreditoMh implements SerializadorMh
             $tributos = [['codigo' => $ivaCod, 'descripcion' => $this->descTributo($ivaCod), 'valor' => $iva]];
         }
 
-        // montoTotalOperacion es el BRUTO antes de retención (subTotal + IVA), igual que
-        // en el CCF; la retención viaja aparte en ivaRete1 y el neto a pagar se deduce
-        // restándola (la v3 de la NC no lleva `totalPagar`).
-        $montoTotalOperacion = round($subTotal + $iva, 2);
-
         // Retención de IVA REVERSADA por esta NC: refleja exactamente `iva_retenido` del
         // documento, calculado sobre la base gravada neta de la NC (proporcional en
         // devoluciones parciales). 0.00 cuando el CCF original no retuvo.
         $ivaRete1 = round((float) $r->ivaRetenido, 2);
+        // Retención de renta: este módulo no la maneja todavía; viaja en 0.00 pero entra
+        // en la fórmula para no dejarla implícita el día que exista.
+        $reteRenta = 0.0;
+
+        // montoTotalOperacion de la NC v3 va NETO de retenciones:
+        //     subTotal + tributos − ivaRete1 − reteRenta
+        // A diferencia del CCF —donde el monto es el BRUTO y la retención se descuenta en
+        // `totalPagar`—, la v3 de la NC NO lleva `totalPagar`, así que este es su único
+        // total y debe traer ya restada la retención. Enviarlo bruto con ivaRete1 > 0 hace
+        // que Hacienda rechace con "[resumen.montoTotalOperacion] CALCULO INCORRECTO"
+        // (DTE #150: se envió 137.55 con ivaRete1 1.22; lo correcto era 136.33). Sin
+        // retención la fórmula da el mismo resultado de siempre, así que las NC ya
+        // aceptadas conservan su forma exacta.
+        $montoTotalOperacion = round($subTotal + $iva - $ivaRete1 - $reteRenta, 2);
 
         return [
             'totalNoSuj' => $totalNoSuj,
@@ -233,7 +245,7 @@ class SerializadorNotaCreditoMh implements SerializadorMh
             'subTotal' => $subTotal,
             'ivaPerci1' => 0.0,
             'ivaRete1' => $ivaRete1,
-            'reteRenta' => 0.0,
+            'reteRenta' => $reteRenta,
             'montoTotalOperacion' => $montoTotalOperacion,
             'totalLetras' => $r->totalLetras,
             'condicionOperacion' => (int) ($r->condicionOperacion ?? 1),
