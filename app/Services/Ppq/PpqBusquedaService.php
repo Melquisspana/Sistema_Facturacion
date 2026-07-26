@@ -26,6 +26,9 @@ class PpqBusquedaService
     {
         $q = Dte::query()
             ->whereIn('tipo_dte', self::TIPOS)
+            // Los rechazados ARCHIVADOS están fuera de la operación: no aparecen en la
+            // búsqueda rápida de cobro (se consultan por el filtro dedicado o Auditoría).
+            ->noArchivados()
             ->with(['cliente:id,nombre,nombre_comercial', 'clienteSucursal:id,nombre,codigo'])
             ->latest('fecha_emision');
 

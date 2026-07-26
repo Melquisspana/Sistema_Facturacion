@@ -166,6 +166,11 @@ Route::middleware('auth')->group(function () {
         // (snapshot). No modifica el original ni copia numeración/firma/sello/correos.
         Route::post('{dte}/duplicar', [DteController::class, 'duplicar'])->name('duplicar');
         Route::post('{dte}/anular', [DteController::class, 'anular'])->name('anular');
+        // Archivar / desarchivar un DTE RECHAZADO: lo retira de la operación diaria sin
+        // borrarlo ni liberar el correlativo. Autorización fina en DtePolicy (solo
+        // rechazados). No emite, no firma, no transmite.
+        Route::post('{dte}/archivar', [DteController::class, 'archivar'])->name('archivar');
+        Route::post('{dte}/desarchivar', [DteController::class, 'desarchivar'])->name('desarchivar');
         // Envío por correo al cliente (PDF + JSON/JWS), encolado. No transmite a Hacienda.
         Route::post('{dte}/correo', [DteController::class, 'enviarCorreo'])->name('correo.enviar');
         // Envío rápido de un clic al correo del cliente/sala (mismo pipeline encolado).

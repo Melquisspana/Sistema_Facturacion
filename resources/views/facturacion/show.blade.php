@@ -1096,6 +1096,48 @@
                 </details>
             @endif
 
+            {{-- Archivado de un RECHAZADO: lo saca de la operación diaria sin borrarlo ni
+                 liberar el correlativo. Solo aparece en documentos rechazados. --}}
+            @if ($dte->estaArchivado())
+                <div class="bg-white shadow sm:rounded-lg p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="font-semibold text-gray-700">Documento archivado</h3>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Retirado de la operación diaria
+                                @if ($dte->archivado_en) el {{ $dte->archivado_en->format('d/m/Y H:i') }} @endif.
+                                No admite correo, firma, transmisión ni edición. Sus datos fiscales, líneas,
+                                JSON, respuesta de Hacienda y correlativo quedaron intactos.
+                            </p>
+                        </div>
+                        @can('desarchivar', $dte)
+                            <form method="POST" action="{{ route('facturacion.desarchivar', $dte) }}">
+                                @csrf
+                                <button class="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Desarchivar</button>
+                            </form>
+                        @endcan
+                    </div>
+                </div>
+            @elsecan('archivar', $dte)
+                <div class="bg-white shadow sm:rounded-lg p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="font-semibold text-gray-700">Archivar documento rechazado</h3>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Lo saca del listado normal y de las búsquedas rápidas. No se borra nada, no
+                                cambia su estado fiscal y el correlativo sigue consumido. Se consulta con el
+                                filtro "Rechazados archivados".
+                            </p>
+                        </div>
+                        <form method="POST" action="{{ route('facturacion.archivar', $dte) }}"
+                              onsubmit="return confirm('¿Archivar este documento rechazado? Se puede desarchivar después.');">
+                            @csrf
+                            <button class="rounded-md bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">Archivar</button>
+                        </form>
+                    </div>
+                </div>
+            @endcan
+
             <div>
                 <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">← Volver al listado</a>
             </div>

@@ -93,6 +93,8 @@
                     <a href="{{ route('facturacion.index', ['estado' => 'pendientes']) }}" class="{{ $estadoActual === 'pendientes' ? $chipActivo : $chipInactivo }}">Pendientes</a>
                     <a href="{{ route('facturacion.index', ['estado' => 'aceptado']) }}" class="{{ $estadoActual === 'aceptado' ? $chipActivo : $chipInactivo }}">Aceptados</a>
                     <a href="{{ route('facturacion.index', ['estado' => 'rechazados_invalidados']) }}" class="{{ $estadoActual === 'rechazados_invalidados' ? $chipActivo : $chipInactivo }}">Rechazados / invalidados</a>
+                    {{-- Único acceso a los rechazados archivados: el resto del listado los excluye. --}}
+                    <a href="{{ route('facturacion.index', ['estado' => 'rechazados_archivados']) }}" class="{{ $estadoActual === 'rechazados_archivados' ? $chipActivo : $chipInactivo }}">Rechazados archivados</a>
                 </div>
 
                 {{-- Buscador siempre visible + filtros avanzados colapsables --}}
