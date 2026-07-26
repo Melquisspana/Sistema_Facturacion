@@ -571,16 +571,17 @@ class DteBorradorService
 
     /**
      * Saldo acreditable disponible de una línea del documento original: cantidad
-     * original − lo ya acreditado por notas de crédito NO invalidadas. Fuente única
-     * del cálculo de saldo, reutilizada por {@see validarSaldoAcreditable()} (acreditación
-     * puntual) y por {@see revertirCcfCompleto()} (reversión total).
+     * original − lo ya acreditado por notas de crédito que siguen consumiendo saldo.
+     * Fuente única del cálculo de saldo, reutilizada por {@see validarSaldoAcreditable()}
+     * (acreditación puntual) y por {@see revertirCcfCompleto()} (reversión total).
      */
     private function saldoAcreditableDisponible(DteLinea $lineaOriginal): string
     {
-        // Ignora las NC anuladas (invalidado): su acreditación vuelve a estar disponible.
+        // Qué NC dejan de consumir saldo (invalidadas y rechazadas archivadas) vive en
+        // Dte::scopeConsumeSaldoAcreditable(), única fuente de la regla.
         $yaAcreditado = Dinero::de(
             DteLinea::where('dte_linea_original_id', $lineaOriginal->id)
-                ->whereHas('dte', fn ($q) => $q->where('estado', '!=', EstadoDte::Invalidado->value))
+                ->whereHas('dte', fn ($q) => $q->consumeSaldoAcreditable())
                 ->sum('cantidad') ?? 0
         );
 

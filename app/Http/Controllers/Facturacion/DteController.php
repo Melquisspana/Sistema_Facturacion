@@ -1644,9 +1644,10 @@ class DteController extends Controller
         $lineasOriginales = collect();
         if ($porProductos && $original) {
             $lineasOriginales = $original->lineas->map(function (DteLinea $lo) {
-                // El saldo ignora NC anuladas (invalidado).
+                // Misma regla que DteBorradorService::saldoAcreditableDisponible(): el
+                // saldo ignora las NC invalidadas y las rechazadas ARCHIVADAS.
                 $acreditado = (string) (DteLinea::where('dte_linea_original_id', $lo->id)
-                    ->whereHas('dte', fn ($q) => $q->where('estado', '!=', \App\Enums\EstadoDte::Invalidado->value))
+                    ->whereHas('dte', fn ($q) => $q->consumeSaldoAcreditable())
                     ->sum('cantidad') ?? 0);
 
                 return [
