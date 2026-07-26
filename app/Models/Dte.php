@@ -239,6 +239,28 @@ class Dte extends Model
         return $q->where('archivado', true)->where('estado', EstadoDte::Rechazado->value);
     }
 
+    /**
+     * Scope: documentos que CONSUMEN saldo acreditable del CCF original. Fuente única de
+     * la regla, usada por el cálculo de saldo por línea (borrador y pantalla de NC).
+     *
+     * Deja de consumir saldo una NC que ya no puede llegar a Hacienda:
+     *  - INVALIDADA: anulada oficialmente, su acreditación vuelve a estar disponible.
+     *  - RECHAZADA **y ARCHIVADA**: rechazo asumido y retirado de la operación diaria.
+     *
+     * Una rechazada SIN archivar sigue consumiendo saldo a propósito: puede corregirse y
+     * reintentarse, así que el saldo permanece reservado hasta que alguien decida
+     * archivarla. Borrador, generada, firmada, enviada y aceptada consumen siempre.
+     * (No confundir con {@see \App\Services\Dte\ValidacionPreJsonService::saldoGravadoDisponible()},
+     * que valida contra Hacienda y por eso solo cuenta NC aceptadas realmente.)
+     */
+    public function scopeConsumeSaldoAcreditable(Builder $q): Builder
+    {
+        return $q->where('estado', '!=', EstadoDte::Invalidado->value)
+            ->whereNot(fn (Builder $sub) => $sub
+                ->where('estado', EstadoDte::Rechazado->value)
+                ->where('archivado', true));
+    }
+
     /** Scope: documentos ACEPTADOS REALMENTE por Hacienda (mismos criterios que aceptadoRealmentePorMh). */
     public function scopeAceptadoRealMh(Builder $q): Builder
     {
