@@ -25,6 +25,7 @@
         <thead>
             <tr class="text-left text-gray-500">
                 <th class="px-3 py-2">Tipo</th>
+                <th class="px-3 py-2">N.º sistema</th>
                 <th class="px-3 py-2">Número</th>
                 <th class="px-3 py-2">Relacionado</th>
                 <th class="px-3 py-2">Cliente / sala</th>
@@ -41,6 +42,14 @@
                 @php $esNc = $dte->tipo_dte === \App\Enums\TipoDte::NotaCredito; @endphp
                 <tr>
                     <td class="px-3 py-2">{{ $dte->tipo_dte->label() }}</td>
+                    {{-- Numeración comercial visible del sistema (nunca el id de la fila) --}}
+                    <td class="px-3 py-2 font-semibold whitespace-nowrap">
+                        @if ($dte->tieneNumeroSistema())
+                            {{ $dte->numero_sistema }}
+                        @else
+                            <span class="text-gray-400">{{ $dte->etiquetaNumeroSistema() }}</span>
+                        @endif
+                    </td>
                     {{-- Número: control oficial si existe; si no, el interno/generado --}}
                     <td class="px-3 py-2 font-mono text-xs">{{ $dte->numero_control ?? $dte->numero_interno ?? '—' }}</td>
                     {{-- Relacionado: solo NC con CCF original (nunca a sí misma) --}}
@@ -95,7 +104,7 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="10" class="px-3 py-6 text-center text-gray-400">No hay documentos con esos filtros.</td></tr>
+                <tr><td colspan="11" class="px-3 py-6 text-center text-gray-400">No hay documentos con esos filtros.</td></tr>
             @endforelse
         </tbody>
     </table>

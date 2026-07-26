@@ -19,9 +19,10 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Pasa un DTE de BORRADOR a GENERADO: valida el documento, consume el correlativo
- * interno de forma transaccional, asigna un número INTERNO/provisional, cambia el
- * estado con la máquina de estados y construye el JSON oficial preliminar (número de
- * control + código de generación + archivo en storage), todo de forma ATÓMICA.
+ * interno de forma transaccional, asigna un número INTERNO/provisional y el número de
+ * SISTEMA visible (solo producción), cambia el estado con la máquina de estados y
+ * construye el JSON oficial preliminar (número de control + código de generación +
+ * archivo en storage), todo de forma ATÓMICA.
  *
  * Alcance: NO firma, NO transmite a Hacienda, NO guarda sello. Si el JSON oficial no
  * pasa la validación del schema, se revierte TODA la generación (el documento queda
@@ -32,6 +33,7 @@ class DteGeneracionService
     public function __construct(
         private readonly DteStateMachine $maquina,
         private readonly DteJsonService $json,
+        private readonly NumeroSistemaService $numeroSistema,
     ) {}
 
     /**
@@ -54,6 +56,13 @@ class DteGeneracionService
             // Aún en borrador: el observer permite estos cambios de cabecera.
             $dte->correlativo_id = $correlativo->id;
             $dte->numero_interno = $this->formatearNumeroInterno($dte, $numero);
+
+            // Numeración GLOBAL VISIBLE del sistema: este es su punto irreversible, el
+            // mismo en que se consume el correlativo fiscal. Solo producción; si el JSON
+            // no valida, el rollback deshace ambos números a la vez. Un borrador nunca
+            // llega acá, así que nunca consume número.
+            $this->numeroSistema->asignar($dte);
+
             $dte->save();
 
             // Congela el orden de las líneas según la orden de compra (solo CCF) y
