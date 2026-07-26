@@ -37,10 +37,26 @@ class DtePolicy
             && $dte->aceptadoRealmentePorMh();
     }
 
-    /** Solo se edita un borrador, y solo con permiso de gestión. */
+    /**
+     * Archivar un DTE RECHAZADO: lo retira de la operación diaria sin borrarlo. Solo
+     * gestores (`dte.gestionar`) y SOLO en estado rechazado — nunca un aceptado, un
+     * invalidado ni uno en curso. No libera correlativos ni toca datos fiscales.
+     */
+    public function archivar(User $user, Dte $dte): bool
+    {
+        return $user->can('dte.gestionar') && $dte->esArchivable();
+    }
+
+    /** Desarchivar: devuelve el rechazado al listado normal. Mismo permiso. */
+    public function desarchivar(User $user, Dte $dte): bool
+    {
+        return $user->can('dte.gestionar') && $dte->estaArchivado();
+    }
+
+    /** Solo se edita un borrador, y solo con permiso de gestión. Nunca un archivado. */
     public function update(User $user, Dte $dte): bool
     {
-        return $user->can('dte.gestionar') && $dte->esEditable();
+        return $user->can('dte.gestionar') && $dte->esEditable() && ! $dte->estaArchivado();
     }
 
     /** Solo se elimina un borrador, y solo con permiso de gestión. */
@@ -104,7 +120,9 @@ class DtePolicy
      */
     public function enviarCorreo(User $user, Dte $dte): bool
     {
-        return $user->can('dte.enviar-correo') && ! $dte->esEditable();
+        // Un ARCHIVADO no admite acciones operativas: es el único flujo que, por estado,
+        // aceptaría un rechazado (firmar/transmitir/editar ya lo excluyen).
+        return $user->can('dte.enviar-correo') && ! $dte->esEditable() && ! $dte->estaArchivado();
     }
 
     /**
@@ -119,7 +137,8 @@ class DtePolicy
         return $user->can('dte.emitir')
             && in_array($dte->estado, [\App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
-            && ! $dte->esAnulado();
+            && ! $dte->esAnulado()
+            && ! $dte->estaArchivado(); // defensa en profundidad (el estado ya lo excluye)
     }
 
     /** Tipos habilitados para la acción REAL "Generar y transmitir producción". */
@@ -146,6 +165,7 @@ class DtePolicy
             && in_array($dte->estado, [\App\Enums\EstadoDte::Borrador, \App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
             && ! $dte->esAnulado()
+            && ! $dte->estaArchivado()
             && $dte->ambiente === \App\Enums\AmbienteHacienda::Produccion;
     }
 

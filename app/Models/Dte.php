@@ -29,7 +29,7 @@ class Dte extends Model
     protected $table = 'dtes';
 
     protected $fillable = [
-        'tipo_dte', 'estado', 'ambiente',
+        'tipo_dte', 'estado', 'ambiente', 'archivado', 'archivado_en',
         'tipo_modelo', 'tipo_operacion', 'tipo_contingencia', 'motivo_contingencia',
         'establecimiento_id', 'punto_venta_id', 'correlativo_id',
         'cliente_id', 'cliente_sucursal_id', 'dte_relacionado_id',
@@ -67,6 +67,8 @@ class Dte extends Model
             'fecha_procesamiento_invalidacion' => 'datetime',
             'fecha_emision' => 'date',
             'fecha_procesamiento_mh' => 'datetime',
+            'archivado' => 'boolean',
+            'archivado_en' => 'datetime',
             'respuesta_mh' => 'array',
             'aplica_retencion_iva' => 'boolean',
             'total_no_sujeto' => 'decimal:2',
@@ -207,6 +209,34 @@ class Dte extends Model
             && $sello !== ''
             && ! str_starts_with(strtoupper($sello), 'MOCK')
             && $this->fecha_procesamiento_mh !== null;
+    }
+
+    /**
+     * ¿Este documento se puede ARCHIVAR (retirar de la operación diaria)? Solo un DTE
+     * RECHAZADO por Hacienda: nunca un aceptado, un invalidado, ni uno en curso
+     * (borrador/generado/firmado/enviado). Archivar no borra ni libera correlativos.
+     */
+    public function esArchivable(): bool
+    {
+        return $this->estado === EstadoDte::Rechazado && ! $this->archivado;
+    }
+
+    /** ¿Está archivado? Un archivado no admite ninguna acción operativa. */
+    public function estaArchivado(): bool
+    {
+        return (bool) $this->archivado;
+    }
+
+    /** Scope: documentos NO archivados (lo que se ve en la operación diaria). */
+    public function scopeNoArchivados(Builder $q): Builder
+    {
+        return $q->where('archivado', false);
+    }
+
+    /** Scope: rechazados YA archivados (filtro dedicado del listado y auditoría). */
+    public function scopeRechazadosArchivados(Builder $q): Builder
+    {
+        return $q->where('archivado', true)->where('estado', EstadoDte::Rechazado->value);
     }
 
     /** Scope: documentos ACEPTADOS REALMENTE por Hacienda (mismos criterios que aceptadoRealmentePorMh). */

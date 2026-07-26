@@ -39,6 +39,10 @@ class DteObserver
         'motivo_anulacion',
         'observacion_anulacion',
         'fecha_anulacion',
+        // Archivado de un RECHAZADO: solo lo saca de la operación diaria. No es
+        // contenido del documento ni cambia su estado fiscal.
+        'archivado',
+        'archivado_en',
         // Evento de invalidación oficial (metadatos, no contenido del DTE original).
         'codigo_generacion_invalidacion',
         'tipo_anulacion',

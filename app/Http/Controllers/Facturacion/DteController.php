@@ -101,6 +101,10 @@ class DteController extends Controller
             // filtro fijo a SIEMPRE producción real es exclusivo del Dashboard (negocio);
             // acá forzarlo ocultaría los borradores/generados recién creados en desarrollo.
             ->ambienteOperativoActual()
+            // Los RECHAZADOS ARCHIVADOS quedan fuera de la operación diaria: se ven solo
+            // con el filtro dedicado (estado=rechazados_archivados) o desde Auditoría. El
+            // acceso por URL directa a la ficha nunca se filtra.
+            ->when($filtros['estado'] !== 'rechazados_archivados', fn ($qb) => $qb->noArchivados())
             // Estado del ÚLTIMO envío de correo por documento (badge del listado), como
             // subquery para no caer en N+1. Solo lectura.
             ->addSelect(['ultimo_envio_estado' => DteEnvio::select('estado')
@@ -129,6 +133,12 @@ class DteController extends Controller
                         EstadoDte::Rechazado->value,
                         EstadoDte::Invalidado->value,
                     ]);
+                }
+
+                // "rechazados_archivados": los retirados de la operación diaria. Único
+                // filtro que los muestra (el resto del listado los excluye).
+                if ($v === 'rechazados_archivados') {
+                    return $qb->rechazadosArchivados();
                 }
 
                 return $qb->where('estado', $v);
@@ -1501,6 +1511,57 @@ class DteController extends Controller
         $nc = $this->borradores->crearNotaCredito($dte, $datos, $request->user());
 
         return redirect()->route('facturacion.edit', $nc)->with('status', $this->mensajeNotaCredito($nc));
+    }
+
+    /**
+     * ARCHIVA un DTE rechazado: lo saca del listado operativo y le cierra toda acción
+     * operativa (correo, firma, transmisión, edición). NO borra nada, NO cambia el
+     * estado fiscal y NO libera el correlativo: el número consumido sigue consumido.
+     * Las líneas, el JSON, la respuesta del MH, el número de control, el código de
+     * generación y el historial quedan intactos. Sigue accesible por URL y por el
+     * filtro "Rechazados archivados".
+     */
+    public function archivar(Request $request, Dte $dte): RedirectResponse
+    {
+        $this->authorize('archivar', $dte); // gestor + SOLO estado rechazado
+
+        $dte->update(['archivado' => true, 'archivado_en' => now()]);
+
+        activity('dte_archivado')
+            ->performedOn($dte)
+            ->causedBy($request->user())
+            ->withProperties([
+                'numero_control' => $dte->numero_control,
+                'codigo_generacion' => $dte->codigo_generacion,
+                'estado' => $dte->estado->value,
+                'accion' => 'archivado',
+            ])
+            ->log('archivó un DTE rechazado (fuera de la operación diaria)');
+
+        return back()->with('status', 'Documento rechazado archivado: ya no aparece en el listado normal '
+            .'ni en las búsquedas rápidas. Se consulta con el filtro "Rechazados archivados". '
+            .'No se borró nada y el correlativo sigue consumido.');
+    }
+
+    /** Desarchiva un DTE rechazado: vuelve al listado normal. No cambia nada fiscal. */
+    public function desarchivar(Request $request, Dte $dte): RedirectResponse
+    {
+        $this->authorize('desarchivar', $dte);
+
+        $dte->update(['archivado' => false, 'archivado_en' => null]);
+
+        activity('dte_archivado')
+            ->performedOn($dte)
+            ->causedBy($request->user())
+            ->withProperties([
+                'numero_control' => $dte->numero_control,
+                'codigo_generacion' => $dte->codigo_generacion,
+                'estado' => $dte->estado->value,
+                'accion' => 'desarchivado',
+            ])
+            ->log('desarchivó un DTE rechazado');
+
+        return back()->with('status', 'Documento desarchivado: vuelve a aparecer en el listado normal.');
     }
 
     /**
