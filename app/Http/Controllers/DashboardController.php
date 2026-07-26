@@ -29,6 +29,19 @@ use Illuminate\View\View;
  */
 class DashboardController extends Controller
 {
+    /**
+     * Documentos que se listan en "Documentos reales de producción".
+     *
+     * El tope existe por LAYOUT, no por rendimiento: la tarjeta ocupa la columna
+     * izquierda y debe terminar aproximadamente a la altura de las tres tarjetas de la
+     * derecha (Acciones rápidas + Estado técnico + Diagnóstico ≈ 940 px en escritorio).
+     * Con filas de dos líneas —cliente fiscal y sala debajo, ~56 px— doce filas llenan
+     * esa altura sin desbordarla cuando algún nombre largo envuelve. El recorte se hace
+     * en la CONSULTA: los documentos más antiguos no se traen ni se renderizan (el
+     * listado completo vive en Facturación, que no se toca).
+     */
+    private const DOCUMENTOS_RECIENTES = 12;
+
     public function index(Request $request, DteTransmisionService $transmision, DiagnosticoSistemaService $diagnosticoService): View
     {
         $usuario = $request->user();
@@ -181,19 +194,26 @@ class DashboardController extends Controller
      * Documentos REALES de producción: ambiente '01' (fijo, no el ambiente activo de
      * esta instalación) y estado Aceptado (fijo, no enviado/rechazado/generado/
      * firmado). Nunca deben aparecer ni sumar acá documentos APITEST, rechazados,
-     * borradores, ni documentos aceptados todavía no confirmados por Hacienda. Un solo
-     * SELECT con LIMIT 8 y el cliente precargado (evita N+1 en la tabla).
+     * borradores, ni documentos aceptados todavía no confirmados por Hacienda.
+     *
+     * Precarga cliente Y sala/sucursal (`cliente_sucursal_id` debe ir en el SELECT o la
+     * relación no resuelve): la tabla muestra el nombre fiscal con la sala debajo, igual
+     * que el listado de Facturación y el PDF. Son 3 consultas fijas (documentos +
+     * clientes + sucursales), sin N+1 por fila.
+     *
+     * Se traen solo los {@see self::DOCUMENTOS_RECIENTES} más recientes: el dashboard es
+     * un resumen, no el listado completo.
      */
     private function actividadReciente(): Collection
     {
         return Dte::query()
             ->where('ambiente', AmbienteHacienda::Produccion->value)
             ->where('estado', EstadoDte::Aceptado->value)
-            ->with('cliente:id,nombre')
+            ->with(['cliente:id,nombre', 'clienteSucursal:id,nombre'])
             ->orderByDesc('fecha_emision')
             ->orderByDesc('id')
-            ->limit(8)
-            ->get(['id', 'tipo_dte', 'estado', 'numero_control', 'cliente_id', 'total_pagar', 'fecha_emision']);
+            ->limit(self::DOCUMENTOS_RECIENTES)
+            ->get(['id', 'tipo_dte', 'estado', 'numero_control', 'cliente_id', 'cliente_sucursal_id', 'total_pagar', 'fecha_emision']);
     }
 
     /**

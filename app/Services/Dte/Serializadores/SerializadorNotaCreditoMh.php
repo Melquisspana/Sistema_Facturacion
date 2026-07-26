@@ -210,7 +210,15 @@ class SerializadorNotaCreditoMh implements SerializadorMh
             $tributos = [['codigo' => $ivaCod, 'descripcion' => $this->descTributo($ivaCod), 'valor' => $iva]];
         }
 
+        // montoTotalOperacion es el BRUTO antes de retención (subTotal + IVA), igual que
+        // en el CCF; la retención viaja aparte en ivaRete1 y el neto a pagar se deduce
+        // restándola (la v3 de la NC no lleva `totalPagar`).
         $montoTotalOperacion = round($subTotal + $iva, 2);
+
+        // Retención de IVA REVERSADA por esta NC: refleja exactamente `iva_retenido` del
+        // documento, calculado sobre la base gravada neta de la NC (proporcional en
+        // devoluciones parciales). 0.00 cuando el CCF original no retuvo.
+        $ivaRete1 = round((float) $r->ivaRetenido, 2);
 
         return [
             'totalNoSuj' => $totalNoSuj,
@@ -224,7 +232,7 @@ class SerializadorNotaCreditoMh implements SerializadorMh
             'tributos' => $tributos,
             'subTotal' => $subTotal,
             'ivaPerci1' => 0.0,
-            'ivaRete1' => 0.0,
+            'ivaRete1' => $ivaRete1,
             'reteRenta' => 0.0,
             'montoTotalOperacion' => $montoTotalOperacion,
             'totalLetras' => $r->totalLetras,
