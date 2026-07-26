@@ -71,7 +71,7 @@ class DteNotaCreditoRetencionTest extends TestCase
      *
      * @param  array<int, float>  $precios
      */
-    private function ccfAceptado(bool $agenteRetencion = true, array $precios = [64.07, 64.07]): Dte
+    private function ccfAceptado(bool $agenteRetencion = true, array $precios = [64.07, 64.07], bool $aceptar = true): Dte
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create([
@@ -93,7 +93,7 @@ class DteNotaCreditoRetencionTest extends TestCase
 
         app(DteGeneracionService::class)->generar($ccf);
 
-        return $this->aceptarCcf($ccf);
+        return $aceptar ? $this->aceptarCcf($ccf) : $ccf->refresh();
     }
 
     // ---------- El CCF de referencia ----------
@@ -232,18 +232,16 @@ class DteNotaCreditoRetencionTest extends TestCase
         $json = app(SerializadorNotaCreditoMh::class)->serializar($salida);
 
         $this->assertSame(1.22, $json['resumen']['ivaRete1']);
-        // Coherencia interna: subTotal + IVA = montoTotalOperacion (bruto, antes de
-        // retención) y montoTotalOperacion − ivaRete1 = total a pagar del documento.
         $this->assertSame(121.73, $json['resumen']['subTotal']);
         $this->assertSame(15.82, $json['resumen']['tributos'][0]['valor']);
-        $this->assertSame(137.55, $json['resumen']['montoTotalOperacion']);
-        $this->assertSame(
-            136.33,
-            round($json['resumen']['montoTotalOperacion'] - $json['resumen']['ivaRete1'], 2)
-        );
-        $this->assertSame(136.33, (float) $nc->total_pagar);
-        // La v3 de la NC no lleva totalPagar (va implícito): no debe aparecer.
+        // La NC v3 no lleva totalPagar: montoTotalOperacion es el ÚNICO total y va NETO
+        // de retenciones. Enviarlo bruto (137.55) fue el rechazo del DTE #150.
         $this->assertArrayNotHasKey('totalPagar', $json['resumen']);
+        $this->assertSame(136.33, $json['resumen']['montoTotalOperacion']);
+        $this->assertNotSame(137.55, $json['resumen']['montoTotalOperacion']);
+        // Coherente con el total del documento y con las letras del propio JSON.
+        $this->assertSame(136.33, (float) $nc->total_pagar);
+        $this->assertStringContainsString('CIENTO TREINTA Y SEIS 33/100', (string) $json['resumen']['totalLetras']);
 
         $res = app(DteSchemaValidator::class)->validar($json, TipoDte::NotaCredito);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
@@ -256,9 +254,51 @@ class DteNotaCreditoRetencionTest extends TestCase
         app(DteGeneracionService::class)->generar($nc);
 
         $json = app(SerializadorNotaCreditoMh::class)->serializar(app(MapeadorDteSalida::class)->mapear($nc->refresh()));
+        $r = $json['resumen'];
 
-        $this->assertSame(0.0, $json['resumen']['ivaRete1']);
+        $this->assertSame(0.0, $r['ivaRete1']);
+        // SIN retención la fórmula da exactamente lo de siempre (subTotal + IVA): las NC
+        // ya aceptadas por Hacienda conservan su forma byte a byte.
+        $this->assertSame(round($r['subTotal'] + $r['tributos'][0]['valor'], 2), $r['montoTotalOperacion']);
+        $this->assertSame(137.55, $r['montoTotalOperacion']);
+
         $res = app(DteSchemaValidator::class)->validar($json, TipoDte::NotaCredito);
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
+    public function test_el_monto_total_de_la_nc_respeta_la_formula_completa_con_rete_renta(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $nc = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
+        app(DteGeneracionService::class)->generar($nc);
+
+        $r = app(SerializadorNotaCreditoMh::class)
+            ->serializar(app(MapeadorDteSalida::class)->mapear($nc->refresh()))['resumen'];
+
+        // reteRenta existe en la v3 y participa en la fórmula aunque este módulo aún no
+        // la maneje (viaja en 0.00): el total es invariante respecto de su propio JSON.
+        $this->assertSame(0.0, $r['reteRenta']);
+        $this->assertSame(0.0, $r['ivaPerci1']);
+        $this->assertSame(
+            round($r['subTotal'] + $r['tributos'][0]['valor'] - $r['ivaRete1'] - $r['reteRenta'], 2),
+            $r['montoTotalOperacion'],
+            'montoTotalOperacion debe ser subTotal + tributos − ivaRete1 − reteRenta.'
+        );
+    }
+
+    public function test_la_formula_del_ccf_no_cambia(): void
+    {
+        // El CCF conserva su forma ACEPTADA: monto BRUTO y la retención restada en
+        // totalPagar. La corrección es exclusiva de la NC. (Se serializa en estado
+        // GENERADO, que es cuando se arma el JSON que viaja a Hacienda.)
+        $ccf = $this->ccfAceptado(aceptar: false);
+
+        $r = app(\App\Services\Dte\Serializadores\SerializadorCcfMh::class)
+            ->serializar(app(MapeadorDteSalida::class)->mapear($ccf))['resumen'];
+
+        $this->assertSame(1.22, $r['ivaRete']);
+        $this->assertSame(137.55, $r['montoTotalOperacion']);          // BRUTO, sin restar
+        $this->assertSame(136.33, $r['totalPagar']);                   // acá sí va neto
+        $this->assertSame(round($r['montoTotalOperacion'] - $r['ivaRete'], 2), $r['totalPagar']);
     }
 }

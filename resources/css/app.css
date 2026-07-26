@@ -150,6 +150,13 @@ html.dark {
 .dark .text-indigo-600,
 .dark .text-indigo-700 { color: #8b93f8; }
 .dark .hover\:text-indigo-600:hover { color: #a5abfa; }
+/* Índigo OSCURO (800/900): en tema claro se lee bien sobre bg-indigo-50, pero en
+   oscuro ese fondo pasa a índigo translúcido y el texto queda azul marino sobre
+   negro (casi invisible). Afecta al monto grande de "Total a pagar / a acreditar"
+   y a los avisos índigo. Se aclara conservando el tinte índigo y la jerarquía: el
+   900 (monto destacado) más claro que el 800 (texto de apoyo). */
+.dark .text-indigo-800 { color: #a5abfa; }
+.dark .text-indigo-900 { color: #c7cbfd; }
 
 /* ---- Bordes / separadores ---- */
 .dark .border-gray-200,
