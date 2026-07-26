@@ -121,6 +121,165 @@ class DashboardTest extends TestCase
         $resp->assertSee(route('facturacion.show', $dte), false);
     }
 
+    public function test_actividad_reciente_muestra_la_sala_del_documento(): void
+    {
+        // Igual que el listado de Facturación y el PDF: nombre fiscal + sala debajo.
+        $dte = $this->dte(['ambiente' => '01']);
+        $sala = \App\Models\ClienteSucursal::factory()->create([
+            'cliente_id' => $dte->cliente_id,
+            'nombre' => 'Súper Selectos San Benito',
+        ]);
+        $dte->cliente_sucursal_id = $sala->id;
+        Dte::withoutEvents(fn () => $dte->save());
+
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        $resp->assertSee('CLIENTE DASHBOARD SA');      // cliente fiscal
+        $resp->assertSee('Súper Selectos San Benito'); // sala efectiva
+    }
+
+    public function test_actividad_reciente_sin_sala_muestra_solo_el_cliente(): void
+    {
+        $dte = $this->dte(['ambiente' => '01']);
+        $this->assertNull($dte->cliente_sucursal_id);
+
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        $resp->assertSee('CLIENTE DASHBOARD SA');
+        $resp->assertDontSee('Súper Selectos San Benito');
+    }
+
+    public function test_actividad_reciente_precarga_cliente_y_sala_sin_n_mas_1(): void
+    {
+        // 5 documentos, cada uno con su cliente y su sala: con eager loading debe haber
+        // UNA sola consulta a `clientes` y UNA a `cliente_sucursales`, no una por fila.
+        for ($i = 1; $i <= 5; $i++) {
+            $dte = $this->dte(['ambiente' => '01', 'numero_control' => 'DTE-03-M001P001-00000000000010'.$i]);
+            $sala = \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $dte->cliente_id, 'nombre' => 'Sala '.$i]);
+            $dte->cliente_sucursal_id = $sala->id;
+            Dte::withoutEvents(fn () => $dte->save());
+        }
+
+        $consultas = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$consultas) {
+            $consultas[] = $q->sql;
+        });
+
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        $contar = fn (string $tabla) => count(array_filter(
+            $consultas,
+            fn (string $sql) => str_contains($sql, 'from "'.$tabla.'"') || str_contains($sql, 'from `'.$tabla.'`')
+        ));
+
+        $this->assertLessThanOrEqual(1, $contar('clientes'), 'Hay N+1 sobre `clientes` en el dashboard.');
+        $this->assertLessThanOrEqual(1, $contar('cliente_sucursales'), 'Hay N+1 sobre `cliente_sucursales` en el dashboard.');
+        // Y las 5 salas se muestran (no es que no consulte porque no renderiza).
+        foreach (range(1, 5) as $i) {
+            $resp->assertSee('Sala '.$i);
+        }
+    }
+
+    // ---------- Tope de filas (la tarjeta debe cerrar a la altura de la columna derecha) ----------
+
+    /**
+     * Crea $cantidad documentos de producción aceptados, del más ANTIGUO al más reciente,
+     * reutilizando un solo emisor. Devuelve los números de control en ese mismo orden.
+     *
+     * @return array<int, string>
+     */
+    private function documentosProduccion(int $cantidad): array
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'CLIENTE DASHBOARD SA']);
+        $sala = \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Sala Tope']);
+
+        $numeros = [];
+        for ($i = 1; $i <= $cantidad; $i++) {
+            $numero = 'DTE-03-M001P001-'.str_pad((string) $i, 15, '0', STR_PAD_LEFT);
+            Dte::create([
+                'tipo_dte' => TipoDte::CreditoFiscal->value,
+                'estado' => EstadoDte::Aceptado->value,
+                'ambiente' => '01',
+                'establecimiento_id' => $estab->id,
+                'punto_venta_id' => $pv->id,
+                'cliente_id' => $cliente->id,
+                'cliente_sucursal_id' => $sala->id,
+                'numero_control' => $numero,
+                // El más antiguo primero: el índice 1 es el de fecha más vieja.
+                'fecha_emision' => now()->subDays($cantidad - $i)->toDateString(),
+                'hora_emision' => now()->toTimeString(),
+                'total_pagar' => 100 + $i,
+            ]);
+            $numeros[] = $numero;
+        }
+
+        return $numeros;
+    }
+
+    public function test_actividad_reciente_se_limita_a_doce_documentos(): void
+    {
+        $this->documentosProduccion(20);
+
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        // El tope se aplica en la CONSULTA, no ocultando filas con CSS.
+        $this->assertCount(12, $resp->viewData('actividad'));
+    }
+
+    public function test_actividad_reciente_muestra_los_mas_recientes_y_descarta_los_viejos(): void
+    {
+        $numeros = $this->documentosProduccion(15); // [0] = el más antiguo
+
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        // Los 12 más recientes (índices 3..14) están; los 3 más antiguos no se renderizan.
+        foreach (array_slice($numeros, 3) as $numero) {
+            $resp->assertSee($numero);
+        }
+        foreach (array_slice($numeros, 0, 3) as $numeroViejo) {
+            $resp->assertDontSee($numeroViejo);
+        }
+
+        // Y siguen mostrándose cliente fiscal y sala.
+        $resp->assertSee('CLIENTE DASHBOARD SA');
+        $resp->assertSee('Sala Tope');
+    }
+
+    public function test_la_tabla_del_dashboard_no_tiene_scroll_vertical_interno(): void
+    {
+        $this->documentosProduccion(12);
+
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+
+        // Sin altura máxima ni scroll vertical en el contenedor de la tabla. (No se
+        // asserta `overflow-y-auto` a secas: la sidebar del layout lo usa legítimamente.)
+        $this->assertStringNotContainsString('max-h-96', $html);
+        $this->assertStringNotContainsString('overflow-x-auto overflow-y-auto', $html);
+        // El scroll horizontal se conserva: es lo que salva la tabla en pantallas angostas.
+        $this->assertStringContainsString('overflow-x-auto', $html);
+    }
+
+    public function test_con_muchas_filas_tampoco_hay_n_mas_1(): void
+    {
+        $this->documentosProduccion(20);
+
+        $consultas = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$consultas) {
+            $consultas[] = $q->sql;
+        });
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        $contar = fn (string $tabla) => count(array_filter(
+            $consultas,
+            fn (string $sql) => str_contains($sql, 'from "'.$tabla.'"') || str_contains($sql, 'from `'.$tabla.'`')
+        ));
+
+        $this->assertLessThanOrEqual(1, $contar('clientes'));
+        $this->assertLessThanOrEqual(1, $contar('cliente_sucursales'));
+    }
+
     public function test_actividad_reciente_no_incluye_borradores(): void
     {
         $this->dte(['estado' => EstadoDte::Borrador->value, 'numero_control' => null, 'ambiente' => '01']);
@@ -269,6 +428,35 @@ class DashboardTest extends TestCase
         $resp->assertSee('Dry-run');
         $resp->assertSee('ACTIVO');
         $this->assertTrue((bool) config('dte.transmision.dry_run'), 'DTE_TRANSMISION_DRY_RUN debe seguir activo.');
+    }
+
+    public function test_el_estado_tecnico_refleja_la_config_actual_y_no_se_cachea(): void
+    {
+        $usuario = $this->usuario('administrador');
+
+        // Primera visita con la config de pruebas de la suite.
+        config(['dte.ambiente' => '00', 'dte.transmision.dry_run' => true]);
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertSee('Pruebas')
+            ->assertSee('ACTIVO');
+
+        // Cambia la config: la MISMA pantalla debe reflejarlo de inmediato. El caché de
+        // 60s del dashboard solo cubre las tarjetas de conteos, nunca el estado técnico.
+        config(['dte.ambiente' => '01', 'dte.transmision.dry_run' => false]);
+        $resp = $this->actingAs($usuario)->get(route('dashboard'))->assertOk();
+
+        $resp->assertSee('Producción');
+        $resp->assertDontSee('Pruebas');
+    }
+
+    public function test_el_estado_tecnico_no_depende_de_app_env(): void
+    {
+        // Son ejes independientes: APP_ENV no debe alterar el ambiente DTE ni el dry-run.
+        config(['dte.ambiente' => '00', 'dte.transmision.dry_run' => true, 'app.env' => 'production']);
+
+        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()
+            ->assertSee('Pruebas')
+            ->assertSee('ACTIVO');
     }
 
     // ---------- Diagnóstico real (Parte 4: dashboard y "atención inmediata") ----------

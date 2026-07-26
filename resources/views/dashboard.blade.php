@@ -91,9 +91,12 @@
                         </span>
                     </div>
                     @if ($veFacturacion && $actividad->isNotEmpty())
-                        {{-- max-h + overflow-y-auto: si hubiera muchos documentos, la tabla
-                             scrollea internamente en vez de estirar la tarjeta. --}}
-                        <div class="max-h-96 overflow-x-auto overflow-y-auto">
+                        {{-- Sin scroll vertical interno: la cantidad de filas ya viene acotada
+                             desde la consulta (DashboardController::DOCUMENTOS_RECIENTES) para
+                             que la tarjeta termine a la altura de la columna derecha. Solo se
+                             conserva el scroll HORIZONTAL, que es lo que salva la tabla en
+                             pantallas angostas. --}}
+                        <div class="overflow-x-auto">
                             <table class="min-w-full text-sm">
                                 <thead>
                                     <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 dark:bg-ink-900 dark:text-paper-500">
@@ -110,7 +113,13 @@
                                         <tr class="hover:bg-gray-50 dark:hover:bg-ink-700">
                                             <td class="py-2.5 px-4 text-gray-600 dark:text-paper-300">{{ $dte->tipo_dte->label() }}</td>
                                             <td class="py-2.5 px-4 font-mono text-xs text-gray-600 dark:text-paper-300">{{ $dte->numero_control ?? '—' }}</td>
-                                            <td class="py-2.5 px-4 text-gray-800 dark:text-paper-100">{{ $dte->cliente?->nombre ?? '—' }}</td>
+                                            {{-- Cliente fiscal + sala/sucursal, igual que el listado de Facturación y el PDF. --}}
+                                            <td class="py-2.5 px-4 text-gray-800 dark:text-paper-100">
+                                                <div>{{ $dte->cliente?->nombre ?? '—' }}</div>
+                                                @if ($dte->clienteSucursal)
+                                                    <div class="text-xs text-gray-500 dark:text-paper-500">{{ $dte->clienteSucursal->nombre }}</div>
+                                                @endif
+                                            </td>
                                             <td class="py-2.5 px-4 text-right tabular-nums text-gray-700 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</td>
                                             <td class="py-2.5 px-4 text-center"><x-estado-dte-badge :estado="$dte->estado" /></td>
                                             <td class="py-2.5 px-4 text-right">

@@ -876,10 +876,17 @@ class DteBorradorService
      * Decide automáticamente si aplica retención de IVA: solo CCF, receptor agente
      * de retención, y base gravada NETA (total_gravado − descuento_gravado) > umbral.
      *
+     * Las NOTAS DE CRÉDITO no deciden por sí solas: espejan al CCF relacionado
+     * ({@see retencionHeredadaDeNotaCredito}).
+     *
      * @param  array<int, LineaDocumento>  $documentos
      */
     private function decidirRetencionAutomatica(Dte $dte, array $documentos, string $montoDescuento = '0.00'): bool
     {
+        if ($dte->tipo_dte === TipoDte::NotaCredito) {
+            return $this->retencionHeredadaDeNotaCredito($dte);
+        }
+
         if ($dte->tipo_dte !== TipoDte::CreditoFiscal || ! $this->esAgenteRetencion($dte)) {
             return false;
         }
@@ -898,6 +905,33 @@ class DteBorradorService
         $umbral = (string) config('dte.retencion_iva_umbral', 100);
 
         return Dinero::comparar($baseNeta, $umbral) > 0;
+    }
+
+    /**
+     * ¿La NC debe retener? Espeja la DECISIÓN del CCF relacionado, nunca su MONTO: la
+     * calculadora aplica el 1% sobre la base gravada neta de la NC, así una devolución
+     * parcial retiene lo proporcional y una reversión total coincide al centavo con el
+     * CCF. No se evalúa el umbral acá: el umbral ya se juzgó al emitir el original; si
+     * se re-evaluara, una devolución parcial pequeña dejaría de reversar una retención
+     * que el cliente sí soportó.
+     *
+     * Solo heredan las NC por PRODUCTOS y por AVERÍA — el mismo criterio que el
+     * descuento global ({@see porcentajeDescuentoVigente}). Las NC por MONTO (pronto
+     * pago, concepto) son ajustes comerciales sin base gravada del original: siguen
+     * sin retención, como hasta ahora.
+     */
+    private function retencionHeredadaDeNotaCredito(Dte $nc): bool
+    {
+        $hereda = ($nc->tipo_nota_credito?->esPorProductos() ?? false)
+            || ($nc->tipo_nota_credito?->esPorAveria() ?? false);
+
+        if (! $hereda) {
+            return false;
+        }
+
+        $nc->loadMissing('dteRelacionado');
+
+        return (bool) $nc->dteRelacionado?->aplica_retencion_iva;
     }
 
     /**
