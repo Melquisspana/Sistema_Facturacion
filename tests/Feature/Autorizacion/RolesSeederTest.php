@@ -5,6 +5,7 @@ namespace Tests\Feature\Autorizacion;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
 use App\Models\User;
+use Database\Seeders\RolesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -95,6 +96,40 @@ class RolesSeederTest extends TestCase
         $this->assertFalse($fact->can('usuarios.gestionar'));
     }
 
+    /**
+     * Los 12 permisos `planta.*` del rol `produccion`: la OPERACIÓN DIARIA del
+     * área. Fuente: §11 del plan de la Fase 2.
+     */
+    private const PLANTA_OPERATIVOS = [
+        'planta.ver',
+        'planta.catalogos.ver',
+        'planta.recepciones.ver',
+        'planta.recepciones.crear',
+        'planta.recepciones.confirmar',
+        'planta.traslados.ver',
+        'planta.traslados.crear',
+        'planta.traslados.enviar',
+        'planta.traslados.recibir',
+        'planta.ajustes.ver',
+        'planta.existencias.ver',
+        'planta.movimientos.ver',
+    ];
+
+    /**
+     * Los 8 permisos `planta.*` reservados a administrador (y a un supervisor
+     * futuro, que NO se crea en Fase 2).
+     */
+    private const PLANTA_RESERVADOS = [
+        'planta.gestionar',
+        'planta.catalogos.gestionar',
+        'planta.recepciones.reversar',
+        'planta.traslados.reversar',
+        'planta.ajustes.crear',
+        'planta.ajustes.confirmar',
+        'planta.ajustes.reversar',
+        'planta.calidad.gestionar',
+    ];
+
     public function test_produccion_solo_entra_a_su_area(): void
     {
         $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
@@ -113,10 +148,147 @@ class RolesSeederTest extends TestCase
             'documentos-recibidos.ver', 'reportes.ver', 'contabilidad.enviar',
             'auditoria.ver', 'usuarios.gestionar', 'configuracion.gestionar',
             'importaciones.gestionar', 'sistema.salud', 'preparacion.ver',
-            'planta.gestionar',
         ] as $prohibido) {
             $this->assertFalse($prod->can($prohibido), "Producción no debería tener {$prohibido}.");
         }
+    }
+
+    public function test_produccion_tiene_la_operacion_diaria_de_planta(): void
+    {
+        $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
+
+        foreach (self::PLANTA_OPERATIVOS as $operativo) {
+            $this->assertTrue($prod->can($operativo), "Producción debería tener {$operativo}.");
+        }
+    }
+
+    public function test_produccion_no_gestiona_catalogos_ajustes_reversiones_ni_calidad(): void
+    {
+        $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
+
+        // Decisión de control deliberada: estas acciones alteran el marco de
+        // trabajo o deshacen inventario ya contabilizado. La auditoría (motivo
+        // obligatorio + Activitylog + mayor inmutable) NO sustituye a la
+        // autorización: son capas complementarias.
+        foreach (self::PLANTA_RESERVADOS as $reservado) {
+            $this->assertFalse($prod->can($reservado), "Producción no debería tener {$reservado}.");
+        }
+    }
+
+    public function test_produccion_ve_los_ajustes_pero_no_los_registra(): void
+    {
+        $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
+
+        // Consulta lo que se ajustó en su área...
+        $this->assertTrue($prod->can('planta.ajustes.ver'));
+
+        // ...pero crear, confirmar y reversar son de administrador. `confirmar`
+        // es el acto que MUEVE inventario y por eso está separado de `crear`.
+        $this->assertFalse($prod->can('planta.ajustes.crear'));
+        $this->assertFalse($prod->can('planta.ajustes.confirmar'));
+        $this->assertFalse($prod->can('planta.ajustes.reversar'));
+    }
+
+    public function test_produccion_lee_catalogos_pero_no_los_gestiona(): void
+    {
+        $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
+
+        $this->assertTrue($prod->can('planta.catalogos.ver'));
+        $this->assertFalse($prod->can('planta.catalogos.gestionar'));
+    }
+
+    public function test_el_catalogo_de_planta_tiene_exactamente_veinte_permisos(): void
+    {
+        $planta = array_values(array_filter(
+            PermisoSistema::todos(),
+            fn (string $p) => str_starts_with($p, 'planta.')
+        ));
+
+        $this->assertCount(20, $planta);
+
+        // Cuadre explícito: 12 operativos + 8 reservados = 20. Si alguien añade
+        // un permiso `planta.*` sin decidir a qué lado pertenece, esto falla.
+        $this->assertEqualsCanonicalizing(
+            array_merge(self::PLANTA_OPERATIVOS, self::PLANTA_RESERVADOS),
+            $planta
+        );
+    }
+
+    public function test_el_set_de_planta_del_rol_produccion_es_exacto(): void
+    {
+        $suyos = array_values(array_filter(
+            PermisoSistema::paraRol(RolSistema::Produccion),
+            fn (string $p) => str_starts_with($p, 'planta.')
+        ));
+
+        $this->assertCount(12, $suyos);
+        $this->assertEqualsCanonicalizing(self::PLANTA_OPERATIVOS, $suyos);
+    }
+
+    public function test_ningun_otro_rol_recibe_permisos_de_planta(): void
+    {
+        // El aislamiento va en los dos sentidos: producción no ve lo fiscal y
+        // los roles fiscales no ven Planta. El administrador es la excepción
+        // deliberada (recibe todo).
+        foreach ([RolSistema::Jefatura, RolSistema::Facturacion, RolSistema::Contabilidad] as $rol) {
+            $dePlanta = array_filter(
+                PermisoSistema::paraRol($rol),
+                fn (string $p) => str_starts_with($p, 'planta.')
+            );
+
+            $this->assertSame([], $dePlanta, "El rol {$rol->value} no debería tener permisos de Planta.");
+        }
+    }
+
+    public function test_el_administrador_recibe_los_permisos_reservados_de_planta(): void
+    {
+        $admin = User::factory()->create()->assignRole(RolSistema::Administrador->value);
+
+        foreach (self::PLANTA_RESERVADOS as $reservado) {
+            $this->assertTrue($admin->can($reservado), "El administrador debería tener {$reservado}.");
+        }
+    }
+
+    public function test_el_seeder_es_idempotente_con_los_permisos_de_planta(): void
+    {
+        // El seeder ya corre una vez en el setUp de TestCase. Volver a
+        // ejecutarlo no debe duplicar permisos ni alterar el set de ningún rol:
+        // es lo que permite reejecutarlo tras un despliegue para incorporar los
+        // 18 permisos nuevos sin tocar las asignaciones usuario<->rol.
+        $antes = Permission::where('name', 'like', 'planta.%')->count();
+
+        $this->seed(RolesSeeder::class);
+
+        $this->assertSame($antes, Permission::where('name', 'like', 'planta.%')->count());
+        $this->assertSame(20, $antes);
+
+        $reales = Role::findByName(RolSistema::Produccion->value, 'web')
+            ->permissions()
+            ->pluck('name')
+            ->filter(fn (string $p) => str_starts_with($p, 'planta.'))
+            ->sort()
+            ->values()
+            ->all();
+
+        $esperados = self::PLANTA_OPERATIVOS;
+        sort($esperados);
+
+        $this->assertSame($esperados, $reales);
+    }
+
+    public function test_el_seeder_retira_un_permiso_asignado_de_mas(): void
+    {
+        // `syncPermissions` deja el set EXACTO. Si un despliegue intermedio dejó
+        // a producción con `planta.ajustes.crear`, reejecutar el seeder se lo
+        // quita solo: no hace falta migración de datos para corregir el reparto.
+        $rol = Role::findByName(RolSistema::Produccion->value, 'web');
+        $rol->givePermissionTo('planta.ajustes.crear');
+
+        $this->assertTrue($rol->fresh()->hasPermissionTo('planta.ajustes.crear'));
+
+        $this->seed(RolesSeeder::class);
+
+        $this->assertFalse($rol->fresh()->hasPermissionTo('planta.ajustes.crear'));
     }
 
     public function test_jefatura_es_solo_lectura(): void
