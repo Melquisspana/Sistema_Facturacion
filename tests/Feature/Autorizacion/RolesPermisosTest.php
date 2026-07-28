@@ -23,7 +23,20 @@ class RolesPermisosTest extends TestCase
     use PreparaEmisorDte;
     use RefreshDatabase;
 
-    private const ROLES = ['administrador', 'jefatura', 'facturacion', 'contabilidad'];
+    /**
+     * Universo de roles contra el que se prueba CADA ruta. Incluye `produccion`,
+     * que no pertenece al área Facturación: al no figurar en ninguna lista de
+     * permitidos, la matriz exige 403 para él en todo el sistema existente. Ese
+     * es el test formal del aislamiento del área nueva.
+     */
+    private const ROLES = ['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion'];
+
+    /**
+     * Los cuatro roles del área Facturación: los que SÍ pueden entrar a las
+     * pantallas abiertas a "todos". Antes esta lista y {@see ROLES} eran la misma
+     * constante; se separaron al aparecer un rol fuera del área.
+     */
+    private const ROLES_FACTURACION = ['administrador', 'jefatura', 'facturacion', 'contabilidad'];
 
     private function usuario(string $rol): User
     {
@@ -40,15 +53,19 @@ class RolesPermisosTest extends TestCase
     public static function lecturas(): array
     {
         return [
-            'dashboard' => ['dashboard', self::ROLES],
-            'facturación (DTE)' => ['facturacion.index', self::ROLES],
-            'clientes' => ['clientes.index', self::ROLES],
-            'productos' => ['productos.index', self::ROLES],
-            'ppq' => ['ppq.index', self::ROLES],
-            'exportaciones' => ['exportaciones.index', self::ROLES],
-            'compras (documentos recibidos)' => ['documentos-recibidos.index', self::ROLES],
-            'reporte contadora (ventas)' => ['facturacion.reporte-contadora', self::ROLES],
-            'paquete contabilidad' => ['contabilidad.paquete', self::ROLES],
+            // 'dashboard' NO va en esta matriz: no tiene solo dos desenlaces. Para los
+            // cuatro roles del área Facturación responde 200, pero para el rol
+            // `produccion` responde 302 (a /planta) o 404 (módulo apagado), que no es
+            // ni 2xx ni 403. Ese caso se cubre entero en
+            // Tests\Feature\Planta\PlantaRedireccionTest.
+            'facturación (DTE)' => ['facturacion.index', self::ROLES_FACTURACION],
+            'clientes' => ['clientes.index', self::ROLES_FACTURACION],
+            'productos' => ['productos.index', self::ROLES_FACTURACION],
+            'ppq' => ['ppq.index', self::ROLES_FACTURACION],
+            'exportaciones' => ['exportaciones.index', self::ROLES_FACTURACION],
+            'compras (documentos recibidos)' => ['documentos-recibidos.index', self::ROLES_FACTURACION],
+            'reporte contadora (ventas)' => ['facturacion.reporte-contadora', self::ROLES_FACTURACION],
+            'paquete contabilidad' => ['contabilidad.paquete', self::ROLES_FACTURACION],
             'auditoría' => ['auditoria.index', ['administrador', 'contabilidad']],
             'usuarios' => ['usuarios.index', ['administrador']],
             'configuración empresa' => ['configuracion.empresa.edit', ['administrador']],

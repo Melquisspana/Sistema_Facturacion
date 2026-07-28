@@ -13,6 +13,14 @@ enum RolSistema: string
     case Jefatura = 'jefatura';
     case Facturacion = 'facturacion';
     case Contabilidad = 'contabilidad';
+    /*
+     * Producción (área «planta»). El ROL conserva el nombre del negocio
+     * ('produccion') porque es la cadena que se elige en el formulario de
+     * Usuarios; todo lo TÉCNICO del área usa «planta» (ruta /planta, permisos
+     * planta.*, config/planta.php) para no confundirse con la producción FISCAL
+     * de Hacienda. Ver config/planta.php.
+     */
+    case Produccion = 'produccion';
 
     public function label(): string
     {
@@ -21,6 +29,7 @@ enum RolSistema: string
             self::Jefatura => 'Jefatura',
             self::Facturacion => 'Facturación',
             self::Contabilidad => 'Contabilidad',
+            self::Produccion => 'Producción',
         };
     }
 

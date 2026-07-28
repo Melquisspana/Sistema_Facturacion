@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Enums\AreaSistema;
 use App\Services\Dte\DteTransmisionService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Queue\Events\Looping;
@@ -64,6 +65,14 @@ class AppServiceProvider extends ServiceProvider
             // Solo lectura: reutiliza evaluarCandados(), no transmite ni muestra secretos.
             $esGestor = (bool) auth()->user()?->can('dte.emitir');
             $view->with('modoDte', $esGestor ? app(DteTransmisionService::class)->estadoOperativo() : null);
+
+            // Áreas de trabajo (ver App\Enums\AreaSistema): cuál se está viendo y
+            // cuáles puede ver este usuario, para el selector superior y para elegir
+            // la sidebar. Es PRESENTACIÓN: la autorización real vive en el middleware
+            // de cada grupo de rutas. El área activa se deriva de la URL, nunca de la
+            // sesión. Solo permisos (que Spatie cachea) y config: CERO consultas.
+            $view->with('areaActiva', AreaSistema::activaDesdeRequest());
+            $view->with('areasVisibles', AreaSistema::visiblesPara(auth()->user()));
         });
 
         // Mismo estado operativo DTE para las pantallas de facturación (ficha + creación),

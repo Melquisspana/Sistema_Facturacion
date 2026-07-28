@@ -45,6 +45,12 @@ enum PermisoSistema: string
     case DocumentosRecibidosVer = 'documentos-recibidos.ver';
     case DocumentosRecibidosGestionar = 'documentos-recibidos.gestionar';
 
+    // Producción / planta. Área operativa AISLADA: no interviene en DTE,
+    // correlativos, firma, transmisión ni correo. Nombre técnico «planta»;
+    // etiqueta visible «Producción» (ver config/planta.php).
+    case PlantaVer = 'planta.ver';
+    case PlantaGestionar = 'planta.gestionar';
+
     // Contabilidad / reportes.
     case ReportesVer = 'reportes.ver';
     case ContabilidadEnviar = 'contabilidad.enviar';
@@ -120,6 +126,16 @@ enum PermisoSistema: string
                 self::ReportesVer,
                 self::ContabilidadEnviar,
                 self::AuditoriaVer,
+            ]),
+
+            // Producción (planta): SOLO su área. Deliberadamente sin dte.ver,
+            // clientes.ver, productos.ver, ppq.ver, reportes.ver,
+            // exportaciones.ver ni documentos-recibidos.ver — así el aislamiento
+            // del área es demostrable (403 en todo lo demás, ver
+            // RolesPermisosTest) y no hereda visibilidad fiscal por descuido.
+            RolSistema::Produccion => self::valores([
+                self::DashboardVer,
+                self::PlantaVer,
             ]),
         };
     }
