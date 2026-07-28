@@ -18,7 +18,7 @@ class RolesSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_existen_los_cuatro_roles(): void
+    public function test_existen_los_roles_del_catalogo(): void
     {
         foreach (RolSistema::nombres() as $rol) {
             $this->assertTrue(Role::where('name', $rol)->where('guard_name', 'web')->exists(), "Falta el rol {$rol}.");
@@ -93,6 +93,30 @@ class RolesSeederTest extends TestCase
         $this->assertFalse($fact->can('contabilidad.enviar'));
         $this->assertFalse($fact->can('documentos-recibidos.gestionar'));
         $this->assertFalse($fact->can('usuarios.gestionar'));
+    }
+
+    public function test_produccion_solo_entra_a_su_area(): void
+    {
+        $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
+
+        // Su área y nada más.
+        $this->assertTrue($prod->can('planta.ver'));
+        $this->assertTrue($prod->can('dashboard.ver'));
+
+        // Ni un permiso fiscal, comercial ni administrativo. `dte.ver` es además
+        // el permiso de ENTRADA al área Facturación (AreaSistema::permiso()): sin
+        // él, el área ni siquiera aparece en el selector.
+        foreach ([
+            'dte.ver', 'dte.gestionar', 'dte.emitir', 'dte.enviar-correo', 'dte.invalidar',
+            'clientes.ver', 'clientes.gestionar', 'productos.ver', 'productos.gestionar',
+            'ppq.ver', 'ppq.gestionar', 'exportaciones.ver', 'exportaciones.gestionar',
+            'documentos-recibidos.ver', 'reportes.ver', 'contabilidad.enviar',
+            'auditoria.ver', 'usuarios.gestionar', 'configuracion.gestionar',
+            'importaciones.gestionar', 'sistema.salud', 'preparacion.ver',
+            'planta.gestionar',
+        ] as $prohibido) {
+            $this->assertFalse($prod->can($prohibido), "Producción no debería tener {$prohibido}.");
+        }
     }
 
     public function test_jefatura_es_solo_lectura(): void

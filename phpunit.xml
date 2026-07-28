@@ -68,5 +68,10 @@
         <env name="DOCUMENTOS_RECIBIDOS_MAIL_HOST" value=""/>
         <env name="DOCUMENTOS_RECIBIDOS_MAIL_USERNAME" value=""/>
         <env name="DOCUMENTOS_RECIBIDOS_MAIL_PASSWORD" value=""/>
+        <!-- Módulo Producción/Planta: el suite arranca SIEMPRE con el módulo APAGADO,
+             sin importar el .env real de la máquina. Así toda la suite histórica corre
+             en el mismo estado que hoy. Los tests del módulo lo encienden explícitamente
+             con config()->set('planta.enabled', true). -->
+        <env name="PLANTA_ENABLED" value="false"/>
     </php>
 </phpunit>

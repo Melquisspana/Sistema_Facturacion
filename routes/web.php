@@ -37,7 +37,7 @@ Route::post('/logout-completo', function (\Illuminate\Http\Request $request) {
     return redirect('/cdn-cgi/access/logout');
 })->middleware('auth')->name('logout.completo');
 
-Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified', 'area.principal'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -436,3 +436,4 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
     });
 
 require __DIR__.'/auth.php';
+require __DIR__.'/planta.php';

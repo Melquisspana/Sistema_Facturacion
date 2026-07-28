@@ -32,11 +32,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PROTO
         );
 
-        // Alias de middleware de roles/permisos (spatie/laravel-permission).
+        // Alias de middleware de roles/permisos (spatie/laravel-permission) y de
+        // áreas del sistema (ver App\Enums\AreaSistema):
+        //  - modulo.planta   : 404 si el módulo Producción/Planta está apagado.
+        //  - area.principal  : aterrizaje por área; se usa SOLO en /dashboard.
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'modulo.planta' => \App\Http\Middleware\ModuloPlantaActivo::class,
+            'area.principal' => \App\Http\Middleware\RedirigirAreaPrincipal::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
