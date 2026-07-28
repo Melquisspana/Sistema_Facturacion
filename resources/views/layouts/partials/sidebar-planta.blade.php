@@ -15,4 +15,19 @@
         </div>
     </div>
 
+    {{-- Catálogos base. El grupo entero desaparece sin planta.catalogos.ver,
+         igual que hace sidebar-facturacion. Ocultar no autoriza: las rutas
+         llevan su propio middleware. Productos, presentaciones, empaques y
+         lotes se agregarán cuando tengan rutas reales. --}}
+    @can('planta.catalogos.ver')
+        <div>
+            <p class="{{ $tituloGrupo }}">Catálogos</p>
+            <div class="space-y-0.5">
+                <x-sidebar-link :href="route('planta.insumos.index')" :active="request()->routeIs('planta.insumos.*')">Insumos</x-sidebar-link>
+                <x-sidebar-link :href="route('planta.proveedores.index')" :active="request()->routeIs('planta.proveedores.*')">Proveedores</x-sidebar-link>
+                <x-sidebar-link :href="route('planta.ubicaciones.index')" :active="request()->routeIs('planta.ubicaciones.*')">Ubicaciones</x-sidebar-link>
+            </div>
+        </div>
+    @endcan
+
 </nav>
