@@ -50,6 +50,43 @@ enum PermisoSistema: string
     // etiqueta visible «Producción» (ver config/planta.php).
     case PlantaVer = 'planta.ver';
     case PlantaGestionar = 'planta.gestionar';
+    // Catálogos de Planta (insumos, proveedores, ubicaciones, productos base,
+    // presentaciones, empaques, lotes). Leerlos es operativo; gestionarlos
+    // define el MARCO DE TRABAJO y por eso es de administrador.
+    case PlantaCatalogosVer = 'planta.catalogos.ver';
+    case PlantaCatalogosGestionar = 'planta.catalogos.gestionar';
+    // Recepciones de insumos. `confirmar` es la acción que MUEVE inventario;
+    // `reversar` deshace una entrada ya contabilizada y por eso va aparte:
+    // si lo cubriera `confirmar`, todo operador podría anular entradas firmes.
+    case PlantaRecepcionesVer = 'planta.recepciones.ver';
+    case PlantaRecepcionesCrear = 'planta.recepciones.crear';
+    case PlantaRecepcionesConfirmar = 'planta.recepciones.confirmar';
+    case PlantaRecepcionesReversar = 'planta.recepciones.reversar';
+    // Traslados entre ubicaciones. Enviar y recibir son dos actos distintos
+    // (salida física y llegada física) y pueden recaer en personas distintas.
+    case PlantaTrasladosVer = 'planta.traslados.ver';
+    case PlantaTrasladosCrear = 'planta.traslados.crear';
+    case PlantaTrasladosEnviar = 'planta.traslados.enviar';
+    case PlantaTrasladosRecibir = 'planta.traslados.recibir';
+    case PlantaTrasladosReversar = 'planta.traslados.reversar';
+    // Ajustes: carga inicial, mermas, daños, vencimientos y correcciones de
+    // conteo. Crear, confirmar y reversar son de ADMINISTRADOR: alteran la
+    // cantidad física sin contrapartida documental. La auditoría (motivo
+    // obligatorio + Activitylog + mayor inmutable) acompaña a la autorización,
+    // NO la sustituye. `ver` sí es operativo: planta consulta lo que se ajustó.
+    case PlantaAjustesVer = 'planta.ajustes.ver';
+    case PlantaAjustesCrear = 'planta.ajustes.crear';
+    case PlantaAjustesConfirmar = 'planta.ajustes.confirmar';
+    case PlantaAjustesReversar = 'planta.ajustes.reversar';
+    // Control BÁSICO de disponibilidad: elegir si una recepción entra retenida
+    // o disponible, y liberar / rechazar / retener saldo después. Un solo
+    // permiso cubre las cuatro cosas porque quien decide una decide todas.
+    // No es evaluación de calidad (parámetros, análisis): es el interruptor
+    // que determina qué saldo puede trasladarse o utilizarse.
+    case PlantaCalidadGestionar = 'planta.calidad.gestionar';
+    // Consultas de solo lectura sobre el inventario y su historial.
+    case PlantaExistenciasVer = 'planta.existencias.ver';
+    case PlantaMovimientosVer = 'planta.movimientos.ver';
 
     // Contabilidad / reportes.
     case ReportesVer = 'reportes.ver';
@@ -133,9 +170,35 @@ enum PermisoSistema: string
             // exportaciones.ver ni documentos-recibidos.ver — así el aislamiento
             // del área es demostrable (403 en todo lo demás, ver
             // RolesPermisosTest) y no hereda visibilidad fiscal por descuido.
+            //
+            // Dentro de su área recibe la OPERACIÓN DIARIA: recibir insumos,
+            // confirmarlos, trasladarlos entre Casa y Fábrica, y consultar
+            // existencias, movimientos y ajustes.
+            //
+            // Queda FUERA, reservado a administrador (y a un supervisor futuro,
+            // que NO se crea todavía):
+            //   - planta.gestionar y planta.catalogos.gestionar: definen el
+            //     marco de trabajo, no la operación;
+            //   - las tres reversiones: deshacen inventario ya contabilizado;
+            //   - ajustes.crear/confirmar/reversar: alteran la cantidad física
+            //     sin contrapartida documental;
+            //   - planta.calidad.gestionar: decide qué saldo es utilizable.
+            // La auditoría NO es motivo para ampliar este set: son capas
+            // complementarias, no intercambiables.
             RolSistema::Produccion => self::valores([
                 self::DashboardVer,
                 self::PlantaVer,
+                self::PlantaCatalogosVer,
+                self::PlantaRecepcionesVer,
+                self::PlantaRecepcionesCrear,
+                self::PlantaRecepcionesConfirmar,
+                self::PlantaTrasladosVer,
+                self::PlantaTrasladosCrear,
+                self::PlantaTrasladosEnviar,
+                self::PlantaTrasladosRecibir,
+                self::PlantaAjustesVer,
+                self::PlantaExistenciasVer,
+                self::PlantaMovimientosVer,
             ]),
         };
     }
