@@ -1,7 +1,10 @@
 <?php
 
+use App\Http\Controllers\Planta\EmpaqueConfigController;
 use App\Http\Controllers\Planta\InsumoController;
 use App\Http\Controllers\Planta\PlantaDashboardController;
+use App\Http\Controllers\Planta\PresentacionController;
+use App\Http\Controllers\Planta\ProductoBaseController;
 use App\Http\Controllers\Planta\ProveedorController;
 use App\Http\Controllers\Planta\UbicacionController;
 use Illuminate\Support\Facades\Route;
@@ -71,5 +74,33 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
             Route::get('ubicaciones/{ubicacion}/editar', [UbicacionController::class, 'edit'])->middleware($gestionar)->name('ubicaciones.edit');
             Route::put('ubicaciones/{ubicacion}', [UbicacionController::class, 'update'])->middleware($gestionar)->name('ubicaciones.update');
             Route::patch('ubicaciones/{ubicacion}/toggle-activo', [UbicacionController::class, 'toggleActivo'])->middleware($gestionar)->name('ubicaciones.toggle-activo');
+
+            // Productos base.
+            Route::get('productos-base', [ProductoBaseController::class, 'index'])->name('productos-base.index');
+            Route::get('productos-base/crear', [ProductoBaseController::class, 'create'])->middleware($gestionar)->name('productos-base.create');
+            Route::post('productos-base', [ProductoBaseController::class, 'store'])->middleware($gestionar)->name('productos-base.store');
+            Route::get('productos-base/{productoBase}/editar', [ProductoBaseController::class, 'edit'])->middleware($gestionar)->name('productos-base.edit');
+            Route::put('productos-base/{productoBase}', [ProductoBaseController::class, 'update'])->middleware($gestionar)->name('productos-base.update');
+            Route::patch('productos-base/{productoBase}/toggle-activo', [ProductoBaseController::class, 'toggleActivo'])->middleware($gestionar)->name('productos-base.toggle-activo');
+
+            // Presentaciones.
+            Route::get('presentaciones', [PresentacionController::class, 'index'])->name('presentaciones.index');
+            Route::get('presentaciones/crear', [PresentacionController::class, 'create'])->middleware($gestionar)->name('presentaciones.create');
+            Route::post('presentaciones', [PresentacionController::class, 'store'])->middleware($gestionar)->name('presentaciones.store');
+            Route::get('presentaciones/{presentacion}/editar', [PresentacionController::class, 'edit'])->middleware($gestionar)->name('presentaciones.edit');
+            Route::put('presentaciones/{presentacion}', [PresentacionController::class, 'update'])->middleware($gestionar)->name('presentaciones.update');
+            Route::patch('presentaciones/{presentacion}/toggle-activo', [PresentacionController::class, 'toggleActivo'])->middleware($gestionar)->name('presentaciones.toggle-activo');
+
+            // Configuraciones de empaque. `predeterminada` va aparte de `update`
+            // porque es un cambio de una sola bandera que además reordena a sus
+            // hermanas; separarlo permite hacerlo desde el listado sin reenviar
+            // el formulario entero.
+            Route::get('empaques', [EmpaqueConfigController::class, 'index'])->name('empaques.index');
+            Route::get('empaques/crear', [EmpaqueConfigController::class, 'create'])->middleware($gestionar)->name('empaques.create');
+            Route::post('empaques', [EmpaqueConfigController::class, 'store'])->middleware($gestionar)->name('empaques.store');
+            Route::get('empaques/{empaque}/editar', [EmpaqueConfigController::class, 'edit'])->middleware($gestionar)->name('empaques.edit');
+            Route::put('empaques/{empaque}', [EmpaqueConfigController::class, 'update'])->middleware($gestionar)->name('empaques.update');
+            Route::patch('empaques/{empaque}/predeterminada', [EmpaqueConfigController::class, 'marcarPredeterminada'])->middleware($gestionar)->name('empaques.predeterminada');
+            Route::patch('empaques/{empaque}/toggle-activo', [EmpaqueConfigController::class, 'toggleActivo'])->middleware($gestionar)->name('empaques.toggle-activo');
         });
     });

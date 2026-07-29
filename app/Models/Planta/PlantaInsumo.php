@@ -72,4 +72,16 @@ class PlantaInsumo extends Model
     {
         return $this->hasMany(PlantaLote::class, 'planta_insumo_id');
     }
+
+    /** Configuraciones de empaque donde este insumo actúa como bolsa. */
+    public function configsComoBolsa(): HasMany
+    {
+        return $this->hasMany(PlantaEmpaqueConfig::class, 'planta_insumo_bolsa_id');
+    }
+
+    /** Configuraciones de empaque donde este insumo actúa como viñeta. */
+    public function configsComoVinieta(): HasMany
+    {
+        return $this->hasMany(PlantaEmpaqueConfig::class, 'planta_insumo_vinieta_id');
+    }
 }

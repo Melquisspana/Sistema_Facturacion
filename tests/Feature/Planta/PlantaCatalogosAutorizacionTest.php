@@ -239,13 +239,12 @@ class PlantaCatalogosAutorizacionTest extends TestCase
     {
         $this->encenderModulo();
 
-        $respuesta = $this->actingAs($this->usuario('administrador'))
+        // Productos, presentaciones y empaques salieron de esta lista al
+        // implementarse el paso 4. Lotes sigue fuera: no se crean a mano, nacen
+        // en las recepciones.
+        $this->actingAs($this->usuario('administrador'))
             ->get(route('planta.dashboard'))
-            ->assertOk();
-
-        // Nada de productos, presentaciones, empaques ni lotes: no hay rutas.
-        foreach (['planta/productos', 'planta/presentaciones', 'planta/empaques', 'planta/lotes'] as $futura) {
-            $respuesta->assertDontSee($futura);
-        }
+            ->assertOk()
+            ->assertDontSee('planta/lotes');
     }
 }

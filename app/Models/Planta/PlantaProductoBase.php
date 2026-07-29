@@ -5,6 +5,7 @@ namespace App\Models\Planta;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -57,5 +58,16 @@ class PlantaProductoBase extends Model
     public function presentaciones(): HasMany
     {
         return $this->hasMany(PlantaPresentacion::class, 'planta_producto_base_id');
+    }
+
+    /** Configuraciones de empaque de todas sus presentaciones. */
+    public function empaqueConfigs(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            PlantaEmpaqueConfig::class,
+            PlantaPresentacion::class,
+            'planta_producto_base_id',
+            'planta_presentacion_id'
+        );
     }
 }

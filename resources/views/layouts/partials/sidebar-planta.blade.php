@@ -17,8 +17,8 @@
 
     {{-- Catálogos base. El grupo entero desaparece sin planta.catalogos.ver,
          igual que hace sidebar-facturacion. Ocultar no autoriza: las rutas
-         llevan su propio middleware. Productos, presentaciones, empaques y
-         lotes se agregarán cuando tengan rutas reales. --}}
+         llevan su propio middleware. Lotes se agregará cuando tenga rutas
+         reales (nacen en las recepciones, no se crean a mano). --}}
     @can('planta.catalogos.ver')
         <div>
             <p class="{{ $tituloGrupo }}">Catálogos</p>
@@ -26,6 +26,9 @@
                 <x-sidebar-link :href="route('planta.insumos.index')" :active="request()->routeIs('planta.insumos.*')">Insumos</x-sidebar-link>
                 <x-sidebar-link :href="route('planta.proveedores.index')" :active="request()->routeIs('planta.proveedores.*')">Proveedores</x-sidebar-link>
                 <x-sidebar-link :href="route('planta.ubicaciones.index')" :active="request()->routeIs('planta.ubicaciones.*')">Ubicaciones</x-sidebar-link>
+                <x-sidebar-link :href="route('planta.productos-base.index')" :active="request()->routeIs('planta.productos-base.*')">Productos</x-sidebar-link>
+                <x-sidebar-link :href="route('planta.presentaciones.index')" :active="request()->routeIs('planta.presentaciones.*')">Presentaciones</x-sidebar-link>
+                <x-sidebar-link :href="route('planta.empaques.index')" :active="request()->routeIs('planta.empaques.*')">Configuraciones de empaque</x-sidebar-link>
             </div>
         </div>
     @endcan
