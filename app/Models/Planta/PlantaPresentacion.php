@@ -5,6 +5,7 @@ namespace App\Models\Planta;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -60,5 +61,11 @@ class PlantaPresentacion extends Model
     public function productoBase(): BelongsTo
     {
         return $this->belongsTo(PlantaProductoBase::class, 'planta_producto_base_id');
+    }
+
+    /** Bolsa y viñeta de esta presentación por mercado y marca. */
+    public function empaqueConfigs(): HasMany
+    {
+        return $this->hasMany(PlantaEmpaqueConfig::class, 'planta_presentacion_id');
     }
 }
