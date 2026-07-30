@@ -84,8 +84,11 @@ class DteGenerarJsonUiTest extends TestCase
         $depto = Departamento::first();
         $muni = Municipio::where('departamento_id', $depto->id)->first();
 
+        // La ubicación la aporta la factory como un trío COHERENTE (departamento →
+        // municipio 2024 → distrito). Fijar solo departamento/municipio acá dejaba un par
+        // incompatible con el distrito de la factory, que ahora se rechaza al generar.
         $cliente = Cliente::factory()->contribuyente()->create([
-            'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id,
+            'actividad_economica_id' => $actividad->id,
             'nrc' => '1234', 'direccion' => 'Av Cliente 123', 'telefono' => null, 'correo' => null,
         ]);
         $unidad = UnidadMedida::whereNotNull('codigo')->first();

@@ -7,6 +7,8 @@ use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Support\Dinero;
+use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\Ubicacion\CoherenciaUbicacion;
 
 /**
  * Validación PREVIA e INTERNA de un DTE antes de (en el futuro) generar el JSON
@@ -127,6 +129,26 @@ class ValidacionPreJsonService
             }
         }
 
+        // Distrito del emisor: obligatorio en los tipos cuyo esquema lo lleva (CCF v4,
+        // Factura v2, FEX v3). Sin él el JSON sale con `distrito: ""` y el MH lo rechaza.
+        if (self::esquemaLlevaDistritoEmisor($dte->tipo_dte) && blank($emisor->distrito_id)) {
+            $problemas[] = 'Falta distrito del emisor (CAT-008): el esquema de '
+                .$dte->tipo_dte->label().' lo exige y no puede enviarse vacío.';
+        }
+
+        // Coherencia del trío: el distrito debe pertenecer al municipio elegido.
+        $incoherencia = CoherenciaUbicacion::problemaDe($emisor);
+        if ($incoherencia !== null) {
+            $problemas[] = 'Ubicación del emisor incoherente: '.$incoherencia;
+        }
+
+        // Y los códigos oficiales deben existir: sin ellos el JSON saldría con "".
+        foreach (CoherenciaUbicacion::codigosFaltantes(
+            $emisor, self::esquemaLlevaDistritoEmisor($dte->tipo_dte)
+        ) as $falta) {
+            $problemas[] = 'Ubicación del emisor incompleta: '.$falta.'.';
+        }
+
         if (blank($dte->establecimiento?->codigo)) {
             $problemas[] = 'El establecimiento del emisor no tiene código.';
         }
@@ -209,6 +231,13 @@ class ValidacionPreJsonService
                 if ($umbral !== null && ! $cliente && Dinero::comparar((string) $dte->total_pagar, (string) $umbral) > 0) {
                     $problemas[] = 'El receptor es obligatorio: el total supera el monto configurado para exigir identificación del consumidor final.';
                 }
+
+                // Con receptor identificado, la Factura v2 SÍ manda `receptor.direccion`
+                // (incluido `distrito`), así que la ubicación debe estar completa y
+                // coherente. Sin cliente no hay bloque receptor y no se valida nada.
+                if ($cliente) {
+                    $this->validarUbicacionReceptor($dte, $problemas);
+                }
                 break;
 
             default:
@@ -235,7 +264,16 @@ class ValidacionPreJsonService
         $sala = $dte->clienteSucursal;
         $ubicacion = $sala ?? $dte->cliente;
 
-        foreach (['departamento_id' => 'departamento', 'municipio_id' => 'municipio'] as $campo => $etiqueta) {
+        $campos = ['departamento_id' => 'departamento', 'municipio_id' => 'municipio'];
+
+        // El distrito solo se exige cuando el esquema del tipo lo lleva en el receptor
+        // (CCF v4 y Factura v2). La Nota de crédito v3 NO tiene `distrito` en la dirección,
+        // así que exigirlo bloquearía documentos que el MH acepta sin él.
+        if (self::esquemaLlevaDistritoReceptor($dte->tipo_dte)) {
+            $campos['distrito_id'] = 'distrito (CAT-008)';
+        }
+
+        foreach ($campos as $campo => $etiqueta) {
             if (! blank($ubicacion?->{$campo})) {
                 continue;
             }
@@ -244,10 +282,52 @@ class ValidacionPreJsonService
                 ? "Falta {$etiqueta} en la sala de entrega \"{$sala->nombre}\"."
                 : "Falta {$etiqueta} en la ubicación fiscal del receptor.";
         }
+
+        // Coherencia del trío departamento → municipio 2024 → distrito. Un par imposible
+        // (p. ej. municipio "Cabañas Este" con el distrito "Ilobasco", que es de Cabañas
+        // Oeste) es exactamente lo que Hacienda rechaza como
+        // «[receptor.direccion.distrito] VALOR NO ES PERMITIDO».
+        if ($ubicacion) {
+            $incoherencia = CoherenciaUbicacion::problemaDe($ubicacion);
+            if ($incoherencia !== null) {
+                $problemas[] = $sala
+                    ? "Ubicación incoherente en la sala de entrega \"{$sala->nombre}\": {$incoherencia}"
+                    : "Ubicación fiscal del receptor incoherente: {$incoherencia}";
+            }
+
+            // Los códigos oficiales (CAT-013 / CAT-008) deben existir: sin ellos el JSON
+            // saldría con `municipio: ""` o `distrito: ""`, que el MH rechaza.
+            foreach (CoherenciaUbicacion::codigosFaltantes(
+                $ubicacion, self::esquemaLlevaDistritoReceptor($dte->tipo_dte)
+            ) as $falta) {
+                $problemas[] = $sala
+                    ? "Ubicación incompleta en la sala de entrega \"{$sala->nombre}\": {$falta}."
+                    : "Ubicación fiscal del receptor incompleta: {$falta}.";
+            }
+        }
+    }
+
+    /**
+     * ¿El esquema vigente del tipo lleva `emisor.direccion.distrito`?
+     * CCF v4, Factura v2 y FEX v3 sí; Nota de crédito v3 no.
+     */
+    private static function esquemaLlevaDistritoEmisor(TipoDte $tipo): bool
+    {
+        return in_array($tipo, [TipoDte::CreditoFiscal, TipoDte::Factura, TipoDte::FacturaExportacion], true);
+    }
+
+    /**
+     * ¿El esquema vigente del tipo lleva `receptor.direccion.distrito`?
+     * CCF v4 y Factura v2 sí. La Nota de crédito v3 no lo tiene, y en la FEX el receptor
+     * es extranjero (país + complemento), sin distrito.
+     */
+    private static function esquemaLlevaDistritoReceptor(TipoDte $tipo): bool
+    {
+        return in_array($tipo, [TipoDte::CreditoFiscal, TipoDte::Factura], true);
     }
 
     private function requiereOrdenCompra(Dte $dte): bool
     {
-        return \App\Support\Dte\ReglaOrdenCompra::requerida($dte->cliente, $dte->clienteSucursal);
+        return ReglaOrdenCompra::requerida($dte->cliente, $dte->clienteSucursal);
     }
 }

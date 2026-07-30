@@ -61,51 +61,23 @@
                                 @endforeach
                             </select>
                         </div>
-                        {{-- Ubicación administrativa (división 2024): Departamento → Municipio → Distrito.
-                             En el emisor el distrito es opcional (compatibilidad con el establecimiento ya configurado). --}}
-                        <div class="contents" x-data="{
-                                departamentoId: @js((string) old('departamento_id', $establecimiento->departamento_id)),
-                                municipioSel: @js((string) old('municipio_2024', $establecimiento->distrito?->municipio)),
-                                distritoId: @js((string) old('distrito_id', $establecimiento->distrito_id)),
-                                distritos: @js($distritos->map(fn ($d) => ['id' => (string) $d->id, 'nombre' => $d->nombre, 'municipio' => $d->municipio, 'departamento_id' => (string) $d->departamento_id])->values()),
-                                get municipiosDelDepto() { return [...new Set(this.distritos.filter(d => d.departamento_id === this.departamentoId).map(d => d.municipio))].sort(); },
-                                get distritosFiltrados() { return this.distritos.filter(d => d.departamento_id === this.departamentoId && d.municipio === this.municipioSel); },
-                             }">
-                            <div>
-                                <x-input-label for="departamento_id" value="Departamento *" />
-                                <select id="departamento_id" name="departamento_id" x-model="departamentoId"
-                                        x-on:change="municipioSel=''; distritoId=''" required
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-                                    <option value="">— Seleccione —</option>
-                                    @foreach ($departamentos as $depto)
-                                        <option value="{{ $depto->id }}">{{ $depto->nombre }}</option>
-                                    @endforeach
-                                </select>
-                                <x-input-error :messages="$errors->get('departamento_id')" class="mt-1" />
-                            </div>
-                            <div>
-                                <x-input-label for="municipio_2024" value="Municipio" />
-                                <select id="municipio_2024" name="municipio_2024" x-model="municipioSel"
-                                        x-on:change="distritoId=''"
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-                                    <option value="">— Seleccione —</option>
-                                    <template x-for="m in municipiosDelDepto" :key="m">
-                                        <option :value="m" x-text="m"></option>
-                                    </template>
-                                </select>
-                            </div>
-                            <div>
-                                <x-input-label for="distrito_id" value="Distrito *" />
-                                <select id="distrito_id" name="distrito_id" x-model="distritoId" required
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-                                    <option value="">— Seleccione —</option>
-                                    <template x-for="d in distritosFiltrados" :key="d.id">
-                                        <option :value="d.id" x-text="d.nombre"></option>
-                                    </template>
-                                </select>
-                                <x-input-error :messages="$errors->get('distrito_id')" class="mt-1" />
-                            </div>
-                        </div>
+                        {{-- Ubicación administrativa (división 2024): Departamento → Municipio
+                             2024 (CAT-013) → Distrito (CAT-008), con el MISMO componente que
+                             usan empresa, clientes y salas.
+                             Antes el select de municipio se llamaba `municipio_2024` y enviaba
+                             el NOMBRE de la agrupación: servía para filtrar los distritos en
+                             pantalla pero NUNCA guardaba `municipio_id`, así que el emisor podía
+                             quedar sin municipio fiscal (y el JSON con `municipio: ""`). Ahora
+                             se guarda el municipio real y el distrito se filtra por él. --}}
+                        <x-ubicacion-selects
+                            :departamentos="$departamentos"
+                            :municipios="$municipios"
+                            :distritos="$distritos"
+                            :departamento-id="$establecimiento->departamento_id"
+                            :municipio-id="$establecimiento->municipio_id"
+                            :distrito-id="$establecimiento->distrito_id"
+                            :distrito-requerido="true"
+                            :departamento-requerido="true" />
                         <div>
                             <x-input-label for="telefono" value="Teléfono" />
                             <x-text-input id="telefono" name="telefono" type="text" class="mt-1 block w-full"

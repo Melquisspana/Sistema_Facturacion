@@ -6,10 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Clientes\ClienteSucursalRequest;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
-use App\Models\Departamento;
-use App\Models\Distrito;
-use App\Models\Municipio;
 use App\Models\Pais;
+use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -98,13 +96,9 @@ class ClienteSucursalController extends Controller
     /** @return array<string, mixed> */
     private function datosFormulario(Cliente $cliente, ClienteSucursal $sucursal): array
     {
-        return [
+        return array_merge([
             'cliente' => $cliente,
             'sucursal' => $sucursal,
-            'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),
-            'municipios' => Municipio::where('activo', true)->orderBy('nombre')->get(['id', 'nombre', 'departamento_id']),
-            'distritos' => Distrito::where('activo', true)->orderBy('municipio')->orderBy('nombre')
-                ->get(['id', 'nombre', 'municipio', 'departamento_id']),
-        ];
+        ], OpcionesUbicacion::todas());
     }
 }

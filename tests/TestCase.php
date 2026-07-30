@@ -3,9 +3,13 @@
 namespace Tests;
 
 use App\Enums\EstadoDte;
+use App\Models\Distrito;
 use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Municipio;
 use App\Services\Dte\DteStateMachine;
 use App\Support\Correo\CandadoCorreoReal;
+use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Database\Seeders\RolesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -38,6 +42,58 @@ abstract class TestCase extends BaseTestCase
         if (in_array(RefreshDatabase::class, class_uses_recursive(static::class), true)) {
             $this->seed(RolesSeeder::class);
         }
+
+        $this->completarDistritoDelEmisorEnPruebas();
+    }
+
+    /**
+     * Completa el DISTRITO de la empresa emisora creada en pruebas.
+     *
+     * Por qué existe: el CCF (v4), la Factura (v2) y la FEX (v3) llevan
+     * `emisor.direccion.distrito`, y desde que la validación previa exige ese campo (para
+     * no enviar `distrito: ""`, que Hacienda rechaza) todo emisor debe tener uno coherente
+     * con su municipio. Decenas de pruebas construyen su emisor con el mismo bloque
+     * copiado que solo fija departamento y municipio; en vez de repetir el arreglo en cada
+     * archivo, se completa acá una sola vez.
+     *
+     * Es deliberadamente conservador:
+     *  - No toca una empresa SIN departamento: esos casos prueban justamente la ausencia
+     *    de ubicación y deben seguir fallando la validación.
+     *  - No toca una empresa que ya trae distrito.
+     *  - Respeta el municipio elegido si existe un distrito suyo; solo lo realinea cuando
+     *    ese municipio no tiene ningún distrito (catálogo incompleto para ese caso).
+     *
+     * Solo aplica en la suite: no hay ningún equivalente en producción.
+     */
+    protected function completarDistritoDelEmisorEnPruebas(): void
+    {
+        // Se registra en CADA setUp a propósito: la aplicación se rebota por prueba y con
+        // ella el dispatcher de eventos de Eloquent, así que un listener registrado una
+        // sola vez solo viviría en la primera prueba del proceso.
+        Empresa::created(function (Empresa $empresa) {
+            if (blank($empresa->departamento_id) || filled($empresa->distrito_id)) {
+                return;
+            }
+
+            $municipio = $empresa->municipio_id ? Municipio::find($empresa->municipio_id) : null;
+
+            $distrito = $municipio && filled($municipio->codigo)
+                ? Distrito::where('departamento_id', $empresa->departamento_id)
+                    ->where('municipio_codigo', $municipio->codigo)->orderBy('id')->first()
+                : null;
+
+            if (! $distrito) {
+                $tercia = UbicacionCoherenteFactory::tercia((int) $empresa->departamento_id);
+                if (blank($tercia['distrito_id'])) {
+                    return; // catálogo sin distritos vinculados: no se inventa nada
+                }
+                $empresa->municipio_id = $tercia['municipio_id'];
+                $distrito = Distrito::find($tercia['distrito_id']);
+            }
+
+            $empresa->distrito_id = $distrito->id;
+            $empresa->saveQuietly();
+        });
     }
 
     /**

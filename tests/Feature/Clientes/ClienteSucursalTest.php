@@ -4,6 +4,9 @@ namespace Tests\Feature\Clientes;
 
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Departamento;
+use App\Models\Distrito;
+use App\Models\Municipio;
 use App\Models\User;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,8 +36,8 @@ class ClienteSucursalTest extends TestCase
 
     private function datosSucursal(array $override = []): array
     {
-        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->first()
-            ?? \App\Models\Distrito::firstOrFail();
+        $distrito = Distrito::where('nombre', 'Olocuilta')->first()
+            ?? Distrito::firstOrFail();
 
         return array_merge([
             'nombre' => 'Selectos Santa Rosa',
@@ -55,8 +58,8 @@ class ClienteSucursalTest extends TestCase
     public function test_sucursal_guarda_municipio_fiscal(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();
-        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
-        $municipio = \App\Models\Municipio::where('departamento_id', $distrito->departamento_id)
+        $distrito = Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $municipio = Municipio::where('departamento_id', $distrito->departamento_id)
             ->where('nombre', 'Olocuilta')->firstOrFail();
 
         $this->actingAs($this->usuario('administrador'))
@@ -76,8 +79,8 @@ class ClienteSucursalTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
         // La sala se declara en La Paz (Olocuilta) pero con un municipio de San Salvador.
-        $sanSalvador = \App\Models\Departamento::where('codigo', '06')->firstOrFail();
-        $municipioAjeno = \App\Models\Municipio::where('departamento_id', $sanSalvador->id)
+        $sanSalvador = Departamento::where('codigo', '06')->firstOrFail();
+        $municipioAjeno = Municipio::where('departamento_id', $sanSalvador->id)
             ->where('nombre', 'San Salvador')->firstOrFail();
 
         $this->actingAs($this->usuario('administrador'))
@@ -109,8 +112,8 @@ class ClienteSucursalTest extends TestCase
     /** Editar una sala existente no debe perder el municipio que ya tenía. */
     public function test_editar_sucursal_conserva_municipio_fiscal(): void
     {
-        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
-        $municipio = \App\Models\Municipio::where('departamento_id', $distrito->departamento_id)
+        $distrito = Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $municipio = Municipio::where('departamento_id', $distrito->departamento_id)
             ->where('nombre', 'Olocuilta')->firstOrFail();
 
         $cliente = Cliente::factory()->contribuyente()->create();
@@ -139,23 +142,29 @@ class ClienteSucursalTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
 
+        // La sala usa el componente compartido de ubicación: el municipio se rotula
+        // "Municipio" y se aclara que es el fiscal 2024 (CAT-013), el que viaja en el DTE.
         $this->actingAs($this->usuario('administrador'))
             ->get(route('clientes.sucursales.create', $cliente))
             ->assertOk()
-            ->assertSee('Municipio fiscal (CAT-013)');
+            ->assertSee('name="municipio_id"', false)
+            ->assertSee('Municipio fiscal 2024 (CAT-013)');
     }
 
     public function test_formulario_de_sala_muestra_un_solo_municipio(): void
     {
-        // El municipio 2024 dejó de tener su propio select (se deriva del distrito):
-        // el único municipio visible es el fiscal CAT-013.
+        // Un ÚNICO select de municipio: el fiscal CAT-013. Antes existía además un
+        // `municipio_2024` que solo agrupaba distritos y no se guardaba.
         $cliente = Cliente::factory()->contribuyente()->create();
 
-        $this->actingAs($this->usuario('administrador'))
+        $html = $this->actingAs($this->usuario('administrador'))
             ->get(route('clientes.sucursales.create', $cliente))
             ->assertOk()
-            ->assertSee('Municipio fiscal (CAT-013)')
-            ->assertDontSee('agrupación 2024');
+            ->getContent();
+
+        $this->assertSame(1, substr_count($html, 'name="municipio_id"'));
+        $this->assertStringNotContainsString('name="municipio_2024"', $html);
+        $this->assertStringNotContainsString('agrupación 2024', $html);
     }
 
     public function test_sala_precarga_telefono_por_defecto(): void
@@ -174,7 +183,7 @@ class ClienteSucursalTest extends TestCase
         // Se demuestra que quitar el campo municipio_2024 no pierde información:
         // el municipio 2024 sigue derivándose del distrito guardado.
         $cliente = Cliente::factory()->contribuyente()->create();
-        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $distrito = Distrito::where('nombre', 'Olocuilta')->firstOrFail();
 
         $datos = $this->datosSucursal();
         unset($datos['municipio_2024']); // el formulario ya no lo envía
@@ -220,7 +229,7 @@ class ClienteSucursalTest extends TestCase
     public function test_sucursal_guarda_distrito(): void
     {
         $cliente = Cliente::factory()->contribuyente()->create();
-        $distrito = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $distrito = Distrito::where('nombre', 'Olocuilta')->firstOrFail();
 
         $this->actingAs($this->usuario('administrador'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal())
@@ -236,8 +245,8 @@ class ClienteSucursalTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
         // Olocuilta (La Paz) pero declarando un departamento distinto (San Salvador).
-        $olocuilta = \App\Models\Distrito::where('nombre', 'Olocuilta')->firstOrFail();
-        $sanSalvador = \App\Models\Departamento::where('codigo', '06')->firstOrFail();
+        $olocuilta = Distrito::where('nombre', 'Olocuilta')->firstOrFail();
+        $sanSalvador = Departamento::where('codigo', '06')->firstOrFail();
 
         $this->actingAs($this->usuario('administrador'))
             ->post(route('clientes.sucursales.store', $cliente), $this->datosSucursal([

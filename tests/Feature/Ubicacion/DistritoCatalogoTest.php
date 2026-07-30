@@ -45,10 +45,20 @@ class DistritoCatalogoTest extends TestCase
         $this->assertSame('La Paz Oeste', $olocuilta->municipio);
     }
 
-    public function test_codigo_mh_queda_pendiente(): void
+    public function test_codigo_mh_y_vinculo_al_municipio_quedan_completos(): void
     {
-        // El código MH del distrito se completa con el catálogo oficial: por ahora NULL.
-        $this->assertSame(0, Distrito::whereNotNull('codigo')->count());
+        // Antes el código MH del distrito quedaba pendiente (NULL) hasta correr comandos a
+        // mano. Ahora el seeder de catálogos importa el Excel oficial y completa TODO: sin
+        // el código CAT-008 el JSON saldría con `distrito: ""` y Hacienda lo rechaza, así
+        // que un catálogo a medias dejó de ser un estado válido.
+        $this->assertSame(262, Distrito::count());
+        $this->assertSame(0, Distrito::whereNull('codigo')->count(), 'Todo distrito debe tener su CAT-008.');
+        $this->assertSame(0, Distrito::whereNull('municipio_codigo')->count(), 'Todo distrito debe estar vinculado a su municipio 2024.');
+
+        // Y el caso de referencia: Ilobasco es el distrito 03 de Cabañas, en Cabañas Oeste (10).
+        $ilobasco = Distrito::where('nombre', 'Ilobasco')->firstOrFail();
+        $this->assertSame('03', $ilobasco->codigo);
+        $this->assertSame('10', $ilobasco->municipio_codigo);
     }
 
     public function test_municipios_se_agrupan_por_departamento(): void

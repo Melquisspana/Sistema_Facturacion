@@ -10,6 +10,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Municipio;
 use App\Models\PuntoVenta;
+use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Database\Seeders\CatalogosMhSeeder;
 use Database\Seeders\CatalogosMhTablaSeeder;
 
@@ -49,9 +50,18 @@ trait PreparaEmisorDte
         }
         $actividad = ActividadEconomica::query()->first();
 
+        // Ubicación COMPLETA y COHERENTE del emisor, como la de un emisor real: el CCF v4,
+        // la Factura v2 y la FEX v3 llevan `emisor.direccion.distrito`, y el distrito debe
+        // pertenecer al municipio 2024 elegido (ver CoherenciaUbicacion). Se elige el
+        // distrito primero y de ahí se deriva su municipio, en vez de combinar un municipio
+        // y un distrito cualesquiera.
+        $ubicacion = UbicacionCoherenteFactory::tercia($depto?->id);
+        $ubicacion['municipio_id'] ??= $muni?->id;
+
         $empresa = Empresa::create([
             'razon_social' => 'Dulces La Negrita', 'nit' => '06140000000000', 'nrc' => '1234567',
-            'actividad_economica_id' => $actividad?->id, 'departamento_id' => $depto?->id, 'municipio_id' => $muni?->id,
+            'actividad_economica_id' => $actividad?->id,
+            ...$ubicacion,
             'direccion' => 'Km 30 Carretera a Zacatecoluca', 'telefono' => '2200-0000', 'correo' => 'emisor@dulceslanegrita.sv',
             'ambiente' => '00', 'activo' => true,
         ]);

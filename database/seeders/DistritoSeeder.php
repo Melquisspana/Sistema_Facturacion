@@ -4,6 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Departamento;
 use App\Models\Distrito;
+use App\Models\Municipio;
+use App\Support\Ubicacion\VinculaMunicipioDistrito;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
 
@@ -64,5 +66,17 @@ class DistritoSeeder extends Seeder
         }
 
         $this->command?->info("Distritos importados/actualizados: {$total}");
+
+        // Si el catálogo CAT-013 ya está cargado, dejar el vínculo distrito → municipio
+        // fiscal al día en la misma corrida. Si aún no lo está (orden típico de una BD
+        // nueva), lo completa CatalogosMhTablaSeeder al importar el Excel oficial.
+        if (VinculaMunicipioDistrito::hayCatalogo()) {
+            try {
+                VinculaMunicipioDistrito::ejecutar();
+                Municipio::olvidarNombresFiscales();
+            } catch (\RuntimeException $e) {
+                $this->command?->warn('No se pudo vincular distrito → municipio CAT-013: '.$e->getMessage());
+            }
+        }
     }
 }

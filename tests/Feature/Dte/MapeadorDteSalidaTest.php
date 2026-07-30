@@ -6,9 +6,12 @@ use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Exceptions\Dte\DteNoMapeableException;
 use App\Models\ActividadEconomica;
+use App\Models\CatalogoMh;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Departamento;
+use App\Models\Distrito;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
@@ -21,13 +24,14 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\MapeadorDteSalida;
 use App\Services\Dte\Serializadores\SerializadorNotaCreditoMh;
-use Database\Seeders\CatalogosMhSeeder;
+use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 class MapeadorDteSalidaTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -48,20 +52,20 @@ class MapeadorDteSalidaTest extends TestCase
     private function emisor(): array
     {
         $actividad = ActividadEconomica::first();
-        $depto = Departamento::first();
-        $muni = Municipio::where('departamento_id', $depto->id)->first();
-        // MunicipioSeeder (liviano) no trae el código CAT-013 (se completa al importar el
-        // catálogo oficial); lo respaldamos con un código real ya importado en catalogos_mh
-        // para que la Factura de Exportación (que sí exige este campo) pueda generarse en pruebas.
-        if ($muni && blank($muni->codigo)) {
-            $muni->update(['codigo' => \App\Models\CatalogoMh::where('cat', '013')->value('codigo') ?? '10']);
-        }
+        // Ubicación COHERENTE del emisor: el trío departamento → municipio 2024 → distrito
+        // debe encajar (CCF v4, Factura v2 y FEX v3 llevan `emisor.direccion.distrito`).
+        // Elegir cada nivel por separado producía pares imposibles que el MH rechaza.
+        $ubicacion = UbicacionCoherenteFactory::tercia();
+        $depto = Departamento::findOrFail($ubicacion['departamento_id']);
+        $muni = Municipio::findOrFail($ubicacion['municipio_id']);
+        $distrito = Distrito::findOrFail($ubicacion['distrito_id']);
 
         $empresa = Empresa::create([
             'razon_social' => 'Dulces La Negrita', 'nombre_comercial' => 'La Negrita',
             // Sin guiones: el schema de la Factura 01 limita el NIT del emisor a 14 chars.
             'nit' => '06140000000000', 'nrc' => '111111-1',
-            'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id,
+            'actividad_economica_id' => $actividad->id,
+            ...$ubicacion,
             'direccion' => 'Calle Principal', 'telefono' => '2200-0000', 'correo' => 'fact@negrita.sv',
             'ambiente' => '00', 'activo' => true,
         ]);
@@ -74,16 +78,42 @@ class MapeadorDteSalidaTest extends TestCase
             Correlativo::create(['tipo_dte' => $t, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
         }
 
-        return compact('empresa', 'estab', 'pv', 'actividad', 'depto', 'muni');
+        return compact('empresa', 'estab', 'pv', 'actividad', 'depto', 'muni', 'distrito');
     }
 
     private function clienteContribuyente(array $emisor, array $override = []): Cliente
     {
         return Cliente::factory()->contribuyente()->create(array_merge([
             'actividad_economica_id' => $emisor['actividad']->id,
+            // Mismo trío coherente que el emisor.
             'departamento_id' => $emisor['depto']->id,
             'municipio_id' => $emisor['muni']->id,
+            'distrito_id' => $emisor['distrito']->id,
         ], $override));
+    }
+
+    /**
+     * Otro municipio 2024 del mismo departamento, con su propio distrito: sirve para
+     * comprobar que el receptor usa la ubicación de la SALA y no la del cliente, sin
+     * inventar un par municipio/distrito incompatible.
+     *
+     * @return array{municipio: Municipio, distrito: Distrito}
+     */
+    private function otraUbicacionDelDepartamento(array $emisor): array
+    {
+        $distrito = Distrito::where('departamento_id', $emisor['depto']->id)
+            ->whereNotNull('municipio_codigo')
+            ->where('municipio_codigo', '!=', $emisor['distrito']->municipio_codigo)
+            ->whereExists(fn ($q) => $q->from('municipios')
+                ->whereColumn('municipios.departamento_id', 'distritos.departamento_id')
+                ->whereColumn('municipios.codigo', 'distritos.municipio_codigo'))
+            ->orderBy('id')
+            ->firstOrFail();
+
+        return [
+            'municipio' => UbicacionCoherenteFactory::municipioDe($distrito),
+            'distrito' => $distrito,
+        ];
     }
 
     private function producto(string $nombre = 'Dulce de leche'): Producto
@@ -144,30 +174,31 @@ class MapeadorDteSalidaTest extends TestCase
     {
         // Demuestra que el municipio del receptor en el JSON sale del municipio fiscal
         // (CAT-013) de la SALA — el campo que se conserva en el formulario —, no del
-        // municipio 2024 (que se quitó de la UI) ni del municipio del cliente.
+        // municipio del cliente.
         $emisor = $this->emisor();
         $depto = $emisor['depto'];
-
-        // Municipio fiscal de la sala, distinto del municipio del cliente y con código.
         $muniCliente = $emisor['muni'];
-        $muniSala = Municipio::where('departamento_id', $depto->id)
-            ->where('id', '!=', $muniCliente->id)->firstOrFail();
-        $muniSala->update(['codigo' => '99']);
+
+        // Otro municipio 2024 del mismo departamento, CON su propio distrito: la ubicación
+        // de la sala tiene que ser coherente, así que se toma un par real del catálogo en
+        // lugar de forzar un código inventado.
+        ['municipio' => $muniSala, 'distrito' => $distritoSala] = $this->otraUbicacionDelDepartamento($emisor);
+        $this->assertNotSame($muniCliente->codigo, $muniSala->codigo, 'El caso requiere dos municipios distintos.');
 
         $cliente = $this->clienteContribuyente($emisor); // municipio_id = muniCliente
-        $distrito = \App\Models\Distrito::where('departamento_id', $depto->id)->first();
-        $sala = \App\Models\ClienteSucursal::factory()->create([
+        $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $cliente->id,
             'nombre' => 'Sala Con Municipio Propio',
             'departamento_id' => $depto->id,
             'municipio_id' => $muniSala->id,
-            'distrito_id' => $distrito?->id,
+            'distrito_id' => $distritoSala->id,
         ]);
 
         $ccf = $this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
         $salida = $this->mapeador->mapear($ccf);
 
-        $this->assertSame('99', $salida->receptor->municipio);
+        $this->assertSame($muniSala->codigo, $salida->receptor->municipio);
+        $this->assertSame($distritoSala->codigo, $salida->receptor->distrito);
         $this->assertNotSame($muniCliente->codigo, $salida->receptor->municipio);
     }
 
@@ -175,7 +206,7 @@ class MapeadorDteSalidaTest extends TestCase
     {
         $emisor = $this->emisor();
         $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
-        $sala = \App\Models\ClienteSucursal::factory()->create([
+        $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $cliente->id,
             'departamento_id' => $emisor['depto']->id,
             'municipio_id' => $emisor['muni']->id,
@@ -195,7 +226,7 @@ class MapeadorDteSalidaTest extends TestCase
         $emisor = $this->emisor();
         $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
         // Sala con contacto vacío (cadena vacía y null): no debe reemplazar al del cliente.
-        $sala = \App\Models\ClienteSucursal::factory()->create([
+        $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $cliente->id,
             'departamento_id' => $emisor['depto']->id,
             'municipio_id' => $emisor['muni']->id,
@@ -214,7 +245,7 @@ class MapeadorDteSalidaTest extends TestCase
     {
         $emisor = $this->emisor();
         $cliente = $this->clienteContribuyente($emisor, ['telefono' => '2100-1111', 'correo' => 'cliente@x.sv']);
-        $sala = \App\Models\ClienteSucursal::factory()->create([
+        $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $cliente->id,
             'departamento_id' => $emisor['depto']->id,
             'municipio_id' => $emisor['muni']->id,
@@ -322,7 +353,7 @@ class MapeadorDteSalidaTest extends TestCase
     public function test_nota_credito_averia_con_productos_manuales_genera_json_v3_valido(): void
     {
         // El serializador valida la unidad contra CAT-014 (no contra la tabla UnidadMedida).
-        \App\Models\CatalogoMh::firstOrCreate(['cat' => '014', 'codigo' => '59'], ['valor' => 'Unidad']);
+        CatalogoMh::firstOrCreate(['cat' => '014', 'codigo' => '59'], ['valor' => 'Unidad']);
         $emisor = $this->emisor();
         $cliente = $this->clienteContribuyente($emisor);
         // CCF realmente aceptado por el MH (aceptarCcf setea sello real + fecha_procesamiento_mh).

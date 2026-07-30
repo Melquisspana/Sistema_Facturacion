@@ -5,10 +5,9 @@ namespace App\Http\Controllers\Configuracion;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\EmpresaRequest;
 use App\Models\ActividadEconomica;
-use App\Models\Departamento;
 use App\Models\Empresa;
-use App\Models\Municipio;
 use App\Models\Pais;
+use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -23,10 +22,7 @@ class EmpresaController extends Controller
             'empresa' => $empresa,
             'actividades' => ActividadEconomica::where('activo', true)->orderBy('nombre')->get(),
             'paises' => Pais::where('activo', true)->orderBy('nombre')->get(),
-            'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),
-            'municipios' => Municipio::where('activo', true)->orderBy('nombre')->get(),
-            'distritos' => \App\Models\Distrito::where('activo', true)->orderBy('municipio')->orderBy('nombre')
-                ->get(['id', 'nombre', 'municipio', 'departamento_id']),
+            ...OpcionesUbicacion::todas(),
         ]);
     }
 

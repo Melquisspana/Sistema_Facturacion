@@ -11,9 +11,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Clientes\ClienteRequest;
 use App\Models\ActividadEconomica;
 use App\Models\Cliente;
-use App\Models\Departamento;
-use App\Models\Municipio;
 use App\Models\Pais;
+use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -157,10 +156,7 @@ class ClienteController extends Controller
                 ->all(),
             'actividades' => ActividadEconomica::where('activo', true)->orderBy('nombre')->get(),
             'paises' => Pais::where('activo', true)->orderBy('nombre')->get(),
-            'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),
-            'municipios' => Municipio::where('activo', true)->orderBy('nombre')->get(),
-            'distritos' => \App\Models\Distrito::where('activo', true)->orderBy('municipio')->orderBy('nombre')
-                ->get(['id', 'nombre', 'municipio', 'departamento_id']),
+            ...OpcionesUbicacion::todas(),
             // Para preseleccionar El Salvador en clientes nacionales (CAT-020: SV).
             'paisElSalvadorId' => Pais::where('codigo', 'SV')->value('id'),
         ];
