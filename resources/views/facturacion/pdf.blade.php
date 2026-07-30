@@ -200,19 +200,15 @@
         .items .pn { font-weight: bold; color: #20242C; }
         .items .num { font-family: "DejaVu Sans Mono", monospace; }
         .dash { color: #C9CDD4; }
-        /* CCF / Factura / Nota de crédito: regla histórica de máximo 10 líneas por página.
-           Cada bloque de 10 va en su página; el 2º bloque en adelante empieza con salto
-           de página y no se parte internamente. */
-        .items-cont { page-break-before: always; }
-        .items-blk { page-break-inside: avoid; }
-        .cont-hdr { margin: 0 0 6px; padding: 3px 8px; background: #F2F3F5; border: 1px solid #D4D8DE; border-radius: 4px; font-size: 7px; letter-spacing: .6px; text-transform: uppercase; color: #6B7280; }
-
-        /* Factura de exportación (tipo 11): paginación NATURAL de Dompdf sobre UNA sola
-           tabla, sin límite fijo de líneas por página.
+        /* Paginación NATURAL de Dompdf sobre UNA sola tabla de líneas, para TODOS los
+           tipos de documento (Factura 01, CCF 03, Nota de crédito 05, Exportación 11).
              - `table-header-group`: Dompdf repite el <thead> al continuar en otra página.
              - filas indivisibles: una línea nunca se corta entre dos páginas.
              - la tabla sí puede partirse, así cada página se llena hasta donde alcanza.
-           Solo maquetación: no cambia montos, cantidades ni textos fiscales. */
+
+           Reemplaza la regla anterior de MÁXIMO 10 líneas por página, que gastaba páginas
+           casi vacías (un CCF de 12 líneas ocupaba 2 páginas: 10 + 2). Solo maquetación:
+           no cambia montos, cantidades ni textos fiscales. */
         .items-nat { page-break-inside: auto; }
         .items-nat thead { display: table-header-group; }
         .items-nat tbody tr { page-break-inside: avoid; }
@@ -249,6 +245,9 @@
 
         .pie { margin-top: 5px; font-size: 7px; color: #9AA0A8; text-align: center; }
         .nobreak { page-break-inside: avoid; }
+        /* Cierre del documento (letras + firmas + totales + estado técnico + pie): viaja
+           SIEMPRE junto, para que no quede una página final con solo el pie. */
+        .cierre { page-break-inside: avoid; }
     </style>
 </head>
 <body>
@@ -399,90 +398,72 @@
         </div>
     @endif
 
-    {{-- PRODUCTOS
-         · Factura de exportación (11): UNA sola tabla con paginación NATURAL de Dompdf.
-           El <thead> se repite solo en cada página de continuación (CSS .items-nat) y
-           cada fila es indivisible, así que cada página se llena hasta donde alcanza sin
-           límite fijo de líneas ni saltos manuales.
-         · CCF (03) / Factura (01) / Nota de crédito (05): se conserva la regla histórica
-           de máximo 10 líneas por página, con su encabezado de continuación.
-         Solo maquetación: no cambia montos, cantidades ni textos fiscales. --}}
-    @php
-        $paginacionNatural = $esFex;
-        $bloquesLineas = $paginacionNatural
-            ? ($dte->lineas->isEmpty() ? collect() : collect([$dte->lineas]))
-            : $dte->lineas->chunk(10);
-    @endphp
-    @forelse ($bloquesLineas as $iBloque => $bloque)
-        @if ($iBloque > 0)
-            <div class="cont-hdr items-cont">Continuación · {{ $dte->numero_control ?: $dte->numero_interno }} · líneas {{ $iBloque * 10 + 1 }}–{{ $iBloque * 10 + $bloque->count() }}</div>
-        @endif
-        <table class="items {{ $paginacionNatural ? 'items-nat' : ($iBloque > 0 ? 'items-blk' : '') }}">
-            <thead>
+    {{-- PRODUCTOS — UNA sola tabla con paginación NATURAL de Dompdf, para TODOS los tipos
+         (Factura 01, CCF 03, Nota de crédito 05, Exportación 11). El <thead> se repite en
+         cada página de continuación (CSS .items-nat) y cada fila es indivisible, así que
+         cada página se llena hasta donde alcanza sin límite fijo de líneas ni saltos
+         manuales. Solo maquetación: no cambia montos, cantidades ni textos fiscales. --}}
+    <table class="items items-nat">
+        <thead>
+            <tr>
+                <th class="ci">#</th>
+                <th>Código</th>
+                <th>Producto / descripción</th>
+                <th class="r">Cant.</th>
+                <th>Present.</th>
+                <th class="r">Precio</th>
+                <th class="r">Desc.</th>
+                @if ($hayNoSujeto)<th class="r">No suj.</th>@endif
+                @if ($hayExento)<th class="r">Exento</th>@endif
+                <th class="r">{{ $baseLabel }}</th>
+                <th class="r">IVA</th>
+                <th class="r">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse ($dte->lineas as $linea)
+                @php
+                    $cb = trim((string) $linea->codigo_barra);
+                    $cc = trim((string) $linea->codigo);
+                    $pres = \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte);
+                @endphp
                 <tr>
-                    <th class="ci">#</th>
-                    <th>Código</th>
-                    <th>Producto / descripción</th>
-                    <th class="r">Cant.</th>
-                    <th>Present.</th>
-                    <th class="r">Precio</th>
-                    <th class="r">Desc.</th>
-                    @if ($hayNoSujeto)<th class="r">No suj.</th>@endif
-                    @if ($hayExento)<th class="r">Exento</th>@endif
-                    <th class="r">{{ $baseLabel }}</th>
-                    <th class="r">IVA</th>
-                    <th class="r">Total</th>
+                    <td class="ci">{{ $linea->numero_linea }}</td>
+                    <td>
+                        {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras. --}}
+                        @if ($cb !== '')
+                            <span class="cod">{{ $cb }}</span>
+                        @elseif ($cc !== '')
+                            <span class="cod">{{ $cc }}</span>
+                        @else
+                            <span class="dash">—</span>
+                        @endif
+                    </td>
+                    <td><span class="pn">{{ $linea->descripcion }}</span></td>
+                    <td class="r num">{{ rtrim(rtrim($linea->cantidad, '0'), '.') }}</td>
+                    <td>{{ $pres !== '' ? $pres : '—' }}</td>
+                    <td class="r num">${{ number_format($linea->precio_unitario, 2) }}</td>
+                    <td class="r num">@if((float)$linea->descuento_monto > 0)-${{ number_format($linea->descuento_monto, 2) }}@else<span class="dash">—</span>@endif</td>
+                    @if ($hayNoSujeto)<td class="r num">${{ number_format($linea->venta_no_sujeta, 2) }}</td>@endif
+                    @if ($hayExento)<td class="r num">${{ number_format($linea->venta_exenta, 2) }}</td>@endif
+                    <td class="r num">${{ number_format($esFex ? $linea->venta_exportacion : $linea->venta_gravada, 2) }}</td>
+                    <td class="r num">${{ number_format($linea->iva_linea, 2) }}</td>
+                    <td class="r num"><strong>${{ number_format($linea->total_linea, 2) }}</strong></td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach ($bloque as $linea)
-                    @php
-                        $cb = trim((string) $linea->codigo_barra);
-                        $cc = trim((string) $linea->codigo);
-                        $pres = \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte);
-                    @endphp
-                    <tr>
-                        <td class="ci">{{ $linea->numero_linea }}</td>
-                        <td>
-                            {{-- Solo el código de barras; el código interno solo como respaldo si no hay barras. --}}
-                            @if ($cb !== '')
-                                <span class="cod">{{ $cb }}</span>
-                            @elseif ($cc !== '')
-                                <span class="cod">{{ $cc }}</span>
-                            @else
-                                <span class="dash">—</span>
-                            @endif
-                        </td>
-                        <td><span class="pn">{{ $linea->descripcion }}</span></td>
-                        <td class="r num">{{ rtrim(rtrim($linea->cantidad, '0'), '.') }}</td>
-                        <td>{{ $pres !== '' ? $pres : '—' }}</td>
-                        <td class="r num">${{ number_format($linea->precio_unitario, 2) }}</td>
-                        <td class="r num">@if((float)$linea->descuento_monto > 0)-${{ number_format($linea->descuento_monto, 2) }}@else<span class="dash">—</span>@endif</td>
-                        @if ($hayNoSujeto)<td class="r num">${{ number_format($linea->venta_no_sujeta, 2) }}</td>@endif
-                        @if ($hayExento)<td class="r num">${{ number_format($linea->venta_exenta, 2) }}</td>@endif
-                        <td class="r num">${{ number_format($esFex ? $linea->venta_exportacion : $linea->venta_gravada, 2) }}</td>
-                        <td class="r num">${{ number_format($linea->iva_linea, 2) }}</td>
-                        <td class="r num"><strong>${{ number_format($linea->total_linea, 2) }}</strong></td>
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-    @empty
-        <table class="items">
-            <thead>
-                <tr>
-                    <th class="ci">#</th><th>Código</th><th>Producto / descripción</th><th class="r">Cant.</th><th>Present.</th>
-                    <th class="r">Precio</th><th class="r">Desc.</th>@if ($hayNoSujeto)<th class="r">No suj.</th>@endif@if ($hayExento)<th class="r">Exento</th>@endif<th class="r">{{ $baseLabel }}</th><th class="r">IVA</th><th class="r">Total</th>
-                </tr>
-            </thead>
-            <tbody>
+            @empty
                 <tr><td colspan="{{ $colspan }}" style="text-align:center;color:#9AA0A8;padding:10px;">Sin líneas.</td></tr>
-            </tbody>
-        </table>
-    @endforelse
+            @endforelse
+        </tbody>
+    </table>
 
+    {{-- CIERRE DEL DOCUMENTO: valor en letras + firmas + totales fiscales, y detrás el
+         estado técnico y el pie. Va todo en UN contenedor indivisible para que viaje junto:
+         si se dejaba suelto, el estado técnico y el pie podían caer solos en una página
+         final casi vacía (p. ej. una Factura de 12 líneas ocupaba 2 páginas con la segunda
+         conteniendo únicamente esas dos líneas de texto). --}}
+    <div class="cierre">
     {{-- BLOQUE INFERIOR: letras / condición / firmas  +  totales fiscales --}}
-    <table class="botwrap nobreak">
+    <table class="botwrap">
         <tr>
             <td style="width: 53%; padding-right: 12px;">
                 <div class="letras"><span class="k">Valor en letras</span><br>{{ $valorLetras }}</div>
@@ -571,5 +552,6 @@
         Representación gráfica generada el {{ now()->format('d/m/Y H:i') }}.
         @if ($preliminar) Documento PRELIMINAR — no equivale a un DTE emitido ante Hacienda hasta completar transmisión y sello de recepción. @endif
     </div>
+    </div>{{-- /.cierre --}}
 </body>
 </html>
