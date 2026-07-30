@@ -200,11 +200,22 @@
         .items .pn { font-weight: bold; color: #20242C; }
         .items .num { font-family: "DejaVu Sans Mono", monospace; }
         .dash { color: #C9CDD4; }
-        /* Regla de máximo 10 líneas por página: cada bloque de 10 va en su página.
-           El 2º bloque en adelante empieza con salto de página; no se parte internamente. */
+        /* CCF / Factura / Nota de crédito: regla histórica de máximo 10 líneas por página.
+           Cada bloque de 10 va en su página; el 2º bloque en adelante empieza con salto
+           de página y no se parte internamente. */
         .items-cont { page-break-before: always; }
         .items-blk { page-break-inside: avoid; }
         .cont-hdr { margin: 0 0 6px; padding: 3px 8px; background: #F2F3F5; border: 1px solid #D4D8DE; border-radius: 4px; font-size: 7px; letter-spacing: .6px; text-transform: uppercase; color: #6B7280; }
+
+        /* Factura de exportación (tipo 11): paginación NATURAL de Dompdf sobre UNA sola
+           tabla, sin límite fijo de líneas por página.
+             - `table-header-group`: Dompdf repite el <thead> al continuar en otra página.
+             - filas indivisibles: una línea nunca se corta entre dos páginas.
+             - la tabla sí puede partirse, así cada página se llena hasta donde alcanza.
+           Solo maquetación: no cambia montos, cantidades ni textos fiscales. */
+        .items-nat { page-break-inside: auto; }
+        .items-nat thead { display: table-header-group; }
+        .items-nat tbody tr { page-break-inside: avoid; }
 
         /* Totales */
         .botwrap { margin-top: 9px; }
@@ -388,15 +399,25 @@
         </div>
     @endif
 
-    {{-- PRODUCTOS — regla fija: MÁXIMO 10 líneas por página. Cada bloque de 10 va en su
-         propia página (con su encabezado de columnas); el 11º producto en adelante salta
-         a la página siguiente. Solo maquetación: no cambia montos ni textos fiscales. --}}
-    @php $bloquesLineas = $dte->lineas->chunk(10); @endphp
+    {{-- PRODUCTOS
+         · Factura de exportación (11): UNA sola tabla con paginación NATURAL de Dompdf.
+           El <thead> se repite solo en cada página de continuación (CSS .items-nat) y
+           cada fila es indivisible, así que cada página se llena hasta donde alcanza sin
+           límite fijo de líneas ni saltos manuales.
+         · CCF (03) / Factura (01) / Nota de crédito (05): se conserva la regla histórica
+           de máximo 10 líneas por página, con su encabezado de continuación.
+         Solo maquetación: no cambia montos, cantidades ni textos fiscales. --}}
+    @php
+        $paginacionNatural = $esFex;
+        $bloquesLineas = $paginacionNatural
+            ? ($dte->lineas->isEmpty() ? collect() : collect([$dte->lineas]))
+            : $dte->lineas->chunk(10);
+    @endphp
     @forelse ($bloquesLineas as $iBloque => $bloque)
         @if ($iBloque > 0)
             <div class="cont-hdr items-cont">Continuación · {{ $dte->numero_control ?: $dte->numero_interno }} · líneas {{ $iBloque * 10 + 1 }}–{{ $iBloque * 10 + $bloque->count() }}</div>
         @endif
-        <table class="items {{ $iBloque > 0 ? 'items-blk' : '' }}">
+        <table class="items {{ $paginacionNatural ? 'items-nat' : ($iBloque > 0 ? 'items-blk' : '') }}">
             <thead>
                 <tr>
                     <th class="ci">#</th>
