@@ -84,4 +84,20 @@ class PlantaInsumo extends Model
     {
         return $this->hasMany(PlantaEmpaqueConfig::class, 'planta_insumo_vinieta_id');
     }
+
+    /** Movimientos del mayor que afectan a este insumo. FK restrictOnDelete. */
+    public function movimientos(): HasMany
+    {
+        return $this->hasMany(PlantaMovimiento::class, 'planta_insumo_id');
+    }
+
+    /**
+     * Saldos por bucket de este insumo. Es una PROYECCIÓN del mayor y es de solo
+     * lectura: el insumo sigue sin conocer saldos propios, únicamente da acceso
+     * a los que se derivan de sus movimientos.
+     */
+    public function existencias(): HasMany
+    {
+        return $this->hasMany(PlantaExistencia::class, 'planta_insumo_id');
+    }
 }

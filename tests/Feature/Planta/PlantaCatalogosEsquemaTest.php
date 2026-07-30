@@ -123,11 +123,11 @@ class PlantaCatalogosEsquemaTest extends TestCase
 
     public function test_las_tablas_reservadas_para_pasos_posteriores_no_existen(): void
     {
-        // `planta_empaque_configs` salió de esta lista al implementarse el paso 4;
-        // su propia prueba de esquema la cubre ahora.
+        // Las tablas salen de esta lista según se implementan, y pasan a tener su
+        // propia prueba de esquema: `planta_empaque_configs` en el paso 4, y
+        // `planta_movimientos` y `planta_existencias` en el paso 5
+        // ({@see PlantaInventarioEsquemaTest}).
         foreach ([
-            'planta_movimientos',          // paso 5
-            'planta_existencias',          // paso 5
             'planta_recepciones',          // paso 7
             'planta_traslados',            // paso 8
             'planta_cambios_disponibilidad', // paso 9
