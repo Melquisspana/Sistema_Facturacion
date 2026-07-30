@@ -491,7 +491,43 @@ class DteController extends Controller
         $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
         $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor'));
+        // Salas del MISMO cliente que pueden RECIBIR una nota de crédito por monto
+        // (pronto pago). Alimenta el selector "Sala receptora" del panel de NC: incluye
+        // salas administrativas sin CCF propio, como "Bodega Oficina Central Calleja".
+        $salasNotaCredito = $this->salasReceptorasNotaCredito($dte);
+
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito'));
+    }
+
+    /**
+     * Salas que pueden ser RECEPTORAS de una nota de crédito emitida contra este CCF:
+     * las del mismo cliente, activas y con permiso de nota de crédito. NO se exige que
+     * la sala tenga un CCF propio previo (ese es justamente el caso de "Bodega Oficina
+     * Central Calleja" en el flujo de pronto pago).
+     *
+     * Devuelve [] cuando el documento no es un CCF o no tiene cliente: el selector
+     * simplemente no se muestra. La sala del CCF se marca para poder señalarla en la UI.
+     *
+     * @return array<int, array{id: int, nombre: string, es_sala_ccf: bool}>
+     */
+    private function salasReceptorasNotaCredito(Dte $dte): array
+    {
+        if ($dte->tipo_dte !== TipoDte::CreditoFiscal || ! $dte->cliente_id) {
+            return [];
+        }
+
+        return ClienteSucursal::query()
+            ->where('cliente_id', $dte->cliente_id)
+            ->where('activo', true)
+            ->where('permite_nota_credito', true)
+            ->orderBy('nombre')
+            ->get(['id', 'nombre'])
+            ->map(fn (ClienteSucursal $s) => [
+                'id' => $s->id,
+                'nombre' => $s->nombre,
+                'es_sala_ccf' => (int) $s->id === (int) $dte->cliente_sucursal_id,
+            ])
+            ->all();
     }
 
     /**
@@ -1502,6 +1538,10 @@ class DteController extends Controller
         $datos = $request->validate([
             'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, \App\Enums\TipoNotaCredito::cases()))],
             'motivo' => ['nullable', 'string', 'max:1000'],
+            // Sala RECEPTORA de la NC. Opcional: sin ella se usa la del CCF. Solo las
+            // modalidades por monto (pronto pago…) admiten una distinta; la coherencia
+            // (mismo cliente, activa, permite NC) la valida crearNotaCredito().
+            'cliente_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
         ], [
             'tipo.required' => 'Seleccione el tipo de nota de crédito.',
             'tipo.in' => 'Seleccione el tipo de nota de crédito.',
@@ -2075,9 +2115,16 @@ class DteController extends Controller
 
         // Tipos de NC que afectan productos del CCF (exigen documento relacionado).
         $tiposPorProductos = [];
+        // Tipos por MONTO (pronto pago, descuento posterior, ajuste comercial, otro): son
+        // los únicos que admiten emitir la NC a una sala distinta a la del CCF relacionado
+        // (ver DteBorradorService::resolverSalaNotaCredito).
+        $tiposPorMonto = [];
         foreach (TipoNotaCredito::cases() as $t) {
             if ($t->esPorProductos()) {
                 $tiposPorProductos[] = $t->value;
+            }
+            if ($t->esPorMonto()) {
+                $tiposPorMonto[] = $t->value;
             }
         }
 
@@ -2107,6 +2154,17 @@ class DteController extends Controller
             ])->all(),
             'tiposNc' => TipoNotaCredito::opciones(),
             'tiposPorProductos' => $tiposPorProductos,
+            'tiposPorMonto' => $tiposPorMonto,
+            // Salas RECEPTORAS posibles por cliente (activas y que permiten NC). Alimenta el
+            // selector "Sala receptora de la Nota de Crédito" del formulario: una sala
+            // administrativa como "Bodega Oficina Central Calleja" aparece aquí aunque nunca
+            // haya recibido un CCF propio.
+            'salasPorCliente' => $clientes->mapWithKeys(fn (Cliente $c) => [
+                $c->id => $c->sucursales->map(fn (ClienteSucursal $s) => [
+                    'id' => $s->id,
+                    'nombre' => $s->nombre,
+                ])->values()->all(),
+            ])->all(),
             'establecimientos' => Establecimiento::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']),
             'puntosVenta' => PuntoVenta::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre', 'establecimiento_id']),
         ];

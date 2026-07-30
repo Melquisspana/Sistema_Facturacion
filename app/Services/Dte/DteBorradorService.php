@@ -303,20 +303,13 @@ class DteBorradorService
             ]);
         }
 
-        // Cliente y sala: del original si existe; si no, de los datos (NC independiente).
+        // Cliente: SIEMPRE el del original (es el contribuyente con el NIT/NRC).
         $clienteId = $original?->cliente_id ?? ($datos['cliente_id'] ?? null);
-        $sucursalId = $original?->cliente_sucursal_id ?? ($datos['cliente_sucursal_id'] ?? null);
 
-        // La sala (si se indica) debe pertenecer al cliente y permitir notas de crédito.
-        if ($sucursalId !== null) {
-            $sucursal = ClienteSucursal::find($sucursalId);
-            if ($sucursal && $clienteId !== null && (int) $sucursal->cliente_id !== (int) $clienteId) {
-                throw ValidationException::withMessages(['cliente_sucursal_id' => 'La sala no pertenece al cliente.']);
-            }
-            if ($sucursal && $sucursal->permite_nota_credito === false) {
-                throw ValidationException::withMessages(['cliente_sucursal_id' => 'Esta sala no permite notas de crédito.']);
-            }
-        }
+        // Sala RECEPTORA de la nota de crédito. Ver resolverSalaNotaCredito(): por
+        // defecto la del CCF, y solo las modalidades por MONTO (pronto pago, descuento
+        // posterior, ajuste comercial, otro) admiten una sala distinta del mismo cliente.
+        $sucursalId = $this->resolverSalaNotaCredito($original, $tipo, $datos, $clienteId);
 
         // Orden de compra: se CONGELA desde el CCF relacionado (no se acepta del request).
         $ordenCompra = $original?->numero_orden_compra;
@@ -349,8 +342,101 @@ class DteBorradorService
 
             $this->maquina->registrarCreacion($nc, $usuario, 'Creación de nota de crédito');
 
+            // AUDITORÍA: la sala receptora de la NC difiere de la del CCF relacionado
+            // (caso pronto pago a una sala administrativa). Se deja rastro explícito de
+            // quién lo hizo, sobre qué CCF y entre qué salas.
+            if ($original && (int) $sucursalId !== (int) $original->cliente_sucursal_id) {
+                activity('dte_nota_credito_sala')
+                    ->performedOn($nc)
+                    ->causedBy($usuario ?? Auth::user())
+                    ->withProperties([
+                        'dte_relacionado_id' => $original->id,
+                        'ccf_numero' => $original->numero_control ?? $original->numero_interno,
+                        'sala_ccf_id' => $original->cliente_sucursal_id,
+                        'sala_ccf_nombre' => $original->clienteSucursal?->nombre,
+                        'sala_nc_id' => $sucursalId,
+                        'sala_nc_nombre' => ClienteSucursal::find($sucursalId)?->nombre,
+                        'cliente_id' => $clienteId,
+                        'tipo_nota_credito' => $tipo->value,
+                        'motivo' => $datos['motivo'] ?? null,
+                    ])
+                    ->log('emitió la nota de crédito a una sala distinta a la del CCF relacionado');
+            }
+
             return $nc->refresh();
         });
+    }
+
+    /**
+     * Resuelve la SALA RECEPTORA de una nota de crédito.
+     *
+     * El cliente fiscal (NIT/NRC/razón social) siempre es el del CCF relacionado; la
+     * sala solo define el establecimiento mostrado y la DIRECCIÓN del receptor. Eso
+     * permite el flujo real de PRONTO PAGO de Calleja: el CCF pertenece a una sala de
+     * Súper Selectos, pero la nota se emite a una sala administrativa ("Bodega Oficina
+     * Central Calleja") que normalmente nunca recibe un CCF propio.
+     *
+     * Reglas:
+     *  - Por defecto SIEMPRE la sala del CCF relacionado.
+     *  - Solo las modalidades por MONTO ({@see TipoNotaCredito::esPorMonto()}: pronto
+     *    pago, descuento posterior, ajuste comercial, otro) admiten una sala distinta.
+     *  - Devolución / faltante / avería quedan atadas a la sala del CCF: si llega otra,
+     *    se rechaza en lugar de ignorarla en silencio.
+     *  - La sala elegida debe pertenecer al MISMO cliente, estar activa y permitir NC.
+     *  - NO se exige que la sala tenga un CCF propio previo.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function resolverSalaNotaCredito(?Dte $original, TipoNotaCredito $tipo, array $datos, ?int $clienteId): ?int
+    {
+        $salaCcf = $original?->cliente_sucursal_id;
+        $pedida = $datos['cliente_sucursal_id'] ?? null;
+        $pedida = ($pedida === '' || $pedida === null) ? null : (int) $pedida;
+
+        // Sin selección explícita: la sala del CCF (o la de los datos si no hay original).
+        if ($pedida === null) {
+            return $salaCcf !== null ? (int) $salaCcf : null;
+        }
+
+        // Misma sala del CCF: nada que validar más allá de lo ya heredado.
+        if ($salaCcf !== null && $pedida === (int) $salaCcf) {
+            return $pedida;
+        }
+
+        // Sala DISTINTA: solo permitido en las modalidades por monto.
+        if ($salaCcf !== null && ! $tipo->esPorMonto()) {
+            throw ValidationException::withMessages([
+                'cliente_sucursal_id' => 'Una nota de crédito por '.mb_strtolower($tipo->label())
+                    .' debe emitirse a la misma sala del CCF relacionado. Solo las notas por monto '
+                    .'(pronto pago, descuento posterior, ajuste comercial u otro) pueden usar otra sala.',
+            ]);
+        }
+
+        $sucursal = ClienteSucursal::find($pedida);
+        if (! $sucursal) {
+            throw ValidationException::withMessages([
+                'cliente_sucursal_id' => 'La sala seleccionada no existe.',
+            ]);
+        }
+        if ($clienteId !== null && (int) $sucursal->cliente_id !== (int) $clienteId) {
+            throw ValidationException::withMessages([
+                'cliente_sucursal_id' => 'La sala receptora debe pertenecer al mismo cliente del CCF relacionado.',
+            ]);
+        }
+        if (! $sucursal->activo) {
+            throw ValidationException::withMessages([
+                'cliente_sucursal_id' => 'La sala seleccionada está inactiva.',
+            ]);
+        }
+        if ($sucursal->permite_nota_credito === false) {
+            throw ValidationException::withMessages([
+                'cliente_sucursal_id' => 'Esta sala no permite notas de crédito.',
+            ]);
+        }
+
+        return $pedida;
     }
 
     /**

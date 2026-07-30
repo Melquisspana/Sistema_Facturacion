@@ -34,9 +34,14 @@
                           opciones: @js($opcionesCliente),
                           ccfs: @js(collect($opcionesCcf)->keyBy('id')),
                           porProductos: @js($tiposPorProductos),
+                          porMonto: @js($tiposPorMonto),
+                          salasPorCliente: @js($salasPorCliente),
                           tipo: @js(old('tipo', array_key_first($tiposNc))),
                           clienteId: @js((string) old('cliente_id', $preCcf?->cliente_id ?? '')),
                           sucursalId: @js((string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? '')),
+                          {{-- Sala RECEPTORA de la NC. Arranca en la sala del CCF; solo las
+                               modalidades por monto (pronto pago…) permiten cambiarla. --}}
+                          salaNcId: @js((string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? '')),
                           ccfId: @js((string) old('dte_relacionado_id', $preCcf?->id ?? '')),
                           establecimientoId: @js((string) old('establecimiento_id', $preCcf?->establecimiento_id ?? '')),
                           puntoVentaId: @js((string) old('punto_venta_id', $preCcf?->punto_venta_id ?? '')),
@@ -66,14 +71,32 @@
                               this.descuento = o.descuento_porcentaje ?? '0.00';
                               this.condicionLabel = o.condicion_label ?? '—';
                           },
-                          limpiar() { this.clienteId = ''; this.sucursalId = ''; this.buscar = ''; this.descuento = '0.00'; this.condicionLabel = '—'; },
+                          limpiar() { this.clienteId = ''; this.sucursalId = ''; this.salaNcId = ''; this.buscar = ''; this.descuento = '0.00'; this.condicionLabel = '—'; },
                           get requiereCcf() { return this.porProductos.includes(this.tipo); },
                           get ccf() { return this.ccfs[this.ccfId] ?? null; },
+                          {{-- ¿Se puede elegir una sala receptora distinta a la del CCF?
+                               Solo en las modalidades por monto y con un CCF ya elegido. --}}
+                          get permiteOtraSala() { return this.ccfId !== '' && this.porMonto.includes(this.tipo); },
+                          {{-- Salas del MISMO cliente del CCF (activas y que permiten NC). --}}
+                          get salasCliente() { return this.salasPorCliente[this.clienteId] ?? []; },
+                          get nombreSalaCcf() {
+                              const s = this.salasCliente.find(s => String(s.id) === String(this.sucursalId));
+                              return s ? s.nombre : '';
+                          },
+                          {{-- Valor realmente enviado: la sala elegida solo cuenta cuando la
+                               modalidad lo permite; si no, siempre la del CCF. El servidor
+                               vuelve a validar esto (no se confía en el navegador). --}}
+                          get salaEnviada() { return this.permiteOtraSala ? this.salaNcId : this.sucursalId; },
+                          onTipoChange() {
+                              {{-- Al pasar a devolución/avería/faltante se vuelve a la sala del CCF. --}}
+                              if (! this.permiteOtraSala) { this.salaNcId = this.sucursalId; }
+                          },
                           onCcfChange() {
                               const c = this.ccf;
                               if (c) {
                                   this.clienteId = String(c.cliente_id ?? '');
                                   this.sucursalId = c.cliente_sucursal_id ? String(c.cliente_sucursal_id) : '';
+                                  this.salaNcId = this.sucursalId;
                                   this.establecimientoId = String(c.establecimiento_id ?? '');
                                   this.puntoVentaId = String(c.punto_venta_id ?? '');
                                   this.ordenCompra = c.orden_compra ?? '';
@@ -81,6 +104,7 @@
                                   if (sel) { this.buscar = this.etiqueta(sel); this.descuento = sel.descuento_porcentaje; this.condicionLabel = sel.condicion_label; }
                               } else {
                                   this.ordenCompra = '';
+                                  this.salaNcId = this.sucursalId;
                               }
                           },
                       }"
@@ -92,7 +116,7 @@
                              automáticamente a partir del CCF elegido (ver bloque más abajo). --}}
                         <div>
                             <x-input-label for="tipo" value="Tipo de nota de crédito *" />
-                            <select id="tipo" name="tipo" x-model="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                            <select id="tipo" name="tipo" x-model="tipo" @change="onTipoChange()" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 @foreach ($tiposNc as $valor => $label)
                                     <option value="{{ $valor }}">{{ $label }}</option>
                                 @endforeach
@@ -139,9 +163,42 @@
                              cliente final. Se oculta una vez que hay un CCF elegido para no
                              sugerir que se pueda cambiar el cliente por separado. --}}
                         <input type="hidden" name="cliente_id" :value="clienteId">
-                        <input type="hidden" name="cliente_sucursal_id" :value="sucursalId">
+                        <input type="hidden" name="cliente_sucursal_id" :value="salaEnviada">
                         <x-input-error :messages="$errors->get('cliente_id')" class="md:col-span-2 -mb-2" />
                         <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="md:col-span-2 -mb-2" />
+
+                        {{-- SALA RECEPTORA DE LA NOTA DE CRÉDITO.
+                             Solo aparece en las modalidades por MONTO (pronto pago, descuento
+                             posterior, ajuste comercial, otro). Permite emitir la nota a una sala
+                             administrativa del mismo cliente —p. ej. "Bodega Oficina Central
+                             Calleja"— aunque esa sala nunca haya recibido un CCF propio.
+                             El CCF relacionado y el cliente fiscal NO cambian. --}}
+                        <div class="md:col-span-2 rounded-md border border-amber-200 bg-amber-50 p-3"
+                             x-show="permiteOtraSala" x-cloak>
+                            <x-input-label for="sala_nc" value="Sala receptora de la Nota de Crédito" />
+                            <select id="sala_nc" x-model="salaNcId"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                <template x-for="s in salasCliente" :key="s.id">
+                                    <option :value="String(s.id)" x-text="s.nombre"></option>
+                                </template>
+                            </select>
+                            <p class="mt-1.5 text-xs text-amber-800">
+                                Predeterminada: la sala del CCF relacionado<span x-show="nombreSalaCcf"> (<span x-text="nombreSalaCcf"></span>)</span>.
+                                Para <strong>pronto pago</strong> podés elegir una sala administrativa del mismo
+                                cliente, como «Bodega Oficina Central Calleja», aunque no tenga CCF propios.
+                            </p>
+                            <p class="mt-1 text-xs text-amber-700">
+                                Cambiar la sala solo cambia el establecimiento y la dirección mostrados.
+                                <strong>El CCF relacionado, el cliente fiscal (NIT/NRC) y el saldo acreditable no cambian.</strong>
+                            </p>
+                        </div>
+
+                        {{-- Devolución / faltante / avería: la sala queda atada a la del CCF. --}}
+                        <div class="md:col-span-2 text-xs text-gray-500"
+                             x-show="ccfId !== '' && ! permiteOtraSala" x-cloak>
+                            Esta nota se emite a la misma sala del CCF relacionado<span x-show="nombreSalaCcf">: <span class="font-medium text-gray-700" x-text="nombreSalaCcf"></span></span>.
+                            Solo las notas por monto (pronto pago, descuento posterior, ajuste comercial u otro) pueden usar otra sala.
+                        </div>
                         <div class="md:col-span-2" x-show="ccfId === ''" @click.outside="abierto = false">
                             <x-input-label for="cliente_buscar" value="Cliente (contribuyente) / sala" />
                             <p class="text-xs text-gray-400 mb-1">Opcional: el cliente definitivo lo determina el CCF que elijas arriba; buscá aquí solo si te ayuda a ubicarlo.</p>

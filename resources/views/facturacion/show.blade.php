@@ -517,13 +517,24 @@
                                 {{-- Otras notas de crédito: selector de tipo existente (parcial / avería / ajuste). --}}
                                 <div class="mt-5 border-t border-gray-100 pt-4">
                                     <h4 class="text-sm font-semibold text-gray-600 mb-2">Otras notas de crédito (parcial / avería / ajuste)</h4>
+                                    @php
+                                        // Modalidades por MONTO: las únicas que admiten emitir la NC a una
+                                        // sala distinta a la del CCF (ver DteBorradorService).
+                                        $tiposPorMontoNc = collect(\App\Enums\TipoNotaCredito::cases())
+                                            ->filter(fn ($t) => $t->esPorMonto())->map(fn ($t) => $t->value)->values()->all();
+                                    @endphp
                                     <form method="POST" action="{{ route('facturacion.nota-credito.store', $dte) }}"
                                           class="grid grid-cols-1 gap-3 items-end"
+                                          x-data="{
+                                              tipo: @js(old('tipo', '')),
+                                              porMonto: @js($tiposPorMontoNc),
+                                              get permiteOtraSala() { return this.porMonto.includes(this.tipo); },
+                                          }"
                                           onsubmit="return confirm('¿Crear una nota de crédito para este CCF?');">
                                         @csrf
                                         <div>
                                             <x-input-label for="tipo_nc" value="Tipo de nota de crédito *" />
-                                            <select id="tipo_nc" name="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
+                                            <select id="tipo_nc" name="tipo" x-model="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
                                                 <option value="">— Seleccione —</option>
                                                 @foreach (\App\Enums\TipoNotaCredito::opciones() as $valor => $label)
                                                     <option value="{{ $valor }}" @selected(old('tipo') === $valor)>{{ $label }}</option>
@@ -532,6 +543,35 @@
                                             <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
                                             <p class="mt-1 text-xs text-gray-400">Devolución y faltante usan las líneas de este CCF. Avería permite otros productos. Pronto pago y ajustes usan conceptos manuales.</p>
                                         </div>
+
+                                        {{-- SALA RECEPTORA: solo para las notas por monto (pronto pago…).
+                                             Permite emitir a una sala administrativa del mismo cliente que no
+                                             tenga CCF propios. El CCF relacionado y el cliente NO cambian. --}}
+                                        @if (! empty($salasNotaCredito))
+                                            <div x-show="permiteOtraSala" x-cloak
+                                                 class="rounded-md border border-amber-200 bg-amber-50 p-3">
+                                                <x-input-label for="sala_nc_ccf" value="Sala receptora de la Nota de Crédito" />
+                                                <select id="sala_nc_ccf" name="cliente_sucursal_id"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                                    @foreach ($salasNotaCredito as $sala)
+                                                        <option value="{{ $sala['id'] }}"
+                                                            @selected((int) old('cliente_sucursal_id', $dte->cliente_sucursal_id) === (int) $sala['id'])>
+                                                            {{ $sala['nombre'] }}@if ($sala['es_sala_ccf']) — sala del CCF @endif
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
+                                                <p class="mt-1.5 text-xs text-amber-800">
+                                                    Para <strong>pronto pago</strong> podés emitir la nota a una sala administrativa
+                                                    del mismo cliente, aunque nunca haya recibido un CCF.
+                                                    Solo cambia el establecimiento y la dirección mostrados:
+                                                    <strong>el CCF relacionado, el NIT/NRC del cliente y el saldo acreditable no cambian.</strong>
+                                                </p>
+                                            </div>
+                                            <p class="text-xs text-gray-400" x-show="tipo !== '' && ! permiteOtraSala" x-cloak>
+                                                Esta nota se emite a la misma sala del CCF relacionado.
+                                            </p>
+                                        @endif
                                         <div>
                                             <x-input-label for="motivo" value="Motivo / observaciones (opcional)" />
                                             <x-text-input id="motivo" name="motivo" type="text" class="mt-1 block w-full"
