@@ -1,0 +1,633 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Enums\Planta\EstadoDisponibilidad;
+use App\Enums\Planta\TipoInsumo;
+use App\Enums\Planta\TipoMovimientoPlanta;
+use App\Enums\Planta\TipoUbicacion;
+use App\Enums\Planta\UnidadBase;
+use App\Models\Planta\PlantaInsumo;
+use App\Models\Planta\PlantaMovimiento;
+use App\Services\Planta\LoteService;
+use App\Services\Planta\PlantaInventarioService;
+use App\Support\Planta\BucketInventario;
+use App\Support\Planta\ContextoMovimiento;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use RuntimeException;
+use Symfony\Component\Process\Process;
+use Throwable;
+
+/**
+ * Verificación de CONCURRENCIA REAL del motor de inventario, contra el motor de
+ * verdad (MySQL/InnoDB) y con procesos de sistema operativo separados.
+ *
+ * POR QUÉ EXISTE. La suite corre sobre SQLite en memoria, donde `lockForUpdate`
+ * es un no-op: SQLite serializa la base entera durante una escritura, así que
+ * cualquier prueba de «dos escritores a la vez» pasaría incluso si el servicio
+ * NO tomara ningún bloqueo. Presentar eso como prueba de que el bloqueo
+ * funciona sería mentir. Lo que de verdad hay que demostrar —que dos
+ * transacciones InnoDB simultáneas sobre el mismo bucket se serializan y ninguna
+ * pierde su efecto— solo se puede demostrar contra MySQL y con procesos reales:
+ * dos hilos en un mismo proceso PHP compartirían conexión y no habría carrera.
+ *
+ * Es una herramienta de DIAGNÓSTICO, no una prueba automática, y por eso no
+ * vive en la suite. Escribe datos reales en la base configurada, con el prefijo
+ * `DIAGCONC-`, y los borra al terminar.
+ *
+ * CANDADOS. Escribe en la base configurada, así que se blinda por LISTA BLANCA,
+ * no por lista negra:
+ *   - solo corre con APP_ENV en {@see ENTORNOS_PERMITIDOS} (`local`, `testing`).
+ *     Denegar únicamente `production` sería insuficiente: `staging`, `preprod` o
+ *     cualquier entorno nuevo apuntan a bases que tampoco son de usar y tirar, y
+ *     con una lista negra entrarían por omisión;
+ *   - exige `--confirmar`, porque escribe;
+ *   - muestra SIEMPRE conexión y base antes de tocar nada, para que quien lo
+ *     lanza vea contra qué va;
+ *   - trabaja SOLO con datos que crea él mismo, con el prefijo `DIAGCONC-`.
+ *     No admite identificadores por parámetro y los trabajadores verifican que
+ *     los que reciben corresponden a datos propios antes de escribir;
+ *   - la limpieza corre en `finally`, por escenario y otra vez al terminar,
+ *     aunque un proceso falle o se agote su tiempo. No crea usuarios.
+ *
+ * USO:
+ *   php artisan planta:diagnostico-concurrencia --confirmar
+ *   php artisan planta:diagnostico-concurrencia --confirmar --escenario=ultimo-saldo --procesos=8
+ *
+ * El rol `trabajador` es interno: lo invoca el coordinador en subprocesos y
+ * escribe una sola línea JSON con su resultado.
+ */
+class PlantaDiagnosticoConcurrenciaCommand extends Command
+{
+    protected $signature = 'planta:diagnostico-concurrencia
+        {--confirmar : Obligatorio: el diagnóstico ESCRIBE datos temporales en la base configurada}
+        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|todos}
+        {--procesos=6 : Cuántos procesos compiten a la vez}
+        {--rol=coordinador : Interno. `trabajador` lo usan los subprocesos}
+        {--contexto= : Interno. Contexto JSON del escenario, en base64}';
+
+    protected $description = 'Verifica la concurrencia real del inventario de Planta contra MySQL con procesos separados';
+
+    /** Prefijo de todo lo que crea, para poder limpiarlo sin ambigüedad. */
+    private const PREFIJO = 'DIAGCONC-';
+
+    private const ESCENARIOS = ['crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico'];
+
+    /**
+     * Únicos entornos donde este diagnóstico puede correr. Lista BLANCA: un
+     * entorno nuevo queda excluido por omisión, que es el lado seguro.
+     */
+    private const ENTORNOS_PERMITIDOS = ['local', 'testing'];
+
+    /** Segundos que se le dan a un trabajador antes de matarlo. */
+    private const TIMEOUT_TRABAJADOR = 90;
+
+    /** Segundos que espera el coordinador a que todos avisen que están listos. */
+    private const TIMEOUT_BARRERA = 60;
+
+    /**
+     * Espera máxima por un bloqueo de fila, en segundos, dentro del trabajador.
+     * El valor de MySQL por defecto (50 s) convertiría un atasco en un plantón; en
+     * un diagnóstico interesa que salte pronto y se vea.
+     */
+    private const ESPERA_BLOQUEO = 10;
+
+    public function handle(): int
+    {
+        if ($this->option('rol') === 'trabajador') {
+            return $this->ejecutarTrabajador();
+        }
+
+        return $this->ejecutarCoordinador();
+    }
+
+    // --- Coordinador ---
+
+    private function ejecutarCoordinador(): int
+    {
+        $entorno = app()->environment();
+        $conexion = DB::connection();
+
+        // Conexión y base SIEMPRE a la vista, incluso al denegar: si alguien lanza
+        // esto contra la base equivocada, lo primero que debe leer es cuál era.
+        $this->components->twoColumnDetail('Entorno', $entorno);
+        $this->components->twoColumnDetail('Conexión', $conexion->getName());
+        $this->components->twoColumnDetail('Motor', $conexion->getDriverName());
+        $this->components->twoColumnDetail('Base', (string) $conexion->getDatabaseName());
+
+        if (! in_array($entorno, self::ENTORNOS_PERMITIDOS, true)) {
+            $this->components->error(sprintf(
+                'Este diagnóstico ESCRIBE datos y solo puede correr en %s. Entorno actual: %s.',
+                implode(' o ', self::ENTORNOS_PERMITIDOS),
+                $entorno,
+            ));
+
+            return self::FAILURE;
+        }
+
+        if (! $this->option('confirmar')) {
+            $this->components->error('Falta --confirmar: el diagnóstico escribe datos temporales en la base configurada.');
+
+            return self::FAILURE;
+        }
+
+        if ($conexion->getDriverName() !== 'mysql') {
+            $this->components->warn(
+                'La conexión activa no es MySQL. Sobre SQLite este diagnóstico NO demuestra nada: '
+                .'lockForUpdate es no-op y la base se serializa entera.'
+            );
+        }
+
+        $escenarios = $this->option('escenario') === 'todos'
+            ? self::ESCENARIOS
+            : [$this->option('escenario')];
+
+        $procesos = max(2, (int) $this->option('procesos'));
+        $fallos = 0;
+
+        // Limpieza de arranque: si una ejecución anterior murió de mala manera,
+        // sus restos se van ahora y no contaminan la medición.
+        $this->limpiar();
+
+        try {
+            foreach ($escenarios as $escenario) {
+                if (! in_array($escenario, self::ESCENARIOS, true)) {
+                    $this->components->error("Escenario desconocido: {$escenario}");
+
+                    return self::FAILURE;
+                }
+
+                $this->newLine();
+                $this->components->info("Escenario «{$escenario}» con {$procesos} procesos simultáneos");
+
+                try {
+                    $ok = $this->correrEscenario($escenario, $procesos);
+                } catch (Throwable $e) {
+                    $this->components->error($e->getMessage());
+                    $ok = false;
+                } finally {
+                    $this->limpiar();
+                }
+
+                $fallos += $ok ? 0 : 1;
+            }
+        } finally {
+            // Red final: cubre también el `return` de escenario desconocido y
+            // cualquier excepción que se escape del bucle.
+            $this->limpiar();
+            $this->confirmarQueNoQuedaNada();
+        }
+
+        $this->newLine();
+
+        if ($fallos > 0) {
+            $this->components->error("{$fallos} escenario(s) NO se comportaron como exige el motor.");
+
+            return self::FAILURE;
+        }
+
+        $this->components->info('Todos los escenarios se comportaron correctamente.');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Comprueba y reporta que la base quedó como estaba. Un diagnóstico que deja
+     * basura detrás es peor que no tenerlo: la siguiente reconciliación la
+     * encontraría y la reportaría como corrupción real.
+     */
+    private function confirmarQueNoQuedaNada(): void
+    {
+        $restos = [
+            'insumos' => DB::table('planta_insumos')->where('codigo', 'like', self::PREFIJO.'%')->count(),
+            'ubicaciones' => DB::table('planta_ubicaciones')->where('codigo', 'like', self::PREFIJO.'%')->count(),
+            'lotes' => DB::table('planta_lotes')->where('codigo_interno', 'like', self::PREFIJO.'%')->count(),
+        ];
+
+        $total = array_sum($restos);
+
+        $this->newLine();
+        $this->components->twoColumnDetail(
+            'Datos temporales restantes',
+            $total === 0 ? '<fg=green>ninguno</>' : '<fg=red>'.json_encode($restos).'</>'
+        );
+    }
+
+    /** Prepara datos, lanza los procesos y verifica la invariante del escenario. */
+    private function correrEscenario(string $escenario, int $procesos): bool
+    {
+        $contexto = $this->prepararEscenario($escenario);
+
+        // Barrera de arranque POR FICHEROS. Un instante fijo no sirve: arrancar N
+        // procesos PHP tarda lo que tarde la máquina, y si el instante pasa mientras
+        // el último todavía bootea, los primeros ya habrán terminado y no habría
+        // colisión que medir. Aquí cada trabajador avisa cuando está listo y ninguno
+        // actúa hasta que lo están todos.
+        $contexto['barrera'] = storage_path('app/diagnostico-concurrencia/'.Str::random(12));
+        $contexto['escenario'] = $escenario;
+
+        @mkdir($contexto['barrera'], 0777, true);
+
+        try {
+            $resultados = $this->lanzarTrabajadores($contexto, $procesos);
+        } finally {
+            $this->borrarBarrera($contexto['barrera']);
+        }
+
+        $exitos = count(array_filter($resultados, fn (array $r) => $r['ok']));
+        $fallidos = count($resultados) - $exitos;
+
+        $this->components->twoColumnDetail('Procesos con éxito', (string) $exitos);
+        $this->components->twoColumnDetail('Procesos rechazados', (string) $fallidos);
+
+        foreach ($resultados as $resultado) {
+            if (! $resultado['ok']) {
+                $this->line('  · rechazado: '.Str::limit($resultado['error'], 120));
+            }
+        }
+
+        return $this->verificar($escenario, $contexto, $procesos, $exitos);
+    }
+
+    /**
+     * Lanza los trabajadores, los libera a la vez y espera a que terminen TODOS.
+     *
+     * Esperar a todos no es un detalle: la limpieza del escenario corre justo
+     * después, y borrar filas mientras un trabajador sigue escribiendo produce un
+     * descuadre que parece un fallo del inventario sin serlo. Por eso ningún
+     * camino de salida —ni el timeout— puede dejar procesos vivos.
+     *
+     * @param  array<string, mixed>  $contexto
+     * @return array<int, array{ok: bool, error: string}>
+     */
+    private function lanzarTrabajadores(array $contexto, int $procesos): array
+    {
+        $payload = base64_encode(json_encode($contexto));
+        $enMarcha = [];
+
+        for ($i = 0; $i < $procesos; $i++) {
+            $proceso = new Process([
+                PHP_BINARY,
+                base_path('artisan'),
+                'planta:diagnostico-concurrencia',
+                '--rol=trabajador',
+                '--contexto='.$payload,
+            ], base_path());
+
+            $proceso->setTimeout(self::TIMEOUT_TRABAJADOR);
+            $proceso->start();
+
+            $enMarcha[] = $proceso;
+        }
+
+        $this->esperarYSoltarLaBarrera($contexto['barrera'], $procesos);
+
+        $resultados = [];
+
+        foreach ($enMarcha as $proceso) {
+            try {
+                $proceso->wait();
+            } catch (Throwable $e) {
+                // Timeout u otro fallo del proceso: se mata para que no siga
+                // escribiendo por detrás de la limpieza.
+                $proceso->stop(5);
+
+                $resultados[] = ['ok' => false, 'error' => 'proceso interrumpido: '.Str::limit($e->getMessage(), 140)];
+
+                continue;
+            }
+
+            $salida = trim($proceso->getOutput());
+            $decodificada = json_decode($salida, true);
+
+            $resultados[] = is_array($decodificada) && array_key_exists('ok', $decodificada)
+                ? ['ok' => (bool) $decodificada['ok'], 'error' => (string) ($decodificada['error'] ?? '')]
+                : ['ok' => false, 'error' => 'salida ilegible: '.Str::limit($salida.' '.$proceso->getErrorOutput(), 200)];
+        }
+
+        // Red de seguridad: nadie sigue vivo cuando esto retorna.
+        foreach ($enMarcha as $proceso) {
+            if ($proceso->isRunning()) {
+                $proceso->stop(5);
+            }
+        }
+
+        return $resultados;
+    }
+
+    /** Espera a que los N trabajadores avisen que están listos y los suelta a la vez. */
+    private function esperarYSoltarLaBarrera(string $barrera, int $procesos): void
+    {
+        $limite = microtime(true) + self::TIMEOUT_BARRERA;
+
+        while (microtime(true) < $limite) {
+            if (count(glob($barrera.'/listo-*') ?: []) >= $procesos) {
+                break;
+            }
+
+            usleep(50_000);
+        }
+
+        touch($barrera.'/ya');
+    }
+
+    private function borrarBarrera(string $barrera): void
+    {
+        foreach (glob($barrera.'/*') ?: [] as $archivo) {
+            @unlink($archivo);
+        }
+
+        @rmdir($barrera);
+    }
+
+    /**
+     * Datos mínimos de cada escenario. Se crean con el query builder porque el
+     * insumo y la ubicación son catálogo normal, pero el saldo inicial de
+     * `ultimo-saldo` sí pasa por el servicio: tiene que ser saldo legítimo.
+     *
+     * @return array<string, mixed>
+     */
+    private function prepararEscenario(string $escenario): array
+    {
+        $sufijo = strtoupper(Str::random(6));
+
+        $controlaLotes = $escenario !== 'lote-generico';
+
+        $insumo = PlantaInsumo::create([
+            'codigo' => self::PREFIJO.$sufijo,
+            'nombre' => 'Diagnóstico de concurrencia '.$sufijo,
+            'tipo' => TipoInsumo::MateriaPrima->value,
+            'unidad_base' => UnidadBase::Libra->value,
+            'controla_lotes' => $controlaLotes,
+            'permite_fraccion' => true,
+            'activo' => true,
+        ]);
+
+        $ubicacionId = DB::table('planta_ubicaciones')->insertGetId([
+            'codigo' => self::PREFIJO.$sufijo,
+            'nombre' => 'Bodega de diagnóstico '.$sufijo,
+            'tipo' => TipoUbicacion::Fisica->value,
+            'es_sistema' => false,
+            'permite_operacion_manual' => true,
+            'activo' => true,
+            'orden' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $contexto = ['insumo_id' => $insumo->id, 'ubicacion_id' => $ubicacionId];
+
+        // En lote-generico el lote es justamente lo que compiten por crear.
+        if ($escenario === 'lote-generico') {
+            return $contexto;
+        }
+
+        $contexto['lote_id'] = DB::table('planta_lotes')->insertGetId([
+            'planta_insumo_id' => $insumo->id,
+            'codigo_interno' => self::PREFIJO.$sufijo,
+            'es_generico' => false,
+            'fecha_recepcion' => now()->toDateString(),
+            'activo' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // `sumar` y `ultimo-saldo` necesitan que el bucket ya exista con saldo.
+        if ($escenario !== 'crear-bucket') {
+            $servicio = app(PlantaInventarioService::class);
+            $bucket = $this->bucketDe($contexto);
+
+            DB::transaction(fn () => $servicio->aplicarMovimiento(
+                $bucket,
+                $escenario === 'ultimo-saldo' ? '10.0000' : '100.0000',
+                ContextoMovimiento::para(
+                    tipo: TipoMovimientoPlanta::CargaInicial,
+                    documentoType: 'diagnostico.concurrencia',
+                    documentoId: 1,
+                    transicion: 'preparar',
+                    fechaEfectiva: now(),
+                    grupoUuid: (string) Str::uuid(),
+                ),
+            ));
+        }
+
+        return $contexto;
+    }
+
+    /** Comprueba la invariante que cada escenario debe cumplir tras la tormenta. */
+    private function verificar(string $escenario, array $contexto, int $procesos, int $exitos): bool
+    {
+        if ($escenario === 'lote-generico') {
+            $lotes = DB::table('planta_lotes')
+                ->where('planta_insumo_id', $contexto['insumo_id'])
+                ->where('es_generico', true)
+                ->count();
+
+            $this->components->twoColumnDetail('Lotes genéricos creados', (string) $lotes);
+
+            return $this->afirmar($lotes === 1, 'debe existir EXACTAMENTE 1 lote genérico por insumo');
+        }
+
+        $bucket = $this->bucketDe($contexto);
+        $columnas = $bucket->aColumnas();
+
+        $filas = DB::table('planta_existencias')->where($columnas)->count();
+        $saldo = (string) (DB::table('planta_existencias')->where($columnas)->value('cantidad') ?? '0');
+        $sumaMayor = (string) (DB::table('planta_movimientos')->where($columnas)->sum('cantidad'));
+
+        $this->components->twoColumnDetail('Filas de existencia del bucket', (string) $filas);
+        $this->components->twoColumnDetail('Saldo proyectado', $saldo);
+        $this->components->twoColumnDetail('Suma del mayor', $sumaMayor);
+
+        $ok = $this->afirmar($filas === 1, 'el bucket debe tener EXACTAMENTE 1 fila de existencia');
+        $ok = $this->afirmar(bccomp($saldo, $sumaMayor, 4) === 0, 'el saldo proyectado debe igualar la suma del mayor') && $ok;
+
+        $esperado = match ($escenario) {
+            // Cada proceso suma 1: ningún efecto puede perderse.
+            'crear-bucket' => bcmul((string) $exitos, '1.0000', 4),
+            // Saldo inicial 100 más 10 por proceso con éxito.
+            'sumar' => bcadd('100.0000', bcmul((string) $exitos, '10.0000', 4), 4),
+            // Saldo inicial 10 y un solo ganador que se lo lleva entero.
+            'ultimo-saldo' => '0.0000',
+            default => $saldo,
+        };
+
+        $ok = $this->afirmar(bccomp($saldo, $esperado, 4) === 0, "el saldo esperado es {$esperado}") && $ok;
+
+        if ($escenario === 'ultimo-saldo') {
+            $ok = $this->afirmar($exitos === 1, "solo 1 de los {$procesos} procesos puede llevarse el último saldo") && $ok;
+        } else {
+            $ok = $this->afirmar($exitos === $procesos, 'ningún proceso debería ser rechazado en este escenario') && $ok;
+        }
+
+        return $ok;
+    }
+
+    private function afirmar(bool $condicion, string $descripcion): bool
+    {
+        $this->line($condicion ? "  <fg=green>OK</> {$descripcion}" : "  <fg=red>FALLA</> {$descripcion}");
+
+        return $condicion;
+    }
+
+    /**
+     * Borra TODO lo que creó el diagnóstico, en orden de dependencias.
+     *
+     * Usa el query builder para los movimientos, que es exactamente la puerta
+     * trasera documentada en {@see PlantaMovimiento}: el
+     * candado del modelo no la cubre. Aquí es deliberado y acotado a los datos
+     * con prefijo `DIAGCONC-`; en el dominio no hay ni un solo sitio que lo haga.
+     */
+    private function limpiar(): void
+    {
+        $insumos = DB::table('planta_insumos')->where('codigo', 'like', self::PREFIJO.'%')->pluck('id');
+
+        if ($insumos->isEmpty()) {
+            return;
+        }
+
+        DB::table('planta_movimientos')->whereIn('planta_insumo_id', $insumos)->delete();
+        DB::table('planta_existencias')->whereIn('planta_insumo_id', $insumos)->delete();
+        DB::table('planta_lotes')->whereIn('planta_insumo_id', $insumos)->delete();
+        DB::table('planta_insumos')->whereIn('id', $insumos)->delete();
+        DB::table('planta_ubicaciones')->where('codigo', 'like', self::PREFIJO.'%')->delete();
+    }
+
+    // --- Trabajador ---
+
+    /** Un solo intento, en su propio proceso y su propia conexión. */
+    private function ejecutarTrabajador(): int
+    {
+        if (! in_array(app()->environment(), self::ENTORNOS_PERMITIDOS, true)) {
+            // El trabajador es otro proceso y vuelve a comprobarlo por su cuenta:
+            // el candado del coordinador no viaja con él.
+            $this->output->write(json_encode(['ok' => false, 'error' => 'entorno no permitido']));
+
+            return self::FAILURE;
+        }
+
+        $contexto = json_decode(base64_decode((string) $this->option('contexto')), true);
+
+        // Conexión ya abierta y espera de bloqueo acotada ANTES de la barrera: así
+        // el tiempo de conectar no se cuela dentro de la ventana de colisión.
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement('SET SESSION innodb_lock_wait_timeout = '.self::ESPERA_BLOQUEO);
+        }
+
+        try {
+            // La validación va ANTES de la barrera: si los identificadores no son
+            // del diagnóstico, no tiene sentido esperar a nadie para luego negarse,
+            // y esperando se bloquearía además al resto del grupo.
+            $this->exigirDatosDelDiagnostico($contexto);
+
+            $this->esperarEnLaBarrera($contexto['barrera']);
+
+            $this->trabajo($contexto);
+
+            $this->output->write(json_encode(['ok' => true]));
+        } catch (Throwable $e) {
+            $this->output->write(json_encode(['ok' => false, 'error' => class_basename($e).': '.$e->getMessage()]));
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Se niega a tocar nada que no haya creado el propio diagnóstico.
+     *
+     * `--contexto` es un parámetro interno, pero es un parámetro: nada impide
+     * invocar el rol `trabajador` a mano con los identificadores de un insumo o
+     * una ubicación REALES, y entonces el diagnóstico escribiría movimientos de
+     * mentira sobre inventario de verdad. Se comprueba por el prefijo del código,
+     * que es lo único que el coordinador controla al crearlos.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function exigirDatosDelDiagnostico(array $contexto): void
+    {
+        $codigoInsumo = DB::table('planta_insumos')->where('id', $contexto['insumo_id'])->value('codigo');
+        $codigoUbicacion = DB::table('planta_ubicaciones')->where('id', $contexto['ubicacion_id'])->value('codigo');
+
+        foreach (['insumo' => $codigoInsumo, 'ubicación' => $codigoUbicacion] as $que => $codigo) {
+            if ($codigo === null || ! str_starts_with((string) $codigo, self::PREFIJO)) {
+                throw new RuntimeException(sprintf(
+                    'El %s indicado no pertenece al diagnóstico (código «%s»): este comando solo '
+                    .'escribe sobre datos con prefijo %s que crea él mismo.',
+                    $que,
+                    $codigo ?? 'inexistente',
+                    self::PREFIJO,
+                ));
+            }
+        }
+
+        if (isset($contexto['lote_id'])) {
+            $lote = DB::table('planta_lotes')->where('id', $contexto['lote_id'])->first(['codigo_interno', 'planta_insumo_id']);
+
+            if ($lote === null || (int) $lote->planta_insumo_id !== (int) $contexto['insumo_id']) {
+                throw new RuntimeException('El lote indicado no pertenece al insumo del diagnóstico.');
+            }
+        }
+    }
+
+    /** Avisa de que este proceso está listo y espera la señal de salida común. */
+    private function esperarEnLaBarrera(string $barrera): void
+    {
+        touch($barrera.'/listo-'.getmypid());
+
+        $limite = microtime(true) + self::TIMEOUT_BARRERA;
+
+        while (! file_exists($barrera.'/ya') && microtime(true) < $limite) {
+            usleep(20_000);
+        }
+    }
+
+    /** @param  array<string, mixed>  $contexto */
+    private function trabajo(array $contexto): void
+    {
+        if ($contexto['escenario'] === 'lote-generico') {
+            $insumo = PlantaInsumo::findOrFail($contexto['insumo_id']);
+
+            app(LoteService::class)->resolverGenerico($insumo, now()->toDateString());
+
+            return;
+        }
+
+        $cantidad = match ($contexto['escenario']) {
+            'crear-bucket' => '1.0000',
+            'sumar' => '10.0000',
+            'ultimo-saldo' => '-10.0000',
+        };
+
+        $servicio = app(PlantaInventarioService::class);
+        $bucket = $this->bucketDe($contexto);
+
+        DB::transaction(fn () => $servicio->aplicarMovimiento(
+            $bucket,
+            $cantidad,
+            ContextoMovimiento::para(
+                tipo: TipoMovimientoPlanta::Ajuste,
+                documentoType: 'diagnostico.concurrencia',
+                // Documento distinto por proceso: si compartieran efecto_uid, el
+                // duplicado los rechazaría y no se estaría midiendo la concurrencia
+                // del saldo sino la idempotencia.
+                documentoId: getmypid(),
+                transicion: 'aplicar',
+                fechaEfectiva: now(),
+                grupoUuid: (string) Str::uuid(),
+            ),
+        ), 3);
+    }
+
+    /** @param  array<string, mixed>  $contexto */
+    private function bucketDe(array $contexto): BucketInventario
+    {
+        return new BucketInventario(
+            insumoId: (int) $contexto['insumo_id'],
+            loteId: (int) $contexto['lote_id'],
+            ubicacionId: (int) $contexto['ubicacion_id'],
+            estado: EstadoDisponibilidad::Disponible,
+        );
+    }
+}
