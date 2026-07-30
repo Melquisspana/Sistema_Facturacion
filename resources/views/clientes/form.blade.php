@@ -59,8 +59,11 @@
                           departamentoId: @js((string) old('departamento_id', $cliente->departamento_id)),
                           municipioId: @js((string) old('municipio_id', $cliente->municipio_id)),
                           distritoId: @js((string) old('distrito_id', $cliente->distrito_id)),
-                          municipios: @js($municipios->map(fn ($m) => ['id' => (string) $m->id, 'nombre' => $m->nombre, 'departamento_id' => (string) $m->departamento_id])->values()),
-                          distritos: @js($distritos->map(fn ($d) => ['id' => (string) $d->id, 'nombre' => $d->nombre, 'municipio' => $d->municipio, 'departamento_id' => (string) $d->departamento_id])->values()),
+                          {{-- Municipio con su nombre FISCAL 2024 (ej. "Cabañas Oeste") y su
+                               código CAT-013: el código es lo que permite filtrar los
+                               distritos por municipio. --}}
+                          municipios: @js($municipios->map(fn ($m) => ['id' => (string) $m->id, 'nombre' => $m->nombre_fiscal ?? $m->nombre, 'codigo' => (string) $m->codigo, 'departamento_id' => (string) $m->departamento_id])->values()),
+                          distritos: @js($distritos->map(fn ($d) => ['id' => (string) $d->id, 'nombre' => $d->nombre, 'municipio' => $d->municipio, 'municipio_codigo' => (string) $d->municipio_codigo, 'departamento_id' => (string) $d->departamento_id])->values()),
                           get esNacional() { return this.tipo === 'consumidor_final' || this.tipo === 'contribuyente'; },
                           get esContribuyente() { return this.tipo === 'contribuyente'; },
                           // La ubicación general del cliente solo se pide cuando NO va a
@@ -75,7 +78,20 @@
                           // salas ya la tiene marcada.
                           get mostrarOc() { return (this.esNacional && this.sinSalas) || (this.clienteSinSalas && this.clienteTieneOc); },
                           get municipiosFiltrados() { return this.municipios.filter(m => m.departamento_id === this.departamentoId); },
-                          get distritosFiltrados() { return this.distritos.filter(d => d.departamento_id === this.departamentoId); },
+                          get municipioElegido() { return this.municipios.find(m => m.id === this.municipioId) ?? null; },
+                          {{-- El distrito se filtra por el MUNICIPIO elegido, no solo por el
+                               departamento: así no se puede guardar un par imposible como
+                               «Cabañas Este» + distrito «Ilobasco» (que es de Cabañas Oeste),
+                               que Hacienda rechaza. El servidor lo revalida igual. --}}
+                          get distritosFiltrados() {
+                              const m = this.municipioElegido;
+                              if (! m) { return []; }
+                              return this.distritos.filter(d =>
+                                  d.departamento_id === m.departamento_id && d.municipio_codigo === m.codigo);
+                          },
+                          onMunicipioChange() {
+                              if (! this.distritosFiltrados.some(d => d.id === this.distritoId)) { this.distritoId = ''; }
+                          },
                       }"
                       x-init="$watch('tipo', valor => { if (valor === 'contribuyente' || valor === 'exportacion') adicionales = true })"
                       class="space-y-6">
@@ -337,7 +353,7 @@
                             <div x-show="mostrarUbicacion" x-cloak>
                                 <x-input-label for="municipio_id" value="Municipio" />
                                 <select id="municipio_id" name="municipio_id"
-                                        x-model="municipioId" :disabled="!esNacional"
+                                        x-model="municipioId" x-on:change="onMunicipioChange()" :disabled="!esNacional"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                                     <option value="">— Seleccione —</option>
                                     <template x-for="m in municipiosFiltrados" :key="m.id">
@@ -353,11 +369,15 @@
                                         x-model="distritoId" :disabled="!esNacional"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                                     <option value="">— Seleccione —</option>
+                                    {{-- Solo el nombre del distrito: el municipio ya se eligió
+                                         arriba, prefijarlo acá era redundante y hacía parecer
+                                         que el distrito traía su propio municipio. --}}
                                     <template x-for="d in distritosFiltrados" :key="d.id">
-                                        <option :value="d.id" x-text="d.municipio + ' — ' + d.nombre"></option>
+                                        <option :value="d.id" x-text="d.nombre"></option>
                                     </template>
                                 </select>
                                 <x-input-error :messages="$errors->get('distrito_id')" class="mt-1" />
+                                <p class="text-xs text-gray-400 mt-1" x-show="esNacional && municipioId === ''" x-cloak>Seleccione primero un municipio.</p>
                             </div>
                             <div class="hidden md:block" x-show="mostrarUbicacion" x-cloak></div>
 

@@ -3,6 +3,8 @@
 namespace App\Http\Requests\Configuracion;
 
 use App\Enums\AmbienteHacienda;
+use App\Support\Ubicacion\CoherenciaUbicacion;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -50,8 +52,33 @@ class EmpresaRequest extends FormRequest
     {
         return [
             'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
+            'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',
             'ambiente.in' => 'El ambiente debe ser un valor válido del catálogo (pruebas o producción).',
         ];
+    }
+
+    /**
+     * Coherencia del trío departamento → municipio 2024 → distrito del EMISOR. El JSON del
+     * MH lleva la dirección del emisor en CCF, Factura y FEX: un par municipio/distrito
+     * incompatible acá rompe todos los documentos, no solo uno.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->hasAny(['departamento_id', 'municipio_id', 'distrito_id'])) {
+                return;
+            }
+
+            $problema = CoherenciaUbicacion::problema(
+                $this->integer('departamento_id') ?: null,
+                $this->integer('municipio_id') ?: null,
+                $this->integer('distrito_id') ?: null,
+            );
+
+            if ($problema !== null) {
+                $validator->errors()->add('distrito_id', $problema);
+            }
+        });
     }
 
     protected function prepareForValidation(): void

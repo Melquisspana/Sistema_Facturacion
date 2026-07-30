@@ -5,7 +5,10 @@ namespace Database\Factories;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
 use App\Enums\TipoPersona;
+use App\Models\ActividadEconomica;
 use App\Models\Cliente;
+use App\Models\Pais;
+use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -38,9 +41,11 @@ class ClienteFactory extends Factory
             'nrc' => '123456-7',
             'nombre' => $this->faker->company(),
             // Datos que exige el receptor de un CCF/NC (si los catálogos ya están seedeados).
-            'actividad_economica_id' => \App\Models\ActividadEconomica::query()->value('id'),
-            'departamento_id' => \App\Models\Departamento::query()->value('id'),
-            'municipio_id' => \App\Models\Municipio::query()->value('id'),
+            'actividad_economica_id' => ActividadEconomica::query()->value('id'),
+            // Trío coherente departamento → municipio 2024 → distrito: elegir cada nivel
+            // por separado podía dar un par municipio/distrito imposible (ver
+            // App\Support\Ubicacion\CoherenciaUbicacion).
+            ...UbicacionCoherenteFactory::tercia(),
         ]);
     }
 
@@ -54,9 +59,9 @@ class ClienteFactory extends Factory
             'num_documento' => $this->faker->bothify('P########'),
             'nombre' => $this->faker->company(),
             // País extranjero (≠ El Salvador SV): lo exige el receptor de exportación.
-            'pais_id' => \App\Models\Pais::query()->where('codigo', '!=', 'SV')->value('id'),
+            'pais_id' => Pais::query()->where('codigo', '!=', 'SV')->value('id'),
             // El schema oficial de exportación exige descActividad del receptor (CAT-019).
-            'actividad_economica_id' => \App\Models\ActividadEconomica::query()->value('id'),
+            'actividad_economica_id' => ActividadEconomica::query()->value('id'),
         ]);
     }
 }

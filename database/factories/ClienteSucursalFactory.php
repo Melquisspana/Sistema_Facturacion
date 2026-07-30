@@ -6,6 +6,7 @@ use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Departamento;
 use App\Models\Municipio;
+use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -17,18 +18,16 @@ class ClienteSucursalFactory extends Factory
 
     public function definition(): array
     {
-        // Ubicación completa como la de las salas reales: el receptor del CCF toma
-        // departamento y municipio de la SALA cuando el documento tiene una (ver
-        // MapeadorDteSalida::receptor y ValidacionPreJsonService), así que una sala
-        // sin ubicación no representa ningún caso de producción.
-        $departamentoId = Departamento::query()->value('id');
-
+        // Ubicación completa y COHERENTE como la de las salas reales: el receptor del CCF
+        // toma departamento, municipio y distrito de la SALA cuando el documento tiene una
+        // (ver MapeadorDteSalida::receptor y ValidacionPreJsonService). Una sala sin
+        // distrito, o con un distrito que no pertenece a su municipio, no representa ningún
+        // caso de producción válido: el MH la rechaza.
         return [
             'cliente_id' => Cliente::factory()->contribuyente(),
             'nombre' => 'Sala '.$this->faker->city(),
             'direccion' => $this->faker->streetAddress(),
-            'departamento_id' => $departamentoId,
-            'municipio_id' => Municipio::query()->where('departamento_id', $departamentoId)->value('id'),
+            ...UbicacionCoherenteFactory::tercia(),
             'requiere_orden_compra' => null, // hereda del cliente
             'activo' => true,
         ];

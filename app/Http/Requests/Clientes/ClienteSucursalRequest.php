@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Clientes;
 
+use App\Support\Ubicacion\CoherenciaUbicacion;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -55,6 +57,32 @@ class ClienteSucursalRequest extends FormRequest
             'activo' => ['required', 'boolean'],
             'observaciones' => ['nullable', 'string', 'max:1000'],
         ];
+    }
+
+    /**
+     * Coherencia del trío: además de que municipio y distrito sean del departamento, el
+     * DISTRITO debe pertenecer al MUNICIPIO elegido. Sin esto se podía guardar el
+     * municipio "Cabañas Este" con el distrito "Ilobasco" (de Cabañas Oeste) y Hacienda
+     * rechazaba el CCF por `receptor.direccion.distrito`.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            // Solo si las reglas de campo ya pasaron (evita mensajes contradictorios).
+            if ($validator->errors()->hasAny(['departamento_id', 'municipio_id', 'distrito_id'])) {
+                return;
+            }
+
+            $problema = CoherenciaUbicacion::problema(
+                $this->integer('departamento_id') ?: null,
+                $this->integer('municipio_id') ?: null,
+                $this->integer('distrito_id') ?: null,
+            );
+
+            if ($problema !== null) {
+                $validator->errors()->add('distrito_id', $problema);
+            }
+        });
     }
 
     protected function prepareForValidation(): void

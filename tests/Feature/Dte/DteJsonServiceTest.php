@@ -67,8 +67,10 @@ class DteJsonServiceTest extends TestCase
         $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
         Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
 
+        // La ubicación la aporta la factory como trío COHERENTE (departamento → municipio
+        // 2024 → distrito); fijar solo departamento/municipio dejaba un par incompatible.
         $cliente = Cliente::factory()->contribuyente()->create([
-            'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id,
+            'actividad_economica_id' => $actividad->id,
             'nrc' => '1234', 'direccion' => 'Av Cliente 123', 'telefono' => null, 'correo' => null,
         ]);
         $unidad = UnidadMedida::whereNotNull('codigo')->first();
@@ -86,7 +88,7 @@ class DteJsonServiceTest extends TestCase
         // atómica): estos tests prueban justamente el servicio que los asigna.
         $dte->refresh();
         if ($dte->json_generado_path) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($dte->json_generado_path);
+            Storage::disk('local')->delete($dte->json_generado_path);
         }
         $dte->json_generado_path = null;
         $dte->numero_control = null;
@@ -190,7 +192,7 @@ class DteJsonServiceTest extends TestCase
         $empresa = Empresa::create(['razon_social' => 'X', 'nit' => '0614-000000-000-0', 'nrc' => '111111-1', 'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id, 'ambiente' => '00', 'activo' => true]);
         $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'M', 'tipo_establecimiento' => '01', 'activo' => true]);
         $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'C', 'activo' => true]);
-        $cliente = Cliente::factory()->contribuyente()->create(['actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id]);
+        $cliente = Cliente::factory()->contribuyente()->create(['actividad_economica_id' => $actividad->id]);
         $borrador = app(DteBorradorService::class)->crearBorrador(['tipo_dte' => TipoDte::CreditoFiscal, 'cliente_id' => $cliente->id, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id]);
 
         $this->expectException(DteJsonException::class);

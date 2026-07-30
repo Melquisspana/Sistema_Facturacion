@@ -7,6 +7,7 @@ use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
 use App\Enums\TipoPersona;
+use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -183,6 +184,20 @@ class ClienteRequest extends FormRequest
                     'direccion',
                     'Para exportación debe indicar dirección o complemento de dirección.'
                 );
+            }
+
+            // Coherencia del trío departamento → municipio 2024 → distrito. Las reglas de
+            // campo solo garantizan que cada nivel sea del departamento; acá se exige que
+            // el DISTRITO pertenezca al MUNICIPIO elegido (el par que rechaza Hacienda).
+            if (! $validator->errors()->hasAny(['departamento_id', 'municipio_id', 'distrito_id'])) {
+                $problema = CoherenciaUbicacion::problema(
+                    $this->integer('departamento_id') ?: null,
+                    $this->integer('municipio_id') ?: null,
+                    $this->integer('distrito_id') ?: null,
+                );
+                if ($problema !== null) {
+                    $validator->errors()->add('distrito_id', $problema);
+                }
             }
         });
     }

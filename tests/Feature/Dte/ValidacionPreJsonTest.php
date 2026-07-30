@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\ActividadEconomica;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Departamento;
 use App\Models\Dte;
@@ -18,13 +20,14 @@ use App\Models\UnidadMedida;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\ValidacionPreJsonService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 class ValidacionPreJsonTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -66,10 +69,12 @@ class ValidacionPreJsonTest extends TestCase
 
     private function clienteContribuyente(array $emisor, array $override = []): Cliente
     {
+        // La ubicación la aporta la factory como un trío COHERENTE (departamento →
+        // municipio 2024 → distrito). Fijar solo departamento/municipio dejaba un par
+        // incompatible con el distrito de la factory, que ahora se rechaza al generar.
+        // Las pruebas que necesitan ubicación INCOMPLETA la anulan vía $override.
         return Cliente::factory()->contribuyente()->create(array_merge([
             'actividad_economica_id' => $emisor['actividad']->id,
-            'departamento_id' => $emisor['depto']->id,
-            'municipio_id' => $emisor['muni']->id,
         ], $override));
     }
 
@@ -234,9 +239,9 @@ class ValidacionPreJsonTest extends TestCase
     //     (sala de entrega si el documento tiene una; si no, el cliente). ---
 
     /** Sala con ubicación completa, del mismo catálogo que usa el emisor. */
-    private function salaCompleta(Cliente $cliente, array $emisor, array $override = []): \App\Models\ClienteSucursal
+    private function salaCompleta(Cliente $cliente, array $emisor, array $override = []): ClienteSucursal
     {
-        return \App\Models\ClienteSucursal::factory()->create(array_merge([
+        return ClienteSucursal::factory()->create(array_merge([
             'cliente_id' => $cliente->id,
             'departamento_id' => $emisor['depto']->id,
             'municipio_id' => $emisor['muni']->id,
@@ -253,7 +258,7 @@ class ValidacionPreJsonTest extends TestCase
     public function test_ccf_con_cliente_sin_ubicacion_pero_sala_completa_pasa(): void
     {
         $emisor = $this->emisor();
-        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null]);
+        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null, 'distrito_id' => null]);
         $sala = $this->salaCompleta($cliente, $emisor);
 
         $ccf = $this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
@@ -264,7 +269,7 @@ class ValidacionPreJsonTest extends TestCase
     public function test_nota_credito_con_cliente_sin_ubicacion_pero_sala_completa_pasa(): void
     {
         $emisor = $this->emisor();
-        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null]);
+        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null, 'distrito_id' => null]);
         $sala = $this->salaCompleta($cliente, $emisor);
 
         $ccf = $this->aceptarCcf($this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]));
@@ -283,6 +288,7 @@ class ValidacionPreJsonTest extends TestCase
             'nombre' => 'Sala Sin Ubicacion',
             'departamento_id' => null,
             'municipio_id' => null,
+            'distrito_id' => null,
         ]);
 
         $ccf = $this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
@@ -295,7 +301,7 @@ class ValidacionPreJsonTest extends TestCase
     public function test_ccf_sin_sala_y_cliente_sin_ubicacion_falla(): void
     {
         $emisor = $this->emisor();
-        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null]);
+        $cliente = $this->clienteContribuyente($emisor, ['departamento_id' => null, 'municipio_id' => null, 'distrito_id' => null]);
 
         $problemas = $this->validacion->validar($this->ccfBorradorCompleto($emisor, $cliente));
 
@@ -443,8 +449,8 @@ class ValidacionPreJsonTest extends TestCase
         $this->borradores->agregarProductoNotaCreditoAveria($nc1, $this->productoConUnidad(), 1); // 10.00
         $nc1->refresh();
         // NC #1 ACEPTADA REALMENTE por el MH (consume saldo): sello real + fecha_procesamiento_mh.
-        $nc1->estado = \App\Enums\EstadoDte::Aceptado->value;
-        $nc1->sello_recepcion = '2026'.strtoupper(\Illuminate\Support\Str::random(36));
+        $nc1->estado = EstadoDte::Aceptado->value;
+        $nc1->sello_recepcion = '2026'.strtoupper(Str::random(36));
         $nc1->fecha_procesamiento_mh = now();
         $nc1->save();
 
@@ -469,8 +475,8 @@ class ValidacionPreJsonTest extends TestCase
         $emisor = $this->emisor();
         // CCF "aceptado" MOCK: estado aceptado pero con sello MOCK y SIN fecha_procesamiento_mh.
         $ccf = $this->ccfBorradorCompleto($emisor);
-        $ccf->estado = \App\Enums\EstadoDte::Aceptado->value;
-        $ccf->codigo_generacion = strtoupper((string) \Illuminate\Support\Str::uuid());
+        $ccf->estado = EstadoDte::Aceptado->value;
+        $ccf->codigo_generacion = strtoupper((string) Str::uuid());
         $ccf->sello_recepcion = 'MOCK-SIMULADO-ABC123';
         $ccf->fecha_procesamiento_mh = null;
         $ccf->save();

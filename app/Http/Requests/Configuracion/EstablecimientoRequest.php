@@ -3,6 +3,8 @@
 namespace App\Http\Requests\Configuracion;
 
 use App\Enums\TipoEstablecimiento;
+use App\Support\Ubicacion\CoherenciaUbicacion;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -61,6 +63,29 @@ class EstablecimientoRequest extends FormRequest
             'departamento_id.required' => 'El departamento es obligatorio.',
             'tipo_establecimiento.in' => 'El tipo de establecimiento debe ser un valor válido del catálogo CAT-009.',
         ];
+    }
+
+    /**
+     * Coherencia del trío departamento → municipio 2024 → distrito del establecimiento
+     * emisor: el distrito debe pertenecer al municipio elegido, no solo al departamento.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->hasAny(['departamento_id', 'municipio_id', 'distrito_id'])) {
+                return;
+            }
+
+            $problema = CoherenciaUbicacion::problema(
+                $this->integer('departamento_id') ?: null,
+                $this->integer('municipio_id') ?: null,
+                $this->integer('distrito_id') ?: null,
+            );
+
+            if ($problema !== null) {
+                $validator->errors()->add('distrito_id', $problema);
+            }
+        });
     }
 
     protected function prepareForValidation(): void

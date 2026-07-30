@@ -5,12 +5,10 @@ namespace App\Http\Controllers\Configuracion;
 use App\Enums\TipoEstablecimiento;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\EstablecimientoRequest;
-use App\Models\Departamento;
-use App\Models\Distrito;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
-use App\Models\Municipio;
 use App\Models\Pais;
+use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -72,10 +70,7 @@ class EstablecimientoController extends Controller
             'empresas' => Empresa::orderBy('razon_social')->get(),
             'tiposEstablecimiento' => TipoEstablecimiento::opciones(),
             'paises' => Pais::where('activo', true)->orderBy('nombre')->get(),
-            'departamentos' => Departamento::where('activo', true)->orderBy('nombre')->get(),
-            'municipios' => Municipio::where('activo', true)->orderBy('nombre')->get(),
-            'distritos' => Distrito::where('activo', true)->orderBy('municipio')->orderBy('nombre')
-                ->get(['id', 'nombre', 'municipio', 'departamento_id']),
+            ...OpcionesUbicacion::todas(),
         ];
     }
 }

@@ -20,11 +20,12 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 class DteJsonPreviewCommandTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -52,8 +53,10 @@ class DteJsonPreviewCommandTest extends TestCase
         $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
         Correlativo::create(['tipo_dte' => '03', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true]);
 
+        // La ubicación la aporta la factory como trío COHERENTE (departamento → municipio
+        // 2024 → distrito); fijar solo departamento/municipio dejaba un par incompatible.
         $cliente = Cliente::factory()->contribuyente()->create([
-            'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id,
+            'actividad_economica_id' => $actividad->id,
         ]);
         $unidad = UnidadMedida::whereNotNull('codigo')->first();
         $producto = Producto::factory()->create(['unidad_medida_id' => $unidad->id, 'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
@@ -70,7 +73,7 @@ class DteJsonPreviewCommandTest extends TestCase
         // atómica): el preview prueba la numeración fake y los errores de numeración vacía.
         $dte->refresh();
         if ($dte->json_generado_path) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($dte->json_generado_path);
+            Storage::disk('local')->delete($dte->json_generado_path);
         }
         $dte->json_generado_path = null;
         $dte->numero_control = null;
@@ -156,7 +159,7 @@ class DteJsonPreviewCommandTest extends TestCase
         $empresa = Empresa::create(['razon_social' => 'X', 'nit' => '0614-000000-000-0', 'nrc' => '111111-1', 'actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id, 'ambiente' => '00', 'activo' => true]);
         $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'M', 'tipo_establecimiento' => '01', 'activo' => true]);
         $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'C', 'activo' => true]);
-        $cliente = Cliente::factory()->contribuyente()->create(['actividad_economica_id' => $actividad->id, 'departamento_id' => $depto->id, 'municipio_id' => $muni->id]);
+        $cliente = Cliente::factory()->contribuyente()->create(['actividad_economica_id' => $actividad->id]);
         $borrador = $borradores->crearBorrador(['tipo_dte' => TipoDte::CreditoFiscal, 'cliente_id' => $cliente->id, 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id]);
 
         $this->artisan('dte:json-preview', ['dte' => $borrador->id])->assertExitCode(1);

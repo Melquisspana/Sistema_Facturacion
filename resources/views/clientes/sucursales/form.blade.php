@@ -21,22 +21,6 @@
 
                 <form method="POST"
                       action="{{ $sucursal->exists ? route('clientes.sucursales.update', [$cliente, $sucursal]) : route('clientes.sucursales.store', $cliente) }}"
-                      x-data="{
-                          departamentoId: @js((string) old('departamento_id', $sucursal->departamento_id)),
-                          distritoId: @js((string) old('distrito_id', $sucursal->distrito_id)),
-                          municipioFiscalId: @js((string) old('municipio_id', $sucursal->municipio_id)),
-                          distritos: @js($distritos->map(fn ($d) => ['id' => (string) $d->id, 'nombre' => $d->nombre, 'municipio' => $d->municipio, 'departamento_id' => (string) $d->departamento_id])->values()),
-                          municipiosFiscales: @js($municipios->map(fn ($m) => ['id' => (string) $m->id, 'nombre' => $m->nombre, 'departamento_id' => (string) $m->departamento_id])->values()),
-                          // El municipio 2024 no se pide: se deriva del distrito (distritos.municipio).
-                          // Acá solo se usa para AGRUPAR los distritos del departamento en <optgroup>.
-                          get distritosAgrupados() {
-                              const filtrados = this.distritos.filter(d => d.departamento_id === this.departamentoId);
-                              const grupos = {};
-                              filtrados.forEach(d => { (grupos[d.municipio] = grupos[d.municipio] || []).push(d); });
-                              return Object.keys(grupos).sort().map(m => ({ municipio: m, distritos: grupos[m] }));
-                          },
-                          get municipiosFiscalesFiltrados() { return this.municipiosFiscales.filter(m => m.departamento_id === this.departamentoId); },
-                      }"
                       class="space-y-6">
                     @csrf
                     @if ($sucursal->exists) @method('PUT') @endif
@@ -63,66 +47,25 @@
                             <x-input-error :messages="$errors->get('direccion')" class="mt-1" />
                         </div>
 
-                        {{-- Ubicación administrativa: Departamento → Distrito (agrupado por
-                             municipio 2024). El municipio 2024 NO se pide: se deriva del
-                             distrito. Obligatoria por requisito legal. --}}
-                        <div>
-                            <x-input-label for="departamento_id" value="Departamento *" />
-                            <select id="departamento_id" name="departamento_id" x-model="departamentoId"
-                                    x-on:change="distritoId=''; municipioFiscalId=''"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                <option value="">— Seleccione —</option>
-                                @foreach ($departamentos as $depto)
-                                    <option value="{{ $depto->id }}">{{ $depto->nombre }}</option>
-                                @endforeach
-                            </select>
-                            <x-input-error :messages="$errors->get('departamento_id')" class="mt-1" />
-                        </div>
-
-                        <div>
-                            <x-input-label for="distrito_id" value="Distrito *" />
-                            <select id="distrito_id" name="distrito_id" x-model="distritoId"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                <option value="">— Seleccione —</option>
-                                {{-- Agrupado por municipio 2024, para no perder esa referencia
-                                     al haber quitado el select propio. --}}
-                                <template x-for="grupo in distritosAgrupados" :key="grupo.municipio">
-                                    <optgroup :label="grupo.municipio">
-                                        <template x-for="d in grupo.distritos" :key="d.id">
-                                            <option :value="d.id" x-text="d.nombre"></option>
-                                        </template>
-                                    </optgroup>
-                                </template>
-                            </select>
-                            <x-input-error :messages="$errors->get('distrito_id')" class="mt-1" />
-                            <p class="text-xs text-gray-400 mt-1" x-show="departamentoId === ''">Seleccione primero un departamento.</p>
-                        </div>
-
-                        {{-- Municipio fiscal (CAT-013): es el que viaja en el DTE como
-                             receptor.direccion.municipio cuando se factura a esta sala.
-                             Va aparte de la cadena 2024 porque el catálogo del MH sigue
-                             siendo el anterior a la reforma. Opcional: el catálogo sembrado
-                             no cubre todos los departamentos. --}}
-                        <div>
-                            <x-input-label for="municipio_id" value="Municipio fiscal (CAT-013)" />
-                            <select id="municipio_id" name="municipio_id" x-model="municipioFiscalId"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-                                <option value="">— Sin municipio —</option>
-                                <template x-for="m in municipiosFiscalesFiltrados" :key="m.id">
-                                    <option :value="m.id" x-text="m.nombre"></option>
-                                </template>
-                            </select>
-                            <x-input-error :messages="$errors->get('municipio_id')" class="mt-1" />
-                            <p class="text-xs text-gray-400 mt-1" x-show="departamentoId === ''" x-cloak>Seleccione primero un departamento.</p>
-                            <p class="text-xs text-amber-600 mt-1"
-                               x-show="departamentoId !== '' && municipiosFiscalesFiltrados.length === 0" x-cloak>
-                                El catálogo CAT-013 no tiene municipios cargados para este departamento.
-                            </p>
-                            <p class="text-xs text-amber-600 mt-1"
-                               x-show="municipioFiscalId === '' && municipiosFiscalesFiltrados.length > 0" x-cloak>
-                                Sin municipio fiscal, el CCF emitido a esta sala llevará el campo municipio vacío.
-                            </p>
-                        </div>
+                        {{-- Ubicación administrativa: Departamento → Municipio 2024 (CAT-013)
+                             → Distrito (CAT-008), con el MISMO componente que usan empresa,
+                             establecimientos y clientes.
+                             Antes este formulario tenía su propia cascada: el distrito
+                             listaba TODO el departamento agrupado en <optgroup> por municipio
+                             2024, y el municipio fiscal era un select aparte filtrado solo por
+                             departamento. Los <optgroup> parecían indicar el municipio elegido
+                             pero eran decorativos, así que se podía guardar «Cabañas Este» con
+                             el distrito «Ilobasco» (de Cabañas Oeste) — el par que Hacienda
+                             rechaza. Ahora el distrito se filtra POR el municipio elegido. --}}
+                        <x-ubicacion-selects
+                            :departamentos="$departamentos"
+                            :municipios="$municipios"
+                            :distritos="$distritos"
+                            :departamento-id="$sucursal->departamento_id"
+                            :municipio-id="$sucursal->municipio_id"
+                            :distrito-id="$sucursal->distrito_id"
+                            :distrito-requerido="true"
+                            :departamento-requerido="true" />
 
                         <div>
                             <x-input-label for="telefono" value="Teléfono" />
