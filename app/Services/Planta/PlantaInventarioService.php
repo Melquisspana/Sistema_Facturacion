@@ -174,6 +174,35 @@ class PlantaInventarioService
     }
 
     /**
+     * Saldo de un bucket leído CON LA FILA BLOQUEADA, sin crearla si no existe.
+     *
+     * Existe para los documentos que necesitan DECIDIR a partir del saldo, no
+     * solo consultarlo. El caso que lo motiva es la corrección de conteo: la
+     * diferencia entre lo contado y lo que dice el sistema tiene que calcularse
+     * con un saldo que no pueda cambiar entre la lectura y la escritura. Con
+     * {@see saldo()} —lectura pura— dos correcciones simultáneas del mismo
+     * bucket partirían ambas del mismo número y la segunda escribiría una
+     * diferencia que ya no existe.
+     *
+     * A diferencia de {@see bloquearBucket()}, NO crea la fila: preguntar cuánto
+     * hay no debería materializar un bucket que quizá no llegue a usarse. Si no
+     * existe devuelve '0.0000', y entonces no hay fila que bloquear porque no hay
+     * nada que otro proceso pueda estar cambiando; el bloqueo de verdad lo toma
+     * después {@see aplicarMovimiento()} al escribir.
+     *
+     * DEBE llamarse dentro de una transacción: fuera de ella el bloqueo se libera
+     * de inmediato y no protege nada.
+     */
+    public function saldoBloqueado(BucketInventario $bucket): string
+    {
+        $this->exigirTransaccion();
+
+        $fila = $this->leerBloqueado($bucket);
+
+        return $this->aEscala($fila === null ? '0' : (string) $fila->cantidad);
+    }
+
+    /**
      * Resuelve el lote que corresponde al insumo: el genérico si no controla
      * lotes. Atajo para los flujos que aún no conocen el lote; el genérico se
      * crea de forma concurrente-segura en {@see LoteService}.

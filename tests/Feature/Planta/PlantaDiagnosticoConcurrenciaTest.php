@@ -167,6 +167,10 @@ class PlantaDiagnosticoConcurrenciaTest extends TestCase
             'recepcion-numero', 'recepcion-confirmar', 'recepcion-mismo-bucket',
             // Cambio de disponibilidad (paso 7).
             'disponibilidad-confirmar',
+            // Traslados (paso 8).
+            'traslado-numero', 'traslado-enviar', 'traslado-recibir', 'traslado-ultimo-saldo',
+            // Ajustes (paso 9).
+            'ajuste-numero', 'ajuste-confirmar', 'ajuste-ultimo-saldo', 'ajuste-conteo', 'ajuste-mismo-bucket',
         ] as $escenario) {
             $this->assertStringContainsString($escenario, $descripcion);
         }
