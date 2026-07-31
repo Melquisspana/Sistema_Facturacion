@@ -158,26 +158,38 @@ class PpqGmailService
     private function filtrarPorNumeroYDeduplicar(array $fichas, string $numero): array
     {
         $buscado = preg_replace('/\D/', '', $numero);
-        $salida = [];
+        $salidaP002 = [];
+        $salidaP001 = [];
         $vistos = [];
 
+        $secuencia = $buscado !== ''
+            ? str_pad((string) ((int) $buscado), 15, '0', STR_PAD_LEFT)
+            : null;
+
         foreach ($fichas as $ficha) {
-            $control = (string) ($ficha['ccf']['numeroControl'] ?? '');
+            $control = strtoupper((string) ($ficha['ccf']['numeroControl'] ?? ''));
             $controlDigitos = preg_replace('/\D/', '', $control);
 
-            if ($buscado !== '' && $controlDigitos !== '' && ! str_ends_with($controlDigitos, $buscado)) {
+            if ($secuencia !== null && ! str_ends_with($control, '-'.$secuencia)) {
                 continue;
             }
 
-            $clave = ((string) ($ficha['ccf']['codigoGeneracion'] ?? '')) ?: $controlDigitos;
+            $clave = ((string) ($ficha['ccf']['codigoGeneracion'] ?? '')) ?: $control;
             if ($clave !== '' && isset($vistos[$clave])) {
                 continue;
             }
+
             $vistos[$clave] = true;
-            $salida[] = $ficha;
+
+            if (str_contains($control, 'M001P002-')) {
+                $salidaP002[] = $ficha;
+            } elseif (str_contains($control, 'M001P001-')) {
+                $salidaP001[] = $ficha;
+            }
         }
 
-        return array_values($salida);
+        // El sistema nuevo P002 tiene prioridad. Solo si no existe se devuelve P001.
+        return array_values($salidaP002 !== [] ? $salidaP002 : $salidaP001);
     }
 
     /**
