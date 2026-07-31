@@ -6,6 +6,7 @@ use App\Http\Controllers\Planta\PlantaDashboardController;
 use App\Http\Controllers\Planta\PresentacionController;
 use App\Http\Controllers\Planta\ProductoBaseController;
 use App\Http\Controllers\Planta\ProveedorController;
+use App\Http\Controllers\Planta\RecepcionController;
 use App\Http\Controllers\Planta\UbicacionController;
 use Illuminate\Support\Facades\Route;
 
@@ -14,9 +15,10 @@ use Illuminate\Support\Facades\Route;
 | etiqueta visible «Producción»; ver config/planta.php).
 |
 | NO emite DTE, no genera JSON, no firma, no transmite, no toca correlativos y
-| no envía correo. Fase 2 paso 3: dashboard + CRUD de los catálogos base
-| (insumos, proveedores, ubicaciones). Todavía no hay inventario: ni saldos, ni
-| movimientos, ni recepciones, traslados o ajustes.
+| no envía correo. Contiene el dashboard, el CRUD de los catálogos base
+| (insumos, proveedores, ubicaciones, productos, presentaciones, empaques) y las
+| RECEPCIONES de insumos, que son el primer documento que mueve inventario.
+| Traslados, ajustes y cambios de disponibilidad todavía no existen.
 |
 | Tres candados en orden, todos de BACKEND:
 |   1. auth               -> invitado va al login.
@@ -102,5 +104,46 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
             Route::put('empaques/{empaque}', [EmpaqueConfigController::class, 'update'])->middleware($gestionar)->name('empaques.update');
             Route::patch('empaques/{empaque}/predeterminada', [EmpaqueConfigController::class, 'marcarPredeterminada'])->middleware($gestionar)->name('empaques.predeterminada');
             Route::patch('empaques/{empaque}/toggle-activo', [EmpaqueConfigController::class, 'toggleActivo'])->middleware($gestionar)->name('empaques.toggle-activo');
+        });
+
+        /*
+        | Recepciones de insumos. Primer documento del módulo que MUEVE
+        | INVENTARIO, así que los permisos se reparten por acción y no por
+        | pantalla:
+        |
+        |   - ver       -> planta.recepciones.ver
+        |   - crear/editar/anular borradores -> planta.recepciones.crear
+        |   - confirmar -> planta.recepciones.confirmar
+        |   - reversar  -> planta.recepciones.reversar (admin en esta fase)
+        |
+        | El destino RETENIDO exige además `planta.calidad.gestionar`, pero eso
+        | NO se declara aquí: no es una ruta distinta, es una condición sobre las
+        | líneas que comprueba PlantaRecepcionService. Ponerlo en la ruta
+        | impediría a producción confirmar también las recepciones normales.
+        |
+        | `anular` es PATCH y no DELETE a propósito: no se borra nada, se cambia
+        | el estado a `anulada` y el documento queda para siempre. NO hay
+        | `destroy`: ni siquiera un borrador desaparece de la base.
+        |
+        | Rutas literales ANTES que las paramétricas, como el resto del archivo.
+        */
+        Route::middleware('permission:planta.recepciones.ver')->group(function () {
+            Route::get('recepciones', [RecepcionController::class, 'index'])->name('recepciones.index');
+            Route::get('recepciones/crear', [RecepcionController::class, 'create'])
+                ->middleware('permission:planta.recepciones.crear')->name('recepciones.create');
+            Route::post('recepciones', [RecepcionController::class, 'store'])
+                ->middleware('permission:planta.recepciones.crear')->name('recepciones.store');
+
+            Route::get('recepciones/{recepcion}', [RecepcionController::class, 'show'])->name('recepciones.show');
+            Route::get('recepciones/{recepcion}/editar', [RecepcionController::class, 'edit'])
+                ->middleware('permission:planta.recepciones.crear')->name('recepciones.edit');
+            Route::put('recepciones/{recepcion}', [RecepcionController::class, 'update'])
+                ->middleware('permission:planta.recepciones.crear')->name('recepciones.update');
+            Route::patch('recepciones/{recepcion}/anular', [RecepcionController::class, 'anular'])
+                ->middleware('permission:planta.recepciones.crear')->name('recepciones.anular');
+            Route::patch('recepciones/{recepcion}/confirmar', [RecepcionController::class, 'confirmar'])
+                ->middleware('permission:planta.recepciones.confirmar')->name('recepciones.confirmar');
+            Route::patch('recepciones/{recepcion}/reversar', [RecepcionController::class, 'reversar'])
+                ->middleware('permission:planta.recepciones.reversar')->name('recepciones.reversar');
         });
     });
