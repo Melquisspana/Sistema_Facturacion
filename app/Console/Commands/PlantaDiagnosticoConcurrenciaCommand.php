@@ -12,11 +12,14 @@ use App\Models\Planta\PlantaInsumo;
 use App\Models\Planta\PlantaMovimiento;
 use App\Models\Planta\PlantaRecepcion;
 use App\Models\Planta\PlantaRecepcionDetalle;
+use App\Models\Planta\PlantaTraslado;
+use App\Models\Planta\PlantaTrasladoDetalle;
 use App\Models\User;
 use App\Services\Planta\LoteService;
 use App\Services\Planta\PlantaCambioDisponibilidadService;
 use App\Services\Planta\PlantaInventarioService;
 use App\Services\Planta\PlantaRecepcionService;
+use App\Services\Planta\PlantaTrasladoService;
 use App\Support\Planta\BucketInventario;
 use App\Support\Planta\ContextoMovimiento;
 use Illuminate\Console\Command;
@@ -69,7 +72,7 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
 {
     protected $signature = 'planta:diagnostico-concurrencia
         {--confirmar : Obligatorio: el diagnóstico ESCRIBE datos temporales en la base configurada}
-        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|disponibilidad-confirmar|todos}
+        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|disponibilidad-confirmar|traslado-numero|traslado-enviar|traslado-recibir|traslado-ultimo-saldo|todos}
         {--procesos=6 : Cuántos procesos compiten a la vez}
         {--rol=coordinador : Interno. `trabajador` lo usan los subprocesos}
         {--contexto= : Interno. Contexto JSON del escenario, en base64}';
@@ -86,6 +89,8 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         'recepcion-numero', 'recepcion-confirmar', 'recepcion-mismo-bucket',
         // Cambio de disponibilidad (paso 7).
         'disponibilidad-confirmar',
+        // Traslados (paso 8).
+        'traslado-numero', 'traslado-enviar', 'traslado-recibir', 'traslado-ultimo-saldo',
     ];
 
     /**
@@ -414,6 +419,51 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
             return $contexto;
         }
 
+        // TRASLADOS: hacen falta dos bodegas, una ubicación de tránsito y saldo
+        // DISPONIBLE en el origen. La de tránsito la crea el propio diagnóstico
+        // con su prefijo y la borra al terminar: el servicio exige que exista
+        // exactamente una, y sembrar la del sistema es una decisión de
+        // configuración, no algo que un diagnóstico deba tomar.
+        if (str_starts_with($escenario, 'traslado-')) {
+            $contexto['usuario_id'] = $this->usuarioDelDiagnostico();
+            $usuario = User::findOrFail($contexto['usuario_id']);
+
+            $contexto['destino_id'] = DB::table('planta_ubicaciones')->insertGetId([
+                'codigo' => self::PREFIJO.$sufijo.'D',
+                'nombre' => 'Destino de diagnóstico '.$sufijo,
+                'tipo' => TipoUbicacion::Fisica->value,
+                'es_sistema' => false, 'permite_operacion_manual' => true,
+                'activo' => true, 'orden' => 0, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+
+            $contexto['transito_id'] = DB::table('planta_ubicaciones')->insertGetId([
+                'codigo' => self::PREFIJO.$sufijo.'T',
+                'nombre' => 'Tránsito de diagnóstico '.$sufijo,
+                'tipo' => TipoUbicacion::Transito->value,
+                'es_sistema' => true, 'permite_operacion_manual' => false,
+                'activo' => true, 'orden' => 0, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+
+            // Saldo disponible real en el origen, por recepción confirmada.
+            $recepcion = $this->crearBorradorDeDiagnostico($contexto);
+            app(PlantaRecepcionService::class)->confirmar($recepcion, $usuario);
+            $contexto['lote_id'] = $recepcion->refresh()->detalles->first()->planta_lote_id;
+
+            // `traslado-enviar` y los que siguen necesitan UN borrador que todos
+            // intenten mover a la vez: es la carrera que hay que medir.
+            if ($escenario !== 'traslado-numero') {
+                $traslado = $this->crearTrasladoDeDiagnostico($contexto, $escenario === 'traslado-ultimo-saldo' ? '500' : '100');
+                $contexto['traslado_id'] = $traslado->id;
+
+                // Para medir la recepción concurrente hay que salir primero.
+                if ($escenario === 'traslado-recibir') {
+                    app(PlantaTrasladoService::class)->enviar($traslado, $usuario);
+                }
+            }
+
+            return $contexto;
+        }
+
         // Cambio de DISPONIBILIDAD: hace falta saldo RETENIDO de verdad, que solo
         // llega por una recepción confirmada con ese destino. Fabricarlo a mano en
         // `planta_existencias` produciría un escenario que el dominio no genera.
@@ -515,9 +565,83 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         ], User::findOrFail($contexto['usuario_id']));
     }
 
+    /** @param  array<string, mixed>  $contexto */
+    private function crearTrasladoDeDiagnostico(array $contexto, string $cantidad): PlantaTraslado
+    {
+        return app(PlantaTrasladoService::class)->crearBorrador([
+            'fecha' => now()->toDateString(),
+            'planta_ubicacion_origen_id' => $contexto['ubicacion_id'],
+            'planta_ubicacion_destino_id' => $contexto['destino_id'],
+            'detalles' => [[
+                'planta_insumo_id' => $contexto['insumo_id'],
+                'planta_lote_id' => $contexto['lote_id'],
+                'cantidad' => $cantidad,
+            ]],
+        ], User::findOrFail($contexto['usuario_id']));
+    }
+
+    /**
+     * Invariantes de los escenarios de traslado.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function verificarTraslado(string $escenario, array $contexto, int $procesos, int $exitos): bool
+    {
+        $saldo = fn (int $ubicacion, int $traslado) => (string) (DB::table('planta_existencias')
+            ->where('planta_ubicacion_id', $ubicacion)
+            ->where('planta_traslado_id', $traslado)
+            ->where('estado', EstadoDisponibilidad::Disponible->value)
+            ->value('cantidad') ?? '0');
+
+        if ($escenario === 'traslado-numero') {
+            $numeros = PlantaTraslado::where('planta_ubicacion_origen_id', $contexto['ubicacion_id'])->pluck('numero');
+
+            $this->components->twoColumnDetail('Traslados creados', (string) $numeros->count());
+            $this->components->twoColumnDetail('Números distintos', (string) $numeros->unique()->count());
+
+            $ok = $this->afirmar($numeros->count() === $numeros->unique()->count(), 'ningún número puede repetirse');
+
+            return $this->afirmar($exitos === $procesos, 'crear un borrador no debería rechazar a nadie') && $ok;
+        }
+
+        $trasladoId = (int) $contexto['traslado_id'];
+        $enOrigen = $saldo($contexto['ubicacion_id'], 0);
+        $enTransito = $saldo($contexto['transito_id'], $trasladoId);
+        $enDestino = $saldo($contexto['destino_id'], 0);
+
+        $this->components->twoColumnDetail('Procesos con éxito', (string) $exitos);
+        $this->components->twoColumnDetail('Saldo en origen', $enOrigen);
+        $this->components->twoColumnDetail('Saldo en tránsito (de este traslado)', $enTransito);
+        $this->components->twoColumnDetail('Saldo en destino', $enDestino);
+
+        // Vale para los tres: el total nunca cambia, solo cambia de sitio.
+        $total = bcadd(bcadd($enOrigen, $enTransito, 4), $enDestino, 4);
+        $ok = $this->afirmar(bccomp($total, '500.0000', 4) === 0, 'el total del lote sigue siendo 500.0000');
+        $ok = $this->afirmar($exitos === 1, "solo 1 de los {$procesos} procesos puede completar la acción") && $ok;
+
+        if ($escenario === 'traslado-enviar' || $escenario === 'traslado-ultimo-saldo') {
+            $esperadoTransito = $escenario === 'traslado-enviar' ? '100.0000' : '500.0000';
+            $esperadoOrigen = $escenario === 'traslado-enviar' ? '400.0000' : '0.0000';
+
+            $ok = $this->afirmar(bccomp($enTransito, $esperadoTransito, 4) === 0, "el tránsito debe tener {$esperadoTransito}") && $ok;
+            $ok = $this->afirmar(bccomp($enOrigen, $esperadoOrigen, 4) === 0, "el origen debe quedar en {$esperadoOrigen}") && $ok;
+
+            return $this->afirmar(bccomp($enDestino, '0.0000', 4) === 0, 'el destino no cambia al enviar') && $ok;
+        }
+
+        // traslado-recibir: el tránsito de ESTE viaje queda vacío y llega al destino.
+        $ok = $this->afirmar(bccomp($enTransito, '0.0000', 4) === 0, 'el tránsito de este traslado queda en 0') && $ok;
+
+        return $this->afirmar(bccomp($enDestino, '100.0000', 4) === 0, 'el destino debe recibir 100.0000') && $ok;
+    }
+
     /** Comprueba la invariante que cada escenario debe cumplir tras la tormenta. */
     private function verificar(string $escenario, array $contexto, int $procesos, int $exitos): bool
     {
+        if (str_starts_with($escenario, 'traslado-')) {
+            return $this->verificarTraslado($escenario, $contexto, $procesos, $exitos);
+        }
+
         if (str_starts_with($escenario, 'recepcion-')) {
             return $this->verificarRecepcion($escenario, $contexto, $procesos, $exitos);
         }
@@ -710,6 +834,20 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
             ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
         DB::table('planta_recepciones')->whereIn('id', $recepciones)->delete();
 
+        // Traslados: mismos punteros de reversión, así que se sueltan antes.
+        $traslados = DB::table('planta_traslados')
+            ->where(fn ($q) => $q->whereIn('planta_ubicacion_origen_id', $ubicaciones)
+                ->orWhereIn('planta_ubicacion_destino_id', $ubicaciones))
+            ->pluck('id');
+
+        $detallesTraslado = DB::table('planta_traslado_detalles')
+            ->whereIn('planta_traslado_id', $traslados)->pluck('id');
+
+        DB::table('planta_traslado_detalles')->whereIn('planta_traslado_id', $traslados)->delete();
+        DB::table('planta_traslados')->whereIn('id', $traslados)
+            ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
+        DB::table('planta_traslados')->whereIn('id', $traslados)->delete();
+
         // Cambios de disponibilidad: mismos punteros de reversión que las
         // recepciones, así que se sueltan antes de borrar.
         $cambios = DB::table('planta_cambios_disponibilidad')
@@ -744,6 +882,14 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         DB::table('activity_log')
             ->where('subject_type', PlantaCambioDisponibilidad::class)
             ->whereIn('subject_id', $cambios)
+            ->delete();
+        DB::table('activity_log')
+            ->where('subject_type', PlantaTraslado::class)
+            ->whereIn('subject_id', $traslados)
+            ->delete();
+        DB::table('activity_log')
+            ->where('subject_type', PlantaTrasladoDetalle::class)
+            ->whereIn('subject_id', $detallesTraslado)
             ->delete();
     }
 
@@ -840,6 +986,26 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     {
         if (str_starts_with($contexto['escenario'], 'recepcion-')) {
             $this->trabajoDeRecepcion($contexto);
+
+            return;
+        }
+
+        if (str_starts_with($contexto['escenario'], 'traslado-')) {
+            $usuario = User::findOrFail($contexto['usuario_id']);
+            $servicio = app(PlantaTrasladoService::class);
+
+            match ($contexto['escenario']) {
+                // Todos crean su borrador a la vez: carrera por la numeración.
+                'traslado-numero' => $this->crearTrasladoDeDiagnostico($contexto, '10'),
+                // Todos reciben el MISMO traslado: solo uno puede ganar.
+                'traslado-recibir' => $servicio->recibir(
+                    PlantaTraslado::findOrFail($contexto['traslado_id']), $usuario
+                ),
+                // Todos envían el MISMO traslado: solo uno puede ganar.
+                default => $servicio->enviar(
+                    PlantaTraslado::findOrFail($contexto['traslado_id']), $usuario
+                ),
+            };
 
             return;
         }

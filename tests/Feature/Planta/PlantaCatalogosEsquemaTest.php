@@ -129,9 +129,9 @@ class PlantaCatalogosEsquemaTest extends TestCase
         // ({@see PlantaInventarioEsquemaTest}), `planta_recepciones` con sus
         // detalles en el paso 6 ({@see PlantaRecepcionEsquemaTest}) y
         // `planta_cambios_disponibilidad` en el paso 7
-        // ({@see PlantaCambioDisponibilidadEsquemaTest}).
+        // ({@see PlantaCambioDisponibilidadEsquemaTest}) y `planta_traslados`
+        // con sus detalles en el paso 8 ({@see PlantaTrasladoEsquemaTest}).
         foreach ([
-            'planta_traslados',            // paso 8
             'planta_ajustes',              // paso 9
         ] as $futura) {
             $this->assertFalse(Schema::hasTable($futura), "La tabla {$futura} no pertenece al paso 2.");
