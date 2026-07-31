@@ -126,11 +126,12 @@ class PlantaCatalogosEsquemaTest extends TestCase
         // Las tablas salen de esta lista según se implementan, y pasan a tener su
         // propia prueba de esquema: `planta_empaque_configs` en el paso 4,
         // `planta_movimientos` y `planta_existencias` en el paso 5
-        // ({@see PlantaInventarioEsquemaTest}), y `planta_recepciones` con sus
-        // detalles en el paso 6 ({@see PlantaRecepcionEsquemaTest}).
+        // ({@see PlantaInventarioEsquemaTest}), `planta_recepciones` con sus
+        // detalles en el paso 6 ({@see PlantaRecepcionEsquemaTest}) y
+        // `planta_cambios_disponibilidad` en el paso 7
+        // ({@see PlantaCambioDisponibilidadEsquemaTest}).
         foreach ([
-            'planta_traslados',            // paso 7
-            'planta_cambios_disponibilidad', // paso 8
+            'planta_traslados',            // paso 8
             'planta_ajustes',              // paso 9
         ] as $futura) {
             $this->assertFalse(Schema::hasTable($futura), "La tabla {$futura} no pertenece al paso 2.");

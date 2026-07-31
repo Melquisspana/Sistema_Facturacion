@@ -7,12 +7,14 @@ use App\Enums\Planta\TipoInsumo;
 use App\Enums\Planta\TipoMovimientoPlanta;
 use App\Enums\Planta\TipoUbicacion;
 use App\Enums\Planta\UnidadBase;
+use App\Models\Planta\PlantaCambioDisponibilidad;
 use App\Models\Planta\PlantaInsumo;
 use App\Models\Planta\PlantaMovimiento;
 use App\Models\Planta\PlantaRecepcion;
 use App\Models\Planta\PlantaRecepcionDetalle;
 use App\Models\User;
 use App\Services\Planta\LoteService;
+use App\Services\Planta\PlantaCambioDisponibilidadService;
 use App\Services\Planta\PlantaInventarioService;
 use App\Services\Planta\PlantaRecepcionService;
 use App\Support\Planta\BucketInventario;
@@ -67,7 +69,7 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
 {
     protected $signature = 'planta:diagnostico-concurrencia
         {--confirmar : Obligatorio: el diagnóstico ESCRIBE datos temporales en la base configurada}
-        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|todos}
+        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|disponibilidad-confirmar|todos}
         {--procesos=6 : Cuántos procesos compiten a la vez}
         {--rol=coordinador : Interno. `trabajador` lo usan los subprocesos}
         {--contexto= : Interno. Contexto JSON del escenario, en base64}';
@@ -82,6 +84,8 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         'crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico',
         // Documento de recepción (paso 6).
         'recepcion-numero', 'recepcion-confirmar', 'recepcion-mismo-bucket',
+        // Cambio de disponibilidad (paso 7).
+        'disponibilidad-confirmar',
     ];
 
     /**
@@ -410,6 +414,34 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
             return $contexto;
         }
 
+        // Cambio de DISPONIBILIDAD: hace falta saldo RETENIDO de verdad, que solo
+        // llega por una recepción confirmada con ese destino. Fabricarlo a mano en
+        // `planta_existencias` produciría un escenario que el dominio no genera.
+        if ($escenario === 'disponibilidad-confirmar') {
+            $contexto['usuario_id'] = $this->usuarioDelDiagnostico();
+            $usuario = User::findOrFail($contexto['usuario_id']);
+
+            $recepcion = $this->crearBorradorDeDiagnostico($contexto, EstadoDisponibilidad::Retenido);
+            app(PlantaRecepcionService::class)->confirmar($recepcion, $usuario);
+
+            $detalle = $recepcion->refresh()->detalles->first();
+
+            $cambio = app(PlantaCambioDisponibilidadService::class)->crearBorrador([
+                'planta_insumo_id' => $contexto['insumo_id'],
+                'planta_lote_id' => $detalle->planta_lote_id,
+                'planta_ubicacion_id' => $contexto['ubicacion_id'],
+                'estado_destino' => EstadoDisponibilidad::Disponible->value,
+                'cantidad' => '100',
+                'fecha' => now()->toDateString(),
+                'motivo' => 'Diagnóstico de concurrencia del paso 7',
+            ], $usuario);
+
+            $contexto['cambio_id'] = $cambio->id;
+            $contexto['lote_id'] = $detalle->planta_lote_id;
+
+            return $contexto;
+        }
+
         $contexto['lote_id'] = DB::table('planta_lotes')->insertGetId([
             'planta_insumo_id' => $insumo->id,
             'codigo_interno' => self::PREFIJO.$sufijo,
@@ -464,8 +496,10 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     }
 
     /** @param  array<string, mixed>  $contexto */
-    private function crearBorradorDeDiagnostico(array $contexto): PlantaRecepcion
-    {
+    private function crearBorradorDeDiagnostico(
+        array $contexto,
+        EstadoDisponibilidad $destino = EstadoDisponibilidad::Disponible,
+    ): PlantaRecepcion {
         return app(PlantaRecepcionService::class)->crearBorrador([
             'fecha' => now()->toDateString(),
             'planta_ubicacion_id' => $contexto['ubicacion_id'],
@@ -476,7 +510,7 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
                 'unidad_recibida' => 'saco',
                 'contenido_por_unidad' => '100',
                 'factor_conversion' => '1',
-                'estado_destino' => EstadoDisponibilidad::Disponible->value,
+                'estado_destino' => $destino->value,
             ]],
         ], User::findOrFail($contexto['usuario_id']));
     }
@@ -486,6 +520,10 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     {
         if (str_starts_with($escenario, 'recepcion-')) {
             return $this->verificarRecepcion($escenario, $contexto, $procesos, $exitos);
+        }
+
+        if ($escenario === 'disponibilidad-confirmar') {
+            return $this->verificarDisponibilidad($contexto, $procesos, $exitos);
         }
 
         if ($escenario === 'lote-generico') {
@@ -597,6 +635,45 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         return $this->afirmar($exitos === $procesos, 'ninguna confirmación debería perderse') && $ok;
     }
 
+    /**
+     * Invariantes del cambio de disponibilidad concurrente.
+     *
+     * N procesos confirman el MISMO documento a la vez. Solo uno puede ganar: si
+     * ganaran dos, el saldo se movería dos veces y el par dejaría de sumar cero.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function verificarDisponibilidad(array $contexto, int $procesos, int $exitos): bool
+    {
+        $movimientos = DB::table('planta_movimientos')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])
+            ->where('tipo', TipoMovimientoPlanta::CambioDisponibilidad->value)
+            ->get(['cantidad', 'estado']);
+
+        $retenido = (string) (DB::table('planta_existencias')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])
+            ->where('estado', EstadoDisponibilidad::Retenido->value)->value('cantidad') ?? '0');
+        $disponible = (string) (DB::table('planta_existencias')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])
+            ->where('estado', EstadoDisponibilidad::Disponible->value)->value('cantidad') ?? '0');
+
+        $sumaPar = (string) $movimientos->reduce(fn ($acc, $m) => bcadd((string) $acc, (string) $m->cantidad, 4), '0');
+
+        $this->components->twoColumnDetail('Procesos con éxito', (string) $exitos);
+        $this->components->twoColumnDetail('Movimientos del cambio', (string) $movimientos->count());
+        $this->components->twoColumnDetail('Saldo retenido', $retenido);
+        $this->components->twoColumnDetail('Saldo disponible', $disponible);
+        $this->components->twoColumnDetail('Suma del par', $sumaPar);
+
+        $ok = $this->afirmar($exitos === 1, "solo 1 de los {$procesos} procesos puede confirmar el documento");
+        $ok = $this->afirmar($movimientos->count() === 2, 'la confirmación produce EXACTAMENTE dos movimientos') && $ok;
+        $ok = $this->afirmar(bccomp($sumaPar, '0', 4) === 0, 'el par compensado debe sumar cero') && $ok;
+        $ok = $this->afirmar(bccomp($disponible, '100.0000', 4) === 0, 'el saldo liberado debe ser 100.0000') && $ok;
+        $ok = $this->afirmar(bccomp($retenido, '400.0000', 4) === 0, 'el retenido restante debe ser 400.0000') && $ok;
+
+        return $ok;
+    }
+
     private function afirmar(bool $condicion, string $descripcion): bool
     {
         $this->line($condicion ? "  <fg=green>OK</> {$descripcion}" : "  <fg=red>FALLA</> {$descripcion}");
@@ -633,6 +710,15 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
             ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
         DB::table('planta_recepciones')->whereIn('id', $recepciones)->delete();
 
+        // Cambios de disponibilidad: mismos punteros de reversión que las
+        // recepciones, así que se sueltan antes de borrar.
+        $cambios = DB::table('planta_cambios_disponibilidad')
+            ->whereIn('planta_ubicacion_id', $ubicaciones)->pluck('id');
+
+        DB::table('planta_cambios_disponibilidad')->whereIn('id', $cambios)
+            ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
+        DB::table('planta_cambios_disponibilidad')->whereIn('id', $cambios)->delete();
+
         // Los movimientos de reversión apuntan a los originales con una auto-FK
         // `restrictOnDelete`: hay que soltarla antes o el borrado en bloque falla.
         DB::table('planta_movimientos')->whereIn('planta_insumo_id', $insumos)
@@ -654,6 +740,10 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         DB::table('activity_log')
             ->where('subject_type', PlantaRecepcionDetalle::class)
             ->whereIn('subject_id', $detalles)
+            ->delete();
+        DB::table('activity_log')
+            ->where('subject_type', PlantaCambioDisponibilidad::class)
+            ->whereIn('subject_id', $cambios)
             ->delete();
     }
 
@@ -750,6 +840,15 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     {
         if (str_starts_with($contexto['escenario'], 'recepcion-')) {
             $this->trabajoDeRecepcion($contexto);
+
+            return;
+        }
+
+        if ($contexto['escenario'] === 'disponibilidad-confirmar') {
+            app(PlantaCambioDisponibilidadService::class)->confirmar(
+                PlantaCambioDisponibilidad::findOrFail($contexto['cambio_id']),
+                User::findOrFail($contexto['usuario_id']),
+            );
 
             return;
         }
