@@ -8,6 +8,7 @@ use App\Http\Controllers\Planta\PresentacionController;
 use App\Http\Controllers\Planta\ProductoBaseController;
 use App\Http\Controllers\Planta\ProveedorController;
 use App\Http\Controllers\Planta\RecepcionController;
+use App\Http\Controllers\Planta\TrasladoController;
 use App\Http\Controllers\Planta\UbicacionController;
 use Illuminate\Support\Facades\Route;
 
@@ -187,5 +188,48 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
                 ->middleware($gestionar)->name('disponibilidad.confirmar');
             Route::patch('disponibilidad/{disponibilidad}/reversar', [CambioDisponibilidadController::class, 'reversar'])
                 ->middleware($gestionar)->name('disponibilidad.reversar');
+        });
+
+        /*
+        | Traslados entre ubicaciones. Permisos por ACCIÓN, no por pantalla,
+        | porque enviar y recibir son actos físicos distintos que pueden recaer
+        | en personas distintas:
+        |
+        |   - ver      -> planta.traslados.ver
+        |   - crear / editar / cancelar borradores -> planta.traslados.crear
+        |   - enviar   -> planta.traslados.enviar
+        |   - recibir  -> planta.traslados.recibir
+        |   - reversar -> planta.traslados.reversar (admin en esta fase)
+        |
+        | Producción tiene los cuatro primeros y NO el último: opera el día a
+        | día, pero deshacer inventario ya contabilizado no es operación.
+        |
+        | `cancelar` es PATCH, no DELETE: no se borra nada, cambia el estado. NO
+        | hay `destroy`.
+        |
+        | Rutas literales ANTES que las paramétricas, como el resto del archivo.
+        */
+        Route::middleware('permission:planta.traslados.ver')->group(function () {
+            $crear = 'permission:planta.traslados.crear';
+
+            Route::get('traslados', [TrasladoController::class, 'index'])->name('traslados.index');
+            Route::get('traslados/crear', [TrasladoController::class, 'create'])
+                ->middleware($crear)->name('traslados.create');
+            Route::post('traslados', [TrasladoController::class, 'store'])
+                ->middleware($crear)->name('traslados.store');
+
+            Route::get('traslados/{traslado}', [TrasladoController::class, 'show'])->name('traslados.show');
+            Route::get('traslados/{traslado}/editar', [TrasladoController::class, 'edit'])
+                ->middleware($crear)->name('traslados.edit');
+            Route::put('traslados/{traslado}', [TrasladoController::class, 'update'])
+                ->middleware($crear)->name('traslados.update');
+            Route::patch('traslados/{traslado}/cancelar', [TrasladoController::class, 'cancelar'])
+                ->middleware($crear)->name('traslados.cancelar');
+            Route::patch('traslados/{traslado}/enviar', [TrasladoController::class, 'enviar'])
+                ->middleware('permission:planta.traslados.enviar')->name('traslados.enviar');
+            Route::patch('traslados/{traslado}/recibir', [TrasladoController::class, 'recibir'])
+                ->middleware('permission:planta.traslados.recibir')->name('traslados.recibir');
+            Route::patch('traslados/{traslado}/reversar', [TrasladoController::class, 'reversar'])
+                ->middleware('permission:planta.traslados.reversar')->name('traslados.reversar');
         });
     });
