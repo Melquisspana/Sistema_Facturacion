@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Planta\AjusteController;
 use App\Http\Controllers\Planta\CambioDisponibilidadController;
 use App\Http\Controllers\Planta\EmpaqueConfigController;
 use App\Http\Controllers\Planta\InsumoController;
@@ -231,5 +232,45 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
                 ->middleware('permission:planta.traslados.recibir')->name('traslados.recibir');
             Route::patch('traslados/{traslado}/reversar', [TrasladoController::class, 'reversar'])
                 ->middleware('permission:planta.traslados.reversar')->name('traslados.reversar');
+        });
+
+        /*
+        | Ajustes de inventario. Es el único documento que altera la cantidad
+        | física sin contrapartida documental, así que el reparto es asimétrico a
+        | propósito:
+        |
+        |   - ver    -> planta.ajustes.ver     (producción SÍ lo tiene: consulta
+        |                                       lo que se ajustó en su bodega)
+        |   - TODA escritura -> planta.ajustes.crear (admin-only en Fase 2)
+        |
+        | No se separan `confirmar` ni `reversar` en permisos propios porque hoy
+        | las tres acciones recaen en la misma persona; el enum ya deja el ciclo
+        | preparado para separarlas cuando exista un supervisor.
+        |
+        | `anular` es PATCH, no DELETE: no se borra nada, cambia el estado. NO hay
+        | `destroy`.
+        |
+        | Rutas literales ANTES que las paramétricas, como el resto del archivo.
+        */
+        Route::middleware('permission:planta.ajustes.ver')->group(function () {
+            $gestionar = 'permission:planta.ajustes.crear';
+
+            Route::get('ajustes', [AjusteController::class, 'index'])->name('ajustes.index');
+            Route::get('ajustes/crear', [AjusteController::class, 'create'])
+                ->middleware($gestionar)->name('ajustes.create');
+            Route::post('ajustes', [AjusteController::class, 'store'])
+                ->middleware($gestionar)->name('ajustes.store');
+
+            Route::get('ajustes/{ajuste}', [AjusteController::class, 'show'])->name('ajustes.show');
+            Route::get('ajustes/{ajuste}/editar', [AjusteController::class, 'edit'])
+                ->middleware($gestionar)->name('ajustes.edit');
+            Route::put('ajustes/{ajuste}', [AjusteController::class, 'update'])
+                ->middleware($gestionar)->name('ajustes.update');
+            Route::patch('ajustes/{ajuste}/anular', [AjusteController::class, 'anular'])
+                ->middleware($gestionar)->name('ajustes.anular');
+            Route::patch('ajustes/{ajuste}/confirmar', [AjusteController::class, 'confirmar'])
+                ->middleware($gestionar)->name('ajustes.confirmar');
+            Route::patch('ajustes/{ajuste}/reversar', [AjusteController::class, 'reversar'])
+                ->middleware($gestionar)->name('ajustes.reversar');
         });
     });

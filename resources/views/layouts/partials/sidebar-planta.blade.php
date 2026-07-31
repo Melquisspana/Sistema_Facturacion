@@ -22,7 +22,7 @@
          Cada entrada lleva SU permiso, no el del grupo: se lee lo que se puede
          entrar a ver. Ocultar no autoriza —las rutas llevan su middleware—, pero
          un enlace que siempre da 403 es ruido. --}}
-    @canany(['planta.recepciones.ver', 'planta.traslados.ver', 'planta.existencias.ver'])
+    @canany(['planta.recepciones.ver', 'planta.traslados.ver', 'planta.existencias.ver', 'planta.ajustes.ver'])
         <div>
             <p class="{{ $tituloGrupo }}">Operación</p>
             <div class="space-y-0.5">
@@ -34,6 +34,9 @@
                 @endcan
                 @can('planta.existencias.ver')
                     <x-sidebar-link :href="route('planta.disponibilidad.index')" :active="request()->routeIs('planta.disponibilidad.*')">Disponibilidad</x-sidebar-link>
+                @endcan
+                @can('planta.ajustes.ver')
+                    <x-sidebar-link :href="route('planta.ajustes.index')" :active="request()->routeIs('planta.ajustes.*')">Ajustes</x-sidebar-link>
                 @endcan
             </div>
         </div>

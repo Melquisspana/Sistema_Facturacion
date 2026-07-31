@@ -3,25 +3,27 @@
 namespace App\Console\Commands;
 
 use App\Enums\Planta\EstadoDisponibilidad;
+use App\Enums\Planta\TipoAjuste;
 use App\Enums\Planta\TipoInsumo;
 use App\Enums\Planta\TipoMovimientoPlanta;
 use App\Enums\Planta\TipoUbicacion;
 use App\Enums\Planta\UnidadBase;
+use App\Models\Planta\PlantaAjuste;
 use App\Models\Planta\PlantaCambioDisponibilidad;
 use App\Models\Planta\PlantaInsumo;
 use App\Models\Planta\PlantaMovimiento;
 use App\Models\Planta\PlantaRecepcion;
-use App\Models\Planta\PlantaRecepcionDetalle;
 use App\Models\Planta\PlantaTraslado;
-use App\Models\Planta\PlantaTrasladoDetalle;
 use App\Models\User;
 use App\Services\Planta\LoteService;
+use App\Services\Planta\PlantaAjusteService;
 use App\Services\Planta\PlantaCambioDisponibilidadService;
 use App\Services\Planta\PlantaInventarioService;
 use App\Services\Planta\PlantaRecepcionService;
 use App\Services\Planta\PlantaTrasladoService;
 use App\Support\Planta\BucketInventario;
 use App\Support\Planta\ContextoMovimiento;
+use App\Support\Planta\RastroActivityLog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -59,7 +61,11 @@ use Throwable;
  *     No admite identificadores por parámetro y los trabajadores verifican que
  *     los que reciben corresponden a datos propios antes de escribir;
  *   - la limpieza corre en `finally`, por escenario y otra vez al terminar,
- *     aunque un proceso falle o se agote su tiempo. No crea usuarios.
+ *     aunque un proceso falle o se agote su tiempo. No crea usuarios;
+ *   - la limpieza incluye el `activity_log` que escriben los modelos auditados
+ *     al crearse. No basta con vaciar las tablas: el rastro del sujeto sobrevive
+ *     al sujeto. Lo resuelve {@see RastroActivityLog}, que borra solo lo escrito
+ *     durante esta ejecución y cuyo sujeto ya no existe, nunca auditoría ajena.
  *
  * USO:
  *   php artisan planta:diagnostico-concurrencia --confirmar
@@ -72,7 +78,7 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
 {
     protected $signature = 'planta:diagnostico-concurrencia
         {--confirmar : Obligatorio: el diagnóstico ESCRIBE datos temporales en la base configurada}
-        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|disponibilidad-confirmar|traslado-numero|traslado-enviar|traslado-recibir|traslado-ultimo-saldo|todos}
+        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|disponibilidad-confirmar|traslado-numero|traslado-enviar|traslado-recibir|traslado-ultimo-saldo|ajuste-numero|ajuste-confirmar|ajuste-ultimo-saldo|ajuste-conteo|ajuste-mismo-bucket|todos}
         {--procesos=6 : Cuántos procesos compiten a la vez}
         {--rol=coordinador : Interno. `trabajador` lo usan los subprocesos}
         {--contexto= : Interno. Contexto JSON del escenario, en base64}';
@@ -91,6 +97,8 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         'disponibilidad-confirmar',
         // Traslados (paso 8).
         'traslado-numero', 'traslado-enviar', 'traslado-recibir', 'traslado-ultimo-saldo',
+        // Ajustes (paso 9).
+        'ajuste-numero', 'ajuste-confirmar', 'ajuste-ultimo-saldo', 'ajuste-conteo', 'ajuste-mismo-bucket',
     ];
 
     /**
@@ -111,6 +119,13 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
      * un diagnóstico interesa que salte pronto y se vea.
      */
     private const ESPERA_BLOQUEO = 10;
+
+    /**
+     * Rastro del `activity_log` de ESTA ejecución. Lo abre el coordinador antes
+     * de crear nada y lo purga cada {@see limpiar()}; el trabajador no lo usa
+     * porque no limpia: de eso se encarga quien lo lanzó.
+     */
+    private ?RastroActivityLog $rastro = null;
 
     public function handle(): int
     {
@@ -165,6 +180,12 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         $procesos = max(2, (int) $this->option('procesos'));
         $fallos = 0;
 
+        // La frontera del `activity_log` se anota ANTES de tocar nada: a partir
+        // de aquí, todo lo que se escriba lo escribimos nosotros —incluido lo
+        // que escriban los subprocesos, que van a la misma base— y por eso se
+        // puede borrar sin tocar auditoría ajena. Ver {@see RastroActivityLog}.
+        $this->rastro = RastroActivityLog::abrir();
+
         // Limpieza de arranque: si una ejecución anterior murió de mala manera,
         // sus restos se van ahora y no contaminan la medición.
         $this->limpiar();
@@ -218,10 +239,15 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
      */
     private function confirmarQueNoQuedaNada(): void
     {
+        // El `activity_log` se cuenta aquí porque su ausencia en esta lista fue
+        // exactamente lo que dejó pasar el defecto: el comando informaba
+        // «ninguno» mirando solo las tablas de dominio mientras el rastro de los
+        // sujetos borrados seguía en la auditoría.
         $restos = [
             'insumos' => DB::table('planta_insumos')->where('codigo', 'like', self::PREFIJO.'%')->count(),
             'ubicaciones' => DB::table('planta_ubicaciones')->where('codigo', 'like', self::PREFIJO.'%')->count(),
             'lotes' => DB::table('planta_lotes')->where('codigo_interno', 'like', self::PREFIJO.'%')->count(),
+            'registros de actividad' => count($this->rastro?->idsPurgables() ?? []),
         ];
 
         $total = array_sum($restos);
@@ -420,9 +446,9 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         }
 
         // TRASLADOS: hacen falta dos bodegas, una ubicación de tránsito y saldo
-        // DISPONIBLE en el origen. La de tránsito la crea el propio diagnóstico
-        // con su prefijo y la borra al terminar: el servicio exige que exista
-        // exactamente una, y sembrar la del sistema es una decisión de
+        // DISPONIBLE en el origen. La de tránsito se reutiliza si la base ya la
+        // tiene; solo si no hay ninguna crea una temporal con su prefijo y la
+        // borra al terminar. Sembrar la del sistema es una decisión de
         // configuración, no algo que un diagnóstico deba tomar.
         if (str_starts_with($escenario, 'traslado-')) {
             $contexto['usuario_id'] = $this->usuarioDelDiagnostico();
@@ -436,13 +462,24 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
                 'activo' => true, 'orden' => 0, 'created_at' => now(), 'updated_at' => now(),
             ]);
 
-            $contexto['transito_id'] = DB::table('planta_ubicaciones')->insertGetId([
-                'codigo' => self::PREFIJO.$sufijo.'T',
-                'nombre' => 'Tránsito de diagnóstico '.$sufijo,
-                'tipo' => TipoUbicacion::Transito->value,
-                'es_sistema' => true, 'permite_operacion_manual' => false,
-                'activo' => true, 'orden' => 0, 'created_at' => now(), 'updated_at' => now(),
-            ]);
+            // El tránsito se REUTILIZA si la base ya tiene el suyo sembrado. El
+            // servicio exige que exista EXACTAMENTE una ubicación de tránsito, así
+            // que crear siempre la propia rompía los escenarios en cuanto la base
+            // dejaba de estar virgen. Solo se crea una temporal cuando no hay
+            // ninguna, y en ese caso lleva el prefijo y la limpieza se la lleva.
+            $contexto['transito_id'] = (int) (DB::table('planta_ubicaciones')
+                ->where('tipo', TipoUbicacion::Transito->value)
+                ->where('es_sistema', true)
+                ->where('activo', true)
+                ->where('permite_operacion_manual', false)
+                ->value('id')
+                ?? DB::table('planta_ubicaciones')->insertGetId([
+                    'codigo' => self::PREFIJO.$sufijo.'T',
+                    'nombre' => 'Tránsito de diagnóstico '.$sufijo,
+                    'tipo' => TipoUbicacion::Transito->value,
+                    'es_sistema' => true, 'permite_operacion_manual' => false,
+                    'activo' => true, 'orden' => 0, 'created_at' => now(), 'updated_at' => now(),
+                ]));
 
             // Saldo disponible real en el origen, por recepción confirmada.
             $recepcion = $this->crearBorradorDeDiagnostico($contexto);
@@ -459,6 +496,29 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
                 if ($escenario === 'traslado-recibir') {
                     app(PlantaTrasladoService::class)->enviar($traslado, $usuario);
                 }
+            }
+
+            return $contexto;
+        }
+
+        // AJUSTES: hace falta saldo real en el bucket, y tiene que entrar como
+        // entra en la operación —por recepción confirmada—. La carga inicial no
+        // sirve para prepararlo: exige un bucket SIN historial, que es justo lo
+        // contrario de lo que estos escenarios necesitan.
+        if (str_starts_with($escenario, 'ajuste-')) {
+            $contexto['usuario_id'] = $this->usuarioDelDiagnostico();
+            $usuario = User::findOrFail($contexto['usuario_id']);
+
+            $recepcion = $this->crearBorradorDeDiagnostico($contexto);
+            app(PlantaRecepcionService::class)->confirmar($recepcion, $usuario);
+            $contexto['lote_id'] = $recepcion->refresh()->detalles->first()->planta_lote_id;
+
+            // `ajuste-confirmar` necesita UN borrador que todos intenten confirmar
+            // a la vez: es la carrera que hay que medir. En los demás cada proceso
+            // crea el suyo, porque lo que compiten es por el SALDO, no por el
+            // estado del documento.
+            if ($escenario === 'ajuste-confirmar') {
+                $contexto['ajuste_id'] = $this->crearAjusteDeDiagnostico($contexto, TipoAjuste::Positivo, '100')->id;
             }
 
             return $contexto;
@@ -581,6 +641,123 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     }
 
     /**
+     * Borrador de ajuste del diagnóstico.
+     *
+     * `cantidad_conteo` solo se envía en la corrección: en los demás tipos la
+     * columna no aplica y mandarla nula sería declarar algo que no existe.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function crearAjusteDeDiagnostico(
+        array $contexto,
+        TipoAjuste $tipo,
+        string $cantidad,
+        ?string $conteo = null,
+    ): PlantaAjuste {
+        $linea = [
+            'planta_insumo_id' => $contexto['insumo_id'],
+            'planta_lote_id' => $contexto['lote_id'],
+            'planta_ubicacion_id' => $contexto['ubicacion_id'],
+            'estado_disponibilidad' => EstadoDisponibilidad::Disponible->value,
+            'cantidad' => $cantidad,
+        ];
+
+        if ($conteo !== null) {
+            $linea['cantidad_conteo'] = $conteo;
+        }
+
+        return app(PlantaAjusteService::class)->crearBorrador([
+            'tipo' => $tipo->value,
+            'fecha' => now()->toDateString(),
+            'motivo' => 'Diagnóstico de concurrencia del paso 9',
+            'detalles' => [$linea],
+        ], User::findOrFail($contexto['usuario_id']));
+    }
+
+    /**
+     * Invariantes de los escenarios de ajuste.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function verificarAjuste(string $escenario, array $contexto, int $procesos, int $exitos): bool
+    {
+        $ajustes = DB::table('planta_ajustes as a')
+            ->join('planta_ajuste_detalles as d', 'd.planta_ajuste_id', '=', 'a.id')
+            ->where('d.planta_ubicacion_id', $contexto['ubicacion_id'])
+            ->distinct()
+            ->pluck('a.numero');
+
+        $this->components->twoColumnDetail('Ajustes creados', (string) $ajustes->count());
+        $this->components->twoColumnDetail('Números distintos', (string) $ajustes->unique()->count());
+
+        // Vale para los cinco: numerar dos documentos igual rompería el unique y
+        // dejaría el módulo sin forma de referirse a uno de ellos.
+        $ok = $this->afirmar(
+            $ajustes->count() === $ajustes->unique()->count(),
+            'ningún número de ajuste puede repetirse'
+        );
+
+        if ($escenario === 'ajuste-numero') {
+            $movimientos = DB::table('planta_movimientos')
+                ->where('planta_ubicacion_id', $contexto['ubicacion_id'])
+                ->where('tipo', TipoMovimientoPlanta::Ajuste->value)
+                ->count();
+
+            $this->components->twoColumnDetail('Movimientos de ajuste', (string) $movimientos);
+
+            $ok = $this->afirmar($movimientos === 0, 'crear borradores NO puede escribir en el mayor') && $ok;
+
+            return $this->afirmar($exitos === $procesos, 'crear un borrador no debería rechazar a nadie') && $ok;
+        }
+
+        $bucket = $this->bucketDe($contexto);
+        $columnas = $bucket->aColumnas();
+
+        $filas = DB::table('planta_existencias')->where($columnas)->count();
+        $saldo = (string) (DB::table('planta_existencias')->where($columnas)->value('cantidad') ?? '0');
+        $sumaMayor = (string) DB::table('planta_movimientos')->where($columnas)->sum('cantidad');
+        $movimientos = DB::table('planta_movimientos')->where($columnas)
+            ->where('tipo', TipoMovimientoPlanta::Ajuste->value)->count();
+
+        $this->components->twoColumnDetail('Filas de existencia del bucket', (string) $filas);
+        $this->components->twoColumnDetail('Movimientos de ajuste', (string) $movimientos);
+        $this->components->twoColumnDetail('Saldo proyectado', $saldo);
+        $this->components->twoColumnDetail('Suma del mayor', $sumaMayor);
+
+        $ok = $this->afirmar($filas === 1, 'el bucket debe tener EXACTAMENTE 1 fila de existencia') && $ok;
+        $ok = $this->afirmar(bccomp($saldo, $sumaMayor, 4) === 0, 'el saldo proyectado debe igualar la suma del mayor') && $ok;
+
+        // El saldo de partida es 500: la recepción que preparó el escenario.
+        $esperado = match ($escenario) {
+            // Un solo ganador suma sus 100 sobre los 500 de la recepción.
+            'ajuste-confirmar' => '600.0000',
+            // Cada proceso intenta llevarse los 500 enteros; solo cabe uno.
+            'ajuste-ultimo-saldo' => '0.0000',
+            // Todos cuentan 250. El primero registra la diferencia; los demás
+            // encuentran que el sistema YA dice 250 y se rechazan por no tener
+            // nada que corregir.
+            'ajuste-conteo' => '250.0000',
+            // Cada proceso suma 10: ningún efecto puede perderse.
+            default => bcadd('500.0000', bcmul((string) $exitos, '10.0000', 4), 4),
+        };
+
+        $ok = $this->afirmar(bccomp($saldo, $esperado, 4) === 0, "el saldo esperado es {$esperado}") && $ok;
+
+        if ($escenario === 'ajuste-mismo-bucket') {
+            $ok = $this->afirmar($movimientos === $exitos, 'un movimiento por confirmación con éxito') && $ok;
+
+            return $this->afirmar($exitos === $procesos, 'ninguna confirmación debería perderse') && $ok;
+        }
+
+        $ok = $this->afirmar($exitos === 1, "solo 1 de los {$procesos} procesos puede completar la acción") && $ok;
+
+        // La afirmación que demuestra la lectura BAJO BLOQUEO: si
+        // `cantidad_sistema` se hubiera tomado del borrador en vez del saldo
+        // bloqueado, los N procesos habrían visto 500 y escrito N movimientos.
+        return $this->afirmar($movimientos === 1, 'la acción debe producir EXACTAMENTE un movimiento') && $ok;
+    }
+
+    /**
      * Invariantes de los escenarios de traslado.
      *
      * @param  array<string, mixed>  $contexto
@@ -638,6 +815,10 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     /** Comprueba la invariante que cada escenario debe cumplir tras la tormenta. */
     private function verificar(string $escenario, array $contexto, int $procesos, int $exitos): bool
     {
+        if (str_starts_with($escenario, 'ajuste-')) {
+            return $this->verificarAjuste($escenario, $contexto, $procesos, $exitos);
+        }
+
         if (str_starts_with($escenario, 'traslado-')) {
             return $this->verificarTraslado($escenario, $contexto, $procesos, $exitos);
         }
@@ -825,7 +1006,6 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         // Orden de dependencias, de las hojas a la raíz. Las recepciones van
         // primero porque sus líneas apuntan a lotes e insumos.
         $recepciones = DB::table('planta_recepciones')->whereIn('planta_ubicacion_id', $ubicaciones)->pluck('id');
-        $detalles = DB::table('planta_recepcion_detalles')->whereIn('planta_recepcion_id', $recepciones)->pluck('id');
 
         DB::table('planta_recepcion_detalles')->whereIn('planta_recepcion_id', $recepciones)->delete();
         // Las auto-referencias (reversion_de_id / revertido_por_id) se sueltan
@@ -840,13 +1020,22 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
                 ->orWhereIn('planta_ubicacion_destino_id', $ubicaciones))
             ->pluck('id');
 
-        $detallesTraslado = DB::table('planta_traslado_detalles')
-            ->whereIn('planta_traslado_id', $traslados)->pluck('id');
-
         DB::table('planta_traslado_detalles')->whereIn('planta_traslado_id', $traslados)->delete();
         DB::table('planta_traslados')->whereIn('id', $traslados)
             ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
         DB::table('planta_traslados')->whereIn('id', $traslados)->delete();
+
+        // Ajustes: el bucket vive en la LÍNEA, así que la cabecera se localiza
+        // por sus detalles y no por una columna propia.
+        $ajustes = DB::table('planta_ajuste_detalles')
+            ->whereIn('planta_ubicacion_id', $ubicaciones)
+            ->distinct()
+            ->pluck('planta_ajuste_id');
+
+        DB::table('planta_ajuste_detalles')->whereIn('planta_ajuste_id', $ajustes)->delete();
+        DB::table('planta_ajustes')->whereIn('id', $ajustes)
+            ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
+        DB::table('planta_ajustes')->whereIn('id', $ajustes)->delete();
 
         // Cambios de disponibilidad: mismos punteros de reversión que las
         // recepciones, así que se sueltan antes de borrar.
@@ -868,29 +1057,17 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         DB::table('planta_insumos')->whereIn('id', $insumos)->delete();
         DB::table('planta_ubicaciones')->whereIn('id', $ubicaciones)->delete();
 
-        // El registro de actividad de las recepciones del diagnóstico tampoco
-        // debe quedarse: es ruido en la auditoría real. Se limpian los dos
-        // canales —cabecera y líneas—, porque LogsActivity escribe en ambos.
-        DB::table('activity_log')
-            ->where('subject_type', PlantaRecepcion::class)
-            ->whereIn('subject_id', $recepciones)
-            ->delete();
-        DB::table('activity_log')
-            ->where('subject_type', PlantaRecepcionDetalle::class)
-            ->whereIn('subject_id', $detalles)
-            ->delete();
-        DB::table('activity_log')
-            ->where('subject_type', PlantaCambioDisponibilidad::class)
-            ->whereIn('subject_id', $cambios)
-            ->delete();
-        DB::table('activity_log')
-            ->where('subject_type', PlantaTraslado::class)
-            ->whereIn('subject_id', $traslados)
-            ->delete();
-        DB::table('activity_log')
-            ->where('subject_type', PlantaTrasladoDetalle::class)
-            ->whereIn('subject_id', $detallesTraslado)
-            ->delete();
+        // El registro de actividad del diagnóstico tampoco debe quedarse: es
+        // ruido en la auditoría real. Antes se enumeraban aquí, a mano, los
+        // modelos a barrer, y la lista se quedó corta —cubría los documentos
+        // pero no los catálogos que el propio diagnóstico crea (insumos, lotes,
+        // ubicaciones)—, así que cada corrida dejaba filas huérfanas. Ahora lo
+        // resuelve el rastro, que no depende de ninguna lista escrita a mano y
+        // borra SOLO lo escrito después de abrirlo y cuyo sujeto ya no existe.
+        //
+        // Va al final a propósito: las tablas de arriba ya se vaciaron, que es
+        // lo que convierte a esas filas en huérfanas identificables.
+        $this->rastro?->purgar();
     }
 
     // --- Trabajador ---
@@ -986,6 +1163,38 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     {
         if (str_starts_with($contexto['escenario'], 'recepcion-')) {
             $this->trabajoDeRecepcion($contexto);
+
+            return;
+        }
+
+        if (str_starts_with($contexto['escenario'], 'ajuste-')) {
+            $usuario = User::findOrFail($contexto['usuario_id']);
+            $servicio = app(PlantaAjusteService::class);
+
+            match ($contexto['escenario']) {
+                // Todos crean su borrador a la vez: carrera por la numeración.
+                'ajuste-numero' => $this->crearAjusteDeDiagnostico($contexto, TipoAjuste::Positivo, '10'),
+                // Todos confirman el MISMO documento: solo uno puede ganar.
+                'ajuste-confirmar' => $servicio->confirmar(
+                    PlantaAjuste::findOrFail($contexto['ajuste_id']), $usuario
+                ),
+                // Cada uno pide los 500 enteros: solo cabe un ganador.
+                'ajuste-ultimo-saldo' => $servicio->confirmar(
+                    $this->crearAjusteDeDiagnostico($contexto, TipoAjuste::Negativo, '500'), $usuario
+                ),
+                // Todos cuentan lo MISMO. El primero corrige; los demás encuentran
+                // que el sistema ya dice eso y no tienen nada que corregir. Es la
+                // prueba de que `cantidad_sistema` se lee bajo bloqueo al
+                // confirmar y no se hereda del borrador.
+                'ajuste-conteo' => $servicio->confirmar(
+                    $this->crearAjusteDeDiagnostico($contexto, TipoAjuste::CorreccionConteo, '0', '250'), $usuario
+                ),
+                // ajuste-mismo-bucket: cada uno suma 10 al mismo bucket y todos
+                // deben caber, sin perder ningún efecto.
+                default => $servicio->confirmar(
+                    $this->crearAjusteDeDiagnostico($contexto, TipoAjuste::Positivo, '10'), $usuario
+                ),
+            };
 
             return;
         }

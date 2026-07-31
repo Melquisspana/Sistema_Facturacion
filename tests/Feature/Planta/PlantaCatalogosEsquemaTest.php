@@ -121,20 +121,30 @@ class PlantaCatalogosEsquemaTest extends TestCase
         }
     }
 
-    public function test_las_tablas_reservadas_para_pasos_posteriores_no_existen(): void
+    public function test_cada_tabla_de_los_pasos_posteriores_tiene_su_propia_prueba_de_esquema(): void
     {
-        // Las tablas salen de esta lista según se implementan, y pasan a tener su
-        // propia prueba de esquema: `planta_empaque_configs` en el paso 4,
-        // `planta_movimientos` y `planta_existencias` en el paso 5
-        // ({@see PlantaInventarioEsquemaTest}), `planta_recepciones` con sus
-        // detalles en el paso 6 ({@see PlantaRecepcionEsquemaTest}) y
-        // `planta_cambios_disponibilidad` en el paso 7
-        // ({@see PlantaCambioDisponibilidadEsquemaTest}) y `planta_traslados`
-        // con sus detalles en el paso 8 ({@see PlantaTrasladoEsquemaTest}).
+        // Esta prueba nació como lista de tablas RESERVADAS que aún no debían
+        // existir. Las fue soltando según se implementaban —`planta_empaque_configs`
+        // en el paso 4, el mayor y la proyección en el paso 5, las recepciones en
+        // el 6, los cambios de disponibilidad en el 7, los traslados en el 8— y con
+        // los ajustes del paso 9 se vació. Se conserva invertida, como inventario
+        // de que ninguna tabla del módulo quedó sin dueño: cada una la verifica en
+        // detalle la prueba de esquema de SU paso, y esta solo comprueba que
+        // siguen ahí y que la del paso 2 no se quedó atrás.
         foreach ([
-            'planta_ajustes',              // paso 9
-        ] as $futura) {
-            $this->assertFalse(Schema::hasTable($futura), "La tabla {$futura} no pertenece al paso 2.");
+            'planta_empaque_configs' => PlantaEmpaqueEsquemaTest::class,
+            'planta_movimientos' => PlantaInventarioEsquemaTest::class,
+            'planta_existencias' => PlantaInventarioEsquemaTest::class,
+            'planta_recepciones' => PlantaRecepcionEsquemaTest::class,
+            'planta_recepcion_detalles' => PlantaRecepcionEsquemaTest::class,
+            'planta_cambios_disponibilidad' => PlantaCambioDisponibilidadEsquemaTest::class,
+            'planta_traslados' => PlantaTrasladoEsquemaTest::class,
+            'planta_traslado_detalles' => PlantaTrasladoEsquemaTest::class,
+            'planta_ajustes' => PlantaAjusteEsquemaTest::class,
+            'planta_ajuste_detalles' => PlantaAjusteEsquemaTest::class,
+        ] as $tabla => $prueba) {
+            $this->assertTrue(Schema::hasTable($tabla), "Falta la tabla {$tabla}.");
+            $this->assertTrue(class_exists($prueba), "{$tabla} no tiene prueba de esquema propia.");
         }
     }
 
