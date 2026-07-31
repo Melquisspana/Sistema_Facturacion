@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Planta\CambioDisponibilidadController;
 use App\Http\Controllers\Planta\EmpaqueConfigController;
 use App\Http\Controllers\Planta\InsumoController;
 use App\Http\Controllers\Planta\PlantaDashboardController;
@@ -145,5 +146,46 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
                 ->middleware('permission:planta.recepciones.confirmar')->name('recepciones.confirmar');
             Route::patch('recepciones/{recepcion}/reversar', [RecepcionController::class, 'reversar'])
                 ->middleware('permission:planta.recepciones.reversar')->name('recepciones.reversar');
+        });
+
+        /*
+        | Cambios de disponibilidad: liberar o rechazar saldo RETENIDO.
+        |
+        | LECTURA con `planta.existencias.ver`, no con `planta.ajustes.ver`. Un
+        | ajuste altera la cantidad física y este documento no: lo que responde
+        | es cuánto saldo es UTILIZABLE, que es una pregunta de existencias.
+        | Colgarlo del permiso de ajustes reintroduciría la confusión que el
+        | módulo separa a propósito. Además `planta.existencias.ver` ya existe y
+        | producción ya lo tiene, así que no hubo que crear ningún permiso.
+        |
+        | ESCRITURA —crear, editar, anular, confirmar y reversar— con
+        | `planta.calidad.gestionar`, que producción NO tiene: decidir qué saldo
+        | entra en la operación no es tarea de quien lo mueve.
+        |
+        | `anular` es PATCH, no DELETE: no se borra nada, cambia el estado. NO hay
+        | `destroy`.
+        |
+        | Rutas literales ANTES que las paramétricas, como el resto del archivo.
+        */
+        Route::middleware('permission:planta.existencias.ver')->group(function () {
+            $gestionar = 'permission:planta.calidad.gestionar';
+
+            Route::get('disponibilidad', [CambioDisponibilidadController::class, 'index'])->name('disponibilidad.index');
+            Route::get('disponibilidad/crear', [CambioDisponibilidadController::class, 'create'])
+                ->middleware($gestionar)->name('disponibilidad.create');
+            Route::post('disponibilidad', [CambioDisponibilidadController::class, 'store'])
+                ->middleware($gestionar)->name('disponibilidad.store');
+
+            Route::get('disponibilidad/{disponibilidad}', [CambioDisponibilidadController::class, 'show'])->name('disponibilidad.show');
+            Route::get('disponibilidad/{disponibilidad}/editar', [CambioDisponibilidadController::class, 'edit'])
+                ->middleware($gestionar)->name('disponibilidad.edit');
+            Route::put('disponibilidad/{disponibilidad}', [CambioDisponibilidadController::class, 'update'])
+                ->middleware($gestionar)->name('disponibilidad.update');
+            Route::patch('disponibilidad/{disponibilidad}/anular', [CambioDisponibilidadController::class, 'anular'])
+                ->middleware($gestionar)->name('disponibilidad.anular');
+            Route::patch('disponibilidad/{disponibilidad}/confirmar', [CambioDisponibilidadController::class, 'confirmar'])
+                ->middleware($gestionar)->name('disponibilidad.confirmar');
+            Route::patch('disponibilidad/{disponibilidad}/reversar', [CambioDisponibilidadController::class, 'reversar'])
+                ->middleware($gestionar)->name('disponibilidad.reversar');
         });
     });

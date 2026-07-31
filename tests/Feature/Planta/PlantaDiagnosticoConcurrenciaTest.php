@@ -165,6 +165,8 @@ class PlantaDiagnosticoConcurrenciaTest extends TestCase
             'crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico',
             // Documento de recepción (paso 6).
             'recepcion-numero', 'recepcion-confirmar', 'recepcion-mismo-bucket',
+            // Cambio de disponibilidad (paso 7).
+            'disponibilidad-confirmar',
         ] as $escenario) {
             $this->assertStringContainsString($escenario, $descripcion);
         }

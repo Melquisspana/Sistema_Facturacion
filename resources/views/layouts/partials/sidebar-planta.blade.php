@@ -16,16 +16,25 @@
     </div>
 
     {{-- Operación diaria. Aparece antes que los catálogos porque es lo que se
-         usa todos los días; los catálogos se tocan de vez en cuando. Traslados,
-         Ajustes y Calidad se agregarán cuando tengan rutas reales. --}}
-    @can('planta.recepciones.ver')
+         usa todos los días; los catálogos se tocan de vez en cuando. Traslados y
+         Ajustes se agregarán cuando tengan rutas reales.
+
+         Cada entrada lleva SU permiso, no el del grupo: se lee lo que se puede
+         entrar a ver. Ocultar no autoriza —las rutas llevan su middleware—, pero
+         un enlace que siempre da 403 es ruido. --}}
+    @canany(['planta.recepciones.ver', 'planta.existencias.ver'])
         <div>
             <p class="{{ $tituloGrupo }}">Operación</p>
             <div class="space-y-0.5">
-                <x-sidebar-link :href="route('planta.recepciones.index')" :active="request()->routeIs('planta.recepciones.*')">Recepciones</x-sidebar-link>
+                @can('planta.recepciones.ver')
+                    <x-sidebar-link :href="route('planta.recepciones.index')" :active="request()->routeIs('planta.recepciones.*')">Recepciones</x-sidebar-link>
+                @endcan
+                @can('planta.existencias.ver')
+                    <x-sidebar-link :href="route('planta.disponibilidad.index')" :active="request()->routeIs('planta.disponibilidad.*')">Disponibilidad</x-sidebar-link>
+                @endcan
             </div>
         </div>
-    @endcan
+    @endcanany
 
     {{-- Catálogos base. El grupo entero desaparece sin planta.catalogos.ver,
          igual que hace sidebar-facturacion. Ocultar no autoriza: las rutas
