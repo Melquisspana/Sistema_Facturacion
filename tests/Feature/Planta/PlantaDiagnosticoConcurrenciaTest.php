@@ -153,14 +153,19 @@ class PlantaDiagnosticoConcurrenciaTest extends TestCase
 
     // --- Contrato del comando ---
 
-    public function test_el_comando_esta_registrado_con_sus_cuatro_escenarios(): void
+    public function test_el_comando_esta_registrado_con_todos_sus_escenarios(): void
     {
         $this->assertArrayHasKey('planta:diagnostico-concurrencia', Artisan::all());
 
         $descripcion = Artisan::all()['planta:diagnostico-concurrencia']
             ->getDefinition()->getOption('escenario')->getDescription();
 
-        foreach (['crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico'] as $escenario) {
+        foreach ([
+            // Motor de inventario (paso 5).
+            'crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico',
+            // Documento de recepción (paso 6).
+            'recepcion-numero', 'recepcion-confirmar', 'recepcion-mismo-bucket',
+        ] as $escenario) {
             $this->assertStringContainsString($escenario, $descripcion);
         }
     }

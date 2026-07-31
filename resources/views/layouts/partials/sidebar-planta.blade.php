@@ -15,6 +15,18 @@
         </div>
     </div>
 
+    {{-- Operación diaria. Aparece antes que los catálogos porque es lo que se
+         usa todos los días; los catálogos se tocan de vez en cuando. Traslados,
+         Ajustes y Calidad se agregarán cuando tengan rutas reales. --}}
+    @can('planta.recepciones.ver')
+        <div>
+            <p class="{{ $tituloGrupo }}">Operación</p>
+            <div class="space-y-0.5">
+                <x-sidebar-link :href="route('planta.recepciones.index')" :active="request()->routeIs('planta.recepciones.*')">Recepciones</x-sidebar-link>
+            </div>
+        </div>
+    @endcan
+
     {{-- Catálogos base. El grupo entero desaparece sin planta.catalogos.ver,
          igual que hace sidebar-facturacion. Ocultar no autoriza: las rutas
          llevan su propio middleware. Lotes se agregará cuando tenga rutas

@@ -9,8 +9,12 @@ use App\Enums\Planta\TipoUbicacion;
 use App\Enums\Planta\UnidadBase;
 use App\Models\Planta\PlantaInsumo;
 use App\Models\Planta\PlantaMovimiento;
+use App\Models\Planta\PlantaRecepcion;
+use App\Models\Planta\PlantaRecepcionDetalle;
+use App\Models\User;
 use App\Services\Planta\LoteService;
 use App\Services\Planta\PlantaInventarioService;
+use App\Services\Planta\PlantaRecepcionService;
 use App\Support\Planta\BucketInventario;
 use App\Support\Planta\ContextoMovimiento;
 use Illuminate\Console\Command;
@@ -63,7 +67,7 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
 {
     protected $signature = 'planta:diagnostico-concurrencia
         {--confirmar : Obligatorio: el diagnóstico ESCRIBE datos temporales en la base configurada}
-        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|todos}
+        {--escenario=todos : crear-bucket|sumar|ultimo-saldo|lote-generico|recepcion-numero|recepcion-confirmar|recepcion-mismo-bucket|todos}
         {--procesos=6 : Cuántos procesos compiten a la vez}
         {--rol=coordinador : Interno. `trabajador` lo usan los subprocesos}
         {--contexto= : Interno. Contexto JSON del escenario, en base64}';
@@ -73,7 +77,12 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     /** Prefijo de todo lo que crea, para poder limpiarlo sin ambigüedad. */
     private const PREFIJO = 'DIAGCONC-';
 
-    private const ESCENARIOS = ['crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico'];
+    private const ESCENARIOS = [
+        // Motor de inventario (paso 5).
+        'crear-bucket', 'sumar', 'ultimo-saldo', 'lote-generico',
+        // Documento de recepción (paso 6).
+        'recepcion-numero', 'recepcion-confirmar', 'recepcion-mismo-bucket',
+    ];
 
     /**
      * Únicos entornos donde este diagnóstico puede correr. Lista BLANCA: un
@@ -353,7 +362,10 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     {
         $sufijo = strtoupper(Str::random(6));
 
-        $controlaLotes = $escenario !== 'lote-generico';
+        // Sin control de lotes en los escenarios que necesitan que TODOS los
+        // procesos aterricen en el MISMO bucket: el lote genérico es único por
+        // insumo, así que la quinta dimensión coincide sin acuerdo previo.
+        $controlaLotes = ! in_array($escenario, ['lote-generico', 'recepcion-mismo-bucket'], true);
 
         $insumo = PlantaInsumo::create([
             'codigo' => self::PREFIJO.$sufijo,
@@ -381,6 +393,20 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
 
         // En lote-generico el lote es justamente lo que compiten por crear.
         if ($escenario === 'lote-generico') {
+            return $contexto;
+        }
+
+        // Escenarios de RECEPCIÓN: el lote lo resuelve el propio documento al
+        // confirmarse, así que aquí no se prepara ninguno.
+        if (str_starts_with($escenario, 'recepcion-')) {
+            $contexto['usuario_id'] = $this->usuarioDelDiagnostico();
+
+            // `recepcion-confirmar` necesita UN borrador que todos intenten
+            // confirmar a la vez: es la carrera que hay que medir.
+            if ($escenario === 'recepcion-confirmar') {
+                $contexto['recepcion_id'] = $this->crearBorradorDeDiagnostico($contexto)->id;
+            }
+
             return $contexto;
         }
 
@@ -416,9 +442,52 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         return $contexto;
     }
 
+    /**
+     * Usuario con el que se firman las recepciones del diagnóstico.
+     *
+     * Se REUTILIZA un administrador existente en vez de crear uno: un usuario de
+     * prueba que sobreviva a un fallo de limpieza es una cuenta con permisos
+     * flotando en la base, que es bastante peor que una fila de inventario.
+     */
+    private function usuarioDelDiagnostico(): int
+    {
+        $usuario = User::role('administrador')->first();
+
+        if ($usuario === null) {
+            throw new RuntimeException(
+                'El diagnóstico de recepciones necesita un usuario con rol administrador ya existente. '
+                .'No crea usuarios: sembrar cuentas de prueba es justo lo que no debe dejar detrás.'
+            );
+        }
+
+        return $usuario->id;
+    }
+
+    /** @param  array<string, mixed>  $contexto */
+    private function crearBorradorDeDiagnostico(array $contexto): PlantaRecepcion
+    {
+        return app(PlantaRecepcionService::class)->crearBorrador([
+            'fecha' => now()->toDateString(),
+            'planta_ubicacion_id' => $contexto['ubicacion_id'],
+            'documento_referencia' => self::PREFIJO.'REF',
+            'detalles' => [[
+                'planta_insumo_id' => $contexto['insumo_id'],
+                'cantidad_recibida' => '5',
+                'unidad_recibida' => 'saco',
+                'contenido_por_unidad' => '100',
+                'factor_conversion' => '1',
+                'estado_destino' => EstadoDisponibilidad::Disponible->value,
+            ]],
+        ], User::findOrFail($contexto['usuario_id']));
+    }
+
     /** Comprueba la invariante que cada escenario debe cumplir tras la tormenta. */
     private function verificar(string $escenario, array $contexto, int $procesos, int $exitos): bool
     {
+        if (str_starts_with($escenario, 'recepcion-')) {
+            return $this->verificarRecepcion($escenario, $contexto, $procesos, $exitos);
+        }
+
         if ($escenario === 'lote-generico') {
             $lotes = DB::table('planta_lotes')
                 ->where('planta_insumo_id', $contexto['insumo_id'])
@@ -465,6 +534,69 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
         return $ok;
     }
 
+    /**
+     * Invariantes de los escenarios de recepción.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function verificarRecepcion(string $escenario, array $contexto, int $procesos, int $exitos): bool
+    {
+        $recepciones = PlantaRecepcion::where('planta_ubicacion_id', $contexto['ubicacion_id'])->get();
+        $numeros = $recepciones->pluck('numero');
+
+        $this->components->twoColumnDetail('Recepciones creadas', (string) $recepciones->count());
+        $this->components->twoColumnDetail('Números distintos', (string) $numeros->unique()->count());
+
+        // Vale para los tres: numerar dos documentos igual rompería el unique y
+        // dejaría el módulo sin forma de referirse a uno de ellos.
+        $ok = $this->afirmar(
+            $numeros->count() === $numeros->unique()->count(),
+            'ningún número de recepción puede repetirse'
+        );
+
+        if ($escenario === 'recepcion-numero') {
+            $ok = $this->afirmar($recepciones->count() === $exitos, 'una recepción por proceso con éxito') && $ok;
+
+            return $this->afirmar($exitos === $procesos, 'crear un borrador no debería rechazar a nadie') && $ok;
+        }
+
+        $movimientos = DB::table('planta_movimientos')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])->count();
+        $filas = DB::table('planta_existencias')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])->count();
+        $saldo = (string) (DB::table('planta_existencias')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])->sum('cantidad') ?? '0');
+        $sumaMayor = (string) DB::table('planta_movimientos')
+            ->where('planta_ubicacion_id', $contexto['ubicacion_id'])->sum('cantidad');
+
+        $this->components->twoColumnDetail('Movimientos escritos', (string) $movimientos);
+        $this->components->twoColumnDetail('Filas de existencia', (string) $filas);
+        $this->components->twoColumnDetail('Saldo proyectado', $saldo);
+        $this->components->twoColumnDetail('Suma del mayor', $sumaMayor);
+
+        $ok = $this->afirmar(bccomp($saldo, $sumaMayor, 4) === 0, 'el saldo debe igualar la suma del mayor') && $ok;
+
+        if ($escenario === 'recepcion-confirmar') {
+            // La carrera: N procesos confirmando el MISMO documento. Solo uno puede
+            // ganar; si ganaran dos, el saldo entraría dos veces.
+            $ok = $this->afirmar($exitos === 1, "solo 1 de los {$procesos} procesos puede confirmar el documento") && $ok;
+            $ok = $this->afirmar($movimientos === 1, 'el documento tiene una línea: debe producir UN movimiento') && $ok;
+            $ok = $this->afirmar(bccomp($saldo, '500.0000', 4) === 0, 'el saldo esperado es 500.0000') && $ok;
+
+            return $ok;
+        }
+
+        // recepcion-mismo-bucket: cada proceso crea Y confirma su documento, y
+        // todos aterrizan en el mismo bucket porque el insumo no controla lotes.
+        $esperado = bcmul((string) $exitos, '500.0000', 4);
+
+        $ok = $this->afirmar($filas === 1, 'todos deben aterrizar en UNA sola fila de existencia') && $ok;
+        $ok = $this->afirmar($movimientos === $exitos, 'un movimiento por confirmación con éxito') && $ok;
+        $ok = $this->afirmar(bccomp($saldo, $esperado, 4) === 0, "el saldo esperado es {$esperado}") && $ok;
+
+        return $this->afirmar($exitos === $procesos, 'ninguna confirmación debería perderse') && $ok;
+    }
+
     private function afirmar(bool $condicion, string $descripcion): bool
     {
         $this->line($condicion ? "  <fg=green>OK</> {$descripcion}" : "  <fg=red>FALLA</> {$descripcion}");
@@ -483,16 +615,46 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     private function limpiar(): void
     {
         $insumos = DB::table('planta_insumos')->where('codigo', 'like', self::PREFIJO.'%')->pluck('id');
+        $ubicaciones = DB::table('planta_ubicaciones')->where('codigo', 'like', self::PREFIJO.'%')->pluck('id');
 
-        if ($insumos->isEmpty()) {
+        if ($insumos->isEmpty() && $ubicaciones->isEmpty()) {
             return;
         }
 
+        // Orden de dependencias, de las hojas a la raíz. Las recepciones van
+        // primero porque sus líneas apuntan a lotes e insumos.
+        $recepciones = DB::table('planta_recepciones')->whereIn('planta_ubicacion_id', $ubicaciones)->pluck('id');
+        $detalles = DB::table('planta_recepcion_detalles')->whereIn('planta_recepcion_id', $recepciones)->pluck('id');
+
+        DB::table('planta_recepcion_detalles')->whereIn('planta_recepcion_id', $recepciones)->delete();
+        // Las auto-referencias (reversion_de_id / revertido_por_id) se sueltan
+        // antes de borrar: si no, el restrictOnDelete bloquearía el borrado.
+        DB::table('planta_recepciones')->whereIn('id', $recepciones)
+            ->update(['reversion_de_id' => null, 'revertido_por_id' => null]);
+        DB::table('planta_recepciones')->whereIn('id', $recepciones)->delete();
+
+        // Los movimientos de reversión apuntan a los originales con una auto-FK
+        // `restrictOnDelete`: hay que soltarla antes o el borrado en bloque falla.
+        DB::table('planta_movimientos')->whereIn('planta_insumo_id', $insumos)
+            ->update(['movimiento_revertido_id' => null]);
         DB::table('planta_movimientos')->whereIn('planta_insumo_id', $insumos)->delete();
+
         DB::table('planta_existencias')->whereIn('planta_insumo_id', $insumos)->delete();
         DB::table('planta_lotes')->whereIn('planta_insumo_id', $insumos)->delete();
         DB::table('planta_insumos')->whereIn('id', $insumos)->delete();
-        DB::table('planta_ubicaciones')->where('codigo', 'like', self::PREFIJO.'%')->delete();
+        DB::table('planta_ubicaciones')->whereIn('id', $ubicaciones)->delete();
+
+        // El registro de actividad de las recepciones del diagnóstico tampoco
+        // debe quedarse: es ruido en la auditoría real. Se limpian los dos
+        // canales —cabecera y líneas—, porque LogsActivity escribe en ambos.
+        DB::table('activity_log')
+            ->where('subject_type', PlantaRecepcion::class)
+            ->whereIn('subject_id', $recepciones)
+            ->delete();
+        DB::table('activity_log')
+            ->where('subject_type', PlantaRecepcionDetalle::class)
+            ->whereIn('subject_id', $detalles)
+            ->delete();
     }
 
     // --- Trabajador ---
@@ -586,6 +748,12 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
     /** @param  array<string, mixed>  $contexto */
     private function trabajo(array $contexto): void
     {
+        if (str_starts_with($contexto['escenario'], 'recepcion-')) {
+            $this->trabajoDeRecepcion($contexto);
+
+            return;
+        }
+
         if ($contexto['escenario'] === 'lote-generico') {
             $insumo = PlantaInsumo::findOrFail($contexto['insumo_id']);
 
@@ -618,6 +786,35 @@ class PlantaDiagnosticoConcurrenciaCommand extends Command
                 grupoUuid: (string) Str::uuid(),
             ),
         ), 3);
+    }
+
+    /**
+     * Lo que hace cada proceso en los escenarios de recepción.
+     *
+     * @param  array<string, mixed>  $contexto
+     */
+    private function trabajoDeRecepcion(array $contexto): void
+    {
+        $usuario = User::findOrFail($contexto['usuario_id']);
+        $servicio = app(PlantaRecepcionService::class);
+
+        // Todos crean su borrador a la vez: es la carrera por la numeración.
+        if ($contexto['escenario'] === 'recepcion-numero') {
+            $this->crearBorradorDeDiagnostico($contexto);
+
+            return;
+        }
+
+        // Todos confirman el MISMO documento: solo uno puede ganar.
+        if ($contexto['escenario'] === 'recepcion-confirmar') {
+            $servicio->confirmar(PlantaRecepcion::findOrFail($contexto['recepcion_id']), $usuario);
+
+            return;
+        }
+
+        // Cada uno crea Y confirma el suyo, y todos caen en el mismo bucket
+        // porque el insumo no controla lotes: comparten el lote genérico.
+        $servicio->confirmar($this->crearBorradorDeDiagnostico($contexto), $usuario);
     }
 
     /** @param  array<string, mixed>  $contexto */
