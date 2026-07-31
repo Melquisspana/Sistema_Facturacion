@@ -93,12 +93,41 @@ class PpqBusquedaService
         }
         $digitos = preg_replace('/\D/', '', $texto);
 
+        /*
+         * Si se escribe un correlativo numérico, primero buscamos una coincidencia
+         * fiscal exacta en P002 usando la secuencia final del número de control.
+         *
+         * Ejemplo: 0006 debe encontrar ...M001P002-000000000000006.
+         * Si todavía no existe en P002, se conserva la búsqueda histórica P001.
+         */
+        if ($digitos !== '') {
+            $secuencia = str_pad((string) ((int) $digitos), 15, '0', STR_PAD_LEFT);
+
+            $finalP002 = 'M001P002-'.$secuencia;
+            $finalP001 = 'M001P001-'.$secuencia;
+
+            $existeNuevo = Dte::query()
+                ->whereIn('tipo_dte', self::TIPOS)
+                ->where('numero_control', 'like', "%{$finalP002}")
+                ->exists();
+
+            if ($existeNuevo) {
+                $q->where('numero_control', 'like', "%{$finalP002}");
+
+                return;
+            }
+
+            $q->where('numero_control', 'like', "%{$finalP001}");
+
+            return;
+        }
+
         $q->where(function (Builder $sub) use ($texto, $digitos) {
             $sub->where('numero_control', 'like', "%{$texto}%")
                 ->orWhere('codigo_generacion', 'like', "%{$texto}%")
                 ->orWhere('sello_recepcion', 'like', "%{$texto}%")
                 ->orWhere('numero_orden_compra', 'like', "%{$texto}%");
-            // Búsqueda por "últimos 4 dígitos": el control termina en la secuencia.
+
             if ($digitos !== '') {
                 $sub->orWhere('numero_control', 'like', "%{$digitos}");
             }
