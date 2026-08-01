@@ -5,6 +5,7 @@ namespace Tests\Feature\Planta;
 use App\Enums\Planta\EstadoAjustePlanta;
 use App\Enums\Planta\TipoAjuste;
 use App\Models\Planta\PlantaAjuste;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -142,6 +143,47 @@ class PlantaAjusteAutorizacionTest extends TestCase
         $this->assertSame(EstadoAjustePlanta::Borrador, $borrador->refresh()->estado);
         $this->assertSame(EstadoAjustePlanta::Confirmado, $confirmado->refresh()->estado);
         // El saldo es el de la recepción más el único ajuste que sí se aplicó.
+        $this->assertSame('520.0000', $this->saldo($bucket));
+    }
+
+    // --- Ciclo repartido entre personas ---
+
+    public function test_quien_solo_prepara_ajustes_no_los_confirma_ni_los_reversa(): void
+    {
+        // El supervisor que el plan prevé: prepara el ajuste y otro lo confirma.
+        // Hoy nadie tiene este reparto —los tres permisos son de administrador—,
+        // y por eso hace falta la prueba: sin ella, que `confirmar` exigiera
+        // `planta.ajustes.crear` pasaría inadvertido, porque quien los tiene los
+        // tiene todos y quien no, ninguno.
+        $this->encenderModulo();
+        $e = $this->escenarioConSaldo();
+        $bucket = $this->bucketDeAjuste($e);
+        $borrador = $this->borradorAjuste($e, TipoAjuste::Positivo, '10');
+        $confirmado = $this->ajusteConfirmado($e, TipoAjuste::Positivo, '20');
+
+        $preparador = User::factory()->create()->givePermissionTo([
+            'planta.ver',
+            'planta.ajustes.ver',
+            'planta.ajustes.crear',
+        ]);
+        $antes = $this->huellaMayor();
+
+        // Lo suyo sí puede.
+        $this->actingAs($preparador)->get(route('planta.ajustes.index'))->assertOk();
+        $this->actingAs($preparador)->get(route('planta.ajustes.create'))->assertOk();
+
+        // Lo que mueve inventario, no.
+        $this->actingAs($preparador)
+            ->patch(route('planta.ajustes.confirmar', $borrador))
+            ->assertForbidden();
+
+        $this->actingAs($preparador)
+            ->patch(route('planta.ajustes.reversar', $confirmado), ['motivo' => 'no deberia poder hacerlo'])
+            ->assertForbidden();
+
+        $this->assertSame(EstadoAjustePlanta::Borrador, $borrador->refresh()->estado);
+        $this->assertSame(EstadoAjustePlanta::Confirmado, $confirmado->refresh()->estado);
+        $this->assertSame($antes, $this->huellaMayor());
         $this->assertSame('520.0000', $this->saldo($bucket));
     }
 
@@ -343,6 +385,51 @@ class PlantaAjusteAutorizacionTest extends TestCase
     }
 
     // --- Superficie ---
+
+    /**
+     * Permisos que debe exigir cada ruta, incluidos los de los grupos que la
+     * envuelven. Se declara el conjunto COMPLETO y se compara exacto: así una
+     * ruta no puede quedarse ni corta —exigiendo menos de lo debido— ni pedir de
+     * más por copiar el middleware de su vecina.
+     *
+     * @return array<string, array{0: string, 1: list<string>}>
+     */
+    public static function permisosPorRuta(): array
+    {
+        $area = ['permission:planta.ver', 'permission:planta.ajustes.ver'];
+
+        return [
+            'index' => ['planta.ajustes.index', $area],
+            'show' => ['planta.ajustes.show', $area],
+            'create' => ['planta.ajustes.create', [...$area, 'permission:planta.ajustes.crear']],
+            'store' => ['planta.ajustes.store', [...$area, 'permission:planta.ajustes.crear']],
+            'edit' => ['planta.ajustes.edit', [...$area, 'permission:planta.ajustes.crear']],
+            'update' => ['planta.ajustes.update', [...$area, 'permission:planta.ajustes.crear']],
+            'anular' => ['planta.ajustes.anular', [...$area, 'permission:planta.ajustes.crear']],
+            'confirmar' => ['planta.ajustes.confirmar', [...$area, 'permission:planta.ajustes.confirmar']],
+            'reversar' => ['planta.ajustes.reversar', [...$area, 'permission:planta.ajustes.reversar']],
+        ];
+    }
+
+    /**
+     * Un permiso que existe en PermisoSistema pero que ninguna ruta exige
+     * equivale a no tenerlo: la matriz de roles diría una cosa y el backend haría
+     * otra. Esta prueba ata las dos.
+     *
+     * @param  list<string>  $esperados
+     */
+    #[DataProvider('permisosPorRuta')]
+    public function test_cada_ruta_exige_exactamente_sus_permisos(string $ruta, array $esperados): void
+    {
+        $middleware = app('router')->getRoutes()->getByName($ruta)->gatherMiddleware();
+
+        $permisos = array_values(array_filter(
+            $middleware,
+            fn ($capa) => is_string($capa) && str_starts_with($capa, 'permission:')
+        ));
+
+        $this->assertEqualsCanonicalizing($esperados, $permisos);
+    }
 
     public function test_no_hay_ruta_de_borrado(): void
     {
