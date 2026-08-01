@@ -20,6 +20,13 @@ class PpqBusquedaService
     private const TIPOS = ['03', '05'];
 
     /**
+     * Ancho máximo que se le supone a la secuencia final del número de control.
+     * La norma son 15 dígitos, pero hay documentos históricos con 16, así que el
+     * correlativo se busca probando anchos en vez de dar uno por sentado.
+     */
+    private const ANCHO_MAX_SECUENCIA = 20;
+
+    /**
      * @param  array<string, mixed>  $filtros  q, oc, albaran, sala, fecha_desde, fecha_hasta, monto, tipo
      */
     public function buscar(array $filtros, int $porPagina = 25): LengthAwarePaginator
@@ -31,8 +38,6 @@ class PpqBusquedaService
             ->noArchivados()
             ->with(['cliente:id,nombre,nombre_comercial', 'clienteSucursal:id,nombre,codigo'])
             ->latest('fecha_emision');
-
-        $this->aplicarTexto($q, trim((string) ($filtros['q'] ?? '')));
 
         if (filled($filtros['oc'] ?? null)) {
             $oc = OrdenCompra::normalizar((string) $filtros['oc']);
@@ -79,6 +84,13 @@ class PpqBusquedaService
             $q->where('tipo_dte', $filtros['tipo']);
         }
 
+        // El texto va AL FINAL para que la comprobación de «¿existe ya en P002?»
+        // se haga sobre la misma búsqueda que el usuario está viendo —mismo tipo,
+        // mismas fechas, sin archivados— y no sobre la tabla entera. Si se
+        // resolviera antes, un documento P002 de otro tipo o ya archivado podría
+        // esconder el P001 que sí correspondía mostrar.
+        $this->aplicarTexto($q, trim((string) ($filtros['q'] ?? '')));
+
         return $q->paginate($porPagina)->withQueryString();
     }
 
@@ -91,54 +103,93 @@ class PpqBusquedaService
         if ($texto === '') {
             return;
         }
-        $digitos = preg_replace('/\D/', '', $texto);
 
-        /*
-         * Si se escribe un correlativo numérico, primero buscamos una coincidencia
-         * fiscal exacta en P002 usando la secuencia final del número de control.
-         *
-         * Ejemplo: 0006 debe encontrar ...M001P002-000000000000006.
-         * Si todavía no existe en P002, se conserva la búsqueda histórica P001.
-         */
-        if ($digitos !== '') {
-            $secuencia = str_pad((string) ((int) $digitos), 15, '0', STR_PAD_LEFT);
-
-            $finalP002 = 'M001P002-'.$secuencia;
-            $finalP001 = 'M001P001-'.$secuencia;
-
-            $existeNuevo = Dte::query()
-                ->whereIn('tipo_dte', self::TIPOS)
-                ->where('numero_control', 'like', "%{$finalP002}")
-                ->exists();
-
-            if ($existeNuevo) {
-                $q->where('numero_control', 'like', "%{$finalP002}");
-
-                return;
-            }
-
-            $q->where('numero_control', 'like', "%{$finalP001}");
+        // Un término SOLO de dígitos es un correlativo: es el caso de «escribo los
+        // últimos 4». Cualquier otra cosa —número de control completo, código de
+        // generación, sello, orden de compra con letras— es una referencia
+        // literal y se busca como subcadena, que es como se buscó siempre.
+        if (ctype_digit($texto)) {
+            $this->aplicarCorrelativo($q, $texto);
 
             return;
         }
 
-        $q->where(function (Builder $sub) use ($texto, $digitos) {
+        $q->where(function (Builder $sub) use ($texto) {
             $sub->where('numero_control', 'like', "%{$texto}%")
                 ->orWhere('codigo_generacion', 'like', "%{$texto}%")
                 ->orWhere('sello_recepcion', 'like', "%{$texto}%")
                 ->orWhere('numero_orden_compra', 'like', "%{$texto}%");
-
-            if ($digitos !== '') {
-                $sub->orWhere('numero_control', 'like', "%{$digitos}");
-            }
         });
+    }
+
+    /**
+     * Correlativo numérico. Contra el número de control se exige coincidencia
+     * EXACTA —no subcadena—, para que escribir `0340` no arrastre el `0003401`
+     * de otro documento. Contra el resto de campos se mantiene la subcadena,
+     * porque una orden de compra o un sello también pueden ser solo dígitos.
+     *
+     * Si ese mismo correlativo ya existe en P002, se muestra ese y no el
+     * histórico de P001: tras el cambio de punto de venta ambos comparten
+     * numeración y el vigente es el nuevo.
+     */
+    private function aplicarCorrelativo(Builder $q, string $digitos): void
+    {
+        $hayEnP002 = (clone $q)
+            ->where('numero_control', 'like', '%P002-%')
+            ->where(fn (Builder $sub) => $this->correlativoExacto($sub, $digitos))
+            ->exists();
+
+        $q->where(function (Builder $sub) use ($digitos, $hayEnP002) {
+            $sub->where(function (Builder $control) use ($digitos, $hayEnP002) {
+                // El grupo va anidado: sin él, el `AND P002` se pegaría solo al
+                // último patrón del `OR` en vez de a todos.
+                $control->where(fn (Builder $c) => $this->correlativoExacto($c, $digitos));
+
+                if ($hayEnP002) {
+                    $control->where('numero_control', 'like', '%P002-%');
+                }
+            })
+                ->orWhere('codigo_generacion', 'like', "%{$digitos}%")
+                ->orWhere('sello_recepcion', 'like', "%{$digitos}%")
+                ->orWhere('numero_orden_compra', 'like', "%{$digitos}%");
+        });
+    }
+
+    /**
+     * El número de control TERMINA en ese correlativo, con su relleno de ceros
+     * completo hasta el separador.
+     *
+     * Se prueba un patrón por ancho posible en vez de fijar 15 dígitos: el ancho
+     * real varía entre documentos y darlo por sentado fue lo que dejó de
+     * encontrar los de 16. Anclar en el guion es lo que da la exactitud —entre el
+     * separador y el final solo puede haber ceros y el correlativo—, de modo que
+     * `986` no casa con `...100986`.
+     */
+    private function correlativoExacto(Builder $q, string $digitos): void
+    {
+        // `0986` y `986` son el mismo correlativo: el relleno lo pone el patrón.
+        $valor = ltrim($digitos, '0');
+
+        if ($valor === '') {
+            $valor = '0';
+        }
+
+        // `max()` evita que un término más largo que el ancho máximo genere un
+        // rango descendente: en ese caso solo cabe su propio ancho.
+        foreach (range(strlen($valor), max(strlen($valor), self::ANCHO_MAX_SECUENCIA)) as $i => $ancho) {
+            $patron = '%-'.str_pad($valor, $ancho, '0', STR_PAD_LEFT);
+
+            $i === 0
+                ? $q->where('numero_control', 'like', $patron)
+                : $q->orWhere('numero_control', 'like', $patron);
+        }
     }
 
     /**
      * IDs de DTE ya usados en algún lote PPQ (para avisar duplicados en la búsqueda).
      *
      * @param  array<int, int>  $dteIds
-     * @return array<int, int>  dte_id => ppq_lote_id (un lote cualquiera donde ya está)
+     * @return array<int, int> dte_id => ppq_lote_id (un lote cualquiera donde ya está)
      */
     public function dtesYaUsados(array $dteIds): array
     {
