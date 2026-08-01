@@ -241,11 +241,17 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
         |
         |   - ver    -> planta.ajustes.ver     (producción SÍ lo tiene: consulta
         |                                       lo que se ajustó en su bodega)
-        |   - TODA escritura -> planta.ajustes.crear (admin-only en Fase 2)
+        |   - crear / editar / anular borradores -> planta.ajustes.crear
+        |   - confirmar -> planta.ajustes.confirmar
+        |   - reversar  -> planta.ajustes.reversar
         |
-        | No se separan `confirmar` ni `reversar` en permisos propios porque hoy
-        | las tres acciones recaen en la misma persona; el enum ya deja el ciclo
-        | preparado para separarlas cuando exista un supervisor.
+        | Los tres permisos de escritura son admin-only en Fase 2, así que hoy las
+        | tres acciones recaen de hecho en la misma persona. Aun así van SEPARADOS
+        | en la ruta: preparar un ajuste y confirmarlo son actos distintos —el
+        | segundo es el que mueve inventario— y tenerlos cableados desde ya permite
+        | que un supervisor futuro prepare y otro confirme sin tocar estas rutas.
+        | Un permiso que existe en PermisoSistema pero que ninguna ruta exige
+        | equivale a no tenerlo.
         |
         | `anular` es PATCH, no DELETE: no se borra nada, cambia el estado. NO hay
         | `destroy`.
@@ -253,24 +259,24 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
         | Rutas literales ANTES que las paramétricas, como el resto del archivo.
         */
         Route::middleware('permission:planta.ajustes.ver')->group(function () {
-            $gestionar = 'permission:planta.ajustes.crear';
+            $crear = 'permission:planta.ajustes.crear';
 
             Route::get('ajustes', [AjusteController::class, 'index'])->name('ajustes.index');
             Route::get('ajustes/crear', [AjusteController::class, 'create'])
-                ->middleware($gestionar)->name('ajustes.create');
+                ->middleware($crear)->name('ajustes.create');
             Route::post('ajustes', [AjusteController::class, 'store'])
-                ->middleware($gestionar)->name('ajustes.store');
+                ->middleware($crear)->name('ajustes.store');
 
             Route::get('ajustes/{ajuste}', [AjusteController::class, 'show'])->name('ajustes.show');
             Route::get('ajustes/{ajuste}/editar', [AjusteController::class, 'edit'])
-                ->middleware($gestionar)->name('ajustes.edit');
+                ->middleware($crear)->name('ajustes.edit');
             Route::put('ajustes/{ajuste}', [AjusteController::class, 'update'])
-                ->middleware($gestionar)->name('ajustes.update');
+                ->middleware($crear)->name('ajustes.update');
             Route::patch('ajustes/{ajuste}/anular', [AjusteController::class, 'anular'])
-                ->middleware($gestionar)->name('ajustes.anular');
+                ->middleware($crear)->name('ajustes.anular');
             Route::patch('ajustes/{ajuste}/confirmar', [AjusteController::class, 'confirmar'])
-                ->middleware($gestionar)->name('ajustes.confirmar');
+                ->middleware('permission:planta.ajustes.confirmar')->name('ajustes.confirmar');
             Route::patch('ajustes/{ajuste}/reversar', [AjusteController::class, 'reversar'])
-                ->middleware($gestionar)->name('ajustes.reversar');
+                ->middleware('permission:planta.ajustes.reversar')->name('ajustes.reversar');
         });
     });

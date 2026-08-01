@@ -125,10 +125,16 @@
             @endif
 
             {{-- Acciones. Ocultar un botón NO autoriza: cada ruta lleva su
-                 permiso y el servicio revalida el estado con la fila bloqueada. --}}
+                 permiso y el servicio revalida el estado con la fila bloqueada.
+
+                 Cada bloque lleva EL PERMISO DE SU ACCIÓN, no el del documento:
+                 editar y anular son `crear`, confirmar es `confirmar` y reversar
+                 es `reversar`. Hoy los tres son admin-only y se ven juntos, pero
+                 así la pantalla no promete un botón que la ruta vaya a rechazar
+                 cuando exista un supervisor con solo una parte del ciclo. --}}
             <div class="flex flex-wrap items-center justify-end gap-3">
-                @can('planta.ajustes.crear')
-                    @if ($ajuste->esEditable())
+                @if ($ajuste->esEditable())
+                    @can('planta.ajustes.crear')
                         <a href="{{ route('planta.ajustes.edit', $ajuste) }}"
                            class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">Editar</a>
 
@@ -137,15 +143,19 @@
                             @csrf @method('PATCH')
                             <button class="rounded-md bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-300">Anular</button>
                         </form>
+                    @endcan
 
+                    @can('planta.ajustes.confirmar')
                         <form method="POST" action="{{ route('planta.ajustes.confirmar', $ajuste) }}"
                               onsubmit="return confirm('Confirmar el ajuste #{{ $ajuste->numero }}? El inventario cambiará y ya no se podrá editar.')">
                             @csrf @method('PATCH')
                             <button class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Confirmar ajuste</button>
                         </form>
-                    @endif
+                    @endcan
+                @endif
 
-                    @if ($ajuste->puedeReversarse())
+                @if ($ajuste->puedeReversarse())
+                    @can('planta.ajustes.reversar')
                         <form method="POST" action="{{ route('planta.ajustes.reversar', $ajuste) }}"
                               class="flex items-end gap-2"
                               onsubmit="return confirm('Reversar el ajuste #{{ $ajuste->numero }}? Se aplicará su efecto al revés.')">
@@ -158,8 +168,8 @@
                             </div>
                             <button class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Reversar</button>
                         </form>
-                    @endif
-                @endcan
+                    @endcan
+                @endif
             </div>
         </div>
     </div>

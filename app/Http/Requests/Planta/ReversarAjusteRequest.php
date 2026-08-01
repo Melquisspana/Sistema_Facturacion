@@ -15,7 +15,7 @@ class ReversarAjusteRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // el permiso planta.ajustes.crear lo aplica la ruta
+        return true; // el permiso planta.ajustes.reversar lo aplica la ruta
     }
 
     /**
