@@ -101,6 +101,7 @@
                             <th class="px-4 py-3">Estado</th>
                             <th class="px-4 py-3">Responsable</th>
                             <th class="px-4 py-3">Enviado</th>
+                            <th class="px-4 py-3">Días en tránsito</th>
                             <th class="px-4 py-3">Recibido</th>
                             <th class="px-4 py-3 text-right">Acciones</th>
                         </tr>
@@ -123,6 +124,27 @@
                                 </td>
                                 <td class="px-4 py-3">{{ $traslado->responsable_nombre ?? '—' }}</td>
                                 <td class="px-4 py-3">{{ $traslado->enviado_en?->format('d/m/Y H:i') ?? '—' }}</td>
+                                {{-- Días en tránsito: SOLO para lo que está viajando ahora.
+                                     Un traslado recibido, cancelado o reversado conserva su
+                                     `enviado_en` como historia, y mostrarle una cifra de
+                                     tránsito vigente diría que sigue en camino. El cálculo y
+                                     los umbrales viven en PlantaDashboardQuery, que es el
+                                     único sitio donde está esa regla: el panel de inicio usa
+                                     exactamente los mismos. No cuesta ninguna consulta:
+                                     `enviado_en` ya viene con la fila. --}}
+                                <td class="px-4 py-3">
+                                    @php
+                                        $diasTransito = \App\Support\Planta\PlantaDashboardQuery::diasEnTransito($traslado);
+                                        $sevTransito = \App\Support\Planta\PlantaDashboardQuery::severidadTransito($diasTransito);
+                                    @endphp
+                                    @if ($diasTransito === null)
+                                        <span class="text-gray-400 dark:text-paper-500">—</span>
+                                    @else
+                                        <x-planta.badge :color="$sevTransito">
+                                            {{ $diasTransito }} {{ $diasTransito === 1 ? 'día' : 'días' }}
+                                        </x-planta.badge>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3">{{ $traslado->recibido_en?->format('d/m/Y H:i') ?? '—' }}</td>
                                 <td class="px-4 py-3 text-right">
                                     <a href="{{ route('planta.traslados.show', $traslado) }}"
@@ -137,7 +159,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="10" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-400">
+                                <td colspan="11" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-400">
                                     No hay traslados con esos filtros.
                                 </td>
                             </tr>

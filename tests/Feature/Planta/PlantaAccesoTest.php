@@ -138,16 +138,35 @@ class PlantaAccesoTest extends TestCase
         $this->get('/planta')->assertRedirect(route('login'));
     }
 
-    /** D6 — contenido de la pantalla: sin KPIs inventados. */
-    public function test_d6_el_dashboard_es_informativo_y_no_muestra_indicadores(): void
+    /**
+     * D6 — contenido de la pantalla: indicadores del ÁREA y ninguno fiscal.
+     *
+     * El dashboard dejó de ser una pantalla informativa al implementarse el panel
+     * operativo, igual que los catálogos y los lotes dejaron de ser «pendientes».
+     * Lo que NO cambió, y es la razón de fondo de esta prueba, es que quien
+     * trabaja en planta no ve una sola cifra de facturación: el aislamiento del
+     * área se sigue verificando aquí y en PlantaRedireccionTest C4.
+     */
+    public function test_d6_el_dashboard_muestra_indicadores_del_area_y_ninguno_fiscal(): void
     {
         $this->encenderModulo();
 
         $resp = $this->actingAs($this->usuario('produccion'))->get('/planta')->assertOk();
 
         $resp->assertSee('Producción');
-        $resp->assertSee('Módulo en preparación');
-        $resp->assertSee('Qué se podrá hacer aquí más adelante');
+        $resp->assertSee('Área de Producción');
+        $resp->assertSee('Traslados en tránsito');
+
+        // Los textos de la Fase 1 describían un módulo sin funciones. Ya no son
+        // ciertos y no deben volver por copiar y pegar.
+        foreach ([
+            'Módulo en preparación',
+            'Esta área todavía no tiene funciones operativas',
+            'No hay datos que mostrar',
+            'Qué se podrá hacer aquí más adelante',
+        ] as $obsoleto) {
+            $resp->assertDontSee($obsoleto);
+        }
 
         // Ni una cifra ni un rótulo de indicador tomado del área fiscal.
         foreach (['DTE aceptados', 'Ventas del mes', 'Jobs fallidos', 'Estado técnico', 'Diagnóstico'] as $indicador) {
