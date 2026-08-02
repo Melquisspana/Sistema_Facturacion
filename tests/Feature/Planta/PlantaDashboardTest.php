@@ -549,15 +549,143 @@ class PlantaDashboardTest extends TestCase
         $this->assertNull(PlantaDashboardQuery::diasEnTransito($borrador));
     }
 
-    public function test_los_umbrales_de_severidad_son_los_autorizados(): void
+    /**
+     * ÚNICO sitio de toda la suite donde los umbrales aparecen como números
+     * literales, y es a propósito: aquí es donde se documenta la regla de
+     * negocio. Todo lo demás se deriva de las constantes, de modo que ajustar el
+     * criterio se hace en un solo lugar del código y otro de las pruebas.
+     *
+     * El viaje de Casa a Fábrica dura una hora y debe recibirse el mismo día: un
+     * día en tránsito ya es anómalo y dos son un problema.
+     */
+    public function test_los_umbrales_corresponden_a_la_operacion_real(): void
     {
+        $this->assertSame(1, PlantaDashboardQuery::DIAS_TRANSITO_ADVERTENCIA);
+        $this->assertSame(2, PlantaDashboardQuery::DIAS_TRANSITO_PELIGRO);
+    }
+
+    /**
+     * El comportamiento en los bordes, expresado RELATIVO a las constantes: si
+     * mañana cambian, esta prueba sigue describiendo la regla correcta.
+     */
+    public function test_la_severidad_cambia_exactamente_en_cada_umbral(): void
+    {
+        $advertencia = PlantaDashboardQuery::DIAS_TRANSITO_ADVERTENCIA;
+        $peligro = PlantaDashboardQuery::DIAS_TRANSITO_PELIGRO;
+
+        // Sin traslado en tránsito no hay antigüedad que juzgar.
         $this->assertSame(PlantaDashboardQuery::SEVERIDAD_NEUTRA, PlantaDashboardQuery::severidadTransito(null));
-        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_NEUTRA, PlantaDashboardQuery::severidadTransito(0));
-        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_NEUTRA, PlantaDashboardQuery::severidadTransito(2));
-        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_ADVERTENCIA, PlantaDashboardQuery::severidadTransito(3));
-        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_ADVERTENCIA, PlantaDashboardQuery::severidadTransito(6));
-        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_PELIGRO, PlantaDashboardQuery::severidadTransito(7));
-        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_PELIGRO, PlantaDashboardQuery::severidadTransito(40));
+
+        // Justo por debajo del primer umbral, y en el propio umbral.
+        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_NEUTRA, PlantaDashboardQuery::severidadTransito($advertencia - 1));
+        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_ADVERTENCIA, PlantaDashboardQuery::severidadTransito($advertencia));
+
+        // Justo por debajo del segundo, en el propio umbral y muy por encima.
+        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_ADVERTENCIA, PlantaDashboardQuery::severidadTransito($peligro - 1));
+        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_PELIGRO, PlantaDashboardQuery::severidadTransito($peligro));
+        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_PELIGRO, PlantaDashboardQuery::severidadTransito($peligro + 20));
+    }
+
+    /** Sin fecha de salida no hay antigüedad: null, nunca cero. */
+    public function test_sin_fecha_de_salida_no_hay_antiguedad(): void
+    {
+        $this->assertNull(PlantaDashboardQuery::diasDesde(null));
+        $this->assertNull(PlantaDashboardQuery::diasDesde(''));
+        $this->assertSame(PlantaDashboardQuery::SEVERIDAD_NEUTRA, PlantaDashboardQuery::severidadTransito(null));
+    }
+
+    /**
+     * Los tres tramos sobre traslados REALES, enviados de verdad en el pasado:
+     * hoy es neutro, un día es advertencia y dos o más son peligro.
+     */
+    public function test_los_tres_tramos_sobre_traslados_reales(): void
+    {
+        $advertencia = PlantaDashboardQuery::DIAS_TRANSITO_ADVERTENCIA;
+        $peligro = PlantaDashboardQuery::DIAS_TRANSITO_PELIGRO;
+
+        $hoy = $this->trasladoEnviadoHace(0);
+        $enUmbral = $this->trasladoEnviadoHace($advertencia);
+        $grave = $this->trasladoEnviadoHace($peligro);
+        $muyGrave = $this->trasladoEnviadoHace($peligro + 5);
+
+        foreach ([
+            [$hoy, 0, PlantaDashboardQuery::SEVERIDAD_NEUTRA],
+            [$enUmbral, $advertencia, PlantaDashboardQuery::SEVERIDAD_ADVERTENCIA],
+            [$grave, $peligro, PlantaDashboardQuery::SEVERIDAD_PELIGRO],
+            [$muyGrave, $peligro + 5, PlantaDashboardQuery::SEVERIDAD_PELIGRO],
+        ] as [$traslado, $diasEsperados, $severidadEsperada]) {
+            $dias = PlantaDashboardQuery::diasEnTransito($traslado);
+
+            $this->assertSame($diasEsperados, $dias, "El traslado #{$traslado->numero} debía llevar {$diasEsperados} días.");
+            $this->assertSame($severidadEsperada, PlantaDashboardQuery::severidadTransito($dias));
+        }
+    }
+
+    /**
+     * La MISMA regla en las dos pantallas. Se comprueba por el color realmente
+     * renderizado y no por la función, que ya está probada arriba: lo que
+     * importa es que ninguna vista aplique un criterio propio.
+     *
+     * El rojo es la señal inequívoca: en el listado, el badge de estado de un
+     * traslado enviado es ámbar, así que el ámbar no distingue; el rojo solo
+     * puede venir de la antigüedad mientras no haya traslados cancelados.
+     */
+    public function test_el_listado_y_el_panel_aplican_la_misma_severidad(): void
+    {
+        $this->encenderModulo();
+        $usuario = $this->usuarioCon(['planta.traslados.ver']);
+        $peligro = PlantaDashboardQuery::DIAS_TRANSITO_PELIGRO;
+
+        // --- Un día: advertencia, nunca peligro ---
+        $this->trasladoEnviadoHace(PlantaDashboardQuery::DIAS_TRANSITO_ADVERTENCIA);
+
+        $listado = $this->actingAs($usuario)->get(route('planta.traslados.index'))->assertOk();
+        $listado->assertSee('bg-amber-100', false);
+        $listado->assertDontSee('bg-red-100', false);
+
+        // En el panel solo se dibuja la tarjeta de traslados: el anillo es suyo.
+        $panel = $this->actingAs($usuario)->get(route('planta.dashboard'))->assertOk();
+        $panel->assertSee('ring-amber-300', false);
+        $panel->assertDontSee('ring-red-300', false);
+
+        // --- Dos días: peligro en las dos pantallas ---
+        $this->trasladoEnviadoHace($peligro);
+
+        $this->actingAs($usuario)->get(route('planta.traslados.index'))->assertOk()
+            ->assertSee('bg-red-100', false);
+
+        $this->actingAs($usuario)->get(route('planta.dashboard'))->assertOk()
+            ->assertSee('ring-red-300', false);
+    }
+
+    /**
+     * Lo que ya no viaja no muestra antigüedad ni cuenta en el KPI, sea porque
+     * llegó, porque se canceló o porque se reversó.
+     */
+    public function test_lo_que_ya_no_viaja_no_tiene_antiguedad_ni_cuenta(): void
+    {
+        $peligro = PlantaDashboardQuery::DIAS_TRANSITO_PELIGRO;
+
+        $recibido = $this->trasladoEnviadoHace($peligro + 3);
+        $this->servicioTraslado()->recibir($recibido, $this->admin());
+
+        $reversado = $this->trasladoEnviadoHace($peligro + 3);
+        $this->servicioTraslado()->reversar($reversado, 'salió el lote equivocado', $this->admin());
+
+        $cancelado = $this->borradorTraslado($this->escenarioConTransitoUnico(), '100');
+        $this->servicioTraslado()->cancelar($cancelado, $this->admin());
+
+        foreach ([$recibido, $reversado, $cancelado] as $traslado) {
+            $this->assertNull(
+                PlantaDashboardQuery::diasEnTransito($traslado->refresh()),
+                "El traslado #{$traslado->numero} ya no viaja y no puede mostrar antigüedad.",
+            );
+        }
+
+        $traslados = (new PlantaDashboardQuery)->traslados();
+
+        $this->assertSame(0, $traslados['cantidad']);
+        $this->assertNull($traslados['dias']);
     }
 
     public function test_sin_traslados_en_transito_la_tarjeta_muestra_su_estado_vacio(): void
