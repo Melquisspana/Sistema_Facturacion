@@ -24,6 +24,12 @@ use Illuminate\View\View;
  *
  * La consulta vive en {@see ExistenciaQuery} para que el listado y los totales
  * compartan exactamente los mismos filtros.
+ *
+ * Los totales se piden con `totalesPorUnidadYEstado()` y NO con
+ * `totalesPorEstado()`: esta pantalla abarca todos los insumos, y `cantidad`
+ * guarda libras y unidades en la misma columna. Agrupar solo por estado
+ * produciría cifras como «1100» al juntar 700 libras con 400 bolsas, que no es
+ * una cantidad de nada.
  */
 class ExistenciaController extends Controller
 {
@@ -34,8 +40,10 @@ class ExistenciaController extends Controller
         return view('planta.existencias.index', [
             'existencias' => $consulta->paginar(),
             // Totales del conjunto filtrado ENTERO, no de la página, y separados
-            // por estado: no existe un total que mezcle disponible con retenido.
-            'totales' => $consulta->totalesPorEstado(),
+            // DOS veces: por estado —no existe un total que mezcle disponible con
+            // retenido— y por unidad base, porque esta pantalla abarca varios
+            // insumos y sumar libras con unidades daría una cifra que no es nada.
+            'totalesPorUnidad' => $consulta->totalesPorUnidadYEstado(),
             'estados' => EstadoDisponibilidad::cases(),
             'tipos' => TipoInsumo::cases(),
             'insumos' => PlantaInsumo::orderBy('nombre')->get(['id', 'codigo', 'nombre']),

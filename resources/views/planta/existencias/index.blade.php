@@ -22,26 +22,58 @@
                 $etiquetaFiltro = 'block text-xs font-medium text-gray-500 dark:text-paper-400';
             @endphp
 
-            {{-- Totales del conjunto FILTRADO entero, no de la página visible. --}}
-            <div class="mb-4 grid gap-3 sm:grid-cols-3">
-                @forelse ($totales as $t)
-                    <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
-                        <div class="flex items-center justify-between">
-                            <x-planta.badge :color="$t['estado']->color()">{{ $t['estado']->label() }}</x-planta.badge>
-                            <span class="text-xs text-gray-400 dark:text-paper-500">{{ $t['buckets'] }} {{ $t['buckets'] === 1 ? 'saldo' : 'saldos' }}</span>
+            {{-- Resumen del conjunto FILTRADO entero, no de la página visible.
+
+                 Separado DOS veces: por estado y por unidad base. Nunca hay una
+                 cifra sin unidad al lado, porque `cantidad` guarda libras y
+                 unidades en la misma columna y un número desnudo no diría de qué
+                 está hablando. Solo se dibujan las combinaciones que existen. --}}
+            @php
+                $grupos = collect($totalesPorUnidad)->groupBy(fn (array $t) => $t['unidad']->value);
+                // Con una sola unidad el encabezado de grupo sobra: la abreviatura
+                // ya va pegada a cada cifra.
+                $variasUnidades = $grupos->count() > 1;
+            @endphp
+
+            <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-paper-500">
+                Saldo por unidad y estado
+            </h2>
+
+            <div class="mb-4 space-y-4">
+                @forelse ($grupos as $filas)
+                    @php $unidad = $filas->first()['unidad']; @endphp
+                    <div>
+                        @if ($variasUnidades)
+                            <p class="mb-2 text-xs font-medium text-gray-500 dark:text-paper-400">
+                                {{ $unidad->label() }} ({{ $unidad->abreviatura() }})
+                            </p>
+                        @endif
+                        <div class="grid gap-3 sm:grid-cols-3">
+                            @foreach ($filas as $t)
+                                <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
+                                    <div class="flex items-center justify-between">
+                                        <x-planta.badge :color="$t['estado']->color()">{{ $t['estado']->label() }}</x-planta.badge>
+                                        <span class="text-xs text-gray-400 dark:text-paper-500">{{ $t['buckets'] }} {{ $t['buckets'] === 1 ? 'saldo' : 'saldos' }}</span>
+                                    </div>
+                                    <p class="mt-2 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">
+                                        {{ $t['total'] }}
+                                        <span class="text-base font-normal text-gray-400 dark:text-paper-500">{{ $t['unidad']->abreviatura() }}</span>
+                                    </p>
+                                </div>
+                            @endforeach
                         </div>
-                        <p class="mt-2 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">{{ $t['total'] }}</p>
                     </div>
                 @empty
-                    <div class="sm:col-span-3 rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-400 dark:ring-ink-600">
-                        No hay saldo que totalizar con esos filtros.
+                    <div class="rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-400 dark:ring-ink-600">
+                        No hay saldo que totalizar con estos filtros.
                     </div>
                 @endforelse
             </div>
 
             <p class="mb-4 text-xs text-gray-500 dark:text-paper-400">
-                Cada estado se totaliza por separado a propósito: solo el saldo <strong>disponible</strong>
-                puede trasladarse o utilizarse. No existe un total que los sume.
+                Cada estado se totaliza por separado y las cantidades también se separan por unidad base:
+                solo el saldo <strong>disponible</strong> puede trasladarse o utilizarse, y las libras y las
+                unidades no se suman entre sí.
             </p>
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
