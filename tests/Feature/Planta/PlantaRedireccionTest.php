@@ -132,7 +132,9 @@ class PlantaRedireccionTest extends TestCase
             ->followingRedirects()
             ->get('/')
             ->assertOk()
-            ->assertSee('Módulo en preparación');
+            // Ancla en la cabecera del panel operativo: el texto de la Fase 1
+            // («Módulo en preparación») desapareció al implementarse el dashboard.
+            ->assertSee('Área de Producción');
     }
 
     // ---------------------------------------------------------------------
