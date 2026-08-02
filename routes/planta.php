@@ -5,6 +5,7 @@ use App\Http\Controllers\Planta\CambioDisponibilidadController;
 use App\Http\Controllers\Planta\EmpaqueConfigController;
 use App\Http\Controllers\Planta\ExistenciaController;
 use App\Http\Controllers\Planta\InsumoController;
+use App\Http\Controllers\Planta\LoteController;
 use App\Http\Controllers\Planta\MovimientoController;
 use App\Http\Controllers\Planta\PlantaDashboardController;
 use App\Http\Controllers\Planta\PresentacionController;
@@ -21,9 +22,11 @@ use Illuminate\Support\Facades\Route;
 |
 | NO emite DTE, no genera JSON, no firma, no transmite, no toca correlativos y
 | no envía correo. Contiene el dashboard, el CRUD de los catálogos base
-| (insumos, proveedores, ubicaciones, productos, presentaciones, empaques) y las
-| RECEPCIONES de insumos, que son el primer documento que mueve inventario.
-| Traslados, ajustes y cambios de disponibilidad todavía no existen.
+| (insumos, proveedores, ubicaciones, productos, presentaciones, empaques), la
+| consulta de LOTES —que no se crean aquí: nacen en las recepciones—, los cuatro
+| documentos que mueven inventario (recepciones, cambios de disponibilidad,
+| traslados y ajustes) y las dos consultas de solo lectura (existencias y
+| movimientos).
 |
 | Tres candados en orden, todos de BACKEND:
 |   1. auth               -> invitado va al login.
@@ -109,6 +112,28 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
             Route::put('empaques/{empaque}', [EmpaqueConfigController::class, 'update'])->middleware($gestionar)->name('empaques.update');
             Route::patch('empaques/{empaque}/predeterminada', [EmpaqueConfigController::class, 'marcarPredeterminada'])->middleware($gestionar)->name('empaques.predeterminada');
             Route::patch('empaques/{empaque}/toggle-activo', [EmpaqueConfigController::class, 'toggleActivo'])->middleware($gestionar)->name('empaques.toggle-activo');
+
+            /*
+            | Lotes. Es el único catálogo que NO tiene `create`, `edit` ni
+            | `update`, y no es una fase pendiente: los lotes nacen en las
+            | recepciones, que son el documento que los justifica. Editar su
+            | insumo o su código interno después de que tengan movimientos
+            | rompería la traza que un lote existe para dar, y no hay corrección
+            | legítima que pase por ahí.
+            |
+            | Queda `toggle-activo`, que retira el lote de la operación sin
+            | tocar su saldo ni el mayor, con el mismo permiso que el resto de
+            | los catálogos. No hay `destroy`: la tabla no tiene `deleted_at` a
+            | propósito y la FK del mayor es `restrictOnDelete`.
+            |
+            | El lote genérico no se lista ni se abre: el controlador devuelve
+            | 404 y el modelo lo bloquea en `updating` y `deleting`.
+            |
+            | Ruta literal ANTES que la paramétrica, como el resto del archivo.
+            */
+            Route::get('lotes', [LoteController::class, 'index'])->name('lotes.index');
+            Route::get('lotes/{lote}', [LoteController::class, 'show'])->name('lotes.show');
+            Route::patch('lotes/{lote}/toggle-activo', [LoteController::class, 'toggleActivo'])->middleware($gestionar)->name('lotes.toggle-activo');
         });
 
         /*

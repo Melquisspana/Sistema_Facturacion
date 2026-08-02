@@ -235,16 +235,20 @@ class PlantaCatalogosAutorizacionTest extends TestCase
             ->assertSee(route('planta.ubicaciones.index'));
     }
 
-    public function test_la_sidebar_no_ofrece_lo_que_todavia_no_existe(): void
+    public function test_la_sidebar_solo_ofrece_lo_que_tiene_ruta_real(): void
     {
         $this->encenderModulo();
 
-        // Productos, presentaciones y empaques salieron de esta lista al
-        // implementarse el paso 4. Lotes sigue fuera: no se crean a mano, nacen
-        // en las recepciones.
-        $this->actingAs($this->usuario('administrador'))
+        // Productos, presentaciones y empaques salieron de la lista de pendientes
+        // al implementarse el paso 4, y Lotes al implementarse su pantalla de
+        // consulta. Lo que sigue sin existir —y la sidebar no puede insinuar— es
+        // CREAR un lote a mano: los lotes nacen al confirmar una recepción.
+        $html = $this->actingAs($this->usuario('administrador'))
             ->get(route('planta.dashboard'))
             ->assertOk()
-            ->assertDontSee('planta/lotes');
+            ->assertSee(route('planta.lotes.index'), false)
+            ->getContent();
+
+        $this->assertStringNotContainsString('planta/lotes/crear', $html);
     }
 }

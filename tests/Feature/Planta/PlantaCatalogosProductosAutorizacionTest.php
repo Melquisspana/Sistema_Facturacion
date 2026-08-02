@@ -210,13 +210,20 @@ class PlantaCatalogosProductosAutorizacionTest extends TestCase
             ->assertSee(route('planta.empaques.index'));
     }
 
-    public function test_la_sidebar_no_ofrece_lotes_todavia(): void
+    /**
+     * Lotes entró en la sidebar con su pantalla de consulta. Lo que sigue sin
+     * existir es CREARLOS a mano: nacen al confirmar una recepción.
+     */
+    public function test_la_sidebar_ofrece_lotes_pero_no_su_creacion(): void
     {
         $this->encenderModulo();
 
-        $this->actingAs($this->usuario('administrador'))
+        $html = $this->actingAs($this->usuario('administrador'))
             ->get(route('planta.dashboard'))
             ->assertOk()
-            ->assertDontSee('planta/lotes');
+            ->assertSee(route('planta.lotes.index'), false)
+            ->getContent();
+
+        $this->assertStringNotContainsString('planta/lotes/crear', $html);
     }
 }
