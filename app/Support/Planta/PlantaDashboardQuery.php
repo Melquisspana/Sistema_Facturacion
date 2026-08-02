@@ -56,11 +56,23 @@ use Illuminate\Support\Carbon;
  */
 final class PlantaDashboardQuery
 {
-    /** Desde estos días en tránsito, la señal deja de ser neutra. */
-    public const DIAS_TRANSITO_ADVERTENCIA = 3;
+    /**
+     * Desde estos días en tránsito, la señal deja de ser neutra.
+     *
+     * El viaje de Casa a Fábrica dura alrededor de UNA HORA y lo normal es
+     * recibirlo el mismo día. Por eso el umbral es 1: algo que amanece todavía
+     * en tránsito ya no siguió el curso normal, aunque no sea grave todavía.
+     */
+    public const DIAS_TRANSITO_ADVERTENCIA = 1;
 
-    /** Desde estos días en tránsito, la señal es de peligro. */
-    public const DIAS_TRANSITO_PELIGRO = 7;
+    /**
+     * Desde estos días en tránsito, la señal es de peligro.
+     *
+     * Dos días son dos amaneceres con mercancía que salió de una bodega y no
+     * llegó a la otra: no está en ninguna de las dos y nadie la ha echado en
+     * falta. Es el fallo de inventario más probable del módulo.
+     */
+    public const DIAS_TRANSITO_PELIGRO = 2;
 
     /** Ventana de «reciente»: ajustes confirmados y lotes por vencer. */
     public const DIAS_VENTANA = 30;
