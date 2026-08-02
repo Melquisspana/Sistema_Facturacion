@@ -5,6 +5,7 @@ namespace App\Support\Planta;
 use App\Enums\Planta\EstadoDisponibilidad;
 use App\Enums\Planta\EstadoTrasladoPlanta;
 use App\Enums\Planta\TipoInsumo;
+use App\Enums\Planta\UnidadBase;
 use App\Models\Planta\PlantaExistencia;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,10 +25,17 @@ use Illuminate\Support\Facades\DB;
  *  1. NO ESCRIBE. No hay un solo `update`, `insert` ni `delete` aquí, y el
  *     modelo los rechazaría igualmente. Leer el inventario jamás lo modifica.
  *  2. LOS ESTADOS NO SE SUMAN ENTRE SÍ. `disponible`, `retenido` y `rechazado`
- *     son dimensiones distintas del bucket, no fases de la misma cantidad;
- *     {@see totalesPorEstado()} agrupa por estado y no ofrece un gran total,
+ *     son dimensiones distintas del bucket, no fases de la misma cantidad; los
+ *     dos métodos de totales agrupan por estado y ninguno ofrece un gran total,
  *     porque un número que mezclara los tres no significaría nada operativo.
- *  3. NADA PASA POR FLOAT. Los totales se suman en SQL con
+ *  3. LAS UNIDADES TAMPOCO SE SUMAN ENTRE SÍ. `cantidad` guarda libras y
+ *     unidades en la misma columna, así que 700 libras y 400 bolsas no hacen
+ *     «1100» de nada. {@see totalesPorUnidadYEstado()} separa también por
+ *     `unidad_base` y es el que debe usar cualquier pantalla que abarque varios
+ *     insumos. {@see totalesPorEstado()} solo es correcto cuando el conjunto ya
+ *     está acotado a UNA unidad —el caso de la ficha de un lote, que pertenece a
+ *     un único insumo— y se conserva para ese uso.
+ *  4. NADA PASA POR FLOAT. Los totales se suman en SQL con
  *     {@see SumaInventario} y salen como cadena decimal de 4 posiciones.
  *
  * Un filtro con valor inválido —un estado que no existe, un id que no es
@@ -88,6 +96,12 @@ final class ExistenciaQuery
      * Devuelve una entrada por estado presente. Deliberadamente NO devuelve la
      * suma de los tres: ver la regla 2 de la cabecera de esta clase.
      *
+     * SOLO PARA CONJUNTOS DE UNA SOLA UNIDAD. No separa por `unidad_base`, así
+     * que sumaría libras con unidades si el filtro abarcara insumos de ambas.
+     * Su uso legítimo es la ficha de un lote —que pertenece a un único insumo y
+     * por tanto a una única unidad—. Para cualquier pantalla que abarque varios
+     * insumos, {@see totalesPorUnidadYEstado()}.
+     *
      * @return array<int, array{estado: EstadoDisponibilidad, total: string, buckets: int}>
      */
     public function totalesPorEstado(): array
@@ -123,6 +137,83 @@ final class ExistenciaQuery
                 'total' => $porEstado[$estado->value]['total'],
                 'buckets' => $porEstado[$estado->value]['buckets'],
             ];
+        }
+
+        return $totales;
+    }
+
+    /**
+     * Totales del conjunto filtrado, separados por UNIDAD BASE y por estado.
+     *
+     * Es lo que muestra la pantalla general de Existencias, y la razón por la que
+     * existe es concreta: `planta_existencias.cantidad` guarda libras y unidades
+     * en la misma columna, así que agrupar solo por estado —lo que hace
+     * {@see totalesPorEstado()}— produce cifras como «1100» al juntar 700 libras
+     * con 400 bolsas. Ese número no es nada: ni libras, ni unidades, ni una
+     * cantidad física que alguien pueda ir a contar a la bodega.
+     *
+     * DOS SEPARACIONES, NO UNA. Los estados siguen sin sumarse entre sí (regla 2
+     * de la cabecera) y ahora tampoco se suman las unidades. Por eso NO se
+     * devuelve un total por unidad que junte disponible + retenido + rechazado:
+     * sería matemáticamente válido y operativamente falso, porque solo el
+     * disponible puede moverse.
+     *
+     * LA UNIDAD SALE DE `planta_insumos`, no de aquí: `planta_existencias` no
+     * guarda `unidad_base` —solo la tiene el mayor, congelada al escribir cada
+     * movimiento—, así que hace falta el JOIN. Las columnas van CALIFICADAS a
+     * propósito: con las dos tablas en juego, `activo` existe en ambas y dejar
+     * nombres sueltos sería sembrar una ambigüedad para el primero que añada un
+     * filtro.
+     *
+     * UNA SOLA CONSULTA, cueste lo que cueste el volumen: un `GROUP BY` de dos
+     * columnas, con la suma exacta de {@see SumaInventario} —enteros escalados en
+     * SQLite, decimal nativo en MySQL— y `COUNT(*)` para los buckets. Nada pasa
+     * por float y no se escribe absolutamente nada.
+     *
+     * Hereda los filtros de {@see base()}, el mismo constructor que usa
+     * {@see paginar()}: el resumen describe exactamente la tabla que hay debajo.
+     *
+     * @return array<int, array{unidad: UnidadBase, estado: EstadoDisponibilidad, total: string, buckets: int}>
+     */
+    public function totalesPorUnidadYEstado(): array
+    {
+        $filas = $this->base()
+            ->getQuery()
+            ->join('planta_insumos', 'planta_insumos.id', '=', 'planta_existencias.planta_insumo_id')
+            ->select('planta_insumos.unidad_base', 'planta_existencias.estado')
+            ->selectRaw(SumaInventario::expresion('planta_existencias.cantidad').' as total')
+            ->selectRaw('COUNT(*) as buckets')
+            ->groupBy('planta_insumos.unidad_base', 'planta_existencias.estado')
+            ->get();
+
+        $porClave = [];
+
+        foreach ($filas as $fila) {
+            $porClave[(string) $fila->unidad_base.'|'.(string) $fila->estado] = [
+                'total' => SumaInventario::desdeSuma($fila->total),
+                'buckets' => (int) $fila->buckets,
+            ];
+        }
+
+        // Se recorren los ENUMS, no el resultado del motor: así el orden de las
+        // tarjetas es siempre el mismo y no depende de cómo agrupe la base.
+        $totales = [];
+
+        foreach (UnidadBase::cases() as $unidad) {
+            foreach (EstadoDisponibilidad::cases() as $estado) {
+                $clave = $unidad->value.'|'.$estado->value;
+
+                if (! isset($porClave[$clave])) {
+                    continue;
+                }
+
+                $totales[] = [
+                    'unidad' => $unidad,
+                    'estado' => $estado,
+                    'total' => $porClave[$clave]['total'],
+                    'buckets' => $porClave[$clave]['buckets'],
+                ];
+            }
         }
 
         return $totales;

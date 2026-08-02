@@ -3,10 +3,15 @@
 namespace Tests\Feature\Planta;
 
 use App\Enums\Planta\EstadoDisponibilidad;
+use App\Enums\Planta\UnidadBase;
+use App\Models\Planta\PlantaInsumo;
 use App\Models\Planta\PlantaRecepcion;
 use App\Models\Planta\PlantaTraslado;
+use App\Models\Planta\PlantaUbicacion;
+use App\Models\User;
 use App\Services\Planta\ReconciliacionExistenciasService;
 use App\Support\Planta\ExistenciaQuery;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -445,5 +450,371 @@ class PlantaExistenciasConsultaTest extends TestCase
         }
 
         return $acciones;
+    }
+
+    // ---------------------------------------------------------------
+    // Totales por UNIDAD y estado
+    //
+    // La afirmación central: `cantidad` guarda libras y unidades en la misma
+    // columna, así que 700 libras y 400 bolsas NO hacen 1100 de nada. El
+    // resumen de esta pantalla separa por unidad además de por estado.
+    // ---------------------------------------------------------------
+
+    /** Recepción confirmada que deja saldo de un insumo concreto. */
+    private function recibir(
+        PlantaInsumo $insumo,
+        string $cantidadRecibida,
+        ?PlantaUbicacion $ubicacion = null,
+        EstadoDisponibilidad $destino = EstadoDisponibilidad::Disponible,
+    ): PlantaRecepcion {
+        $admin = $this->admin();
+
+        $recepcion = $this->servicioRecepcion()->crearBorrador(
+            $this->payload($ubicacion ?? $this->bodega(), [
+                $this->linea($insumo, [
+                    'cantidad_recibida' => $cantidadRecibida,
+                    'estado_destino' => $destino->value,
+                ]),
+            ]),
+            $admin,
+        );
+
+        return $this->servicioRecepcion()->confirmar($recepcion, $admin);
+    }
+
+    /** 700 libras y 400 unidades disponibles: el escenario del defecto. */
+    private function escenarioDosUnidades(): array
+    {
+        // linea() convierte 7 × 100 × 1 = 700 y 4 × 100 × 1 = 400.
+        $enLibras = $this->insumoConLotes();
+        $enUnidades = $this->insumoSinLotes();
+
+        $this->recibir($enLibras, '7');
+        $this->recibir($enUnidades, '4');
+
+        return [$enLibras, $enUnidades];
+    }
+
+    /** @return array<string, array{total: string, buckets: int}> Clave `unidad|estado`. */
+    private function resumen(array $filtros = []): array
+    {
+        $indexado = [];
+
+        foreach ((new ExistenciaQuery($filtros))->totalesPorUnidadYEstado() as $fila) {
+            $indexado[$fila['unidad']->value.'|'.$fila['estado']->value] = [
+                'total' => $fila['total'],
+                'buckets' => $fila['buckets'],
+            ];
+        }
+
+        return $indexado;
+    }
+
+    public function test_con_una_sola_unidad_el_total_sale_con_su_abreviatura(): void
+    {
+        $this->recibir($this->insumoConLotes(), '7');
+        $this->encenderModulo();
+
+        $html = $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertOk()
+            ->assertSee('Saldo por unidad y estado')
+            ->assertSee('700.0000')
+            ->getContent();
+
+        // La cifra NO va desnuda: la abreviatura viaja pegada al número.
+        $this->assertMatchesRegularExpression(
+            '/700\.0000\s*<span[^>]*>\s*lb\s*<\/span>/',
+            $html,
+            'La cantidad debe mostrarse siempre con su unidad al lado.',
+        );
+    }
+
+    public function test_libras_y_unidades_nunca_se_suman_en_una_sola_cifra(): void
+    {
+        $this->escenarioDosUnidades();
+        $this->encenderModulo();
+
+        $html = $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertOk()
+            ->assertSee('700.0000')
+            ->assertSee('400.0000')
+            ->getContent();
+
+        // 700 + 400 = 1100. Esa cifra no puede existir en la página.
+        $this->assertStringNotContainsString('1100', $html);
+
+        // Y cada una lleva su unidad.
+        $this->assertMatchesRegularExpression('/700\.0000\s*<span[^>]*>\s*lb\s*<\/span>/', $html);
+        $this->assertMatchesRegularExpression('/400\.0000\s*<span[^>]*>\s*u\s*<\/span>/', $html);
+    }
+
+    public function test_cada_unidad_tiene_su_propia_fila_de_resumen(): void
+    {
+        $this->escenarioDosUnidades();
+
+        $resumen = $this->resumen();
+
+        $this->assertSame('700.0000', $resumen['libra|disponible']['total']);
+        $this->assertSame(1, $resumen['libra|disponible']['buckets']);
+        $this->assertSame('400.0000', $resumen['unidad|disponible']['total']);
+        $this->assertSame(1, $resumen['unidad|disponible']['buckets']);
+        $this->assertCount(2, $resumen);
+    }
+
+    public function test_con_varias_unidades_la_pantalla_las_agrupa_con_encabezado(): void
+    {
+        $this->escenarioDosUnidades();
+        $this->encenderModulo();
+
+        $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertOk()
+            ->assertSee('Libra (lb)')
+            ->assertSee('Unidad (u)');
+    }
+
+    public function test_con_una_sola_unidad_no_se_dibuja_el_encabezado_de_grupo(): void
+    {
+        $this->recibir($this->insumoConLotes(), '7');
+        $this->encenderModulo();
+
+        $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertOk()
+            ->assertDontSee('Libra (lb)');
+    }
+
+    public function test_los_tres_estados_se_totalizan_por_separado_dentro_de_cada_unidad(): void
+    {
+        // Libras repartidas entre los tres estados: 200 disponibles, 200
+        // retenidas y 100 rechazadas, por el camino real.
+        $this->escenarioTresEstados();
+        // Y una unidad distinta con su propio saldo.
+        $this->recibir($this->insumoSinLotes(), '4');
+
+        $resumen = $this->resumen();
+
+        $this->assertSame('200.0000', $resumen['libra|disponible']['total']);
+        $this->assertSame('200.0000', $resumen['libra|retenido']['total']);
+        $this->assertSame('100.0000', $resumen['libra|rechazado']['total']);
+        $this->assertSame('400.0000', $resumen['unidad|disponible']['total']);
+
+        // No hay ninguna fila que junte estados ni unidades: cuatro filas, cuatro
+        // combinaciones reales. Ni 500 (los tres estados) ni 900 (las dos unidades).
+        $this->assertCount(4, $resumen);
+    }
+
+    public function test_no_existe_ninguna_combinacion_sin_filas(): void
+    {
+        $this->recibir($this->insumoConLotes(), '7');
+
+        // Dos unidades × tres estados serían seis combinaciones posibles; solo
+        // existe una, y solo esa se devuelve.
+        $this->assertCount(1, $this->resumen());
+    }
+
+    /**
+     * El resumen y el listado describen SIEMPRE el mismo conjunto: la suma de
+     * `buckets` tiene que coincidir con el total de filas paginadas, filtre lo
+     * que filtre. Es la invariante que garantiza que el resumen no miente sobre
+     * la tabla que hay debajo.
+     */
+    public function test_todos_los_filtros_afectan_al_resumen_igual_que_al_listado(): void
+    {
+        $recepcion = $this->escenarioTresEstados();
+        $this->recibir($this->insumoSinLotes(), '4');
+        [$e] = $this->escenarioEnTransito();
+
+        $bucket = $this->bucketDe($recepcion);
+
+        $casos = [
+            'sin filtros' => [],
+            'insumo' => ['insumo' => $bucket->insumoId],
+            'lote' => ['lote' => $bucket->loteId],
+            'ubicacion' => ['ubicacion' => $bucket->ubicacionId],
+            'tipo materia prima' => ['tipo' => 'materia_prima'],
+            'tipo bolsa' => ['tipo' => 'bolsa'],
+            'estado retenido' => ['estado' => 'retenido'],
+            'estado rechazado' => ['estado' => 'rechazado'],
+            'solo transito' => ['transito' => ExistenciaQuery::TRANSITO_SI],
+            'sin transito' => ['transito' => ExistenciaQuery::TRANSITO_NO],
+            'incluye ceros' => ['saldo' => ExistenciaQuery::SALDO_TODOS],
+            'combinado' => ['tipo' => 'materia_prima', 'estado' => 'disponible', 'saldo' => ExistenciaQuery::SALDO_TODOS],
+        ];
+
+        foreach ($casos as $nombre => $filtros) {
+            $consulta = new ExistenciaQuery($filtros);
+            $buckets = collect($consulta->totalesPorUnidadYEstado())->sum('buckets');
+
+            $this->assertSame(
+                $consulta->paginar()->total(),
+                $buckets,
+                "El resumen no describe el listado con el filtro «{$nombre}».",
+            );
+        }
+
+        $this->assertNotNull($e['transito']);
+    }
+
+    public function test_un_filtro_de_unidad_ajena_deja_el_resumen_vacio(): void
+    {
+        $this->recibir($this->insumoConLotes(), '7');
+
+        // Solo hay materia prima en libras: filtrando bolsas no queda nada.
+        $this->assertSame([], $this->resumen(['tipo' => 'bolsa']));
+    }
+
+    public function test_un_bucket_sin_saldo_no_contribuye(): void
+    {
+        [, $traslado] = $this->escenarioEnTransito();
+        $this->servicioTraslado()->recibir($traslado, $this->admin());
+
+        $ceros = DB::table('planta_existencias')->where('cantidad', 0)->count();
+        $this->assertGreaterThan(0, $ceros, 'El escenario debe dejar buckets en cero.');
+
+        $porDefecto = collect($this->resumen())->sum('buckets');
+        $conCeros = collect($this->resumen(['saldo' => ExistenciaQuery::SALDO_TODOS]))->sum('buckets');
+
+        $this->assertSame($porDefecto + $ceros, $conCeros);
+    }
+
+    /**
+     * Un total negativo es IMPOSIBLE por esquema, no por convención: la tabla
+     * lleva un CHECK `cantidad >= 0` (o los triggers equivalentes en SQLite). La
+     * prueba afirma esa invariante en vez de inventar un caso que el motor
+     * rechazaría.
+     */
+    public function test_la_base_impide_cantidades_negativas_en_la_proyeccion(): void
+    {
+        $recepcion = $this->escenarioTresEstados();
+        $bucket = $this->bucketDe($recepcion);
+
+        try {
+            DB::table('planta_existencias')->where($bucket->aColumnas())->update(['cantidad' => -1]);
+            $this->fail('La base debía rechazar una cantidad negativa.');
+        } catch (QueryException) {
+            // Es lo esperado.
+        }
+
+        foreach ($this->resumen() as $fila) {
+            $this->assertSame(1, bccomp($fila['total'], '0', 4), 'Ningún total puede ser negativo ni cero.');
+        }
+    }
+
+    public function test_los_totales_por_unidad_son_cadenas_decimales_no_floats(): void
+    {
+        $this->escenarioDosUnidades();
+
+        foreach ((new ExistenciaQuery)->totalesPorUnidadYEstado() as $fila) {
+            $this->assertIsString($fila['total']);
+            $this->assertMatchesRegularExpression('/^-?\d+\.\d{4}$/', $fila['total']);
+            $this->assertIsInt($fila['buckets']);
+            $this->assertInstanceOf(UnidadBase::class, $fila['unidad']);
+            $this->assertInstanceOf(EstadoDisponibilidad::class, $fila['estado']);
+        }
+    }
+
+    public function test_el_resumen_por_unidad_no_crece_en_consultas_con_el_volumen(): void
+    {
+        $this->encenderModulo();
+        $admin = $this->admin();
+
+        $this->saldoDisponibleEn($this->bodega());
+        $this->saldoDisponibleEn($this->bodega());
+
+        // Calentamiento: no se mide.
+        $this->actingAs($admin)->get(route('planta.existencias.index'))->assertOk();
+
+        $conDos = $this->contarConsultas(fn () => $this->actingAs($admin)
+            ->get(route('planta.existencias.index'))->assertOk());
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->saldoDisponibleEn($this->bodega());
+        }
+
+        $conDoce = $this->contarConsultas(fn () => $this->actingAs($admin)
+            ->get(route('planta.existencias.index'))->assertOk());
+
+        $this->assertSame(12, (new ExistenciaQuery)->paginar()->total(), 'El escenario debe tener 12 buckets.');
+        $this->assertLessThanOrEqual(
+            $conDos,
+            $conDoce,
+            "La pantalla hace {$conDoce} consultas con 12 filas y {$conDos} con 2: crece con las filas.",
+        );
+    }
+
+    public function test_el_resumen_no_escribe_ni_reconcilia_ni_toca_lo_ajeno(): void
+    {
+        $this->escenarioDosUnidades();
+        $this->escenarioTresEstados();
+        $this->encenderModulo();
+
+        $antes = $this->huellaInventario();
+        $sentencias = [];
+        $midiendo = true;
+
+        DB::listen(function ($query) use (&$sentencias, &$midiendo): void {
+            if ($midiendo) {
+                $sentencias[] = $query->sql;
+            }
+        });
+
+        $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertOk();
+
+        $midiendo = false;
+
+        // No escribe.
+        $this->assertSame($antes, $this->huellaInventario());
+
+        // No reconcilia: la reconciliación agrupa el MAYOR por las cinco
+        // dimensiones, y esta pantalla no lo lee siquiera.
+        foreach ($sentencias as $sql) {
+            $this->assertStringNotContainsString('planta_movimientos', $sql);
+        }
+
+        // Ni una tabla fiscal.
+        foreach (['dtes', 'documentos_recibidos', 'exportaciones'] as $tabla) {
+            foreach ($sentencias as $sql) {
+                $this->assertStringNotContainsString($tabla, $sql, "La pantalla no debe consultar «{$tabla}».");
+            }
+        }
+    }
+
+    public function test_la_autorizacion_y_el_interruptor_siguen_intactos(): void
+    {
+        $this->recibir($this->insumoConLotes(), '7');
+
+        // Módulo apagado (valor de phpunit.xml): 404 incluso para el administrador.
+        $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertNotFound();
+
+        $this->encenderModulo();
+
+        // Sin el permiso de consulta, 403.
+        $sinPermiso = User::factory()->create()->givePermissionTo(['planta.ver']);
+        $this->actingAs($sinPermiso)
+            ->get(route('planta.existencias.index'))
+            ->assertForbidden();
+
+        // Producción sí entra y ve el resumen.
+        $this->actingAs($this->usuarioConRol('produccion'))
+            ->get(route('planta.existencias.index'))
+            ->assertOk()
+            ->assertSee('Saldo por unidad y estado');
+    }
+
+    public function test_sin_resultados_el_resumen_muestra_su_estado_vacio(): void
+    {
+        $this->encenderModulo();
+
+        $this->actingAs($this->admin())
+            ->get(route('planta.existencias.index'))
+            ->assertOk()
+            ->assertSee('No hay saldo que totalizar con estos filtros.');
     }
 }
