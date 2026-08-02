@@ -16,8 +16,7 @@
     </div>
 
     {{-- Operación diaria. Aparece antes que los catálogos porque es lo que se
-         usa todos los días; los catálogos se tocan de vez en cuando. Traslados y
-         Ajustes se agregarán cuando tengan rutas reales.
+         usa todos los días; los catálogos se tocan de vez en cuando.
 
          Cada entrada lleva SU permiso, no el del grupo: se lee lo que se puede
          entrar a ver. Ocultar no autoriza —las rutas llevan su middleware—, pero
@@ -54,13 +53,18 @@
 
     {{-- Catálogos base. El grupo entero desaparece sin planta.catalogos.ver,
          igual que hace sidebar-facturacion. Ocultar no autoriza: las rutas
-         llevan su propio middleware. Lotes se agregará cuando tenga rutas
-         reales (nacen en las recepciones, no se crean a mano). --}}
+         llevan su propio middleware.
+
+         Lotes va aquí aunque no se cree a mano —nace al confirmar una
+         recepción—: la pregunta que responde, «qué es este lote y de dónde
+         salió», es de catálogo y no de operación. Por eso es el único que no
+         ofrece «nuevo». --}}
     @can('planta.catalogos.ver')
         <div>
             <p class="{{ $tituloGrupo }}">Catálogos</p>
             <div class="space-y-0.5">
                 <x-sidebar-link :href="route('planta.insumos.index')" :active="request()->routeIs('planta.insumos.*')">Insumos</x-sidebar-link>
+                <x-sidebar-link :href="route('planta.lotes.index')" :active="request()->routeIs('planta.lotes.*')">Lotes</x-sidebar-link>
                 <x-sidebar-link :href="route('planta.proveedores.index')" :active="request()->routeIs('planta.proveedores.*')">Proveedores</x-sidebar-link>
                 <x-sidebar-link :href="route('planta.ubicaciones.index')" :active="request()->routeIs('planta.ubicaciones.*')">Ubicaciones</x-sidebar-link>
                 <x-sidebar-link :href="route('planta.productos-base.index')" :active="request()->routeIs('planta.productos-base.*')">Productos</x-sidebar-link>
