@@ -22,10 +22,17 @@
          Cada entrada lleva SU permiso, no el del grupo: se lee lo que se puede
          entrar a ver. Ocultar no autoriza —las rutas llevan su middleware—, pero
          un enlace que siempre da 403 es ruido. --}}
-    @canany(['planta.recepciones.ver', 'planta.traslados.ver', 'planta.existencias.ver', 'planta.ajustes.ver'])
+    @canany(['planta.recepciones.ver', 'planta.traslados.ver', 'planta.existencias.ver', 'planta.ajustes.ver', 'planta.movimientos.ver'])
         <div>
             <p class="{{ $tituloGrupo }}">Operación</p>
             <div class="space-y-0.5">
+                {{-- Existencias abre el grupo porque es la pregunta que más se hace:
+                     qué hay y dónde. Movimientos lo cierra porque es la consulta de
+                     respaldo, la que se abre cuando el saldo no cuadra con lo que
+                     se esperaba. --}}
+                @can('planta.existencias.ver')
+                    <x-sidebar-link :href="route('planta.existencias.index')" :active="request()->routeIs('planta.existencias.*')">Existencias</x-sidebar-link>
+                @endcan
                 @can('planta.recepciones.ver')
                     <x-sidebar-link :href="route('planta.recepciones.index')" :active="request()->routeIs('planta.recepciones.*')">Recepciones</x-sidebar-link>
                 @endcan
@@ -37,6 +44,9 @@
                 @endcan
                 @can('planta.ajustes.ver')
                     <x-sidebar-link :href="route('planta.ajustes.index')" :active="request()->routeIs('planta.ajustes.*')">Ajustes</x-sidebar-link>
+                @endcan
+                @can('planta.movimientos.ver')
+                    <x-sidebar-link :href="route('planta.movimientos.index')" :active="request()->routeIs('planta.movimientos.*')">Movimientos</x-sidebar-link>
                 @endcan
             </div>
         </div>
