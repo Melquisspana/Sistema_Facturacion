@@ -98,11 +98,24 @@ class PlantaInventarioInmutabilidadTest extends TestCase
         $this->assertNotSame($this->sumaMayor($bucket), $this->saldoProyectado($bucket));
     }
 
-    public function test_no_hay_ninguna_ruta_que_exponga_movimientos_ni_existencias(): void
+    /**
+     * Ninguna ruta ESCRIBE en el mayor ni en su proyección.
+     *
+     * Hasta el paso 11 esta prueba exigía que no existiera ninguna ruta que
+     * mencionase movimientos o existencias, porque no había ninguna. Ahora hay
+     * dos pantallas de consulta, y la garantía que importaba nunca fue «que no se
+     * puedan mirar» sino «que no se puedan tocar»: leer el inventario no lo
+     * modifica. Por eso lo que se comprueba es el VERBO, no la existencia de la
+     * ruta. Un POST, PUT, PATCH o DELETE contra estas URLs sería un camino de
+     * escritura hacia una tabla append-only y una proyección que solo el motor
+     * de inventario puede actualizar.
+     */
+    public function test_ninguna_ruta_de_movimientos_ni_existencias_acepta_escritura(): void
     {
         $sospechosas = collect(Route::getRoutes()->getRoutes())
-            ->map(fn ($ruta) => $ruta->uri())
-            ->filter(fn (string $uri) => str_contains($uri, 'movimiento') || str_contains($uri, 'existencia'))
+            ->filter(fn ($ruta) => str_contains($ruta->uri(), 'movimiento') || str_contains($ruta->uri(), 'existencia'))
+            ->filter(fn ($ruta) => array_diff($ruta->methods(), ['GET', 'HEAD']) !== [])
+            ->map(fn ($ruta) => implode('|', $ruta->methods()).' '.$ruta->uri())
             ->values()
             ->all();
 

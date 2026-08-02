@@ -123,4 +123,18 @@ class PlantaExistencia extends Model
     {
         return $this->belongsTo(PlantaUbicacion::class, 'planta_ubicacion_id');
     }
+
+    /**
+     * Traslado al que pertenece este saldo mientras viaja. SOLO LECTURA: existe
+     * para que la pantalla de existencias muestre de qué envío es cada bucket de
+     * tránsito sin resolverlo fila a fila.
+     *
+     * La columna NO es una FK con constraint: es la quinta dimensión del bucket
+     * y vale 0 —no null— en todo saldo que no está en tránsito (§22.5). Para esas
+     * filas la relación resuelve a null, que es justo lo que hay que mostrar.
+     */
+    public function traslado(): BelongsTo
+    {
+        return $this->belongsTo(PlantaTraslado::class, 'planta_traslado_id');
+    }
 }

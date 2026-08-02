@@ -3,7 +3,9 @@
 use App\Http\Controllers\Planta\AjusteController;
 use App\Http\Controllers\Planta\CambioDisponibilidadController;
 use App\Http\Controllers\Planta\EmpaqueConfigController;
+use App\Http\Controllers\Planta\ExistenciaController;
 use App\Http\Controllers\Planta\InsumoController;
+use App\Http\Controllers\Planta\MovimientoController;
 use App\Http\Controllers\Planta\PlantaDashboardController;
 use App\Http\Controllers\Planta\PresentacionController;
 use App\Http\Controllers\Planta\ProductoBaseController;
@@ -279,4 +281,26 @@ Route::middleware(['auth', 'modulo.planta', 'permission:planta.ver'])
             Route::patch('ajustes/{ajuste}/reversar', [AjusteController::class, 'reversar'])
                 ->middleware('permission:planta.ajustes.reversar')->name('ajustes.reversar');
         });
+
+        /*
+        | CONSULTA. Existencias (el saldo) e Historial (los hechos que lo
+        | produjeron). Son las dos caras del mismo inventario y las dos son de
+        | SOLO LECTURA.
+        |
+        | Solo se declara GET. No es un olvido ni una fase pendiente: no existe
+        | ninguna acción de escritura que pueda añadirse aquí más adelante.
+        | Corregir un saldo se hace con un ajuste —documento, motivo y
+        | autorización— y el libro mayor es append-only por diseño. Al no haber
+        | POST/PUT/PATCH/DELETE registrados, cualquiera de esos verbos contra
+        | estas URLs muere en el router con un 405 antes de tocar código.
+        |
+        | Permisos separados porque responden preguntas distintas y podrían
+        | repartirse: `existencias.ver` es «cuánto hay» y `movimientos.ver` es
+        | «por qué». Producción tiene los dos.
+        */
+        Route::get('existencias', [ExistenciaController::class, 'index'])
+            ->middleware('permission:planta.existencias.ver')->name('existencias.index');
+
+        Route::get('movimientos', [MovimientoController::class, 'index'])
+            ->middleware('permission:planta.movimientos.ver')->name('movimientos.index');
     });
