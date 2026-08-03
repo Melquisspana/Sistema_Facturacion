@@ -29,9 +29,29 @@ use Illuminate\View\View;
  * la redirección: son situaciones esperables —el documento cambió de estado, la
  * ubicación se desactivó, el saldo ya se movió— y el usuario debe leerlas, no
  * encontrarse un 500.
+ *
+ * LA PROPIEDAD PROTEGE EL CONTENIDO, NO LA ACCIÓN. El borrador solo lo edita,
+ * actualiza o anula quien lo escribió ({@see exigirBorradorPropio()}); en cambio
+ * CONFIRMAR no exige autoría, porque recibir mercancía y capturarla son actos
+ * que recaen a menudo en personas distintas y el documento ya guarda quién
+ * confirmó. La combinación es la que da la garantía: quien confirma una
+ * recepción ajena aplica exactamente lo que su autor escribió, porque no ha
+ * podido modificarlo.
  */
 class RecepcionController extends Controller
 {
+    /**
+     * Permiso que permite gestionar CUALQUIER borrador, no solo el propio.
+     *
+     * Es `reversar` y no `confirmar`: producción TIENE
+     * `planta.recepciones.confirmar`, así que usarlo como marca administrativa
+     * convertiría a todo operario en excepción y dejaría el candado sin efecto.
+     * `reversar` es el único permiso del documento que producción no tiene, y
+     * encaja además por significado: quien puede deshacer una recepción ya
+     * contabilizada puede, con más razón, corregir o descartar un borrador ajeno.
+     */
+    private const GESTIONA_CUALQUIER_BORRADOR = 'planta.recepciones.reversar';
+
     public function __construct(private readonly PlantaRecepcionService $servicio) {}
 
     public function index(Request $request): View
@@ -94,8 +114,10 @@ class RecepcionController extends Controller
         return view('planta.recepciones.show', ['recepcion' => $recepcion]);
     }
 
-    public function edit(PlantaRecepcion $recepcion): View|RedirectResponse
+    public function edit(Request $request, PlantaRecepcion $recepcion): View|RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $recepcion);
+
         if (! $recepcion->esEditable()) {
             return redirect()
                 ->route('planta.recepciones.show', $recepcion)
@@ -109,6 +131,8 @@ class RecepcionController extends Controller
 
     public function update(RecepcionRequest $request, PlantaRecepcion $recepcion): RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $recepcion);
+
         try {
             $this->servicio->actualizarBorrador($recepcion, $request->validated(), $request->user());
         } catch (\RuntimeException $e) {
@@ -120,8 +144,10 @@ class RecepcionController extends Controller
             ->with('status', "Recepción #{$recepcion->numero} actualizada.");
     }
 
-    public function anular(PlantaRecepcion $recepcion): RedirectResponse
+    public function anular(Request $request, PlantaRecepcion $recepcion): RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $recepcion);
+
         try {
             $this->servicio->anular($recepcion);
         } catch (\RuntimeException $e) {
@@ -157,6 +183,31 @@ class RecepcionController extends Controller
         return redirect()
             ->route('planta.recepciones.show', $reversion)
             ->with('status', "Recepción #{$recepcion->numero} reversada con el documento #{$reversion->numero}.");
+    }
+
+    /**
+     * Un borrador lo edita quien lo escribió, o quien puede reversar.
+     *
+     * `planta.recepciones.crear` autoriza a PREPARAR recepciones, no a manipular
+     * las de los demás: sin esto, dos operarios podrían reescribirse las
+     * cantidades el uno al otro y el documento dejaría de decir lo que constató
+     * quien recibió la mercancía.
+     *
+     * Es un candado de ACCESO y responde 403, no 404: el documento existe, se
+     * lista y se abre con `recepciones.ver`; lo que no se puede es tocarlo.
+     *
+     * NO juzga el estado. De eso siguen ocupándose `esEditable()` y el servicio,
+     * que responden con un mensaje porque son otra cosa.
+     */
+    private function exigirBorradorPropio(Request $request, PlantaRecepcion $recepcion): void
+    {
+        $usuario = $request->user();
+
+        if ($usuario?->can(self::GESTIONA_CUALQUIER_BORRADOR)) {
+            return;
+        }
+
+        abort_unless($usuario !== null && $recepcion->creado_por === $usuario->id, 403);
     }
 
     /** @return array<string, mixed> */

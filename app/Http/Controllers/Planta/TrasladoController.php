@@ -29,9 +29,30 @@ use RuntimeException;
  * Las excepciones de dominio se traducen a un mensaje en la redirección: son
  * situaciones esperables —falta saldo, el documento cambió de estado, no existe
  * la ubicación de tránsito— y el usuario debe leerlas, no encontrarse un 500.
+ *
+ * LA PROPIEDAD PROTEGE EL CONTENIDO, NO EL ACTO FÍSICO. El borrador solo lo
+ * edita, actualiza o cancela quien lo escribió ({@see exigirBorradorPropio()}).
+ * ENVIAR y RECIBIR no exigen autoría, y es deliberado: son actos físicos
+ * distintos —la salida en Casa y la llegada en Fábrica— que recaen a menudo en
+ * personas distintas, y por eso tienen permisos propios. Ahí está la garantía
+ * completa: quien envía el borrador de otro despacha exactamente lo que su autor
+ * escribió, porque no ha podido modificarlo; y el documento guarda quién envió y
+ * quién recibió.
  */
 class TrasladoController extends Controller
 {
+    /**
+     * Permiso que permite gestionar CUALQUIER borrador, no solo el propio.
+     *
+     * Es `reversar` y no `enviar`: producción TIENE `planta.traslados.enviar`
+     * —y `recibir`—, así que cualquiera de los dos como marca administrativa
+     * dejaría el candado sin efecto. `reversar` es el único permiso del
+     * documento que producción no tiene, y encaja por significado: quien puede
+     * deshacer un traslado ya contabilizado puede, con más razón, corregir o
+     * descartar un borrador ajeno.
+     */
+    private const GESTIONA_CUALQUIER_BORRADOR = 'planta.traslados.reversar';
+
     public function __construct(private readonly PlantaTrasladoService $servicio) {}
 
     public function index(Request $request): View
@@ -101,8 +122,10 @@ class TrasladoController extends Controller
         return view('planta.traslados.show', ['traslado' => $traslado]);
     }
 
-    public function edit(PlantaTraslado $traslado): View|RedirectResponse
+    public function edit(Request $request, PlantaTraslado $traslado): View|RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $traslado);
+
         if (! $traslado->esEditable()) {
             return redirect()
                 ->route('planta.traslados.show', $traslado)
@@ -117,6 +140,8 @@ class TrasladoController extends Controller
 
     public function update(TrasladoRequest $request, PlantaTraslado $traslado): RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $traslado);
+
         try {
             $this->servicio->actualizarBorrador($traslado, $request->validated());
         } catch (RuntimeException $e) {
@@ -128,8 +153,10 @@ class TrasladoController extends Controller
             ->with('status', "Traslado #{$traslado->numero} actualizado.");
     }
 
-    public function cancelar(PlantaTraslado $traslado): RedirectResponse
+    public function cancelar(Request $request, PlantaTraslado $traslado): RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $traslado);
+
         try {
             $this->servicio->cancelar($traslado);
         } catch (RuntimeException $e) {
@@ -178,6 +205,31 @@ class TrasladoController extends Controller
         return redirect()
             ->route('planta.traslados.show', $reversion)
             ->with('status', "Traslado #{$traslado->numero} reversado con el documento #{$reversion->numero}.");
+    }
+
+    /**
+     * Un borrador lo edita quien lo escribió, o quien puede reversar.
+     *
+     * `planta.traslados.crear` autoriza a PREPARAR traslados, no a manipular los
+     * de los demás: sin esto, un operario podría cambiar las cantidades del
+     * borrador de otro —o cancelárselo— justo antes de que salga el camión.
+     *
+     * Es un candado de ACCESO y responde 403, no 404: el documento existe, se
+     * lista y se abre con `traslados.ver`; lo que no se puede es tocarlo.
+     *
+     * NO se aplica a enviar ni a recibir, que son actos físicos con permiso
+     * propio y pueden recaer en otra persona. Tampoco juzga el estado: de eso
+     * siguen ocupándose `esEditable()` y el servicio.
+     */
+    private function exigirBorradorPropio(Request $request, PlantaTraslado $traslado): void
+    {
+        $usuario = $request->user();
+
+        if ($usuario?->can(self::GESTIONA_CUALQUIER_BORRADOR)) {
+            return;
+        }
+
+        abort_unless($usuario !== null && $traslado->creado_por === $usuario->id, 403);
     }
 
     /**

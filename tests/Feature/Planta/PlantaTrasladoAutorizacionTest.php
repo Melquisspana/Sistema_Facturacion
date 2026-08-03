@@ -5,7 +5,9 @@ namespace Tests\Feature\Planta;
 use App\Enums\Planta\EstadoTrasladoPlanta;
 use App\Models\Planta\PlantaMovimiento;
 use App\Models\Planta\PlantaTraslado;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -140,9 +142,14 @@ class PlantaTrasladoAutorizacionTest extends TestCase
     public function test_produccion_cancela_un_borrador(): void
     {
         $this->encenderModulo();
-        $traslado = $this->borradorTraslado($this->escenarioTraslado());
+        $operario = $this->usuarioConRol('produccion');
 
-        $this->actingAs($this->usuarioConRol('produccion'))
+        // El borrador se ATRIBUYE al operario que lo cancela: `borradorTraslado()`
+        // lo crearía como administrador y la prueba mediría el permiso en vez de
+        // la propiedad, pasando incluso sobre un documento ajeno.
+        $traslado = $this->borradorDe($operario, $this->escenarioTraslado());
+
+        $this->actingAs($operario)
             ->patch(route('planta.traslados.cancelar', $traslado))
             ->assertRedirect();
 
@@ -257,5 +264,277 @@ class PlantaTrasladoAutorizacionTest extends TestCase
 
         // Un documento de inventario no se borra: se cancela o se reversa.
         $this->assertNotContains('DELETE', $metodos);
+    }
+
+    // ---------------------------------------------------------------
+    // Propiedad del borrador
+    //
+    // La propiedad protege el CONTENIDO, no el acto físico. Editar, actualizar
+    // y cancelar exigen ser el autor —o tener `traslados.reversar`—; ENVIAR y
+    // RECIBIR no, porque la salida en Casa y la llegada en Fábrica recaen a
+    // menudo en personas distintas y tienen permisos propios.
+    //
+    // La excepción administrativa es `reversar` y NO `enviar`: producción tiene
+    // `enviar` y `recibir`, así que cualquiera de los dos como marca dejaría el
+    // candado sin efecto.
+    // ---------------------------------------------------------------
+
+    /** Borrador creado por HTTP y atribuido al usuario indicado. */
+    private function borradorDe(User $usuario, array $e, string $cantidad = '200'): PlantaTraslado
+    {
+        $this->actingAs($usuario)
+            ->post(route('planta.traslados.store'), $this->payloadTraslado($e, $cantidad))
+            ->assertRedirect();
+
+        $traslado = PlantaTraslado::latest('id')->firstOrFail();
+
+        $this->assertSame($usuario->id, $traslado->creado_por);
+        $this->assertSame(EstadoTrasladoPlanta::Borrador, $traslado->estado);
+
+        return $traslado;
+    }
+
+    /** Huella de las dos tablas de inventario. */
+    private function huellaInventario(): array
+    {
+        $existencias = DB::table('planta_existencias')
+            ->selectRaw(
+                'COUNT(*) as filas, '
+                .'COALESCE(SUM(CAST(ROUND(cantidad * 10000) AS INTEGER)), 0) as suma, '
+                .'COALESCE(MAX(id), 0) as max_id'
+            )
+            ->first();
+
+        return [
+            'mayor' => $this->huellaMayor(),
+            'existencias' => [
+                'filas' => (int) $existencias->filas,
+                'suma' => bcdiv((string) (int) $existencias->suma, '10000', 4),
+                'max_id' => (int) $existencias->max_id,
+            ],
+        ];
+    }
+
+    public function test_produccion_gestiona_su_propio_borrador(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+
+        $suyo = $this->borradorDe($operario, $e);
+
+        $this->actingAs($operario)->get(route('planta.traslados.edit', $suyo))->assertOk();
+
+        $this->actingAs($operario)
+            ->put(route('planta.traslados.update', $suyo), $this->payloadTraslado($e, '150'))
+            ->assertRedirect();
+
+        $this->assertSame('150.0000', $suyo->refresh()->detalles->first()->cantidad);
+
+        $this->actingAs($operario)->patch(route('planta.traslados.cancelar', $suyo))->assertRedirect();
+
+        $this->assertSame(EstadoTrasladoPlanta::Cancelado, $suyo->refresh()->estado);
+    }
+
+    public function test_produccion_puede_enviar_su_propio_borrador(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+
+        $suyo = $this->borradorDe($operario, $e);
+
+        $this->actingAs($operario)->patch(route('planta.traslados.enviar', $suyo))->assertRedirect();
+
+        $this->assertSame(EstadoTrasladoPlanta::Enviado, $suyo->refresh()->estado);
+    }
+
+    public function test_produccion_no_toca_el_borrador_de_otro_operario(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operarioA = $this->usuarioConRol('produccion');
+        $operarioB = $this->usuarioConRol('produccion');
+
+        $deA = $this->borradorDe($operarioA, $e);
+        $antes = $this->huellaInventario();
+
+        $this->actingAs($operarioB)->get(route('planta.traslados.edit', $deA))->assertForbidden();
+
+        $this->actingAs($operarioB)
+            ->put(route('planta.traslados.update', $deA), $this->payloadTraslado($e, '999'))
+            ->assertForbidden();
+
+        $this->actingAs($operarioB)->patch(route('planta.traslados.cancelar', $deA))->assertForbidden();
+
+        $deA->refresh();
+        $this->assertSame(EstadoTrasladoPlanta::Borrador, $deA->estado);
+        $this->assertSame('200.0000', $deA->detalles->first()->cantidad);
+        $this->assertSame($operarioA->id, $deA->creado_por);
+        $this->assertSame($antes, $this->huellaInventario());
+    }
+
+    public function test_produccion_no_toca_el_borrador_de_administracion(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+
+        $delAdmin = $this->borradorDe($this->admin(), $e);
+
+        $this->actingAs($operario)->get(route('planta.traslados.edit', $delAdmin))->assertForbidden();
+        $this->actingAs($operario)
+            ->put(route('planta.traslados.update', $delAdmin), $this->payloadTraslado($e, '10'))
+            ->assertForbidden();
+        $this->actingAs($operario)->patch(route('planta.traslados.cancelar', $delAdmin))->assertForbidden();
+
+        $this->assertSame(EstadoTrasladoPlanta::Borrador, $delAdmin->refresh()->estado);
+    }
+
+    public function test_administracion_gestiona_el_borrador_de_produccion(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+        $admin = $this->admin();
+
+        $delOperario = $this->borradorDe($operario, $e);
+
+        $this->actingAs($admin)->get(route('planta.traslados.edit', $delOperario))->assertOk();
+
+        $this->actingAs($admin)
+            ->put(route('planta.traslados.update', $delOperario), $this->payloadTraslado($e, '120'))
+            ->assertRedirect();
+
+        $this->assertSame('120.0000', $delOperario->refresh()->detalles->first()->cantidad);
+
+        $this->actingAs($admin)->patch(route('planta.traslados.cancelar', $delOperario))->assertRedirect();
+
+        $this->assertSame(EstadoTrasladoPlanta::Cancelado, $delOperario->refresh()->estado);
+    }
+
+    /**
+     * EL CIRCUITO REAL, con tres personas distintas: A prepara en Casa, B
+     * despacha y C recibe en Fábrica. Ninguno de los tres actos exige ser el
+     * autor, y sin embargo el contenido nunca deja de ser el que escribió A.
+     */
+    public function test_enviar_y_recibir_no_exigen_ser_el_autor(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operarioA = $this->usuarioConRol('produccion');
+        $operarioB = $this->usuarioConRol('produccion');
+        $operarioC = $this->usuarioConRol('produccion');
+
+        $deA = $this->borradorDe($operarioA, $e);
+
+        // B despacha lo que preparó A.
+        $this->actingAs($operarioB)->patch(route('planta.traslados.enviar', $deA))->assertRedirect();
+
+        $deA->refresh();
+        $this->assertSame(EstadoTrasladoPlanta::Enviado, $deA->estado);
+        $this->assertSame($operarioA->id, $deA->creado_por, 'B no pudo alterar el contenido ni la autoría.');
+        $this->assertSame($operarioB->id, $deA->enviado_por);
+        $this->assertNotNull($deA->enviado_en);
+        $this->assertSame('200.0000', $deA->detalles->first()->cantidad);
+
+        // El saldo salió del origen y está en TRÁNSITO, atado a ESTE traslado.
+        $this->assertSame('300.0000', $this->saldo($this->bucketOrigen($e)));
+        $this->assertSame('200.0000', $this->saldo($this->bucketTransito($e, $deA)));
+
+        // C, que ni lo preparó ni lo envió, lo recibe en Fábrica.
+        $this->actingAs($operarioC)->patch(route('planta.traslados.recibir', $deA))->assertRedirect();
+
+        $deA->refresh();
+        $this->assertSame(EstadoTrasladoPlanta::Recibido, $deA->estado);
+        $this->assertSame($operarioC->id, $deA->recibido_por);
+        $this->assertNotNull($deA->recibido_en);
+
+        // Y el saldo llegó al destino.
+        $this->assertSame('0.0000', $this->saldo($this->bucketTransito($e, $deA)));
+        $this->assertSame('200.0000', $this->saldo($this->bucketDestino($e)));
+    }
+
+    public function test_produccion_sigue_sin_poder_reversar(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+
+        $suyo = $this->borradorDe($operario, $e);
+        $this->actingAs($operario)->patch(route('planta.traslados.enviar', $suyo))->assertRedirect();
+
+        $antes = $this->huellaInventario();
+
+        // Ni sobre el suyo propio.
+        $this->actingAs($operario)
+            ->patch(route('planta.traslados.reversar', $suyo), ['motivo' => 'salio el lote equivocado'])
+            ->assertForbidden();
+
+        $this->assertSame(EstadoTrasladoPlanta::Enviado, $suyo->refresh()->estado);
+        $this->assertSame($antes, $this->huellaInventario());
+    }
+
+    public function test_con_el_modulo_apagado_el_guard_de_propiedad_no_llega_a_evaluarse(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+        $suyo = $this->borradorDe($operario, $e);
+
+        config()->set('planta.enabled', false);
+
+        $this->actingAs($operario)->get(route('planta.traslados.edit', $suyo))->assertNotFound();
+        $this->actingAs($operario)->patch(route('planta.traslados.cancelar', $suyo))->assertNotFound();
+
+        $this->assertSame(EstadoTrasladoPlanta::Borrador, $suyo->refresh()->estado);
+    }
+
+    /** La administración se identifica por PERMISO, no por el nombre del rol. */
+    public function test_la_excepcion_administrativa_se_basa_en_el_permiso(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+        $deOtro = $this->borradorDe($operario, $e);
+
+        $supervisor = User::factory()->create()->givePermissionTo([
+            'planta.ver',
+            'planta.traslados.ver',
+            'planta.traslados.crear',
+            'planta.traslados.reversar',
+        ]);
+
+        $this->assertFalse($supervisor->hasRole('administrador'));
+
+        $this->actingAs($supervisor)->get(route('planta.traslados.edit', $deOtro))->assertOk();
+        $this->actingAs($supervisor)->patch(route('planta.traslados.cancelar', $deOtro))->assertRedirect();
+
+        $this->assertSame(EstadoTrasladoPlanta::Cancelado, $deOtro->refresh()->estado);
+    }
+
+    public function test_la_gestion_de_borradores_no_consulta_tablas_fiscales(): void
+    {
+        $this->encenderModulo();
+        $e = $this->escenarioTraslado();
+        $operario = $this->usuarioConRol('produccion');
+        $suyo = $this->borradorDe($operario, $e);
+
+        $sentencias = [];
+        $midiendo = true;
+        DB::listen(function ($query) use (&$sentencias, &$midiendo): void {
+            if ($midiendo) {
+                $sentencias[] = $query->sql;
+            }
+        });
+
+        $this->actingAs($operario)->get(route('planta.traslados.edit', $suyo))->assertOk();
+        $midiendo = false;
+
+        foreach (['dtes', 'documentos_recibidos', 'exportaciones'] as $tabla) {
+            foreach ($sentencias as $sql) {
+                $this->assertStringNotContainsString($tabla, $sql, "No debe consultarse «{$tabla}».");
+            }
+        }
     }
 }
