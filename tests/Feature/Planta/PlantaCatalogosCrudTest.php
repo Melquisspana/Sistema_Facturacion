@@ -2,14 +2,23 @@
 
 namespace Tests\Feature\Planta;
 
+use App\Enums\Planta\EstadoDisponibilidad;
+use App\Enums\Planta\TipoAjuste;
 use App\Enums\Planta\TipoInsumo;
 use App\Enums\Planta\TipoUbicacion;
 use App\Enums\Planta\UnidadBase;
+use App\Exceptions\Planta\UnidadBaseInmutableException;
 use App\Models\Planta\PlantaInsumo;
+use App\Models\Planta\PlantaLote;
+use App\Models\Planta\PlantaMovimiento;
 use App\Models\Planta\PlantaProveedor;
+use App\Models\Planta\PlantaRecepcion;
 use App\Models\Planta\PlantaUbicacion;
 use App\Models\User;
+use App\Services\Planta\PlantaAjusteService;
+use App\Services\Planta\PlantaTrasladoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -555,5 +564,405 @@ class PlantaCatalogosCrudTest extends TestCase
 
         $this->assertSame(1, Activity::where('log_name', 'planta_proveedor')->count());
         $this->assertSame(1, Activity::where('log_name', 'planta_ubicacion')->count());
+    }
+
+    // ---------------------------------------------------------------
+    // Unidad base inmutable con historial
+    //
+    // `unidad_base` no es un rótulo del catálogo: es la unidad en la que están
+    // escritas TODAS las cantidades del insumo. El mayor guarda una copia
+    // congelada en cada asiento y `planta_existencias` la toma por JOIN, así que
+    // cambiarla con historial dejaría el historial diciendo una cosa y el saldo
+    // presentándose como otra sin que ninguna cifra se hubiera movido.
+    //
+    // La regla mira DOS señales y ninguna más: movimientos o existencias. No
+    // depende del saldo actual.
+    // ---------------------------------------------------------------
+
+    use RecepcionPlantaFixtures {
+        admin as private adminDeFixtures;
+    }
+
+    /** Insumo persistido, sin ningún historial. */
+    private function insumoGuardado(array $sobrescribir = []): PlantaInsumo
+    {
+        $this->actingAs($this->admin())
+            ->post(route('planta.insumos.store'), $this->datosInsumo($sobrescribir))
+            ->assertSessionHasNoErrors();
+
+        return PlantaInsumo::firstWhere('codigo', $sobrescribir['codigo'] ?? 'AZUCAR');
+    }
+
+    /** Intenta cambiar la unidad por HTTP y devuelve la respuesta. */
+    private function cambiarUnidad(PlantaInsumo $insumo, UnidadBase $nueva)
+    {
+        return $this->actingAs($this->admin())
+            ->put(route('planta.insumos.update', $insumo), $this->datosInsumo([
+                'codigo' => $insumo->codigo,
+                'unidad_base' => $nueva->value,
+                // Coherencia con la validación de bolsas: si va a unidad, sin fracción.
+                'permite_fraccion' => $nueva === UnidadBase::Unidad ? '0' : '1',
+            ]));
+    }
+
+    /** Recepción confirmada sobre ESE insumo: la forma real de generar historial. */
+    private function darHistorialA(PlantaInsumo $insumo): PlantaRecepcion
+    {
+        $admin = $this->adminDeFixtures();
+
+        $recepcion = $this->servicioRecepcion()->crearBorrador(
+            $this->payload($this->bodega(), [$this->linea($insumo)]),
+            $admin,
+        );
+
+        return $this->servicioRecepcion()->confirmar($recepcion, $admin);
+    }
+
+    private function huellaInventario(): array
+    {
+        $existencias = DB::table('planta_existencias')
+            ->selectRaw('COUNT(*) as filas, COALESCE(MAX(id), 0) as max_id')
+            ->first();
+
+        return [
+            'mayor' => $this->huellaMayor(),
+            'existencias' => ['filas' => (int) $existencias->filas, 'max_id' => (int) $existencias->max_id],
+        ];
+    }
+
+    // --- Sin historial: se puede cambiar ---
+
+    public function test_sin_historial_la_unidad_pasa_de_libra_a_unidad(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->assertSame(UnidadBase::Libra, $insumo->unidad_base);
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)->assertSessionHasNoErrors();
+
+        $this->assertSame(UnidadBase::Unidad, $insumo->fresh()->unidad_base);
+    }
+
+    public function test_sin_historial_la_unidad_pasa_de_unidad_a_libra(): void
+    {
+        $insumo = $this->insumoGuardado(['unidad_base' => UnidadBase::Unidad->value, 'permite_fraccion' => '0']);
+        $this->assertSame(UnidadBase::Unidad, $insumo->unidad_base);
+
+        $this->cambiarUnidad($insumo, UnidadBase::Libra)->assertSessionHasNoErrors();
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
+    }
+
+    public function test_un_lote_sin_movimientos_no_bloquea_el_cambio(): void
+    {
+        $insumo = $this->insumoGuardado();
+        PlantaLote::factory()->create(['planta_insumo_id' => $insumo->id]);
+
+        $this->assertFalse($insumo->tieneHistorialDeInventario());
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)->assertSessionHasNoErrors();
+
+        $this->assertSame(UnidadBase::Unidad, $insumo->fresh()->unidad_base);
+    }
+
+    public function test_un_documento_solo_en_borrador_no_bloquea_el_cambio(): void
+    {
+        $insumo = $this->insumoGuardado();
+
+        // Borrador SIN confirmar: no ha escrito nada en el inventario.
+        $this->servicioRecepcion()->crearBorrador(
+            $this->payload($this->bodega(), [$this->linea($insumo)]),
+            $this->adminDeFixtures(),
+        );
+
+        $this->assertFalse($insumo->tieneHistorialDeInventario());
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)->assertSessionHasNoErrors();
+
+        $this->assertSame(UnidadBase::Unidad, $insumo->fresh()->unidad_base);
+    }
+
+    // --- Con historial: se bloquea ---
+
+    public function test_con_movimientos_la_unidad_no_cambia(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)
+            ->assertSessionHasErrors('unidad_base');
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
+    }
+
+    /** El saldo actual es irrelevante: lo que manda es que el historial exista. */
+    public function test_con_movimientos_y_saldo_cero_la_unidad_tampoco_cambia(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $recepcion = $this->darHistorialA($insumo);
+
+        // Reversar deja el saldo en cero y conserva movimientos originales y espejo.
+        $this->servicioRecepcion()->reversar($recepcion->refresh(), 'devolución completa al proveedor', $this->adminDeFixtures());
+
+        $this->assertSame('0.0000', $this->saldo($this->bucketDe($recepcion)));
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)
+            ->assertSessionHasErrors('unidad_base');
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
+    }
+
+    /** Una fila de existencias EN CERO también cuenta como historial. */
+    public function test_una_fila_de_existencias_en_cero_bloquea_el_cambio(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $lote = PlantaLote::factory()->create(['planta_insumo_id' => $insumo->id]);
+
+        // Fila de proyección en cero SIN movimientos detrás: el caso anómalo que
+        // la segunda señal existe para cubrir.
+        DB::table('planta_existencias')->insert([
+            'planta_insumo_id' => $insumo->id,
+            'planta_lote_id' => $lote->id,
+            'planta_ubicacion_id' => $this->bodega()->id,
+            'estado' => EstadoDisponibilidad::Disponible->value,
+            'planta_traslado_id' => 0,
+            'cantidad' => 0,
+            'actualizado_en' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertSame(0, PlantaMovimiento::where('planta_insumo_id', $insumo->id)->count());
+        $this->assertTrue($insumo->tieneHistorialDeInventario());
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)
+            ->assertSessionHasErrors('unidad_base');
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
+    }
+
+    public function test_un_ajuste_historico_bloquea_el_cambio(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $recepcion = $this->darHistorialA($insumo);
+        $detalle = $recepcion->refresh()->detalles->first();
+        $admin = $this->adminDeFixtures();
+
+        $ajuste = app(PlantaAjusteService::class)->crearBorrador([
+            'tipo' => TipoAjuste::Merma->value,
+            'fecha' => '2026-07-30',
+            'motivo' => 'Producto dañado en la descarga',
+            'responsable_nombre' => 'Quien constató',
+            'detalles' => [[
+                'planta_insumo_id' => $insumo->id,
+                'planta_lote_id' => $detalle->planta_lote_id,
+                'planta_ubicacion_id' => $recepcion->planta_ubicacion_id,
+                'estado_disponibilidad' => EstadoDisponibilidad::Disponible->value,
+                'cantidad' => '10',
+            ]],
+        ], $admin);
+
+        app(PlantaAjusteService::class)->confirmar($ajuste, $admin);
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)
+            ->assertSessionHasErrors('unidad_base');
+    }
+
+    public function test_un_traslado_historico_bloquea_el_cambio(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $origen = $this->bodega();
+        $destino = $this->bodega();
+        $transito = PlantaUbicacion::factory()->transito()->create([
+            'es_sistema' => true, 'activo' => true, 'permite_operacion_manual' => false,
+        ]);
+        $admin = $this->adminDeFixtures();
+
+        $recepcion = $this->servicioRecepcion()->crearBorrador(
+            $this->payload($origen, [$this->linea($insumo)]),
+            $admin,
+        );
+        $this->servicioRecepcion()->confirmar($recepcion, $admin);
+        $detalle = $recepcion->refresh()->detalles->first();
+
+        $traslado = app(PlantaTrasladoService::class)->crearBorrador([
+            'fecha' => '2026-07-30',
+            'planta_ubicacion_origen_id' => $origen->id,
+            'planta_ubicacion_destino_id' => $destino->id,
+            'responsable_nombre' => 'Quien transporta',
+            'detalles' => [[
+                'planta_insumo_id' => $insumo->id,
+                'planta_lote_id' => $detalle->planta_lote_id,
+                'cantidad' => '100',
+            ]],
+        ], $admin);
+
+        app(PlantaTrasladoService::class)->enviar($traslado, $admin);
+
+        $this->assertNotNull($transito->id);
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)
+            ->assertSessionHasErrors('unidad_base');
+    }
+
+    // --- Lo que SÍ se puede seguir editando ---
+
+    public function test_con_historial_los_demas_campos_si_se_editan(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $this->actingAs($this->admin())
+            ->put(route('planta.insumos.update', $insumo), $this->datosInsumo([
+                'nombre' => 'Azúcar morena refinada',
+                'tipo' => TipoInsumo::MateriaPrima->value,
+                'stock_minimo' => '120',
+                'activo' => '0',
+                'observaciones' => 'Se cambió el proveedor habitual',
+                // Se reenvía la MISMA unidad: eso nunca activa el bloqueo.
+                'unidad_base' => UnidadBase::Libra->value,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $insumo->refresh();
+
+        $this->assertSame('Azúcar morena refinada', $insumo->nombre);
+        $this->assertSame('120.0000', $insumo->stock_minimo);
+        $this->assertFalse($insumo->activo);
+        $this->assertSame(UnidadBase::Libra, $insumo->unidad_base);
+    }
+
+    public function test_toggle_activo_sigue_funcionando_con_historial(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        // `toggleActivo()` hace update(['activo']) sin enviar la unidad: el
+        // candado del modelo no debe interferir.
+        $this->actingAs($this->admin())
+            ->patch(route('planta.insumos.toggle-activo', $insumo))
+            ->assertRedirect();
+
+        $this->assertFalse($insumo->fresh()->activo);
+    }
+
+    public function test_un_valor_fuera_del_enum_sigue_rechazado(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $this->actingAs($this->admin())
+            ->put(route('planta.insumos.update', $insumo), $this->datosInsumo([
+                'codigo' => $insumo->codigo,
+                'unidad_base' => 'kilogramo',
+            ]))
+            ->assertSessionHasErrors('unidad_base');
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
+    }
+
+    // --- La protección no escribe nada ---
+
+    public function test_el_intento_rechazado_no_toca_el_inventario(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $antes = $this->huellaInventario();
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad)->assertSessionHasErrors('unidad_base');
+
+        $this->assertSame($antes, $this->huellaInventario());
+    }
+
+    public function test_la_comprobacion_no_consulta_tablas_fiscales(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $sentencias = [];
+        $midiendo = true;
+        DB::listen(function ($query) use (&$sentencias, &$midiendo): void {
+            if ($midiendo) {
+                $sentencias[] = $query->sql;
+            }
+        });
+
+        $this->cambiarUnidad($insumo, UnidadBase::Unidad);
+        $midiendo = false;
+
+        foreach (['dtes', 'documentos_recibidos', 'exportaciones'] as $tabla) {
+            foreach ($sentencias as $sql) {
+                $this->assertStringNotContainsString($tabla, $sql, "No debe consultarse «{$tabla}».");
+            }
+        }
+    }
+
+    // --- Candado del modelo (fuera del formulario) ---
+
+    public function test_el_modelo_rechaza_el_cambio_directo_con_historial(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $this->expectException(UnidadBaseInmutableException::class);
+
+        $insumo->update(['unidad_base' => UnidadBase::Unidad->value]);
+    }
+
+    public function test_el_modelo_permite_el_update_directo_si_la_unidad_no_cambia(): void
+    {
+        $insumo = $this->insumoGuardado();
+        $this->darHistorialA($insumo);
+
+        $insumo->update([
+            'nombre' => 'Otro nombre',
+            'unidad_base' => UnidadBase::Libra->value,
+        ]);
+
+        $this->assertSame('Otro nombre', $insumo->fresh()->nombre);
+    }
+
+    public function test_el_modelo_permite_el_cambio_directo_sin_historial(): void
+    {
+        $insumo = $this->insumoGuardado();
+
+        $insumo->update(['unidad_base' => UnidadBase::Unidad->value]);
+
+        $this->assertSame(UnidadBase::Unidad, $insumo->fresh()->unidad_base);
+    }
+
+    public function test_la_factory_y_la_creacion_siguen_intactas(): void
+    {
+        // El candado es de `updating`: crear nunca lo toca.
+        $porFactory = PlantaInsumo::factory()->create(['unidad_base' => UnidadBase::Unidad->value]);
+        $this->assertSame(UnidadBase::Unidad, $porFactory->unidad_base);
+
+        $porHttp = $this->insumoGuardado(['codigo' => 'HARINA']);
+        $this->assertSame(UnidadBase::Libra, $porHttp->unidad_base);
+    }
+
+    public function test_con_el_modulo_apagado_la_edicion_responde_404(): void
+    {
+        $insumo = $this->insumoGuardado();
+
+        config()->set('planta.enabled', false);
+
+        $this->actingAs($this->admin())
+            ->put(route('planta.insumos.update', $insumo), $this->datosInsumo(['codigo' => $insumo->codigo]))
+            ->assertNotFound();
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
+    }
+
+    public function test_la_autorizacion_de_catalogos_sigue_intacta(): void
+    {
+        $insumo = $this->insumoGuardado();
+
+        // Producción lee catálogos pero no los gestiona.
+        $this->actingAs(User::factory()->create()->assignRole('produccion'))
+            ->put(route('planta.insumos.update', $insumo), $this->datosInsumo(['codigo' => $insumo->codigo]))
+            ->assertForbidden();
+
+        $this->assertSame(UnidadBase::Libra, $insumo->fresh()->unidad_base);
     }
 }
