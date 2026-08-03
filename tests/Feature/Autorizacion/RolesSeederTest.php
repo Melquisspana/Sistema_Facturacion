@@ -97,8 +97,9 @@ class RolesSeederTest extends TestCase
     }
 
     /**
-     * Los 12 permisos `planta.*` del rol `produccion`: la OPERACIÓN DIARIA del
-     * área. Fuente: §11 del plan de la Fase 2.
+     * Los 13 permisos `planta.*` del rol `produccion`: la OPERACIÓN DIARIA del
+     * área, incluida la PREPARACIÓN de ajustes (mermas, daños, vencimientos).
+     * Preparar no mueve inventario; confirmarlo sí, y eso queda fuera.
      */
     private const PLANTA_OPERATIVOS = [
         'planta.ver',
@@ -111,20 +112,21 @@ class RolesSeederTest extends TestCase
         'planta.traslados.enviar',
         'planta.traslados.recibir',
         'planta.ajustes.ver',
+        'planta.ajustes.crear',
         'planta.existencias.ver',
         'planta.movimientos.ver',
     ];
 
     /**
-     * Los 8 permisos `planta.*` reservados a administrador (y a un supervisor
-     * futuro, que NO se crea en Fase 2).
+     * Los 7 permisos `planta.*` reservados a administrador (y a un supervisor
+     * futuro, que NO se crea en Fase 2). Todos comparten un rasgo: mueven o
+     * deshacen inventario ya contabilizado, o definen el marco de trabajo.
      */
     private const PLANTA_RESERVADOS = [
         'planta.gestionar',
         'planta.catalogos.gestionar',
         'planta.recepciones.reversar',
         'planta.traslados.reversar',
-        'planta.ajustes.crear',
         'planta.ajustes.confirmar',
         'planta.ajustes.reversar',
         'planta.calidad.gestionar',
@@ -175,16 +177,18 @@ class RolesSeederTest extends TestCase
         }
     }
 
-    public function test_produccion_ve_los_ajustes_pero_no_los_registra(): void
+    public function test_produccion_prepara_los_ajustes_pero_no_los_aplica(): void
     {
         $prod = User::factory()->create()->assignRole(RolSistema::Produccion->value);
 
-        // Consulta lo que se ajustó en su área...
+        // Consulta lo que se ajustó en su área y PREPARA el borrador de lo que
+        // ve: la merma la anota quien está en la bodega, con el motivo fresco.
         $this->assertTrue($prod->can('planta.ajustes.ver'));
+        $this->assertTrue($prod->can('planta.ajustes.crear'));
 
-        // ...pero crear, confirmar y reversar son de administrador. `confirmar`
-        // es el acto que MUEVE inventario y por eso está separado de `crear`.
-        $this->assertFalse($prod->can('planta.ajustes.crear'));
+        // Pero confirmar y reversar son de administrador. `confirmar` es el acto
+        // que MUEVE inventario y por eso está separado de `crear`: quien pudiera
+        // ser responsable de un faltante no puede aplicarlo solo.
         $this->assertFalse($prod->can('planta.ajustes.confirmar'));
         $this->assertFalse($prod->can('planta.ajustes.reversar'));
     }
@@ -221,7 +225,9 @@ class RolesSeederTest extends TestCase
             fn (string $p) => str_starts_with($p, 'planta.')
         ));
 
-        $this->assertCount(12, $suyos);
+        // El tamaño sale de la lista, no de un número escrito a mano: así los
+        // dos no pueden desincronizarse al ajustar el reparto.
+        $this->assertCount(count(self::PLANTA_OPERATIVOS), $suyos);
         $this->assertEqualsCanonicalizing(self::PLANTA_OPERATIVOS, $suyos);
     }
 
@@ -279,16 +285,21 @@ class RolesSeederTest extends TestCase
     public function test_el_seeder_retira_un_permiso_asignado_de_mas(): void
     {
         // `syncPermissions` deja el set EXACTO. Si un despliegue intermedio dejó
-        // a producción con `planta.ajustes.crear`, reejecutar el seeder se lo
-        // quita solo: no hace falta migración de datos para corregir el reparto.
+        // a producción con `planta.ajustes.confirmar` —el permiso que MUEVE
+        // inventario y que nunca debe salir de administración—, reejecutar el
+        // seeder se lo quita solo: no hace falta migración de datos para
+        // corregir el reparto.
         $rol = Role::findByName(RolSistema::Produccion->value, 'web');
-        $rol->givePermissionTo('planta.ajustes.crear');
+        $rol->givePermissionTo('planta.ajustes.confirmar');
 
-        $this->assertTrue($rol->fresh()->hasPermissionTo('planta.ajustes.crear'));
+        $this->assertTrue($rol->fresh()->hasPermissionTo('planta.ajustes.confirmar'));
 
         $this->seed(RolesSeeder::class);
 
-        $this->assertFalse($rol->fresh()->hasPermissionTo('planta.ajustes.crear'));
+        $this->assertFalse($rol->fresh()->hasPermissionTo('planta.ajustes.confirmar'));
+
+        // Y lo que SÍ le corresponde sigue ahí: el seeder corrige de más, no de menos.
+        $this->assertTrue($rol->fresh()->hasPermissionTo('planta.ajustes.crear'));
     }
 
     public function test_jefatura_es_solo_lectura(): void

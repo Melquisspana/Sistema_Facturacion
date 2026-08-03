@@ -32,9 +32,32 @@ use RuntimeException;
  * Las excepciones de dominio se traducen a un mensaje en la redirección: son
  * situaciones esperables —falta saldo, el bucket ya tiene historial, el lote no
  * ha vencido— y el usuario debe leerlas, no encontrarse un 500.
+ *
+ * TRES CANDADOS DISTINTOS, y conviene no confundirlos porque fallan de formas
+ * distintas a propósito:
+ *
+ *   1. ACCESO — el middleware de la ruta (`planta.ajustes.{ver,crear,confirmar,
+ *      reversar}`) y, sobre los borradores, {@see exigirBorradorPropio()}.
+ *      Responde 403: es una cuestión de quién sos.
+ *   2. TRANSICIÓN DE ESTADO — `esEditable()` aquí y las comprobaciones del
+ *      servicio. Responde con una redirección y un mensaje: el documento existe
+ *      y sos quien corresponde, pero ya no está en un estado que admita eso.
+ *   3. CONTENIDO — los Form Requests. Responde con errores de validación.
  */
 class AjusteController extends Controller
 {
+    /**
+     * Permiso que distingue a quien puede gestionar CUALQUIER borrador, no solo
+     * el suyo.
+     *
+     * Se deriva de `confirmar` y NO del nombre del rol: quien puede aplicar un
+     * ajuste al inventario puede, con más razón, corregir o descartar el
+     * borrador de otro. Atarlo al permiso en vez de a «administrador» hace que
+     * un supervisor futuro herede el comportamiento correcto sin tocar esto, y
+     * no exige crear ningún permiso nuevo.
+     */
+    private const GESTIONA_CUALQUIER_BORRADOR = 'planta.ajustes.confirmar';
+
     public function __construct(private readonly PlantaAjusteService $servicio) {}
 
     public function index(Request $request): View
@@ -105,8 +128,10 @@ class AjusteController extends Controller
         ]);
     }
 
-    public function edit(PlantaAjuste $ajuste): View|RedirectResponse
+    public function edit(Request $request, PlantaAjuste $ajuste): View|RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $ajuste);
+
         if (! $ajuste->esEditable()) {
             return redirect()
                 ->route('planta.ajustes.show', $ajuste)
@@ -120,6 +145,8 @@ class AjusteController extends Controller
 
     public function update(AjusteRequest $request, PlantaAjuste $ajuste): RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $ajuste);
+
         try {
             $this->servicio->actualizarBorrador($ajuste, $request->validated());
         } catch (RuntimeException $e) {
@@ -131,8 +158,10 @@ class AjusteController extends Controller
             ->with('status', "Ajuste #{$ajuste->numero} actualizado.");
     }
 
-    public function anular(PlantaAjuste $ajuste): RedirectResponse
+    public function anular(Request $request, PlantaAjuste $ajuste): RedirectResponse
     {
+        $this->exigirBorradorPropio($request, $ajuste);
+
         try {
             $this->servicio->anular($ajuste);
         } catch (RuntimeException $e) {
@@ -168,6 +197,33 @@ class AjusteController extends Controller
         return redirect()
             ->route('planta.ajustes.show', $reversion)
             ->with('status', "Ajuste #{$ajuste->numero} reversado con el documento #{$reversion->numero}.");
+    }
+
+    /**
+     * Un borrador lo gestiona quien lo escribió, o quien puede confirmarlo.
+     *
+     * `planta.ajustes.crear` autoriza a PREPARAR ajustes, no a manipular los de
+     * los demás. Sin esto, dos operarios de planta podrían editarse o anularse
+     * el borrador el uno al otro —o el de administración— y el motivo que quedó
+     * escrito dejaría de ser el de quien constató el hecho, que es justo lo que
+     * un ajuste existe para registrar.
+     *
+     * Es un candado de ACCESO y por eso responde 403, no 404: el documento
+     * existe, se lista y se puede abrir con `ajustes.ver`; lo que no se puede es
+     * tocarlo. Un 404 mentiría sobre algo que el usuario ya está viendo.
+     *
+     * No juzga el ESTADO: de eso se ocupan `esEditable()` y el servicio, que
+     * responden con un mensaje en vez de un 403 porque son otra cosa.
+     */
+    private function exigirBorradorPropio(Request $request, PlantaAjuste $ajuste): void
+    {
+        $usuario = $request->user();
+
+        if ($usuario?->can(self::GESTIONA_CUALQUIER_BORRADOR)) {
+            return;
+        }
+
+        abort_unless($usuario !== null && $ajuste->creado_por === $usuario->id, 403);
     }
 
     /**
