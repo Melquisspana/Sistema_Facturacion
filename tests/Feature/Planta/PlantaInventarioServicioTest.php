@@ -9,6 +9,8 @@ use App\Exceptions\Planta\BucketInvalidoException;
 use App\Exceptions\Planta\EfectoDuplicadoException;
 use App\Exceptions\Planta\MovimientoInvalidoException;
 use App\Exceptions\Planta\SaldoInsuficienteException;
+use App\Exceptions\Planta\UnidadBaseInmutableException;
+use App\Models\Planta\PlantaInsumo;
 use App\Models\Planta\PlantaMovimiento;
 use App\Services\Planta\LoteService;
 use App\Support\Planta\BucketInventario;
@@ -258,8 +260,22 @@ class PlantaInventarioServicioTest extends TestCase
 
         $movimiento = $this->aplicar($bucket, '5.0000');
 
-        $insumo->unidad_base = UnidadBase::Unidad->value;
-        $insumo->save();
+        // Con historial, el catálogo YA NO deja cambiar la unidad: lo impide
+        // PlantaInsumo::booted(). Ese candado es lo primero que se comprueba.
+        try {
+            $insumo->update(['unidad_base' => UnidadBase::Unidad->value]);
+            $this->fail('Un insumo con movimientos no debía admitir el cambio de unidad.');
+        } catch (UnidadBaseInmutableException) {
+            // Es lo esperado.
+        }
+
+        // Y aun forzándolo por el query builder —la puerta que ese candado
+        // documenta que NO cubre, porque no materializa el modelo—, la propiedad
+        // de fondo se mantiene: el mayor no se reescribe.
+        PlantaInsumo::query()->whereKey($insumo->getKey())
+            ->update(['unidad_base' => UnidadBase::Unidad->value]);
+
+        $this->assertSame(UnidadBase::Unidad, $insumo->fresh()->unidad_base);
 
         // La unidad del movimiento es una INSTANTÁNEA congelada al escribirlo, no
         // una referencia viva al catálogo.

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Planta;
 
 use App\Enums\Planta\TipoInsumo;
 use App\Enums\Planta\UnidadBase;
+use App\Models\Planta\PlantaInsumo;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -58,6 +59,51 @@ class InsumoRequest extends FormRequest
                         'Las bolsas y las viñetas se cuentan por unidades enteras: desmarque «permite fracción».'
                     );
                 }
+            },
+
+            /*
+            | La unidad base de un insumo CON HISTORIAL no se cambia.
+            |
+            | No es un rótulo: es la unidad en la que están escritas todas sus
+            | cantidades. El mayor guarda una copia congelada en cada asiento y
+            | `planta_existencias` la toma del catálogo por JOIN, así que
+            | cambiarla dejaría el historial diciendo una cosa y el saldo
+            | presentándose como otra, sin que ninguna cifra se hubiera movido.
+            |
+            | Se comprueba aquí para que el usuario reciba un error de validación
+            | junto al campo. La misma condición vuelve a mirarse al escribir, en
+            | {@see PlantaInsumo::booted()}, que es lo que cubre Tinker y los
+            | comandos; ambas capas llaman a `tieneHistorialDeInventario()` para
+            | que no puedan divergir.
+            */
+            function (Validator $validator) {
+                $insumo = $this->route('insumo');
+
+                // En la creación no hay unidad anterior que proteger.
+                if (! $insumo instanceof PlantaInsumo) {
+                    return;
+                }
+
+                $enviada = UnidadBase::tryFrom((string) $this->input('unidad_base'));
+
+                // Un valor inválido ya lo rechaza `Rule::enum`; añadir un segundo
+                // error sobre el mismo campo sería ruido. Y reenviar la MISMA
+                // unidad —lo que hace el formulario siempre— no cambia nada.
+                if ($enviada === null || $enviada === $insumo->unidad_base) {
+                    return;
+                }
+
+                if (! $insumo->tieneHistorialDeInventario()) {
+                    return;
+                }
+
+                $validator->errors()->add(
+                    'unidad_base',
+                    'La unidad base no puede modificarse porque este insumo ya tiene movimientos de '
+                    .'inventario o historial registrado. Puede editar los demás datos. Si la unidad se '
+                    .'configuró incorrectamente, cree un insumo nuevo con la unidad correcta y '
+                    .'desactive este.'
+                );
             },
         ];
     }
