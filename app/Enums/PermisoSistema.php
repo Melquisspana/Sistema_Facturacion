@@ -70,10 +70,12 @@ enum PermisoSistema: string
     case PlantaTrasladosRecibir = 'planta.traslados.recibir';
     case PlantaTrasladosReversar = 'planta.traslados.reversar';
     // Ajustes: carga inicial, mermas, daños, vencimientos y correcciones de
-    // conteo. Crear, confirmar y reversar son de ADMINISTRADOR: alteran la
-    // cantidad física sin contrapartida documental. La auditoría (motivo
+    // conteo. `ver` y `crear` son operativos —planta consulta lo que se ajustó y
+    // PREPARA el borrador de lo que ve en su bodega—; `confirmar` y `reversar`
+    // son de ADMINISTRADOR, porque son los que alteran la cantidad física sin
+    // contrapartida documental. Un borrador no mueve nada. La auditoría (motivo
     // obligatorio + Activitylog + mayor inmutable) acompaña a la autorización,
-    // NO la sustituye. `ver` sí es operativo: planta consulta lo que se ajustó.
+    // NO la sustituye.
     case PlantaAjustesVer = 'planta.ajustes.ver';
     case PlantaAjustesCrear = 'planta.ajustes.crear';
     case PlantaAjustesConfirmar = 'planta.ajustes.confirmar';
@@ -175,12 +177,29 @@ enum PermisoSistema: string
             // confirmarlos, trasladarlos entre Casa y Fábrica, y consultar
             // existencias, movimientos y ajustes.
             //
+            // AJUSTES: producción PREPARA, administración CONFIRMA. Tiene
+            // `ajustes.crear` —que cubre crear, editar y anular borradores— y no
+            // tiene `confirmar`. La razón es operativa: quien ve la merma, el
+            // daño o el vencimiento es quien está en la bodega, y obligarle a
+            // llamar al administrador para siquiera empezar a registrarlo hace
+            // que las mermas se anoten tarde, en bloque o nunca. Un borrador NO
+            // mueve inventario: no escribe en el mayor ni toca `planta_existencias`.
+            // El acto que sí lo mueve —confirmar— sigue exigiendo un segundo par
+            // de ojos, y así quien pudiera ser responsable de un faltante no
+            // puede aplicarlo solo.
+            //
+            // `ajustes.crear` NO distingue por tipo: producción puede preparar
+            // también una carga inicial o un ajuste positivo. El riesgo queda
+            // acotado porque ninguno de ellos altera nada hasta que el
+            // administrador lo confirma leyendo el motivo, la cantidad y el
+            // bucket.
+            //
             // Queda FUERA, reservado a administrador (y a un supervisor futuro,
             // que NO se crea todavía):
             //   - planta.gestionar y planta.catalogos.gestionar: definen el
             //     marco de trabajo, no la operación;
             //   - las tres reversiones: deshacen inventario ya contabilizado;
-            //   - ajustes.crear/confirmar/reversar: alteran la cantidad física
+            //   - ajustes.confirmar: es el acto que altera la cantidad física
             //     sin contrapartida documental;
             //   - planta.calidad.gestionar: decide qué saldo es utilizable.
             // La auditoría NO es motivo para ampliar este set: son capas
@@ -197,6 +216,7 @@ enum PermisoSistema: string
                 self::PlantaTrasladosEnviar,
                 self::PlantaTrasladosRecibir,
                 self::PlantaAjustesVer,
+                self::PlantaAjustesCrear,
                 self::PlantaExistenciasVer,
                 self::PlantaMovimientosVer,
             ]),
