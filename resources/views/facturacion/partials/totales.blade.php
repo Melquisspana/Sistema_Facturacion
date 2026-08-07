@@ -26,6 +26,7 @@
     $montoDescuento = (float) $dte->total_descuento;
 
     $aplicaRet = (bool) $dte->aplica_retencion_iva;
+    $montoRetencion = (float) $dte->iva_retenido;
     $umbral = number_format((float) config('dte.retencion_iva_umbral', 100), 2, '.', '');
     $esAgente = $esAgenteRetencion ?? null; // null = desconocido
     $baseNetaGravada = max(0, (float) $dte->total_gravado - (float) $dte->descuento_gravado);
@@ -99,6 +100,13 @@
                                 <p class="text-xs text-gray-400">No aplica: la base gravada neta no supera ${{ $umbral }}.</p>
                             @endif
                         @endif
+                    @elseif ($esNc && $aplicaRet && $montoRetencion > 0)
+                        {{-- NC que reversa la retención del CCF original: se muestra SOLO cuando
+                             el backend realmente la aplicó y el monto es > 0. Si no hay retención
+                             la fila se omite (nunca se imprime "Retención IVA 1% $0.00"). --}}
+                        <div class="flex justify-between text-amber-700">
+                            <dt>Retención IVA 1%</dt><dd class="font-mono">-${{ number_format($montoRetencion, 2) }}</dd>
+                        </div>
                     @endif
                 @endif
             </dl>
