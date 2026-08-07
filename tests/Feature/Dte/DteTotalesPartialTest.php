@@ -5,6 +5,7 @@ namespace Tests\Feature\Dte;
 use App\Enums\MotivoAnulacion;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
+use App\Enums\TipoNotaCredito;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -156,7 +157,129 @@ class DteTotalesPartialTest extends TestCase
             ->assertSee('Total a acreditar')
             ->assertDontSee('Total a pagar')
             ->assertSee($ccf->numero_interno)   // documento relacionado
-            ->assertSee('OC-555');              // orden de compra vinculada
+            ->assertSee('OC-555')               // orden de compra vinculada
+            ->assertDontSee('Retención IVA 1%'); // la NC por monto nunca retiene
+    }
+
+    /**
+     * CCF ACEPTADO con 5 % de descuento global: es el documento del que la NC HEREDA el
+     * criterio de retención. Con $agenteRetencion = false el cliente no es sujeto de
+     * retención, así que el CCF legítimamente no retiene y la NC tampoco puede inventarla.
+     */
+    private function ccfAceptado(float $precio, bool $agenteRetencion = true): Dte
+    {
+        $emisor = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create([
+            'es_agente_retencion' => $agenteRetencion,
+            'descuento_global_default' => 5,
+        ]);
+
+        $ccf = $this->borradores->crearBorrador([
+            'tipo_dte' => TipoDte::CreditoFiscal,
+            'cliente_id' => $cliente->id,
+            'establecimiento_id' => $emisor['estab']->id,
+            'punto_venta_id' => $emisor['pv']->id,
+        ]);
+        $this->borradores->agregarLineaDesdeProducto($ccf, $this->producto($precio), cantidad: 1);
+        app(DteGeneracionService::class)->generar($ccf);
+
+        return $this->aceptarCcf($ccf->refresh());
+    }
+
+    /** NC por avería sobre ese CCF, con una sola línea del precio indicado. */
+    private function ncAveria(Dte $ccf, float $precio): Dte
+    {
+        $nc = $this->borradores->crearNotaCredito($ccf, [
+            'tipo' => TipoNotaCredito::Averia->value,
+            'motivo' => 'Producto averiado',
+        ]);
+        $this->borradores->agregarLineaDesdeProducto($nc, $this->producto($precio), cantidad: 1);
+
+        return $nc->refresh();
+    }
+
+    /**
+     * CASO A: la NC retiene de verdad, así que la fila debe verse. Antes el partial
+     * restaba la retención del total pero nunca imprimía la fila (la mostraba solo en
+     * CCF), y en pantalla el total parecía no cuadrar.
+     */
+    public function test_nota_credito_con_retencion_muestra_la_fila_de_retencion(): void
+    {
+        $ccf = $this->ccfAceptado(112.25);
+        $this->assertTrue((bool) $ccf->aplica_retencion_iva, 'El CCF original debe haber retenido.');
+
+        $nc = $this->ncAveria($ccf, 112.25);
+
+        // El dato viene del backend; la vista solo lo imprime.
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('1.07', (string) $nc->iva_retenido);
+        $this->assertSame('119.43', (string) $nc->total_pagar);
+
+        $this->verShow($nc)->assertOk()
+            ->assertSee('Descuento aplicado')
+            ->assertSee('-$5.61')            // descuento 5 %
+            ->assertSee('$106.64')           // base gravada neta
+            ->assertSee('$13.86')            // IVA 13 %
+            ->assertSee('Retención IVA 1%')
+            ->assertSee('-$1.07')            // retención realmente aplicada
+            ->assertSee('Total a acreditar')
+            ->assertSee('$119.43');
+
+        // Las cifras mostradas explican por completo el total: 106.64 + 13.86 − 1.07.
+        $this->assertSame(
+            119.43,
+            round(106.64 + 13.86 - (float) $nc->iva_retenido, 2)
+        );
+    }
+
+    /**
+     * CASO B: el CCF original NO retuvo (cliente que no es agente de retención), así que
+     * la NC tampoco retiene. La fila debe OMITIRSE por completo: nunca se imprime un
+     * "Retención IVA 1% $0.00" ficticio. Mismas cifras del CASO A para que el contraste
+     * sea exacto: lo único que cambia es la retención.
+     */
+    public function test_nota_credito_sin_retencion_no_muestra_la_fila(): void
+    {
+        $ccf = $this->ccfAceptado(112.25, agenteRetencion: false);
+        $this->assertFalse((bool) $ccf->aplica_retencion_iva, 'El CCF original no debe retener.');
+        $this->assertSame('0.00', (string) $ccf->iva_retenido);
+
+        $nc = $this->ncAveria($ccf, 112.25);
+
+        // 112.25 − 5 % = 106.64 de base neta → IVA 13.86 → total 120.50, SIN retención.
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('120.50', (string) $nc->total_pagar);
+
+        $this->verShow($nc)->assertOk()
+            ->assertSee('-$5.61')            // descuento 5 %
+            ->assertSee('$106.64')           // base gravada neta
+            ->assertSee('$13.86')            // IVA 13 %
+            ->assertSee('Total a acreditar')
+            ->assertSee('$120.50')
+            ->assertDontSee('Retención IVA 1%');
+
+        // Sin retención el total es exactamente base + IVA.
+        $this->assertSame(120.50, round(106.64 + 13.86, 2));
+    }
+
+    /**
+     * La regla es HERENCIA del CCF, no un umbral por NC: una devolución parcial pequeña
+     * sobre un CCF que sí retuvo debe seguir reversando su parte proporcional, y la fila
+     * debe verse aunque la NC individual quede por debajo de los $100.
+     */
+    public function test_nota_credito_parcial_pequena_hereda_la_retencion_del_ccf(): void
+    {
+        $ccf = $this->ccfAceptado(112.25);
+        $nc = $this->ncAveria($ccf, 20);
+
+        // 20.00 − 5 % = 19.00 de base neta (bajo el umbral, pero el CCF ya lo superó).
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.19', (string) $nc->iva_retenido);
+
+        $this->verShow($nc)->assertOk()
+            ->assertSee('Retención IVA 1%')
+            ->assertSee('-$0.19');
     }
 
     public function test_documento_anulado_muestra_totales_y_badge(): void
