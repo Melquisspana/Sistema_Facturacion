@@ -37,6 +37,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
@@ -334,10 +335,41 @@ class DteController extends Controller
                 ->find($request->integer('ccf'));
         }
 
+        // El formulario ya no precarga cientos de CCF: el buscador los consulta al
+        // servidor. Pero el CCF ya elegido —por `?ccf=` o repintado con old() tras un
+        // error de validación— debe seguir estando entre las opciones del select de
+        // respaldo aunque no sea reciente, o el POST viajaría sin documento relacionado.
+        $ccfElegido = $preCcf?->id ?? (old('dte_relacionado_id') !== null
+            ? (int) old('dte_relacionado_id')
+            : null);
+
         return view('facturacion.create-nota-credito', array_merge(
-            $this->datosFormularioNotaCredito(),
+            $this->datosFormularioNotaCredito($ccfElegido),
             ['preCcf' => $preCcf],
         ));
+    }
+
+    /**
+     * Autocomplete de CCF relacionados para el formulario de Nota de Crédito (JSON).
+     *
+     * SOLO LECTURA. Ofrece EXACTAMENTE el mismo universo que ofrecía el select que
+     * reemplaza (CCF 03 con aceptación real del MH) y exige el MISMO permiso que la
+     * pantalla (`DtePolicy::create`). No decide nada: el id que el navegador devuelva
+     * lo revalida de cero storeNotaCreditoIndependiente() +
+     * DteBorradorService::crearNotaCredito(), igual que antes.
+     */
+    public function buscarCcfParaNotaCredito(
+        Request $request,
+        BusquedaCcfParaNotaCredito $busqueda,
+    ): \Illuminate\Http\JsonResponse {
+        $this->authorize('create', Dte::class);
+
+        $resultados = $busqueda->buscar((string) $request->input('q', ''));
+
+        return response()->json([
+            'ok' => true,
+            'resultados' => $busqueda->opciones($resultados),
+        ]);
     }
 
     /**
@@ -2101,17 +2133,14 @@ class DteController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function datosFormularioNotaCredito(): array
+    private function datosFormularioNotaCredito(?int $ccfElegido = null): array
     {
         // CCF ACEPTADOS REALMENTE por Hacienda (sello real + fecha_procesamiento_mh; no
-        // mock/simulado ni solo locales) que se pueden vincular en el buscador del formulario.
-        $ccfs = Dte::query()
-            ->where('tipo_dte', TipoDte::CreditoFiscal->value)
-            ->aceptadoRealMh()
-            ->with('cliente:id,nombre,num_documento,nrc')
-            ->orderByDesc('id')
-            ->limit(200)
-            ->get(['id', 'numero_interno', 'numero_control', 'cliente_id', 'cliente_sucursal_id', 'numero_orden_compra', 'fecha_emision', 'total_pagar', 'establecimiento_id', 'punto_venta_id']);
+        // mock/simulado ni solo locales) que se pueden vincular. Solo los más RECIENTES:
+        // el resto los trae el autocomplete contra el servidor (buscarCcfParaNotaCredito),
+        // en vez de embeber cientos de documentos en el HTML de cada carga. Estos alimentan
+        // el select de respaldo que funciona sin JavaScript.
+        $ccfs = app(BusquedaCcfParaNotaCredito::class)->recientes(incluirId: $ccfElegido);
 
         // Tipos de NC que afectan productos del CCF (exigen documento relacionado).
         $tiposPorProductos = [];
@@ -2138,20 +2167,9 @@ class DteController extends Controller
 
         return [
             'opcionesCliente' => $this->opcionesClienteSucursal($clientes),
-            'opcionesCcf' => $ccfs->map(fn (Dte $c) => [
-                'id' => $c->id,
-                'numero' => $c->numero_interno ?? ('#'.$c->id),
-                'numero_control' => $c->numero_control,
-                'cliente_id' => $c->cliente_id,
-                'cliente_sucursal_id' => $c->cliente_sucursal_id,
-                'cliente_nombre' => $c->cliente?->nombre,
-                'num_documento' => $c->cliente?->num_documento,
-                'orden_compra' => $c->numero_orden_compra,
-                'fecha' => $c->fecha_emision?->format('d/m/Y'),
-                'total' => number_format((float) $c->total_pagar, 2),
-                'establecimiento_id' => $c->establecimiento_id,
-                'punto_venta_id' => $c->punto_venta_id,
-            ])->all(),
+            // Misma forma que devuelve el autocomplete (BusquedaCcfParaNotaCredito::opciones):
+            // la tarjeta del CCF elegido se pinta igual venga de la precarga o del buscador.
+            'opcionesCcf' => app(BusquedaCcfParaNotaCredito::class)->opciones($ccfs),
             'tiposNc' => TipoNotaCredito::opciones(),
             'tiposPorProductos' => $tiposPorProductos,
             'tiposPorMonto' => $tiposPorMonto,
