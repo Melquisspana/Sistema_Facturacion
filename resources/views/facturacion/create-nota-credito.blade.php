@@ -50,9 +50,75 @@
                           abierto: false,
                           descuento: '0.00',
                           condicionLabel: '—',
+                          {{-- Buscador de CCF (autocomplete al servidor). `jsListo` distingue
+                               «Alpine arrancó» de «no hay JS»: sin JS nada de esto corre, el
+                               buscador queda oculto por [x-cloak] y se usa el select de
+                               respaldo, que conserva el mismo name del POST. --}}
+                          jsListo: false,
+                          ccfBuscar: '',
+                          ccfAbierto: false,
+                          ccfCargando: false,
+                          ccfResultados: [],
+                          ccfPeticion: 0,
                           init() {
+                              this.jsListo = true;
                               const sel = this.seleccionada;
                               if (sel) { this.buscar = this.etiqueta(sel); this.descuento = sel.descuento_porcentaje; this.condicionLabel = sel.condicion_label; }
+                          },
+                          {{-- Una línea por CCF, con lo que hace falta para no confundir dos
+                               documentos del mismo cliente. --}}
+                          etiquetaCcf(c) {
+                              return ['CCF #' + (c.correlativo ?? c.id), c.cliente_nombre, c.sala, c.fecha, '$' + c.total, c.serie]
+                                  .filter(Boolean).join(' · ');
+                          },
+                          async buscarCcf() {
+                              this.ccfAbierto = true;
+                              this.ccfCargando = true;
+                              {{-- Solo la última petición pinta: escribir rápido no debe dejar
+                                   en pantalla el resultado de un término ya viejo. --}}
+                              const propia = ++this.ccfPeticion;
+                              try {
+                                  const url = '{{ route('facturacion.nota-credito.buscar-ccf') }}?q=' + encodeURIComponent(this.ccfBuscar);
+                                  const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                                  const data = await r.json();
+                                  if (propia !== this.ccfPeticion) { return; }
+                                  this.ccfResultados = data.resultados ?? [];
+                              } catch (e) {
+                                  if (propia === this.ccfPeticion) { this.ccfResultados = []; }
+                              } finally {
+                                  if (propia === this.ccfPeticion) { this.ccfCargando = false; }
+                              }
+                          },
+                          {{-- El valor que viaja al POST sigue saliendo del <select>. Un CCF
+                               traído por el buscador puede no estar entre las opciones
+                               precargadas, así que primero se le agrega su <option> y solo
+                               después se fija ccfId (si no, x-model lo descartaría). --}}
+                          {{-- OJO: este objeto vive DENTRO del atributo x-data, delimitado por
+                               comillas dobles. Ninguna comilla doble puede aparecer acá adentro:
+                               cierra el atributo antes de tiempo y el resto del componente sale
+                               impreso como texto en la página. Por eso la opción ya existente se
+                               busca recorriendo sel.options y no con un selector CSS. --}}
+                          seleccionarCcf(c) {
+                              this.ccfs[c.id] = c;
+                              const sel = this.$refs.selectCcf;
+                              const yaEsta = sel && Array.from(sel.options).some(o => o.value === String(c.id));
+                              if (sel && ! yaEsta) {
+                                  const o = document.createElement('option');
+                                  o.value = c.id;
+                                  o.textContent = this.etiquetaCcf(c);
+                                  sel.appendChild(o);
+                              }
+                              this.ccfId = String(c.id);
+                              this.ccfAbierto = false;
+                              this.ccfBuscar = '';
+                              this.onCcfChange();
+                          },
+                          limpiarCcf() {
+                              this.ccfId = '';
+                              this.ccfBuscar = '';
+                              this.ccfResultados = [];
+                              this.ccfAbierto = false;
+                              this.onCcfChange();
                           },
                           mismaOpcion(o) { return String(o.cliente_id) === String(this.clienteId) && String(o.cliente_sucursal_id ?? '') === String(this.sucursalId); },
                           get seleccionada() { return this.opciones.find(o => this.mismaOpcion(o)) ?? null; },
@@ -123,29 +189,98 @@
                             </select>
                             <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
                         </div>
-                        <div>
-                            <x-input-label for="dte_relacionado_id" value="CCF aceptado relacionado *" />
-                            <select id="dte_relacionado_id" name="dte_relacionado_id" x-model="ccfId" @change="onCcfChange()"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                                <option value="">— Seleccione un CCF aceptado por Hacienda —</option>
-                                @foreach ($opcionesCcf as $ccf)
-                                    <option value="{{ $ccf['id'] }}">{{ $ccf['numero_control'] ?? $ccf['numero'] }} — {{ $ccf['cliente_nombre'] ?? 'Cliente' }} — {{ $ccf['fecha'] }} — ${{ $ccf['total'] }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-400">Solo aparecen CCF ACEPTADOS por Hacienda: es obligatorio vincular uno.</p>
+                        {{-- CCF RELACIONADO. El buscador consulta al servidor (~20 resultados
+                             por término) en lugar de embeber cientos de documentos. El
+                             <select> sigue existiendo debajo: es la fuente del id que viaja al
+                             POST y el respaldo cuando no hay JavaScript. El universo ofrecido
+                             es el mismo de siempre (CCF 03 con aceptación real del MH) y el
+                             servidor revalida el id igual que antes. --}}
+                        <div class="md:col-span-2" @click.outside="ccfAbierto = false">
+                            <x-input-label for="ccf_buscar" value="CCF aceptado relacionado *" />
+
+                            {{-- Buscador: oculto hasta que Alpine arranca. --}}
+                            <div class="relative mt-1" x-show="jsListo" x-cloak>
+                                <template x-if="ccfId === ''">
+                                    <div>
+                                        <input id="ccf_buscar" type="text" x-model="ccfBuscar" autocomplete="off"
+                                               @focus="ccfAbierto = true; buscarCcf()" @input.debounce.300ms="buscarCcf()"
+                                               placeholder="Buscar por correlativo (ej. 1120), N.º de control, orden de compra, cliente o sala…"
+                                               class="block w-full border-gray-300 rounded-md shadow-sm" />
+                                        <ul x-show="ccfAbierto" x-cloak
+                                            class="absolute z-20 mt-1 w-full max-h-80 overflow-auto bg-white border border-gray-200 rounded-md shadow-lg text-sm">
+                                            <li x-show="ccfCargando" class="px-3 py-2 text-gray-400">Buscando…</li>
+                                            <template x-for="c in ccfResultados" :key="c.id">
+                                                <li @click="seleccionarCcf(c)" class="px-3 py-2 cursor-pointer hover:bg-indigo-50 border-b border-gray-100 last:border-0">
+                                                    <div class="flex justify-between gap-3">
+                                                        <span class="font-medium text-gray-800">
+                                                            CCF #<span x-text="c.correlativo ?? c.id"></span>
+                                                            <span class="text-gray-500"> · </span>
+                                                            <span x-text="c.cliente_nombre"></span>
+                                                            <span x-show="c.sala" class="text-indigo-600"> — <span x-text="c.sala"></span></span>
+                                                        </span>
+                                                        <span class="font-mono text-gray-700 shrink-0" x-text="'$' + c.total"></span>
+                                                    </div>
+                                                    <div class="text-xs text-gray-500">
+                                                        <span x-text="c.fecha"></span>
+                                                        <template x-if="c.orden_compra"><span> · OC <span x-text="c.orden_compra"></span></span></template>
+                                                        <span x-show="c.serie"> · <span class="font-medium text-gray-600" x-text="c.serie"></span></span>
+                                                    </div>
+                                                    <div class="text-xs text-gray-400 font-mono" x-text="c.numero_control ?? c.numero_interno"></div>
+                                                </li>
+                                            </template>
+                                            <li x-show="! ccfCargando && ccfResultados.length === 0" class="px-3 py-2 text-gray-400">Sin coincidencias.</li>
+                                        </ul>
+                                        <p class="mt-1 text-xs text-gray-400">Solo aparecen CCF ACEPTADOS por Hacienda: es obligatorio vincular uno. Se muestran hasta 20 coincidencias.</p>
+                                    </div>
+                                </template>
+
+                                {{-- Ya hay un CCF elegido: tarjeta fija, sin desplegable abierto. --}}
+                                <template x-if="ccfId !== ''">
+                                    <div class="flex items-start justify-between gap-3 rounded-md border border-indigo-300 bg-white p-3">
+                                        <div class="text-sm">
+                                            <div class="font-medium text-gray-800">
+                                                CCF #<span x-text="ccf?.correlativo ?? ccfId"></span>
+                                                <span class="text-gray-500"> · </span>
+                                                <span x-text="ccf?.cliente_nombre"></span>
+                                                <span x-show="ccf?.sala" class="text-indigo-600"> — <span x-text="ccf?.sala"></span></span>
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-0.5">
+                                                <span x-text="ccf?.fecha"></span> · <span class="font-mono" x-text="'$' + (ccf?.total ?? '')"></span>
+                                                <template x-if="ccf?.orden_compra"><span> · OC <span x-text="ccf?.orden_compra"></span></span></template>
+                                                <span x-show="ccf?.serie"> · <span class="font-medium text-gray-600" x-text="ccf?.serie"></span></span>
+                                            </div>
+                                            <div class="text-xs text-gray-400 font-mono mt-0.5" x-text="ccf?.numero_control ?? ccf?.numero_interno"></div>
+                                        </div>
+                                        <button type="button" @click="limpiarCcf()"
+                                                class="shrink-0 text-xs text-indigo-600 hover:text-indigo-800 hover:underline">Cambiar</button>
+                                    </div>
+                                </template>
+                            </div>
+
+                            {{-- RESPALDO SIN JAVASCRIPT y fuente del id del POST. Con Alpine se
+                                 oculta (sigue en el DOM, así que se envía igual) y pierde
+                                 `required`, que en un control display:none bloquearía el envío;
+                                 con JS el botón queda deshabilitado hasta elegir un CCF. Sin
+                                 Alpine ninguna de las dos cosas ocurre: select visible y
+                                 obligatorio, como antes. --}}
+                            <div x-show="! jsListo">
+                                <select id="dte_relacionado_id" name="dte_relacionado_id" x-ref="selectCcf"
+                                        x-model="ccfId" @change="onCcfChange()" :required="! jsListo"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                    <option value="">— Seleccione un CCF aceptado por Hacienda —</option>
+                                    @foreach ($opcionesCcf as $ccf)
+                                        <option value="{{ $ccf['id'] }}">{{ 'CCF #'.($ccf['correlativo'] ?? $ccf['id']) }} · {{ $ccf['cliente_nombre'] ?? 'Cliente' }}{{ $ccf['sala'] ? ' — '.$ccf['sala'] : '' }} · {{ $ccf['fecha'] }} · ${{ $ccf['total'] }}{{ $ccf['serie'] ? ' · '.$ccf['serie'] : '' }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-xs text-gray-400">Solo aparecen CCF ACEPTADOS por Hacienda: es obligatorio vincular uno.</p>
+                            </div>
+
                             <x-input-error :messages="$errors->get('dte_relacionado_id')" class="mt-1" />
                         </div>
 
-                        {{-- Resumen del CCF elegido --}}
-                        <div class="md:col-span-2 rounded-md bg-indigo-50 border border-indigo-200 p-3 text-sm" x-show="ccfId !== ''" x-cloak>
-                            <p class="font-medium text-indigo-900 mb-1.5">CCF relacionado</p>
-                            <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
-                                <div><dt class="text-gray-500 text-xs">Cliente</dt><dd class="font-medium text-gray-800" x-text="ccf?.cliente_nombre"></dd></div>
-                                <div><dt class="text-gray-500 text-xs">N° de control</dt><dd class="font-medium text-gray-800 font-mono" x-text="ccf?.numero_control"></dd></div>
-                                <div><dt class="text-gray-500 text-xs">Fecha</dt><dd class="font-medium text-gray-800" x-text="ccf?.fecha"></dd></div>
-                                <div><dt class="text-gray-500 text-xs">Total original</dt><dd class="font-medium text-gray-800" x-text="'$' + ccf?.total"></dd></div>
-                            </dl>
-                        </div>
+                        {{-- El resumen del CCF elegido lo pinta ahora la tarjeta del buscador
+                             (cliente, sala, correlativo, N.º de control, fecha, total, OC y
+                             serie), así que el panel que lo repetía se quitó. --}}
 
                         {{-- Orden de compra vinculada (informativa, copiada del CCF) --}}
                         <div class="md:col-span-2 rounded-md bg-gray-50 border border-gray-200 p-3 text-sm" x-show="ccfId !== ''" x-cloak>
@@ -304,7 +439,10 @@
                     </div>
 
                     <div class="flex items-center gap-3">
-                        <x-primary-button>Crear nota de crédito</x-primary-button>
+                        {{-- Con JS el `required` del select oculto no puede actuar, así que el
+                             botón toma su lugar. Sin JS el atributo sigue vivo y esto no corre.
+                             El servidor valida igual en ambos casos. --}}
+                        <x-primary-button ::disabled="jsListo && ccfId === ''">Crear nota de crédito</x-primary-button>
                         <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
                     </div>
                 </form>

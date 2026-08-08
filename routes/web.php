@@ -95,6 +95,9 @@ Route::middleware('auth')->group(function () {
         // Nota de crédito como documento independiente (flujo propio, no desde un CCF).
         // Debe ir ANTES de `{dte}` para que «nota-credito/crear» no caiga en show.
         Route::get('nota-credito/crear', [DteController::class, 'createNotaCredito'])->name('create-nota-credito');
+        // Autocomplete del CCF relacionado (JSON, solo lectura). Mismo permiso que el
+        // formulario; también antes de `{dte}`.
+        Route::get('nota-credito/buscar-ccf', [DteController::class, 'buscarCcfParaNotaCredito'])->name('nota-credito.buscar-ccf');
         Route::post('nota-credito', [DteController::class, 'storeNotaCreditoIndependiente'])->name('store-nota-credito');
 
         // Checklist "Preparar emisión real" — SOLO lectura/preparación (no emite, no
