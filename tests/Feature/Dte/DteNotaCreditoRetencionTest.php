@@ -23,10 +23,12 @@ use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
- * RETENCIÓN de IVA en notas de crédito. Una NC relacionada a un CCF que retuvo debe
- * reversar esa retención: espeja la DECISIÓN del original, pero recalcula el MONTO
- * sobre su propia base gravada neta (proporcional en devoluciones parciales, exacto en
- * la reversión total). Las NC por MONTO (pronto pago/concepto) siguen sin retención.
+ * RETENCIÓN de IVA en notas de crédito. Una NC solo retiene si el CCF relacionado
+ * retuvo Y su PROPIA base gravada neta supera dte.retencion_iva_umbral; el monto es el
+ * 1 % de esa base (proporcional en devoluciones parciales, exacto en la reversión
+ * total). Una NC bajo el umbral no retiene, aunque el original sí lo haya hecho: es lo
+ * que trae el albarán real del cliente. Las NC por MONTO (pronto pago/concepto) siguen
+ * sin retención.
  *
  * Caso de oro (CCF real de producción #145): gravado neto 121.73 · IVA 15.82 ·
  * total antes de retención 137.55 · retención 1.22 · total 136.33.
@@ -155,24 +157,49 @@ class DteNotaCreditoRetencionTest extends TestCase
 
     public function test_devolucion_parcial_retiene_proporcionalmente(): void
     {
-        $ccf = $this->ccfAceptado();
+        // Líneas de 300.00 para que la mitad devuelta siga superando el umbral: lo que
+        // se prueba acá es la PROPORCIONALIDAD del monto, no el umbral.
+        $ccf = $this->ccfAceptado(precios: [300.00, 300.00]);
         $linea = $ccf->lineas()->orderBy('numero_linea')->first();
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value], $this->usuario());
         $this->borradores->acreditarLinea($nc, $linea, 1); // solo 1 de las 2 líneas
         $nc->refresh();
 
-        // Base de la NC: 64.07 − 5 % = 60.87 → IVA 7.91 → retención 1 % = 0.61.
+        // Base de la NC: 300.00 − 5 % = 285.00 → IVA 37.05 → retención 1 % = 2.85.
         $this->assertTrue((bool) $nc->aplica_retencion_iva);
-        $this->assertSame('0.61', (string) $nc->iva_retenido);
-        $this->assertSame('68.17', (string) $nc->total_pagar);
-        // NO copia el monto completo del CCF.
+        $this->assertSame('2.85', (string) $nc->iva_retenido);
+        $this->assertSame('319.20', (string) $nc->total_pagar);
+        // NO copia el monto completo del CCF (5.70).
         $this->assertNotSame((string) $ccf->iva_retenido, (string) $nc->iva_retenido);
+    }
+
+    /**
+     * Caso real de producción (Calleja): NC por avería de $0.90 sobre un CCF que sí
+     * retuvo. Su base neta ($0.85) no llega al umbral, así que NO retiene y el total
+     * coincide con el albarán del cliente: $0.96.
+     */
+    public function test_nc_bajo_el_umbral_no_retiene_aunque_el_ccf_haya_retenido(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $this->assertTrue((bool) $ccf->aplica_retencion_iva);
+        $producto = Producto::factory()->create(['precio_unitario' => 0.90, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
+        $nc->refresh();
+
+        $this->assertSame('0.90', (string) $nc->total_gravado);
+        $this->assertSame('0.05', (string) $nc->total_descuento);   // 5 % de 0.90 → 0.045 → 0.05
+        $this->assertSame('0.11', (string) $nc->iva);               // 13 % de 0.85
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('0.96', (string) $nc->total_pagar);
     }
 
     public function test_dos_notas_de_credito_no_duplican_saldo_ni_retencion(): void
     {
-        $ccf = $this->ccfAceptado();
+        $ccf = $this->ccfAceptado(precios: [300.00, 300.00]);
         $lineas = $ccf->lineas()->orderBy('numero_linea')->get();
 
         $nc1 = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value], $this->usuario());
@@ -182,9 +209,9 @@ class DteNotaCreditoRetencionTest extends TestCase
         $nc2 = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
 
         $this->assertSame(1, $nc2->lineas()->count());
-        $this->assertSame('0.61', (string) $nc1->refresh()->iva_retenido);
-        $this->assertSame('0.61', (string) $nc2->iva_retenido);
-        // Las dos NC juntas reversan la retención del CCF (1.22), sin excederla.
+        $this->assertSame('2.85', (string) $nc1->refresh()->iva_retenido);
+        $this->assertSame('2.85', (string) $nc2->iva_retenido);
+        // Las dos NC juntas reversan la retención del CCF (5.70), sin excederla.
         $suma = number_format((float) $nc1->iva_retenido + (float) $nc2->iva_retenido, 2, '.', '');
         $this->assertSame((string) $ccf->iva_retenido, $suma);
     }
@@ -194,14 +221,15 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_averia_con_ccf_retenido_tambien_retiene(): void
     {
         $ccf = $this->ccfAceptado();
-        $producto = Producto::factory()->create(['precio_unitario' => 64.07, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $producto = Producto::factory()->create(['precio_unitario' => 200.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
+        // 200.00 − 5 % = 190.00 de base neta → sobre el umbral → 1.90.
         $this->assertTrue((bool) $nc->aplica_retencion_iva);
-        $this->assertSame('0.61', (string) $nc->iva_retenido);
+        $this->assertSame('1.90', (string) $nc->iva_retenido);
         $this->assertSame('5.00', (string) $nc->descuento_porcentaje_aplicado);
     }
 

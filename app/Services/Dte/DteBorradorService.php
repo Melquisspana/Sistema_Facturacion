@@ -960,26 +960,38 @@ class DteBorradorService
     }
 
     /**
-     * Decide automáticamente si aplica retención de IVA: solo CCF, receptor agente
-     * de retención, y base gravada NETA (total_gravado − descuento_gravado) > umbral.
+     * Decide automáticamente si aplica retención de IVA: receptor agente de retención
+     * (CCF) o CCF relacionado que retuvo (NC), y base gravada NETA
+     * (total_gravado − descuento_gravado) > umbral.
      *
-     * Las NOTAS DE CRÉDITO no deciden por sí solas: espejan al CCF relacionado
-     * ({@see retencionHeredadaDeNotaCredito}).
+     * El umbral se evalúa SIEMPRE sobre la base neta del documento que se está
+     * calculando — también en las notas de crédito ({@see retencionHeredadaDeNotaCredito}).
      *
      * @param  array<int, LineaDocumento>  $documentos
      */
     private function decidirRetencionAutomatica(Dte $dte, array $documentos, string $montoDescuento = '0.00'): bool
     {
         if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            return $this->retencionHeredadaDeNotaCredito($dte);
-        }
-
-        if ($dte->tipo_dte !== TipoDte::CreditoFiscal || ! $this->esAgenteRetencion($dte)) {
+            if (! $this->retencionHeredadaDeNotaCredito($dte)) {
+                return false;
+            }
+        } elseif ($dte->tipo_dte !== TipoDte::CreditoFiscal || ! $this->esAgenteRetencion($dte)) {
             return false;
         }
 
-        // Cálculo sin retención (pero CON el descuento ya aplicado) solo para
-        // conocer la base gravada NETA.
+        return $this->baseNetaSuperaUmbralRetencion(
+            $this->baseGravadaNeta($dte, $documentos, $montoDescuento)
+        );
+    }
+
+    /**
+     * Base gravada NETA (total gravado − descuento gravado) del documento: cálculo
+     * sin retención pero CON el descuento ya aplicado, solo para poder juzgar el umbral.
+     *
+     * @param  array<int, LineaDocumento>  $documentos
+     */
+    private function baseGravadaNeta(Dte $dte, array $documentos, string $montoDescuento): string
+    {
         $base = $this->calculadora->calcular(
             $documentos,
             $dte->tipo_dte,
@@ -988,19 +1000,31 @@ class DteBorradorService
             $dte->seguro ?? 0,
             false,
         );
-        $baseNeta = Dinero::redondear(Dinero::restar($base->totalGravado, $base->descuentoGravado), 2);
-        $umbral = (string) config('dte.retencion_iva_umbral', 100);
 
-        return Dinero::comparar($baseNeta, $umbral) > 0;
+        return Dinero::redondear(Dinero::restar($base->totalGravado, $base->descuentoGravado), 2);
     }
 
     /**
-     * ¿La NC debe retener? Espeja la DECISIÓN del CCF relacionado, nunca su MONTO: la
-     * calculadora aplica el 1% sobre la base gravada neta de la NC, así una devolución
-     * parcial retiene lo proporcional y una reversión total coincide al centavo con el
-     * CCF. No se evalúa el umbral acá: el umbral ya se juzgó al emitir el original; si
-     * se re-evaluara, una devolución parcial pequeña dejaría de reversar una retención
-     * que el cliente sí soportó.
+     * ¿La base gravada neta alcanza para retener? Comparación ESTRICTA contra
+     * dte.retencion_iva_umbral: una base exactamente igual al umbral NO retiene.
+     * Es la semántica con la que se emitieron todos los CCF aceptados y la misma
+     * que ahora usan las NC.
+     */
+    private function baseNetaSuperaUmbralRetencion(string $baseNeta): bool
+    {
+        return Dinero::comparar($baseNeta, (string) config('dte.retencion_iva_umbral', 100)) > 0;
+    }
+
+    /**
+     * ¿La NC es de un tipo que PUEDE retener? Solo si el CCF relacionado retuvo: un
+     * original sin retención nunca contagia retención a sus notas.
+     *
+     * Esto es solo la mitad de la decisión — la otra mitad es el umbral sobre la base
+     * neta de la PROPIA NC ({@see decidirRetencionAutomatica}). Heredar la decisión del
+     * CCF a secas producía notas chicas con retención que el cliente no reconoce: el
+     * caso real fue una NC por avería de $0.90 (base neta $0.85) sobre un CCF de Calleja
+     * que sí retuvo — el albarán del cliente vino por $0.96, SIN retención. Por eso la
+     * NC juzga su propio monto contra el mismo umbral que juzgó al original.
      *
      * Solo heredan las NC por PRODUCTOS y por AVERÍA — el mismo criterio que el
      * descuento global ({@see porcentajeDescuentoVigente}). Las NC por MONTO (pronto

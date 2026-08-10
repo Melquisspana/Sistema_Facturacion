@@ -264,22 +264,30 @@ class DteTotalesPartialTest extends TestCase
     }
 
     /**
-     * La regla es HERENCIA del CCF, no un umbral por NC: una devolución parcial pequeña
-     * sobre un CCF que sí retuvo debe seguir reversando su parte proporcional, y la fila
-     * debe verse aunque la NC individual quede por debajo de los $100.
+     * CASO C: la NC hereda la POSIBILIDAD de retener del CCF, pero además debe superar
+     * el umbral con SU propia base neta. Una avería pequeña sobre un CCF que sí retuvo
+     * no retiene — es el caso real de Calleja, donde el albarán de $0.96 llegó sin
+     * retención— y la pantalla lo dice con todas las letras en vez de callarlo: acá el
+     * $0.00 SÍ se imprime, porque hay algo que explicar.
      */
-    public function test_nota_credito_parcial_pequena_hereda_la_retencion_del_ccf(): void
+    public function test_nota_credito_pequena_no_retiene_y_la_pantalla_explica_el_umbral(): void
     {
         $ccf = $this->ccfAceptado(112.25);
-        $nc = $this->ncAveria($ccf, 20);
+        $this->assertTrue((bool) $ccf->aplica_retencion_iva, 'El CCF original debe haber retenido.');
 
-        // 20.00 − 5 % = 19.00 de base neta (bajo el umbral, pero el CCF ya lo superó).
-        $this->assertTrue((bool) $nc->aplica_retencion_iva);
-        $this->assertSame('0.19', (string) $nc->iva_retenido);
+        $nc = $this->ncAveria($ccf, 0.90);
+
+        // 0.90 − 5 % (0.045 → 0.05) = 0.85 de base neta → IVA 0.11 → total 0.96.
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('0.11', (string) $nc->iva);
+        $this->assertSame('0.96', (string) $nc->total_pagar);
 
         $this->verShow($nc)->assertOk()
+            ->assertSee('$0.96')
             ->assertSee('Retención IVA 1%')
-            ->assertSee('-$0.19');
+            ->assertSee('No aplica: la base gravada neta de esta nota no supera $100.00')
+            ->assertDontSee('-$0.01');       // no se resta nada del total
     }
 
     public function test_documento_anulado_muestra_totales_y_badge(): void

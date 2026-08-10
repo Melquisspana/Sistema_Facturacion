@@ -34,10 +34,11 @@ use Tests\TestCase;
  * INVARIANTES MATEMÁTICAS y la coherencia entre las tres representaciones del mismo
  * documento: lo PERSISTIDO, lo que se MUESTRA y lo que viaja en el JSON del MH.
  *
- * REGLA DE NEGOCIO FIJADA (no se toca acá): una NC por productos o avería HEREDA la
- * DECISIÓN de retención del CCF original y recalcula el MONTO sobre su propia base
- * gravada neta. No hay umbral por NC: una devolución de base 19.00 sobre un CCF que
- * retuvo debe reversar 0.19 aunque quede muy por debajo de los $100.
+ * REGLA DE NEGOCIO FIJADA (no se toca acá): una NC por productos o avería solo puede
+ * retener si el CCF original retuvo, y además su PROPIA base gravada neta debe superar
+ * dte.retencion_iva_umbral — la misma comparación estricta que juzgó al CCF. El monto
+ * es el 1 % de esa base. Una NC chica sobre un CCF retenido NO retiene: el albarán real
+ * del cliente (caso Calleja, base 0.85) llega sin retención.
  *
  * Toda la aritmética esperada se expresa con {@see Dinero} (BCMath, half-up), nunca con
  * floats: es el mismo criterio que usa el sistema.
@@ -333,27 +334,77 @@ class DteNotaCreditoBlindajeTest extends TestCase
     }
 
     /**
-     * EL caso que motivó fijar la regla: una NC chiquita sobre un CCF que sí retuvo
-     * DEBE reversar su parte, aunque su base quede muy por debajo de los $100.
+     * EL CASO REAL DE PRODUCCIÓN (Calleja): una NC por avería de $0.90 sobre un CCF que
+     * sí retuvo. El albarán del cliente llegó por $0.96 y SIN retención, porque la base
+     * neta de la NC ($0.85) no alcanza el umbral. La NC no puede inventar una retención
+     * de $0.01 que el cliente no reconoce.
      */
-    public function test_nc_pequena_sobre_ccf_con_retencion_retiene_0_19(): void
+    public function test_nc_de_090_sobre_ccf_con_retencion_no_retiene_y_da_096(): void
     {
         $ccf = $this->ccfAceptado($this->cliente(true, 5), [[500.00, 1]]);
         $this->assertTrue((bool) $ccf->aplica_retencion_iva);
 
         $nc = $this->nc($ccf, TipoNotaCredito::Averia);
-        $this->borradores->agregarProductoNotaCreditoAveria($nc, $this->producto(20.00), 1);
+        $this->borradores->agregarProductoNotaCreditoAveria($nc, $this->producto(0.90), 1);
         $nc->refresh();
 
-        // 20.00 − 5 % = 19.00 de base neta → 19.00 × 1 % = 0.19.
-        $this->assertSame('19.00', Dinero::redondear(Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2));
-        $this->assertTrue((bool) $nc->aplica_retencion_iva, 'La NC pequeña debe heredar la retención del CCF.');
-        $this->assertSame('0.19', (string) $nc->iva_retenido);
-        $this->assertSame('2.47', (string) $nc->iva);
-        $this->assertSame('21.28', (string) $nc->total_pagar);
-        $this->assertInvariantes($nc, 'en la NC pequeña con retención');
+        // 0.90 − 5 % (0.045 → 0.05) = 0.85 de base neta → IVA 0.1105 → 0.11.
+        $this->assertSame('0.90', (string) $nc->total_gravado);
+        $this->assertSame('0.05', (string) $nc->total_descuento);
+        $this->assertSame('0.85', Dinero::redondear(Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2));
+        $this->assertSame('0.11', (string) $nc->iva);
 
-        $this->verShow($nc)->assertOk()->assertSee('Retención IVA 1%')->assertSee('-$0.19');
+        // Bajo el umbral: NO retiene, y el total es exactamente base + IVA.
+        $this->assertFalse((bool) $nc->aplica_retencion_iva, 'Una NC de base 0.85 no puede retener.');
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('0.96', (string) $nc->total_antes_retencion);
+        $this->assertSame('0.96', (string) $nc->total_pagar);
+        $this->assertInvariantes($nc, 'en la NC de 0.90 del caso Calleja');
+
+        // La pantalla no descuenta nada, pero SÍ explica por qué: la fila va en $0.00
+        // con el motivo, en vez de desaparecer y dejar al usuario adivinando.
+        $this->verShow($nc)->assertOk()
+            ->assertSee('$0.96')
+            ->assertSee('Retención IVA 1%')
+            ->assertSee('No aplica: la base gravada neta de esta nota no supera $100.00')
+            ->assertDontSee('-$0.01');
+    }
+
+    /**
+     * La misma NC pequeña en las otras modalidades: mientras la base neta no supere el
+     * umbral, ninguna retiene — da igual que el CCF de origen sí lo haya hecho.
+     */
+    public function test_ninguna_nc_bajo_el_umbral_retiene_aunque_el_ccf_haya_retenido(): void
+    {
+        // 10 × 20.00 = 200.00 − 5 % = 190.00: el CCF sí supera el umbral y retiene.
+        $ccf = $this->ccfAceptado($this->cliente(true, 5), [[20.00, 10]]);
+        $this->assertTrue((bool) $ccf->aplica_retencion_iva);
+
+        $casos = [
+            'avería pequeña' => fn () => tap($this->nc($ccf, TipoNotaCredito::Averia), fn ($nc) => $this->borradores
+                ->agregarProductoNotaCreditoAveria($nc, $this->producto(20.00), 1)),
+            'devolución parcial' => fn () => tap($this->nc($ccf, TipoNotaCredito::DevolucionProducto), fn ($nc) => $this->borradores
+                ->acreditarLinea($nc, $this->lineasDe($ccf)->first(), 1)),
+            'faltante' => fn () => tap($this->nc($ccf, TipoNotaCredito::FaltanteEntrega), fn ($nc) => $this->borradores
+                ->acreditarLinea($nc, $this->lineasDe($ccf)->first(), 1)),
+        ];
+
+        foreach ($casos as $etiqueta => $construir) {
+            $nc = $construir()->refresh();
+
+            // 20.00 − 5 % = 19.00 de base neta → bajo el umbral.
+            $this->assertSame('19.00', Dinero::redondear(Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2));
+            $this->assertFalse((bool) $nc->aplica_retencion_iva, "«{$etiqueta}» no debía retener bajo el umbral.");
+            $this->assertSame('0.00', (string) $nc->iva_retenido, "«{$etiqueta}» dejó retención.");
+            $this->assertSame('2.47', (string) $nc->iva);
+            $this->assertSame('21.47', (string) $nc->total_pagar); // 19.00 + 2.47, sin restar nada
+            $this->assertInvariantes($nc, "en «{$etiqueta}»");
+
+            // La fila se muestra en $0.00 CON el motivo del umbral (el CCF sí retuvo).
+            $this->verShow($nc)->assertOk()
+                ->assertSee('Retención IVA 1%')
+                ->assertSee('No aplica: la base gravada neta de esta nota no supera $100.00');
+        }
     }
 
     public function test_ccf_con_retencion_la_hereda_en_toda_modalidad_por_productos_o_averia(): void
@@ -361,11 +412,11 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $ccf = $this->ccfAceptado($this->cliente(true, 5), [[400.00, 2]]);
         $this->assertTrue((bool) $ccf->aplica_retencion_iva);
 
+        // Todas las NC de este caso quedan MUY por encima del umbral: lo que se prueba
+        // acá es que el monto sale del 1 % de SU base neta, no del monto del CCF.
         $casos = [
             'NC grande (avería)' => fn () => tap($this->nc($ccf, TipoNotaCredito::Averia), fn ($nc) => $this->borradores
                 ->agregarProductoNotaCreditoAveria($nc, $this->producto(750.00), 1)),
-            'NC pequeña (avería)' => fn () => tap($this->nc($ccf, TipoNotaCredito::Averia), fn ($nc) => $this->borradores
-                ->agregarProductoNotaCreditoAveria($nc, $this->producto(7.00), 1)),
             'devolución parcial' => fn () => tap($this->nc($ccf, TipoNotaCredito::DevolucionProducto), fn ($nc) => $this->borradores
                 ->acreditarLinea($nc, $this->lineasDe($ccf)->first(), 1)),
             'faltante' => fn () => tap($this->nc($ccf, TipoNotaCredito::FaltanteEntrega), fn ($nc) => $this->borradores
@@ -376,6 +427,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
             $nc = $construir()->refresh();
             $baseNeta = Dinero::redondear(Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2);
 
+            $this->assertSame(1, Dinero::comparar($baseNeta, '100.00'), "«{$etiqueta}» debía quedar sobre el umbral.");
             $this->assertTrue((bool) $nc->aplica_retencion_iva, "«{$etiqueta}» debía heredar la retención.");
             $this->assertSame(
                 Dinero::redondear(Dinero::multiplicar($baseNeta, '0.01'), 2),
@@ -385,6 +437,35 @@ class DteNotaCreditoBlindajeTest extends TestCase
             $this->assertInvariantes($nc, "en «{$etiqueta}»");
             $this->verShow($nc)->assertOk()->assertSee('Retención IVA 1%');
         }
+    }
+
+    /**
+     * El BORDE exacto del umbral: la comparación es ESTRICTA, igual que en el CCF.
+     * Base neta 100.00 → no retiene; 100.01 → retiene.
+     */
+    public function test_el_umbral_de_la_nc_usa_la_misma_comparacion_estricta_que_el_ccf(): void
+    {
+        $ccf = $this->ccfAceptado($this->cliente(true, 0), [[5000.00, 1]]);
+        $this->assertTrue((bool) $ccf->aplica_retencion_iva);
+
+        // Sin descuento global: la base neta es el precio tal cual.
+        $justo = $this->nc($ccf, TipoNotaCredito::Averia);
+        $this->borradores->agregarProductoNotaCreditoAveria($justo, $this->producto(100.00), 1);
+        $justo->refresh();
+
+        $this->assertSame('100.00', Dinero::redondear(Dinero::restar($justo->total_gravado, $justo->descuento_gravado), 2));
+        $this->assertFalse((bool) $justo->aplica_retencion_iva, 'Base = umbral NO retiene (comparación estricta).');
+        $this->assertSame('0.00', (string) $justo->iva_retenido);
+        $this->assertInvariantes($justo, 'en la NC de base exactamente 100.00');
+
+        $unCentavoMas = $this->nc($ccf, TipoNotaCredito::Averia);
+        $this->borradores->agregarProductoNotaCreditoAveria($unCentavoMas, $this->producto(100.01), 1);
+        $unCentavoMas->refresh();
+
+        $this->assertSame('100.01', Dinero::redondear(Dinero::restar($unCentavoMas->total_gravado, $unCentavoMas->descuento_gravado), 2));
+        $this->assertTrue((bool) $unCentavoMas->aplica_retencion_iva);
+        $this->assertSame('1.00', (string) $unCentavoMas->iva_retenido); // 100.01 × 1 % = 1.0001 → 1.00
+        $this->assertInvariantes($unCentavoMas, 'en la NC de base 100.01');
     }
 
     /** Pronto pago conserva su regla vigente: nunca retiene, ni siquiera sobre un CCF que retuvo. */
@@ -491,9 +572,13 @@ class DteNotaCreditoBlindajeTest extends TestCase
         ), 'Dos NC parciales no pueden reversar más retención que la del CCF.');
     }
 
+    /**
+     * Cuando LAS DOS mitades superan el umbral, la suma reversa exactamente la retención
+     * del CCF: la proporcionalidad sigue intacta donde la retención existe.
+     */
     public function test_dos_nc_que_cubren_todo_reversan_exactamente_la_retencion_del_ccf(): void
     {
-        $ccf = $this->ccfAceptado($this->cliente(true, 5), [[64.07, 1], [64.07, 1]]);
+        $ccf = $this->ccfAceptado($this->cliente(true, 5), [[300.00, 1], [300.00, 1]]);
         $lineas = $this->lineasDe($ccf);
 
         $nc1 = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
@@ -501,8 +586,43 @@ class DteNotaCreditoBlindajeTest extends TestCase
 
         $nc2 = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
 
-        $suma = Dinero::redondear(Dinero::sumar($nc1->refresh()->iva_retenido, $nc2->refresh()->iva_retenido), 2);
+        // Cada mitad: 300.00 − 5 % = 285.00 → 2.85. El CCF retuvo 5.70.
+        $this->assertSame('2.85', (string) $nc1->refresh()->iva_retenido);
+        $this->assertSame('2.85', (string) $nc2->refresh()->iva_retenido);
+        $suma = Dinero::redondear(Dinero::sumar($nc1->iva_retenido, $nc2->iva_retenido), 2);
         $this->assertSame(Dinero::redondear($ccf->iva_retenido, 2), $suma);
+    }
+
+    /**
+     * CONSECUENCIA ACEPTADA de la regla: si el CCF se trocea en NC que quedan bajo el
+     * umbral, la suma de las retenciones de las NC ya NO reversa la del CCF. Es
+     * deliberado: manda lo que el cliente reconoce en cada albarán, no la reconciliación
+     * contra el original. Se deja explícito para que nadie lo lea como una regresión.
+     */
+    public function test_trocear_un_ccf_en_nc_bajo_el_umbral_no_reversa_la_retencion_del_ccf(): void
+    {
+        $ccf = $this->ccfAceptado($this->cliente(true, 5), [[64.07, 1], [64.07, 1]]);
+        $this->assertSame('1.22', (string) $ccf->iva_retenido); // 121.73 × 1 %
+
+        $lineas = $this->lineasDe($ccf);
+        $nc1 = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
+        $this->borradores->acreditarLinea($nc1, $lineas[0], 1);
+        $nc2 = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
+
+        // Cada mitad: 64.07 − 5 % = 60.87 → bajo los $100 → sin retención.
+        foreach ([$nc1, $nc2] as $nc) {
+            $nc->refresh();
+            $this->assertFalse((bool) $nc->aplica_retencion_iva);
+            $this->assertSame('0.00', (string) $nc->iva_retenido);
+            $this->assertInvariantes($nc, 'en la mitad bajo el umbral');
+        }
+
+        // La reversión total EN UNA SOLA NC sí habría retenido (base 121.73): la
+        // diferencia la crea el troceo, no el cálculo.
+        $this->assertSame(
+            1,
+            Dinero::comparar($ccf->iva_retenido, Dinero::sumar($nc1->iva_retenido, $nc2->iva_retenido))
+        );
     }
 
     // ================= 5. IMPEDIR SOBRECRÉDITO =================
@@ -611,12 +731,39 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $this->assertSame('99.99', (string) $nc->total_gravado);
         $this->assertSame('5.00', (string) $nc->total_descuento);
         $this->assertSame('94.99', Dinero::redondear(Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2));
-        // IVA 94.99 × 0.13 = 12.3487 → 12.35 · retención 0.9499 → 0.95
+        // IVA 94.99 × 0.13 = 12.3487 → 12.35. La base queda BAJO el umbral: sin retención.
         $this->assertSame('12.35', (string) $nc->iva);
-        $this->assertSame('0.95', (string) $nc->iva_retenido);
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
         $this->assertSame('107.34', (string) $nc->total_antes_retencion);
-        $this->assertSame('106.39', (string) $nc->total_pagar);
+        $this->assertSame('107.34', (string) $nc->total_pagar);
         $this->assertInvariantes($nc, 'en el caso de redondeos');
+    }
+
+    /**
+     * El mismo escenario incómodo pero SOBRE el umbral, para que el redondeo de la
+     * retención siga cubierto: 3 × 44.44 = 133.32 corta decimales en descuento, IVA y
+     * retención a la vez.
+     */
+    public function test_redondeos_incomodos_sobre_el_umbral_tambien_cuadran(): void
+    {
+        $ccf = $this->ccfAceptado($this->cliente(true, 5), [[900.00, 1]]);
+
+        $nc = $this->nc($ccf, TipoNotaCredito::Averia);
+        $this->borradores->agregarProductoNotaCreditoAveria($nc, $this->producto(44.44), 3);
+        $nc->refresh();
+
+        // 3 × 44.44 = 133.32 · 5 % = 6.666 → 6.67 · base 126.65
+        $this->assertSame('133.32', (string) $nc->total_gravado);
+        $this->assertSame('6.67', (string) $nc->total_descuento);
+        $this->assertSame('126.65', Dinero::redondear(Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2));
+        // IVA 126.65 × 0.13 = 16.4645 → 16.46 · retención 1.2665 → 1.27
+        $this->assertSame('16.46', (string) $nc->iva);
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('1.27', (string) $nc->iva_retenido);
+        $this->assertSame('143.11', (string) $nc->total_antes_retencion);
+        $this->assertSame('141.84', (string) $nc->total_pagar);
+        $this->assertInvariantes($nc, 'en el caso de redondeos sobre el umbral');
     }
 
     public function test_el_iva_se_redondea_una_sola_vez_sobre_el_total_no_por_linea(): void
@@ -901,29 +1048,48 @@ class DteNotaCreditoBlindajeTest extends TestCase
 
     // ================= 12. PRESENTACIÓN =================
 
-    public function test_la_fila_de_retencion_aparece_solo_cuando_hay_retencion_real(): void
+    /**
+     * Los TRES estados que puede mostrar la fila de retención en una NC:
+     *   1. retención real  → fila ámbar con el monto restado;
+     *   2. estuvo en juego pero la base no llega al umbral → fila gris $0.00 + motivo;
+     *   3. nunca estuvo en juego (el CCF no retuvo) → la fila NO se imprime.
+     * El estado 3 no puede degradarse al 2: sería insinuar un umbral que jamás se evaluó.
+     */
+    public function test_la_fila_de_retencion_distingue_sus_tres_estados(): void
     {
         $conRetencion = $this->ccfAceptado($this->cliente(true, 5), [[500.00, 1]]);
         $sinRetencion = $this->ccfAceptado($this->cliente(false, 5), [[500.00, 1]]);
+        $motivoUmbral = 'No aplica: la base gravada neta de esta nota no supera $100.00';
 
+        // 1. Base 106.64 sobre un CCF que retuvo → retiene 1.07.
         $ncCon = $this->nc($conRetencion, TipoNotaCredito::Averia);
         $this->borradores->agregarProductoNotaCreditoAveria($ncCon, $this->producto(112.25), 1);
 
+        // 2. Base 0.85 sobre el MISMO CCF → no retiene, pero por el umbral.
+        $ncUmbral = $this->nc($conRetencion, TipoNotaCredito::Averia);
+        $this->borradores->agregarProductoNotaCreditoAveria($ncUmbral, $this->producto(0.90), 1);
+
+        // 3. Misma base que el caso 1, pero el CCF nunca retuvo.
         $ncSin = $this->nc($sinRetencion, TipoNotaCredito::Averia);
         $this->borradores->agregarProductoNotaCreditoAveria($ncSin, $this->producto(112.25), 1);
 
         // show + editor comparten el mismo partial de totales.
         foreach ([route('facturacion.show', $ncCon), route('facturacion.edit', $ncCon)] as $url) {
             $this->actingAs($this->usuario())->get($url)->assertOk()
-                ->assertSee('Retención IVA 1%')->assertSee('-$1.07');
+                ->assertSee('Retención IVA 1%')->assertSee('-$1.07')->assertDontSee($motivoUmbral);
+        }
+        foreach ([route('facturacion.show', $ncUmbral), route('facturacion.edit', $ncUmbral)] as $url) {
+            $this->actingAs($this->usuario())->get($url)->assertOk()
+                ->assertSee('Retención IVA 1%')->assertSee($motivoUmbral)->assertDontSee('-$0.01');
         }
         foreach ([route('facturacion.show', $ncSin), route('facturacion.edit', $ncSin)] as $url) {
             $this->actingAs($this->usuario())->get($url)->assertOk()
-                ->assertDontSee('Retención IVA 1%')->assertDontSee('$0.00 ficticio');
+                ->assertDontSee('Retención IVA 1%')->assertDontSee($motivoUmbral);
         }
 
-        // Las cifras mostradas explican el total en ambos casos.
+        // Las cifras mostradas explican el total en los tres casos.
         $this->assertSame('119.43', (string) $ncCon->refresh()->total_pagar);
+        $this->assertSame('0.96', (string) $ncUmbral->refresh()->total_pagar);
         $this->assertSame('120.50', (string) $ncSin->refresh()->total_pagar);
     }
 

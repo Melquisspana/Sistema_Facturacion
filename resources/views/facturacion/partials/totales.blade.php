@@ -31,6 +31,14 @@
     $esAgente = $esAgenteRetencion ?? null; // null = desconocido
     $baseNetaGravada = max(0, (float) $dte->total_gravado - (float) $dte->descuento_gravado);
 
+    // NC: ¿la retención estuvo EN JUEGO para esta nota? Solo si el CCF relacionado
+    // retuvo y el tipo de nota hereda esa decisión (productos/avería). Sirve para
+    // explicar un $0.00 que se debe al umbral, sin inventar la fila en las notas donde
+    // la retención nunca pudo existir (CCF sin retención, o NC por monto).
+    $ncPudoRetener = $esNc
+        && (($dte->tipo_nota_credito?->esPorProductos() ?? false) || ($dte->tipo_nota_credito?->esPorAveria() ?? false))
+        && (bool) $dte->dteRelacionado?->aplica_retencion_iva;
+
     $totalLabel = $esNc ? 'Total a acreditar' : 'Total a pagar';
 @endphp
 
@@ -102,11 +110,19 @@
                         @endif
                     @elseif ($esNc && $aplicaRet && $montoRetencion > 0)
                         {{-- NC que reversa la retención del CCF original: se muestra SOLO cuando
-                             el backend realmente la aplicó y el monto es > 0. Si no hay retención
-                             la fila se omite (nunca se imprime "Retención IVA 1% $0.00"). --}}
+                             el backend realmente la aplicó y el monto es > 0. --}}
                         <div class="flex justify-between text-amber-700">
                             <dt>Retención IVA 1%</dt><dd class="font-mono">-${{ number_format($montoRetencion, 2) }}</dd>
                         </div>
+                    @elseif ($ncPudoRetener && $baseNetaGravada > 0)
+                        {{-- NC sobre un CCF que SÍ retuvo, pero cuya propia base gravada neta no
+                             alcanza el umbral: se explica el $0.00 en vez de dejar un hueco. En
+                             las notas donde la retención nunca estuvo en juego (CCF sin retención,
+                             NC por monto) la fila se omite por completo. --}}
+                        <div class="flex justify-between text-gray-400">
+                            <dt>Retención IVA 1%</dt><dd class="font-mono">$0.00</dd>
+                        </div>
+                        <p class="text-xs text-gray-400">No aplica: la base gravada neta de esta nota no supera ${{ $umbral }}.</p>
                     @endif
                 @endif
             </dl>
