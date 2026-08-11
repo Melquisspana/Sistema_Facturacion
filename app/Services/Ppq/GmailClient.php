@@ -19,6 +19,18 @@ use Illuminate\Support\Carbon;
  */
 class GmailClient
 {
+    /** ¿La última búsqueda dejó resultados sin devolver por el tope de `maxResults`? */
+    private bool $ultimaBusquedaTruncada = false;
+
+    /**
+     * ¿La última búsqueda quedó truncada por el límite? Se lee INMEDIATAMENTE después de
+     * la llamada que interesa: refleja solo la más reciente.
+     */
+    public function ultimaBusquedaTruncada(): bool
+    {
+        return $this->ultimaBusquedaTruncada;
+    }
+
     /** ¿Está la integración configurada Y hay una cuenta conectada? */
     public function disponible(): bool
     {
@@ -273,6 +285,10 @@ class GmailClient
         return $this->ejecutarGoogle(function () use ($q, $limite) {
             $gmail = new Gmail($this->clienteAutenticado());
             $lista = $gmail->users_messages->listUsersMessages('me', ['q' => $q, 'maxResults' => $limite]);
+            // Google avisa con nextPageToken que quedaron resultados sin devolver. Acá NO se
+            // pagina (una corrida lee día por día con un tope), pero el dato se guarda para
+            // que el llamador pueda advertir en vez de perder correos en silencio.
+            $this->ultimaBusquedaTruncada = filled($lista->getNextPageToken());
             $salida = [];
             foreach ($lista->getMessages() ?? [] as $m) {
                 $full = $gmail->users_messages->get('me', $m->getId(), ['format' => 'metadata', 'metadataHeaders' => ['Subject', 'Date']]);

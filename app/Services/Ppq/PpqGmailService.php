@@ -328,6 +328,15 @@ class PpqGmailService
     }
 
     /**
+     * ¿La última llamada a albaranesDeFecha() quedó truncada por el límite? Se consulta
+     * justo después: si es true, ese día tiene más correos de los que se leyeron.
+     */
+    public function ultimaBusquedaTruncada(): bool
+    {
+        return $this->gmail->ultimaBusquedaTruncada();
+    }
+
+    /**
      * Lista los albaranes del label de Calleja recibidos en una fecha (YYYY-MM-DD),
      * parseando cada PDF para sacar número/OC/sala/monto/fecha + el asunto del correo.
      * Sirve para la búsqueda manual cuando no se encontró el albarán por OC.

@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Support\OrdenCompra;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
  * Albarán de Calleja. Se vincula al CCF/NC por número de orden de compra; la sala
@@ -71,5 +73,21 @@ class PpqAlbaran extends Model
     public function yaVinculado(): bool
     {
         return $this->items()->exists();
+    }
+
+    /**
+     * Albaranes cuya SALA quedó sin resolver: ni existe en `cliente_sucursales` (por eso
+     * `cliente_sucursal_id` está vacío) ni figura en el mapa auxiliar `ppq_salas`. Son las
+     * EXCEPCIONES de la sincronización, para revisión manual: el sistema NUNCA da de alta
+     * una sucursal por su cuenta, así que se guardan con el código tal cual y se listan acá.
+     */
+    public function scopeSalaSinResolver(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('cliente_sucursal_id')
+            ->whereNotExists(fn (QueryBuilder $sub) => $sub
+                ->selectRaw('1')
+                ->from('ppq_salas')
+                ->whereColumn('ppq_salas.codigo', 'ppq_albaranes.sala_codigo'));
     }
 }

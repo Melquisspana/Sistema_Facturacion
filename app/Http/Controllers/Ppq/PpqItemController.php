@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Ppq;
 
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
+use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
+use App\Services\Ppq\AlbaranPersistidor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -66,7 +68,11 @@ class PpqItemController extends Controller
             }
         } elseif (! $sinAlbaran && filled($datos['numero_albaran'] ?? null)) {
             // Albarán manual (NC): registra/reusa por número + OC del documento.
-            $albaran = $this->registrarAlbaran($datos + ['numero_orden_compra' => $dte->numero_orden_compra], $esNc ? 'manual' : 'gmail');
+            try {
+                $albaran = $this->registrarAlbaran($datos + ['numero_orden_compra' => $dte->numero_orden_compra], $esNc ? 'manual' : 'gmail');
+            } catch (AlbaranDadoDeBajaException $e) {
+                return back()->with('error', $e->getMessage());
+            }
         }
 
         $salaCodigo = \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra);
@@ -138,7 +144,11 @@ class PpqItemController extends Controller
         // Albarán: registra/reusa por número (si vino y no se pidió "sin albarán").
         $albaran = null;
         if (! $sinAlbaran && filled($d['numero_albaran'] ?? null)) {
-            $albaran = $this->registrarAlbaran($d, $esNc ? 'manual' : 'gmail');
+            try {
+                $albaran = $this->registrarAlbaran($d, $esNc ? 'manual' : 'gmail');
+            } catch (AlbaranDadoDeBajaException $e) {
+                return back()->with('error', $e->getMessage());
+            }
         }
 
         // Nombre de sala: el que ya resolvió la búsqueda (viene en el form) o, si no, se busca
@@ -189,33 +199,22 @@ class PpqItemController extends Controller
 
     /**
      * Registra (o reusa) un albarán por número + OC. `$origen` = 'gmail' (parseado del
-     * correo) o 'manual' (capturado a mano para una NC). La fecha se normaliza d/m/Y.
+     * correo) o 'manual' (capturado a mano para una NC).
+     *
+     * Las reglas de identidad y autocorrección viven en AlbaranPersistidor, compartidas
+     * con la sincronización automática desde Gmail (`ppq:sincronizar-albaranes`), para que
+     * el alta manual y la automática no se separen nunca.
+     *
+     * La SALA no se toca acá a propósito: `registrar()` deja `sala_codigo` y
+     * `cliente_sucursal_id` intactos. Resolver el vínculo fiscal con la sucursal es
+     * exclusivo de la sincronización automática, que además reporta las excepciones.
+     *
+     * @throws AlbaranDadoDeBajaException si esa identidad existe pero está dada de baja;
+     *                                    los llamadores la traducen en un mensaje de error.
      */
     private function registrarAlbaran(array $d, string $origen): PpqAlbaran
     {
-        $albaran = PpqAlbaran::firstOrCreate(
-            [
-                'numero_albaran' => \App\Support\Albaran::numeroLimpio($d['numero_albaran']),
-                'numero_orden_compra' => $d['numero_orden_compra'] ?? null,
-            ],
-            [
-                'monto_albaran' => $d['monto_albaran'] ?? null,
-                'fecha_albaran' => \App\Support\Albaran::fecha($d['fecha_albaran'] ?? null),
-                'origen' => $origen,
-                'gmail_message_id' => $d['gmail_message_id'] ?? null,
-            ],
-        );
-
-        // Autocorrección: el registro YA existía (mismo número+OC) pero quedó SIN
-        // monto — típicamente porque una corrida anterior del parser no pudo
-        // extraerlo (ej. un bug ya corregido). Si esta vez sí se resolvió un monto,
-        // se completa. NUNCA pisa un monto ya guardado (evita sorprender con un
-        // valor distinto si un reparseo posterior da otra cosa).
-        if ($albaran->monto_albaran === null && filled($d['monto_albaran'] ?? null)) {
-            $albaran->update(['monto_albaran' => $d['monto_albaran']]);
-        }
-
-        return $albaran;
+        return app(AlbaranPersistidor::class)->registrar($d, $origen);
     }
 
     public function destroy(PpqLote $lote, PpqItem $item): RedirectResponse
