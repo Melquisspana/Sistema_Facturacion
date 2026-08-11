@@ -347,6 +347,63 @@ class PpqModuloTest extends TestCase
         $this->assertDatabaseHas('ppq_albaranes', ['numero_albaran' => 'ALB-77', 'origen' => 'gmail']);
     }
 
+    /**
+     * El alta desde la pantalla NUNCA vincula la sucursal fiscal, ni siquiera cuando la sala
+     * existe y su código se lee limpio de la OC. Ese vínculo lo establece SOLO
+     * `ppq:sincronizar-albaranes`, que además reporta las excepciones para revisión.
+     */
+    public function test_el_alta_desde_la_pantalla_no_completa_cliente_sucursal_id(): void
+    {
+        $calleja = $this->calleja();
+        config(['ppq.cliente_default_id' => $calleja->id]);
+        $sucursal = $calleja->sucursales()->create(['nombre' => 'Súper Selectos Santa Elena', 'codigo' => '0236']);
+
+        $admin = $this->usuario('administrador');
+        $lote = PpqLote::create(['referencia' => 'SIN-SALA', 'fecha' => now(), 'estado' => 'borrador']);
+
+        $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-SS', 'tipo_dte' => '03',
+            'numero_orden_compra' => '26060236004586', 'monto_dte' => 100.00,
+            'numero_albaran' => 'AC01/0236/00/6359', 'monto_albaran' => 100.00, 'sin_albaran' => '0',
+        ])->assertRedirect();
+
+        // `sala_codigo` queda porque el hook `saving` del modelo lo deriva de la OC; lo que
+        // NO se establece por esta vía es el vínculo fiscal con la sucursal.
+        $this->assertDatabaseHas('ppq_albaranes', [
+            'numero_albaran' => 'AC01/0236/00/6359',
+            'sala_codigo' => '0236',
+            'cliente_sucursal_id' => null,
+        ]);
+        $this->assertSame(0, \App\Models\PpqAlbaran::where('cliente_sucursal_id', $sucursal->id)->count());
+    }
+
+    /**
+     * Recapturar desde la pantalla un albarán DADO DE BAJA da un error claro, no un 500:
+     * el índice único no distingue borrados, así que el INSERT reventaría con violación de
+     * integridad. No se resucita solo — restaurarlo es decisión de una persona.
+     */
+    public function test_recapturar_un_albaran_dado_de_baja_da_error_controlado(): void
+    {
+        $admin = $this->usuario('administrador');
+        $lote = PpqLote::create(['referencia' => 'BAJA', 'fecha' => now(), 'estado' => 'borrador']);
+
+        \App\Models\PpqAlbaran::create([
+            'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
+            'origen' => 'manual',
+        ])->delete();
+
+        $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-BAJA', 'tipo_dte' => '03',
+            'numero_orden_compra' => '26060236004586', 'monto_dte' => 100.00,
+            'numero_albaran' => 'AC01/0236/00/6359', 'monto_albaran' => 100.00, 'sin_albaran' => '0',
+        ])->assertRedirect()->assertSessionHas('error');
+
+        // Ni duplicado, ni resucitado, ni item creado a medias.
+        $this->assertSame(0, \App\Models\PpqAlbaran::count());
+        $this->assertSame(1, \App\Models\PpqAlbaran::onlyTrashed()->count());
+        $this->assertSame(0, $lote->items()->count());
+    }
+
     public function test_nc_resta_en_el_lote_con_albaran_manual(): void
     {
         $admin = $this->usuario('administrador');
