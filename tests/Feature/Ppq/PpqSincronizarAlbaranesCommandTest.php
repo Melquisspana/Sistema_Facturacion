@@ -15,6 +15,7 @@ use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\JsonAdjuntoDecoder;
 use App\Services\Ppq\PpqGmailService;
 use Database\Seeders\DatosInicialesNegritaSeeder;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -426,6 +427,20 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         $this->assertInstanceOf(DteCorreoParser::class, $refleja('parser'));
         $this->assertInstanceOf(JsonAdjuntoDecoder::class, $refleja('decoder'));
         $this->assertInstanceOf(AlbaranParser::class, $refleja('albaranParser'));
+    }
+
+    // ------------------------------------------------------------- scheduler
+
+    public function test_esta_agendado_y_con_aplicar(): void
+    {
+        $comandos = collect(app(Schedule::class)->events())->map(fn ($e) => $e->command);
+
+        $agendado = $comandos->first(fn (?string $c) => $c !== null && str_contains($c, 'ppq:sincronizar-albaranes'));
+
+        $this->assertNotNull($agendado, 'El comando debería estar agendado en routes/console.php.');
+        // Sin --aplicar la corrida agendada sería un dry-run: correría todos los días
+        // sin guardar nada, y nadie se enteraría.
+        $this->assertStringContainsString('--aplicar', $agendado);
     }
 
     // ------------------------------------------------------- albarán dado de baja
