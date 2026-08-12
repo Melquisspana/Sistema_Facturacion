@@ -26,6 +26,7 @@ class ClienteSucursal extends Model
 
     protected $fillable = [
         'cliente_id',
+        'ruta_id',
         'codigo',
         'nombre',
         'direccion',
@@ -84,6 +85,15 @@ class ClienteSucursal extends Model
     public function cliente(): BelongsTo
     {
         return $this->belongsTo(Cliente::class);
+    }
+
+    /**
+     * Ruta HABITUAL de visita/cobro. Null es un estado válido: hay salas que no
+     * entran en ninguna ruta. No implica participación en ninguna salida concreta.
+     */
+    public function ruta(): BelongsTo
+    {
+        return $this->belongsTo(Ruta::class, 'ruta_id');
     }
 
     public function pais(): BelongsTo

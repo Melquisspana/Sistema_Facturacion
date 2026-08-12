@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Activitylog\LogOptions;
@@ -68,5 +69,14 @@ class User extends Authenticatable
                 'deleted' => 'eliminó el usuario',
                 default => $evento,
             });
+    }
+
+    /**
+     * Salidas de ruta en las que participa. No hay catálogo de vendedores aparte:
+     * quien sale a ruta ya es usuario del sistema.
+     */
+    public function salidasRuta(): BelongsToMany
+    {
+        return $this->belongsToMany(SalidaRuta::class, 'salida_ruta_user')->withTimestamps();
     }
 }

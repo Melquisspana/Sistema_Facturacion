@@ -27,6 +27,7 @@ enum AreaSistema: string
 {
     case Facturacion = 'facturacion';
     case Planta = 'planta';
+    case Rutas = 'rutas';
 
     /** Etiqueta visible en la UI (selector superior y sidebar). */
     public function label(): string
@@ -34,6 +35,7 @@ enum AreaSistema: string
         return match ($this) {
             self::Facturacion => 'Facturación',
             self::Planta => 'Producción',
+            self::Rutas => 'Rutas / Cobros',
         };
     }
 
@@ -43,6 +45,7 @@ enum AreaSistema: string
         return match ($this) {
             self::Facturacion => PermisoSistema::DteVer->value,
             self::Planta => PermisoSistema::PlantaVer->value,
+            self::Rutas => PermisoSistema::RutasVer->value,
         };
     }
 
@@ -52,6 +55,7 @@ enum AreaSistema: string
         return match ($this) {
             self::Facturacion => 'dashboard',
             self::Planta => 'planta.dashboard',
+            self::Rutas => 'rutas.dashboard',
         };
     }
 
@@ -61,18 +65,24 @@ enum AreaSistema: string
         return match ($this) {
             self::Facturacion => 'facturacion',
             self::Planta => 'planta',
+            self::Rutas => 'rutas',
         };
     }
 
     /**
      * ¿El módulo del área está encendido? Facturación es el núcleo del sistema y
      * no tiene interruptor; Planta se apaga con PLANTA_ENABLED (config/planta.php).
+     *
+     * Rutas / Cobros tampoco lleva interruptor: quien la ve se decide solo por el
+     * permiso `rutas.ver`, que en esta fase tiene únicamente el administrador. Un
+     * flag de config sería una segunda llave para la misma puerta.
      */
     public function habilitada(): bool
     {
         return match ($this) {
             self::Facturacion => true,
             self::Planta => (bool) config('planta.enabled'),
+            self::Rutas => true,
         };
     }
 
@@ -122,10 +132,15 @@ enum AreaSistema: string
 
     /**
      * Área activa según la URL actual (nunca según la sesión). Cualquier ruta que
-     * no sea `planta.*` pertenece a Facturación, que es el resto del sistema.
+     * no sea `planta.*` ni `rutas.*` pertenece a Facturación, que es el resto del
+     * sistema.
      */
     public static function activaDesdeRequest(): self
     {
-        return request()->routeIs('planta.*') ? self::Planta : self::Facturacion;
+        return match (true) {
+            request()->routeIs('planta.*') => self::Planta,
+            request()->routeIs('rutas.*') => self::Rutas,
+            default => self::Facturacion,
+        };
     }
 }

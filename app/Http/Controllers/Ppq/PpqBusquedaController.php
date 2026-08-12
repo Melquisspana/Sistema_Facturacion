@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Services\Ppq\PpqBusquedaService;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -227,34 +226,25 @@ class PpqBusquedaController extends Controller
     }
 
     /**
+     * Albaranes de los resultados, por `dte_id` y por orden de compra.
+     *
+     * La regla de emparejamiento vive ahora en {@see \App\Services\Rutas\AlbaranLocalizador},
+     * que es la MISMA que usa el seguimiento documental de Rutas / Cobros. Se movió
+     * para que exista un solo lugar donde decidir qué albarán le toca a un documento:
+     * dos copias de esta regla acabarían respondiendo distinto en dos pantallas.
+     * El comportamiento de esta búsqueda no cambia.
+     *
      * @return array{0: array<int, PpqAlbaran>, 1: array<string, PpqAlbaran>}
      */
     private function albaranesDe($resultados): array
     {
-        $porDte = [];
-        $porOc = [];
         if (! $resultados || $resultados->isEmpty()) {
-            return [$porDte, $porOc];
-        }
-        $ids = $resultados->pluck('id')->all();
-        $ocs = $resultados->pluck('numero_orden_compra')->filter()->all();
-
-        $albaranes = PpqAlbaran::where(function (Builder $q) use ($ids, $ocs) {
-            $q->whereIn('dte_id', $ids);
-            if ($ocs !== []) {
-                $q->orWhereIn('numero_orden_compra', $ocs);
-            }
-        })->get();
-
-        foreach ($albaranes as $alb) {
-            if ($alb->dte_id) {
-                $porDte[$alb->dte_id] = $alb;
-            }
-            if ($alb->numero_orden_compra && ! isset($porOc[$alb->numero_orden_compra])) {
-                $porOc[$alb->numero_orden_compra] = $alb;
-            }
+            return [[], []];
         }
 
-        return [$porDte, $porOc];
+        return app(\App\Services\Rutas\AlbaranLocalizador::class)->indices(
+            $resultados->pluck('id')->all(),
+            $resultados->pluck('numero_orden_compra')->filter()->all(),
+        );
     }
 }
