@@ -83,12 +83,19 @@ class PlantaNavegacionTest extends TestCase
         }
     }
 
-    /** A3 / D3 bis — con el módulo apagado nadie ve selector ni enlace al área. */
+    /**
+     * A3 / D3 bis — con el módulo apagado, PLANTA no se ve por ningún lado.
+     *
+     * El administrador quedó fuera de este bucle al aparecer el área Rutas / Cobros:
+     * ahora tiene dos áreas visibles (Facturación y Rutas) aun con Planta apagada, y
+     * el selector se dibuja a partir de dos. Lo que sigue importando —que no haya ni
+     * rastro de Planta— se comprueba aparte, en {@see test_a3_bis_el_administrador_no_ve_planta_apagada()}.
+     */
     public function test_a3_con_el_modulo_apagado_no_hay_selector_ni_enlace(): void
     {
         $this->apagarModulo();
 
-        foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
             $resp = $this->actingAs($this->usuario($rol))
                 ->get(route('dashboard'))
                 ->assertOk();
@@ -96,6 +103,27 @@ class PlantaNavegacionTest extends TestCase
             $resp->assertDontSee(self::MARCADOR_SELECTOR, false);
             $resp->assertDontSee(route('planta.dashboard'), false);
         }
+    }
+
+    /**
+     * A3 bis — el administrador SÍ ve selector con Planta apagada (por el área Rutas /
+     * Cobros), pero Planta no aparece en él. El selector dibuja las áreas habilitadas,
+     * y una apagada no lo está.
+     */
+    public function test_a3_bis_el_administrador_no_ve_planta_apagada(): void
+    {
+        $this->apagarModulo();
+
+        $resp = $this->actingAs($this->usuario('administrador'))
+            ->get(route('dashboard'))
+            ->assertOk();
+
+        $resp->assertSee(self::MARCADOR_SELECTOR, false);
+        $resp->assertSee('Rutas / Cobros');
+        // Se comprueba por el ENLACE al área y no por la palabra «Producción»: en el
+        // dashboard de Facturación esa palabra ya aparece como ambiente fiscal del DTE
+        // («Ambiente: Producción»), que no tiene nada que ver con el área de planta.
+        $resp->assertDontSee(route('planta.dashboard'), false);
     }
 
     // ---------------------------------------------------------------------

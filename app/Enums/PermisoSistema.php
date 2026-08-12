@@ -90,6 +90,17 @@ enum PermisoSistema: string
     case PlantaExistenciasVer = 'planta.existencias.ver';
     case PlantaMovimientosVer = 'planta.movimientos.ver';
 
+    // Rutas / Cobros. Área comercial de campo: qué ruta visita cada sala, qué
+    // salidas se hacen y quién va en ellas. NO emite DTE, no toca correlativos,
+    // firma, transmisión, PPQ ni Planta.
+    //
+    // Solo dos permisos en esta fase: `ver` para entrar y consultar, `gestionar`
+    // para todo lo que escribe (crear/editar rutas, asignar salas, crear salidas
+    // y moverles el estado). Cuando exista el seguimiento documental se partirá
+    // en verbos más finos; abrir hoy permisos que nadie usa es ruido.
+    case RutasVer = 'rutas.ver';
+    case RutasGestionar = 'rutas.gestionar';
+
     // Contabilidad / reportes.
     case ReportesVer = 'reportes.ver';
     case ContabilidadEnviar = 'contabilidad.enviar';

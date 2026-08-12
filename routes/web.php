@@ -440,3 +440,4 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
 
 require __DIR__.'/auth.php';
 require __DIR__.'/planta.php';
+require __DIR__.'/rutas.php';
