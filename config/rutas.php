@@ -41,4 +41,14 @@ return [
     | seguridad (una única salida en curso, documento sin dueño) no dependen de él.
     */
     'asociacion_dias' => (int) env('RUTAS_ASOCIACION_DIAS', 7),
+
+    /*
+    | Ventana por defecto de la BANDEJA de documentos (todas las salidas juntas).
+    |
+    | No es solo una comodidad de pantalla: la bandeja resuelve en PHP los filtros
+    | derivados (entrega, estado de cobro) porque no son columnas, y eso obliga a
+    | hidratar las filas que entran. La ventana es el tope que mantiene ese trabajo
+    | acotado. El usuario puede moverla con los filtros de fecha, pero no quitarla.
+    */
+    'bandeja_dias' => (int) env('RUTAS_BANDEJA_DIAS', 60),
 ];
