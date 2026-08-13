@@ -436,6 +436,85 @@ class CobroPpqTest extends TestCase
         $this->assertSame('aplicada', $documento->ppqNotaCredito()->conciliacion_estado);
     }
 
+    // ============================== una NC sin efecto no cuenta como corrección
+
+    public function test_una_nc_rechazada_no_cuenta_como_correccion_vigente(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'San Miguel']);
+        $salida = $this->salida($ruta);
+        $sala = $this->sala($ruta);
+
+        $conRechazada = $this->documento($salida, $ccf = $this->ccf($sala, 'DTE-03-M001P002-000000000000001'));
+        $this->ccf($sala, 'DTE-05-M001P002-000000000000010', [
+            'tipo_dte' => '05',
+            'dte_relacionado_id' => $ccf->id,
+            'estado' => 'rechazado',
+            'total_pagar' => 15.00,
+        ]);
+
+        $conAceptada = $this->documento($salida, $otro = $this->ccf($sala, 'DTE-03-M001P002-000000000000002'));
+        $this->ccf($sala, 'DTE-05-M001P002-000000000000011', [
+            'tipo_dte' => '05',
+            'dte_relacionado_id' => $otro->id,
+            'estado' => 'aceptado',
+            'total_pagar' => 20.00,
+        ]);
+
+        // Las dos NC se HALLAN y las dos se muestran...
+        $this->assertNotNull($conRechazada->notaCredito());
+        $this->assertNotNull($conAceptada->notaCredito());
+
+        // ...pero solo una sigue corrigiendo algo.
+        $this->assertFalse($conRechazada->notaCreditoVigente());
+        $this->assertTrue($conAceptada->notaCreditoVigente());
+
+        $seguimiento = $this->seguimiento();
+        $resumen = $seguimiento->resumen($seguimiento->documentosDe($salida->fresh()));
+
+        $this->assertSame(2, $resumen['nc_reales'], 'las dos se ven en la lista');
+        $this->assertSame(1, $resumen['nc_vigentes'], 'solo una descuenta algo');
+    }
+
+    public function test_una_nc_invalidada_tampoco_cuenta(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'San Miguel']);
+        $salida = $this->salida($ruta);
+        $sala = $this->sala($ruta);
+
+        $documento = $this->documento($salida, $ccf = $this->ccf($sala, 'DTE-03-M001P002-000000000000001'));
+        $this->ccf($sala, 'DTE-05-M001P002-000000000000010', [
+            'tipo_dte' => '05',
+            'dte_relacionado_id' => $ccf->id,
+            'estado' => 'invalidado',
+            'total_pagar' => 15.00,
+        ]);
+
+        $this->assertNotNull($documento->notaCredito());
+        $this->assertFalse($documento->notaCreditoVigente());
+    }
+
+    public function test_la_pantalla_declara_las_nc_sin_efecto_en_vez_de_esconderlas(): void
+    {
+        $admin = $this->admin();
+        $ruta = Ruta::create(['nombre' => 'San Miguel']);
+        $salida = $this->salida($ruta);
+        $sala = $this->sala($ruta);
+
+        $this->documento($salida, $ccf = $this->ccf($sala, 'DTE-03-M001P002-000000000000001'));
+        $this->ccf($sala, 'DTE-05-M001P002-000000000000010', [
+            'tipo_dte' => '05',
+            'dte_relacionado_id' => $ccf->id,
+            'estado' => 'rechazado',
+            'total_pagar' => 15.00,
+        ]);
+
+        $this->actingAs($admin)->get(route('rutas.salidas.show', $salida))
+            ->assertOk()
+            ->assertSee('1 sin efecto')
+            // La NC sigue a la vista en la tarjeta del documento.
+            ->assertSee('NC rechazada');
+    }
+
     // ================================= 9) nada de PPQ se escribe en la tabla
 
     public function test_consultar_el_cobro_no_escribe_nada_en_el_documento(): void

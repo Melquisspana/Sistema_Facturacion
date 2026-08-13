@@ -137,12 +137,21 @@
                         <p class="{{ $pie }}">papel de regreso</p>
                     </div>
 
-                    {{-- Número grande = NC REALES halladas en `dtes`. El pie cuenta la
-                         marca operativa, que es otra cosa y por eso va aparte. --}}
+                    {{-- Número grande = NC que SIGUEN CORRIGIENDO algo. Una rechazada o
+                         una invalidada no descuenta nada, así que contarlas acá decía
+                         que hay correcciones donde no quedó ninguna.
+
+                         Las sin efecto no se ocultan: se declaran en el pie, y la
+                         tarjeta del documento las sigue mostrando en rojo. El pie
+                         cuenta además la marca operativa, que es otra cosa. --}}
                     <div class="{{ $caja }}">
                         <p class="{{ $rotulo }}">Notas de crédito</p>
-                        <p class="{{ $numero }}">{{ $resumen['nc_reales'] }}</p>
+                        <p class="{{ $numero }}">{{ $resumen['nc_vigentes'] }}</p>
+                        @php $ncSinEfecto = $resumen['nc_reales'] - $resumen['nc_vigentes']; @endphp
                         <p class="{{ $pie }} @if ($resumen['requieren_nc'] > 0) !text-amber-600 dark:!text-amber-400 @endif">
+                            @if ($ncSinEfecto > 0)
+                                <span class="text-red-600 dark:text-red-400">{{ $ncSinEfecto }} sin efecto</span> ·
+                            @endif
                             {{ $resumen['requieren_nc'] }} marcado{{ $resumen['requieren_nc'] === 1 ? '' : 's' }} para revisar
                         </p>
                     </div>

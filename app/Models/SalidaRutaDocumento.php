@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\EstadoDte;
 use App\Enums\MotivoRevisionDocumento;
 use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\LocalizadorNotaCredito;
@@ -226,6 +227,33 @@ class SalidaRutaDocumento extends Model
         }
 
         return $this->notaCreditoResuelta;
+    }
+
+    /**
+     * ¿La nota de crédito de este documento todavía corrige algo?
+     *
+     * Una NC RECHAZADA por Hacienda nunca llegó a existir, y una INVALIDADA se anuló
+     * después: ninguna de las dos descuenta un centavo. Sumarlas al contador de
+     * «Notas de crédito» hacía que el número dijera que hay correcciones donde no
+     * quedó ninguna.
+     *
+     * La NC sin efecto NO se esconde: la tarjeta del documento la sigue mostrando en
+     * rojo, porque saber que hubo un intento fallido es justamente lo que hace falta
+     * para ir a corregirlo. Lo que cambia es solo qué se CUENTA arriba.
+     */
+    public function notaCreditoVigente(): bool
+    {
+        $nc = $this->notaCredito();
+
+        if ($nc === null) {
+            return false;
+        }
+
+        $estado = $nc->estado instanceof EstadoDte
+            ? $nc->estado
+            : EstadoDte::tryFrom((string) $nc->estado);
+
+        return ! in_array($estado, [EstadoDte::Rechazado, EstadoDte::Invalidado], true);
     }
 
     public function documentacionFisicaRecibida(): bool

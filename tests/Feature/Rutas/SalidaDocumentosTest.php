@@ -184,6 +184,45 @@ class SalidaDocumentosTest extends TestCase
         $this->assertSame(113.58, $documento->monto());
     }
 
+    public function test_un_numero_con_espacios_sobrantes_igual_encuentra_su_dte(): void
+    {
+        // Pegar el número desde otra pantalla suele arrastrar un espacio. Antes, ese
+        // espacio hacía fallar la búsqueda y el CCF se guardaba como HISTÓRICO —con el
+        // número ya recortado, o sea idéntico al real— sin ningún aviso: la pantalla
+        // quedaba sin sala, sin fecha, sin albarán y sin PPQ, y el número se veía bien.
+        $admin = $this->admin();
+        $ruta = $this->ruta();
+        $sala = $this->sala($ruta);
+        $salida = $this->salida($ruta);
+        $ccf = $this->ccf($sala, 'DTE-03-M001P002-000000000000007');
+
+        $this->actingAs($admin)
+            ->post(route('rutas.salidas.documentos.historico.store', $salida), [
+                'numero_control' => "  DTE-03-M001P002-000000000000007\t",
+            ])
+            ->assertRedirect();
+
+        $documento = SalidaRutaDocumento::sole();
+        $this->assertSame($ccf->id, $documento->dte_id, 'tenía que entrar por el camino P002');
+        $this->assertFalse($documento->esHistorico());
+        $this->assertSame('DTE-03-M001P002-000000000000007', $documento->numero_control);
+    }
+
+    public function test_un_historico_real_con_espacios_se_guarda_recortado(): void
+    {
+        $salida = $this->salida($this->ruta());
+
+        $this->actingAs($this->admin())
+            ->post(route('rutas.salidas.documentos.historico.store', $salida), [
+                'numero_control' => '  DTE-03-M001P001-000000000000986  ',
+            ])
+            ->assertRedirect();
+
+        $documento = SalidaRutaDocumento::sole();
+        $this->assertTrue($documento->esHistorico());
+        $this->assertSame('DTE-03-M001P001-000000000000986', $documento->numero_control);
+    }
+
     public function test_el_historico_exige_al_menos_el_numero_de_control(): void
     {
         $salida = $this->salida($this->ruta());

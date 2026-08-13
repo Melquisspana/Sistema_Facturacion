@@ -155,6 +155,16 @@ class SalidaDocumentoController extends Controller
             'numero_control.required' => 'El número de control es lo mínimo para identificar el documento.',
         ]);
 
+        // El número se recorta ACÁ, antes de buscar, y no solo al guardar.
+        //
+        // Antes la búsqueda usaba el texto crudo del formulario mientras el alta del
+        // histórico sí aplicaba `trim()`. Con eso, pegar el número con un espacio al
+        // final no encontraba el DTE y el documento se guardaba como histórico —con su
+        // número ya recortado, o sea idéntico al real— sin ninguna señal de que algo
+        // había fallado. El síntoma es de los peores: la pantalla queda sin sala, sin
+        // fecha, sin albarán y sin PPQ, y el número se ve bien.
+        $datos['numero_control'] = trim($datos['numero_control']);
+
         // Si ese número SÍ existe en `dtes`, no es un histórico: se agrega por el camino
         // normal para que quede con su `dte_id` y sus datos vivos, en vez de como una
         // copia congelada.
