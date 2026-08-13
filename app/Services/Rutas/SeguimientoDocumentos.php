@@ -122,7 +122,12 @@ class SeguimientoDocumentos
             'sin_albaran' => $documentos->count() - $entregados,
             'documentacion_fisica' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->documentacionFisicaRecibida())->count(),
             'requieren_nc' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->requiere_nc)->count(),
+            // `nc_reales` = documentos con una NC hallada, sea cual sea su estado; es
+            // lo que se VE en la lista. `nc_vigentes` = las que además siguen surtiendo
+            // efecto. Se exponen las dos porque la diferencia entre ambas es
+            // exactamente lo que hay que ir a revisar.
             'nc_reales' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->notaCredito() !== null)->count(),
+            'nc_vigentes' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->notaCreditoVigente())->count(),
             'en_ppq' => $enPpq,
             'sin_ppq' => $documentos->count() - $enPpq,
             'pagados' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->pagado())->count(),
