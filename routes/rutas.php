@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Rutas\BandejaDocumentosController;
 use App\Http\Controllers\Rutas\RutaController;
 use App\Http\Controllers\Rutas\RutaSalaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
@@ -38,6 +39,14 @@ Route::middleware(['auth', 'permission:rutas.ver'])
     ->name('rutas.')
     ->group(function () {
         Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+
+        /*
+        | Bandeja transversal de documentos (todas las salidas juntas). Solo lectura:
+        | acá se CONSULTA qué falta —albarán, papel, PPQ, cobro—; los actos se hacen
+        | en el detalle de la salida, que es donde tienen contexto. Por eso le alcanza
+        | con `rutas.ver` y no lleva `rutas.gestionar`.
+        */
+        Route::get('documentos', [BandejaDocumentosController::class, 'index'])->name('documentos.index');
 
         /*
         | Catálogo de rutas. Sin `destroy`: una ruta no se elimina, se desactiva

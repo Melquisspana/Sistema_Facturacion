@@ -23,6 +23,10 @@
         <p class="{{ $tituloGrupo }}">Operación</p>
         <div class="space-y-0.5">
             <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas</x-sidebar-link>
+            {{-- La bandeja cruza todas las salidas: es donde se contesta «qué me
+                 falta» sin abrir viaje por viaje. Va pegada a Salidas porque se
+                 usan juntas. --}}
+            <x-sidebar-link :href="route('rutas.documentos.index')" :active="request()->routeIs('rutas.documentos.*')">Documentos</x-sidebar-link>
             <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Rutas</x-sidebar-link>
         </div>
     </div>
