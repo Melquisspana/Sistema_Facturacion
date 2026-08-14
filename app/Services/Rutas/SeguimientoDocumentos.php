@@ -80,26 +80,48 @@ class SeguimientoDocumentos
             $doc->precargarPpq($this->ppq->elegir($ppqPorDte, $ppqPorControl, $doc->dte_id, $doc->numeroLegible()));
         }
 
-        // Segunda vuelta para el PPQ de las NC: recién ahora se sabe qué NC tiene
-        // cada documento, y son otros números de control que los de arriba.
-        $notas = $documentos->map(fn (SalidaRutaDocumento $d) => $d->notaCredito())->filter();
+        // Segunda vuelta para las NC. Se resuelven DOS cosas distintas con la misma
+        // consulta, porque la pantalla y el dinero no miran lo mismo:
+        //
+        //   · la NC de la insignia  -> UNA, la más reciente ({@see LocalizadorNotaCredito});
+        //   · las NC del dinero     -> TODAS las vinculadas por `dte_relacionado_id`.
+        //
+        // Después hace falta el renglón PPQ de cada una de esas notas, así que el
+        // índice se arma sobre la UNIÓN de ambos conjuntos: una sola consulta más, y
+        // ningún documento vuelve a la base por su cuenta.
+        $vinculadasPorCcf = $this->notas->todasVinculadas(
+            $documentos->map(fn (SalidaRutaDocumento $d) => $d->dte_id)->all()
+        );
 
-        if ($notas->isNotEmpty()) {
+        $todasLasNotas = $documentos
+            ->map(fn (SalidaRutaDocumento $d) => $d->notaCredito())
+            ->filter()
+            ->concat(collect($vinculadasPorCcf)->flatten(1))
+            ->unique('id')
+            ->values();
+
+        $ppqPorNota = [];
+
+        if ($todasLasNotas->isNotEmpty()) {
             [$ncPpqPorDte, $ncPpqPorControl] = $this->ppq->indices(
-                $notas->map(fn ($n) => $n->id)->all(),
-                $notas->map(fn ($n) => $n->numero_control)->all(),
+                $todasLasNotas->map(fn ($n) => $n->id)->all(),
+                $todasLasNotas->map(fn ($n) => $n->numero_control)->all(),
             );
 
-            foreach ($documentos as $doc) {
-                $nc = $doc->notaCredito();
-                $doc->precargarPpqNotaCredito(
-                    $nc === null ? null : $this->ppq->elegir($ncPpqPorDte, $ncPpqPorControl, $nc->id, $nc->numero_control),
-                );
+            foreach ($todasLasNotas as $nota) {
+                $item = $this->ppq->elegir($ncPpqPorDte, $ncPpqPorControl, $nota->id, $nota->numero_control);
+                if ($item !== null) {
+                    $ppqPorNota[$nota->id] = $item;
+                }
             }
-        } else {
-            foreach ($documentos as $doc) {
-                $doc->precargarPpqNotaCredito(null);
-            }
+        }
+
+        foreach ($documentos as $doc) {
+            $doc->precargarNotasVinculadas(collect($vinculadasPorCcf[$doc->dte_id] ?? []));
+            $doc->precargarPpqDeNotas($ppqPorNota);
+
+            $nc = $doc->notaCredito();
+            $doc->precargarPpqNotaCredito($nc === null ? null : ($ppqPorNota[$nc->id] ?? null));
         }
 
         return $documentos;

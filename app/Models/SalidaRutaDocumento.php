@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Un documento (CCF) dentro de una salida de ruta. Ver la migración para el
@@ -99,6 +100,12 @@ class SalidaRutaDocumento extends Model
     private PpqItem|false|null $ppqResuelto = false;
 
     private PpqItem|false|null $ppqNotaCreditoResuelto = false;
+
+    /** @var Collection<int, Dte>|false */
+    private Collection|false $notasVinculadasResueltas = false;
+
+    /** @var array<int, PpqItem>|false */
+    private array|false $ppqDeNotasResuelto = false;
 
     // ------------------------------------------------------------- relaciones
 
@@ -273,6 +280,18 @@ class SalidaRutaDocumento extends Model
         $this->ppqNotaCreditoResuelto = $item;
     }
 
+    /** @param Collection<int, Dte> $notas */
+    public function precargarNotasVinculadas(Collection $notas): void
+    {
+        $this->notasVinculadasResueltas = $notas;
+    }
+
+    /** @param array<int, PpqItem> $porNotaId */
+    public function precargarPpqDeNotas(array $porNotaId): void
+    {
+        $this->ppqDeNotasResuelto = $porNotaId;
+    }
+
     /**
      * Renglón de PPQ de este documento, o null si todavía no entró a ningún lote.
      * Se resuelve al consultarlo: nada de esto se guarda en esta tabla.
@@ -334,6 +353,188 @@ class SalidaRutaDocumento extends Model
         $monto = $this->ppqItem()?->monto_pagado;
 
         return $monto === null ? null : (float) $monto;
+    }
+
+    // ------------------------------------------------------------------ dinero
+
+    /**
+     * TODAS las notas de crédito de este documento por vínculo FISCAL.
+     *
+     * El dinero se calcula sobre esta colección y no sobre {@see notaCredito()}, que
+     * devuelve una sola —la más reciente— y sirve para la insignia de la pantalla.
+     * Son dos preguntas distintas: «¿hubo corrección?» se contesta con la última,
+     * pero «¿cuánto descuenta?» se contesta sumando todas, porque una NC aceptada no
+     * deja de descontar porque después alguien haya generado un borrador.
+     *
+     * Solo `dte_relacionado_id`, nunca la orden de compra: una OC ampara varios CCF y
+     * por ahí la misma NC se restaría de dos documentos. Un histórico P001 no tiene
+     * vínculo fiscal posible, así que su colección va siempre vacía: se prefiere
+     * decir «no hay NC atribuible» antes que adivinar.
+     *
+     * @return Collection<int, Dte>
+     */
+    public function notasCreditoVinculadas(): Collection
+    {
+        if ($this->dte_id === null) {
+            return collect();
+        }
+
+        if ($this->notasVinculadasResueltas === false) {
+            $this->notasVinculadasResueltas = collect(
+                app(LocalizadorNotaCredito::class)->todasVinculadas([$this->dte_id])[$this->dte_id] ?? []
+            );
+        }
+
+        return $this->notasVinculadasResueltas;
+    }
+
+    /** Renglón PPQ de una NC concreta. */
+    private function ppqDeNota(Dte $nc): ?PpqItem
+    {
+        if ($this->ppqDeNotasResuelto === false) {
+            $this->ppqDeNotasResuelto = [];
+            foreach ($this->notasCreditoVinculadas() as $nota) {
+                $item = app(LocalizadorPpq::class)->paraUno($nota->id, $nota->numero_control);
+                if ($item !== null) {
+                    $this->ppqDeNotasResuelto[$nota->id] = $item;
+                }
+            }
+        }
+
+        return $this->ppqDeNotasResuelto[$nc->id] ?? null;
+    }
+
+    /**
+     * Los renglones PPQ de las NC que Calleja YA descontó.
+     *
+     * @return Collection<int, PpqItem>
+     */
+    private function itemsNcAplicadas(): Collection
+    {
+        return $this->notasCreditoVinculadas()
+            ->map(fn (Dte $nc) => $this->ppqDeNota($nc))
+            ->filter(fn (?PpqItem $item) => $item?->conciliacion_estado === 'aplicada')
+            ->values();
+    }
+
+    /** Lo facturado. Null = desconocido, que NO es lo mismo que cero. */
+    public function montoFacturado(): ?float
+    {
+        return $this->monto();
+    }
+
+    /** Lo efectivamente cobrado según el TXT de Calleja. Null si todavía no se cobró. */
+    public function montoCobrado(): ?float
+    {
+        if (! $this->pagado()) {
+            return null;
+        }
+
+        return $this->montoPagado();
+    }
+
+    /**
+     * NC ya DESCONTADAS por Calleja, sumadas: el monto que reporta el TXT y no el
+     * fiscal, porque para el saldo lo que cuenta es lo que realmente se descontó.
+     */
+    public function montoNcAplicada(): ?float
+    {
+        $items = $this->itemsNcAplicadas();
+
+        if ($items->isEmpty()) {
+            return null;
+        }
+
+        return round($items->reduce(fn (float $t, PpqItem $i) => $t + (float) $i->monto_pagado, 0.0), 2);
+    }
+
+    /**
+     * NC emitidas y ACEPTADAS que todavía no se descontaron, sumadas. Reducen lo que
+     * esperamos cobrar aunque Calleja no las haya aplicado.
+     *
+     * El candado contra el doble descuento es POR NOTA, no por documento: cada NC se
+     * pregunta primero si ya está aplicada y, si lo está, no vuelve a contar acá. Un
+     * documento con una NC aplicada y otra aceptada suma una en cada columna, que es
+     * lo correcto; ninguna suma en las dos.
+     *
+     * Solo `aceptado` descuenta. Borrador, generada, rechazada e invalidada no: la
+     * primera no existe, la segunda todavía no fue aceptada por Hacienda y las dos
+     * últimas ya no corrigen nada.
+     */
+    public function montoNcAceptadaPorAplicar(): ?float
+    {
+        $total = null;
+
+        foreach ($this->notasCreditoVinculadas() as $nc) {
+            if ($this->ppqDeNota($nc)?->conciliacion_estado === 'aplicada') {
+                continue; // ya cuenta como aplicada
+            }
+
+            $estado = $nc->estado instanceof EstadoDte ? $nc->estado : EstadoDte::tryFrom((string) $nc->estado);
+
+            if ($estado === EstadoDte::Aceptado) {
+                $total = ($total ?? 0.0) + (float) $nc->total_pagar;
+            }
+        }
+
+        return $total === null ? null : round($total, 2);
+    }
+
+    /**
+     * Lo que falta cobrar de este documento.
+     *
+     * Devuelve NULL —desconocido— y nunca un cero de relleno cuando falta alguna
+     * pieza: sin monto facturado, o cobrado/descontado sin importe registrado. Un
+     * saldo inventado se suma al total y ahí ya no hay forma de notar que era humo.
+     */
+    public function saldoPendiente(): ?float
+    {
+        $facturado = $this->montoFacturado();
+
+        if ($facturado === null) {
+            return null;
+        }
+
+        // Está pagado (o hay una NC aplicada) pero sin importe: no se puede restar.
+        if ($this->pagado() && $this->montoPagado() === null) {
+            return null;
+        }
+        if ($this->itemsNcAplicadas()->contains(fn (PpqItem $i) => $i->monto_pagado === null)) {
+            return null;
+        }
+
+        return round(
+            $facturado
+            - ($this->montoCobrado() ?? 0)
+            - ($this->montoNcAplicada() ?? 0)
+            - ($this->montoNcAceptadaPorAplicar() ?? 0),
+            2,
+        );
+    }
+
+    /** ¿Se pudo calcular el saldo? Lo contrario se declara, no se rellena. */
+    public function saldoConocido(): bool
+    {
+        return $this->saldoPendiente() !== null;
+    }
+
+    /** ¿Queda algo por cobrar? Un saldo desconocido NO se da por cobrado. */
+    public function tieneSaldo(): bool
+    {
+        $saldo = $this->saldoPendiente();
+
+        return $saldo !== null && $saldo > 0;
+    }
+
+    /**
+     * Días desde la EMISIÓN del documento. Null si no se conoce la fecha, que en los
+     * históricos P001 pasa: el snapshot es opcional y no se inventa.
+     */
+    public function diasAntiguedad(): ?int
+    {
+        $fecha = $this->fecha();
+
+        return $fecha === null ? null : (int) $fecha->copy()->startOfDay()->diffInDays(Carbon::today());
     }
 
     /**

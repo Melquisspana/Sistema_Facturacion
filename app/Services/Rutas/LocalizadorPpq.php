@@ -104,6 +104,18 @@ class LocalizadorPpq
         }
 
         $items = PpqItem::query()
+            // El lote tiene que EXISTIR. `ppq_lotes` se borra de forma lógica y sus
+            // items no: el `cascadeOnDelete` de la clave foránea no se dispara con un
+            // soft delete, así que quedan renglones vivos colgando de un lote que ya
+            // nadie ve —ni siquiera PPQ, donde solo se llega a un item a través de su
+            // lote—. Sin este filtro, un documento aparecía «En PPQ» apoyado en un
+            // lote eliminado, y encima con «Lote sin referencia» porque la relación
+            // devolvía null.
+            //
+            // Un lote borrado es un lote retirado: ese documento NO está presentado a
+            // cobro, está pendiente de ingresar. Y como el filtro es por item, un
+            // documento que además figure en un lote VIVO sigue contando como en PPQ.
+            ->whereHas('lote')
             ->with('lote:id,referencia,estado,fecha')
             ->where(function (Builder $q) use ($dteIds, $buscables) {
                 if ($dteIds !== []) {

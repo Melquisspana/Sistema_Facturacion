@@ -62,14 +62,26 @@ class BandejaDocumentos
     /** Conciliado contra el TXT de Calleja. */
     public const PPQ_PAGADO = 'pagado';
 
-    public function __construct(private readonly SeguimientoDocumentos $seguimiento) {}
+    /** Queda plata por cobrar (saldo > 0). */
+    public const SALDO_CON = 'con_saldo';
+
+    /** No queda nada por cobrar. Un saldo DESCONOCIDO no entra acá: no consta que se haya cobrado. */
+    public const SALDO_SIN = 'sin_saldo';
+
+    /** El saldo no se pudo calcular (falta el monto o el importe de un pago). */
+    public const SALDO_DESCONOCIDO = 'desconocido';
+
+    public function __construct(
+        private readonly SeguimientoDocumentos $seguimiento,
+        private readonly Cobranza $cobranza,
+    ) {}
 
     /**
      * Documentos que cumplen los filtros, ya hidratados, más el resumen contado sobre
      * ESE mismo conjunto (no sobre la página que se ve).
      *
      * @param  array<string, mixed>  $filtros
-     * @return array{documentos: Collection<int, SalidaRutaDocumento>, resumen: array<string, int>, desde: Carbon, hasta: Carbon}
+     * @return array{documentos: Collection<int, SalidaRutaDocumento>, resumen: array<string, int>, dinero: array<string, float|int>, antiguedad: array<string, array{documentos: int, monto: float}>, desde: Carbon, hasta: Carbon}
      */
     public function consultar(array $filtros): array
     {
@@ -84,6 +96,10 @@ class BandejaDocumentos
         return [
             'documentos' => $documentos,
             'resumen' => $this->seguimiento->resumen($documentos),
+            // El dinero se calcula sobre el MISMO conjunto ya filtrado: los totales
+            // corresponden siempre a lo que se está mirando, no a otra cosa.
+            'dinero' => $this->cobranza->resumen($documentos),
+            'antiguedad' => $this->cobranza->antiguedad($documentos),
             'desde' => $desde,
             'hasta' => $hasta,
         ];
@@ -188,6 +204,8 @@ class BandejaDocumentos
     {
         $entrega = $filtros['entrega'] ?? null;
         $ppq = $filtros['ppq'] ?? null;
+        $saldo = $filtros['saldo'] ?? null;
+        $tramo = $filtros['antiguedad'] ?? null;
 
         return $documentos
             ->when($entrega === self::ENTREGA_ENTREGADO, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->entregado()))
@@ -197,7 +215,40 @@ class BandejaDocumentos
             // item en estado `aplicada` caería acá, pero eso solo le pasa a una NC y
             // este módulo transporta CCF: en la práctica no ocurre.
             ->when($ppq === self::PPQ_PENDIENTE, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->enPpq() && ! $d->pagado()))
-            ->when($ppq === self::PPQ_PAGADO, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->pagado()));
+            ->when($ppq === self::PPQ_PAGADO, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->pagado()))
+
+            // Saldo. «Sin saldo» exige que el saldo se haya podido CALCULAR: un
+            // documento cuyo importe no se conoce no puede darse por cobrado.
+            ->when($saldo === self::SALDO_CON, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->tieneSaldo()))
+            ->when($saldo === self::SALDO_SIN, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->saldoConocido() && ! $d->tieneSaldo()))
+            ->when($saldo === self::SALDO_DESCONOCIDO, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => ! $d->saldoConocido()))
+
+            ->when(filled($tramo), fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $this->enTramo($d, (string) $tramo)));
+    }
+
+    /**
+     * ¿El documento cae en ese tramo de antigüedad? Solo cuentan los que tienen saldo:
+     * lo ya cobrado no envejece.
+     */
+    private function enTramo(SalidaRutaDocumento $documento, string $tramo): bool
+    {
+        if (! $documento->tieneSaldo()) {
+            return false;
+        }
+
+        $dias = $documento->diasAntiguedad();
+
+        if ($tramo === 'sin_fecha') {
+            return $dias === null;
+        }
+
+        if ($dias === null || ! isset(Cobranza::TRAMOS[$tramo])) {
+            return false;
+        }
+
+        [$desde, $hasta] = Cobranza::TRAMOS[$tramo];
+
+        return $dias >= $desde && ($hasta === null || $dias <= $hasta);
     }
 
     private function fecha(mixed $valor): ?Carbon

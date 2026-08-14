@@ -80,6 +80,41 @@ class LocalizadorNotaCredito
         return [$porCcf, $porOrden];
     }
 
+    /**
+     * TODAS las notas de crédito de cada CCF, por vínculo fiscal, sin colapsar.
+     *
+     * Existe porque la pregunta del DINERO es distinta de la de la pantalla. Arriba
+     * se elige UNA —la más reciente— para contestar «¿hubo corrección?», y eso está
+     * bien para una insignia. Pero para restar plata elegir es directamente erróneo:
+     * una NC aceptada de $16.61 seguía descontando aunque después alguien generara
+     * tres borradores, y con la regla de «la más reciente» quedaba invisible. Peor
+     * todavía si hay dos aceptadas: descuentan las dos, no una.
+     *
+     * Por eso acá no se elige nada: se devuelven todas y que el documento decida
+     * cuáles suman y en qué columna. Y solo por `dte_relacionado_id` —nunca por orden
+     * de compra—, porque una OC ampara varios CCF y descontaría de más.
+     *
+     * @param  array<int, int|null>  $dteIds
+     * @return array<int, Collection<int, Dte>> indexado por `dte_relacionado_id`
+     */
+    public function todasVinculadas(array $dteIds): array
+    {
+        $dteIds = array_values(array_unique(array_filter($dteIds)));
+
+        if ($dteIds === []) {
+            return [];
+        }
+
+        return Dte::query()
+            ->where('tipo_dte', self::TIPO_NC)
+            ->noArchivados()
+            ->whereIn('dte_relacionado_id', $dteIds)
+            ->orderBy('id')
+            ->get(['id', 'tipo_dte', 'estado', 'numero_control', 'dte_relacionado_id', 'numero_orden_compra', 'fecha_emision', 'total_pagar'])
+            ->groupBy('dte_relacionado_id')
+            ->all();
+    }
+
     public function paraUno(?int $dteId, ?string $orden): ?Dte
     {
         [$porCcf, $porOrden] = $this->indices([$dteId], [$orden]);
