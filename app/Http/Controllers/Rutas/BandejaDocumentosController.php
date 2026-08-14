@@ -31,10 +31,17 @@ class BandejaDocumentosController extends Controller
     {
         $filtros = $request->only([
             'desde', 'hasta', 'ruta_id', 'salida_id', 'sucursal_id',
-            'entrega', 'papel', 'requiere_nc', 'ppq',
+            'entrega', 'papel', 'requiere_nc', 'ppq', 'saldo', 'antiguedad',
         ]);
 
-        ['documentos' => $documentos, 'resumen' => $resumen, 'desde' => $desde, 'hasta' => $hasta] = $bandeja->consultar($filtros);
+        [
+            'documentos' => $documentos,
+            'resumen' => $resumen,
+            'dinero' => $dinero,
+            'antiguedad' => $antiguedad,
+            'desde' => $desde,
+            'hasta' => $hasta,
+        ] = $bandeja->consultar($filtros);
 
         $pagina = LengthAwarePaginator::resolveCurrentPage();
 
@@ -52,6 +59,8 @@ class BandejaDocumentosController extends Controller
         return view('rutas.documentos.index', [
             'documentos' => $paginados,
             'resumen' => $resumen,
+            'dinero' => $dinero,
+            'antiguedad' => $antiguedad,
             'desde' => $desde,
             'hasta' => $hasta,
             'filtros' => $filtros,
