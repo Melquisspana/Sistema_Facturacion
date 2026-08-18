@@ -109,9 +109,9 @@ class SeguimientoDocumentos
             );
 
             foreach ($todasLasNotas as $nota) {
-                $item = $this->ppq->elegir($ncPpqPorDte, $ncPpqPorControl, $nota->id, $nota->numero_control);
-                if ($item !== null) {
-                    $ppqPorNota[$nota->id] = $item;
+                $renglon = $this->ppq->elegir($ncPpqPorDte, $ncPpqPorControl, $nota->id, $nota->numero_control);
+                if ($renglon !== null) {
+                    $ppqPorNota[$nota->id] = $renglon;
                 }
             }
         }
@@ -150,6 +150,10 @@ class SeguimientoDocumentos
             // exactamente lo que hay que ir a revisar.
             'nc_reales' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->notaCredito() !== null)->count(),
             'nc_vigentes' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->notaCreditoVigente())->count(),
+            // `en_ppq` es PRESENTACIÓN ACTUAL (está en un lote vivo) y `pagados` es un
+            // hecho consumado. Son independientes a propósito: un documento cobrado cuyo
+            // lote se retiró cuenta en `pagados` y NO en `en_ppq`, que es exactamente lo
+            // que pasó. Ver {@see RenglonPpq}.
             'en_ppq' => $enPpq,
             'sin_ppq' => $documentos->count() - $enPpq,
             'pagados' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->pagado())->count(),

@@ -7,6 +7,7 @@ use App\Enums\MotivoRevisionDocumento;
 use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\LocalizadorNotaCredito;
 use App\Services\Rutas\LocalizadorPpq;
+use App\Services\Rutas\RenglonPpq;
 use App\Support\OrdenCompra;
 use App\Support\Sala;
 use Illuminate\Database\Eloquent\Builder;
@@ -97,14 +98,14 @@ class SalidaRutaDocumento extends Model
 
     private Dte|false|null $notaCreditoResuelta = false;
 
-    private PpqItem|false|null $ppqResuelto = false;
+    private RenglonPpq|false|null $ppqResuelto = false;
 
-    private PpqItem|false|null $ppqNotaCreditoResuelto = false;
+    private RenglonPpq|false|null $ppqNotaCreditoResuelto = false;
 
     /** @var Collection<int, Dte>|false */
     private Collection|false $notasVinculadasResueltas = false;
 
-    /** @var array<int, PpqItem>|false */
+    /** @var array<int, RenglonPpq>|false */
     private array|false $ppqDeNotasResuelto = false;
 
     // ------------------------------------------------------------- relaciones
@@ -270,14 +271,14 @@ class SalidaRutaDocumento extends Model
 
     // ------------------------------------------------------------ cobro / PPQ
 
-    public function precargarPpq(?PpqItem $item): void
+    public function precargarPpq(?RenglonPpq $renglon): void
     {
-        $this->ppqResuelto = $item;
+        $this->ppqResuelto = $renglon;
     }
 
-    public function precargarPpqNotaCredito(?PpqItem $item): void
+    public function precargarPpqNotaCredito(?RenglonPpq $renglon): void
     {
-        $this->ppqNotaCreditoResuelto = $item;
+        $this->ppqNotaCreditoResuelto = $renglon;
     }
 
     /** @param Collection<int, Dte> $notas */
@@ -286,23 +287,41 @@ class SalidaRutaDocumento extends Model
         $this->notasVinculadasResueltas = $notas;
     }
 
-    /** @param array<int, PpqItem> $porNotaId */
+    /** @param array<int, RenglonPpq> $porNotaId */
     public function precargarPpqDeNotas(array $porNotaId): void
     {
         $this->ppqDeNotasResuelto = $porNotaId;
     }
 
     /**
-     * Renglón de PPQ de este documento, o null si todavía no entró a ningún lote.
+     * Lo que PPQ sabe de este documento: presentación y conciliación, por separado.
      * Se resuelve al consultarlo: nada de esto se guarda en esta tabla.
      */
-    public function ppqItem(): ?PpqItem
+    public function ppqRenglon(): ?RenglonPpq
     {
         if ($this->ppqResuelto === false) {
             $this->ppqResuelto = app(LocalizadorPpq::class)->paraUno($this->dte_id, $this->numeroLegible());
         }
 
         return $this->ppqResuelto;
+    }
+
+    /** El renglón de PPQ que se muestra en pantalla ({@see RenglonPpq::paraMostrar()}). */
+    public function ppqItem(): ?PpqItem
+    {
+        return $this->ppqRenglon()?->paraMostrar();
+    }
+
+    /** El renglón que sostiene la presentación ACTUAL. Null si no está en ningún lote vivo. */
+    public function ppqPresentado(): ?PpqItem
+    {
+        return $this->ppqRenglon()?->presentado;
+    }
+
+    /** El renglón que prueba el cobro. Sobrevive al retiro de su lote. */
+    public function ppqConciliado(): ?PpqItem
+    {
+        return $this->ppqRenglon()?->conciliado;
     }
 
     /** Renglón de PPQ de la NC de este documento (si la NC existe y entró a un lote). */
@@ -315,13 +334,20 @@ class SalidaRutaDocumento extends Model
                 : app(LocalizadorPpq::class)->paraUno($nc->id, $nc->numero_control);
         }
 
-        return $this->ppqNotaCreditoResuelto;
+        return $this->ppqNotaCreditoResuelto?->paraMostrar();
     }
 
-    /** ¿El documento ya fue ingresado a un lote de cobro? */
+    /**
+     * ¿Está HOY dentro de un lote de cobro VIVO?
+     *
+     * Es una pregunta de estado actual y se contesta sola, sin mirar el cobro: un
+     * documento pagado cuyo lote se retiró contesta que NO —ya no está presentado—
+     * y sin embargo sigue estando pagado. Ver {@see RenglonPpq} para el porqué de
+     * que estas dos respuestas no se pisen.
+     */
     public function enPpq(): bool
     {
-        return $this->ppqItem() !== null;
+        return $this->ppqPresentado() !== null;
     }
 
     /**
@@ -329,28 +355,31 @@ class SalidaRutaDocumento extends Model
      * de Calleja. Estar dentro de un lote NO alcanza, y el estado del LOTE tampoco
      * —un lote marcado «pagado» a mano es una etiqueta de gestión del paquete, no la
      * prueba de que este renglón se cobró—.
+     *
+     * Y al revés: que el lote se retire DESPUÉS tampoco deshace el pago. La plata ya
+     * entró; borrar el paquete es una acción administrativa, no un reembolso.
      */
     public function pagado(): bool
     {
-        return $this->ppqItem()?->conciliacion_estado === 'pagado';
+        return $this->ppqConciliado()?->conciliacion_estado === 'pagado';
     }
 
     /** NC descontada por Calleja según el TXT. Es el equivalente de «pagado» para una NC. */
     public function ncAplicada(): bool
     {
-        return $this->ppqItem()?->conciliacion_estado === 'aplicada';
+        return $this->ppqConciliado()?->conciliacion_estado === 'aplicada';
     }
 
     /** Fecha que reporta el TXT de Calleja. Null mientras no esté conciliado. */
     public function fechaPago(): ?Carbon
     {
-        return $this->ppqItem()?->fecha_pago;
+        return $this->ppqConciliado()?->fecha_pago;
     }
 
     /** Monto que reporta el TXT (no el del documento). Null mientras no esté conciliado. */
     public function montoPagado(): ?float
     {
-        $monto = $this->ppqItem()?->monto_pagado;
+        $monto = $this->ppqConciliado()?->monto_pagado;
 
         return $monto === null ? null : (float) $monto;
     }
@@ -388,15 +417,15 @@ class SalidaRutaDocumento extends Model
         return $this->notasVinculadasResueltas;
     }
 
-    /** Renglón PPQ de una NC concreta. */
-    private function ppqDeNota(Dte $nc): ?PpqItem
+    /** Lo que PPQ sabe de una NC concreta. */
+    private function ppqDeNota(Dte $nc): ?RenglonPpq
     {
         if ($this->ppqDeNotasResuelto === false) {
             $this->ppqDeNotasResuelto = [];
             foreach ($this->notasCreditoVinculadas() as $nota) {
-                $item = app(LocalizadorPpq::class)->paraUno($nota->id, $nota->numero_control);
-                if ($item !== null) {
-                    $this->ppqDeNotasResuelto[$nota->id] = $item;
+                $renglon = app(LocalizadorPpq::class)->paraUno($nota->id, $nota->numero_control);
+                if ($renglon !== null) {
+                    $this->ppqDeNotasResuelto[$nota->id] = $renglon;
                 }
             }
         }
@@ -407,12 +436,15 @@ class SalidaRutaDocumento extends Model
     /**
      * Los renglones PPQ de las NC que Calleja YA descontó.
      *
+     * Se leen del renglón CONCILIADO, no del que se muestra: una NC descontada en un
+     * lote que después se retiró sigue estando descontada, igual que un pago.
+     *
      * @return Collection<int, PpqItem>
      */
     private function itemsNcAplicadas(): Collection
     {
         return $this->notasCreditoVinculadas()
-            ->map(fn (Dte $nc) => $this->ppqDeNota($nc))
+            ->map(fn (Dte $nc) => $this->ppqDeNota($nc)?->conciliado)
             ->filter(fn (?PpqItem $item) => $item?->conciliacion_estado === 'aplicada')
             ->values();
     }
@@ -466,7 +498,7 @@ class SalidaRutaDocumento extends Model
         $total = null;
 
         foreach ($this->notasCreditoVinculadas() as $nc) {
-            if ($this->ppqDeNota($nc)?->conciliacion_estado === 'aplicada') {
+            if ($this->ppqDeNota($nc)?->conciliado?->conciliacion_estado === 'aplicada') {
                 continue; // ya cuenta como aplicada
             }
 

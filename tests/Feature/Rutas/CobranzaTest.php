@@ -34,6 +34,8 @@ use Tests\TestCase;
  *  - una NC solo resta si el vínculo es FISCAL (`dte_relacionado_id`). Por orden de
  *    compra no, porque una OC ampara varios CCF y descontaría de más;
  *  - el saldo se parte SIEMPRE en fuera de PPQ / en PPQ sin pagar;
+ *  - un lote RETIRADO apaga la presentación pero NUNCA borra un cobro ya conciliado:
+ *    «¿está presentado hoy?» y «¿ya se pagó?» son dos preguntas y se contestan aparte;
  *  - la antigüedad corre desde la EMISIÓN y solo sobre lo que falta cobrar.
  */
 class CobranzaTest extends TestCase
@@ -366,9 +368,14 @@ class CobranzaTest extends TestCase
         $this->assertSame(100.00, $documento->saldoPendiente());
     }
 
-    // ======================================== lotes borrados (soft delete)
+    // ======================================== lotes retirados (borrado lógico)
+    //
+    // LA REGLA QUE DEFIENDE ESTE BLOQUE: un lote retirado apaga la PRESENTACIÓN pero
+    // nunca borra la CONCILIACIÓN. Son dos hechos de naturaleza distinta —uno es un
+    // estado actual y reversible, el otro es plata que ya entró— y ninguno puede
+    // destruir al otro. Ver {@see App\Services\Rutas\RenglonPpq}.
 
-    public function test_un_item_de_un_lote_borrado_no_pone_el_documento_en_ppq(): void
+    public function test_un_item_no_pagado_en_un_lote_borrado_no_pone_el_documento_en_ppq(): void
     {
         $salida = $this->salida();
         $sala = $this->sala($salida->ruta);
@@ -380,8 +387,12 @@ class CobranzaTest extends TestCase
         $item->lote->delete();
         $this->assertDatabaseHas('ppq_items', ['id' => $item->id]);
 
-        // Un lote retirado no es un lote: el documento está pendiente de ingresar.
+        // Nunca se cobró y el lote se retiró: no hay presentación ni hay cobro. El
+        // documento vuelve a la cola de «pendiente de ingresar».
         $this->assertFalse($documento->enPpq());
+        $this->assertFalse($documento->pagado());
+        $this->assertNull($documento->ppqPresentado());
+        $this->assertNull($documento->ppqConciliado());
         $this->assertNull($documento->ppqItem());
 
         $dinero = $this->dinero($salida);
@@ -389,7 +400,57 @@ class CobranzaTest extends TestCase
         $this->assertSame(0.0, $dinero['saldo_en_ppq']);
     }
 
-    public function test_un_documento_en_un_lote_vivo_y_otro_borrado_sigue_en_ppq(): void
+    public function test_un_item_pagado_en_un_lote_borrado_sigue_contando_como_cobrado(): void
+    {
+        // Este test INVIERTE a conciencia la decisión que se había fijado antes. El
+        // criterio anterior era «sobreestimar la deuda» y descartaba el renglón junto
+        // con su lote. El problema es que no sobreestimaba: BORRABA un hecho. Retirar
+        // un lote es una acción administrativa sobre el paquete, no un reembolso, y
+        // hacer que el sistema vuelva a reclamar algo ya cobrado es peor que cualquier
+        // aproximación: manda a cobrar dos veces.
+        $salida = $this->salida();
+        $sala = $this->sala($salida->ruta);
+        $documento = $this->documento($salida, $this->ccf($sala, 'DTE-03-M001P002-000000000000001', ['total_pagar' => 100.00]));
+
+        $item = $this->item('DTE-03-M001P002-000000000000001', 'pagado', 100.00);
+        $item->lote->delete();
+
+        // El cobro sobrevive al retiro del lote...
+        $this->assertTrue($documento->pagado());
+        $this->assertSame(100.00, $documento->montoCobrado());
+        $this->assertSame($item->id, $documento->ppqConciliado()->id);
+
+        // ...y la presentación NO: ya no está en ningún lote vivo. Las dos respuestas
+        // conviven sin contradecirse.
+        $this->assertFalse($documento->enPpq());
+        $this->assertNull($documento->ppqPresentado());
+
+        $this->assertSame(0.0, $documento->saldoPendiente());
+        $this->assertFalse($documento->tieneSaldo());
+    }
+
+    public function test_un_documento_pagado_que_solo_queda_en_un_lote_borrado_no_reaparece_como_deuda(): void
+    {
+        $salida = $this->salida();
+        $sala = $this->sala($salida->ruta);
+        $this->documento($salida, $this->ccf($sala, 'DTE-03-M001P002-000000000000001', ['total_pagar' => 100.00]));
+
+        $item = $this->item('DTE-03-M001P002-000000000000001', 'pagado', 100.00);
+        $item->lote->delete();
+
+        $dinero = $this->dinero($salida);
+
+        // Lo cobrado sigue cobrado y no hay saldo que reclamar por ningún lado.
+        $this->assertSame(100.00, $dinero['facturado']);
+        $this->assertSame(100.00, $dinero['cobrado']);
+        $this->assertSame(0.0, $dinero['saldo']);
+        $this->assertSame(0.0, $dinero['saldo_fuera_ppq']);
+        $this->assertSame(0.0, $dinero['saldo_en_ppq']);
+        $this->assertSame(0, $dinero['documentos_con_saldo']);
+        $this->assertSame(0, $dinero['saldo_desconocido']);
+    }
+
+    public function test_un_documento_en_un_lote_vivo_y_otro_borrado_sigue_presentado(): void
     {
         $salida = $this->salida();
         $sala = $this->sala($salida->ruta);
@@ -399,31 +460,78 @@ class CobranzaTest extends TestCase
         $borrado->lote->delete();
         $vivo = $this->item('DTE-03-M001P002-000000000000001', null);
 
-        // El filtro es por ITEM: alcanza con que uno de sus renglones siga en pie.
+        // La presentación se deriva del lote VIVO: alcanza con que uno siga en pie.
         $this->assertTrue($documento->enPpq());
+        $this->assertSame($vivo->id, $documento->ppqPresentado()->id);
         $this->assertSame($vivo->id, $documento->ppqItem()->id);
 
         $dinero = $this->dinero($salida);
         $this->assertSame(100.00, $dinero['saldo_en_ppq']);
     }
 
-    public function test_un_item_conciliado_en_un_lote_borrado_tampoco_cuenta(): void
+    public function test_pagado_en_un_lote_borrado_y_presentado_en_uno_vivo_no_duplica_el_dinero(): void
     {
-        // DECISIÓN FIJADA a propósito. Si el lote se retiró, ese renglón no prueba un
-        // cobro vigente y el documento vuelve a contar como deuda. Se prefiere
-        // SOBREESTIMAR la deuda —que lleva a ir a preguntar y descubrir el error— antes
-        // que subestimarla, que hace que nunca se reclame. Hoy no existe ningún caso
-        // así en los datos; si el negocio decidiera lo contrario, este test es el
-        // lugar donde cambiar la regla a conciencia.
+        // El caso que obliga a guardar DOS renglones y no uno: el documento se cobró en
+        // un lote que después se retiró, y alguien volvió a presentarlo en uno vivo.
+        // Los dos hechos son ciertos a la vez y por renglones distintos.
         $salida = $this->salida();
         $sala = $this->sala($salida->ruta);
         $documento = $this->documento($salida, $this->ccf($sala, 'DTE-03-M001P002-000000000000001', ['total_pagar' => 100.00]));
 
-        $item = $this->item('DTE-03-M001P002-000000000000001', 'pagado', 100.00);
+        $pagado = $this->item('DTE-03-M001P002-000000000000001', 'pagado', 100.00);
+        $pagado->lote->delete();
+        $vivo = $this->item('DTE-03-M001P002-000000000000001', null);
+
+        // Presentación por el lote vivo, cobro por el renglón conciliado.
+        $this->assertTrue($documento->enPpq());
+        $this->assertSame($vivo->id, $documento->ppqPresentado()->id);
+        $this->assertTrue($documento->pagado());
+        $this->assertSame($pagado->id, $documento->ppqConciliado()->id);
+
+        // Y el dinero se cuenta UNA vez: la conciliación es una sola ranura por más
+        // renglones que tenga el documento.
+        $dinero = $this->dinero($salida);
+        $this->assertSame(100.00, $dinero['facturado']);
+        $this->assertSame(100.00, $dinero['cobrado']);
+        $this->assertSame(0.0, $dinero['saldo']);
+    }
+
+    public function test_entre_dos_renglones_pagados_gana_el_del_lote_vivo(): void
+    {
+        $salida = $this->salida();
+        $sala = $this->sala($salida->ruta);
+        $documento = $this->documento($salida, $this->ccf($sala, 'DTE-03-M001P002-000000000000001', ['total_pagar' => 100.00]));
+
+        $retirado = $this->item('DTE-03-M001P002-000000000000001', 'pagado', 100.00);
+        $retirado->lote->delete();
+        $vigente = $this->item('DTE-03-M001P002-000000000000001', 'pagado', 100.00);
+
+        // A igualdad de conciliación manda el que alguien puede ir a mirar hoy.
+        $this->assertSame($vigente->id, $documento->ppqConciliado()->id);
+        $this->assertSame(100.00, $this->dinero($salida)['cobrado']);
+    }
+
+    public function test_una_nc_aplicada_en_un_lote_borrado_sigue_descontando(): void
+    {
+        // Misma regla que el pago: «aplicada» es el descuento ya hecho por Calleja. Que
+        // después se retire el lote no lo devuelve.
+        $salida = $this->salida();
+        $sala = $this->sala($salida->ruta);
+        $ccf = $this->ccf($sala, 'DTE-03-M001P002-000000000000001', ['total_pagar' => 100.00]);
+        $documento = $this->documento($salida, $ccf);
+
+        $nc = $this->ccf($sala, 'DTE-05-M001P002-000000000000010', [
+            'tipo_dte' => '05', 'dte_relacionado_id' => $ccf->id,
+            'estado' => 'aceptado', 'total_pagar' => 20.00,
+        ]);
+        $item = $this->item($nc->numero_control, 'aplicada', 20.00, '05');
         $item->lote->delete();
 
-        $this->assertFalse($documento->pagado());
-        $this->assertSame(100.00, $documento->saldoPendiente());
+        $this->assertSame(20.00, $documento->montoNcAplicada());
+        // Y no vuelve a contar como «aceptada por aplicar»: el candado por nota sigue
+        // en pie aunque el lote ya no esté.
+        $this->assertNull($documento->montoNcAceptadaPorAplicar());
+        $this->assertSame(80.00, $documento->saldoPendiente());
     }
 
     // ============================ NC aceptada tapada por una NC posterior
