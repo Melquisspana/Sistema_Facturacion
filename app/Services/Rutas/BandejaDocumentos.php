@@ -53,7 +53,7 @@ class BandejaDocumentos
 
     public const PAPEL_PENDIENTE = 'pendiente';
 
-    /** No entró a ningún lote todavía. */
+    /** No está presentado en ningún lote vivo y tampoco se cobró: hay que ingresarlo. */
     public const PPQ_FUERA = 'fuera';
 
     /** Ya está en un lote, pero nadie lo pagó. */
@@ -210,7 +210,11 @@ class BandejaDocumentos
         return $documentos
             ->when($entrega === self::ENTREGA_ENTREGADO, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => $d->entregado()))
             ->when($entrega === self::ENTREGA_SIN_ALBARAN, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => ! $d->entregado()))
-            ->when($ppq === self::PPQ_FUERA, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => ! $d->enPpq()))
+            // «Fuera de PPQ» es una BANDEJA DE TRABAJO —lo que falta ingresar—, así que
+            // exige las dos cosas: ni presentado ni cobrado. Sin el segundo candado, un
+            // documento ya pagado cuyo lote se retiró aparecería como tarea pendiente,
+            // que es justo el reclamo duplicado que se quiere evitar.
+            ->when($ppq === self::PPQ_FUERA, fn (Collection $c) => $c->filter(fn (SalidaRutaDocumento $d) => ! $d->enPpq() && ! $d->pagado()))
             // «En PPQ sin pagar»: está en un lote y no está conciliado como pagado. Un
             // item en estado `aplicada` caería acá, pero eso solo le pasa a una NC y
             // este módulo transporta CCF: en la práctica no ocurre.

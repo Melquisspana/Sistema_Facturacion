@@ -337,6 +337,37 @@ class BandejaDocumentosTest extends TestCase
         $this->assertSame(0, $resumen['pagados']);
     }
 
+    public function test_un_documento_pagado_en_un_lote_retirado_no_vuelve_a_la_bandeja_de_pendientes(): void
+    {
+        // «Fuera de PPQ» es la bandeja de trabajo: lo que hay que ingresar. Un documento
+        // ya cobrado no es trabajo pendiente por más que su lote se haya retirado, y
+        // ponerlo ahí sería mandar a reclamar algo que ya se pagó.
+        $ruta = Ruta::create(['nombre' => 'San Miguel']);
+        $sala = $this->sala($ruta);
+        $salida = $this->salida($ruta);
+
+        $this->documento($salida, $this->ccf($sala, 'DTE-03-M001P002-000000000000001')); // nunca entró
+        $this->documento($salida, $this->ccf($sala, 'DTE-03-M001P002-000000000000002')); // cobrado, lote retirado
+
+        $item = $this->itemPpq('DTE-03-M001P002-000000000000002', 'pagado');
+        $item->lote->delete();
+
+        $fuera = $this->bandeja(['ppq' => BandejaDocumentos::PPQ_FUERA]);
+        $this->assertCount(1, $fuera);
+        $this->assertSame('DTE-03-M001P002-000000000000001', $fuera->first()->numeroLegible());
+
+        // El cobrado sigue estando donde le corresponde, aunque ya no esté presentado.
+        $pagado = $this->bandeja(['ppq' => BandejaDocumentos::PPQ_PAGADO]);
+        $this->assertCount(1, $pagado);
+        $this->assertSame('DTE-03-M001P002-000000000000002', $pagado->first()->numeroLegible());
+        $this->assertFalse($pagado->first()->enPpq());
+
+        // Y los contadores lo dicen sin contradecirse: no está presentado y está pagado.
+        $resumen = app(BandejaDocumentos::class)->consultar([])['resumen'];
+        $this->assertSame(0, $resumen['en_ppq']);
+        $this->assertSame(1, $resumen['pagados']);
+    }
+
     // ==================================================== filtros duros
 
     public function test_filtra_por_papel_y_por_requiere_nc(): void

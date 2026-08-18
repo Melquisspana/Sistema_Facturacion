@@ -50,9 +50,23 @@ use Illuminate\Support\Facades\DB;
  * ─────────────────────── Cuando el documento está en varios lotes ───────────────────────
  *
  * El índice de PPQ es `(ppq_lote_id, numero_control)`: el mismo CCF puede figurar en
- * más de un lote. Cuando pasa, gana el renglón CONCILIADO sobre el pendiente —un pago
- * ya registrado no deja de existir porque otro lote lo tenga pendiente— y, a igualdad
- * de condiciones, el más reciente.
+ * más de un lote. Por eso lo que se devuelve no es un item suelto sino un
+ * {@see RenglonPpq}, que guarda por separado el renglón que sostiene la PRESENTACIÓN
+ * actual y el que prueba la CONCILIACIÓN. Las reglas de desempate viven ahí.
+ *
+ * ──────────────────────────── Lotes retirados (borrado lógico) ────────────────────────────
+ *
+ * `ppq_lotes` se borra de forma lógica y sus items no: el `cascadeOnDelete` de la clave
+ * foránea no se dispara con un soft delete, así que quedan renglones vivos colgando de un
+ * lote que ya nadie ve —ni siquiera PPQ, donde solo se llega a un item a través de su lote—.
+ *
+ * Esos renglones se SIGUEN LEYENDO, y a propósito. Antes se descartaban de plano, y eso
+ * mezclaba dos hechos que no son el mismo: retirar un lote apaga la presentación, pero no
+ * deshace un pago que ya entró. Quién decide qué hace cada renglón es {@see RenglonPpq};
+ * acá solo se le informa si su lote sigue vivo.
+ *
+ * Lo único que se descarta es el item cuyo lote NO EXISTE en absoluto: sin lote no hay ni
+ * presentación ni prueba de cobro, solo una fila huérfana.
  */
 class LocalizadorPpq
 {
@@ -84,7 +98,7 @@ class LocalizadorPpq
      *
      * @param  array<int, int|null>  $dteIds
      * @param  array<int, string|null>  $controles
-     * @return array{0: array<int, PpqItem>, 1: array<string, PpqItem>} [porDte, porControl]
+     * @return array{0: array<int, RenglonPpq>, 1: array<string, RenglonPpq>} [porDte, porControl]
      */
     public function indices(array $dteIds, array $controles): array
     {
@@ -104,19 +118,15 @@ class LocalizadorPpq
         }
 
         $items = PpqItem::query()
-            // El lote tiene que EXISTIR. `ppq_lotes` se borra de forma lógica y sus
-            // items no: el `cascadeOnDelete` de la clave foránea no se dispara con un
-            // soft delete, así que quedan renglones vivos colgando de un lote que ya
-            // nadie ve —ni siquiera PPQ, donde solo se llega a un item a través de su
-            // lote—. Sin este filtro, un documento aparecía «En PPQ» apoyado en un
-            // lote eliminado, y encima con «Lote sin referencia» porque la relación
-            // devolvía null.
-            //
-            // Un lote borrado es un lote retirado: ese documento NO está presentado a
-            // cobro, está pendiente de ingresar. Y como el filtro es por item, un
-            // documento que además figure en un lote VIVO sigue contando como en PPQ.
-            ->whereHas('lote')
-            ->with('lote:id,referencia,estado,fecha')
+            // El lote tiene que EXISTIR, aunque esté retirado. `withTrashed()` es lo que
+            // deja entrar a los lotes borrados lógicamente —sin él, un pago ya cobrado
+            // desaparecía junto con su lote y el documento volvía a figurar como deuda—
+            // y a la vez sigue dejando fuera al item huérfano, cuyo lote no existe ni
+            // borrado.
+            ->whereHas('lote', fn (Builder $q) => $q->withTrashed())
+            // `deleted_at` va en el select a propósito: sin esa columna `trashed()`
+            // respondería que no a todo y todos los lotes parecerían vivos.
+            ->with(['lote' => fn ($q) => $q->withTrashed()->select('id', 'referencia', 'estado', 'fecha', 'deleted_at')])
             ->where(function (Builder $q) use ($dteIds, $buscables) {
                 if ($dteIds !== []) {
                     $q->whereIn('dte_id', $dteIds);
@@ -132,21 +142,23 @@ class LocalizadorPpq
         $porControl = [];
 
         foreach ($items as $item) {
+            $vigente = $this->enLoteVigente($item);
+
             if ($item->dte_id !== null) {
-                $porDte[$item->dte_id] = $this->preferido($porDte[$item->dte_id] ?? null, $item);
+                $porDte[$item->dte_id] = ($porDte[$item->dte_id] ?? RenglonPpq::vacio())->con($item, $vigente);
             }
 
             $clave = $item->numeroNormalizado();
             if ($clave !== null) {
-                $porControl[$clave] = $this->preferido($porControl[$clave] ?? null, $item);
+                $porControl[$clave] = ($porControl[$clave] ?? RenglonPpq::vacio())->con($item, $vigente);
             }
         }
 
         return [$porDte, $porControl];
     }
 
-    /** El item de UN documento. Una consulta por llamada: no usar dentro de un bucle. */
-    public function paraUno(?int $dteId, ?string $control): ?PpqItem
+    /** El renglón de UN documento. Una consulta por llamada: no usar dentro de un bucle. */
+    public function paraUno(?int $dteId, ?string $control): ?RenglonPpq
     {
         [$porDte, $porControl] = $this->indices([$dteId], [$control]);
 
@@ -156,10 +168,10 @@ class LocalizadorPpq
     /**
      * Aplica la prioridad: vínculo explícito primero, número de control después.
      *
-     * @param  array<int, PpqItem>  $porDte
-     * @param  array<string, PpqItem>  $porControl
+     * @param  array<int, RenglonPpq>  $porDte
+     * @param  array<string, RenglonPpq>  $porControl
      */
-    public function elegir(array $porDte, array $porControl, ?int $dteId, ?string $control): ?PpqItem
+    public function elegir(array $porDte, array $porControl, ?int $dteId, ?string $control): ?RenglonPpq
     {
         if ($dteId !== null && isset($porDte[$dteId])) {
             return $porDte[$dteId];
@@ -174,7 +186,7 @@ class LocalizadorPpq
      * Índices ya armados a partir de una colección de documentos de salida.
      *
      * @param  Collection<int, SalidaRutaDocumento>  $documentos
-     * @return array{0: array<int, PpqItem>, 1: array<string, PpqItem>}
+     * @return array{0: array<int, RenglonPpq>, 1: array<string, RenglonPpq>}
      */
     public function paraDocumentos(Collection $documentos): array
     {
@@ -201,19 +213,11 @@ class LocalizadorPpq
     }
 
     /**
-     * Entre dos renglones del mismo documento (distintos lotes), cuál se muestra.
-     * Conciliado le gana a pendiente; si empatan, el más reciente.
+     * ¿El lote de este item sigue vivo? Un lote retirado (borrado lógico) responde que
+     * no, y con eso {@see RenglonPpq} apaga la presentación sin tocar la conciliación.
      */
-    private function preferido(?PpqItem $actual, PpqItem $candidato): PpqItem
+    private function enLoteVigente(PpqItem $item): bool
     {
-        if ($actual === null) {
-            return $candidato;
-        }
-
-        if ($actual->estaConciliado() !== $candidato->estaConciliado()) {
-            return $candidato->estaConciliado() ? $candidato : $actual;
-        }
-
-        return $candidato->id >= $actual->id ? $candidato : $actual;
+        return $item->lote !== null && ! $item->lote->trashed();
     }
 }
