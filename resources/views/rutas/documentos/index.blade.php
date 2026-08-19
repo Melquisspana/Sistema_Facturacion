@@ -139,7 +139,6 @@
                 $rotulo = 'text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400';
                 $numero = 'mt-1 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100';
                 $pie = 'mt-0.5 text-[11px] text-gray-400 dark:text-paper-500';
-                $enPpqPendiente = $resumen['en_ppq'] - $resumen['pagados'];
             @endphp
 
             <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -160,12 +159,12 @@
                 </div>
                 <div class="{{ $caja }}">
                     <p class="{{ $rotulo }}">Fuera de PPQ</p>
-                    <p class="{{ $numero }} @if ($resumen['sin_ppq'] > 0) !text-amber-600 dark:!text-amber-400 @endif">{{ $resumen['sin_ppq'] }}</p>
+                    <p class="{{ $numero }} @if ($resumen['fuera_ppq'] > 0) !text-amber-600 dark:!text-amber-400 @endif">{{ $resumen['fuera_ppq'] }}</p>
                     <p class="{{ $pie }}">falta ingresarlos</p>
                 </div>
                 <div class="{{ $caja }}">
                     <p class="{{ $rotulo }}">En PPQ sin pagar</p>
-                    <p class="{{ $numero }}">{{ $enPpqPendiente }}</p>
+                    <p class="{{ $numero }}">{{ $resumen['en_ppq_sin_pagar'] }}</p>
                     <p class="{{ $pie }}">ya en un lote</p>
                 </div>
                 <div class="{{ $caja }}">

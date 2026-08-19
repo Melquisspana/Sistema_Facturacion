@@ -137,6 +137,7 @@ class SeguimientoDocumentos
     {
         $entregados = $documentos->filter(fn (SalidaRutaDocumento $d) => $d->entregado())->count();
         $enPpq = $documentos->filter(fn (SalidaRutaDocumento $d) => $d->enPpq())->count();
+        $pagados = $documentos->filter(fn (SalidaRutaDocumento $d) => $d->pagado())->count();
 
         return [
             'total' => $documentos->count(),
@@ -156,7 +157,21 @@ class SeguimientoDocumentos
             // que pasó. Ver {@see RenglonPpq}.
             'en_ppq' => $enPpq,
             'sin_ppq' => $documentos->count() - $enPpq,
-            'pagados' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->pagado())->count(),
+            'pagados' => $pagados,
+
+            // Los dos de abajo NO son restas de los de arriba, y por eso existen.
+            //
+            // Desde que presentación y conciliación se separaron, `en_ppq - pagados` es
+            // una cuenta rota: un documento cobrado en un lote retirado suma en `pagados`
+            // sin sumar en `en_ppq`, así que la resta puede quedar CORTA o incluso
+            // NEGATIVA. Y `total - en_ppq` metería a ese mismo documento en la bandeja de
+            // «falta ingresarlo», mandando a reclamar algo ya cobrado.
+            //
+            // Se cuentan entonces con los MISMOS predicados que usan los filtros
+            // equivalentes de {@see BandejaDocumentos}, para que la tarjeta y el listado
+            // que abre no puedan discrepar.
+            'fuera_ppq' => $documentos->filter(fn (SalidaRutaDocumento $d) => ! $d->enPpq() && ! $d->pagado())->count(),
+            'en_ppq_sin_pagar' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->enPpq() && ! $d->pagado())->count(),
         ];
     }
 }
