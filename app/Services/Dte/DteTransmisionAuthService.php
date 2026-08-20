@@ -26,6 +26,15 @@ class DteTransmisionAuthService
 
     private const MSG_TESTING_SIN_CREDENCIALES = 'Credenciales de apitest/homologación no configuradas.';
 
+    /** Texto legible de cada fuente. Nunca incluye usuarios, contraseñas ni tokens. */
+    private const DETALLE_FUENTE = [
+        'testing' => 'DTE_TEST_USER / DTE_TEST_PASSWORD (apitest, sin respaldo)',
+        'prod' => 'DTE_PROD_USER / DTE_PROD_PASSWORD (explícitas de producción)',
+        'legacy' => 'DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD (LEGACY, por respaldo: definí DTE_PROD_* para no depender de ellas)',
+        'ninguna' => 'sin credenciales configuradas para el ambiente actual',
+        'parcial' => 'configuración incompleta: falta el usuario o la contraseña',
+    ];
+
     /**
      * Devuelve el token de autorización ("Bearer ...") para transmitir.
      *
@@ -65,12 +74,14 @@ class DteTransmisionAuthService
      * @return array{
      *     ambiente: string, url: string, habilitada: bool, auth_test_real: bool,
      *     usuario_configurado: bool, password_configurado: bool,
-     *     token_manual_configurado: bool, token_cacheado: bool, vigencia_horas: int
+     *     token_manual_configurado: bool, token_cacheado: bool, vigencia_horas: int,
+     *     fuente_credenciales: string, fuente_credenciales_detalle: string
      * }
      */
     public function diagnostico(): array
     {
         $cred = $this->credencialesActuales();
+        $fuente = $this->fuenteCredenciales();
 
         return [
             'ambiente' => $this->esProduccion() ? 'produccion' : 'testing',
@@ -82,7 +93,47 @@ class DteTransmisionAuthService
             'token_manual_configurado' => filled(config('dte.transmision.token')),
             'token_cacheado' => is_string(Cache::get($this->cacheKey())),
             'vigencia_horas' => $this->esProduccion() ? 24 : 48,
+            'fuente_credenciales' => $fuente,
+            'fuente_credenciales_detalle' => self::DETALLE_FUENTE[$fuente],
         ];
+    }
+
+    /**
+     * QUÉ variables de entorno están alimentando el login actual, sin revelar ningún
+     * valor. Existe porque `config('dte.transmision.usuario_produccion')` ya viene
+     * RESUELTO por el fallback declarado en config/dte.php
+     * (env('DTE_PROD_USER', env('DTE_TRANSMISION_USER', ''))): mirando el valor final es
+     * imposible saber si producción está usando las credenciales explícitas o cayó de
+     * vuelta a las LEGACY. Sin esta distinción, un DTE_PROD_USER mal escrito no falla:
+     * se transmite en silencio con la credencial vieja.
+     *
+     * Devuelve una de:
+     *   'testing'   → ambiente de pruebas (DTE_TEST_*; nunca hay fallback aquí)
+     *   'prod'      → producción con DTE_PROD_USER / DTE_PROD_PASSWORD explícitas
+     *   'legacy'    → producción cayendo de vuelta a DTE_TRANSMISION_USER/PASSWORD
+     *   'ninguna'   → no hay credenciales configuradas para el ambiente actual
+     *   'parcial'   → hay usuario pero no contraseña (o al revés)
+     */
+    public function fuenteCredenciales(): string
+    {
+        $cred = $this->credencialesActuales();
+        $hayUsuario = filled($cred['usuario']);
+        $hayPassword = filled($cred['password']);
+
+        if (! $hayUsuario && ! $hayPassword) {
+            return 'ninguna';
+        }
+        if (! $hayUsuario || ! $hayPassword) {
+            return 'parcial';
+        }
+        if (! $this->esProduccion()) {
+            return 'testing';
+        }
+
+        $explicitas = filled(config('dte.transmision.usuario_produccion_explicito'))
+            && filled(config('dte.transmision.password_produccion_explicito'));
+
+        return $explicitas ? 'prod' : 'legacy';
     }
 
     /**

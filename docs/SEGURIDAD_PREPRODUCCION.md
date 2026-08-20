@@ -49,15 +49,25 @@ real **siempre** está bloqueada.
 | `DTE_TRANSMISION_TEST_ENABLED` | `false` | Sin envío directo a apitest |
 | `DTE_AUTH_TEST_REAL_ENABLED` / `_PROD_ENABLED` | `false` | Sin login real a Hacienda |
 | `DTE_FIRMA_ENABLED` | `false` (o `true` **solo** con `DTE_FIRMADOR_MOCK`) | Firma real apagada en piloto |
-| `DTE_FIRMADOR_MOCK` / `MH_MOCK` / `DTE_INVALIDACION_MOCK` | según necesidad de prueba | Simulan sin credenciales; el badge muestra **PRUEBAS / MOCK** |
+| `DTE_FIRMADOR_MOCK` / `MH_MOCK` / `DTE_INVALIDACION_MOCK` | según necesidad de prueba, **pero ver el aviso de abajo** | Simulan sin credenciales; el badge muestra **PRUEBAS / MOCK** |
 | `QUEUE_CONNECTION` | `database` | Los correos se encolan; requieren worker |
 | `CACHE_STORE` | `database` | Heartbeat del worker + cache compartida |
 | `MAIL_MAILER` | SMTP real (no `log`) | Para que los correos salgan de verdad |
 | Backups | scripts activos + tarea programada | Ver `docs/BACKUPS_WINDOWS.md` |
 
-> ⚠️ **Secretos:** `DTE_CERT_PASSWORD`, `DTE_TRANSMISION_USER/PASSWORD/TOKEN`,
-> `DTE_API_*`, `GMAIL_CLIENT_SECRET`, `MAIL_PASSWORD` van **solo** en el `.env` local,
+> ⚠️ **Mocks con `APP_ENV=production`:** desde la limpieza del Centro de Configuración,
+> esa combinación se considera **estado inválido** y el preflight de emisión real
+> (`Preparar emisión real` / `Generar y transmitir producción`) queda **cerrado**. La
+> razón es que un mock fabrica sellos y JWS FICTICIOS que en pantalla se ven igual que
+> los reales, y en un servidor marcado como producción eso es indistinguible de una
+> emisión de verdad. Para un piloto con mocks, usá `APP_ENV=local` (opción ya
+> contemplada arriba). `dte:seguridad-check` y Salud del sistema lo señalan como crítico.
+
+> ⚠️ **Secretos:** `DTE_CERT_PASSWORD`, `DTE_TRANSMISION_USER/PASSWORD/TOKEN`
+> (legacy, deprecadas), `DTE_PROD_USER/PASSWORD`, `DTE_TEST_USER/PASSWORD`,
+> `GMAIL_CLIENT_SECRET`, `MAIL_PASSWORD` van **solo** en el `.env` del entorno,
 > **nunca** en el repo, docs, scripts ni capturas. `.env` está en `.gitignore`.
+> (`DTE_API_USER` / `DTE_API_PASSWORD` ya no existen: no las leía ningún consumidor.)
 
 ### Combinación segura mínima (lo que importa)
 

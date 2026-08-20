@@ -198,6 +198,9 @@ class SaludSistemaTest extends TestCase
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
         ]);
+        // "Todo en verde" ahora incluye tener a quién avisarle si un respaldo falla:
+        // el default de config/backup.php es un centinela que significa "sin configurar".
+        config(['backup.notifications.mail.to' => 'avisos@ejemplo.com']);
 
         $resp = $this->actingAs($this->usuario('administrador'))->ver()->assertOk();
 

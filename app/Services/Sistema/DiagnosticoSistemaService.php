@@ -8,7 +8,9 @@ use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Models\RespaldoEjecucion;
 use App\Services\Dte\DteTransmisionService;
+use App\Support\Dte\CoherenciaConfiguracionFiscal;
 use App\Support\Dte\CorrelativoSistemaNuevo;
+use App\Support\Sistema\NotificacionesRespaldo;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -43,9 +45,11 @@ class DiagnosticoSistemaService
             $this->checkWorker(),
             $this->checkJobsFallidos(),
             $this->checkBackup(),
+            $this->checkNotificacionesRespaldo(),
             $this->checkFirmador(),
             $this->checkTransmision(),
             $this->checkAmbiente(),
+            $this->checkCoherenciaConfiguracion(),
             $this->checkCorrelativosP002(),
             $this->checkStorageLink(),
             $this->checkMigracionesPendientes(),
@@ -145,6 +149,70 @@ class DiagnosticoSistemaService
 
         return $this->check('ambiente', 'Ambiente y punto de venta', 'correcto',
             'Ambiente '.$ambiente.' · punto de venta predeterminado '.$pv.'.');
+    }
+
+    /**
+     * ¿Los avisos de respaldo tienen a quién avisarle? Es ADVERTENCIA, no crítico: el
+     * respaldo se sigue haciendo y `checkBackup()` ya cubre si existe uno válido de hoy.
+     * Lo que falta sin destinatario es enterarse cuando FALLA — que es justo el día en
+     * que nadie va a mirar el panel.
+     */
+    private function checkNotificacionesRespaldo(): array
+    {
+        if (NotificacionesRespaldo::configurado()) {
+            return $this->check('notificaciones_respaldo', 'Avisos de respaldo', 'correcto',
+                'Hay destinatario configurado para los avisos de backup.');
+        }
+
+        return $this->check('notificaciones_respaldo', 'Avisos de respaldo', 'advertencia',
+            'Notificaciones de backup no configuradas: si un respaldo falla, nadie recibe aviso. '
+            .'Definí BACKUP_NOTIFICACIONES_CORREO en el .env del servidor.');
+    }
+
+    /**
+     * Coherencia de la configuración fiscal (ver CoherenciaConfiguracionFiscal): sin
+     * red, sin escrituras. Tres incoherencias que ningún otro check mira.
+     *
+     * Niveles, a propósito distintos entre sí:
+     *  - ambientes cruzados y mocks con APP_ENV=production son CRÍTICOS siempre: no hay
+     *    ninguna lectura benigna de esos estados;
+     *  - el NIT de firma solo se evalúa cuando YA importa (firma habilitada o ambiente
+     *    de producción). En modo seguro —firma apagada, ambiente 00— que DTE_FIRMA_NIT
+     *    esté vacío es el estado esperado durante la preparación, no un problema, y
+     *    marcarlo en rojo en el Dashboard de todos los días entrena a ignorarlo. El
+     *    preflight de emisión real sí lo exige siempre, que es donde debe exigirse.
+     */
+    private function checkCoherenciaConfiguracion(): array
+    {
+        $ambientes = CoherenciaConfiguracionFiscal::checkAmbientes();
+        $mocks = CoherenciaConfiguracionFiscal::checkMocksProduccion();
+        $nit = CoherenciaConfiguracionFiscal::checkNitFirma();
+
+        $nitImporta = (bool) config('dte.firma.enabled', false)
+            || (string) config('dte.ambiente') === AmbienteHacienda::Produccion->value;
+
+        $problemas = [];
+        if (! $ambientes['ok']) {
+            $problemas[] = $ambientes['detalle'];
+        }
+        if (! $mocks['ok']) {
+            $problemas[] = $mocks['detalle'];
+        }
+        if (! $nit['ok'] && $nitImporta) {
+            $problemas[] = $nit['detalle'];
+        }
+
+        if ($problemas !== []) {
+            return $this->check('coherencia_configuracion', 'Coherencia de la configuración fiscal', 'critico',
+                implode(' ', $problemas));
+        }
+
+        $detalle = 'Ambiente del JSON y ambiente de transmisión concuerdan; sin mocks en producción.';
+        if (! $nit['ok']) {
+            $detalle .= ' NIT de firma sin verificar todavía (no aplica en modo seguro).';
+        }
+
+        return $this->check('coherencia_configuracion', 'Coherencia de la configuración fiscal', 'correcto', $detalle);
     }
 
     /**

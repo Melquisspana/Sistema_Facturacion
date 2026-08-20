@@ -132,7 +132,12 @@ class PreparacionProduccionTest extends TestCase
             ->assertSee('Sistema nuevo', false)
             ->assertSee('Conta: M001/P001, contingencia independiente', false)
             ->assertSee((string) $proximoP002)
-            ->assertSee('1093') // último externo confirmado en Conta (default), solo informativo
+            // Sin la clave `produccion.ultimo_ccf_externo` configurada, la pantalla dice
+            // "no configurado". Antes se inventaba 1093, un número que se leía como
+            // confirmado por el contador sin estarlo. Sigue siendo solo informativo:
+            // no participa en ningún cálculo de numeración.
+            ->assertSee('no configurado')
+            ->assertDontSee('1093')
             // Ya NO existe ningún lenguaje de alineación/barrera contra Conta.
             ->assertDontSee('va por delante', false)
             ->assertDontSee('alinear el correlativo', false)

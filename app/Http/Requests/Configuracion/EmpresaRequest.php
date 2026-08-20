@@ -2,12 +2,20 @@
 
 namespace App\Http\Requests\Configuracion;
 
-use App\Enums\AmbienteHacienda;
 use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+/**
+ * Datos del emisor. NO incluye el ambiente fiscal: la columna `empresas.ambiente`
+ * sigue existiendo en la tabla pero NINGÚN consumidor fiscal la lee — el ambiente que
+ * viaja en el JSON del MH sale siempre de `config('dte.ambiente')` (DTE_AMBIENTE).
+ * Mientras estuvo en este formulario, un administrador podía elegir "Producción" y
+ * creer que había cambiado el ambiente de emisión sin que cambiara nada en absoluto.
+ * Al no declararse aquí, `ambiente` nunca llega a validated() y el controlador no
+ * puede escribirlo, mande lo que mande el formulario.
+ */
 class EmpresaRequest extends FormRequest
 {
     public function authorize(): bool
@@ -43,7 +51,7 @@ class EmpresaRequest extends FormRequest
             'direccion' => ['nullable', 'string', 'max:255'],
             'telefono' => ['nullable', 'string', 'max:30'],
             'correo' => ['nullable', 'email', 'max:255'],
-            'ambiente' => ['required', Rule::in(array_column(AmbienteHacienda::cases(), 'value'))],
+            // `ambiente` está ausente a propósito (ver la nota de clase).
             'activo' => ['required', 'boolean'],
         ];
     }
@@ -53,7 +61,6 @@ class EmpresaRequest extends FormRequest
         return [
             'municipio_id.exists' => 'El municipio seleccionado no pertenece al departamento elegido.',
             'distrito_id.exists' => 'El distrito seleccionado no pertenece al departamento elegido.',
-            'ambiente.in' => 'El ambiente debe ser un valor válido del catálogo (pruebas o producción).',
         ];
     }
 

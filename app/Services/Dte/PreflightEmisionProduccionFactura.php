@@ -43,6 +43,7 @@ class PreflightEmisionProduccionFactura
             $this->checkFirmador($ambiente['ok']),
             $this->checkCandados(),
             $this->checkCredenciales(),
+            ...$this->checksCoherenciaConfiguracion(),
             $this->checkDocumentoCompleto($dte),
             $this->checkReceptorObligatorio($dte),
             $this->checkCorreoNoAutomatico(),

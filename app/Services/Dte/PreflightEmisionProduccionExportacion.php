@@ -40,6 +40,7 @@ class PreflightEmisionProduccionExportacion
             $this->checkFirmador($ambiente['ok']),
             $this->checkCandados(),
             $this->checkCredenciales(),
+            ...$this->checksCoherenciaConfiguracion(),
             $this->checkClienteExportacion($dte),
             $this->checkDocumentoNoProvisional($dte),
             $this->checkPaisActividad($dte),

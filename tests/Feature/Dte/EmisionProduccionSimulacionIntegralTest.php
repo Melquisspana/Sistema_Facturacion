@@ -81,6 +81,10 @@ class EmisionProduccionSimulacionIntegralTest extends TestCase
             'dte.transmision.sistema_actual_activo' => false,
             'dte.transmision.modo_operacion' => 'respaldo',
             'dte.transmision.ambiente' => 'produccion',
+            // NIT del certificado alineado con el del emisor que crea crearEmisorDte().
+            // El preflight ahora lo exige: firmar con un certificado de otro NIT sería
+            // firmar el documento de otro contribuyente. Ver CoherenciaConfiguracionFiscal.
+            'dte.firma.nit' => '06140000000000',
         ]);
         Configuracion::set('correo.auto_envio', false);
         Configuracion::set('produccion.auth_prod_validada', true);
