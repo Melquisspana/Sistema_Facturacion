@@ -400,13 +400,30 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
     ->prefix('configuracion')
     ->name('configuracion.')
     ->group(function () {
+        // Resumen: estado de la configuración del sistema. SOLO LECTURA, sin
+        // ninguna ruta de escritura asociada.
+        Route::get('resumen', [\App\Http\Controllers\Configuracion\ResumenController::class, 'index'])->name('resumen');
+
         // Empresa emisora (registro único).
         Route::get('empresa', [EmpresaController::class, 'edit'])->name('empresa.edit');
         Route::put('empresa', [EmpresaController::class, 'update'])->name('empresa.update');
 
-        // Correo de DTE (auto-envío, adjuntar JWS, plantilla).
+        // Correo: una pantalla con servidor SMTP, documentos fiscales y contabilidad.
         Route::get('correo', [CorreoController::class, 'edit'])->name('correo.edit');
+        // Documentos fiscales (auto-envío, adjuntar JWS, plantilla). Nombre de ruta
+        // intacto: es el que usaban la pantalla anterior y sus pruebas.
         Route::put('correo', [CorreoController::class, 'update'])->name('correo.update');
+
+        // Servidor SMTP. Todos sus ajustes son N2: `updateSmtp` devuelve la pantalla
+        // de confirmación cuando el envío no la trae.
+        Route::put('correo/smtp', [CorreoController::class, 'updateSmtp'])->name('correo.smtp.update');
+        Route::post('correo/smtp/probar', [CorreoController::class, 'probarConexion'])->name('correo.smtp.probar');
+
+        // Contraseña SMTP: pantalla aparte para que el secreto no viaje en los
+        // campos ocultos de la confirmación de los demás campos.
+        Route::get('correo/smtp/password', [\App\Http\Controllers\Configuracion\PasswordSmtpController::class, 'edit'])->name('correo.smtp.password.edit');
+        Route::put('correo/smtp/password', [\App\Http\Controllers\Configuracion\PasswordSmtpController::class, 'update'])->name('correo.smtp.password.update');
+        Route::delete('correo/smtp/password', [\App\Http\Controllers\Configuracion\PasswordSmtpController::class, 'destroy'])->name('correo.smtp.password.destroy');
 
         // Contabilidad: correo de contabilidad + copia (BCC) en el envío manual de DTE.
         // Guardar NO envía nada; la copia viaja dentro del envío existente.

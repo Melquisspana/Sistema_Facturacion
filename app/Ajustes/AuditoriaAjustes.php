@@ -2,6 +2,7 @@
 
 namespace App\Ajustes;
 
+use App\Ajustes\Ceremonias\CeremoniaN3;
 use App\Ajustes\Definicion\DefinicionAjuste;
 use App\Ajustes\Definicion\FuenteAjuste;
 use Illuminate\Support\Facades\Auth;
@@ -77,6 +78,50 @@ class AuditoriaAjustes
         $this->escribir(
             "quitó el valor guardado de «{$definicion->clave}»",
             $this->comunes($definicion, 'override_quitado', $fuenteAntes, $fuenteDespues),
+        );
+    }
+
+    /**
+     * Una comprobación de configuración que alguien disparó a mano (probar la
+     * conexión SMTP, y mañana Hacienda o el firmador).
+     *
+     * Se registra el RESULTADO, nunca lo que se usó para conseguirlo. `$mensaje`
+     * debe llegar ya saneado por quien conoce la excepción original: acá no hay
+     * forma de distinguir la parte útil del texto de la que trae credenciales.
+     */
+    public function verificacion(string $que, bool $exito, ?string $mensaje = null): void
+    {
+        $this->escribir(
+            'probó '.$que.': '.($exito ? 'éxito' : 'error'),
+            array_filter([
+                'accion' => 'verificacion',
+                'verificacion' => $que,
+                'resultado' => $exito ? 'exito' : 'fallo',
+                'mensaje' => $mensaje,
+                'ip' => $this->ip(),
+            ], static fn ($v) => $v !== null),
+        );
+    }
+
+    /**
+     * Una acción crítica que pasó la ceremonia N3.
+     *
+     * La contraseña con la que el usuario se reautenticó NO llega hasta acá y no
+     * podría registrarse aunque se quisiera: {@see CeremoniaN3}
+     * la comprueba y la descarta sin pasarla a nadie.
+     */
+    public function accionCritica(string $accion, string $titulo, bool $ejecutada, ?string $detalle = null): void
+    {
+        $this->escribir(
+            ($ejecutada ? 'ejecutó la acción crítica' : 'intentó la acción crítica').' «'.$titulo.'»',
+            array_filter([
+                'accion' => 'n3',
+                'accion_critica' => $accion,
+                'nivel' => 'n3',
+                'resultado' => $ejecutada ? 'ejecutada' : 'rechazada',
+                'detalle' => $detalle,
+                'ip' => $this->ip(),
+            ], static fn ($v) => $v !== null),
         );
     }
 

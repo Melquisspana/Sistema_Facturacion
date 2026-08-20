@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Contabilidad;
 
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Http\Controllers\Controller;
 use App\Mail\PaqueteContabilidadCorreo;
 use App\Models\DocumentoRecibido;
@@ -193,6 +194,12 @@ class PaqueteContabilidadController extends Controller
 
         try {
             $bytes = (string) file_get_contents($r['ruta']);
+
+            // Configuración de correo vigente antes de construir el transporte: este
+            // envío es INLINE (no pasa por la cola), así que no lo cubre el listener
+            // de JobProcessing y tiene que pedirla por su cuenta.
+            app(ConfiguracionCorreoRuntime::class)->aplicar();
+
             // 5) Un solo correo a contabilidad, con el ZIP adjunto.
             Mail::to($correo)->send(new PaqueteContabilidadCorreo($rango['etiqueta'], $bytes, $nombreZip, $resumen));
         } catch (Throwable $e) {

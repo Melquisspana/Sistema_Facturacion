@@ -203,10 +203,114 @@ class CatalogoAjustes
             ),
 
             // ================================================================
+            // N2 — Servidor SMTP. Persisten en la tabla NUEVA con fallback
+            // explícito a config/.env: hoy el valor sale de ahí y NO se copia.
+            // Mientras nadie guarde un override, el correo se comporta
+            // exactamente igual que antes de que existiera esta sección.
+            //
+            // Todos son N2 y no N1: una dirección mal escrita acá no rompe una
+            // pantalla, hace que deje de salir el DTE al cliente — y eso se
+            // descubre tarde, cuando el cliente reclama que no le llegó.
+            // ================================================================
+            DefinicionAjuste::hacer(
+                clave: 'mail.mailer',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Enumerado,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                // SOLO LECTURA, y es una decisión deliberada, no una fase pendiente.
+                //
+                // Qué transporte usa el correo ya lo gobiernan tres mecanismos que
+                // existen y funcionan: MAIL_MAILER en el .env, la segunda barrera de
+                // AppServiceProvider (fuera de producción fuerza `log`) y
+                // CandadoCorreoReal. Dejar que esta capa lo escribiera añadiría una
+                // CUARTA autoridad sobre el interruptor más peligroso del módulo, y
+                // sus dos modos de fallo son "sale correo real cuando no debía" y
+                // "deja de salir sin que nadie lo note".
+                //
+                // Registrarlo igualmente sí sirve: la pantalla puede decir con qué
+                // transporte se está enviando AHORA. Cambiarlo sigue siendo una
+                // decisión de .env, con acceso al servidor.
+                editabilidad: Editabilidad::SoloLectura,
+                persistencia: Persistencia::Ninguna,
+                etiqueta: 'Medio de envío',
+                descripcion: 'El servidor SMTP entrega de verdad; «log» escribe el correo en el registro sin enviarlo. Fuera de producción el candado de correo fuerza «log» sea cual sea este valor.',
+                claveConfig: 'mail.default',
+                // Los dos que este despliegue usa de verdad. La lista acota lo que la
+                // pantalla sabe rotular; no habilita ninguna escritura.
+                opciones: ['smtp', 'log', 'array'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'mail.smtp.host',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Servidor',
+                descripcion: 'Nombre del servidor de correo saliente (por ejemplo smtp.gmail.com).',
+                claveConfig: 'mail.mailers.smtp.host',
+                reglas: ['maxlen:255'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'mail.smtp.port',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Entero,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Puerto',
+                descripcion: 'Habitualmente 587 (STARTTLS) o 465 (TLS implícito).',
+                claveConfig: 'mail.mailers.smtp.port',
+                reglas: ['min:1', 'max:65535'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'mail.smtp.scheme',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Enumerado,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Seguridad de la conexión',
+                descripcion: 'La opción automática deja que decida el puerto (465 = TLS implícito; el resto, STARTTLS). Es lo que hace el mailer cuando no se le indica nada.',
+                claveConfig: 'mail.mailers.smtp.scheme',
+                // 'auto' NO es un valor del mailer: es la AUSENCIA de valor. Se
+                // modela como opción porque en un <select> "automático" es una
+                // elección real del administrador, y ConfiguracionCorreoRuntime la
+                // traduce a "no fijar scheme" para que Laravel lo derive del puerto.
+                //
+                // Las otras dos son las ÚNICAS que entiende el transporte de Symfony
+                // (ver MailManager::createSmtpTransport). Los nombres del Laravel
+                // viejo —'tls' y 'ssl'— ya no los lee nadie: registrarlos habría
+                // creado un ajuste que no cambia nada y que parece que sí.
+                porDefecto: 'auto',
+                opciones: ['auto', 'smtp', 'smtps'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'mail.smtp.username',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Usuario',
+                descripcion: 'Usuario con el que se autentica el envío. En Gmail y similares es la dirección completa.',
+                claveConfig: 'mail.mailers.smtp.username',
+                reglas: ['maxlen:255'],
+            ),
+
+            // ================================================================
             // N2 — Secreto. Se DECLARA, no se migra: el valor sigue saliendo del
-            // .env. Existe en esta fase para que el camino del cifrado, la
-            // ocultación en pantalla y la auditoría sin valores estén probados
-            // ANTES de que haya una pantalla que escriba secretos.
+            // .env mientras nadie guarde un override desde la pantalla.
             // ================================================================
             DefinicionAjuste::hacer(
                 clave: 'mail.smtp.password',
@@ -220,6 +324,38 @@ class CatalogoAjustes
                 etiqueta: 'Contraseña del servidor SMTP',
                 descripcion: 'Solo la usa el transporte de correo. Nunca se muestra ni se registra: de ella solo se sabe si está configurada y desde dónde.',
                 claveConfig: 'mail.mailers.smtp.password',
+            ),
+
+            // ================================================================
+            // N2 — Remitente. Lo que ve el cliente en su bandeja.
+            // ================================================================
+            DefinicionAjuste::hacer(
+                clave: 'mail.from.address',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Email,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Correo remitente',
+                descripcion: 'Dirección desde la que salen los documentos. Muchos servidores rechazan el envío si no coincide con el usuario autenticado.',
+                claveConfig: 'mail.from.address',
+                reglas: ['maxlen:255'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'mail.from.name',
+                seccion: 'correo_saliente',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Nombre remitente',
+                descripcion: 'Nombre visible del remitente en la bandeja del cliente.',
+                claveConfig: 'mail.from.name',
+                reglas: ['maxlen:120'],
             ),
 
             // ================================================================

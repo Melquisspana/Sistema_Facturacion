@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Mail\DteCorreo;
 use App\Models\Configuracion;
+use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
 use App\Services\Dte\DtePdfService;
@@ -71,6 +73,13 @@ class EnviarDteCorreo implements ShouldQueue
             // Simulando no hay copia que registrar: nada viajó.
             $bccContabilidad = ($simular || $envio->esCanalContabilidad()) ? null : $this->correoContabilidad();
 
+            // El servidor de correo puede haber cambiado desde que este proceso
+            // arrancó (el worker vive horas y el MailManager cachea el transporte).
+            // Se vuelca la configuración vigente ANTES de tocar el transporte para
+            // que el envío use la que el administrador acaba de guardar, sin
+            // reiniciar nada. No decide si el correo sale: eso es del candado.
+            app(ConfiguracionCorreoRuntime::class)->aplicar();
+
             if (! $simular) {
                 $mail = Mail::to($destinatarios);
                 if ($bccContabilidad !== null) {
@@ -118,7 +127,7 @@ class EnviarDteCorreo implements ShouldQueue
      *
      * @return array{0: array<int, array{contenido: string, nombre: string, mime: string}>, 1: array<int, string>}
      */
-    private function adjuntos(\App\Models\Dte $dte): array
+    private function adjuntos(Dte $dte): array
     {
         $disco = (string) config('dte.storage.disk', 'local');
         $extra = [];

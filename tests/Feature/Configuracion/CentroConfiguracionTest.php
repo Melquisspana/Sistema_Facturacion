@@ -117,20 +117,44 @@ class CentroConfiguracionTest extends TestCase
     }
 
     /**
-     * Una sola fila: la barra se DESPLAZA en horizontal cuando no cabe, en vez de
-     * partirse y dejar una pestaña suelta en un segundo renglón.
+     * NINGUNA sección queda fuera de la pantalla.
+     *
+     * Este test cambió de forma junto con el índice, pero no de intención. Antes la
+     * navegación era una fila de pestañas y la garantía era "una sola fila que se
+     * desplaza en horizontal en vez de partirse". Con las secciones que vienen
+     * (Integraciones, Módulos, Sistema) esa fila solo podía crecer escondiendo
+     * opciones fuera del borde — y lo que se esconde en una barra desplazable es
+     * justamente lo que el usuario todavía no sabe que existe.
+     *
+     * El índice agrupado invierte la solución: en móvil las secciones se ENVUELVEN
+     * (flex-wrap) y en escritorio se apilan en columna. En ninguna de las dos formas
+     * hay desplazamiento horizontal, así que la garantía de hoy es la contraria a la
+     * de ayer: que `overflow-x-auto` NO esté.
      */
     #[DataProvider('seccionesProvider')]
-    public function test_las_pestanas_no_se_parten_en_dos_lineas(string $ruta): void
+    public function test_ninguna_seccion_queda_fuera_de_la_pantalla(string $ruta): void
     {
         $barra = $this->barraDe(
             $this->actingAs($this->admin())->get(route($ruta))->assertOk()->getContent()
         );
 
-        $this->assertStringContainsString('overflow-x-auto', $barra);
-        $this->assertStringNotContainsString('flex-wrap', $barra);
-        $this->assertSame(6, substr_count($barra, 'shrink-0'), 'Las seis pestañas deben resistirse a comprimirse.');
-        $this->assertSame(6, substr_count($barra, 'whitespace-nowrap'), 'Ninguna pestaña debe partir su texto.');
+        $this->assertStringNotContainsString(
+            'overflow-x-auto',
+            $barra,
+            'El índice no debe esconder secciones detrás de un desplazamiento horizontal.',
+        );
+        $this->assertStringContainsString(
+            'flex-wrap',
+            $barra,
+            'En pantalla pequeña las secciones deben envolverse, no salirse.',
+        );
+
+        // Una entrada por sección real: las seis de siempre más Resumen.
+        $this->assertSame(
+            7,
+            substr_count($barra, 'whitespace-nowrap'),
+            'El índice debe listar exactamente las secciones existentes, sin partir sus nombres.',
+        );
     }
 
     // --------------------------------------------------------- subpantallas
