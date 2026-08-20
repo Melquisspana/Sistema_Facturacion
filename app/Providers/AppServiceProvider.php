@@ -2,9 +2,18 @@
 
 namespace App\Providers;
 
+use App\Ajustes\Ajustes;
+use App\Ajustes\CatalogoAjustes;
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
+use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
+use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
+use App\Services\DocumentosRecibidos\ImapMailboxClient;
+use App\Services\DocumentosRecibidos\NullMailboxClient;
 use App\Services\Dte\DteTransmisionService;
 use App\Support\WorkerHeartbeat;
+use Illuminate\Contracts\Cache\Factory;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -24,23 +33,24 @@ class AppServiceProvider extends ServiceProvider
         // El catálogo y el conversor no tienen estado mutable; el repositorio recibe
         // el store de caché POR DEFECTO (compartido entre web, worker y CLI), que es
         // lo que permite que una escritura llegue a todos los procesos.
-        $this->app->singleton(\App\Ajustes\RepositorioAjustes::class, static fn ($app) => new \App\Ajustes\RepositorioAjustes(
-            $app->make(\Illuminate\Contracts\Cache\Factory::class)->store()
+        $this->app->singleton(RepositorioAjustes::class, static fn ($app) => new RepositorioAjustes(
+            $app->make(Factory::class)->store()
         ));
-        $this->app->singleton(\App\Ajustes\CatalogoAjustes::class);
-        $this->app->singleton(\App\Ajustes\Ajustes::class);
+        $this->app->singleton(CatalogoAjustes::class);
+        $this->app->singleton(Ajustes::class);
+        $this->app->singleton(ConfiguracionCorreoRuntime::class);
 
         // Fuente de correo de "Documentos recibidos" (INDEPENDIENTE de Gmail/PPQ):
         // driver 'imap' → lector IMAP de solo lectura (Yahoo); cualquier otro valor,
         // o falta de soporte/credenciales, cae al Null (revisión deshabilitada).
         $this->app->bind(
-            \App\Services\DocumentosRecibidos\Contracts\MailboxClient::class,
+            MailboxClient::class,
             static function () {
                 $driver = strtolower((string) config('documentos_recibidos.mail.driver', 'none'));
 
                 return $driver === 'imap'
-                    ? new \App\Services\DocumentosRecibidos\ImapMailboxClient()
-                    : new \App\Services\DocumentosRecibidos\NullMailboxClient();
+                    ? new ImapMailboxClient
+                    : new NullMailboxClient;
             }
         );
     }
@@ -63,6 +73,24 @@ class AppServiceProvider extends ServiceProvider
         // proceso worker; en peticiones web queda registrado pero no se ejecuta. Observación
         // pura: no toca la cola, el envío ni la firma/transmisión.
         Event::listen(Looping::class, static fn () => WorkerHeartbeat::pulse());
+
+        // CONFIGURACIÓN DE CORREO AL DÍA EN EL WORKER.
+        //
+        // El worker de colas vive horas y el MailManager cachea el mailer que
+        // construye: sin esto, un cambio de servidor SMTP hecho desde la pantalla no
+        // tendría efecto sobre los correos de la tarde hasta reiniciar el proceso, y
+        // nadie relacionaría una cosa con la otra.
+        //
+        // Se engancha a JobProcessing —antes de CADA trabajo— y no al arranque, que
+        // es lo único que un proceso largo puede hacer para enterarse. Cubre también
+        // los trabajos de correo que se escriban en el futuro sin que haya que
+        // acordarse de llamar a nada. El coste es una lectura cacheada y olvidar un
+        // array; el transporte se reconstruye una vez por envío de todas formas.
+        //
+        // NO decide si el correo sale: eso sigue siendo del candado de entorno.
+        Event::listen(JobProcessing::class, static function () {
+            app(ConfiguracionCorreoRuntime::class)->aplicar();
+        });
 
         // Contador de trabajos fallidos para el navbar (badge junto a "Salud del sistema").
         // Solo se consulta para administradores (que ven ese enlace); para el resto es 0 sin

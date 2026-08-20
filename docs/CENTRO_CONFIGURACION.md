@@ -188,10 +188,9 @@ migren; para ellas, un cambio sí puede necesitar reinicio del worker.
 | **N2** | alto | confirmación explícita + auditoría | `configuracion.gestionar` |
 | **N3** | fiscal crítico | permiso especial + frase exacta + reautenticación + precondiciones | `configuracion.critica` |
 
-Esta fase construye el **nivel y el permiso**. Los modales de N2/N3 son de la fase
-siguiente; la metadata ya permite saber cuál corresponde a cada clave
-(`Ajustes::nivel($clave)`, `NivelConfirmacion::requiereConfirmacion()`,
-`requiereCeremoniaFuerte()`).
+Las dos ceremonias están construidas (§15 y §16). La metadata dice cuál toca:
+`Ajustes::nivel($clave)`, `NivelConfirmacion::requiereConfirmacion()` y
+`requiereCeremoniaFuerte()`.
 
 ### El permiso `configuracion.critica`
 
@@ -300,7 +299,7 @@ claves arbitrarias. `RegistryAjustesTest` fija estas exclusiones.
 
 ---
 
-## 14. Estado actual (Fase 2)
+## 14. Estado actual
 
 Catálogo **mínimo y representativo**, no las ~140 claves del inventario. Sirve para
 ejercitar las tres estrategias de persistencia, los tres niveles y el camino de los
@@ -315,7 +314,14 @@ secretos.
 | `correo.plantilla` | N1 | Legacy | defecto `PlantillaCorreo::DEFAULT` |
 | `respaldos.notificaciones.correo` | N2 | Nueva | `backup.notifications.mail.to` |
 | `respaldos.dias_retencion` | N2 | Nueva | `backup_diario.dias_retencion`, defecto 30 |
+| `mail.mailer` | N2 | **Ninguna (solo lectura)** | `mail.default` |
+| `mail.smtp.host` | N2 | Nueva | `mail.mailers.smtp.host` |
+| `mail.smtp.port` | N2 | Nueva | `mail.mailers.smtp.port` |
+| `mail.smtp.scheme` | N2 | Nueva | `mail.mailers.smtp.scheme`, defecto `auto` |
+| `mail.smtp.username` | N2 | Nueva | `mail.mailers.smtp.username` |
 | `mail.smtp.password` | N2 | Nueva (cifrado) | `mail.mailers.smtp.password` |
+| `mail.from.address` | N2 | Nueva | `mail.from.address` |
+| `mail.from.name` | N2 | Nueva | `mail.from.name` |
 | `dte.ambiente` | **N3** | Ninguna (solo lectura) | `dte.ambiente` |
 | `dte.transmision.ambiente` | **N3** | Ninguna (solo lectura) | `dte.transmision.ambiente` |
 | `dte.firma.enabled` | **N3** | Ninguna (solo lectura) | `dte.firma.enabled` |
@@ -328,3 +334,194 @@ se resuelve desde `config()` igual que antes.
 
 Consumidor real ya migrado: el **correo de contabilidad** (`CorreoContabilidad`),
 que unifica los cuatro sitios que resolvían la misma dirección por separado.
+
+---
+
+## 15. Confirmación N2
+
+Para cambios de impacto alto que **no** son fiscales. Enseña qué va a cambiar,
+explica la consecuencia y exige un segundo clic. No pide frase exacta ni
+contraseña: para el puerto del servidor de correo eso no añadiría seguridad,
+añadiría gente que escribe su contraseña sin leer.
+
+Piezas: `ConfirmacionN2` (calcula los cambios), `CambioPropuesto` (uno de ellos) y
+el componente `<x-configuracion.confirmacion-n2>`.
+
+**Flujo de dos pasos.** El primer envío del formulario no escribe: el controlador
+calcula el diff y devuelve la pantalla de confirmación con los valores ya validados
+en campos ocultos. Solo el segundo envío, con `confirmacion`, guarda.
+
+**Solo se lista lo que cambia.** Un resumen que repite los ocho campos del
+formulario, siete idénticos, es un resumen que nadie lee.
+
+**Los secretos no viajan.** Un `CambioPropuesto` de tipo secreto se construye sin
+`antes` ni `despues` y solo aporta la frase «… será reemplazada». Y los valores que
+se reenvían en campos ocultos **nunca** incluyen un secreto: por eso exactamente la
+contraseña SMTP tiene pantalla propia en vez de pasar por esta confirmación.
+
+**Las claves no vienen del navegador.** El formulario manda nombres humanos
+(`servidor`, `puerto`) y un mapa fijo en el controlador los traduce a claves del
+registry. Un campo oculto manipulado no puede elegir qué ajuste se escribe ni con
+qué nivel se trata.
+
+---
+
+## 16. Ceremonia N3
+
+Para lo fiscal. Cuatro puertas, en este orden, y ninguna se salta:
+
+1. permiso `configuracion.critica`;
+2. **precondiciones** de la acción;
+3. **frase exacta**;
+4. **contraseña actual** del usuario.
+
+El orden importa. El permiso va primero para que quien no lo tiene no pueda
+averiguar qué frase pide la acción ni usar el formulario como oráculo de
+contraseñas. Las precondiciones van antes que la frase porque no tiene sentido
+hacer escribir una frase larga para después decir que faltaba un respaldo.
+
+**La contraseña no se guarda, no se devuelve y no se audita.** Entra por parámetro,
+se comprueba con `Auth::guard('web')->validate()` —el mismo mecanismo que la
+pantalla de confirmar contraseña de Laravel— y se descarta. No se pasa a la acción,
+no viaja en el resultado y `AuditoriaAjustes::accionCritica()` no tiene por dónde
+recibirla.
+
+**Límite de intentos**: 5 por usuario y acción en 5 minutos. El formulario acepta
+contraseñas, así que es un oráculo; sin límite, una sesión secuestrada podría
+probar contraseñas contra este endpoint sin las protecciones del login.
+
+Una acción se declara como `AccionCriticaN3` (clave, título, consecuencia, frase,
+precondiciones, callback y aviso persistente opcional) y se ejecuta con
+`CeremoniaN3::ejecutar()`.
+
+**NO HAY NINGUNA ACCIÓN N3 CONECTADA TODAVÍA.** La infraestructura está construida y
+probada con una acción de prueba; el ambiente fiscal, la firma, la transmisión, las
+credenciales del MH, el certificado y los correlativos siguen siendo de solo
+lectura. Abrir el primero es una decisión aparte.
+
+El **aviso persistente** se declara en la acción y el resultado lo devuelve. No se
+persiste todavía: sin una acción N3 real, la tabla que lo guardara tendría columnas
+inventadas a ciegas.
+
+---
+
+## 17. Configuración de correo en tiempo de ejecución
+
+`ConfiguracionCorreoRuntime::aplicar()` vuelca los ajustes de correo sobre la
+configuración viva del proceso y llama a `forgetMailers()`.
+
+**El problema.** Laravel lee `config/mail.php` una vez al arrancar y el MailManager
+cachea cada mailer que construye. En una petición web da igual —el proceso muere al
+terminar—, pero el worker de colas vive horas: construye el transporte con el primer
+correo del día y se queda con él. Sin esto, un administrador cambia el servidor SMTP,
+la pantalla dice «guardado», y los documentos de la tarde siguen saliendo por el
+servidor viejo. Nadie relacionaría una cosa con la otra.
+
+**Dónde se aplica:**
+
+- `JobProcessing` (AppServiceProvider) — antes de **cada** trabajo de la cola. Es lo
+  que cubre al worker y también a los trabajos de correo que se escriban después,
+  sin tener que acordarse de llamar a nada.
+- `EnviarDteCorreo` y `EnviarDocumentoRecibidoContabilidad` — explícito en el job.
+- `PaqueteContabilidadController` — el envío del paquete es **inline** (no pasa por
+  la cola), así que no lo cubre el listener y lo pide por su cuenta.
+
+**Qué NO hace: tocar `mail.default`.** Qué transporte se usa lo deciden el `.env`,
+la segunda barrera de `AppServiceProvider` (fuera de producción, `log`) y
+`CandadoCorreoReal`. Una cuarta autoridad sobre ese interruptor es exactamente como
+se termina enviando correo real desde una máquina de pruebas. Por eso `mail.mailer`
+está registrado como **solo lectura**: se informa, no se cambia.
+
+**`mail.smtp.scheme` y no `encryption`.** Laravel 12 ya no lee `encryption`:
+`MailManager::createSmtpTransport()` usa `scheme` (`smtp` = STARTTLS, `smtps` = TLS
+implícito) y, si no hay ninguno, lo deriva del puerto (465 → `smtps`). Registrar un
+ajuste llamado `encryption` habría creado una clave que no cambia nada y que parece
+que sí. El valor `auto` de la lista no es un valor del mailer: es la ausencia de
+valor, y el runtime la traduce a «no fijar scheme».
+
+---
+
+## 18. Verificaciones de configuración
+
+Tabla `verificaciones_configuracion` + `RegistroVerificaciones`. Guarda «¿esto
+funciona de verdad?»: fecha, resultado y un mensaje **ya saneado**.
+
+**Por qué una tabla aparte y no columnas en `ajustes_sistema`.** Son dos cosas con
+vidas distintas: una guarda lo que una persona decidió (se edita, una fila por
+clave), la otra lo que el sistema observó (se añade, muchas filas por clave, y el
+historial es lo útil). Mezclarlas movería el `updated_at` del ajuste cada vez que se
+prueba una conexión —rompiendo la comprobación optimista de concurrencia— y añadiría
+columnas vacías para casi todas las claves.
+
+`clave` es el nombre del **servicio** (`smtp`, y mañana `hacienda`, `firmador`,
+`gmail`, `imap`), no una clave del registry: una comprobación valida un conjunto de
+ajustes a la vez.
+
+Se conservan las **20 últimas por servicio**. Un botón «Probar conexión» pulsado con
+insistencia no puede hacer crecer la tabla para siempre.
+
+En pantalla se muestra el texto relativo («hace 2 horas»), que es lo que se lee, y el
+timestamp exacto queda en el `title`, que es lo que se compara.
+
+### Prueba de conexión SMTP
+
+`PruebaConexionSmtp` llama a `SmtpTransport::start()`: conecta, saluda, negocia el
+cifrado y **autentica**. Ahí termina — el mensaje solo viaja en `send()`, que no se
+llama nunca. Es la comprobación completa de servidor + puerto + seguridad + usuario
++ contraseña **sin enviar ningún correo**, y por eso no existe la alternativa de
+«mandarse un correo de prueba»: una dirección de prueba inventada es justo la clase
+de cosa que un día acaba en la bandeja de un cliente.
+
+El mensaje de error se sanea antes de mostrarse o guardarse: se tacha la contraseña
+actual si aparece, se corta en la primera línea (Symfony añade el diálogo completo
+con el servidor) y se acota. Nunca la excepción entera.
+
+---
+
+## 19. Pantallas
+
+```
+Configuración
+├── Resumen                    ← estado de todo el sistema (solo lectura)
+├── General
+│   ├── Empresa emisora
+│   ├── Establecimientos
+│   └── Puntos de venta
+├── Facturación electrónica
+│   └── Correlativos
+└── Correo
+    ├── Correo y servidor      ← SMTP + documentos fiscales + contabilidad
+    └── Contabilidad
+```
+
+El índice pasó de pestañas horizontales a **columna agrupada**: con las secciones
+que vienen, una barra horizontal solo podía crecer desplazándose de lado y
+escondiendo justo lo que el usuario no sabe que existe. En móvil el mismo marcado se
+envuelve en pastillas; en ninguna de las dos formas hay desplazamiento horizontal.
+
+Los grupos que todavía no tienen pantallas reales (Integraciones, Módulos, Sistema)
+**no se dibujan**. Un grupo vacío o un enlace a una página inexistente enseña al
+usuario a desconfiar del resto del índice.
+
+### Resumen
+
+Once tarjetas: ambiente fiscal, modo DTE, firmador, API Hacienda, SMTP, Gmail, IMAP,
+respaldos, cola, Planta y Rutas/Cobros. Tres reglas lo gobiernan:
+
+1. **Nunca hay red.** Ni un ping al firmador ni un login a Hacienda. Una pantalla de
+   estado que se cuelga esperando a un servicio externo deja de ser una pantalla de
+   estado.
+2. **Nunca hay secretos.** De una credencial solo se dice si está y de dónde sale.
+3. **Nunca se inventa un estado.** Si el sistema no puede saber si algo funciona, la
+   tarjeta dice qué está configurado y deja claro que eso no es lo mismo. Un verde
+   falso aquí es peor que no tener la pantalla.
+
+### Contraseña SMTP
+
+Pantalla propia (`/configuracion/correo/smtp/password`). El campo nunca se precarga
+—ni con el valor ni con un relleno que insinúe su longitud—, usa
+`autocomplete="new-password"` y la vista recibe un `EstadoAjuste`, que para un
+secreto se construye con el valor en `null`.
+
+Un envío en blanco **no borra nada**: la validación lo rechaza. Volver al `.env` es
+una acción separada («quitar override») que se pide a propósito y también confirma.

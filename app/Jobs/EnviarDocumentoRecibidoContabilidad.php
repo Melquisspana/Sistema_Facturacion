@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Mail\DocumentoRecibidoContabilidadCorreo;
 use App\Models\DocumentoRecibidoEnvio;
 use App\Models\User;
@@ -75,6 +76,13 @@ class EnviarDocumentoRecibidoContabilidad implements ShouldQueue
                 'nombre' => $a['nombre'],
                 'mime' => $a['mime'],
             ], $seleccion['enviados']);
+
+            // El servidor de correo puede haber cambiado desde que este proceso
+            // arrancó (el worker vive horas y el MailManager cachea el transporte).
+            // Se vuelca la configuración vigente ANTES de tocar el transporte para
+            // que el envío use la que el administrador acaba de guardar, sin
+            // reiniciar nada. No decide si el correo sale: eso es del candado.
+            app(ConfiguracionCorreoRuntime::class)->aplicar();
 
             if (! $simular) {
                 Mail::to($destinatarios)->send(new DocumentoRecibidoContabilidadCorreo($documento, $archivos, $omitidos));
