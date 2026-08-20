@@ -2,8 +2,10 @@
 
 namespace App\Ajustes\Verificaciones;
 
+use App\Ajustes\RepositorioAjustes;
 use App\Models\VerificacionConfiguracion;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Registro de comprobaciones de configuración, reutilizable por servicio.
@@ -46,6 +48,10 @@ class RegistroVerificaciones
     /** Última comprobación de un servicio, o null si nunca se comprobó. */
     public function ultima(string $clave): ?VerificacionConfiguracion
     {
+        if (! $this->tablaDisponible()) {
+            return null;
+        }
+
         return VerificacionConfiguracion::query()
             ->de($clave)
             ->latest('created_at')
@@ -62,7 +68,7 @@ class RegistroVerificaciones
      */
     public function ultimasDe(array $claves): array
     {
-        if ($claves === []) {
+        if ($claves === [] || ! $this->tablaDisponible()) {
             return [];
         }
 
@@ -74,6 +80,20 @@ class RegistroVerificaciones
             // La última de cada clave gana porque se recorre en orden ascendente.
             ->keyBy('clave')
             ->all();
+    }
+
+    /**
+     * ¿Existe ya la tabla del historial?
+     *
+     * Igual que en {@see RepositorioAjustes}: entre desplegar y
+     * migrar, el código nuevo corre contra el esquema viejo. Sin esta comprobación
+     * la pantalla Resumen —que consulta la última verificación de cada servicio—
+     * devolvería 500 durante toda esa ventana. Sin historial la respuesta correcta
+     * es "nunca se comprobó", que es justamente lo que se devuelve.
+     */
+    private function tablaDisponible(): bool
+    {
+        return Schema::hasTable((new VerificacionConfiguracion)->getTable());
     }
 
     private function podar(string $clave): void

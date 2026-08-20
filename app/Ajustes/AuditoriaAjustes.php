@@ -104,6 +104,27 @@ class AuditoriaAjustes
     }
 
     /**
+     * Se desconectó una integración externa.
+     *
+     * Queda la CUENTA, que es lo que hace falta para saber qué dejó de funcionar y
+     * a quién avisarle. Nunca los tokens: ni enteros, ni en fragmentos, ni en
+     * hashes. Un token de acceso en el registro de auditoría es una credencial
+     * viva en un sitio que lee más gente que la configuración misma.
+     */
+    public function integracionDesconectada(string $integracion, string $cuenta): void
+    {
+        $this->escribir(
+            'desconectó '.$integracion.' ('.$cuenta.')',
+            array_filter([
+                'accion' => 'integracion_desconectada',
+                'integracion' => $integracion,
+                'cuenta' => $cuenta,
+                'ip' => $this->ip(),
+            ], static fn ($v) => $v !== null),
+        );
+    }
+
+    /**
      * Una acción crítica que pasó la ceremonia N3.
      *
      * La contraseña con la que el usuario se reautenticó NO llega hasta acá y no

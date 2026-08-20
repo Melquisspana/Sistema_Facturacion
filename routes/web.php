@@ -9,6 +9,9 @@ use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\Usuarios\UserController;
 use App\Http\Controllers\Auditoria\AuditoriaController;
 use App\Http\Controllers\Configuracion\CorreoController;
+use App\Http\Controllers\Configuracion\IntegracionDocumentosRecibidosController;
+use App\Http\Controllers\Configuracion\IntegracionGmailController;
+use App\Http\Controllers\Configuracion\SecretoController;
 use App\Http\Controllers\Configuracion\CorrelativoController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\EstablecimientoController;
@@ -419,16 +422,70 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
         Route::put('correo/smtp', [CorreoController::class, 'updateSmtp'])->name('correo.smtp.update');
         Route::post('correo/smtp/probar', [CorreoController::class, 'probarConexion'])->name('correo.smtp.probar');
 
-        // Contraseña SMTP: pantalla aparte para que el secreto no viaje en los
-        // campos ocultos de la confirmación de los demás campos.
-        Route::get('correo/smtp/password', [\App\Http\Controllers\Configuracion\PasswordSmtpController::class, 'edit'])->name('correo.smtp.password.edit');
-        Route::put('correo/smtp/password', [\App\Http\Controllers\Configuracion\PasswordSmtpController::class, 'update'])->name('correo.smtp.password.update');
-        Route::delete('correo/smtp/password', [\App\Http\Controllers\Configuracion\PasswordSmtpController::class, 'destroy'])->name('correo.smtp.password.destroy');
+        // SECRETOS. Todos usan la MISMA pantalla; qué secreto administra cada ruta
+        // se fija acá con ->defaults(), nunca en la petición. Es la diferencia
+        // entre "cada secreto tiene su URL" y "hay una URL que escribe el secreto
+        // que le mandes". `volver` es a dónde regresa el usuario al terminar.
+        Route::get('correo/smtp/password', [SecretoController::class, 'edit'])
+            ->name('correo.smtp.password.edit')
+            ->defaults('clave', 'mail.smtp.password')->defaults('volver', 'configuracion.correo.edit');
+        Route::put('correo/smtp/password', [SecretoController::class, 'update'])
+            ->name('correo.smtp.password.update')
+            ->defaults('clave', 'mail.smtp.password')->defaults('volver', 'configuracion.correo.edit');
+        Route::delete('correo/smtp/password', [SecretoController::class, 'destroy'])
+            ->name('correo.smtp.password.destroy')
+            ->defaults('clave', 'mail.smtp.password')->defaults('volver', 'configuracion.correo.edit');
+
+        /*
+        | INTEGRACIONES — servicios externos que la aplicación consulta.
+        |
+        | Gmail (Prontos Pagos) y el buzón IMAP de compras. Cada uno con su
+        | pantalla de estado + configuración, su prueba de conexión (que NO
+        | sincroniza nada) y su secreto en pantalla aparte.
+        */
+        Route::get('integraciones/gmail', [IntegracionGmailController::class, 'index'])->name('integraciones.gmail');
+        Route::put('integraciones/gmail', [IntegracionGmailController::class, 'update'])->name('integraciones.gmail.update');
+        Route::post('integraciones/gmail/probar', [IntegracionGmailController::class, 'probar'])->name('integraciones.gmail.probar');
+        Route::delete('integraciones/gmail/cuenta', [IntegracionGmailController::class, 'desconectar'])->name('integraciones.gmail.desconectar');
+        Route::get('integraciones/gmail/secreto', [SecretoController::class, 'edit'])
+            ->name('integraciones.gmail.secreto.edit')
+            ->defaults('clave', 'ppq.gmail.client_secret')->defaults('volver', 'configuracion.integraciones.gmail');
+        Route::put('integraciones/gmail/secreto', [SecretoController::class, 'update'])
+            ->name('integraciones.gmail.secreto.update')
+            ->defaults('clave', 'ppq.gmail.client_secret')->defaults('volver', 'configuracion.integraciones.gmail');
+        Route::delete('integraciones/gmail/secreto', [SecretoController::class, 'destroy'])
+            ->name('integraciones.gmail.secreto.destroy')
+            ->defaults('clave', 'ppq.gmail.client_secret')->defaults('volver', 'configuracion.integraciones.gmail');
+
+        Route::get('integraciones/documentos-recibidos', [IntegracionDocumentosRecibidosController::class, 'index'])->name('integraciones.documentos-recibidos');
+        Route::put('integraciones/documentos-recibidos', [IntegracionDocumentosRecibidosController::class, 'update'])->name('integraciones.documentos-recibidos.update');
+        Route::post('integraciones/documentos-recibidos/probar', [IntegracionDocumentosRecibidosController::class, 'probar'])->name('integraciones.documentos-recibidos.probar');
+        Route::get('integraciones/documentos-recibidos/secreto', [SecretoController::class, 'edit'])
+            ->name('integraciones.documentos-recibidos.secreto.edit')
+            ->defaults('clave', 'documentos_recibidos.password')->defaults('volver', 'configuracion.integraciones.documentos-recibidos');
+        Route::put('integraciones/documentos-recibidos/secreto', [SecretoController::class, 'update'])
+            ->name('integraciones.documentos-recibidos.secreto.update')
+            ->defaults('clave', 'documentos_recibidos.password')->defaults('volver', 'configuracion.integraciones.documentos-recibidos');
+        Route::delete('integraciones/documentos-recibidos/secreto', [SecretoController::class, 'destroy'])
+            ->name('integraciones.documentos-recibidos.secreto.destroy')
+            ->defaults('clave', 'documentos_recibidos.password')->defaults('volver', 'configuracion.integraciones.documentos-recibidos');
 
         // Contabilidad: correo de contabilidad + copia (BCC) en el envío manual de DTE.
         // Guardar NO envía nada; la copia viaja dentro del envío existente.
         Route::get('contabilidad', [\App\Http\Controllers\Configuracion\ContabilidadController::class, 'edit'])->name('contabilidad.edit');
         Route::put('contabilidad', [\App\Http\Controllers\Configuracion\ContabilidadController::class, 'update'])->name('contabilidad.update');
+
+        /*
+        | SISTEMA — respaldos, cola, salud y entorno.
+        |
+        | Solo la política de respaldos es editable; el resto es diagnóstico que
+        | reutiliza los servicios existentes. `respaldar` tiene su propio permiso,
+        | más estrecho que el del grupo.
+        */
+        Route::get('sistema', [\App\Http\Controllers\Configuracion\SistemaController::class, 'index'])->name('sistema');
+        Route::put('sistema', [\App\Http\Controllers\Configuracion\SistemaController::class, 'update'])->name('sistema.update');
+        Route::post('sistema/respaldar', [\App\Http\Controllers\Configuracion\SistemaController::class, 'respaldar'])
+            ->middleware('permission:respaldos.ejecutar')->name('sistema.respaldar');
 
         // Establecimientos.
         Route::get('establecimientos', [EstablecimientoController::class, 'index'])->name('establecimientos.index');

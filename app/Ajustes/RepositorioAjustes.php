@@ -7,6 +7,7 @@ use App\Models\Configuracion;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -178,6 +179,33 @@ class RepositorioAjustes
     /** @return array<string, array{valor: ?string, cifrado: bool, actualizado: ?string}> */
     private function leerDeBaseDeDatos(): array
     {
+        // LA VENTANA ENTRE DESPLEGAR Y MIGRAR.
+        //
+        // Un despliegue normal es `git pull` y después `php artisan migrate`. En
+        // los segundos o minutos que pasan entre las dos cosas, el código nuevo
+        // corre contra el esquema viejo y esta tabla todavía no existe. Sin esta
+        // comprobación, CADA lectura de configuración lanzaría una excepción de
+        // SQL — y no solo se caería el Centro de Configuración: también el
+        // observer de DTE y el job de correo, que resuelven ajustes. La
+        // aplicación entera devolvería 500 durante toda la ventana.
+        //
+        // Sin la tabla no hay overrides, así que devolver un mapa vacío es
+        // exactamente correcto: cada ajuste cae a su lectura de transición, a
+        // config/.env o a su valor por defecto, que es como se comportaba el
+        // sistema antes de que la tabla existiera.
+        //
+        // Se comprueba la EXISTENCIA en vez de atrapar la excepción a propósito:
+        // un try/catch convertiría también una base caída en "no hay overrides" y
+        // la configuración caería a sus valores por defecto sin que nadie se
+        // enterara. Una tabla que falta es una situación conocida y transitoria;
+        // una consulta que falla teniendo la tabla, no.
+        //
+        // El coste es una consulta de esquema por RECARGA del mapa, no por
+        // lectura: lo que sigue queda cacheado igual que el mapa.
+        if (! Schema::hasTable((new AjusteSistema)->getTable())) {
+            return [];
+        }
+
         // Una sola consulta para toda la tabla: es pequeña por diseño (overrides,
         // no catálogo) y se consulta varias veces por petición.
         return AjusteSistema::query()

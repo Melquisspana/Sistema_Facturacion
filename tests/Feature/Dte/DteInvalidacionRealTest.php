@@ -41,6 +41,13 @@ class DteInvalidacionRealTest extends TestCase
         config()->set('dte.transmision.ambiente', 'testing');
         config()->set('dte.transmision.test_enabled', true);
         config()->set('dte.ambientes.00.anulacion_url', 'https://apitest.dtes.mh.gob.sv/fesv/anulardte');
+        // Credenciales FICTICIAS de apitest: estos tests mockean toda la red, pero
+        // el servicio de autenticación aborta antes de llegar a ella si no hay
+        // ninguna. Sin esto, la suite se pone roja en cualquier máquina sin
+        // DTE_TEST_USER/DTE_TEST_PASSWORD en el .env — un rojo que no señala
+        // ninguna regresión. Ver Tests\TestCase::credencialesApitestFicticias().
+        $this->credencialesApitestFicticias();
+
     }
 
     /** Firmador + auth + anulardte mockeados (firma y transmisión reales NO ocurren). */

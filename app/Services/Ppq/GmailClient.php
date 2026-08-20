@@ -2,6 +2,7 @@
 
 namespace App\Services\Ppq;
 
+use App\Ajustes\Integraciones\ConfiguracionGmail;
 use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Models\GmailCuenta;
 use Google\Client as GoogleClient;
@@ -23,6 +24,32 @@ class GmailClient
     private bool $ultimaBusquedaTruncada = false;
 
     /**
+     * Configuración del Centro de Configuración, resuelta PEREZOSAMENTE.
+     *
+     * Cambia la FUENTE, no el comportamiento: la búsqueda, el parseo y la
+     * conciliación reciben exactamente los mismos valores que antes cuando no hay
+     * ningún override guardado.
+     *
+     * No es un parámetro obligatorio del constructor a propósito. Varios tests de
+     * PPQ doblan esta clase con subclases anónimas que tienen su propio
+     * constructor (`new class($buzon) extends GmailClient`); exigirlo habría
+     * obligado a reescribir esos dobles, que es justo la lógica de PPQ que esta
+     * fase no debe tocar. Se puede inyectar cuando interesa y, si no, se resuelve
+     * del contenedor la primera vez que hace falta.
+     */
+    private ?ConfiguracionGmail $configuracion = null;
+
+    public function __construct(?ConfiguracionGmail $configuracion = null)
+    {
+        $this->configuracion = $configuracion;
+    }
+
+    private function configuracion(): ConfiguracionGmail
+    {
+        return $this->configuracion ??= app(ConfiguracionGmail::class);
+    }
+
+    /**
      * ¿La última búsqueda quedó truncada por el límite? Se lee INMEDIATAMENTE después de
      * la llamada que interesa: refleja solo la más reciente.
      */
@@ -37,13 +64,34 @@ class GmailClient
         return $this->configurado() && optional(GmailCuenta::actual())->conectada() === true;
     }
 
-    /** ¿Están las credenciales OAuth en config (client_id/secret/redirect)? */
+    /** ¿Están la integración activada y las credenciales OAuth completas? */
     public function configurado(): bool
     {
-        return (bool) config('ppq.gmail.enabled')
-            && filled(config('ppq.gmail.client_id'))
-            && filled(config('ppq.gmail.client_secret'))
-            && filled(config('ppq.gmail.redirect_uri'));
+        return $this->configuracion()->completo();
+    }
+
+    /**
+     * Perfil de la cuenta conectada: la llamada de SOLO LECTURA más barata que
+     * expone Gmail. Sirve para comprobar que el token sigue vigente sin listar
+     * correos, sin descargar adjuntos y sin marcar nada.
+     *
+     * No sincroniza: es la comprobación de "¿esto todavía funciona?" que consulta
+     * la pantalla de Integraciones.
+     *
+     * @return array{email: ?string, mensajes: ?int}
+     *
+     * @throws GmailDesconectadoException si el token expiró o fue revocado
+     */
+    public function perfil(): array
+    {
+        $servicio = new Gmail($this->clienteAutenticado());
+
+        $perfil = $this->ejecutarGoogle(fn () => $servicio->users->getProfile('me'));
+
+        return [
+            'email' => $perfil->getEmailAddress(),
+            'mensajes' => $perfil->getMessagesTotal(),
+        ];
     }
 
     /** URL de consentimiento OAuth (paso 1 de la conexión). */
@@ -103,8 +151,8 @@ class GmailClient
      */
     public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
     {
-        $base = trim((string) config('ppq.gmail.enviados_query', 'in:sent'));
-        $filtroDte = trim((string) config('ppq.gmail.dte_adjunto_query', '(filename:json OR filename:pdf)'));
+        $base = trim($this->configuracion()->enviadosQuery());
+        $filtroDte = trim($this->configuracion()->dteAdjuntoQuery());
         $variantes = $this->variantesNumero($numero);
         $intentos = [];
 
@@ -136,7 +184,7 @@ class GmailClient
     /** Busca albaranes en el label de Calleja, opcionalmente filtrando por texto (OC). */
     public function buscarAlbaranes(string $filtroTexto = '', int $limite = 20): array
     {
-        $label = config('ppq.gmail.label_albaranes', 'Calleja_Albaranes');
+        $label = $this->configuracion()->labelAlbaranes();
         $q = trim('label:'.$label.' '.$filtroTexto);
 
         return $this->listar($q, $limite);
@@ -150,7 +198,7 @@ class GmailClient
      */
     public function buscarAlbaranesPorFecha(string $fecha, int $limite = 40): array
     {
-        $dia = \Illuminate\Support\Carbon::parse($fecha);
+        $dia = Carbon::parse($fecha);
         $filtro = 'after:'.$dia->format('Y/m/d').' before:'.$dia->copy()->addDay()->format('Y/m/d');
 
         return $this->buscarAlbaranes($filtro, $limite);
@@ -168,7 +216,7 @@ class GmailClient
     {
         $gmail = new Gmail($this->clienteAutenticado());
         $variantes = $this->variantesNumero($numero);
-        $label = config('ppq.gmail.label_albaranes', 'Calleja_Albaranes');
+        $label = $this->configuracion()->labelAlbaranes();
 
         // Queries a probar (etiqueta => query Gmail).
         $queries = [
@@ -306,10 +354,11 @@ class GmailClient
 
     private function clienteBase(): GoogleClient
     {
-        $client = new GoogleClient();
-        $client->setClientId((string) config('ppq.gmail.client_id'));
-        $client->setClientSecret((string) config('ppq.gmail.client_secret'));
-        $client->setRedirectUri((string) config('ppq.gmail.redirect_uri'));
+        $client = new GoogleClient;
+        $client->setClientId($this->configuracion()->clientId());
+        // Única vía por la que sale el secreto: hacia el cliente de Google.
+        $client->setClientSecret($this->configuracion()->clientSecret());
+        $client->setRedirectUri($this->configuracion()->redirectUri());
         $client->setScopes([Gmail::GMAIL_READONLY]);
         $client->setAccessType('offline');
         $client->setPrompt('consent');
@@ -382,7 +431,7 @@ class GmailClient
 
     private function guardarToken(array $token, ?string $email, ?int $userId): GmailCuenta
     {
-        $cuenta = GmailCuenta::actual() ?? new GmailCuenta();
+        $cuenta = GmailCuenta::actual() ?? new GmailCuenta;
         $cuenta->fill([
             'email' => $email ?? $cuenta->email,
             'access_token' => json_encode($token),

@@ -149,9 +149,10 @@ class CentroConfiguracionTest extends TestCase
             'En pantalla pequeña las secciones deben envolverse, no salirse.',
         );
 
-        // Una entrada por sección real: las seis de siempre más Resumen.
+        // Una entrada por sección real: las seis de siempre, más Resumen, las dos
+        // integraciones y Sistema.
         $this->assertSame(
-            7,
+            10,
             substr_count($barra, 'whitespace-nowrap'),
             'El índice debe listar exactamente las secciones existentes, sin partir sus nombres.',
         );

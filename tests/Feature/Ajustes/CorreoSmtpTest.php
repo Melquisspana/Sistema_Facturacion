@@ -273,12 +273,13 @@ class CorreoSmtpTest extends TestCase
 
         Configuracion::olvidarCache();
 
-        $this->assertTrue(Configuracion::getBool('correo.auto_envio', false));
-        $this->assertTrue(Configuracion::getBool('correo.adjuntar_jws', false));
-        $this->assertSame('Hola {{cliente}}', Configuracion::get('correo.plantilla'));
+        $this->assertTrue(Ajustes::bool('correo.auto_envio', false));
+        $this->assertTrue(Ajustes::bool('correo.adjuntar_jws', false));
+        $this->assertSame('Hola {{cliente}}', Ajustes::texto('correo.plantilla'));
 
-        // No se duplicó en la tabla nueva.
-        $this->assertDatabaseMissing('ajustes_sistema', ['clave' => 'correo.auto_envio']);
+        // Ya viven en la tabla nueva (fase 4) y NO quedan duplicadas en la anterior.
+        $this->assertDatabaseHas('ajustes_sistema', ['clave' => 'correo.auto_envio']);
+        $this->assertDatabaseMissing('configuraciones', ['clave' => 'correo.auto_envio']);
 
         Mail::assertNothingSent();
     }
@@ -298,7 +299,8 @@ class CorreoSmtpTest extends TestCase
 
         Configuracion::olvidarCache();
 
-        $this->assertDatabaseHas('configuraciones', ['clave' => 'contabilidad.correo', 'valor' => 'conta@ejemplo.com']);
+        $this->assertDatabaseHas('ajustes_sistema', ['clave' => 'contabilidad.correo', 'valor' => 'conta@ejemplo.com']);
+        $this->assertDatabaseMissing('configuraciones', ['clave' => 'contabilidad.correo']);
         $this->assertSame('conta@ejemplo.com', app(CorreoContabilidad::class)->direccion());
 
         Mail::assertNothingSent();

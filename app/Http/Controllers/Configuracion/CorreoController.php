@@ -6,15 +6,14 @@ use App\Ajustes\Ajustes as ServicioAjustes;
 use App\Ajustes\Ceremonias\ConfirmacionN2;
 use App\Ajustes\Correo\PruebaConexionSmtp;
 use App\Ajustes\EstadoAjuste;
-use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Ajustes\Verificaciones\RegistroVerificaciones;
 use App\Facades\Ajustes;
+use App\Http\Controllers\Configuracion\Concerns\GuardaConConfirmacionN2;
 use App\Http\Controllers\Controller;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dte\PlantillaCorreo;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -37,6 +36,8 @@ use Illuminate\View\View;
  */
 class CorreoController extends Controller
 {
+    use GuardaConConfirmacionN2;
+
     /**
      * Campo del formulario ⇒ clave del registry. Es la ÚNICA traducción posible:
      * lo que no esté aquí no se puede escribir desde esta pantalla.
@@ -108,42 +109,17 @@ class CorreoController extends Controller
      */
     public function updateSmtp(Request $request, ConfirmacionN2 $confirmacion): View|RedirectResponse
     {
-        $datos = $this->validarSmtp($request);
-
-        // clave del registry ⇒ valor propuesto. Las claves salen del mapa fijo.
-        $propuestos = [];
-        foreach (self::CAMPOS_SMTP as $campo => $clave) {
-            $propuestos[$clave] = $datos[$campo] ?? null;
-        }
-
-        $cambios = $confirmacion->calcular($propuestos);
-
-        if ($cambios === []) {
-            return redirect()
-                ->route('configuracion.correo.edit')
-                ->with('status', 'No había nada que cambiar en el servidor de correo.');
-        }
-
-        if (! $request->boolean('confirmacion') && $confirmacion->requiereConfirmacion($cambios)) {
-            return view('configuracion.correo.confirmar-smtp', [
-                'cambios' => $cambios,
-                // Se reenvían los valores YA VALIDADOS, con los mismos nombres de
-                // campo del formulario. Ninguno es secreto.
-                'valores' => array_intersect_key($datos, self::CAMPOS_SMTP),
-            ]);
-        }
-
-        try {
-            Ajustes::guardarVarios($propuestos);
-        } catch (ValorAjusteInvalidoException $e) {
-            throw ValidationException::withMessages([
-                array_search($e->clave, self::CAMPOS_SMTP, true) ?: 'servidor' => $e->getMessage(),
-            ]);
-        }
-
-        return redirect()
-            ->route('configuracion.correo.edit')
-            ->with('status', 'Servidor de correo guardado. Probá la conexión para comprobar que funciona.');
+        return $this->guardarConConfirmacion(
+            $request,
+            $confirmacion,
+            self::CAMPOS_SMTP,
+            $this->validarSmtp($request),
+            volver: 'configuracion.correo.edit',
+            titulo: 'Vas a cambiar por dónde sale el correo',
+            consecuencia: 'Si estos datos no son correctos, los documentos dejarán de llegar a los clientes y a contabilidad. No se rompe ninguna pantalla: los envíos simplemente fallan, y eso suele descubrirse tarde. Después de guardar, usá «Probar conexión».',
+            exito: 'Servidor de correo guardado. Probá la conexión para comprobar que funciona.',
+            sinCambios: 'No había nada que cambiar en el servidor de correo.',
+        );
     }
 
     /** Prueba de conexión: conecta y autentica, NO envía ningún correo. */

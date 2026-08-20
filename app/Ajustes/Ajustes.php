@@ -146,16 +146,15 @@ class Ajustes
     {
         $definicion = $this->catalogo->definicion($clave);
 
-        // 1) Override, en la ÚNICA ubicación que la definición declara.
-        $texto = $this->overrideAlmacenado($definicion);
+        // 1) Override, en la ubicación que la definición declara (más, si está en
+        //    transición, la tabla de la que todavía no terminó de mudarse).
+        [$texto, $fuente] = $this->overrideAlmacenado($definicion);
 
         if ($texto !== null) {
             return new ValorAjuste(
                 $definicion,
                 $this->conversor->aValor($definicion, $texto),
-                $definicion->persistencia === Persistencia::Legacy
-                    ? FuenteAjuste::BaseDeDatosLegacy
-                    : FuenteAjuste::BaseDeDatos,
+                $fuente,
             );
         }
 
@@ -421,13 +420,44 @@ class Ajustes
         };
     }
 
-    private function overrideAlmacenado(DefinicionAjuste $definicion): ?string
+    /**
+     * Override guardado y DE DÓNDE salió.
+     *
+     * LECTURA DE TRANSICIÓN. Un ajuste que ya persiste en la tabla nueva pero
+     * conserva `claveLegacy` está a mitad de mudanza: se escribe siempre en la
+     * nueva, y se LEE de la anterior solo mientras la nueva no tenga nada. Es lo
+     * que permite que el despliegue funcione igual en los minutos —o los días—
+     * que pasen entre subir el código y correr la migración de datos: sin este
+     * paso, `contabilidad.correo` volvería a "sin configurar" y las copias a
+     * contabilidad dejarían de salir sin que nadie hubiera cambiado nada.
+     *
+     * No hay riesgo de doble valor: la migración BORRA la fila anterior al
+     * copiarla, y mientras exista solo se lee si la nueva está vacía. En cuanto la
+     * mudanza termina, `claveLegacy` se quita de la definición.
+     *
+     * @return array{0: ?string, 1: FuenteAjuste}
+     */
+    private function overrideAlmacenado(DefinicionAjuste $definicion): array
     {
-        return match ($definicion->persistencia) {
-            Persistencia::Nueva => $this->repositorio->valor($definicion->clave),
-            Persistencia::Legacy => $this->legacy->valor((string) $definicion->claveLegacy),
-            Persistencia::Ninguna => null,
-        };
+        if ($definicion->persistencia === Persistencia::Ninguna) {
+            return [null, FuenteAjuste::NoConfigurado];
+        }
+
+        if ($definicion->persistencia === Persistencia::Legacy) {
+            return [$this->legacy->valor((string) $definicion->claveLegacy), FuenteAjuste::BaseDeDatosLegacy];
+        }
+
+        $texto = $this->repositorio->valor($definicion->clave);
+
+        if ($texto !== null) {
+            return [$texto, FuenteAjuste::BaseDeDatos];
+        }
+
+        if ($definicion->claveLegacy !== null) {
+            return [$this->legacy->valor($definicion->claveLegacy), FuenteAjuste::BaseDeDatosLegacy];
+        }
+
+        return [null, FuenteAjuste::NoConfigurado];
     }
 
     private function exigirTipo(string $clave, TipoAjuste $esperado): void

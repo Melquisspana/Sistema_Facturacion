@@ -4,7 +4,10 @@ namespace App\Observers;
 
 use App\Enums\EstadoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
+use App\Facades\Ajustes;
 use App\Models\Dte;
+use App\Models\DteEnvio;
+use App\Services\Dte\EnvioDteCorreoService;
 
 /**
  * Inmutabilidad del DTE a nivel de modelo (defensa que no depende del controller).
@@ -96,7 +99,7 @@ class DteObserver
         if (! $dte->wasChanged('estado') || $dte->estado !== EstadoDte::Aceptado) {
             return;
         }
-        if (! \App\Models\Configuracion::getBool('correo.auto_envio', false)) {
+        if (! Ajustes::bool('correo.auto_envio', false)) {
             return;
         }
         if ($dte->envios()->whereIn('estado', ['pendiente', 'enviado'])->exists()) {
@@ -111,11 +114,11 @@ class DteObserver
         // Mismo pipeline que la UI (registro 'pendiente' + job). Con queue=database el job es
         // transaccional (su fila se inserta dentro de la transacción de aceptación y se confirma
         // con ella); el worker lo toma luego. user_id null = envío automático (sistema).
-        app(\App\Services\Dte\EnvioDteCorreoService::class)->encolar(
+        app(EnvioDteCorreoService::class)->encolar(
             $dte,
             [$correo],
             null,
-            \App\Models\DteEnvio::CANAL_CLIENTE,
+            DteEnvio::CANAL_CLIENTE,
         );
     }
 

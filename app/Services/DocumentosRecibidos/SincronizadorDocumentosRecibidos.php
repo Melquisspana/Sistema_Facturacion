@@ -2,6 +2,7 @@
 
 namespace App\Services\DocumentosRecibidos;
 
+use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Ppq\JsonAdjuntoDecoder;
@@ -31,6 +32,7 @@ class SincronizadorDocumentosRecibidos
         private readonly ParserDocumentoRecibido $parser,
         private readonly ClasificadorDocumentoRecibido $clasificador,
         private readonly FiltroExclusionCorreo $filtro,
+        private readonly ConfiguracionDocumentosRecibidos $configuracion,
     ) {}
 
     public function disponible(): bool
@@ -69,7 +71,7 @@ class SincronizadorDocumentosRecibidos
         $resumen = array_merge($base, ['desde' => $desde?->format('Y-m-d')]);
 
         try {
-            $limite = (int) config('documentos_recibidos.limite', 30);
+            $limite = $this->configuracion->limite();
             $mensajes = $this->buzon->mensajesConAdjuntos($limite, $desde);
         } catch (Throwable $e) {
             return array_merge($resumen, ['error' => 'No se pudo leer el correo: '.$e->getMessage()]);

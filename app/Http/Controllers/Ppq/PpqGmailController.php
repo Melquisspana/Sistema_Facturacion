@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Ppq;
 
+use App\Ajustes\Integraciones\DesconectarGmail;
 use App\Http\Controllers\Controller;
-use App\Models\GmailCuenta;
 use App\Services\Ppq\GmailClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -44,9 +44,14 @@ class PpqGmailController extends Controller
             ->with('status', 'Gmail conectado'.($cuenta->email ? ' ('.$cuenta->email.')' : '').'. Ya podés buscar CCF.');
     }
 
-    public function desconectar(): RedirectResponse
+    /**
+     * Desconecta la cuenta. La operación vive en un servicio porque hay DOS
+     * puertas a ella —esta pantalla y la de Integraciones— y con el borrado
+     * copiado la auditoría habría quedado solo en una de las dos.
+     */
+    public function desconectar(DesconectarGmail $desconectar): RedirectResponse
     {
-        GmailCuenta::query()->delete();
+        $desconectar->ejecutar();
 
         return redirect()->route('ppq.index')->with('status', 'Gmail desconectado.');
     }

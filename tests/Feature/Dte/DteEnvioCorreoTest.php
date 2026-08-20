@@ -3,6 +3,7 @@
 namespace Tests\Feature\Dte;
 
 use App\Enums\EstadoDte;
+use App\Facades\Ajustes;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Jobs\EnviarDteCorreo;
@@ -324,9 +325,11 @@ class DteEnvioCorreoTest extends TestCase
             ->assertRedirect();
 
         Configuracion::olvidarCache();
-        $this->assertTrue(Configuracion::getBool('correo.auto_envio'));
-        $this->assertTrue(Configuracion::getBool('correo.adjuntar_jws'));
-        $this->assertSame('Hola {{cliente}}', Configuracion::get('correo.plantilla'));
+        // Desde la fase 4 estas claves viven en `ajustes_sistema`: se consultan por
+        // la API que las resuelve, no por la tabla en la que estaban antes.
+        $this->assertTrue(Ajustes::bool('correo.auto_envio'));
+        $this->assertTrue(Ajustes::bool('correo.adjuntar_jws'));
+        $this->assertSame('Hola {{cliente}}', Ajustes::texto('correo.plantilla'));
     }
 
     public function test_plantilla_renderiza_variables(): void

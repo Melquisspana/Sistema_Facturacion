@@ -165,6 +165,33 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * Credenciales FICTICIAS del ambiente de pruebas del Ministerio de Hacienda.
+     *
+     * POR QUÉ EXISTE. Varios tests de transmisión e invalidación mockean toda la
+     * red con `Http::fake()` pero morían antes de llegar a ella, porque
+     * `DteTransmisionAuthService` aborta —con razón— cuando no hay credenciales de
+     * apitest. El resultado era una suite que se ponía roja en las máquinas sin
+     * DTE_TEST_USER/DTE_TEST_PASSWORD en el .env: quince fallos que no señalaban
+     * ninguna regresión y que enseñaban a ignorar el rojo.
+     *
+     * Estas credenciales NO abren ninguna puerta: son texto inventado, la red
+     * sigue mockeada y phpunit.xml mantiene apagados firma, transmisión y
+     * producción. Lo único que hacen es dejar que el test llegue a la parte que
+     * quiere probar.
+     *
+     * Si algún día hiciera falta un test que hable de verdad con apitest, ese sí
+     * tendría que exigir credenciales reales y saltarse cuando falten — pero
+     * entonces sería un test de integración, no de la suite.
+     */
+    protected function credencialesApitestFicticias(): void
+    {
+        config([
+            'dte.transmision.usuario_testing' => 'usuario-apitest-de-prueba',
+            'dte.transmision.password_testing' => 'password-apitest-de-prueba',
+        ]);
+    }
+
+    /**
      * Declara que ESTE test simula PRODUCCIÓN a efectos del CORREO: el candado
      * {@see CandadoCorreoReal} solo permite envío real cuando el
      * entorno es `production`, así que sin esto todo envío queda 'simulado'.
