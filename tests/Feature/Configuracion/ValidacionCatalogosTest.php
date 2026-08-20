@@ -43,17 +43,26 @@ class ValidacionCatalogosTest extends TestCase
         return Departamento::where('codigo', $codigo)->firstOrFail();
     }
 
-    public function test_ambiente_invalido_es_rechazado(): void
+    /**
+     * Antes este test comprobaba que un `ambiente` fuera de CAT-001 fuera RECHAZADO por
+     * la validación. Ya no aplica: el campo salió del formulario y de las reglas porque
+     * `empresas.ambiente` no era la fuente de verdad de nada (el ambiente fiscal sale de
+     * config('dte.ambiente')). La garantía correcta ahora es más fuerte que un rechazo:
+     * el campo se IGNORA por completo, así que ni un valor inválido ni uno válido pueden
+     * llegar a la tabla desde esta pantalla. Ver AmbienteFiscalNoEditableTest.
+     */
+    public function test_ambiente_enviado_al_formulario_se_ignora_y_no_rompe_el_guardado(): void
     {
         $this->actingAs($this->admin())
             ->put('/configuracion/empresa', [
                 'razon_social' => 'Empresa X',
-                'ambiente' => '99', // fuera de CAT-001
+                'ambiente' => '99', // fuera de CAT-001: ni se valida ni se guarda
                 'activo' => '1',
             ])
-            ->assertSessionHasErrors('ambiente');
+            ->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('empresas', 0);
+        $this->assertDatabaseCount('empresas', 1);
+        $this->assertDatabaseMissing('empresas', ['ambiente' => '99']);
     }
 
     public function test_municipio_de_otro_departamento_es_rechazado(): void

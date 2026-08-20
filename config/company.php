@@ -2,13 +2,23 @@
 
 /*
 |--------------------------------------------------------------------------
-| Datos del emisor (Dulces La Negrita)
+| Datos del emisor — RESPALDO DE PRESENTACIÓN ÚNICAMENTE
 |--------------------------------------------------------------------------
 |
-| Valores por defecto del emisor, leídos del .env. Los datos OFICIALES y
-| editables vivirán en la tabla `empresas` (se crea en una fase posterior);
-| este archivo sirve como respaldo/configuración base y para sembrar el
-| registro inicial. No contiene credenciales.
+| NO es la fuente de verdad del emisor. La fuente FISCAL es la tabla `empresas`
+| (editable en Configuración → Empresa emisora): de ahí salen razón social, NIT,
+| NRC, actividad y dirección del bloque `emisor` del JSON del MH, vía
+| App\Services\Dte\MapeadorDteSalida. Este archivo NO participa en el JSON, ni en
+| la firma, ni en la transmisión, ni en los correlativos.
+|
+| Su único uso real son las representaciones GRÁFICAS del documento:
+|   - resources/views/facturacion/pdf.blade.php
+|   - resources/views/facturacion/imprimir.blade.php
+| Ambas resuelven cada dato como «empresa real → este respaldo → '—'», para que un
+| PDF no salga en blanco si la empresa enlazada al documento todavía no tiene ese
+| campo cargado. Es estética, nunca un dato fiscal.
+|
+| No contiene credenciales y no debe contenerlas nunca.
 |
 */
 

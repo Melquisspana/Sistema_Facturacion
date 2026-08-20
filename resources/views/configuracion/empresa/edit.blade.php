@@ -42,17 +42,23 @@
                 </select>
                 <x-input-error :messages="$errors->get('actividad_economica_id')" class="mt-1" />
             </div>
+            {{-- Ambiente fiscal: SOLO LECTURA, y leído de la fuente REAL.
+                 Antes había aquí un <select> sobre `empresas.ambiente`, una columna que
+                 ningún consumidor fiscal lee: se podía elegir "Producción" y no cambiaba
+                 nada. El ambiente que viaja en el JSON del MH sale de config('dte.ambiente')
+                 (DTE_AMBIENTE, en el .env del servidor), y solo se cambia ahí. --}}
             <div>
-                <x-input-label for="ambiente" value="Ambiente *" />
-                <select id="ambiente" name="ambiente" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
-                    @foreach (\App\Enums\AmbienteHacienda::cases() as $amb)
-                        <option value="{{ $amb->value }}"
-                            @selected(old('ambiente', $empresa?->ambiente?->value ?? '00') === $amb->value)>
-                            {{ $amb->label() }}
-                        </option>
-                    @endforeach
-                </select>
-                <x-input-error :messages="$errors->get('ambiente')" class="mt-1" />
+                <x-input-label value="Ambiente fiscal actual" />
+                <div class="mt-1 flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {{ $ambienteFiscalEsProduccion ? 'bg-rose-100 text-rose-700' : 'bg-green-100 text-green-700' }}">
+                        {{ $ambienteFiscalEtiqueta }}
+                    </span>
+                    <span class="font-mono text-xs text-gray-500">dte.ambiente={{ $ambienteFiscalCodigo }}</span>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">
+                    Solo lectura. No se cambia desde esta pantalla: viene de <span class="font-mono">DTE_AMBIENTE</span>
+                    en la configuración del servidor.
+                </p>
             </div>
             <div>
                 <x-input-label for="pais_id" value="País" />

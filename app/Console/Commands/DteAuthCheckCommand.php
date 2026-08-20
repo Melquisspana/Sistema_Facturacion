@@ -25,8 +25,15 @@ class DteAuthCheckCommand extends Command
         $this->estado('URL de autenticación', $d['url'], true);
         $this->estado('Prueba de auth real (DTE_AUTH_TEST_REAL_ENABLED)', $d['auth_test_real'] ? 'ACTIVA (solo testing)' : 'BLOQUEADA', true);
         $this->estado('Transmisión', $d['habilitada'] ? 'HABILITADA' : 'BLOQUEADA (enabled=false)', ! $d['habilitada'] ? true : true);
-        $this->estado('Usuario (DTE_TRANSMISION_USER)', $d['usuario_configurado'] ? 'configurado (oculto)' : 'no configurado', $d['usuario_configurado']);
-        $this->estado('Password (DTE_TRANSMISION_PASSWORD)', $d['password_configurado'] ? 'configurada (oculta)' : 'no configurada', $d['password_configurado']);
+        $this->estado('Usuario', $d['usuario_configurado'] ? 'configurado (oculto)' : 'no configurado', $d['usuario_configurado']);
+        $this->estado('Password', $d['password_configurado'] ? 'configurada (oculta)' : 'no configurada', $d['password_configurado']);
+        // QUÉ variables alimentan el login (no sus valores). 'legacy' significa que
+        // producción está cayendo de vuelta a DTE_TRANSMISION_* porque DTE_PROD_* no
+        // están definidas: funciona, pero conviene dejar de depender de ese respaldo.
+        $this->estado('Fuente de credenciales', $d['fuente_credenciales_detalle'], $d['fuente_credenciales'] !== 'legacy');
+        if ($d['fuente_credenciales'] === 'legacy') {
+            $this->line('       → Definí DTE_PROD_USER y DTE_PROD_PASSWORD para no depender del respaldo legacy.');
+        }
         $this->estado('Token manual (DTE_TRANSMISION_TOKEN)', $d['token_manual_configurado'] ? 'configurado (oculto)' : 'no configurado', true);
         $this->estado('Token en cache', $d['token_cacheado'] ? 'sí (oculto)' : 'no', true);
         $this->estado('Vigencia estimada del token', $d['vigencia_horas'].' horas', true);

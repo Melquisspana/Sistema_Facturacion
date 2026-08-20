@@ -660,7 +660,7 @@
                                         </div>
                                         <dl class="mt-3 grid grid-cols-2 gap-2 border-t border-indigo-100 pt-3 text-xs text-gray-600">
                                             @if ($esCcfModal)
-                                                <div><dt class="text-gray-400">Último real en Conta (P001, informativo)</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] }}</dd></div>
+                                                <div><dt class="text-gray-400">Último real en Conta (P001, informativo)</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] ?? 'no configurado' }}</dd></div>
                                             @endif
                                             <div><dt class="text-gray-400">Próximo tras aceptar este</dt><dd class="font-semibold">{{ $rp['proximo_futuro'] }}</dd></div>
                                         </dl>

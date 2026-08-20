@@ -219,7 +219,10 @@ class PreparacionProduccionController extends Controller
 
         // Último CCF real EXTERNO confirmado en Conta Portable — dato puramente
         // informativo (contingencia P001), NO participa en ningún cálculo de readiness.
-        $externoUltimo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
+        // Sin la clave configurada es null (la vista muestra "no configurado"): antes se
+        // inventaba 1093, un número que se leía como confirmado y no lo estaba.
+        $externoRaw = Configuracion::get('produccion.ultimo_ccf_externo');
+        $externoUltimo = ($externoRaw === null || trim($externoRaw) === '') ? null : (int) $externoRaw;
 
         return [
             'ultimo' => $ultimo ? [

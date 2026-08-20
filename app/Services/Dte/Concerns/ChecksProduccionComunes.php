@@ -5,6 +5,7 @@ namespace App\Services\Dte\Concerns;
 use App\Models\Configuracion;
 use App\Models\Dte;
 use App\Models\RespaldoEjecucion;
+use App\Support\Dte\CoherenciaConfiguracionFiscal;
 use App\Support\Dte\CorrelativoSistemaNuevo;
 use App\Support\WorkerHeartbeat;
 
@@ -21,6 +22,21 @@ use App\Support\WorkerHeartbeat;
  */
 trait ChecksProduccionComunes
 {
+    /**
+     * Coherencia de la configuración fiscal: ambientes cruzados, NIT de firma distinto
+     * del NIT del emisor, y mocks activos con APP_ENV=production. Son tres estados que
+     * hoy pueden convivir en silencio y que ninguno de los checks anteriores mira.
+     *
+     * SOLO LECTURA (ver CoherenciaConfiguracionFiscal): no corrige nada, solo impide
+     * que el readiness diga "listo" mientras la configuración se contradice.
+     *
+     * @return array<int, array{clave: string, label: string, ok: bool, detalle: string}>
+     */
+    private function checksCoherenciaConfiguracion(): array
+    {
+        return CoherenciaConfiguracionFiscal::checks();
+    }
+
     /** @return array{clave: string, label: string, ok: bool, detalle: string} */
     private function checkAmbiente(): array
     {
@@ -80,9 +96,16 @@ trait ChecksProduccionComunes
     private function checkCredenciales(): array
     {
         $credOk = Configuracion::getBool('produccion.auth_prod_validada', false);
+        // Cuándo y con qué variables de entorno se validó (nunca los valores). Un
+        // "validadas" sin fecha no se distingue de uno de hace seis meses con otra
+        // credencial. Lo escribe únicamente `dte:auth-test --prod`.
+        $credEn = Configuracion::get('produccion.auth_prod_validada_en');
+        $credFuente = Configuracion::get('produccion.auth_prod_validada_fuente');
+        $credDetalle = $credOk
+            ? 'validadas'.($credEn ? ' el '.$credEn : '').($credFuente ? ' ('.$credFuente.')' : '')
+            : 'sin validar (correr dte:auth-test --prod y confirmar)';
 
-        return $this->check('credenciales', 'Credenciales producción validadas', $credOk,
-            $credOk ? 'validadas' : 'sin validar (correr dte:auth-test --prod y confirmar)');
+        return $this->check('credenciales', 'Credenciales producción validadas', $credOk, $credDetalle);
     }
 
     /** @return array{clave: string, label: string, ok: bool, detalle: string} */

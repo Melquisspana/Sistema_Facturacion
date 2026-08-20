@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Sistema\NotificacionesRespaldo;
 use Spatie\Backup\Notifications\Notifiable;
 use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
 use Spatie\Backup\Notifications\Notifications\BackupWasSuccessfulNotification;
@@ -236,7 +237,18 @@ return [
         'notifiable' => Notifiable::class,
 
         'mail' => [
-            'to' => 'your@example.com',
+            /*
+             * Destinatario de los avisos de respaldo. Se configura con
+             * BACKUP_NOTIFICACIONES_CORREO en el .env del entorno.
+             *
+             * El default NO es un correo real: es el centinela de
+             * NotificacionesRespaldo, con formato válido (spatie
+             * lanza InvalidConfig si no lo es, y rompería backup:run entero) pero en el
+             * TLD reservado .invalid. Salud del sistema lo reconoce y avisa que las
+             * notificaciones no están configuradas, en vez de dejar el 'your@example.com'
+             * de la plantilla, que parecía un destinatario ya puesto.
+             */
+            'to' => env('BACKUP_NOTIFICACIONES_CORREO', NotificacionesRespaldo::SIN_CONFIGURAR),
 
             'from' => [
                 'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),

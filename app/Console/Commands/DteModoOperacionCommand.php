@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Dte\DteTransmisionService;
+use App\Support\Dte\CoherenciaConfiguracionFiscal;
 use Illuminate\Console\Command;
 
 /**
@@ -50,6 +51,18 @@ class DteModoOperacionCommand extends Command
             $this->line('Candados activos:');
             foreach ($c['razones'] as $r) {
                 $this->line('  - '.$r);
+            }
+        }
+
+        // Incoherencias de configuración: no son candados (no bloquean por sí solas la
+        // transmisión), pero un modo "LISTO" con los ambientes cruzados o un mock activo
+        // en producción no significa lo que parece. Se listan aparte, sin secretos.
+        $problemas = CoherenciaConfiguracionFiscal::problemas();
+        if ($problemas !== []) {
+            $this->newLine();
+            $this->error('Incoherencias de configuración detectadas:');
+            foreach ($problemas as $p) {
+                $this->line('  - '.$p['label'].': '.$p['detalle']);
             }
         }
 

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Dte\CoherenciaConfiguracionFiscal;
 use Illuminate\Console\Command;
 use Symfony\Component\Finder\Finder;
 
@@ -28,6 +29,17 @@ class DteSeguridadCheckCommand extends Command
         $this->estado('APP_DEBUG', $debug ? 'true' : 'false', ! $debug);
         if ($debug) {
             $recomendaciones[] = 'Poné APP_DEBUG=false en producción.';
+        }
+
+        // --- Coherencia de la configuración fiscal (sin secretos, sin red) ---
+        // Tres estados que nadie más compara: ambientes cruzados (el ambiente del JSON
+        // contra el ambiente de las credenciales), NIT de firma distinto del NIT del
+        // emisor, y mocks activos con APP_ENV=production.
+        foreach (CoherenciaConfiguracionFiscal::checks() as $coherencia) {
+            $this->estado($coherencia['label'], $coherencia['detalle'], $coherencia['ok']);
+            if (! $coherencia['ok']) {
+                $recomendaciones[] = $coherencia['detalle'];
+            }
         }
 
         // --- Firma (sin mostrar la contraseña) ---

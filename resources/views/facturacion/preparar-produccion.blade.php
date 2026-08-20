@@ -60,7 +60,7 @@
 
                 <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
                     <span class="font-semibold">Conta: {{ $conta['establecimiento'] }}/{{ $conta['punto_venta'] }}, contingencia independiente.</span>
-                    Último CCF real confirmado ahí: {{ $conta['ultimo_ccf_externo'] ?? '—' }}. Es un sistema aparte
+                    Último CCF real confirmado ahí: {{ $conta['ultimo_ccf_externo'] ?? 'no configurado' }}. Es un sistema aparte
                     (solo informativo aquí); ya no se compara ni se exige alinear contra el sistema nuevo para poder emitir.
                 </div>
             </section>

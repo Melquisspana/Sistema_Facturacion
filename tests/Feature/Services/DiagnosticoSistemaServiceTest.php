@@ -39,6 +39,18 @@ class DiagnosticoSistemaServiceTest extends TestCase
         ]);
     }
 
+    /**
+     * Destinatario real para los avisos de respaldo. El default de config/backup.php es
+     * un centinela que significa "sin configurar" (spatie exige un correo con formato
+     * válido, así que no se puede dejar vacío), y el diagnóstico lo reporta como
+     * advertencia: sin destinatario, un respaldo que falla no le avisa a nadie. Por eso
+     * forma parte de "todo verde".
+     */
+    private function avisosRespaldoConfigurados(): void
+    {
+        config(['backup.notifications.mail.to' => 'avisos@ejemplo.com']);
+    }
+
     private function servicio(): DiagnosticoSistemaService
     {
         return app(DiagnosticoSistemaService::class);
@@ -48,6 +60,7 @@ class DiagnosticoSistemaServiceTest extends TestCase
     {
         WorkerHeartbeat::pulse();
         $this->respaldoValidoHoy();
+        $this->avisosRespaldoConfigurados();
 
         $d = $this->servicio()->evaluar();
 
@@ -118,6 +131,7 @@ class DiagnosticoSistemaServiceTest extends TestCase
         // desactivar ese flag no cambia el nivel global (nunca debería, no se lee acá).
         WorkerHeartbeat::pulse();
         $this->respaldoValidoHoy();
+        $this->avisosRespaldoConfigurados();
         \App\Models\Configuracion::set('correo.auto_envio', false);
 
         $d = $this->servicio()->evaluar();

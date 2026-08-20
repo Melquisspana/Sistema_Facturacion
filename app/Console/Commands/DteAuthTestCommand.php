@@ -2,8 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Configuracion;
 use App\Services\Dte\DteTransmisionAuthService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 
 /**
  * Prueba CONTROLADA del login/token contra el ambiente de PRUEBAS (apitest), sin
@@ -75,14 +77,43 @@ class DteAuthTestCommand extends Command
         $this->line('  login aceptado         : '.($r['login_aceptado'] ? 'SÍ' : 'no'));
         $this->newLine();
 
+        // ÚNICO escritor de `produccion.auth_prod_validada` en todo el sistema.
+        //
+        // Ese flag abre el check "Credenciales producción validadas" del preflight de
+        // emisión real. Hasta ahora se leía en cuatro lugares y no lo escribía nadie:
+        // solo se podía encender a mano con tinker o SQL — sin autor, sin fecha y sin
+        // ninguna evidencia de que la credencial funcionara de verdad. Por eso NO hay
+        // (ni debe haber) un interruptor manual en ninguna pantalla: el flag es el
+        // RESULTADO de este login-only, no una opinión del operador.
+        //
+        // Se escribe en los dos sentidos a propósito: un rechazo REVOCA una validación
+        // vieja, para que una credencial que dejó de servir no siga abriendo el
+        // preflight con el visto bueno de la semana pasada.
+        $this->persistirValidacion($r['login_aceptado'], $auth->fuenteCredenciales());
+
         if ($r['login_aceptado']) {
             $this->info('La credencial es VÁLIDA en PRODUCCIÓN (login OK). El token se DESCARTÓ (no se cachea).');
             $this->warn('=> Si en testing falla y en producción funciona, la credencial es de PRODUCCIÓN, no de pruebas.');
+            $this->line('  → Registrado: credenciales de producción validadas (habilita el check del preflight).');
         } else {
             $this->warn('La credencial tampoco fue aceptada en producción (revisar usuario/contraseña/formato).');
+            $this->line('  → Registrado: credenciales de producción NO validadas (el preflight queda cerrado).');
         }
         $this->warn('*** LOGIN-ONLY / TOKEN NO MOSTRADO NI CACHEADO / NO SE TRANSMITIÓ NINGÚN DTE / CANDADOS DE TRANSMISIÓN INTACTOS ***');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Persiste el resultado del login-only. Guarda además CUÁNDO y con QUÉ FUENTE de
+     * credenciales se validó (nombres de variables de entorno, nunca sus valores): sin
+     * esas dos cosas, un "validadas" sin fecha no se puede distinguir de uno de hace
+     * seis meses hecho con otra credencial.
+     */
+    private function persistirValidacion(bool $aceptado, string $fuente): void
+    {
+        Configuracion::set('produccion.auth_prod_validada', $aceptado);
+        Configuracion::set('produccion.auth_prod_validada_en', Carbon::now()->toDateTimeString());
+        Configuracion::set('produccion.auth_prod_validada_fuente', $fuente);
     }
 }

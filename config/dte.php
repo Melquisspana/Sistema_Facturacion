@@ -93,8 +93,9 @@ return [
     | Firma del DTE — FASE DE PREPARACIÓN. DESHABILITADA por defecto: el sistema
     | NO firma documentos todavía. Cuando se habilite, DteFirmaService usará el
     | firmador local del MH ('firmador.url') con el NIT del emisor y la clave del
-    | certificado (DTE_CERT_PASSWORD, en 'credenciales'). Solo placeholders aquí:
-    | NUNCA escribir certificados ni passwords en el repositorio (van en .env).
+    | certificado (DTE_CERT_PASSWORD, leída en 'firma.cert_password' de abajo, que es
+    | su ÚNICA fuente). Solo placeholders aquí: NUNCA escribir certificados ni
+    | passwords en el repositorio (van en .env).
     */
     'firma' => [
         // Interruptor maestro. En esta fase debe quedar en false (no se firma).
@@ -183,6 +184,11 @@ return [
         // Credenciales/token de la API de Hacienda. Solo desde .env, nunca en código.
         // El token se OBTIENE del servicio de autenticación (/seguridad/auth) con
         // usuario_api + password (form-urlencoded). Vigencia: pruebas 48h, prod 24h.
+        // DEPRECADAS: DTE_TRANSMISION_USER/PASSWORD son las credenciales LEGACY, previas
+        // a separar producción de apitest. Se conservan SOLO como respaldo del par de
+        // producción (ver 'usuario_produccion' abajo) para no romper lo que hoy funciona
+        // con CCF real. En un despliegue nuevo NO deben usarse: definí DTE_PROD_USER y
+        // DTE_PROD_PASSWORD. `dte:auth-check` informa cuál de las dos fuentes está en uso.
         'usuario_api' => env('DTE_TRANSMISION_USER', ''),
         'password' => env('DTE_TRANSMISION_PASSWORD', ''),
         'token' => env('DTE_TRANSMISION_TOKEN', ''),
@@ -197,6 +203,14 @@ return [
         'password_produccion' => env('DTE_PROD_PASSWORD', env('DTE_TRANSMISION_PASSWORD', '')),
         'usuario_testing' => env('DTE_TEST_USER', ''),
         'password_testing' => env('DTE_TEST_PASSWORD', ''),
+
+        // DIAGNÓSTICO del fallback anterior. Los valores de arriba ya vienen RESUELTOS:
+        // mirándolos es imposible saber si producción está usando DTE_PROD_* (explícitas)
+        // o cayó de vuelta a DTE_TRANSMISION_* (legacy, DEPRECADAS). Estas dos claves leen
+        // SOLO las explícitas, sin fallback, para que el diagnóstico pueda decir qué fuente
+        // está en uso sin revelar ningún valor. No las use nadie para autenticar.
+        'usuario_produccion_explicito' => env('DTE_PROD_USER', ''),
+        'password_produccion_explicito' => env('DTE_PROD_PASSWORD', ''),
     ],
 
     /*
@@ -262,14 +276,12 @@ return [
     ],
 
     /*
-    | Credenciales y secretos: SIEMPRE desde .env, nunca en el repositorio.
-    | Vacías en Fase 1.
+    | (Eliminado) El bloque 'credenciales' (DTE_API_USER / DTE_API_PASSWORD /
+    | password_certificado) no tenía NINGÚN consumidor: las credenciales reales de
+    | Hacienda viven en 'transmision' (usuario_produccion/testing) y la contraseña del
+    | certificado en 'firma.cert_password' (DTE_CERT_PASSWORD), que es su única fuente.
+    | Se quitó para que no haya dos claves distintas leyendo lo mismo.
     */
-    'credenciales' => [
-        'usuario_api' => env('DTE_API_USER', ''),
-        'password_api' => env('DTE_API_PASSWORD', ''),
-        'password_certificado' => env('DTE_CERT_PASSWORD', ''),
-    ],
 
     'tipos' => $tiposDte,
 

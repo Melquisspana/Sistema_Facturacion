@@ -477,6 +477,10 @@ class DashboardTest extends TestCase
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
         ]);
+        // "Todo en orden" ahora incluye tener a quién avisarle si un respaldo falla: el
+        // default de config/backup.php es un centinela que significa "sin configurar"
+        // (spatie exige formato de correo válido, no se puede dejar vacío).
+        config(['backup.notifications.mail.to' => 'avisos@ejemplo.com']);
 
         $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))
             ->assertOk()->assertSee('Todo en orden');

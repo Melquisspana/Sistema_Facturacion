@@ -6,6 +6,7 @@ use App\Enums\TipoDte;
 use App\Models\Configuracion;
 use App\Models\Dte;
 use App\Models\RespaldoEjecucion;
+use App\Support\Dte\CoherenciaConfiguracionFiscal;
 use App\Support\Dte\CorrelativoSistemaNuevo;
 use App\Support\WorkerHeartbeat;
 
@@ -77,8 +78,23 @@ class PreflightEmisionProduccion
 
         // Credenciales de producción validadas (login-only OK; lo confirma el operador).
         $credOk = Configuracion::getBool('produccion.auth_prod_validada', false);
-        $checks[] = $this->check('credenciales', 'Credenciales producción validadas', $credOk,
-            $credOk ? 'validadas' : 'sin validar (correr dte:auth-test --prod y confirmar)');
+        // Cuándo y con qué variables de entorno se validó (nunca los valores). Un
+        // "validadas" sin fecha no se distingue de uno de hace seis meses con otra
+        // credencial. Lo escribe únicamente `dte:auth-test --prod`.
+        $credEn = Configuracion::get('produccion.auth_prod_validada_en');
+        $credFuente = Configuracion::get('produccion.auth_prod_validada_fuente');
+        $credDetalle = $credOk
+            ? 'validadas'.($credEn ? ' el '.$credEn : '').($credFuente ? ' ('.$credFuente.')' : '')
+            : 'sin validar (correr dte:auth-test --prod y confirmar)';
+        $checks[] = $this->check('credenciales', 'Credenciales producción validadas', $credOk, $credDetalle);
+
+        // Coherencia de la configuración fiscal: ambientes cruzados (JSON vs transmisión),
+        // NIT de firma distinto del NIT del emisor, y mocks activos con APP_ENV=production.
+        // SOLO LECTURA: no corrige nada, solo impide que el readiness diga "listo" con la
+        // configuración contradiciéndose. Ver App\Support\Dte\CoherenciaConfiguracionFiscal.
+        foreach (CoherenciaConfiguracionFiscal::checks() as $coherencia) {
+            $checks[] = $coherencia;
+        }
 
         // Documento completo: CCF con cliente, productos y total > 0.
         $docOk = $dte->tipo_dte === TipoDte::CreditoFiscal
@@ -112,7 +128,14 @@ class PreflightEmisionProduccion
         // informativo, y ya no participa en el cálculo del número de este documento.
         $corr = CorrelativoSistemaNuevo::correlativo('03', '01');
         $interno = (int) ($corr?->ultimo_numero ?? 0);
-        $externo = (int) (Configuracion::get('produccion.ultimo_ccf_externo') ?? 1093);
+        // Último CCF real de Conta Portable (P001). Es un dato PURAMENTE INFORMATIVO:
+        // no participa en documento_actual ni en proximo_futuro (ver el comentario de
+        // abajo), así que no puede alterar numeración fiscal. Aun así ya no se inventa
+        // el 1093 histórico cuando la clave no está: un número que el sistema se
+        // inventó se lee igual que uno confirmado por el contador, y no lo es. Sin
+        // dato, es null y la pantalla dice "no configurado".
+        $externoRaw = Configuracion::get('produccion.ultimo_ccf_externo');
+        $externo = ($externoRaw === null || trim($externoRaw) === '') ? null : (int) $externoRaw;
 
         // Número del documento que ESTA acción va a emitir: si el CCF ya fue generado (ya
         // tiene numeroControl reservado), es el SUYO propio — no "interno + 1", porque
