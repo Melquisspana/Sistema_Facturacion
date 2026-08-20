@@ -99,19 +99,20 @@ class ResolucionAjustesTest extends TestCase
     // ------------------------------------------- una sola ubicación por clave
 
     /**
-     * Las claves de contabilidad/correo siguen viviendo en `configuraciones`.
-     * Guardarlas por la capa nueva NO puede dejar una copia en `ajustes_sistema`:
-     * dos filas con el mismo dato son un incidente esperando a ocurrir.
+     * UNA sola ubicación de escritura, y desde la fase 4 esa ubicación es la tabla
+     * nueva también para las claves de correo/contabilidad. Lo que este test fija
+     * —y fijaba antes de la mudanza— es que el valor NUNCA queda en las dos: dos
+     * filas con el mismo dato son un incidente esperando a ocurrir.
      */
-    public function test_una_clave_legacy_no_se_duplica_en_la_tabla_nueva(): void
+    public function test_una_clave_migrada_no_se_duplica_en_la_tabla_anterior(): void
     {
         $this->actingAs($this->admin());
 
         Ajustes::guardar('contabilidad.correo', 'conta@ejemplo.com');
 
-        $this->assertDatabaseHas('configuraciones', ['clave' => 'contabilidad.correo', 'valor' => 'conta@ejemplo.com']);
-        $this->assertDatabaseMissing('ajustes_sistema', ['clave' => 'contabilidad.correo']);
-        $this->assertSame(FuenteAjuste::BaseDeDatosLegacy, Ajustes::fuente('contabilidad.correo'));
+        $this->assertDatabaseHas('ajustes_sistema', ['clave' => 'contabilidad.correo', 'valor' => 'conta@ejemplo.com']);
+        $this->assertDatabaseMissing('configuraciones', ['clave' => 'contabilidad.correo']);
+        $this->assertSame(FuenteAjuste::BaseDeDatos, Ajustes::fuente('contabilidad.correo'));
     }
 
     /** Y al revés: una clave de la tabla nueva no escribe en la tabla anterior. */
@@ -135,14 +136,22 @@ class ResolucionAjustesTest extends TestCase
         $this->assertSame('previo@ejemplo.com', Ajustes::texto('contabilidad.correo'));
     }
 
-    /** Y lo que escribe la capa nueva lo sigue viendo el código antiguo. */
-    public function test_el_codigo_antiguo_ve_lo_que_escribe_la_capa_nueva(): void
+    /**
+     * Tras la mudanza, la tabla anterior YA NO es fuente de verdad de estas claves:
+     * lo que escribe la capa nueva no aparece ahí, y es correcto que no aparezca.
+     *
+     * La contrapartida es que ningún consumidor puede seguir leyéndolas con
+     * `Configuracion::` —todos pasan por `Ajustes`—, y eso se comprueba a nivel de
+     * comportamiento en MigracionLegacyTest y en los tests de los consumidores.
+     */
+    public function test_la_tabla_anterior_deja_de_ser_fuente_de_verdad(): void
     {
         $this->actingAs($this->admin());
 
         Ajustes::guardar('correo.auto_envio', true);
 
-        $this->assertTrue(Configuracion::getBool('correo.auto_envio', false));
+        $this->assertTrue(Ajustes::bool('correo.auto_envio', false));
+        $this->assertDatabaseMissing('configuraciones', ['clave' => 'correo.auto_envio']);
     }
 
     public function test_la_plantilla_de_correo_cae_a_su_valor_por_defecto(): void

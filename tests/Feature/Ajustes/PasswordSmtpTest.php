@@ -193,7 +193,7 @@ class PasswordSmtpTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('configuracion.correo.smtp.password.edit'))
             ->assertOk()
-            ->assertDontSee('Quitar contraseña guardada');
+            ->assertDontSee('Quitar valor guardado');
     }
 
     // -------------------------------------------------------------- fugas

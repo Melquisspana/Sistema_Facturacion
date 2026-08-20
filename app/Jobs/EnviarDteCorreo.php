@@ -3,8 +3,8 @@
 namespace App\Jobs;
 
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
+use App\Facades\Ajustes;
 use App\Mail\DteCorreo;
-use App\Models\Configuracion;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
@@ -57,7 +57,7 @@ class EnviarDteCorreo implements ShouldQueue
         try {
             $bytes = $pdf->bytes($dte);
             [$extra, $nombres] = $this->adjuntos($dte);
-            $plantilla = Configuracion::get('correo.plantilla');
+            $plantilla = Ajustes::texto('correo.plantilla');
 
             // CANDADO de correo real: fuera de producción (o con un mailer de prueba) NO se
             // llama al transporte. Se registra SIMULADO —el DTE conserva su estado— y el
@@ -137,7 +137,7 @@ class EnviarDteCorreo implements ShouldQueue
             $extra[] = ['contenido' => (string) Storage::disk($disco)->get($dte->json_generado_path), 'nombre' => 'dte-'.$dte->id.'.json', 'mime' => 'application/json'];
             $nombres[] = 'JSON';
         }
-        if (Configuracion::getBool('correo.adjuntar_jws', false)
+        if (Ajustes::bool('correo.adjuntar_jws', false)
             && filled($dte->json_firmado_path) && Storage::disk($disco)->exists($dte->json_firmado_path)) {
             $extra[] = ['contenido' => (string) Storage::disk($disco)->get($dte->json_firmado_path), 'nombre' => 'dte-'.$dte->id.'.jws', 'mime' => 'application/jose'];
             $nombres[] = 'JWS';

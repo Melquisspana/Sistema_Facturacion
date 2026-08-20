@@ -42,6 +42,19 @@
                 ['ruta' => 'configuracion.contabilidad.edit', 'patron' => 'configuracion.contabilidad.*', 'titulo' => 'Contabilidad'],
             ],
         ],
+        [
+            'titulo' => 'Integraciones',
+            'items' => [
+                ['ruta' => 'configuracion.integraciones.gmail', 'patron' => 'configuracion.integraciones.gmail*', 'titulo' => 'Gmail / Prontos Pagos'],
+                ['ruta' => 'configuracion.integraciones.documentos-recibidos', 'patron' => 'configuracion.integraciones.documentos-recibidos*', 'titulo' => 'Buzón de compras'],
+            ],
+        ],
+        [
+            'titulo' => 'Sistema',
+            'items' => [
+                ['ruta' => 'configuracion.sistema', 'patron' => 'configuracion.sistema*', 'titulo' => 'Respaldos y estado'],
+            ],
+        ],
     ];
 @endphp
 

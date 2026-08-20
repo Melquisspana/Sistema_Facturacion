@@ -295,8 +295,11 @@ class DteTransmisionTest extends TestCase
     {
         $this->habilitarTransmision();
         config()->set('dte.transmision.token', '');          // sin override → login real
-        config()->set('dte.transmision.usuario_api', 'facturador01');
-        config()->set('dte.transmision.password', 'PW_FAKE');
+        // Las claves de credenciales cambiaron a usuario_testing/password_testing
+        // (apitest y producción son cuentas distintas); las de abajo ya no las leía
+        // nadie, así que este test moría en el guard de credenciales en vez de
+        // llegar al login que quiere probar. La red sigue mockeada.
+        $this->credencialesApitestFicticias();
         Http::fake([
             '*/seguridad/auth' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer LOGINTOKEN']], 200),
             '*/fesv/recepciondte' => Http::response(['estado' => 'PROCESADO', 'selloRecibido' => 'S1'], 200),

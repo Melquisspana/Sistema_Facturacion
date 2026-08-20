@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Ajustes\Ajustes;
 use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
+use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
@@ -45,13 +46,13 @@ class AppServiceProvider extends ServiceProvider
         // o falta de soporte/credenciales, cae al Null (revisión deshabilitada).
         $this->app->bind(
             MailboxClient::class,
-            static function () {
-                $driver = strtolower((string) config('documentos_recibidos.mail.driver', 'none'));
-
-                return $driver === 'imap'
-                    ? new ImapMailboxClient
-                    : new NullMailboxClient;
-            }
+            // El driver ya es un ajuste administrable: se pregunta al resolver, no a
+            // config(), para que apagar la lectura desde la pantalla tenga efecto
+            // sin tocar el .env. El lector se construye por el contenedor porque
+            // ahora recibe su configuración inyectada.
+            static fn ($app) => $app->make(ConfiguracionDocumentosRecibidos::class)->lecturaActivada()
+                ? $app->make(ImapMailboxClient::class)
+                : new NullMailboxClient
         );
     }
 

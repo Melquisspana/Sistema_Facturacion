@@ -178,8 +178,12 @@ class CorreoContabilidadUnicoTest extends TestCase
         $this->assertNull($this->resolver()->direccion());
     }
 
-    /** Los datos siguen viviendo en la tabla `configuraciones`: nada se migró. */
-    public function test_el_valor_sigue_guardandose_en_la_tabla_de_siempre(): void
+    /**
+     * Una sola ubicación de escritura. Hasta la fase 3 era la tabla anterior; desde
+     * la 4 es `ajustes_sistema`. Lo que este test fija —y sigue fijando— es que
+     * NUNCA queda el mismo valor en las dos.
+     */
+    public function test_el_valor_se_guarda_en_una_sola_tabla(): void
     {
         $this->actingAs($this->admin())
             ->put(route('configuracion.contabilidad.update'), [
@@ -188,7 +192,7 @@ class CorreoContabilidadUnicoTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->assertDatabaseHas('configuraciones', ['clave' => 'contabilidad.correo', 'valor' => self::CORREO]);
-        $this->assertDatabaseMissing('ajustes_sistema', ['clave' => 'contabilidad.correo']);
+        $this->assertDatabaseHas('ajustes_sistema', ['clave' => 'contabilidad.correo', 'valor' => self::CORREO]);
+        $this->assertDatabaseMissing('configuraciones', ['clave' => 'contabilidad.correo']);
     }
 }

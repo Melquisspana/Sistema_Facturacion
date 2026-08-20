@@ -2,7 +2,9 @@
 
 namespace App\Services\DocumentosRecibidos;
 
+use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
+use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
@@ -22,9 +24,15 @@ class ImapMailboxClient implements MailboxClient
     /** @var array<string, mixed> */
     private array $cfg;
 
-    public function __construct()
+    /**
+     * La configuración llega del Centro de Configuración con la MISMA forma que
+     * tenía `config('documentos_recibidos.mail')`, para que el resto de esta clase
+     * no tenga que cambiar. Sigue siendo un lector de SOLO LECTURA: no borra, no
+     * mueve y no marca como leído.
+     */
+    public function __construct(ConfiguracionDocumentosRecibidos $configuracion)
     {
-        $this->cfg = (array) config('documentos_recibidos.mail', []);
+        $this->cfg = $configuracion->paraLector();
     }
 
     public function disponible(): bool
@@ -50,7 +58,7 @@ class ImapMailboxClient implements MailboxClient
             : 'Correo Yahoo/IMAP sin configurar';
     }
 
-    public function mensajesConAdjuntos(int $limite = 30, ?\Illuminate\Support\Carbon $desde = null): array
+    public function mensajesConAdjuntos(int $limite = 30, ?Carbon $desde = null): array
     {
         if (! $this->disponible()) {
             return [];

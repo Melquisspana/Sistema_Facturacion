@@ -3,7 +3,7 @@
 namespace App\Services\Dte;
 
 use App\Enums\TipoDte;
-use App\Models\Configuracion;
+use App\Facades\Ajustes;
 use App\Models\Dte;
 use App\Services\Dte\Concerns\ChecksProduccionComunes;
 use App\Support\Dinero;
@@ -130,7 +130,7 @@ class PreflightEmisionProduccionFactura
      */
     private function checkCorreoNoAutomatico(): array
     {
-        $autoEnvio = Configuracion::getBool('correo.auto_envio', false);
+        $autoEnvio = Ajustes::bool('correo.auto_envio', false);
 
         return $this->check('correo_auto', 'Correo automático desactivado (o revisado a propósito)', ! $autoEnvio,
             $autoEnvio

@@ -46,6 +46,13 @@ class DteInvalidacionUiTest extends TestCase
         // Responsable/solicitante REALES (el schema los exige); vienen de config en la UI.
         config()->set('dte.invalidacion.responsable', ['nombre' => 'Melqui Administrador', 'tipo_doc' => '13', 'num_doc' => '040000000']);
         config()->set('dte.invalidacion.solicita', ['nombre' => 'Calleja CxP', 'tipo_doc' => '36', 'num_doc' => '06141101690011']);
+        // Credenciales FICTICIAS de apitest: estos tests mockean toda la red, pero
+        // el servicio de autenticación aborta antes de llegar a ella si no hay
+        // ninguna. Sin esto, la suite se pone roja en cualquier máquina sin
+        // DTE_TEST_USER/DTE_TEST_PASSWORD en el .env — un rojo que no señala
+        // ninguna regresión. Ver Tests\TestCase::credencialesApitestFicticias().
+        $this->credencialesApitestFicticias();
+
     }
 
     private function usuario(string $rol): User

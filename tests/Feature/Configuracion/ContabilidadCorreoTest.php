@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Configuracion;
 
+use App\Facades\Ajustes;
 use App\Jobs\EnviarDteCorreo;
 use App\Mail\DteCorreo;
 use App\Models\Configuracion;
@@ -43,7 +44,7 @@ class ContabilidadCorreoTest extends TestCase
 
     public function test_por_defecto_enviar_copia_contabilidad_es_false(): void
     {
-        $this->assertFalse(Configuracion::getBool('contabilidad.enviar_copia', false));
+        $this->assertFalse(Ajustes::bool('contabilidad.enviar_copia', false));
     }
 
     public function test_guardar_configuracion_no_envia_ningun_correo(): void
@@ -59,8 +60,10 @@ class ContabilidadCorreoTest extends TestCase
             ->assertSessionHas('status');
 
         Configuracion::olvidarCache();
-        $this->assertSame('contabilidad@empresa.com', Configuracion::get('contabilidad.correo'));
-        $this->assertTrue(Configuracion::getBool('contabilidad.enviar_copia'));
+        // Desde la fase 4 estas claves viven en `ajustes_sistema`; se consultan por
+        // la API que las resuelve, no por la tabla en la que estaban antes.
+        $this->assertSame('contabilidad@empresa.com', Ajustes::texto('contabilidad.correo'));
+        $this->assertTrue(Ajustes::bool('contabilidad.enviar_copia'));
 
         // Guardar NO manda correos.
         Mail::assertNothingSent();
@@ -81,8 +84,8 @@ class ContabilidadCorreoTest extends TestCase
         $this->simularProduccionCorreo(); // el BCC solo viaja cuando el envío es real
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
-        Configuracion::set('contabilidad.correo', 'contabilidad@empresa.com');
-        Configuracion::set('contabilidad.enviar_copia', true);
+        Ajustes::guardarComoSistema('contabilidad.correo', 'contabilidad@empresa.com');
+        Ajustes::guardarComoSistema('contabilidad.enviar_copia', true);
 
         $envio = $this->crearEnvioPendiente();
         (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
@@ -98,7 +101,7 @@ class ContabilidadCorreoTest extends TestCase
         $this->simularProduccionCorreo();
         Mail::fake();
         $this->seed(DatosInicialesNegritaSeeder::class);
-        Configuracion::set('contabilidad.enviar_copia', false);
+        Ajustes::guardarComoSistema('contabilidad.enviar_copia', false);
 
         $envio = $this->crearEnvioPendiente();
         (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
