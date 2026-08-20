@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Contabilidad;
 
 use App\Http\Controllers\Controller;
 use App\Mail\PaqueteContabilidadCorreo;
-use App\Models\Configuracion;
 use App\Models\DocumentoRecibido;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\Reportes\ReporteContadoraQuery;
+use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -220,9 +220,7 @@ class PaqueteContabilidadController extends Controller
     /** Correo de contabilidad configurado, o null si no existe o no es válido. */
     private function correoContabilidad(): ?string
     {
-        $correo = trim((string) Configuracion::get('contabilidad.correo'));
-
-        return $correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL) ? $correo : null;
+        return app(CorreoContabilidad::class)->direccion();
     }
 
     /** Registra la auditoría del intento de envío (usuario, destino, rango, conteos, ZIP, estado). */

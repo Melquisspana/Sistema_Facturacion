@@ -7,6 +7,7 @@ use App\Models\Configuracion;
 use App\Models\DteEnvio;
 use App\Models\User;
 use App\Services\Dte\DtePdfService;
+use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -99,12 +100,7 @@ class EnviarDteCorreo implements ShouldQueue
      */
     private function correoContabilidad(): ?string
     {
-        if (! Configuracion::getBool('contabilidad.enviar_copia', false)) {
-            return null;
-        }
-        $correo = strtolower(trim((string) Configuracion::get('contabilidad.correo')));
-
-        return ($correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL)) ? $correo : null;
+        return app(CorreoContabilidad::class)->copiaOculta();
     }
 
     /** Si el job falla de forma fatal (deserialización, timeout duro), deja el error. */

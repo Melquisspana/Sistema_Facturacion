@@ -511,9 +511,12 @@ class DteController extends Controller
         // Indicadores SOLO LECTURA para la ficha (no cambian nada):
         //  - copia a contabilidad activa (BCC en el envío manual del correo).
         //  - si el documento ya cae en el Reporte contadora (aceptado REAL ambiente 01).
+        // Misma fuente que usa el job al enviar (CorreoContabilidad): la ficha no
+        // puede decir "va copia a X" mientras el envío resuelve otra cosa.
+        $contabilidad = app(\App\Support\Contabilidad\CorreoContabilidad::class);
         $copiaContabilidad = [
-            'activa' => \App\Models\Configuracion::getBool('contabilidad.enviar_copia', false),
-            'correo' => \App\Models\Configuracion::get('contabilidad.correo'),
+            'activa' => $contabilidad->enviarCopia(),
+            'correo' => $contabilidad->direccion(),
         ];
         $enReporteContadora = $dte->estado === EstadoDte::Aceptado
             && Dte::whereKey($dte->id)->aceptadoRealMh()->exists();
