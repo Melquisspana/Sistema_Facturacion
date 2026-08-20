@@ -14,9 +14,7 @@
     $esAdmin = $usuario->hasRole('administrador');
     $veAuditoria = $usuario->can('auditoria.ver');
     $vePpq = $usuario->can('ppq.ver');
-    $puedeGestionarPpq = $usuario->can('ppq.gestionar');
     $veExportaciones = $usuario->can('exportaciones.ver');
-    $puedeGestionarExportaciones = $usuario->can('exportaciones.gestionar');
     $veCompras = $usuario->can('documentos-recibidos.ver');
     $veReportes = $usuario->can('reportes.ver');
     $veContabilidad = $veCompras || $veReportes; // grupo "Contabilidad" del sidebar
@@ -28,15 +26,27 @@
     // Activos por item (rutas actuales, sin cambios de lógica).
     $enPreparar = request()->routeIs('facturacion.preparar-produccion');
     $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
-    // "Facturación" cubre el listado y las pantallas de creación (CCF, NC, factura,
-    // exportación), que ya no tienen enlace propio en el sidebar. La invalidación ya no
+    // "Documentos fiscales" cubre el listado y las pantallas de creación (CCF, NC,
+    // factura, exportación), que no tienen enlace propio en el sidebar: crear es una
+    // acción del listado y del dashboard, no una categoría. La invalidación tampoco
     // tiene enlace lateral: sus acciones viven dentro de la ficha de cada documento.
-    $enCcfFacturas = request()->routeIs('facturacion.*') && ! $enPreparar && ! $enReporteContadora;
+    $enDocumentosFiscales = request()->routeIs('facturacion.*') && ! $enPreparar && ! $enReporteContadora;
 
-    $enNuevaLista = request()->routeIs('exportaciones.create');
     $enExpClientes = request()->routeIs('exportaciones.clientes.*');
     $enExpProductos = request()->routeIs('exportaciones.productos.*');
-    $enListasEmpaque = request()->routeIs('exportaciones.*') && ! $enNuevaLista && ! $enExpClientes && ! $enExpProductos;
+    // "Nueva lista de empaque" salió del sidebar (sigue como botón del listado y del
+    // dashboard), así que crear una lista ahora resalta su propia sección.
+    $enListasEmpaque = request()->routeIs('exportaciones.*') && ! $enExpClientes && ! $enExpProductos;
+
+    // Grupos COLAPSABLES: cuál contiene la página actual. Se calcula acá —y no dentro
+    // de cada grupo— para que el grupo de la ruta activa nazca abierto pase lo que pase
+    // en localStorage. Es presentación pura: no autoriza nada.
+    $grupoVentasActivo = request()->routeIs('clientes.*', 'productos.*') || $enDocumentosFiscales || $enPreparar;
+    $grupoCobrosActivo = request()->routeIs('ppq.*');
+    $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
+    $grupoExportacionesActivo = request()->routeIs('exportaciones.*');
+    $grupoAdministracionActivo = request()->routeIs('usuarios.*', 'auditoria.*', 'importaciones.*');
+    $grupoConfiguracionActivo = request()->routeIs('configuracion.*');
 @endphp
 
 {{-- Navegación: topbar fija (logo + usuario; los badges de modo DTE aparecen SOLO

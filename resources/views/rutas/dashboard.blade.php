@@ -1,7 +1,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Rutas / Cobros</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Cobros</h2>
             <p class="text-xs text-gray-500 dark:text-paper-400">{{ $desde->translatedFormat('d M Y') }} → {{ $hasta->translatedFormat('d M Y') }}</p>
         </div>
     </x-slot>
