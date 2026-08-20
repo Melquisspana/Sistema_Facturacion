@@ -29,13 +29,23 @@ enum AreaSistema: string
     case Planta = 'planta';
     case Rutas = 'rutas';
 
-    /** Etiqueta visible en la UI (selector superior y sidebar). */
+    /**
+     * Etiqueta visible en la UI (selector superior y sidebar). Es lo ÚNICO
+     * presentacional de este enum: cambiarla no toca el value del case, ni el
+     * permiso de entrada, ni la ruta de aterrizaje, ni el prefijo de las URL.
+     *
+     * `Rutas` se muestra como «Cobros» —y no «Rutas / Cobros»— porque el nombre
+     * del área es lo que se cobra, no el vehículo con el que se llega. El nombre
+     * TÉCNICO sigue siendo «rutas» en todos lados (case, permisos rutas.*, prefijo
+     * /rutas-cobros, nombres de ruta rutas.*), igual que «planta» sigue siendo el
+     * nombre técnico de «Producción».
+     */
     public function label(): string
     {
         return match ($this) {
             self::Facturacion => 'Facturación',
             self::Planta => 'Producción',
-            self::Rutas => 'Rutas / Cobros',
+            self::Rutas => 'Cobros',
         };
     }
 

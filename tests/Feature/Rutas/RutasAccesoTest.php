@@ -33,7 +33,7 @@ class RutasAccesoTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSee('Rutas / Cobros');
+            ->assertSee('Cobros');
     }
 
     public function test_los_demas_roles_reciben_403_en_todas_las_pantallas(): void

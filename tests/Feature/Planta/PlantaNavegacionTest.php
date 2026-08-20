@@ -119,7 +119,7 @@ class PlantaNavegacionTest extends TestCase
             ->assertOk();
 
         $resp->assertSee(self::MARCADOR_SELECTOR, false);
-        $resp->assertSee('Rutas / Cobros');
+        $resp->assertSee('Cobros');
         // Se comprueba por el ENLACE al área y no por la palabra «Producción»: en el
         // dashboard de Facturación esa palabra ya aparece como ambiente fiscal del DTE
         // («Ambiente: Producción»), que no tiene nada que ver con el área de planta.

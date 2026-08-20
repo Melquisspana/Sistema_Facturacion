@@ -1,33 +1,39 @@
-{{-- Sidebar del área Rutas / Cobros. Deliberadamente SIN enlaces de Facturación,
-     PPQ ni Planta: quien trabaja rutas no navega documentos fiscales desde acá.
-     Se irán agregando entradas a medida que existan rutas reales; nunca enlaces
-     rotos.
+{{-- Sidebar del área Cobros (nombre técnico «rutas»: prefijo /rutas-cobros,
+     permisos rutas.*, App\Enums\AreaSistema::Rutas). Deliberadamente SIN enlaces
+     de Facturación ni de Planta: quien trabaja cobros no navega documentos
+     fiscales desde acá.
+
+     La única excepción es Prontos Pagos, que ES cobro aunque su ruta viva bajo
+     /ppq (área Facturación). Se dibuja acá porque es donde el usuario lo busca;
+     al entrar, la sidebar cambia sola a la de Facturación, que presenta el mismo
+     bloque «Cobros → Prontos Pagos». No se movió ninguna ruta ni permiso.
 
      Ocultar no autoriza: cada grupo de rutas lleva su propio middleware. --}}
-@php
-    // Mismo estilo de título de grupo que los otros sidebars.
-    $tituloGrupo = 'mb-1.5 flex items-center gap-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-paper-500';
-@endphp
 <nav class="space-y-6 px-3 py-5">
 
-    <div>
-        <p class="{{ $tituloGrupo }}"><x-sidebar-icon name="rutas" />Rutas / Cobros</p>
-        <div class="space-y-0.5">
-            <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard')">Inicio</x-sidebar-link>
-        </div>
-    </div>
+    <x-sidebar-group titulo="Cobros" icono="rutas">
+        <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard')">Resumen</x-sidebar-link>
+    </x-sidebar-group>
 
-    {{-- Operación. Salidas va primero porque es lo que se mira todos los días;
-         el catálogo de rutas se toca de vez en cuando. --}}
-    <div>
-        <p class="{{ $tituloGrupo }}">Operación</p>
-        <div class="space-y-0.5">
-            <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas</x-sidebar-link>
-            {{-- La bandeja cruza todas las salidas: es donde se contesta «qué me
-                 falta» sin abrir viaje por viaje. Va pegada a Salidas porque se
-                 usan juntas. --}}
-            <x-sidebar-link :href="route('rutas.documentos.index')" :active="request()->routeIs('rutas.documentos.*')">Documentos</x-sidebar-link>
-            <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Rutas</x-sidebar-link>
-        </div>
-    </div>
+    {{-- Operación. Salidas va primero porque es lo que se mira todos los días; el
+         catálogo de rutas se toca de vez en cuando. La bandeja cruza todas las
+         salidas: es donde se contesta «qué me falta cobrar» sin abrir viaje por
+         viaje, y por eso va pegada a Salidas. --}}
+    <x-sidebar-group titulo="Operación" icono="operacion" clave="rutas-operacion"
+                     :activo="request()->routeIs('rutas.salidas.*', 'rutas.documentos.*', 'rutas.rutas.*')">
+        <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas</x-sidebar-link>
+        <x-sidebar-link :href="route('rutas.documentos.index')" :active="request()->routeIs('rutas.documentos.*')">Documentos por cobrar</x-sidebar-link>
+        <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Rutas</x-sidebar-link>
+    </x-sidebar-group>
+
+    {{-- Prontos Pagos: mismo permiso de siempre (ppq.ver). Se comprueba aparte del
+         permiso del área porque son dos puertas distintas: hoy solo el administrador
+         tiene rutas.ver y también ppq.ver, pero el enlace no debe aparecer para
+         quien no pueda entrar. --}}
+    @can('ppq.ver')
+        <x-sidebar-group titulo="Prontos Pagos" icono="ppq" clave="rutas-ppq" :activo="request()->routeIs('ppq.*')">
+            <x-sidebar-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index', 'ppq.albaranes_por_fecha')">Buscar CCF / NC</x-sidebar-link>
+            <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
+        </x-sidebar-group>
+    @endcan
 </nav>

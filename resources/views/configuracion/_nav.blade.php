@@ -5,38 +5,38 @@
         ['ruta' => 'configuracion.puntos-venta.index', 'patron' => 'configuracion.puntos-venta.*', 'titulo' => 'Puntos de venta'],
         ['ruta' => 'configuracion.correlativos.index', 'patron' => 'configuracion.correlativos.*', 'titulo' => 'Correlativos'],
         ['ruta' => 'configuracion.contabilidad.edit', 'patron' => 'configuracion.contabilidad.*', 'titulo' => 'Contabilidad'],
+        // Correo: la pantalla existía (controlador, vista y rutas GET/PUT) pero no
+        // estaba en ninguna pestaña ni enlace, así que solo se llegaba escribiendo
+        // la URL. Mismo permiso que el resto del grupo (configuracion.gestionar):
+        // no se abre acceso nuevo, se cierra un hueco de navegación.
+        ['ruta' => 'configuracion.correo.edit', 'patron' => 'configuracion.correo.*', 'titulo' => 'Correo'],
     ];
 @endphp
 
-<nav class="flex flex-wrap gap-2 border-b border-gray-200 mb-6">
+{{-- FUENTE ÚNICA de las pestañas del Centro de Configuración. Ninguna vista dibuja
+     este HTML por su cuenta: todas lo reciben a través de <x-configuracion-layout>,
+     así que agregar o renombrar una sección se hace en un solo sitio.
+
+     UNA SOLA FILA, siempre. En escritorio las seis pestañas caben de sobra; cuando
+     no caben (móvil, ventana angosta) la barra se DESPLAZA en horizontal en vez de
+     partirse, que es lo que dejaba una pestaña suelta en un segundo renglón:
+     `shrink-0` impide que se compriman y `whitespace-nowrap` que se corten.
+
+     El borde inferior de esta barra es además el SEPARADOR entre la navegación y el
+     contenido de cada pantalla; por eso vive acá y no en el shell.
+
+     Solo navegación: mismas rutas y mismo permiso de siempre. El patrón `.*` deja la
+     pestaña activa también en las subpantallas (crear/editar) de cada sección. --}}
+<nav aria-label="Secciones de configuración"
+     class="flex gap-1 overflow-x-auto border-b border-gray-200 px-6 [scrollbar-width:thin]">
     @foreach ($tabs as $tab)
         @php $activo = request()->routeIs($tab['patron']); @endphp
         <a href="{{ route($tab['ruta']) }}"
-           class="px-4 py-2 text-sm font-medium rounded-t-md {{ $activo ? 'bg-white border border-b-0 border-gray-200 text-indigo-600' : 'text-gray-500 hover:text-gray-700' }}">
+           @if ($activo) aria-current="page" @endif
+           class="shrink-0 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition {{ $activo
+               ? 'border-indigo-600 text-indigo-600'
+               : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }}">
             {{ $tab['titulo'] }}
         </a>
     @endforeach
 </nav>
-
-@if (session('status'))
-    <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-4 text-sm text-green-700">
-        {{ session('status') }}
-    </div>
-@endif
-
-@if (session('error'))
-    <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
-        {{ session('error') }}
-    </div>
-@endif
-
-@if ($errors->any())
-    <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
-        <p class="font-medium">Corrige los siguientes errores:</p>
-        <ul class="list-disc list-inside mt-1">
-            @foreach ($errors->all() as $error)
-                <li>{{ $error }}</li>
-            @endforeach
-        </ul>
-    </div>
-@endif
