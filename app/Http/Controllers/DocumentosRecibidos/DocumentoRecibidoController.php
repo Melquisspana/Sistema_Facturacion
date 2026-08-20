@@ -3,13 +3,13 @@
 namespace App\Http\Controllers\DocumentosRecibidos;
 
 use App\Http\Controllers\Controller;
-use App\Models\Configuracion;
 use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\AdjuntosDocumentoRecibido;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\EnvioDocumentoRecibidoService;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
+use App\Support\Contabilidad\CorreoContabilidad;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -173,9 +173,7 @@ class DocumentoRecibidoController extends Controller
     /** Correo de contabilidad configurado, o null si no existe o no es válido. */
     private function correoContabilidad(): ?string
     {
-        $correo = strtolower(trim((string) Configuracion::get('contabilidad.correo')));
-
-        return ($correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL)) ? $correo : null;
+        return app(CorreoContabilidad::class)->direccion();
     }
 
     private function mb(int $bytes): string

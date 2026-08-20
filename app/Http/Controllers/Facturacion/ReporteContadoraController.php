@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Facturacion;
 
 use App\Http\Controllers\Controller;
-use App\Models\Configuracion;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Reportes\ReporteContadoraExcel;
 use App\Services\Reportes\ReporteContadoraQuery;
+use App\Support\Contabilidad\CorreoContabilidad;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -113,8 +113,6 @@ class ReporteContadoraController extends Controller
     /** Correo de contabilidad configurado, o null si no existe o no es válido. */
     private function correoContabilidad(): ?string
     {
-        $correo = strtolower(trim((string) Configuracion::get('contabilidad.correo')));
-
-        return ($correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL)) ? $correo : null;
+        return app(CorreoContabilidad::class)->direccion();
     }
 }

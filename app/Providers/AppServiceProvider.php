@@ -18,6 +18,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Centro de Configuración. Singleton porque el resolver memoriza el mapa de
+        // overrides mientras la huella de caché no cambie: compartir la instancia
+        // dentro de la petición evita releer la tabla una vez por consumidor.
+        // El catálogo y el conversor no tienen estado mutable; el repositorio recibe
+        // el store de caché POR DEFECTO (compartido entre web, worker y CLI), que es
+        // lo que permite que una escritura llegue a todos los procesos.
+        $this->app->singleton(\App\Ajustes\RepositorioAjustes::class, static fn ($app) => new \App\Ajustes\RepositorioAjustes(
+            $app->make(\Illuminate\Contracts\Cache\Factory::class)->store()
+        ));
+        $this->app->singleton(\App\Ajustes\CatalogoAjustes::class);
+        $this->app->singleton(\App\Ajustes\Ajustes::class);
+
         // Fuente de correo de "Documentos recibidos" (INDEPENDIENTE de Gmail/PPQ):
         // driver 'imap' → lector IMAP de solo lectura (Yahoo); cualquier otro valor,
         // o falta de soporte/credenciales, cae al Null (revisión deshabilitada).

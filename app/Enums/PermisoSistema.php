@@ -109,6 +109,16 @@ enum PermisoSistema: string
     case AuditoriaVer = 'auditoria.ver';
     case UsuariosGestionar = 'usuarios.gestionar';
     case ConfiguracionGestionar = 'configuracion.gestionar';
+    // Configuración de impacto FISCAL (nivel N3 del Centro de Configuración):
+    // ambiente del MH, interruptores de firma y transmisión, credenciales de
+    // Hacienda, correlativos. Va SEPARADO de `configuracion.gestionar` a
+    // propósito: quien administra el correo de contabilidad o la plantilla del
+    // mensaje no tiene por qué poder poner el sistema a emitir en producción,
+    // y hasta ahora un solo permiso cubría ambas cosas.
+    //
+    // Hoy solo lo tiene el administrador (recibe todos). No amplía el acceso de
+    // ningún rol existente: es un permiso NUEVO que nadie más recibe.
+    case ConfiguracionCritica = 'configuracion.critica';
     case ImportacionesGestionar = 'importaciones.gestionar';
     case SistemaSalud = 'sistema.salud';
     case PreparacionVer = 'preparacion.ver';
