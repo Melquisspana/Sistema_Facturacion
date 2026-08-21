@@ -6,6 +6,8 @@ use App\Ajustes\Ajustes;
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Ajustes\Correo\PruebaConexionSmtp;
 use App\Ajustes\Definicion\FuenteAjuste;
+use App\Ajustes\Fiscal\EstadoFirmador;
+use App\Ajustes\Fiscal\EstadoHaciendaApi;
 use App\Ajustes\Verificaciones\RegistroVerificaciones;
 use App\Models\GmailCuenta;
 use App\Models\RespaldoEjecucion;
@@ -54,13 +56,17 @@ class ResumenConfiguracion
     /** @return array<int, TarjetaResumen> */
     public function tarjetas(): array
     {
-        $ultimas = $this->verificaciones->ultimasDe([PruebaConexionSmtp::CLAVE]);
+        $ultimas = $this->verificaciones->ultimasDe([
+            PruebaConexionSmtp::CLAVE,
+            EstadoFirmador::CLAVE_VERIFICACION,
+            EstadoHaciendaApi::CLAVE_VERIFICACION,
+        ]);
 
         return [
             $this->ambienteFiscal(),
             $this->modoOperacion(),
-            $this->firmador(),
-            $this->apiHacienda(),
+            $this->firmador($ultimas[EstadoFirmador::CLAVE_VERIFICACION] ?? null),
+            $this->apiHacienda($ultimas[EstadoHaciendaApi::CLAVE_VERIFICACION] ?? null),
             $this->smtp($ultimas[PruebaConexionSmtp::CLAVE] ?? null),
             $this->gmail(),
             $this->imap(),
@@ -101,6 +107,8 @@ class ResumenConfiguracion
             lineas: ['Código CAT-001: '.$ambiente],
             fuente: $this->fuente('dte.ambiente'),
             advertencia: 'Solo se cambia desde el archivo de configuración del servidor.',
+            ruta: $this->ruta('configuracion.fiscal.hacienda'),
+            etiquetaRuta: 'Ver detalle',
         );
     }
 
@@ -125,7 +133,7 @@ class ResumenConfiguracion
         );
     }
 
-    private function firmador(): TarjetaResumen
+    private function firmador(?VerificacionConfiguracion $ultima): TarjetaResumen
     {
         $habilitada = (bool) config('dte.firma.enabled', false);
         $mock = (bool) config('dte.firma.mock', false);
@@ -150,12 +158,18 @@ class ResumenConfiguracion
             },
             lineas: $lineas,
             fuente: 'Archivo de configuración / .env',
+            ultimaVerificacion: $ultima?->created_at,
+            resultadoVerificacion: $ultima?->resultado->etiqueta(),
             // Sin ping: lo único honesto que se puede decir es qué hay configurado.
+            // Lo que sí hubo se lee del historial, que alguien disparó a mano desde
+            // la pantalla del firmador.
             advertencia: 'Estado declarado en la configuración; esta pantalla no comprueba si el servicio responde.',
+            ruta: $this->ruta('configuracion.fiscal.firmador'),
+            etiquetaRuta: 'Ver detalle',
         );
     }
 
-    private function apiHacienda(): TarjetaResumen
+    private function apiHacienda(?VerificacionConfiguracion $ultima): TarjetaResumen
     {
         $habilitada = (bool) config('dte.transmision.enabled', false);
         $ambiente = strtolower((string) config('dte.transmision.ambiente', 'testing'));
@@ -181,7 +195,11 @@ class ResumenConfiguracion
                 'Transmisión: '.($habilitada ? 'habilitada' : 'deshabilitada'),
             ],
             fuente: 'Archivo de configuración / .env',
-            advertencia: 'Solo lectura por ahora: las credenciales del Ministerio de Hacienda no se editan desde la aplicación.',
+            ultimaVerificacion: $ultima?->created_at,
+            resultadoVerificacion: $ultima?->resultado->etiqueta(),
+            advertencia: 'Las credenciales del Ministerio de Hacienda no se editan desde la aplicación, y no es algo pendiente: con ellas se emiten documentos fiscales.',
+            ruta: $this->ruta('configuracion.fiscal.hacienda'),
+            etiquetaRuta: 'Ver detalle',
         );
     }
 

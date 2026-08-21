@@ -32,7 +32,11 @@
         [
             'titulo' => 'Facturación electrónica',
             'items' => [
+                ['ruta' => 'configuracion.fiscal.hacienda', 'patron' => 'configuracion.fiscal.hacienda*', 'titulo' => 'Hacienda / API'],
+                ['ruta' => 'configuracion.fiscal.firmador', 'patron' => 'configuracion.fiscal.firmador*', 'titulo' => 'Certificado y firmador'],
                 ['ruta' => 'configuracion.correlativos.index', 'patron' => 'configuracion.correlativos.*', 'titulo' => 'Correlativos'],
+                ['ruta' => 'configuracion.fiscal.parametros', 'patron' => 'configuracion.fiscal.parametros*', 'titulo' => 'Parámetros fiscales'],
+                ['ruta' => 'configuracion.fiscal.invalidacion', 'patron' => 'configuracion.fiscal.invalidacion*', 'titulo' => 'Invalidación'],
             ],
         ],
         [

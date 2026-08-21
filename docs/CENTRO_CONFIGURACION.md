@@ -337,10 +337,7 @@ secretos.
 | `mail.smtp.password` | N2 | Nueva (cifrado) | `mail.mailers.smtp.password` |
 | `mail.from.address` | N2 | Nueva | `mail.from.address` |
 | `mail.from.name` | N2 | Nueva | `mail.from.name` |
-| `dte.ambiente` | **N3** | Ninguna (solo lectura) | `dte.ambiente` |
-| `dte.transmision.ambiente` | **N3** | Ninguna (solo lectura) | `dte.transmision.ambiente` |
-| `dte.firma.enabled` | **N3** | Ninguna (solo lectura) | `dte.firma.enabled` |
-| `dte.transmision.enabled` | **N3** | Ninguna (solo lectura) | `dte.transmision.enabled` |
+| **secciones `fiscal`, `fiscal_parametros`, `fiscal_invalidacion`** (~30 claves) | N2/**N3** | Ninguna (solo lectura) | `config/dte.php` — ver §25 |
 | `ppq.gmail.enabled` | N2 | Nueva | `ppq.gmail.enabled` |
 | `ppq.gmail.client_id` | N2 | Nueva | `ppq.gmail.client_id` |
 | `ppq.gmail.client_secret` | N2 | Nueva (cifrado) | `ppq.gmail.client_secret` |
@@ -733,7 +730,169 @@ activada en producción.
 
 ---
 
-## 25. Hacia un producto instalable
+## 25. Configuración → Facturación electrónica
+
+Cuatro pantallas —Hacienda / API, Certificado y firmador, Parámetros fiscales,
+Invalidación— más Correlativos, que ya existía. Todas de **SOLO LECTURA**: no hay
+un solo `PUT` en el grupo. Los dos únicos `POST` son comprobaciones, no cambios.
+
+Código: `app/Ajustes/Fiscal/`.
+
+### Por qué nada es editable todavía
+
+Los ~30 parámetros fiscales están **declarados** en el catálogo y **clasificados**,
+pero ninguno tiene dónde escribirse (`Persistencia::Ninguna`). No es prudencia
+genérica: sus consumidores leen `config()`. Abrir el formulario antes de cambiar
+esos consumidores daría lo peor de los dos mundos — una pantalla que dice
+«guardado» y no cambia nada en el documento siguiente. Es el fallo que esta fase
+tenía el encargo de *detectar*, no de introducir.
+
+Cada uno se abrirá junto con su consumidor y con la prueba que demuestre que el
+valor guardado llega al documento.
+
+### La clasificación
+
+`Editabilidad` responde «¿hay hoy dónde escribir esto?». No responde «¿debería
+poder administrarse alguna vez desde una pantalla, y con cuánta ceremonia?». Para
+eso está `ClasificacionFiscal`, con cinco valores:
+
+| Clasificación | Qué significa | Ejemplos |
+|---|---|---|
+| `SoloLectura` | Se muestra; no se edita nunca. Lo fija la ley o el catálogo del MH. | `dte.iva_tasa`, `dte.retencion_iva_tasa`, `receptor_obligatorio_desde`, `dte.invalidacion.version` |
+| `EditableNormal` | Futuro campo N1. | (ninguno todavía) |
+| `EditableN2` | Futuro campo con confirmación. | timeouts, User-Agent, umbral de retención, forma de pago, plazo de crédito, defaults de exportación, responsable/solicitante de invalidación |
+| `CriticaN3` | Ceremonia fuerte. Cambiarlo altera la validez fiscal. | ambientes, URLs y endpoints del MH, NIT del certificado, URL del firmador, **todos los candados** |
+| `SoloServidor` | No debe existir como ajuste web, ni con ceremonia. | credenciales del MH, token, contraseña del certificado, documentos blindados |
+
+Los `SoloServidor` **no están declarados en el catálogo**. Es estructural, no una
+convención: el catálogo es una lista blanca, y lo que no está en ella no se lee ni
+se escribe por esta capa. La pantalla dice si están configuradas y de qué juego de
+variables salen, que es lo que hace falta para administrarlas sin poder tocarlas.
+
+### Por qué las credenciales del MH no se guardan cifradas
+
+Podrían, igual que la del SMTP y la de Gmail. La diferencia no es técnica: es qué
+habilita quien las obtiene. Con la contraseña del SMTP se manda correo en nombre de
+la empresa; con estas se **emiten documentos fiscales** en su nombre. Una pantalla
+que las escriba convierte «una sesión de administrador abierta» en «capacidad de
+facturar», y ninguna ceremonia arregla eso — la ceremonia protege del error, no de
+quien ya entró.
+
+Lo mismo vale para `DTE_CERT_PASSWORD` y, por extensión, para `dte.firmador.url`:
+a esa dirección se le manda la contraseña del certificado en cada firma, así que
+poder cambiarla desde la web es poder redirigir esa contraseña. Por eso es N3 pese
+a apuntar a un servicio local.
+
+### El certificado no está en esta aplicación
+
+El archivo `<NIT>.crt` lo custodia el firmador oficial del MH, un servicio Java
+aparte. La aplicación le manda el NIT y la contraseña y recibe el documento
+firmado; su interfaz son dos rutas (`/firmardocumento` y `/status`) y ninguna
+devuelve datos del certificado.
+
+De ahí que la pantalla **no muestre huella SHA-256, fecha de emisión ni
+vencimiento**: calcularlos exige abrir el `.crt`. Subirlo por la web pondría el
+material de firma en un segundo sitio, alcanzable desde una sesión de navegador, a
+cambio de tres datos informativos. El aviso de vencimiento se resuelve mejor
+leyendo el certificado en el servidor donde ya está, sin duplicarlo.
+
+Lo que sí se comprueba es lo que de verdad rompe documentos: que el NIT del
+certificado coincida con el del emisor (`CoherenciaConfiguracionFiscal::checkNitFirma()`).
+Si divergen, cada documento se firma con el certificado de otro contribuyente y
+nada más en el sistema lo detecta.
+
+### Los candados, por fin en un sitio
+
+`InventarioFiscal::candados()` reúne los quince interruptores que hasta ahora
+vivían repartidos entre `DteTransmisionService::evaluarCandados()`, el servicio de
+autenticación y la invalidación. No había ninguna pantalla donde verlos juntos, y
+eso era media auditoría perdida.
+
+Cada candado declara **cuál de sus posiciones es la de riesgo**, y son tres casos,
+no dos:
+
+- `true` → lo peligroso es encenderlo (transmisión, mocks, autorización de producción);
+- `false` → lo peligroso es **apagarlo**: `DTE_TRANSMISION_DRY_RUN` es la red de
+  seguridad, y `DTE_SISTEMA_ACTUAL_ACTIVO` es lo que impide duplicar correlativos;
+- `null` → ninguna posición merece aviso (`DTE_AUTH_TEST_REAL_ENABLED` solo permite
+  iniciar sesión contra apitest).
+
+Con un booleano, el tercer caso salía contado como riesgo permanente y la cabecera
+decía «1 de 15 abiertos» con todo cerrado — la forma más rápida de que nadie vuelva
+a mirar ese número.
+
+### Las dos acciones seguras
+
+**Probar conexión** (`PruebaConexionHacienda`) pide un token al servicio de
+seguridad del ambiente de **pruebas**. No transmite, no firma, no toca
+correlativos y no crea ni modifica ningún DTE. Es la misma comprobación que
+`php artisan dte:auth-test`, con el mismo candado.
+
+Contra producción existe una comprobación equivalente
+(`DteTransmisionAuthService::pruebaAuthProduccion()`, login-only, descarta el
+token) y **no se expone en la pantalla**: un botón que usa la credencial de
+producción con un clic es un botón que se pulsa por curiosidad, y ninguna
+advertencia lo evita. En una pantalla, «probar» tiene que significar «probar
+contra pruebas».
+
+**Probar firma** (`PruebaFirmador`) hace el health check y manda un documento
+inventado, con NIT `00000000000000` y contraseña falsa. **El resultado correcto es
+un rechazo**: significa que el firmador está vivo y procesa la petición hasta darse
+cuenta de que no tiene ese certificado. Si en cambio firmara, se reporta como
+problema — un firmador que firma cualquier cosa no es un firmador que funciona.
+
+Las dos son `POST` y no `GET` porque tienen efecto externo (una petición a otro
+servicio, una línea en el historial), y eso no debe dispararse recargando una
+página o precargando un enlace. Las dos se anotan en
+`verificaciones_configuracion`, y las tarjetas del Resumen leen esa anotación.
+
+#### Bloqueada ≠ fallida
+
+`pruebaAuthTesting()` devuelve `bloqueado = true` tanto cuando no llegó a
+intentarlo como cuando lo intentó y el MH lo rechazó. Para el historial eso no
+puede ser lo mismo: «el candado está cerrado» no es un fallo de Hacienda, y
+anotarlo como tal llenaría el registro de errores que no lo son y taparía los que
+sí. Por eso `PruebaConexionHacienda` resuelve las precondiciones **antes**
+(`EstadoHaciendaApi::pruebaDisponible()`): así un bloqueo posterior solo puede
+significar una cosa.
+
+### Configuración sin efecto
+
+`InventarioFiscal::configuracionMuerta()` lista, **en la propia pantalla**, las
+claves de `config/dte.php` que ningún consumidor lee o que duplican a otra:
+
+| Clave | Problema |
+|---|---|
+| `dte.correlativo.formato` / `.longitud` | Duplican `dte.json.numero_control_formato` / `_longitud_correlativo`, que son las que sí se leen. |
+| `dte.json.invalidacion_version` | Duplica `dte.invalidacion.version`, que es la que sí se lee. |
+| `dte.firma.driver` | Sin consumidor: el firmador es siempre el local del MH. |
+| `dte.storage.pdf` | Sin consumidor. |
+| `dte.decimales.*` | Sin consumidor: el redondeo lo fija `App\Support\Dinero`. |
+| `dte.tipos` / `dte.estados` | Sin consumidor: se derivan de los enums `TipoDte` y `EstadoDte`. |
+| `dte.nota_credito.requiere_documento_relacionado_para_emision` | Sin consumidor: la regla vive en el validador. |
+| `dte.ambientes.*.auth_url` / `recepcion_url` / `consulta_url` | Sin consumidor. De ese bloque solo se lee `anulacion_url`. |
+| `DTE_TRANSMISION_USER` / `_PASSWORD` | Credenciales previas a separar producción de pruebas. Siguen valiendo como respaldo de producción; en una instalación nueva no deben usarse. |
+
+Se **listan** en vez de borrarse: quitarlas es un cambio al motor fiscal y merece
+su propia revisión. Lo peligroso no es que sobren — es que alguien las edite
+creyendo que sirven para algo, y esta lista es lo que lo impide mientras tanto.
+
+### Pendiente conocido
+
+`DteTransmisionService::authConfigurado()` (diagnóstico y dry-run) mira
+`dte.transmision.usuario_api` / `.password`, es decir las variables **antiguas**,
+mientras que `DteTransmisionAuthService` resuelve el par según el ambiente. Con
+`DTE_TEST_USER` / `DTE_TEST_PASSWORD` definidas y las antiguas vacías, el preflight
+informa «Auth configurado: no» aunque el acceso funcione. Es solo diagnóstico —no
+decide si se transmite— pero son dos fuentes de verdad para la misma pregunta.
+
+Las pantallas nuevas **no usan `authConfigurado()`**: usan
+`fuenteCredenciales()`, que resuelve por ambiente. Unificarlo toca las pruebas del
+motor de transmisión y se deja para su propio cambio.
+
+---
+
+## 26. Hacia un producto instalable
 
 El objetivo de fondo es que el sistema pueda instalarse en otra empresa sin editar
 decenas de archivos a mano. Nada de lo construido asume la empresa actual, y el
@@ -752,9 +911,11 @@ Lo que ya encaja en ese flujo:
 | crear administrador | `UsuarioAdminInicialSeeder` |
 | configurar empresa | Configuración → General |
 | conectar servicios | Correo, Integraciones (con secretos cifrados y prueba de conexión) |
-| comprobar estado | Configuración → Resumen y → Sistema |
+| comprobar estado | Configuración → Resumen, → Sistema y → Facturación electrónica |
 
-Lo que falta para cerrarlo: un asistente que encadene los pasos, y que los ajustes
-que hoy solo viven en el `.env` (ambiente fiscal, credenciales del MH, certificado)
-tengan su camino N3. **Ninguna decisión de estas fases lo bloquea**: el registry es
-extensible, los secretos ya tienen su patrón y el estado ya es consultable.
+Lo que falta para cerrarlo: un asistente que encadene los pasos, y que los
+parámetros fiscales hoy declarados pero cerrados recorran su camino —cada uno junto
+con su consumidor—. Las credenciales del MH y la contraseña del certificado NO
+forman parte de ese camino: se quedan en el servidor a propósito (ver §25).
+**Ninguna decisión de estas fases lo bloquea**: el registry es extensible, los
+secretos ya tienen su patrón y el estado ya es consultable.
