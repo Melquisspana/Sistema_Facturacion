@@ -15,6 +15,10 @@ use App\Http\Controllers\Configuracion\SecretoController;
 use App\Http\Controllers\Configuracion\CorrelativoController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\EstablecimientoController;
+use App\Http\Controllers\Configuracion\FirmadorController;
+use App\Http\Controllers\Configuracion\HaciendaController;
+use App\Http\Controllers\Configuracion\InvalidacionController;
+use App\Http\Controllers\Configuracion\ParametrosFiscalesController;
 use App\Http\Controllers\Configuracion\PuntoVentaController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
@@ -406,6 +410,31 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
         // Resumen: estado de la configuración del sistema. SOLO LECTURA, sin
         // ninguna ruta de escritura asociada.
         Route::get('resumen', [\App\Http\Controllers\Configuracion\ResumenController::class, 'index'])->name('resumen');
+
+        /*
+        | FACTURACIÓN ELECTRÓNICA — SOLO LECTURA.
+        |
+        | Ninguna de estas rutas escribe configuración: no hay PUT, no hay DELETE
+        | y no hay formularios de guardado. Lo que muestran se administra en el
+        | archivo del servidor. Los dos POST son COMPROBACIONES, no cambios:
+        |
+        |   - `hacienda/probar` inicia sesión contra el ambiente de PRUEBAS del MH
+        |     y no transmite ningún documento;
+        |   - `firmador/probar` manda al firmador un documento inventado con NIT de
+        |     relleno y contraseña falsa, y no firma ningún DTE real.
+        |
+        | Son POST y no GET porque tienen un efecto externo (una petición a otro
+        | servicio, una línea en el historial de verificaciones), y eso no debe
+        | poder dispararse recargando una página o precargando un enlace.
+        */
+        Route::get('facturacion-electronica/hacienda', [HaciendaController::class, 'index'])->name('fiscal.hacienda');
+        Route::post('facturacion-electronica/hacienda/probar', [HaciendaController::class, 'probar'])->name('fiscal.hacienda.probar');
+
+        Route::get('facturacion-electronica/firmador', [FirmadorController::class, 'index'])->name('fiscal.firmador');
+        Route::post('facturacion-electronica/firmador/probar', [FirmadorController::class, 'probar'])->name('fiscal.firmador.probar');
+
+        Route::get('facturacion-electronica/parametros', [ParametrosFiscalesController::class, 'index'])->name('fiscal.parametros');
+        Route::get('facturacion-electronica/invalidacion', [InvalidacionController::class, 'index'])->name('fiscal.invalidacion');
 
         // Empresa emisora (registro único).
         Route::get('empresa', [EmpresaController::class, 'edit'])->name('empresa.edit');

@@ -141,7 +141,16 @@ class ResumenConfiguracionTest extends TestCase
         }
     }
 
-    /** El ambiente fiscal se informa, pero esta pantalla no lo cambia. */
+    /**
+     * El ambiente fiscal se informa, pero esta pantalla no lo cambia — y la que hay
+     * al otro lado del enlace, tampoco.
+     *
+     * La tarjeta pasó de no tener enlace a tener uno. La garantía NO cambió: sigue
+     * siendo que ningún botón invite a cambiar el ambiente. Lo que cambió es que ya
+     * existe una pantalla donde MIRARLO en detalle, y esconderla no protegía nada;
+     * lo que protege es que el rótulo diga «Ver detalle» y no «Configurar», y que
+     * el destino sea de solo lectura.
+     */
     public function test_el_ambiente_fiscal_aparece_como_solo_lectura(): void
     {
         config(['dte.ambiente' => '00']);
@@ -150,7 +159,22 @@ class ResumenConfiguracionTest extends TestCase
 
         $this->assertSame(EstadoTarjeta::SoloLectura, $tarjeta->estado);
         $this->assertStringContainsString('PRUEBAS', $tarjeta->detalle);
-        $this->assertNull($tarjeta->ruta, 'El ambiente fiscal no debe ofrecer un botón para cambiarlo.');
+        $this->assertSame(route('configuracion.fiscal.hacienda'), $tarjeta->ruta);
+        $this->assertSame('Ver detalle', $tarjeta->etiquetaRuta,
+            'El ambiente fiscal no debe ofrecer un botón que insinúe que se cambia desde ahí.');
+    }
+
+    /**
+     * Y el destino de ese enlace no acepta escritura por ningún verbo. Sin esto, el
+     * test de arriba solo comprobaría el rótulo del botón.
+     */
+    public function test_la_pantalla_enlazada_desde_el_ambiente_fiscal_no_acepta_escritura(): void
+    {
+        foreach (['put', 'patch', 'delete'] as $verbo) {
+            $this->actingAs($this->admin())
+                ->$verbo(route('configuracion.fiscal.hacienda'))
+                ->assertStatus(405);
+        }
     }
 
     public function test_la_tarjeta_de_smtp_enlaza_a_la_pantalla_de_correo(): void
