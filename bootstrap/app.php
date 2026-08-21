@@ -1,5 +1,6 @@
 <?php
 
+use App\Ajustes\Excepciones\AlmacenAjustesNoDisponibleException;
 use App\Exceptions\Dte\PuntoVentaPredeterminadoInvalidoException;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
@@ -55,5 +56,18 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return back()->withErrors(['punto_venta_id' => $e->getMessage()]);
+        });
+
+        // Guardar configuración durante la ventana de un despliegue a medias (código
+        // nuevo, `migrate` todavía sin correr). Leer en esa ventana funciona; escribir
+        // no tiene dónde hacerlo. Se responde con el mensaje de la excepción —que dice
+        // qué falta y que no se perdió nada— en vez de un 500 con la excepción de SQL,
+        // que además llevaría dentro el nombre de la base y del host.
+        $exceptions->render(function (AlmacenAjustesNoDisponibleException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $e->getMessage()], 503);
+            }
+
+            return back()->withErrors(['configuracion' => $e->getMessage()])->withInput();
         });
     })->create();

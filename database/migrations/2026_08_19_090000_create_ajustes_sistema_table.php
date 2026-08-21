@@ -1,5 +1,6 @@
 <?php
 
+use App\Ajustes\RepositorioAjustes;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -50,5 +51,19 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('ajustes_sistema');
+
+        // Al desaparecer la tabla, el mapa que los procesos tienen cacheado pasa a
+        // describir filas que ya no existen: durante los 5 minutos de su TTL seguirían
+        // resolviendo overrides FANTASMA, con fuente «base de datos», leídos de una
+        // tabla borrada. Invalidando acá, la siguiente lectura ve que no hay tabla y
+        // cada clave vuelve a su fallback, que es la verdad.
+        //
+        // No puede tumbar el rollback: la tabla ya se borró y una caché que no responde
+        // se arregla sola al vencer la TTL.
+        try {
+            app(RepositorioAjustes::class)->invalidar();
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 };

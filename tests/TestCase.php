@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Enums\EstadoDte;
+use App\Models\Configuracion;
 use App\Models\Distrito;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -34,6 +35,22 @@ abstract class TestCase extends BaseTestCase
         $this->abortarSiLaBaseDeDatosNoEsSegura();
 
         parent::setUp();
+
+        // La caché de `Configuracion` es una propiedad STATIC: vive en el proceso de
+        // PHPUnit, no en la aplicación. `RefreshDatabase` borra la FILA entre pruebas
+        // pero no la estática, así que una clave escrita por un test seguía
+        // resolviéndose en el siguiente —de otra clase, incluso de otra carpeta— como
+        // un valor fantasma que ya no está en ninguna base.
+        //
+        // No es hipotético: `PreflightEmisionProduccionTest` deja
+        // `produccion.ultimo_ccf_externo` en '1093' y `PreparacionProduccionTest`, que
+        // afirma que esa clave está SIN configurar, fallaba al correr la suite entera y
+        // pasaba en aislado. Un fallo que solo aparece según el orden de ejecución es
+        // el que enseña a ignorar el rojo.
+        //
+        // Se limpia acá, para TODA la suite, en vez de en cada setUp que se acuerde:
+        // olvidar hacerlo no da un error, da un test que miente.
+        Configuracion::olvidarCache();
 
         // Siembra roles/permisos (RolesSeeder) para toda prueba con base fresca, igual
         // que en producción. Sin esto, como la autorización pasó a basarse en permisos

@@ -1,5 +1,6 @@
 <?php
 
+use App\Ajustes\RepositorioAjustes;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -34,6 +35,24 @@ use Illuminate\Support\Facades\Schema;
  *
  * REVERSIBLE. `down()` devuelve los valores a `configuraciones` y los quita de
  * `ajustes_sistema`, dejando el sistema exactamente como estaba.
+ *
+ * INVALIDA LA CACHÉ AL TERMINAR, y no es un detalle de limpieza: es lo que evita
+ * una VENTANA REAL DE PÉRDIDA DE CONFIGURACIÓN.
+ *
+ * Esta migración escribe con `DB::table()` —lo correcto: una migración no debe
+ * depender de los servicios de la aplicación para mover filas— y por tanto pasa por
+ * detrás de {@see RepositorioAjustes}, cuya caché está versionada por una huella que
+ * solo cambia cuando se escribe A TRAVÉS de él. Sin tocar esa huella, todos los
+ * procesos —web y worker— siguen sirviendo el mapa que cachearon ANTES de la mudanza
+ * (vacío, porque la tabla no existía) durante los 5 minutos de su TTL. Y como la
+ * mudanza acaba de BORRAR las filas de la tabla anterior, la lectura de transición ya
+ * no las encuentra: en esos minutos `correo.auto_envio` se resuelve a su valor por
+ * defecto —`false`— y los DTE aceptados dejan de encolar el correo al cliente sin que
+ * nadie haya cambiado nada. Se midió en el ensayo de la Fase 6.
+ *
+ * Por eso se invalida acá y no solo en el runbook: un `cache:clear` que el operador
+ * puede olvidar no es una garantía, y aunque no lo olvide, la ventana existe entre un
+ * comando y el siguiente. Invalidando dentro de la migración la ventana es cero.
  */
 return new class extends Migration
 {
@@ -85,6 +104,8 @@ return new class extends Migration
                 DB::table('configuraciones')->where('clave', $vieja)->delete();
             }
         });
+
+        $this->invalidarCacheDeAjustes();
     }
 
     public function down(): void
@@ -113,5 +134,27 @@ return new class extends Migration
                 DB::table('ajustes_sistema')->where('clave', $nueva)->delete();
             }
         });
+
+        $this->invalidarCacheDeAjustes();
+    }
+
+    /**
+     * Fuerza a que todos los procesos vuelvan a leer la tabla en su próxima lectura.
+     *
+     * FUERA DE LA TRANSACCIÓN, a propósito: si la mudanza se revierte, la caché no
+     * debe quedar invalidada por un cambio que no llegó a ocurrir.
+     *
+     * NO PUEDE TUMBAR LA MIGRACIÓN. Las filas ya están donde tienen que estar; que el
+     * store de caché no esté disponible es un problema menor y transitorio —la TTL de
+     * 5 minutos lo resuelve sola— comparado con dejar la mudanza a medias. Se avisa
+     * por el canal de errores para que quede rastro y se sigue.
+     */
+    private function invalidarCacheDeAjustes(): void
+    {
+        try {
+            app(RepositorioAjustes::class)->invalidar();
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 };

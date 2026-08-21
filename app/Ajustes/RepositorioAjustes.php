@@ -2,6 +2,7 @@
 
 namespace App\Ajustes;
 
+use App\Ajustes\Excepciones\AlmacenAjustesNoDisponibleException;
 use App\Models\AjusteSistema;
 use App\Models\Configuracion;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -106,6 +107,8 @@ class RepositorioAjustes
      */
     public function guardar(string $clave, ?string $texto, bool $cifrar): void
     {
+        $this->exigirTabla();
+
         AjusteSistema::query()->updateOrCreate(
             ['clave' => $clave],
             [
@@ -120,6 +123,8 @@ class RepositorioAjustes
     /** Quita el override para que el ajuste vuelva a resolverse por su fallback. */
     public function eliminar(string $clave): void
     {
+        $this->exigirTabla();
+
         AjusteSistema::query()->where('clave', $clave)->delete();
 
         $this->invalidar();
@@ -156,6 +161,28 @@ class RepositorioAjustes
     }
 
     // ---------------------------------------------------------------- interno
+
+    /**
+     * ESCRIBIR exige la tabla; LEER no.
+     *
+     * La asimetría es deliberada. Sin la tabla, leer tiene una respuesta correcta
+     * —no hay overrides, así que cada clave cae a su fallback— y por eso
+     * {@see leerDeBaseDeDatos()} devuelve un mapa vacío en vez de fallar. Escribir
+     * no tiene ninguna: no existe el sitio donde poner el valor. Tragarse la
+     * escritura y devolver «guardado» sería lo único peor que fallar.
+     *
+     * Se traduce a una excepción propia y no se deja pasar la de SQL para que el
+     * administrador lea qué ocurre y qué falta, en vez de un 500 con el nombre de la
+     * base dentro. Ver {@see AlmacenAjustesNoDisponibleException}.
+     */
+    private function exigirTabla(): void
+    {
+        $tabla = (new AjusteSistema)->getTable();
+
+        if (! Schema::hasTable($tabla)) {
+            throw AlmacenAjustesNoDisponibleException::tabla($tabla);
+        }
+    }
 
     /** @return array<string, array{valor: ?string, cifrado: bool, actualizado: ?string}> */
     private function mapa(): array

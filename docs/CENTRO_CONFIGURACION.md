@@ -655,7 +655,30 @@ configuración caería a sus valores por defecto sin que nadie se enterara. Una 
 que falta es una situación conocida y transitoria; una consulta que falla teniendo
 la tabla, no.
 
-Cubierto por `VentanaDespliegueTest` en los dos órdenes posibles.
+Esa tolerancia vale para **leer**. Para **escribir** no hay respuesta correcta —no
+existe la tabla donde poner el valor—, así que `RepositorioAjustes::guardar()` y
+`eliminar()` lanzan `AlmacenAjustesNoDisponibleException`, que `bootstrap/app.php`
+convierte en un error de formulario («volvé a intentarlo en unos minutos; la
+configuración actual no se ha perdido») en vez de un 500 con la excepción de SQL
+dentro. Tragarse la escritura y contestar «guardado» sería lo único peor que fallar.
+
+El historial de verificaciones va al revés: sin su tabla, `RegistroVerificaciones::registrar()`
+devuelve `null` y no guarda nada. La comprobación —conectar al SMTP, pedir el perfil
+de Gmail— ya se hizo y su resultado ya se mostró; lo que falta es un apunte que se
+regenera pulsando el botón otra vez. Ahí sí se pierde una línea de historial; en un
+ajuste se perdería la decisión de una persona.
+
+**La mudanza de datos invalida la caché ella misma.** La migración escribe con
+`DB::table()`, por detrás del repositorio, así que la huella que versiona la caché
+compartida no cambiaba: durante los 5 minutos de la TTL todos los procesos servían el
+mapa cacheado ANTES de la mudanza mientras la migración ya había vaciado la tabla
+anterior. El ensayo de la Fase 6 lo midió: `correo.auto_envio` se resolvía a `false` y
+los DTE aceptados dejaban de encolar el correo. Hoy `up()`, `down()` y el `down()` que
+borra la tabla llaman a `invalidar()`, y la ventana es cero sin depender de que nadie
+corra `cache:clear`.
+
+Cubierto por `VentanaDespliegueTest` (los dos órdenes posibles) y por
+`EnsayoDespliegueTest` (caché, escritura y verificaciones).
 
 ---
 
