@@ -28,11 +28,30 @@ class RegistroVerificaciones
     /** Longitud máxima del mensaje guardado (la columna admite 500). */
     private const MAX_MENSAJE = 480;
 
+    /**
+     * Guarda el resultado de una comprobación, o NO guarda nada si la tabla del
+     * historial todavía no existe (ventana entre desplegar y migrar).
+     *
+     * Devuelve null en ese caso en vez de fallar. La comprobación en sí —conectar
+     * al SMTP, pedir el perfil de Gmail— ya se hizo y su resultado ya se le mostró
+     * a quien pulsó el botón; lo único que falta es el apunte histórico. Tirar un
+     * 500 con una excepción de SQL después de una prueba que salió bien sería
+     * convertir un dato de segundo orden en un fallo de la pantalla.
+     *
+     * Es lo contrario de lo que hace la escritura de un AJUSTE, que sí falla
+     * ruidosamente con AlmacenAjustesNoDisponibleException: ahí se perdería una
+     * decisión de una persona; acá, una línea de historial que se puede volver a
+     * generar pulsando el botón otra vez.
+     */
     public function registrar(
         string $clave,
         ResultadoVerificacion $resultado,
         ?string $mensaje = null,
-    ): VerificacionConfiguracion {
+    ): ?VerificacionConfiguracion {
+        if (! $this->tablaDisponible()) {
+            return null;
+        }
+
         $verificacion = VerificacionConfiguracion::create([
             'clave' => $clave,
             'resultado' => $resultado,
