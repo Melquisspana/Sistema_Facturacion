@@ -27,6 +27,7 @@
         // Catálogos: hojas apiladas (el marco de trabajo que se consulta, no se opera).
         'catalogos' => 'M11 4 3.5 7.5 11 11l7.5-3.5L11 4Z M3.5 12 11 15.5 18.5 12 M3.5 16.5 11 20l7.5-3.5',
         // Administración: personas (usuarios, auditoría, importaciones).
+        'asistencia' => 'M12 11a1.8 1.8 0 0 1 1.8 1.8c0 1.9-.3 3.7-1 5.4 M8.6 12.8a3.4 3.4 0 0 1 6.8 0c0 2.3-.4 4.5-1.3 6.6 M5.2 12.8a6.8 6.8 0 0 1 13.6 0c0 1.4-.1 2.7-.4 4 M6.4 7.2a8 8 0 0 1 11.2 0',
         'usuarios' => 'M8.5 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M3.5 19.5a5 5 0 0 1 10 0 M14.5 5.6a3 3 0 0 1 0 5.8 M15.5 14.9a5 5 0 0 1 3 4.6',
         // Sistema: bastidores apilados (infraestructura, no administración de negocio).
         'sistema' => 'M4 5.5h14a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V6a.5.5 0 0 1 .5-.5Z M4 13.5h14a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5Z M6.5 7.5h.01M6.5 15.5h.01',

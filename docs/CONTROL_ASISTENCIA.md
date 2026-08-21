@@ -6,10 +6,12 @@ Marcaciones con un dispositivo físico:
 huella -> ESP32 -> Wi-Fi -> HTTP -> Laravel -> respuesta JSON -> pantalla TFT
 ```
 
-Estado: **base funcional**. Hay empleados, huellas, lectores y marcaciones reales.
-Todavía **no** hay horarios, tardanzas, ausencias, horas trabajadas, reportes,
-planilla ni pantallas de administración: el módulo se administra con los comandos
-`asistencia:*`.
+Estado: **administrable desde la web**. Hay empleados, huellas, lectores y
+marcaciones reales, con pantallas para darlos de alta y mantenerlos.
+
+Todavía **no** hay historial de marcaciones con filtros, reportes diario o
+mensual, horas trabajadas, horarios, tardanzas, ausencias, planilla ni
+enrolamiento remoto del sensor. Cada uno tiene su fase.
 
 ## Reglas del módulo
 
@@ -134,7 +136,7 @@ Log `asistencia` de spatie/activitylog:
 | Alta / cambio / baja de EMPLEADO | sí | `logFillable` |
 | Asignar y liberar una HUELLA | sí | es el cambio que decide de quién son las marcaciones |
 | Alta, cambio y baja de un LECTOR | sí | **sin `token_hash`**: `logOnly(['codigo','nombre','activo'])` |
-| Rotación del token | sí (el hecho) | el valor no aparece en ningún lado |
+| Rotación del token | sí (el hecho) | `RotarTokenDispositivo` la registra a mano. **No basta con `LogsActivity`**: `token_hash` está fuera de las columnas auditadas —a propósito—, así que `logOnlyDirty` producía un diff vacío y `dontSubmitEmptyLogs` descartaba la entrada entera. Se descubrió ejecutándolo. |
 | Telemetría del lector (`ultima_conexion_at`) | **no** | `saveQuietly`: una entrada por cada dedo dejaría el log inservible |
 | MARCACIONES | **no** | la tabla ya es append-only; auditarla sería guardarlas dos veces |
 
@@ -151,9 +153,81 @@ Hoy solo los tiene el administrador (recibe todos); **ningún otro rol se
 ensanchó**. Todavía no hay pantallas que los usen: existen para que las de la
 fase siguiente nazcan con su candado en vez de heredar `configuracion.gestionar`.
 
-`AreaSistema::Asistencia` **no existe todavía**, y no es un olvido: un área exige
-una `rutaInicio()` real, y hasta que el módulo tenga pantalla ese enlace sería un
-enlace muerto en la barra de todos los administradores.
+`AreaSistema::Asistencia` existe desde la Fase 2, cuando el módulo estrenó su
+pantalla de inicio. Antes no: un área exige una `rutaInicio()` real y la barra de
+navegación llama `route()` sobre ella, así que declararla sin pantalla habría
+reventado el navbar de todo administrador en cuanto se encendiera el módulo. Hay
+un test que recorre TODAS las áreas y comprueba que su ruta de aterrizaje existe.
+
+Con `ASISTENCIA_ENABLED=false` el área desaparece del selector
+(`AreaSistema::habilitada()`) **y** sus rutas responden 404 (middleware
+`modulo.asistencia`). Son dos candados para dos cosas distintas: uno evita ofrecer
+el enlace, el otro evita que sirva escribir la URL.
+
+## Pantallas (área Asistencia)
+
+Prefijo `/asistencia`, nombres `asistencia.*`, `App\Enums\AreaSistema::Asistencia`.
+Rutas en `routes/asistencia.php`.
+
+| Pantalla | Ruta | Permiso |
+|---|---|---|
+| Resumen | `asistencia.dashboard` | `asistencia.ver` |
+| Empleados (listado) | `asistencia.empleados.index` | `asistencia.ver` |
+| Ficha de empleado | `asistencia.empleados.show` | `asistencia.ver` |
+| Alta / edición de empleado | `asistencia.empleados.create` / `.edit` | `asistencia.gestionar` |
+| Activar o desactivar empleado | `asistencia.empleados.toggle-activo` | `asistencia.gestionar` |
+| Asignar ranura | `asistencia.empleados.huellas.store` | `asistencia.gestionar` |
+| Liberar ranura | `asistencia.huellas.liberar` | `asistencia.gestionar` |
+| Lectores (listado) | `asistencia.dispositivos.index` | `asistencia.ver` |
+| Alta / edición de lector | `asistencia.dispositivos.create` / `.edit` | `asistencia.dispositivos.gestionar` |
+| Activar o desactivar lector | `asistencia.dispositivos.toggle-activo` | `asistencia.dispositivos.gestionar` |
+| Rotar token | `asistencia.dispositivos.rotar-token` (+ `.ejecutar`) | `asistencia.dispositivos.gestionar` |
+
+Candados, en orden: `auth` → `modulo.asistencia` (404 si el módulo está apagado)
+→ `permission:asistencia.ver`, más el permiso de escritura **inline** en cada ruta
+que escribe.
+
+### Decisiones que no son obvias
+
+**No hay `destroy` de empleado, y no falta.** Borrar a alguien borra su historial
+laboral. La base lo respalda (`restrictOnDelete`), pero la garantía real es que
+**no existe el endpoint**: no hay que acordarse de comprobar nada. Quien se va se
+desactiva.
+
+**Liberar una ranura es `PATCH`, no `DELETE`.** No se borra nada: la asignación se
+queda como registro histórico con su empleado y sus marcaciones. Un `DELETE`
+prometería lo contrario de lo que hace.
+
+**Las huellas no tienen listado propio.** Se administran dentro de la ficha de
+cada persona, que es donde «qué ranura es de quién» se entiende sin cruzar dos
+pantallas. La ficha muestra las vigentes y las históricas **por separado**:
+esconder el historial haría parecer que se borró algo.
+
+**El resumen solo cuenta lo que existe.** Personas activas, ranuras asignadas,
+lectores activos y marcaciones de hoy. No hay tardanzas ni horas trabajadas
+porque necesitan horarios, y los horarios no existen: un indicador inventado en
+una pantalla de inicio es peor que ninguno. La tarjeta de marcaciones **no enlaza
+a ningún lado** — el historial todavía no está hecho y no se promete.
+
+**Desactivar a alguien no libera sus ranuras.** La plantilla sigue en el sensor y
+la asignación sigue siendo suya; lo que cambia es que el lector responde
+`empleado_inactivo`. Liberar es un acto aparte porque implica borrarla del AS608,
+y ese paso el servidor no lo puede dar.
+
+### El token, en la web
+
+Se genera al dar de alta y se renueva rotándolo. **Nunca se escribe a mano**: el
+formulario no acepta ningún campo de token, así que no existe un camino para fijar
+uno débil o ya conocido.
+
+Se muestra **una vez**, por `flash`: desaparece en la petición siguiente, incluso
+si se recarga la pantalla. No hay ninguna ruta que pueda devolverlo y `token_hash`
+está en `$hidden` del modelo.
+
+**Rotar es una pantalla, no un botón.** Deja al lector sin autenticar hasta que
+alguien reprograme el firmware, y mientras tanto nadie marca. Por eso exige
+ESCRIBIR el código del lector —el mismo criterio de la confirmación fuerte del
+Centro de Configuración—: quien lo escribe leyó de qué lector se trata.
 
 ## Endpoints
 
@@ -334,11 +408,16 @@ Ambos comandos muestran qué van a crear y piden confirmación. Ninguno borra ni
 nada: si la ranura tiene una asignación VIGENTE, se detienen. Que tenga
 asignaciones HISTÓRICAS no estorba — eso es lo que permite reutilizarla.
 
-`asistencia:empleado` delega la asignación en `AsignarHuella`, así que la
-comprobación y la auditoría son las mismas desde la consola que desde la pantalla
-que viene. **Liberar una ranura todavía no tiene comando**: la operación existe
-(`LiberarHuella`, auditada y probada) y la expondrá la pantalla de administración
-de la fase siguiente.
+Desde la Fase 2 lo habitual es hacer todo esto **desde las pantallas**; los
+comandos se quedan por dos motivos concretos: `asistencia:dispositivo` porque un
+secreto que pasa por el navegador queda en el historial y en la caché, y
+`asistencia:empleado` porque sirve para montar el módulo antes de que exista un
+usuario con permisos.
+
+Las dos vías comparten servicio y no compiten: `asistencia:empleado` delega en
+`AsignarHuella` y `asistencia:dispositivo` en `RotarTokenDispositivo`, así que la
+comprobación de ranura ocupada, el hasheo y la auditoría son los mismos desde la
+consola que desde la web.
 
 Guardar la plantilla biométrica en la ranura N es un acto del sensor, no de
 Laravel. Estos comandos solo anotan a quién corresponde.
