@@ -28,6 +28,7 @@ enum AreaSistema: string
     case Facturacion = 'facturacion';
     case Planta = 'planta';
     case Rutas = 'rutas';
+    case Asistencia = 'asistencia';
 
     /**
      * Etiqueta visible en la UI (selector superior y sidebar). Es lo ÚNICO
@@ -46,6 +47,7 @@ enum AreaSistema: string
             self::Facturacion => 'Facturación',
             self::Planta => 'Producción',
             self::Rutas => 'Cobros',
+            self::Asistencia => 'Asistencia',
         };
     }
 
@@ -56,6 +58,7 @@ enum AreaSistema: string
             self::Facturacion => PermisoSistema::DteVer->value,
             self::Planta => PermisoSistema::PlantaVer->value,
             self::Rutas => PermisoSistema::RutasVer->value,
+            self::Asistencia => PermisoSistema::AsistenciaVer->value,
         };
     }
 
@@ -66,6 +69,7 @@ enum AreaSistema: string
             self::Facturacion => 'dashboard',
             self::Planta => 'planta.dashboard',
             self::Rutas => 'rutas.dashboard',
+            self::Asistencia => 'asistencia.dashboard',
         };
     }
 
@@ -76,6 +80,7 @@ enum AreaSistema: string
             self::Facturacion => 'facturacion',
             self::Planta => 'planta',
             self::Rutas => 'rutas',
+            self::Asistencia => 'asistencia',
         };
     }
 
@@ -86,6 +91,12 @@ enum AreaSistema: string
      * Rutas / Cobros tampoco lleva interruptor: quien la ve se decide solo por el
      * permiso `rutas.ver`, que en esta fase tiene únicamente el administrador. Un
      * flag de config sería una segunda llave para la misma puerta.
+     *
+     * Asistencia SÍ lo lleva, y por el mismo motivo que Planta: el módulo depende
+     * de un lector físico. En un servidor sin ESP32 no hay nada que administrar, y
+     * `ASISTENCIA_ENABLED=false` (el valor por defecto) tiene que dejar el área
+     * fuera del selector Y sus rutas en 404 —eso último lo impone el middleware
+     * `modulo.asistencia`, no este método—.
      */
     public function habilitada(): bool
     {
@@ -93,6 +104,7 @@ enum AreaSistema: string
             self::Facturacion => true,
             self::Planta => (bool) config('planta.enabled'),
             self::Rutas => true,
+            self::Asistencia => (bool) config('asistencia.enabled'),
         };
     }
 
@@ -150,6 +162,10 @@ enum AreaSistema: string
         return match (true) {
             request()->routeIs('planta.*') => self::Planta,
             request()->routeIs('rutas.*') => self::Rutas,
+            // `asistencia.*` son las pantallas web. Los endpoints del lector se
+            // llaman `api.asistencia.*` y no entran acá: no tienen sesión, no
+            // dibujan barra lateral y nunca llegan a esta función.
+            request()->routeIs('asistencia.*') => self::Asistencia,
             default => self::Facturacion,
         };
     }

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Asistencia\AsistenciaDispositivo;
+use App\Services\Asistencia\RotarTokenDispositivo;
 use Illuminate\Console\Command;
 
 /**
@@ -18,6 +19,11 @@ use Illuminate\Console\Command;
  * NO se escribe en el log, ni se devuelve por HTTP, ni se guarda en claro. Si se
  * pierde, no se recupera: se rota (que es exactamente lo que hay que hacer si
  * alguien pudo haberlo visto).
+ *
+ * Desde la Fase 2 existe también la pantalla de administración, y las dos vías
+ * comparten {@see RotarTokenDispositivo}: es la que hashea y la que deja la
+ * auditoría. Con dos implementaciones, una de las dos acabaría olvidándose de una
+ * de las dos cosas.
  */
 class AsistenciaDispositivoCommand extends Command
 {
@@ -28,7 +34,7 @@ class AsistenciaDispositivoCommand extends Command
 
     protected $description = 'Da de alta un lector biométrico de asistencia (o le rota el token)';
 
-    public function handle(): int
+    public function handle(RotarTokenDispositivo $rotar): int
     {
         if (! config('asistencia.enabled')) {
             $this->warn('El módulo de asistencia está apagado (ASISTENCIA_ENABLED=false).');
@@ -54,9 +60,9 @@ class AsistenciaDispositivoCommand extends Command
         }
 
         // El token de PROVISIÓN del .env permite fijar desde configuración el
-        // mismo valor que se va a quemar en el firmware. Si no está, se genera.
+        // mismo valor que se va a quemar en el firmware. Si no está, lo genera el
+        // servicio.
         $desdeEnv = (string) (config('asistencia.token_provision') ?? '');
-        $token = $desdeEnv !== '' ? $desdeEnv : AsistenciaDispositivo::generarToken();
 
         if ($existente !== null) {
             if (! $this->confirm("Se le va a rotar el token al lector «{$codigo}». El firmware actual dejará de autenticar. ¿Continuar?", false)) {
@@ -65,10 +71,13 @@ class AsistenciaDispositivoCommand extends Command
                 return self::SUCCESS;
             }
 
-            $existente->update(['token_hash' => AsistenciaDispositivo::hashDeToken($token)]);
+            // Mismo camino que la pantalla web: hashea y deja auditoría.
+            $token = $rotar($existente, $desdeEnv !== '' ? $desdeEnv : null);
             $dispositivo = $existente;
             $this->info("Token rotado para «{$codigo}».");
         } else {
+            $token = $desdeEnv !== '' ? $desdeEnv : AsistenciaDispositivo::generarToken();
+
             $dispositivo = AsistenciaDispositivo::create([
                 'codigo' => $codigo,
                 'nombre' => (string) ($this->option('nombre') ?: $codigo),
