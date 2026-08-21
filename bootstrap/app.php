@@ -11,6 +11,10 @@ use Illuminate\Http\Request;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        // Endpoints para DISPOSITIVOS (hoy: el lector de huella del control de
+        // asistencia). Van bajo /api con el grupo `api`: sin sesión y sin CSRF,
+        // que es lo que un ESP32 puede cumplir. No cambia ninguna ruta web.
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -36,12 +40,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // Alias de middleware de roles/permisos (spatie/laravel-permission) y de
         // áreas del sistema (ver App\Enums\AreaSistema):
         //  - modulo.planta   : 404 si el módulo Producción/Planta está apagado.
+        //  - modulo.asistencia: 404 si el módulo Control de Asistencia está apagado.
+        //  - dispositivo.asistencia: 401 sin token válido de lector biométrico.
         //  - area.principal  : aterrizaje por área; se usa SOLO en /dashboard.
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'modulo.planta' => \App\Http\Middleware\ModuloPlantaActivo::class,
+            'modulo.asistencia' => \App\Http\Middleware\ModuloAsistenciaActivo::class,
+            'dispositivo.asistencia' => \App\Http\Middleware\AutenticaDispositivoAsistencia::class,
             'area.principal' => \App\Http\Middleware\RedirigirAreaPrincipal::class,
         ]);
     })

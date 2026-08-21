@@ -73,5 +73,9 @@
              en el mismo estado que hoy. Los tests del módulo lo encienden explícitamente
              con config()->set('planta.enabled', true). -->
         <env name="PLANTA_ENABLED" value="false"/>
+        <!-- Control de Asistencia (lector de huella ESP32): el suite arranca SIEMPRE con
+             el módulo APAGADO, igual que un servidor sin lector. Los tests del módulo lo
+             encienden explícitamente con config()->set('asistencia.enabled', true). -->
+        <env name="ASISTENCIA_ENABLED" value="false"/>
     </php>
 </phpunit>
