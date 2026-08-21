@@ -101,6 +101,27 @@ enum PermisoSistema: string
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
 
+    // Control de Asistencia (lector de huella ESP32). Área de personal: quién
+    // marcó y a qué hora. NO emite DTE, no toca correlativos, firma, transmisión,
+    // PPQ, Planta ni Rutas.
+    //
+    // Se parte en tres y no en «ver/gestionar» porque son tres decisiones de
+    // riesgo distinto y las tres las va a tomar gente distinta:
+    //
+    //  - `ver`: consultar marcaciones y reportes. Solo lectura.
+    //  - `gestionar`: dar de alta personas y ASIGNAR o LIBERAR ranuras del sensor.
+    //    Asignar una ranura decide de quién van a ser las marcaciones que vengan
+    //    después, así que es el permiso que de verdad hay que cuidar.
+    //  - `dispositivos.gestionar`: dar de alta lectores y ROTARLES el token.
+    //    Va aparte porque produce un secreto y porque quien administra al personal
+    //    no tiene por qué poder dejar el lector de la puerta sin autenticar.
+    //
+    // Hoy no hay pantallas: los tres existen para que las de la fase siguiente
+    // nazcan con su candado en vez de heredar `configuracion.gestionar`.
+    case AsistenciaVer = 'asistencia.ver';
+    case AsistenciaGestionar = 'asistencia.gestionar';
+    case AsistenciaDispositivosGestionar = 'asistencia.dispositivos.gestionar';
+
     // Contabilidad / reportes.
     case ReportesVer = 'reportes.ver';
     case ContabilidadEnviar = 'contabilidad.enviar';
