@@ -959,34 +959,111 @@ anotado en la orden (`ranura_manual`). Si esa ranura resulta ocupada en el senso
 el reintento vuelve a ser **automático**: repetir el número elegido llevaría al
 mismo choque.
 
-### Lo que le toca al firmware (todavía no hecho)
+### El firmware del lector
 
-Esta fase cierra **solo el lado Laravel**. El contrato está probado de punta a punta
-con peticiones simuladas: las pruebas actúan como el lector. Lo que no pueden
-comprobar es que el AS608 grabe de verdad.
+El firmware vive en **`firmware/asistencia/`** y está escrito contra este
+contrato. Su `README.md` tiene el pinout, las versiones de librería verificadas y
+las reglas de diseño que no se pueden romper.
 
-Para completar el flujo, el ESP32 necesita:
+Lo que hace, en el orden en que ocurre:
 
-1. `POST /indice-sensor` al arrancar, y cada vez que el sondeo conteste
-   `sincronizar_indice: true`. La capacidad sale de `finger.capacity` y las ocupadas
-   de recorrer la tabla de índices del AS608.
-2. `GET /pendiente` cada ~3 s mientras está ocioso. **No debe competir con una
-   marcación en curso ni con un enrolamiento activo**: mientras captura, el bucle
-   de sondeo se pausa.
-3. Guardar el `token` de la orden en RAM y mandarlo en cada `progreso` y en el
+1. `POST /indice-sensor` al arrancar, y cada vez que el sondeo contesta
+   `sincronizar_indice: true`. La capacidad sale de `finger.getParameters()` —**no**
+   de `verifyPassword()`, que no la llena— y las ocupadas de barrer el sensor con
+   `loadModel()` ranura por ranura. El barrido tarda 1-3 s y nunca corre con un
+   dedo apoyado.
+2. `GET /pendiente` cada 3 s **solo cuando el AS608 devuelve `FINGERPRINT_NOFINGER`**.
+   Son 20 peticiones/min, muy por debajo de las 120 que da el limitador.
+3. Guarda el `token` de la orden en RAM y lo manda en cada `progreso` y en el
    `resultado`.
-4. Ejecutar la captura en **la ranura que dice la orden** — nunca en otra — con la
-   secuencia habitual del AS608: `getImage` → `image2Tz(1)` → soltar → `getImage` →
-   `image2Tz(2)` → `createModel` → `storeModel(ranura)`.
-5. Mapear cada error del AS608 al código de `motivo` correspondiente, y comprobar
-   con `loadModel(ranura)` antes de grabar para poder reportar
-   `ranura_ocupada_en_sensor` en vez de sobrescribir.
-6. Reintentar el `POST /resultado` si se pierde la respuesta: es idempotente, no
+4. Captura en **la ranura que dice la orden** — nunca en otra — con la secuencia
+   `getImage` → `image2Tz(1)` → soltar → `getImage` → `image2Tz(2)` → `createModel`
+   → `loadModel(ranura)` → `storeModel(ranura)`.
+5. Mapea cada error del AS608 a su `motivo`, y comprueba la ranura con `loadModel`
+   **dos veces**: una antes de pedir el dedo (para no hacer trabajar a la persona
+   en vano) y otra justo antes de grabar.
+6. Reintenta el `POST /resultado` con backoff y, si aun así no lo entrega, lo deja
+   pendiente en RAM y lo reenvía desde el bucle en reposo. Es idempotente: no
    duplica nada.
 
+**El enrolamiento es bloqueante respecto al bucle principal.** Mientras captura no
+se sondea otra orden y no se procesa ninguna marcación. Es una condición de
+corrección, no una comodidad: `TomarOrdenEnrolamiento` **reemite el token** en cada
+sondeo que encuentre la orden viva, así que un sondeo en paralelo invalidaría el
+token que el lector tiene en RAM y su `resultado` moriría con un 404 **después** de
+haber grabado la plantilla en el sensor.
+
 Las pantallas del TFT («COLOQUE EL DEDO», «RETIRE EL DEDO», el nombre corto de la
-persona) salen de los datos de la orden; el `POST /progreso` es opcional pero es lo
-que hace que quien mira la web vea lo mismo que quien está frente al lector.
+persona) salen de los datos de la orden; el `POST /progreso` es secundario —un
+fallo de red ahí no aborta nada— pero es lo que hace que quien mira la web vea lo
+mismo que quien está frente al lector.
+
+**Lo que el lector todavía no puede alegar.** No existe un motivo para «este dedo
+ya está enrolado en otra ranura», así que el firmware **no** lo detecta: inventar un
+código rompería el contrato. Si hiciera falta, es un cambio de
+{@see MotivoFalloEnrolamiento}, no del firmware.
+
+### Qué se probó con el lector delante
+
+Todo lo de abajo se ejercitó **físicamente**, con el ESP32 conectado y personas
+reales poniendo el dedo. No son pruebas simuladas.
+
+| Escenario | Desenlace observado |
+|---|---|
+| Marcación normal (entrada y salida) | `registrada`, 200 |
+| Dedo repetido dentro de la ventana | `cooldown`, 409, sin escribir nada |
+| Enrolamiento remoto completo | orden → dos capturas → `storeModel` → `completada` → la persona marca con su huella nueva |
+| Dedo mal colocado | `captura_defectuosa`, sin huella |
+| Nadie pone el dedo (20 s) | `timeout_dedo`, sin huella |
+| Dedos distintos en las dos capturas | `dedos_no_coinciden`, nada grabado en el sensor |
+| Ranura con plantilla heredada | `ranura_ocupada_en_sensor`, **sin sobrescribir**, y orden nueva automática en otra ranura |
+| Caída de Wi-Fi | `SIN SERVIDOR` en pantalla, ninguna marcación escrita |
+| Apache detenido | mismo camino, punto API en rojo, nada encolado |
+| Recuperación de red y servidor | los dos puntos vuelven a verde solos, el sondeo se reanuda |
+| Sincronización del índice | `POST /indice-sensor` → 200, capacidad y ocupadas correctas |
+
+**El sensor instalado.** AS608 de **capacidad 300**, rango real **0..299**. La
+ranura 0 **es válida**, confirmado de dos formas independientes: `storeModel(0)`
+devolvió OK y el barrido posterior releyó esa ranura como ocupada. El «ID #0 not
+allowed» del ejemplo `enroll.ino` de Adafruit **no es una regla del sensor**: es
+una defensa contra `Serial.parseInt()`, que devuelve 0 cuando no se tecleó nada.
+
+### ⚠️ Lo que NO se validó físicamente
+
+**`storeModel` correcto y caída de red ANTES de entregar el resultado.**
+
+Es el escenario en que la plantilla ya está grabada en el AS608 y el `POST
+/resultado` no llega. La lógica existe —tres reintentos con espera creciente, el
+cuerpo queda en RAM y el bucle lo reenvía en reposo cada 15 s— y el endpoint es
+idempotente y está cubierto por pruebas del lado servidor. Lo que **no** ocurrió
+nunca es un corte real en esa ventana: dura milisegundos y las dos ventanas
+manuales que se intentaron (5 s y 15 s) no alcanzaron para detener Apache a tiempo.
+
+Queda **pendiente de validación física**. La forma de cerrarlo sin ventana manual
+es desconectar el cable de red del servidor en vez de parar Apache.
+
+**Límite conocido asociado.** El resultado pendiente vive **solo en RAM**: no hay
+NVS ni EEPROM en el firmware. Si el ESP32 se reinicia con un resultado sin
+entregar, se pierde — la plantilla queda en el sensor y la orden expira a los 3
+minutos. Se auto-repara: al reintentar el enrolamiento, el servidor elegirá esa
+misma ranura, el firmware detectará `ranura_ocupada_en_sensor` y saltará a la
+siguiente, dejando una plantilla huérfana.
+
+### Antes de desplegar a producción
+
+Dos tareas que **no** se ejecutan solas y que en desarrollo hubo que hacer a mano:
+
+1. **Las dos migraciones de Fase 5**, con la corrección de los nombres de clave
+   foránea. La versión original reventaba en MySQL con un `1059` —identificador de
+   65 caracteres sobre un límite de 64— y **ninguna prueba podía verlo**, porque
+   la suite corre sobre SQLite, que no tiene ese límite.
+2. **`php artisan db:seed --class=RolesSeeder`.** Los permisos `asistencia.*` se
+   crean ahí. Sin ese paso el módulo queda instalado y el área **invisible en el
+   menú**, incluso para el administrador: `AreaSistema::visiblesPara()` filtra por
+   permiso, y un permiso que no existe en la tabla no lo tiene nadie.
+
+Las dos comparten causa: **el estado de la base no viaja con el código**, y la
+suite no puede avisar porque no corre contra esa base.
 
 ## Administración
 
