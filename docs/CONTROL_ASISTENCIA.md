@@ -6,12 +6,13 @@ Marcaciones con un dispositivo físico:
 huella -> ESP32 -> Wi-Fi -> HTTP -> Laravel -> respuesta JSON -> pantalla TFT
 ```
 
-Estado: **administrable desde la web**. Hay empleados, huellas, lectores y
-marcaciones reales, con pantallas para darlos de alta y mantenerlos.
+Estado: **administrable y consultable desde la web**. Hay empleados, huellas,
+lectores y marcaciones reales, con pantallas para darlos de alta, mantenerlos y
+consultar el historial.
 
-Todavía **no** hay historial de marcaciones con filtros, reportes diario o
-mensual, horas trabajadas, horarios, tardanzas, ausencias, planilla ni
-enrolamiento remoto del sensor. Cada uno tiene su fase.
+Todavía **no** hay reportes diario o mensual, horas trabajadas, horarios,
+tardanzas, ausencias, planilla ni enrolamiento remoto del sensor. Cada uno tiene
+su fase.
 
 ## Reglas del módulo
 
@@ -178,6 +179,7 @@ Rutas en `routes/asistencia.php`.
 | Activar o desactivar empleado | `asistencia.empleados.toggle-activo` | `asistencia.gestionar` |
 | Asignar ranura | `asistencia.empleados.huellas.store` | `asistencia.gestionar` |
 | Liberar ranura | `asistencia.huellas.liberar` | `asistencia.gestionar` |
+| Historial de marcaciones | `asistencia.marcaciones.index` | `asistencia.ver` |
 | Lectores (listado) | `asistencia.dispositivos.index` | `asistencia.ver` |
 | Alta / edición de lector | `asistencia.dispositivos.create` / `.edit` | `asistencia.dispositivos.gestionar` |
 | Activar o desactivar lector | `asistencia.dispositivos.toggle-activo` | `asistencia.dispositivos.gestionar` |
@@ -228,6 +230,127 @@ está en `$hidden` del modelo.
 alguien reprograme el firmware, y mientras tanto nadie marca. Por eso exige
 ESCRIBIR el código del lector —el mismo criterio de la confirmación fuerte del
 Centro de Configuración—: quien lo escribe leyó de qué lector se trata.
+
+## Consultar el historial
+
+Código: `app/Support/Asistencia/`. Dos piezas.
+
+| Clase | Responsabilidad |
+|---|---|
+| `FiltroAsistencia` | QUÉ se quiere. Objeto de criterios inmutable, sin nada de HTTP. |
+| `ConsultaAsistencia` | CÓMO se busca. La única consulta de marcaciones del sistema. |
+
+### Por qué existe una capa y no un `where` en el controlador
+
+Porque el módulo de Formatos va a necesitar estos mismos datos, y la diferencia
+entre estas dos formas decide si ese módulo se puede construir:
+
+```
+Formatos -> ConsultaAsistencia -> datos reales     ✅
+Formatos -> copiar el where del controlador        ❌
+```
+
+La segunda parece más rápida el primer día y garantiza que, en cuanto alguien
+corrija un criterio, la pantalla y el documento empiecen a decir cosas distintas
+sobre el mismo mes.
+
+Por eso `MarcacionController` **no tiene un solo `where`**, y por eso las pruebas
+de la capa (`ConsultaAsistenciaTest`) no tocan una sola ruta: si solo se probara a
+través de la pantalla, nada garantizaría que sirve fuera de ella.
+
+### Contrato
+
+```php
+$filtro = FiltroAsistencia::vacio()
+    ->conEmpleado($id)
+    ->conRango($desde, $hasta)      // días LOCALES, inclusivo en ambos extremos
+    ->conDispositivo($id)
+    ->conTipo(TipoMarcacion::Entrada)
+    ->conOrigen('dispositivo')
+    ->ascendente();                 // cronológico: lo que quiere un documento
+
+FiltroAsistencia::desdeArray([...]); // formulario, formato guardado, comando
+$filtro->descripcion(['empleado' => 'Ana Pérez']);  // rótulo del documento
+```
+
+| Método de `ConsultaAsistencia` | Devuelve | Para |
+|---|---|---|
+| `query($filtro)` | `Builder` sin ejecutar | **el seam**: componer, `lazyById()`, joins |
+| `paginar($filtro)` | `LengthAwarePaginator` | la pantalla |
+| `todas($filtro)` | `Collection` | documentos y reportes acotados |
+| `porEmpleado($filtro)` | `Collection` agrupada por persona | una hoja por empleado |
+| `porDia($filtro)` | `Collection` agrupada por día local | una fila por día |
+| `resumen($filtro)` | `total, entradas, salidas, personas, dias` | encabezados |
+| `contar($filtro)` | `int` | conteos |
+| `ultimasDe($id, $n)` | `Collection` | la ficha del empleado |
+
+`query()` es público a propósito: quien necesite algo que estos métodos no
+ofrecen compone sobre él en vez de escribir su propio `where`.
+
+### Las fechas se filtran por DÍA LOCAL, siempre
+
+Sobre `fecha_local`, **nunca** sobre `marcado_at`. Dos razones y las dos mandan:
+
+1. **Corrección.** En El Salvador (UTC−6) una marcación de las **19:30 del día 5**
+   se guarda como **01:30 UTC del día 6**. Filtrar por el instante la sacaría del
+   día 5 — el turno de la tarde entero, movido de día, sin error y sin aviso.
+2. **Rendimiento.** `fecha_local` está indexada sola y junto al empleado.
+   Convertir `marcado_at` a hora local dentro del `where` exigiría funciones de
+   zona horaria que difieren entre MySQL y SQLite y que ningún índice aprovecha.
+
+Hay una prueba dedicada (`test_una_marcacion_nocturna_pertenece_a_su_dia_local_y_no_al_utc`)
+que falla si alguien cambia la columna.
+
+### Índices: no hizo falta esquema nuevo
+
+Verificado con `EXPLAIN` sobre MySQL 8.4:
+
+| Consulta | Índice usado | `type` |
+|---|---|---|
+| empleado + rango | `asistencia_marc_empleado_fecha_idx` | `range` |
+| solo rango | `asistencia_marc_fecha_idx` | `range` |
+| lector | índice de su clave foránea | `ref` |
+
+`tipo` y `origen` no llevan índice y no lo necesitan: dos y dos valores, y siempre
+acompañados de un filtro de fecha.
+
+### Datos históricos: se muestra el estado real
+
+Nada se rellena ni se adivina. Hay cuatro casos distintos y la pantalla los
+distingue (`<x-asistencia.origen-marcacion>`):
+
+| Situación | Qué se muestra |
+|---|---|
+| `origen=dispositivo` + lector presente | nombre y código del lector |
+| `origen=dispositivo` + lector `NULL` | «Lector no disponible» (se borró; la registró un aparato igual) |
+| `origen=manual` | «Manual» (corrección hecha por una persona) |
+| huella liberada después de la marcación | la ranura + «asignación liberada» |
+| empleado desactivado | su nombre + «(inactivo)» |
+
+**Una marcación NUNCA cambia de dueño por reutilizar una ranura.** Sigue colgando
+de la asignación con la que se hizo, aunque ese número sea de otra persona hoy.
+
+Los desplegables de filtro incluyen a los empleados y lectores **inactivos**: el
+historial de quien ya no trabaja acá es justamente lo que se viene a buscar.
+
+### Append-only, otra vez
+
+La pantalla es de **solo consulta**. No hay `edit`, ni `update`, ni `destroy`, ni
+ruta que los invoque: `PUT`, `PATCH` y `DELETE` sobre una marcación responden
+**404** porque esa URL no existe. Cuando exista la corrección manual será una fila
+NUEVA con `origen = 'manual'`, nunca una edición encima del hecho.
+
+Hay una prueba que compara la tabla entera antes y después de una ronda de
+consultas con filtros, y otra que espía el SQL buscando cualquier `insert`,
+`update` o `delete`.
+
+### Lo que esta capa NO calcula
+
+Horas trabajadas, jornadas, tardanzas y ausencias. Todo eso necesita horarios, y
+los horarios no existen: emparejar una entrada con una salida sin saber qué es una
+jornada es adivinar. `resumen()` cuenta hechos y ahí se detiene. `porDia()` es la
+base sobre la que la fase siguiente hará ese emparejamiento cuando existan las
+reglas que digan cómo.
 
 ## Endpoints
 

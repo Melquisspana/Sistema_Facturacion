@@ -4,6 +4,7 @@ use App\Http\Controllers\Asistencia\AsistenciaDashboardController;
 use App\Http\Controllers\Asistencia\DispositivoController;
 use App\Http\Controllers\Asistencia\EmpleadoController;
 use App\Http\Controllers\Asistencia\HuellaController;
+use App\Http\Controllers\Asistencia\MarcacionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -12,10 +13,10 @@ use Illuminate\Support\Facades\Route;
 | Qué contiene HOY: personas que marcan, sus asignaciones de ranura del sensor, y
 | los lectores dados de alta.
 |
-| Qué NO contiene, y no por descuido: historial de marcaciones con filtros,
-| reportes diarios o mensuales, cálculo de horas y enrolamiento remoto del ESP32.
-| Cada uno tiene su fase. Ofrecer media pantalla de historial sería peor que no
-| ofrecerla.
+| Desde la Fase 3, también el historial de marcaciones con filtros.
+|
+| Qué NO contiene, y no por descuido: reportes diarios o mensuales, cálculo de
+| horas trabajadas y enrolamiento remoto del ESP32. Cada uno tiene su fase.
 |
 | NO se toca DTE, facturación, PPQ, exportaciones, Rutas/Cobros ni Planta.
 |
@@ -83,6 +84,17 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         */
         Route::post('empleados/{empleado}/huellas', [HuellaController::class, 'store'])->middleware($gestionar)->name('empleados.huellas.store');
         Route::patch('huellas/{huella}/liberar', [HuellaController::class, 'liberar'])->middleware($gestionar)->name('huellas.liberar');
+
+        /*
+        | HISTORIAL DE MARCACIONES. SOLO `index`: no hay `edit`, ni `update`, ni
+        | `destroy`, y no es un olvido. Una marcación es un hecho ya ocurrido; la
+        | tabla ni siquiera tiene `updated_at` con el que disimular un cambio.
+        | Cuando exista la corrección manual será una fila NUEVA con
+        | `origen = 'manual'`, nunca una edición encima del hecho.
+        |
+        | Basta `asistencia.ver`: consultar el historial no escribe nada.
+        */
+        Route::get('marcaciones', [MarcacionController::class, 'index'])->name('marcaciones.index');
 
         /*
         | LECTORES. El token se genera al dar de alta y se renueva rotándolo; nunca

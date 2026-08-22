@@ -201,6 +201,59 @@
                 </div>
             @endif
 
+            {{-- ────────────────────── Últimas marcaciones ────────────────────── --}}
+            <div class="{{ $tarjeta }}">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimas marcaciones</h3>
+                    <a href="{{ route('asistencia.marcaciones.index', ['empleado_id' => $empleado->id]) }}"
+                       class="text-sm text-indigo-600 hover:underline dark:text-indigo-300">Ver historial completo →</a>
+                </div>
+
+                @if ($ultimas->isEmpty())
+                    <p class="mt-3 text-sm text-gray-500 dark:text-paper-400">
+                        Esta persona todavía no ha marcado ninguna vez.
+                    </p>
+                @else
+                    {{-- Solo las últimas: la ficha responde «¿el lector la está
+                         registrando?». Consultar el historial con filtros es otra
+                         pantalla, y duplicarla acá sería mantener dos tablas. --}}
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
+                                    <th class="py-2 pr-4">Fecha</th>
+                                    <th class="py-2 pr-4">Hora</th>
+                                    <th class="py-2 pr-4">Tipo</th>
+                                    <th class="py-2 pr-4">Origen</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
+                                @foreach ($ultimas as $marcacion)
+                                    <tr>
+                                        <td class="py-2.5 pr-4 tabular-nums text-gray-800 dark:text-paper-200">{{ $marcacion->fecha_local->format('d/m/Y') }}</td>
+                                        <td class="py-2.5 pr-4 tabular-nums font-medium text-gray-800 dark:text-paper-100">
+                                            {{ $marcacion->marcado_at->copy()->setTimezone($zona)->format('H:i:s') }}
+                                        </td>
+                                        <td class="py-2.5 pr-4">
+                                            <span @class([
+                                                'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                                                'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' => $marcacion->tipo === \App\Enums\Asistencia\TipoMarcacion::Entrada,
+                                                'bg-gray-100 text-gray-700 dark:bg-ink-700 dark:text-paper-300' => $marcacion->tipo === \App\Enums\Asistencia\TipoMarcacion::Salida,
+                                            ])>{{ $marcacion->tipo->label() }}</span>
+                                        </td>
+                                        <td class="py-2.5 pr-4"><x-asistencia.origen-marcacion :marcacion="$marcacion" /></td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p class="mt-3 text-xs text-gray-400 dark:text-paper-500">
+                        Hora oficial del servidor ({{ $zona }}). Las marcaciones no se editan ni se borran.
+                    </p>
+                @endif
+            </div>
+
             <a href="{{ route('asistencia.empleados.index') }}" class="inline-block text-sm text-gray-500 hover:underline dark:text-paper-400">← Volver a empleados</a>
         </div>
     </div>
