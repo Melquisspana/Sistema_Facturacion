@@ -20,8 +20,9 @@
          se administran DENTRO de la ficha de cada persona, que es donde «qué
          ranura es de quién» se entiende sin tener que cruzar dos listados. --}}
     <x-sidebar-group titulo="Personal" icono="usuarios" clave="asistencia-personal"
-                     :activo="request()->routeIs('asistencia.empleados.*')">
+                     :activo="request()->routeIs('asistencia.empleados.*', 'asistencia.marcaciones.*')">
         <x-sidebar-link :href="route('asistencia.empleados.index')" :active="request()->routeIs('asistencia.empleados.*')">Empleados</x-sidebar-link>
+        <x-sidebar-link :href="route('asistencia.marcaciones.index')" :active="request()->routeIs('asistencia.marcaciones.*')">Historial de marcaciones</x-sidebar-link>
     </x-sidebar-group>
 
     {{-- Los lectores llevan su propio permiso: dar de alta uno o rotarle el token

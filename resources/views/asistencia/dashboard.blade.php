@@ -6,8 +6,8 @@
      nadie vuelve a dudar de él.
 
      «Marcaciones de hoy» es un conteo, no un historial: responde «¿el lector está
-     registrando?», que es lo que se mira al entrar. El historial con filtros es
-     otra fase y otra pantalla, y por eso esa tarjeta NO enlaza a ningún lado.
+     registrando?», que es lo que se mira al entrar. Desde la Fase 3 enlaza al
+     historial con filtros, que sí es una pantalla.
 
      Todos los números los calcula App\Support\Asistencia\PanelAsistencia. Esta
      vista no consulta nada. --}}
@@ -107,16 +107,18 @@
                         @endcan
                     </div>
 
-                    {{-- SIN enlace: el historial de marcaciones todavía no existe y no
-                         se promete una pantalla que no está hecha. --}}
+                    {{-- Un conteo, no un reporte. Enlaza al historial —que desde la
+                         Fase 3 sí existe— pero no calcula nada: horas y jornadas
+                         necesitan horarios, y los horarios no existen. --}}
                     <div class="{{ $tarjeta }}">
                         <p class="{{ $rotulo }}">Marcaciones de hoy</p>
                         <p class="{{ $cifra }}">{{ $resumen['marcaciones_hoy'] }}</p>
                         <p class="{{ $nota }}">
                             {{ $resumen['personas_hoy'] }} persona(s) &middot; {{ $resumen['fecha_hoy'] }}
                         </p>
-                        <p class="mt-3 text-xs text-gray-400 dark:text-paper-500">
-                            Conteo del día en {{ $resumen['zona'] }}. El historial con filtros llega más adelante.
+                        <a href="{{ route('asistencia.marcaciones.index') }}" class="{{ $enlace }}">Ver historial →</a>
+                        <p class="mt-1 text-xs text-gray-400 dark:text-paper-500">
+                            Conteo del día en {{ $resumen['zona'] }}.
                         </p>
                     </div>
                 </div>
@@ -124,10 +126,9 @@
                 <div class="rounded-xl bg-white p-5 text-sm text-gray-600 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:text-paper-300">
                     <h2 class="text-base font-semibold text-gray-800 dark:text-paper-100">Lo que todavía no está</h2>
                     <p class="mt-2">
-                        Historial de marcaciones con filtros, reportes diario y mensual, cálculo de horas
-                        trabajadas y enrolamiento de huellas desde el sistema. Se construyen en las fases
-                        siguientes; mientras tanto, la huella se guarda en el sensor y acá se anota a quién
-                        corresponde cada ranura.
+                        Reportes diario y mensual, cálculo de horas trabajadas y enrolamiento de huellas
+                        desde el sistema. Se construyen en las fases siguientes; mientras tanto, la huella se
+                        guarda en el sensor y acá se anota a quién corresponde cada ranura.
                     </p>
                 </div>
             @endif

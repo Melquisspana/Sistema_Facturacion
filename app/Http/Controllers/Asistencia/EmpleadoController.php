@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Asistencia\EmpleadoRequest;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
+use App\Services\Asistencia\HoraOficial;
+use App\Support\Asistencia\ConsultaAsistencia;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -21,6 +23,14 @@ use Illuminate\View\View;
  * endpoint**: no hace falta acordarse de comprobar nada porque no hay por dónde
  * pedirlo. Quien deja la empresa se DESACTIVA: sus marcaciones siguen ahí y su
  * huella deja de abrir la puerta.
+ *
+ * ─────────────────── La ficha muestra sus últimas marcaciones ───────────────────
+ *
+ * Y las pide a {@see ConsultaAsistencia}, la misma capa que alimenta el historial
+ * completo y que alimentará al módulo de Formatos. Un `AsistenciaMarcacion::where()`
+ * escrito acá funcionaría hoy y garantizaría que, en cuanto alguien afine el
+ * criterio en un sitio, las dos pantallas empezaran a discrepar sobre la misma
+ * persona.
  *
  * ─────────────── `asistencia_empleados` no es `users`, y sigue sin serlo ───────────────
  *
@@ -57,7 +67,7 @@ class EmpleadoController extends Controller
      * e históricas. Es la pantalla desde la que se asigna y se libera, porque «qué
      * ranura es de quién» solo se entiende mirando a la persona completa.
      */
-    public function show(AsistenciaEmpleado $empleado): View
+    public function show(AsistenciaEmpleado $empleado, ConsultaAsistencia $consulta, HoraOficial $horaOficial): View
     {
         $empleado->load([
             'huellas' => fn ($q) => $q->with('dispositivo')
@@ -71,6 +81,13 @@ class EmpleadoController extends Controller
             // Solo lectores ACTIVOS: asignar una ranura de un lector desactivado
             // crearía una asignación que no puede marcar nada.
             'lectores' => AsistenciaDispositivo::query()->where('activo', true)->orderBy('nombre')->get(),
+
+            // Las últimas marcaciones, por la MISMA capa de consulta que usa el
+            // historial completo. La ficha no construye su propia consulta: si lo
+            // hiciera, el día que cambie el orden o el criterio, las dos pantallas
+            // dirían cosas distintas de la misma persona.
+            'ultimas' => $consulta->ultimasDe($empleado->id),
+            'zona' => $horaOficial->zona(),
         ]);
     }
 

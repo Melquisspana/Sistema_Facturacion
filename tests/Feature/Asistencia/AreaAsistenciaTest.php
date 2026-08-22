@@ -148,10 +148,15 @@ class AreaAsistenciaTest extends TestCase
 
         $respuesta->assertSee(route('asistencia.empleados.index'));
         $respuesta->assertSee(route('asistencia.dispositivos.index'));
+        $respuesta->assertSee(route('asistencia.marcaciones.index'));
 
-        // Y NO promete pantallas que no existen todavía.
-        $respuesta->assertDontSee('Reportes');
-        $respuesta->assertDontSee('Enrolamiento');
+        // Y NO promete pantallas que no existen todavía. Se busca el CIERRE DE UN
+        // ENLACE y no la palabra suelta: la pantalla sí menciona en prosa lo que
+        // falta por construir —y debe poder hacerlo—; lo que no puede es ofrecer
+        // un enlace que lleve a ninguna parte.
+        $respuesta->assertDontSee('Reportes</a>', escape: false);
+        $respuesta->assertDontSee('Enrolamiento</a>', escape: false);
+        $respuesta->assertDontSee('Jornadas</a>', escape: false);
     }
 
     /**
