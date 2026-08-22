@@ -68,13 +68,22 @@
                 @endunless
             </div>
 
+            {{-- ───────────────── Registrar la huella con el lector ───────────────── --}}
+            @include('asistencia.empleados._enrolamiento', [
+                'empleado' => $empleado,
+                'lectores' => $lectores,
+                'ordenViva' => $ordenViva,
+                'ordenesRecientes' => $ordenesRecientes,
+            ])
+
             {{-- ──────────────────────── Asignar una ranura ──────────────────────── --}}
             @can('asistencia.gestionar')
                 <div class="{{ $tarjeta }}">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Asignar una ranura del sensor</h3>
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Anotar una ranura ya grabada</h3>
                     <p class="mt-2 text-sm text-gray-600 dark:text-paper-300">
-                        La huella se guarda <strong>en el sensor AS608</strong>, no acá. Este formulario solo
-                        anota que la ranura N de ese lector corresponde a esta persona.
+                        Para huellas que <strong>ya están en el sensor</strong> y solo falta decir de quién son.
+                        Si querés grabar una huella nueva, usá «Registrar huella con el lector» de arriba: hace
+                        las dos cosas.
                     </p>
 
                     @if ($lectores->isEmpty())

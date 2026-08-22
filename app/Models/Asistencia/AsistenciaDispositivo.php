@@ -31,6 +31,9 @@ class AsistenciaDispositivo extends Model
         'nombre',
         'token_hash',
         'activo',
+        'capacidad_sensor',
+        'ranuras_ocupadas',
+        'indice_sincronizado_at',
     ];
 
     /**
@@ -47,6 +50,9 @@ class AsistenciaDispositivo extends Model
         return [
             'activo' => 'boolean',
             'ultima_conexion_at' => 'datetime',
+            'capacidad_sensor' => 'integer',
+            'ranuras_ocupadas' => 'array',
+            'indice_sincronizado_at' => 'datetime',
         ];
     }
 
@@ -76,6 +82,55 @@ class AsistenciaDispositivo extends Model
                 'deleted' => 'eliminó un lector de asistencia',
                 default => $evento,
             });
+    }
+
+    public function ordenesEnrolamiento(): HasMany
+    {
+        return $this->hasMany(AsistenciaOrdenEnrolamiento::class, 'asistencia_dispositivo_id');
+    }
+
+    /**
+     * ¿Sabemos qué hay dentro del sensor?
+     *
+     * `false` mientras el lector no haya reportado su capacidad y su índice. No es
+     * un detalle: sin esa información el servidor no puede elegir una ranura sin
+     * arriesgarse a pisar una plantilla heredada, y prefiere decirlo a apostar.
+     */
+    public function tieneIndiceSincronizado(): bool
+    {
+        return $this->indice_sincronizado_at !== null && $this->capacidad_sensor !== null;
+    }
+
+    /**
+     * Ranuras con plantilla FÍSICA según la última sincronización. Es una foto: si
+     * nadie sincronizó, está vacía, y eso NO significa «el sensor está vacío» sino
+     * «no sabemos» — por eso {@see tieneIndiceSincronizado()} se pregunta aparte.
+     *
+     * @return array<int, int>
+     */
+    public function ranurasOcupadasEnSensor(): array
+    {
+        return array_values(array_map('intval', $this->ranuras_ocupadas ?? []));
+    }
+
+    /**
+     * Guarda lo que el sensor dice de sí mismo. Telemetría del hardware, no un
+     * cambio administrativo: por eso `saveQuietly`, igual que la última conexión.
+     * Auditar cada sincronización llenaría el registro de ruido sin decir nada que
+     * no esté ya en estas columnas.
+     *
+     * @param  array<int, int>  $ocupadas
+     */
+    public function sincronizarIndice(int $capacidad, array $ocupadas): void
+    {
+        $limpias = array_values(array_unique(array_map('intval', $ocupadas)));
+        sort($limpias);
+
+        $this->forceFill([
+            'capacidad_sensor' => $capacidad,
+            'ranuras_ocupadas' => $limpias,
+            'indice_sincronizado_at' => Carbon::now(),
+        ])->saveQuietly();
     }
 
     public function huellas(): HasMany
