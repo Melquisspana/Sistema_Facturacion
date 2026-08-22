@@ -10,9 +10,12 @@ Estado: **administrable y consultable desde la web**. Hay empleados, huellas,
 lectores y marcaciones reales, con pantallas para darlos de alta, mantenerlos y
 consultar el historial.
 
-Todavía **no** hay reportes diario o mensual, horas trabajadas, horarios,
-tardanzas, ausencias, planilla ni enrolamiento remoto del sensor. Cada uno tiene
-su fase.
+Desde la Fase 4 hay además **jornadas**: qué ocurrió cada día, con las entradas y
+salidas emparejadas y el tiempo de presencia sumado.
+
+Todavía **no** hay horarios, tardanzas, horas extra, ausencias, feriados, planilla
+ni enrolamiento remoto del sensor. Los primeros necesitan reglas laborales que
+nadie ha declarado; el último tiene su propia fase.
 
 ## Reglas del módulo
 
@@ -180,6 +183,7 @@ Rutas en `routes/asistencia.php`.
 | Asignar ranura | `asistencia.empleados.huellas.store` | `asistencia.gestionar` |
 | Liberar ranura | `asistencia.huellas.liberar` | `asistencia.gestionar` |
 | Historial de marcaciones | `asistencia.marcaciones.index` | `asistencia.ver` |
+| Jornadas (reporte) | `asistencia.jornadas.index` | `asistencia.ver` |
 | Lectores (listado) | `asistencia.dispositivos.index` | `asistencia.ver` |
 | Alta / edición de lector | `asistencia.dispositivos.create` / `.edit` | `asistencia.dispositivos.gestionar` |
 | Activar o desactivar lector | `asistencia.dispositivos.toggle-activo` | `asistencia.dispositivos.gestionar` |
@@ -351,6 +355,112 @@ los horarios no existen: emparejar una entrada con una salida sin saber qué es 
 jornada es adivinar. `resumen()` cuenta hechos y ahí se detiene. `porDia()` es la
 base sobre la que la fase siguiente hará ese emparejamiento cuando existan las
 reglas que digan cómo.
+
+## Jornadas
+
+Código: `app/Support/Asistencia/` y `App\Enums\Asistencia\EstadoJornada`.
+
+| Clase | Responsabilidad |
+|---|---|
+| `Jornada` | Lo que ocurrió con UNA persona en UN día local. Objeto derivado. |
+| `TramoJornada` | Un tramo `entrada → salida`. Puede quedar abierto. |
+| `EstadoJornada` | `Completa` · `Abierta` · `Irregular`. |
+| `ConsultaJornadas` | Las arma a partir de `ConsultaAsistencia`. **El seam.** |
+
+### La cadena, y por qué importa
+
+```
+Formatos -> ConsultaJornadas -> ConsultaAsistencia -> datos reales
+```
+
+`ConsultaJornadas` **no consulta la tabla por su cuenta**: pide los datos a la
+capa de la Fase 3. Así toda su garantía —filtrar por `fecha_local` y no por el
+instante UTC, usar los índices, no inventar nada cuando falta el lector— sigue
+valiendo. Una segunda consulta escrita aparte la perdería en silencio.
+
+`JornadaController` no empareja, no suma y no decide estados; la vista tampoco.
+Hay un test (`test_la_pantalla_y_la_capa_reutilizable_producen_lo_mismo`) que
+compara fila por fila lo que pinta la pantalla contra lo que devuelve la capa.
+
+### Contrato
+
+```php
+$consulta->porRango($filtro, $estado);      // Collection<Jornada>  ← entrada principal
+$consulta->deEmpleado($id, $filtro);        // atajo por persona
+$consulta->porEmpleado($filtro);            // agrupadas: una hoja por empleado
+$consulta->delDia($id, $dia);               // ?Jornada — rellenar una celda
+$consulta->paginar($filtro, $estado);       // la pantalla
+$consulta->resumen($filtro, $estado);       // conteos + tiempo + tiempo_exacto
+```
+
+De cada `Jornada`: `primeraEntrada()`, `ultimaSalida()`, `entradas()`, `salidas()`,
+`paresCompletos()`, `sinPareja()`, `trabajadoSegundos()`, `trabajadoLegible()`,
+`trabajadoHorasDecimales()`, `tiempoEsExacto()`, `estado`, `toArray()`.
+
+### El tiempo es la SUMA DE LOS TRAMOS
+
+No «última salida − primera entrada». Quien entra a las 07:00, sale a las 12:00,
+vuelve a las 13:00 y se va a las 16:00 trabajó **8 h, no 9**: la resta ingenua se
+come la hora de almuerzo, y ese error va directo a una planilla.
+
+Un tramo sin cerrar **no aporta tiempo**. Cerrarlo con «ahora» o con el final del
+día serían dos formas de inventar una hora que nadie marcó. Cuando eso pasa,
+`tiempoEsExacto()` devuelve `false` y la pantalla dice «al menos».
+
+### Los tres estados, y qué los distingue
+
+| Estado | Cuándo | Tiempo |
+|---|---|---|
+| `Completa` | cada entrada tiene su salida | exacto |
+| `Abierta` | la **última** marcación es una entrada sin cerrar | mínimo |
+| `Irregular` | una salida sin entrada, o una entrada sin cerrar que **no es la última** | mínimo |
+
+La diferencia entre `Abierta` e `Irregular` es **posicional**, no de cantidad:
+«se le olvidó salir» y «hay una entrada duplicada» dejan los dos un tramo abierto,
+pero significan cosas distintas. Vía lector `Irregular` no puede ocurrir —la
+alternancia lo impide y el día siempre empieza en entrada—: solo llega de
+correcciones manuales.
+
+**No hay `Puntual`, `Ausente`, `Tardanza` ni `Extra`.** Todos presuponen una hora
+oficial de entrada, una jornada pactada o un calendario laboral, y ninguna de las
+tres está declarada. Un estado inventado en una pantalla de asistencia se
+convierte en una discusión de planilla.
+
+**Un día sin marcaciones no produce jornada.** No es «ausencia» —eso presupone
+saber que ese día se trabajaba—: es un día del que no hay nada que decir.
+
+### ⚠️ Turnos que cruzan la medianoche
+
+**Identificados, no resueltos.** Y el problema es peor de lo que parece.
+Comprobado ejecutando el servicio real de marcación:
+
+```
+persona entra 20:00 del día 5  y sale 01:00 del día 6
+
+día 5 -> 20:00 entrada          jornada ABIERTA, 0 h
+día 6 -> 01:00 **entrada**      ¡no «salida»!
+```
+
+La marcación de la 01:00 se registra como **entrada** porque la alternancia se
+reinicia a medianoche local (`TipoMarcacion::siguienteTras()` con el día vacío).
+El tipo queda invertido y **sigue invertido mientras dure el patrón**.
+
+Unirlas exigiría saber que esa persona hace turno de noche, que es exactamente lo
+que un horario declara. Adivinarlo —«si el día abre y el siguiente empieza de
+madrugada, unilos»— sería una heurística silenciosa que acertaría casi siempre y
+fallaría en la planilla de alguien.
+
+Se deja como `Abierta`, con las horas en cero en vez de inventadas, y con un test
+(`test_el_turno_nocturno_queda_identificado_pero_sin_resolver`) que fija el
+comportamiento ACTUAL. El día que existan horarios, ese test tiene que cambiar —
+y ese cambio será la señal de que el problema se resolvió.
+
+### Coste y rango por defecto
+
+Una jornada no es una fila: es el resultado de agrupar y emparejar varias, así que
+la paginación ocurre en memoria y **no hay `LIMIT` que proteja de un «traeme
+todo»**. Por eso la pantalla ofrece el **mes en curso** cuando no se pide otro
+rango, y con un solo extremo completa el otro con el mes de ese extremo.
 
 ## Endpoints
 

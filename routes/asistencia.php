@@ -4,6 +4,7 @@ use App\Http\Controllers\Asistencia\AsistenciaDashboardController;
 use App\Http\Controllers\Asistencia\DispositivoController;
 use App\Http\Controllers\Asistencia\EmpleadoController;
 use App\Http\Controllers\Asistencia\HuellaController;
+use App\Http\Controllers\Asistencia\JornadaController;
 use App\Http\Controllers\Asistencia\MarcacionController;
 use Illuminate\Support\Facades\Route;
 
@@ -13,10 +14,12 @@ use Illuminate\Support\Facades\Route;
 | Qué contiene HOY: personas que marcan, sus asignaciones de ranura del sensor, y
 | los lectores dados de alta.
 |
-| Desde la Fase 3, también el historial de marcaciones con filtros.
+| Desde la Fase 3, el historial de marcaciones con filtros. Desde la Fase 4, el
+| reporte de jornadas (qué ocurrió cada día, con el tiempo de presencia sumado).
 |
-| Qué NO contiene, y no por descuido: reportes diarios o mensuales, cálculo de
-| horas trabajadas y enrolamiento remoto del ESP32. Cada uno tiene su fase.
+| Qué NO contiene, y no por descuido: tardanzas, horas extra, ausencias, feriados
+| y enrolamiento remoto del ESP32. Los cuatro primeros necesitan horarios, que no
+| existen; el último tiene su propia fase.
 |
 | NO se toca DTE, facturación, PPQ, exportaciones, Rutas/Cobros ni Planta.
 |
@@ -95,6 +98,18 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         | Basta `asistencia.ver`: consultar el historial no escribe nada.
         */
         Route::get('marcaciones', [MarcacionController::class, 'index'])->name('marcaciones.index');
+
+        /*
+        | JORNADAS. El reporte: qué ocurrió cada día, con las entradas y salidas
+        | emparejadas y el tiempo de presencia sumado.
+        |
+        | Solo `index`, y por el mismo motivo que el historial: una jornada es un
+        | objeto DERIVADO de las marcaciones. No se guarda, no tiene tabla y no se
+        | puede editar — corregirla es corregir las marcaciones que la produjeron.
+        |
+        | Basta `asistencia.ver`: consultar no escribe nada.
+        */
+        Route::get('jornadas', [JornadaController::class, 'index'])->name('jornadas.index');
 
         /*
         | LECTORES. El token se genera al dar de alta y se renueva rotándolo; nunca
