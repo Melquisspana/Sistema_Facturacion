@@ -1065,6 +1065,85 @@ Dos tareas que **no** se ejecutan solas y que en desarrollo hubo que hacer a man
 Las dos comparten causa: **el estado de la base no viaja con el código**, y la
 suite no puede avisar porque no corre contra esa base.
 
+## Puesta en servicio del lector definitivo
+
+Las huellas que hay hoy en el AS608 son **de desarrollo**: se grabaron probando el
+enrolamiento, algunas pertenecen a la misma persona repetida y otras quedaron
+huérfanas de pruebas de robustez. **Ninguna sirve para producción.**
+
+**El sensor definitivo se entrega VACÍO.** Las huellas reales del personal se
+enrolan desde cero, una por una, con el lector ya instalado en su ubicación
+definitiva. No se migran, no se reaprovechan y no se copian: una plantilla
+biométrica grabada en un banco de pruebas no tiene por qué corresponder a quien
+dice la base, y comprobarlo cuesta más que volver a tomar el dedo.
+
+### ⚠️ Todavía NO se borra nada
+
+Las huellas actuales **hacen falta** mientras se termina el montaje físico: son las
+que permiten comprobar que el lector marca en su sitio nuevo, con su cableado
+nuevo y su alimentación nueva.
+
+La limpieza se hace **después** de tres cosas, en este orden:
+
+1. **Firmware congelado** — sin más cambios pendientes en `firmware/asistencia/`.
+2. **Pinout congelado** — el cableado definitivo, ya montado.
+3. **Montaje validado** — el lector en su ubicación final, marcando de verdad.
+
+Borrar antes obliga a re-enrolar para seguir probando, y esas huellas nuevas
+habría que borrarlas otra vez.
+
+### El orden de la limpieza
+
+1. **Liberar en Laravel las asignaciones de prueba**, desde la ficha de cada
+   persona. Liberar **no borra**: la fila queda con su `liberada_at` y las
+   marcaciones históricas siguen apuntando a ella. Ver «Reutilizar una ranura».
+2. **Vaciar el sensor.** El firmware no expone esa operación a propósito —no hay
+   ningún camino desde la web ni desde el lector que borre plantillas— así que se
+   hace cargando temporalmente el ejemplo `emptyDatabase` de la librería
+   Adafruit_Fingerprint y volviendo a cargar `asistencia.ino` después.
+3. **Reiniciar el ESP32** para que re-sincronice su índice. Sin este paso el
+   servidor sigue creyendo ocupadas las ranuras que ya se vaciaron.
+
+### Verificación antes de dar el lector por listo
+
+Los tres tienen que cumplirse a la vez:
+
+| Qué | Dónde se comprueba | Valor exigido |
+|---|---|---|
+| Sensor sin plantillas | Serial, al arrancar | `Huellas guardadas: 0` |
+| Índice físico sin ocupadas | Serial, al arrancar | `RANURAS OCUPADAS EN EL SENSOR: 0` |
+| Sin asignaciones activas de prueba | base | ninguna `asistencia_huellas` con `activo = true` |
+
+En base, lo que no debe devolver ninguna fila:
+
+```sql
+SELECT id, asistencia_empleado_id, fingerprint_id
+FROM asistencia_huellas
+WHERE activo = 1;
+```
+
+Y el índice del lector, que debe quedar sincronizado y vacío:
+
+```sql
+SELECT capacidad_sensor, ranuras_ocupadas, indice_sincronizado_at
+FROM asistencia_dispositivos WHERE codigo = 'lector-entrada';
+```
+
+`ranuras_ocupadas` tiene que ser `[]` — **no `NULL`**. Vacío significa «sincronizó
+y no tiene nada»; `NULL` significa «nunca sincronizó», y con eso el enrolamiento se
+niega a reservar ranura.
+
+### Lo que SÍ se conserva
+
+**El historial no se toca.** Marcaciones, jornadas, órdenes de enrolamiento y
+huellas liberadas se quedan donde están: son append-only y su valor es
+precisamente registrar lo que pasó, incluidas las pruebas. Nadie va a confundir una
+marcación de agosto de un banco de pruebas con una jornada real, y borrarla
+destruiría la trazabilidad de cómo se validó el módulo.
+
+Lo que tiene que quedar limpio es **el sensor físico** y **las asignaciones
+activas**. Nada más.
+
 ## Administración
 
 ```powershell
