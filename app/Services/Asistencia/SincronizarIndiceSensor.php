@@ -41,9 +41,13 @@ class SincronizarIndiceSensor
         // Se descarta lo que no cabe en el sensor que el propio lector declara: una
         // ranura fuera de rango no puede tener plantilla, y guardarla ensuciaría la
         // exclusión sin protegernos de nada.
+        //
+        // El rango sale de SelectorRanura y no de un `< $capacidad` escrito acá: si
+        // alguna vez se instalara un sensor que numera desde 1, este filtro tiene
+        // que moverse con el resto o empezaría a tirar la última ranura buena.
         $dentroDeRango = array_filter(
             array_map('intval', $ocupadas),
-            fn (int $ranura) => $ranura >= SelectorRanura::RANURA_MINIMA && $ranura < $capacidad,
+            fn (int $ranura) => SelectorRanura::dentroDelRango($ranura, $capacidad),
         );
 
         $lector->sincronizarIndice($capacidad, $dentroDeRango);

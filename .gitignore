@@ -35,3 +35,7 @@ Thumbs.db
 
 # Backups locales (dumps .sql manuales/automáticos, zips, .bak): nunca versionar
 /backups/
+
+# Firmware del lector de asistencia: secretos locales (SSID, password Wi-Fi,
+# token del lector). Solo se versiona la plantilla secretos.h.example.
+/firmware/asistencia/secretos.h

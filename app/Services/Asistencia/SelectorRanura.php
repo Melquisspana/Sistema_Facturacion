@@ -34,15 +34,41 @@ use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
 class SelectorRanura
 {
     /**
-     * Primera ranura del sensor. Las librerías del AS608 numeran desde cero.
+     * Primera ranura del sensor. Los AS608 numeran desde cero, y este lector lo
+     * confirmó de dos formas independientes: `storeModel(0)` devolvió OK y el
+     * barrido posterior releyó esa ranura como ocupada. Escribir y releer son
+     * caminos distintos del protocolo y los dos aceptan la página 0.
      *
      * Vive acá, en una constante y no repartida por el código, porque es el único
      * detalle de este cálculo que depende del modelo: si un sensor resultara
-     * numerar desde 1, se cambia este número y nada más. El firmware rechaza con
-     * `fallo_guardado` una ranura fuera de rango, así que el error se ve, no se
-     * traga.
+     * numerar desde 1, se cambia este número y nada más.
+     *
+     * Para que eso último sea VERDAD y no una intención, el tope superior se
+     * deriva siempre de {@see self::ranuraMaxima()} en vez de repetir `< capacidad`
+     * por ahí. Antes no era así: con `RANURA_MINIMA = 1` el rango efectivo habría
+     * pasado a 1..capacidad-1 y la última ranura del sensor habría quedado
+     * inalcanzable en silencio, sin que ninguna prueba lo notara.
      */
     public const RANURA_MINIMA = 0;
+
+    /**
+     * La ÚLTIMA ranura válida de un sensor con esta capacidad.
+     *
+     * Un sensor de 300 ranuras que numera desde 0 llega hasta la 299; uno que
+     * numerara desde 1 llegaría hasta la 300. En los dos casos son 300 ranuras, y
+     * ese es justo el punto: la cuenta sale de la constante, no de suponer dónde
+     * empieza.
+     */
+    public static function ranuraMaxima(int $capacidad): int
+    {
+        return self::RANURA_MINIMA + $capacidad - 1;
+    }
+
+    /** ¿Esta ranura existe en un sensor de esta capacidad? */
+    public static function dentroDelRango(int $ranura, int $capacidad): bool
+    {
+        return $ranura >= self::RANURA_MINIMA && $ranura <= self::ranuraMaxima($capacidad);
+    }
 
     /**
      * La menor ranura libre. «Libre» = ni asignada, ni reservada, ni ocupada
@@ -59,7 +85,7 @@ class SelectorRanura
         $ocupadas = $this->ocupadas($lector);
         $capacidad = (int) $lector->capacidad_sensor;
 
-        for ($ranura = self::RANURA_MINIMA; $ranura < $capacidad; $ranura++) {
+        for ($ranura = self::RANURA_MINIMA; $ranura <= self::ranuraMaxima($capacidad); $ranura++) {
             if (! in_array($ranura, $ocupadas, true)) {
                 return $ranura;
             }
@@ -122,9 +148,9 @@ class SelectorRanura
         // La capacidad solo se comprueba si el lector la reportó. Sin índice, el
         // escape manual sigue disponible —es justo el camino de recuperación para
         // un sensor sin sincronizar— pero sin poder validar el tope.
-        if ($lector->capacidad_sensor !== null && $ranura >= $lector->capacidad_sensor) {
+        if ($lector->capacidad_sensor !== null && ! self::dentroDelRango($ranura, $lector->capacidad_sensor)) {
             return "El sensor tiene {$lector->capacidad_sensor} ranuras (de "
-                .self::RANURA_MINIMA.' a '.($lector->capacidad_sensor - 1).').';
+                .self::RANURA_MINIMA.' a '.self::ranuraMaxima($lector->capacidad_sensor).').';
         }
 
         if (in_array($ranura, $this->asignadas($lector), true)) {

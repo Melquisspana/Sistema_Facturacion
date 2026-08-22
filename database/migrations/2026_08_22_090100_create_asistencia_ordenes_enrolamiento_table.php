@@ -55,13 +55,29 @@ return new class extends Migration
         Schema::create('asistencia_ordenes_enrolamiento', function (Blueprint $table) {
             $table->id();
 
+            /*
+            | Las CINCO claves foráneas llevan nombre explícito, igual que los dos
+            | únicos y los índices de más abajo.
+            |
+            | No es estilo: MySQL corta los identificadores en 64 caracteres, y el
+            | nombre que Laravel genera solo para la primera
+            | —`asistencia_ordenes_enrolamiento_asistencia_dispositivo_id_foreign`—
+            | mide 65. La migración reventaba con un 1059 al crear la tabla.
+            |
+            | No lo detectó ninguna prueba porque las pruebas corren sobre SQLite
+            | (ver phpunit.xml), que no tiene ese límite. Las otras cuatro cabían
+            | por 2 caracteres, que es margen de nadie: se nombran las cinco.
+            */
+
             // Una orden es de UN lector. Sin esto, con dos lectores, cualquiera
             // podría ejecutar el enrolamiento que le tocaba al otro.
             $table->foreignId('asistencia_dispositivo_id')
-                ->constrained('asistencia_dispositivos')->restrictOnDelete();
+                ->constrained('asistencia_dispositivos', 'id', 'asistencia_ordenes_dispositivo_fk')
+                ->restrictOnDelete();
 
             $table->foreignId('asistencia_empleado_id')
-                ->constrained('asistencia_empleados')->restrictOnDelete();
+                ->constrained('asistencia_empleados', 'id', 'asistencia_ordenes_empleado_fk')
+                ->restrictOnDelete();
 
             $table->string('estado', 20)
                 ->comment('App\Enums\Asistencia\EstadoOrdenEnrolamiento');
@@ -78,7 +94,8 @@ return new class extends Migration
             // La huella que se creó al confirmar. NULL mientras no haya confirmación
             // real: es la garantía de «no crear la asignación antes de tiempo».
             $table->foreignId('asistencia_huella_id')->nullable()
-                ->constrained('asistencia_huellas')->nullOnDelete();
+                ->constrained('asistencia_huellas', 'id', 'asistencia_ordenes_huella_fk')
+                ->nullOnDelete();
 
             $table->string('motivo_fallo', 40)->nullable()
                 ->comment('Código ESTABLE sobre el que ramifica el firmware');
@@ -88,7 +105,8 @@ return new class extends Migration
             $table->unsignedTinyInteger('intento')->default(1)
                 ->comment('1 = original. Sube cuando el sensor resulta tener la ranura ocupada y se reserva otra');
             $table->foreignId('orden_origen_id')->nullable()
-                ->constrained('asistencia_ordenes_enrolamiento')->nullOnDelete()
+                ->constrained('asistencia_ordenes_enrolamiento', 'id', 'asistencia_ordenes_origen_fk')
+                ->nullOnDelete()
                 ->comment('De qué orden nació este reintento');
 
             $table->timestamp('expira_at')
@@ -97,7 +115,8 @@ return new class extends Migration
             $table->timestamp('finalizada_at')->nullable();
 
             $table->foreignId('solicitada_por_user_id')->nullable()
-                ->constrained('users')->nullOnDelete();
+                ->constrained('users', 'id', 'asistencia_ordenes_user_fk')
+                ->nullOnDelete();
 
             $table->timestamps();
 
