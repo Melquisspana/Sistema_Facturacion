@@ -468,12 +468,25 @@ rango, y con un solo extremo completa el otro con el mes de ese extremo.
 |---|---|---|
 | Ruta | `GET`/`POST` `/api/asistencia/ping` | `POST` `/api/asistencia/marcar` |
 | Nombre | `api.asistencia.ping` | `api.asistencia.marcar` |
-| Middleware | `modulo.asistencia`, `throttle:60,1` | + `dispositivo.asistencia` |
+| Middleware | `modulo.asistencia`, `throttle:asistencia-dispositivo` | + `dispositivo.asistencia` |
 | Escribe | Nada | Una marcación (y la última conexión del lector) |
 
 **Por qué viven en `/api`.** Un dispositivo no es un navegador: no tiene sesión,
 ni cookie, ni token CSRF. El grupo `api` no monta ninguna de las tres, así que el
 POST del firmware funciona sin desactivarle candados al sitio web.
+
+**El límite se reparte por LECTOR, no por IP.** `throttle:60,1` repartía por IP y
+todos los lectores salen por la misma IP del router: con tres aparatos detrás de
+un NAT compartían 60 peticiones por minuto entre todos. El sondeo del enrolamiento
+lo volvió bloqueante. El limitador `asistencia-dispositivo`
+(`AppServiceProvider::boot()`) aplica **dos** límites a la vez:
+
+| Límite | Clave | Para qué |
+|---|---|---|
+| 120/min | `lector:<código>` | Cada aparato tiene su presupuesto: uno que sondee mucho no deja sin marcar a los demás. |
+| 300/min | `ip:<ip>` | Techo global. El código viaja en una cabecera y **todavía no está autenticado** cuando el limitador actúa; sin este segundo límite bastaría rotar el valor de la cabecera para saltarse el primero. |
+
+120/min por lector sobra: un sondeo cada 3 s son 20, más marcaciones y progreso.
 
 **Por qué el ping sigue abierto.** Es la herramienta para diagnosticar por qué algo
 *no* funciona. Cerrado, un 401 dejaría al técnico sin saber si el problema es el
@@ -623,6 +636,357 @@ Idéntica, con `"tipo": "salida"`, `"tipo_label": "Salida"` y
 
 `nombre_corto` (primer nombre + primer apellido) existe porque en 128×128 píxeles
 no cabe un nombre completo. Se deriva, no se guarda.
+
+## Enrolamiento remoto (registrar una huella desde la web)
+
+Registrar una huella son dos cosas a la vez: **grabar la plantilla en el AS608** y
+**anotar de quién es esa ranura**. Antes solo se podía hacer la segunda desde la
+web; la primera exigía reprogramar el ESP32 con el número del empleado quemado en
+el sketch, subirlo, y acordarse de qué ranura tocaba. El enrolamiento remoto hace
+las dos con un botón en la ficha de la persona.
+
+### El flujo, de punta a punta
+
+```
+Ficha del empleado
+  └─ «Registrar huella» ──► Laravel elige y APARTA una ranura, crea la orden
+                                     │
+              (el lector sondea cada ~3 s mientras está ocioso)
+                                     ▼
+                        GET /pendiente ──► se lleva la orden + un token
+                                     │
+                        TFT: «COLOQUE EL DEDO»      → POST /progreso
+                        primera captura
+                        TFT: «RETIRE EL DEDO»       → POST /progreso
+                        segunda captura
+                        AS608 guarda la plantilla en la ranura reservada
+                                     ▼
+                        POST /resultado {exito, fingerprint_id}
+                                     │
+                        Laravel llama a AsignarHuella ──► nace asistencia_huella
+                                     ▼
+                        La ficha lo muestra en el siguiente refresco
+```
+
+### El lector PREGUNTA; el servidor no llama
+
+El ESP32 de hoy **no puede recibir órdenes**: comprobado en el firmware actual, es
+un cliente HTTP que abre la conexión, manda su marcación y cierra. No escucha en
+ningún puerto.
+
+Se eligió mantenerlo así, con sondeo, y no montarle un servidor HTTP dentro:
+
+| | Sondeo (elegido) | Empuje (descartado) |
+|---|---|---|
+| Credenciales | Reutiliza el token del lector, que ya existe y ya funciona | Haría falta inventar una **en dirección contraria**; sin ella cualquiera en la LAN dispararía enrolamientos |
+| Direcciones | El lector conoce la del servidor y no cambia | Laravel necesitaría la IP del lector, que reparte el DHCP y que `ultima_ip` refleja tarde |
+| Red | Sobrevive al NAT y al día que este servidor viva fuera de la LAN | Solo funciona mientras los dos estén en la misma red |
+| Firmware | Un `GET` más en el bucle | Servidor HTTP corriendo mientras maneja el AS608 y la pantalla |
+
+El precio es la latencia. No importa: enrolar es un acto supervisado, con alguien
+de pie frente al lector. Tres segundos no se notan.
+
+### La regla que ordena todo lo demás
+
+> **No existe `asistencia_huella` hasta que el AS608 confirma que grabó.**
+
+Crear la orden no asigna nada. Sondearla, tampoco. Reportar progreso, tampoco. Si
+el enrolamiento falla, se cancela o vence, **no queda ninguna huella fantasma**:
+solo la orden en su estado final, que sirve para explicar qué pasó.
+
+La asignación se hace llamando a `AsignarHuella` — el mismo servicio de la
+asignación manual — nunca escribiendo `asistencia_huellas` a mano. Así una ranura
+reutilizada produce una fila **nueva** y jamás toca la anterior, igual que siempre.
+
+### Los estados de una orden
+
+| Estado | Qué significa | ¿Viva? |
+|---|---|---|
+| `pendiente` | Creada. El lector todavía no la recogió. | sí |
+| `tomada` | El lector la sondeó y tiene su token. Espera el dedo. | sí |
+| `en_curso` | Reportó progreso: está capturando. | sí |
+| `completada` | El AS608 grabó y la huella quedó asignada. | no |
+| `fallida` | No pudo. `motivo_fallo` dice por qué. | no |
+| `expirada` | Nadie la atendió a tiempo. | no |
+| `cancelada` | Alguien la canceló desde la web. | no |
+
+Los tres estados vivos son la lista `EstadoOrdenEnrolamiento::VIVOS`, y **la misma
+lista está escrita en las columnas generadas** de la tabla (abajo). Cambiar una sin
+la otra rompería los únicos.
+
+### Dos únicos parciales, otra vez con columnas generadas
+
+MySQL no tiene índices únicos parciales. Se usa la misma técnica que ya sostiene
+`asistencia_huellas.fingerprint_id_activo`: una columna **generada** que vale
+`NULL` cuando la fila no cuenta —y los NULL no colisionan en un índice único—.
+
+```sql
+orden_activa_uq    = CASE WHEN estado IN ('pendiente','tomada','en_curso') THEN 1               ELSE NULL END
+ranura_reservada_uq = CASE WHEN estado IN ('pendiente','tomada','en_curso') THEN ranura_reservada ELSE NULL END
+
+UNIQUE (asistencia_dispositivo_id, orden_activa_uq)      -- un lector, una orden viva
+UNIQUE (asistencia_dispositivo_id, ranura_reservada_uq)  -- una ranura, una reserva viva
+```
+
+`VIRTUAL`, no `STORED`: es la única forma que SQLite acepta en `ALTER TABLE ADD
+COLUMN`, y las pruebas corren sobre SQLite.
+
+Qué garantiza cada uno:
+
+- **El primero**, que un ESP32 no reciba dos órdenes a la vez. No puede enrolar dos
+  huellas al mismo tiempo: tiene un sensor y una pantalla.
+- **El segundo**, que dos órdenes vivas no aparten la misma ranura. Es lo que hace
+  que la reserva sea real y no una intención.
+
+Cuando una orden termina —del modo que sea— las dos columnas vuelven a `NULL` y el
+buzón y la ranura quedan libres. El historial **crece**; nada se borra ni se
+reescribe.
+
+### Cómo se elige la ranura
+
+Automáticamente, y **no se escribe ningún número** en el flujo normal. Se toma la
+menor libre a partir de 0, excluyendo la **unión** de tres fuentes:
+
+1. **Asignadas** — `asistencia_huellas` activas de ese lector. Las sabe la base.
+2. **Reservadas** — órdenes vivas de ese lector. Las sabe la base.
+3. **Ocupadas físicamente** — plantillas que el AS608 dice tener. **Solo las sabe
+   el sensor.**
+
+La tercera existe porque la verdad está partida: la base sabe a quién corresponde
+cada ranura, pero solo el sensor sabe qué ranuras tienen plantilla. Un sensor que
+se usó antes de que existiera este sistema tiene plantillas que la base ignora.
+
+**Sin índice sincronizado no se reserva a ciegas.** Si el lector nunca reportó su
+capacidad, crear una orden falla con *«el lector todavía no ha sincronizado sus
+ranuras»*. `NULL` en `capacidad_sensor` significa «nunca sincronizó», que es un
+estado distinto de «sincronizó y está vacío». La capacidad **la dice el sensor**;
+162 no es una verdad fija del sistema.
+
+Entre elegir el número y escribirlo hay una ventana en la que otra petición puede
+quedarse con él. Cuando el único de la base lo detecta, la creación **reintenta**
+con una selección nueva —que ya ve la reserva rival—, hasta tres veces. Devolver un
+error ahí sería fallarle a la persona por una carrera que el sistema resuelve solo.
+
+### Cuando el sensor tenía una plantilla que nadie conocía
+
+El caso de los sensores heredados. El lector recibe la orden, va a grabar en la
+ranura reservada y el AS608 le dice que ahí ya hay algo.
+
+**No se sobrescribe.** Sobrescribir borraría la huella de alguien —quizá de alguien
+que sigue marcando con ella— sin que nadie lo pidiera. En su lugar:
+
+1. El lector reporta `ranura_ocupada_en_sensor` y, con el mismo mensaje, **su
+   índice real** (`indice.capacidad`, `indice.ocupadas`).
+2. Laravel guarda ese índice **antes** de fallar la orden, para que lo siguiente ya
+   lo tenga en cuenta.
+3. La orden queda `fallida` con ese motivo.
+4. Se crea una orden **nueva**, con otra ranura, ya excluyendo la que resultó
+   ocupada. La respuesta la trae en `reintento.orden_id` para que el lector siga sin
+   esperar al próximo sondeo.
+
+La cadena está acotada a `MAX_INTENTOS = 3`: un sensor lleno de plantillas
+heredadas no puede generar reintentos infinitos.
+
+### La vida de la orden: 3 minutos
+
+Una orden vive `MINUTOS_DE_VIDA = 3`. Es tiempo de sobra para que alguien coloque
+el dedo dos veces, y poco para que una orden olvidada siga apartando una ranura.
+
+**Una orden vencida no revive ni se ejecuta después.** No hay cron: las vencidas se
+materializan **justo antes** de crear una orden o de entregar el sondeo
+(`ExpirarOrdenesVencidas`), que son los dos únicos momentos en que su existencia
+estorba. Es idempotente y no depende del scheduler, que en este proyecto no corre.
+
+`POST /progreso` **refresca** el vencimiento: mientras el lector reporta, hay
+alguien delante. Capturar la huella de una persona que tarda no debe expirar a
+mitad.
+
+### El token de la orden
+
+Cada entrega del sondeo emite un token de un solo uso: `Str::random(32)`, del que
+en base queda **solo su SHA-256** (mismo criterio que el token del lector, con
+`hash_equals`). Sale del servidor **una vez** — en la respuesta del sondeo — y no
+se puede recuperar.
+
+Volver a sondear una orden ya tomada **reemite el token e invalida el anterior**.
+Si el lector vuelve a preguntar es porque no recibió la respuesta; que el token
+viejo deje de valer cierra la ventana en la que dos copias de la misma orden
+podrían responder.
+
+### Idempotencia
+
+El ESP32 está detrás de una red doméstica: puede grabar la plantilla, mandar el
+resultado y perder la respuesta. Si reintenta, obtiene **el mismo desenlace**, no
+un error ni una segunda asignación. Una orden ya finalizada no se vuelve a
+procesar: se devuelve lo que pasó la primera vez.
+
+Sin esto, un reintento con éxito intentaría crear dos huellas para la misma ranura,
+el único de la Fase 1 lo rechazaría, y un enrolamiento **correcto** acabaría
+contado como fallo.
+
+### Endpoints del lector
+
+Los cuatro exigen token de lector (`dispositivo.asistencia`) y viven bajo
+`/api/asistencia/enrolamiento`. **Un navegador no puede tocarlos**: no conoce el
+token y la web nunca lo muestra.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `GET` | `/pendiente` | El sondeo. Entrega la orden y su token. |
+| `POST` | `/{orden}/progreso` | Informativo. Mueve a `en_curso` y refresca el vencimiento. |
+| `POST` | `/{orden}/resultado` | El acto. Idempotente. |
+| `POST` | `/indice-sensor` | La capacidad y las ranuras ocupadas que reporta el AS608. |
+
+**Sondeo sin nada que hacer:**
+
+```json
+{ "ok": true, "hay_orden": false, "sincronizar_indice": true }
+```
+
+`sincronizar_indice: true` es el servidor pidiéndole al lector que reporte su
+índice. Así el firmware no tiene que acordarse por su cuenta: en cuanto lo ve, hace
+`POST /indice-sensor` y a partir de ahí ya se pueden crear órdenes.
+
+**Sondeo con orden:**
+
+```json
+{
+  "ok": true,
+  "hay_orden": true,
+  "orden": {
+    "id": 12,
+    "empleado": { "id": 3, "nombre_corto": "Ana Pérez" },
+    "ranura": 7,
+    "capacidad": 162,
+    "expira_en": 178,
+    "intento": 1,
+    "token": "…32 caracteres, la única vez que sale…"
+  }
+}
+```
+
+`nombre_corto` porque la pantalla del lector mide 128×128.
+
+**Resultado, éxito:**
+
+```json
+{ "token": "…", "exito": true, "fingerprint_id": 7 }
+```
+
+`fingerprint_id` tiene que ser **exactamente** la ranura reservada. Se le dijo
+dónde grabar; si dice haber grabado en otro sitio no se asocia nada
+(`ranura_no_coincide`): o el firmware improvisó, o el mensaje viene corrupto.
+
+**Resultado, fallo:**
+
+```json
+{ "token": "…", "exito": false, "motivo": "dedos_no_coinciden", "detalle": "opcional" }
+```
+
+Y con el índice, cuando el motivo es el conflicto de ranura:
+
+```json
+{ "token": "…", "exito": false, "motivo": "ranura_ocupada_en_sensor",
+  "indice": { "capacidad": 162, "ocupadas": [0, 1, 5] } }
+```
+
+**Índice del sensor:**
+
+```json
+{ "capacidad": 162, "ocupadas": [0, 1, 5] }
+```
+
+Las ranuras fuera de rango se descartan y las repetidas se colapsan. Es telemetría:
+se guarda sin generar auditoría.
+
+### Motivos de fallo: quién puede alegar qué
+
+`motivo` es un **código cerrado** sobre el que el firmware ramifica. El texto de
+`mensaje` es para la pantalla y puede cambiar; el código, no.
+
+El lector solo puede alegar lo que él puede ver:
+
+| Reportable por el lector | Solo lo decide el servidor |
+|---|---|
+| `sin_sensor` | `expirada` |
+| `timeout_dedo` | `ranura_ya_asignada` |
+| `captura_defectuosa` | `ranura_no_coincide` |
+| `dedos_no_coinciden` | `empleado_no_elegible` |
+| `fallo_modelo` | `cancelada_por_operador` |
+| `fallo_guardado` | |
+| `ranura_ocupada_en_sensor` | |
+| `cancelada_en_dispositivo` | |
+
+Si un lector pudiera declarar los de la derecha, podría cerrar una orden alegando
+algo que no observó. El `FormRequest` los rechaza con `422` y
+`motivo: payload_invalido`.
+
+### Seguridad
+
+- **Ningún navegador puede hacerse pasar por un lector.** Desde la web solo existen
+  dos rutas: pedir el registro y cancelarlo. No hay ninguna que complete una orden
+  —hay una prueba que enumera las rutas y lo verifica—, y las del lector exigen un
+  token que la web no conoce.
+- **Ninguna orden ajena.** Cada endpoint resuelve el lector desde su token y
+  comprueba que la orden le pertenece. El rechazo es **el mismo 404** para «no es
+  tuya» y para «token equivocado», así nadie puede averiguar desde la red qué
+  órdenes existen probando identificadores.
+- **El token nunca sale a la web.** Ni el del lector ni el `token_hash` de la orden
+  aparecen en la ficha, en la auditoría ni en ninguna respuesta.
+- **Auditoría sin secretos.** Las órdenes se registran con `activitylog`
+  excluyendo `token_hash` explícitamente del `logOnly`. Queda quién pidió el
+  registro (`solicitada_por_user_id`), sobre quién, en qué lector, qué ranura y
+  cómo terminó.
+
+### Desde la ficha del empleado
+
+La tarjeta «Registrar huella con el lector» pide el lector y nada más. Mientras hay
+una orden viva muestra su estado y un botón de cancelar, y **la página se refresca
+sola cada 3 s** — sin conexión permanente es lo único honesto, y el enrolamiento
+dura menos de un minuto. Debajo quedan los últimos tres intentos terminados, que es
+cómo se entiende por qué falló el anterior.
+
+Cancelar es seguro en cualquier momento: si el lector ya grabó y todavía no
+reportó, su resultado llegará sobre una orden final y se tratará como reintento,
+sin crear nada.
+
+**Opciones avanzadas → ranura manual.** Cerrado por defecto y con su advertencia.
+Existe para **un** caso: sensores que ya traían plantillas de antes, donde hace
+falta apuntar a un hueco concreto que la persona conoce. No se salta ninguna
+protección —se comprueba contra las tres fuentes igual que la automática y el único
+de la base sigue mandando— pero sí desactiva la elección automática, y por eso queda
+anotado en la orden (`ranura_manual`). Si esa ranura resulta ocupada en el sensor,
+el reintento vuelve a ser **automático**: repetir el número elegido llevaría al
+mismo choque.
+
+### Lo que le toca al firmware (todavía no hecho)
+
+Esta fase cierra **solo el lado Laravel**. El contrato está probado de punta a punta
+con peticiones simuladas: las pruebas actúan como el lector. Lo que no pueden
+comprobar es que el AS608 grabe de verdad.
+
+Para completar el flujo, el ESP32 necesita:
+
+1. `POST /indice-sensor` al arrancar, y cada vez que el sondeo conteste
+   `sincronizar_indice: true`. La capacidad sale de `finger.capacity` y las ocupadas
+   de recorrer la tabla de índices del AS608.
+2. `GET /pendiente` cada ~3 s mientras está ocioso. **No debe competir con una
+   marcación en curso ni con un enrolamiento activo**: mientras captura, el bucle
+   de sondeo se pausa.
+3. Guardar el `token` de la orden en RAM y mandarlo en cada `progreso` y en el
+   `resultado`.
+4. Ejecutar la captura en **la ranura que dice la orden** — nunca en otra — con la
+   secuencia habitual del AS608: `getImage` → `image2Tz(1)` → soltar → `getImage` →
+   `image2Tz(2)` → `createModel` → `storeModel(ranura)`.
+5. Mapear cada error del AS608 al código de `motivo` correspondiente, y comprobar
+   con `loadModel(ranura)` antes de grabar para poder reportar
+   `ranura_ocupada_en_sensor` en vez de sobrescribir.
+6. Reintentar el `POST /resultado` si se pierde la respuesta: es idempotente, no
+   duplica nada.
+
+Las pantallas del TFT («COLOQUE EL DEDO», «RETIRE EL DEDO», el nombre corto de la
+persona) salen de los datos de la orden; el `POST /progreso` es opcional pero es lo
+que hace que quien mira la web vea lo mismo que quien está frente al lector.
 
 ## Administración
 

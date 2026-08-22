@@ -8,16 +8,20 @@ use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
+use App\Services\Asistencia\AutenticadorDispositivo;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ImapMailboxClient;
 use App\Services\DocumentosRecibidos\NullMailboxClient;
 use App\Services\Dte\DteTransmisionService;
 use App\Support\WorkerHeartbeat;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Cache\Factory;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -68,6 +72,37 @@ class AppServiceProvider extends ServiceProvider
         if (! $this->app->environment('production')) {
             config(['mail.default' => 'log']);
         }
+
+        /*
+        | LÍMITE DE PETICIONES DE LOS LECTORES DE ASISTENCIA.
+        |
+        | El `throttle:60,1` que traía el módulo se aplicaba POR IP, y todos los
+        | lectores salen por la misma IP del router: con tres aparatos detrás de un
+        | NAT compartían 60 peticiones por minuto entre todos. El enrolamiento lo
+        | volvió bloqueante, porque añade un sondeo cada pocos segundos que competía
+        | con las marcaciones reales.
+        |
+        | Se reparte por LECTOR y no por IP. Dos límites a la vez, y los dos hacen
+        | falta:
+        |
+        |   1. por código de lector -> cada aparato tiene su propio presupuesto, así
+        |      que uno que sondee mucho no deja sin marcar a los demás;
+        |   2. por IP, más alto     -> techo global. El código viaja en una cabecera
+        |      y todavía no está autenticado cuando el limitador actúa, así que sin
+        |      este segundo límite bastaría con rotar el valor de la cabecera para
+        |      saltarse el primero.
+        |
+        | 120/min por lector alcanza de sobra: un sondeo cada 3 s son 20, más las
+        | marcaciones y los reportes de progreso.
+        */
+        RateLimiter::for('asistencia-dispositivo', function (Request $request) {
+            $codigo = trim((string) $request->headers->get(AutenticadorDispositivo::CABECERA_CODIGO, ''));
+
+            return [
+                Limit::perMinute(120)->by('lector:'.($codigo !== '' ? $codigo : 'sin-codigo')),
+                Limit::perMinute(300)->by('ip:'.$request->ip()),
+            ];
+        });
 
         // Heartbeat del worker de colas: cada iteración del daemon `queue:work` dispara
         // Looping (aun estando ocioso) y marca "vivo" en cache. Solo se dispara dentro del

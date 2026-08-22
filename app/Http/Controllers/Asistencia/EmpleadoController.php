@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Asistencia;
 
+use App\Enums\Asistencia\EstadoOrdenEnrolamiento;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Asistencia\EmpleadoRequest;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
+use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
 use App\Services\Asistencia\HoraOficial;
 use App\Support\Asistencia\ConsultaAsistencia;
 use Illuminate\Http\RedirectResponse;
@@ -31,6 +33,12 @@ use Illuminate\View\View;
  * escrito acá funcionaría hoy y garantizaría que, en cuanto alguien afine el
  * criterio en un sitio, las dos pantallas empezaran a discrepar sobre la misma
  * persona.
+ *
+ * ────────────────── El registro de huella con el lector ──────────────────
+ *
+ * La ficha muestra la orden viva de esta persona, si la hay, para poder seguirla y
+ * cancelarla. Crear la orden, elegir la ranura y confirmarla NO pasan por acá: son
+ * actos de sus propios servicios, y el que confirma es el sensor.
  *
  * ─────────────── `asistencia_empleados` no es `users`, y sigue sin serlo ───────────────
  *
@@ -88,6 +96,17 @@ class EmpleadoController extends Controller
             // dirían cosas distintas de la misma persona.
             'ultimas' => $consulta->ultimasDe($empleado->id),
             'zona' => $horaOficial->zona(),
+
+            // Registro de huella con el lector. La orden VIVA de esta persona —si
+            // la hay— para poder seguirla y cancelarla, y las últimas terminadas
+            // para poder ver por qué falló la anterior.
+            'ordenViva' => AsistenciaOrdenEnrolamiento::query()
+                ->where('asistencia_empleado_id', $empleado->id)
+                ->vivas()->with('dispositivo')->latest('id')->first(),
+            'ordenesRecientes' => AsistenciaOrdenEnrolamiento::query()
+                ->where('asistencia_empleado_id', $empleado->id)
+                ->whereNotIn('estado', EstadoOrdenEnrolamiento::vivos())
+                ->with('dispositivo')->latest('id')->limit(3)->get(),
         ]);
     }
 

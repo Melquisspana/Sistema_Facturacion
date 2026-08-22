@@ -3,6 +3,7 @@
 use App\Http\Controllers\Asistencia\AsistenciaDashboardController;
 use App\Http\Controllers\Asistencia\DispositivoController;
 use App\Http\Controllers\Asistencia\EmpleadoController;
+use App\Http\Controllers\Asistencia\EnrolamientoController;
 use App\Http\Controllers\Asistencia\HuellaController;
 use App\Http\Controllers\Asistencia\JornadaController;
 use App\Http\Controllers\Asistencia\MarcacionController;
@@ -86,6 +87,16 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         | contrario de lo que hace.
         */
         Route::post('empleados/{empleado}/huellas', [HuellaController::class, 'store'])->middleware($gestionar)->name('empleados.huellas.store');
+
+        /*
+        | ENROLAMIENTO desde la web. Solo dos verbos: pedir y cancelar.
+        |
+        | Completar una orden NO se puede desde acá — eso vive en /api y exige el
+        | token del lector, que el navegador no conoce y la web nunca muestra. Una
+        | persona pide el registro; el sensor es quien confirma que grabó.
+        */
+        Route::post('empleados/{empleado}/enrolamiento', [EnrolamientoController::class, 'store'])->middleware($gestionar)->name('empleados.enrolamiento.store');
+        Route::delete('empleados/{empleado}/enrolamiento/{orden}', [EnrolamientoController::class, 'destroy'])->middleware($gestionar)->name('empleados.enrolamiento.destroy');
         Route::patch('huellas/{huella}/liberar', [HuellaController::class, 'liberar'])->middleware($gestionar)->name('huellas.liberar');
 
         /*
