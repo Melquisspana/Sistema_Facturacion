@@ -126,6 +126,67 @@ la transmisión según §7.b. **No hacer sin confirmación**; producción sigue 
 
 > **Sin barra final** (trailing slash): el manual exige la URL exacta (ej. `.../fesv/recepciondte`).
 
+> **Ojo con esta tabla.** Lista los endpoints del **Manual v2** (el que está en
+> `docs/referencias/`). El sistema hoy implementa **solo tres**: autenticación,
+> recepción uno-a-uno e invalidación. Lote, consulta y contingencia están en la
+> tabla como referencia del manual, **no como código existente**. Nada de esto
+> afirma que el manual v2 siga vigente: contrastar contra el manual vigente antes
+> de volver a transmitir.
+
+### 2.1 Fuente única de las URLs
+
+Desde la fase de endurecimiento, **ninguna URL del MH se arma fuera de**
+`App\Support\Dte\EndpointsHacienda`. Antes convivían dos mecanismos —
+`dte.ambientes.{00,01}.*_url` y `dte.transmision.url_base` + `endpoint_*` — y cada
+consumidor repetía además su propio fallback con el host escrito a mano, en cuatro
+archivos. Cambiar un endpoint y olvidarse de una copia no daba error: seguía
+apuntando al sitio viejo.
+
+Precedencia, **idéntica para auth, recepción y anulación**:
+
+1. `dte.ambientes.{00|01}.{auth|recepcion|anulacion}_url` — URL completa. Gana sobre todo.
+2. `dte.transmision.url_base` — reemplaza solo el host.
+3. Host oficial incorporado (`HOST_PRUEBAS` / `HOST_PRODUCCION`).
+
+La ruta sale de `dte.transmision.endpoint_{auth|recepcion|anulacion}`; si la clave
+está vacía se usa la ruta incorporada, para que una configuración a medias no
+resuelva a un host pelado (que significaba hacer POST contra la raíz del servicio).
+
+Los métodos `*Oficial()` **ignoran toda la configuración** a propósito: son la
+referencia contra la que `DteInvalidacionService` compara la URL resuelta antes de
+tocar producción. Si un override apuntara a otro sitio, esa comparación es lo único
+que lo detecta — y bloquea el envío en vez de redirigirlo.
+
+Consumidores (todos pasan por ahí): `DteTransmisionAuthService`,
+`DteTransmisionService`, `DteInvalidacionService`, `DteInvalidacionPreflightCommand`
+y la pantalla `EstadoHaciendaApi`.
+
+### 2.2 Credenciales de producción: sin respaldo
+
+`DTE_PROD_USER` y `DTE_PROD_PASSWORD` son **obligatorias** para autenticar contra
+producción. Si faltan, el login falla explícito **antes de cualquier HTTP**.
+
+Antes caían de vuelta a `DTE_TRANSMISION_USER` / `DTE_TRANSMISION_PASSWORD`. El
+problema no era el respaldo sino su silencio: un `DTE_PROD_USER` mal escrito no
+fallaba, transmitía con la credencial vieja. Ese fallback **se eliminó**.
+
+`DTE_TRANSMISION_USER` / `DTE_TRANSMISION_PASSWORD` siguen declaradas, pero **ya no
+autentican en ningún ambiente**. Sus únicos consumidores legítimos son de
+diagnóstico:
+
+| Consumidor | Qué hace con ellas |
+|---|---|
+| `DteTransmisionService::authConfigurado()` | Señal del dry-run/estado técnico: «¿hay algún dato de auth?». No elige credenciales ni abre candados. |
+| `DteSeguridadCheckCommand` | Informa si están puestas. No las usa. |
+
+El diagnóstico (`dte:auth-check`, pantalla Hacienda/API) reporta la fuente:
+`prod` · `testing` · `parcial` · `ninguna` · `legacy`. **`legacy` cambió de
+significado**: ya no quiere decir «está usando las viejas», sino «producción NO
+puede autenticar porque solo están puestas las legacy». Se pinta como **Error**,
+no como advertencia.
+
+`DTE_TEST_USER` / `DTE_TEST_PASSWORD` nunca tuvieron respaldo y siguen igual.
+
 ## 3. Autenticación (4.1)
 
 - **Headers:** `content-Type: application/x-www-form-urlencoded`, `User-Agent`.

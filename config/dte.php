@@ -60,8 +60,18 @@ return [
     'punto_venta_predeterminado' => env('DTE_PUNTO_VENTA_PREDETERMINADO'),
 
     /*
-    | Endpoints del Ministerio de Hacienda por ambiente. Vacíos por ahora;
-    | se completarán con las URLs oficiales en la fase de integración.
+    | OVERRIDE por ambiente de las direcciones del MH, como URL COMPLETA. Vacío =
+    | usar la resolución normal (host oficial del ambiente + ruta de 'transmision').
+    |
+    | Estas claves NO son la fuente de las URLs: son el escalón MÁS ALTO de
+    | precedencia de App\Support\Dte\EndpointsHacienda, que es la fuente única para
+    | auth, recepción e invalidación. Sirven para apuntar un ambiente a otra
+    | dirección sin tocar código; en operación normal se dejan vacías.
+    |
+    | Ojo: un override aquí NO abre producción. La invalidación productiva sigue
+    | exigiendo que la URL resuelta sea EXACTAMENTE la oficial (ver
+    | DteInvalidacionService), así que un override que apunte a otro sitio bloquea
+    | el envío en vez de redirigirlo.
     */
     'ambientes' => [
         AmbienteHacienda::Pruebas->value => [
@@ -169,48 +179,73 @@ return [
         // Ambiente lógico de transmisión (testing/produccion). No confundir con el
         // 'ambiente' MH del DTE ('00'/'01'); este es solo un rótulo operativo.
         'ambiente' => env('DTE_TRANSMISION_AMBIENTE', 'testing'),
-        // URL base del servicio del MH (vacía hasta integración real). Si queda vacía,
-        // el servicio de auth usa el host por defecto según el ambiente (apitest/api).
+        // Override del HOST del servicio del MH. Vacío (normal) = host oficial según
+        // el ambiente (apitest/api), resuelto por App\Support\Dte\EndpointsHacienda.
         'url_base' => env('DTE_TRANSMISION_URL', ''),
+        // Rutas de los servicios. Se combinan con el host de arriba en
+        // EndpointsHacienda, que es el ÚNICO sitio donde se arma una URL del MH.
+        // Si alguna queda vacía se usa la ruta incorporada equivalente: un endpoint
+        // vacío por descuido significaba hacer POST contra la raíz del servicio.
         // Path del endpoint de autenticación (POST form-urlencoded user+pwd).
         'endpoint_auth' => env('DTE_TRANSMISION_ENDPOINT_AUTH', '/seguridad/auth'),
-        // Path del endpoint de recepción (POST). Vacío hasta confirmar manual técnico.
-        'endpoint_recepcion' => env('DTE_TRANSMISION_ENDPOINT_RECEPCION', ''),
+        // Path del endpoint de recepción uno-a-uno (POST del DTE firmado).
+        // El default deja de ser vacío: es la ruta que el sistema ya venía usando
+        // (la fijan todos los tests y el .env). NO afirma que sea la ruta vigente del
+        // manual del 25-08-2026 — eso está pendiente de contrastar; solo evita que una
+        // configuración incompleta resuelva a una URL sin ruta.
+        'endpoint_recepcion' => env('DTE_TRANSMISION_ENDPOINT_RECEPCION', '/fesv/recepciondte'),
+        // Path del evento de invalidación/anulación. Antes vivía escrito a mano en
+        // DteInvalidacionService; ahora se configura junto a los otros dos.
+        'endpoint_anulacion' => env('DTE_TRANSMISION_ENDPOINT_ANULACION', '/fesv/anulardte'),
         // Timeout (segundos) de las llamadas HTTP a recepción. El manual define un
         // umbral de ~8s antes de aplicar la política de reintentos.
         'timeout' => (int) env('DTE_TRANSMISION_TIMEOUT', 15),
         // User-Agent requerido por los servicios de recepción del MH.
         'user_agent' => env('DTE_TRANSMISION_USER_AGENT', 'DulcesLaNegrita-DTE/1.0'),
-        // Credenciales/token de la API de Hacienda. Solo desde .env, nunca en código.
-        // El token se OBTIENE del servicio de autenticación (/seguridad/auth) con
-        // usuario_api + password (form-urlencoded). Vigencia: pruebas 48h, prod 24h.
-        // DEPRECADAS: DTE_TRANSMISION_USER/PASSWORD son las credenciales LEGACY, previas
-        // a separar producción de apitest. Se conservan SOLO como respaldo del par de
-        // producción (ver 'usuario_produccion' abajo) para no romper lo que hoy funciona
-        // con CCF real. En un despliegue nuevo NO deben usarse: definí DTE_PROD_USER y
-        // DTE_PROD_PASSWORD. `dte:auth-check` informa cuál de las dos fuentes está en uso.
+        // Token manual opcional (override): si está, se usa tal cual y no se hace login.
+        // Solo desde .env, nunca en código. Vigencia oficial: pruebas 48h, prod 24h.
+        'token' => env('DTE_TRANSMISION_TOKEN', ''),
+
+        // DEPRECADAS — DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD. Son las
+        // credenciales LEGACY, previas a separar producción de apitest. YA NO alimentan
+        // el login de producción (antes lo hacían por fallback silencioso; ver abajo).
+        //
+        // ÚNICO CONSUMIDOR LEGÍTIMO que queda, y por eso siguen declaradas:
+        //   - App\Services\Dte\DteTransmisionService::authConfigurado() — señal de
+        //     DIAGNÓSTICO en el dry-run/estado técnico ("¿hay algún dato de auth?").
+        //     No autentica, no elige credenciales y no abre ningún candado.
+        //   - App\Console\Commands\DteSeguridadCheckCommand — informa si están puestas.
+        // Ningún otro sitio debe leerlas. En un despliegue nuevo no se definen.
         'usuario_api' => env('DTE_TRANSMISION_USER', ''),
         'password' => env('DTE_TRANSMISION_PASSWORD', ''),
-        'token' => env('DTE_TRANSMISION_TOKEN', ''),
 
         // Credenciales SEPARADAS por ambiente (producción y apitest/homologación son
         // cuentas DISTINTAS en Hacienda). Usadas por DteTransmisionAuthService para
-        // elegir el par correcto según dte.transmision.ambiente:
-        //  - producción: cae de vuelta a DTE_TRANSMISION_USER/PASSWORD (arriba) mientras
-        //    no se definan DTE_PROD_*, para no romper lo que ya funciona hoy con CCF real.
-        //  - testing: SIN fallback. Si faltan, el login se bloquea antes de cualquier HTTP.
-        'usuario_produccion' => env('DTE_PROD_USER', env('DTE_TRANSMISION_USER', '')),
-        'password_produccion' => env('DTE_PROD_PASSWORD', env('DTE_TRANSMISION_PASSWORD', '')),
+        // elegir el par correcto según dte.transmision.ambiente. NINGUNO de los dos
+        // pares tiene fallback:
+        //  - producción: SOLO DTE_PROD_USER / DTE_PROD_PASSWORD. Si faltan, el login
+        //    falla de forma explícita ANTES de cualquier HTTP. Antes caía de vuelta a
+        //    DTE_TRANSMISION_*, así que un DTE_PROD_USER mal escrito no fallaba:
+        //    transmitía en silencio con la credencial vieja.
+        //  - testing: SOLO DTE_TEST_USER / DTE_TEST_PASSWORD, como ya era.
+        'usuario_produccion' => env('DTE_PROD_USER', ''),
+        'password_produccion' => env('DTE_PROD_PASSWORD', ''),
         'usuario_testing' => env('DTE_TEST_USER', ''),
         'password_testing' => env('DTE_TEST_PASSWORD', ''),
 
-        // DIAGNÓSTICO del fallback anterior. Los valores de arriba ya vienen RESUELTOS:
-        // mirándolos es imposible saber si producción está usando DTE_PROD_* (explícitas)
-        // o cayó de vuelta a DTE_TRANSMISION_* (legacy, DEPRECADAS). Estas dos claves leen
-        // SOLO las explícitas, sin fallback, para que el diagnóstico pueda decir qué fuente
-        // está en uso sin revelar ningún valor. No las use nadie para autenticar.
-        'usuario_produccion_explicito' => env('DTE_PROD_USER', ''),
-        'password_produccion_explicito' => env('DTE_PROD_PASSWORD', ''),
+        /*
+        | (Eliminado) 'usuario_produccion_explicito' / 'password_produccion_explicito'.
+        | Existían SOLO para diagnosticar el fallback: como 'usuario_produccion' venía
+        | resuelto por env('DTE_PROD_USER', env('DTE_TRANSMISION_USER')), mirándolo era
+        | imposible saber de cuál de las dos fuentes salía, y hacía falta un par de
+        | claves que leyeran únicamente las explícitas.
+        |
+        | Al quitar el fallback quedaron valiendo exactamente lo mismo que las de
+        | arriba: dos claves distintas leyendo la misma variable, que es la clase de
+        | duplicado que esta fase vino a eliminar. El diagnóstico ya no las necesita
+        | (DteTransmisionAuthService::fuenteCredenciales mira si hay credenciales
+        | LEGACY puestas, que es la pregunta que de verdad queda por responder).
+        */
     ],
 
     /*

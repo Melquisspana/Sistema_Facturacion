@@ -871,7 +871,7 @@ claves de `config/dte.php` que ningún consumidor lee o que duplican a otra:
 | `dte.tipos` / `dte.estados` | Sin consumidor: se derivan de los enums `TipoDte` y `EstadoDte`. |
 | `dte.nota_credito.requiere_documento_relacionado_para_emision` | Sin consumidor: la regla vive en el validador. |
 | `dte.ambientes.*.auth_url` / `recepcion_url` / `consulta_url` | Sin consumidor. De ese bloque solo se lee `anulacion_url`. |
-| `DTE_TRANSMISION_USER` / `_PASSWORD` | Credenciales previas a separar producción de pruebas. Siguen valiendo como respaldo de producción; en una instalación nueva no deben usarse. |
+| `DTE_TRANSMISION_USER` / `_PASSWORD` | Credenciales previas a separar producción de pruebas. **Ya NO autentican**: el respaldo silencioso de producción se eliminó. Solo quedan como señal de diagnóstico (`DteTransmisionService::authConfigurado()`, `dte:seguridad-check`). En una instalación nueva no se definen. |
 
 Se **listan** en vez de borrarse: quitarlas es un cambio al motor fiscal y merece
 su propia revisión. Lo peligroso no es que sobren — es que alguien las edite

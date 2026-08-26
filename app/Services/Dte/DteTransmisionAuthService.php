@@ -2,8 +2,10 @@
 
 namespace App\Services\Dte;
 
+use App\Enums\AmbienteHacienda;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -26,11 +28,16 @@ class DteTransmisionAuthService
 
     private const MSG_TESTING_SIN_CREDENCIALES = 'Credenciales de apitest/homologación no configuradas.';
 
+    /** Mensaje único de producción sin credenciales propias. Nunca incluye valores. */
+    private const MSG_PRODUCCION_SIN_CREDENCIALES =
+        'Credenciales de PRODUCCIÓN no configuradas: definí DTE_PROD_USER y DTE_PROD_PASSWORD. '
+        .'DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD ya NO sirven de respaldo (fallback eliminado).';
+
     /** Texto legible de cada fuente. Nunca incluye usuarios, contraseñas ni tokens. */
     private const DETALLE_FUENTE = [
         'testing' => 'DTE_TEST_USER / DTE_TEST_PASSWORD (apitest, sin respaldo)',
         'prod' => 'DTE_PROD_USER / DTE_PROD_PASSWORD (explícitas de producción)',
-        'legacy' => 'DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD (LEGACY, por respaldo: definí DTE_PROD_* para no depender de ellas)',
+        'legacy' => 'faltan DTE_PROD_USER / DTE_PROD_PASSWORD y solo hay DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD (LEGACY, ya NO se usan como respaldo): producción no puede autenticar',
         'ninguna' => 'sin credenciales configuradas para el ambiente actual',
         'parcial' => 'configuración incompleta: falta el usuario o la contraseña',
     ];
@@ -100,17 +107,21 @@ class DteTransmisionAuthService
 
     /**
      * QUÉ variables de entorno están alimentando el login actual, sin revelar ningún
-     * valor. Existe porque `config('dte.transmision.usuario_produccion')` ya viene
-     * RESUELTO por el fallback declarado en config/dte.php
-     * (env('DTE_PROD_USER', env('DTE_TRANSMISION_USER', ''))): mirando el valor final es
-     * imposible saber si producción está usando las credenciales explícitas o cayó de
-     * vuelta a las LEGACY. Sin esta distinción, un DTE_PROD_USER mal escrito no falla:
-     * se transmite en silencio con la credencial vieja.
+     * valor.
+     *
+     * Nació cuando producción caía en silencio a las credenciales LEGACY: un
+     * DTE_PROD_USER mal escrito no fallaba, transmitía con la credencial vieja. Ese
+     * fallback YA NO EXISTE (config/dte.php), así que ahora este diagnóstico cumple
+     * el otro lado del mismo problema: cuando producción no puede autenticar, decir
+     * si es porque no hay nada configurado o porque solo están puestas las legacy
+     * —que es el caso de quien viene de la configuración anterior y no se enteró—.
      *
      * Devuelve una de:
-     *   'testing'   → ambiente de pruebas (DTE_TEST_*; nunca hay fallback aquí)
-     *   'prod'      → producción con DTE_PROD_USER / DTE_PROD_PASSWORD explícitas
-     *   'legacy'    → producción cayendo de vuelta a DTE_TRANSMISION_USER/PASSWORD
+     *   'testing'   → ambiente de pruebas (DTE_TEST_*; nunca hubo fallback aquí)
+     *   'prod'      → producción con DTE_PROD_USER / DTE_PROD_PASSWORD
+     *   'legacy'    → producción SIN sus credenciales, con DTE_TRANSMISION_* puestas.
+     *                 NO significa "está usando las legacy": significa que no puede
+     *                 autenticar y que probablemente se esperaba que sirvieran.
      *   'ninguna'   → no hay credenciales configuradas para el ambiente actual
      *   'parcial'   → hay usuario pero no contraseña (o al revés)
      */
@@ -119,21 +130,27 @@ class DteTransmisionAuthService
         $cred = $this->credencialesActuales();
         $hayUsuario = filled($cred['usuario']);
         $hayPassword = filled($cred['password']);
+        $esProduccion = $this->esProduccion();
 
         if (! $hayUsuario && ! $hayPassword) {
-            return 'ninguna';
+            // Producción vacía PERO con legacy puestas: se nombra el error exacto.
+            return $esProduccion && $this->hayCredencialesLegacy() ? 'legacy' : 'ninguna';
         }
         if (! $hayUsuario || ! $hayPassword) {
             return 'parcial';
         }
-        if (! $this->esProduccion()) {
-            return 'testing';
-        }
 
-        $explicitas = filled(config('dte.transmision.usuario_produccion_explicito'))
-            && filled(config('dte.transmision.password_produccion_explicito'));
+        return $esProduccion ? 'prod' : 'testing';
+    }
 
-        return $explicitas ? 'prod' : 'legacy';
+    /**
+     * ¿Están definidas las credenciales LEGACY (DTE_TRANSMISION_USER/PASSWORD)?
+     * Solo para diagnóstico: ya no autentican en ningún ambiente.
+     */
+    private function hayCredencialesLegacy(): bool
+    {
+        return filled(config('dte.transmision.usuario_api'))
+            || filled(config('dte.transmision.password'));
     }
 
     /**
@@ -142,7 +159,8 @@ class DteTransmisionAuthService
      * contraseña). NO hace HTTP salvo que TODOS los candados de prueba estén OK:
      *  - DTE_AUTH_TEST_REAL_ENABLED=true
      *  - ambiente = testing (no producción)
-     *  - URL contiene apitest.dtes.mh.gob.sv
+     *  - la URL EMPIEZA por el host de pruebas (apitest.dtes.mh.gob.sv). Empieza, no
+     *    contiene: una URL con ese texto en la query apuntaría a otro sitio y pasaría.
      *  - usuario y contraseña configurados
      * El token, si se obtiene, vive solo en Cache (TTL testing) y nunca se imprime.
      *
@@ -202,10 +220,10 @@ class DteTransmisionAuthService
         return $r;
     }
 
-    /** ¿La URL de autenticación apunta al ambiente de pruebas (apitest)? */
+    /** ¿La URL de autenticación apunta al host de pruebas (apitest)? */
     private function urlEsTesting(): bool
     {
-        return str_contains($this->authUrl(), 'apitest.dtes.mh.gob.sv');
+        return str_starts_with($this->authUrl(), EndpointsHacienda::HOST_PRUEBAS);
     }
 
     /**
@@ -262,7 +280,10 @@ class DteTransmisionAuthService
      */
     public function pruebaAuthProduccion(): array
     {
-        $url = 'https://api.dtes.mh.gob.sv/'.ltrim((string) config('dte.transmision.endpoint_auth', '/seguridad/auth'), '/');
+        // URL OFICIAL de producción, deliberadamente sin overrides: esta prueba existe
+        // para saber si la credencial es productiva, y solo significa algo si va contra
+        // el servicio real. Un url_base de pruebas no puede secuestrarla.
+        $url = EndpointsHacienda::authOficial(AmbienteHacienda::Produccion);
         $cred = $this->credencialesProduccion();
         $r = [
             'bloqueado' => true,
@@ -281,7 +302,7 @@ class DteTransmisionAuthService
             return $r;
         }
         if (! $r['usuario_configurado'] || ! $r['password_configurado']) {
-            $r['razon'] = 'Faltan credenciales (DTE_PROD_USER / DTE_PROD_PASSWORD, o DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD como respaldo).';
+            $r['razon'] = self::MSG_PRODUCCION_SIN_CREDENCIALES;
 
             return $r;
         }
@@ -334,15 +355,14 @@ class DteTransmisionAuthService
         $user = $cred['usuario'];
         $pwd = $cred['password'];
 
-        // Testing/apitest: SIN fallback a producción. Falla claro antes de cualquier HTTP.
+        // Ningún ambiente tiene respaldo: los dos fallan claro ANTES de cualquier HTTP.
         if (! $this->esProduccion() && ($user === '' || $pwd === '')) {
             throw new DteTransmisionException(self::MSG_TESTING_SIN_CREDENCIALES);
         }
-        if ($user === '') {
-            throw new DteTransmisionException('Falta el usuario de transmisión (configure DTE_PROD_USER en .env; DTE_TRANSMISION_USER sirve de respaldo temporal).');
-        }
-        if ($pwd === '') {
-            throw new DteTransmisionException('Falta la contraseña de transmisión (configure DTE_PROD_PASSWORD en .env; DTE_TRANSMISION_PASSWORD sirve de respaldo temporal).');
+        // Producción: exige sus DOS credenciales propias. Antes, si faltaban, caía a
+        // DTE_TRANSMISION_* y el login seguía adelante con la credencial vieja.
+        if ($user === '' || $pwd === '') {
+            throw new DteTransmisionException(self::MSG_PRODUCCION_SIN_CREDENCIALES);
         }
 
         $url = $this->authUrl();
@@ -388,26 +408,24 @@ class DteTransmisionAuthService
         return str_starts_with($token, 'Bearer ') ? $token : 'Bearer '.$token;
     }
 
-    /** URL de autenticación según el ambiente (host por defecto si url_base está vacío). */
+    /** URL de autenticación del ambiente activo. Resolución única: EndpointsHacienda. */
     private function authUrl(): string
     {
-        $base = rtrim((string) config('dte.transmision.url_base', ''), '/');
-        if ($base === '') {
-            $base = $this->esProduccion() ? 'https://api.dtes.mh.gob.sv' : 'https://apitest.dtes.mh.gob.sv';
-        }
-        $path = '/'.ltrim((string) config('dte.transmision.endpoint_auth', '/seguridad/auth'), '/');
+        return EndpointsHacienda::auth($this->ambiente());
+    }
 
-        return rtrim($base.$path, '/');
+    /** Ambiente CAT-001 correspondiente al rótulo operativo de transmisión. */
+    private function ambiente(): AmbienteHacienda
+    {
+        return EndpointsHacienda::ambienteTransmision();
     }
 
     private function esProduccion(): bool
     {
-        $amb = strtolower((string) config('dte.transmision.ambiente', 'testing'));
-
-        return in_array($amb, ['produccion', 'production', 'prod', '01'], true);
+        return $this->ambiente()->esProduccion();
     }
 
-    /** Credenciales de PRODUCCIÓN: caen de vuelta a DTE_TRANSMISION_USER/PASSWORD si DTE_PROD_* no están definidas. */
+    /** Credenciales de PRODUCCIÓN: SOLO DTE_PROD_USER/PASSWORD. Sin respaldo legacy. */
     private function credencialesProduccion(): array
     {
         return [

@@ -36,8 +36,6 @@ class AuthProdValidadaEscritorTest extends TestCase
             'dte.transmision.auth_test_prod_enabled' => true,
             'dte.transmision.usuario_produccion' => 'usuario_ficticio',
             'dte.transmision.password_produccion' => 'clave_ficticia',
-            'dte.transmision.usuario_produccion_explicito' => 'usuario_ficticio',
-            'dte.transmision.password_produccion_explicito' => 'clave_ficticia',
         ]);
     }
 

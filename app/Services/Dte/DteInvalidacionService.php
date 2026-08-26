@@ -10,6 +10,7 @@ use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -41,12 +42,6 @@ use Throwable;
  */
 class DteInvalidacionService
 {
-    /** Único endpoint aceptado para un DTE de ambiente '00' (apitest). */
-    private const URL_APITEST = 'https://apitest.dtes.mh.gob.sv/fesv/anulardte';
-
-    /** Único endpoint aceptado para un DTE de ambiente '01' (producción real). */
-    private const URL_PRODUCCION = 'https://api.dtes.mh.gob.sv/fesv/anulardte';
-
     public function __construct(
         private readonly SerializadorInvalidacionMh $serializador,
         private readonly DteSchemaValidator $validador,
@@ -205,18 +200,22 @@ class DteInvalidacionService
         // Endpoint EXACTO y candado dedicado de producción, según el ambiente PROPIO
         // del DTE (CAT-001: '00' apitest / '01' producción). Nunca se infiere de otra
         // config operativa: el ambiente del propio documento manda.
+        // La comparación es contra la URL OFICIAL incorporada (EndpointsHacienda::
+        // anulacionOficial), NO contra la resuelta: si un override apuntara a otro
+        // sitio, esto es exactamente lo que lo detecta y bloquea el envío.
         $endpoint = $this->urlAnulacion($dte);
+        $oficial = EndpointsHacienda::anulacionOficial($dte->ambiente);
         if ($dte->ambiente === AmbienteHacienda::Produccion) {
             if (! (bool) config('dte.invalidacion.produccion_enabled', false)) {
                 $r[] = 'Producción no habilitada: DTE_INVALIDACION_PRODUCCION_ENABLED=false '
                     .'(config dte.invalidacion.produccion_enabled).';
             }
-            if ($endpoint !== self::URL_PRODUCCION) {
-                $r[] = 'El endpoint de anulación no es el productivo exacto ('.self::URL_PRODUCCION.'): '.$endpoint.'.';
+            if ($endpoint !== $oficial) {
+                $r[] = 'El endpoint de anulación no es el productivo exacto ('.$oficial.'): '.$endpoint.'.';
             }
         } else {
-            if ($endpoint !== self::URL_APITEST) {
-                $r[] = 'El endpoint de anulación no es el de apitest exacto ('.self::URL_APITEST.'): '.$endpoint.'.';
+            if ($endpoint !== $oficial) {
+                $r[] = 'El endpoint de anulación no es el de apitest exacto ('.$oficial.'): '.$endpoint.'.';
             }
         }
 
@@ -446,19 +445,18 @@ class DteInvalidacionService
     }
 
     /**
-     * URL de anulación configurada para el ambiente PROPIO del DTE
-     * (dte.ambientes.{00|01}.anulacion_url). Sin barra final. Si no hay nada configurado,
-     * cae a la URL OFICIAL del ambiente correspondiente (apitest para '00', producción
-     * real para '01'); nunca mezcla ambientes. El candado real de producción sigue siendo
-     * `dte.invalidacion.produccion_enabled`, evaluado aparte en {@see evaluarCandados()}.
+     * URL de anulación para el ambiente PROPIO del DTE, sin barra final. Misma
+     * resolución y misma precedencia de overrides que auth y recepción: la hace
+     * {@see EndpointsHacienda} (override `dte.ambientes.{00|01}.anulacion_url` →
+     * `url_base` → host oficial). Nunca mezcla ambientes: apitest para '00',
+     * producción real para '01'.
+     *
+     * El candado real de producción sigue siendo `dte.invalidacion.produccion_enabled`,
+     * evaluado aparte en {@see evaluarCandados()} junto con la comparación contra
+     * {@see EndpointsHacienda::anulacionOficial()}.
      */
     private function urlAnulacion(Dte $dte): string
     {
-        $url = rtrim((string) config('dte.ambientes.'.$dte->ambiente->value.'.anulacion_url', ''), '/');
-        if ($url !== '') {
-            return $url;
-        }
-
-        return $dte->ambiente === AmbienteHacienda::Produccion ? self::URL_PRODUCCION : self::URL_APITEST;
+        return EndpointsHacienda::anulacion($dte->ambiente);
     }
 }

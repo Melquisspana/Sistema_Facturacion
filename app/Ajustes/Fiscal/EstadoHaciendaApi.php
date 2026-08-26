@@ -7,6 +7,7 @@ use App\Enums\AmbienteHacienda;
 use App\Services\Dte\DteTransmisionAuthService;
 use App\Services\Dte\DteTransmisionService;
 use App\Support\Dte\CoherenciaConfiguracionFiscal;
+use App\Support\Dte\EndpointsHacienda;
 
 /**
  * Estado de la conexión con el Ministerio de Hacienda, listo para pintarse.
@@ -17,11 +18,12 @@ use App\Support\Dte\CoherenciaConfiguracionFiscal;
  * queda registrada en el historial de verificaciones.
  *
  * SIN SECRETOS. De las credenciales solo salen dos cosas: si están, y de qué
- * juego de variables salen. Lo segundo importa más de lo que parece: el archivo
- * de configuración declara un respaldo silencioso —producción cae a las
- * credenciales antiguas si no se definen las nuevas—, así que mirando el valor
- * final es imposible saber cuál se está usando. Un DTE_PROD_USER mal escrito no
- * fallaría: transmitiría con la credencial vieja, en silencio.
+ * juego de variables salen. Lo segundo importa más de lo que parece. Hubo un
+ * respaldo silencioso —producción caía a las credenciales antiguas si no se
+ * definían las nuevas—, así que un DTE_PROD_USER mal escrito no fallaba:
+ * transmitía con la credencial vieja. Ese respaldo se eliminó; ahora producción
+ * sin sus credenciales propias falla, y esta pantalla lo pinta como Error
+ * (fuente 'legacy') en vez de dejarlo pasar como advertencia.
  *
  * LAS DOS PREGUNTAS QUE ESTA PANTALLA TIENE QUE SEPARAR
  * ------------------------------------------------------------------
@@ -103,7 +105,7 @@ class EstadoHaciendaApi
             return ['puede' => false, 'razon' => 'Faltan las credenciales del ambiente de pruebas. Se configuran en el servidor (DTE_TEST_USER y DTE_TEST_PASSWORD).'];
         }
 
-        if (! str_contains($this->auth->diagnostico()['url'], 'apitest.dtes.mh.gob.sv')) {
+        if (! str_starts_with($this->auth->diagnostico()['url'], EndpointsHacienda::HOST_PRUEBAS)) {
             return ['puede' => false, 'razon' => 'La dirección de autenticación configurada no es la del ambiente de pruebas del Ministerio de Hacienda.'];
         }
 
@@ -129,40 +131,26 @@ class EstadoHaciendaApi
         return match ($fuente) {
             'ninguna' => [EstadoTarjeta::NoConfigurado, 'No hay credenciales configuradas para el ambiente activo.'],
             'parcial' => [EstadoTarjeta::Error, 'Configuración incompleta: hay usuario o contraseña, pero no las dos.'],
-            'legacy' => [EstadoTarjeta::Advertencia, 'Producción está usando las credenciales antiguas de respaldo, no las suyas propias.'],
+            'legacy' => [EstadoTarjeta::Error, 'Producción no tiene sus credenciales propias (DTE_PROD_USER / DTE_PROD_PASSWORD). Las antiguas ya no sirven de respaldo.'],
             'prod' => [EstadoTarjeta::Configurado, 'Credenciales de producción configuradas con sus propias variables.'],
             default => [EstadoTarjeta::Configurado, 'Credenciales del ambiente de pruebas configuradas.'],
         };
     }
 
     /**
-     * Dirección EFECTIVA de recepción. Se arma igual que en
-     * {@see DteTransmisionService}, que la tiene privada. Se
-     * repite el cálculo —tres líneas— en vez de abrir ese método al exterior: una
-     * pantalla de estado no debería ampliar la superficie pública del servicio que
-     * transmite.
+     * Dirección EFECTIVA de recepción. Ya no se recalcula aquí: sale de
+     * {@see EndpointsHacienda}, la misma fuente que usa {@see DteTransmisionService}
+     * para transmitir. Antes eran dos copias del mismo cálculo, y una pantalla que
+     * muestra una dirección distinta de la que se usa es peor que no mostrar ninguna.
      */
     private function urlRecepcion(): string
     {
-        $base = rtrim((string) config('dte.transmision.url_base', ''), '/');
-        $endpoint = '/'.ltrim((string) config('dte.transmision.endpoint_recepcion', ''), '/');
-
-        if ($base === '' && trim($endpoint, '/') === '') {
-            return 'sin configurar';
-        }
-
-        if ($base === '') {
-            $base = $this->esProduccion() ? 'https://api.dtes.mh.gob.sv' : 'https://apitest.dtes.mh.gob.sv';
-        }
-
-        return rtrim($base.$endpoint, '/');
+        return EndpointsHacienda::recepcion(EndpointsHacienda::ambienteTransmision());
     }
 
-    /** Mismo criterio que el servicio de autenticación: varios rótulos cuentan como producción. */
+    /** Mismo criterio que el servicio de autenticación: la resolución es una sola. */
     private function esProduccion(): bool
     {
-        $ambiente = strtolower(trim((string) config('dte.transmision.ambiente', 'testing')));
-
-        return in_array($ambiente, ['produccion', 'production', 'prod', '01'], true);
+        return EndpointsHacienda::ambienteTransmision()->esProduccion();
     }
 }
