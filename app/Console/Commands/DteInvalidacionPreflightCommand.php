@@ -11,6 +11,7 @@ use App\Models\Dte;
 use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteTransmisionAuthService;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Console\Command;
 
 /**
@@ -95,9 +96,9 @@ class DteInvalidacionPreflightCommand extends Command
         $esProduccion = $dte->ambiente === AmbienteHacienda::Produccion;
         try {
             $d = $inval->dryRun($dte, $evento, false, false, $confirmoNc);
-            $endpointEsperado = $esProduccion
-                ? 'https://api.dtes.mh.gob.sv/fesv/anulardte'
-                : 'https://apitest.dtes.mh.gob.sv/fesv/anulardte';
+            // Referencia OFICIAL del ambiente propio del DTE (sin overrides), la misma
+            // que usa DteInvalidacionService para bloquear. No se reescribe aquí.
+            $endpointEsperado = EndpointsHacienda::anulacionOficial($dte->ambiente);
             $add($d['endpoint'] === $endpointEsperado, 'Endpoint correcto para el ambiente del DTE ('.$d['ambiente'].')', $d['endpoint']);
             $add($d['schema']['valido'], 'Schema evento válido (v3)', $d['schema']['valido'] ? 'sí' : 'NO: '.implode(' | ', array_slice($d['schema']['errores'], 0, 4)));
             $candados = $d['candados'];
@@ -135,7 +136,7 @@ class DteInvalidacionPreflightCommand extends Command
         $tokenOk = $diag['token_manual_configurado'] || ($diag['usuario_configurado'] && $diag['password_configurado']) || $diag['token_cacheado'];
         $add($tokenOk, 'Token MH disponible', $tokenOk
             ? 'credenciales/token configurados ('.$diag['ambiente'].')'
-            : 'faltan DTE_TRANSMISION_USER/PASSWORD o token');
+            : 'faltan las credenciales del ambiente ('.$diag['fuente_credenciales_detalle'].') o un token');
 
         $this->table(['', 'Verificación', 'Detalle'], $checks);
 

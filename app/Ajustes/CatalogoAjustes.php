@@ -794,8 +794,9 @@ class CatalogoAjustes
                 editabilidad: Editabilidad::Futura,
                 persistencia: Persistencia::Ninguna,
                 etiqueta: 'Ruta de recepción',
-                descripcion: 'Ruta donde se entregan los documentos firmados. Vacía mientras no se confirme contra el manual técnico.',
+                descripcion: 'Ruta donde se entregan los documentos firmados. Si se deja vacía se usa la ruta incorporada, para que nunca quede a medias; pendiente de contrastar contra el manual técnico vigente.',
                 claveConfig: 'dte.transmision.endpoint_recepcion',
+                porDefecto: '/fesv/recepciondte',
             ),
             DefinicionAjuste::hacer(
                 clave: 'dte.transmision.timeout',

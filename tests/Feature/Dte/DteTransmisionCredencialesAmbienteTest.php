@@ -59,25 +59,39 @@ class DteTransmisionCredencialesAmbienteTest extends TestCase
             && ($r->data()['pwd'] ?? null) === self::PW_PROD);
     }
 
-    // --- Producción mantiene el fallback legacy temporal ---
+    // --- Producción YA NO tiene fallback legacy ---
 
     /**
-     * El fallback vive en la CONSTRUCCIÓN de config/dte.php (env('DTE_PROD_USER',
-     * env('DTE_TRANSMISION_USER', ''))): config()->set() pisaría el valor ya resuelto
-     * y no probaría nada real, y putenv() no altera lo que env() ya resolvió en el
-     * arranque (Laravel cachea el snapshot de .env). Se verifica directamente que el
-     * archivo de config declara el fallback tal como se pidió.
+     * El fallback vivía en la CONSTRUCCIÓN de config/dte.php (env('DTE_PROD_USER',
+     * env('DTE_TRANSMISION_USER', ''))), así que se verifica sobre el TEXTO del
+     * archivo: config()->set() pisaría el valor ya resuelto y no probaría nada real,
+     * y putenv() no altera lo que env() resolvió en el arranque (Laravel cachea el
+     * snapshot del .env).
+     *
+     * Antes este test exigía que el fallback ESTUVIERA. Ahora exige lo contrario: se
+     * eliminó porque su silencio era el problema — un DTE_PROD_USER mal escrito no
+     * fallaba, transmitía con la credencial vieja.
      */
-    public function test_config_produccion_declara_fallback_a_legacy(): void
+    public function test_config_produccion_ya_no_declara_fallback_a_legacy(): void
     {
         $fuente = file_get_contents(config_path('dte.php'));
 
-        $this->assertStringContainsString(
+        $this->assertStringNotContainsString(
             "'usuario_produccion' => env('DTE_PROD_USER', env('DTE_TRANSMISION_USER', ''))",
             $fuente
         );
-        $this->assertStringContainsString(
+        $this->assertStringNotContainsString(
             "'password_produccion' => env('DTE_PROD_PASSWORD', env('DTE_TRANSMISION_PASSWORD', ''))",
+            $fuente
+        );
+
+        // Los cuatro pares leen UNA sola variable cada uno, sin encadenar.
+        $this->assertStringContainsString(
+            "'usuario_produccion' => env('DTE_PROD_USER', '')",
+            $fuente
+        );
+        $this->assertStringContainsString(
+            "'password_produccion' => env('DTE_PROD_PASSWORD', '')",
             $fuente
         );
         $this->assertStringContainsString(
@@ -90,11 +104,33 @@ class DteTransmisionCredencialesAmbienteTest extends TestCase
         );
     }
 
-    /** El valor YA RESUELTO en el proceso actual de test coincide con el legacy (ambos vienen del mismo .env real, sin DTE_PROD_* definido ahí). */
-    public function test_produccion_config_resuelto_coincide_con_legacy_cuando_dte_prod_no_esta_en_env(): void
+    /**
+     * Con las LEGACY puestas y las de producción vacías, producción no autentica y no
+     * sale ni un byte a la red. Es el reemplazo del test que antes comprobaba que el
+     * valor resuelto de producción COINCIDÍA con el legacy: esa coincidencia era
+     * exactamente el fallo.
+     */
+    public function test_produccion_no_hereda_las_credenciales_legacy(): void
     {
-        $this->assertSame(config('dte.transmision.usuario_api'), config('dte.transmision.usuario_produccion'));
-        $this->assertSame(config('dte.transmision.password'), config('dte.transmision.password_produccion'));
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.token', '');
+        config()->set('dte.transmision.usuario_produccion', '');
+        config()->set('dte.transmision.password_produccion', '');
+        config()->set('dte.transmision.usuario_api', 'usuario_legacy');
+        config()->set('dte.transmision.password', 'clave_legacy');
+        Http::fake();
+
+        try {
+            $this->auth()->obtenerToken();
+            $this->fail('Debió lanzar DteTransmisionException.');
+        } catch (DteTransmisionException $e) {
+            $this->assertStringContainsString('DTE_PROD_USER', $e->getMessage());
+            // El mensaje nombra variables, nunca valores.
+            $this->assertStringNotContainsString('usuario_legacy', $e->getMessage());
+            $this->assertStringNotContainsString('clave_legacy', $e->getMessage());
+        } finally {
+            Http::assertNothingSent();
+        }
     }
 
     // --- Testing usa solo credenciales testing ---

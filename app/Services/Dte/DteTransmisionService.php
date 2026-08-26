@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -583,16 +584,13 @@ class DteTransmisionService
         ];
     }
 
-    /** URL de recepción (base + endpoint, sin barra final). '' si no está configurada. */
+    /**
+     * URL de recepción del ambiente activo, sin barra final. Resolución única en
+     * {@see EndpointsHacienda}; ya no puede quedar vacía por configuración incompleta.
+     */
     private function urlRecepcion(): string
     {
-        $base = rtrim((string) config('dte.transmision.url_base', ''), '/');
-        $endpoint = '/'.ltrim((string) config('dte.transmision.endpoint_recepcion', ''), '/');
-        if ($base === '' && trim($endpoint, '/') === '') {
-            return '';
-        }
-
-        return rtrim($base.$endpoint, '/');
+        return EndpointsHacienda::recepcion(EndpointsHacienda::ambienteTransmision());
     }
 
     private function authConfigurado(): bool
@@ -615,9 +613,7 @@ class DteTransmisionService
 
     private function esProduccion(): bool
     {
-        $amb = strtolower((string) config('dte.transmision.ambiente', 'testing'));
-
-        return in_array($amb, ['produccion', 'production', 'prod', '01'], true);
+        return EndpointsHacienda::ambienteTransmision()->esProduccion();
     }
 
     /**

@@ -124,6 +124,21 @@ pulse "Firmar y transmitir" obtiene firma (mock si aplica) y la transmisión que
 
 Auditá en cualquier momento con `php artisan dte:seguridad-check`.
 
+### 4.1 Ninguna prueba sale a la red
+
+`tests/TestCase::bloquearHttpReal()` aplica `Http::preventStrayRequests()` en el
+`setUp()` de **toda** la suite: cualquier petición saliente que no tenga un
+`Http::fake()` que la cubra lanza `StrayRequestException` en vez de salir a la red.
+
+Antes estaba en tres archivos sueltos y el resto dependía de que cada test se
+acordara de mockear. Un olvido no daba error: daba una prueba que hablaba de verdad
+con Hacienda, con el firmador o con Cloudflare, según el `.env` de esa máquina — y en
+CI, según la red. Correr la suite no puede ser una acción con efectos externos.
+
+Cubre todo el tráfico saliente del proyecto porque hoy **todo** pasa por el facade
+`Http` (no hay cURL ni Guzzle directo). Lo fija `EndurecimientoDteTest`, que
+comprueba el bloqueo sin mockear nada — es la única forma de verificar el candado.
+
 ---
 
 ## 5. Hallazgos de esta auditoría

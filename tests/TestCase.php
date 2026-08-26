@@ -14,6 +14,7 @@ use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Database\Seeders\RolesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 abstract class TestCase extends BaseTestCase
@@ -35,6 +36,8 @@ abstract class TestCase extends BaseTestCase
         $this->abortarSiLaBaseDeDatosNoEsSegura();
 
         parent::setUp();
+
+        $this->bloquearHttpReal();
 
         // La caché de `Configuracion` es una propiedad STATIC: vive en el proceso de
         // PHPUnit, no en la aplicación. `RefreshDatabase` borra la FILA entre pruebas
@@ -61,6 +64,31 @@ abstract class TestCase extends BaseTestCase
         }
 
         $this->completarDistritoDelEmisorEnPruebas();
+    }
+
+    /**
+     * CANDADO DE RED DE LA SUITE. Ninguna prueba puede hacer una petición HTTP real.
+     *
+     * `Http::preventStrayRequests()` hace que cualquier request que NO tenga un
+     * `Http::fake()` que la cubra lance una excepción en vez de salir a la red. Se
+     * aplica acá, para TODA la suite, en vez de en los tests que se acuerden: hasta
+     * ahora estaba en tres archivos sueltos y el resto dependía de que cada test
+     * recordara mockear. Un olvido no daba error, daba una prueba que hablaba de
+     * verdad con Hacienda, con el firmador o con Cloudflare según qué .env tuviera
+     * la máquina — y en CI, según qué red.
+     *
+     * Es compatible con lo que ya existe: los tests que llaman a `Http::fake()`
+     * siguen igual (fake gana), y los que ya llamaban a `preventStrayRequests()`
+     * simplemente lo repiten sin efecto. Un test que necesite una respuesta concreta
+     * la declara con `Http::fake([...])`, como siempre.
+     *
+     * Lo que NO hace: no bloquea sockets ni clientes que no pasen por el facade
+     * `Http`. Hoy todo el tráfico saliente del proyecto usa ese facade (no hay cURL
+     * ni Guzzle directo), así que cubre la superficie completa.
+     */
+    protected function bloquearHttpReal(): void
+    {
+        Http::preventStrayRequests();
     }
 
     /**
