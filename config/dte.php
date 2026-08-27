@@ -17,12 +17,16 @@ use App\Enums\TipoDte;
 */
 
 // Tipos de DTE habilitados, indexados por su código MH.
+//
+// Ya NO se incluye 'version_esquema'. Venía de TipoDte::versionEsquema() y declaraba
+// versiones que CONTRADECÍAN a las autoritativas de 'json.versiones' (más abajo), sin
+// tener ningún consumidor: nadie leía esta clave. La versión de esquema de un tipo se
+// pregunta SIEMPRE a config('dte.json.versiones').
 $tiposDte = [];
 foreach (TipoDte::habilitados() as $tipo) {
     $tiposDte[$tipo->value] = [
         'codigo' => $tipo->value,
         'nombre' => $tipo->label(),
-        'version_esquema' => $tipo->versionEsquema(),
     ];
 }
 
@@ -197,13 +201,61 @@ return [
         // Path del evento de invalidación/anulación. Antes vivía escrito a mano en
         // DteInvalidacionService; ahora se configura junto a los otros dos.
         'endpoint_anulacion' => env('DTE_TRANSMISION_ENDPOINT_ANULACION', '/fesv/anulardte'),
-        // Timeout (segundos) de las llamadas HTTP a recepción. El manual define un
-        // umbral de ~8s antes de aplicar la política de reintentos.
-        'timeout' => (int) env('DTE_TRANSMISION_TIMEOUT', 15),
-        // User-Agent requerido por los servicios de recepción del MH.
+        // Path de la CONSULTA INDIVIDUAL de un DTE ya transmitido. La usa
+        // DteConsultaService, y es la pieza sin la cual la política de reintentos no
+        // puede existir: sin consultar no se sabe si reenviar duplicaría el documento.
+        'endpoint_consulta' => env('DTE_TRANSMISION_ENDPOINT_CONSULTA', '/fesv/recepcion/consultadte'),
+        // Timeout (segundos) de las llamadas HTTP a recepción y consulta.
+        // Es también el UMBRAL que dispara la política de reintentos: si recepción no
+        // respondió en este tiempo, se consulta el estado antes de decidir reenviar.
+        // Baja de 15 a 8 para alinearse con el umbral que describe el manual.
+        'timeout' => (int) env('DTE_TRANSMISION_TIMEOUT', 8),
+        // User-Agent requerido por los servicios del MH. FUENTE ÚNICA: lo usan auth,
+        // recepción, consulta e invalidación. No hay ningún otro valor en el código.
         'user_agent' => env('DTE_TRANSMISION_USER_AGENT', 'DulcesLaNegrita-DTE/1.0'),
+
+        /*
+        | POLÍTICA DE REINTENTOS previa a contingencia (ver DteTransmisionResiliente).
+        |
+        | El objetivo NO es "insistir hasta que entre": es no duplicar. Un DTE que no
+        | responde puede haber sido recibido igual, así que antes de reenviar SIEMPRE
+        | se consulta el estado. Reenviar a ciegas es lo que produce documentos
+        | duplicados con dos códigos de generación para una misma venta.
+        |
+        | Al agotarse, el resultado es 'reintentos_agotados' y NO se activa nada:
+        | la contingencia es una decisión con requisitos propios, diferida a su fase.
+        */
+        'reintentos' => [
+            // Reenvíos ADICIONALES tras el envío inicial. 2 = hasta 3 intentos en total.
+            // El tope se cuenta sobre el DOCUMENTO, no sobre la llamada: si el envío
+            // inicial ya lo hizo un intento anterior (Caso 2 del manual), a la nueva
+            // llamada le quedan estos 2 reenvíos, no 3 envíos otra vez.
+            'max_reenvios' => (int) env('DTE_TRANSMISION_MAX_REENVIOS', 2),
+            // Si false, transmitir() se comporta exactamente como antes (un solo envío,
+            // sin consulta ni reenvío). Interruptor para poder apagar la política sin
+            // revertir código.
+            'enabled' => (bool) env('DTE_TRANSMISION_REINTENTOS_ENABLED', true),
+        ],
+
+        /*
+        | Vigencia del token de autenticación, en horas.
+        |
+        | CONFIRMADO contra el Manual V2.0: «El servicio de autorización se deberá
+        | ejecutar una vez en el día o según sea el modelo de facturación del
+        | contribuyente». 24 h es ese ciclo diario, y aplica IGUAL a los dos ambientes.
+        |
+        | Antes estaba HARDCODED en 24 h producción / 48 h pruebas. El 48 de apitest no
+        | salía del manual: se eliminó. Queda configurable por si el modelo de
+        | facturación del contribuyente exigiera un ciclo distinto, nunca más largo.
+        |
+        | El TTL del cache se calcula POR DEBAJO de este valor (ver
+        | DteTransmisionAuthService::ttlSegundos): un token cacheado más tiempo del que
+        | vive es un 401 en mitad de una transmisión. Bajarlo nunca es peligroso —el
+        | costo de equivocarse por abajo es un login de más—, subirlo sí.
+        */
+        'token_vigencia_horas' => (int) env('DTE_TRANSMISION_TOKEN_VIGENCIA_HORAS', 24),
         // Token manual opcional (override): si está, se usa tal cual y no se hace login.
-        // Solo desde .env, nunca en código. Vigencia oficial: pruebas 48h, prod 24h.
+        // Solo desde .env, nunca en código. Ver 'token_vigencia_horas' más abajo.
         'token' => env('DTE_TRANSMISION_TOKEN', ''),
 
         // DEPRECADAS — DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD. Son las

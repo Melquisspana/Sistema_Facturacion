@@ -28,17 +28,21 @@ enum TipoDte: string
         };
     }
 
-    /** Versión del esquema JSON del MH para este tipo de documento. */
-    public function versionEsquema(): int
-    {
-        return match ($this) {
-            self::Factura => 1,
-            self::CreditoFiscal => 3,
-            self::NotaCredito => 3,
-            self::NotaDebito => 3,
-            self::FacturaExportacion => 1,
-        };
-    }
+    /*
+    | (Eliminado) versionEsquema(). Declaraba una SEGUNDA versión de esquema por tipo
+    | —Factura 1, CCF 3, FEX 1— que CONTRADECÍA la autoritativa de
+    | config('dte.json.versiones') —Factura 2, CCF 4, FEX 3—.
+    |
+    | No estaba en uso: su única llamada era config/dte.php, que la volcaba en
+    | dte.tipos.*.version_esquema, y esa clave no tenía ningún consumidor (ni código,
+    | ni vistas, ni accesos dinámicos, ni tests). No participaba en la generación, ni
+    | en la validación contra schema, ni en el payload de recepción.
+    |
+    | Se eliminó porque config muerta que además CONTRADICE a la viva no es inofensiva:
+    | es una trampa para quien lea el enum creyéndolo la fuente. Las versiones
+    | autoritativas siguen siendo, sin cambios, las de config('dte.json.versiones'):
+    | Factura 2 · CCF 4 · NC 3 · FEX 3 · invalidación 3.
+    */
 
     /**
      * Tipos habilitados para el alcance del proyecto (Fases 2-4).

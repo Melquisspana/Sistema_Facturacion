@@ -21,9 +21,26 @@ firmado localmente", solo administrador/facturación).
 El firmador es el servicio oficial Java/Spring del MH (`sv.mh.fe`, "Firma-Digital"),
 incluido en `resources/firmador/`. Expone:
 
-- `GET  http://localhost:8113/firmardocumento/status` → health check (no firma).
-- `POST http://localhost:8113/firmardocumento/` → firma un `dteJson` y devuelve un
+- `GET  <url>/firmardocumento/status` → health check (no firma).
+- `POST <url>/firmardocumento/` → firma un `dteJson` y devuelve un
   JWS (serialización compacta) en `body` cuando `status = OK`.
+
+**VERIFICADO contra el Manual V2.0** (revisión manual del PDF, 26-08-2026): el manual
+documenta `POST http://localhost:8113/firmardocumento/` con cuerpo `nit`, `activo`,
+`passwordPri`, `dteJson`. Coincide con lo implementado en `DteFirmaService`. La firma es
+**100 % local**: no hay ninguna dependencia remota de Hacienda para firmar.
+
+### Sobre el PUERTO: 8113 vs 8080
+
+El JAR del MH trae **8113** por defecto. Este sistema lo corre en **8080**, y no es un
+descuido: `firmador-auto.bat` lo fuerza con `--server.port=8080` porque es el puerto
+que espera `DTE_FIRMADOR_URL`.
+
+Es una decisión de despliegue local, no una desviación del protocolo: la ruta
+(`/firmardocumento/`), el método (POST) y el cuerpo (`nit`, `activo`, `passwordPri`,
+`dteJson`) son los mismos. El puerto es configurable de los dos lados y cambiarlo no
+requiere tocar código — basta con alinear el `--server.port` del `.bat` y
+`DTE_FIRMADOR_URL`. Si algún día conviene volver a 8113, se cambian esos dos valores.
 
 ## 1. Cómo corre el firmador
 
@@ -62,11 +79,16 @@ Debe llamarse exactamente **`<NIT>.crt`**, con el NIT **solo dígitos** (formato
 
 Ya existen en `config/dte.php` (todas leídas de `.env`, con defaults seguros):
 
+> **Corregido.** Este bloque documentaba `DTE_FIRMA_URL`, `DTE_FIRMA_STATUS_PATH` y
+> `DTE_FIRMA_ENDPOINT_PATH`, que **ya no existen**: se consolidaron en una sola clave
+> (`DTE_FIRMADOR_URL` → `dte.firmador.url`) precisamente para que la URL del firmador
+> no pudiera divergir entre tres sitios. Copiar las de antes no daba un error visible:
+> simplemente no las leía nadie.
+
 ```dotenv
-# Conexión al firmador local (ya validado en preparación)
-DTE_FIRMA_URL=http://localhost:8113
-DTE_FIRMA_STATUS_PATH=/firmardocumento/status
-DTE_FIRMA_ENDPOINT_PATH=/firmardocumento/
+# Conexión al firmador local. FUENTE ÚNICA de la URL: de aquí salen tanto el POST de
+# firma (.../firmardocumento/) como el health check (.../firmardocumento/status).
+DTE_FIRMADOR_URL=http://localhost:8080/firmardocumento
 DTE_FIRMA_TIMEOUT=10
 
 # Interruptor maestro de firma. Mantener en false hasta tener todo listo.

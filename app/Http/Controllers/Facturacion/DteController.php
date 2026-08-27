@@ -45,6 +45,7 @@ use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteJsonService;
+use App\Services\Dte\DteTransmisionResiliente;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Dte\PreflightEmisionProduccion;
@@ -772,6 +773,13 @@ class DteController extends Controller
      */
     private function procesarFirmaTransmision(Dte $dte, DteJsonService $jsonService, DteFirmaService $firma, DteTransmisionService $transmision): array
     {
+        // CASO 2 del manual. Se mira ANTES de firmar: si el documento YA llega firmado,
+        // hubo un intento anterior cuyo desenlace nadie conoce (el usuario que vuelve a
+        // pulsar el botón). Ese es el escenario donde reenviar a ciegas duplica, y por
+        // eso la política consulta antes del primer envío. Si llega Generado, la firma
+        // es nueva: no hubo envío previo y no hay nada que consultar.
+        $estadoIncierto = $dte->estado === EstadoDte::Firmado;
+
         // 1. Asegurar el JSON oficial (genera si falta, reusando la misma garantía del correo).
         if (($error = $this->asegurarJsonParaCorreo($dte, $jsonService)) !== null) {
             return ['error' => 'No se puede firmar/transmitir: '.$error];
@@ -789,9 +797,14 @@ class DteController extends Controller
             return ['error' => 'No se pudo firmar el documento: '.$e->getMessage().' Podés reintentar.'];
         }
 
-        // 3. Transmitir el documento firmado.
+        // 3. Transmitir el documento firmado, SIEMPRE por la política oficial de
+        //    reintentos (Manual V2.0): consulta antes de cualquier reenvío, máximo 2
+        //    reenvíos, y al agotarse un error explícito SIN activar contingencia.
+        //    Se resuelve del contenedor en vez de inyectarlo en las cuatro acciones que
+        //    llegan hasta acá: la política no es una opción de cada botón, es la única
+        //    forma de transmitir.
         try {
-            $r = $transmision->transmitir($dte);
+            $r = app(DteTransmisionResiliente::class)->transmitir($dte, $estadoIncierto);
         } catch (DteTransmisionDeshabilitadaException $e) {
             Log::warning('DTE transmisión bloqueada', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 
