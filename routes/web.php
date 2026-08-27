@@ -160,6 +160,11 @@ Route::middleware('auth')->group(function () {
         // refuerza además con las guardas de estado/evidencia.
         Route::post('{dte}/invalidacion/dry-run', [DteController::class, 'dryRunInvalidacion'])
             ->middleware('permission:dte.invalidar')->name('invalidacion.dry-run');
+        // Autocomplete del documento de reemplazo (paso 2 del asistente, tipo 1 CAT-024).
+        // SOLO CONSULTA (GET): no firma, no transmite, no toca BD. Mismo permiso y misma
+        // ability que el resto del bloque; lo que devuelva se revalida al transmitir.
+        Route::get('{dte}/invalidacion/buscar-reemplazo', [DteController::class, 'buscarReemplazoInvalidacion'])
+            ->middleware('permission:dte.invalidar')->name('invalidacion.buscar-reemplazo');
         Route::post('{dte}/invalidacion/mock', [DteController::class, 'invalidarMock'])
             ->middleware('permission:dte.invalidar')->name('invalidacion.mock');
         // Transmisión REAL del evento de invalidación a Hacienda (anulardte), reutilizando

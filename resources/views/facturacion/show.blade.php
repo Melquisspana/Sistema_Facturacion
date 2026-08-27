@@ -336,7 +336,9 @@
                     $mailerReal = ! in_array(config("mail.mailers.$mailerDriver.transport", $mailerDriver), ['log', 'array'], true);
                     $dteAceptado = $dte->estado === \App\Enums\EstadoDte::Aceptado;
                 @endphp
-                <div class="bg-white shadow sm:rounded-lg overflow-hidden">
+                {{-- El id lo usa el acceso rápido "Enviar correo" de «Acciones del documento»:
+                     lleva a ESTE formulario en vez de duplicarlo arriba. --}}
+                <div id="correo-cliente" class="bg-white shadow sm:rounded-lg overflow-hidden scroll-mt-6">
                     {{-- Header compacto: título + estado --}}
                     <div class="flex items-center justify-between gap-2 px-5 py-3 border-b border-gray-100 bg-gray-50/70">
                         <div class="flex items-center gap-2">
@@ -450,303 +452,52 @@
                 </div>
             @endcan
 
-            {{-- Corrección / reversión del documento: dos acciones AL MISMO NIVEL para un
-                 documento ACEPTADO — (1) invalidación oficial (evento anulardte) y (2)
-                 reversión con nota de crédito. La invalidación aplica a CCF y NC; la
-                 reversión con NC es específica de un CCF aceptado. Las acciones viven aquí,
-                 dentro de la ficha (ya no en un listado aparte ni escondidas en "Zona
-                 peligrosa"). La reversión TOTAL con NC llega en una fase siguiente: por ahora
-                 su botón es un placeholder deshabilitado (no apunta a una ruta inexistente).
-                 El selector de tipos de NC sigue funcional para NC parciales/avería/ajuste. --}}
+            {{-- ACCIONES DEL DOCUMENTO — sección única para los cuatro tipos (01/03/05/11).
+                 Antes esto era "Corrección / reversión del documento", con la invalidación
+                 y la NC compuestas de forma distinta según el tipo. Toda la composición vive
+                 ahora en <x-dte.acciones-documento>, que decide qué tarjetas mostrar a partir
+                 de las MISMAS abilities que se consultaban aquí. No cambia ninguna ruta,
+                 payload ni regla: solo dónde y cómo se ve. --}}
             @php
-                $mostrarInvalidacion = (bool) ($invalidacion ?? false);
+                // El CCF aceptado es el único tipo con reversión por nota de crédito
+                // (mismo criterio que antes: tipo 03 + aceptado + permiso de gestión).
                 $mostrarReversion = $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
                     && $dte->estado === \App\Enums\EstadoDte::Aceptado
                     && auth()->user()?->can('create', App\Models\Dte::class);
-                $dosBloques = $mostrarInvalidacion && $mostrarReversion;
             @endphp
-            @if ($mostrarInvalidacion || $mostrarReversion)
-                <div>
-                    <h3 class="font-semibold text-gray-700 mb-3">Corrección / reversión del documento</h3>
-                    <div class="grid grid-cols-1 {{ $dosBloques ? 'md:grid-cols-2' : '' }} gap-6 items-start">
-                        {{-- Bloque 1: Invalidación oficial (evento anulardte). Partial reutilizado. --}}
-                        @if ($mostrarInvalidacion)
-                            @include('facturacion.partials.invalidacion', ['dte' => $dte, 'invalidacion' => $invalidacion])
-                        @endif
+            <x-dte.acciones-documento
+                :dte="$dte"
+                :invalidacion="$invalidacion ?? null"
+                :mostrarReversion="$mostrarReversion"
+                :salasNotaCredito="$salasNotaCredito ?? []" />
 
-                        {{-- Bloque 2: Revertir con nota de crédito (solo CCF aceptado). --}}
-                        @if ($mostrarReversion)
-                            <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-rose-400">
-                                <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-                                    <h3 class="font-semibold text-gray-700">Revertir con nota de crédito</h3>
-                                    <span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800">Crea un borrador</span>
-                                </div>
-                                <p class="text-sm text-gray-500">
-                                    Cuando la invalidación oficial ya no proceda, revertí el CCF con una nota de crédito.
-                                    Se crea un <strong>borrador</strong>; nunca se emite, firma ni transmite automáticamente.
-                                </p>
-
-                                {{-- Reversión TOTAL: crea un borrador de devolución con TODAS las líneas del CCF
-                                     (saldo acreditable disponible). Solo visible con CCF aceptado REAL por Hacienda
-                                     (ability revertirConNotaCredito). No emite/firma/transmite. --}}
-                                <div class="mt-4">
-                                    @can('revertirConNotaCredito', $dte)
-                                        <form method="POST" action="{{ route('facturacion.nota-credito.revertir', $dte) }}"
-                                              onsubmit="return confirm('¿Crear un borrador de nota de crédito que revierte TODO el CCF? Se copian todas las líneas con saldo disponible. No se emite ni transmite: quedará en borrador para revisión.');">
-                                            @csrf
-                                            <button class="inline-flex items-center px-4 py-2 bg-rose-600 text-white text-sm rounded-md hover:bg-rose-700 font-medium">
-                                                Revertir CCF completo con NC
-                                            </button>
-                                        </form>
-                                        <p class="mt-1 text-xs text-gray-400">
-                                            Copia todas las líneas del CCF (cantidades, precios, descuentos e impuestos) a un
-                                            borrador de devolución, respetando el saldo acreditable. No emite nada.
-                                        </p>
-                                    @else
-                                        <button type="button" disabled title="Requiere aceptación real de Hacienda"
-                                                class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-md font-medium cursor-not-allowed">
-                                            Revertir CCF completo con NC
-                                        </button>
-                                        <p class="mt-1 text-xs text-gray-400">
-                                            Bloqueado: la reversión total requiere un CCF con <strong>aceptación real</strong> de Hacienda
-                                            (APITEST o producción). Una aceptación simulada (MOCK) no habilita esta acción.
-                                        </p>
-                                    @endcan
-                                </div>
-
-                                {{-- Otras notas de crédito: selector de tipo existente (parcial / avería / ajuste). --}}
-                                <div class="mt-5 border-t border-gray-100 pt-4">
-                                    <h4 class="text-sm font-semibold text-gray-600 mb-2">Otras notas de crédito (parcial / avería / ajuste)</h4>
-                                    @php
-                                        // Modalidades por MONTO: las únicas que admiten emitir la NC a una
-                                        // sala distinta a la del CCF (ver DteBorradorService).
-                                        $tiposPorMontoNc = collect(\App\Enums\TipoNotaCredito::cases())
-                                            ->filter(fn ($t) => $t->esPorMonto())->map(fn ($t) => $t->value)->values()->all();
-                                    @endphp
-                                    <form method="POST" action="{{ route('facturacion.nota-credito.store', $dte) }}"
-                                          class="grid grid-cols-1 gap-3 items-end"
-                                          x-data="{
-                                              tipo: @js(old('tipo', '')),
-                                              porMonto: @js($tiposPorMontoNc),
-                                              get permiteOtraSala() { return this.porMonto.includes(this.tipo); },
-                                          }"
-                                          onsubmit="return confirm('¿Crear una nota de crédito para este CCF?');">
-                                        @csrf
-                                        <div>
-                                            <x-input-label for="tipo_nc" value="Tipo de nota de crédito *" />
-                                            <select id="tipo_nc" name="tipo" x-model="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
-                                                <option value="">— Seleccione —</option>
-                                                @foreach (\App\Enums\TipoNotaCredito::opciones() as $valor => $label)
-                                                    <option value="{{ $valor }}" @selected(old('tipo') === $valor)>{{ $label }}</option>
-                                                @endforeach
-                                            </select>
-                                            <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
-                                            <p class="mt-1 text-xs text-gray-400">Devolución y faltante usan las líneas de este CCF. Avería permite otros productos. Pronto pago y ajustes usan conceptos manuales.</p>
-                                        </div>
-
-                                        {{-- SALA RECEPTORA: solo para las notas por monto (pronto pago…).
-                                             Permite emitir a una sala administrativa del mismo cliente que no
-                                             tenga CCF propios. El CCF relacionado y el cliente NO cambian. --}}
-                                        @if (! empty($salasNotaCredito))
-                                            <div x-show="permiteOtraSala" x-cloak
-                                                 class="rounded-md border border-amber-200 bg-amber-50 p-3">
-                                                <x-input-label for="sala_nc_ccf" value="Sala receptora de la Nota de Crédito" />
-                                                <select id="sala_nc_ccf" name="cliente_sucursal_id"
-                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
-                                                    @foreach ($salasNotaCredito as $sala)
-                                                        <option value="{{ $sala['id'] }}"
-                                                            @selected((int) old('cliente_sucursal_id', $dte->cliente_sucursal_id) === (int) $sala['id'])>
-                                                            {{ $sala['nombre'] }}@if ($sala['es_sala_ccf']) — sala del CCF @endif
-                                                        </option>
-                                                    @endforeach
-                                                </select>
-                                                <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
-                                                <p class="mt-1.5 text-xs text-amber-800">
-                                                    Para <strong>pronto pago</strong> podés emitir la nota a una sala administrativa
-                                                    del mismo cliente, aunque nunca haya recibido un CCF.
-                                                    Solo cambia el establecimiento y la dirección mostrados:
-                                                    <strong>el CCF relacionado, el NIT/NRC del cliente y el saldo acreditable no cambian.</strong>
-                                                </p>
-                                            </div>
-                                            <p class="text-xs text-gray-400" x-show="tipo !== '' && ! permiteOtraSala" x-cloak>
-                                                Esta nota se emite a la misma sala del CCF relacionado.
-                                            </p>
-                                        @endif
-                                        <div>
-                                            <x-input-label for="motivo" value="Motivo / observaciones (opcional)" />
-                                            <x-text-input id="motivo" name="motivo" type="text" class="mt-1 block w-full"
-                                                          placeholder="Ej. Devolución parcial de mercadería" :value="old('motivo')" />
-                                        </div>
-                                        <div>
-                                            <button class="inline-flex items-center px-4 py-2 bg-rose-600 text-white text-sm rounded-md hover:bg-rose-700">
-                                                Crear nota de crédito
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        @endif
-                    </div>
-                </div>
+            {{-- EMITIR EN PRODUCCIÓN — tarjeta única para los cuatro tipos (01/03/05/11).
+                 Antes esto era un modal propio de "Emitir a Hacienda" que solo veían CCF,
+                 Factura y FEX, cuyo resumen leía claves del preflight que dos de los tres
+                 tipos no producen, y que en el CCF mostraba el último correlativo de un
+                 sistema externo. Toda la composición vive ahora en
+                 <x-dte.confirmacion-produccion>, que muestra el resumen a partir del propio
+                 $dte y consume del preflight solo los candados. La ruta destino la resuelve
+                 el controlador: no cambia ninguna policy, correlativo ni payload. --}}
+            @if (! empty($confirmacionProduccion))
+                <x-dte.confirmacion-produccion :dte="$dte" :produccion="$confirmacionProduccion" />
             @endif
 
-            {{-- Acción REAL de PRODUCCIÓN, explícita y separada: "Generar y transmitir producción".
-                 Preflight de seguridad + barrera anti-Conta + frase EMITIR PRODUCCION. No envía correo.
-                 Es la acción PRINCIPAL guiada cuando el CCF está listo para emitir: se queda VISIBLE
-                 (no colapsada), a diferencia del panel manual paso a paso de más abajo. --}}
-            @if (! empty($emisionProduccion))
-                @php
-                    $pf = $emisionProduccion['preflight'];
-                    $rp = $emisionProduccion['resumen'];
-                @endphp
-                <div x-data="{ open: false, enviando: false }" class="bg-white shadow sm:rounded-lg p-6 border-l-4 border-indigo-600">
-                    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-                        <div>
-                            <h3 class="font-semibold text-gray-800 text-lg">Emitir a Hacienda</h3>
-                            <p class="text-xs text-gray-500">Genera, firma y transmite en producción — en un solo paso.</p>
-                        </div>
-                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $pf['puede'] ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700' }}">
-                            {{ $pf['puede'] ? 'Preflight OK · listo' : 'Preflight bloqueado' }}
-                        </span>
-                    </div>
-                    <p class="text-sm text-gray-500">
-                        El correo al cliente queda <strong>separado</strong> (se envía después de aceptado). El botón normal
-                        “Generar” es solo local y no transmite.
-                    </p>
+            {{-- Emisión manual paso a paso (gestores; estado generado/firmado, sin sello).
+                 SIEMPRE colapsada bajo "Avanzado": es para pruebas o para hacerlo por pasos.
 
-                    {{-- Checklist del preflight (cada precondición) --}}
-                    <ul class="mt-3 space-y-1 text-sm">
-                        @foreach ($pf['checks'] as $c)
-                            <li class="flex items-start gap-2">
-                                <span class="mt-0.5 inline-block h-4 w-4 shrink-0 rounded-full text-center text-xs leading-4 {{ $c['ok'] ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700' }}">{{ $c['ok'] ? '✓' : '✗' }}</span>
-                                <span class="{{ $c['ok'] ? 'text-gray-600' : 'text-rose-700 font-medium' }}">{{ $c['label'] }} <span class="text-xs text-gray-400">— {{ $c['detalle'] }}</span></span>
-                            </li>
-                        @endforeach
-                    </ul>
-
-                    <div class="mt-4">
-                        @if ($pf['puede'])
-                            <button type="button" @click="open = true"
-                                    class="inline-flex items-center gap-1.5 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-md font-semibold">
-                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.897 28.897 0 0015.293-7.155.75.75 0 000-1.114A28.897 28.897 0 003.105 2.289z"/></svg>
-                                Emitir a Hacienda
-                            </button>
-                        @else
-                            <button type="button" disabled title="Faltan precondiciones del preflight"
-                                    class="inline-flex items-center px-5 py-2.5 bg-gray-100 text-gray-400 text-sm rounded-md font-semibold cursor-not-allowed">
-                                Emitir a Hacienda
-                            </button>
-                            <p class="mt-1 text-xs text-rose-600">Falta: {{ implode('; ', $pf['faltantes']) }}.</p>
-                        @endif
-                    </div>
-
-                    {{-- Modal de confirmación: resumen + barrera + frase EMITIR PRODUCCION --}}
-                    @if ($pf['puede'])
-                        <div x-show="open" x-cloak class="fixed inset-0 z-50 overflow-y-auto">
-                            <div class="flex min-h-full items-center justify-center p-4">
-                                <div class="fixed inset-0 bg-gray-900/50" @click="open = false"></div>
-                                <div class="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg p-6">
-                                    @php $esCcfModal = $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal; @endphp
-                                    <h3 class="text-lg font-semibold text-rose-700">Confirmar emisión a PRODUCCIÓN</h3>
-
-                                    {{-- Número del documento a emitir (correlativo del SISTEMA NUEVO, P002). Para
-                                         CCF se muestra además el último real en Conta Portable (P001) como dato
-                                         puramente INFORMATIVO — es una contingencia independiente, no participa
-                                         en el cálculo de este número ni requiere alinearse con ella. --}}
-                                    <div class="mt-3 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4">
-                                        <div class="text-center">
-                                            <p class="text-xs uppercase tracking-wide text-indigo-500">Documento actual a emitir (sistema nuevo)</p>
-                                            <p class="mt-0.5 text-4xl font-bold tabular-nums text-indigo-700">{{ $rp['documento_actual'] }}</p>
-                                        </div>
-                                        <dl class="mt-3 grid grid-cols-2 gap-2 border-t border-indigo-100 pt-3 text-xs text-gray-600">
-                                            @if ($esCcfModal)
-                                                <div><dt class="text-gray-400">Último real en Conta (P001, informativo)</dt><dd class="font-semibold">{{ $rp['externo_ultimo'] ?? 'no configurado' }}</dd></div>
-                                            @endif
-                                            <div><dt class="text-gray-400">Próximo tras aceptar este</dt><dd class="font-semibold">{{ $rp['proximo_futuro'] }}</dd></div>
-                                        </dl>
-                                    </div>
-
-                                    <div class="mt-3 rounded-md bg-rose-600 p-3 text-sm text-white font-semibold text-center">
-                                        ⚠ Esto se enviará a Hacienda <span class="underline">de verdad</span> (producción). No se deshace fácilmente.
-                                    </div>
-
-                                    <dl class="mt-3 divide-y divide-gray-100 text-sm">
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Tipo de documento</dt><dd class="font-medium text-gray-900">{{ $rp['tipo_dte'] }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Ambiente</dt><dd class="font-medium text-gray-900">{{ $rp['ambiente'] }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">N.º de control</dt><dd class="font-medium text-gray-900 font-mono text-xs">{{ $rp['numero_control'] ?? '(se asigna al generar)' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Cliente / receptor</dt><dd class="font-medium text-gray-900">{{ $rp['cliente'] ?? '—' }}</dd></div>
-                                        @if ($esCcfModal)
-                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Sala</dt><dd class="font-medium text-gray-900">{{ $rp['sala'] ?? '—' }}</dd></div>
-                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Orden de compra</dt><dd class="font-medium text-gray-900">{{ $rp['oc'] ?? '—' }}</dd></div>
-                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total gravado</dt><dd class="font-medium text-gray-900">${{ number_format($rp['total_gravado'], 2) }}</dd></div>
-                                            <div class="flex justify-between py-1.5"><dt class="text-gray-500">IVA</dt><dd class="font-medium text-gray-900">${{ number_format($rp['iva'], 2) }}</dd></div>
-                                            @if ($rp['aplica_retencion'])
-                                                <div class="flex justify-between py-1.5"><dt class="text-gray-500">Retención IVA</dt><dd class="font-medium text-gray-900">-${{ number_format($rp['retencion'], 2) }}</dd></div>
-                                            @endif
-                                        @endif
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Total a pagar</dt><dd class="font-semibold text-gray-900">${{ number_format($rp['total_pagar'], 2) }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Correo destino</dt><dd class="font-medium text-gray-900">{{ $rp['correo_destino'] ?? '(sin correo — se enviará aparte)' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">URL efectiva</dt><dd class="font-medium text-gray-900 font-mono text-xs">{{ $rp['url_efectiva'] ?? '—' }}</dd></div>
-                                        <div class="flex justify-between py-1.5"><dt class="text-gray-500">Certificado esperado</dt><dd class="font-medium text-gray-900">{{ $rp['certificado_esperado'] ?? '—' }}</dd></div>
-                                    </dl>
-
-                                    {{-- Valida (frase/barrera/confirm) y solo si pasa marca "enviando" (deshabilita el botón
-                                         y evita doble submit). Si no pasa, previene el envío y deja el botón activo. --}}
-                                    <form method="POST" action="{{ route('facturacion.generar-transmitir-produccion', $dte) }}" class="mt-4"
-                                          @submit="dteConfirmarProduccion($event.target) ? (enviando = true) : $event.preventDefault()">
-                                        @csrf
-                                        <label class="flex items-start gap-2 text-sm text-gray-700">
-                                            <input type="checkbox" name="barrera_conta" value="1" class="mt-0.5 rounded border-gray-300">
-                                            @if ($esCcfModal)
-                                                <span>Confirmo que revisé este documento (datos, totales y receptor) y que corresponde emitirlo en producción ahora, con el correlativo del sistema nuevo (P002). Documento actual a emitir: {{ $rp['documento_actual'] }}. Próximo después de aceptar este documento: {{ $rp['proximo_futuro'] }}.</span>
-                                            @else
-                                                <span>Confirmo que revisé este documento (datos, totales y receptor) y que corresponde emitirlo en producción ahora. Documento actual a emitir: {{ $rp['documento_actual'] }}.</span>
-                                            @endif
-                                        </label>
-                                        <label class="mt-3 block text-xs font-semibold text-rose-700">Escribí exactamente: <span class="font-mono">EMITIR PRODUCCION</span></label>
-                                        <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false" placeholder="EMITIR PRODUCCION"
-                                               class="mt-1 w-full rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
-                                        <div class="mt-5 flex items-center justify-end gap-3">
-                                            <button type="button" @click="open = false" :disabled="enviando" class="rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
-                                            <button type="submit" :disabled="enviando"
-                                                    class="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed">
-                                                <span x-show="!enviando">Emitir a Hacienda ahora</span>
-                                                <span x-show="enviando" x-cloak>Procesando…</span>
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                    @endif
-                </div>
-
-                <script>
-                    function dteConfirmarProduccion(form) {
-                        if (!form.barrera_conta.checked) {
-                            alert('Marcá la confirmación de revisión antes de emitir.');
-                            return false;
-                        }
-                        var val = ((form.confirmacion_emision && form.confirmacion_emision.value) || '').trim();
-                        if (val !== 'EMITIR PRODUCCION') {
-                            alert('Para emitir a producción debés escribir exactamente: EMITIR PRODUCCION');
-                            return false;
-                        }
-                        return confirm('¿GENERAR, FIRMAR Y TRANSMITIR a Hacienda producción? Esto es real y no se deshace fácilmente.');
-                    }
-                </script>
-            @endif
-
-            {{-- Acción MANUAL única: firmar y transmitir (gestores; estado generado/firmado, sin sello).
-                 SIEMPRE colapsada bajo "Avanzado": el camino principal es "Emitir a Hacienda" de arriba
-                 (cuando aplica); esto es para pruebas o para hacerlo a mano paso a paso. --}}
+                 Ya NO contiene un segundo formulario de emisión real: cuando los candados
+                 permiten transmitir de verdad a producción, este panel remite a la tarjeta
+                 «Emitir en producción», que es la ÚNICA confirmación de producción del
+                 sistema. Antes había aquí una copia con su propia frase EMITIR PRODUCCION,
+                 su propio aviso y su propio botón rojo. La ruta y el payload no cambian. --}}
             @can('firmarTransmitir', $dte)
                 @php
                     $modoMock = (bool) config('dte.firma.mock') || (bool) config('dte.transmision.mock');
                     $yaFirmado = $dte->estado === \App\Enums\EstadoDte::Firmado;
                     $etiquetaBoton = $yaFirmado ? 'Reintentar transmisión' : 'Firmar y transmitir';
                     // ¿Puede emitir REAL a producción ahora? (candados abiertos + ambiente producción).
-                    // En modo seguro es false y solo aplica la doble confirmación normal.
+                    // En modo seguro es false y este panel opera con su doble confirmación normal.
                     $emisionReal = ! empty($modoDte['transmision_real_posible']);
                 @endphp
                 <details class="group rounded-lg border border-dashed border-gray-300 bg-gray-50/60">
@@ -754,17 +505,16 @@
                         Avanzado · emisión manual paso a paso
                         <span class="ml-1 font-normal text-gray-400">(Generar / Firmar y transmitir)</span>
                         <p class="mt-0.5 text-xs font-normal text-gray-400">
-                            Para pruebas o si necesitás hacerlo por pasos. Normalmente usá
-                            <span class="font-semibold text-gray-500">“Emitir a Hacienda”</span> de arriba.
+                            Para pruebas o si necesitás hacerlo por pasos.
                         </p>
                     </summary>
                     <div class="px-5 pb-5 pt-1">
-                        <div class="bg-white shadow sm:rounded-lg p-6 border-l-4 {{ $emisionReal ? 'border-rose-600' : ($modoMock ? 'border-amber-400' : 'border-emerald-500') }}">
+                        <div class="bg-white shadow sm:rounded-lg p-6 border border-gray-200">
                             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
                                 <h3 class="font-semibold text-gray-700">Firmar y transmitir</h3>
                                 @if ($emisionReal)
-                                    <span class="inline-flex items-center rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold text-white animate-pulse">
-                                        EMISIÓN REAL A PRODUCCIÓN
+                                    <span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800">
+                                        Emisión real habilitada
                                     </span>
                                 @elseif ($modoMock)
                                     <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
@@ -776,72 +526,62 @@
                                     </span>
                                 @endif
                             </div>
-                            <p class="text-sm text-gray-500">
-                                @if ($yaFirmado)
-                                    El documento ya está <strong>firmado localmente</strong>. Esta acción solo reintenta la
-                                    transmisión (no vuelve a firmar ni consume correlativo).
-                                @else
-                                    Acción manual: genera el JSON si falta, firma el documento y lo transmite en un solo paso.
-                                    Es <strong>idempotente</strong>: no re-firma si ya hay firma ni retransmite si ya fue aceptado.
-                                @endif
-                            </p>
 
                             @if ($emisionReal)
-                                <div class="mt-3 bg-rose-50 border border-rose-300 rounded-md p-3 text-xs text-rose-800 font-semibold">
-                                    ⚠ EMISIÓN REAL A PRODUCCIÓN HABILITADA
-                                    <p class="mt-1 font-normal">
-                                        Los candados están abiertos y el ambiente es de <strong>producción</strong>: esta acción
-                                        transmite el documento a Hacienda <strong>de verdad</strong>. Para continuar, escribí la
-                                        frase exacta <span class="font-mono font-bold">EMITIR PRODUCCION</span>.
-                                    </p>
-                                </div>
-                            @elseif ($modoMock)
-                                <div class="mt-3 bg-amber-50 border border-amber-300 rounded-md p-3 text-xs text-amber-800 font-semibold">
-                                    SIMULACIÓN (MOCK) — NO EMITE A HACIENDA
-                                    <p class="mt-1 font-normal">
-                                        La firma y la aceptación son <strong>simuladas</strong> (sin firmador real ni envío a Hacienda),
-                                        para validar el flujo en local. El sello será ficticio (<span class="font-mono">MOCK-SIMULADO-…</span>).
-                                    </p>
-                                </div>
-                            @endif
+                                {{-- Emisión real posible: acá NO se ofrece formulario. La confirmación
+                                     de producción vive en un solo lugar. --}}
+                                <p class="text-sm text-gray-500">
+                                    Los candados están abiertos y el documento es de producción, así que esta
+                                    emisión se confirma desde la tarjeta
+                                    <a href="#emitir-produccion" class="font-semibold text-indigo-600 hover:underline">Emitir en producción</a>,
+                                    con su resumen y su frase de seguridad.
+                                </p>
+                                <a href="#emitir-produccion"
+                                   class="mt-4 inline-flex items-center px-4 py-2 rounded-md border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                    Ir a la tarjeta de emisión
+                                </a>
+                            @else
+                                <p class="text-sm text-gray-500">
+                                    @if ($yaFirmado)
+                                        El documento ya está <strong>firmado localmente</strong>. Esta acción solo reintenta la
+                                        transmisión (no vuelve a firmar ni consume correlativo).
+                                    @else
+                                        Acción manual: genera el JSON si falta, firma el documento y lo transmite en un solo paso.
+                                        Es <strong>idempotente</strong>: no re-firma si ya hay firma ni retransmite si ya fue aceptado.
+                                    @endif
+                                </p>
 
-                            <form method="POST" action="{{ route('facturacion.firmar-transmitir', $dte) }}" class="mt-4"
-                                  onsubmit="return dteConfirmarEmision(this, {{ $emisionReal ? 'true' : 'false' }});">
-                                @csrf
-                                @if ($emisionReal)
-                                    <div class="mb-3">
-                                        <label class="block text-xs font-semibold text-rose-700 mb-1">
-                                            Escribí exactamente para emitir real: <span class="font-mono">EMITIR PRODUCCION</span>
-                                        </label>
-                                        <input type="text" name="confirmacion_emision" autocomplete="off" spellcheck="false"
-                                               placeholder="EMITIR PRODUCCION"
-                                               class="w-72 rounded-md border-rose-300 text-sm font-mono focus:border-rose-500 focus:ring-rose-500">
+                                @if ($modoMock)
+                                    <div class="mt-3 bg-amber-50 border border-amber-300 rounded-md p-3 text-xs text-amber-800 font-semibold">
+                                        SIMULACIÓN (MOCK) — NO EMITE A HACIENDA
+                                        <p class="mt-1 font-normal">
+                                            La firma y la aceptación son <strong>simuladas</strong> (sin firmador real ni envío a Hacienda),
+                                            para validar el flujo en local. El sello será ficticio (<span class="font-mono">MOCK-SIMULADO-…</span>).
+                                        </p>
                                     </div>
                                 @endif
-                                <button class="inline-flex items-center px-4 py-2 {{ $emisionReal ? 'bg-rose-600 hover:bg-rose-700' : ($modoMock ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700') }} text-white text-sm rounded-md font-medium">
-                                    {{ $emisionReal ? 'EMITIR A PRODUCCIÓN' : $etiquetaBoton }}{{ (! $emisionReal && $modoMock) ? ' (prueba)' : '' }}
-                                </button>
-                            </form>
+
+                                <form method="POST" action="{{ route('facturacion.firmar-transmitir', $dte) }}" class="mt-4"
+                                      onsubmit="return dteConfirmarEmisionSegura();">
+                                    @csrf
+                                    <button class="inline-flex items-center px-4 py-2 {{ $modoMock ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700' }} text-white text-sm rounded-md font-medium">
+                                        {{ $etiquetaBoton }}{{ $modoMock ? ' (prueba)' : '' }}
+                                    </button>
+                                </form>
+                            @endif
                         </div>
                     </div>
                 </details>
 
-                {{-- Guardia de UI (defensa en profundidad; el servidor RE-VALIDA la frase y los candados).
-                     Modo seguro: doble confirmación. Producción real: frase exacta + confirmación. --}}
+                {{-- Doble confirmación del camino NO productivo. La emisión real ya no pasa
+                     por acá: su frase la pide la tarjeta de arriba y la revalida el servidor
+                     igual que siempre. --}}
                 <script>
-                    function dteConfirmarEmision(form, esReal) {
-                        if (esReal) {
-                            var val = ((form.confirmacion_emision && form.confirmacion_emision.value) || '').trim();
-                            if (val !== 'EMITIR PRODUCCION') {
-                                alert('Para EMITIR REAL debés escribir exactamente la frase: EMITIR PRODUCCION');
-                                return false;
-                            }
-                            return confirm('¿EMITIR REAL A PRODUCCIÓN? Esto transmite el documento a Hacienda de verdad y no se deshace fácilmente.');
-                        }
-                        if (!confirm('¿Firmar y transmitir este documento? (SIMULACIÓN — no se envía nada real a Hacienda).')) {
+                    function dteConfirmarEmisionSegura() {
+                        if (!confirm('¿Firmar y transmitir este documento? (No es una emisión a producción).')) {
                             return false;
                         }
-                        return confirm('Confirmá una vez más: ejecutar firmar/transmitir en MODO SEGURO.');
+                        return confirm('Confirmá una vez más: ejecutar firmar/transmitir.');
                     }
                 </script>
             @endcan
