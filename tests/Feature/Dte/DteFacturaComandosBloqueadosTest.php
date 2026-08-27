@@ -13,6 +13,7 @@ use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -69,7 +70,11 @@ class DteFacturaComandosBloqueadosTest extends TestCase
         config()->set('dte.transmision.allow_production', true);
         config()->set('dte.transmision.ambiente', 'produccion');
         config()->set('dte.transmision.test_enabled', false);
-        config()->set('dte.transmision.url_base', 'https://recepcion.test');
+        // Host OFICIAL de produccion: abrir "todos" los candados ahora incluye el
+        // endpoint, porque transmitir a produccion exige la URL productiva exacta.
+        // Con un host inventado el envio queda bloqueado — que es justamente lo que
+        // ese candado tiene que hacer. Nada sale a la red: Http::fake() lo intercepta.
+        config()->set('dte.transmision.url_base', EndpointsHacienda::HOST_PRODUCCION);
         config()->set('dte.transmision.endpoint_recepcion', '/fesv/recepciondte');
         config()->set('dte.transmision.token', 'TOKEN_FAKE_NO_REAL');
     }

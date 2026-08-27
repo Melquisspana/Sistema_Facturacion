@@ -2,6 +2,7 @@
 
 namespace App\Services\Dte;
 
+use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
@@ -195,6 +196,33 @@ class DteTransmisionService
     }
 
     /**
+     * Aplica al documento un resultado DEFINITIVO que vino de la CONSULTA, no de la
+     * respuesta a un envío.
+     *
+     * Existe para que la política de reintentos ({@see DteTransmisionResiliente}) no
+     * tenga que tocar la máquina de estados por su cuenta. Cuando recepción no
+     * responde y la consulta revela que el documento sí había entrado, esa respuesta
+     * es tan definitiva como la que se perdió, y tiene que persistirse por el MISMO
+     * camino: sello, historial y transición. Duplicar esa lógica en el servicio de
+     * reintentos era la forma segura de que un día divergieran.
+     *
+     * Los resultados no definitivos se devuelven tal cual, sin tocar el documento.
+     *
+     * @param  array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, cuerpo?: array<string, mixed>|null}  $resultado
+     * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null}
+     */
+    public function aplicarResultadoDeConsulta(Dte $dte, array $resultado): array
+    {
+        return $this->aplicarResultado($dte, [
+            'resultado' => (string) ($resultado['resultado'] ?? 'desconocido'),
+            'http_status' => $resultado['http_status'] ?? null,
+            'mensaje' => (string) ($resultado['mensaje'] ?? ''),
+            'sello' => $resultado['sello'] ?? null,
+            'cuerpo' => $resultado['cuerpo'] ?? null,
+        ]);
+    }
+
+    /**
      * Aplica el resultado de una respuesta DEFINITIVA del MH al documento, vía
      * DteStateMachine (con historial), dentro de una transacción:
      *  - aceptado  → persiste sello_recepcion y avanza Firmado → Enviado → Aceptado.
@@ -358,6 +386,19 @@ class DteTransmisionService
         }
         if ($esProd && ! $allowProd) {
             $razones[] = 'Ambiente de producción sin autorización (DTE_TRANSMISION_ALLOW_PRODUCTION=false). No se transmitió.';
+        }
+
+        // ENDPOINT PRODUCTIVO EXACTO. Mismo criterio que la invalidación, que ya lo
+        // exigía: sin esto, un `url_base` mal puesto manda un DTE de PRODUCCIÓN a un
+        // host cualquiera y el documento se pierde con numeración oficial ya gastada.
+        // La comparación es contra la URL oficial incorporada, no contra la resuelta:
+        // comparar la resuelta consigo misma no comprobaría nada.
+        if ($esProd) {
+            $urlOficial = EndpointsHacienda::recepcionOficial(AmbienteHacienda::Produccion);
+            $urlActual = $this->urlRecepcion();
+            if ($urlActual !== $urlOficial) {
+                $razones[] = 'El endpoint de recepción no es el productivo exacto ('.$urlOficial.'): '.$urlActual.'.';
+            }
         }
 
         // Modo de operación frente al SISTEMA ACTUAL en uso (no se transmite desde dos

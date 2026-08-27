@@ -73,7 +73,9 @@ una acción **manual** "Firmar y transmitir" para gestores (`administrador`/`fac
 - **Controlador:** `DteController::firmarTransmitir()` — orquesta, idempotente, reusa los servicios:
   1. asegura el JSON oficial (lo genera si falta; **no consume correlativo nuevo**),
   2. firma **solo si está `Generado`** (`DteFirmaService::firmar()`); si ya está `Firmado`, salta,
-  3. transmite (`DteTransmisionService::transmitir()`) y traduce el resultado.
+  3. transmite **por la política oficial de reintentos** (`DteTransmisionResiliente`,
+     ver §2.4) y traduce el resultado. Si el documento ya llegaba `Firmado`, consulta
+     antes de enviar (Caso 2 del manual).
 - **Policy:** `DtePolicy::firmarTransmitir()` — gestores, estado `Generado`/`Firmado`, sin sello, no anulado.
 - **Idempotencia:** no re-firma si ya hay JWS, no retransmite si ya hay sello / está `Aceptado`; el
   botón **desaparece** una vez aceptado.
@@ -102,7 +104,7 @@ la transmisión según §7.b. **No hacer sin confirmación**; producción sigue 
 
 1. **Autenticarse** una vez al día (o según el modelo de facturación) contra el
    servicio de autenticación → se obtiene un **token** (JWT, ya con prefijo `Bearer`).
-   - Vigencia del token: **pruebas 48 h, producción 24 h**.
+   - Vigencia del token: **24 h en los dos ambientes** (ciclo diario). Ver §2.5.
 2. Con el DTE ya **firmado** (JWS), hacer **POST** al servicio de **recepción uno-a-uno**
    con el token en el header `Authorization`.
 3. Leer la respuesta: `estado` = `PROCESADO` (aceptado, con `selloRecibido`) o
@@ -126,12 +128,11 @@ la transmisión según §7.b. **No hacer sin confirmación**; producción sigue 
 
 > **Sin barra final** (trailing slash): el manual exige la URL exacta (ej. `.../fesv/recepciondte`).
 
-> **Ojo con esta tabla.** Lista los endpoints del **Manual v2** (el que está en
-> `docs/referencias/`). El sistema hoy implementa **solo tres**: autenticación,
-> recepción uno-a-uno e invalidación. Lote, consulta y contingencia están en la
-> tabla como referencia del manual, **no como código existente**. Nada de esto
-> afirma que el manual v2 siga vigente: contrastar contra el manual vigente antes
-> de volver a transmitir.
+> **VERIFICADO contra el Manual V2.0** (revisión manual del PDF, 26-08-2026):
+> autenticación, recepción uno-a-uno, **consulta individual** e invalidación
+> coinciden exactamente con lo implementado. Lote, consulta de lote y contingencia
+> siguen en la tabla como referencia del manual y **no** como código existente:
+> pertenecen a la fase de contingencia, diferida.
 
 ### 2.1 Fuente única de las URLs
 
@@ -187,6 +188,124 @@ no como advertencia.
 
 `DTE_TEST_USER` / `DTE_TEST_PASSWORD` nunca tuvieron respaldo y siguen igual.
 
+### 2.3 Consulta individual (implementada)
+
+`App\Services\Dte\DteConsultaService` — `POST .../fesv/recepcion/consultadte`.
+
+| Parte | Valor |
+|---|---|
+| Body | `nitEmisor` (solo dígitos, del EMISOR del documento), `tdte` (CAT-002), `codigoGeneracion` |
+| Headers | `Authorization` (Bearer), `User-Agent`, `Content-Type: application/json` |
+| Candados | los mismos que la transmisión: con la integración apagada no hace ninguna petición |
+| Efectos | **ninguno**: no cambia estado, no persiste, no toca la máquina de estados |
+
+Comando: `php artisan dte:consultar {id}` — por defecto **no hace HTTP**, solo muestra
+a qué URL iría y con qué cuerpo. Para preguntar de verdad, `--consultar`.
+
+**VERIFICADO contra el Manual V2.0**: método, URL de los dos ambientes, headers y los
+tres campos del cuerpo coinciden.
+
+No existe por conveniencia: es la pieza sin la cual la política de reintentos no puede
+escribirse.
+
+### 2.4 Política de reintentos previa a contingencia (implementada)
+
+`App\Services\Dte\DteTransmisionResiliente`.
+
+**El objetivo no es que el DTE entre: es que no entre dos veces.** Cuando recepción no
+responde, el documento pudo haber sido recibido igual —la petición se perdió de vuelta,
+no de ida—. Reenviar a ciegas transmite el mismo hecho económico dos veces, con dos
+códigos de generación, y eso no se deshace borrando nada: se corrige invalidando ante
+Hacienda.
+
+**Los dos casos del Manual V2.0**, verificados:
+
+| Caso | Disparador | Implementación |
+|---|---|---|
+| 1 | Recepción no responde tras el umbral (8 s) | consulta dentro del bucle, tras el timeout |
+| 2 | El firmador falla y no procesa la respuesta de recepción | `estadoIncierto`: consulta **obligatoria antes** del primer envío |
+
+En esta arquitectura firma y transmisión son pasos separados —el firmador no está en el
+camino de la respuesta de recepción—, así que el Caso 2 se materializa como un documento
+que llega **ya firmado** de un intento anterior cuyo desenlace nadie conoce: el usuario
+que vuelve a pulsar el botón. `DteController` lo detecta mirando si el documento llega en
+estado `Firmado` **antes** de intentar firmarlo.
+
+Lo que **no** es el Caso 2: que la firma falle sin llegar a producir un JWS. Ahí no hubo
+envío que consultar y preguntar sería una petición inútil; ese camino lanza su excepción
+de firma y no entra en la política.
+
+**LA REGLA QUE GOBIERNA TODO: solo se reenvía cuando se ha DETERMINADO que el documento
+no fue recibido.** El manual manda reenviar «si no ha sido recibido»; una consulta que
+falla no demuestra eso — no demuestra nada. Y los dos errores posibles no son
+simétricos: no enviar se arregla enviando más tarde, mientras que enviar dos veces deja
+un duplicado emitido, con numeración oficial gastada, que solo se corrige invalidando
+ante Hacienda. **Ante la duda, detenerse.**
+
+El ciclo:
+
+1. Enviar. (Con `estadoIncierto`, primero se consulta — Caso 2.)
+2. Respuesta definitiva (aceptado / rechazado) → se aplica y termina.
+3. Silencio (timeout / conexión caída) → **consultar**:
+   - el MH lo tiene → esa es la respuesta buena, se aplica, **no se reenvía**;
+   - el MH **no** lo tiene (determinado) → reenviar, si quedan reenvíos;
+   - **no se pudo determinar** → **no se envía ni se reenvía**: `estado_recepcion_incierto`.
+4. Sin reenvíos → `reintentos_agotados`.
+
+`estado_recepcion_incierto` deja el documento **intacto** (sin sello, sin cambio de
+estado, misma numeración) y **no** activa contingencia. El mensaje dice explícitamente
+que no es seguro reenviar hasta poder determinar el estado. Se aplica igual en la
+consulta previa y en la del bucle: un solo criterio, un solo nombre.
+
+El resultado lo declara con dos campos, para que nadie tenga que deducirlo:
+`consulta_no_disponible = true` y `consulta_resultado` con el resultado crudo de la
+consulta (`error_conexion`, `error_http`, `token_invalido`, …), o `null` si la consulta
+no se pudo ni formular. Porque **«consulta que falla» incluye la que no llega a
+salir**: si consultar lanza una excepción de precondición, tampoco se determinó nada, y
+la política se detiene igual. Lo único que se propaga hacia arriba es el candado
+(`DteTransmisionDeshabilitadaException`): un candado no se degrada a resultado.
+
+**El tope se cuenta sobre el documento, no sobre la llamada.** En el camino normal son
+el envío inicial más 2 reenvíos: 3 en total. En el Caso 2, el envío inicial ya lo hizo
+el intento anterior, así que cuando la consulta previa confirma que el MH **no** lo
+tiene, a esa llamada le quedan **2 envíos, no 3**. Contarlo de otro modo dejaría 4
+transmisiones del mismo documento repartidas entre dos pulsaciones del botón, que es
+justo lo que el tope existe para impedir.
+
+| Parámetro | Clave | Default |
+|---|---|---|
+| Umbral de respuesta | `dte.transmision.timeout` | 8 s |
+| Reenvíos adicionales | `dte.transmision.reintentos.max_reenvios` | 2 (3 envíos en total; 2 tras un Caso 2 confirmado) |
+| Interruptor | `dte.transmision.reintentos.enabled` | `true` |
+
+**Qué NO hace**, a propósito: no activa contingencia, no crea ni transmite evento de
+contingencia, y **no regenera** el código de generación ni el número de control —
+regenerarlos convertiría un reintento en un documento nuevo—. Al agotarse devuelve
+`reintentos_agotados` con `contingencia_requerida = true` y ahí se detiene.
+
+Qué cuenta como "sin respuesta": **solo** `error_conexion`. Un token rechazado, un HTTP
+500 o un JSON roto son respuestas —el servidor contestó—; reintentarlos no es la
+política, es insistir, y con un 500 podría duplicar.
+
+**La política NO es opcional: es la única forma de transmitir.** Tanto el botón de la UI
+(`DteController::procesarFirmaTransmision`, núcleo compartido por «firmar y transmitir» y
+«generar y transmitir producción») como `php artisan dte:transmitir` pasan por
+`DteTransmisionResiliente`. No hay una segunda vía, y hay un test que recorre el código
+para que no aparezca mañana.
+
+`dte:transmitir {id} --estado-incierto` fuerza el Caso 2 desde consola.
+
+### 2.5 Vigencia del token
+
+`dte.transmision.token_vigencia_horas`, default **24 h**, igual en los dos ambientes.
+
+**CONFIRMADO contra el Manual V2.0**: «El servicio de autorización se deberá ejecutar una
+vez en el día o según sea el modelo de facturación del contribuyente». Es un ciclo diario
+y no distingue ambientes. Antes estaba hardcoded en 24 h producción / **48 h pruebas**;
+ese 48 no salía del manual y se eliminó. El TTL del cache se calcula siempre por debajo de la
+vigencia: equivocarse por abajo cuesta un login de más, por arriba significa usar un
+token muerto en mitad de una transmisión.
+
 ## 3. Autenticación (4.1)
 
 - **Headers:** `content-Type: application/x-www-form-urlencoded`, `User-Agent`.
@@ -224,7 +343,7 @@ ningún DTE**, existe el candado `DTE_AUTH_TEST_REAL_ENABLED` (default `false`):
   cualquier HTTP** (no autentica). Habilitado, hace el login (form-urlencoded user/pwd),
   valida `status=OK` y `body.token`, y normaliza el prefijo `Bearer`.
 - **Cache del token** (Cache de Laravel, no base de datos) con TTL **47 h pruebas /
-  23 h producción** (por debajo de la vigencia oficial de **48 h / 24 h**).
+  por debajo de la vigencia configurada de **24 h** (ver §2.5).
 - URL de auth construida según ambiente: `apitest.dtes.mh.gob.sv` (testing) /
   `api.dtes.mh.gob.sv` (producción), o `DTE_TRANSMISION_URL` si se define.
 - **Nunca** imprime ni loguea usuario, contraseña ni token.
@@ -272,7 +391,7 @@ incorpora `selloRecibido` al JSON del DTE y se persiste en la BD.
 
 - **Dominios distintos:** `apitest.dtes.mh.gob.sv` (pruebas) vs `api.dtes.mh.gob.sv`
   (producción); `ambiente` = `00` (prueba) / `01` (producción).
-- **Token:** vigencia 48 h en pruebas, 24 h en producción.
+- **Token:** vigencia 24 h (ciclo diario), igual en pruebas y producción.
 - **Nunca** enviar DTE de prueba a producción (sección 6.3 del manual).
 
 ## 7. Variables `.env` necesarias (SIN valores reales)

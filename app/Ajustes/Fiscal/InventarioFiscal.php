@@ -299,7 +299,7 @@ class InventarioFiscal
             ['clave' => 'dte.firma.driver', 'problema' => 'Ningún consumidor. El firmador es siempre el local del MH; el valor no elige nada.'],
             ['clave' => 'dte.storage.pdf', 'problema' => 'Ningún consumidor: el PDF no se guarda en disco por esta ruta.'],
             ['clave' => 'dte.decimales.*', 'problema' => 'Ningún consumidor: el redondeo lo fija App\\Support\\Dinero.'],
-            ['clave' => 'dte.tipos / dte.estados', 'problema' => 'Ningún consumidor: se derivan de los enums TipoDte y EstadoDte, que es de donde los leen todos.'],
+            ['clave' => 'dte.tipos / dte.estados', 'problema' => 'Ningún consumidor: se derivan de los enums TipoDte y EstadoDte, que es de donde los leen todos. La clave version_esquema se ELIMINÓ de dte.tipos: contradecía a dte.json.versiones, que es la fuente autoritativa de la versión de esquema.'],
             ['clave' => 'dte.nota_credito.requiere_documento_relacionado_para_emision', 'problema' => 'Ningún consumidor: la regla está en el validador, no en esta clave.'],
             ['clave' => 'dte.ambientes.*.consulta_url', 'problema' => 'Ningún consumidor: no hay consulta de estado implementada. auth_url / recepcion_url / anulacion_url SÍ se leen: son el override de URL completa por ambiente que resuelve App\Support\Dte\EndpointsHacienda.'],
             ['clave' => 'DTE_TRANSMISION_USER / DTE_TRANSMISION_PASSWORD', 'problema' => 'Credenciales anteriores a separar producción de pruebas. YA NO autentican: el respaldo silencioso de producción se eliminó. Solo quedan como señal de diagnóstico (DteTransmisionService::authConfigurado y dte:seguridad-check). En una instalación nueva no se definen.'],

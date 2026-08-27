@@ -54,8 +54,21 @@ final class EndpointsHacienda
     /** Ruta de recepción uno-a-uno (Manual 4.2.1). */
     public const PATH_RECEPCION = '/fesv/recepciondte';
 
+    /** Ruta de consulta individual de un DTE ya transmitido. */
+    public const PATH_CONSULTA = '/fesv/recepcion/consultadte';
+
     /** Ruta del evento de invalidación/anulación. */
     public const PATH_ANULACION = '/fesv/anulardte';
+
+    /*
+    | PENDIENTES DE LA FASE DE CONTINGENCIA — NO implementados a propósito.
+    | Se dejan anotados aquí, y no como constantes, para que nadie los use por
+    | descuido creyendo que hay algo detrás:
+    |   POST /fesv/contingencia                            — evento de contingencia
+    |   POST /fesv/recepcionlote                           — transmisión posterior por lote
+    |   GET  /fesv/recepcion/consultadtelote/{codigoLote}  — estado del lote
+    | Ver docs/TRANSMISION_DTE.md §2.
+    */
 
     /**
      * Rótulos que `dte.transmision.ambiente` acepta como producción. Es un ajuste
@@ -104,6 +117,12 @@ final class EndpointsHacienda
         return self::hostOficial($ambiente).self::PATH_RECEPCION;
     }
 
+    /** URL oficial de consulta individual, sin overrides. */
+    public static function consultaOficial(AmbienteHacienda $ambiente): string
+    {
+        return self::hostOficial($ambiente).self::PATH_CONSULTA;
+    }
+
     /** URL oficial de invalidación/anulación, sin overrides. */
     public static function anulacionOficial(AmbienteHacienda $ambiente): string
     {
@@ -122,6 +141,12 @@ final class EndpointsHacienda
     public static function recepcion(AmbienteHacienda $ambiente): string
     {
         return self::resolver($ambiente, 'recepcion_url', 'endpoint_recepcion', self::PATH_RECEPCION);
+    }
+
+    /** URL de consulta individual EFECTIVA para el ambiente dado. */
+    public static function consulta(AmbienteHacienda $ambiente): string
+    {
+        return self::resolver($ambiente, 'consulta_url', 'endpoint_consulta', self::PATH_CONSULTA);
     }
 
     /** URL de invalidación/anulación EFECTIVA para el ambiente dado. */

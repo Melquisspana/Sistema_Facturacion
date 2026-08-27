@@ -16,8 +16,8 @@ use Throwable;
  *
  * Bloqueado por defecto: si 'dte.transmision.enabled' = false, NO hace ninguna
  * petición HTTP. El token se cachea (Cache de Laravel) con TTL por debajo de la
- * vigencia oficial (48 h pruebas / 24 h producción). NUNCA imprime ni loguea
- * usuario, contraseña ni token, y nunca los guarda en base de datos.
+ * vigencia CONFIGURADA ('dte.transmision.token_vigencia_horas', 24 h por defecto).
+ * NUNCA imprime ni loguea usuario, contraseña ni token, ni los guarda en base de datos.
  *
  * Flujo (Manual Técnico 4.1): POST form-urlencoded { user, pwd } al endpoint de
  * autenticación; respuesta OK trae body.token con prefijo "Bearer".
@@ -99,7 +99,7 @@ class DteTransmisionAuthService
             'password_configurado' => filled($cred['password']),
             'token_manual_configurado' => filled(config('dte.transmision.token')),
             'token_cacheado' => is_string(Cache::get($this->cacheKey())),
-            'vigencia_horas' => $this->esProduccion() ? 24 : 48,
+            'vigencia_horas' => $this->vigenciaHoras(),
             'fuente_credenciales' => $fuente,
             'fuente_credenciales_detalle' => self::DETALLE_FUENTE[$fuente],
         ];
@@ -340,10 +340,14 @@ class DteTransmisionAuthService
         return $r;
     }
 
-    /** Vigencia oficial estimada del token (horas), para mostrar sin revelar el token. */
+    /**
+     * Vigencia del token en horas, desde configuración
+     * ('dte.transmision.token_vigencia_horas', default 24 = "una vez al día").
+     * Se muestra en diagnósticos; nunca revela el token.
+     */
     public function vigenciaHoras(): int
     {
-        return $this->esProduccion() ? 24 : 48;
+        return max(1, (int) config('dte.transmision.token_vigencia_horas', 24));
     }
 
     /**
@@ -461,10 +465,28 @@ class DteTransmisionAuthService
         return ! $this->esProduccion() && (bool) config('dte.transmision.test_enabled', false);
     }
 
-    /** TTL del cache: por debajo de la vigencia oficial para refrescar a tiempo. */
+    /**
+     * TTL del cache del token: deliberadamente POR DEBAJO de la vigencia configurada,
+     * para refrescar antes de que caduque.
+     *
+     * Antes esto era `esProduccion() ? 23*3600 : 47*3600`, con la vigencia hardcoded en
+     * 24 h / 48 h. El Manual V2.0 dice que el servicio de autorización «se deberá
+     * ejecutar una vez en el día o según sea el modelo de facturación del
+     * contribuyente»: un ciclo DIARIO, sin distinguir ambientes. El 47 h de apitest no
+     * salía de ahí y se eliminó.
+     *
+     * Una vigencia SOBREESTIMADA es la peor de las dos equivocaciones posibles:
+     * significa usar un token muerto en mitad de una transmisión. Equivocarse por
+     * abajo solo cuesta un login de más — por eso el TTL nunca alcanza la vigencia.
+     *
+     * El margen es de una hora, o del 10 % si la vigencia configurada fuera muy corta.
+     */
     private function ttlSegundos(): int
     {
-        return $this->esProduccion() ? 23 * 3600 : 47 * 3600;
+        $vigencia = $this->vigenciaHoras() * 3600;
+        $margen = max(300, min(3600, (int) round($vigencia * 0.1)));
+
+        return max(60, $vigencia - $margen);
     }
 
     private function cacheKey(): string

@@ -449,7 +449,7 @@ futura transmisión. **No se transmitió nada a Hacienda** (todo sigue con
 
 **Autenticación:** `content-Type: application/x-www-form-urlencoded`, body `user`+`pwd`,
 respuesta `{ status:"OK", body:{ token:"Bearer eyJ...", ... } }`. Token con vigencia
-**48 h (pruebas) / 24 h (producción)**.
+**24 h** (ciclo diario, igual en los dos ambientes; ver docs/TRANSMISION_DTE.md §2.5).
 
 **Recepción uno-a-uno:** headers `Authorization` (token con `Bearer`), `User-Agent`,
 `content-Type: application/JSON`. Body: `ambiente, idEnvio (Integer), version (Integer),
@@ -485,7 +485,7 @@ usaron credenciales reales.**
     a `…/seguridad/auth` (host por ambiente: `apitest` pruebas / `api` producción).
   - Acepta el token con prefijo `Bearer` (lo normaliza si no lo trae).
   - **Cachea** el token (Cache de Laravel) con TTL **47 h (pruebas) / 23 h (producción)**,
-    por debajo de la vigencia oficial (48 h / 24 h). **No** se guarda en base de datos.
+    por debajo de la vigencia configurada (24 h). **No** se guarda en base de datos.
   - Maneja credenciales faltantes, token ausente, HTTP 401, respuesta malformada y
     timeout con mensajes claros **sin exponer usuario/contraseña/token**.
 - **`DteTransmisionService::transmitir()`** ahora obtiene el token del auth service y lo
