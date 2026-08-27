@@ -76,7 +76,10 @@
                                         @if ($conEvento)
                                             <span class="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">Ya tiene evento</span>
                                         @endif
-                                        <a href="{{ route('facturacion.show', $dte) }}#invalidacion"
+                                        {{-- Ancla de la tarjeta de invalidación dentro de «Acciones del
+                                             documento» (ver components/dte/acciones-documento). Antes
+                                             apuntaba a #invalidacion, que dejó de existir al unificar la UI. --}}
+                                        <a href="{{ route('facturacion.show', $dte) }}#invalidacion-oficial"
                                            class="ms-1 inline-flex items-center rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700">
                                             Invalidar
                                         </a>

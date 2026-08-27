@@ -16,7 +16,6 @@
     @php
         $workerActivo = ($worker['estado'] ?? null) === 'activo';
         $sistemaNuevo = $correlativo['sistema_nuevo'] ?? ['establecimiento' => '—', 'punto_venta' => '—', 'proximos' => []];
-        $conta = $correlativo['conta'] ?? ['establecimiento' => 'M001', 'punto_venta' => 'P001', 'ultimo_ccf_externo' => null];
     @endphp
 
     <div class="py-8">
@@ -37,13 +36,13 @@
                     haciéndose desde la ficha del documento, con su doble confirmación y la frase de seguridad.</p>
             </div>
 
-            {{-- 0) Correlativo del sistema nuevo (P002) + Conta (P001) como contingencia independiente --}}
+            {{-- 0) Correlativo de producción del propio sistema. Única fuente mostrada aquí. --}}
             <section class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 space-y-4">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Correlativos de producción</h3>
 
                 <div class="rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-4">
                     <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">
-                        Sistema nuevo: {{ $sistemaNuevo['establecimiento'] }}/{{ $sistemaNuevo['punto_venta'] }}
+                        Serie de emisión: {{ $sistemaNuevo['establecimiento'] }}/{{ $sistemaNuevo['punto_venta'] }}
                     </p>
                     <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-4">
                         @forelse ($sistemaNuevo['proximos'] as $tipo => $p)
@@ -58,11 +57,13 @@
                     </div>
                 </div>
 
-                <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-                    <span class="font-semibold">Conta: {{ $conta['establecimiento'] }}/{{ $conta['punto_venta'] }}, contingencia independiente.</span>
-                    Último CCF real confirmado ahí: {{ $conta['ultimo_ccf_externo'] ?? 'no configurado' }}. Es un sistema aparte
-                    (solo informativo aquí); ya no se compara ni se exige alinear contra el sistema nuevo para poder emitir.
-                </div>
+                {{-- Aquí vivía un recuadro con el establecimiento/punto de venta y el último
+                     correlativo confirmado del sistema de contingencia externo. Se retiró de la
+                     UI operativa: no participa en ningún cálculo de numeración ni de readiness,
+                     y mostrarlo junto al correlativo propio invitaba a compararlos.
+                     El dato sigue disponible en la configuración (`produccion.ultimo_ccf_externo`)
+                     y el controlador lo sigue resolviendo para auditoría/histórico; solo dejó de
+                     representarse en este flujo. --}}
             </section>
 
             {{-- Worker / cola: estado prominente --}}

@@ -102,9 +102,35 @@ class DteInvalidacionUiTest extends TestCase
             ->get(route('facturacion.show', $nc))
             ->assertOk()
             ->assertSee('Invalidación oficial (evento anulardte)')
-            ->assertSee('Firmar invalidación (MOCK)')          // mock sigue disponible (avanzado)
-            ->assertSee('Transmitir invalidación a Hacienda')  // acción real (candada en este entorno)
-            ->assertSee('INVALIDAR DTE');                       // frase-barrera visible
+            ->assertSee('Firmar invalidación (MOCK)')   // mock sigue disponible (avanzado)
+            // Acción real presente pero DESHABILITADA: en este entorno los candados la
+            // bloquean. El asistente no se monta, así que su formulario —y con él la
+            // frase-barrera— no está en la página (ver el test de candados abiertos).
+            ->assertSee('Invalidar oficialmente')
+            ->assertSee('Botón deshabilitado')
+            ->assertDontSee('Transmitir invalidación a Hacienda');
+    }
+
+    /**
+     * Con los candados del entorno ABIERTOS, el asistente sí se monta: aparece el botón
+     * rojo del último paso y la frase-barrera exacta. Sigue sin transmitir nada por el
+     * solo hecho de renderizarse (es un GET).
+     */
+    public function test_con_candados_abiertos_el_asistente_expone_la_frase_barrera(): void
+    {
+        $this->abrirCandados();
+        Http::fake();
+        $nc = $this->ncAceptada();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.show', $nc))
+            ->assertOk()
+            ->assertSee('Invalidación oficial (evento anulardte)')
+            ->assertSee('Transmitir invalidación a Hacienda')
+            ->assertSee('INVALIDAR DTE')
+            ->assertDontSee('Botón deshabilitado');
+
+        Http::assertNothingSent();
     }
 
     /**

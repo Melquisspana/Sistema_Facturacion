@@ -38,6 +38,7 @@ use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
+use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
@@ -432,6 +433,7 @@ class DteController extends Controller
         PreflightEmisionProduccion $preflightProduccion,
         PreflightEmisionProduccionFactura $preflightFactura,
         PreflightEmisionProduccionExportacion $preflightExportacion,
+        BusquedaDocumentoReemplazo $reemplazos,
     ): View {
         $this->authorize('view', $dte);
 
@@ -488,6 +490,15 @@ class DteController extends Controller
                 'candados' => $invalidacionService->evaluarCandados($dte, $evento, true, true, false),
                 'dry_run' => session('dry_run_invalidacion'),
                 'tipos' => TipoAnulacionMh::opciones(),
+                // Vocabulario humano del paso 1 del asistente: capa de PRESENTACIÓN sobre
+                // los MISMOS valores de CAT-024 (ver OpcionesInvalidacion).
+                'opciones_motivo' => \App\Support\Dte\OpcionesInvalidacion::opciones(),
+                // Candidatos a documento de reemplazo (solo los usa el tipo 1). Se precargan
+                // para que el paso 2 no dependa de una llamada previa; el autocomplete refina
+                // sobre la MISMA consulta. SOLO LECTURA: lo que se envíe lo revalidan el Form
+                // Request y SerializadorInvalidacionMh, igual que antes.
+                'reemplazos' => $reemplazos->opciones($reemplazos->buscar($dte)),
+                'buscar_reemplazo_url' => route('facturacion.invalidacion.buscar-reemplazo', $dte),
             ];
         }
 
@@ -505,6 +516,49 @@ class DteController extends Controller
                 $emisionProduccion = [
                     'preflight' => $preflight->evaluar($dte),
                     'resumen' => $preflight->resumen($dte),
+                ];
+            }
+        }
+
+        // Confirmación de EMISIÓN EN PRODUCCIÓN, unificada para los cuatro tipos
+        // (01/03/05/11). Solo decide QUÉ ruta y QUÉ candados alimentan la tarjeta
+        // <x-dte.confirmacion-produccion>; el resumen que se muestra lo saca la vista
+        // del propio $dte. SOLO LECTURA: no genera, no firma, no transmite.
+        //
+        // Los tipos con acción de producción (CCF/Factura/FEX, ver
+        // DtePolicy::TIPOS_EMISION_PRODUCCION) usan su preflight y van a
+        // `generar-transmitir-produccion`. La NC 05 no tiene esa acción —no se le
+        // agrega: sería cambiar la policy— y conserva su vía de siempre,
+        // `firmar-transmitir`, candada por los mismos flags de entorno. En ambos casos
+        // las razones del bloqueo son las que YA produce el sistema.
+        $confirmacionProduccion = null;
+        if ($dte->ambiente === \App\Enums\AmbienteHacienda::Produccion
+            && $dte->estado !== EstadoDte::Aceptado
+            && blank($dte->sello_recepcion)) {
+            if ($emisionProduccion !== null) {
+                $confirmacionProduccion = [
+                    'accion' => route('facturacion.generar-transmitir-produccion', $dte),
+                    'puede' => (bool) $emisionProduccion['preflight']['puede'],
+                    'razones' => $emisionProduccion['preflight']['faltantes'],
+                    'checks' => $emisionProduccion['preflight']['checks'],
+                    // El controlador exige esta casilla en esta ruta (barrera_conta).
+                    'requiere_barrera' => true,
+                    'etiqueta' => 'Firmar y transmitir a Hacienda',
+                ];
+            } elseif (auth()->user()?->can('firmarTransmitir', $dte)) {
+                $candados = $transmision->evaluarCandados();
+                $confirmacionProduccion = [
+                    'accion' => route('facturacion.firmar-transmitir', $dte),
+                    'puede' => $transmision->emisionRealPosible(),
+                    'razones' => $candados['razones'],
+                    'checks' => [],
+                    // `firmar-transmitir` no pide casilla de revisión, solo la frase.
+                    'requiere_barrera' => false,
+                    // Un documento ya firmado solo se retransmite: el label lo dice sin
+                    // cambiar nada del flujo (el servicio sigue siendo idempotente).
+                    'etiqueta' => $dte->estado === EstadoDte::Firmado
+                        ? 'Reintentar transmisión a Hacienda'
+                        : 'Firmar y transmitir a Hacienda',
                 ];
             }
         }
@@ -532,7 +586,7 @@ class DteController extends Controller
         // salas administrativas sin CCF propio, como "Bodega Oficina Central Calleja".
         $salasNotaCredito = $this->salasReceptorasNotaCredito($dte);
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito'));
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion'));
     }
 
     /**
@@ -982,6 +1036,32 @@ class DteController extends Controller
             ->route('facturacion.show', $dte)
             ->with('dry_run', $resumen)
             ->with('status', 'Dry-run ejecutado (solo diagnóstico). NO se transmitió nada a Hacienda.');
+    }
+
+    /**
+     * Autocomplete del «documento de reemplazo» del asistente de invalidación (paso 2 del
+     * tipo 1 de CAT-024). SOLO CONSULTA: devuelve el MISMO universo que la vista ya
+     * precarga en `show()` —ver {@see BusquedaDocumentoReemplazo}—, filtrado por el texto
+     * escrito. No decide nada: el código que el navegador devuelva lo revalidan de cero el
+     * Form Request y `SerializadorInvalidacionMh::candados()`, exactamente igual que si se
+     * hubiera escrito a mano en el modo avanzado.
+     *
+     * Exige la MISMA ability que ver el bloque de invalidación (`verInvalidacion`), además
+     * del permiso `dte.invalidar` del middleware de la ruta.
+     */
+    public function buscarReemplazoInvalidacion(
+        Request $request,
+        Dte $dte,
+        BusquedaDocumentoReemplazo $reemplazos,
+    ): \Illuminate\Http\JsonResponse {
+        $this->authorize('verInvalidacion', $dte);
+
+        return response()->json([
+            'ok' => true,
+            'resultados' => $reemplazos->opciones(
+                $reemplazos->buscar($dte, (string) $request->input('q', ''))
+            ),
+        ]);
     }
 
     /**

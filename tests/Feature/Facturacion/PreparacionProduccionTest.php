@@ -113,7 +113,15 @@ class PreparacionProduccionTest extends TestCase
         $this->assertSame($antesDtes, Dte::count());           // no se emitió nada
     }
 
-    public function test_muestra_sistema_nuevo_y_conta_como_independientes(): void
+    /**
+     * La pantalla muestra ÚNICAMENTE el correlativo de producción del propio sistema.
+     * El recuadro del sistema de contingencia externo se retiró de la UI operativa: no
+     * participaba en ningún cálculo y ponerlo al lado del correlativo propio invitaba a
+     * compararlos. La clave de configuración y su resolución en el controlador siguen
+     * existiendo (ver los dos tests siguientes, que verifican que jamás afecta al
+     * correlativo propio); lo que desapareció es su representación.
+     */
+    public function test_muestra_solo_el_correlativo_propio_sin_referencias_externas(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
         $corr = Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->first();
@@ -129,20 +137,21 @@ class PreparacionProduccionTest extends TestCase
         $html = $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertOk()
-            ->assertSee('Sistema nuevo', false)
-            ->assertSee('Conta: M001/P001, contingencia independiente', false)
+            ->assertSee('Serie de emisión', false)
             ->assertSee((string) $proximoP002)
-            // Sin la clave `produccion.ultimo_ccf_externo` configurada, la pantalla dice
-            // "no configurado". Antes se inventaba 1093, un número que se leía como
-            // confirmado por el contador sin estarlo. Sigue siendo solo informativo:
-            // no participa en ningún cálculo de numeración.
-            ->assertSee('no configurado')
+            // Ninguna referencia al sistema de contingencia externo en la UI operativa.
+            // Se buscan las FRASES, no la subcadena «Conta» a secas: el menú lateral
+            // tiene «Contabilidad», que no tiene nada que ver.
+            ->assertDontSee('Conta Portable', false)
+            ->assertDontSee('Conta:', false)
+            ->assertDontSee('en Conta', false)
+            ->assertDontSee('sistema anterior', false)
+            ->assertDontSee('sistema externo', false)
             ->assertDontSee('1093')
-            // Ya NO existe ningún lenguaje de alineación/barrera contra Conta.
+            // Y tampoco el lenguaje de alineación/barrera que existió antes.
             ->assertDontSee('va por delante', false)
             ->assertDontSee('alinear el correlativo', false)
-            ->assertDontSee('Confirmo que Conta Portable quedó detenido', false)
-            ->assertDontSee('barrera anti-Conta', false)
+            ->assertDontSee('contingencia independiente', false)
             // Higiene de configuración (solo reporte, no cambia .env).
             ->assertSee('Higiene de configuración')
             ->assertSee('no cambia', false)
@@ -192,8 +201,10 @@ class PreparacionProduccionTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.preparar-produccion'))
             ->assertOk()
-            ->assertSee('1100')  // externo confirmado, solo informativo
-            ->assertSee('1079'); // próximo de P002 = 1078 + 1 (SIN relación con el externo)
+            // La clave existe y el controlador la resuelve, pero ya NO se representa en
+            // esta pantalla: lo importante es que no toque el correlativo propio.
+            ->assertDontSee('1100')
+            ->assertSee('1079'); // próximo propio = 1078 + 1 (SIN relación con el externo)
 
         // No se movió el correlativo interno.
         $this->assertSame(1078, (int) Correlativo::where('tipo_dte', '03')->where('ambiente', '01')->value('ultimo_numero'));
