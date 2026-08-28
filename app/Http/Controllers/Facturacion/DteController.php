@@ -525,32 +525,75 @@ class DteController extends Controller
         // <x-dte.confirmacion-produccion>; el resumen que se muestra lo saca la vista
         // del propio $dte. SOLO LECTURA: no genera, no firma, no transmite.
         //
+        // ── Qué decide que la sección EXISTA ──────────────────────────────────
+        // La ELEGIBILIDAD del documento, y nada más: que alguna de las dos abilities
+        // de emisión aplique, mirando de ellas todo MENOS el ambiente. Las abilities ya
+        // excluyen lo que de verdad no corresponde (aceptado, con sello,
+        // anulado/invalidado, archivado, estado o tipo fuera del flujo), y esas
+        // exclusiones se respetan tal cual: aquí no se añade ninguna condición nueva
+        // ni se relaja ninguna.
+        //
+        // Los CANDADOS —flags de entorno, preflight y el ambiente del propio
+        // documento— deciden si la tarjeta está HABILITADA o BLOQUEADA, nunca si se ve:
+        // esconder la sección entera dejaba al usuario sin saber por qué no puede
+        // emitir. Un documento de PRUEBAS entra por esta última puerta: aparece con la
+        // razón explicada, porque su numeración lleva el ambiente '00' y jamás se
+        // transmite a producción.
+        //
         // Los tipos con acción de producción (CCF/Factura/FEX, ver
         // DtePolicy::TIPOS_EMISION_PRODUCCION) usan su preflight y van a
         // `generar-transmitir-produccion`. La NC 05 no tiene esa acción —no se le
         // agrega: sería cambiar la policy— y conserva su vía de siempre,
-        // `firmar-transmitir`, candada por los mismos flags de entorno. En ambos casos
-        // las razones del bloqueo son las que YA produce el sistema.
+        // `firmar-transmitir`. En ambos casos las razones son las que YA produce el
+        // sistema; la del ambiente es la única que aporta esta capa, y es de
+        // presentación (el candado real vive en la policy y en evaluarCandados()).
         $confirmacionProduccion = null;
-        if ($dte->ambiente === \App\Enums\AmbienteHacienda::Produccion
-            && $dte->estado !== EstadoDte::Aceptado
-            && blank($dte->sello_recepcion)) {
-            if ($emisionProduccion !== null) {
+        $esProduccion = $dte->ambiente === \App\Enums\AmbienteHacienda::Produccion;
+        $puedeFirmarTransmitir = (bool) auth()->user()?->can('firmarTransmitir', $dte);
+
+        // ¿Aplica la acción de producción a ESTE documento? El ambiente no entra en la
+        // pregunta: generarTransmitirProduccion lo exige (y hace bien: es una defensa
+        // real de la ruta), pero para decidir si la sección SE VE hay que preguntar por
+        // todo lo demás —permiso, tipo, estado, sello, anulado, archivado—. Se consulta
+        // la MISMA ability sobre una copia EN MEMORIA marcada como producción: así no
+        // se duplica ni se modifica ninguna regla de DtePolicy. Esta copia no se guarda
+        // y no sale de aquí; la autorización de la ruta se sigue evaluando contra el
+        // documento real, que rechazará el POST de un documento de pruebas.
+        $comoProduccion = $esProduccion ? $dte : (clone $dte)->forceFill([
+            'ambiente' => \App\Enums\AmbienteHacienda::Produccion->value,
+        ]);
+        $aplicaProduccion = (bool) auth()->user()?->can('generarTransmitirProduccion', $comoProduccion);
+
+        if ($aplicaProduccion || $puedeFirmarTransmitir) {
+            $razonAmbiente = $esProduccion ? [] : [
+                'Este documento es de pruebas (ambiente '.$dte->ambiente->value.'): su numeración '
+                .'no corresponde a producción, así que no puede emitirse por esta vía.',
+            ];
+
+            if ($aplicaProduccion) {
+                // El preflight solo existe cuando el documento es de producción: en un
+                // documento de pruebas no se evalúa a propósito, para no lanzar un
+                // diagnóstico (que puede consultar al firmador) por una vía que ese
+                // documento nunca podrá usar. La razón del ambiente ya lo explica.
+                $pf = $emisionProduccion['preflight'] ?? null;
                 $confirmacionProduccion = [
                     'accion' => route('facturacion.generar-transmitir-produccion', $dte),
-                    'puede' => (bool) $emisionProduccion['preflight']['puede'],
-                    'razones' => $emisionProduccion['preflight']['faltantes'],
-                    'checks' => $emisionProduccion['preflight']['checks'],
+                    'puede' => $esProduccion && (bool) ($pf['puede'] ?? false),
+                    'razones' => array_merge($razonAmbiente, (array) ($pf['faltantes'] ?? [])),
+                    'checks' => (array) ($pf['checks'] ?? []),
                     // El controlador exige esta casilla en esta ruta (barrera_conta).
                     'requiere_barrera' => true,
                     'etiqueta' => 'Firmar y transmitir a Hacienda',
                 ];
-            } elseif (auth()->user()?->can('firmarTransmitir', $dte)) {
+            } else {
                 $candados = $transmision->evaluarCandados();
                 $confirmacionProduccion = [
                     'accion' => route('facturacion.firmar-transmitir', $dte),
-                    'puede' => $transmision->emisionRealPosible(),
-                    'razones' => $candados['razones'],
+                    // emisionRealPosible() ya exige ambiente de producción; se combina
+                    // con el del documento de forma explícita para que la condición se
+                    // lea completa en un solo lugar.
+                    'puede' => $esProduccion && $transmision->emisionRealPosible(),
+                    'razones' => array_merge($razonAmbiente, $candados['razones']),
                     'checks' => [],
                     // `firmar-transmitir` no pide casilla de revisión, solo la frase.
                     'requiere_barrera' => false,

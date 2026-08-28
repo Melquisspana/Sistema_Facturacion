@@ -370,11 +370,17 @@ class ConfirmacionProduccionUiTest extends TestCase
         Http::assertNothingSent();
     }
 
-    /** Un documento de apitest no habla de producción: la tarjeta no aplica. */
-    public function test_documento_de_pruebas_no_muestra_la_tarjeta_de_produccion(): void
+    /**
+     * Un documento de PRUEBAS sigue mostrando la sección: el ambiente es un candado,
+     * no un motivo para esconderla. Antes se ocultaba entera y el usuario se quedaba
+     * viendo solo el panel «Avanzado», sin ninguna explicación de por qué no podía
+     * emitir. Ahora aparece bloqueada y con la razón escrita.
+     */
+    public function test_documento_de_pruebas_muestra_la_tarjeta_bloqueada_con_su_razon(): void
     {
         Http::fake();
         $this->preflightsVerdes();
+        $this->candadosTransmisionAbiertos();
         $dte = $this->documento(TipoDte::CreditoFiscal);
         // El ambiente es inmutable en un DTE ya creado salvo por esta vía directa.
         Dte::whereKey($dte->id)->update(['ambiente' => '00']);
@@ -382,8 +388,138 @@ class ConfirmacionProduccionUiTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.show', $dte->fresh()))
             ->assertOk()
-            ->assertDontSee('id="emitir-produccion"', false)
-            ->assertDontSee('Emitir en producción');
+            ->assertSee('id="emitir-produccion"', false)
+            ->assertSee('Emitir en producción')
+            ->assertSee('Emisión real bloqueada')
+            ->assertSee('Este documento es de pruebas (ambiente 00)')
+            // Bloqueada = sin formulario utilizable.
+            ->assertDontSee('name="confirmacion_emision"', false)
+            ->assertDontSee('name="barrera_conta"', false);
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * La sección existe para TODO documento elegible, esté el entorno abierto o no.
+     * Es el caso real de la máquina de trabajo: apitest, dry-run, modo paralelo y
+     * firma deshabilitada. Antes, con esa configuración, la ficha solo mostraba
+     * «Avanzado · emisión manual paso a paso».
+     */
+    public function test_en_modo_seguro_la_seccion_sigue_existiendo_para_los_cuatro_tipos(): void
+    {
+        Http::fake();
+        // Configuración equivalente a la del entorno de trabajo: todo cerrado.
+        config([
+            'dte.transmision.enabled' => false,
+            'dte.transmision.real_confirmation' => false,
+            'dte.transmision.dry_run' => true,
+            'dte.transmision.allow_production' => false,
+            'dte.transmision.ambiente' => 'testing',
+            'dte.transmision.modo_operacion' => 'paralelo',
+            'dte.firma.enabled' => false,
+        ]);
+        $admin = $this->usuario('administrador');
+
+        foreach (self::TIPOS as $tipo) {
+            $dte = $this->documento($tipo);
+            Dte::whereKey($dte->id)->update(['ambiente' => '00']);
+
+            $this->actingAs($admin)
+                ->get(route('facturacion.show', $dte->fresh()))
+                ->assertOk()
+                ->assertSee('Emitir en producción')
+                ->assertSee('Emisión real bloqueada')
+                ->assertDontSee('name="confirmacion_emision"', false);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Con candados cerrados se muestran las razones REALES del sistema, tal como las
+     * produce DteTransmisionService::evaluarCandados(). No se inventa ninguna.
+     */
+    public function test_las_razones_de_bloqueo_son_las_del_sistema(): void
+    {
+        Http::fake();
+        config([
+            'dte.transmision.enabled' => false,
+            'dte.transmision.real_confirmation' => false,
+            'dte.transmision.dry_run' => true,
+            'dte.transmision.modo_operacion' => 'paralelo',
+        ]);
+        $nc = $this->documento(TipoDte::NotaCredito);
+
+        $respuesta = $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.show', $nc))
+            ->assertOk()
+            ->assertSee('Emisión real bloqueada');
+
+        // Cada razón que devuelve el servicio debe estar en pantalla.
+        foreach (app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados()['razones'] as $razon) {
+            $respuesta->assertSee($razon);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Un documento que ya NO está en el flujo de emisión sí oculta la sección: es el
+     * único motivo legítimo para que desaparezca.
+     */
+    public function test_documento_aceptado_no_muestra_la_tarjeta(): void
+    {
+        Http::fake();
+        $this->preflightsVerdes();
+        $this->candadosTransmisionAbiertos();
+        $dte = $this->documento(TipoDte::CreditoFiscal);
+        Dte::whereKey($dte->id)->update([
+            'estado' => EstadoDte::Aceptado->value,
+            'sello_recepcion' => '2026SELLOREALDEHACIENDA0000000000000000',
+            'fecha_procesamiento_mh' => now(),
+        ]);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.show', $dte->fresh()))
+            ->assertOk()
+            ->assertDontSee('id="emitir-produccion"', false);
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * La tarjeta va ANTES del panel «Avanzado»: es la acción principal, no una opción
+     * escondida en el acordeón de diagnóstico.
+     */
+    public function test_la_tarjeta_aparece_antes_del_panel_avanzado(): void
+    {
+        Http::fake();
+        $this->preflightsVerdes();
+        $this->candadosTransmisionAbiertos();
+        $admin = $this->usuario('administrador');
+
+        foreach (self::TIPOS as $tipo) {
+            $contenido = $this->actingAs($admin)
+                ->get(route('facturacion.show', $this->documento($tipo)))
+                ->assertOk()
+                ->getContent();
+
+            $posTarjeta = strpos($contenido, 'id="emitir-produccion"');
+            $posAvanzado = strpos($contenido, 'Avanzado · emisión manual paso a paso');
+
+            $this->assertNotFalse($posTarjeta, 'La tarjeta de emisión debe estar presente.');
+            $this->assertNotFalse($posAvanzado, 'El panel avanzado debe seguir existiendo.');
+            $this->assertLessThan($posAvanzado, $posTarjeta,
+                'La tarjeta «Emitir en producción» debe ir antes del panel «Avanzado».');
+
+            // Y también antes del resto de bloques secundarios.
+            foreach (['JSON y firma', 'Estado técnico DTE', 'Zona peligrosa'] as $bloque) {
+                $pos = strpos($contenido, $bloque);
+                if ($pos !== false) {
+                    $this->assertLessThan($pos, $posTarjeta, "La tarjeta debe ir antes de «{$bloque}».");
+                }
+            }
+        }
 
         Http::assertNothingSent();
     }
@@ -415,6 +551,38 @@ class ConfirmacionProduccionUiTest extends TestCase
             // Y el panel avanzado ya no ofrece su propia emisión real.
             $this->assertStringNotContainsString('EMISIÓN REAL A PRODUCCIÓN HABILITADA', $contenido);
             $this->assertStringNotContainsString('EMITIR A PRODUCCIÓN', $contenido);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * BORRADOR de un tipo con acción de producción, en ambiente de PRUEBAS. Es el caso
+     * cotidiano de la máquina de trabajo: el documento todavía no se ha generado y el
+     * entorno es 00. El flujo de emisión SÍ aplica —generar, firmar y transmitir es
+     * justamente lo que toca—, así que la sección debe verse bloqueada y con su razón,
+     * no desaparecer. Antes se ocultaba porque la elegibilidad se leía solo de las dos
+     * abilities, y ambas fallan aquí: generarTransmitirProduccion exige ambiente 01 y
+     * firmarTransmitir exige el documento ya generado.
+     */
+    public function test_borrador_de_pruebas_muestra_la_tarjeta_bloqueada(): void
+    {
+        Http::fake();
+        $this->preflightsVerdes();
+        $this->candadosTransmisionAbiertos();
+        $admin = $this->usuario('administrador');
+
+        foreach ([TipoDte::Factura, TipoDte::CreditoFiscal, TipoDte::FacturaExportacion] as $tipo) {
+            $dte = $this->documento($tipo, 'borrador');
+            Dte::whereKey($dte->id)->update(['ambiente' => '00']);
+
+            $this->actingAs($admin)
+                ->get(route('facturacion.show', $dte->fresh()))
+                ->assertOk()
+                ->assertSee('Emitir en producción')
+                ->assertSee('Emisión real bloqueada')
+                ->assertSee('Este documento es de pruebas (ambiente 00)')
+                ->assertDontSee('name="confirmacion_emision"', false);
         }
 
         Http::assertNothingSent();
