@@ -17,6 +17,7 @@ use App\Services\Dte\DteInvalidacionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use App\Support\Dte\EndpointsHacienda;
 use Tests\TestCase;
 
 /**
@@ -247,6 +248,66 @@ class DteInvalidacionProduccionTest extends TestCase
         $this->assertTrue($d['schema']['valido'], implode(' | ', $d['schema']['errores']));
         $this->assertFalse($d['candados']['bloqueado'], implode(' | ', $d['candados']['razones']));
         $this->assertSame(3, $d['evento']['motivo']['tipoAnulacion']);
+        Http::assertNothingSent();
+    }
+
+    // ---------- Variantes engañosas del endpoint, en los DOS ambientes ----------
+
+    /**
+     * El candado del endpoint de anulación es el mismo que el de los otros tres
+     * servicios ({@see \App\Support\Dte\CandadoEndpointOficial}) y ya valía en los dos
+     * ambientes; esto lo fija contra las variantes que un chequeo laxo dejaría pasar:
+     * el subdominio que EMPIEZA por el host oficial, el puerto, el esquema, el host del
+     * otro ambiente, el query, el fragmento y la ruta parecida. Nada se transmite.
+     *
+     * El documento se crea UNA vez por ambiente (su número de control es único): lo que
+     * cambia entre iteraciones es solo la URL configurada.
+     */
+    public function test_anulacion_bloquea_variantes_enganosas_en_ambos_ambientes(): void
+    {
+        Http::fake();
+        config()->set('dte.invalidacion.produccion_enabled', true);
+
+        // Un solo documento: su número de control es único por ambiente, así que se
+        // reutiliza cambiando el ambiente por la vía directa (es inmutable de otro modo).
+        $dte = $this->ccfAceptado(AmbienteHacienda::Pruebas->value);
+
+        foreach ([AmbienteHacienda::Pruebas, AmbienteHacienda::Produccion] as $ambiente) {
+            Dte::whereKey($dte->id)->update(['ambiente' => $ambiente->value]);
+            $dte->refresh();
+
+            $oficial = EndpointsHacienda::anulacionOficial($ambiente);
+            $host = EndpointsHacienda::hostOficial($ambiente);
+            $otro = EndpointsHacienda::anulacionOficial(
+                $ambiente->esProduccion() ? AmbienteHacienda::Pruebas : AmbienteHacienda::Produccion
+            );
+            $clave = 'dte.ambientes.'.$ambiente->value.'.anulacion_url';
+
+            $variantes = [
+                $oficial.'?x=1',                                  // query
+                $oficial.'#frag',                                 // fragmento
+                $host.'.impostor.test/fesv/anulardte',            // empieza por el host oficial
+                $host.':8443/fesv/anulardte',                     // puerto
+                str_replace('https://', 'http://', $oficial),     // esquema
+                $oficial.'/v2',                                   // ruta parecida
+                $otro,                                            // el host del OTRO ambiente
+            ];
+
+            foreach ($variantes as $url) {
+                config()->set($clave, $url);
+
+                $c = $this->servicio()->evaluarCandados($dte, $this->evento(), true, true);
+
+                $this->assertTrue($c['bloqueado'], "Debe bloquear {$url}");
+                $this->assertStringContainsString('endpoint de anulación', implode(' ', $c['razones']));
+            }
+
+            // Y con el endpoint oficial exacto, ese candado concreto desaparece.
+            config()->set($clave, $oficial);
+            $c = $this->servicio()->evaluarCandados($dte, $this->evento(), true, true);
+            $this->assertStringNotContainsString('endpoint de anulación', implode(' ', $c['razones']));
+        }
+
         Http::assertNothingSent();
     }
 }

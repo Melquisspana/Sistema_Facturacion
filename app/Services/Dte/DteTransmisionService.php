@@ -7,6 +7,7 @@ use App\Enums\EstadoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -167,7 +168,7 @@ class DteTransmisionService
         $payload = $this->prepararPayloadRecepcion($dte);
 
         $url = $this->urlRecepcion();
-        $timeout = (int) config('dte.transmision.timeout', 15);
+        $timeout = (int) config('dte.transmision.timeout', 8);
         $userAgent = (string) config('dte.transmision.user_agent', 'DTE/1.0');
 
         // Token desde el servicio de autenticación (login + cache). El token ya viene
@@ -388,17 +389,23 @@ class DteTransmisionService
             $razones[] = 'Ambiente de producción sin autorización (DTE_TRANSMISION_ALLOW_PRODUCTION=false). No se transmitió.';
         }
 
-        // ENDPOINT PRODUCTIVO EXACTO. Mismo criterio que la invalidación, que ya lo
-        // exigía: sin esto, un `url_base` mal puesto manda un DTE de PRODUCCIÓN a un
-        // host cualquiera y el documento se pierde con numeración oficial ya gastada.
+        // ENDPOINT OFICIAL EXACTO, en LOS DOS AMBIENTES. Mismo criterio que la
+        // invalidación, que ya lo exigía así: sin esto, un `url_base` mal puesto manda
+        // el DTE a un host cualquiera y el documento se pierde con la numeración
+        // oficial ya gastada. Apitest entra también: transmitir ahí es una operación
+        // real, con token real, y un mock no necesita host propio (Http::fake sobre la
+        // URL oficial, o el modo mock, que ni construye la petición).
         // La comparación es contra la URL oficial incorporada, no contra la resuelta:
         // comparar la resuelta consigo misma no comprobaría nada.
-        if ($esProd) {
-            $urlOficial = EndpointsHacienda::recepcionOficial(AmbienteHacienda::Produccion);
-            $urlActual = $this->urlRecepcion();
-            if ($urlActual !== $urlOficial) {
-                $razones[] = 'El endpoint de recepción no es el productivo exacto ('.$urlOficial.'): '.$urlActual.'.';
-            }
+        $ambienteTransmision = EndpointsHacienda::ambienteTransmision();
+        $razonEndpoint = CandadoEndpointOficial::razon(
+            $ambienteTransmision,
+            CandadoEndpointOficial::RECEPCION,
+            EndpointsHacienda::recepcionOficial($ambienteTransmision),
+            $this->urlRecepcion(),
+        );
+        if ($razonEndpoint !== null) {
+            $razones[] = $razonEndpoint;
         }
 
         // Modo de operación frente al SISTEMA ACTUAL en uso (no se transmite desde dos

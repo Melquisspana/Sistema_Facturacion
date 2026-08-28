@@ -5,6 +5,7 @@ namespace Tests\Feature\Dte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Services\Dte\DteTransmisionAuthService;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -35,7 +36,10 @@ class DteTransmisionAuthTest extends TestCase
     {
         config()->set('dte.transmision.enabled', true);
         config()->set('dte.transmision.ambiente', 'testing');
-        config()->set('dte.transmision.url_base', 'https://auth.test');
+        // Host OFICIAL de apitest: desde que el candado del endpoint vale en los dos
+        // ambientes, un host inventado bloquea el login. Http::fake intercepta la URL
+        // oficial igual de bien, que es justamente lo que se quiere probar.
+        config()->set('dte.transmision.url_base', EndpointsHacienda::HOST_PRUEBAS);
         config()->set('dte.transmision.token', '');       // sin override → fuerza login
         // Ambiente testing: el servicio lee usuario_testing/password_testing, NO usuario_api.
         config()->set('dte.transmision.usuario_testing', 'facturador01');

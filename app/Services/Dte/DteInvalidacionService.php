@@ -10,6 +10,7 @@ use App\Exceptions\Dte\DteInvalidacionException;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
+use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -149,7 +150,7 @@ class DteInvalidacionService
         ];
 
         try {
-            $resp = Http::timeout((int) config('dte.transmision.timeout', 15))
+            $resp = Http::timeout((int) config('dte.transmision.timeout', 8))
                 ->acceptJson()->withHeaders($headers)->post($this->urlAnulacion($dte), $payload);
         } catch (Throwable $e) {
             // Error transitorio: no se persiste nada en BD (se puede reintentar).
@@ -203,20 +204,23 @@ class DteInvalidacionService
         // La comparación es contra la URL OFICIAL incorporada (EndpointsHacienda::
         // anulacionOficial), NO contra la resuelta: si un override apuntara a otro
         // sitio, esto es exactamente lo que lo detecta y bloquea el envío.
+        // El candado del endpoint es el MISMO de los otros tres servicios
+        // ({@see CandadoEndpointOficial}); esta comprobación ya era exacta en los dos
+        // ambientes y ahora comparte la implementación en vez de repetirla.
         $endpoint = $this->urlAnulacion($dte);
-        $oficial = EndpointsHacienda::anulacionOficial($dte->ambiente);
-        if ($dte->ambiente === AmbienteHacienda::Produccion) {
-            if (! (bool) config('dte.invalidacion.produccion_enabled', false)) {
-                $r[] = 'Producción no habilitada: DTE_INVALIDACION_PRODUCCION_ENABLED=false '
-                    .'(config dte.invalidacion.produccion_enabled).';
-            }
-            if ($endpoint !== $oficial) {
-                $r[] = 'El endpoint de anulación no es el productivo exacto ('.$oficial.'): '.$endpoint.'.';
-            }
-        } else {
-            if ($endpoint !== $oficial) {
-                $r[] = 'El endpoint de anulación no es el de apitest exacto ('.$oficial.'): '.$endpoint.'.';
-            }
+        if ($dte->ambiente === AmbienteHacienda::Produccion
+            && ! (bool) config('dte.invalidacion.produccion_enabled', false)) {
+            $r[] = 'Producción no habilitada: DTE_INVALIDACION_PRODUCCION_ENABLED=false '
+                .'(config dte.invalidacion.produccion_enabled).';
+        }
+        $razonEndpoint = CandadoEndpointOficial::razon(
+            $dte->ambiente,
+            CandadoEndpointOficial::ANULACION,
+            EndpointsHacienda::anulacionOficial($dte->ambiente),
+            $endpoint,
+        );
+        if ($razonEndpoint !== null) {
+            $r[] = $razonEndpoint;
         }
 
         // Firma REAL (no mock) habilitada.

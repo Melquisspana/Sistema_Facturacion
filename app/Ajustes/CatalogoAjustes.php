@@ -810,7 +810,7 @@ class CatalogoAjustes
                 etiqueta: 'Tiempo de espera de Hacienda (segundos)',
                 descripcion: 'Cuánto se espera una respuesta del MH antes de darla por perdida. El manual técnico habla de unos 8 s antes de reintentar.',
                 claveConfig: 'dte.transmision.timeout',
-                porDefecto: 15,
+                porDefecto: 8,
                 reglas: ['min:1', 'max:120'],
             ),
             DefinicionAjuste::hacer(

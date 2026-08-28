@@ -5,6 +5,7 @@ namespace App\Services\Dte;
 use App\Enums\AmbienteHacienda;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
+use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -220,10 +221,23 @@ class DteTransmisionAuthService
         return $r;
     }
 
-    /** ¿La URL de autenticación apunta al host de pruebas (apitest)? */
+    /**
+     * ¿La URL de autenticación es EXACTAMENTE la oficial de apitest?
+     *
+     * Antes esto era `str_starts_with(..., HOST_PRUEBAS)`, y ese "empieza por" aceptaba
+     * `https://apitest.dtes.mh.gob.sv.impostor.test/seguridad/auth`: la cadena empieza
+     * igual, pero el host es otro y el dominio lo controla un tercero. La prueba de
+     * login manda usuario y contraseña reales, así que el margen de error aquí es cero:
+     * se compara la URL completa contra la oficial ({@see CandadoEndpointOficial}).
+     */
     private function urlEsTesting(): bool
     {
-        return str_starts_with($this->authUrl(), EndpointsHacienda::HOST_PRUEBAS);
+        return CandadoEndpointOficial::razon(
+            AmbienteHacienda::Pruebas,
+            CandadoEndpointOficial::AUTH,
+            EndpointsHacienda::authOficial(AmbienteHacienda::Pruebas),
+            $this->authUrl(),
+        ) === null;
     }
 
     /**
@@ -313,7 +327,7 @@ class DteTransmisionAuthService
 
         try {
             // form-urlencoded (Manual 4.1), mismo formato que testing. NO se loguea nada.
-            $resp = Http::timeout((int) config('dte.transmision.timeout', 15))
+            $resp = Http::timeout((int) config('dte.transmision.timeout', 8))
                 ->asForm()
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->post($url, ['user' => $user, 'pwd' => $pwd]);
@@ -355,6 +369,20 @@ class DteTransmisionAuthService
      */
     private function login(): string
     {
+        // CANDADO DEL ENDPOINT OFICIAL, lo primero de todo. Este método es el único
+        // sitio del sistema que envía usuario y contraseña del MH, así que la URL se
+        // valida ANTES incluso de leer las credenciales de configuración: si el destino
+        // no es el publicado, no hay petición, no hay credenciales en vuelo y no hay
+        // token que cachear. Vale para los DOS ambientes -un login contra apitest es
+        // igual de real que uno contra producción-.
+        $ambiente = $this->esProduccion() ? AmbienteHacienda::Produccion : AmbienteHacienda::Pruebas;
+        CandadoEndpointOficial::verificar(
+            $ambiente,
+            CandadoEndpointOficial::AUTH,
+            EndpointsHacienda::authOficial($ambiente),
+            $this->authUrl(),
+        );
+
         $cred = $this->credencialesActuales();
         $user = $cred['usuario'];
         $pwd = $cred['password'];
@@ -370,7 +398,7 @@ class DteTransmisionAuthService
         }
 
         $url = $this->authUrl();
-        $timeout = (int) config('dte.transmision.timeout', 15);
+        $timeout = (int) config('dte.transmision.timeout', 8);
         $userAgent = (string) config('dte.transmision.user_agent', 'DTE/1.0');
 
         try {
