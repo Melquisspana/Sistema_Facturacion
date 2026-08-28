@@ -1019,8 +1019,13 @@ class ConsultaYReintentosDteTest extends TestCase
         Http::assertNothingSent();
     }
 
-    /** Pruebas no exige el host productivo: apitest sigue funcionando igual que antes. */
-    public function test_el_candado_del_endpoint_no_afecta_al_ambiente_de_pruebas(): void
+    /**
+     * Apitest exige SU endpoint oficial, igual que producción exige el suyo. Antes este
+     * ambiente admitía cualquier host «para facilitar las pruebas»; pero transmitir a
+     * apitest es una operación real, con token real, y el aviso del MH no distingue
+     * ambientes: solo endpoints publicados.
+     */
+    public function test_el_candado_del_endpoint_tambien_cierra_el_ambiente_de_pruebas(): void
     {
         Http::fake();
         $this->habilitarTransmision();
@@ -1029,6 +1034,22 @@ class ConsultaYReintentosDteTest extends TestCase
 
         $candados = app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados();
 
+        $this->assertTrue($candados['bloqueado']);
+        $this->assertStringContainsString('de apitest exacto', implode(' ', $candados['razones']));
+        Http::assertNothingSent();
+    }
+
+    /** Y con el host oficial de apitest, ese candado concreto no aparece. */
+    public function test_apitest_con_su_endpoint_oficial_no_dispara_el_candado(): void
+    {
+        Http::fake();
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.url_base', EndpointsHacienda::HOST_PRUEBAS);
+
+        $candados = app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados();
+
+        $this->assertStringNotContainsString('apitest exacto', implode(' ', $candados['razones']));
         $this->assertFalse($candados['bloqueado'], implode(' | ', $candados['razones']));
         Http::assertNothingSent();
     }
@@ -1120,5 +1141,246 @@ class ConsultaYReintentosDteTest extends TestCase
             "'token_vigencia_horas' => (int) env('DTE_TRANSMISION_TOKEN_VIGENCIA_HORAS', 24)",
             $fuente
         );
+    }
+
+    // ==================================== CANDADO DEL ENDPOINT OFICIAL DE CONSULTA
+
+    /**
+     * Espía del servicio de autenticación: cuenta si alguien pidió el token, sin hacer
+     * HTTP. Es la única forma de comprobar el ORDEN —endpoint primero, token después—,
+     * que es la mitad de lo que protege el candado: un endpoint no oficial no debe
+     * llegar a ver un Bearer, ni siquiera en memoria.
+     */
+    private function espiaDeToken(): DteTransmisionAuthService
+    {
+        $espia = new class extends DteTransmisionAuthService
+        {
+            public int $llamadas = 0;
+
+            public function obtenerToken(): string
+            {
+                $this->llamadas++;
+
+                return 'Bearer TOKEN_QUE_NO_DEBERIA_PEDIRSE';
+            }
+        };
+        $this->app->instance(DteTransmisionAuthService::class, $espia);
+
+        return $espia;
+    }
+
+    /** Producción + endpoint oficial exacto: la consulta procede con normalidad. */
+    public function test_produccion_con_el_endpoint_oficial_de_consulta_procede(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.url_base', '');   // host oficial
+        $espia = $this->espiaDeToken();
+        Http::fake(['*' => Http::response(['estado' => 'PROCESADO', 'selloRecibido' => 'S'], 200)]);
+        $dte = $this->ccfFirmado();
+
+        $r = $this->consulta()->consultar($dte);
+
+        $this->assertSame('aceptado', $r['resultado']);
+        $this->assertSame(1, $espia->llamadas, 'Superado el candado, el token sí se pide.');
+        Http::assertSent(fn ($request) => $request->url()
+            === 'https://api.dtes.mh.gob.sv/fesv/recepcion/consultadte');
+    }
+
+    /**
+     * Producción + endpoint alterado: bloqueo duro. No se pide token y no sale ni una
+     * petición. El aviso del MH exige consumir únicamente endpoints oficiales.
+     */
+    public function test_produccion_con_endpoint_de_consulta_no_oficial_bloquea_sin_token_ni_http(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.url_base', 'https://consulta.impostora.test');
+        $espia = $this->espiaDeToken();
+        Http::fake();
+        $dte = $this->ccfFirmado();
+
+        try {
+            $this->consulta()->consultar($dte);
+            $this->fail('Un endpoint de consulta no oficial en producción debe bloquear.');
+        } catch (DteTransmisionDeshabilitadaException $e) {
+            $this->assertStringContainsString('productivo exacto', $e->getMessage());
+        }
+
+        $this->assertSame(0, $espia->llamadas, 'El token NO puede pedirse antes de validar el endpoint.');
+        Http::assertNothingSent();
+    }
+
+    /**
+     * Ninguna variante engañosa pasa: subdominio que "termina bien", puerto, esquema,
+     * el host de pruebas usado como si fuera producción, query string, fragmento y
+     * rutas parecidas. La comparación es de igualdad exacta justamente para no tener
+     * que confiar en un parser.
+     */
+    public function test_ninguna_variante_del_endpoint_de_produccion_pasa_el_candado(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'produccion');
+        $dte = $this->ccfFirmado();
+
+        $hosts = [
+            'https://api.dtes.mh.gob.sv.impostor.test',  // subdominio engañoso
+            'https://api-dtes.mh.gob.sv',                // parecido, no es
+            'https://api.dtes.mh.gob.sv:8443',           // puerto
+            'http://api.dtes.mh.gob.sv',                 // esquema
+            'https://apitest.dtes.mh.gob.sv',            // pruebas mientras el ambiente es producción
+        ];
+
+        foreach ($hosts as $base) {
+            config()->set('dte.transmision.url_base', $base);
+            config()->set('dte.transmision.endpoint_consulta', '');
+            $espia = $this->espiaDeToken();
+            Http::fake();
+
+            try {
+                $this->consulta()->consultar($dte);
+                $this->fail("Debe bloquear el host: {$base}");
+            } catch (DteTransmisionDeshabilitadaException $e) {
+                $this->assertStringContainsString('productivo exacto', $e->getMessage());
+            }
+            $this->assertSame(0, $espia->llamadas, "No debe pedirse token para {$base}");
+            Http::assertNothingSent();
+        }
+
+        // Y las rutas alteradas sobre el host oficial tampoco pasan.
+        $rutas = [
+            '/fesv/recepcion/consultadte?forzar=1',
+            '/fesv/recepcion/consultadte#frag',
+            '/fesv/recepcion/consultadtelote',
+            '/fesv/recepciondte',
+        ];
+
+        foreach ($rutas as $ruta) {
+            config()->set('dte.transmision.url_base', '');
+            config()->set('dte.transmision.endpoint_consulta', $ruta);
+            $espia = $this->espiaDeToken();
+            Http::fake();
+
+            try {
+                $this->consulta()->consultar($dte);
+                $this->fail("Debe bloquear la ruta: {$ruta}");
+            } catch (DteTransmisionDeshabilitadaException $e) {
+                $this->assertStringContainsString('productivo exacto', $e->getMessage());
+            }
+            $this->assertSame(0, $espia->llamadas, "No debe pedirse token para {$ruta}");
+            Http::assertNothingSent();
+        }
+    }
+
+    /** Pruebas resuelve SIEMPRE a su propio endpoint oficial, nunca al de producción. */
+    public function test_pruebas_usa_su_endpoint_oficial_y_no_el_de_produccion(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.url_base', '');
+        $this->espiaDeToken();
+        Http::fake(['*' => Http::response(['estado' => 'PROCESADO', 'selloRecibido' => 'S'], 200)]);
+        $dte = $this->ccfFirmado();
+
+        $this->consulta()->consultar($dte);
+
+        Http::assertSent(fn ($request) => $request->url()
+            === 'https://apitest.dtes.mh.gob.sv/fesv/recepcion/consultadte');
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '//api.dtes.mh.gob.sv'));
+    }
+
+    /**
+     * Apitest con endpoint alterado: BLOQUEADO, igual que producción. Un mock local no
+     * justifica abrir la puerta —se hace con Http::fake() sobre la URL oficial, como en
+     * estas mismas pruebas, o con el modo mock, que ni construye la petición—, y a
+     * cambio un `url_base` mal puesto mandaría el token a cualquier host.
+     */
+    public function test_apitest_con_endpoint_alterado_bloquea_sin_token_ni_http(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.url_base', 'https://mock.local.test');
+        $espia = $this->espiaDeToken();
+        Http::fake();
+        $dte = $this->ccfFirmado();
+
+        try {
+            $this->consulta()->consultar($dte);
+            $this->fail('Un endpoint de consulta alterado en apitest debe bloquear.');
+        } catch (DteTransmisionDeshabilitadaException $e) {
+            $this->assertStringContainsString('de apitest exacto', $e->getMessage());
+        }
+
+        $this->assertSame(0, $espia->llamadas, 'El token NO puede pedirse con el endpoint bloqueado.');
+        Http::assertNothingSent();
+    }
+
+    /** Y el endpoint OFICIAL de apitest sí procede, con Http::fake sobre la URL real. */
+    public function test_apitest_con_su_endpoint_oficial_procede(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'testing');
+        config()->set('dte.transmision.url_base', EndpointsHacienda::HOST_PRUEBAS);
+        $espia = $this->espiaDeToken();
+        Http::fake(['*' => Http::response(['estado' => 'PROCESADO', 'selloRecibido' => 'S'], 200)]);
+        $dte = $this->ccfFirmado();
+
+        $r = $this->consulta()->consultar($dte);
+
+        $this->assertSame('aceptado', $r['resultado']);
+        $this->assertSame(1, $espia->llamadas);
+        Http::assertSent(fn ($request) => $request->url()
+            === 'https://apitest.dtes.mh.gob.sv/fesv/recepcion/consultadte');
+    }
+
+    /**
+     * LO QUE NO PUEDE PASAR: que un endpoint de consulta bloqueado acabe en un reenvío.
+     * Con el estado incierto (CASO 2), la consulta previa se corta y el DTE NO se
+     * transmite: ni un POST a recepción, ni cambio de estado, ni contingencia.
+     */
+    public function test_un_endpoint_de_consulta_bloqueado_no_reenvia_el_dte(): void
+    {
+        $this->habilitarTransmision();
+        config()->set('dte.transmision.ambiente', 'produccion');
+        config()->set('dte.transmision.allow_production', true);
+        config()->set('dte.transmision.url_base', 'https://consulta.impostora.test');
+        Http::fake();
+        $dte = $this->ccfFirmado();
+        $estadoPrevio = $dte->estado;
+
+        try {
+            $this->resiliente()->transmitir($dte, estadoIncierto: true);
+            $this->fail('La consulta bloqueada debe cortar la transmisión, no seguir.');
+        } catch (DteTransmisionDeshabilitadaException $e) {
+            $this->assertStringContainsString('productivo exacto', $e->getMessage());
+        }
+
+        Http::assertNothingSent();
+        $this->assertSame($estadoPrevio, $dte->fresh()->estado);
+        $this->assertNull($dte->fresh()->sello_recepcion);
+    }
+
+    /**
+     * El fallback interno de timeout es 8 s en TODOS los servicios que hablan con el
+     * MH, igual que el declarado en config/dte.php. Antes convivían 15 y 8: no se
+     * notaba (la clave siempre existe), pero dos números para un mismo umbral es
+     * exactamente como se cuela el tercero.
+     */
+    public function test_los_fallbacks_internos_de_timeout_son_de_ocho_segundos(): void
+    {
+        $archivos = [
+            app_path('Services/Dte/DteConsultaService.php'),
+            app_path('Services/Dte/DteTransmisionService.php'),
+            app_path('Services/Dte/DteTransmisionAuthService.php'),
+            app_path('Services/Dte/DteInvalidacionService.php'),
+            app_path('Ajustes/Fiscal/InventarioFiscal.php'),
+        ];
+
+        foreach ($archivos as $archivo) {
+            $fuente = (string) file_get_contents($archivo);
+
+            $this->assertStringNotContainsString("'dte.transmision.timeout', 15", $fuente,
+                basename($archivo).' conserva el fallback viejo de 15 s.');
+        }
     }
 }

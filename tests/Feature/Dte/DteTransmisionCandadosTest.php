@@ -17,6 +17,7 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteTransmisionService;
 use Database\Seeders\CatalogosMhSeeder;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -61,7 +62,10 @@ class DteTransmisionCandadosTest extends TestCase
         config()->set('dte.transmision.modo_operacion', 'principal');
         config()->set('dte.transmision.allow_production', false);
         config()->set('dte.transmision.ambiente', 'testing');
-        config()->set('dte.transmision.url_base', 'https://recepcion.test');
+        // Host OFICIAL de apitest: desde que el candado del endpoint vale en los dos
+        // ambientes, un host inventado bloquea la operación. Http::fake intercepta la
+        // URL oficial igual de bien, que es justamente lo que se quiere probar.
+        config()->set('dte.transmision.url_base', EndpointsHacienda::HOST_PRUEBAS);
         config()->set('dte.transmision.endpoint_recepcion', '/fesv/recepciondte');
         config()->set('dte.transmision.token', 'TOKEN_FAKE_NO_REAL');
     }

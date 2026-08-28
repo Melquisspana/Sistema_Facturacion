@@ -55,7 +55,7 @@ class InventarioFiscal
             $this->fila('dte.transmision.url_base', $this->textoODefecto('dte.transmision.url_base', 'vacío — se usa el host oficial del ambiente'), ClasificacionFiscal::CriticaN3, 'DTE_TRANSMISION_URL'),
             $this->fila('dte.transmision.endpoint_auth', $this->textoODefecto('dte.transmision.endpoint_auth', 'sin definir'), ClasificacionFiscal::CriticaN3, 'DTE_TRANSMISION_ENDPOINT_AUTH'),
             $this->fila('dte.transmision.endpoint_recepcion', $this->textoODefecto('dte.transmision.endpoint_recepcion', 'sin definir'), ClasificacionFiscal::CriticaN3, 'DTE_TRANSMISION_ENDPOINT_RECEPCION'),
-            $this->fila('dte.transmision.timeout', $this->ajustes->entero('dte.transmision.timeout', 15).' s', ClasificacionFiscal::EditableN2, 'DTE_TRANSMISION_TIMEOUT'),
+            $this->fila('dte.transmision.timeout', $this->ajustes->entero('dte.transmision.timeout', 8).' s', ClasificacionFiscal::EditableN2, 'DTE_TRANSMISION_TIMEOUT'),
             $this->fila('dte.transmision.user_agent', $this->textoODefecto('dte.transmision.user_agent', 'sin definir'), ClasificacionFiscal::EditableN2, 'DTE_TRANSMISION_USER_AGENT'),
 
             // No está en el catálogo: es una URL por ambiente que solo consume la

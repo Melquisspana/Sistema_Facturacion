@@ -2,9 +2,11 @@
 
 namespace App\Services\Dte;
 
+use App\Enums\AmbienteHacienda;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -30,6 +32,10 @@ use Throwable;
  * ('dte.transmision.enabled', o la vía dedicada de pruebas): si está cerrado no se
  * hace ninguna petición. Consultar es inofensivo, pero exige token, y pedir un token
  * es autenticarse contra Hacienda — no algo que deba pasar con la integración apagada.
+ *
+ * Y en PRODUCCIÓN, además, la URL debe ser el endpoint oficial EXACTO
+ * ({@see verificarEndpointOficial}), comprobado ANTES de pedir el token. Ninguno de
+ * los dos candados abre nada: solo pueden impedir la consulta.
  */
 class DteConsultaService
 {
@@ -54,7 +60,8 @@ class DteConsultaService
      * `recibido` es true SOLO cuando el MH confirma tenerlo (aceptado o rechazado).
      * Ante cualquier duda es false, porque de este booleano depende si se reenvía.
      *
-     * @throws DteTransmisionDeshabilitadaException si la integración está apagada
+     * @throws DteTransmisionDeshabilitadaException si la integración está apagada, o si
+     *                                              en producción el endpoint no es el oficial exacto
      * @throws DteTransmisionException              si faltan datos para consultar
      */
     public function consultar(Dte $dte): array
@@ -65,11 +72,19 @@ class DteConsultaService
             );
         }
 
+        // ── CANDADO DEL ENDPOINT OFICIAL — antes de todo lo demás. ──────────
+        // Va aquí, y no más abajo, porque pedir el token YA es autenticarse: si la URL
+        // no es la oficial, no debe existir ni la petición de token, ni el Bearer en
+        // memoria, ni el POST. Ver verificarEndpointOficial().
+        $ambiente = EndpointsHacienda::ambienteTransmision();
+        $url = EndpointsHacienda::consulta($ambiente);
+        $this->verificarEndpointOficial($ambiente, $url);
+
         $payload = $this->prepararPayload($dte);
-        $url = EndpointsHacienda::consulta(EndpointsHacienda::ambienteTransmision());
         $timeout = (int) config('dte.transmision.timeout', 8);
 
-        // Mismos headers que recepción. El token nunca se loguea.
+        // Mismos headers que recepción. El token nunca se loguea. Se pide DESPUÉS de
+        // validar el endpoint: ese orden es la mitad de lo que protege este candado.
         $headers = [
             'User-Agent' => (string) config('dte.transmision.user_agent', 'DTE/1.0'),
             'Authorization' => $this->auth->obtenerToken(),
@@ -111,6 +126,47 @@ class DteConsultaService
             'tdte' => $dte->tipo_dte->value,
             'codigoGeneracion' => (string) $dte->codigo_generacion,
         ];
+    }
+
+    /**
+     * CANDADO DEL ENDPOINT OFICIAL de consulta.
+     *
+     * BRECHA QUE CIERRA. Recepción e invalidación ya exigían el endpoint productivo
+     * exacto; la consulta no exigía nada más que el interruptor maestro. Y la consulta
+     * no es un servicio menor: en el CASO 2 se ejecuta ANTES de cualquier envío, con lo
+     * que era el único servicio del MH que un `url_base` mal puesto podía alcanzar
+     * primero —llevándose el token Bearer, el NIT del emisor y el código de generación
+     * a un host cualquiera—. El aviso de Hacienda exige consumir únicamente endpoints
+     * oficiales, así que en PRODUCCIÓN la URL tiene que ser exactamente la oficial.
+     *
+     * LA COMPARACIÓN ES DE IGUALDAD EXACTA, a propósito. No se parsea la URL ni se
+     * comprueba "que el host termine en mh.gob.sv": esa clase de comprobación es la que
+     * deja pasar `api.dtes.mh.gob.sv.impostor.test`. Comparar la cadena completa contra
+     * la constante oficial descarta de una sola vez el subdominio engañoso, el query
+     * string, el fragmento, el puerto y cualquier diferencia de ruta, sin tener que
+     * enumerarlos.
+     *
+     * APITEST TAMBIÉN, no solo producción: consultar contra apitest es una operación
+     * real —sale de la máquina y lleva un token de verdad—, así que el host tiene que
+     * ser el publicado igualmente. Los mocks no necesitan un host propio: se hacen con
+     * Http::fake() sobre la URL oficial, o con el modo mock, que ni construye la
+     * petición. Cada ambiente exige el suyo, y nunca el del otro.
+     *
+     * NO ABRE NINGÚN CANDADO: solo puede añadir un bloqueo. Y al ser
+     * DteTransmisionDeshabilitadaException, {@see DteTransmisionResiliente} la propaga
+     * tal cual en vez de convertirla en un resultado, de modo que un endpoint bloqueado
+     * NUNCA se traduce en un reenvío.
+     *
+     * @throws DteTransmisionDeshabilitadaException si la URL no es la oficial exacta
+     */
+    private function verificarEndpointOficial(AmbienteHacienda $ambiente, string $url): void
+    {
+        CandadoEndpointOficial::verificar(
+            $ambiente,
+            CandadoEndpointOficial::CONSULTA,
+            EndpointsHacienda::consultaOficial($ambiente),
+            $url,
+        );
     }
 
     /**
