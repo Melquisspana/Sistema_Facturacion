@@ -48,20 +48,27 @@
         <div>
             <h3 class="font-semibold text-gray-700">Emitir en producción</h3>
             <p class="mt-1 text-sm text-gray-500 max-w-prose">
-                @if ($yaGenerado)
-                    El documento ya está generado con su número definitivo. Esta acción lo
-                    <strong>firma y lo transmite</strong> al Ministerio de Hacienda.
+                @if ($puede)
+                    @if ($yaGenerado)
+                        El documento ya está generado con su número definitivo. Esta acción lo
+                        <strong>firma y lo transmite</strong> al Ministerio de Hacienda.
+                    @else
+                        Esta acción genera el documento, lo <strong>firma y lo transmite</strong> al
+                        Ministerio de Hacienda.
+                    @endif
+                    El correo al cliente va aparte, después de que Hacienda acepte.
                 @else
-                    Esta acción genera el documento, lo <strong>firma y lo transmite</strong> al
-                    Ministerio de Hacienda.
+                    {{-- Bloqueada: no se describe una acción que ahora mismo no se puede
+                         hacer; el detalle de por qué va en la lista de razones de abajo. --}}
+                    Acá se firma y se transmite el documento al Ministerio de Hacienda cuando
+                    la emisión real está habilitada.
                 @endif
-                El correo al cliente va aparte, después de que Hacienda acepte.
             </p>
         </div>
         @if ($puede)
             <span class="inline-flex shrink-0 items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800">Emisión real habilitada</span>
         @else
-            <span class="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Bloqueada</span>
+            <span class="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Emisión real bloqueada</span>
         @endif
     </div>
 
