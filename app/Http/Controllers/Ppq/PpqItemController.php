@@ -2,13 +2,20 @@
 
 namespace App\Http\Controllers\Ppq;
 
+use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
-use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
+use App\Models\PpqSala;
 use App\Services\Ppq\AlbaranPersistidor;
+use App\Services\Ppq\SalaResolver;
+use App\Support\IdentidadPpq;
+use App\Support\OrdenCompra;
+use App\Support\PpqElegibilidad;
+use App\Support\Sala;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -18,6 +25,11 @@ use Illuminate\Validation\Rule;
  *  - No permite el mismo CCF/NC dos veces en el lote (unique en BD + chequeo amable).
  *  - Avisa si el CCF/NC ya está usado en otro lote.
  *  - Avisa si el albarán ya fue vinculado antes.
+ *
+ * Y con un CANDADO FISCAL sobre los documentos LOCALES: solo entra al lote un CCF/NC de
+ * producción aceptado realmente por Hacienda ({@see PpqElegibilidad}). Los históricos
+ * que llegan por Gmail siguen su propio camino —no tienen DTE local que evaluar— y ese
+ * flujo no cambia.
  */
 class PpqItemController extends Controller
 {
@@ -42,17 +54,35 @@ class PpqItemController extends Controller
             'observaciones' => ['nullable', 'string', 'max:500'],
         ]);
 
-        // Anti-duplicado dentro del lote.
-        if ($lote->items()->where('dte_id', $datos['dte_id'])->exists()) {
+        $dte = Dte::findOrFail($datos['dte_id']);
+
+        // CANDADO FISCAL. La pantalla ya no dibuja los botones para un documento no
+        // elegible, pero eso es una cortesía, no una defensa: el `dte_id` viaja en un
+        // campo oculto de un formulario POST y cualquiera puede cambiarlo. La única
+        // comprobación que cuenta es esta, del lado del servidor, y usa LA MISMA regla
+        // que la pantalla ({@see PpqElegibilidad}) para que no puedan discrepar.
+        //
+        // Va ANTES de registrar el albarán: un intento rechazado no debe dejar rastro.
+        $motivo = PpqElegibilidad::motivo($dte);
+        if ($motivo !== null) {
+            return back()->with('error', 'Ese documento no se puede cobrar por PPQ y no se agregó al lote. '.$motivo);
+        }
+
+        // Anti-duplicado dentro del lote, por IDENTIDAD COMPLETA: no alcanza con
+        // `dte_id`. Si el documento ya entró como snapshot de Gmail —que es como
+        // entraron los 158 items que existen hoy, todos con `dte_id` en NULL—, cruzar
+        // solo por el vínculo lo dejaría pasar y el mismo CCF quedaría dos veces en el
+        // mismo lote, cobrado por duplicado.
+        if ($this->itemsEquivalentes($dte->id, $dte->numero_control)->where('ppq_lote_id', $lote->id)->exists()) {
             return back()->with('error', 'Ese CCF/NC ya está en este lote.');
         }
 
-        // Aviso: ya usado en otro lote (no bloquea, informa).
-        $otroLote = PpqItem::where('dte_id', $datos['dte_id'])
+        // Aviso: ya usado en otro lote (no bloquea, informa). Misma regla de identidad.
+        $otroLote = $this->itemsEquivalentes($dte->id, $dte->numero_control)
             ->where('ppq_lote_id', '!=', $lote->id)
+            ->orderBy('id')
             ->value('ppq_lote_id');
 
-        $dte = Dte::findOrFail($datos['dte_id']);
         $esNc = $dte->tipo_dte?->value === '05';
 
         // "Agregar sin albarán": se incluye el CCF/NC dejando vacíos los datos del
@@ -75,10 +105,10 @@ class PpqItemController extends Controller
             }
         }
 
-        $salaCodigo = \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra);
-        $salaNombre = \App\Support\Sala::nombrePreferido($salaCodigo, $dte->clienteSucursal?->nombre);
+        $salaCodigo = OrdenCompra::salaDesde($dte->numero_orden_compra);
+        $salaNombre = Sala::nombrePreferido($salaCodigo, $dte->clienteSucursal?->nombre);
         // Enriquecer el mapa auxiliar de PPQ (no fiscal) para futuros documentos de esta sala.
-        \App\Models\PpqSala::recordar($salaCodigo, $salaNombre, 'local');
+        PpqSala::recordar($salaCodigo, $salaNombre, 'local');
 
         $lote->items()->create([
             'dte_id' => $dte->id,
@@ -109,6 +139,40 @@ class PpqItemController extends Controller
         return back()->with('status', $mensaje);
     }
 
+    /**
+     * Consulta de los items que representan ESTE MISMO documento, según la regla única
+     * de {@see IdentidadPpq}: el vínculo explícito `dte_id` o el número de control
+     * NORMALIZADO. La usan por igual la vía local y la de Gmail, que es lo que impide
+     * que una copia local y una copia de Gmail pasen por documentos distintos.
+     *
+     * Nunca casa por correlativo suelto, orden de compra, monto ni sala: una OC ampara
+     * varios CCF de la misma sala y el correlativo `0986` existe en P001 y en P002. Con
+     * cualquiera de esos, el aviso diría «ya cobrado» sobre algo que nadie cobró.
+     *
+     * Devuelve una consulta SIN ejecutar para que el llamador la acote al lote que le
+     * interesa (dentro del mismo lote, o en cualquier otro).
+     */
+    private function itemsEquivalentes(?int $dteId, ?string $numeroControl): Builder
+    {
+        $clave = IdentidadPpq::normalizar($numeroControl);
+
+        return PpqItem::query()->where(function (Builder $q) use ($dteId, $clave) {
+            if ($dteId !== null) {
+                $q->where('dte_id', $dteId);
+            }
+
+            if ($clave !== null) {
+                $q->orWhere(IdentidadPpq::columnaNormalizada(), $clave);
+            }
+
+            // Sin ninguna de las dos llaves no hay identidad posible: no se puede
+            // afirmar que algo sea el mismo documento, así que no coincide con nada.
+            if ($dteId === null && $clave === null) {
+                $q->whereRaw('1 = 0');
+            }
+        });
+    }
+
     /** Agrega al lote un CCF/NC resuelto desde Gmail (snapshot, sin DTE local). */
     private function agregarDesdeGmail(Request $request, PpqLote $lote): RedirectResponse
     {
@@ -128,11 +192,17 @@ class PpqItemController extends Controller
             'sala_nombre' => ['nullable', 'string', 'max:255'],
         ]);
 
-        if ($lote->items()->where('numero_control', $d['numero_control'])->exists()) {
+        // La MISMA regla de identidad que la vía local. Comparar el número crudo solo
+        // acertaba cuando ambos lados estaban escritos igual; normalizado, un item
+        // cargado como `DTE03…0986` y este correo con `DTE-03-…-0986` son el mismo
+        // documento, y un item LOCAL del mismo documento también se detecta.
+        if ($this->itemsEquivalentes(null, $d['numero_control'])->where('ppq_lote_id', $lote->id)->exists()) {
             return back()->with('error', 'Ese CCF/NC ya está en este lote.');
         }
-        $otroLote = PpqItem::where('numero_control', $d['numero_control'])
-            ->where('ppq_lote_id', '!=', $lote->id)->value('ppq_lote_id');
+        $otroLote = $this->itemsEquivalentes(null, $d['numero_control'])
+            ->where('ppq_lote_id', '!=', $lote->id)
+            ->orderBy('id')
+            ->value('ppq_lote_id');
 
         // "Agregar sin albarán": incluye el CCF/NC dejando vacíos los datos del
         // albarán, aunque haya uno encontrado o esté incompleto (NC/casos especiales).
@@ -155,7 +225,7 @@ class PpqItemController extends Controller
         // el DTE local (el CCF lo emite este sistema) por código de generación, control u OC.
         $salaNombre = $d['sala_nombre'] ?? null;
         if (blank($salaNombre)) {
-            $salaNombre = app(\App\Services\Ppq\SalaResolver::class)->nombre(
+            $salaNombre = app(SalaResolver::class)->nombre(
                 $d['numero_orden_compra'] ?? null,
                 $d['codigo_generacion'] ?? null,
                 $d['numero_control'],
@@ -163,8 +233,8 @@ class PpqItemController extends Controller
         }
         // Enriquecer el mapa auxiliar de PPQ (no fiscal). Si el nombre vino del formulario
         // (revisado por quien concilia) se marca 'manual' para que no lo pise una fuente auto.
-        \App\Models\PpqSala::recordar(
-            \App\Support\OrdenCompra::salaDesde($d['numero_orden_compra'] ?? null),
+        PpqSala::recordar(
+            OrdenCompra::salaDesde($d['numero_orden_compra'] ?? null),
             $salaNombre,
             filled($d['sala_nombre'] ?? null) ? 'manual' : 'gmail',
         );

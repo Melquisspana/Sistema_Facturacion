@@ -75,21 +75,37 @@
                 </form>
             </div>
 
-            {{-- Estado de la conexión Gmail --}}
-            @if ($gmailDisponible)
-                <p class="text-xs text-green-600">● Buscando en Gmail (correos enviados + Calleja_Albaranes).</p>
-            @elseif ($gmailConfigurado)
+            {{--
+                FUENTE DE LA BÚSQUEDA. La base local es la fuente normal; Gmail es la
+                excepción, reservada a los históricos de Conta/P001 que este sistema
+                nunca emitió. El aviso de Gmail desconectado solo aparece cuando de
+                verdad hizo falta: si el documento se resolvió localmente, que Gmail
+                esté caído no afecta nada y decirlo solo alarmaría de gratis.
+            --}}
+            @if ($resueltoLocalmente)
+                <p class="text-xs text-green-600">● Resuelto con la base local del sistema. No hizo falta consultar Gmail.</p>
+            @elseif ($gmailError)
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center justify-between">
-                    <span>{{ $gmailError ?? 'Gmail está configurado pero no conectado.' }} Mostrando datos locales (respaldo).</span>
+                    <span>
+                        {{ $gmailError }}
+                        Los documentos emitidos por este sistema se siguen buscando normalmente; lo único que no se puede consultar
+                        ahora son los <span class="font-medium">históricos de Conta (P001)</span>.
+                    </span>
                     @role('administrador')
-                        <a href="{{ route('ppq.gmail.conectar') }}" class="rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700">Reconectar Gmail</a>
+                        <a href="{{ route('ppq.gmail.conectar') }}" class="ml-3 shrink-0 rounded bg-amber-600 px-3 py-1 text-xs text-white hover:bg-amber-700">Reconectar Gmail</a>
                     @endrole
                 </div>
+            @elseif ($gmailConsultado)
+                <p class="text-xs text-amber-600">● Sin coincidencia local: consulta excepcional a Gmail (históricos de Conta / P001).</p>
+            @elseif (! $gmailDisponible && $gmailConfigurado)
+                <p class="text-xs text-gray-400">Buscando en la base local del sistema. Gmail no está conectado: solo faltarían los históricos de Conta (P001).</p>
+            @elseif (! $gmailDisponible)
+                <p class="text-xs text-gray-400">Buscando en la base local del sistema. Gmail no está configurado: solo faltarían los históricos de Conta (P001).</p>
             @else
-                <p class="text-xs text-gray-400">Gmail no configurado — mostrando datos locales (respaldo). Configurá las credenciales en .env para usar Gmail como fuente principal.</p>
+                <p class="text-xs text-gray-400">Buscando en la base local del sistema; Gmail queda como respaldo para los históricos de Conta (P001).</p>
             @endif
 
-            {{-- Resultados desde Gmail (fuente principal) --}}
+            {{-- Resultados desde Gmail: FALLBACK, solo si la base local no resolvió --}}
             @if (! is_null($fichasGmail))
                 @forelse ($fichasGmail as $f)
                     @php
@@ -99,7 +115,21 @@
                         $r = [
                             'origen' => 'gmail',
                             'esNc' => ($ccf['tipoDte'] ?? '') === '05',
-                            'fuente' => 'Gmail',
+                            // Los históricos de Conta/P001 NO pasan por el candado fiscal:
+                            // los emitió otro sistema y no hay DTE local que evaluar.
+                            // Aplicárselo los bloquearía a todos.
+                            'motivoNoElegible' => null,
+                            // Un control P001 es del sistema viejo (ContaPortable): ese es el
+                            // caso legítimo del correo. Cualquier otro llegando por Gmail es
+                            // una consulta excepcional, y conviene que se vea como tal.
+                            'fuente' => str_contains((string) ($ccf['numeroControl'] ?? ''), 'M001P001-')
+                                ? 'Histórico Conta'
+                                : 'Consulta excepcional a Gmail',
+                            'albaranFuente' => match ($f['albaran_fuente'] ?? null) {
+                                \App\Services\Ppq\PpqGmailService::ALBARAN_LOCAL => 'Albarán sincronizado',
+                                \App\Services\Ppq\PpqGmailService::ALBARAN_GMAIL => 'Consulta excepcional a Gmail',
+                                default => null,
+                            },
                             'tipoDte' => $ccf['tipoDte'] ?? null,
                             'numeroControl' => $ccf['numeroControl'] ?? null,
                             'codigoGeneracion' => $ccf['codigoGeneracion'] ?? null,
@@ -134,10 +164,20 @@
                 @endforelse
             @endif
 
-            {{-- Resultados locales (respaldo cuando Gmail no está conectado) --}}
-            @if (! is_null($resultados))
-                <p class="text-sm text-gray-500">{{ $resultados->total() }} documento(s) encontrado(s) localmente.</p>
+            {{-- Resultados locales: la fuente NORMAL, se consulta siempre y va primero --}}
+            @php
+                // Documentos locales que ya representó una ficha de Gmail: no se repiten.
+                // Solo pueden ser locales NO elegibles —los elegibles descartan la copia
+                // de Gmail, no al revés—. Ver PpqBusquedaController::completarFichasGmail().
+                $totalLocal = is_null($resultados) ? null : max(0, $resultados->total() - count($localesOcultos));
+                // El bloque local se dibuja si tiene algo que mostrar, o si fue la ÚNICA
+                // fuente consultada: ahí hace falta para poder decir «sin resultados».
+                $mostrarLocales = ! is_null($resultados) && ($totalLocal > 0 || is_null($fichasGmail));
+            @endphp
+            @if ($mostrarLocales)
+                <p class="text-sm text-gray-500">{{ $totalLocal }} documento(s) encontrado(s) en el sistema.</p>
                 @forelse ($resultados as $dte)
+                    @continue (in_array($dte->id, $localesOcultos, true))
                     @php
                         $esNcLocal = $dte->tipo_dte->value === '05';
                         // En NC no se auto-vincula albarán (comparte OC con el CCF; es manual).
@@ -146,7 +186,14 @@
                         $r = [
                             'origen' => 'local',
                             'esNc' => $esNcLocal,
-                            'fuente' => null,
+                            'fuente' => 'Sistema',
+                            // Candado fiscal: por qué este documento NO se puede cobrar por
+                            // PPQ (null si sí se puede). Se muestra igual —esconderlo sería
+                            // mentir sobre lo que existe—, pero sin botones para agregarlo.
+                            'motivoNoElegible' => \App\Support\PpqElegibilidad::motivo($dte),
+                            // El albarán de un resultado local sale siempre de `ppq_albaranes`
+                            // (vía AlbaranLocalizador): esta pantalla no baja albaranes de Gmail.
+                            'albaranFuente' => $alb !== null ? 'Albarán sincronizado' : null,
                             'tipoDte' => $dte->tipo_dte->value,
                             'numeroControl' => $dte->numero_control,
                             'codigoGeneracion' => $dte->codigo_generacion,
@@ -174,7 +221,7 @@
                     <div class="bg-white shadow sm:rounded-lg p-8 text-center text-gray-400">Sin resultados para esa búsqueda.</div>
                 @endforelse
                 <div>{{ $resultados->links() }}</div>
-            @elseif (is_null($fichasGmail))
+            @elseif (is_null($fichasGmail) && is_null($resultados))
                 <div class="bg-white shadow sm:rounded-lg p-8 text-center text-sm text-gray-500">
                     Escribí el número del CCF/NC (ej. <span class="font-mono">0986</span>) y presioná <strong>Buscar</strong>.
                 </div>

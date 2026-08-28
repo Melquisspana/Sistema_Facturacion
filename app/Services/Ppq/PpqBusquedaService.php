@@ -5,7 +5,9 @@ namespace App\Services\Ppq;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
+use App\Support\IdentidadPpq;
 use App\Support\OrdenCompra;
+use App\Support\PpqElegibilidad;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -27,6 +29,39 @@ class PpqBusquedaService
     private const ANCHO_MAX_SECUENCIA = 20;
 
     /**
+     * ¿Este documento local RESUELVE la búsqueda sin necesidad de Gmail?
+     *
+     * Es exactamente la misma pregunta que «¿se puede cobrar por PPQ?», y por eso la
+     * respuesta la da {@see PpqElegibilidad} y no una condición propia de acá. Un
+     * documento que no se puede agregar a un lote tampoco puede dar la búsqueda por
+     * cerrada: puede seguir habiendo un histórico de Conta/P001 en el correo, que es
+     * justo para lo que Gmail queda como respaldo.
+     */
+    public static function resuelveSinGmail(Dte $dte): bool
+    {
+        return PpqElegibilidad::esElegible($dte);
+    }
+
+    /**
+     * ¿Alguno de los resultados ya cargados resuelve la búsqueda sin Gmail?
+     *
+     * Trabaja sobre la colección que la vista ya tiene en memoria: NO agrega ninguna
+     * consulta a la búsqueda.
+     *
+     * @param  iterable<int, Dte>  $resultados
+     */
+    public function hayResolutivoLocal(iterable $resultados): bool
+    {
+        foreach ($resultados as $dte) {
+            if (self::resuelveSinGmail($dte)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param  array<string, mixed>  $filtros  q, oc, albaran, sala, fecha_desde, fecha_hasta, monto, tipo
      */
     public function buscar(array $filtros, int $porPagina = 25): LengthAwarePaginator
@@ -37,6 +72,12 @@ class PpqBusquedaService
             // búsqueda rápida de cobro (se consultan por el filtro dedicado o Auditoría).
             ->noArchivados()
             ->with(['cliente:id,nombre,nombre_comercial', 'clienteSucursal:id,nombre,codigo'])
+            // Los documentos ELEGIBLES para PPQ (producción + aceptados realmente por
+            // Hacienda) van primero: son los que permiten no consultar Gmail y los únicos
+            // que se pueden agregar a un lote. Es una PRIORIDAD, no un filtro: un borrador
+            // o un documento de pruebas sigue apareciendo —más abajo y marcado como no
+            // disponible—, porque esconderlo sería mentir sobre lo que existe.
+            ->orderByRaw(PpqElegibilidad::SQL_PRIORIDAD, PpqElegibilidad::bindingsPrioridad())
             ->latest('fecha_emision');
 
         if (filled($filtros['oc'] ?? null)) {
@@ -135,6 +176,9 @@ class PpqBusquedaService
     private function aplicarCorrelativo(Builder $q, string $digitos): void
     {
         $hayEnP002 = (clone $q)
+            // Sin el orden: a un EXISTS no le cambia la respuesta y le agrega el costo
+            // de ordenar (incluida la prioridad por CASE) para nada.
+            ->reorder()
             ->where('numero_control', 'like', '%P002-%')
             ->where(fn (Builder $sub) => $this->correlativoExacto($sub, $digitos))
             ->exists();
@@ -186,19 +230,70 @@ class PpqBusquedaService
     }
 
     /**
-     * IDs de DTE ya usados en algún lote PPQ (para avisar duplicados en la búsqueda).
+     * Qué documentos de la búsqueda YA están en algún lote PPQ, para avisar duplicados.
      *
-     * @param  array<int, int>  $dteIds
+     * Cruza por las dos llaves de {@see IdentidadPpq}: el vínculo explícito `dte_id` y
+     * el número de control NORMALIZADO. La segunda es la que hace el trabajo: los 158
+     * items que existen hoy vienen del barrido de Gmail y TODOS tienen `dte_id` en
+     * NULL, así que cruzar solo por el vínculo no encontraba ninguno y un CCF ya
+     * cobrado aparecía como si nunca hubiera entrado a un PPQ.
+     *
+     * Recibe los DTE enteros —no una lista de ids— porque hace falta su número de
+     * control. Es UNA sola consulta para todos los resultados de la página.
+     *
+     * @param  iterable<int, Dte>  $dtes
      * @return array<int, int> dte_id => ppq_lote_id (un lote cualquiera donde ya está)
      */
-    public function dtesYaUsados(array $dteIds): array
+    public function dtesYaUsados(iterable $dtes): array
     {
-        if ($dteIds === []) {
+        $ids = [];
+        $dtePorControl = [];
+
+        foreach ($dtes as $dte) {
+            $ids[] = (int) $dte->id;
+
+            $clave = IdentidadPpq::normalizar($dte->numero_control);
+            if ($clave !== null) {
+                $dtePorControl[$clave] = (int) $dte->id;
+            }
+        }
+
+        if ($ids === []) {
             return [];
         }
 
-        return PpqItem::whereIn('dte_id', $dteIds)
-            ->pluck('ppq_lote_id', 'dte_id')
-            ->all();
+        $claves = array_keys($dtePorControl);
+
+        $items = PpqItem::query()
+            ->where(function (Builder $q) use ($ids, $claves) {
+                $q->whereIn('dte_id', $ids);
+
+                if ($claves !== []) {
+                    $q->orWhereIn(IdentidadPpq::columnaNormalizada(), $claves);
+                }
+            })
+            // El de id más bajo gana: cuando un documento está en varios lotes se avisa
+            // del primero, que es lo que este aviso siempre significó («ya está en el
+            // lote #N», no «está en estos N lotes»).
+            ->orderBy('id')
+            ->get(['id', 'ppq_lote_id', 'dte_id', 'numero_control']);
+
+        $mapa = [];
+        $conocidos = array_flip($ids);
+
+        foreach ($items as $item) {
+            // Llave 1: vínculo explícito.
+            if ($item->dte_id !== null && isset($conocidos[$item->dte_id])) {
+                $mapa[$item->dte_id] ??= (int) $item->ppq_lote_id;
+            }
+
+            // Llave 2: número de control normalizado (los snapshots de Gmail).
+            $clave = IdentidadPpq::normalizar($item->numero_control);
+            if ($clave !== null && isset($dtePorControl[$clave])) {
+                $mapa[$dtePorControl[$clave]] ??= (int) $item->ppq_lote_id;
+            }
+        }
+
+        return $mapa;
     }
 }

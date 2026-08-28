@@ -5,10 +5,10 @@ namespace App\Services\Rutas;
 use App\Models\PpqItem;
 use App\Models\SalidaRutaDocumento;
 use App\Services\Ppq\ConciliacionTxtParser;
+use App\Support\IdentidadPpq;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Encuentra el renglón de PPQ (cobro) que corresponde a un documento de una salida.
@@ -70,18 +70,6 @@ use Illuminate\Support\Facades\DB;
  */
 class LocalizadorPpq
 {
-    /**
-     * Separadores que se limpian en SQL para comparar números de control.
-     *
-     * `normalizarNumero()` quita en PHP todo lo que no sea alfanumérico; en SQL hay
-     * que enumerar, y estos son los separadores que un número de control puede
-     * llevar de verdad: los que escribe el sistema (`-`) y los que puede teclear una
-     * persona al cargar un histórico P001 a mano. La comparación se hace además
-     * sobre el valor ya normalizado en PHP, así que un carácter exótico solo haría
-     * que ese documento no se encuentre —nunca que se encuentre el equivocado—.
-     */
-    private const SEPARADORES = ['-', ' ', '.', '/', '_'];
-
     /**
      * Resuelve en BLOQUE y devuelve los dos índices con los que después se elige.
      *
@@ -197,19 +185,16 @@ class LocalizadorPpq
     }
 
     /**
-     * `numero_control` sin separadores y en mayúsculas, como expresión SQL. Se arma
-     * anidando REPLACE porque es lo único que MySQL y SQLite entienden igual (los
-     * tests corren en SQLite y la operación en MySQL).
+     * `numero_control` sin separadores y en mayúsculas, como expresión SQL.
+     *
+     * La expresión vive en {@see IdentidadPpq}, que es donde está escrita la regla de
+     * identidad de PPQ. Antes estaba acá: se movió cuando la búsqueda de PPQ y el alta
+     * de items pasaron a necesitar exactamente la misma comparación. Dos copias de esto
+     * acabarían respondiendo distinto en dos pantallas.
      */
     private function columnaNormalizada(): Expression
     {
-        $expresion = 'numero_control';
-
-        foreach (self::SEPARADORES as $separador) {
-            $expresion = "REPLACE({$expresion}, '{$separador}', '')";
-        }
-
-        return DB::raw("UPPER({$expresion})");
+        return IdentidadPpq::columnaNormalizada();
     }
 
     /**
