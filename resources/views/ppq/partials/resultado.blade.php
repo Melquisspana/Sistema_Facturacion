@@ -5,6 +5,18 @@
       $lotesAbiertos colección de lotes editables a los que se puede agregar
 --}}
 @php
+    // Claves nuevas: se normalizan acá para no exigirle a cada llamador que las arme.
+    $r['albaranFuente'] ??= null;
+    $r['motivoNoElegible'] ??= null;
+
+    // CANDADO FISCAL. Un documento LOCAL que no se puede cobrar por PPQ se sigue
+    // mostrando —existe, y ocultarlo sería mentir sobre lo que hay— pero sin ninguna
+    // vía para agregarlo a un lote. El backend lo vuelve a comprobar con la MISMA
+    // regla ({@see \App\Support\PpqElegibilidad}); esto solo evita ofrecer un botón
+    // que iba a fallar. Los históricos que llegan por Gmail no pasan por acá: no
+    // tienen DTE local que evaluar, así que su motivo siempre viene en null.
+    $noElegible = filled($r['motivoNoElegible']);
+
     $esNc = (bool) $r['esNc'];
     $montoNum = $r['monto'] !== null ? (float) $r['monto'] : null;
     $montoCcf = $montoNum === null ? '—' : ($esNc ? '−$'.number_format(abs($montoNum), 2) : '$'.number_format($montoNum, 2));
@@ -78,6 +90,18 @@
 
 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
 
+    {{-- BLOQUE 0 — Candado fiscal: el documento existe, pero no se puede cobrar --}}
+    @if ($noElegible)
+        <div class="border-l-4 border-red-400 bg-red-50 px-6 py-4">
+            <p class="flex items-center gap-2 text-sm font-semibold text-red-800">
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-4a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" /></svg>
+                No disponible para PPQ
+            </p>
+            <p class="mt-1 text-sm text-red-700">{{ $r['motivoNoElegible'] }}</p>
+            <p class="mt-1 text-xs text-red-600">Se muestra como referencia. No se puede agregar a ningún lote de cobro.</p>
+        </div>
+    @endif
+
     {{-- BLOQUE 1 — Documento encontrado --}}
     <div class="p-6">
         <div class="flex items-start justify-between gap-4">
@@ -128,7 +152,19 @@
         @endif
     </div>
 
-    @if ($esNc)
+    @if ($noElegible)
+        {{--
+            BLOQUE 3 (bloqueado) — Ni conciliación ni acciones.
+            Va como PRIMERA rama, delante de la de NC y la del CCF, para que el candado
+            se decida en un solo lugar: los dos bloques de abajo quedan tal cual estaban
+            y no tienen que enterarse de nada. El panel de albarán y diferencia tampoco
+            se dibuja porque solo sirve para decidir si agregar el documento, y este no
+            se puede agregar.
+        --}}
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+            <span class="text-sm text-gray-500">Sin acciones disponibles: este documento no se puede cobrar por PPQ.</span>
+        </div>
+    @elseif ($esNc)
         {{-- BLOQUE 3 (NC) — Albarán de captura MANUAL + agregar (resta) --}}
         <div class="px-6 py-5 border-t border-gray-100">
             <div class="flex items-center justify-between mb-1">
@@ -196,7 +232,14 @@
         {{-- BLOQUE 3 (CCF) — Albarán automático y conciliación --}}
         <div class="px-6 py-5 border-t border-gray-100">
             <div class="flex items-center justify-between mb-4">
-                <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Albarán encontrado</h4>
+                <div class="flex flex-wrap items-center gap-2">
+                    <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Albarán encontrado</h4>
+                    {{-- De dónde salió el albarán: de `ppq_albaranes` (lo normal) o de una
+                         consulta a Gmail hecha en el momento (la excepción). --}}
+                    @if ($hayAlbaran && ! empty($r['albaranFuente']))
+                        <span class="inline-block rounded px-2 py-0.5 text-xs {{ $r['albaranFuente'] === 'Albarán sincronizado' ? 'bg-gray-100 text-gray-500' : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' }}">{{ $r['albaranFuente'] }}</span>
+                    @endif
+                </div>
                 <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $r['estado']['clase'] }}">
                     @if ($alerta)
                         <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" /></svg>

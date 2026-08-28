@@ -40,14 +40,28 @@ class PpqModuloTest extends TestCase
         return Cliente::where('nombre', 'like', '%Calleja%')->firstOrFail();
     }
 
+    /**
+     * CCF de Calleja COBRABLE: producción y aceptado REALMENTE por Hacienda (sello real
+     * y fecha de procesamiento).
+     *
+     * Antes se creaba en el ambiente de pruebas y sin sello. Daba igual mientras nada
+     * lo comprobara, pero desde que existe el candado fiscal de PPQ
+     * ({@see \App\Support\PpqElegibilidad}) un documento así NO se puede agregar a un
+     * lote —y con razón: no existe ante Hacienda—. Estas pruebas hablan de cobrar CCF
+     * reales, así que el helper ahora construye uno real.
+     */
     private function crearCcf(string $numeroControl, ?string $oc = '260600232002345', float $monto = 113.58): Dte
     {
         return Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id,
             'tipo_dte' => '03',
             'estado' => 'aceptado',
+            'ambiente' => '01',
             'cliente_id' => $this->calleja()->id,
             'numero_control' => $numeroControl,
+            'codigo_generacion' => strtoupper(\Illuminate\Support\Str::uuid()->toString()),
+            'sello_recepcion' => '2026'.strtoupper(\Illuminate\Support\Str::random(36)),
+            'fecha_procesamiento_mh' => now(),
             'numero_orden_compra' => $oc,
             'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'),

@@ -3,25 +3,61 @@
 namespace App\Services\Ppq;
 
 use App\Exceptions\Ppq\GmailDesconectadoException;
+use App\Models\PpqAlbaran;
+use App\Models\PpqSala;
+use App\Services\Rutas\AlbaranLocalizador;
+use App\Support\Albaran;
+use App\Support\OrdenCompra;
+use App\Support\Sala;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 /**
- * Orquesta el flujo real de PPQ sobre Gmail:
+ * Orquesta el flujo de PPQ sobre Gmail, que desde la Fase 1 es la fuente de
+ * FALLBACK —no la principal—: acá se llega cuando la base local no tiene un
+ * documento que resuelva la búsqueda (típicamente un histórico de Conta/P001).
+ *
  *  1. Buscar el CCF/NC en correos ENVIADOS por su número (últimos 4 / control).
  *  2. Extraer del JSON adjunto: control, código, sello, OC, monto, fecha, sala.
- *  3. Con la OC, buscar el albarán en el label Calleja_Albaranes.
- *  4. Devolver la ficha lista (CCF + albarán + diferencia) para "Agregar a PPQ".
+ *  3. Filtrar las menciones y deduplicar los reenvíos.
+ *  4. Recién entonces, resolver el albarán: PRIMERO en `ppq_albaranes` y solo si
+ *     ahí no está, en el label Calleja_Albaranes.
+ *  5. Devolver la ficha lista (CCF + albarán + diferencia) para "Agregar a PPQ".
  *
- * No escribe nada; solo lee Gmail y arma el resultado. La persistencia (lote/item)
+ * El orden de los pasos 3 y 4 no es cosmético. Antes el albarán se buscaba dentro
+ * del bucle de correos, así que un CCF reenviado cuatro veces disparaba cuatro
+ * búsquedas en Gmail y se tiraban tres; y los correos que solo MENCIONABAN el
+ * número —un Excel de cobro— también pagaban su búsqueda antes de ser descartados.
+ * Resolviendo después del filtro se busca el albarán una vez por documento real.
+ *
+ * No escribe DTE ni items; solo lee y arma el resultado. La persistencia (lote/item)
  * la hace el flujo de PPQ cuando el usuario confirma.
  */
 class PpqGmailService
 {
+    /** Fuentes posibles del albarán de una ficha (se muestran en la interfaz). */
+    public const ALBARAN_LOCAL = 'local';
+
+    public const ALBARAN_GMAIL = 'gmail';
+
+    /**
+     * El localizador NO es un parámetro obligatorio a propósito: varios tests de PPQ
+     * construyen este servicio a mano con sus cuatro dobles, y esa es justo la lógica
+     * que esta fase no debe reescribir. Se puede inyectar cuando interesa y, si no, se
+     * resuelve del contenedor la primera vez que hace falta.
+     */
     public function __construct(
         private readonly GmailClient $gmail,
         private readonly DteCorreoParser $parser,
         private readonly JsonAdjuntoDecoder $decoder,
         private readonly AlbaranParser $albaranParser,
+        private ?AlbaranLocalizador $albaranesLocales = null,
     ) {}
+
+    private function albaranesLocales(): AlbaranLocalizador
+    {
+        return $this->albaranesLocales ??= app(AlbaranLocalizador::class);
+    }
 
     public function disponible(): bool
     {
@@ -101,27 +137,15 @@ class PpqGmailService
                     continue;
                 }
 
-                // Las NC (tipo 05) NO traen albarán por correo y comparten OC con el
-                // CCF original: no buscamos albarán automático (se captura a mano).
-                $esNc = ($ccf['tipoDte'] ?? null) === '05';
-                $albaran = (! $esNc && $ccf['ordenCompra'])
-                    ? $this->buscarAlbaranPorOc((string) $ccf['ordenCompra'], $ccf['fecha'] ?? null, isset($ccf['monto']) ? (float) $ccf['monto'] : null)
-                    : null;
-                $det['albaran_debug'] = $albaran['debug'] ?? null;
-                // Enriquecer el mapa auxiliar de PPQ con el nombre real del receptor del CCF.
-                \App\Models\PpqSala::recordar(
-                    \App\Support\OrdenCompra::salaDesde($ccf['ordenCompra'] ?? null),
-                    $ccf['salaNombre'] ?? null,
-                    'ccf_json',
-                );
+                // El albarán y el mapa de salas se resuelven DESPUÉS del filtro/dedup:
+                // acá todavía no se sabe si este correo es el documento buscado.
                 $fichas[] = [
                     'origen' => 'gmail',
                     'gmail_message_id' => $correo['id'],
                     'ccf' => $ccf,
-                    'albaran' => $albaran,
-                    'diferencia' => ($albaran && $albaran['monto'] !== null && $ccf['monto'] !== null)
-                        ? round((float) $ccf['monto'] - (float) $albaran['monto'], 2)
-                        : null,
+                    'albaran' => null,
+                    'albaran_fuente' => null,
+                    'diferencia' => null,
                 ];
             } catch (GmailDesconectadoException $e) {
                 // Gmail se desconectó a mitad de la búsqueda: no lo tratamos como un
@@ -139,7 +163,13 @@ class PpqGmailService
         // ese DTE, y un mismo DTE reenviado llega como varios correos: nos quedamos solo con
         // los DTE cuyo control REAL termina en lo buscado y contamos cada DTE una sola vez.
         $fichas = $this->filtrarPorNumeroYDeduplicar($fichas, $numero);
+        $fichas = $this->completarAlbaranes($fichas);
+        $this->recordarSalas($fichas);
         $debug['fichas'] = count($fichas);
+        $debug['albaranes'] = [
+            'locales' => count(array_filter($fichas, fn ($f) => ($f['albaran_fuente'] ?? null) === self::ALBARAN_LOCAL)),
+            'gmail' => count(array_filter($fichas, fn ($f) => ($f['albaran_fuente'] ?? null) === self::ALBARAN_GMAIL)),
+        ];
 
         return ['fichas' => $fichas, 'debug' => $debug];
     }
@@ -190,6 +220,124 @@ class PpqGmailService
 
         // El sistema nuevo P002 tiene prioridad. Solo si no existe se devuelve P001.
         return array_values($salidaP002 !== [] ? $salidaP002 : $salidaP001);
+    }
+
+    /**
+     * Resuelve el albarán de cada ficha YA filtrada: `ppq_albaranes` PRIMERO y Gmail
+     * solo para las que ahí no están.
+     *
+     * La consulta local es UNA sola para todas las fichas (el localizador arma los dos
+     * índices de una pasada), así que agregar fichas no agrega consultas. Se delega en
+     * {@see AlbaranLocalizador} a propósito: es la misma regla —`dte_id` primero, orden
+     * de compra después— que ya usan la búsqueda local de PPQ y el seguimiento de Rutas.
+     * Acá solo puede aplicar la segunda llave: un documento que viene de Gmail no tiene
+     * `dte_id` local que ofrecer.
+     *
+     * Las NC (tipo 05) quedan fuera, como siempre: no traen albarán por correo y
+     * comparten OC con el CCF original, así que el suyo se captura a mano.
+     *
+     * @param  array<int, array<string, mixed>>  $fichas
+     * @return array<int, array<string, mixed>>
+     */
+    private function completarAlbaranes(array $fichas): array
+    {
+        $ocs = [];
+        foreach ($fichas as $ficha) {
+            $oc = $this->ocConAlbaran($ficha);
+            if ($oc !== null) {
+                $ocs[] = $oc;
+            }
+        }
+
+        [, $porOrden] = $ocs === [] ? [[], []] : $this->albaranesLocales()->indices([], $ocs);
+
+        foreach ($fichas as $i => $ficha) {
+            $oc = $this->ocConAlbaran($ficha);
+            if ($oc === null) {
+                continue;
+            }
+
+            $local = $porOrden[$oc] ?? null;
+
+            // Ya sincronizado: no se vuelve a bajar ni a parsear el correo del albarán.
+            $albaran = $local !== null
+                ? $this->desdeAlbaranLocal($local, $oc)
+                : $this->buscarAlbaranPorOc(
+                    $oc,
+                    $ficha['ccf']['fecha'] ?? null,
+                    isset($ficha['ccf']['monto']) ? (float) $ficha['ccf']['monto'] : null,
+                );
+
+            $montoCcf = $ficha['ccf']['monto'] ?? null;
+
+            $fichas[$i]['albaran'] = $albaran;
+            $fichas[$i]['albaran_fuente'] = $albaran['fuente'] ?? null;
+            $fichas[$i]['diferencia'] = ($albaran !== null && $albaran['monto'] !== null && $montoCcf !== null)
+                ? round((float) $montoCcf - (float) $albaran['monto'], 2)
+                : null;
+        }
+
+        return $fichas;
+    }
+
+    /**
+     * Orden de compra de una ficha que ADMITE búsqueda automática de albarán, o null
+     * si es una NC o no trae OC.
+     *
+     * @param  array<string, mixed>  $ficha
+     */
+    private function ocConAlbaran(array $ficha): ?string
+    {
+        if (($ficha['ccf']['tipoDte'] ?? null) === '05') {
+            return null;
+        }
+
+        $oc = trim((string) ($ficha['ccf']['ordenCompra'] ?? ''));
+
+        return $oc !== '' ? $oc : null;
+    }
+
+    /**
+     * Un albarán de `ppq_albaranes` en el MISMO formato que devuelve la búsqueda por
+     * Gmail, para que la vista y la conciliación no tengan que distinguir de dónde
+     * salió. Lo único que cambia es `fuente`, que es lo que se muestra al usuario.
+     *
+     * @return array<string, mixed>
+     */
+    private function desdeAlbaranLocal(PpqAlbaran $albaran, string $oc): array
+    {
+        $sala = $albaran->sala_codigo ?: OrdenCompra::salaDesde($oc);
+
+        return [
+            'ppq_albaran_id' => $albaran->id,
+            'gmail_message_id' => $albaran->gmail_message_id,
+            'numero_albaran' => $albaran->numero_albaran,
+            'orden_compra' => $albaran->numero_orden_compra ?: $oc,
+            'sala' => $sala,
+            'nombre_sala' => Sala::nombre($sala),
+            'monto' => $albaran->monto_albaran !== null ? (float) $albaran->monto_albaran : null,
+            'fecha' => optional($albaran->fecha_albaran)->toDateString(),
+            'fuente' => self::ALBARAN_LOCAL,
+            'debug' => ['fuente' => 'ppq_albaranes', 'albaran_id' => $albaran->id, 'origen' => $albaran->origen],
+        ];
+    }
+
+    /**
+     * Enriquece el mapa auxiliar de PPQ (`ppq_salas`, NO fiscal) con el nombre comercial
+     * del receptor. Solo con las fichas que sobrevivieron al filtro: antes se escribía
+     * también la sala de los correos que apenas mencionaban el número.
+     *
+     * @param  array<int, array<string, mixed>>  $fichas
+     */
+    private function recordarSalas(array $fichas): void
+    {
+        foreach ($fichas as $ficha) {
+            PpqSala::recordar(
+                OrdenCompra::salaDesde($ficha['ccf']['ordenCompra'] ?? null),
+                $ficha['ccf']['salaNombre'] ?? null,
+                'ccf_json',
+            );
+        }
     }
 
     /**
@@ -257,12 +405,13 @@ class PpqGmailService
 
         return [
             'gmail_message_id' => $correo['id'],
-            'numero_albaran' => \App\Support\Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null),
+            'numero_albaran' => Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null),
             'orden_compra' => ($datosPdf['oc'] ?? null) ?: $oc,
-            'sala' => \App\Support\OrdenCompra::salaDesde($oc),
+            'sala' => OrdenCompra::salaDesde($oc),
             'nombre_sala' => $datosPdf['nombre_sala'] ?? null,
             'monto' => $datosPdf['monto'] ?? null,
             'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
+            'fuente' => self::ALBARAN_GMAIL,
             'debug' => $debug,
         ];
     }
@@ -291,18 +440,18 @@ class PpqGmailService
      */
     private function albaranPorFechaSalaMonto(string $oc, ?string $fecha, ?float $monto): ?array
     {
-        $fechaValida = $fecha ? rescue(fn () => \Illuminate\Support\Carbon::parse($fecha)->toDateString(), null, false) : null;
+        $fechaValida = $fecha ? rescue(fn () => Carbon::parse($fecha)->toDateString(), null, false) : null;
         if ($fechaValida === null) {
             return null;
         }
 
-        $salaOc = \App\Support\OrdenCompra::salaDesde($oc);
+        $salaOc = OrdenCompra::salaDesde($oc);
         $candidatos = collect($this->albaranesDeFecha($fechaValida))
             // Solo candidatos de la MISMA sala (por el nº de albarán o por su OC).
             ->filter(function (array $c) use ($salaOc) {
-                $salaCand = \App\Support\Albaran::salaDesdeNumero($c['numero_albaran'] ?? null) ?: ($c['sala'] ?? null);
+                $salaCand = Albaran::salaDesdeNumero($c['numero_albaran'] ?? null) ?: ($c['sala'] ?? null);
 
-                return $salaOc !== null && \App\Support\Sala::normalizar($salaCand) === $salaOc;
+                return $salaOc !== null && Sala::normalizar($salaCand) === $salaOc;
             })
             ->values();
 
@@ -323,6 +472,7 @@ class PpqGmailService
             'nombre_sala' => $elegido['nombre_sala'] ?? null,
             'monto' => $elegido['monto'] ?? null,
             'fecha' => $elegido['fecha'] ?? $fechaValida,
+            'fuente' => self::ALBARAN_GMAIL,
             'debug' => ['fallback' => 'fecha+sala+monto', 'fecha' => $fechaValida, 'sala' => $salaOc, 'candidatos' => $candidatos->count()],
         ];
     }
@@ -382,9 +532,9 @@ class PpqGmailService
         }
 
         $oc = $datosPdf['oc'] ?? null;
-        $numero = \App\Support\Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null);
+        $numero = Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null);
         // Sala desde la OC si se pudo parsear; si no, del 2º segmento del número de albarán.
-        $sala = \App\Support\OrdenCompra::salaDesde($oc) ?: \App\Support\Albaran::salaDesdeNumero($numero);
+        $sala = OrdenCompra::salaDesde($oc) ?: Albaran::salaDesdeNumero($numero);
 
         return [
             'gmail_message_id' => $correo['id'],
@@ -392,7 +542,7 @@ class PpqGmailService
             'orden_compra' => $oc,
             'sala' => $sala,
             // Nombre de sala: del texto del PDF si viene; si no, del mapa auxiliar por código.
-            'nombre_sala' => ($datosPdf['nombre_sala'] ?? null) ?: \App\Support\Sala::nombre($sala),
+            'nombre_sala' => ($datosPdf['nombre_sala'] ?? null) ?: Sala::nombre($sala),
             'monto' => $datosPdf['monto'] ?? null,
             'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
             'asunto' => $correo['asunto'] ?? null,
@@ -427,7 +577,7 @@ class PpqGmailService
         $dir = trim((string) config('ppq.gmail.storage_dir', 'ppq/gmail'), '/').'/inspect';
         $safe = preg_replace('/[^A-Za-z0-9._-]+/', '_', $messageId.'-'.$filename);
         $ruta = $dir.'/'.$safe;
-        \Illuminate\Support\Facades\Storage::disk((string) config('dte.storage.disk', 'local'))->put($ruta, $data);
+        Storage::disk((string) config('dte.storage.disk', 'local'))->put($ruta, $data);
 
         return $ruta;
     }
