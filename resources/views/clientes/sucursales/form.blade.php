@@ -1,13 +1,18 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            {{ $sucursal->exists ? 'Editar' : 'Nueva' }} sucursal — {{ $cliente->nombre }}
+        {{-- El nombre FISCAL del cliente, no el comercial: es el que identifica al
+             receptor del documento y evita agregarle la sala al cliente equivocado
+             cuando dos razones sociales comparten nombre de fantasía. --}}
+        <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">
+            {{ $sucursal->exists
+                ? 'Editar sala — '.$cliente->nombre
+                : 'Nueva sala para '.$cliente->nombre }}
         </h2>
     </x-slot>
 
     <div class="py-8">
         <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
 
                 @if ($errors->any())
                     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
@@ -84,7 +89,7 @@
                         <div>
                             <x-input-label for="requiere_orden_compra" value="Requiere orden de compra" />
                             <select id="requiere_orden_compra" name="requiere_orden_compra"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                    class="mt-1 block w-full rounded-md border-gray-300 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100 shadow-sm">
                                 @php $ocActual = old('requiere_orden_compra', $sucursal->requiere_orden_compra); @endphp
                                 <option value="" @selected(is_null($ocActual))>Heredar del cliente</option>
                                 <option value="1" @selected($ocActual === true || $ocActual === '1')>Sí</option>
@@ -95,7 +100,7 @@
 
                         <div>
                             <x-input-label for="activo" value="Estado" />
-                            <select id="activo" name="activo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                            <select id="activo" name="activo" class="mt-1 block w-full rounded-md border-gray-300 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100 shadow-sm">
                                 <option value="1" @selected((string) old('activo', (int) $sucursal->activo) === '1')>Activa</option>
                                 <option value="0" @selected((string) old('activo', (int) $sucursal->activo) === '0')>Inactiva</option>
                             </select>
@@ -104,14 +109,14 @@
                         <div class="md:col-span-2">
                             <x-input-label for="observaciones" value="Observaciones" />
                             <textarea id="observaciones" name="observaciones" rows="2"
-                                      class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">{{ old('observaciones', $sucursal->observaciones) }}</textarea>
+                                      class="mt-1 block w-full rounded-md border-gray-300 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100 shadow-sm">{{ old('observaciones', $sucursal->observaciones) }}</textarea>
                             <x-input-error :messages="$errors->get('observaciones')" class="mt-1" />
                         </div>
                     </div>
 
                     <div class="flex items-center gap-3">
-                        <x-primary-button>{{ $sucursal->exists ? 'Guardar cambios' : 'Crear sucursal' }}</x-primary-button>
-                        <a href="{{ route('clientes.show', $cliente) }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
+                        <x-primary-button>{{ $sucursal->exists ? 'Guardar cambios' : 'Crear sala' }}</x-primary-button>
+                        <a href="{{ route('clientes.show', $cliente) }}" class="text-sm text-gray-500 dark:text-paper-300 hover:underline">Cancelar</a>
                     </div>
                 </form>
             </div>
