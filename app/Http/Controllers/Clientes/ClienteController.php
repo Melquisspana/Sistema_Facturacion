@@ -22,36 +22,118 @@ class ClienteController extends Controller
 {
     use AuthorizesRequests;
 
+    /**
+     * Filtros del directorio: DOS grupos independientes que se combinan entre sí, y
+     * ambos con el buscador y con el tipo de cliente.
+     *
+     * Separados y no excluyentes porque la pregunta útil es cruzada: «activos que
+     * todavía no tienen sala» es el pendiente real de trabajo, y con un solo grupo de
+     * pastillas había que elegir entre ver los activos o ver los que no tienen sala.
+     */
+    private const ESTADOS = ['activos', 'todos', 'inactivos'];
+
+    private const SALAS = ['todas', 'sin', 'con'];
+
     public function index(Request $request): View
     {
         $this->authorize('viewAny', Cliente::class);
 
         $busqueda = trim((string) $request->input('q', ''));
         $tipoCliente = $request->input('tipo_cliente');
-        $activo = $request->input('activo');
+        $estado = $this->estadoVigente($request);
+        $salas = $this->salasVigente($request);
 
         $clientes = Cliente::query()
-            ->with(['departamento', 'municipio', 'pais'])
+            // Conteos por subconsulta: el listado muestra «N salas · M activas» en cada
+            // fila y con withCount eso no cuesta una consulta por cliente. Las salas
+            // borradas (soft delete) no cuentan, que es lo que espera el operador.
+            ->withCount([
+                'sucursales as salas_total',
+                'sucursales as salas_activas' => fn ($q) => $q->where('activo', true),
+            ])
             ->when($busqueda !== '', function ($query) use ($busqueda) {
-                $query->where(function ($w) use ($busqueda) {
-                    $w->where('nombre', 'like', "%{$busqueda}%")
-                        ->orWhere('num_documento', 'like', "%{$busqueda}%")
-                        ->orWhere('nrc', 'like', "%{$busqueda}%")
-                        ->orWhere('correo', 'like', "%{$busqueda}%");
+                $like = "%{$busqueda}%";
+
+                // El cliente entra por sus propios campos O por los de alguna de sus
+                // salas. orWhereHas mantiene todo en una sola consulta: no se recorre
+                // la lista de clientes preguntando por sus salas una por una.
+                $query->where(function ($w) use ($like) {
+                    $w->where('nombre', 'like', $like)
+                        ->orWhere('codigo', 'like', $like)
+                        ->orWhere('num_documento', 'like', $like)
+                        ->orWhere('nrc', 'like', $like)
+                        ->orWhere('correo', 'like', $like)
+                        ->orWhereHas('sucursales', fn ($s) => $s->where(
+                            fn ($t) => $t->where('nombre', 'like', $like)->orWhere('codigo', 'like', $like)
+                        ));
                 });
+
+                // Contexto de la coincidencia: se precargan SOLO las salas que casan con
+                // lo buscado, para poder decir en la fila por qué apareció ese cliente.
+                // Es una única consulta extra para toda la página, y cuando la búsqueda
+                // casó por datos del cliente la relación viene vacía y no se muestra nada.
+                $query->with(['sucursales' => fn ($s) => $s
+                    ->where(fn ($t) => $t->where('nombre', 'like', $like)->orWhere('codigo', 'like', $like))
+                    ->orderBy('nombre'),
+                ]);
             })
+            // Los dos grupos son independientes: cada uno añade su condición, y la
+            // combinación «activos + sin salas» sale sola de aplicar las dos.
             ->when(TipoCliente::tryFrom((string) $tipoCliente), fn ($q) => $q->where('tipo_cliente', $tipoCliente))
-            ->when($activo === '1', fn ($q) => $q->where('activo', true))
-            ->when($activo === '0', fn ($q) => $q->where('activo', false))
+            ->when($estado === 'activos', fn ($q) => $q->where('activo', true))
+            ->when($estado === 'inactivos', fn ($q) => $q->where('activo', false))
+            ->when($salas === 'sin', fn ($q) => $q->doesntHave('sucursales'))
+            ->when($salas === 'con', fn ($q) => $q->has('sucursales'))
             ->orderBy('nombre')
             ->paginate(15)
             ->withQueryString();
 
         return view('clientes.index', [
             'clientes' => $clientes,
-            'filtros' => ['q' => $busqueda, 'tipo_cliente' => $tipoCliente, 'activo' => $activo],
+            'filtros' => [
+                'q' => $busqueda,
+                'tipo_cliente' => $tipoCliente,
+                'estado' => $estado,
+                'salas' => $salas,
+            ],
             'tiposCliente' => TipoCliente::opciones(),
         ]);
+    }
+
+    /**
+     * Estado vigente. Por defecto «activos»: el directorio es una herramienta de
+     * trabajo y lo normal es operar sobre clientes vivos; los inactivos se piden.
+     *
+     * Se sigue entendiendo el `?activo=1|0` del filtro anterior para que un enlace o un
+     * favorito guardado no cambie de significado al abrirlo.
+     */
+    private function estadoVigente(Request $request): string
+    {
+        $estado = (string) $request->input('estado', '');
+        if (in_array($estado, self::ESTADOS, true)) {
+            return $estado;
+        }
+
+        if ($request->has('activo')) {
+            return match ((string) $request->input('activo')) {
+                '1' => 'activos',
+                '0' => 'inactivos',
+                default => 'todos',   // el «Todos» del select viejo mandaba activo=''
+            };
+        }
+
+        return 'activos';
+    }
+
+    /**
+     * Filtro de salas. Por defecto «todas»: al entrar, la cantidad de salas no debe
+     * esconder a nadie; es una pregunta que se hace aparte.
+     */
+    private function salasVigente(Request $request): string
+    {
+        $salas = (string) $request->input('salas', '');
+
+        return in_array($salas, self::SALAS, true) ? $salas : 'todas';
     }
 
     public function create(): View

@@ -39,11 +39,15 @@ class ClienteSucursalController extends Controller
 
         $datos = $request->validated();
         $datos['pais_id'] = Pais::where('codigo', 'SV')->value('id'); // El Salvador
-        $cliente->sucursales()->create($datos);
+        $sucursal = $cliente->sucursales()->create($datos);
 
+        // Se vuelve a la ficha con la sala nombrada en el mensaje y señalada en la
+        // tabla: con muchas salas, un «creada correctamente» genérico obliga a
+        // buscarla a ojo para comprobar que quedó como se quería.
         return redirect()
             ->route('clientes.show', $cliente)
-            ->with('status', 'Sucursal creada correctamente.');
+            ->with('status', 'Sala «'.$sucursal->nombre.'» creada correctamente.')
+            ->with('sala_destacada', $sucursal->id);
     }
 
     public function edit(Cliente $cliente, ClienteSucursal $sucursal): View
@@ -63,7 +67,8 @@ class ClienteSucursalController extends Controller
 
         return redirect()
             ->route('clientes.show', $cliente)
-            ->with('status', 'Sucursal actualizada correctamente.');
+            ->with('status', 'Sala «'.$sucursal->nombre.'» actualizada correctamente.')
+            ->with('sala_destacada', $sucursal->id);
     }
 
     public function toggleActivo(Cliente $cliente, ClienteSucursal $sucursal): RedirectResponse
@@ -73,7 +78,7 @@ class ClienteSucursalController extends Controller
 
         $sucursal->update(['activo' => ! $sucursal->activo]);
 
-        return back()->with('status', $sucursal->activo ? 'Sucursal activada.' : 'Sucursal inactivada.');
+        return back()->with('status', $sucursal->activo ? 'Sala activada.' : 'Sala inactivada.');
     }
 
     public function destroy(Cliente $cliente, ClienteSucursal $sucursal): RedirectResponse
@@ -85,7 +90,7 @@ class ClienteSucursalController extends Controller
 
         return redirect()
             ->route('clientes.show', $cliente)
-            ->with('status', 'Sucursal eliminada.');
+            ->with('status', 'Sala eliminada.');
     }
 
     private function verificarPertenencia(Cliente $cliente, ClienteSucursal $sucursal): void
