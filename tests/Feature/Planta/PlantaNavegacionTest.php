@@ -119,7 +119,11 @@ class PlantaNavegacionTest extends TestCase
             ->assertOk();
 
         $resp->assertSee(self::MARCADOR_SELECTOR, false);
-        $resp->assertSee('Cobros');
+        // Por el ENLACE de aterrizaje y no por la palabra: «Cobros» es el nombre del
+        // ÁREA, y desde que la barra de Facturación dejó de llamar «Cobros» a su
+        // bloque de PPQ, comprobar la palabra suelta ya no distingue una cosa de la
+        // otra. Lo que esta prueba quiere saber es que el área sigue ofrecida.
+        $resp->assertSee(route('rutas.dashboard'), false);
         // Se comprueba por el ENLACE al área y no por la palabra «Producción»: en el
         // dashboard de Facturación esa palabra ya aparece como ambiente fiscal del DTE
         // («Ambiente: Producción»), que no tiene nada que ver con el área de planta.

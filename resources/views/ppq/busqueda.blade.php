@@ -1,7 +1,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Prontos Pagos — Buscar CCF / NC</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Pronto pago — Buscar CCF / NC</h2>
             <div class="flex items-center gap-3">
                 @role('administrador')
                     <a href="{{ route('ppq.gmail.debug') }}" class="text-xs text-gray-400 hover:text-gray-600">Diagnóstico Gmail</a>

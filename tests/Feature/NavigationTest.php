@@ -68,6 +68,27 @@ class NavigationTest extends TestCase
     }
 
     /**
+     * La sidebar SIN el selector de áreas: la lista de secciones del área activa.
+     * Elegir un área y navegar dentro de una son operaciones distintas, y algunos
+     * nombres viven legítimamente en las dos (el área «Cobros» y el grupo «Pronto
+     * pago» hablan de cosas distintas aunque se parezcan).
+     */
+    private function seccionesDelSidebar(string $html): string
+    {
+        $sidebar = $this->sidebarDe($html);
+        $inicio = strpos($sidebar, '<nav aria-label="Áreas de trabajo"');
+
+        if ($inicio === false) {
+            return $sidebar;
+        }
+
+        $fin = strpos($sidebar, '</nav>', $inicio);
+        $this->assertNotFalse($fin, 'El selector de áreas no está cerrado.');
+
+        return substr_replace($sidebar, '', $inicio, $fin - $inicio + 6);
+    }
+
+    /**
      * @param  array<int, string>  $rutas  nombres de ruta esperados
      * @return array<int, string>
      */
@@ -88,7 +109,7 @@ class NavigationTest extends TestCase
         foreach ([
             'Inicio',
             'Ventas y facturación',
-            'Cobros', 'Prontos Pagos',
+            'Pronto pago',
             'Contabilidad', 'Exportaciones',
             'Administración', 'Sistema',
         ] as $categoria) {
@@ -372,7 +393,7 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe($html);
         $this->assertStringContainsString('Resumen', $sidebar);
         $this->assertStringContainsString('Documentos por cobrar', $sidebar);
-        $this->assertStringContainsString('Prontos Pagos', $sidebar);
+        $this->assertStringContainsString('Pronto pago', $sidebar);
     }
 
     public function test_jefatura_ve_secciones_operativas_de_lectura_pero_no_administracion(): void
@@ -381,7 +402,7 @@ class NavigationTest extends TestCase
         // NO Administración, Configuración ni Sistema.
         $resp = $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk();
 
-        $resp->assertSee('Prontos Pagos');
+        $resp->assertSee('Pronto pago');
         $resp->assertSee('Contabilidad');
         $resp->assertSee('Exportaciones');
         $resp->assertDontSee('Administración');
@@ -542,6 +563,61 @@ class NavigationTest extends TestCase
         // La red de seguridad sin JavaScript vive en el layout, no en el sidebar.
         $this->assertStringContainsString('[data-sidebar-panel]{display:block !important;}', $html);
         $this->assertStringContainsString('<noscript>', $html);
+    }
+
+    /**
+     * El bloque de PPQ en la barra de Facturación se llama «Pronto pago» y cuelga
+     * sus dos opciones directamente, sin subtítulo intermedio.
+     *
+     * Antes el grupo se llamaba «Cobros» y dentro llevaba un subtítulo «Prontos
+     * Pagos»: el rótulo de fuera prometía todo el ciclo de cobro cuando acá sólo
+     * está el pronto pago, y el de dentro repetía la misma idea un escalón más
+     * abajo. Con dos opciones, ese escalón no agrupaba nada.
+     */
+    public function test_pronto_pago_es_un_grupo_plano_en_la_barra_de_facturacion(): void
+    {
+        // Sobre las SECCIONES, no sobre el panel entero: «Cobros» sigue —y debe
+        // seguir— apareciendo como nombre del área en el selector de arriba, que es
+        // justo la distinción que este renombrado hace visible.
+        $secciones = $this->seccionesDelSidebar(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString('Pronto pago', $secciones);
+
+        // Ni el rótulo viejo del grupo ni el subtítulo que llevaba dentro.
+        $this->assertStringNotContainsString('Cobros', $secciones);
+        $this->assertStringNotContainsString('Prontos Pagos', $secciones);
+
+        // Y las dos opciones siguen ahí, en orden.
+        $this->assertMatchesRegularExpression(
+            '/Pronto pago.*Buscar CCF \/ NC.*Historial PPQ/su',
+            $secciones,
+            'Bajo «Pronto pago» deben colgar Buscar CCF / NC e Historial PPQ, en ese orden.',
+        );
+    }
+
+    /**
+     * El ÁREA sigue llamándose «Cobros» —es otra cosa, con más contenido— pero el
+     * módulo de PPQ se llama «Pronto pago» también aquí.
+     *
+     * En la primera versión de este cambio sólo se renombró la barra de Facturación
+     * y esta prueba fijaba lo contrario: que la barra del área conservara «Prontos
+     * Pagos». Era un nombre distinto para el mismo módulo según por dónde entraras,
+     * y eso obliga al usuario a deducir que hablan de lo mismo. El singular es ahora
+     * el único rótulo visible; los nombres técnicos (permiso ppq.ver, prefijo /ppq,
+     * rutas ppq.*) no cambiaron.
+     */
+    public function test_el_area_cobros_conserva_su_nombre_y_usa_el_mismo_rotulo_del_modulo(): void
+    {
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.dashboard'))->assertOk()->getContent();
+        $sidebar = $this->sidebarDe($html);
+
+        // El área conserva su nombre.
+        $this->assertStringContainsString('Cobros', $sidebar);
+        // Y el módulo se llama igual que en la barra de Facturación.
+        $this->assertStringContainsString('Pronto pago', $sidebar);
+        $this->assertStringNotContainsString('Prontos Pagos', $sidebar);
     }
 
     // ------------------------------------------------------------------ preparación

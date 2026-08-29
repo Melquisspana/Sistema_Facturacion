@@ -1,4 +1,4 @@
-<x-configuracion-layout titulo="Gmail (Prontos Pagos)">
+<x-configuracion-layout titulo="Gmail (Pronto pago)">
     {{--
         Tres bloques bien separados: estado de la conexión, credenciales y
         parámetros de búsqueda.
