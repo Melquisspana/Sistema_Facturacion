@@ -9,13 +9,19 @@
      está apagado).
 
      Con una sola área visible NO se dibuja nada: los cuatro roles históricos y el
-     rol de producción no ven ningún elemento nuevo en la barra superior. --}}
+     rol de producción no ven ningún elemento nuevo en la barra superior.
+
+     SOLO DESDE lg, y no desde sm como antes. Por debajo de lg la navegación es el
+     panel lateral deslizante, y el cambio de área vive allí dentro
+     (<x-area-selector-panel>). Antes este elemento era `hidden sm:block` y el panel
+     no ofrecía nada: entre 0 y 640 px no había NINGUNA forma de cambiar de área.
+     Ahora cada ancho tiene exactamente un selector, y ninguno depende del otro. --}}
 @if (count($areas) > 1)
-    <div class="hidden sm:block" data-area-selector>
+    <div class="hidden lg:block" data-area-selector>
         <x-dropdown align="left" width="48">
             <x-slot name="trigger">
-                <button type="button"
-                        class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 focus:outline-none dark:border-ink-600 dark:bg-transparent dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100">
+                <button type="button" aria-label="Cambiar de área de trabajo"
+                        class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-ink-600 dark:bg-transparent dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100 dark:focus-visible:outline-indigo-400">
                     <x-sidebar-icon :name="$activa->icono()" />
                     <span>{{ $activa->label() }}</span>
                     <svg class="h-4 w-4 fill-current text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">

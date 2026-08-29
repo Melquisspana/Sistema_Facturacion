@@ -1,4 +1,6 @@
 @php
+    use App\Http\Controllers\Facturacion\DteController;
+
     // Clases literales (JIT de Tailwind no interpola variables): mismo mapeo de colores
     // que usa el panel "Salud del sistema" (ok/advertencia/critico).
     $modoDteBadge = [
@@ -18,19 +20,28 @@
     $veCompras = $usuario->can('documentos-recibidos.ver');
     $veReportes = $usuario->can('reportes.ver');
     $veContabilidad = $veCompras || $veReportes; // grupo "Contabilidad" del sidebar
-    $vePreparacion = $usuario->can('preparacion.ver'); // checklist "Preparar emisión real"
     $veClientes = $usuario->can('viewAny', App\Models\Cliente::class);
     $veProductos = $usuario->can('viewAny', App\Models\Producto::class);
     $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
 
     // Activos por item (rutas actuales, sin cambios de lógica).
-    $enPreparar = request()->routeIs('facturacion.preparar-produccion');
     $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
-    // "Documentos fiscales" cubre el listado y las pantallas de creación (CCF, NC,
-    // factura, exportación), que no tienen enlace propio en el sidebar: crear es una
-    // acción del listado y del dashboard, no una categoría. La invalidación tampoco
-    // tiene enlace lateral: sus acciones viven dentro de la ficha de cada documento.
-    $enDocumentosFiscales = request()->routeIs('facturacion.*') && ! $enPreparar && ! $enReporteContadora;
+    // "Documentos fiscales" cubre el listado y TODAS las pantallas del documento —crear
+    // CCF/NC/factura/exportación, la ficha, la edición, el PDF, el JSON, la
+    // invalidación—, que no tienen enlace propio en el sidebar: crear e invalidar son
+    // acciones del listado y de la ficha, no categorías.
+    //
+    // Se resuelve por el CONTROLADOR de la ruta actual y NO por «facturacion.* menos una
+    // lista de excepciones». El prefijo `facturacion.` lo comparten pantallas que no son
+    // documentos (el reporte contable, el checklist de preparación), así que con la regla
+    // por descarte cada ruta nueva bajo ese prefijo encendía este item hasta que alguien
+    // se acordara de excluirla. La pregunta positiva —«¿esta pantalla la sirve
+    // DteController?»— no tiene lista que mantener: las 51 rutas de documentos viven en
+    // ese controlador y solo en él.
+    //
+    // getControllerClass() devuelve el NOMBRE de la clase leyéndolo del array de acción;
+    // no instancia el controlador, así que no dispara constructores ni consultas.
+    $enDocumentosFiscales = request()->route()?->getControllerClass() === DteController::class;
 
     $enExpClientes = request()->routeIs('exportaciones.clientes.*');
     $enExpProductos = request()->routeIs('exportaciones.productos.*');
@@ -41,27 +52,37 @@
     // Grupos COLAPSABLES: cuál contiene la página actual. Se calcula acá —y no dentro
     // de cada grupo— para que el grupo de la ruta activa nazca abierto pase lo que pase
     // en localStorage. Es presentación pura: no autoriza nada.
-    $grupoVentasActivo = request()->routeIs('clientes.*', 'productos.*') || $enDocumentosFiscales || $enPreparar;
+    $grupoVentasActivo = $enDocumentosFiscales || request()->routeIs('clientes.*', 'productos.*');
     $grupoCobrosActivo = request()->routeIs('ppq.*');
     $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
     $grupoExportacionesActivo = request()->routeIs('exportaciones.*');
     $grupoAdministracionActivo = request()->routeIs('usuarios.*', 'auditoria.*', 'importaciones.*');
-    $grupoConfiguracionActivo = request()->routeIs('configuracion.*');
+    // Configuración ya no es un grupo colapsable sino una entrada directa, así que
+    // esto no marca «qué grupo contiene la ruta» sino simplemente si estamos dentro
+    // del Centro de Configuración. Cubre sus catorce pantallas de una vez.
+    $enConfiguracion = request()->routeIs('configuracion.*');
 @endphp
 
 {{-- Navegación: topbar fija (logo + usuario; los badges de modo DTE aparecen SOLO
      en pantallas de Facturación) y sidebar izquierda agrupada por secciones
      (off-canvas en móvil). Solo UX/layout: mismas rutas, mismos roles/permisos,
      sin lógica de negocio nueva. --}}
-<div x-data="{ sidebarAbierta: false }">
+<div x-data="{ sidebarAbierta: false }"
+     @keydown.escape.window="if (sidebarAbierta) { sidebarAbierta = false; $refs.hamburguesa?.focus() }">
 
     {{-- ===== Topbar ===== --}}
     <nav class="fixed inset-x-0 top-0 z-40 h-16 border-b border-gray-200 bg-white dark:border-ink-600 dark:bg-ink-900">
         <div class="flex h-16 items-center gap-3 px-4 sm:px-6">
-            {{-- Hamburguesa (solo móvil) --}}
-            <button @click="sidebarAbierta = ! sidebarAbierta"
-                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100 lg:hidden">
-                <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+            {{-- Hamburguesa (solo móvil). Lleva nombre accesible fijo —el icono cambia
+                 de dibujo, no de significado— y declara qué panel abre y en qué estado
+                 está, para que un lector de pantalla anuncie el cambio sin verlo. --}}
+            <button type="button" x-ref="hamburguesa"
+                    @click="sidebarAbierta = ! sidebarAbierta"
+                    aria-label="Menú de navegación"
+                    aria-controls="sidebar-principal"
+                    :aria-expanded="sidebarAbierta ? 'true' : 'false'"
+                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100 dark:focus-visible:outline-indigo-400 lg:hidden">
+                <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                     <path x-show="! sidebarAbierta" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                     <path x-show="sidebarAbierta" x-cloak stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -148,8 +169,20 @@
          class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden"></div>
 
     {{-- ===== Sidebar ===== --}}
-    <aside class="fixed bottom-0 left-0 top-16 z-30 w-64 -translate-x-full transform overflow-y-auto border-r border-gray-200 bg-white transition-transform duration-150 dark:border-ink-600 dark:bg-ink-900 lg:translate-x-0"
+    <aside id="sidebar-principal" aria-label="Navegación principal"
+           class="fixed bottom-0 left-0 top-16 z-30 w-64 -translate-x-full transform overflow-x-hidden overflow-y-auto border-r border-gray-200 bg-white transition-transform duration-150 dark:border-ink-600 dark:bg-ink-900 lg:translate-x-0"
            :class="sidebarAbierta ? 'translate-x-0' : '-translate-x-full'">
+        {{-- Cambio de área DENTRO del panel. Existe porque el selector de la barra
+             superior solo se dibuja desde lg, que es justo donde este panel deja de
+             ser la navegación: sin esto, por debajo de lg no había ninguna forma de
+             llegar a Producción, Cobros o Asistencia salvo escribir la URL.
+
+             Dibuja EXACTAMENTE las mismas áreas que el selector de escritorio
+             ($areasVisibles = módulo encendido Y permiso de entrada) y, como aquél,
+             no aparece con una sola área. Nunca autoriza: entrar a un área la decide
+             su middleware. --}}
+        <x-area-selector-panel :areas="$areasVisibles" :activa="$areaActiva" />
+
         {{-- Sidebar del ÁREA ACTIVA. El área se deriva de la URL
              (AreaSistema::activaDesdeRequest), nunca de la sesión, y esto es solo
              presentación: quien autoriza es el middleware de cada grupo de rutas. --}}

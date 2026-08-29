@@ -3,6 +3,29 @@
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Facturación</h2>
 
+            {{-- Invalidaciones: acción ocasional del propio listado, no una fila del
+                 sidebar. Antes la pantalla existía sin ninguna puerta —el único
+                 route('facturacion.invalidaciones') del proyecto estaba dentro de su
+                 propio formulario de filtros—, así que solo se llegaba escribiendo la
+                 URL.
+
+                 Va detrás de `dte.invalidar` (hoy, solo administrador) y no de
+                 `dte.ver`: aunque el listado se puede mirar con permiso de lectura,
+                 todo lo que se hace desde ahí exige invalidar. Ofrecer la puerta a
+                 quien no puede cruzarla es la clase de enlace que enseña a
+                 desconfiar del resto del menú. Ocultar no autoriza: la pantalla
+                 sigue detrás de DtePolicy. --}}
+            @can('dte.invalidar')
+                <a href="{{ route('facturacion.invalidaciones') }}"
+                   class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M10 14 21 3m-3 8v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7" />
+                    </svg>
+                    Invalidaciones
+                </a>
+            @endcan
+
             {{-- Acción secundaria, no una sección: llenar el formato de notas de crédito
                  de un cliente es algo que se hace cada tantos días, así que vive acá —al
                  lado de los documentos que lo alimentan— y no como una fila permanente en

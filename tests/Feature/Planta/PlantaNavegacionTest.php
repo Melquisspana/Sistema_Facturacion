@@ -171,25 +171,83 @@ class PlantaNavegacionTest extends TestCase
     }
 
     /**
-     * D5 — la sidebar de Facturación no contiene el enlace al área de Planta.
+     * D5 — la sidebar de Facturación no lista pantallas del área de Planta.
      *
-     * La aserción se acota al elemento <aside> a propósito: para el administrador
-     * el enlace SÍ existe en la página, pero dentro del selector superior, que es
-     * su único lugar legítimo. Mirar la página entera confundiría ambas cosas.
+     * QUÉ CAMBIÓ Y POR QUÉ. Antes esta prueba miraba el <aside> entero y exigía que
+     * no apareciera ni una vez el enlace al área de Producción, con el argumento de
+     * que el selector superior era «su único lugar legítimo». Ese selector se
+     * dibujaba sólo desde sm, así que por debajo de 640 px no había NINGUNA forma de
+     * cambiar de área: el administrador con un teléfono quedaba encerrado en
+     * Facturación salvo que escribiera la URL. El cambio de área pasó a vivir
+     * también DENTRO del panel, que es la navegación en esos anchos.
+     *
+     * Lo que la prueba protege sigue intacto, y es lo importante: la LISTA DE
+     * SECCIONES de Facturación no puede ofrecer pantallas de Planta. Un enlace al
+     * aterrizaje de otra área dentro de un selector de áreas rotulado no es
+     * contaminación entre áreas; un «Existencias» colado entre «Clientes» y
+     * «Productos» sí lo sería. Por eso se acota al panel MENOS el selector.
+     *
+     * El selector, además, sólo ofrece áreas que el usuario ya puede ver
+     * (AreaSistema::visiblesPara: módulo encendido Y permiso de entrada), así que no
+     * abre ninguna puerta nueva — lo comprueba
+     * test_el_selector_de_areas_no_ofrece_pantallas_de_planta.
      */
-    public function test_d5_la_sidebar_de_facturacion_no_contiene_el_enlace_a_planta(): void
+    public function test_d5_la_sidebar_de_facturacion_no_lista_pantallas_de_planta(): void
     {
         $this->encenderModulo();
 
         foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad'] as $rol) {
-            $sidebar = $this->sidebarDe(
+            $secciones = $this->seccionesDelSidebar(
                 $this->actingAs($this->usuario($rol))->get(route('facturacion.index'))->assertOk()->getContent()
             );
 
-            $this->assertStringNotContainsString(route('planta.dashboard'), $sidebar, "La sidebar del rol {$rol} no debe enlazar al área de Producción.");
-            $this->assertStringNotContainsString('Producción', $sidebar);
+            $this->assertStringNotContainsString(route('planta.dashboard'), $secciones, "La sidebar del rol {$rol} no debe enlazar al área de Producción.");
+            $this->assertStringNotContainsString('Producción', $secciones);
             // Y sigue mostrando lo suyo.
-            $this->assertStringContainsString(route('facturacion.index'), $sidebar);
+            $this->assertStringContainsString(route('facturacion.index'), $secciones);
+        }
+    }
+
+    /**
+     * El selector de áreas del panel ofrece ATERRIZAJES de área, nunca pantallas
+     * internas de otra área. Es la contraparte de D5: sin ella, «acotar la prueba al
+     * panel menos el selector» sería un agujero por el que podría colarse cualquier
+     * cosa con sólo meterla dentro del selector.
+     */
+    public function test_el_selector_de_areas_no_ofrece_pantallas_de_planta(): void
+    {
+        $this->encenderModulo();
+
+        $selector = $this->selectorDeAreasDelSidebar(
+            $this->actingAs($this->usuario('administrador'))->get(route('facturacion.index'))->assertOk()->getContent()
+        );
+
+        $this->assertNotSame('', $selector, 'El administrador ve más de un área: el selector debe dibujarse.');
+        $this->assertStringContainsString(route('planta.dashboard'), $selector);
+
+        foreach ([
+            'planta.existencias.index', 'planta.recepciones.index', 'planta.traslados.index',
+            'planta.ajustes.index', 'planta.movimientos.index', 'planta.insumos.index',
+        ] as $ruta) {
+            $this->assertStringNotContainsString(
+                route($ruta),
+                $selector,
+                "El selector de áreas no debe ofrecer la pantalla {$ruta}.",
+            );
+        }
+    }
+
+    /** Un rol de una sola área no ve selector: no hay nada entre lo que elegir. */
+    public function test_un_rol_de_una_sola_area_no_ve_el_selector(): void
+    {
+        $this->encenderModulo();
+
+        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+            $selector = $this->selectorDeAreasDelSidebar(
+                $this->actingAs($this->usuario($rol))->get(route('facturacion.index'))->assertOk()->getContent()
+            );
+
+            $this->assertSame('', $selector, "El rol {$rol} sólo ve un área: no debe dibujarse el selector.");
         }
     }
 
@@ -203,6 +261,36 @@ class PlantaNavegacionTest extends TestCase
         $this->assertNotFalse($fin, 'La sidebar no está cerrada.');
 
         return substr($html, $inicio, $fin - $inicio);
+    }
+
+    /** El selector de áreas del panel, o cadena vacía si no se dibuja. */
+    private function selectorDeAreasDelSidebar(string $html): string
+    {
+        $sidebar = $this->sidebarDe($html);
+        $inicio = strpos($sidebar, '<nav aria-label="Áreas de trabajo"');
+
+        if ($inicio === false) {
+            return '';
+        }
+
+        $fin = strpos($sidebar, '</nav>', $inicio);
+        $this->assertNotFalse($fin, 'El selector de áreas no está cerrado.');
+
+        return substr($sidebar, $inicio, $fin - $inicio + 6);
+    }
+
+    /**
+     * La sidebar SIN el selector de áreas: la lista de secciones del área activa,
+     * que es de lo que habla D5. Elegir un área es una operación distinta de
+     * navegar dentro de una, y mezclarlas en la misma aserción hacía imposible
+     * ofrecer el cambio de área en el panel (única forma de cambiarla en móvil).
+     */
+    private function seccionesDelSidebar(string $html): string
+    {
+        $sidebar = $this->sidebarDe($html);
+        $selector = $this->selectorDeAreasDelSidebar($html);
+
+        return $selector === '' ? $sidebar : str_replace($selector, '', $sidebar);
     }
 
     /** El sidebar de Planta marca su enlace activo igual que el resto del sistema. */
