@@ -309,6 +309,7 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
             app(\App\Services\Dte\SnapshotProductoService::class),
             app(\App\Services\Dte\DteStateMachine::class),
             app(\App\Services\Dte\PrecioProductoResolver::class),
+            app(\App\Services\Dte\PerfilDocumentoResolver::class),
         ) extends DteBorradorService {
             public int $llamadas = 0;
 

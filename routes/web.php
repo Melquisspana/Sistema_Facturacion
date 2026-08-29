@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Clientes\ClienteController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Clientes\ClientePerfilDocumentoController;
 use App\Http\Controllers\Clientes\ClienteSucursalController;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Productos\ProductoController;
@@ -62,6 +63,16 @@ Route::middleware('auth')->group(function () {
     Route::put('clientes/{cliente}/sucursales/{sucursal}', [ClienteSucursalController::class, 'update'])->name('clientes.sucursales.update');
     Route::patch('clientes/{cliente}/sucursales/{sucursal}/toggle-activo', [ClienteSucursalController::class, 'toggleActivo'])->name('clientes.sucursales.toggle-activo');
     Route::delete('clientes/{cliente}/sucursales/{sucursal}', [ClienteSucursalController::class, 'destroy'])->name('clientes.sucursales.destroy');
+
+    // Perfil documental del cliente (albarán obligatorio en la NC, mapeo de modalidades a
+    // los códigos del cliente y formato de exportación). Detrás de la MISMA autorización
+    // que editar el cliente —ClientePolicy::update, es decir clientes.gestionar—, porque
+    // decide el descuento de las notas de crédito igual que `descuento_global_default`.
+    // Antes del resource para que la URL literal no la capture `clientes/{cliente}`.
+    Route::get('clientes/{cliente}/perfil-documental', [ClientePerfilDocumentoController::class, 'edit'])
+        ->name('clientes.perfil-documento.edit');
+    Route::put('clientes/{cliente}/perfil-documental', [ClientePerfilDocumentoController::class, 'update'])
+        ->name('clientes.perfil-documento.update');
 
     Route::resource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);
 
@@ -202,6 +213,10 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/conceptos', [DteController::class, 'agregarConceptoNc'])->name('conceptos.store');
         // NC por avería: agregar producto libre del catálogo (no limitado al CCF original).
         Route::post('{dte}/averia', [DteController::class, 'agregarProductoAveria'])->name('averia.store');
+        // Albarán de crédito que originó la NC (AC02/AC04 y equivalentes de otros clientes).
+        // Solo captura datos del documento del cliente: no toca ningún valor fiscal.
+        Route::post('{dte}/albaran', [DteController::class, 'guardarAlbaranNc'])->name('albaran.store');
+        Route::delete('{dte}/albaran', [DteController::class, 'quitarAlbaranNc'])->name('albaran.destroy');
         // {linea} es del documento ORIGINAL (otro dte), por eso no se escopa al {dte}.
         Route::post('{dte}/acreditar/{linea}', [DteController::class, 'acreditarLinea'])
             ->name('acreditar')
@@ -301,6 +316,16 @@ Route::middleware('auth')->group(function () {
             // Conciliación del lote contra el TXT de pagos de Calleja.
             Route::post('lotes/{lote}/conciliar', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'conciliar'])->name('lotes.conciliar');
         });
+
+        // Envío diario de notas de crédito al cliente (una fila por NC). Consultar y
+        // descargar basta con ppq.ver; crear el lote exige ppq.gestionar, porque marca
+        // documentos como enviados.
+        Route::get('nc-exportaciones', [\App\Http\Controllers\Ppq\NcExportacionController::class, 'index'])
+            ->name('nc-exportaciones.index');
+        Route::get('nc-exportaciones/{lote}/descargar', [\App\Http\Controllers\Ppq\NcExportacionController::class, 'descargar'])
+            ->name('nc-exportaciones.descargar');
+        Route::post('nc-exportaciones', [\App\Http\Controllers\Ppq\NcExportacionController::class, 'store'])
+            ->middleware('permission:ppq.gestionar')->name('nc-exportaciones.store');
 
         // Conexión OAuth de Gmail (solo administrador). Nunca muestra tokens.
         Route::middleware('permission:ppq.gmail')->group(function () {

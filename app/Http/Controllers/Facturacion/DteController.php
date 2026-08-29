@@ -10,6 +10,7 @@ use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\TipoAnulacionMh;
+use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
 use App\Exceptions\Dte\DteFirmaException;
@@ -37,6 +38,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteAnulacionService;
@@ -1667,10 +1669,33 @@ class DteController extends Controller
         return $emails;
     }
 
-    public function generar(Dte $dte, DteGeneracionService $generacion): RedirectResponse
-    {
+    public function generar(
+        Request $request,
+        Dte $dte,
+        DteGeneracionService $generacion,
+        AlbaranNotaCreditoService $albaranes,
+    ): RedirectResponse {
         // 'update' exige borrador + gestor (administrador/facturación).
         $this->authorize('update', $dte);
+
+        // El albarán obligatorio SÍ frena: es un dato que el cliente declaró
+        // imprescindible, no una diferencia a valorar.
+        if ($albaranes->faltaAlbaranObligatorio($dte)) {
+            return back()->withErrors(['generar' => 'Registre el albarán de esta nota de crédito antes de generarla: '
+                .'el cliente lo exige para poder incluirla en su formato de notas de crédito.']);
+        }
+
+        // Retención y diferencia contra el albarán NO bloquean: se muestran y se confirman.
+        // Bloquearlas sería inventar una regla del cliente que nadie nos dio, y ajustar los
+        // números en silencio para que cuadren sería peor todavía.
+        $avisos = $albaranes->avisos($dte);
+        if ($avisos !== [] && ! $request->boolean('confirmar_avisos_nc')) {
+            return back()->withErrors([
+                'generar' => 'Revise antes de generar: '
+                    .implode(' ', array_column($avisos, 'texto'))
+                    .' Si es correcto, marque la confirmación y genere de nuevo.',
+            ]);
+        }
 
         try {
             $generacion->generar($dte, request()->user());
@@ -1873,9 +1898,57 @@ class DteController extends Controller
 
         $tiposImpuesto = \App\Enums\TipoImpuesto::opciones();
 
+        // Albarán del cliente: el panel solo aparece si el cliente declaró un perfil que
+        // mapea ESTA modalidad. Sin perfil, la pantalla es exactamente la de siempre.
+        $albaranes = app(AlbaranNotaCreditoService::class);
+        $reglaAlbaran = app(\App\Services\Dte\PerfilDocumentoResolver::class)->reglaNotaCredito($nc);
+        $albaran = $nc->albaran;
+        $comparacionAlbaran = $albaranes->comparacion($nc);
+        $avisosAlbaran = $albaranes->avisos($nc);
+
         return view('facturacion.edit-nc', compact(
-            'nc', 'original', 'lineasOriginales', 'porProductos', 'porAveria', 'productosDisponibles', 'tiposImpuesto'
+            'nc', 'original', 'lineasOriginales', 'porProductos', 'porAveria', 'productosDisponibles', 'tiposImpuesto',
+            'reglaAlbaran', 'albaran', 'comparacionAlbaran', 'avisosAlbaran'
         ));
+    }
+
+    /**
+     * Registra el ALBARÁN DE CRÉDITO que originó esta nota (número, tipo, sala, fecha y
+     * total). Es el dato que el sistema nunca había guardado y sin el cual no se puede
+     * llenar el archivo que el cliente exige.
+     *
+     * No toca ningún valor fiscal: la nota sigue valiendo lo que calculó el motor. Si el
+     * total del albarán difiere, la diferencia se muestra al generar.
+     */
+    public function guardarAlbaranNc(Request $request, Dte $dte, AlbaranNotaCreditoService $albaranes): RedirectResponse
+    {
+        $this->authorize('update', $dte);
+
+        try {
+            $albaranes->registrar($dte, $request->only(['numero', 'fecha', 'total', 'tipo_codigo', 'sala_codigo']));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withInput()->withErrors($e->errors());
+        } catch (DocumentoInmutableException $e) {
+            return back()->withErrors(['numero' => $e->getMessage()]);
+        }
+
+        return back()->with('status', 'Albarán registrado en la nota de crédito.');
+    }
+
+    /** Quita el albarán del borrador y lo libera para otra nota de crédito. */
+    public function quitarAlbaranNc(Dte $dte, AlbaranNotaCreditoService $albaranes): RedirectResponse
+    {
+        $this->authorize('update', $dte);
+
+        try {
+            $albaranes->quitar($dte);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors());
+        } catch (DocumentoInmutableException $e) {
+            return back()->withErrors(['numero' => $e->getMessage()]);
+        }
+
+        return back()->with('status', 'Albarán quitado de la nota de crédito.');
     }
 
     /**

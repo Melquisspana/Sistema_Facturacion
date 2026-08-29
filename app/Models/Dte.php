@@ -321,6 +321,26 @@ class Dte extends Model
             ->whereNotNull('fecha_procesamiento_mh');
     }
 
+    /**
+     * Albarán de crédito que originó esta nota de crédito (AC02 avería / AC04 devolución
+     * y equivalentes de otros clientes). Solo lo tienen las NC de clientes con perfil
+     * documental; en cualquier otro documento es null.
+     */
+    public function albaran(): HasOne
+    {
+        return $this->hasOne(DteAlbaran::class, 'dte_id');
+    }
+
+    /**
+     * Renglón del lote de exportación en el que esta nota de crédito ya viajó al cliente.
+     * Existe como relación —y no como bandera en `dtes`— para que «ya exportada» tenga una
+     * sola fuente: la fila del lote. Null mientras la nota siga pendiente de enviar.
+     */
+    public function exportacionItem(): HasOne
+    {
+        return $this->hasOne(NcExportacionItem::class, 'dte_id');
+    }
+
     /** Notas de crédito/débito que referencian a este documento. */
     public function notas(): HasMany
     {
