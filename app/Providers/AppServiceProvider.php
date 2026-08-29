@@ -45,6 +45,14 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Ajustes::class);
         $this->app->singleton(ConfiguracionCorreoRuntime::class);
 
+        // Perfil documental del cliente. Singleton por la misma razón que el resolver de
+        // ajustes: memoriza qué clientes tienen perfil, y recalcular una nota de crédito
+        // lo consulta varias veces mientras cuadra los totales. Compartir la instancia
+        // dentro de la petición convierte esas consultas en una sola —y hace que
+        // PerfilDocumentoResolver::olvidar() sirva de verdad para quien cambie un perfil
+        // en caliente, en vez de limpiar la memoria de una instancia que nadie usa.
+        $this->app->singleton(\App\Services\Dte\PerfilDocumentoResolver::class);
+
         // Fuente de correo de "Documentos recibidos" (INDEPENDIENTE de Gmail/PPQ):
         // driver 'imap' → lector IMAP de solo lectura (Yahoo); cualquier otro valor,
         // o falta de soporte/credenciales, cae al Null (revisión deshabilitada).

@@ -171,6 +171,9 @@ class ClienteController extends Controller
 
         $cliente->load(['actividadEconomica', 'pais', 'departamento', 'municipio']);
         $cliente->load(['sucursales' => fn ($q) => $q->orderBy('nombre')]);
+        // Perfil documental: casi ningún cliente tiene, y la ficha lo dice explícitamente
+        // en vez de callarlo, para que se vea que existe la opción.
+        $cliente->load(['perfilDocumento.tiposNc']);
 
         $actividades = $cliente->activities()->with('causer')->latest()->limit(30)->get();
 

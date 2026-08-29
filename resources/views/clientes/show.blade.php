@@ -275,6 +275,74 @@
                 </dl>
             </div>
 
+            {{-- Perfil documental: exigencias propias de este cliente sobre sus notas de
+                 crédito. Se muestra SIEMPRE, también cuando no hay perfil, para que la
+                 opción sea descubrible en vez de vivir solo en un comando de consola. --}}
+            @php $perfilDoc = $cliente->perfilDocumento; @endphp
+            <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
+                <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                    <div>
+                        <h3 class="font-medium text-gray-700 dark:text-paper-100">Perfil documental</h3>
+                        <p class="text-sm text-gray-500 dark:text-paper-300">
+                            Códigos de albarán del cliente, origen del descuento por modalidad y formato de exportación.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        @if ($perfilDoc)
+                            <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $perfilDoc->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">
+                                {{ $perfilDoc->activo ? 'Activo' : 'Inactivo' }}
+                            </span>
+                        @endif
+                        @can('update', $cliente)
+                            <a href="{{ route('clientes.perfil-documento.edit', $cliente) }}" class="text-indigo-600 hover:underline text-sm">
+                                {{ $perfilDoc ? 'Configurar' : 'Configurar perfil' }}
+                            </a>
+                        @endcan
+                    </div>
+                </div>
+
+                @if (! $perfilDoc)
+                    <p class="text-sm text-gray-500 dark:text-paper-300">
+                        Sin perfil. Este cliente calcula sus notas de crédito con el criterio general del sistema.
+                    </p>
+                @else
+                    <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-3 text-sm mb-4">
+                        <div><dt class="text-gray-500 dark:text-paper-300">Código de proveedor</dt><dd class="font-mono">{{ $perfilDoc->codigo_proveedor ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Formato de exportación</dt><dd class="font-mono">{{ $perfilDoc->formato_export ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Albarán obligatorio</dt><dd>{{ $perfilDoc->exige_albaran_en_nc ? 'Sí' : 'No' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Tolerancia</dt><dd class="font-mono">{{ number_format((float) $perfilDoc->tolerancia_albaran, 2) }}</dd></div>
+                    </dl>
+
+                    @if ($perfilDoc->tiposNc->isEmpty())
+                        <p class="text-sm text-gray-500 dark:text-paper-300">Ninguna modalidad mapeada: todas siguen el criterio histórico.</p>
+                    @else
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm">
+                                <caption class="sr-only">Modalidades de nota de crédito configuradas para este cliente</caption>
+                                <thead class="bg-gray-50 text-gray-600 dark:text-paper-300">
+                                    <tr>
+                                        <th scope="col" class="p-2 text-left font-medium">Modalidad</th>
+                                        <th scope="col" class="p-2 text-left font-medium">Código</th>
+                                        <th scope="col" class="p-2 text-left font-medium">Descuento</th>
+                                        <th scope="col" class="p-2 text-right font-medium">Tasa</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
+                                    @foreach ($perfilDoc->tiposNc as $regla)
+                                        <tr>
+                                            <td class="p-2">{{ $regla->tipo_nota_credito?->label() ?? '—' }}</td>
+                                            <td class="p-2 font-mono">{{ $regla->codigo_externo }}</td>
+                                            <td class="p-2">{{ $regla->descuento_origen->label() }}</td>
+                                            <td class="p-2 text-right font-mono">{{ $regla->descuento_tasa !== null ? number_format((float) $regla->descuento_tasa, 2).'%' : '—' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                @endif
+            </div>
+
             <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                 <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Historial de auditoría</h3>
                 @forelse ($actividades as $actividad)

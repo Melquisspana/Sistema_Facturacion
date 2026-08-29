@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -117,6 +118,16 @@ class Cliente extends Model
     public function sucursales(): HasMany
     {
         return $this->hasMany(ClienteSucursal::class);
+    }
+
+    /**
+     * Perfil de exigencias documentales del cliente (albarán obligatorio en la NC,
+     * mapeo de modalidades a códigos propios, formato de exportación). Casi todos los
+     * clientes NO tienen perfil: sin fila, el cliente se comporta como siempre.
+     */
+    public function perfilDocumento(): HasOne
+    {
+        return $this->hasOne(ClientePerfilDocumento::class);
     }
 
     /**

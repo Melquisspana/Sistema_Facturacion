@@ -23,17 +23,131 @@
                 </div>
             @endif
 
-            {{-- Acción: generar --}}
+            {{-- Acción: generar. Si hay avisos (retención o diferencia contra el albarán)
+                 se exige marcar la confirmación; nunca se ajusta un valor fiscal en silencio. --}}
             @can('update', $nc)
-                <div class="bg-white shadow sm:rounded-lg p-4 flex items-center justify-between">
-                    <p class="text-sm text-gray-600">Cuando termines de acreditar líneas, generá la nota de crédito (consume el correlativo y deja de ser editable).</p>
-                    <form method="POST" action="{{ route('facturacion.generar', $nc) }}"
-                          onsubmit="return confirm('¿Generar la nota de crédito? Ya no podrá editarse.');">
-                        @csrf
-                        <button class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700">Generar</button>
-                    </form>
+                <div class="bg-white shadow sm:rounded-lg p-4">
+                    @if (! empty($avisosAlbaran))
+                        <div class="mb-4 rounded-md bg-amber-50 border border-amber-300 p-3">
+                            <p class="text-sm font-semibold text-amber-800">Revisá antes de generar</p>
+                            <ul class="mt-1 list-disc list-inside text-sm text-amber-800 space-y-1">
+                                @foreach ($avisosAlbaran as $aviso)
+                                    <li>{{ $aviso['texto'] }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+                    <div class="flex items-center justify-between gap-4">
+                        <p class="text-sm text-gray-600">Cuando termines de acreditar líneas, generá la nota de crédito (consume el correlativo y deja de ser editable).</p>
+                        <form method="POST" action="{{ route('facturacion.generar', $nc) }}"
+                              onsubmit="return confirm('¿Generar la nota de crédito? Ya no podrá editarse.');"
+                              class="flex items-center gap-3 shrink-0">
+                            @csrf
+                            @if (! empty($avisosAlbaran))
+                                <label class="flex items-center gap-2 text-sm text-amber-800">
+                                    <input type="checkbox" name="confirmar_avisos_nc" value="1" class="rounded border-amber-400 text-amber-600">
+                                    Reviso y confirmo
+                                </label>
+                            @endif
+                            <button class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700">Generar</button>
+                        </form>
+                    </div>
                 </div>
             @endcan
+
+            {{-- Albarán de crédito del cliente. Solo se muestra si el cliente tiene un perfil
+                 que mapea esta modalidad; en cualquier otro caso la pantalla no cambia. --}}
+            @if ($reglaAlbaran)
+                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
+                    <h3 class="font-semibold text-gray-700 dark:text-paper-100">Albarán del cliente</h3>
+                    <p class="text-sm text-gray-500 dark:text-paper-300 mb-4">
+                        Esta modalidad corresponde a un albarán
+                        <span class="font-mono font-semibold">{{ $reglaAlbaran->codigo_externo }}</span>@if ($reglaAlbaran->etiqueta_externa) ({{ $reglaAlbaran->etiqueta_externa }})@endif.
+                        Los datos van al archivo del día; <strong>no cambian los valores fiscales</strong> de la nota.
+                    </p>
+
+                    @if ($albaran)
+                        <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-sm mb-4">
+                            <div class="col-span-2 sm:col-span-1"><dt class="text-gray-500 dark:text-paper-300">Número</dt><dd class="font-mono break-all">{{ $albaran->numero_canonico }}</dd></div>
+                            <div><dt class="text-gray-500 dark:text-paper-300">Tipo</dt><dd class="font-mono">{{ $albaran->tipo_codigo }}</dd></div>
+                            <div><dt class="text-gray-500 dark:text-paper-300">Sala</dt><dd class="font-mono">{{ $albaran->sala_codigo ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500 dark:text-paper-300">Fecha</dt><dd>{{ $albaran->fecha?->format('d/m/Y') ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500 dark:text-paper-300">Total albarán</dt><dd class="font-mono">{{ number_format((float) $albaran->total, 2) }}</dd></div>
+                        </dl>
+
+                        @if ($comparacionAlbaran)
+                            {{-- role=status y no alert: es información de contraste permanente,
+                                 no una alarma que interrumpa. El aviso que sí exige acción vive
+                                 arriba, junto al botón de generar. --}}
+                            <div role="status"
+                                 class="rounded-md border p-3 text-sm mb-4 {{ $comparacionAlbaran['cuadra'] ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-300 text-amber-800' }}">
+                                Total de la nota <span class="font-mono font-semibold">{{ $comparacionAlbaran['total_nc'] }}</span>
+                                · total del albarán <span class="font-mono font-semibold">{{ $comparacionAlbaran['total_albaran'] }}</span>
+                                · diferencia <span class="font-mono font-semibold">{{ $comparacionAlbaran['diferencia'] }}</span>
+                                @if ($comparacionAlbaran['cuadra']) — coinciden. @else — revisá cuál de los dos es el correcto antes de generar. @endif
+                            </div>
+                        @endif
+                    @else
+                        <p class="text-sm text-amber-700 mb-4">Todavía no se registró el albarán de esta nota de crédito.</p>
+                    @endif
+
+                    @can('update', $nc)
+                        <form method="POST" action="{{ route('facturacion.albaran.store', $nc) }}">
+                            @csrf
+                            <fieldset class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+                                <legend class="sr-only">Datos del albarán de crédito</legend>
+
+                                <div class="sm:col-span-2">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-paper-100" for="albaran_numero">Número de albarán</label>
+                                    <input id="albaran_numero" name="numero" type="text" required maxlength="60"
+                                           value="{{ old('numero', $albaran?->numero_canonico) }}"
+                                           placeholder="{{ $reglaAlbaran->codigo_externo }}/0033/00/3209"
+                                           @error('numero') aria-invalid="true" aria-describedby="albaran_numero_error" @else aria-describedby="albaran_numero_ayuda" @enderror
+                                           class="mt-1 w-full rounded-md border-gray-300 text-sm font-mono">
+                                    <p id="albaran_numero_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">
+                                        Acepta el número completo, el nombre del PDF que manda el cliente, o solo el correlativo.
+                                    </p>
+                                    @error('numero')<p id="albaran_numero_error" class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-paper-100" for="albaran_fecha">Fecha del albarán</label>
+                                    <input id="albaran_fecha" name="fecha" type="date" required
+                                           value="{{ old('fecha', $albaran?->fecha?->format('Y-m-d')) }}"
+                                           @error('fecha') aria-invalid="true" aria-describedby="albaran_fecha_error" @enderror
+                                           class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                                    @error('fecha')<p id="albaran_fecha_error" class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-paper-100" for="albaran_total">Total del albarán</label>
+                                    <input id="albaran_total" name="total" type="number" step="0.01" min="0" required inputmode="decimal"
+                                           value="{{ old('total', $albaran?->total) }}"
+                                           @error('total') aria-invalid="true" aria-describedby="albaran_total_error" @else aria-describedby="albaran_total_ayuda" @enderror
+                                           class="mt-1 w-full rounded-md border-gray-300 text-sm font-mono">
+                                    <p id="albaran_total_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">En positivo, aunque el PDF lo imprima en negativo.</p>
+                                    @error('total')<p id="albaran_total_error" class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                                </div>
+                            </fieldset>
+
+                            <div class="mt-4 flex flex-wrap items-center gap-3">
+                                <button class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
+                                    {{ $albaran ? 'Actualizar albarán' : 'Registrar albarán' }}
+                                </button>
+                            </div>
+                        </form>
+
+                        @if ($albaran)
+                            <form method="POST" action="{{ route('facturacion.albaran.destroy', $nc) }}" class="mt-3"
+                                  onsubmit="return confirm('¿Quitar el albarán de esta nota de crédito? Quedará libre para otra nota.');">
+                                @csrf
+                                @method('DELETE')
+                                <button class="text-sm text-red-600 hover:underline">Quitar albarán</button>
+                            </form>
+                        @endif
+                    @endcan
+                </div>
+            @endif
 
             {{-- Cabecera --}}
             <div class="bg-white shadow sm:rounded-lg p-6">

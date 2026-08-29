@@ -36,6 +36,13 @@ Thumbs.db
 # Backups locales (dumps .sql manuales/automáticos, zips, .bak): nunca versionar
 /backups/
 
+# Estado local de las herramientas de asistente (settings.local.json, locks).
+# Es configuración de la MÁQUINA de cada quien, no del proyecto.
+/.claude/
+
+# Scratch de trabajo (PDFs volcados, renders intermedios). Nada de acá se versiona.
+/tmp/
+
 # Firmware del lector de asistencia: secretos locales (SSID, password Wi-Fi,
 # token del lector). Solo se versiona la plantilla secretos.h.example.
 /firmware/asistencia/secretos.h

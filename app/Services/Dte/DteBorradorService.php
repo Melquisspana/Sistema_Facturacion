@@ -6,6 +6,7 @@ use App\DataTransferObjects\Dte\LineaDocumento;
 use App\DataTransferObjects\Dte\ResultadoCalculo;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
+use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Enums\TipoItemExportacion;
@@ -47,6 +48,7 @@ class DteBorradorService
         private readonly SnapshotProductoService $snapshots,
         private readonly DteStateMachine $maquina,
         private readonly PrecioProductoResolver $precios,
+        private readonly PerfilDocumentoResolver $perfiles,
     ) {}
 
     /**
@@ -1047,32 +1049,70 @@ class DteBorradorService
 
     /**
      * Porcentaje de descuento vigente para el documento: prioridad sucursal →
-     * cliente → 0.
-     *
-     * Notas de crédito POR PRODUCTOS (devolución/faltante) y POR AVERÍA: heredan el MISMO
-     * descuento global del CCF relacionado (su descuento_porcentaje_aplicado), aplicado como
-     * descuento GLOBAL del resumen (ventaGravada bruto, descuGravada en el resumen), tal como
-     * la NC v3 aceptada por el MH. La avería usa catálogo libre, pero al estar relacionada a un
-     * CCF con descuento global debe reflejar el mismo descuento (igual que Conta Portable).
-     * Concepto / pronto pago (por monto) no heredan (0%).
+     * cliente → 0. Las notas de crédito tienen su propia regla ({@see porcentajeDescuentoNotaCredito()}).
      */
     private function porcentajeDescuentoVigente(Dte $dte): string
     {
         if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            $heredaDescuento = ($dte->tipo_nota_credito?->esPorProductos() ?? false)
-                || ($dte->tipo_nota_credito?->esPorAveria() ?? false);
-            if ($heredaDescuento && $dte->dteRelacionado !== null) {
-                $pct = (float) ($dte->dteRelacionado->descuento_porcentaje_aplicado ?? 0);
-
-                return number_format(max(0.0, min(100.0, $pct)), 2, '.', '');
-            }
-
-            return '0.00';
+            return $this->porcentajeDescuentoNotaCredito($dte);
         }
 
         $dte->loadMissing(['cliente', 'clienteSucursal']);
 
         return $this->porcentajeDesde($dte->cliente, $dte->clienteSucursal);
+    }
+
+    /**
+     * Porcentaje de descuento GLOBAL de una nota de crédito. Se aplica como descuento del
+     * resumen (ventaGravada bruto, descuGravada en el resumen), tal como la NC v3 aceptada
+     * por el MH; no toca los precios de línea.
+     *
+     * El origen del porcentaje lo declara el PERFIL del cliente por modalidad, porque la
+     * regla real no es la misma para todas. El caso que lo obligó: en los albaranes de
+     * crédito de Calleja la AVERÍA sí lleva el descuento comercial (2.89 bruto − 0.14 =
+     * 2.75 gravado) y la DEVOLUCIÓN no lo lleva (6 × 1.04 = 6.24 gravado, con «Descuentos
+     * Generales: Porcentaje 0» impreso en el propio albarán) aunque su CCF tenga el 5 %
+     * de siempre. Con una sola condición para las dos, una de las dos tenía que salir mal.
+     *
+     * SIN PERFIL se conserva EXACTAMENTE el criterio histórico —heredan las NC por
+     * productos y por avería, el resto va a 0 %—, así que ningún cliente que no haya
+     * declarado nada cambia de comportamiento.
+     */
+    private function porcentajeDescuentoNotaCredito(Dte $nc): string
+    {
+        $regla = $this->perfiles->reglaNotaCredito($nc);
+
+        // Sin regla declarada, el criterio histórico decide el origen.
+        $origen = $regla?->descuento_origen ?? ($this->heredaDescuentoPorDefecto($nc)
+            ? OrigenDescuentoNc::Ccf
+            : OrigenDescuentoNc::Ninguno);
+
+        // Ninguno y tasa_propia traen el porcentaje consigo; ccf lo pide al relacionado.
+        $fijo = $origen === OrigenDescuentoNc::Ccf ? null : ($regla?->porcentajeFijo() ?? '0.00');
+        if ($fijo !== null) {
+            return $fijo;
+        }
+
+        return $nc->dteRelacionado !== null
+            ? $this->acotarPorcentaje((float) ($nc->dteRelacionado->descuento_porcentaje_aplicado ?? 0))
+            : '0.00';
+    }
+
+    /**
+     * Criterio HISTÓRICO de herencia, previo a los perfiles: solo las NC que acreditan
+     * productos —devolución, faltante y avería— heredan el descuento del CCF. Sigue vivo
+     * como comportamiento por defecto de todo cliente sin perfil declarado.
+     */
+    private function heredaDescuentoPorDefecto(Dte $nc): bool
+    {
+        return ($nc->tipo_nota_credito?->esPorProductos() ?? false)
+            || ($nc->tipo_nota_credito?->esPorAveria() ?? false);
+    }
+
+    /** Encierra un porcentaje en [0, 100] y lo devuelve con 2 decimales. */
+    private function acotarPorcentaje(float $pct): string
+    {
+        return number_format(max(0.0, min(100.0, $pct)), 2, '.', '');
     }
 
     /** Porcentaje de descuento (0–100) desde sucursal → cliente → 0. */
