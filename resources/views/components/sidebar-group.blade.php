@@ -17,11 +17,19 @@
       1. `activo` —lo calcula quien incluye el grupo, con request()->routeIs()—
          fuerza el grupo ABIERTO al cargar, pase lo que pase en localStorage. La
          página en la que estás nunca queda escondida dentro de un grupo cerrado.
-      2. Sin preferencia guardada el grupo nace ABIERTO: la navegación se ve igual
-         que antes de que existieran los colapsables, y cerrar es una decisión del
-         usuario, no el estado por defecto. Antes de que Alpine arranque el panel
-         también está visible, así que nunca se pierde un enlace por JS lento.
-      3. Esto es PRESENTACIÓN. Quién VE cada grupo lo decide el @if/@can de quien
+      2. Sin preferencia guardada el grupo nace CERRADO. Antes nacía abierto, y con
+         siete grupos eso llenaba la barra de enlaces que nadie estaba mirando —en
+         una pantalla de teléfono había que desplazarse para llegar a los últimos—.
+         Ahora se ve la sección en la que estás y los títulos de las demás, que es
+         lo que hace falta para orientarse. Abrir otra sigue siendo una decisión del
+         usuario, y se recuerda.
+      3. El panel arranca con `display:none` desde el SERVIDOR cuando el grupo no
+         está activo. Sin eso, la página pintaría todos los grupos abiertos y
+         Alpine los cerraría de golpe al arrancar: un parpadeo visible en cada
+         carga. Como contrapartida, sin JavaScript los paneles quedarían ocultos,
+         así que un <noscript> en el layout los vuelve a mostrar (ver
+         layouts/app.blade.php): sin JS se pierde el colapso, nunca los enlaces.
+      4. Esto es PRESENTACIÓN. Quién VE cada grupo lo decide el @if/@can de quien
          lo incluye; quién puede ENTRAR lo decide el middleware de cada ruta.
 --}}
 @php
@@ -35,7 +43,7 @@
 
 <div @if ($clave)
         x-data="{
-            abierto: @js((bool) $activo) || (localStorage.getItem(@js($claveAlmacen)) ?? '1') === '1',
+            abierto: @js((bool) $activo) || localStorage.getItem(@js($claveAlmacen)) === '1',
             alternar() {
                 this.abierto = ! this.abierto;
                 localStorage.setItem(@js($claveAlmacen), this.abierto ? '1' : '0');
@@ -58,7 +66,9 @@
             </svg>
         </button>
 
-        <div id="{{ $idPanel }}" x-show="abierto" class="space-y-0.5">
+        <div id="{{ $idPanel }}" x-show="abierto" data-sidebar-panel
+             @if (! $activo) style="display: none" @endif
+             class="space-y-0.5">
             {{ $slot }}
         </div>
     @else

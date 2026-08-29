@@ -23,6 +23,11 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <style>[x-cloak]{display:none !important;}</style>
+        {{-- Los grupos colapsables de la barra lateral arrancan cerrados desde el
+             servidor para no parpadear al cargar (ver components/sidebar-group).
+             Sin JavaScript nadie los abriría, así que acá se vuelven a mostrar:
+             sin JS se pierde el colapso, nunca los enlaces. --}}
+        <noscript><style>[data-sidebar-panel]{display:block !important;}</style></noscript>
     </head>
     <body class="min-h-screen bg-gray-100 font-sans antialiased dark:bg-ink-950">
         {{-- <html> y <body> ya llevan el mismo fondo (body arriba; html vía app.css): si

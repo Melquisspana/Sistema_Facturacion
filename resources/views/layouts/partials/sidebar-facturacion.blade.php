@@ -13,27 +13,34 @@
         <x-sidebar-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">Dashboard</x-sidebar-link>
     </x-sidebar-group>
 
-    {{-- Ventas y facturación: UN SOLO bloque. Comercial (con qué se factura) y
-         Facturación (lo que se emite) son dos caras del mismo trabajo, y tenerlas
-         como categorías hermanas obligaba a saber de antemano en cuál buscar. --}}
-    @if ($veClientes || $veProductos || $veFacturacion)
-        <x-sidebar-group titulo="Ventas y facturación" icono="facturacion" clave="ventas" :activo="$grupoVentasActivo">
-            @if ($veClientes || $veProductos)
-                <x-sidebar-subtitulo>Comercial</x-sidebar-subtitulo>
-                @if ($veClientes)
-                    <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes</x-sidebar-link>
-                @endif
-                @if ($veProductos)
-                    <x-sidebar-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">Productos</x-sidebar-link>
-                @endif
-            @endif
+    {{-- Ventas y facturación: UN SOLO bloque y una sola lista.
 
+         Antes iba partido en dos sub-bloques, «Comercial» (clientes y productos) y
+         «Facturación» (los documentos). La división pedía saber de antemano en cuál
+         de las dos buscar, y el grupo ya se llama «Ventas y facturación»: dentro
+         volvía a poner «Facturación», que no distingue nada. Facturar un CCF empieza
+         indistintamente por el cliente, por el producto o por el documento, así que
+         los tres son hermanos y no dos familias.
+
+         El documento va PRIMERO porque es lo que se abre todos los días; los
+         catálogos se tocan cuando algo cambia.
+
+         «Preparar emisión real» ya no está acá: era el guion de la primera emisión
+         real, no una herramienta de trabajo diario. La ruta, el permiso
+         (preparacion.ver) y la pantalla siguen intactos —se llega por URL—, y sus
+         diagnósticos permanentes viven en Configuración y en Salud del sistema.
+         Crear e invalidar tampoco tienen fila: son acciones del listado y de la
+         ficha, no categorías. --}}
+    @if ($veFacturacion || $veClientes || $veProductos)
+        <x-sidebar-group titulo="Ventas y facturación" icono="facturacion" clave="ventas" :activo="$grupoVentasActivo">
             @if ($veFacturacion)
-                <x-sidebar-subtitulo>Facturación</x-sidebar-subtitulo>
                 <x-sidebar-link :href="route('facturacion.index')" :active="$enDocumentosFiscales">Documentos fiscales</x-sidebar-link>
-                @if ($vePreparacion)
-                    <x-sidebar-link :href="route('facturacion.preparar-produccion')" :active="$enPreparar">Preparar emisión real</x-sidebar-link>
-                @endif
+            @endif
+            @if ($veClientes)
+                <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes</x-sidebar-link>
+            @endif
+            @if ($veProductos)
+                <x-sidebar-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">Productos</x-sidebar-link>
             @endif
         </x-sidebar-group>
     @endif
@@ -94,20 +101,36 @@
         </x-sidebar-group>
     @endif
 
-    {{-- Configuración: el marco fiscal y operativo del sistema, separado de
-         Administración a propósito. Son las mismas cinco pestañas de la pantalla de
-         configuración más «Correo», que existía como pantalla pero no estaba
-         enlazada en ningún lado. Misma condición de visibilidad de siempre
-         ($esAdmin) y mismo permiso de ruta (configuracion.gestionar). --}}
+    {{-- Configuración: UNA entrada directa, sin grupo que la envuelva.
+
+         Antes había seis filas sueltas —empresa, establecimientos, puntos de venta,
+         correlativos, contabilidad y correo—, elegidas en su día porque eran las
+         pantallas que existían. Hoy el Centro de Configuración tiene CATORCE, y las
+         ocho restantes (Hacienda / API, certificado y firmador, parámetros fiscales,
+         invalidación, las dos integraciones, respaldos y estado, y el propio resumen)
+         no tenían ninguna entrada: para llegar a «Hacienda / API» había que entrar
+         antes a «Empresa emisora» y descubrir el índice de al lado.
+
+         Seis atajos que además escondían la mitad del módulo valen menos que una
+         puerta que lo muestra entera. El índice agrupado ya existe y es la fuente
+         única (configuracion/_nav.blade.php, vía <x-configuracion-layout>): esta fila
+         lleva a su portada y desde ahí las catorce están a un clic.
+
+         NO ES UN <x-sidebar-group>. Un grupo existe para agrupar, y con una sola
+         opción el encabezado sólo conseguía decir «Configuración» dos veces
+         seguidas: una en el rótulo de la sección y otra en la fila de debajo. El
+         icono se pone acá dentro para que la entrada conserve el peso visual de una
+         sección sin fingir que contiene algo.
+
+         Misma condición de visibilidad de siempre ($esAdmin) y mismo permiso de ruta
+         (configuracion.gestionar). No se retiró ninguna pantalla ni ninguna ruta. --}}
     @if ($esAdmin)
-        <x-sidebar-group titulo="Configuración" icono="configuracion" clave="configuracion" :activo="$grupoConfiguracionActivo">
-            <x-sidebar-link :href="route('configuracion.empresa.edit')" :active="request()->routeIs('configuracion.empresa.*')">Empresa emisora</x-sidebar-link>
-            <x-sidebar-link :href="route('configuracion.establecimientos.index')" :active="request()->routeIs('configuracion.establecimientos.*')">Establecimientos</x-sidebar-link>
-            <x-sidebar-link :href="route('configuracion.puntos-venta.index')" :active="request()->routeIs('configuracion.puntos-venta.*')">Puntos de venta</x-sidebar-link>
-            <x-sidebar-link :href="route('configuracion.correlativos.index')" :active="request()->routeIs('configuracion.correlativos.*')">Correlativos</x-sidebar-link>
-            <x-sidebar-link :href="route('configuracion.contabilidad.edit')" :active="request()->routeIs('configuracion.contabilidad.*')">Contabilidad</x-sidebar-link>
-            <x-sidebar-link :href="route('configuracion.correo.edit')" :active="request()->routeIs('configuracion.correo.*')">Correo</x-sidebar-link>
-        </x-sidebar-group>
+        <x-sidebar-link :href="route('configuracion.resumen')" :active="$enConfiguracion">
+            <span class="flex min-w-0 items-center gap-1.5">
+                <x-sidebar-icon name="configuracion" />
+                <span class="truncate">Configuración</span>
+            </span>
+        </x-sidebar-link>
     @endif
 
     {{-- Sistema: infraestructura (colas, worker, modo de transmisión). Va al final y

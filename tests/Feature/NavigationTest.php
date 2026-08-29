@@ -87,13 +87,95 @@ class NavigationTest extends TestCase
 
         foreach ([
             'Inicio',
-            'Ventas y facturación', 'Comercial', 'Facturación',
+            'Ventas y facturación',
             'Cobros', 'Prontos Pagos',
             'Contabilidad', 'Exportaciones',
-            'Administración', 'Configuración', 'Sistema',
+            'Administración', 'Sistema',
         ] as $categoria) {
             $resp->assertSee($categoria);
         }
+    }
+
+    /**
+     * Configuración es una ENTRADA, no una categoría: una fila directa que abre el
+     * Centro de Configuración.
+     *
+     * Estuvo un rato siendo un <x-sidebar-group> de una sola opción, y el resultado
+     * era que la barra decía «Configuración» dos veces seguidas —una en el rótulo de
+     * la sección y otra en la fila de debajo—. Un grupo existe para agrupar; con un
+     * solo hijo el encabezado no aporta jerarquía, sólo repetición.
+     *
+     * Esta prueba fija las tres cosas que definen la decisión: la fila existe y lleva
+     * al resumen, no hay encabezado de grupo llamado «Configuración» sobre ella, y no
+     * es colapsable (no tiene panel con id ni botón que lo controle).
+     */
+    public function test_configuracion_es_una_entrada_directa_y_no_un_grupo(): void
+    {
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        // La fila existe y apunta al Centro de Configuración.
+        $this->assertStringContainsString(route('configuracion.resumen', [], false), $sidebar);
+        $this->assertStringContainsString('>Configuración<', $sidebar);
+
+        // No es colapsable: ni panel con id ni botón que lo controle.
+        $this->assertStringNotContainsString('sidebar-grupo-configuracion', $sidebar);
+
+        // Y «Configuración» aparece UNA sola vez en el sidebar: si volviera a
+        // envolverse en un grupo, el encabezado la repetiría y esto lo delataría.
+        $this->assertSame(
+            1,
+            substr_count($sidebar, '>Configuración<'),
+            'El sidebar no debe decir «Configuración» más de una vez.',
+        );
+    }
+
+    /** Y estando dentro del módulo, la entrada se marca como activa. */
+    public function test_la_entrada_de_configuracion_se_marca_activa_en_todo_el_modulo(): void
+    {
+        foreach (['configuracion.resumen', 'configuracion.fiscal.hacienda', 'configuracion.sistema'] as $ruta) {
+            $sidebar = $this->sidebarDe(
+                $this->actingAs($this->usuario('administrador'))->get(route($ruta))->assertOk()->getContent()
+            );
+
+            $this->assertMatchesRegularExpression(
+                '/<a[^>]*'.preg_quote(route('configuracion.resumen', [], false), '/').'[^>]*aria-current="page"/s',
+                $sidebar,
+                "La entrada de Configuración debería marcarse activa en {$ruta}.",
+            );
+        }
+    }
+
+    /**
+     * «Ventas y facturación» es UNA lista plana. Los sub-bloques «Comercial» y
+     * «Facturación» desaparecen: el grupo ya se llama «Ventas y facturación» y
+     * repetir «Facturación» dentro no distinguía nada.
+     *
+     * Se comprueba sobre el <aside> y no sobre la página entera porque la palabra
+     * «Facturación» sigue existiendo con otros significados —es la etiqueta del
+     * área en el selector superior—, y esta prueba habla del sidebar.
+     */
+    public function test_ventas_y_facturacion_es_una_lista_plana(): void
+    {
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        // El componente de sub-bloque ya no se usa en ningún grupo del sidebar.
+        $this->assertStringNotContainsString('>Comercial<', $sidebar);
+        $this->assertDoesNotMatchRegularExpression(
+            '/text-\[10px\][^>]*>\s*Facturación\s*</u',
+            $sidebar,
+            'El subtítulo «Facturación» sigue dentro del grupo de ventas.',
+        );
+
+        // Y el orden es el acordado: el documento primero, los catálogos después.
+        $this->assertMatchesRegularExpression(
+            '/Documentos fiscales.*Clientes.*Productos/su',
+            $sidebar,
+            'El orden de «Ventas y facturación» debe ser Documentos fiscales → Clientes → Productos.',
+        );
     }
 
     public function test_textos_visibles_renombrados(): void
@@ -111,13 +193,17 @@ class NavigationTest extends TestCase
             );
         }
 
-        foreach (['Documentos fiscales', 'Preparar emisión real', 'Clientes y precios', 'Catálogo de productos'] as $texto) {
+        foreach (['Documentos fiscales', 'Clientes y precios', 'Catálogo de productos'] as $texto) {
             $this->assertStringContainsString($texto, $sidebar, "Falta el texto «{$texto}» en la sidebar.");
         }
 
         // Los rótulos viejos ya no están.
         $this->assertStringNotContainsString('Clientes de facturación', $sidebar);
         $this->assertStringNotContainsString('Perfiles y precios de exportación', $sidebar);
+        // «Preparar emisión real» era el guion de la primera emisión, no una
+        // herramienta diaria: sale del menú. La pantalla NO se retiró — ver
+        // test_preparar_emision_real_sigue_accesible_por_url_para_los_roles_autorizados.
+        $this->assertStringNotContainsString('Preparar emisión real', $sidebar);
     }
 
     /**
@@ -139,24 +225,30 @@ class NavigationTest extends TestCase
             ->assertSee('Nueva lista de empaque');
     }
 
-    /** El hueco de navegación de Configuración > Correo queda cerrado. */
-    public function test_configuracion_correo_es_alcanzable_desde_sidebar_y_pestanas(): void
+    /**
+     * Correo sigue siendo alcanzable, pero por el camino nuevo: el sidebar ya no
+     * lleva a seis pantallas sueltas de configuración, lleva al Centro de
+     * Configuración, y desde ahí está el índice completo.
+     */
+    public function test_configuracion_correo_es_alcanzable_desde_el_centro_de_configuracion(): void
     {
         $usuario = $this->usuario('administrador');
 
+        // El sidebar ya NO enlaza Correo directamente: enlaza el centro.
         $sidebar = $this->sidebarDe(
             $this->actingAs($usuario)->get(route('dashboard'))->assertOk()->getContent()
         );
-        $this->assertStringContainsString(route('configuracion.correo.edit', [], false), $sidebar);
+        $this->assertStringNotContainsString(route('configuracion.correo.edit', [], false), $sidebar);
+        $this->assertStringContainsString(route('configuracion.resumen', [], false), $sidebar);
 
-        // Y también como pestaña dentro de la propia pantalla de configuración.
-        $this->actingAs($usuario)->get(route('configuracion.empresa.edit'))->assertOk()
+        // Y desde el centro, en un clic.
+        $this->actingAs($usuario)->get(route('configuracion.resumen'))->assertOk()
             ->assertSee(route('configuracion.correo.edit'), false)
             ->assertSee('Correo');
     }
 
-    /** Quien no es administrador no ve la pestaña ni el enlace de Correo. */
-    public function test_configuracion_correo_no_aparece_para_los_demas_roles(): void
+    /** Quien no es administrador no ve ninguna puerta a configuración. */
+    public function test_configuracion_no_aparece_para_los_demas_roles(): void
     {
         foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
             $sidebar = $this->sidebarDe(
@@ -164,10 +256,14 @@ class NavigationTest extends TestCase
             );
 
             $this->assertStringNotContainsString(route('configuracion.correo.edit', [], false), $sidebar, "El rol {$rol} no debe ver Configuración > Correo.");
+            // La entrada nueva tampoco: sustituir seis filas por una no puede
+            // abrirle la puerta a nadie que antes no la tuviera.
+            $this->assertStringNotContainsString(route('configuracion.resumen', [], false), $sidebar, "El rol {$rol} no debe ver el Centro de Configuración.");
         }
 
-        // Y la URL sigue cerrada en backend, que es el candado de verdad.
+        // Y las URL siguen cerradas en backend, que es el candado de verdad.
         $this->actingAs($this->usuario('facturacion'))->get(route('configuracion.correo.edit'))->assertForbidden();
+        $this->actingAs($this->usuario('facturacion'))->get(route('configuracion.resumen'))->assertForbidden();
     }
 
     // ------------------------------------------------------------------ paridad por rol
@@ -190,20 +286,33 @@ class NavigationTest extends TestCase
         ];
 
         return [
+            // Administrador. Tres cambios declarados respecto del inventario anterior,
+            // y ninguno le abre una pantalla que antes no tuviera:
+            //
+            //  - SALE 'facturacion.preparar-produccion': el checklist deja el menú
+            //    cotidiano. Ruta y permiso siguen; se llega por URL (ver
+            //    test_preparar_emision_real_sigue_accesible_por_url_para_los_roles_autorizados).
+            //  - SALEN las seis filas sueltas de configuración y ENTRA
+            //    'configuracion.resumen': una puerta al Centro de Configuración en vez
+            //    de seis atajos que además escondían las otras ocho pantallas (ver
+            //    test_las_catorce_pantallas_de_configuracion_son_alcanzables_desde_su_centro).
+            //  - ENTRA 'rutas.dashboard': el selector de área ahora vive TAMBIÉN dentro
+            //    del panel lateral, para poder cambiar de área en móvil. Es la MISMA
+            //    lista que ya ofrecía el desplegable superior (AreaSistema::visiblesPara),
+            //    que el administrador siempre tuvo.
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
-                'facturacion.preparar-produccion',
+                'rutas.dashboard',
                 'usuarios.index', 'auditoria.index', 'importaciones.index',
-                'configuracion.empresa.edit', 'configuracion.establecimientos.index',
-                'configuracion.puntos-venta.index', 'configuracion.correlativos.index',
-                'configuracion.contabilidad.edit', 'configuracion.correo.edit',
+                'configuracion.resumen',
                 'admin.salud-sistema',
             ]],
-            // Jefatura: lectura amplia, sin preparación ni administración.
+            // Jefatura: lectura amplia, sin administración. Una sola área visible
+            // (dte.ver), así que el selector del panel no se dibuja: sin cambios.
             'jefatura' => ['jefatura', $lecturaOperativa],
-            // Facturación: lo mismo + el checklist de emisión real (preparacion.ver).
-            'facturacion' => ['facturacion', [...$lecturaOperativa, 'facturacion.preparar-produccion']],
-            // Contabilidad: lo mismo + auditoría (auditoria.ver).
+            // Facturación: pierde el checklist de emisión real y no gana nada.
+            'facturacion' => ['facturacion', $lecturaOperativa],
+            // Contabilidad: lo mismo + auditoría (auditoria.ver). Sin cambios.
             'contabilidad' => ['contabilidad', [...$lecturaOperativa, 'auditoria.index']],
         ];
     }
@@ -250,6 +359,10 @@ class NavigationTest extends TestCase
 
         $this->assertSame(
             $this->urls([
+                // 'dashboard' es el aterrizaje del área Facturación: lo aporta el
+                // selector de áreas del panel, que es lo que permite volver desde un
+                // teléfono. No es una pantalla nueva para este rol.
+                'dashboard',
                 'rutas.dashboard', 'rutas.salidas.index', 'rutas.documentos.index', 'rutas.rutas.index',
                 'ppq.index', 'ppq.lotes.index',
             ]),
@@ -307,11 +420,11 @@ class NavigationTest extends TestCase
         $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
 
         foreach ([
-            'clientes.index', 'productos.index', 'facturacion.index', 'facturacion.preparar-produccion',
+            'clientes.index', 'productos.index', 'facturacion.index',
             'ppq.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
             'contabilidad.paquete', 'exportaciones.index', 'exportaciones.clientes.index',
             'exportaciones.productos.index', 'usuarios.index', 'auditoria.index', 'importaciones.index',
-            'configuracion.empresa.edit', 'admin.salud-sistema',
+            'configuracion.resumen', 'admin.salud-sistema',
         ] as $ruta) {
             $resp->assertSee(route($ruta), false);
         }
@@ -344,7 +457,8 @@ class NavigationTest extends TestCase
             'contabilidad / ventas' => ['facturacion.reporte-contadora', 'contabilidad'],
             'exportaciones / listas' => ['exportaciones.index', 'exportaciones'],
             'administracion / usuarios' => ['usuarios.index', 'administracion'],
-            'configuracion / empresa' => ['configuracion.empresa.edit', 'configuracion'],
+            // «configuracion» ya no figura: con una sola fila el grupo dejó de ser
+            // colapsable (x-sidebar-group sin `clave`), igual que Inicio y Sistema.
         ];
     }
 
@@ -406,5 +520,298 @@ class NavigationTest extends TestCase
 
         $resp->assertSee('Claro / oscuro', false);
         $resp->assertSee('overflow-y-auto', false);
+    }
+
+    /**
+     * Los grupos que NO contienen la ruta actual nacen colapsados, y además con el
+     * panel ya oculto DESDE EL SERVIDOR: si se dibujaran abiertos y Alpine los
+     * cerrara al arrancar, cada carga empezaría con un parpadeo.
+     *
+     * Sin JavaScript nadie los abriría, así que el layout trae un <noscript> que
+     * los vuelve a mostrar: sin JS se pierde el colapso, nunca los enlaces.
+     */
+    public function test_los_grupos_inactivos_nacen_colapsados_sin_esconder_enlaces_sin_js(): void
+    {
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+        $sidebar = $this->sidebarDe($html);
+
+        // En el dashboard ningún grupo colapsable contiene la ruta activa.
+        $this->assertStringContainsString('data-sidebar-panel', $sidebar);
+        $this->assertStringContainsString('style="display: none"', $sidebar);
+
+        // La red de seguridad sin JavaScript vive en el layout, no en el sidebar.
+        $this->assertStringContainsString('[data-sidebar-panel]{display:block !important;}', $html);
+        $this->assertStringContainsString('<noscript>', $html);
+    }
+
+    // ------------------------------------------------------------------ preparación
+
+    /**
+     * «Preparar emisión real» sale del MENÚ, no del sistema. Retirar una opción de
+     * la navegación y borrar funcionalidad son cosas distintas, y esta prueba fija
+     * la diferencia: la pantalla sigue respondiendo por URL a quien tiene
+     * `preparacion.ver`, y sigue cerrada para quien no.
+     */
+    public function test_preparar_emision_real_sigue_accesible_por_url_para_los_roles_autorizados(): void
+    {
+        foreach (['administrador', 'facturacion'] as $rol) {
+            $usuario = $this->usuario($rol);
+
+            // Fuera del menú...
+            $sidebar = $this->sidebarDe(
+                $this->actingAs($usuario)->get(route('dashboard'))->assertOk()->getContent()
+            );
+            $this->assertStringNotContainsString(
+                route('facturacion.preparar-produccion', [], false),
+                $sidebar,
+                "El rol {$rol} no debería ver «Preparar emisión real» en el sidebar.",
+            );
+
+            // ...pero la pantalla sigue ahí.
+            $this->actingAs($usuario)
+                ->get(route('facturacion.preparar-produccion'))
+                ->assertOk()
+                ->assertSee('Preparar emisión real');
+        }
+
+        // Y el candado no se aflojó: quien no tiene preparacion.ver sigue fuera.
+        foreach (['jefatura', 'contabilidad'] as $rol) {
+            $this->actingAs($this->usuario($rol))
+                ->get(route('facturacion.preparar-produccion'))
+                ->assertForbidden();
+        }
+    }
+
+    // ------------------------------------------------------------------ configuración
+
+    /**
+     * Las CATORCE pantallas del Centro de Configuración son alcanzables desde su
+     * portada, que es la única fila de configuración que queda en el sidebar.
+     *
+     * Es la prueba que justifica haber cambiado seis atajos por una puerta: antes
+     * ocho de estas pantallas no tenían ninguna entrada y solo se llegaba a ellas
+     * entrando primero a otra pantalla de configuración y descubriendo el índice
+     * de al lado.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function pantallasDeConfiguracion(): array
+    {
+        return [
+            'resumen' => ['configuracion.resumen'],
+            'empresa emisora' => ['configuracion.empresa.edit'],
+            'establecimientos' => ['configuracion.establecimientos.index'],
+            'puntos de venta' => ['configuracion.puntos-venta.index'],
+            'hacienda / api' => ['configuracion.fiscal.hacienda'],
+            'certificado y firmador' => ['configuracion.fiscal.firmador'],
+            'correlativos' => ['configuracion.correlativos.index'],
+            'parámetros fiscales' => ['configuracion.fiscal.parametros'],
+            'invalidación' => ['configuracion.fiscal.invalidacion'],
+            'correo y servidor' => ['configuracion.correo.edit'],
+            'contabilidad' => ['configuracion.contabilidad.edit'],
+            'gmail / prontos pagos' => ['configuracion.integraciones.gmail'],
+            'buzón de compras' => ['configuracion.integraciones.documentos-recibidos'],
+            'respaldos y estado' => ['configuracion.sistema'],
+        ];
+    }
+
+    #[DataProvider('pantallasDeConfiguracion')]
+    public function test_las_catorce_pantallas_de_configuracion_son_alcanzables_desde_su_centro(string $ruta): void
+    {
+        $usuario = $this->usuario('administrador');
+
+        // Enlazada desde la portada del centro...
+        $this->actingAs($usuario)->get(route('configuracion.resumen'))->assertOk()
+            ->assertSee(route($ruta), false);
+
+        // ...y la pantalla responde de verdad (no es un enlace a una página muerta).
+        $this->actingAs($usuario)->get(route($ruta))->assertOk();
+    }
+
+    /** Y el sidebar llega al centro en un solo clic. */
+    public function test_el_sidebar_lleva_al_centro_de_configuracion_con_una_sola_fila(): void
+    {
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(route('configuracion.resumen', [], false), $sidebar);
+
+        // Las seis filas sueltas de antes ya no están: eran atajos que escondían el
+        // resto del módulo.
+        foreach ([
+            'configuracion.empresa.edit', 'configuracion.establecimientos.index',
+            'configuracion.puntos-venta.index', 'configuracion.correlativos.index',
+            'configuracion.contabilidad.edit', 'configuracion.correo.edit',
+        ] as $ruta) {
+            $this->assertStringNotContainsString(route($ruta, [], false), $sidebar);
+        }
+    }
+
+    // ------------------------------------------------------------------ invalidaciones
+
+    /**
+     * «Invalidaciones» gana una puerta —antes no tenía ninguna— pero no una fila
+     * permanente: es una acción ocasional del propio listado de documentos.
+     */
+    public function test_invalidaciones_es_una_accion_del_listado_y_no_una_fila_del_sidebar(): void
+    {
+        $admin = $this->usuario('administrador');
+
+        $html = $this->actingAs($admin)->get(route('facturacion.index'))->assertOk()->getContent();
+
+        $this->assertStringContainsString(route('facturacion.invalidaciones', [], false), $html);
+        $this->assertStringNotContainsString(
+            route('facturacion.invalidaciones', [], false),
+            $this->sidebarDe($html),
+            'Invalidaciones no debe ocupar una fila del sidebar.',
+        );
+
+        // Quien no puede invalidar no recibe la puerta: hoy solo el administrador
+        // tiene dte.invalidar. Ocultar no autoriza — el candado sigue en DtePolicy.
+        foreach (['facturacion', 'jefatura', 'contabilidad'] as $rol) {
+            $this->actingAs($this->usuario($rol))->get(route('facturacion.index'))->assertOk()
+                ->assertDontSee(route('facturacion.invalidaciones'), false);
+        }
+    }
+
+    // ------------------------------------------------------------------ áreas de trabajo
+
+    /**
+     * El cambio de área funciona en CUALQUIER ancho. Antes el único selector era
+     * `hidden sm:block` en la barra superior, así que por debajo de 640 px no había
+     * forma de llegar a Producción, Cobros o Asistencia salvo escribir la URL.
+     *
+     * Ahora el panel lateral —que ES la navegación por debajo de lg— lleva la lista
+     * dentro, y el desplegable superior se reserva para lg. Cada ancho tiene
+     * exactamente un selector y ninguno depende del otro.
+     */
+    public function test_el_area_se_puede_cambiar_desde_el_panel_lateral(): void
+    {
+        config()->set('planta.enabled', true);
+
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+        $sidebar = $this->sidebarDe($html);
+
+        // La lista de áreas vive DENTRO del panel, con nombre accesible propio.
+        $this->assertStringContainsString('aria-label="Áreas de trabajo"', $sidebar);
+        foreach (['dashboard', 'planta.dashboard', 'rutas.dashboard'] as $aterrizaje) {
+            $this->assertStringContainsString(
+                route($aterrizaje, [], false),
+                $sidebar,
+                "El panel lateral debería ofrecer el área que aterriza en {$aterrizaje}.",
+            );
+        }
+
+        // Y no depende de que un elemento aparezca a partir de sm.
+        $this->assertStringNotContainsString('hidden sm:block', $html);
+    }
+
+    /** El desplegable de escritorio sigue existiendo, ahora reservado a lg. */
+    public function test_el_selector_de_areas_de_escritorio_se_reserva_a_pantalla_grande(): void
+    {
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('data-area-selector', $html);
+        $this->assertStringContainsString('<div class="hidden lg:block" data-area-selector>', $html);
+    }
+
+    /**
+     * AISLAMIENTO. El selector solo muestra áreas permitidas Y habilitadas, así que
+     * producción —que solo tiene planta.ver— no recibe ni el selector ni un solo
+     * enlace fiscal. Es la garantía que no se puede perder al tocar navegación.
+     */
+    public function test_produccion_no_recibe_selector_de_areas_ni_enlaces_fiscales(): void
+    {
+        config()->set('planta.enabled', true);
+
+        $html = $this->actingAs($this->usuario('produccion'))->get(route('planta.dashboard'))->assertOk()->getContent();
+        $sidebar = $this->sidebarDe($html);
+
+        // Con una sola área visible no se dibuja ningún selector, ni arriba ni dentro.
+        $this->assertStringNotContainsString('aria-label="Áreas de trabajo"', $sidebar);
+        $this->assertStringNotContainsString('data-area-selector', $html);
+
+        // Comparación de URL COMPLETAS y no de subcadenas: «/productos» aparece
+        // dentro de «/planta/productos-base», que sí es suyo, y una comprobación por
+        // subcadena daría un falso positivo justo en la prueba que más precisión pide.
+        $enlaces = $this->enlacesDelSidebar($html);
+
+        foreach ([
+            'dashboard', 'facturacion.index', 'clientes.index', 'productos.index',
+            'ppq.index', 'rutas.dashboard', 'configuracion.resumen', 'admin.salud-sistema',
+        ] as $ruta) {
+            $this->assertNotContains(
+                route($ruta),
+                $enlaces,
+                "Producción no debe recibir el enlace {$ruta}.",
+            );
+        }
+    }
+
+    /**
+     * Un módulo apagado no se ofrece aunque el usuario tenga el permiso: Asistencia
+     * viene apagada por defecto y el administrador tiene todos los permisos.
+     */
+    public function test_el_panel_no_ofrece_areas_de_modulos_apagados(): void
+    {
+        config()->set('planta.enabled', false);
+        config()->set('asistencia.enabled', false);
+
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        $this->assertStringNotContainsString(route('planta.dashboard', [], false), $sidebar);
+        $this->assertStringNotContainsString(route('asistencia.dashboard', [], false), $sidebar);
+    }
+
+    // ------------------------------------------------------------------ accesibilidad
+
+    /**
+     * El panel móvil se puede operar con el teclado y anunciarse a un lector de
+     * pantalla: la hamburguesa tiene nombre propio (el icono cambia de dibujo, no
+     * de significado), dice qué panel controla y en qué estado está, y Escape lo
+     * cierra devolviendo el foco al botón que lo abrió.
+     */
+    public function test_el_panel_lateral_es_operable_con_teclado_y_lector_de_pantalla(): void
+    {
+        $resp = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+
+        $resp->assertSee('aria-label="Menú de navegación"', false);
+        $resp->assertSee('aria-controls="sidebar-principal"', false);
+        $resp->assertSee(':aria-expanded="sidebarAbierta ? \'true\' : \'false\'"', false);
+        $resp->assertSee('id="sidebar-principal"', false);
+        $resp->assertSee('aria-label="Navegación principal"', false);
+
+        // Escape cierra y devuelve el foco a la hamburguesa.
+        $resp->assertSee('@keydown.escape.window', false);
+        $resp->assertSee('$refs.hamburguesa?.focus()', false);
+
+        // El foco se ve al llegar por teclado.
+        $resp->assertSee('focus-visible:outline', false);
+    }
+
+    /** Nada del panel puede desbordar a lo ancho: el panel recorta en horizontal. */
+    public function test_el_panel_lateral_no_desborda_en_horizontal(): void
+    {
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString('overflow-x-hidden', $sidebar);
+        $this->assertStringContainsString('truncate', $sidebar);
+    }
+
+    /** Modo oscuro: cada superficie del panel declara su par claro/oscuro. */
+    public function test_el_panel_lateral_tiene_modo_oscuro(): void
+    {
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        foreach (['dark:bg-ink-900', 'dark:border-ink-600', 'dark:text-paper-300'] as $clase) {
+            $this->assertStringContainsString($clase, $sidebar, "Falta el par oscuro «{$clase}» en el panel.");
+        }
     }
 }
