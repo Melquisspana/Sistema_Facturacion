@@ -45,14 +45,28 @@
         </x-sidebar-group>
     @endif
 
-    {{-- Cobros. PPQ vive acá por lo que ES —cobro de Calleja—, no por dónde está su
-         ruta: /ppq pertenece técnicamente al área Facturación (el área se deriva de
-         la URL, ver App\Enums\AreaSistema) y por eso se dibuja en este sidebar. El
-         área Cobros presenta este mismo bloque junto a Salidas, Documentos por cobrar
-         y Rutas. No se movió ni un controlador ni un prefijo. --}}
+    {{-- Pronto pago. PPQ vive acá por lo que ES —el cobro de Calleja—, no por dónde
+         está su ruta: /ppq pertenece técnicamente al área Facturación (el área se
+         deriva de la URL, ver App\Enums\AreaSistema) y por eso se dibuja en este
+         sidebar. No se movió ni un controlador ni un prefijo.
+
+         SE LLAMABA «Cobros» Y DENTRO DECÍA «Prontos Pagos». Dos rótulos para dos
+         filas: el de fuera prometía más de lo que hay —cobros a secas es todo el
+         ciclo, y acá sólo está el pronto pago— y el de dentro repetía la misma idea
+         un escalón más abajo. Ahora el grupo se llama por lo que contiene y las dos
+         opciones cuelgan directamente de él.
+
+         «Cobros» sigue siendo el nombre del ÁREA (AreaSistema::label), que es otra
+         cosa y no se toca: ahí sí caben Salidas, Documentos por cobrar y Rutas junto
+         a este bloque. La barra de esa área usa el MISMO rótulo «Pronto pago» para el
+         mismo módulo, para que no se llame de dos maneras según por dónde entres.
+
+         La clave del colapsable sigue siendo «cobros» a propósito: es la llave de
+         localStorage donde ya está guardado si cada usuario tiene el grupo abierto o
+         cerrado, y renombrarla les reiniciaría esa preferencia sin ningún motivo. Es
+         un identificador técnico, no un rótulo. --}}
     @if ($vePpq)
-        <x-sidebar-group titulo="Cobros" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
-            <x-sidebar-subtitulo>Prontos Pagos</x-sidebar-subtitulo>
+        <x-sidebar-group titulo="Pronto pago" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
             <x-sidebar-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index', 'ppq.albaranes_por_fecha')">Buscar CCF / NC</x-sidebar-link>
             <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
         </x-sidebar-group>

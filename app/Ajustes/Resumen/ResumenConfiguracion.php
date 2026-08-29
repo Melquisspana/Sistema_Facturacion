@@ -255,7 +255,7 @@ class ResumenConfiguracion
 
         return new TarjetaResumen(
             clave: 'gmail',
-            titulo: 'Gmail (Prontos Pagos)',
+            titulo: 'Gmail (Pronto pago)',
             estado: match (true) {
                 $cuenta !== null => EstadoTarjeta::Configurado,
                 ! $credenciales => EstadoTarjeta::NoConfigurado,
