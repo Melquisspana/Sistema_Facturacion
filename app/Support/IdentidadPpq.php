@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Dte;
 use App\Services\Ppq\ConciliacionTxtParser;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +39,21 @@ use Illuminate\Support\Facades\DB;
  * pueden compartir monto, y el correlativo `0986` existe tanto en P001 como en P002.
  * Casar por cualquiera de esos daría por cobrado algo que nadie cobró — que es
  * exactamente el error que este módulo no puede permitirse.
+ *
+ * ─────────────── El ambiente: la mitad que le faltaba a la identidad LOCAL ───────────────
+ *
+ * Para un documento LOCAL, el número de control por sí solo NO alcanza. Desde que la
+ * unicidad de `dtes` pasó a ser `(ambiente, numero_control)` —los correlativos de pruebas
+ * y de producción cuentan desde cero por separado—, el mismo número puede pertenecer a
+ * dos documentos distintos: uno real y uno de prueba. Buscar solo por número puede
+ * devolver el de pruebas y hacer que un documento simulado bloquee, cobre o le preste sus
+ * datos a uno de producción.
+ *
+ * Por eso {@see dteLocal()} nunca resuelve a ciegas. Y por eso la normalización SIN
+ * ambiente sigue existiendo y no se toca: es la que cruza con los SNAPSHOTS de Gmail, que
+ * no tienen ambiente que ofrecer y nunca lo van a tener. Son dos preguntas distintas:
+ * «¿qué fila de `dtes` es esta?» necesita el ambiente; «¿estos dos renglones hablan del
+ * mismo documento?» no puede exigirlo sin dejar fuera a todos los históricos.
  *
  * ──────────────────────────── Una sola normalización ────────────────────────────
  *
@@ -86,6 +102,49 @@ final class IdentidadPpq
         }
 
         return array_keys($claves);
+    }
+
+    /**
+     * El DTE LOCAL que corresponde a un número de control, resuelto SIN ambigüedad de
+     * ambiente. `null` si no existe ninguno.
+     *
+     * ─────────────────────────── Cómo desempata ───────────────────────────
+     *
+     * Con `$ambiente` dado, no hay nada que desempatar: se busca exactamente ese par, que
+     * es el único de la tabla.
+     *
+     * Sin ambiente —el caso de quien teclea o pega un número y no sabe ni tiene por qué
+     * saber en qué ambiente vive— se ordena por dos criterios, en este orden:
+     *
+     *   1. VIGENCIA FISCAL: el documento que existe de verdad ante Hacienda gana. Es lo
+     *      que hace imposible que un documento de PRUEBAS le robe el lugar a uno real,
+     *      que es el caso que motivó todo esto.
+     *   2. AMBIENTE OPERATIVO de esta instalación: entre dos igualmente vigentes —o
+     *      igualmente no vigentes—, manda el del ambiente en el que se está trabajando.
+     *
+     * Y a igualdad de todo, el más reciente. Nunca devuelve dos: quien llama necesita una
+     * respuesta o ninguna, y una lista lo obligaría a inventar su propio desempate.
+     *
+     * La comparación normaliza LOS DOS LADOS, así que encuentra el documento tanto si el
+     * número viene como lo escribe el sistema (`DTE-03-…-1090`) como si alguien lo pegó
+     * sin separadores (`DTE03…1090`).
+     */
+    public static function dteLocal(?string $numeroControl, ?string $ambiente = null): ?Dte
+    {
+        $clave = self::normalizar($numeroControl);
+
+        if ($clave === null) {
+            return null;
+        }
+
+        return Dte::query()
+            ->where(self::columnaNormalizada(), $clave)
+            ->when($ambiente !== null, fn ($q) => $q->where('ambiente', $ambiente))
+            ->when($ambiente === null, fn ($q) => $q
+                ->orderByRaw(VigenciaFiscalDte::SQL_PRIORIDAD, VigenciaFiscalDte::bindingsPrioridad())
+                ->orderByRaw('CASE WHEN ambiente = ? THEN 0 ELSE 1 END', [(string) config('dte.ambiente')]))
+            ->orderByDesc('id')
+            ->first();
     }
 
     /**

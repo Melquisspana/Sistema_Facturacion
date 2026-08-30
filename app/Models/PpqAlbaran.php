@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\NumeroAlbaran;
 use App\Support\OrdenCompra;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -25,6 +26,7 @@ class PpqAlbaran extends Model
 
     protected $fillable = [
         'numero_albaran',
+        'tipo_codigo',
         'fecha_albaran',
         'monto_albaran',
         'numero_orden_compra',
@@ -34,6 +36,9 @@ class PpqAlbaran extends Model
         'origen',
         'gmail_message_id',
         'archivo_path',
+        'archivo_nombre',
+        'archivo_hash',
+        'archivo_descargado_en',
     ];
 
     protected function casts(): array
@@ -41,17 +46,66 @@ class PpqAlbaran extends Model
         return [
             'fecha_albaran' => 'date',
             'monto_albaran' => 'decimal:2',
+            'archivo_descargado_en' => 'datetime',
         ];
     }
 
-    /** Al guardar, deriva la sala desde la OC si no viene seteada. */
+    /**
+     * Al guardar, deriva de lo que la propia fila ya dice: la sala desde la OC y el TIPO
+     * desde el número canónico. Solo RELLENA; nunca pisa un valor que alguien puso.
+     *
+     * El tipo se lee con {@see NumeroAlbaran::desde()}, que es el único lugar del sistema
+     * que sabe desarmar `AC01/0236/00/6359`. Si el número no trae prefijo reconocible
+     * —los capturados a mano con el número suelto— el tipo queda NULL, y eso significa
+     * «no consta», nunca «AC01».
+     */
     protected static function booted(): void
     {
         static::saving(function (PpqAlbaran $albaran) {
             if (blank($albaran->sala_codigo) && filled($albaran->numero_orden_compra)) {
                 $albaran->sala_codigo = OrdenCompra::salaDesde($albaran->numero_orden_compra);
             }
+
+            if (blank($albaran->tipo_codigo) && filled($albaran->numero_albaran)) {
+                $albaran->tipo_codigo = NumeroAlbaran::desde($albaran->numero_albaran)?->tipo;
+            }
         });
+    }
+
+    /**
+     * El código con el que el cliente identifica un albarán de ENTREGA. Es configuración,
+     * no una constante del sistema: otra cadena puede llamarlo distinto, y en ningún caso
+     * se compara por nombre de cliente.
+     */
+    public static function tipoDeEntrega(): string
+    {
+        return strtoupper((string) config('ppq.albaranes.tipo_entrega', 'AC01'));
+    }
+
+    /**
+     * ¿Este albarán prueba una ENTREGA?
+     *
+     * Un albarán de crédito (avería, devolución) NO prueba una entrega: acredita mercadería
+     * que volvió. Y un albarán sin tipo tampoco: no se sabe qué es, y suponerlo de entrega
+     * es justo el error caro. Los dos casos responden que no, por motivos distintos que
+     * ResolucionAlbaran sí distingue.
+     */
+    public function esDeEntrega(): bool
+    {
+        return filled($this->tipo_codigo)
+            && strtoupper((string) $this->tipo_codigo) === self::tipoDeEntrega();
+    }
+
+    /** Solo los albaranes que prueban entrega. */
+    public function scopeDeEntrega(Builder $query): Builder
+    {
+        return $query->where('tipo_codigo', self::tipoDeEntrega());
+    }
+
+    /** Albaranes cuyo tipo no se pudo determinar: van a excepción, no se suponen de entrega. */
+    public function scopeSinTipo(Builder $query): Builder
+    {
+        return $query->whereNull('tipo_codigo');
     }
 
     public function clienteSucursal(): BelongsTo

@@ -143,6 +143,11 @@ class SeguimientoDocumentos
             'total' => $documentos->count(),
             'entregados' => $entregados,
             'sin_albaran' => $documentos->count() - $entregados,
+            // NO es lo mismo «todavía no llegó el albarán» que «llegó algo que no se puede
+            // usar»: varios candidatos para la misma orden de compra, o un albarán cuyo
+            // tipo no consta y por eso no se supone de entrega. Lo primero es esperar; lo
+            // segundo es trabajo para una persona, y por eso se cuenta aparte.
+            'excepciones_entrega' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->entregaExcepcion() !== null)->count(),
             'documentacion_fisica' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->documentacionFisicaRecibida())->count(),
             'requieren_nc' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->requiere_nc)->count(),
             // `nc_reales` = documentos con una NC hallada, sea cual sea su estado; es

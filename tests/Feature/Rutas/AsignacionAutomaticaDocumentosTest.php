@@ -99,6 +99,12 @@ class AsignacionAutomaticaDocumentosTest extends TestCase
             'punto_venta_id' => ($pv ?? $this->p002())->id,
             'tipo_dte' => '03',
             'estado' => 'aceptado',
+            // Fiscalmente VIGENTE. Desde la Fase 0, a una salida de ruta solo entra un
+            // CCF que existe de verdad ante Hacienda: produccion, aceptado y con sello
+            // real. Un CCF de prueba tiene que parecerse a uno real o no entra.
+            'ambiente' => '01',
+            'sello_recepcion' => '2026'.strtoupper(substr(md5($control), 0, 12)),
+            'fecha_procesamiento_mh' => '2026-08-14 12:00:00',
             'cliente_id' => $sala?->cliente_id,
             'cliente_sucursal_id' => $sala?->id,
             'numero_control' => $control,

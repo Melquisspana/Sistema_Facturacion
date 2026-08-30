@@ -35,6 +35,15 @@ enum PermisoSistema: string
     case PpqVer = 'ppq.ver';
     case PpqGestionar = 'ppq.gestionar';
     case PpqGmail = 'ppq.gmail';
+    // Deshacer un cobro ya registrado. Va SEPARADO de `ppq.gestionar` por la misma razón
+    // que `planta.ajustes.confirmar` va separado de `planta.ajustes.crear`: agregar un
+    // documento a un lote es operación diaria, y contradecir un pago que ya se dio por
+    // cobrado es un acto que altera el saldo sin contrapartida del cliente.
+    //
+    // Conciliar —aplicar lo que dice el archivo del cliente— sigue bajo `ppq.gestionar`,
+    // a propósito: es la operación de todos los días y no debe quedar bloqueada si este
+    // permiso todavía no se sembró. Solo la reversión lo exige.
+    case PpqRevertirConciliacion = 'ppq.revertir-conciliacion';
 
     // Exportaciones / listas de empaque.
     case ExportacionesVer = 'exportaciones.ver';
@@ -187,6 +196,11 @@ enum PermisoSistema: string
                 self::ProductosVer,
                 self::PpqVer,
                 self::PpqGestionar,
+                // Facturación ya podía deshacer un pago sin querer —bastaba subir un TXT
+                // parcial y el conciliador limpiaba lo que no venía—, así que darle el
+                // permiso explícito no amplía lo que puede hacer: lo vuelve deliberado,
+                // con motivo y con su nombre.
+                self::PpqRevertirConciliacion,
                 self::ExportacionesVer,
                 self::ExportacionesGestionar,
                 self::DocumentosRecibidosVer,

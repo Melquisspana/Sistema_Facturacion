@@ -213,6 +213,23 @@
                                                 <button class="text-red-600 hover:underline text-xs">quitar</button>
                                             </form>
                                         @endif
+
+                                        {{-- Deshacer un cobro ya registrado. Es lo contrario de conciliar —contradice
+                                             lo que reportó el cliente— así que va con permiso propio y motivo
+                                             obligatorio, y queda en la bitácora del lote con el valor anterior.
+                                             Aparece aunque el lote no sea editable: un pago mal registrado hay que
+                                             poder corregirlo también en un lote ya cerrado. --}}
+                                        @if ($item->estaConciliado() && auth()->user()->can('ppq.revertir-conciliacion'))
+                                            <form method="POST" action="{{ route('ppq.lotes.items.revertir-cobro', [$lote, $item]) }}"
+                                                  class="mt-1"
+                                                  onsubmit="return confirm('Se va a quitar el cobro registrado de este documento. Volverá a contar como pendiente y quedará anotado con tu nombre. ¿Continuar?')">
+                                                @csrf
+                                                <input type="text" name="motivo" required minlength="10" maxlength="500"
+                                                       placeholder="Motivo (obligatorio)"
+                                                       class="w-40 rounded border-gray-300 text-[11px] py-0.5" />
+                                                <button class="mt-1 block w-full text-amber-700 hover:underline text-xs">quitar cobro</button>
+                                            </form>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty
@@ -235,6 +252,55 @@
                     </table>
                 </div>
             </div>
+
+            {{-- Historial de conciliaciones. Cada archivo de pagos procesado y cada
+                 corrección manual, con quién y con qué resultado. Antes esto no existía:
+                 se conciliaba, se sobrescribía el estado y el archivo se descartaba, así
+                 que no había forma de saber de dónde salía un pago ni quién lo había
+                 quitado. Es una bitácora: solo se lee. --}}
+            @if ($lote->conciliaciones->isNotEmpty())
+                <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-200">
+                        <h3 class="text-sm font-semibold text-gray-700">Historial de conciliación ({{ $lote->conciliaciones->count() }})</h3>
+                        <p class="mt-0.5 text-xs text-gray-500">Un archivo solo actualiza los documentos que nombra; los demás conservan su estado.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
+                                <th class="py-2.5 px-3">Cuándo</th>
+                                <th class="py-2.5 px-3">Origen</th>
+                                <th class="py-2.5 px-3">Archivo / motivo</th>
+                                <th class="py-2.5 px-3">Quién</th>
+                                <th class="py-2.5 px-3 text-right">Cambiados</th>
+                                <th class="py-2.5 px-3 text-right">Sin cambio</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @foreach ($lote->conciliaciones as $corrida)
+                                    <tr class="hover:bg-gray-50 align-top">
+                                        <td class="py-2 px-3 text-gray-700 whitespace-nowrap">{{ $corrida->created_at?->translatedFormat('d M Y H:i') ?? '—' }}</td>
+                                        <td class="py-2 px-3">
+                                            <span class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $corrida->origen->clase() }}">{{ $corrida->origen->label() }}</span>
+                                        </td>
+                                        <td class="py-2 px-3 text-gray-700">
+                                            @if ($corrida->archivo_nombre)
+                                                <span class="font-mono text-xs">{{ $corrida->archivo_nombre }}</span>
+                                                {{-- La huella es lo que hace verificable la copia guardada. --}}
+                                                <span class="block font-mono text-[10px] text-gray-400" title="SHA-256 del archivo procesado">{{ substr((string) $corrida->archivo_hash, 0, 16) }}…</span>
+                                            @endif
+                                            @if ($corrida->motivo)
+                                                <span class="block text-xs text-gray-600">{{ $corrida->motivo }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-2 px-3 text-gray-700">{{ $corrida->usuario?->name ?? '—' }}</td>
+                                        <td class="py-2 px-3 text-right tabular-nums text-gray-800">{{ $corrida->items_cambiados }}</td>
+                                        <td class="py-2 px-3 text-right tabular-nums text-gray-500">{{ $corrida->items_sin_cambio }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
 
             @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                 <div class="flex justify-end">

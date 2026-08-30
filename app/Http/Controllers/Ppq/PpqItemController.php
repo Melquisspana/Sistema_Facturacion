@@ -56,14 +56,17 @@ class PpqItemController extends Controller
 
         $dte = Dte::findOrFail($datos['dte_id']);
 
-        // CANDADO FISCAL. La pantalla ya no dibuja los botones para un documento no
-        // elegible, pero eso es una cortesía, no una defensa: el `dte_id` viaja en un
-        // campo oculto de un formulario POST y cualquiera puede cambiarlo. La única
-        // comprobación que cuenta es esta, del lado del servidor, y usa LA MISMA regla
-        // que la pantalla ({@see PpqElegibilidad}) para que no puedan discrepar.
+        // CANDADO. La pantalla ya no dibuja los botones para un documento que no se puede
+        // cobrar, pero eso es una cortesía, no una defensa: el `dte_id` viaja en un campo
+        // oculto de un formulario POST y cualquiera puede cambiarlo. La única comprobación
+        // que cuenta es esta, del lado del servidor, y usa LA MISMA regla que la pantalla
+        // ({@see PpqElegibilidad::motivoParaCobrar()}) para que no puedan discrepar.
+        //
+        // Cubre las dos condiciones: que el documento EXISTA ante Hacienda, y que el
+        // cliente no exija el CCF físico de vuelta o que ese papel ya haya regresado.
         //
         // Va ANTES de registrar el albarán: un intento rechazado no debe dejar rastro.
-        $motivo = PpqElegibilidad::motivo($dte);
+        $motivo = PpqElegibilidad::motivoParaCobrar($dte);
         if ($motivo !== null) {
             return back()->with('error', 'Ese documento no se puede cobrar por PPQ y no se agregó al lote. '.$motivo);
         }
@@ -134,6 +137,11 @@ class PpqItemController extends Controller
         }
         if ($avisoAlbaran) {
             $mensaje .= ' '.$avisoAlbaran;
+        }
+        // El cliente pidió que solo se advierta sobre el CCF físico: el documento entró,
+        // pero conviene que alguien vaya a buscar el papel antes de cerrar el lote.
+        if ($advertencia = PpqElegibilidad::advertenciaParaCobrar($dte)) {
+            $mensaje .= ' '.$advertencia;
         }
 
         return back()->with('status', $mensaje);

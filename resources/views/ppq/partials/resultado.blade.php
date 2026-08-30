@@ -8,6 +8,7 @@
     // Claves nuevas: se normalizan acá para no exigirle a cada llamador que las arme.
     $r['albaranFuente'] ??= null;
     $r['motivoNoElegible'] ??= null;
+    $r['advertenciaCobro'] ??= null;
 
     // CANDADO FISCAL. Un documento LOCAL que no se puede cobrar por PPQ se sigue
     // mostrando —existe, y ocultarlo sería mentir sobre lo que hay— pero sin ninguna
@@ -99,6 +100,17 @@
             </p>
             <p class="mt-1 text-sm text-red-700">{{ $r['motivoNoElegible'] }}</p>
             <p class="mt-1 text-xs text-red-600">Se muestra como referencia. No se puede agregar a ningún lote de cobro.</p>
+        </div>
+    @endif
+
+    {{-- BLOQUE 0b — Aviso que NO impide cobrar. Es el modo «advertir» del perfil del
+         cliente: el documento entra al lote igual, pero conviene buscar el papel antes
+         de cerrarlo. Va en ámbar y no en rojo a propósito: rojo significa «no se puede»,
+         y acá sí se puede. --}}
+    @if (! $noElegible && filled($r['advertenciaCobro']))
+        <div class="border-l-4 border-amber-400 bg-amber-50 px-6 py-3">
+            <p class="text-sm font-semibold text-amber-800">Falta el documento físico</p>
+            <p class="mt-1 text-sm text-amber-700">{{ $r['advertenciaCobro'] }}</p>
         </div>
     @endif
 

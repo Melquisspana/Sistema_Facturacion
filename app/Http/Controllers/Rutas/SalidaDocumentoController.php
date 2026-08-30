@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Rutas;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\MotivoRevisionDocumento;
 use App\Exceptions\Ppq\GmailDesconectadoException;
+use App\Exceptions\Rutas\DocumentoNoVigenteException;
 use App\Exceptions\Rutas\DocumentoYaAsignadoException;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
@@ -14,6 +15,7 @@ use App\Services\Ppq\PpqGmailService;
 use App\Services\Rutas\AsignadorAutomaticoDocumentos;
 use App\Services\Rutas\AsignadorDocumentos;
 use App\Services\Rutas\CandidatosDocumentos;
+use App\Support\IdentidadPpq;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -74,6 +76,7 @@ class SalidaDocumentoController extends Controller
 
         $agregados = 0;
         $choques = [];
+        $rechazados = [];
 
         foreach ($documentos as $dte) {
             try {
@@ -84,6 +87,11 @@ class SalidaDocumentoController extends Controller
                 $agregados++;
             } catch (DocumentoYaAsignadoException $e) {
                 $choques[] = $dte->numero_control;
+            } catch (DocumentoNoVigenteException $e) {
+                // La pantalla de candidatos ya no los ofrece, pero el id viaja en un POST
+                // y cualquiera puede cambiarlo: la comprobación que cuenta es la del
+                // servicio. Se reporta por documento y los demás siguen entrando.
+                $rechazados[] = $e->getMessage();
             }
         }
 
@@ -91,9 +99,14 @@ class SalidaDocumentoController extends Controller
             ->route('rutas.salidas.show', $salida)
             ->with('status', $this->mensajeDeAlta($agregados));
 
-        return $choques === []
+        $errores = array_merge(
+            $choques === [] ? [] : ['No se agregaron (ya están en otra salida abierta): '.implode(', ', $choques)],
+            $rechazados,
+        );
+
+        return $errores === []
             ? $respuesta
-            : $respuesta->with('error', 'No se agregaron (ya están en otra salida abierta): '.implode(', ', $choques));
+            : $respuesta->with('error', implode(' ', $errores));
     }
 
     // ------------------------------------------------------- P001 histórico
@@ -168,7 +181,13 @@ class SalidaDocumentoController extends Controller
         // Si ese número SÍ existe en `dtes`, no es un histórico: se agrega por el camino
         // normal para que quede con su `dte_id` y sus datos vivos, en vez de como una
         // copia congelada.
-        $dte = Dte::where('numero_control', $datos['numero_control'])->first();
+        //
+        // La resolución pasa por {@see IdentidadPpq::dteLocal()} y no por un `where` suelto
+        // sobre el número: el mismo número de control puede existir en PRUEBAS y en
+        // PRODUCCIÓN, y un `first()` a secas devolvía el que la base tuviera más a mano.
+        // Con eso, tipear el número de un CCF real podía terminar agregando su gemelo de
+        // pruebas —con la sala, la fecha y el monto equivocados— sin ninguna señal.
+        $dte = IdentidadPpq::dteLocal($datos['numero_control']);
 
         try {
             $documento = $this->asignador->traduciendoChoques(
@@ -178,6 +197,11 @@ class SalidaDocumentoController extends Controller
                 $datos['numero_control'],
             );
         } catch (DocumentoYaAsignadoException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (DocumentoNoVigenteException $e) {
+            // Existe en el sistema pero no ampara nada. NO se cae al camino histórico: eso
+            // guardaría una copia congelada de un documento que sí conocemos y que está
+            // mal, y la pantalla lo mostraría como si fuera bueno.
             return back()->with('error', $e->getMessage());
         }
 

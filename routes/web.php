@@ -317,6 +317,19 @@ Route::middleware('auth')->group(function () {
             Route::post('lotes/{lote}/conciliar', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'conciliar'])->name('lotes.conciliar');
         });
 
+        /*
+        | Deshacer un cobro ya registrado. Fuera del grupo de `ppq.gestionar` y con permiso
+        | propio: aplicar lo que dice el archivo del cliente es la operación de todos los
+        | días, contradecir un pago que ya se dio por cobrado no lo es.
+        |
+        | Va DESPUÉS del grupo anterior a propósito: `conciliar` conserva su permiso de
+        | siempre, así que si este permiso todavía no se sembró (`db:seed --class=RolesSeeder`)
+        | lo único que queda sin acceso es esta acción nueva, y la operación diaria sigue.
+        */
+        Route::post('lotes/{lote}/items/{item}/revertir-cobro', [\App\Http\Controllers\Ppq\PpqLoteController::class, 'revertirItem'])
+            ->middleware('permission:ppq.revertir-conciliacion')
+            ->name('lotes.items.revertir-cobro');
+
         // Envío diario de notas de crédito al cliente (una fila por NC). Consultar y
         // descargar basta con ppq.ver; crear el lote exige ppq.gestionar, porque marca
         // documentos como enviados.

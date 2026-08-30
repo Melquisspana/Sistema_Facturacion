@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ModoPapelFisico;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoNotaCredito;
 use App\Models\Cliente;
@@ -38,6 +39,7 @@ class PerfilDocumentoClienteCommand extends Command
         {--formato= : Slug del formato de exportación}
         {--exige-albaran : La NC no se podrá generar sin los datos del albarán}
         {--no-exige-albaran : Deja de exigirlo}
+        {--papel-fisico= : Qué hacer si el CCF físico firmado no regresó: bloquear | advertir | no_requerir}
         {--tolerancia= : Diferencia tolerada contra el albarán antes de avisar}
         {--mapear=* : modalidad:CODIGO:origen[:tasa] (repetible)}
         {--olvidar-mapeo=* : modalidad a quitar del mapeo (repetible)}';
@@ -88,7 +90,7 @@ class PerfilDocumentoClienteCommand extends Command
             }
         }
 
-        foreach (['codigo-proveedor', 'formato', 'tolerancia'] as $valor) {
+        foreach (['codigo-proveedor', 'formato', 'tolerancia', 'papel-fisico'] as $valor) {
             if ($this->option($valor) !== null) {
                 return true;
             }
@@ -118,6 +120,15 @@ class PerfilDocumentoClienteCommand extends Command
         }
         if (($tolerancia = $this->option('tolerancia')) !== null) {
             $perfil->tolerancia_albaran = (float) $tolerancia;
+        }
+        if (($papel = $this->option('papel-fisico')) !== null) {
+            // Un modo mal escrito se detiene acá. Aceptarlo en silencio dejaría el perfil
+            // en un estado que nadie declaró y, en el peor caso, sin el bloqueo que el
+            // cliente sí exige.
+            $perfil->modo_papel_fisico = ModoPapelFisico::tryFrom((string) $papel)
+                ?? throw new \InvalidArgumentException(
+                    "Modo de papel físico desconocido: «{$papel}». Válidos: ".implode(', ', ModoPapelFisico::valores()).'.'
+                );
         }
         if (($formato = $this->option('formato')) !== null) {
             // Un slug inexistente se detiene acá y no el día del envío: exportar con un
@@ -199,6 +210,7 @@ class PerfilDocumentoClienteCommand extends Command
             ['Código de proveedor', $perfil->codigo_proveedor ?? '—'],
             ['Formato de exportación', $perfil->formato_export ?? '—'],
             ['Exige albarán en la NC', $perfil->exige_albaran_en_nc ? 'sí' : 'no'],
+            ['CCF físico para cobrar', $perfil->modoPapelFisico()->label().' — '.$perfil->modoPapelFisico()->detalle()],
             ['Tolerancia contra el albarán', $perfil->tolerancia_albaran],
         ]);
 

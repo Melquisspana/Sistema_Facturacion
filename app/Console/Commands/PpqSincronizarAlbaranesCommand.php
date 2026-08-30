@@ -148,6 +148,11 @@ class PpqSincronizarAlbaranesCommand extends Command
             'fecha_albaran' => $candidato['fecha'] ?? null,
             'gmail_message_id' => $candidato['gmail_message_id'] ?? null,
             'sala_codigo' => $candidato['sala'] ?? null,
+            // El PDF viaja hasta el persistidor, que es quien lo guarda. Antes se parseaba
+            // y se descartaba: la entrega quedaba probada por un identificador de correo y
+            // por nada más.
+            'archivo_nombre' => $candidato['archivo_nombre'] ?? null,
+            'archivo_contenido' => $candidato['archivo_contenido'] ?? null,
         ];
 
         $sala = $persistidor->resolverSala($datos);

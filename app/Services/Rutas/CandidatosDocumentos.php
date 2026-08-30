@@ -2,10 +2,13 @@
 
 namespace App\Services\Rutas;
 
+use App\Enums\AmbienteHacienda;
 use App\Models\Dte;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaDocumento;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -14,8 +17,12 @@ use Illuminate\Support\Carbon;
  *
  * Los cinco filtros, y por qué cada uno:
  *
- *  - tipo 03 y no archivado — es lo que se cobra; un rechazado archivado está fuera
- *    de la operación.
+ *  - tipo 03 y FISCALMENTE VIGENTE — es lo que se cobra. La vigencia la decide la regla
+ *    compartida ({@see VigenciaFiscalDte}) y no una condición propia de acá:
+ *    antes bastaba «no archivado», así que la pantalla ofrecía borradores, rechazados sin
+ *    archivar y documentos del ambiente de PRUEBAS. Ofrecer un documento que el backend va
+ *    a rechazar es peor que no ofrecerlo, y un CCF de pruebas metido en una salida bloquea
+ *    por número de control al real.
  *  - con `cliente_sucursal_id` — sin sala no hay forma de saber si es de esta ruta.
  *  - la sala pertenece a la ruta de la salida — es lo que hace «candidato» a un
  *    documento y no a los otros mil.
@@ -46,15 +53,28 @@ class CandidatosDocumentos
 
         $sucursalesDeLaRuta = $salida->ruta->sucursales()->pluck('id');
 
-        return Dte::query()
+        return VigenciaFiscalDte::filtrar(Dte::query())
             ->where('tipo_dte', '03')
-            ->noArchivados()
             ->whereIn('cliente_sucursal_id', $sucursalesDeLaRuta)
             ->whereDate('fecha_emision', '>=', $desde)
             ->whereDate('fecha_emision', '<=', $hasta)
-            // Sin dueño: se compara por número de control, que es la identidad que
-            // comparten los dos caminos (P002 y P001).
-            ->whereNotIn('numero_control', SalidaRutaDocumento::vigentes()->select('numero_control'))
+            // Sin dueño, comprobado por las dos vías:
+            //
+            //  · `dte_id` — el vínculo exacto, el más fuerte;
+            //  · el número de control, para alcanzar a los documentos que alguien cargó
+            //    como histórico y quedaron sin vínculo.
+            //
+            // La segunda excluye solo las filas de PRODUCCIÓN y las HISTÓRICAS (ambiente
+            // nulo: no está en `dtes`, así que no puede ser el gemelo de pruebas de nadie).
+            // Deja fuera a propósito las filas de pruebas: comparar el número sin mirar el
+            // ambiente escondía el CCF real cuando su gemelo simulado estaba en una salida,
+            // y ese CCF no volvía a ofrecerse nunca.
+            ->whereNotIn('id', SalidaRutaDocumento::vigentes()->whereNotNull('dte_id')->select('dte_id'))
+            ->whereNotIn('numero_control', SalidaRutaDocumento::vigentes()
+                ->where(fn (Builder $q) => $q
+                    ->whereNull('ambiente')
+                    ->orWhere('ambiente', AmbienteHacienda::Produccion->value))
+                ->select('numero_control'))
             ->when(filled($filtros['q'] ?? null), function ($q) use ($filtros) {
                 $texto = '%'.trim((string) $filtros['q']).'%';
                 $q->where(fn ($w) => $w->where('numero_control', 'like', $texto)->orWhere('numero_orden_compra', 'like', $texto));
