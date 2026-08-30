@@ -6,6 +6,7 @@ use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Models\PpqAlbaran;
 use App\Support\Albaran;
 use App\Support\OrdenCompra;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Punto ÚNICO de persistencia de albaranes en `ppq_albaranes`.
@@ -99,6 +100,8 @@ class AlbaranPersistidor
             $albaran->update(['monto_albaran' => $datos['monto_albaran']]);
         }
 
+        $this->guardarEvidencia($albaran, $datos);
+
         if ($resolverSala) {
             $this->completarSala($albaran, $datos);
         }
@@ -130,6 +133,61 @@ class AlbaranPersistidor
         if ($borrado !== null) {
             throw new AlbaranDadoDeBajaException($numero, $oc, (int) $borrado->id);
         }
+    }
+
+    /**
+     * Guarda el PDF del albarán y sus señas, si vino y si la fila todavía no lo tiene.
+     *
+     * ─────────────────────── Por qué se guarda, y por qué acá ───────────────────────
+     *
+     * Hasta ahora la sincronización bajaba el PDF, le sacaba número, fecha, OC y monto con
+     * expresiones regulares, y lo tiraba. Lo único que quedaba era el identificador del
+     * mensaje: si el correo se borra, la etiqueta se reorganiza o la cuenta cambia, la
+     * prueba de la entrega desaparece y solo queda un número que alguien parseó.
+     *
+     * Va en este servicio porque es el punto ÚNICO de persistencia del albarán: si lo
+     * guardara quien lee el correo, una consulta de solo lectura escribiría en disco.
+     *
+     * ────────────────────────── Idempotencia y correcciones ──────────────────────────
+     *
+     * La ruta es `{directorio}/{sha256}.pdf`: el contenido decide dónde vive. Releer el
+     * mismo correo escribe el mismo archivo, así que la sincronización se puede correr las
+     * veces que haga falta sin duplicar nada.
+     *
+     * Y NUNCA se pisa una evidencia ya guardada, por el mismo criterio que rige el monto:
+     * si llega un PDF distinto para el mismo número y OC, es una CORRECCIÓN o un reenvío
+     * modificado, y eso hay que mirarlo —el hash guardado permite detectarlo— en vez de
+     * reemplazar en silencio la prueba original.
+     *
+     * Lo que se guarda son los BYTES DEL ADJUNTO y nada más: ni tokens, ni credenciales,
+     * ni la traza de la consulta a Gmail. Va al disco privado (`storage/app/private`), que
+     * no es el que publica `public/storage` y cuya ruta de servido exige URL firmada.
+     *
+     * Si la escritura de la fila falla después de guardar el PDF, la copia queda huérfana y
+     * se deja así: está direccionada por su contenido, el reintento la reutiliza, y borrarla
+     * por hash podría llevarse la evidencia de OTRO albarán que comparte el mismo archivo.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    private function guardarEvidencia(PpqAlbaran $albaran, array $datos): void
+    {
+        $contenido = $datos['archivo_contenido'] ?? null;
+
+        if (blank($contenido) || filled($albaran->archivo_path)) {
+            return;
+        }
+
+        $hash = hash('sha256', $contenido);
+        $ruta = trim((string) config('ppq.albaranes.storage_dir', 'ppq/albaranes'), '/').'/'.$hash.'.pdf';
+
+        Storage::disk((string) config('dte.storage.disk', 'local'))->put($ruta, $contenido);
+
+        $albaran->update([
+            'archivo_path' => $ruta,
+            'archivo_nombre' => $datos['archivo_nombre'] ?? null,
+            'archivo_hash' => $hash,
+            'archivo_descargado_en' => now(),
+        ]);
     }
 
     /**

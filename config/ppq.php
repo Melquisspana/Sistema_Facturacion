@@ -21,6 +21,40 @@ return [
     'diferencia_coincide' => (float) env('PPQ_DIFERENCIA_COINCIDE', 0.05),
     'diferencia_pequena' => (float) env('PPQ_DIFERENCIA_PEQUENA', 1.00),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Conciliación contra el archivo de pagos del cliente
+    |--------------------------------------------------------------------------
+    | Dónde queda la COPIA del TXT que se procesó. No es un caché: es la única
+    | prueba de que el cliente reportó esos pagos, y sin ella la afirmación «este
+    | documento se cobró» no tiene documento de respaldo.
+    |
+    | La copia se guarda direccionada por el SHA-256 de su contenido, así que
+    | procesar dos veces el mismo archivo escribe el mismo lugar y no duplica nada.
+    */
+    'conciliacion' => [
+        'storage_dir' => env('PPQ_CONCILIACION_STORAGE_DIR', 'ppq/conciliaciones'),
+    ],
+
+    /*
+    | Dónde queda el PDF del albarán bajado del correo. Mismo criterio: es la
+    | prueba de la entrega, y hasta ahora se descartaba después de parsearlo.
+    | Solo se guardan los BYTES DEL ADJUNTO: nunca tokens ni credenciales.
+    */
+    'albaranes' => [
+        'storage_dir' => env('PPQ_ALBARANES_STORAGE_DIR', 'ppq/albaranes'),
+
+        /*
+        | Código con el que el cliente identifica el albarán de ENTREGA. Los demás
+        | (AC02 avería, AC04 devolución) son de CRÉDITO y no prueban ninguna entrega,
+        | aunque compartan la orden de compra con el CCF.
+        |
+        | Es configuración y no una constante porque otra cadena puede numerarlos de
+        | otra forma. Lo que NUNCA se hace es comparar por nombre de cliente.
+        */
+        'tipo_entrega' => env('PPQ_ALBARAN_TIPO_ENTREGA', 'AC01'),
+    ],
+
     // Cliente por defecto del módulo (Calleja). Solo referencia para filtros/UI.
     'cliente_default_id' => env('PPQ_CLIENTE_DEFAULT_ID', null),
 

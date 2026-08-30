@@ -7,6 +7,7 @@ use App\Models\Dte;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaDocumento;
 use App\Models\User;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Support\Collection;
 
 /**
@@ -14,7 +15,9 @@ use Illuminate\Support\Collection;
  *
  * La regla completa, y no hay excepciones a ella:
  *
- *     CCF (tipo 03) de la serie P002, no archivado
+ *     CCF (tipo 03) de la serie P002, FISCALMENTE VIGENTE
+ *       (producción, aceptado de verdad por Hacienda, no archivado ni invalidado
+ *        — la decide {@see VigenciaFiscalDte}, no una condición propia)
  *       → tiene `cliente_sucursal_id`
  *       → esa sucursal tiene `ruta_id`
  *       → esa ruta tiene EXACTAMENTE UNA salida EN CURSO
@@ -68,7 +71,7 @@ class AsignadorAutomaticoDocumentos
         self::VARIAS_SALIDAS_EN_CURSO => 'La ruta tiene más de una salida en curso: hay que elegir a mano',
         self::YA_ASIGNADO => 'El documento ya pertenece a una salida',
         self::SERIE_NO_AUTOMATICA => 'La serie del documento no se asocia automáticamente',
-        self::NO_ES_CCF_VIGENTE => 'No es un CCF vigente (tipo 03 sin archivar)',
+        self::NO_ES_CCF_VIGENTE => 'No es un CCF vigente ante Hacienda (tipo 03, de producción, aceptado y sin archivar)',
     ];
 
     public function __construct(private readonly AsignadorDocumentos $asignador) {}
@@ -84,7 +87,15 @@ class AsignadorAutomaticoDocumentos
     {
         // `tipo_dte` está casteado a TipoDte: se compara por su valor, no por el enum,
         // para no acoplar este módulo al catálogo fiscal más de lo imprescindible.
-        if ($dte->tipo_dte?->value !== '03' || $dte->estaArchivado()) {
+        if ($dte->tipo_dte?->value !== '03') {
+            return $this->resultado(self::NO_ES_CCF_VIGENTE);
+        }
+
+        // El resto de la vigencia lo decide la regla COMPARTIDA, no una condición propia.
+        // Antes acá solo se miraba «no archivado», así que un borrador o un documento del
+        // ambiente de PRUEBAS podía asociarse solo a una salida —y arrastrar un número de
+        // control que en producción pertenece a otro documento—.
+        if (! VigenciaFiscalDte::esVigente($dte)) {
             return $this->resultado(self::NO_ES_CCF_VIGENTE);
         }
 
@@ -104,7 +115,7 @@ class AsignadorAutomaticoDocumentos
 
         // Se comprueba ANTES de mirar las salidas: si ya tiene dueño, cuántas salidas
         // haya en curso da igual, no se toca.
-        if ($this->yaAsignado((string) $dte->numero_control)) {
+        if ($this->yaAsignado($dte)) {
             return $this->resultado(self::YA_ASIGNADO);
         }
 
@@ -153,9 +164,11 @@ class AsignadorAutomaticoDocumentos
     {
         $desde = now()->subDays($dias)->toDateString();
 
-        $candidatos = Dte::query()
+        // El barrido ya no recorre borradores ni documentos de pruebas: la misma regla que
+        // aplica `evaluar()` se aplica en la consulta, para no traerse a memoria miles de
+        // filas que van a descartarse una por una.
+        $candidatos = VigenciaFiscalDte::filtrar(Dte::query())
             ->where('tipo_dte', '03')
-            ->noArchivados()
             ->whereNotNull('cliente_sucursal_id')
             ->whereDate('fecha_emision', '>=', $desde)
             ->with(['clienteSucursal:id,nombre,ruta_id', 'puntoVenta:id,codigo'])
@@ -172,10 +185,32 @@ class AsignadorAutomaticoDocumentos
         return $porMotivo;
     }
 
-    /** ¿El documento ya pertenece a alguna salida abierta? */
-    private function yaAsignado(string $numeroControl): bool
+    /**
+     * ¿ESTE documento ya pertenece a alguna salida abierta?
+     *
+     * Se pregunta primero por el vínculo explícito (`dte_id`), que es la respuesta exacta,
+     * y solo si no hay ninguna fila con ese vínculo se mira el número de control ACOTADO
+     * AL MISMO AMBIENTE. Sin esa segunda condición, un documento de pruebas asignado a una
+     * salida haría que el sistema creyera que el CCF real de producción con el mismo
+     * correlativo «ya tiene dueño», y ese CCF nunca se asociaría a la salida que de verdad
+     * lo está llevando.
+     *
+     * El número de control se sigue mirando —y no solo `dte_id`— porque el documento pudo
+     * cargarse antes como histórico, sin vínculo; las filas históricas tienen ambiente
+     * NULL y por eso no compiten con las de un documento local.
+     */
+    private function yaAsignado(Dte $dte): bool
     {
-        return SalidaRutaDocumento::vigentes()->where('numero_control', $numeroControl)->exists();
+        $vigentes = SalidaRutaDocumento::vigentes();
+
+        if ($vigentes->clone()->where('dte_id', $dte->id)->exists()) {
+            return true;
+        }
+
+        return $vigentes
+            ->where('numero_control', (string) $dte->numero_control)
+            ->where('ambiente', $dte->ambiente?->value)
+            ->exists();
     }
 
     /** @return array{estado: string, motivo: string, salida: ?SalidaRuta} */

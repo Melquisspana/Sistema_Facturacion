@@ -19,7 +19,46 @@
             <div class="rounded-md bg-indigo-50 border border-indigo-200 p-3 text-sm text-indigo-800">
                 Archivo <span class="font-mono">{{ $archivo }}</span> — {{ $totalFilas }} fila(s) leída(s) del TXT de Calleja.
                 Los CCF se marcan como <strong>pagados</strong> solo si aparecen en el TXT (tipo CF); estar en el PPQ no los marca pagados.
+                <span class="mt-1 block">
+                    Este archivo solo actualizó los documentos que nombra: <strong>{{ $reporte['corrida']?->items_cambiados ?? 0 }}</strong> renglón(es).
+                    Los demás quedaron como estaban.
+                </span>
             </div>
+
+            {{-- Renglones que YA estaban cobrados y que este archivo no menciona.
+                 Es la sección que prueba que la corrida no borró nada: antes, un archivo
+                 parcial les vaciaba el pago sin dejar rastro. --}}
+            @if (count($reporte['conservados']))
+                <div class="bg-white shadow-sm ring-1 ring-green-200 sm:rounded-xl overflow-hidden">
+                    <div class="px-5 py-3 border-b border-green-200 bg-green-50">
+                        <h3 class="text-sm font-semibold text-green-800">Cobros conservados ({{ count($reporte['conservados']) }})</h3>
+                        <p class="text-xs text-green-700 mt-0.5">
+                            Ya estaban cobrados por una conciliación anterior y este archivo no los menciona.
+                            No se tocaron: un archivo solo puede hablar de lo que trae dentro.
+                        </p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
+                                <th class="py-2.5 px-3">N° de control</th>
+                                <th class="py-2.5 px-3">Estado</th>
+                                <th class="py-2.5 px-3">Fecha de pago</th>
+                                <th class="py-2.5 px-3 text-right">Monto cobrado</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @foreach ($reporte['conservados'] as $item)
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="py-2 px-3 font-mono text-xs text-gray-700">{{ $ctrl($item) }}</td>
+                                        <td class="py-2 px-3"><span class="rounded-full {{ $item->estadoPagoClase() }} px-2 py-0.5 text-[11px] font-medium">{{ $item->estadoPagoLabel() }}</span></td>
+                                        <td class="py-2 px-3 text-gray-700">{{ $dmy($item->fecha_pago) }}</td>
+                                        <td class="py-2 px-3 text-right text-gray-800">{{ $item->monto_pagado !== null ? $money($item->monto_pagado) : '—' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
 
             {{-- Resumen de totales (según TXT) --}}
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -52,6 +91,9 @@
                 <span class="rounded-full bg-indigo-100 text-indigo-700 px-3 py-1">NC aplicadas: {{ $t['cantidad_nc_aplicadas'] }}</span>
                 <span class="rounded-full bg-rose-100 text-rose-700 px-3 py-1">NC pendientes: {{ $t['cantidad_nc_pendientes'] }}</span>
                 <span class="rounded-full bg-gray-100 text-gray-600 px-3 py-1">En TXT, no en PPQ: {{ $t['cantidad_no_en_ppq'] }}</span>
+                @if ($t['cantidad_conservados'] > 0)
+                    <span class="rounded-full bg-green-100 text-green-700 px-3 py-1">Cobros conservados: {{ $t['cantidad_conservados'] }}</span>
+                @endif
             </div>
 
             {{-- CCF del PPQ pagados según TXT --}}

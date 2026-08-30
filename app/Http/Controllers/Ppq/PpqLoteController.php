@@ -61,7 +61,9 @@ class PpqLoteController extends Controller
             'cliente:id,nombre,nombre_comercial',
             'items.dte:id,tipo_dte,numero_control,codigo_generacion,sello_recepcion,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id',
             'items.dte.clienteSucursal:id,nombre,codigo',
-            'items.albaran:id,numero_albaran,fecha_albaran,monto_albaran,sala_codigo',
+            'items.albaran:id,numero_albaran,tipo_codigo,fecha_albaran,monto_albaran,sala_codigo',
+            // Bitácora de conciliación: de dónde salió cada pago y quién lo corrigió.
+            'conciliaciones.usuario:id,name',
         ]);
 
         return view('ppq.lotes.show', ['lote' => $lote]);
@@ -105,9 +107,19 @@ class PpqLoteController extends Controller
     }
 
     /**
-     * Concilia el lote contra el TXT de pagos de Calleja: marca cada CCF como PAGADO/CONCILIADO
-     * solo si aparece en el TXT como CF (y las NC como APLICADA si aparecen como NC), guardando
-     * fecha y monto del TXT. Devuelve un resumen interno. NO modifica el Excel oficial de Calleja.
+     * Concilia el lote contra el TXT de pagos del cliente: marca como PAGADO cada CCF que
+     * aparece en el archivo como CF (y como APLICADA cada NC que aparece como NC),
+     * guardando la fecha y el monto que reporta el archivo.
+     *
+     * Lo que NO hace, y es el cambio importante: no toca los renglones que el archivo no
+     * menciona. Antes se los limpiaba, así que un TXT parcial borraba pagos ya
+     * registrados. Ver {@see \App\Services\Ppq\ConciliadorPpq}.
+     *
+     * El archivo se guarda ANTES de procesar y queda referenciado en la bitácora con su
+     * huella: es la prueba de que el cliente reportó esos pagos. Subir dos veces el mismo
+     * archivo no vuelve a aplicar nada.
+     *
+     * NO modifica el Excel oficial del cliente.
      */
     public function conciliar(
         Request $request,
@@ -123,15 +135,54 @@ class PpqLoteController extends Controller
             return redirect()->route('ppq.lotes.show', $lote)->with('error', 'El lote no tiene documentos para conciliar.');
         }
 
-        $contenido = (string) file_get_contents($request->file('archivo')->getRealPath());
-        $filas = $parser->parse($contenido);
-        $reporte = $conciliador->conciliar($lote, $filas);
+        // Se guarda la copia y se calcula la huella antes de tocar nada: la evidencia no
+        // depende de que el procesamiento salga bien.
+        $archivo = \App\Services\Ppq\ArchivoConciliacion::desdeSubida($request->file('archivo'));
+        $filas = $parser->parse($archivo->contenido);
+
+        try {
+            $reporte = $conciliador->conciliar($lote, $filas, $request->user(), $archivo);
+        } catch (\App\Exceptions\Ppq\ConciliacionYaProcesadaException $e) {
+            // No es un error del usuario ni un fallo: es la respuesta correcta a subir dos
+            // veces el mismo archivo. Se dice cuándo se procesó y no se cambia nada.
+            return redirect()->route('ppq.lotes.show', $lote)->with('status', $e->getMessage());
+        } catch (\App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException $e) {
+            // El archivo se contradice a sí mismo. No se aplicó nada: el mensaje dice qué
+            // documento está repetido y con qué valores, para poder reclamarlo al cliente.
+            return redirect()->route('ppq.lotes.show', $lote)->with('error', $e->getMessage());
+        }
 
         return view('ppq.lotes.conciliacion', [
             'lote' => $lote,
             'reporte' => $reporte,
-            'archivo' => $request->file('archivo')->getClientOriginalName(),
+            'archivo' => $archivo->nombre,
             'totalFilas' => count($filas),
         ]);
+    }
+
+    /**
+     * Quita el cobro registrado de UN renglón del lote. La única forma de deshacer un pago.
+     *
+     * Va aparte de conciliar —y con su propio permiso— porque son actos distintos: aquel
+     * aplica lo que dijo el cliente, este contradice algo que ya se había dado por cobrado.
+     * El motivo es obligatorio y queda con el nombre de quien lo pidió.
+     */
+    public function revertirItem(
+        Request $request,
+        PpqLote $lote,
+        \App\Models\PpqItem $item,
+        \App\Services\Ppq\ReversionConciliacion $reversion,
+    ): RedirectResponse {
+        abort_unless($item->ppq_lote_id === $lote->id, 404);
+
+        $datos = $request->validate([
+            'motivo' => ['required', 'string', 'max:500'],
+        ], [], ['motivo' => 'motivo']);
+
+        $reversion->revertir($item, $datos['motivo'], $request->user());
+
+        return redirect()
+            ->route('ppq.lotes.show', $lote)
+            ->with('status', 'Se quitó el cobro registrado del documento. Vuelve a contar como pendiente y quedó anotado quién lo hizo y por qué.');
     }
 }

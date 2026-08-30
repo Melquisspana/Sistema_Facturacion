@@ -42,6 +42,25 @@ class PpqLote extends Model
     }
 
     /**
+     * Historial de conciliaciones del lote: cada archivo de pagos procesado y cada
+     * corrección manual, de la más reciente a la más vieja.
+     *
+     * Es una bitácora de solo lectura: acá se consulta, nunca se escribe. Quien escribe es
+     * ConciliadorPpq (al procesar un archivo de pagos) o ReversionConciliacion (al quitar
+     * un cobro a mano).
+     */
+    public function conciliaciones(): HasMany
+    {
+        return $this->hasMany(PpqConciliacion::class, 'ppq_lote_id')->orderByDesc('id');
+    }
+
+    /** ¿Alguna vez se concilió este lote contra un archivo de pagos? */
+    public function fueConciliado(): bool
+    {
+        return $this->conciliaciones()->exists();
+    }
+
+    /**
      * Items en el ORDEN de cobro de Calleja: primero todos los CCF, después todas las NC; y
      * dentro de cada grupo por correlativo numérico ascendente (CCF 970, 971, 1000; NC 340, 341).
      * Una NC con número menor igual va DESPUÉS de todos los CCF.

@@ -8,6 +8,7 @@ use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\LocalizadorNotaCredito;
 use App\Services\Rutas\LocalizadorPpq;
 use App\Services\Rutas\RenglonPpq;
+use App\Services\Rutas\ResolucionAlbaran;
 use App\Support\OrdenCompra;
 use App\Support\Sala;
 use Illuminate\Database\Eloquent\Builder;
@@ -62,6 +63,7 @@ class SalidaRutaDocumento extends Model
         'numero_orden_compra',
         'cliente_sucursal_id',
         'origen',
+        'ambiente',
         'cliente_nombre',
         'sala_nombre',
         'monto',
@@ -94,7 +96,7 @@ class SalidaRutaDocumento extends Model
      * Precargas hechas en bloque por el servicio de seguimiento. `false` significa
      * «todavía no se resolvió»; `null`, «se resolvió y no hay».
      */
-    private PpqAlbaran|false|null $albaranResuelto = false;
+    private ResolucionAlbaran|false $albaranResuelto = false;
 
     private Dte|false|null $notaCreditoResuelta = false;
 
@@ -190,9 +192,9 @@ class SalidaRutaDocumento extends Model
     // -------------------------------------------------------------- derivados
 
     /** Precarga en bloque (la hace el servicio de seguimiento). */
-    public function precargarAlbaran(?PpqAlbaran $albaran): void
+    public function precargarAlbaran(ResolucionAlbaran $resolucion): void
     {
-        $this->albaranResuelto = $albaran;
+        $this->albaranResuelto = $resolucion;
     }
 
     public function precargarNotaCredito(?Dte $nc): void
@@ -206,6 +208,15 @@ class SalidaRutaDocumento extends Model
      */
     public function albaran(): ?PpqAlbaran
     {
+        return $this->resolucionAlbaran()->albaran;
+    }
+
+    /**
+     * La resolución completa: el albarán de entrega, o el motivo por el que no hay uno
+     * inequívoco. Si no se precargó, se resuelve para este solo documento.
+     */
+    public function resolucionAlbaran(): ResolucionAlbaran
+    {
         if ($this->albaranResuelto === false) {
             $this->albaranResuelto = app(AlbaranLocalizador::class)->paraUno($this->dte_id, $this->orden());
         }
@@ -214,12 +225,31 @@ class SalidaRutaDocumento extends Model
     }
 
     /**
-     * ENTREGADO es una lectura, no un dato guardado: existe albarán = la sala
-     * recibió la mercadería. Una sola fuente de verdad, `ppq_albaranes`.
+     * ENTREGADO es una lectura, no un dato guardado: hay un albarán DE ENTREGA inequívoco
+     * = la sala recibió la mercadería. Una sola fuente de verdad, `ppq_albaranes`.
+     *
+     * Que esto sea `false` no quiere decir siempre lo mismo: puede que el albarán todavía
+     * no haya llegado, que hayan llegado varios, o que el que llegó sea de crédito (avería
+     * o devolución, que comparten la orden de compra con el CCF y no prueban ninguna
+     * entrega). Esas situaciones se distinguen con {@see entregaExcepcion()}.
+     *
+     * Y no confundir con el CCF FÍSICO: que el cliente haya recibido la mercadería no
+     * significa que el papel firmado y sellado haya vuelto. Eso es
+     * {@see documentacionFisicaRecibida()}, y son dos hechos distintos a propósito.
      */
     public function entregado(): bool
     {
-        return $this->albaran() !== null;
+        return $this->resolucionAlbaran()->estaVinculado();
+    }
+
+    /**
+     * Qué hay que revisar de la entrega, o `null` si no hay nada que revisar: ni cuando
+     * está vinculada, ni cuando el albarán simplemente todavía no llegó —esperar es lo
+     * normal, no una excepción—.
+     */
+    public function entregaExcepcion(): ?string
+    {
+        return $this->resolucionAlbaran()->motivo();
     }
 
     public function fechaEntrega(): ?Carbon

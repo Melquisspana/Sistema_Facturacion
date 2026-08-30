@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\OrdenCompra;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -27,6 +28,14 @@ class PpqModuloTest extends TestCase
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         \App\Support\Sala::olvidarCache(); // el caché estático no debe filtrar nombres entre tests
+
+        // Desde que la conciliación CONSERVA el archivo de pagos como evidencia, subir un
+        // TXT escribe en disco. Sin fingirlo, la prueba de conciliación de esta clase
+        // dejaba su fixture en `storage/app/private/ppq/conciliaciones` de la instalación
+        // real: un archivo con pinta de archivo de pagos verdadero, acumulándose en cada
+        // corrida de la suite.
+        Storage::fake('local');
+
         $this->seed(DatosInicialesNegritaSeeder::class);
     }
 

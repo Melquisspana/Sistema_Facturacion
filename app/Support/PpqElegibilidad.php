@@ -2,14 +2,13 @@
 
 namespace App\Support;
 
-use App\Enums\AmbienteHacienda;
-use App\Enums\EstadoDte;
 use App\Models\Dte;
+use App\Services\Rutas\CustodiaDocumental;
 
 /**
  * REGLA ÚNICA de elegibilidad de un DTE LOCAL para el cobro por PPQ.
  *
- * Un lote PPQ es un cobro real contra Calleja. Solo puede llevar documentos que
+ * Un lote PPQ es un cobro real contra el cliente. Solo puede llevar documentos que
  * existan de verdad ante Hacienda: si un borrador, un documento del ambiente de
  * pruebas o uno rechazado entrara al lote, el Excel le cobraría al cliente algo que
  * tributariamente no existe. Por eso hace falta un candado, y por eso está acá.
@@ -21,23 +20,40 @@ use App\Models\Dte;
  *   1. la BÚSQUEDA — para decidir si un documento local cierra la consulta o hay que
  *      seguir buscando en Gmail (PpqBusquedaService);
  *   2. la VISTA — para no dibujar botones que el backend va a rechazar
- *      (resources/views/ppq/partials/resultado.blade.php);
+ *      (resources/views/ppq/busqueda.blade.php);
  *   3. el CONTROLADOR — para rechazar de verdad (PpqItemController::store()).
- *
- * Se las nombra en texto y no con {@see}: esta clase es la capa de abajo, y no tiene
- * por qué importar al controlador que la usa solo para poder enlazarlo.
  *
  * Escrita tres veces, tarde o temprano las tres copias dirían cosas distintas: la
  * pantalla ofrecería un botón que el backend rechaza, o —mucho peor— el backend
  * aceptaría algo que la búsqueda ya había marcado como no confiable. Está en un solo
  * lugar para que esa divergencia no sea posible.
  *
+ * ──────────────── DOS preguntas distintas, y por qué no son la misma ────────────────
+ *
+ * Hay que leer con cuidado cuál de los dos métodos corresponde, porque contestan cosas
+ * diferentes y confundirlos rompe la búsqueda:
+ *
+ *   · {@see motivo()} / {@see esElegible()} — ¿el documento EXISTE ante Hacienda?
+ *     Es una pregunta puramente FISCAL, delegada en {@see VigenciaFiscalDte}. La usa la
+ *     búsqueda para decidir si hace falta ir a Gmail.
+ *
+ *   · {@see motivoParaCobrar()} / {@see sePuedeCobrar()} — ¿se puede meter HOY a un lote?
+ *     Es la anterior MÁS las exigencias documentales del cliente (hoy: el regreso del CCF
+ *     físico firmado y sellado). La usan la vista y el controlador.
+ *
+ * La separación no es cosmética. Si la regla del papel entrara en `esElegible()`, un CCF
+ * de producción perfectamente válido cuyo papel todavía no volvió dejaría de «resolver la
+ * búsqueda», el sistema saldría a buscarlo a Gmail y podría terminar agregándolo como
+ * SNAPSHOT histórico —duplicando un documento que ya tenemos localmente—. El papel es una
+ * condición de COBRO, no una duda sobre la existencia del documento.
+ *
  * ──────────────────── Lo que este candado NO gobierna ────────────────────
  *
  * Los documentos HISTÓRICOS que llegan por Gmail (ContaPortable / P001). Esos no
  * tienen DTE local que evaluar —los emitió otro sistema— y se agregan como snapshot
- * por su propio camino. Aplicarles esta regla los bloquearía a todos, que es
- * exactamente lo contrario de lo que hace falta.
+ * por su propio camino (PpqItemController::agregarDesdeGmail()).
+ * Aplicarles esta regla los bloquearía a todos, que es exactamente lo contrario de lo que
+ * hace falta. Eso vale para las dos preguntas, incluida la del papel físico.
  */
 final class PpqElegibilidad
 {
@@ -45,26 +61,15 @@ final class PpqElegibilidad
     public const TIPOS = ['03', '05'];
 
     /**
-     * La MISMA regla en SQL, para ordenar la búsqueda sin traerse la tabla a PHP.
+     * La MISMA regla FISCAL en SQL, para ordenar la búsqueda sin traerse la tabla a PHP.
      * Devuelve 0 si el documento es elegible y 1 si no.
      *
-     * Tiene que decir lo mismo que {@see self::motivo()} o la primera página mostraría
-     * un documento y la decisión se tomaría sobre otro. Las dos condiciones que faltan
-     * acá —tipo 03/05 y no archivado— las aplica la propia consulta antes de ordenar
-     * (`whereIn('tipo_dte', …)` y `noArchivados()`), así que no se repiten.
-     *
-     * `estado = 'aceptado'` es lo que deja fuera, de una sola vez, a los borradores, los
-     * rechazados y los invalidados.
+     * Vive en {@see VigenciaFiscalDte}, que es donde está escrita la condición; acá se
+     * reexpone con el nombre por el que ya la conoce la búsqueda. Deliberadamente NO
+     * incluye la regla del papel físico: esto ORDENA resultados, y un documento válido
+     * cuyo papel no volvió sigue siendo el resultado más relevante de su búsqueda.
      */
-    public const SQL_PRIORIDAD = <<<'SQL'
-        CASE WHEN estado = ?
-              AND ambiente = ?
-              AND sello_recepcion IS NOT NULL
-              AND sello_recepcion <> ''
-              AND UPPER(sello_recepcion) NOT LIKE 'MOCK%'
-              AND fecha_procesamiento_mh IS NOT NULL
-             THEN 0 ELSE 1 END
-        SQL;
+    public const SQL_PRIORIDAD = VigenciaFiscalDte::SQL_PRIORIDAD;
 
     /**
      * Parámetros de {@see self::SQL_PRIORIDAD}, en orden.
@@ -73,10 +78,10 @@ final class PpqElegibilidad
      */
     public static function bindingsPrioridad(): array
     {
-        return [EstadoDte::Aceptado->value, AmbienteHacienda::Produccion->value];
+        return VigenciaFiscalDte::bindingsPrioridad();
     }
 
-    /** ¿Se puede agregar este documento a un lote PPQ? */
+    /** ¿El documento existe ante Hacienda y es de un tipo cobrable? (FISCAL, sin el papel) */
     public static function esElegible(Dte $dte): bool
     {
         return self::motivo($dte) === null;
@@ -84,11 +89,10 @@ final class PpqElegibilidad
 
     /**
      * POR QUÉ este documento no se puede cobrar por PPQ, en una frase para el usuario;
-     * `null` si sí se puede.
+     * `null` si sí se puede. SOLO condiciones fiscales.
      *
-     * El orden de las comprobaciones importa: se busca la causa RAÍZ, no la primera
-     * condición que falle. Un rechazado que además está archivado se explica por el
-     * rechazo —lo de archivarlo fue la consecuencia—, así que el rechazo se mira antes.
+     * El tipo se mira primero porque es lo que define si este módulo tiene algo que decir
+     * sobre el documento; el resto de la vigencia la resuelve {@see VigenciaFiscalDte}.
      */
     public static function motivo(Dte $dte): ?string
     {
@@ -96,33 +100,39 @@ final class PpqElegibilidad
             return 'No es un CCF ni una nota de crédito: PPQ solo cobra documentos tipo 03 y 05.';
         }
 
-        if ($dte->estado === EstadoDte::Invalidado) {
-            return 'Fue invalidado ante Hacienda: ya no ampara ningún cobro.';
-        }
+        return VigenciaFiscalDte::motivo($dte);
+    }
 
-        if ($dte->estado === EstadoDte::Rechazado) {
-            return 'Hacienda lo rechazó: no llegó a existir como documento tributario.';
-        }
+    /**
+     * ¿Se puede agregar HOY a un lote de cobro? Fiscal + exigencias documentales del
+     * cliente.
+     */
+    public static function sePuedeCobrar(Dte $dte): bool
+    {
+        return self::motivoParaCobrar($dte) === null;
+    }
 
-        if ($dte->archivado) {
-            return 'Está archivado: quedó retirado de la operación diaria.';
-        }
+    /**
+     * POR QUÉ no se puede agregar a un lote, contando también el documento físico;
+     * `null` si se puede.
+     *
+     * El orden importa: primero lo fiscal. A quien intenta cobrar un documento rechazado
+     * no le sirve que le digan que falta el papel —el papel no arreglaría nada—, así que
+     * la causa raíz se informa primero.
+     */
+    public static function motivoParaCobrar(Dte $dte): ?string
+    {
+        return self::motivo($dte) ?? app(CustodiaDocumental::class)->motivoBloqueo($dte);
+    }
 
-        if ($dte->ambiente !== AmbienteHacienda::Produccion) {
-            return 'Es un documento del ambiente de pruebas: no ampara ningún cobro real.';
-        }
-
-        if ($dte->estado !== EstadoDte::Aceptado) {
-            return 'Todavía no está aceptado por Hacienda (estado: '.($dte->estado?->label() ?? '—').').';
-        }
-
-        // Aceptado, pero sin la huella real del MH: sello vacío, sello MOCK (aceptación
-        // simulada de una prueba) o sin fecha de procesamiento. Su código de generación
-        // no existe en Hacienda, así que cobrarlo sería cobrar un documento inexistente.
-        if (! $dte->aceptadoRealmentePorMh()) {
-            return 'No tiene sello de recepción real de Hacienda: la aceptación es simulada o quedó incompleta.';
-        }
-
-        return null;
+    /**
+     * Aviso que NO impide cobrar, para los clientes que pidieron solo advertencia sobre
+     * el documento físico. `null` cuando no hay nada que advertir.
+     */
+    public static function advertenciaParaCobrar(Dte $dte): ?string
+    {
+        return self::motivo($dte) === null
+            ? app(CustodiaDocumental::class)->advertencia($dte)
+            : null;
     }
 }

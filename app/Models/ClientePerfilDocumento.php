@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ModoPapelFisico;
 use App\Enums\TipoNotaCredito;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -27,6 +28,7 @@ class ClientePerfilDocumento extends Model
         'codigo_proveedor',
         'formato_export',
         'exige_albaran_en_nc',
+        'modo_papel_fisico',
         'tolerancia_albaran',
         'observaciones',
     ];
@@ -36,6 +38,7 @@ class ClientePerfilDocumento extends Model
         return [
             'activo' => 'boolean',
             'exige_albaran_en_nc' => 'boolean',
+            'modo_papel_fisico' => ModoPapelFisico::class,
             'tolerancia_albaran' => 'decimal:2',
         ];
     }
@@ -79,5 +82,17 @@ class ClientePerfilDocumento extends Model
     public function exporta(): bool
     {
         return $this->activo && filled($this->formato_export);
+    }
+
+    /**
+     * Qué exige este cliente respecto del CCF físico firmado y sellado.
+     *
+     * Nunca devuelve null: un perfil que no lo declara —los que existían antes de que la
+     * columna existiera— responde `no_requerir`, que es el comportamiento histórico. Así
+     * quien pregunta no tiene que decidir qué hacer con la ausencia.
+     */
+    public function modoPapelFisico(): ModoPapelFisico
+    {
+        return $this->modo_papel_fisico ?? ModoPapelFisico::NoRequerir;
     }
 }

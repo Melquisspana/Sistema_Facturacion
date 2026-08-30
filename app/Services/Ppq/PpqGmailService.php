@@ -257,7 +257,11 @@ class PpqGmailService
                 continue;
             }
 
-            $local = $porOrden[$oc] ?? null;
+            // `porOrden` guarda una resolución, no un albarán suelto: para una misma OC
+            // puede haber varios albaranes y solo cuenta el de ENTREGA cuando es único.
+            // Si la resolución no es inequívoca se cae a la búsqueda por correo, que es
+            // lo mismo que hacía antes cuando no encontraba nada localmente.
+            $local = ($porOrden[$oc] ?? null)?->albaran;
 
             // Ya sincronizado: no se vuelve a bajar ni a parsear el correo del albarán.
             $albaran = $local !== null
@@ -516,9 +520,19 @@ class PpqGmailService
     private function datosAlbaranDeCorreo(array $correo): array
     {
         $datosPdf = null;
+        // El PDF se lleva junto con los datos parseados: es la EVIDENCIA de la entrega y
+        // hasta ahora se descartaba después de sacarle el número y el monto con
+        // expresiones regulares. Quien lo guarda es {@see AlbaranPersistidor}, no esta
+        // clase: leer un correo no debe escribir en disco, y así una consulta de solo
+        // lectura sigue sin dejar rastro.
+        $archivoNombre = null;
+        $archivoContenido = null;
+
         foreach ($this->gmail->adjuntos($correo['id']) as $a) {
             $esPdf = str_contains(strtolower($a['mime']), 'pdf') || str_ends_with(strtolower($a['filename']), '.pdf');
             if ($esPdf) {
+                $archivoNombre = $a['filename'];
+                $archivoContenido = $a['data'];
                 $datosPdf = $this->albaranParser->desdePdf($a['data']);
                 break;
             }
@@ -546,6 +560,10 @@ class PpqGmailService
             'monto' => $datosPdf['monto'] ?? null,
             'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
             'asunto' => $correo['asunto'] ?? null,
+            // Solo los BYTES DEL ADJUNTO. Nunca tokens, credenciales ni la traza de la
+            // consulta a Gmail, que puede llevar dentro los parámetros de la búsqueda.
+            'archivo_nombre' => $archivoNombre,
+            'archivo_contenido' => $archivoContenido,
         ];
     }
 

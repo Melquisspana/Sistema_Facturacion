@@ -4,6 +4,7 @@ namespace App\Services\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\MotivoRevisionDocumento;
+use App\Exceptions\Rutas\DocumentoNoVigenteException;
 use App\Exceptions\Rutas\DocumentoYaAsignadoException;
 use App\Models\Dte;
 use App\Models\SalidaRuta;
@@ -11,6 +12,7 @@ use App\Models\SalidaRutaDocumento;
 use App\Models\User;
 use App\Support\OrdenCompra;
 use App\Support\Sala;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -38,11 +40,20 @@ class AsignadorDocumentos
      * Agrega un CCF que existe en `dtes` (camino P002).
      *
      * Los datos visibles NO se copian: se leen del DTE cada vez. Solo se guarda lo
-     * necesario para identificarlo y para poder buscar su albarán (control y OC).
+     * necesario para identificarlo, para poder buscar su albarán (control y OC) y para
+     * saber de qué AMBIENTE es.
+     *
+     * El candado fiscal está acá y no en cada controlador, por la misma razón que la
+     * unicidad y la auditoría: para que no dependa de que cada vía se acuerde de
+     * aplicarlo. Un borrador, un rechazado o un documento de pruebas no viaja en una
+     * salida de ruta, se agregue desde donde se agregue.
+     *
+     * @throws DocumentoNoVigenteException
      */
     public function agregarDte(SalidaRuta $salida, Dte $dte, ?User $usuario, bool $automatica = false): SalidaRutaDocumento
     {
         $this->exigirSalidaAbierta($salida);
+        $this->exigirDocumentoVigente($dte);
 
         return $this->crear($salida, [
             'dte_id' => $dte->id,
@@ -50,6 +61,10 @@ class AsignadorDocumentos
             'numero_orden_compra' => $dte->numero_orden_compra,
             'cliente_sucursal_id' => $dte->cliente_sucursal_id,
             'origen' => SalidaRutaDocumento::ORIGEN_P002,
+            // Snapshot del ambiente: es la otra mitad de la identidad fiscal del
+            // documento, y sin ella un CCF de pruebas y uno real con el mismo número de
+            // control son indistinguibles en esta tabla.
+            'ambiente' => $dte->ambiente?->value,
         ], $usuario, $automatica);
     }
 
@@ -323,6 +338,25 @@ class AsignadorDocumentos
     private function bloqueoPara(SalidaRuta $salida): ?int
     {
         return $salida->estado->esTerminal() ? null : 1;
+    }
+
+    /**
+     * El documento tiene que EXISTIR ante Hacienda para poder viajar en una salida.
+     *
+     * La regla no se escribe acá: se pregunta a {@see VigenciaFiscalDte}, que es la misma
+     * que aplica PPQ para decidir si un documento se puede cobrar. Dos módulos que
+     * transportan y cobran el mismo papel no pueden tener dos ideas distintas de qué
+     * documento es real.
+     *
+     * @throws DocumentoNoVigenteException
+     */
+    private function exigirDocumentoVigente(Dte $dte): void
+    {
+        $motivo = VigenciaFiscalDte::motivo($dte);
+
+        if ($motivo !== null) {
+            throw new DocumentoNoVigenteException($dte->numero_control, $motivo);
+        }
     }
 
     private function exigirSalidaAbierta(SalidaRuta $salida): void
