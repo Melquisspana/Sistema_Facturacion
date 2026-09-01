@@ -8,6 +8,7 @@ use App\Enums\TipoImpuesto;
 use App\Jobs\EnviarDteCorreo;
 use App\Mail\DteCorreo;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\Empresa;
@@ -75,7 +76,7 @@ class DteCorreoClienteRapidoTest extends TestCase
         if ($estado !== EstadoDte::Borrador) {
             $dte->numero_control = 'DTE-03-M001P001-000000000000050';
             $dte->codigo_generacion = 'A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D';
-            $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'.json';
+            $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
             Storage::disk('local')->put($dte->json_generado_path, '{"identificacion":{"x":1}}');
             $dte->estado = $estado;
             Dte::withoutEvents(fn () => $dte->save()); // fixture: no probamos generación aquí
@@ -249,7 +250,7 @@ class DteCorreoClienteRapidoTest extends TestCase
     {
         Queue::fake();
         $dte = $this->ccf(EstadoDte::Generado, 'cliente@calleja.com');
-        $sala = \App\Models\ClienteSucursal::factory()->create([
+        $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $dte->cliente_id, 'correo' => 'sala@calleja.com',
         ]);
         $dte->cliente_sucursal_id = $sala->id;

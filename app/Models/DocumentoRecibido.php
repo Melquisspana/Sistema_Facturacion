@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * Documento (CCF/factura) recibido por correo, donde SOMOS EL RECEPTOR. Registro
@@ -38,6 +40,17 @@ class DocumentoRecibido extends Model
     protected $table = 'documentos_recibidos';
 
     protected $fillable = [
+        // Identidad del correo. `identidad` es la clave de deduplicación
+        // ({@see \App\Services\DocumentosRecibidos\Buzon\IdentidadCorreo}); las tres
+        // siguientes son diagnóstico: dicen DÓNDE se leyó, no QUÉ es.
+        'identidad',
+        'message_id',
+        'buzon_carpeta',
+        'uid',
+        'uid_validity',
+        // Identidad HISTÓRICA (el UID crudo de antes de la migración de identidad). Se
+        // conserva tal cual para no reinterpretar las filas viejas; la deduplicación la
+        // sigue reconociendo por acá mientras `identidad` esté en NULL.
         'gmail_message_id',
         'origen_email',
         'asunto',
@@ -63,6 +76,8 @@ class DocumentoRecibido extends Model
     protected function casts(): array
     {
         return [
+            'uid' => 'integer',
+            'uid_validity' => 'integer',
             'fecha_correo' => 'datetime',
             'fecha_dte' => 'date',
             'total' => 'decimal:2',
@@ -77,6 +92,52 @@ class DocumentoRecibido extends Model
     public function envios(): HasMany
     {
         return $this->hasMany(DocumentoRecibidoEnvio::class, 'documento_recibido_id')->latest();
+    }
+
+    /**
+     * FECHA FISCAL: la de emisión del documento (`fecEmi` del JSON del proveedor).
+     *
+     * Es la que decide a qué período contable pertenece una compra, y es distinta de
+     * `fecha_correo`, que solo dice cuándo llegó el correo. Un CCF emitido el 31 de
+     * agosto que el proveedor manda el 2 de septiembre es de AGOSTO: el paquete mensual
+     * lo recortaba por `fecha_correo` y lo dejaba en septiembre.
+     *
+     * Devuelve null cuando el documento no tiene fecha fiscal legible (PDF sin JSON,
+     * JSON inválido). Esos NO se meten en un período a la fuerza: se listan aparte
+     * para que alguien los resuelva ({@see self::scopeSinFechaFiscal()}).
+     */
+    public function fechaFiscal(): ?Carbon
+    {
+        return $this->fecha_dte;
+    }
+
+    public function tieneFechaFiscal(): bool
+    {
+        return $this->fecha_dte !== null;
+    }
+
+    /** Compras cuyo documento se EMITIÓ dentro del período (fecha fiscal, no del correo). */
+    public function scopePeriodoFiscal(Builder $q, string $desde, string $hasta): Builder
+    {
+        return $q->whereNotNull('fecha_dte')
+            ->whereDate('fecha_dte', '>=', $desde)
+            ->whereDate('fecha_dte', '<=', $hasta);
+    }
+
+    /**
+     * Compras SIN fecha fiscal legible. No pertenecen a ningún período todavía, así que
+     * el paquete no las incluye; se muestran como pendientes que hay que resolver a
+     * mano, en vez de desaparecer en silencio.
+     */
+    public function scopeSinFechaFiscal(Builder $q): Builder
+    {
+        return $q->whereNull('fecha_dte');
+    }
+
+    /** Lo que efectivamente se manda a contabilidad: todo menos lo marcado `ignorado`. */
+    public function scopeParaContabilidad(Builder $q): Builder
+    {
+        return $q->where('estado', '!=', 'ignorado');
     }
 
     /** Etiqueta legible del tipo de documento (CAT-002) si se conoce. */

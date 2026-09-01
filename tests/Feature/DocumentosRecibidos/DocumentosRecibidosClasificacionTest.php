@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\BuzonFalso;
+use Tests\Support\SincronizaCompras;
 use Tests\TestCase;
 
 /**
@@ -24,6 +26,7 @@ use Tests\TestCase;
 class DocumentosRecibidosClasificacionTest extends TestCase
 {
     use RefreshDatabase;
+    use SincronizaCompras;
 
     protected function setUp(): void
     {
@@ -45,17 +48,20 @@ class DocumentosRecibidosClasificacionTest extends TestCase
 
     private function sincronizadorCon(MailboxClient $buzon): SincronizadorDocumentosRecibidos
     {
-        $this->app->instance(MailboxClient::class, $buzon);
-
-        return app(SincronizadorDocumentosRecibidos::class);
+        return $this->instalarBuzon($buzon);
     }
 
+    /** @param  array<int, array<string, mixed>>  $mensajes */
     private function buzonCon(array $mensajes): MailboxClient
     {
-        $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldReceive('disponible')->andReturn(true);
-        $buzon->shouldReceive('fuente')->andReturn('IMAP dulceslanegrita@yahoo.com');
-        $buzon->shouldReceive('mensajesConAdjuntos')->andReturn($mensajes);
+        $buzon = new BuzonFalso;
+        foreach ($mensajes as $i => $m) {
+            $buzon->conMensaje($m + [
+                'uid' => 3000 + $i,
+                'message_id' => '<clasif-'.$i.'@proveedor.example>',
+                'fecha' => '2026-07-10 09:00:00',
+            ]);
+        }
 
         return $buzon;
     }
@@ -100,7 +106,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('no_es_dte', $doc->clasificacion);
@@ -122,7 +128,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('falta_adjunto', $doc->clasificacion);
@@ -144,7 +150,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('dte_valido', $doc->clasificacion);
@@ -166,7 +172,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('07', $doc->tipo_documento);
@@ -192,7 +198,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('json_invalido', $doc->clasificacion);
@@ -223,7 +229,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('tipo_no_soportado', $doc->clasificacion);
@@ -271,7 +277,7 @@ class DocumentosRecibidosClasificacionTest extends TestCase
         ]];
 
         $sync = $this->sincronizadorCon($this->buzonCon($mensajes));
-        $sync->sincronizar();
+        $this->sincronizar('2026-07-10');
 
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('no_es_dte', $doc->clasificacion);

@@ -8,13 +8,18 @@ use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\ParserDocumentoRecibido;
-use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
+use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
+use App\Services\DocumentosRecibidos\ResumenSincronizacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\BuzonFalso;
+use Tests\Support\SincronizaCompras;
 use Tests\TestCase;
 
 /**
@@ -26,6 +31,7 @@ use Tests\TestCase;
 class DocumentosRecibidosTest extends TestCase
 {
     use RefreshDatabase;
+    use SincronizaCompras;
 
     protected function setUp(): void
     {
@@ -69,13 +75,6 @@ class DocumentosRecibidosTest extends TestCase
         ];
     }
 
-    private function sincronizadorCon(MailboxClient $buzon): SincronizadorDocumentosRecibidos
-    {
-        $this->app->instance(MailboxClient::class, $buzon);
-
-        return app(SincronizadorDocumentosRecibidos::class);
-    }
-
     // ---------- parser / sincronización ----------
 
     public function test_parser_extrae_emisor_y_campos_del_dte_recibido(): void
@@ -95,90 +94,74 @@ class DocumentosRecibidosTest extends TestCase
     public function test_sincronizar_crea_registros_con_fecha_dte_y_deduplica(): void
     {
         Mail::fake();
-        \Illuminate\Support\Facades\Storage::fake('local');
+        Storage::fake('local');
 
-        $mensajes = [[
-            'id' => 'uid-1', 'asunto' => 'CCF de proveedor', 'remitente' => 'proveedor@correo.com', 'fecha' => '2026-07-10',
+        $buzon = (new BuzonFalso)->conMensaje([
+            'uid' => 1801,
+            'message_id' => '<cod-unico@proveedor.example>',
+            'asunto' => 'CCF de proveedor',
+            'remitente' => 'proveedor@correo.com',
+            'fecha' => '2026-07-10 09:00:00',
             'adjuntos' => [
                 ['filename' => 'dte.json', 'mime' => 'application/json', 'data' => json_encode($this->jsonDte('COD-UNICO', 'DTE-03-BBB-1'))],
                 ['filename' => 'dte.pdf', 'mime' => 'application/pdf', 'data' => '%PDF-1.4 fake'],
             ],
-        ]];
-        $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldReceive('disponible')->andReturn(true);
-        $buzon->shouldReceive('fuente')->andReturn('IMAP dulceslanegrita@yahoo.com');
-        $buzon->shouldReceive('mensajesConAdjuntos')->andReturn($mensajes);
+        ]);
+        $this->instalarBuzon($buzon);
 
-        $sync = $this->sincronizadorCon($buzon);
-
-        $this->assertSame(1, $sync->sincronizar()['nuevos']);
+        $this->assertSame(1, $this->sincronizar('2026-07-10')->nuevos);
         $doc = DocumentoRecibido::firstOrFail();
         $this->assertSame('COD-UNICO', $doc->codigo_generacion);
         $this->assertSame('2026-07-10', $doc->fecha_dte->format('Y-m-d'));
         $this->assertTrue($doc->tiene_pdf && $doc->tiene_json);
 
-        $this->assertSame(0, $sync->sincronizar()['nuevos']); // dedupe
+        // La identidad guardada es el Message-ID normalizado, no el UID.
+        $this->assertSame('mid:cod-unico@proveedor.example', $doc->identidad);
+        $this->assertSame('cod-unico@proveedor.example', $doc->message_id);
+        $this->assertSame(1801, $doc->uid);
+
+        $this->assertSame(0, $this->sincronizar('2026-07-10')->nuevos); // dedupe
         $this->assertSame(1, DocumentoRecibido::count());
         Mail::assertNothingSent();
     }
 
     public function test_sin_correo_configurado_no_falla_y_avisa(): void
     {
-        $r = app(SincronizadorDocumentosRecibidos::class)->sincronizar();
-        $this->assertFalse($r['disponible']);
-        $this->assertNotNull($r['error']);
+        $r = $this->sincronizar('2026-07-10');
+
+        $this->assertSame(ResumenSincronizacion::SIN_CONFIGURAR, $r->desenlace);
+        $this->assertTrue($r->fallo());
+        $this->assertNotNull($r->error);
     }
 
-    public function test_revision_incremental_busca_desde_el_ultimo_documento(): void
+    /**
+     * La corrida incremental arranca en el día siguiente al último cubierto por
+     * completo, menos el solape. Es la marca que reemplazó al "desde el último documento
+     * guardado": aquella avanzaba por encima de los correos que el límite había dejado
+     * afuera, y los perdía para siempre.
+     */
+    public function test_el_inicio_incremental_sale_de_la_marca_de_progreso(): void
     {
-        // Último documento guardado con fecha_correo 10/07.
-        $this->doc(['fecha_correo' => Carbon::parse('2026-07-10 09:00:00')]);
+        $progreso = app(ProgresoSincronizacionCompras::class);
+        foreach (['2026-07-08', '2026-07-09', '2026-07-10'] as $dia) {
+            $progreso->marcarCompleto(Carbon::parse($dia), 'INBOX', 5001, 100, []);
+        }
 
-        $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldReceive('disponible')->andReturn(true);
-        $buzon->shouldReceive('fuente')->andReturn('IMAP x');
-        // Se EXIGE que $desde sea el 2026-07-10 (inicio de ese día, inclusive).
-        $buzon->shouldReceive('mensajesConAdjuntos')
-            ->once()
-            ->with(\Mockery::type('int'), \Mockery::on(fn ($d) => $d instanceof Carbon && $d->format('Y-m-d') === '2026-07-10'))
-            ->andReturn([]);
-        $sync = $this->sincronizadorCon($buzon);
-
-        $r = $sync->sincronizar(); // incremental por defecto
-        $this->assertTrue($r['incremental']);
-        $this->assertSame('2026-07-10', $r['desde']);
+        // Día siguiente al último completo (11), menos 2 de solape → 9.
+        $this->assertSame('2026-07-09', $progreso->inicioIncremental('INBOX', solapeDias: 2)->toDateString());
+        // Sin solape, el día siguiente exacto.
+        $this->assertSame('2026-07-11', $progreso->inicioIncremental('INBOX', solapeDias: 0)->toDateString());
     }
 
-    public function test_sin_registros_usa_rango_inicial_de_30_dias(): void
+    /** Un día con error corta la marca: no se declara cubierto lo que está del otro lado. */
+    public function test_la_marca_se_planta_antes_de_un_dia_con_error(): void
     {
-        $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldReceive('disponible')->andReturn(true);
-        $buzon->shouldReceive('fuente')->andReturn('IMAP x');
-        $buzon->shouldReceive('mensajesConAdjuntos')
-            ->once()
-            ->with(\Mockery::type('int'), \Mockery::on(fn ($d) => $d instanceof Carbon && $d->between(now()->subDays(31), now()->subDays(29))))
-            ->andReturn([]);
-        $sync = $this->sincronizadorCon($buzon);
+        $progreso = app(ProgresoSincronizacionCompras::class);
+        $progreso->marcarCompleto(Carbon::parse('2026-07-08'), 'INBOX', 5001, 100, []);
+        $progreso->marcarError(Carbon::parse('2026-07-09'), 'INBOX', 5001, null, 'buzón caído');
+        $progreso->marcarCompleto(Carbon::parse('2026-07-10'), 'INBOX', 5001, 120, []);
 
-        $r = $sync->sincronizar();
-        $this->assertSame(now()->subDays(30)->format('Y-m-d'), $r['desde']);
-    }
-
-    public function test_modo_historico_no_pasa_fecha_desde(): void
-    {
-        $this->doc(['fecha_correo' => now()]);
-        $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldReceive('disponible')->andReturn(true);
-        $buzon->shouldReceive('fuente')->andReturn('IMAP x');
-        $buzon->shouldReceive('mensajesConAdjuntos')
-            ->once()
-            ->with(\Mockery::type('int'), null)
-            ->andReturn([]);
-        $sync = $this->sincronizadorCon($buzon);
-
-        $r = $sync->sincronizar(incremental: false);
-        $this->assertFalse($r['incremental']);
-        $this->assertNull($r['desde']);
+        $this->assertSame('2026-07-08', $progreso->ultimoDiaCompletoContiguo('INBOX')->toDateString());
     }
 
     public function test_el_modulo_no_referencia_gmailclient(): void
@@ -264,7 +247,7 @@ class DocumentosRecibidosTest extends TestCase
 
         $filtros = DocumentosRecibidosQuery::filtros(['vista' => 'bandeja', 'rango' => 'todos']);
         $docs = DocumentosRecibidosQuery::query($filtros)->get();
-        $ruta = (new DocumentosRecibidosExcel())->generar($docs);
+        $ruta = (new DocumentosRecibidosExcel)->generar($docs);
 
         $hoja = IOFactory::load($ruta)->getActiveSheet();
         foreach (DocumentosRecibidosExcel::COLUMNAS as $i => $titulo) {
@@ -307,7 +290,7 @@ class DocumentosRecibidosTest extends TestCase
     {
         // Una compra solo pasa a 'enviado' cuando el envío por correo (individual o el
         // paquete mensual) termina con éxito: no hay marcado manual.
-        $this->assertFalse(\Illuminate\Support\Facades\Route::has('documentos-recibidos.enviado'));
+        $this->assertFalse(Route::has('documentos-recibidos.enviado'));
 
         $doc = $this->doc(['estado' => 'pendiente', 'fecha_correo' => now()]);
         $this->actingAs($this->usuario('administrador'))
@@ -337,8 +320,8 @@ class DocumentosRecibidosTest extends TestCase
 
     public function test_backfill_fecha_dte_desde_json_guardado_sin_tocar_yahoo(): void
     {
-        \Illuminate\Support\Facades\Storage::fake('local');
-        \Illuminate\Support\Facades\Storage::disk('local')->put('documentos-recibidos/v1/d.json', json_encode($this->jsonDte('COD-V', 'DTE-03-VIEJO-1')));
+        Storage::fake('local');
+        Storage::disk('local')->put('documentos-recibidos/v1/d.json', json_encode($this->jsonDte('COD-V', 'DTE-03-VIEJO-1')));
 
         // Registro VIEJO con JSON guardado y fecha_dte NULL.
         $conJson = $this->doc(['gmail_message_id' => 'v1', 'fecha_dte' => null, 'estado' => 'enviado',

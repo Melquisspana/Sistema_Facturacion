@@ -9,6 +9,7 @@ use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
 use App\Services\Dte\DtePdfService;
+use App\Support\Archivos\ArchivoAlmacenado;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Bus\Queueable;
@@ -16,8 +17,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Envía por correo un DTE (PDF + JSON + JWS opcional) a sus destinatarios. Se ENCOLA
@@ -56,7 +57,7 @@ class EnviarDteCorreo implements ShouldQueue
 
         try {
             $bytes = $pdf->bytes($dte);
-            [$extra, $nombres] = $this->adjuntos($dte);
+            [$extra, $nombres, $incidencias] = $this->adjuntos($dte);
             $plantilla = Ajustes::texto('correo.plantilla');
 
             // CANDADO de correo real: fuera de producción (o con un mailer de prueba) NO se
@@ -89,10 +90,16 @@ class EnviarDteCorreo implements ShouldQueue
                 $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla, $envio->canal));
             }
 
+            // Un fallo de ALMACENAMIENTO queda escrito en el historial aunque el correo
+            // haya salido: el envío fue real, pero incompleto por un problema del
+            // servidor, y quien lo mire después tiene que poder distinguirlo de un DTE
+            // que simplemente no tenía JSON.
+            $aviso = $incidencias === [] ? null : 'Adjuntos no incluidos por error de almacenamiento — '.implode(' · ', $incidencias);
+
             $envio->update([
                 'estado' => $simular ? 'simulado' : 'enviado',
                 'adjuntos' => implode(', ', array_merge(['PDF'], $nombres)),
-                'error' => $simular ? $candado->motivo() : null,
+                'error' => $simular ? $candado->motivo() : $aviso,
             ]);
             $this->auditar($envio, $bccContabilidad);
         } catch (\Throwable $e) {
@@ -125,25 +132,53 @@ class EnviarDteCorreo implements ShouldQueue
      * Adjuntos extra: JSON oficial (si existe) y JWS firmado (si existe y está
      * habilitado en Configuración: correo.adjuntar_jws).
      *
-     * @return array{0: array<int, array{contenido: string, nombre: string, mime: string}>, 1: array<int, string>}
+     * POR QUÉ NO ALCANZA CON `exists()`. Los discos del proyecto están declarados con
+     * `throw => false`, así que un disco mal configurado, un permiso denegado o un
+     * nombre de disco inexistente hacen que `exists()` devuelva `false` sin decir nada:
+     * el JSON no viajaba y el correo salía igual, marcado como enviado, sin un solo
+     * error. Un archivo que el DTE nunca generó y un disco roto se veían idénticos.
+     *
+     * {@see ArchivoAlmacenado} los separa. Un JSON simplemente ausente es normal (no
+     * todos los DTE lo tienen) y no se reporta; un ERROR de almacenamiento sí, con el
+     * disco y el motivo, en el log y en la columna `adjuntos` del historial de envío.
+     *
+     * @return array{0: array<int, array{contenido: string, nombre: string, mime: string}>, 1: array<int, string>, 2: array<int, string>}
      */
     private function adjuntos(Dte $dte): array
     {
         $disco = (string) config('dte.storage.disk', 'local');
         $extra = [];
         $nombres = [];
+        $incidencias = [];
 
-        if (filled($dte->json_generado_path) && Storage::disk($disco)->exists($dte->json_generado_path)) {
-            $extra[] = ['contenido' => (string) Storage::disk($disco)->get($dte->json_generado_path), 'nombre' => 'dte-'.$dte->id.'.json', 'mime' => 'application/json'];
+        $json = ArchivoAlmacenado::leer($disco, $dte->json_generado_path);
+        if ($json->presente()) {
+            $extra[] = ['contenido' => (string) $json->contenido, 'nombre' => 'dte-'.$dte->id.'.json', 'mime' => 'application/json'];
             $nombres[] = 'JSON';
-        }
-        if (Ajustes::bool('correo.adjuntar_jws', false)
-            && filled($dte->json_firmado_path) && Storage::disk($disco)->exists($dte->json_firmado_path)) {
-            $extra[] = ['contenido' => (string) Storage::disk($disco)->get($dte->json_firmado_path), 'nombre' => 'dte-'.$dte->id.'.jws', 'mime' => 'application/jose'];
-            $nombres[] = 'JWS';
+        } elseif ($json->fallo()) {
+            $incidencias[] = 'JSON: '.$json->explicacion();
         }
 
-        return [$extra, $nombres];
+        if (Ajustes::bool('correo.adjuntar_jws', false)) {
+            $jws = ArchivoAlmacenado::leer($disco, $dte->json_firmado_path);
+            if ($jws->presente()) {
+                $extra[] = ['contenido' => (string) $jws->contenido, 'nombre' => 'dte-'.$dte->id.'.jws', 'mime' => 'application/jose'];
+                $nombres[] = 'JWS';
+            } elseif ($jws->fallo()) {
+                $incidencias[] = 'JWS: '.$jws->explicacion();
+            }
+        }
+
+        if ($incidencias !== []) {
+            Log::warning('dte_correo.adjunto_no_disponible', [
+                'dte_id' => $dte->id,
+                'numero_control' => $dte->numero_control,
+                'disco' => $disco,
+                'incidencias' => $incidencias,
+            ]);
+        }
+
+        return [$extra, $nombres, $incidencias];
     }
 
     private function marcarError(DteEnvio $envio, string $error): void

@@ -3,33 +3,48 @@
 namespace App\Services\DocumentosRecibidos;
 
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
+use App\Exceptions\DocumentosRecibidos\AutenticacionBuzonException;
+use App\Exceptions\DocumentosRecibidos\BuzonException;
+use App\Exceptions\DocumentosRecibidos\BuzonInaccesibleException;
+use App\Services\DocumentosRecibidos\Buzon\EstadoBuzon;
+use App\Services\DocumentosRecibidos\Buzon\PaginaMensajes;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
-use Illuminate\Support\Carbon;
+use Carbon\CarbonInterface;
 use Throwable;
 
 /**
- * Lector IMAP de SOLO LECTURA para el buzón de documentos recibidos (Yahoo).
+ * Lector IMAP de SOLO LECTURA para el buzón de compras (Yahoo).
  *
- * Garantías:
+ * Garantías que NO cambian:
  *  - Abre el buzón en modo OP_READONLY.
  *  - Lee cuerpos con FT_PEEK: NO marca los correos como leídos.
  *  - NUNCA borra (imap_delete), NUNCA mueve (imap_mail_move) ni cambia flags.
- *  - Si falta la extensión imap o la configuración, `disponible()` = false y no
- *    intenta conectar (el módulo muestra "Configurar correo Yahoo/IMAP").
+ *  - Las credenciales vienen SOLO del Centro de Configuración y no se registran.
  *
- * Las credenciales vienen SOLO de config (env), nunca del repo, y no se registran.
+ * QUÉ CAMBIÓ, y por qué:
+ *
+ *  1. **Se lee por día y por página, en UID ASCENDENTE.** La versión anterior hacía
+ *     `imap_search(...ALL)`, `rsort($ids)` y `array_slice($ids, 0, 30)`: siempre los 30
+ *     UID más altos. Sin cursor, "Revisar histórico" releía exactamente los mismos
+ *     correos cada vez y no podía retroceder nunca. Ahora la ventana se acota del lado
+ *     del servidor (`SINCE`/`BEFORE` de un día) y se pagina con `$desdeUid`.
+ *  2. **Los fallos son excepciones.** Antes `catch (Throwable) { return []; }` convertía
+ *     una contraseña vencida en una revisión exitosa sin novedades. Ahora se distingue
+ *     credenciales rechazadas de buzón inaccesible, y ambas salen a la superficie.
+ *  3. **Se devuelve el `Message-ID`, el UID y el `UIDVALIDITY`** para que la identidad
+ *     del correo deje de ser el UID crudo ({@see Buzon\IdentidadCorreo}).
  */
 class ImapMailboxClient implements MailboxClient
 {
+    /** Fragmentos del error de IMAP que significan "credenciales rechazadas". */
+    private const SENALES_AUTENTICACION = [
+        'authenticationfailed', 'authentication failed', 'invalid credentials',
+        'login failure', 'login failed', 'authenticate', 'auth error', 'bad credentials',
+    ];
+
     /** @var array<string, mixed> */
     private array $cfg;
 
-    /**
-     * La configuración llega del Centro de Configuración con la MISMA forma que
-     * tenía `config('documentos_recibidos.mail')`, para que el resto de esta clase
-     * no tenga que cambiar. Sigue siendo un lector de SOLO LECTURA: no borra, no
-     * mueve y no marca como leído.
-     */
     public function __construct(ConfiguracionDocumentosRecibidos $configuracion)
     {
         $this->cfg = $configuracion->paraLector();
@@ -58,73 +73,192 @@ class ImapMailboxClient implements MailboxClient
             : 'Correo Yahoo/IMAP sin configurar';
     }
 
-    public function mensajesConAdjuntos(int $limite = 30, ?Carbon $desde = null): array
+    public function estado(): EstadoBuzon
     {
-        if (! $this->disponible()) {
-            return [];
-        }
-
         $conn = $this->abrir();
-        if ($conn === null) {
-            return [];
-        }
 
         try {
-            // Incremental: solo correos DESDE ese día inclusive (SINCE, granularidad de
-            // día). Sin $desde: el criterio base de config (histórico). Formato IMAP
-            // de fecha: "10-Jul-2026".
-            $criterio = $desde !== null
-                ? 'SINCE "'.$desde->format('d-M-Y').'"'
-                : ((string) ($this->cfg['search'] ?? 'ALL') ?: 'ALL');
-            $ids = @imap_search($conn, $criterio, SE_UID) ?: [];
-            // Más recientes primero, acotado al límite.
-            rsort($ids);
-            $ids = array_slice($ids, 0, max(1, $limite));
+            $status = @imap_status($conn, $this->buzon(), SA_UIDVALIDITY | SA_MESSAGES);
+
+            return new EstadoBuzon(
+                carpeta: $this->carpeta(),
+                uidValidity: isset($status->uidvalidity) ? (int) $status->uidvalidity : null,
+                mensajes: isset($status->messages) ? (int) $status->messages : 0,
+            );
+        } finally {
+            $this->cerrar($conn);
+        }
+    }
+
+    public function mensajesDelDia(CarbonInterface $dia, int $limite, ?int $desdeUid = null): PaginaMensajes
+    {
+        $limite = max(1, $limite);
+        $conn = $this->abrir();
+
+        try {
+            // Ventana CERRADA de un día, resuelta por el servidor. IMAP compara contra la
+            // fecha interna del mensaje: SINCE es >= y BEFORE es < , así que un día es
+            // [dia, dia+1). Formato obligatorio: "07-Aug-2026".
+            $criterio = 'SINCE "'.$dia->copy()->startOfDay()->format('d-M-Y').'"'
+                .' BEFORE "'.$dia->copy()->startOfDay()->addDay()->format('d-M-Y').'"';
+
+            $ids = @imap_search($conn, $criterio, SE_UID);
+
+            // imap_search devuelve false tanto cuando no hay coincidencias como cuando
+            // falla. Se distingue mirando el buffer de errores: sin error, es un día
+            // legítimamente vacío; con error, el día NO se pudo leer y no puede darse
+            // por completo.
+            if ($ids === false) {
+                $this->abortarSiHuboError('No se pudo buscar en el buzón');
+
+                return PaginaMensajes::vacia();
+            }
+
+            $ids = array_map('intval', (array) $ids);
+            sort($ids, SORT_NUMERIC); // ASCENDENTE: el corte deja afuera lo MÁS NUEVO
+
+            if ($desdeUid !== null) {
+                $ids = array_values(array_filter($ids, fn (int $uid) => $uid > $desdeUid));
+            }
+
+            // Hay más UID en este día de los que entran en la página: el día queda
+            // truncado y quien lo llame NO puede declararlo completo.
+            $truncada = count($ids) > $limite;
+            $ids = array_slice($ids, 0, $limite);
 
             $mensajes = [];
+            $ultimoUid = null;
             foreach ($ids as $uid) {
-                $mensaje = $this->leerMensaje($conn, (int) $uid);
+                // El cursor avanza con TODO UID leído, tenga adjuntos o no: si solo
+                // avanzara con los que sirven, un bloque de correos sin adjunto haría
+                // que la página siguiente los volviera a mirar para siempre.
+                $ultimoUid = $uid;
+                $mensaje = $this->leerMensaje($conn, $uid);
                 if ($mensaje !== null && $mensaje['adjuntos'] !== []) {
                     $mensajes[] = $mensaje;
                 }
             }
 
-            return $mensajes;
-        } catch (Throwable) {
-            return [];
+            return new PaginaMensajes($mensajes, $truncada, $ultimoUid);
+        } catch (BuzonException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new BuzonInaccesibleException(
+                'La lectura del buzón se cortó: '.BuzonException::sanear($e->getMessage(), $this->password()),
+                previous: $e,
+            );
         } finally {
-            // Cierra sin expunge (no borra nada).
-            @imap_close($conn);
+            $this->cerrar($conn);
         }
     }
 
-    /** Abre la conexión IMAP en SOLO LECTURA. Devuelve null si no se pudo. */
+    /**
+     * Abre la conexión IMAP en SOLO LECTURA.
+     *
+     * @throws AutenticacionBuzonException|BuzonInaccesibleException
+     */
     private function abrir()
     {
-        $host = (string) $this->cfg['host'];
-        $port = (int) ($this->cfg['port'] ?? 993);
-        $enc = strtolower((string) ($this->cfg['encryption'] ?? 'ssl'));
-        $folder = (string) ($this->cfg['folder'] ?? 'INBOX');
-        $flags = '/imap'.($enc === 'ssl' ? '/ssl' : ($enc === 'tls' ? '/tls' : '')).'/readonly';
-        $mailbox = '{'.$host.':'.$port.$flags.'}'.$folder;
+        if (! function_exists('imap_open')) {
+            throw new BuzonInaccesibleException('Este servidor no tiene la extensión IMAP de PHP.');
+        }
+        if (! $this->disponible()) {
+            throw new BuzonInaccesibleException('El buzón de compras no está configurado (servidor, usuario o contraseña).');
+        }
 
         if (is_int($this->cfg['timeout'] ?? null)) {
             @imap_timeout(IMAP_OPENTIMEOUT, (int) $this->cfg['timeout']);
         }
 
+        // imap_open no lanza: deja el motivo en un buffer global. Se vacía antes para no
+        // leer el error de otra llamada.
+        @imap_errors();
+
         try {
             // OP_READONLY: no marca leído; no permite escritura destructiva.
-            $conn = @imap_open($mailbox, (string) $this->cfg['username'], (string) $this->cfg['password'], OP_READONLY);
-
-            return $conn ?: null;
-        } catch (Throwable) {
-            return null;
+            $conn = @imap_open($this->buzon(), (string) $this->cfg['username'], (string) $this->cfg['password'], OP_READONLY, 1);
+        } catch (Throwable $e) {
+            throw new BuzonInaccesibleException(
+                'No se pudo abrir el buzón: '.BuzonException::sanear($e->getMessage(), $this->password()),
+                previous: $e,
+            );
         }
+
+        if ($conn === false) {
+            $this->abortarSiHuboError('No se pudo abrir el buzón');
+
+            throw new BuzonInaccesibleException('El servidor rechazó la conexión sin dar un motivo.');
+        }
+
+        return $conn;
+    }
+
+    /**
+     * Lanza la excepción que corresponda si el buffer de IMAP trae un error.
+     *
+     * Distinguir credenciales de red no es cosmético: con "autenticación fallida" el
+     * operador tiene que ir a Configuración, y reintentar no sirve; con "inaccesible"
+     * el reintento es exactamente lo que corresponde.
+     *
+     * @throws AutenticacionBuzonException|BuzonInaccesibleException
+     */
+    private function abortarSiHuboError(string $prefijo): void
+    {
+        $errores = @imap_errors() ?: [];
+        if ($errores === []) {
+            return;
+        }
+
+        $motivo = BuzonException::sanear((string) end($errores), $this->password());
+
+        $comparable = mb_strtolower($motivo);
+        foreach (self::SENALES_AUTENTICACION as $senal) {
+            if (str_contains($comparable, $senal)) {
+                throw new AutenticacionBuzonException(
+                    'El buzón rechazó las credenciales: '.$motivo
+                    .'. Revisá usuario y contraseña en Configuración > Integraciones > Documentos recibidos.'
+                );
+            }
+        }
+
+        throw new BuzonInaccesibleException($prefijo.': '.$motivo);
+    }
+
+    /** Cierra sin expunge (no borra nada) y vacía el buffer de errores. */
+    private function cerrar($conn): void
+    {
+        if ($conn !== false && $conn !== null) {
+            @imap_close($conn);
+        }
+        @imap_errors();
+    }
+
+    /** Cadena de buzón: `{host:puerto/imap/ssl/readonly}CARPETA`. */
+    private function buzon(): string
+    {
+        $host = (string) $this->cfg['host'];
+        $port = (int) ($this->cfg['port'] ?? 993);
+        $enc = strtolower((string) ($this->cfg['encryption'] ?? 'ssl'));
+        $flags = '/imap'.($enc === 'ssl' ? '/ssl' : ($enc === 'tls' ? '/tls' : '')).'/readonly';
+
+        return '{'.$host.':'.$port.$flags.'}'.$this->carpeta();
+    }
+
+    private function carpeta(): string
+    {
+        return (string) ($this->cfg['folder'] ?? 'INBOX');
+    }
+
+    private function password(): string
+    {
+        return (string) ($this->cfg['password'] ?? '');
     }
 
     /**
      * Lee un mensaje por UID y devuelve sus adjuntos PDF/JSON/XML (con FT_PEEK, sin
-     * marcar leído). @return array<string, mixed>|null
+     * marcar leído), más los datos de identidad.
+     *
+     * @return array<string, mixed>|null
      */
     private function leerMensaje($conn, int $uid): ?array
     {
@@ -156,7 +290,10 @@ class ImapMailboxClient implements MailboxClient
         });
 
         return [
-            'id' => (string) $uid,
+            'uid' => $uid,
+            // `message_id` es la identidad real del correo: viaja con él y no cambia al
+            // moverlo de carpeta ni al reconstruir el buzón.
+            'message_id' => isset($info->message_id) ? (string) $info->message_id : null,
             'asunto' => isset($info->subject) ? $this->decodeMime((string) $info->subject) : null,
             'remitente' => isset($info->from) ? $this->decodeMime((string) $info->from) : null,
             'fecha' => isset($info->date) ? (string) $info->date : null,

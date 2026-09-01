@@ -57,6 +57,13 @@ class Configuracion extends Model
     /** Estado de proceso, no configuración: no se audita en absoluto. */
     public const CLAVES_NO_AUDITABLES = [
         'ppq.albaranes.ultimo_dia_completo',
+        // Bitácora de la sincronización de compras: se reescribe en cada corrida
+        // programada (cada 15 minutos), así que auditarla enterraría lo que sí importa.
+        // {@see \App\Services\DocumentosRecibidos\BitacoraSincronizacionCompras}
+        'documentos_recibidos.ultima_corrida_inicio',
+        'documentos_recibidos.ultima_corrida_exito',
+        'documentos_recibidos.ultima_corrida_resumen',
+        'documentos_recibidos.ultimo_error',
     ];
 
     protected $table = 'configuraciones';

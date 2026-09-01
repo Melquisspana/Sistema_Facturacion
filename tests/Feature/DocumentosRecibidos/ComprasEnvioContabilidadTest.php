@@ -11,13 +11,13 @@ use App\Models\User;
 use App\Services\DocumentosRecibidos\AdjuntosDocumentoRecibido;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\BuzonFalso;
 use Tests\TestCase;
 
 /**
@@ -46,23 +46,7 @@ class ComprasEnvioContabilidadTest extends TestCase
         Configuracion::set('contabilidad.correo', self::CORREO_CONTA);
 
         // Candado: si algo del envío intentara leer el buzón, la prueba falla.
-        $this->app->instance(MailboxClient::class, new class implements MailboxClient
-        {
-            public function disponible(): bool
-            {
-                return false;
-            }
-
-            public function fuente(): string
-            {
-                return 'buzón-prohibido';
-            }
-
-            public function mensajesConAdjuntos(int $limite = 30, ?Carbon $desde = null): array
-            {
-                throw new \RuntimeException('El envío a contabilidad NO debe tocar el buzón.');
-            }
-        });
+        $this->app->instance(MailboxClient::class, new BuzonFalso(disponible: false));
     }
 
     private function usuario(string $rol): User

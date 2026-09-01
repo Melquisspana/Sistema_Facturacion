@@ -4,11 +4,13 @@ namespace Tests\Feature\Contabilidad;
 
 use App\Mail\PaqueteContabilidadCorreo;
 use App\Models\Configuracion;
+use App\Models\Correlativo;
 use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
+use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -42,6 +44,29 @@ class EnviarPaqueteContabilidadTest extends TestCase
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Configuracion::olvidarCache();
+
+        // El período de estas pruebas (julio 2026) parte CUBIERTO: acá se prueba el
+        // envío, no la cobertura.
+        $this->periodoCubierto();
+    }
+
+    /**
+     * Marca todo el mes como recorrido por completo en el buzón.
+     *
+     * Sin esto, la verificación de cobertura considera el período NO verificable —no hay
+     * registro de que se hayan leído esos días— y bloquea el envío. Estas pruebas son
+     * sobre la mecánica del envío, no sobre la cobertura, así que parten de un período
+     * cubierto. El bloqueo se prueba aparte, en CoberturaPaqueteTest.
+     */
+    private function periodoCubierto(int $mes = 7, int $anio = 2026): void
+    {
+        $progreso = app(ProgresoSincronizacionCompras::class);
+        $inicio = Carbon::create($anio, $mes, 1)->startOfMonth();
+        $fin = $inicio->copy()->endOfMonth();
+
+        for ($d = $inicio->copy(); $d->lte($fin); $d->addDay()) {
+            $progreso->marcarCompleto($d, 'INBOX', 5001, null, []);
+        }
     }
 
     private function usuario(string $rol): User
@@ -69,6 +94,9 @@ class EnviarPaqueteContabilidadTest extends TestCase
             'tiene_pdf' => true,
             'tiene_json' => true,
             'fecha_correo' => Carbon::parse($fecha),
+            // Fecha FISCAL: es la que decide el período del paquete. Por defecto coincide
+            // con la del correo; los casos que las separan la pasan en $extra.
+            'fecha_dte' => Carbon::parse($fecha),
         ]);
     }
 
@@ -226,7 +254,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $compra = $this->compra('2026-07-05', 100);
         $this->venta('2026-07-10', 200);
         $dtes = Dte::count();
-        $correl = \App\Models\Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray();
+        $correl = Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray();
 
         // Simula caída del correo: el envío lanza excepción.
         Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP caído'));
@@ -238,7 +266,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
         // No cambia estados de documentos, ni correlativos, ni crea/elimina DTE.
         $this->assertSame('pendiente', $compra->fresh()->estado);
         $this->assertSame($dtes, Dte::count());
-        $this->assertEquals($correl, \App\Models\Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());
+        $this->assertEquals($correl, Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());
 
         $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->first();
         $this->assertNotNull($log);
@@ -367,7 +395,8 @@ class EnviarPaqueteContabilidadTest extends TestCase
 
         // Si el envío tocara el buzón, el contrato IMAP recibiría llamadas: no debe pasar.
         $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldNotReceive('mensajesConAdjuntos');
+        $buzon->shouldNotReceive('mensajesDelDia');
+        $buzon->shouldNotReceive('estado');
         $buzon->shouldNotReceive('disponible');
         $this->app->instance(MailboxClient::class, $buzon);
 

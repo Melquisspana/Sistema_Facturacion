@@ -4,12 +4,14 @@ namespace Tests\Feature\DocumentosRecibidos;
 
 use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
-use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
+use App\Services\DocumentosRecibidos\ResumenSincronizacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use ReflectionClass;
+use Tests\Support\BuzonFalso;
+use Tests\Support\SincronizaCompras;
 use Tests\TestCase;
 
 /**
@@ -21,6 +23,7 @@ use Tests\TestCase;
 class DocumentosRecibidosExclusionTest extends TestCase
 {
     use RefreshDatabase;
+    use SincronizaCompras;
 
     protected function setUp(): void
     {
@@ -38,21 +41,33 @@ class DocumentosRecibidosExclusionTest extends TestCase
         ]);
     }
 
-    /** @param array<int, array<string, mixed>> $mensajes */
-    private function sync(array $mensajes): SincronizadorDocumentosRecibidos
+    /**
+     * Instala un buzón falso con estos mensajes y devuelve el resumen de sincronizar el
+     * día que todos usan (2026-07-10).
+     *
+     * @param  array<int, array<string, mixed>>  $mensajes
+     */
+    private function sync(array $mensajes): ResumenSincronizacion
     {
-        $buzon = \Mockery::mock(MailboxClient::class);
-        $buzon->shouldReceive('disponible')->andReturn(true);
-        $buzon->shouldReceive('fuente')->andReturn('IMAP dulceslanegrita@yahoo.com');
-        $buzon->shouldReceive('mensajesConAdjuntos')->andReturn($mensajes);
-        $this->app->instance(MailboxClient::class, $buzon);
+        $buzon = new BuzonFalso;
+        foreach ($mensajes as $m) {
+            $buzon->conMensaje($m);
+        }
+        $this->instalarBuzon($buzon);
 
-        return app(SincronizadorDocumentosRecibidos::class);
+        return $this->sincronizar('2026-07-10');
     }
 
     private function mensaje(string $id, string $asunto, string $remitente, array $adjuntos): array
     {
-        return compact('id', 'asunto', 'remitente', 'adjuntos') + ['fecha' => '2026-07-10'];
+        return [
+            'uid' => (int) preg_replace('/\D/', '', $id) ?: crc32($id) % 100000,
+            'message_id' => '<'.$id.'@proveedor.example>',
+            'asunto' => $asunto,
+            'remitente' => $remitente,
+            'adjuntos' => $adjuntos,
+            'fecha' => '2026-07-10 09:00:00',
+        ];
     }
 
     private function pdf(string $nombre = 'documento.pdf'): array
@@ -76,10 +91,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
         Log::spy();
         $r = $this->sync([
             $this->mensaje('uid-ec', 'Estado de Cuenta Corriente Bancoagrícola', 'estadosdecuenta@banco.com', [$this->pdf('5040117729.pdf')]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(0, $r['nuevos']);
-        $this->assertSame(1, $r['descartados']);
+        $this->assertSame(0, $r->nuevos);
+        $this->assertSame(1, $r->descartados);
         $this->assertSame(0, DocumentoRecibido::count());
         $this->assertEmpty(Storage::disk('local')->allFiles()); // no se guardaron adjuntos
         Mail::assertNothingSent();
@@ -98,10 +113,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
     {
         $r = $this->sync([
             $this->mensaje('uid-oc', 'ORDEN D ECOMPRA', 'operador@lasramblas.com', [$this->pdf('DILVE.pdf')]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(0, $r['nuevos']);
-        $this->assertSame(1, $r['descartados']);
+        $this->assertSame(0, $r->nuevos);
+        $this->assertSame(1, $r->descartados);
         $this->assertSame(0, DocumentoRecibido::count());
     }
 
@@ -110,10 +125,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
     {
         $r = $this->sync([
             $this->mensaje('uid-ccf-banco', 'Estado de Cuenta', 'estadosdecuenta@banco.com', [$this->jsonCcf('COD-BANCO', 'DTE-03-BANK-1'), $this->pdf()]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(1, $r['nuevos']);
-        $this->assertSame(0, $r['descartados']);
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame(0, $r->descartados);
         $this->assertSame('dte_valido', DocumentoRecibido::firstOrFail()->clasificacion);
     }
 
@@ -122,10 +137,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
     {
         $r = $this->sync([
             $this->mensaje('uid-promo', 'Promociones del mes', 'marketing@proveedor.com', [$this->pdf('boletin.pdf')]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(0, $r['nuevos']);
-        $this->assertSame(1, $r['descartados']);
+        $this->assertSame(0, $r->nuevos);
+        $this->assertSame(1, $r->descartados);
         $this->assertSame(0, DocumentoRecibido::count());
     }
 
@@ -134,10 +149,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
     {
         $r = $this->sync([
             $this->mensaje('uid-trampa', 'Estado de cuenta y CCF adjunto', 'proveedor@correo.com', [$this->jsonCcf('COD-OK', 'DTE-03-OK-1'), $this->pdf()]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(1, $r['nuevos']);
-        $this->assertSame(0, $r['descartados']);
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame(0, $r->descartados);
         $this->assertSame('dte_valido', DocumentoRecibido::firstOrFail()->clasificacion);
     }
 
@@ -146,10 +161,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
     {
         $r = $this->sync([
             $this->mensaje('uid-falta', 'Comprobante de Crédito Fiscal', 'proveedor@correo.com', [$this->pdf('DTE-03-M001P001-000000000000001.pdf')]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(1, $r['nuevos']);
-        $this->assertSame(0, $r['descartados']);
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame(0, $r->descartados);
         $this->assertSame('falta_adjunto', DocumentoRecibido::firstOrFail()->clasificacion);
     }
 
@@ -161,10 +176,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
                 ['filename' => 'roto.json', 'mime' => 'application/json', 'data' => '{"identificacion": {"tipoDte": "03"'],
                 $this->pdf(),
             ]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(1, $r['nuevos']);
-        $this->assertSame(0, $r['descartados']);
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame(0, $r->descartados);
         $this->assertSame('json_invalido', DocumentoRecibido::firstOrFail()->clasificacion);
     }
 
@@ -175,11 +190,11 @@ class DocumentosRecibidosExclusionTest extends TestCase
             $this->mensaje('uid-ec', 'Estado de Cuenta', 'banco@x.com', [$this->pdf('ec.pdf')]),
             $this->mensaje('uid-oc', 'Orden de compra 123', 'op@x.com', [$this->pdf('oc.pdf')]),
             $this->mensaje('uid-ccf', 'CCF', 'prov@x.com', [$this->jsonCcf('C-1', 'DTE-03-Z-1'), $this->pdf()]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(3, $r['revisados']);
-        $this->assertSame(1, $r['nuevos']);
-        $this->assertSame(2, $r['descartados']);
+        $this->assertSame(3, $r->correos);
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame(2, $r->descartados);
         $this->assertSame(1, DocumentoRecibido::count());
     }
 
@@ -191,9 +206,9 @@ class DocumentosRecibidosExclusionTest extends TestCase
             (new ReflectionClass(MailboxClient::class))->getMethods()
         );
 
-        // Solo lectura: disponible / fuente / mensajesConAdjuntos.
+        // Solo lectura: disponible / fuente / estado / mensajesDelDia.
         sort($metodos);
-        $this->assertSame(['disponible', 'fuente', 'mensajesconadjuntos'], $metodos);
+        $this->assertSame(['disponible', 'estado', 'fuente', 'mensajesdeldia'], $metodos);
 
         foreach (['eliminar', 'borrar', 'mover', 'marcar', 'delete', 'move', 'expunge', 'flag', 'seen'] as $mutador) {
             $this->assertNotContains($mutador, $metodos, "El buzón no debe exponer un método de escritura: {$mutador}");
@@ -207,10 +222,10 @@ class DocumentosRecibidosExclusionTest extends TestCase
 
         $r = $this->sync([
             $this->mensaje('uid-ec', 'Estado de Cuenta Corriente', 'banco@x.com', [$this->pdf('ec.pdf')]),
-        ])->sincronizar();
+        ]);
 
-        $this->assertSame(1, $r['nuevos']);
-        $this->assertSame(0, $r['descartados']);
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame(0, $r->descartados);
         $this->assertSame('no_es_dte', DocumentoRecibido::firstOrFail()->clasificacion);
     }
 }

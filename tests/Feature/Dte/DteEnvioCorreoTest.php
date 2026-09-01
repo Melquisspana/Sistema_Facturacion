@@ -3,9 +3,9 @@
 namespace Tests\Feature\Dte;
 
 use App\Enums\EstadoDte;
-use App\Facades\Ajustes;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
+use App\Facades\Ajustes;
 use App\Jobs\EnviarDteCorreo;
 use App\Mail\DteCorreo;
 use App\Models\Cliente;
@@ -14,7 +14,6 @@ use App\Models\Configuracion;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\DteEnvio;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -85,8 +84,15 @@ class DteEnvioCorreoTest extends TestCase
         $dte->refresh();
         $dte->numero_control = 'DTE-03-M001P001-000000000000048';
         $dte->codigo_generacion = 'A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D';
-        $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'.json';
-        Storage::disk('local')->put($dte->json_generado_path, '{"identificacion":{"x":1}}');
+        // Ruta ÚNICA por código de generación: `Storage::fake('local')` apunta siempre a la
+        // misma carpeta física, y con SQLite en memoria los id arrancan en 1, así que
+        // 'dte/json/dte-03-1.json' era el mismo archivo real para varias clases de prueba.
+        $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
+
+        // El adjunto JSON de estas pruebas depende de que el archivo esté de verdad: si el
+        // disco falla, que se vea acá y no en el nombre de los adjuntos del envío.
+        $this->assertTrue(Storage::disk('local')->put($dte->json_generado_path, '{"identificacion":{"x":1}}'));
+        $this->assertSame('local', config('dte.storage.disk'));
 
         if ($estado === EstadoDte::Aceptado) {
             $dte->sello_recepcion = 'SELLO-OK-123';

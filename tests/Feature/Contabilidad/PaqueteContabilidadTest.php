@@ -3,12 +3,13 @@
 namespace Tests\Feature\Contabilidad;
 
 use App\Models\Configuracion;
+use App\Models\Correlativo;
 use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
-use Spatie\Activitylog\Models\Activity;
+use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -16,6 +17,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -37,6 +39,29 @@ class PaqueteContabilidadTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // El período de estas pruebas (julio 2026) parte CUBIERTO: acá se prueba el
+        // armado del paquete, no la cobertura.
+        $this->periodoCubierto();
+    }
+
+    /**
+     * Marca todo el mes como recorrido por completo en el buzón.
+     *
+     * Sin esto, la verificación de cobertura considera el período NO verificable —no hay
+     * registro de que se hayan leído esos días— y bloquea el envío. Estas pruebas son
+     * sobre la mecánica del envío, no sobre la cobertura, así que parten de un período
+     * cubierto. El bloqueo se prueba aparte, en CoberturaPaqueteTest.
+     */
+    private function periodoCubierto(int $mes = 7, int $anio = 2026): void
+    {
+        $progreso = app(ProgresoSincronizacionCompras::class);
+        $inicio = Carbon::create($anio, $mes, 1)->startOfMonth();
+        $fin = $inicio->copy()->endOfMonth();
+
+        for ($d = $inicio->copy(); $d->lte($fin); $d->addDay()) {
+            $progreso->marcarCompleto($d, 'INBOX', 5001, null, []);
+        }
     }
 
     private function usuario(string $rol): User
@@ -60,6 +85,8 @@ class PaqueteContabilidadTest extends TestCase
             'tiene_pdf' => true,
             'tiene_json' => true,
             'fecha_correo' => Carbon::parse($fecha),
+            // Fecha FISCAL: es la que decide el período del paquete.
+            'fecha_dte' => Carbon::parse($fecha),
         ]);
     }
 
@@ -218,7 +245,7 @@ class PaqueteContabilidadTest extends TestCase
 
         $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection([$compra]), $venta, true, true);
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $this->assertTrue($zip->open($r['ruta']) === true);
         $nombres = [];
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -241,13 +268,22 @@ class PaqueteContabilidadTest extends TestCase
         Storage::fake('local');
         $this->seed(DatosInicialesNegritaSeeder::class);
         $venta = $this->venta('2026-07-10', 200);
-        $venta->json_generado_path = 'dte/json/dte-03-'.$venta->id.'.json';
-        Storage::disk('local')->put($venta->json_generado_path, '{"identificacion":{"x":1}}');
+        // La ruta lleva el código de generación para que sea ÚNICA. `Storage::fake('local')`
+        // apunta siempre a la misma carpeta física y con SQLite en memoria los id arrancan
+        // en 1, así que 'dte/json/dte-03-1.json' era el mismo archivo real para varias
+        // clases de prueba: una podía borrarlo mientras otra lo estaba usando.
+        $venta->json_generado_path = 'dte/json/dte-03-'.$venta->id.'-'.$venta->codigo_generacion.'.json';
+
+        // Se afirma lo intermedio: si el disco falla, la prueba lo dice ACÁ y no tres
+        // aserciones más abajo con un "falta el archivo" que no explica nada.
+        $this->assertTrue(Storage::disk('local')->put($venta->json_generado_path, '{"identificacion":{"x":1}}'));
+        $this->assertSame('local', config('dte.storage.disk'), 'el ZIP lee del disco configurado en dte.storage.disk');
+        $this->assertTrue(Storage::disk('local')->exists($venta->json_generado_path));
         $venta->save();
 
-        $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection(), new Collection([$venta]), false, true);
+        $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection, new Collection([$venta]), false, true);
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $this->assertTrue($zip->open($r['ruta']) === true);
         $nombres = [];
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -257,7 +293,7 @@ class PaqueteContabilidadTest extends TestCase
         @unlink($r['ruta']);
 
         $this->assertContains('ventas/pdf/'.$venta->id.'_dte-03-'.$venta->id.'.pdf', $nombres);
-        $this->assertContains('ventas/json/'.$venta->id.'_dte-03-'.$venta->id.'.json', $nombres);
+        $this->assertContains('ventas/json/'.$venta->id.'_'.basename($venta->json_generado_path), $nombres);
         $this->assertSame(1, $r['ventas_pdf']);
         $this->assertSame(1, $r['ventas_json']);
     }
@@ -267,9 +303,9 @@ class PaqueteContabilidadTest extends TestCase
         Storage::fake('local');
         $compra = $this->compra('2026-07-05', 100);
 
-        $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection([$compra]), new Collection(), true, false);
+        $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection([$compra]), new Collection, true, false);
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $zip->open($r['ruta']);
         $nombres = [];
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -306,10 +342,12 @@ class PaqueteContabilidadTest extends TestCase
         $this->assertSame(0, $resp->viewData('resumen')['compras_cantidad']);
         $this->assertSame(0, $resp->viewData('resumen')['ventas_cantidad']);
 
+        // Enero 2020 es anterior a cualquier registro de sincronización: no se puede
+        // afirmar que esté completo, así que el ZIP sale marcado. Sigue descargándose.
         $this->actingAs($this->usuario('administrador'))
             ->post(route('contabilidad.paquete.generar'), ['mes' => 1, 'anio' => 2020])
             ->assertOk()
-            ->assertDownload('documentos_contabilidad_2020-01.zip');
+            ->assertDownload('documentos_contabilidad_2020-01_INCOMPLETO.zip');
     }
 
     public function test_no_toca_correlativos_ni_crea_dtes(): void
@@ -318,14 +356,14 @@ class PaqueteContabilidadTest extends TestCase
         $this->compra('2026-07-05', 100);
         $this->venta('2026-07-10', 200);
         $dtes = Dte::count();
-        $correl = \App\Models\Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray();
+        $correl = Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray();
 
         $this->actingAs($this->usuario('administrador'))
             ->post(route('contabilidad.paquete.generar'), ['mes' => 7, 'anio' => 2026])
             ->assertOk();
 
         $this->assertSame($dtes, Dte::count());
-        $this->assertEquals($correl, \App\Models\Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());
+        $this->assertEquals($correl, Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());
         // El paquete NO cambia estados de compras.
         $this->assertSame('pendiente', DocumentoRecibido::first()->estado);
     }
