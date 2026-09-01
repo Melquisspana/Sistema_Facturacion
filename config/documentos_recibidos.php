@@ -27,7 +27,36 @@ return [
         'timeout' => (int) env('DOCUMENTOS_RECIBIDOS_MAIL_TIMEOUT', 15),
     ],
 
-    // Máximo de correos a revisar por sincronización manual.
+    /*
+    | INTERRUPTOR de la sincronización automática.
+    |
+    | APAGADO por defecto, a propósito. La tarea programada existe en routes/console.php
+    | desde el despliegue, pero no ejecuta nada hasta que alguien la enciende acá. Así el
+    | código puede llegar al servidor antes de que el buzón esté configurado, y antes de
+    | recuperar el backlog histórico —que es el orden correcto: si la automática arranca
+    | primero, la marca de progreso se establece sobre los últimos días y el backlog queda
+    | fuera del barrido incremental—.
+    |
+    | Vive en .env y no en la base: es una decisión de despliegue, y se lee cuando el
+    | scheduler evalúa la tarea, un momento en el que la base puede no estar migrada.
+    |
+    | Encenderlo NO dispara nada por sí solo: hace falta además que el servidor ejecute
+    | `php artisan schedule:run` cada minuto (ver docs/SINCRONIZACION_COMPRAS.md §3).
+    */
+    'sincronizacion_automatica' => (bool) env('DOCUMENTOS_RECIBIDOS_AUTO_SYNC', false),
+
+    /*
+    | TAMAÑO DE PÁGINA: cuántos correos se le piden al buzón en cada petición.
+    |
+    | NO es el máximo que se sincroniza. El recorrido agota cada día paginando por UID
+    | ascendente, así que este número decide en cuántas peticiones se lee un día, no
+    | cuántos correos entran. Antes SÍ era un tope —«máximo de correos por sincronización»—
+    | y era exactamente la causa de que se perdieran correos: lo que quedaba por debajo
+    | del corte no se leía nunca, y la marca de progreso le pasaba por encima.
+    |
+    | La clave se conserva (`limite`, DOCUMENTOS_RECIBIDOS_LIMITE) por compatibilidad con
+    | los .env y los ajustes ya guardados; lo que cambió es lo que significa.
+    */
     'limite' => (int) env('DOCUMENTOS_RECIBIDOS_LIMITE', 30),
 
     // Carpeta local (disco 'local') donde se guardan los adjuntos descargados para

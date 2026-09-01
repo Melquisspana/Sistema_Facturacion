@@ -85,7 +85,7 @@ class VentasEnvioContabilidadTest extends TestCase
         ]);
 
         if ($conJson) {
-            $ruta = 'dte/json/dte-03-'.$dte->id.'.json';
+            $ruta = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
             Storage::disk('local')->put($ruta, '{"identificacion":{"x":1}}');
             // json_generado_path no es fillable: se asigna directo (el observer lo permite).
             $dte->json_generado_path = $ruta;

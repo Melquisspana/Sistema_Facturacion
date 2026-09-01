@@ -261,7 +261,12 @@ Route::middleware('auth')->group(function () {
         // SOLO administrador (permiso documentos-recibidos.gestionar).
         Route::middleware('permission:documentos-recibidos.gestionar')->group(function () {
             // Revisión MANUAL del buzón Yahoo/IMAP (solo lectura del buzón). No marca leído, no mueve, no borra.
+            // Adelanta la corrida incremental que además hace el scheduler; no es la única defensa.
             Route::post('sincronizar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'sincronizar'])->name('sincronizar');
+            // Recuperación EXCEPCIONAL de un período histórico, día por día y con progreso
+            // persistente. Reemplaza al viejo "Revisar histórico", que releía siempre los
+            // mismos correos recientes y nunca retrocedía.
+            Route::post('recuperar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'recuperar'])->name('recuperar');
             Route::patch('{documento}/pendiente', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarPendiente'])->name('pendiente');
             Route::patch('{documento}/ignorar', [\App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController::class, 'marcarIgnorado'])->name('ignorar');
             // Ya NO existe "marcar enviado" manual: una compra pasa a 'enviado' solo cuando

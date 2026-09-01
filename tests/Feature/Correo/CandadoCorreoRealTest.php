@@ -132,7 +132,7 @@ class CandadoCorreoRealTest extends TestCase
             'total_pagar' => 113.00,
         ]);
 
-        $ruta = 'dte/json/dte-03-'.$dte->id.'.json';
+        $ruta = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
         Storage::disk('local')->put($ruta, '{"identificacion":{"x":1}}');
         $dte->json_generado_path = $ruta;
         $dte->save();
@@ -233,7 +233,7 @@ class CandadoCorreoRealTest extends TestCase
             'fecha_emision' => now()->toDateString(), 'hora_emision' => now()->format('H:i:s'),
             'total_gravado' => 10.00, 'iva' => 1.30, 'total_pagar' => 11.30,
         ]);
-        $ruta = 'dte/json/dte-03-'.$dte->id.'.json';
+        $ruta = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
         Storage::disk('local')->put($ruta, '{"identificacion":{"x":1}}');
         $dte->json_generado_path = $ruta;
         $dte->sello_recepcion = '2026SELLOAUTO';

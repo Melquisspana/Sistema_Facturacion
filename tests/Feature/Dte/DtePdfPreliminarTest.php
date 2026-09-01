@@ -5,6 +5,7 @@ namespace Tests\Feature\Dte;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
+use App\Http\Controllers\Facturacion\DteController;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -15,12 +16,12 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -30,7 +31,7 @@ use Tests\TestCase;
  */
 class DtePdfPreliminarTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private Establecimiento $estab;
@@ -73,7 +74,7 @@ class DtePdfPreliminarTest extends TestCase
         $dte->refresh();
         $dte->numero_control = 'DTE-03-M001P001-000000000000012';
         $dte->codigo_generacion = '00000000-0000-4000-8000-000000000101';
-        $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'.json';
+        $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
         $dte->save();
 
         return $dte->refresh();
@@ -157,7 +158,7 @@ class DtePdfPreliminarTest extends TestCase
         ]);
         $ccf = $this->ccfGenerado();
 
-        $emisor = app(\App\Http\Controllers\Facturacion\DteController::class)->resolverEmisorParaPdf($ccf);
+        $emisor = app(DteController::class)->resolverEmisorParaPdf($ccf);
 
         $this->assertSame($real->id, $emisor->id);
         $this->assertSame('06140000000901', $emisor->nit);

@@ -653,8 +653,11 @@ class CatalogoAjustes
                 nivel: NivelConfirmacion::N1,
                 editabilidad: Editabilidad::Editable,
                 persistencia: Persistencia::Nueva,
-                etiqueta: 'Correos por sincronización',
-                descripcion: 'Tope de correos que revisa cada sincronización manual.',
+                etiqueta: 'Tamaño de página (correos por petición)',
+                descripcion: 'Cuántos correos se le piden al buzón en cada petición. NO es el máximo que se '
+                    .'sincroniza: si un día tiene más correos que esto, se pide la página siguiente hasta '
+                    .'agotar el día, así que subirlo o bajarlo no cambia CUÁNTOS correos entran, solo en '
+                    .'cuántas peticiones. Bajarlo hace cada petición más liviana; subirlo, menos peticiones.',
                 claveConfig: 'documentos_recibidos.limite',
                 porDefecto: 30,
                 reglas: ['min:1', 'max:500'],

@@ -2,16 +2,22 @@
 
 namespace App\Http\Controllers\DocumentosRecibidos;
 
+use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Http\Controllers\Controller;
+use App\Jobs\RecuperarPeriodoCompras;
 use App\Models\DocumentoRecibido;
 use App\Services\DocumentosRecibidos\AdjuntosDocumentoRecibido;
+use App\Services\DocumentosRecibidos\BitacoraSincronizacionCompras;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\EnvioDocumentoRecibidoService;
+use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
 use App\Support\Contabilidad\CorreoContabilidad;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -29,8 +35,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DocumentoRecibidoController extends Controller
 {
-    public function index(Request $request, SincronizadorDocumentosRecibidos $sync): View
-    {
+    public function index(
+        Request $request,
+        SincronizadorDocumentosRecibidos $sync,
+        ProgresoSincronizacionCompras $progreso,
+        BitacoraSincronizacionCompras $bitacora,
+        ConfiguracionDocumentosRecibidos $configuracion,
+    ): View {
         // Por defecto: pendientes del mes actual (para que no se llene con el histórico).
         $filtros = DocumentosRecibidosQuery::filtros($request->all());
 
@@ -44,12 +55,74 @@ class DocumentoRecibidoController extends Controller
             'resumen' => $this->resumen($filtros),
             'fuenteDisponible' => $sync->disponible(),
             'fuente' => $sync->fuente(),
+            // Estado PERMANENTE de la sincronización. Antes el único rastro de una
+            // revisión era el mensaje que desaparecía al recargar; con la sincronización
+            // automática nadie está mirando cuando corre, así que el estado tiene que
+            // poder consultarse en cualquier momento.
+            'estadoSync' => $this->estadoSincronizacion($progreso, $bitacora, $configuracion),
+            'sinFechaFiscal' => DocumentoRecibido::query()->sinFechaFiscal()->paraContabilidad()->count(),
             'conteos' => [
                 'pendiente' => DocumentoRecibido::where('estado', 'pendiente')->count(),
                 'enviado' => DocumentoRecibido::where('estado', 'enviado')->count(),
                 'ignorado' => DocumentoRecibido::where('estado', 'ignorado')->count(),
             ],
         ]);
+    }
+
+    /**
+     * Semáforo de la sincronización: al día / con pendientes / con error / sin correr.
+     *
+     * El umbral de "sin correr" es tres veces el intervalo programado (15 min). Si el
+     * scheduler del servidor no está registrado —que es exactamente lo que pasa hoy—, la
+     * franja se pone en ámbar sola en menos de una hora en vez de mostrar un verde que
+     * no significa nada.
+     *
+     * @return array{color: string, titulo: string, detalle: string, ultimo_exito: ?string, ultimo_error: ?string, dias_pendientes: int, primer_dia_pendiente: ?string}
+     */
+    private function estadoSincronizacion(
+        ProgresoSincronizacionCompras $progreso,
+        BitacoraSincronizacionCompras $bitacora,
+        ConfiguracionDocumentosRecibidos $configuracion,
+    ): array {
+        $carpeta = $configuracion->carpeta();
+        $ultimoExito = $bitacora->ultimoExito();
+        $ultimoError = $bitacora->ultimoError();
+
+        // Ventana mirada: el mes en curso y el anterior. Es el horizonte en el que
+        // todavía se puede armar o rehacer un paquete mensual.
+        $desde = now()->subMonthNoOverflow()->startOfMonth();
+        $pendientes = $progreso->diasSinCubrir($desde, now()->startOfDay(), $carpeta);
+
+        $minutos = $bitacora->minutosDesdeElUltimoExito();
+        [$color, $titulo, $detalle] = match (true) {
+            $ultimoError !== null => ['rojo', 'La última sincronización falló', $ultimoError],
+            $ultimoExito === null => ['ambar', 'Todavía no hay ninguna sincronización registrada',
+                'Corré «Revisar ahora» o recuperá el período que necesites.'],
+            $minutos !== null && $minutos > 45 => ['ambar', 'Hace '.$this->tiempo($minutos).' que no se sincroniza',
+                'Debería correr cada 15 minutos. Revisá que la tarea programada del servidor esté activa.'],
+            $pendientes->isNotEmpty() => ['ambar', $pendientes->count().' día(s) sin revisar',
+                'Desde '.$pendientes->first()['dia'].'. Usá «Recuperar período» para cerrarlos.'],
+            default => ['verde', 'Sincronización automática al día', 'Todos los días del período están revisados.'],
+        };
+
+        return [
+            'color' => $color,
+            'titulo' => $titulo,
+            'detalle' => $detalle,
+            'ultimo_exito' => $ultimoExito?->format('d/m/Y H:i'),
+            'ultimo_error' => $ultimoError,
+            'dias_pendientes' => $pendientes->count(),
+            'primer_dia_pendiente' => $pendientes->first()['dia'] ?? null,
+        ];
+    }
+
+    private function tiempo(int $minutos): string
+    {
+        if ($minutos < 60) {
+            return $minutos.' min';
+        }
+
+        return $minutos < 1440 ? intdiv($minutos, 60).' h' : intdiv($minutos, 1440).' día(s)';
     }
 
     /** Descarga el Excel de recibidos respetando los filtros actuales. */
@@ -68,25 +141,105 @@ class DocumentoRecibidoController extends Controller
     }
 
     /**
-     * Revisa el buzón (Yahoo/IMAP) MANUALMENTE y crea registros nuevos. Solo
-     * lectura: no marca leído, no mueve, no borra, no reenvía.
+     * "Revisar ahora": adelanta la corrida INCREMENTAL que de todos modos hace el
+     * scheduler. Solo lectura del buzón: no marca leído, no mueve, no borra, no reenvía.
      *
-     * Por defecto INCREMENTAL (desde la fecha del último documento guardado); con
-     * ?historico=1 revisa todo el buzón (más lento).
+     * Ya no existe "Revisar histórico". Prometía recorrer todo el buzón y en realidad
+     * leía siempre los mismos correos más recientes, porque el lector ordenaba por UID
+     * descendente y recortaba al límite: repetirlo no retrocedía nunca. Su lugar lo ocupa
+     * {@see self::recuperar()}, que sí retrocede, por rango de fechas y con progreso.
      */
-    public function sincronizar(Request $request, SincronizadorDocumentosRecibidos $sync): RedirectResponse
+    public function sincronizar(Request $request, SincronizadorDocumentosRecibidos $sync, ProgresoSincronizacionCompras $progreso, BitacoraSincronizacionCompras $bitacora): RedirectResponse
     {
-        $incremental = ! $request->boolean('historico');
-        $r = $sync->sincronizar($incremental);
-
-        if (! $r['disponible'] || $r['error'] !== null) {
-            return back()->with('error', $r['error'] ?? 'No se pudo revisar el correo.');
+        if (! $sync->disponible()) {
+            return back()->with('error', 'El correo de compras (Yahoo/IMAP) no está configurado. Configuralo en Configuración > Integraciones > Documentos recibidos.');
         }
 
-        $desde = $r['incremental'] ? ('desde el '.($r['desde'] ?? '—')) : 'todo el histórico';
-        return back()->with('status', "Revisión completada (carpeta {$r['carpeta']}, {$desde}): "
-            ."{$r['revisados']} correos revisados, {$r['nuevos']} nuevos, {$r['duplicados']} ya registrados, "
-            ."{$r['descartados']} descartados (no-DTE), {$r['sin_datos']} sin DTE legible. No se modificó ningún correo.");
+        $configuracion = app(ConfiguracionDocumentosRecibidos::class);
+        $carpeta = $configuracion->carpeta();
+        // Mismo solape que la corrida programada, para que apretar el botón y esperar a
+        // que corra sola den exactamente el mismo resultado.
+        $desde = $progreso->inicioIncremental($carpeta, solapeDias: 2);
+        $hasta = now()->startOfDay();
+
+        $bitacora->iniciar();
+        $r = $sync->sincronizarRango($desde->min($hasta), $hasta, $configuracion->limite(), aplicar: true);
+
+        // Un buzón caído o unas credenciales rechazadas YA NO se ven como una revisión
+        // exitosa sin novedades: salen en rojo, con el motivo y qué hacer.
+        if ($r->fallo()) {
+            $bitacora->fallo($r->mensaje(), $r->aArreglo());
+
+            return back()->with('error', $r->mensaje());
+        }
+
+        $bitacora->exito($r->aArreglo());
+
+        return back()->with('status', $r->mensaje());
+    }
+
+    /**
+     * "Recuperar período": trae un rango histórico completo, día por día.
+     *
+     * Es la herramienta EXCEPCIONAL. La sincronización normal la hace el scheduler; esto
+     * se usa cuando hay un hueco que cerrar (el sistema estuvo apagado, el buzón rechazó
+     * credenciales una semana, o hay backlog anterior al despliegue).
+     *
+     * Se encola: un mes son decenas de días con sus adjuntos, y hacerlo dentro de la
+     * petición web daría un timeout del navegador con la recuperación a medias. El
+     * progreso queda en `documentos_recibidos_progreso` y la pantalla lo muestra.
+     */
+    public function recuperar(Request $request, SincronizadorDocumentosRecibidos $sync): RedirectResponse
+    {
+        if (! $sync->disponible()) {
+            return back()->with('error', 'El correo de compras (Yahoo/IMAP) no está configurado: no hay de dónde recuperar.');
+        }
+
+        $datos = $request->validate([
+            'desde' => ['required', 'date_format:Y-m-d'],
+            'hasta' => ['required', 'date_format:Y-m-d', 'after_or_equal:desde'],
+        ], [], ['desde' => 'fecha desde', 'hasta' => 'fecha hasta']);
+
+        $desde = Carbon::parse($datos['desde'])->startOfDay();
+        $hasta = Carbon::parse($datos['hasta'])->startOfDay();
+
+        // Tope de un año: más que eso casi siempre es una fecha mal tipeada, y una
+        // recuperación de cinco años contra Yahoo es una forma segura de que el servidor
+        // corte la conexión. Para un rango mayor está el comando, que no tiene tope.
+        if ($desde->diffInDays($hasta) > 366) {
+            return back()->with('error', 'El período a recuperar no puede pasar de un año. Usá varios tramos, o el comando compras:sincronizar --desde --hasta.');
+        }
+
+        // Una sola recuperación a la vez. El candado se toma ACÁ, al encolar, y lo suelta
+        // el trabajo al terminar: si solo se tomara al ejecutar, apretar «Recuperar» tres
+        // veces dejaría tres trabajos en cola que después se bloquean entre sí de a uno.
+        $candado = Cache::lock(RecuperarPeriodoCompras::LOCK, RecuperarPeriodoCompras::LOCK_SEGUNDOS);
+        if (! $candado->get()) {
+            return back()->with('error', 'Ya hay una recuperación de compras en curso. '
+                .'Esperá a que termine —el avance se ve en esta misma pantalla— y volvé a intentarlo.');
+        }
+
+        RecuperarPeriodoCompras::dispatch($desde->toDateString(), $hasta->toDateString(), lockOwner: $candado->owner());
+
+        $dias = $desde->diffInDays($hasta) + 1;
+
+        return back()->with('status', "Recuperación encolada: {$dias} día(s), del {$desde->toDateString()} al {$hasta->toDateString()}. "
+            .$this->avisoDeCola()
+            .' Se lee el buzón día por día y el avance aparece acá mismo. No se modifica ningún correo.');
+    }
+
+    /**
+     * Aviso sobre quién va a ejecutar la recuperación.
+     *
+     * Con una cola real, «encolada» significa que NO pasa nada hasta que un worker la
+     * tome — y si el worker está caído, el usuario vería un mensaje verde y ningún
+     * documento nuevo, que es justo la clase de silencio que este módulo vino a eliminar.
+     */
+    private function avisoDeCola(): string
+    {
+        return config('queue.default') === 'sync'
+            ? 'Se ejecutó en el momento.'
+            : 'La ejecuta el worker de colas: si no está corriendo en el servidor, la recuperación queda esperando.';
     }
 
     /** Marca el documento como pendiente para contabilidad. */

@@ -8,27 +8,18 @@
                     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
                     Exportar Excel
                 </a>
-                {{-- Sincronización del buzón Yahoo/IMAP: SOLO administrador (documentos-recibidos.gestionar). --}}
+                {{-- Sincronización del buzón Yahoo/IMAP: SOLO administrador (documentos-recibidos.gestionar).
+                     El botón dejó de ser la única defensa: la sincronización la hace el scheduler y
+                     esto solo la adelanta. El estado permanente está en la franja de abajo. --}}
                 @can('documentos-recibidos.gestionar')
                     <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}">
                         @csrf
                         <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                                 @disabled(! $fuenteDisponible)
-                                title="Revisión rápida: lee solo desde la fecha del último documento guardado (solo lectura; no marca leído, no mueve ni borra).">
-                            {{ $fuenteDisponible ? 'Revisar correos recientes' : 'Configurar correo Yahoo/IMAP' }}
+                                title="Adelanta la revisión incremental que ya corre sola (solo lectura; no marca leído, no mueve ni borra).">
+                            {{ $fuenteDisponible ? 'Revisar ahora' : 'Configurar correo Yahoo/IMAP' }}
                         </button>
                     </form>
-                    @if ($fuenteDisponible)
-                        <form method="POST" action="{{ route('documentos-recibidos.sincronizar') }}"
-                              onsubmit="return confirm('Revisar el histórico completo puede tardar porque revisa correos antiguos. ¿Continuar?');">
-                            @csrf
-                            <input type="hidden" name="historico" value="1">
-                            <button class="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-                                    title="Revisa todo el buzón. Puede tardar porque revisa correos antiguos.">
-                                Revisar histórico
-                            </button>
-                        </form>
-                    @endif
                 @endcan
             </div>
         </div>
@@ -47,8 +38,114 @@
             {{-- Candado de correo real: solo aparece fuera de producción. --}}
             <x-correo-simulado-aviso />
 
+            @if ($fuenteDisponible)
+                @php
+                    /* Tres roles de texto, con variante `dark:` explícita en cada uno.
+                       Los overrides globales de app.css solo cubren los pasos 600-800, así
+                       que en oscuro un `text-red-900` quedaba rojo oscuro sobre fondo rojo
+                       oscuro: ilegible. La jerarquía se conserva invertida —en claro el
+                       título es el paso MÁS oscuro, en oscuro el MÁS claro— y los tres
+                       tonos pasan AA sobre el fondo translúcido del aviso. */
+                    $tono = match ($estadoSync['color']) {
+                        'verde' => [
+                            'caja' => 'bg-green-50 border-green-200',
+                            'punto' => 'bg-green-500',
+                            'texto' => 'text-green-900 dark:text-green-200',
+                            'detalle' => 'text-green-800 dark:text-green-300',
+                            'meta' => 'text-green-700 dark:text-green-400',
+                        ],
+                        'rojo' => [
+                            'caja' => 'bg-red-50 border-red-200',
+                            'punto' => 'bg-red-500',
+                            'texto' => 'text-red-900 dark:text-red-200',
+                            'detalle' => 'text-red-800 dark:text-red-300',
+                            'meta' => 'text-red-700 dark:text-red-400',
+                        ],
+                        default => [
+                            'caja' => 'bg-amber-50 border-amber-200',
+                            'punto' => 'bg-amber-500',
+                            'texto' => 'text-amber-900 dark:text-amber-200',
+                            'detalle' => 'text-amber-800 dark:text-amber-300',
+                            'meta' => 'text-amber-700 dark:text-amber-400',
+                        ],
+                    };
+                @endphp
+
+                {{-- ESTADO PERMANENTE de la sincronización. Sustituye al mensaje que se
+                     perdía al recargar la página: ya no hace falta acordarse de apretar un
+                     botón, hace falta poder mirar. --}}
+                <div class="rounded-lg border {{ $tono['caja'] }} p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="flex items-start gap-3">
+                            <span class="mt-1.5 h-2.5 w-2.5 flex-none rounded-full {{ $tono['punto'] }}"></span>
+                            <div>
+                                <p class="text-sm font-semibold {{ $tono['texto'] }}">{{ $estadoSync['titulo'] }}</p>
+                                <p class="text-sm {{ $tono['detalle'] }}">{{ $estadoSync['detalle'] }}</p>
+                                <p class="mt-1 text-xs {{ $tono['meta'] }}">
+                                    Última sincronización correcta:
+                                    <span class="font-medium">{{ $estadoSync['ultimo_exito'] ?? 'nunca' }}</span>
+                                    · Revisión automática cada 15 minutos.
+                                </p>
+                            </div>
+                        </div>
+                        @can('documentos-recibidos.gestionar')
+                            <button type="button"
+                                    onclick="document.getElementById('recuperar-periodo').classList.toggle('hidden')"
+                                    class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                Recuperar período
+                            </button>
+                        @endcan
+                    </div>
+
+                    @can('documentos-recibidos.gestionar')
+                        {{-- Herramienta EXCEPCIONAL: pide fechas y encola el recorrido día por
+                             día. No depende de subir ningún límite. --}}
+                        <form id="recuperar-periodo" method="POST"
+                              class="{{ $errors->any() ? '' : 'hidden' }} mt-4 rounded-md border border-gray-200 bg-white p-4"
+                              action="{{ route('documentos-recibidos.recuperar') }}">
+                            @csrf
+                            <p class="text-sm font-medium text-gray-800">Recuperar un período del buzón</p>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Lee el buzón día por día, de más viejo a más nuevo, y guarda el avance. Se puede
+                                interrumpir y continuar: no duplica nada. Solo lectura: no marca leído, no mueve, no borra.
+                            </p>
+                            <div class="mt-3 flex flex-wrap items-end gap-3">
+                                <div>
+                                    <label for="rec-desde" class="block text-xs font-medium text-gray-600">Desde</label>
+                                    <input id="rec-desde" type="date" name="desde" required
+                                           value="{{ old('desde', $estadoSync['primer_dia_pendiente']) }}"
+                                           class="mt-1 rounded-md border-gray-300 text-sm">
+                                </div>
+                                <div>
+                                    <label for="rec-hasta" class="block text-xs font-medium text-gray-600">Hasta</label>
+                                    <input id="rec-hasta" type="date" name="hasta" required
+                                           value="{{ old('hasta', now()->toDateString()) }}"
+                                           class="mt-1 rounded-md border-gray-300 text-sm">
+                                </div>
+                                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">
+                                    Recuperar
+                                </button>
+                            </div>
+                            @error('desde') <p class="mt-2 text-xs text-red-600">{{ $message }}</p> @enderror
+                            @error('hasta') <p class="mt-2 text-xs text-red-600">{{ $message }}</p> @enderror
+                        </form>
+                    @endcan
+                </div>
+            @endif
+
+            @if ($sinFechaFiscal > 0)
+                {{-- Sin fecha de emisión legible no se puede saber a qué mes pertenece la
+                     compra, así que NO entra en ningún paquete. Se avisa acá en vez de
+                     dejarla desaparecer del período en silencio. --}}
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 dark:text-amber-300">
+                    <span class="font-semibold">{{ $sinFechaFiscal }}</span> compra(s) sin fecha de emisión legible: no entran en
+                    ningún paquete mensual hasta que se resuelvan. Suelen ser PDF sin JSON, o un JSON que no se pudo leer.
+                    <a class="font-medium underline" href="{{ route('documentos-recibidos.index', ['vista' => 'bandeja', 'rango' => 'todos']) }}">Verlas en la bandeja</a>.
+                </div>
+            @endif
+
             @unless ($fuenteDisponible)
-                <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 dark:text-amber-300">
                     El correo de documentos recibidos (Yahoo/IMAP) no está configurado ({{ $fuente }}). La revisión
                     está deshabilitada hasta configurar las variables <code>DOCUMENTOS_RECIBIDOS_MAIL_*</code> en el
                     servidor. El listado de abajo muestra lo ya registrado localmente.
@@ -321,7 +418,7 @@
                             @empty
                                 <tr><td colspan="10" class="py-10 text-center text-gray-400">
                                     No hay documentos para este filtro.
-                                    @if ($fuenteDisponible) Usá "Revisar correos" para buscar nuevos, o cambiá el rango a "Todos". @endif
+                                    @if ($fuenteDisponible) Usá "Revisar ahora" para adelantar la revisión, o cambiá el rango a "Todos". @endif
                                 </td></tr>
                             @endforelse
                         </tbody>

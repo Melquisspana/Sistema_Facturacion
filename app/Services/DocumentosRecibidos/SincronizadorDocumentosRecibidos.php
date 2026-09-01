@@ -3,7 +3,10 @@
 namespace App\Services\DocumentosRecibidos;
 
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
+use App\Exceptions\DocumentosRecibidos\AutenticacionBuzonException;
+use App\Exceptions\DocumentosRecibidos\BuzonException;
 use App\Models\DocumentoRecibido;
+use App\Services\DocumentosRecibidos\Buzon\IdentidadCorreo;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Ppq\JsonAdjuntoDecoder;
 use Illuminate\Support\Carbon;
@@ -12,26 +15,41 @@ use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * Sincroniza los DOCUMENTOS RECIBIDOS desde el buzón configurado (Yahoo/IMAP), a
- * través del contrato MailboxClient. NO depende de Gmail/PPQ.
+ * Sincroniza los DOCUMENTOS RECIBIDOS (compras) desde el buzón Yahoo/IMAP a través del
+ * contrato {@see MailboxClient}. NO depende de Gmail/PPQ.
  *
- * Es MANUAL (se dispara con un botón), NUNCA automático. Garantías fase 1:
- *  - SOLO LECTURA del buzón (el lector no borra, no mueve, no marca leído).
- *  - No reenvía ni envía correos. No toca DTE emitidos ni correlativos.
- *  - Deduplica por id de mensaje y por código de generación (no reprocesa).
+ * SOLO LECTURA del buzón: no borra, no mueve, no marca leído, no reenvía. No toca DTE
+ * emitidos ni correlativos. Escribe únicamente en `documentos_recibidos`, en el disco
+ * local (adjuntos) y en la tabla de progreso.
  *
- * Reutiliza el decodificador y el parser de adjuntos DTE (utilidades de parsing,
- * no fuentes de correo), y el ClasificadorDocumentoRecibido (compartido con el
- * comando de backfill) para decidir POR QUÉ un documento quedó sin datos DTE.
+ * CÓMO RECORRE, y por qué así. Día por día, y dentro de cada día por páginas de UID
+ * ASCENDENTE hasta agotarlo. El recorrido anterior pedía "los 30 más recientes" de todo
+ * el buzón: lo que caía por debajo del corte era siempre lo más viejo, y como la marca
+ * incremental avanzaba igual, esos correos quedaban del lado ya cubierto y no se leían
+ * nunca más. Leyendo un día completo antes de darlo por cubierto, un día que no se pudo
+ * agotar NO avanza la marca y la corrida siguiente vuelve a él.
+ *
+ * IDEMPOTENTE en tres niveles: identidad estable del correo
+ * ({@see IdentidadCorreo}), identidad histórica de las filas anteriores a la migración,
+ * y `codigo_generacion` del DTE. Repetir el mismo rango deja exactamente el mismo
+ * resultado.
  */
 class SincronizadorDocumentosRecibidos
 {
+    /**
+     * Tope de páginas por día. Es una red de seguridad, no un límite de negocio: con
+     * `--limite` razonable ningún día real llega acá. Si se alcanzara, el día queda
+     * `parcial` (nunca `completo`) y la corrida siguiente lo continúa.
+     */
+    private const MAX_PAGINAS_POR_DIA = 200;
+
     public function __construct(
         private readonly MailboxClient $buzon,
         private readonly JsonAdjuntoDecoder $decoder,
         private readonly ParserDocumentoRecibido $parser,
         private readonly ClasificadorDocumentoRecibido $clasificador,
         private readonly FiltroExclusionCorreo $filtro,
+        private readonly ProgresoSincronizacionCompras $progreso,
         private readonly ConfiguracionDocumentosRecibidos $configuracion,
     ) {}
 
@@ -46,69 +64,247 @@ class SincronizadorDocumentosRecibidos
     }
 
     /**
-     * Revisa el buzón y crea registros locales para los correos con DTE nuevos.
+     * Recorre el rango [desde, hasta] día por día.
      *
-     * INCREMENTAL (default): busca solo DESDE la fecha del último documento guardado
-     * (prefiere fecha_correo; si no, created_at), inclusive ese mismo día. Si no hay
-     * ningún registro, usa un rango inicial razonable (últimos 30 días). El modo
-     * HISTÓRICO ($incremental=false) revisa todo el buzón (más lento).
-     *
-     * @return array{disponible: bool, carpeta: string, desde: ?string, incremental: bool, revisados: int, nuevos: int, duplicados: int, descartados: int, sin_datos: int, error: ?string}
+     * @param  int  $limitePagina  máximo de correos por página (no por día: el día se agota)
+     * @param  bool  $aplicar  sin esto no escribe NADA (ni documentos ni progreso)
      */
-    public function sincronizar(bool $incremental = true): array
+    public function sincronizarRango(Carbon $desde, Carbon $hasta, int $limitePagina, bool $aplicar): ResumenSincronizacion
     {
-        $carpeta = (string) config('documentos_recibidos.mail.folder', 'INBOX');
-        $base = ['disponible' => true, 'carpeta' => $carpeta, 'desde' => null, 'incremental' => $incremental,
-            'revisados' => 0, 'nuevos' => 0, 'duplicados' => 0, 'descartados' => 0, 'sin_datos' => 0, 'error' => null];
+        $carpeta = $this->carpeta();
 
         if (! $this->buzon->disponible()) {
-            return array_merge($base, ['disponible' => false,
-                'error' => 'El correo de documentos recibidos (Yahoo/IMAP) no está configurado. Configurá las variables DOCUMENTOS_RECIBIDOS_MAIL_* para habilitar la revisión.']);
+            return new ResumenSincronizacion(
+                desenlace: ResumenSincronizacion::SIN_CONFIGURAR,
+                carpeta: $carpeta,
+                error: 'El correo de compras (Yahoo/IMAP) no está configurado. Configuralo en Configuración > Integraciones > Documentos recibidos.',
+            );
         }
 
-        // Fecha incremental: desde el último documento (o últimos 30 días si no hay).
-        $desde = $incremental ? $this->fechaDesde() : null;
-        $resumen = array_merge($base, ['desde' => $desde?->format('Y-m-d')]);
-
+        // 1) Metadatos ANTES de leer nada: confirma que el buzón responde y acepta las
+        //    credenciales, y trae el UIDVALIDITY contra el que se valida el progreso.
         try {
-            $limite = $this->configuracion->limite();
-            $mensajes = $this->buzon->mensajesConAdjuntos($limite, $desde);
-        } catch (Throwable $e) {
-            return array_merge($resumen, ['error' => 'No se pudo leer el correo: '.$e->getMessage()]);
+            $estado = $this->buzon->estado();
+        } catch (BuzonException $e) {
+            return $this->resumenDeFalla($e, $carpeta, $desde, $hasta);
         }
 
-        foreach ($mensajes as $mensaje) {
-            $resumen['revisados']++;
-            $id = (string) ($mensaje['id'] ?? '');
-            if ($id === '' || DocumentoRecibido::where('gmail_message_id', $id)->exists()) {
-                $resumen['duplicados']++;
+        // A partir de acá manda la carpeta que el lector ABRIÓ de verdad, no la que dice
+        // la configuración. Si alguien cambió el ajuste sin reiniciar nada, el progreso
+        // tiene que quedar anotado bajo la carpeta que se leyó: si no, los cursores de
+        // una carpeta se aplicarían a los UID de otra.
+        $carpeta = $estado->carpeta;
 
-                continue;
-            }
+        // 2) Si la carpeta se reconstruyó, los cursores guardados apuntan a otros
+        //    correos. Reanudar desde ellos saltearía documentos reales, así que la
+        //    corrida se DETIENE y lo dice, en vez de avanzar sobre una referencia falsa.
+        $conflicto = $this->progreso->uidValidityEnConflicto($carpeta, $estado->uidValidity);
+        if ($conflicto !== null) {
+            return new ResumenSincronizacion(
+                desenlace: ResumenSincronizacion::UID_VALIDITY_CAMBIADO,
+                carpeta: $carpeta,
+                desde: $desde->toDateString(),
+                hasta: $hasta->toDateString(),
+                error: 'La carpeta '.$carpeta.' se reconstruyó en el servidor (UIDVALIDITY '.$conflicto
+                    .' → '.$estado->uidValidity.'). El progreso por UID ya no aplica: los UID guardados apuntan a otros correos. '
+                    .'Corré con --reiniciar-uid-validity para soltar los cursores y volver a recorrer los días; no se borra ningún documento.',
+            );
+        }
+
+        $total = ['correos' => 0, 'nuevos' => 0, 'duplicados' => 0, 'descartados' => 0, 'rechazados' => 0];
+        $completos = [];
+        $incompletos = [];
+
+        foreach ($this->progreso->dias($desde, $hasta) as $fecha) {
+            $dia = Carbon::parse($fecha)->startOfDay();
 
             try {
-                match ($this->procesarMensaje($id, $mensaje)) {
-                    'nuevo' => $resumen['nuevos']++,
-                    'duplicado' => $resumen['duplicados']++,
-                    'descartado' => $resumen['descartados']++,
-                    default => $resumen['sin_datos']++,
-                };
-            } catch (Throwable) {
-                $resumen['sin_datos']++;
+                $resultadoDia = $this->recorrerDia($dia, $carpeta, $estado->uidValidity, $limitePagina, $aplicar);
+            } catch (BuzonException $e) {
+                // El buzón se cayó a mitad. Lo ya procesado quedó guardado (es
+                // idempotente), este día queda marcado con su motivo y la corrida
+                // TERMINA: seguir con los demás días contra un buzón caído solo
+                // produciría más errores y ocultaría el primero.
+                if ($aplicar) {
+                    $this->progreso->marcarError($dia, $carpeta, $estado->uidValidity, null, $e->getMessage());
+                }
+                $incompletos[] = $fecha;
+
+                return $this->resumenDeFalla($e, $carpeta, $desde, $hasta, $total, $completos, $incompletos, $aplicar);
             }
+
+            foreach ($total as $k => $v) {
+                $total[$k] = $v + $resultadoDia['conteos'][$k];
+            }
+            $resultadoDia['completo'] ? $completos[] = $fecha : $incompletos[] = $fecha;
         }
 
-        return $resumen;
+        $desenlace = match (true) {
+            $incompletos !== [] => ResumenSincronizacion::INCOMPLETA,
+            $total['nuevos'] === 0 => ResumenSincronizacion::SIN_NOVEDADES,
+            default => ResumenSincronizacion::COMPLETA,
+        };
+
+        return new ResumenSincronizacion(
+            desenlace: $desenlace,
+            carpeta: $carpeta,
+            desde: $desde->toDateString(),
+            hasta: $hasta->toDateString(),
+            correos: $total['correos'],
+            nuevos: $total['nuevos'],
+            duplicados: $total['duplicados'],
+            descartados: $total['descartados'],
+            rechazados: $total['rechazados'],
+            diasCompletos: $completos,
+            diasIncompletos: $incompletos,
+            aplicado: $aplicar,
+        );
     }
 
     /**
-     * Procesa un mensaje ya normalizado (con adjuntos): detecta PDF/JSON, extrae
-     * datos del DTE y crea el registro (o lo omite si ya existe por código).
+     * Recorre UN día hasta agotarlo, paginando por UID ascendente.
      *
-     * @param  array{asunto?: ?string, remitente?: ?string, fecha?: ?string, adjuntos?: array<int, array{filename?: string, mime?: string, data?: string}>}  $mensaje
-     * @return string 'nuevo' | 'duplicado' | 'descartado' | 'sin_datos'
+     * El día solo se declara COMPLETO si el buzón dijo que no quedaba nada más. Si el
+     * límite se alcanzó (`truncada`) o se llegó al tope de páginas, queda `parcial` con
+     * su cursor: la marca no lo pasa y la corrida siguiente lo continúa desde ahí.
+     *
+     * @return array{completo: bool, conteos: array<string, int>}
+     *
+     * @throws BuzonException
      */
-    private function procesarMensaje(string $id, array $mensaje): string
+    private function recorrerDia(Carbon $dia, string $carpeta, ?int $uidValidity, int $limitePagina, bool $aplicar): array
+    {
+        $vacio = ['correos' => 0, 'nuevos' => 0, 'duplicados' => 0, 'descartados' => 0, 'rechazados' => 0];
+        $totalDia = $vacio;
+
+        // Reanudación: se arranca después del último UID ya leído de este día.
+        $cursor = $aplicar ? $this->progreso->cursorDe($dia, $carpeta) : null;
+        $completo = false;
+
+        for ($pagina = 0; $pagina < self::MAX_PAGINAS_POR_DIA; $pagina++) {
+            $resultado = $this->buzon->mensajesDelDia($dia, $limitePagina, $cursor);
+
+            // Conteos de ESTA página. La fila de progreso los suma, así que pasarle el
+            // acumulado del día contaría cada página tantas veces como páginas queden.
+            $conteos = $vacio;
+            foreach ($resultado->mensajes as $mensaje) {
+                $conteos['correos']++;
+                $clave = $this->procesarMensaje($mensaje, $carpeta, $uidValidity, $aplicar);
+                $conteos[$clave]++;
+            }
+            foreach ($conteos as $k => $v) {
+                $totalDia[$k] += $v;
+            }
+
+            if ($resultado->ultimoUid !== null) {
+                $cursor = $resultado->ultimoUid;
+            }
+
+            // Persistir DESPUÉS de cada página, no al final del día: si la corrida muere
+            // en la página 7, las 6 anteriores no se vuelven a leer.
+            if ($aplicar) {
+                $resultado->truncada
+                    ? $this->progreso->marcarParcial($dia, $carpeta, $uidValidity, $cursor, $conteos)
+                    : $this->progreso->marcarCompleto($dia, $carpeta, $uidValidity, $cursor, $conteos);
+            }
+
+            if (! $resultado->truncada) {
+                $completo = true;
+                break;
+            }
+        }
+
+        return ['completo' => $completo, 'conteos' => $totalDia];
+    }
+
+    /**
+     * Procesa un mensaje normalizado: identidad, deduplicación, parseo, exclusión y
+     * alta. Devuelve la clave del contador que corresponde.
+     *
+     * @param  array<string, mixed>  $mensaje
+     * @return 'nuevos'|'duplicados'|'descartados'|'rechazados'
+     */
+    private function procesarMensaje(array $mensaje, string $carpeta, ?int $uidValidity, bool $aplicar): string
+    {
+        ['identidad' => $identidad, 'message_id' => $messageId] = IdentidadCorreo::para($mensaje);
+        $uid = isset($mensaje['uid']) ? (int) $mensaje['uid'] : null;
+
+        $existente = $this->buscarExistente($identidad, $uid);
+        if ($existente !== null) {
+            // El correo ya estaba, pero puede haberse movido de carpeta o tener otro UID
+            // tras una reconstrucción del buzón. Se refresca DÓNDE está (diagnóstico),
+            // nunca QUÉ es: la identidad no se toca.
+            if ($aplicar) {
+                $this->refrescarUbicacion($existente, $identidad, $messageId, $carpeta, $uid, $uidValidity);
+            }
+
+            return 'duplicados';
+        }
+
+        try {
+            return $this->registrar($mensaje, $identidad, $messageId, $carpeta, $uid, $uidValidity, $aplicar);
+        } catch (Throwable $e) {
+            // Un fallo al guardar (disco, permisos, adjunto corrupto) YA NO se confunde
+            // con "no tenía DTE legible": se cuenta como rechazado y queda en el log con
+            // el motivo. Como la fila no se creó, el reintento lo vuelve a procesar.
+            Log::warning('documentos_recibidos.correo_rechazado', [
+                'identidad' => $identidad,
+                'carpeta' => $carpeta,
+                'uid' => $uid,
+                'asunto' => $mensaje['asunto'] ?? null,
+                'motivo' => $e->getMessage(),
+            ]);
+
+            return 'rechazados';
+        }
+    }
+
+    /**
+     * Documento ya registrado para este correo, por cualquiera de los dos caminos.
+     *
+     * El segundo camino es la compatibilidad con las filas anteriores a la migración de
+     * identidad: guardaban el UID crudo en `gmail_message_id` y todavía no tienen
+     * `identidad`. Se acota a ESAS filas (`identidad IS NULL`) a propósito — así un UID
+     * repetido de otra carpeta no puede hacerse pasar por un documento nuevo ya visto.
+     */
+    private function buscarExistente(string $identidad, ?int $uid): ?DocumentoRecibido
+    {
+        return DocumentoRecibido::query()
+            ->where(function ($q) use ($identidad, $uid) {
+                $q->where('identidad', $identidad);
+                if ($uid !== null) {
+                    $q->orWhere(fn ($sub) => $sub->whereNull('identidad')->where('gmail_message_id', (string) $uid));
+                }
+            })
+            ->first();
+    }
+
+    /**
+     * Actualiza dónde vive el correo hoy, sin tocar su contenido ni su identidad.
+     *
+     * Es lo que hace que mover un correo de carpeta no genere un duplicado: se
+     * reconoce por el `Message-ID`, y lo único que cambia es el UID y la carpeta que
+     * quedan anotados para diagnóstico. De paso adopta las filas históricas, que
+     * llegan acá con `identidad` en NULL.
+     */
+    private function refrescarUbicacion(DocumentoRecibido $doc, string $identidad, ?string $messageId, string $carpeta, ?int $uid, ?int $uidValidity): void
+    {
+        $doc->forceFill(array_filter([
+            'identidad' => $doc->identidad ?: $identidad,
+            'message_id' => $doc->message_id ?: $messageId,
+            'buzon_carpeta' => $carpeta,
+            'uid' => $uid,
+            'uid_validity' => $uidValidity,
+        ], fn ($v) => $v !== null))->save();
+    }
+
+    /**
+     * Clasifica y crea el registro local del correo.
+     *
+     * @param  array<string, mixed>  $mensaje
+     * @return 'nuevos'|'duplicados'|'descartados'|'rechazados'
+     */
+    private function registrar(array $mensaje, string $identidad, ?string $messageId, string $carpeta, ?int $uid, ?int $uidValidity, bool $aplicar): string
     {
         $adjuntos = (array) ($mensaje['adjuntos'] ?? []);
 
@@ -144,12 +340,12 @@ class SincronizadorDocumentosRecibidos
         }
 
         if (! $tienePdf && ! $tieneJson) {
-            return 'sin_datos';
+            return 'rechazados';
         }
 
         $codigo = $datos['codigo_generacion'] ?? null;
         if ($codigo !== null && DocumentoRecibido::where('codigo_generacion', $codigo)->exists()) {
-            return 'duplicado';
+            return 'duplicados';
         }
 
         [$clasificacion, $diagnostico] = $this->clasificador->clasificar(
@@ -158,15 +354,15 @@ class SincronizadorDocumentosRecibidos
 
         // Exclusión de correos NO-DTE (estado de cuenta, orden de compra, PDF-only sin
         // DTE): se evalúa DESPUÉS de clasificar y ANTES de guardar adjuntos o crear la
-        // fila. Un JSON DTE válido nunca llega aquí (clasificacion != 'no_es_dte'). No
-        // se toca el buzón; solo se registra en log el motivo (metadatos, sin contenido).
+        // fila. Un JSON DTE válido nunca llega acá. No se toca el buzón; solo se
+        // registra en log el motivo (metadatos, sin contenido).
         $nombresAdjuntos = array_values(array_filter(array_map(
             fn ($a) => (string) ($a['filename'] ?? ''), $adjuntos
         ), fn ($n) => $n !== ''));
         $exclusion = $this->filtro->evaluar($clasificacion, (string) ($mensaje['asunto'] ?? ''), $nombresAdjuntos);
         if ($exclusion !== null) {
             Log::info('documentos_recibidos.correo_descartado', [
-                'message_id' => $id,
+                'identidad' => $identidad,
                 'remitente' => $mensaje['remitente'] ?? null,
                 'asunto' => $mensaje['asunto'] ?? null,
                 'adjuntos' => $nombresAdjuntos,
@@ -174,20 +370,34 @@ class SincronizadorDocumentosRecibidos
                 'motivo' => $exclusion['motivo'],
             ]);
 
-            return 'descartado';
+            return 'descartados';
         }
 
-        // Guardar adjuntos localmente para el futuro envío a contabilidad (no se
-        // reenvía nada ahora). Solo lectura del buzón; escritura en disco local.
-        $rutas = $this->guardarAdjuntos($id, $adjuntos);
+        // Dry-run: se leyó y se clasificó todo (para que el informe sea real), pero no
+        // se escribe ni el adjunto ni la fila.
+        if (! $aplicar) {
+            return 'nuevos';
+        }
+
+        // Los adjuntos se guardan bajo la IDENTIDAD del correo, no bajo el UID: la
+        // carpeta del documento deja de moverse cuando el correo cambia de carpeta.
+        $rutas = $this->guardarAdjuntos($identidad, $adjuntos);
 
         DocumentoRecibido::create([
-            'gmail_message_id' => $id,
+            'identidad' => $identidad,
+            'message_id' => $messageId,
+            'buzon_carpeta' => $carpeta,
+            'uid' => $uid,
+            'uid_validity' => $uidValidity,
+            // Se sigue escribiendo el UID acá para no romper la unicidad histórica ni las
+            // pantallas que lo muestran; ya NO es la clave de deduplicación.
+            'gmail_message_id' => $uid !== null ? (string) $uid : $identidad,
             'origen_email' => $this->buzon->fuente(),
             'asunto' => $mensaje['asunto'] ?? null,
             'remitente' => $mensaje['remitente'] ?? null,
             'fecha_correo' => $this->fecha($mensaje['fecha'] ?? null),
-            // Fecha de emisión del DTE (fecEmi del JSON), si vino.
+            // Fecha de emisión del DTE (fecEmi del JSON): la FISCAL, la que decide a qué
+            // período contable pertenece la compra.
             'fecha_dte' => $this->fecha($datos['fecha'] ?? null),
             'tipo_documento' => $datos['tipo_documento'] ?? null,
             'numero_control' => $datos['numero_control'] ?? null,
@@ -210,7 +420,7 @@ class SincronizadorDocumentosRecibidos
             ],
         ]);
 
-        return 'nuevo';
+        return 'nuevos';
     }
 
     /**
@@ -219,9 +429,9 @@ class SincronizadorDocumentosRecibidos
      * @param  array<int, array{filename?: string, mime?: string, data?: string}>  $adjuntos
      * @return array<int, string>
      */
-    private function guardarAdjuntos(string $id, array $adjuntos): array
+    private function guardarAdjuntos(string $identidad, array $adjuntos): array
     {
-        $base = trim((string) config('documentos_recibidos.storage_dir', 'documentos-recibidos'), '/').'/'.$this->carpeta($id);
+        $base = trim((string) config('documentos_recibidos.storage_dir', 'documentos-recibidos'), '/').'/'.$this->carpetaDe($identidad);
         $rutas = [];
         foreach ($adjuntos as $a) {
             $nombre = (string) ($a['filename'] ?? '');
@@ -238,26 +448,45 @@ class SincronizadorDocumentosRecibidos
         return $rutas;
     }
 
-    private function carpeta(string $id): string
+    /**
+     * Nombre de carpeta a partir de la identidad. Un Message-ID puede ser largo y traer
+     * cualquier cosa, así que se acorta con un hash estable en vez de recortarlo (dos
+     * identidades distintas podrían compartir prefijo y pisarse los adjuntos).
+     */
+    private function carpetaDe(string $identidad): string
     {
-        return preg_replace('/[^A-Za-z0-9._-]+/', '_', $id) ?: 'msg';
+        $limpio = preg_replace('/[^A-Za-z0-9._-]+/', '_', $identidad) ?: 'msg';
+
+        return strlen($limpio) <= 60 ? $limpio : substr($limpio, 0, 40).'-'.substr(sha1($identidad), 0, 12);
     }
 
-    /**
-     * Día desde el que revisar (incremental): el del último documento guardado
-     * (prefiere fecha_correo; si no, created_at), al inicio del día para incluirlo
-     * completo. Sin registros: últimos 30 días.
-     */
-    private function fechaDesde(): Carbon
+    /** @param  array<string, int>  $total */
+    private function resumenDeFalla(
+        BuzonException $e, string $carpeta, Carbon $desde, Carbon $hasta,
+        array $total = [], array $completos = [], array $incompletos = [], bool $aplicar = false,
+    ): ResumenSincronizacion {
+        return new ResumenSincronizacion(
+            desenlace: $e instanceof AutenticacionBuzonException
+                ? ResumenSincronizacion::AUTENTICACION_FALLIDA
+                : ResumenSincronizacion::BUZON_INACCESIBLE,
+            carpeta: $carpeta,
+            desde: $desde->toDateString(),
+            hasta: $hasta->toDateString(),
+            correos: $total['correos'] ?? 0,
+            nuevos: $total['nuevos'] ?? 0,
+            duplicados: $total['duplicados'] ?? 0,
+            descartados: $total['descartados'] ?? 0,
+            rechazados: $total['rechazados'] ?? 0,
+            diasCompletos: $completos,
+            diasIncompletos: $incompletos,
+            error: $e->getMessage(),
+            aplicado: $aplicar,
+        );
+    }
+
+    private function carpeta(): string
     {
-        $ultimo = DocumentoRecibido::orderByRaw('COALESCE(fecha_correo, created_at) DESC')->first();
-        if ($ultimo === null) {
-            return now()->subDays(30)->startOfDay();
-        }
-
-        $ref = $ultimo->fecha_correo ?? $ultimo->created_at;
-
-        return Carbon::parse($ref)->startOfDay();
+        return $this->configuracion->carpeta();
     }
 
     private function fecha(?string $raw): ?Carbon

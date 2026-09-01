@@ -58,6 +58,110 @@
                 </div>
             </form>
 
+            {{-- COBERTURA del período. Va ANTES del resumen a propósito: los totales de
+                 abajo solo significan algo si se sabe que los correos del período están
+                 leídos. Sin esto, un período al que le faltaban quince días se veía
+                 exactamente igual que uno cerrado. --}}
+            @php
+                $cobOk = $cobertura['cubierto'] && ! $cobertura['ultimo_error'];
+                /* Variante `dark:` explícita en cada tono: los overrides globales de
+                   app.css solo cubren los pasos 600-800, así que un `text-*-900` quedaba
+                   oscuro sobre el fondo oscuro del aviso. */
+                $cobTono = $cobOk
+                    ? [
+                        'caja' => 'bg-green-50 ring-green-200',
+                        'punto' => 'bg-green-500',
+                        'titulo' => 'text-green-900 dark:text-green-200',
+                        'texto' => 'text-green-800 dark:text-green-300',
+                    ]
+                    : [
+                        'caja' => 'bg-amber-50 ring-amber-200',
+                        'punto' => 'bg-amber-500',
+                        'titulo' => 'text-amber-900 dark:text-amber-200',
+                        'texto' => 'text-amber-800 dark:text-amber-300',
+                    ];
+                $diasPendientes = collect($cobertura['dias_pendientes']);
+            @endphp
+            <div class="rounded-xl ring-1 {{ $cobTono['caja'] }} p-6">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="flex items-start gap-3">
+                        <span class="mt-1.5 h-2.5 w-2.5 flex-none rounded-full {{ $cobTono['punto'] }}"></span>
+                        <div>
+                            <h3 class="text-sm font-semibold {{ $cobTono['titulo'] }}">
+                                {{ $cobOk ? 'Período completo: se revisaron todos los días' : 'Período incompleto' }}
+                            </h3>
+                            <p class="text-sm {{ $cobTono['texto'] }}">
+                                {{ $cobertura['motivo'] ?? 'Todos los correos del período están leídos.' }}
+                            </p>
+                        </div>
+                    </div>
+                    <a href="{{ route('documentos-recibidos.index') }}"
+                       class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Ir a Compras
+                    </a>
+                </div>
+
+                <dl class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide {{ $cobTono['texto'] }}">Días revisados</dt>
+                        <dd class="font-semibold {{ $cobTono['titulo'] }}">
+                            {{ $cobertura['dias_completos'] }} / {{ $cobertura['dias_totales'] }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide {{ $cobTono['texto'] }}">Última sincronización</dt>
+                        {{-- La corrida global si la hay; si no, el último día de ESTE período que
+                             se cerró. Lo segundo es más específico y es lo que importa acá. --}}
+                        <dd class="font-semibold {{ $cobTono['titulo'] }}">
+                            {{ $cobertura['ultimo_exito'] ?? $cobertura['ultima_sincronizacion'] ?? 'nunca' }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide {{ $cobTono['texto'] }}">Días con error</dt>
+                        <dd class="font-semibold {{ $cobertura['dias_con_error'] > 0 ? 'text-red-700 dark:text-red-300' : $cobTono['titulo'] }}">
+                            {{ $cobertura['dias_con_error'] }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide {{ $cobTono['texto'] }}">Correos procesados</dt>
+                        <dd class="font-semibold {{ $cobTono['titulo'] }}">{{ number_format($cobertura['correos']) }}</dd>
+                    </div>
+                </dl>
+
+                <p class="mt-3 text-xs {{ $cobTono['texto'] }}">
+                    Compras válidas del período: <span class="font-semibold">{{ number_format($cobertura['compras_validas']) }}</span>
+                    · repetidas y descartadas al leer: <span class="font-semibold">{{ number_format($cobertura['duplicados']) }}</span> /
+                    <span class="font-semibold">{{ number_format($cobertura['descartados']) }}</span>
+                    · rechazadas (sin DTE legible): <span class="font-semibold">{{ number_format($cobertura['rechazados']) }}</span>
+                    · ignoradas manualmente, fuera del paquete: <span class="font-semibold">{{ number_format($cobertura['compras_ignoradas']) }}</span>
+                </p>
+
+                @if ($cobertura['compras_sin_fecha_fiscal'] > 0)
+                    <p class="mt-2 rounded-md bg-white/70 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                        <span class="font-semibold">{{ $cobertura['compras_sin_fecha_fiscal'] }}</span> compra(s) sin fecha de emisión legible
+                        NO entran en ningún período. Hay que resolverlas en Compras: no se cuelan por la fecha del correo.
+                    </p>
+                @endif
+
+                @if ($diasPendientes->isNotEmpty())
+                    <details class="mt-3">
+                        <summary class="cursor-pointer text-xs font-medium {{ $cobTono['titulo'] }}">
+                            Ver los {{ $diasPendientes->count() }} día(s) sin revisar
+                        </summary>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            @foreach ($diasPendientes as $d)
+                                <span class="rounded bg-white px-2 py-1 text-xs text-gray-700 ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-600"
+                                      title="{{ $d['error'] ?? 'Sin revisar' }}">
+                                    {{ $d['dia'] }}
+                                    {{-- `text-gray-400` sobre el chip oscuro daba 3.3:1, por debajo de AA. --}}
+                                    <span class="text-gray-500 dark:text-paper-300">· {{ $d['estado'] === 'sin_revisar' ? 'sin revisar' : $d['estado'] }}</span>
+                                </span>
+                            @endforeach
+                        </div>
+                    </details>
+                @endif
+            </div>
+
             {{-- Resumen --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -112,9 +216,24 @@
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Generar paquete</h3>
                 <p class="mt-1 text-xs text-gray-500">
-                    Genera <code>documentos_contabilidad_{{ $rango['etiqueta'] }}.zip</code> con los Excel de compras y ventas,
-                    los PDF/JSON de compras ya guardados y el PDF/JSON de cada venta (documento emitido) del rango.
+                    Genera <code>documentos_contabilidad_{{ $rango['etiqueta'] }}{{ $bloqueaCobertura ? '_INCOMPLETO' : '' }}.zip</code>
+                    con los Excel de compras y ventas, los PDF/JSON de compras ya guardados y el PDF/JSON de cada venta
+                    (documento emitido) del período. El período se arma por la <strong>fecha de emisión</strong> del documento,
+                    no por la fecha del correo.
                 </p>
+                @if ($bloqueaCobertura)
+                    {{-- La descarga NO se bloquea: es la forma de revisar qué hay mientras se
+                         recupera lo que falta. Lo que no puede pasar es que se confunda con un
+                         paquete cerrado, así que el aviso viaja en el nombre y en el LEEME. --}}
+                    <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 dark:text-amber-300">
+                        <p class="font-semibold">El envío a contabilidad está bloqueado: el período no está completo.</p>
+                        <p class="mt-1">
+                            Podés descargarlo igual para revisarlo: el ZIP sale marcado como <code>_INCOMPLETO</code> y el
+                            <code>LEEME.txt</code> abre con los días que faltan. Para habilitar el envío, recuperá el período
+                            desde Compras y volvé a generarlo.
+                        </p>
+                    </div>
+                @endif
                 {{-- Candado de correo real: solo aparece fuera de producción. --}}
                 <div class="mt-3">
                     <x-correo-simulado-aviso />
@@ -142,17 +261,23 @@
                         </button>
                     @else
                         <button type="button" disabled
-                                title="{{ $correoContabilidad === null ? 'Falta un correo de contabilidad válido (Configuración > Contabilidad).' : 'No hay documentos en el rango para las fuentes incluidas.' }}"
+                                title="{{ $bloqueaCobertura ? 'El período de compras no está completo: recuperalo desde Compras.' : ($correoContabilidad === null ? 'Falta un correo de contabilidad válido (Configuración > Contabilidad).' : 'No hay documentos en el rango para las fuentes incluidas.') }}"
                                 class="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">
                             Enviar a contabilidad
                         </button>
                     @endif
                 </div>
                 @unless ($puedeEnviar)
-                    <p class="mt-2 text-xs text-gray-400">
-                        @if ($correoContabilidad === null)
+                    {{-- Este texto es lo único que explica POR QUÉ el botón está apagado, así que
+                         tiene que leerse: `text-gray-400` daba 3.3:1 sobre el fondo oscuro. --}}
+                    <p class="mt-2 text-xs text-gray-600 dark:text-paper-300">
+                        @if ($bloqueaCobertura)
+                            El envío está bloqueado hasta que el período de compras esté revisado por completo.
+                            <a href="{{ route('documentos-recibidos.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-300">Recuperá el período desde Compras</a>
+                            y volvé a generarlo. Mientras tanto podés descargar el ZIP, que sale marcado como incompleto.
+                        @elseif ($correoContabilidad === null)
                             Para habilitar el envío, configurá un correo de contabilidad válido en
-                            <a href="{{ route('configuracion.contabilidad.edit') }}" class="text-indigo-600 hover:underline">Configuración &gt; Contabilidad</a>.
+                            <a href="{{ route('configuracion.contabilidad.edit') }}" class="text-indigo-600 hover:underline dark:text-indigo-300">Configuración &gt; Contabilidad</a>.
                         @else
                             El envío se habilita cuando hay documentos en el rango para las fuentes incluidas.
                         @endif

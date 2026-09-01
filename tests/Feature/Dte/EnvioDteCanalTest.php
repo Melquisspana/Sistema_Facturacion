@@ -81,7 +81,7 @@ class EnvioDteCanalTest extends TestCase
         $dte->refresh();
         $dte->numero_control = 'DTE-03-M001P001-000000000000048';
         $dte->codigo_generacion = 'A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D';
-        $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'.json';
+        $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
         Storage::disk('local')->put($dte->json_generado_path, '{"identificacion":{"x":1}}');
 
         if ($estado === EstadoDte::Aceptado) {
