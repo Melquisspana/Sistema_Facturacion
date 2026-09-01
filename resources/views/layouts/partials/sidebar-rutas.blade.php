@@ -13,16 +13,28 @@
 
     <x-sidebar-group titulo="Cobros" icono="rutas">
         <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard')">Resumen</x-sidebar-link>
+        @can('rutas.custodia.ver')
+            <x-sidebar-link :href="route('rutas.excepciones.index')" :active="request()->routeIs('rutas.excepciones.*')">Excepciones</x-sidebar-link>
+        @endcan
     </x-sidebar-group>
 
     {{-- Operación. Salidas va primero porque es lo que se mira todos los días; el
          catálogo de rutas se toca de vez en cuando. La bandeja cruza todas las
          salidas: es donde se contesta «qué me falta cobrar» sin abrir viaje por
-         viaje, y por eso va pegada a Salidas. --}}
+         viaje, y por eso va pegada a Salidas.
+
+         Recepción de CCF va con ellas —es operación diaria de oficina— y lleva su
+         propio permiso: quien recibe el papel no es quien lo llevó. --}}
     <x-sidebar-group titulo="Operación" icono="operacion" clave="rutas-operacion"
-                     :activo="request()->routeIs('rutas.salidas.*', 'rutas.documentos.*', 'rutas.rutas.*')">
+                     :activo="request()->routeIs('rutas.salidas.*', 'rutas.documentos.*', 'rutas.rutas.*', 'rutas.recepcion.*', 'rutas.personal.*')">
         <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas</x-sidebar-link>
         <x-sidebar-link :href="route('rutas.documentos.index')" :active="request()->routeIs('rutas.documentos.*')">Documentos por cobrar</x-sidebar-link>
+        @can('rutas.custodia.ver')
+            <x-sidebar-link :href="route('rutas.recepcion.index')" :active="request()->routeIs('rutas.recepcion.*')">Recepción de CCF</x-sidebar-link>
+        @endcan
+        @can('rutas.personal.ver')
+            <x-sidebar-link :href="route('rutas.personal.index')" :active="request()->routeIs('rutas.personal.*')">Personal operativo</x-sidebar-link>
+        @endcan
         <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Rutas</x-sidebar-link>
     </x-sidebar-group>
 

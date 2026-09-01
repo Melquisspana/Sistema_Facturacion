@@ -6,9 +6,11 @@ use App\Enums\EstadoSalidaRuta;
 use App\Enums\MotivoRevisionDocumento;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\SalidaRutaRequest;
+use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
-use App\Models\User;
+use App\Services\Rutas\Custodia;
+use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Rutas\SeguimientoDocumentos;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,7 +32,7 @@ class SalidaRutaController extends Controller
     public function index(Request $request): View
     {
         $salidas = SalidaRuta::query()
-            ->with(['ruta:id,nombre', 'vendedores:id,name'])
+            ->with(['ruta:id,nombre', 'personal:id,nombre'])
             // El conteo de documentos es la pregunta del listado; se resuelve en la
             // misma consulta y no fila por fila desde la vista.
             ->withCount('documentos')
@@ -55,7 +57,7 @@ class SalidaRutaController extends Controller
         return view('rutas.salidas.create', $this->datosFormulario());
     }
 
-    public function store(SalidaRutaRequest $request): RedirectResponse
+    public function store(SalidaRutaRequest $request, ParticipantesSalida $participantes): RedirectResponse
     {
         $datos = $request->validated();
 
@@ -70,9 +72,10 @@ class SalidaRutaController extends Controller
             'created_by' => $request->user()?->id,
         ]);
 
-        $salida->vendedores()->sync($datos['vendedores']);
+        $resultado = $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null);
         $this->auditar($request, $salida, 'definió los participantes de la salida', [
-            'vendedores' => $this->nombresDe($datos['vendedores']),
+            'participantes' => $resultado['agregados'],
+            'responsable' => $resultado['responsable'],
         ]);
 
         return redirect()
@@ -87,9 +90,9 @@ class SalidaRutaController extends Controller
      * así que no pueden contradecirse. Entrega y nota de crédito no se guardan en
      * ningún lado: se resuelven acá, en el momento, desde `ppq_albaranes` y `dtes`.
      */
-    public function show(SalidaRuta $salida, SeguimientoDocumentos $seguimiento): View
+    public function show(SalidaRuta $salida, SeguimientoDocumentos $seguimiento, Custodia $custodia): View
     {
-        $salida->load(['ruta', 'vendedores:id,name', 'creador:id,name']);
+        $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
         $documentos = $seguimiento->documentosDe($salida);
 
@@ -97,6 +100,15 @@ class SalidaRutaController extends Controller
             'salida' => $salida,
             'documentos' => $documentos,
             'resumen' => $seguimiento->resumen($documentos),
+            // A quién se le puede dar un papel en esta salida: los que van y siguen activos.
+            // Sale de acá y no de la vista para que el selector no pueda ofrecer a nadie que
+            // el servicio vaya a rechazar después.
+            'participantes' => $salida->participantes
+                ->filter(fn ($p) => $p->personal?->activo)
+                ->sortBy(fn ($p) => $p->personal->nombre)
+                ->values(),
+            // La línea de tiempo de todos los documentos, en una consulta.
+            'historiales' => $custodia->historialesDe($documentos->pluck('id')->all()),
             // Destinos posibles para mover un documento: otras salidas abiertas.
             'destinos' => SalidaRuta::abiertas()
                 ->whereKeyNot($salida->id)
@@ -111,12 +123,12 @@ class SalidaRutaController extends Controller
     {
         abort_unless($salida->estado->esEditable(), 403, 'Una salida finalizada o cancelada ya no se edita.');
 
-        $salida->load('vendedores:id');
+        $salida->load('participantes:id,salida_ruta_id,rutas_personal_id,rol');
 
         return view('rutas.salidas.edit', $this->datosFormulario() + ['salida' => $salida]);
     }
 
-    public function update(SalidaRutaRequest $request, SalidaRuta $salida): RedirectResponse
+    public function update(SalidaRutaRequest $request, SalidaRuta $salida, ParticipantesSalida $participantes): RedirectResponse
     {
         abort_unless($salida->estado->esEditable(), 403, 'Una salida finalizada o cancelada ya no se edita.');
 
@@ -129,19 +141,27 @@ class SalidaRutaController extends Controller
             'observaciones' => $datos['observaciones'] ?? null,
         ]);
 
-        // sync() devuelve qué cambió: solo se audita si de verdad cambió la gente,
-        // para que el historial no se llene de "cambió los participantes" vacíos.
-        $cambios = $salida->vendedores()->sync($datos['vendedores']);
-        if ($cambios['attached'] !== [] || $cambios['detached'] !== []) {
+        $resultado = $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null);
+
+        // Solo se audita si de verdad cambió la gente, para que el historial no se llene de
+        // «cambió los participantes» vacíos.
+        if ($resultado['agregados'] !== [] || $resultado['quitados'] !== []) {
             $this->auditar($request, $salida, 'cambió los participantes de la salida', [
-                'agregados' => $this->nombresDe($cambios['attached']),
-                'quitados' => $this->nombresDe($cambios['detached']),
+                'agregados' => $resultado['agregados'],
+                'quitados' => $resultado['quitados'],
+                'responsable' => $resultado['responsable'],
             ]);
         }
 
-        return redirect()
+        $respuesta = redirect()
             ->route('rutas.salidas.show', $salida)
             ->with('status', 'Salida actualizada.');
+
+        // Quitar a alguien no le saca el papel de la mano: si quedó con documentos, se
+        // avisa para que alguien los transfiera en vez de dejar la punta suelta.
+        return $resultado['advertencias'] === []
+            ? $respuesta
+            : $respuesta->with('error', implode(' ', $resultado['advertencias']));
     }
 
     // ------------------------------------------------------------- transiciones
@@ -196,19 +216,14 @@ class SalidaRutaController extends Controller
     {
         return [
             'rutas' => Ruta::activas()->orderBy('nombre')->get(['id', 'nombre']),
-            // Sin filtrar por rol: todavía no existe rol vendedor y cualquier
-            // usuario activo puede salir a ruta.
-            'usuarios' => User::where('activo', true)->orderBy('name')->get(['id', 'name']),
+            // Personal de campo ACTIVO. Sin filtrar por función: nadie tiene ruta fija y
+            // cualquiera puede ir a cualquier lado. Las funciones se cargan para poder
+            // SUGERIR quién suele quedar a cargo, no para restringir el selector.
+            'personal' => PersonalRuta::activos()
+                ->with('funciones:id,rutas_personal_id,funcion')
+                ->orderBy('nombre')
+                ->get(['id', 'nombre']),
         ];
-    }
-
-    /**
-     * @param  array<int, int|string>  $ids
-     * @return array<int, string>
-     */
-    private function nombresDe(array $ids): array
-    {
-        return $ids === [] ? [] : User::whereIn('id', $ids)->orderBy('name')->pluck('name')->all();
     }
 
     /** @param  array<string, mixed>  $propiedades */

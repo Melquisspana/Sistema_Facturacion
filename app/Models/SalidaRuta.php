@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\RolEnSalida;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -72,16 +74,43 @@ class SalidaRuta extends Model
         return $this->belongsTo(Ruta::class, 'ruta_id');
     }
 
-    /** Quién REGISTRÓ la salida (no quién viaja: eso es `vendedores`). */
+    /** Quién REGISTRÓ la salida (no quién viaja: eso son los `participantes`). */
     public function creador(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /** Quiénes van en la salida. */
-    public function vendedores(): BelongsToMany
+    /**
+     * Quiénes van en la salida, con el papel que lleva cada uno.
+     *
+     * Reemplaza al pivote `salida_ruta_user`, que apuntaba a `users` y por eso solo admitía
+     * gente con login. Los vendedores no la tienen ni deben tenerla: el catálogo de quienes
+     * salen es {@see PersonalRuta}.
+     */
+    public function participantes(): HasMany
     {
-        return $this->belongsToMany(User::class, 'salida_ruta_user')->withTimestamps();
+        return $this->hasMany(SalidaRutaParticipante::class, 'salida_ruta_id');
+    }
+
+    /** Las personas, sin el detalle del pivote. Para listados y etiquetas. */
+    public function personal(): BelongsToMany
+    {
+        return $this->belongsToMany(PersonalRuta::class, 'salida_ruta_participantes', 'salida_ruta_id', 'rutas_personal_id')
+            ->withPivot(['rol'])
+            ->withTimestamps();
+    }
+
+    /**
+     * Quién quedó a cargo de este viaje, si alguien lo hizo.
+     *
+     * Es `hasOne` y no un campo de la salida porque el rol vive en el participante: la misma
+     * persona es responsable de un viaje y acompañante del siguiente. Que NO haya
+     * responsable es válido —una salida de una sola persona no lo necesita—.
+     */
+    public function responsable(): HasOne
+    {
+        return $this->hasOne(SalidaRutaParticipante::class, 'salida_ruta_id')
+            ->where('rol', RolEnSalida::Responsable->value);
     }
 
     /** Documentos que viajaron en esta salida. */

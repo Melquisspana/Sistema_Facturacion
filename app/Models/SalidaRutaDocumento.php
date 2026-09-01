@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\EstadoCustodia;
 use App\Enums\EstadoDte;
 use App\Enums\MotivoRevisionDocumento;
 use App\Services\Rutas\AlbaranLocalizador;
+use App\Services\Rutas\Custodia;
 use App\Services\Rutas\LocalizadorNotaCredito;
 use App\Services\Rutas\LocalizadorPpq;
 use App\Services\Rutas\RenglonPpq;
@@ -15,6 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -135,6 +138,12 @@ class SalidaRutaDocumento extends Model
     public function documentacionRecibidaPor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'documentacion_fisica_recibida_por');
+    }
+
+    /** La bitácora completa de la custodia del papel, del evento más viejo al más nuevo. */
+    public function eventosCustodia(): HasMany
+    {
+        return $this->hasMany(CustodiaDocumentoEvento::class, 'salida_ruta_documento_id')->orderBy('id');
     }
 
     // ---------------------------------------------------------------- lectura
@@ -294,9 +303,68 @@ class SalidaRutaDocumento extends Model
         return ! in_array($estado, [EstadoDte::Rechazado, EstadoDte::Invalidado], true);
     }
 
+    /**
+     * ¿Volvió el CCF físico firmado y sellado?
+     *
+     * Lee la PROYECCIÓN (`documentacion_fisica_recibida_at`) y no la bitácora, a propósito:
+     * es una columna real, la mantiene sincronizada {@see App\Services\Rutas\Custodia} dentro
+     * de la misma transacción que crea o anula el evento de recepción, y es lo que permite
+     * que la bandeja filtre en SQL en vez de hidratar todas las filas para preguntarles una
+     * por una. La verdad de qué pasó está en los eventos; esto es la respuesta rápida.
+     */
     public function documentacionFisicaRecibida(): bool
     {
         return $this->documentacion_fisica_recibida_at !== null;
+    }
+
+    // ------------------------------------------------------------- custodia
+
+    /**
+     * Último evento de custodia que cuenta. `false` = todavía no se resolvió; `null` = se
+     * resolvió y no hay ninguno (el documento nunca salió de bodega).
+     */
+    private CustodiaDocumentoEvento|false|null $custodiaResuelta = false;
+
+    /** Precarga en bloque (la hace {@see App\Services\Rutas\SeguimientoDocumentos}). */
+    public function precargarCustodia(?CustodiaDocumentoEvento $ultimo): void
+    {
+        $this->custodiaResuelta = $ultimo;
+    }
+
+    /** El último evento vigente. Si no se precargó, se consulta para este solo documento. */
+    public function ultimoEventoCustodia(): ?CustodiaDocumentoEvento
+    {
+        if ($this->custodiaResuelta === false) {
+            $this->custodiaResuelta = app(Custodia::class)->ultimoVigente($this);
+        }
+
+        return $this->custodiaResuelta;
+    }
+
+    /**
+     * Dónde está el papel: en bodega, con alguien, recibido o con incidencia.
+     *
+     * Se DERIVA del último evento y no se guarda en ninguna columna. Es una dimensión
+     * distinta de {@see entregado()} —que habla del pedido, no del papel— y de
+     * {@see pagado()}. Las tres se muestran por separado a propósito.
+     */
+    public function estadoCustodia(): EstadoCustodia
+    {
+        return Custodia::estadoDesde($this->ultimoEventoCustodia());
+    }
+
+    /** Quién tiene el papel ahora mismo, o null si está en la empresa o nunca salió. */
+    public function tenedorActual(): ?PersonalRuta
+    {
+        $ultimo = $this->ultimoEventoCustodia();
+
+        return $ultimo?->tipo->dejaEnPersonal() ? $ultimo->destino : null;
+    }
+
+    /** ¿El papel está en manos de alguien que ya no está en la operación? */
+    public function custodiaEnPersonaInactiva(): bool
+    {
+        return $this->tenedorActual()?->activo === false;
     }
 
     // ------------------------------------------------------------ cobro / PPQ

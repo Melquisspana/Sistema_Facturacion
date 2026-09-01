@@ -173,10 +173,10 @@
                 </div>
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
                     <div class="divide-y divide-gray-100 dark:divide-ink-700">
-                        @forelse ($ruta->salidas()->with('vendedores:id,name')->orderByDesc('fecha_inicio')->limit(5)->get() as $salida)
+                        @forelse ($ruta->salidas()->with('personal:id,nombre')->orderByDesc('fecha_inicio')->limit(5)->get() as $salida)
                             <a href="{{ route('rutas.salidas.show', $salida) }}" class="flex items-center justify-between gap-4 px-5 py-3 hover:bg-gray-50 dark:hover:bg-ink-700">
                                 <span class="text-sm text-gray-700 dark:text-paper-200">{{ $salida->periodoLegible() }}</span>
-                                <span class="truncate text-xs text-gray-500 dark:text-paper-400">{{ $salida->vendedores->pluck('name')->implode(' · ') ?: '—' }}</span>
+                                <span class="truncate text-xs text-gray-500 dark:text-paper-400">{{ $salida->personal->pluck('nombre')->implode(' · ') ?: '—' }}</span>
                                 <x-rutas.estado-badge :estado="$salida->estado" />
                             </a>
                         @empty

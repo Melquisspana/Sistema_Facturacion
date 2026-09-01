@@ -5,7 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Activitylog\LogOptions;
@@ -72,11 +72,15 @@ class User extends Authenticatable
     }
 
     /**
-     * Salidas de ruta en las que participa. No hay catálogo de vendedores aparte:
-     * quien sale a ruta ya es usuario del sistema.
+     * La persona de campo que corresponde a este usuario, si alguien las enlazó.
+     *
+     * Reemplaza a `salidasRuta()`, que asumía que «quien sale a ruta ya es usuario del
+     * sistema». Resultó falso: los vendedores no tienen login ni deben tenerlo, así que el
+     * catálogo de quienes salen pasó a ser {@see PersonalRuta} y las salidas de un usuario
+     * se consultan a través de él —cuando existe—.
      */
-    public function salidasRuta(): BelongsToMany
+    public function personalRuta(): HasOne
     {
-        return $this->belongsToMany(SalidaRuta::class, 'salida_ruta_user')->withTimestamps();
+        return $this->hasOne(PersonalRuta::class, 'user_id');
     }
 }

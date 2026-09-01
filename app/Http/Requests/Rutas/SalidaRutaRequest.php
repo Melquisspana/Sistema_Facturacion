@@ -32,10 +32,16 @@ class SalidaRutaRequest extends FormRequest
             'fecha_fin_estimada' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
             'observaciones' => ['nullable', 'string', 'max:1000'],
 
-            // Participantes: al menos uno, y solo usuarios activos. No se exige
-            // ningún rol todavía (no existe rol vendedor).
-            'vendedores' => ['required', 'array', 'min:1'],
-            'vendedores.*' => [Rule::exists('users', 'id')->where('activo', true)],
+            // Participantes: al menos uno, del catálogo de personal de campo y activos.
+            // Apuntan a `rutas_personal` y no a `users` porque los vendedores no tienen
+            // login ni deben tenerlo.
+            'personal' => ['required', 'array', 'min:1'],
+            'personal.*' => [Rule::exists('rutas_personal', 'id')->where('activo', true)],
+
+            // Quién queda a cargo del viaje. OPCIONAL: una salida de una sola persona no
+            // necesita que nadie responda por el grupo. Que esté entre los participantes lo
+            // comprueba el servicio, que es quien puede verlo contra la lista final.
+            'responsable_id' => ['nullable', Rule::exists('rutas_personal', 'id')->where('activo', true)],
         ];
     }
 
@@ -46,7 +52,8 @@ class SalidaRutaRequest extends FormRequest
             'ruta_id' => 'ruta',
             'fecha_inicio' => 'fecha de inicio',
             'fecha_fin_estimada' => 'fecha estimada de regreso',
-            'vendedores' => 'vendedores',
+            'personal' => 'participantes',
+            'responsable_id' => 'responsable',
         ];
     }
 
@@ -55,8 +62,9 @@ class SalidaRutaRequest extends FormRequest
     {
         return [
             'ruta_id.exists' => 'Esa ruta no existe o está desactivada.',
-            'vendedores.required' => 'Elegí al menos una persona para la salida.',
-            'vendedores.*.exists' => 'Alguno de los usuarios elegidos no existe o está inactivo.',
+            'personal.required' => 'Elegí al menos una persona para la salida.',
+            'personal.*.exists' => 'Alguna de las personas elegidas no existe o está inactiva.',
+            'responsable_id.exists' => 'Esa persona no existe o está inactiva.',
             'fecha_fin_estimada.after_or_equal' => 'El regreso estimado no puede ser anterior a la salida.',
         ];
     }
