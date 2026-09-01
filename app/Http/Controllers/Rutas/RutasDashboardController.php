@@ -97,7 +97,7 @@ class RutasDashboardController extends Controller
             'planificadas' => SalidaRuta::enEstado(EstadoSalidaRuta::Planificada)->count(),
             'enCurso' => SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->count(),
             'salasSinRuta' => ClienteSucursal::whereNull('ruta_id')->where('activo', true)->count(),
-            'ultimas' => SalidaRuta::with(['ruta:id,nombre', 'vendedores:id,name'])
+            'ultimas' => SalidaRuta::with(['ruta:id,nombre', 'personal:id,nombre'])
                 ->orderByDesc('fecha_inicio')
                 ->orderByDesc('id')
                 ->limit(8)

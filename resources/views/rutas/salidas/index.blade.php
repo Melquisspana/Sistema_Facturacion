@@ -69,7 +69,7 @@
                                             —
                                         @endif
                                     </td>
-                                    <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->vendedores->pluck('name')->implode(' · ') ?: '—' }}</td>
+                                    <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->personal->pluck('nombre')->implode(' · ') ?: '—' }}</td>
                                     {{-- Cuántos documentos lleva la salida. El desglose
                                          (entregados, papel, NC) está en el detalle: en un
                                          listado, cinco números por fila no se leen. --}}

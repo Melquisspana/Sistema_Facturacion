@@ -3,6 +3,7 @@
 namespace Tests\Feature\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
@@ -24,9 +25,13 @@ class SalidaRutaTest extends TestCase
         return User::factory()->create(['activo' => true, 'name' => 'Admin'])->assignRole('administrador');
     }
 
-    private function vendedor(string $nombre): User
+    /**
+     * Una persona de CAMPO. Ya no es un `User`: desde que existe el catálogo de personal
+     * operativo, quien sale a ruta no necesita —ni suele tener— cuenta en el sistema.
+     */
+    private function vendedor(string $nombre): PersonalRuta
     {
-        return User::factory()->create(['activo' => true, 'name' => $nombre]);
+        return PersonalRuta::create(['nombre' => $nombre]);
     }
 
     private function ruta(string $nombre = 'San Miguel'): Ruta
@@ -35,14 +40,14 @@ class SalidaRutaTest extends TestCase
     }
 
     /** @param array<string, mixed> $extra */
-    private function crearSalida(User $admin, Ruta $ruta, array $vendedores, array $extra = []): SalidaRuta
+    private function crearSalida(User $admin, Ruta $ruta, array $personal, array $extra = []): SalidaRuta
     {
         $this->actingAs($admin)
             ->post(route('rutas.salidas.store'), [
                 'ruta_id' => $ruta->id,
                 'fecha_inicio' => '2026-08-14',
                 'fecha_fin_estimada' => '2026-08-16',
-                'vendedores' => $vendedores,
+                'personal' => $personal,
             ] + $extra)
             ->assertRedirect();
 
@@ -68,7 +73,7 @@ class SalidaRutaTest extends TestCase
         $this->assertSame('Llevar talonarios', $salida->observaciones);
     }
 
-    public function test_una_salida_puede_llevar_varios_vendedores(): void
+    public function test_una_salida_puede_llevar_varios_participantes(): void
     {
         $admin = $this->admin();
         $carlos = $this->vendedor('Carlos');
@@ -79,18 +84,18 @@ class SalidaRutaTest extends TestCase
 
         $this->assertEqualsCanonicalizing(
             [$carlos->id, $jose->id, $ana->id],
-            $salida->vendedores->pluck('id')->all(),
+            $salida->personal->pluck('id')->all(),
         );
     }
 
-    public function test_exige_al_menos_un_vendedor(): void
+    public function test_exige_al_menos_un_participante(): void
     {
         $this->actingAs($this->admin())
             ->post(route('rutas.salidas.store'), [
                 'ruta_id' => $this->ruta()->id,
                 'fecha_inicio' => '2026-08-14',
             ])
-            ->assertSessionHasErrors('vendedores');
+            ->assertSessionHasErrors('personal');
 
         $this->assertSame(0, SalidaRuta::count());
     }
@@ -103,7 +108,7 @@ class SalidaRutaTest extends TestCase
             ->post(route('rutas.salidas.store'), [
                 'ruta_id' => $ruta->id,
                 'fecha_inicio' => '2026-08-14',
-                'vendedores' => [$this->vendedor('Carlos')->id],
+                'personal' => [$this->vendedor('Carlos')->id],
             ])
             ->assertSessionHasErrors('ruta_id');
     }
@@ -115,7 +120,7 @@ class SalidaRutaTest extends TestCase
                 'ruta_id' => $this->ruta()->id,
                 'fecha_inicio' => '2026-08-14',
                 'fecha_fin_estimada' => '2026-08-10',
-                'vendedores' => [$this->vendedor('Carlos')->id],
+                'personal' => [$this->vendedor('Carlos')->id],
             ])
             ->assertSessionHasErrors('fecha_fin_estimada');
     }
@@ -200,7 +205,7 @@ class SalidaRutaTest extends TestCase
 
     // ------------------------------------------------------------------ edición
 
-    public function test_editar_cambia_los_vendedores(): void
+    public function test_editar_cambia_los_participantes(): void
     {
         $admin = $this->admin();
         $carlos = $this->vendedor('Carlos');
@@ -211,11 +216,11 @@ class SalidaRutaTest extends TestCase
             ->put(route('rutas.salidas.update', $salida), [
                 'ruta_id' => $ruta->id,
                 'fecha_inicio' => '2026-08-14',
-                'vendedores' => [$jose->id],
+                'personal' => [$jose->id],
             ])
             ->assertRedirect();
 
-        $this->assertSame([$jose->id], $salida->refresh()->vendedores->pluck('id')->all());
+        $this->assertSame([$jose->id], $salida->refresh()->personal->pluck('id')->all());
     }
 
     // ---------------------------------------------------------------- auditoría
@@ -230,7 +235,7 @@ class SalidaRutaTest extends TestCase
         $this->actingAs($admin)->put(route('rutas.salidas.update', $salida), [
             'ruta_id' => $ruta->id,
             'fecha_inicio' => '2026-08-14',
-            'vendedores' => [$carlos->id, $jose->id],
+            'personal' => [$carlos->id, $jose->id],
         ]);
         $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida));
         $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida));
@@ -256,7 +261,7 @@ class SalidaRutaTest extends TestCase
         $this->actingAs($admin)->put(route('rutas.salidas.update', $salida), [
             'ruta_id' => $ruta->id,
             'fecha_inicio' => '2026-08-14',
-            'vendedores' => [$carlos->id],
+            'personal' => [$carlos->id],
         ]);
 
         $this->assertSame(0, Activity::where('description', 'cambió los participantes de la salida')->count());

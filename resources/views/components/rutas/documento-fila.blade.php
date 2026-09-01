@@ -1,4 +1,4 @@
-@props(['documento', 'salida', 'motivos', 'destinos', 'formPapel'])
+@props(['documento', 'salida', 'motivos', 'destinos', 'formPapel', 'participantes', 'historial' => null])
 
 {{-- Una tarjeta por documento, con tres franjas de arriba abajo:
 
@@ -85,6 +85,19 @@
     {{-- ───────────── 2. Estados ───────────── --}}
     <div class="mt-4 sm:pl-7">
         <x-rutas.documento-estados :documento="$documento" />
+    </div>
+
+    {{-- ───────────── 2b. Custodia del papel ─────────────
+
+         Plegado y justo debajo de los estados: la franja de arriba dice CÓMO está el
+         papel, este panel es donde se cambia. Van pegados porque son la misma pregunta
+         leída y luego contestada. --}}
+    <div class="mt-3 sm:pl-7">
+        <x-rutas.custodia-panel
+            :documento="$documento"
+            :salida="$salida"
+            :participantes="$participantes"
+            :historial="$historial" />
     </div>
 
     {{-- ───────────── 3. Acciones ───────────── --}}

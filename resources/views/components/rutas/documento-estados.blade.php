@@ -4,12 +4,16 @@
      orden, para que la vista se escanee en vertical: la columna «Entrega» de
      todas las filas está a la misma altura y se lee de corrido.
 
-        ENTREGA          DOCUMENTACIÓN      NOTA DE CRÉDITO   COBRO / PPQ
-        ✓ Entregado      ○ Papel pendiente  ✓ NC aceptada     ✓ Pagado
-        17 Jul 2026      —                  DTE-05-…          22 Jul · $113.58
+        ENTREGA          CUSTODIA           NOTA DE CRÉDITO   COBRO / PPQ
+        ✓ Entregado      ◐ Con personal     ✓ NC aceptada     ✓ Pagado
+        17 Jul 2026      Rene Barillas      DTE-05-…          22 Jul · $113.58
 
      El orden cuenta la vida del documento de izquierda a derecha: sale, se
      entrega, vuelve el papel, se corrige si hizo falta y al final se cobra.
+
+     ENTREGA y CUSTODIA son dos hechos distintos y por eso son dos columnas: el
+     albarán prueba que el cliente recibió la mercadería, no que el CCF impreso y
+     firmado haya vuelto a la empresa.
 
      Presentación pura: nada de lo que se pinta acá se guarda en
      `salida_ruta_documentos`. La entrega sale del albarán, la NC se lee de `dtes`
@@ -51,21 +55,46 @@
         @endif
     </div>
 
-    {{-- DOCUMENTACIÓN — el único de los tres que es manual. --}}
+    {{-- CUSTODIA DEL PAPEL — dónde está el CCF impreso.
+
+         Es la dimensión que NO se puede derivar de nada: el albarán prueba que el
+         cliente recibió la mercadería, no que el papel firmado haya vuelto. Entre los
+         dos hechos pasan días y a veces el papel no vuelve nunca, así que van en
+         columnas separadas y con vocabulario distinto.
+
+         El estado sale del último evento vigente de la bitácora de custodia; «recibido»
+         además coincide con la proyección `documentacion_fisica_recibida_at`, que es la
+         que las consultas filtran en SQL. --}}
     <div>
-        <p class="{{ $rotulo }}">Documentación</p>
-        @if ($documento->documentacionFisicaRecibida())
-            <p class="{{ $valor }} {{ $ok }}"><span aria-hidden="true">✓</span> Papel recibido</p>
-            <p class="{{ $meta }}">
+        <p class="{{ $rotulo }}">Custodia del papel</p>
+        @php
+            $custodia = $documento->estadoCustodia();
+            $tenedor = $documento->tenedorActual();
+            $claseCustodia = match ($custodia) {
+                \App\Enums\EstadoCustodia::Recibido => $ok,
+                \App\Enums\EstadoCustodia::ConPersonal => $aviso,
+                \App\Enums\EstadoCustodia::Incidencia => $malo,
+                default => $espera,
+            };
+        @endphp
+        <p class="{{ $valor }} {{ $claseCustodia }}">
+            <span aria-hidden="true">{{ $custodia->icono() }}</span> {{ $custodia->label() }}
+        </p>
+        <p class="{{ $meta }}">
+            @if ($custodia === \App\Enums\EstadoCustodia::Recibido && $documento->documentacion_fisica_recibida_at)
                 {{ $documento->documentacion_fisica_recibida_at->translatedFormat('d M Y') }}
                 @if ($documento->documentacionRecibidaPor)
                     <span class="block truncate opacity-70">{{ $documento->documentacionRecibidaPor->name }}</span>
                 @endif
-            </p>
-        @else
-            <p class="{{ $valor }} {{ $espera }}"><span aria-hidden="true">○</span> Papel pendiente</p>
-            <p class="{{ $meta }} opacity-70">No ha regresado firmado</p>
-        @endif
+            @elseif ($tenedor)
+                <span class="block truncate">{{ $tenedor->nombre }}</span>
+                @unless ($tenedor->activo)
+                    <span class="block text-red-700 dark:text-red-400">Esa persona está inactiva</span>
+                @endunless
+            @else
+                <span class="opacity-70">{{ $custodia->detalle() }}</span>
+            @endif
+        </p>
     </div>
 
     {{-- NOTA DE CRÉDITO — manda el documento REAL sobre la marca operativa.

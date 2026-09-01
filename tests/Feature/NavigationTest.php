@@ -373,7 +373,13 @@ class NavigationTest extends TestCase
         );
     }
 
-    /** El área Cobros presenta salidas, bandeja, rutas y —visualmente— PPQ. */
+    /**
+     * El área Cobros presenta salidas, bandeja, rutas, la custodia del papel y —visualmente— PPQ.
+     *
+     * Los tres enlaces de custodia (excepciones, recepción y personal) van con su propio
+     * permiso: quien solo mira documentos no los ve. Acá se comprueba con administrador, que
+     * los tiene todos; los roles sin permiso están cubiertos por las pruebas de autorización.
+     */
     public function test_el_area_cobros_presenta_sus_enlaces_mas_prontos_pagos(): void
     {
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.dashboard'))->assertOk()->getContent();
@@ -385,6 +391,9 @@ class NavigationTest extends TestCase
                 // teléfono. No es una pantalla nueva para este rol.
                 'dashboard',
                 'rutas.dashboard', 'rutas.salidas.index', 'rutas.documentos.index', 'rutas.rutas.index',
+                // Custodia del CCF físico: la bandeja de lo que no cuadra, la pantalla de
+                // quien recibe en oficina y el catálogo de quienes salen a ruta.
+                'rutas.excepciones.index', 'rutas.recepcion.index', 'rutas.personal.index',
                 'ppq.index', 'ppq.lotes.index',
             ]),
             $this->enlacesDelSidebar($html),
@@ -394,6 +403,9 @@ class NavigationTest extends TestCase
         $this->assertStringContainsString('Resumen', $sidebar);
         $this->assertStringContainsString('Documentos por cobrar', $sidebar);
         $this->assertStringContainsString('Pronto pago', $sidebar);
+        $this->assertStringContainsString('Recepción de CCF', $sidebar);
+        $this->assertStringContainsString('Personal operativo', $sidebar);
+        $this->assertStringContainsString('Excepciones', $sidebar);
     }
 
     public function test_jefatura_ve_secciones_operativas_de_lectura_pero_no_administracion(): void

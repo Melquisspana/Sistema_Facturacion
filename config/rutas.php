@@ -51,4 +51,23 @@ return [
     | acotado. El usuario puede moverla con los filtros de fecha, pero no quitarla.
     */
     'bandeja_dias' => (int) env('RUTAS_BANDEJA_DIAS', 60),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Umbrales de la bandeja de EXCEPCIONES
+    |--------------------------------------------------------------------------
+    | Desde cuántos días una espera normal pasa a ser algo que alguien tiene que
+    | mirar. Empiezan conservadores a propósito: una bandeja que avisa de todo se
+    | deja de mirar, y entonces deja de servir para lo único que existe —que el
+    | hueco se vea el día que aparece—.
+    |
+    | Ninguno dispara correos ni notificaciones todavía: solo deciden qué se pinta
+    | en la pantalla de excepciones.
+    */
+    'excepciones' => [
+        // Entregado según el albarán y el CCF físico firmado sigue sin volver.
+        'dias_sin_papel' => (int) env('RUTAS_EXCEPCION_DIAS_SIN_PAPEL', 5),
+        // Salió en ruta y todavía no hay albarán que pruebe la entrega.
+        'dias_sin_albaran' => (int) env('RUTAS_EXCEPCION_DIAS_SIN_ALBARAN', 3),
+    ],
 ];

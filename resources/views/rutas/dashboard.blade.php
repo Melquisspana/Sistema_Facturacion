@@ -324,7 +324,7 @@
                                         </td>
                                         <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }}</td>
                                         <td class="py-3 px-4 text-gray-600 dark:text-paper-300">
-                                            {{ $salida->vendedores->pluck('name')->implode(' · ') ?: '—' }}
+                                            {{ $salida->personal->pluck('nombre')->implode(' · ') ?: '—' }}
                                         </td>
                                         <td class="py-3 px-4"><x-rutas.estado-badge :estado="$salida->estado" /></td>
                                     </tr>

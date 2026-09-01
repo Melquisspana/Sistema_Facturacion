@@ -5,7 +5,8 @@
      acto de finalizar. Ponerlas acá invitaría a "corregir" el estado a mano. --}}
 @php
     $salida = $salida ?? null;
-    $elegidos = old('vendedores', $salida?->vendedores->pluck('id')->all() ?? []);
+    $elegidos = old('personal', $salida?->participantes->pluck('rutas_personal_id')->all() ?? []);
+    $responsableElegido = old('responsable_id', $salida?->participantes->firstWhere('rol', \App\Enums\RolEnSalida::Responsable)?->rutas_personal_id);
 @endphp
 
 <div>
@@ -47,22 +48,50 @@
 </div>
 
 <div>
-    <span class="block text-sm font-medium text-gray-700 dark:text-paper-200">Vendedores</span>
-    <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">Quiénes van en esta salida. Puede ir más de una persona.</p>
+    <span class="block text-sm font-medium text-gray-700 dark:text-paper-200">Participantes</span>
+    <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
+        Quiénes van en esta salida. Puede ir más de una persona, y nadie tiene ruta fija.
+    </p>
 
     <div class="mt-2 max-h-56 overflow-y-auto rounded-md border border-gray-200 dark:border-ink-600">
-        @forelse ($usuarios as $usuario)
+        @forelse ($personal as $persona)
             <label class="flex cursor-pointer items-center gap-2.5 border-b border-gray-100 px-3 py-2 last:border-0 hover:bg-gray-50 dark:border-ink-700 dark:hover:bg-ink-700">
-                <input type="checkbox" name="vendedores[]" value="{{ $usuario->id }}"
-                       @checked(in_array($usuario->id, $elegidos))
-                       class="rounded border-gray-300 text-indigo-600 dark:border-ink-600 dark:bg-ink-800">
-                <span class="text-sm text-gray-700 dark:text-paper-200">{{ $usuario->name }}</span>
+                <input type="checkbox" name="personal[]" value="{{ $persona->id }}"
+                       @checked(in_array($persona->id, $elegidos))
+                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
+                <span class="text-sm text-gray-700 dark:text-paper-200">{{ $persona->nombre }}</span>
+                @foreach ($persona->funcionesEnum() as $funcion)
+                    <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {{ $funcion->clase() }}">{{ $funcion->label() }}</span>
+                @endforeach
             </label>
         @empty
-            <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-400">No hay usuarios activos.</p>
+            <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-400">
+                No hay personal de campo activo.
+                <a href="{{ route('rutas.personal.create') }}" class="underline">Dá de alta a alguien primero</a>.
+            </p>
         @endforelse
     </div>
-    <x-input-error :messages="$errors->get('vendedores')" class="mt-1" />
+    <x-input-error :messages="$errors->get('personal')" class="mt-1" />
+</div>
+
+<div>
+    <label for="responsable_id" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+        Responsable <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
+    </label>
+    <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
+        Quién queda a cargo de este viaje y reúne los documentos al volver. Se elige por salida:
+        la misma persona puede ir de acompañante en la siguiente.
+    </p>
+    <select name="responsable_id" id="responsable_id"
+            class="mt-2 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+        <option value="">Sin responsable designado</option>
+        @foreach ($personal as $persona)
+            <option value="{{ $persona->id }}" @selected($responsableElegido == $persona->id)>
+                {{ $persona->nombre }}@if (! $persona->puedeSerResponsable()) — no declara esa función @endif
+            </option>
+        @endforeach
+    </select>
+    <x-input-error :messages="$errors->get('responsable_id')" class="mt-1" />
 </div>
 
 <div>

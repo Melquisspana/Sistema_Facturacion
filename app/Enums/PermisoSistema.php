@@ -103,12 +103,34 @@ enum PermisoSistema: string
     // salidas se hacen y quién va en ellas. NO emite DTE, no toca correlativos,
     // firma, transmisión, PPQ ni Planta.
     //
-    // Solo dos permisos en esta fase: `ver` para entrar y consultar, `gestionar`
-    // para todo lo que escribe (crear/editar rutas, asignar salas, crear salidas
-    // y moverles el estado). Cuando exista el seguimiento documental se partirá
-    // en verbos más finos; abrir hoy permisos que nadie usa es ruido.
+    // `ver` para entrar y consultar, `gestionar` para lo que escribe sobre rutas y
+    // salidas (crear/editar rutas, asignar salas, crear salidas y moverles el estado).
+    //
+    // Los verbos finos que anticipaba la fase anterior ya existen debajo: la custodia
+    // del CCF físico los necesitaba de verdad, porque quien lleva el papel y quien lo
+    // recibe en oficina TIENEN que ser dos actores distintos.
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
+    // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
+    // `gestionar` da de alta y desactiva. Va aparte de `rutas.gestionar` porque el
+    // catálogo de personas es un marco de trabajo, no la operación del día.
+    case RutasPersonalVer = 'rutas.personal.ver';
+    case RutasPersonalGestionar = 'rutas.personal.gestionar';
+    // Custodia del CCF FÍSICO. Se parte en tres porque son tres actores distintos y
+    // ese es justamente el control que el módulo existe para dar:
+    //
+    //  - `ver`: consultar dónde está cada papel. Solo lectura.
+    //  - `registrar`: los hechos de CAMPO —entregar, transferir, reportar una
+    //    incidencia—. Los declara quien anduvo la ruta.
+    //  - `recepcion`: confirmar que el papel firmado volvió a la oficina. Lo declara
+    //    quien recibe, NUNCA quien lo llevaba: si un vendedor pudiera cerrar su propia
+    //    devolución, el control no controlaría nada.
+    //  - `corregir`: anular un registro mal hecho. Contradice algo ya asentado, así que
+    //    va con motivo obligatorio y con su propio permiso.
+    case RutasCustodiaVer = 'rutas.custodia.ver';
+    case RutasCustodiaRegistrar = 'rutas.custodia.registrar';
+    case RutasRecepcion = 'rutas.recepcion';
+    case RutasCustodiaCorregir = 'rutas.custodia.corregir';
 
     // Control de Asistencia (lector de huella ESP32). Área de personal: quién
     // marcó y a qué hora. NO emite DTE, no toca correlativos, firma, transmisión,

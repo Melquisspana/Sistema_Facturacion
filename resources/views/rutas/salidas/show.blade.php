@@ -25,9 +25,21 @@
 
                 <dl class="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 border-t border-gray-100 pt-5 sm:grid-cols-3 dark:border-ink-700">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400">Vendedores</dt>
-                        <dd class="mt-1 text-sm text-gray-800 dark:text-paper-100">
-                            {{ $salida->vendedores->pluck('name')->implode(' · ') ?: '—' }}
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400">Participantes</dt>
+                        <dd class="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-gray-800 dark:text-paper-100">
+                            @forelse ($salida->participantes as $participante)
+                                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium {{ $participante->rol->clase() }}">
+                                    {{ $participante->personal?->nombre ?? '—' }}
+                                    @if ($participante->esResponsable())
+                                        <span class="opacity-70">· responsable</span>
+                                    @endif
+                                    @if ($participante->personal && ! $participante->personal->activo)
+                                        <span class="opacity-70">· inactivo</span>
+                                    @endif
+                                </span>
+                            @empty
+                                —
+                            @endforelse
                         </dd>
                     </div>
                     <div>
@@ -232,6 +244,8 @@
                                 :salida="$salida"
                                 :motivos="$motivos"
                                 :destinos="$destinos"
+                                :participantes="$participantes"
+                                :historial="$historiales[$documento->id] ?? null"
                                 :form-papel="'form-papel-'.$salida->id" />
                         @endforeach
                     </div>

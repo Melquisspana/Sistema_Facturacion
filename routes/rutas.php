@@ -1,6 +1,10 @@
 <?php
 
 use App\Http\Controllers\Rutas\BandejaDocumentosController;
+use App\Http\Controllers\Rutas\CustodiaController;
+use App\Http\Controllers\Rutas\ExcepcionesController;
+use App\Http\Controllers\Rutas\PersonalRutaController;
+use App\Http\Controllers\Rutas\RecepcionController;
 use App\Http\Controllers\Rutas\RutaController;
 use App\Http\Controllers\Rutas\RutaSalaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
@@ -129,4 +133,73 @@ Route::middleware(['auth', 'permission:rutas.ver'])
                 Route::patch('{documento}/requiere-nc', [SalidaDocumentoController::class, 'requiereNc'])->name('requiere-nc');
                 Route::delete('{documento}/requiere-nc', [SalidaDocumentoController::class, 'quitarRequiereNc'])->name('requiere-nc.destroy');
             });
+
+        /*
+        | CUSTODIA del CCF físico: los hechos de CAMPO. Entregar desde bodega, pasar el
+        | papel a otra persona y reportar que algo salió mal.
+        |
+        | NO está acá la recepción en oficina, y no es un descuido: quien llevaba el papel
+        | no puede declarar que la oficina ya lo recibió. Son dos actores, dos permisos y
+        | dos pantallas.
+        */
+        Route::prefix('salidas/{salida}/documentos/{documento}/custodia')
+            ->name('salidas.documentos.custodia.')
+            ->middleware('permission:rutas.custodia.registrar')
+            ->group(function () {
+                Route::post('entregar', [CustodiaController::class, 'entregar'])->name('entregar');
+                Route::post('transferir', [CustodiaController::class, 'transferir'])->name('transferir');
+                Route::post('incidencia', [CustodiaController::class, 'incidencia'])->name('incidencia');
+            });
+
+        /*
+        | Anular un registro de custodia mal hecho. Fuera del grupo anterior y con permiso
+        | propio: contradice algo ya asentado, así que lleva motivo obligatorio.
+        */
+        Route::delete('custodia/eventos/{evento}', [CustodiaController::class, 'anular'])
+            ->middleware('permission:rutas.custodia.corregir')
+            ->name('custodia.anular');
+
+        /*
+        | RECEPCIÓN de CCF firmados. La pantalla de quien recibe en oficina: se escanea o
+        | se teclea un número y se confirma. Optimizada para hacerlo muchas veces seguidas.
+        |
+        | La búsqueda va con `rutas.custodia.ver` porque solo consulta; confirmar exige
+        | `rutas.recepcion`, que es el permiso que distingue a recepción del vendedor.
+        */
+        Route::prefix('recepcion')->name('recepcion.')->group(function () {
+            Route::get('/', [RecepcionController::class, 'index'])
+                ->middleware('permission:rutas.custodia.ver')->name('index');
+            Route::post('/', [RecepcionController::class, 'recibir'])
+                ->middleware('permission:rutas.recepcion')->name('recibir');
+            Route::post('lote', [RecepcionController::class, 'recibirLote'])
+                ->middleware('permission:rutas.recepcion')->name('lote');
+        });
+
+        /*
+        | Bandeja de EXCEPCIONES: lo que no cuadra y alguien tiene que mirar. Solo lectura;
+        | cada fila enlaza a donde se resuelve.
+        */
+        Route::get('excepciones', [ExcepcionesController::class, 'index'])
+            ->middleware('permission:rutas.custodia.ver')
+            ->name('excepciones.index');
+
+        /*
+        | PERSONAL OPERATIVO. Sin `destroy`: una persona con historial de custodia no se
+        | borra, se desactiva — igual que las rutas.
+        */
+        Route::prefix('personal')->name('personal.')->middleware('permission:rutas.personal.ver')->group(function () {
+            Route::get('/', [PersonalRutaController::class, 'index'])->name('index');
+            // Literales antes que paramétricas (regla del repo).
+            Route::get('crear', [PersonalRutaController::class, 'create'])
+                ->middleware('permission:rutas.personal.gestionar')->name('create');
+            Route::post('/', [PersonalRutaController::class, 'store'])
+                ->middleware('permission:rutas.personal.gestionar')->name('store');
+            Route::get('{personal}', [PersonalRutaController::class, 'show'])->name('show');
+            Route::get('{personal}/editar', [PersonalRutaController::class, 'edit'])
+                ->middleware('permission:rutas.personal.gestionar')->name('edit');
+            Route::put('{personal}', [PersonalRutaController::class, 'update'])
+                ->middleware('permission:rutas.personal.gestionar')->name('update');
+            Route::patch('{personal}/toggle-activo', [PersonalRutaController::class, 'toggleActivo'])
+                ->middleware('permission:rutas.personal.gestionar')->name('toggle-activo');
+        });
     });

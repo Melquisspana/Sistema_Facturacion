@@ -30,6 +30,7 @@ class SeguimientoDocumentos
         private readonly AlbaranLocalizador $albaranes,
         private readonly LocalizadorNotaCredito $notas,
         private readonly LocalizadorPpq $ppq,
+        private readonly Custodia $custodia,
     ) {}
 
     /**
@@ -73,11 +74,15 @@ class SeguimientoDocumentos
         [$albPorDte, $albPorOrden] = $this->albaranes->paraDocumentos($documentos);
         [$ncPorCcf, $ncPorOrden] = $this->notas->paraDocumentos($documentos);
         [$ppqPorDte, $ppqPorControl] = $this->ppq->paraDocumentos($documentos);
+        // Custodia del papel: el último evento vigente de todos, en una sola consulta. Sin
+        // esto, pintar cincuenta filas costaría cincuenta consultas más.
+        $custodiaPorDocumento = $this->custodia->ultimosVigentesDe($documentos->pluck('id')->all());
 
         foreach ($documentos as $doc) {
             $doc->precargarAlbaran($this->albaranes->elegir($albPorDte, $albPorOrden, $doc->dte_id, $doc->orden()));
             $doc->precargarNotaCredito($this->notas->elegir($ncPorCcf, $ncPorOrden, $doc->dte_id, $doc->orden()));
             $doc->precargarPpq($this->ppq->elegir($ppqPorDte, $ppqPorControl, $doc->dte_id, $doc->numeroLegible()));
+            $doc->precargarCustodia($custodiaPorDocumento[$doc->id] ?? null);
         }
 
         // Segunda vuelta para las NC. Se resuelven DOS cosas distintas con la misma
@@ -149,6 +154,10 @@ class SeguimientoDocumentos
             // segundo es trabajo para una persona, y por eso se cuenta aparte.
             'excepciones_entrega' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->entregaExcepcion() !== null)->count(),
             'documentacion_fisica' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->documentacionFisicaRecibida())->count(),
+            // Papeles que hoy están en manos de alguien. Es una dimensión distinta de
+            // «documentación recibida»: uno cuenta lo que volvió, este lo que anda afuera.
+            'en_manos_de_personal' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->tenedorActual() !== null)->count(),
+            'custodia_con_incidencia' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->estadoCustodia()->esExcepcion())->count(),
             'requieren_nc' => $documentos->filter(fn (SalidaRutaDocumento $d) => $d->requiere_nc)->count(),
             // `nc_reales` = documentos con una NC hallada, sea cual sea su estado; es
             // lo que se VE en la lista. `nc_vigentes` = las que además siguen surtiendo
