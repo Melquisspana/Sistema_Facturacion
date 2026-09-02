@@ -49,6 +49,10 @@ class AlbaranTipoYEvidenciaTest extends TestCase
     {
         parent::setUp();
         Storage::fake('local');
+        // Lo que se prueba acá es la evidencia del albarán, no el interruptor de la
+        // sincronización automática (que arranca apagado en toda la suite y tiene sus
+        // propias pruebas en PpqSincronizacionAutomaticaTest).
+        config(['ppq.albaranes.sincronizacion_automatica' => true]);
     }
 
     private function establecimiento(): Establecimiento
