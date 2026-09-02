@@ -290,11 +290,29 @@ class DteController extends Controller
             ->with('status', 'Borrador de Factura creado. Agrega los productos.');
     }
 
-    public function createExportacion(): View
+    /**
+     * Formulario de Factura de Exportación. Es el ÚNICO alta de FEX del sistema y no
+     * se duplicó en ningún otro sitio.
+     *
+     * Acepta opcionalmente una LISTA DE EMPAQUE en contexto (`?lista=`). Eso no
+     * cambia nada del formulario: solo lo recuerda, para que al guardar la factura
+     * quede vinculada a esa lista y su número aparezca ahí sin teclearlo. Sin el
+     * parámetro, la pantalla se comporta exactamente igual que siempre.
+     */
+    public function createExportacion(Request $request): View
     {
         $this->authorize('create', Dte::class);
 
-        return view('facturacion.create-exportacion', $this->datosFormularioExportacion());
+        $lista = $request->filled('lista')
+            ? \App\Models\Exportacion::find($request->integer('lista'))
+            : null;
+
+        return view('facturacion.create-exportacion', $this->datosFormularioExportacion() + [
+            'listaEmpaque' => $lista,
+            // Preselecciona el receptor de la lista para no obligar a buscarlo otra vez.
+            // Es una comodidad, no una regla: el usuario puede cambiarlo.
+            'clientePreseleccionado' => (string) ($lista?->cliente?->cliente_id ?? ''),
+        ]);
     }
 
     public function storeExportacion(CrearBorradorRequest $request): RedirectResponse
@@ -316,9 +334,44 @@ class DteController extends Controller
 
         $dte = $this->borradores->crearBorrador($datos, $request->user());
 
+        // Vínculo con la lista de empaque de origen, si el formulario venía desde una.
+        // Se hace acá y no en el servicio de borradores porque es una relación del
+        // módulo comercial, no del documento fiscal: un fallo al vincular no puede
+        // dejar sin crear una factura que ya es válida.
+        $aviso = $this->vincularListaDeEmpaque($request, $dte);
+
         return redirect()
             ->route('facturacion.edit', $dte)
-            ->with('status', 'Borrador de Factura de exportación creado. Agrega los productos.');
+            ->with('status', 'Borrador de Factura de exportación creado. Agrega los productos.'.$aviso);
+    }
+
+    /**
+     * Vincula el borrador FEX recién creado con la lista de empaque indicada por el
+     * formulario. Devuelve el texto que se añade al mensaje de éxito.
+     *
+     * Nunca lanza: si la lista desapareció, se finalizó o el vínculo se rechaza, la
+     * factura ya existe y es correcta — lo que corresponde es avisar, no perderla.
+     */
+    private function vincularListaDeEmpaque(Request $request, Dte $dte): string
+    {
+        if (! $request->filled('lista_id')) {
+            return '';
+        }
+
+        $lista = \App\Models\Exportacion::find($request->integer('lista_id'));
+
+        if ($lista === null) {
+            return ' La lista de empaque indicada ya no existe, así que la factura quedó sin vincular.';
+        }
+
+        try {
+            app(\App\Services\Exportaciones\VincularFexALista::class)->vincular($lista, $dte);
+        } catch (\Throwable $e) {
+            return ' No se pudo vincular con la lista de empaque #'.$lista->id.': '.$e->getMessage()
+                .' La factura sí se creó; podés vincularla a mano desde la lista.';
+        }
+
+        return ' Quedó vinculada a la lista de empaque #'.$lista->id.'.';
     }
 
     /**

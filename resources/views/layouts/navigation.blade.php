@@ -43,19 +43,20 @@
     // no instancia el controlador, así que no dispara constructores ni consultas.
     $enDocumentosFiscales = request()->route()?->getControllerClass() === DteController::class;
 
-    $enExpClientes = request()->routeIs('exportaciones.clientes.*');
-    $enExpProductos = request()->routeIs('exportaciones.productos.*');
-    // "Nueva lista de empaque" salió del sidebar (sigue como botón del listado y del
-    // dashboard), así que crear una lista ahora resalta su propia sección.
-    $enListasEmpaque = request()->routeIs('exportaciones.*') && ! $enExpClientes && ! $enExpProductos;
+    // Listas de empaque: viven en Ventas y facturación (facturacion.listas.*). Se
+    // mantiene encendida también en las URL antiguas de /exportaciones, que ahora
+    // redirigen ahí, para que el resaltado no parpadee durante el salto.
+    $enListasEmpaque = request()->routeIs('facturacion.listas.*');
 
     // Grupos COLAPSABLES: cuál contiene la página actual. Se calcula acá —y no dentro
     // de cada grupo— para que el grupo de la ruta activa nazca abierto pase lo que pase
     // en localStorage. Es presentación pura: no autoriza nada.
-    $grupoVentasActivo = $enDocumentosFiscales || request()->routeIs('clientes.*', 'productos.*');
+    // «Productos» cubre nacionales Y la pestaña de exportación: productos.exportacion.*
+    // cuelga del mismo prefijo de nombre, así que `productos.*` las enciende las dos y
+    // no hay que mantener ninguna lista de excepciones.
+    $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*');
     $grupoCobrosActivo = request()->routeIs('ppq.*');
     $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
-    $grupoExportacionesActivo = request()->routeIs('exportaciones.*');
     $grupoAdministracionActivo = request()->routeIs('usuarios.*', 'auditoria.*', 'importaciones.*');
     // Configuración ya no es un grupo colapsable sino una entrada directa, así que
     // esto no marca «qué grupo contiene la ruta» sino simplemente si estamos dentro

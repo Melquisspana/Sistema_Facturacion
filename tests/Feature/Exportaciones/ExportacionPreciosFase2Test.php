@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Exportaciones;
 
+use App\Models\Cliente;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionItem;
@@ -56,9 +57,18 @@ class ExportacionPreciosFase2Test extends TestCase
         ]);
     }
 
+    /**
+     * Perfil de exportación colgando de un cliente REAL del directorio. Es la única
+     * forma que existe ahora: las acciones viven bajo /clientes/{cliente}/exportacion,
+     * así que un perfil sin cliente no tendría pantalla desde la que administrarse.
+     */
     private function cliente(string $nombre): ExportacionCliente
     {
-        return ExportacionCliente::create(['nombre' => $nombre, 'activo' => true]);
+        $clienteDte = Cliente::factory()->exportacion()->create(['nombre' => $nombre]);
+
+        return ExportacionCliente::create([
+            'cliente_id' => $clienteDte->id, 'nombre' => $nombre, 'activo' => true,
+        ]);
     }
 
     // ---------- 1) precio por unidad ----------
@@ -115,11 +125,11 @@ class ExportacionPreciosFase2Test extends TestCase
         $destino->productos()->create(['exportacion_producto_id' => $comun->id, 'precio_caja' => 150.00, 'activo' => true]);
 
         $respuesta = $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.copiar', $destino),
+            route('clientes.exportacion.productos.copiar', $destino->cliente_id),
             ['origen_id' => $origen->id, 'modo' => 'conservar'],
         );
 
-        $respuesta->assertRedirect(route('exportaciones.clientes.show', $destino));
+        $respuesta->assertRedirect(route('clientes.show', $destino->cliente_id));
         // El existente CONSERVA su precio; el nuevo se copia; el inactivo no viaja.
         $this->assertSame('150.00', $destino->productos()->where('exportacion_producto_id', $comun->id)->firstOrFail()->precio_caja);
         $this->assertSame('200.00', $destino->productos()->where('exportacion_producto_id', $soloOrigen->id)->firstOrFail()->precio_caja);
@@ -135,7 +145,7 @@ class ExportacionPreciosFase2Test extends TestCase
         $destino->productos()->create(['exportacion_producto_id' => $comun->id, 'precio_caja' => 150.00, 'activo' => true]);
 
         $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.copiar', $destino),
+            route('clientes.exportacion.productos.copiar', $destino->cliente_id),
             ['origen_id' => $origen->id, 'modo' => 'sobrescribir'],
         );
 
@@ -149,7 +159,7 @@ class ExportacionPreciosFase2Test extends TestCase
         $cliente = $this->cliente('MISMO');
 
         $respuesta = $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.copiar', $cliente),
+            route('clientes.exportacion.productos.copiar', $cliente->cliente_id),
             ['origen_id' => $cliente->id, 'modo' => 'conservar'],
         );
 
@@ -167,7 +177,7 @@ class ExportacionPreciosFase2Test extends TestCase
         $destino->productos()->create(['exportacion_producto_id' => $producto->id, 'precio_caja' => 150.00, 'activo' => true]);
 
         // Exportación vieja del destino con el precio de aquel momento (150).
-        $this->actingAs($this->usuario())->post(route('exportaciones.store'), [
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.store'), [
             'exportacion_cliente_id' => $destino->id,
             'cliente_nombre' => $destino->nombre,
             'exportador_nombre' => 'EXPORTADOR',
@@ -179,7 +189,7 @@ class ExportacionPreciosFase2Test extends TestCase
 
         // Sobrescribir la lista de precios del destino desde el origen.
         $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.copiar', $destino),
+            route('clientes.exportacion.productos.copiar', $destino->cliente_id),
             ['origen_id' => $origen->id, 'modo' => 'sobrescribir'],
         );
 
@@ -199,7 +209,7 @@ class ExportacionPreciosFase2Test extends TestCase
         $enCero = $this->producto(['precio_caja' => 0]);
         $cliente = $this->cliente('CLIENTE');
 
-        $this->actingAs($this->usuario())->post(route('exportaciones.clientes.productos.asignar-catalogo', $cliente));
+        $this->actingAs($this->usuario())->post(route('clientes.exportacion.productos.asignar-catalogo', $cliente->cliente_id));
 
         // Solo se asignó el que tiene precio base > 0; nada quedó en $0 silenciosamente.
         $this->assertSame(1, $cliente->productos()->count());
@@ -215,7 +225,7 @@ class ExportacionPreciosFase2Test extends TestCase
 
         // Sin confirmación: bloqueado.
         $respuesta = $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.store', $cliente),
+            route('clientes.exportacion.productos.store', $cliente->cliente_id),
             ['exportacion_producto_id' => $producto->id, 'precio_caja' => 0],
         );
         $respuesta->assertSessionHasErrors('precio_caja');
@@ -223,7 +233,7 @@ class ExportacionPreciosFase2Test extends TestCase
 
         // Con confirmación: pasa.
         $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.store', $cliente),
+            route('clientes.exportacion.productos.store', $cliente->cliente_id),
             ['exportacion_producto_id' => $producto->id, 'precio_caja' => 0, 'confirmar_cero' => 1],
         );
         $this->assertSame('0.00', $cliente->productos()->firstOrFail()->precio_caja);
@@ -233,7 +243,7 @@ class ExportacionPreciosFase2Test extends TestCase
         $otro = $this->producto();
         $asignacion = $cliente->productos()->create(['exportacion_producto_id' => $otro->id, 'precio_caja' => 50.00, 'activo' => true]);
         $respuesta = $this->actingAs($this->usuario())->patch(
-            route('exportaciones.clientes.productos.update', [$cliente, $asignacion]),
+            route('clientes.exportacion.productos.update', [$cliente->cliente_id, $asignacion]),
             ['precio_caja' => 0],
         );
         $respuesta->assertSessionHasErrors('precio_caja');
@@ -241,7 +251,7 @@ class ExportacionPreciosFase2Test extends TestCase
 
         // Negativo: bloqueado por min:0.
         $respuesta = $this->actingAs($this->usuario())->patch(
-            route('exportaciones.clientes.productos.update', [$cliente, $asignacion]),
+            route('clientes.exportacion.productos.update', [$cliente->cliente_id, $asignacion]),
             ['precio_caja' => -5],
         );
         $respuesta->assertSessionHasErrors('precio_caja');

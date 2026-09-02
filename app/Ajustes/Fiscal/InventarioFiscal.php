@@ -4,6 +4,7 @@ namespace App\Ajustes\Fiscal;
 
 use App\Ajustes\Ajustes;
 use App\Enums\AmbienteHacienda;
+use App\Support\Exportaciones\DatosExportador;
 
 /**
  * Traduce los ajustes fiscales del catálogo a FILAS LEGIBLES, agrupadas por
@@ -227,6 +228,51 @@ class InventarioFiscal
                 descripcion: 'No viene de un catálogo del MH: son dos opciones fijas del sistema.',
                 fuente: 'Archivo de configuración',
                 nota: 'Escrito en el archivo de configuración, sin variable de entorno.',
+            ),
+        ];
+    }
+
+    /**
+     * Datos de la EMPRESA exportadora que van en la lista de empaque.
+     *
+     * Sección propia y no mezclada con los defaults de la FEX porque responden a
+     * preguntas distintas: aquéllos son valores con los que nace un documento
+     * fiscal y éstos son la identidad de la empresa en un documento comercial.
+     *
+     * El valor mostrado es el RESUELTO —lo que de verdad va a salir impreso—, no
+     * el del catálogo: si el ajuste está vacío y responde el respaldo histórico,
+     * la fila enseña ese respaldo. Una pantalla de inventario que muestre «vacío»
+     * mientras el documento imprime un número es peor que no tener pantalla.
+     *
+     * @return array<int, AjusteFiscal>
+     */
+    public function empresaExportadora(): array
+    {
+        $datos = app(DatosExportador::class);
+        $fda = $datos->fdaRegNumber();
+
+        return [
+            $this->fila(
+                'exportaciones.fda_reg_number',
+                $fda ?? 'sin definir — la lista de empaque saldría con la casilla FDA vacía',
+                ClasificacionFiscal::EditableN2,
+                'EXPORTACIONES_FDA',
+                nota: 'Es el FDA de la EMPRESA. Los perfiles de cliente que hoy guardan este mismo número quedaron marcados para revisión en la ficha del cliente: ahí el campo es el FDA del importador.',
+                atencion: $fda === null,
+            ),
+            $this->fila(
+                'exportaciones.exportador_nombre',
+                $datos->nombre() ?? 'sin definir',
+                ClasificacionFiscal::EditableN2,
+                'EXPORTACIONES_EXPORTADOR',
+                nota: 'Sin ajuste ni valor histórico se usa la razón social de la empresa emisora.',
+            ),
+            $this->fila(
+                'exportaciones.exportador_direccion',
+                $datos->direccion() ?? 'sin definir',
+                ClasificacionFiscal::EditableN2,
+                'EXPORTACIONES_EXPORTADOR_DIR',
+                nota: 'Sin ajuste ni valor histórico se usa la dirección de la empresa emisora.',
             ),
         ];
     }

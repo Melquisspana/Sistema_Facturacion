@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Cliente;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -110,11 +111,45 @@ class NavigationTest extends TestCase
             'Inicio',
             'Ventas y facturación',
             'Pronto pago',
-            'Contabilidad', 'Exportaciones',
+            'Contabilidad',
             'Administración', 'Sistema',
         ] as $categoria) {
             $resp->assertSee($categoria);
         }
+
+        // «Exportaciones» dejó de ser un grupo del menú: sus tres destinos se
+        // reubicaron (Productos, ficha del cliente, Ventas y facturación) y ninguno
+        // quedó sin puerta — ver test_los_destinos_de_exportaciones_siguen_alcanzables.
+        $sidebar = $this->sidebarDe($resp->getContent());
+        $this->assertDoesNotMatchRegularExpression('/>\s*Exportaciones\s*</u', $sidebar);
+    }
+
+    /**
+     * Ningún destino del antiguo grupo «Exportaciones» quedó inaccesible. Es la
+     * condición que permitió retirar el grupo: no basta con que las rutas existan,
+     * tienen que estar a un clic desde el menú actual.
+     */
+    public function test_los_destinos_de_exportaciones_siguen_alcanzables(): void
+    {
+        $usuario = $this->usuario('administrador');
+        $sidebar = $this->sidebarDe(
+            $this->actingAs($usuario)->get(route('dashboard'))->assertOk()->getContent()
+        );
+
+        // Listas de empaque: fila propia dentro de Ventas y facturación.
+        $this->assertStringContainsString(route('facturacion.listas.index', [], false), $sidebar);
+        $this->assertStringContainsString('Listas de empaque', $sidebar);
+
+        // Productos de exportación: pestaña dentro de la entrada única «Productos».
+        $this->assertStringContainsString(route('productos.index', [], false), $sidebar);
+        $this->actingAs($usuario)->get(route('productos.index'))->assertOk()
+            ->assertSee(route('productos.exportacion.index'), false)
+            ->assertSee('Productos de exportación');
+
+        // Clientes de exportación: bloque dentro de la ficha del cliente.
+        $cliente = Cliente::factory()->exportacion()->create();
+        $this->actingAs($usuario)->get(route('clientes.show', $cliente))->assertOk()
+            ->assertSee('Exportación');
     }
 
     /**
@@ -214,9 +249,15 @@ class NavigationTest extends TestCase
             );
         }
 
-        foreach (['Documentos fiscales', 'Clientes y precios', 'Catálogo de productos'] as $texto) {
+        foreach (['Documentos fiscales', 'Listas de empaque'] as $texto) {
             $this->assertStringContainsString($texto, $sidebar, "Falta el texto «{$texto}» en la sidebar.");
         }
+
+        // Las dos filas del grupo retirado ya no tienen rótulo propio: «Clientes y
+        // precios» vive dentro de la ficha del cliente y «Catálogo de productos» es la
+        // segunda pestaña de Productos.
+        $this->assertStringNotContainsString('Clientes y precios', $sidebar);
+        $this->assertStringNotContainsString('Catálogo de productos', $sidebar);
 
         // Los rótulos viejos ya no están.
         $this->assertStringNotContainsString('Clientes de facturación', $sidebar);
@@ -239,10 +280,10 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe(
             $this->actingAs($usuario)->get(route('dashboard'))->assertOk()->getContent()
         );
-        $this->assertStringNotContainsString(route('exportaciones.create', [], false), $sidebar);
+        $this->assertStringNotContainsString(route('facturacion.listas.create', [], false), $sidebar);
 
-        $this->actingAs($usuario)->get(route('exportaciones.index'))->assertOk()
-            ->assertSee(route('exportaciones.create'), false)
+        $this->actingAs($usuario)->get(route('facturacion.listas.index'))->assertOk()
+            ->assertSee(route('facturacion.listas.create'), false)
             ->assertSee('Nueva lista de empaque');
     }
 
@@ -303,7 +344,11 @@ class NavigationTest extends TestCase
             'clientes.index', 'productos.index', 'facturacion.index',
             'ppq.index', 'ppq.lotes.index',
             'documentos-recibidos.index', 'facturacion.reporte-contadora', 'contabilidad.paquete',
-            'exportaciones.index', 'exportaciones.clientes.index', 'exportaciones.productos.index',
+            // Exportaciones ya no aporta tres filas: aporta UNA, la de listas de empaque,
+            // dentro de Ventas y facturación. El catálogo de productos de exportación se
+            // alcanza desde «Productos» (es su segunda pestaña) y los clientes de
+            // exportación desde la ficha del cliente, así que ninguno necesita fila.
+            'facturacion.listas.index',
         ];
 
         return [
@@ -416,7 +461,8 @@ class NavigationTest extends TestCase
 
         $resp->assertSee('Pronto pago');
         $resp->assertSee('Contabilidad');
-        $resp->assertSee('Exportaciones');
+        // Exportaciones ya no es una sección; su parte visible es la fila de listas.
+        $resp->assertSee('Listas de empaque');
         $resp->assertDontSee('Administración');
         $resp->assertDontSee(route('usuarios.index'), false);
         $resp->assertDontSee(route('admin.salud-sistema'), false);
@@ -455,8 +501,8 @@ class NavigationTest extends TestCase
         foreach ([
             'clientes.index', 'productos.index', 'facturacion.index',
             'ppq.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
-            'contabilidad.paquete', 'exportaciones.index', 'exportaciones.clientes.index',
-            'exportaciones.productos.index', 'usuarios.index', 'auditoria.index', 'importaciones.index',
+            'contabilidad.paquete', 'facturacion.listas.index',
+            'usuarios.index', 'auditoria.index', 'importaciones.index',
             'configuracion.resumen', 'admin.salud-sistema',
         ] as $ruta) {
             $resp->assertSee(route($ruta), false);
@@ -466,7 +512,7 @@ class NavigationTest extends TestCase
     public function test_ruta_activa_se_marca_con_aria_current(): void
     {
         $this->actingAs($this->usuario('administrador'))
-            ->get(route('exportaciones.clientes.index'))
+            ->get(route('facturacion.listas.index'))
             ->assertOk()
             ->assertSee('aria-current="page"', false);
     }
@@ -488,7 +534,8 @@ class NavigationTest extends TestCase
             'cobros / ppq' => ['ppq.index', 'cobros'],
             'contabilidad / compras' => ['documentos-recibidos.index', 'contabilidad'],
             'contabilidad / ventas' => ['facturacion.reporte-contadora', 'contabilidad'],
-            'exportaciones / listas' => ['exportaciones.index', 'exportaciones'],
+            'ventas / listas de empaque' => ['facturacion.listas.index', 'ventas'],
+            'ventas / productos de exportación' => ['productos.exportacion.index', 'ventas'],
             'administracion / usuarios' => ['usuarios.index', 'administracion'],
             // «configuracion» ya no figura: con una sola fila el grupo dejó de ser
             // colapsable (x-sidebar-group sin `clave`), igual que Inicio y Sistema.

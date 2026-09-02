@@ -11,11 +11,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Clientes\ClienteRequest;
 use App\Models\ActividadEconomica;
 use App\Models\Cliente;
+use App\Models\ExportacionCliente;
+use App\Models\ExportacionProducto;
 use App\Models\Pais;
 use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class ClienteController extends Controller
@@ -177,7 +180,13 @@ class ClienteController extends Controller
 
         $actividades = $cliente->activities()->with('causer')->latest()->limit(30)->get();
 
-        return view('clientes.show', compact('cliente', 'actividades'));
+        // Perfil de exportación: se carga SOLO para clientes de ese tipo, así que la
+        // ficha de un cliente nacional hace exactamente las mismas consultas que antes.
+        [$productosDisponibles, $otrosPerfilesExportacion] = $this->datosExportacion($cliente);
+
+        return view('clientes.show', compact(
+            'cliente', 'actividades', 'productosDisponibles', 'otrosPerfilesExportacion'
+        ));
     }
 
     public function edit(Cliente $cliente): View
@@ -245,5 +254,56 @@ class ClienteController extends Controller
             // Para preseleccionar El Salvador en clientes nacionales (CAT-020: SV).
             'paisElSalvadorId' => Pais::where('codigo', 'SV')->value('id'),
         ];
+    }
+
+    /**
+     * Datos del bloque «Exportación» de la ficha: catálogo todavía sin asignar y
+     * otros perfiles desde los que se pueden copiar precios.
+     *
+     * Devuelve colecciones VACÍAS para cualquier cliente que no sea de exportación,
+     * y sin consultar nada. Es deliberado: la ficha de un cliente nacional tiene que
+     * ejecutar exactamente las mismas consultas que antes de este bloque.
+     *
+     * @return array{0: Collection, 1: Collection}
+     */
+    private function datosExportacion(Cliente $cliente): array
+    {
+        if (! ($cliente->tipo_cliente?->esExportacion() ?? false)) {
+            return [collect(), collect()];
+        }
+
+        $cliente->load([
+            'exportacionClientes' => fn ($q) => $q->orderBy('id'),
+            'exportacionClientes.productos.producto:id,nombre_es,nombre_en,unidades_por_caja,precio_caja,activo',
+        ]);
+
+        $perfil = $cliente->exportacionClientes->first();
+
+        if ($perfil === null) {
+            return [collect(), collect()];
+        }
+
+        $yaAsignados = $perfil->productos->pluck('exportacion_producto_id');
+
+        $disponibles = ExportacionProducto::query()
+            ->where('activo', true)
+            ->whereNotIn('id', $yaAsignados)
+            ->orderBy('nombre_es')
+            ->get(['id', 'nombre_es', 'precio_caja']);
+
+        // Orígenes posibles para «copiar precios»: cualquier otro perfil que tenga al
+        // menos un precio activo. El conteo se filtra en PHP y no con HAVING porque
+        // HAVING sobre un alias de withCount() sin GROUP BY funciona en MySQL y
+        // revienta en SQLite, que es el motor de las pruebas.
+        $otros = ExportacionCliente::query()
+            ->where('id', '!=', $perfil->id)
+            ->with('cliente:id,nombre')
+            ->withCount(['productos as productos_count' => fn ($q) => $q->where('activo', true)])
+            ->get()
+            ->filter(fn ($otro) => $otro->productos_count > 0)
+            ->sortBy(fn ($otro) => $otro->nombreLegal())
+            ->values();
+
+        return [$disponibles, $otros];
     }
 }

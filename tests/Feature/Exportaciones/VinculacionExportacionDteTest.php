@@ -166,9 +166,9 @@ class VinculacionExportacionDteTest extends TestCase
         $lista = $this->lista($clienteExpo);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('Cliente DTE no vinculado');
+            ->assertSee('Cliente del directorio no vinculado');
     }
 
     public function test_show_muestra_lista_lista_para_crear_fex(): void
@@ -184,9 +184,9 @@ class VinculacionExportacionDteTest extends TestCase
         ]);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('Lista lista para crear FEX');
+            ->assertSee('Lista para facturar');
     }
 
     public function test_show_muestra_aviso_si_cliente_vinculado_pero_sin_lineas(): void
@@ -196,9 +196,9 @@ class VinculacionExportacionDteTest extends TestCase
         $lista = $this->lista($clienteExpo);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('La Lista necesita productos antes de crear la FEX');
+            ->assertSee('La lista necesita productos antes de facturar');
     }
 
     public function test_show_muestra_abrir_fex(): void
@@ -210,10 +210,10 @@ class VinculacionExportacionDteTest extends TestCase
         $lista->update(['dte_id' => $dte->id]);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('Abrir factura de exportación')
-            ->assertSee('FEX #'.$dte->id.' vinculada', false);
+            ->assertSee('Facturas de exportación (1)')
+            ->assertSee($dte->numero_control, false);
     }
 
     // ---------- 10: bloquear borrado de Lista con FEX ----------
@@ -226,8 +226,8 @@ class VinculacionExportacionDteTest extends TestCase
         $lista->update(['dte_id' => $dte->id]);
 
         $this->actingAs($this->usuario('administrador'))
-            ->delete(route('exportaciones.destroy', $lista))
-            ->assertRedirect(route('exportaciones.show', $lista))
+            ->delete(route('facturacion.listas.destroy', $lista))
+            ->assertRedirect(route('facturacion.listas.show', $lista))
             ->assertSessionHas('error');
 
         $this->assertNotNull($lista->fresh());
@@ -239,8 +239,8 @@ class VinculacionExportacionDteTest extends TestCase
         $lista = $this->lista();
 
         $this->actingAs($this->usuario('administrador'))
-            ->delete(route('exportaciones.destroy', $lista))
-            ->assertRedirect(route('exportaciones.index'));
+            ->delete(route('facturacion.listas.destroy', $lista))
+            ->assertRedirect(route('facturacion.listas.index'));
 
         $this->assertNull(Exportacion::find($lista->id));
     }
@@ -254,50 +254,70 @@ class VinculacionExportacionDteTest extends TestCase
         $dte = $this->dte($clienteDte);
         $this->lista($clienteExpo)->update(['dte_id' => $dte->id]);
 
+        // Deshabilitar el perfil NO rompe el vínculo con el cliente: lo apaga. Es
+        // deliberado — la lista con FEX sigue apuntando a un receptor identificable.
         $this->actingAs($this->usuario('administrador'))
-            ->delete(route('exportaciones.clientes.desvincular-cliente-dte', $clienteExpo))
-            ->assertSessionHasErrors('cliente_id');
+            ->post(route('clientes.exportacion.deshabilitar', $clienteDte))
+            ->assertRedirect(route('clientes.show', $clienteDte));
 
         $this->assertSame($clienteDte->id, $clienteExpo->fresh()->cliente_id);
+        $this->assertFalse($clienteExpo->fresh()->activo);
     }
 
-    public function test_desvincular_cliente_permitido_sin_listas_con_fex(): void
+    public function test_deshabilitar_y_volver_a_habilitar_no_duplica_el_perfil(): void
     {
         $clienteDte = Cliente::factory()->exportacion()->create();
         $clienteExpo = $this->clienteExportacion(['cliente_id' => $clienteDte->id]);
         $this->lista($clienteExpo); // sin dte_id
 
         $this->actingAs($this->usuario('administrador'))
-            ->delete(route('exportaciones.clientes.desvincular-cliente-dte', $clienteExpo))
-            ->assertRedirect(route('exportaciones.clientes.show', $clienteExpo));
-
-        $this->assertNull($clienteExpo->fresh()->cliente_id);
-    }
-
-    // ---------- vincular: solo clientes DTE de tipo exportación ----------
-
-    public function test_vincular_rechaza_cliente_dte_que_no_es_de_tipo_exportacion(): void
-    {
-        $clienteDte = Cliente::factory()->contribuyente()->create();
-        $clienteExpo = $this->clienteExportacion();
+            ->post(route('clientes.exportacion.deshabilitar', $clienteDte))
+            ->assertRedirect(route('clientes.show', $clienteDte));
+        $this->assertFalse($clienteExpo->fresh()->activo);
 
         $this->actingAs($this->usuario('administrador'))
-            ->patch(route('exportaciones.clientes.vincular-cliente-dte', $clienteExpo), ['cliente_id' => $clienteDte->id])
-            ->assertSessionHasErrors('cliente_id');
+            ->post(route('clientes.exportacion.habilitar', $clienteDte))
+            ->assertRedirect(route('clientes.show', $clienteDte));
 
-        $this->assertNull($clienteExpo->fresh()->cliente_id);
+        $this->assertTrue($clienteExpo->fresh()->activo);
+        $this->assertSame(1, $clienteDte->exportacionClientes()->count());
     }
 
-    // ---------- 12-13: ninguna acción crea DTE ni consume correlativo ----------
-
-    public function test_vincular_cliente_no_crea_dte_ni_consume_correlativo(): void
+    /** La vía antigua de vinculación existe pero ya no escribe. */
+    public function test_la_ruta_antigua_de_vinculacion_ya_no_escribe(): void
     {
         $clienteDte = Cliente::factory()->exportacion()->create();
         $clienteExpo = $this->clienteExportacion();
 
         $this->actingAs($this->usuario('administrador'))
             ->patch(route('exportaciones.clientes.vincular-cliente-dte', $clienteExpo), ['cliente_id' => $clienteDte->id])
-            ->assertRedirect(route('exportaciones.clientes.show', $clienteExpo));
+            ->assertStatus(409);
+
+        $this->assertNull($clienteExpo->fresh()->cliente_id);
+    }
+
+    // ---------- vincular: solo clientes DTE de tipo exportación ----------
+
+    public function test_habilitar_rechaza_un_cliente_que_no_es_de_tipo_exportacion(): void
+    {
+        $nacional = Cliente::factory()->contribuyente()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.exportacion.habilitar', $nacional))
+            ->assertSessionHasErrors('tipo_cliente');
+
+        $this->assertSame(0, $nacional->exportacionClientes()->count());
+    }
+
+    // ---------- 12-13: ninguna acción crea DTE ni consume correlativo ----------
+
+    public function test_habilitar_un_cliente_no_crea_dte_ni_consume_correlativo(): void
+    {
+        $clienteDte = Cliente::factory()->exportacion()->create();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('clientes.exportacion.habilitar', $clienteDte))
+            ->assertRedirect(route('clientes.show', $clienteDte));
 
         $this->assertSame(0, Dte::count());
         $this->assertSame(0, Correlativo::count());

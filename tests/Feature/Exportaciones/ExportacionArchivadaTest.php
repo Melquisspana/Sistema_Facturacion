@@ -79,7 +79,7 @@ class ExportacionArchivadaTest extends TestCase
         $normal = $this->lista(['cliente_nombre' => 'CLIENTE NORMAL VISIBLE']);
         $archivada = $this->lista(['cliente_nombre' => 'PRUEBA APITEST ARCHIVADA', 'archivada' => true, 'archivada_en' => now(), 'observaciones' => 'PRUEBA APITEST - no es real']);
 
-        $resp = $this->actingAs($this->usuario())->get(route('exportaciones.index'))->assertOk();
+        $resp = $this->actingAs($this->usuario())->get(route('facturacion.listas.index'))->assertOk();
 
         $resp->assertSee('CLIENTE NORMAL VISIBLE');
         $resp->assertDontSee('PRUEBA APITEST ARCHIVADA');
@@ -92,7 +92,7 @@ class ExportacionArchivadaTest extends TestCase
         $archivada = $this->lista(['cliente_nombre' => 'PRUEBA APITEST ARCHIVADA', 'archivada' => true, 'archivada_en' => now(), 'observaciones' => 'PRUEBA APITEST - no es real']);
 
         $resp = $this->actingAs($this->usuario())
-            ->get(route('exportaciones.index', ['archivadas' => 1]))
+            ->get(route('facturacion.listas.index', ['estado' => 'archivadas']))
             ->assertOk();
 
         $resp->assertSee('PRUEBA APITEST ARCHIVADA');
@@ -105,7 +105,7 @@ class ExportacionArchivadaTest extends TestCase
         $this->lista(['cliente_nombre' => 'CLIENTE ARCHIVADO FILTRO', 'archivada' => true, 'archivada_en' => now()]);
 
         $resp = $this->actingAs($this->usuario())
-            ->get(route('exportaciones.index', ['filtro' => 'archivadas']))
+            ->get(route('facturacion.listas.index', ['estado' => 'archivadas']))
             ->assertOk();
 
         $resp->assertSee('CLIENTE ARCHIVADO FILTRO');
@@ -118,7 +118,7 @@ class ExportacionArchivadaTest extends TestCase
         $this->lista(['cliente_nombre' => 'CLIENTE ARCHIVADO FILTRO', 'archivada' => true, 'archivada_en' => now()]);
 
         $resp = $this->actingAs($this->usuario())
-            ->get(route('exportaciones.index', ['filtro' => 'todas']))
+            ->get(route('facturacion.listas.index', ['estado' => 'todas']))
             ->assertOk();
 
         $resp->assertSee('CLIENTE ACTIVO FILTRO');
@@ -131,7 +131,7 @@ class ExportacionArchivadaTest extends TestCase
         $this->lista(['cliente_nombre' => 'CLIENTE ARCHIVADO FILTRO', 'archivada' => true, 'archivada_en' => now()]);
 
         $resp = $this->actingAs($this->usuario())
-            ->get(route('exportaciones.index', ['filtro' => 'lo-que-sea']))
+            ->get(route('facturacion.listas.index', ['estado' => 'lo-que-sea']))
             ->assertOk();
 
         $resp->assertSee('CLIENTE ACTIVO FILTRO');
@@ -143,21 +143,34 @@ class ExportacionArchivadaTest extends TestCase
         $archivada = $this->lista(['archivada' => true, 'archivada_en' => now()]);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $archivada))
+            ->get(route('facturacion.listas.show', $archivada))
             ->assertOk()
             ->assertSee('Archivada');
     }
 
     // ---------- 3: el vínculo con la FEX se conserva ----------
 
-    public function test_archivar_no_toca_el_vinculo_con_la_fex(): void
+    /**
+     * Archivar dejó de ser una acción suelta: es una de las tres clasificaciones de
+     * la resolución administrativa de una lista heredada. Lo que se comprueba sigue
+     * siendo lo mismo — archivar no toca el vínculo con la factura ni el documento.
+     */
+    public function test_clasificar_como_archivada_no_toca_el_vinculo_con_la_fex(): void
     {
         $dte = $this->fexAceptada();
-        $lista = $this->lista(['dte_id' => $dte->id]);
+        $lista = $this->lista([
+            'dte_id' => $dte->id,
+            'estado' => 'aprobada',
+            'requiere_revision' => true,
+            'revision_estado_original' => 'aprobada',
+        ]);
 
         $this->actingAs($this->usuario())
-            ->patch(route('exportaciones.archivar', $lista))
-            ->assertRedirect(route('exportaciones.show', $lista));
+            ->post(route('facturacion.listas.resolver-revision', $lista), [
+                'clasificacion' => 'archivada',
+                'motivo' => 'Embarque de prueba: no salió del país.',
+            ])
+            ->assertRedirect(route('facturacion.listas.show', $lista));
 
         $lista->refresh();
         $this->assertTrue($lista->archivada);
@@ -170,31 +183,43 @@ class ExportacionArchivadaTest extends TestCase
         $this->assertSame('10.50', number_format((float) $dte->total_pagar, 2, '.', ''));
     }
 
-    public function test_archivar_no_modifica_snapshot_ni_estado_ni_otros_campos(): void
+    public function test_clasificar_como_archivada_conserva_snapshot_y_estado_original(): void
     {
-        $lista = $this->lista(['cliente_nombre' => 'NOMBRE SNAPSHOT', 'cliente_direccion' => 'DIRECCION SNAPSHOT', 'estado' => 'aprobada']);
+        $lista = $this->lista([
+            'cliente_nombre' => 'NOMBRE SNAPSHOT',
+            'cliente_direccion' => 'DIRECCION SNAPSHOT',
+            'estado' => 'aprobada',
+            'requiere_revision' => true,
+            'revision_estado_original' => 'aprobada',
+        ]);
 
-        $this->actingAs($this->usuario())->patch(route('exportaciones.archivar', $lista));
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.resolver-revision', $lista), [
+            'clasificacion' => 'archivada',
+            'motivo' => 'Confirmado con contabilidad: se descartó.',
+        ]);
 
         $lista->refresh();
         $this->assertSame('NOMBRE SNAPSHOT', $lista->cliente_nombre);
         $this->assertSame('DIRECCION SNAPSHOT', $lista->cliente_direccion);
-        $this->assertSame('aprobada', $lista->estado); // estado no cambia al archivar
+        // Archivar NO reescribe el estado: es un eje aparte y el valor histórico es
+        // justamente lo que había que conservar.
+        $this->assertSame('aprobada', $lista->estado);
+        $this->assertSame('aprobada', $lista->revision_estado_original);
+        $this->assertSame('archivada', $lista->revision_resolucion);
+        $this->assertTrue($lista->archivada);
     }
 
-    public function test_desarchivar_revierte_y_vuelve_a_aparecer(): void
+    /** Las rutas antiguas de archivado existen pero ya no cambian nada. */
+    public function test_las_rutas_antiguas_de_archivado_ya_no_escriben(): void
     {
-        $lista = $this->lista(['cliente_nombre' => 'VUELVE A APARECER', 'archivada' => true, 'archivada_en' => now()]);
+        $lista = $this->lista(['cliente_nombre' => 'NO SE ARCHIVA POR LA VIA VIEJA']);
 
-        $this->actingAs($this->usuario())->patch(route('exportaciones.desarchivar', $lista));
-
+        $this->actingAs($this->usuario())->patch(route('exportaciones.archivar', $lista))->assertStatus(409);
         $this->assertFalse($lista->fresh()->archivada);
-        $this->assertNull($lista->fresh()->archivada_en);
 
-        $this->actingAs($this->usuario())
-            ->get(route('exportaciones.index'))
-            ->assertOk()
-            ->assertSee('VUELVE A APARECER');
+        $archivada = $this->lista(['archivada' => true, 'archivada_en' => now()]);
+        $this->actingAs($this->usuario())->patch(route('exportaciones.desarchivar', $archivada))->assertStatus(409);
+        $this->assertTrue($archivada->fresh()->archivada);
     }
 
     // ---------- 4: no se puede borrar una lista vinculada (archivada o no) ----------
@@ -205,8 +230,8 @@ class ExportacionArchivadaTest extends TestCase
         $lista = $this->lista(['dte_id' => $dte->id, 'archivada' => true, 'archivada_en' => now()]);
 
         $this->actingAs($this->usuario())
-            ->delete(route('exportaciones.destroy', $lista))
-            ->assertRedirect(route('exportaciones.show', $lista))
+            ->delete(route('facturacion.listas.destroy', $lista))
+            ->assertRedirect(route('facturacion.listas.show', $lista))
             ->assertSessionHas('error');
 
         $this->assertNotNull(Exportacion::find($lista->id));
@@ -215,12 +240,43 @@ class ExportacionArchivadaTest extends TestCase
 
     // ---------- Rutas principales siguen cargando ----------
 
-    public function test_pantallas_de_exportaciones_cargan(): void
+    /**
+     * Las pantallas se reubicaron y ninguna quedó sin puerta: las URL antiguas
+     * redirigen a su destino nuevo y ese destino carga. Se sigue la redirección de
+     * verdad en vez de dar por buena la cabecera: un 302 hacia un 404 también es un
+     * destino inaccesible.
+     */
+    public function test_las_urls_antiguas_llevan_a_las_pantallas_nuevas(): void
     {
         $admin = $this->usuario();
 
-        foreach (['exportaciones.index', 'exportaciones.create', 'exportaciones.productos.index', 'exportaciones.clientes.index'] as $ruta) {
-            $this->actingAs($admin)->get(route($ruta))->assertOk();
+        $destinos = [
+            'exportaciones.index' => 'facturacion.listas.index',
+            'exportaciones.create' => 'facturacion.listas.create',
+            'exportaciones.productos.index' => 'productos.exportacion.index',
+            'exportaciones.productos.create' => 'productos.exportacion.create',
+            'exportaciones.productos.importar' => 'productos.exportacion.importar',
+        ];
+
+        foreach ($destinos as $antigua => $nueva) {
+            $this->actingAs($admin)->get(route($antigua))
+                ->assertRedirect(route($nueva));
+
+            $this->actingAs($admin)->get(route($nueva))->assertOk();
         }
+
+        // Clientes: el destino es el directorio único, filtrado por tipo exportación.
+        $this->actingAs($admin)->get(route('exportaciones.clientes.index'))
+            ->assertRedirect(route('clientes.index', ['tipo_cliente' => 'exportacion']));
+        $this->actingAs($admin)->get(route('clientes.index', ['tipo_cliente' => 'exportacion']))->assertOk();
+    }
+
+    public function test_la_url_antigua_de_una_lista_lleva_a_su_ficha_nueva(): void
+    {
+        $lista = $this->lista();
+
+        $this->actingAs($this->usuario())
+            ->get(route('exportaciones.show', $lista))
+            ->assertRedirect(route('facturacion.listas.show', $lista));
     }
 }

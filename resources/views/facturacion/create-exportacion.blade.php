@@ -56,7 +56,7 @@
                 <form method="POST" action="{{ route('facturacion.store-exportacion') }}"
                       x-data="{
                           clientes: @js($clientes),
-                          clienteId: @js((string) old('cliente_id', '')),
+                          clienteId: @js((string) old('cliente_id', $clientePreseleccionado ?? '')),
                           buscar: '',
                           abierto: false,
                           descuento: '0.00',
@@ -89,6 +89,19 @@
                       }"
                       class="space-y-6">
                     @csrf
+
+                    {{-- Lista de empaque de origen. Llega desde «Facturar en el editor»:
+                         el formulario de la FEX es EXACTAMENTE el mismo de siempre y este
+                         campo solo recuerda a qué lista hay que vincular el documento una
+                         vez creado. Sin lista en contexto no se dibuja nada. --}}
+                    @if (! empty($listaEmpaque))
+                        <input type="hidden" name="lista_id" value="{{ $listaEmpaque->id }}">
+                        <div class="mb-4 rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700">
+                            Esta factura quedará vinculada a la
+                            <a href="{{ route('facturacion.listas.show', $listaEmpaque) }}" class="font-medium underline">lista de empaque #{{ $listaEmpaque->id }}</a>
+                            ({{ $listaEmpaque->cliente_nombre }}). El número de la lista se actualizará solo al guardar.
+                        </div>
+                    @endif
                     <input type="hidden" name="tipo_dte" value="11">
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

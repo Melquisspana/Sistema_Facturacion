@@ -71,7 +71,7 @@
                                 <div>
                                     <dt class="inline text-gray-400">Origen:</dt>
                                     <dd class="inline">Lista de Empaque
-                                        <a href="{{ route('exportaciones.show', $dte->exportacionOrigen) }}" class="text-indigo-600 hover:underline">#{{ $dte->exportacionOrigen->id }}</a>
+                                        <a href="{{ route('facturacion.listas.show', $dte->exportacionOrigen) }}" class="text-indigo-600 hover:underline">#{{ $dte->exportacionOrigen->id }}</a>
                                     </dd>
                                 </div>
                             @endif

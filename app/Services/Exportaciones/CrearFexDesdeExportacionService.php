@@ -29,11 +29,12 @@ class CrearFexDesdeExportacionService
 {
     public function __construct(
         private readonly DteBorradorService $borradores,
+        private readonly VincularFexALista $vinculos,
     ) {}
 
     /**
-     * @throws FexYaExisteException  si la Lista ya tiene una FEX vinculada
-     * @throws ValidationException   si falta algún requisito (cliente vinculado, líneas válidas, emisor, etc.)
+     * @throws FexYaExisteException si la Lista ya tiene una FEX vinculada
+     * @throws ValidationException si falta algún requisito (cliente vinculado, líneas válidas, emisor, etc.)
      */
     public function crear(Exportacion $exportacion, ?User $usuario = null): Dte
     {
@@ -44,6 +45,15 @@ class CrearFexDesdeExportacionService
 
             if ($exportacion->dte_id !== null) {
                 throw new FexYaExisteException($exportacion->dte_id);
+            }
+
+            // Defensa en profundidad: el controlador ya lo comprueba, pero este servicio
+            // es público y una lista congelada o finalizada no puede ganar una factura
+            // por ningún camino.
+            if (! $exportacion->puedeEditarse()) {
+                throw ValidationException::withMessages([
+                    'estado' => $exportacion->motivoBloqueo() ?? 'La lista no admite cambios.',
+                ]);
             }
 
             $exportacionCliente = $exportacion->cliente; // ExportacionCliente (belongsTo)
@@ -147,6 +157,9 @@ class CrearFexDesdeExportacionService
             }
 
             $exportacion->update(['dte_id' => $dte->id]);
+            // Espeja el vínculo en la relación uno-a-muchos. La columna se sigue
+            // escribiendo primero por compatibilidad; esto solo la refleja.
+            $this->vinculos->sincronizarDesdeColumna($exportacion);
 
             return $dte->fresh();
         });

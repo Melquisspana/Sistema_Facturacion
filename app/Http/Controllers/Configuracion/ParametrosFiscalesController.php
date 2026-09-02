@@ -23,6 +23,7 @@ class ParametrosFiscalesController extends Controller
         return view('configuracion.fiscal.parametros', [
             'parametros' => $inventario->parametros(),
             'exportacion' => $inventario->exportacion(),
+            'empresaExportadora' => $inventario->empresaExportadora(),
         ]);
     }
 }

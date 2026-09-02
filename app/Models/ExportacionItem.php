@@ -67,15 +67,32 @@ class ExportacionItem extends Model
     /**
      * Descripción para la factura de exportación: "nombre_es / nombre_en - N units"
      * (N = unidades por caja del snapshot). Si no hay unidades por caja, se omite
-     * el sufijo " - N units". Ej.: "Caja de dulce de nance / Yellow cherry candy - 144 units".
+     * el sufijo. Ej.: "Caja de dulce de nance / Yellow cherry candy - 144 units".
+     *
+     * NO REPITE EL SUFIJO. En el catálogo real los 48 productos ya traen el número
+     * de unidades dentro de `nombre_en` («Cashew seed baked - 216 units»), así que
+     * añadirlo sin mirar producía líneas de factura como «… - 216 units - 216
+     * units». Nunca reventó porque hasta hoy ninguna lista llegó a facturarse, pero
+     * habría salido impreso en la primera FEX real.
+     *
+     * La comprobación es sobre el sufijo YA COMPUESTO, no un `str_contains` de la
+     * palabra «units»: un producto cuyo nombre mencione unidades por otro motivo
+     * («200 units per case, 12 units free») sigue recibiendo su sufijo correcto.
      */
     public function descripcionFactura(): string
     {
         $base = trim($this->nombre_es).' / '.trim($this->nombre_en);
+        $unidades = (int) $this->unidades_por_caja;
 
-        return (int) $this->unidades_por_caja >= 1
-            ? $base.' - '.(int) $this->unidades_por_caja.' units'
-            : $base;
+        if ($unidades < 1) {
+            return $base;
+        }
+
+        $sufijo = $unidades.' units';
+
+        return str_ends_with(mb_strtolower($base), mb_strtolower($sufijo))
+            ? $base
+            : $base.' - '.$sufijo;
     }
 
     public function totalUnidades(): int

@@ -62,7 +62,7 @@ class ExportacionFormularioTest extends TestCase
     {
         [$cliente, $producto] = $this->datosBase();
 
-        $respuesta = $this->actingAs($this->usuario())->get(route('exportaciones.create'));
+        $respuesta = $this->actingAs($this->usuario())->get(route('facturacion.listas.create'));
 
         $respuesta->assertOk();
         // El combobox reemplaza al select: placeholder de búsqueda presente.
@@ -80,7 +80,7 @@ class ExportacionFormularioTest extends TestCase
     {
         [$cliente, $producto] = $this->datosBase();
 
-        $this->actingAs($this->usuario())->post(route('exportaciones.store'), [
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.store'), [
             'exportacion_cliente_id' => $cliente->id,
             'cliente_nombre' => $cliente->nombre,
             'exportador_nombre' => 'EXPORTADOR',
@@ -89,7 +89,7 @@ class ExportacionFormularioTest extends TestCase
         ]);
         $exportacion = \App\Models\Exportacion::firstOrFail();
 
-        $respuesta = $this->actingAs($this->usuario())->get(route('exportaciones.edit', $exportacion));
+        $respuesta = $this->actingAs($this->usuario())->get(route('facturacion.listas.edit', $exportacion));
 
         $respuesta->assertOk();
         // El buscador está disponible para agregar filas nuevas…

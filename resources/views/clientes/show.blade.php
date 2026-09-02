@@ -275,6 +275,12 @@
                 </dl>
             </div>
 
+            {{-- Exportación: solo para clientes de ese tipo. En un cliente nacional este
+                 bloque no existe y la ficha queda exactamente igual que antes. --}}
+            @if ($cliente->tipo_cliente?->esExportacion())
+                @include('clientes._exportacion')
+            @endif
+
             {{-- Perfil documental: exigencias propias de este cliente sobre sus notas de
                  crédito. Se muestra SIEMPRE, también cuando no hay perfil, para que la
                  opción sea descubrible en vez de vivir solo en un comando de consola. --}}

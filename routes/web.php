@@ -4,7 +4,10 @@ use App\Http\Controllers\Clientes\ClienteController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Clientes\ClientePerfilDocumentoController;
 use App\Http\Controllers\Clientes\ClienteSucursalController;
+use App\Http\Controllers\Clientes\ClienteExportacionController;
+use App\Http\Controllers\Exportaciones\ExportacionProductoController;
 use App\Http\Controllers\Facturacion\DteController;
+use App\Http\Controllers\Facturacion\ListaEmpaqueController;
 use App\Http\Controllers\Productos\ProductoController;
 use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\Usuarios\UserController;
@@ -74,6 +77,31 @@ Route::middleware('auth')->group(function () {
     Route::put('clientes/{cliente}/perfil-documental', [ClientePerfilDocumentoController::class, 'update'])
         ->name('clientes.perfil-documento.update');
 
+    /*
+    | Perfil de EXPORTACIÓN del cliente, dentro de su propia ficha.
+    |
+    | No hay un segundo directorio de clientes: estas rutas cuelgan del cliente que
+    | ya existe y administran únicamente lo que el directorio no guarda —FDA del
+    | importador, contacto del embarque, dirección de entrega y lista de precios—.
+    |
+    | Van ANTES del resource, o `clientes/{cliente}` capturaría el segmento literal.
+    | Permiso: exportaciones.gestionar, el mismo que protegía estas acciones en la
+    | pantalla anterior; lo refuerza además el propio controlador.
+    */
+    Route::prefix('clientes/{cliente}/exportacion')->name('clientes.exportacion.')
+        ->middleware('permission:exportaciones.gestionar')
+        ->group(function () {
+            Route::post('habilitar', [ClienteExportacionController::class, 'habilitar'])->name('habilitar');
+            Route::post('deshabilitar', [ClienteExportacionController::class, 'deshabilitar'])->name('deshabilitar');
+            Route::put('/', [ClienteExportacionController::class, 'actualizar'])->name('update');
+
+            Route::post('productos', [ClienteExportacionController::class, 'agregarProducto'])->name('productos.store');
+            Route::post('productos/asignar-catalogo', [ClienteExportacionController::class, 'asignarCatalogo'])->name('productos.asignar-catalogo');
+            Route::post('productos/copiar', [ClienteExportacionController::class, 'copiarPrecios'])->name('productos.copiar');
+            Route::patch('productos/{asignacion}', [ClienteExportacionController::class, 'actualizarProducto'])->name('productos.update');
+            Route::delete('productos/{asignacion}', [ClienteExportacionController::class, 'quitarProducto'])->name('productos.destroy');
+        });
+
     Route::resource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);
 
     // Productos. Autorización fina por ProductoPolicy.
@@ -83,6 +111,42 @@ Route::middleware('auth')->group(function () {
     Route::post('productos/{producto}/precios', [ProductoPrecioController::class, 'store'])->name('productos.precios.store');
     Route::patch('productos/{producto}/precios/{precio}/toggle-activo', [ProductoPrecioController::class, 'toggleActivo'])->name('productos.precios.toggle-activo');
     Route::delete('productos/{producto}/precios/{precio}', [ProductoPrecioController::class, 'destroy'])->name('productos.precios.destroy');
+
+    /*
+    | Productos DE EXPORTACIÓN. Viven bajo la misma entrada «Productos» que los
+    | nacionales, como segunda pestaña del selector, y por eso cuelgan de este
+    | prefijo y no de /exportaciones.
+    |
+    | Van ANTES del resource: `productos/{producto}` capturaría `productos/exportacion`
+    | y lo intentaría resolver como un Producto nacional inexistente (404).
+    |
+    | Los permisos NO cambian: siguen siendo exportaciones.ver para mirar y
+    | exportaciones.gestionar para escribir, exactamente los mismos que protegían
+    | estas pantallas en su ubicación anterior. Mover una pantalla de sitio no debe
+    | cambiar quién puede entrar.
+    |
+    | Las rutas antiguas (exportaciones.productos.*) siguen vivas y sirviendo el
+    | MISMO controlador: nadie que tenga un enlace guardado se queda sin destino.
+    | Se retirarán cuando se compruebe en producción que no les queda ningún
+    | consumidor.
+    */
+    Route::prefix('productos/exportacion')->name('productos.exportacion.')
+        ->middleware('permission:exportaciones.ver')
+        ->group(function () {
+            $gestionar = 'permission:exportaciones.gestionar';
+
+            Route::get('/', [ExportacionProductoController::class, 'index'])->name('index');
+            Route::get('crear', [ExportacionProductoController::class, 'create'])->middleware($gestionar)->name('create');
+            Route::post('/', [ExportacionProductoController::class, 'store'])->middleware($gestionar)->name('store');
+            // Literales antes de {producto}, o «importar» se resolvería como un id.
+            Route::get('importar', [ExportacionProductoController::class, 'importarForm'])->middleware($gestionar)->name('importar');
+            Route::post('importar', [ExportacionProductoController::class, 'importar'])->middleware($gestionar)->name('importar.run');
+            Route::get('{producto}', [ExportacionProductoController::class, 'show'])->name('show');
+            Route::get('{producto}/editar', [ExportacionProductoController::class, 'edit'])->middleware($gestionar)->name('edit');
+            Route::put('{producto}', [ExportacionProductoController::class, 'update'])->middleware($gestionar)->name('update');
+            Route::patch('{producto}/toggle-activo', [ExportacionProductoController::class, 'toggleActivo'])->middleware($gestionar)->name('toggle-activo');
+            Route::delete('{producto}', [ExportacionProductoController::class, 'destroy'])->middleware($gestionar)->name('destroy');
+        });
 
     Route::resource('productos', ProductoController::class)->parameters(['productos' => 'producto']);
 
@@ -109,6 +173,51 @@ Route::middleware('auth')->group(function () {
         Route::post('factura', [DteController::class, 'storeFactura'])->name('store-factura');
         Route::get('exportacion/crear', [DteController::class, 'createExportacion'])->name('create-exportacion');
         Route::post('exportacion', [DteController::class, 'storeExportacion'])->name('store-exportacion');
+
+        /*
+        | Listas de empaque. Viven acá, dentro de Ventas y facturación, porque la
+        | lista es el paso previo de la factura de exportación y se abre junto a
+        | ella — no en un área aparte.
+        |
+        | Permisos: exportaciones.ver / exportaciones.gestionar, los MISMOS que
+        | protegían estas pantallas en su ubicación anterior. Mover una pantalla no
+        | cambia quién entra. La gestión se refuerza además en el controlador.
+        |
+        | Van antes de `{dte}` (declarado más abajo en este mismo grupo) para que el
+        | segmento literal no se resuelva como el id de un documento.
+        */
+        Route::prefix('listas-empaque')->name('listas.')
+            ->middleware('permission:exportaciones.ver')
+            ->group(function () {
+                $gestionar = 'permission:exportaciones.gestionar';
+
+                Route::get('/', [ListaEmpaqueController::class, 'index'])->name('index');
+                Route::get('crear', [ListaEmpaqueController::class, 'create'])->middleware($gestionar)->name('create');
+                Route::post('/', [ListaEmpaqueController::class, 'store'])->middleware($gestionar)->name('store');
+                Route::get('{lista}', [ListaEmpaqueController::class, 'show'])->name('show');
+                Route::get('{lista}/editar', [ListaEmpaqueController::class, 'edit'])->middleware($gestionar)->name('edit');
+                Route::put('{lista}', [ListaEmpaqueController::class, 'update'])->middleware($gestionar)->name('update');
+                Route::delete('{lista}', [ListaEmpaqueController::class, 'destroy'])->middleware($gestionar)->name('destroy');
+                Route::post('{lista}/duplicar', [ListaEmpaqueController::class, 'duplicar'])->middleware($gestionar)->name('duplicar');
+
+                // Documentos. Lectura: los ve cualquiera con exportaciones.ver.
+                Route::get('{lista}/excel', [ListaEmpaqueController::class, 'excel'])->name('excel');
+                Route::get('{lista}/imprimir', [ListaEmpaqueController::class, 'imprimir'])->name('imprimir');
+
+                // Facturación. «Facturar en el editor» NO crea nada: lleva al formulario
+                // real de FEX con la lista en contexto.
+                Route::get('{lista}/facturar', [ListaEmpaqueController::class, 'iniciarFactura'])->middleware($gestionar)->name('facturar');
+                Route::post('{lista}/facturar-rapido', [ListaEmpaqueController::class, 'crearFexRapida'])->middleware($gestionar)->name('facturar-rapido');
+                Route::post('{lista}/facturas', [ListaEmpaqueController::class, 'vincularFactura'])->middleware($gestionar)->name('facturas.vincular');
+                Route::delete('{lista}/facturas/{dte}', [ListaEmpaqueController::class, 'desvincularFactura'])->middleware($gestionar)->name('facturas.desvincular');
+
+                // Cierre y corrección auditada.
+                Route::patch('{lista}/finalizar', [ListaEmpaqueController::class, 'finalizar'])->middleware($gestionar)->name('finalizar');
+                Route::post('{lista}/reabrir', [ListaEmpaqueController::class, 'reabrir'])->middleware($gestionar)->name('reabrir');
+                // Clasificación de una lista heredada del flujo anterior. Solo
+                // administrador: el propio controlador lo refuerza.
+                Route::post('{lista}/resolver-revision', [ListaEmpaqueController::class, 'resolverRevision'])->middleware($gestionar)->name('resolver-revision');
+            });
 
         // Nota de crédito como documento independiente (flujo propio, no desde un CCF).
         // Debe ir ANTES de `{dte}` para que «nota-credito/crear» no caiga en show.
@@ -355,68 +464,111 @@ Route::middleware('auth')->group(function () {
     });
 
     /*
-    | Exportaciones / Lista de Empaque — módulo administrativo paralelo: catálogo
-    | de productos de exportación y generación del Excel desde la plantilla.
-    | NO emite DTE, no toca correlativos, firma, transmisión ni correo.
+    |--------------------------------------------------------------------------
+    | Exportaciones — DESTINOS REUBICADOS (no eliminados)
+    |--------------------------------------------------------------------------
+    |
+    | Las tres pantallas que vivían acá se mudaron a donde pertenecen:
+    |
+    |   catálogo de productos  →  productos.exportacion.*   (pestaña de Productos)
+    |   clientes y precios     →  clientes.show             (ficha del cliente)
+    |   listas de empaque      →  facturacion.listas.*      (Ventas y facturación)
+    |
+    | NINGUNA URL se borró: todas siguen resolviendo. Las de LECTURA redirigen a su
+    | destino nuevo, así que un enlace guardado, un favorito o un correo viejo
+    | llegan a donde deben en vez de a un 404.
+    |
+    | LAS DE ESCRITURA YA NO ESCRIBEN. Antes seguían apuntando a los controladores
+    | originales «hasta comprobar producción», y eso dejaba una segunda forma de
+    | escribir el mismo proceso saltándose las reglas nuevas: se podía editar una
+    | lista finalizada con `PUT /exportaciones/{id}`, marcarla 'aprobada' con
+    | `PATCH .../aprobar`, crearle una FEX sin validar receptor ni ambiente, o
+    | borrar un producto de exportación con sus precios. Un candado que se evita
+    | escribiendo otra URL no es un candado.
+    |
+    | Ahora responden 409 explicando a qué operación equivale cada una en el flujo
+    | nuevo. Se conservan —no se borran— hasta comprobar en producción que nadie las
+    | llama; lo que se retiró es su capacidad de mutar datos, no su existencia.
+    |
+    | `ExportacionController` y `ExportacionClienteController` quedan sin ninguna
+    | ruta que los alcance. Siguen en el árbol a propósito: eliminarlos es el paso
+    | siguiente, y exige la misma comprobación en producción.
     */
-    // Lectura para cualquier rol con exportaciones.ver; la escritura lleva además
-    // exportaciones.gestionar (inline en cada ruta que muta) para dejar a jefatura/
-    // contabilidad en solo lectura sin alterar el orden literal-antes-de-parámetro.
     Route::prefix('exportaciones')->name('exportaciones.')->middleware('permission:exportaciones.ver')->group(function () {
         $gestionar = 'permission:exportaciones.gestionar';
 
-        // Catálogo de productos de exportación (antes de {exportacion} para no chocar).
-        Route::get('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'index'])->name('productos.index');
-        Route::get('productos/crear', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'create'])->middleware($gestionar)->name('productos.create');
-        Route::post('productos', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'store'])->middleware($gestionar)->name('productos.store');
-        // Importación del catálogo inicial desde el Excel plantilla (hoja "Lista").
-        Route::get('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importarForm'])->middleware($gestionar)->name('productos.importar');
-        Route::post('productos/importar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'importar'])->middleware($gestionar)->name('productos.importar.run');
-        Route::get('productos/{producto}/editar', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'edit'])->middleware($gestionar)->name('productos.edit');
-        Route::put('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'update'])->middleware($gestionar)->name('productos.update');
-        Route::patch('productos/{producto}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'toggleActivo'])->middleware($gestionar)->name('productos.toggle-activo');
-        Route::delete('productos/{producto}', [\App\Http\Controllers\Exportaciones\ExportacionProductoController::class, 'destroy'])->middleware($gestionar)->name('productos.destroy');
+        /**
+         * Respuesta de una ruta antigua de escritura: dice qué se hacía acá, dónde se
+         * hace ahora y por qué ya no funciona. 409 Conflict —no 404— porque la URL
+         * existe y el recurso también; lo que ya no es válido es la operación.
+         */
+        $retirada = function (string $equivalente) {
+            return function () use ($equivalente) {
+                abort(409, 'Esta dirección pertenece al flujo anterior de Exportaciones y ya no realiza cambios. '
+                    .$equivalente.' Las reglas de revisión, finalización, vínculo con la factura y permisos '
+                    .'viven ahora en un solo sitio, y mantener esta vía en paralelo permitía saltárselas.');
+            };
+        };
 
-        // Clientes de exportación y su lista de precios/productos permitidos.
-        Route::get('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'index'])->name('clientes.index');
-        Route::get('clientes/crear', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'create'])->middleware($gestionar)->name('clientes.create');
-        Route::post('clientes', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'store'])->middleware($gestionar)->name('clientes.store');
-        Route::get('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'show'])->name('clientes.show');
-        Route::get('clientes/{cliente}/editar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'edit'])->middleware($gestionar)->name('clientes.edit');
-        Route::put('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'update'])->middleware($gestionar)->name('clientes.update');
-        Route::patch('clientes/{cliente}/toggle-activo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'toggleActivo'])->middleware($gestionar)->name('clientes.toggle-activo');
-        Route::delete('clientes/{cliente}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroy'])->middleware($gestionar)->name('clientes.destroy');
-        // Vínculo con el Cliente DTE real (solo guarda la relación; no crea clientes ni FEX).
-        Route::patch('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'vincularClienteDte'])->middleware($gestionar)->name('clientes.vincular-cliente-dte');
-        Route::delete('clientes/{cliente}/vincular-cliente-dte', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'desvincularClienteDte'])->middleware($gestionar)->name('clientes.desvincular-cliente-dte');
-        // Lista de precios del cliente (asignaciones producto+precio, únicas por cliente).
-        Route::post('clientes/{cliente}/productos', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'storeProducto'])->middleware($gestionar)->name('clientes.productos.store');
-        Route::post('clientes/{cliente}/productos/asignar-catalogo', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'asignarCatalogo'])->middleware($gestionar)->name('clientes.productos.asignar-catalogo');
-        // Copiar productos/precios activos desde otro cliente (conservar u sobrescribir).
-        Route::post('clientes/{cliente}/productos/copiar', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'copiarPrecios'])->middleware($gestionar)->name('clientes.productos.copiar');
-        Route::patch('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'updateProducto'])->middleware($gestionar)->name('clientes.productos.update');
-        Route::delete('clientes/{cliente}/productos/{asignacion}', [\App\Http\Controllers\Exportaciones\ExportacionClienteController::class, 'destroyProducto'])->middleware($gestionar)->name('clientes.productos.destroy');
+        // --- Catálogo de productos: ahora es la pestaña «De exportación» de Productos.
+        Route::get('productos', fn () => redirect()->route('productos.exportacion.index'))->name('productos.index');
+        Route::get('productos/crear', fn () => redirect()->route('productos.exportacion.create'))->middleware($gestionar)->name('productos.create');
+        Route::get('productos/importar', fn () => redirect()->route('productos.exportacion.importar'))->middleware($gestionar)->name('productos.importar');
+        Route::get('productos/{producto}/editar', fn (\App\Models\ExportacionProducto $producto) => redirect()->route('productos.exportacion.edit', $producto))->middleware($gestionar)->name('productos.edit');
 
-        // Exportaciones / listas de empaque.
-        Route::get('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'index'])->name('index');
-        Route::get('crear', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'create'])->middleware($gestionar)->name('create');
-        Route::post('/', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'store'])->middleware($gestionar)->name('store');
-        Route::get('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'show'])->name('show');
-        Route::get('{exportacion}/editar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'edit'])->middleware($gestionar)->name('edit');
-        Route::put('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'update'])->middleware($gestionar)->name('update');
-        // Excel de lista de empaque desde la plantilla oficial (phpspreadsheet, sin IA).
-        Route::get('{exportacion}/excel', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'excel'])->name('excel');
-        // Aprobación de la lista (revisada por la dueña). No emite nada.
-        Route::patch('{exportacion}/aprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'aprobar'])->middleware($gestionar)->name('aprobar');
-        Route::patch('{exportacion}/desaprobar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desaprobar'])->middleware($gestionar)->name('desaprobar');
-        // Archivar: oculta del listado normal una Lista de PRUEBA (no real) sin borrarla
-        // ni tocar su FEX vinculada. Sigue accesible por URL directa o "Mostrar archivadas".
-        Route::patch('{exportacion}/archivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'archivar'])->middleware($gestionar)->name('archivar');
-        Route::patch('{exportacion}/desarchivar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'desarchivar'])->middleware($gestionar)->name('desarchivar');
-        // Crea (o abre, si ya existe) la FEX de esta Lista. Llama solo al servicio orquestador.
-        Route::post('{exportacion}/crear-fex', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'crearFex'])->middleware($gestionar)->name('crear-fex');
-        Route::post('{exportacion}/duplicar', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'duplicar'])->middleware($gestionar)->name('duplicar');
-        Route::delete('{exportacion}', [\App\Http\Controllers\Exportaciones\ExportacionController::class, 'destroy'])->middleware($gestionar)->name('destroy');
+        $aProductos = 'Usá Productos → pestaña «De exportación».';
+        Route::post('productos', $retirada($aProductos))->middleware($gestionar)->name('productos.store');
+        Route::post('productos/importar', $retirada($aProductos))->middleware($gestionar)->name('productos.importar.run');
+        Route::put('productos/{producto}', $retirada($aProductos))->middleware($gestionar)->name('productos.update');
+        Route::patch('productos/{producto}/toggle-activo', $retirada($aProductos))->middleware($gestionar)->name('productos.toggle-activo');
+        Route::delete('productos/{producto}', $retirada('Un producto con precios o listas no se borra: se archiva desde su ficha en Productos → «De exportación».'))->middleware($gestionar)->name('productos.destroy');
+
+        // --- Clientes y precios: ahora es el bloque «Exportación» de la ficha del cliente.
+        // Sin cliente del directorio vinculado no hay ficha a la que llevar, así que se
+        // cae al directorio filtrado por tipo exportación en vez de a un 404.
+        Route::get('clientes', fn () => redirect()->route('clientes.index', ['tipo_cliente' => 'exportacion']))->name('clientes.index');
+        Route::get('clientes/crear', fn () => redirect()->route('clientes.create'))->middleware($gestionar)->name('clientes.create');
+        Route::get('clientes/{cliente}', fn (\App\Models\ExportacionCliente $cliente) => $cliente->cliente_id !== null
+            ? redirect()->route('clientes.show', $cliente->cliente_id)
+            : redirect()->route('clientes.index', ['tipo_cliente' => 'exportacion']))->name('clientes.show');
+        Route::get('clientes/{cliente}/editar', fn (\App\Models\ExportacionCliente $cliente) => $cliente->cliente_id !== null
+            ? redirect()->route('clientes.show', $cliente->cliente_id)
+            : redirect()->route('clientes.index', ['tipo_cliente' => 'exportacion']))->middleware($gestionar)->name('clientes.edit');
+
+        $aClientes = 'Usá la ficha del cliente, bloque «Exportación».';
+        Route::post('clientes', $retirada($aClientes))->middleware($gestionar)->name('clientes.store');
+        Route::put('clientes/{cliente}', $retirada($aClientes))->middleware($gestionar)->name('clientes.update');
+        Route::patch('clientes/{cliente}/toggle-activo', $retirada($aClientes))->middleware($gestionar)->name('clientes.toggle-activo');
+        Route::delete('clientes/{cliente}', $retirada($aClientes))->middleware($gestionar)->name('clientes.destroy');
+        Route::patch('clientes/{cliente}/vincular-cliente-dte', $retirada($aClientes))->middleware($gestionar)->name('clientes.vincular-cliente-dte');
+        Route::delete('clientes/{cliente}/vincular-cliente-dte', $retirada($aClientes))->middleware($gestionar)->name('clientes.desvincular-cliente-dte');
+        Route::post('clientes/{cliente}/productos', $retirada($aClientes))->middleware($gestionar)->name('clientes.productos.store');
+        Route::post('clientes/{cliente}/productos/asignar-catalogo', $retirada($aClientes))->middleware($gestionar)->name('clientes.productos.asignar-catalogo');
+        Route::post('clientes/{cliente}/productos/copiar', $retirada($aClientes))->middleware($gestionar)->name('clientes.productos.copiar');
+        Route::patch('clientes/{cliente}/productos/{asignacion}', $retirada($aClientes))->middleware($gestionar)->name('clientes.productos.update');
+        Route::delete('clientes/{cliente}/productos/{asignacion}', $retirada($aClientes))->middleware($gestionar)->name('clientes.productos.destroy');
+
+        // --- Listas de empaque: ahora viven en Ventas y facturación.
+        Route::get('/', fn () => redirect()->route('facturacion.listas.index'))->name('index');
+        Route::get('crear', fn () => redirect()->route('facturacion.listas.create'))->middleware($gestionar)->name('create');
+        Route::get('{exportacion}', fn (\App\Models\Exportacion $exportacion) => redirect()->route('facturacion.listas.show', $exportacion))->name('show');
+        Route::get('{exportacion}/editar', fn (\App\Models\Exportacion $exportacion) => redirect()->route('facturacion.listas.edit', $exportacion))->middleware($gestionar)->name('edit');
+        Route::get('{exportacion}/excel', fn (\App\Models\Exportacion $exportacion) => redirect()->route('facturacion.listas.excel', $exportacion))->name('excel');
+
+        $aListas = 'Usá Ventas y facturación → «Listas de empaque».';
+        Route::post('/', $retirada($aListas))->middleware($gestionar)->name('store');
+        Route::put('{exportacion}', $retirada($aListas))->middleware($gestionar)->name('update');
+        // aprobar/desaprobar/archivar pertenecen al flujo anterior. El nuevo tiene dos
+        // estados —borrador y finalizada— y una acción administrativa para clasificar
+        // las listas heredadas; reabrir esta vía volvería a crear estados que nadie
+        // sabe interpretar.
+        Route::patch('{exportacion}/aprobar', $retirada('El flujo actual usa «Finalizar lista», que exige una factura vigente.'))->middleware($gestionar)->name('aprobar');
+        Route::patch('{exportacion}/desaprobar', $retirada('El flujo actual usa «Reabrir lista», que exige un motivo y queda auditado.'))->middleware($gestionar)->name('desaprobar');
+        Route::patch('{exportacion}/archivar', $retirada('Una lista heredada se clasifica —incluido «archivada»— con la acción administrativa de su ficha.'))->middleware($gestionar)->name('archivar');
+        Route::patch('{exportacion}/desarchivar', $retirada($aListas))->middleware($gestionar)->name('desarchivar');
+        Route::post('{exportacion}/crear-fex', $retirada('Facturá desde la ficha de la lista: ahí se validan receptor, ambiente y estado del documento.'))->middleware($gestionar)->name('crear-fex');
+        Route::post('{exportacion}/duplicar', $retirada($aListas))->middleware($gestionar)->name('duplicar');
+        Route::delete('{exportacion}', $retirada($aListas))->middleware($gestionar)->name('destroy');
     });
 });
 
