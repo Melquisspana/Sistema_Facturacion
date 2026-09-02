@@ -62,7 +62,10 @@ class RolesPermisosTest extends TestCase
             'clientes' => ['clientes.index', self::ROLES_FACTURACION],
             'productos' => ['productos.index', self::ROLES_FACTURACION],
             'ppq' => ['ppq.index', self::ROLES_FACTURACION],
-            'exportaciones' => ['exportaciones.index', self::ROLES_FACTURACION],
+            // Se movio a Ventas y facturacion; el permiso de entrada (exportaciones.ver)
+            // y los roles que lo tienen son exactamente los mismos de antes.
+            'listas de empaque' => ['facturacion.listas.index', self::ROLES_FACTURACION],
+            'productos de exportación' => ['productos.exportacion.index', self::ROLES_FACTURACION],
             'compras (documentos recibidos)' => ['documentos-recibidos.index', self::ROLES_FACTURACION],
             'reporte contadora (ventas)' => ['facturacion.reporte-contadora', self::ROLES_FACTURACION],
             'paquete contabilidad' => ['contabilidad.paquete', self::ROLES_FACTURACION],

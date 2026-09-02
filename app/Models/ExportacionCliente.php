@@ -27,6 +27,7 @@ class ExportacionCliente extends Model
         'nombre',
         'direccion',
         'fda_reg_number',
+        'fda_requiere_revision',
         'contacto',
         'activo',
     ];
@@ -35,7 +36,25 @@ class ExportacionCliente extends Model
     {
         return [
             'activo' => 'boolean',
+            'fda_requiere_revision' => 'boolean',
         ];
+    }
+
+    /**
+     * FDA del IMPORTADOR, o null si lo guardado es en realidad el de la empresa.
+     *
+     * El FDA de la empresa exportadora se resolvió a Configuración; el de este
+     * campo solo tiene sentido si es el del destinatario. Mientras la fila esté
+     * marcada para revisión no se devuelve como dato del importador — pero tampoco
+     * se borra: sigue en la columna y la ficha lo muestra con su aviso.
+     */
+    public function fdaImportador(): ?string
+    {
+        if ($this->fda_requiere_revision) {
+            return null;
+        }
+
+        return blank($this->fda_reg_number) ? null : (string) $this->fda_reg_number;
     }
 
     public function productos(): HasMany

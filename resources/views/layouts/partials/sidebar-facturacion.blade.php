@@ -40,7 +40,16 @@
                 <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes</x-sidebar-link>
             @endif
             @if ($veProductos)
+                {{-- UNA sola entrada «Productos». Nacionales es lo predeterminado y
+                     exportación es la segunda pestaña de la misma pantalla, así que
+                     `productos.*` la enciende entera —incluido productos.exportacion.*,
+                     que cuelga de ese mismo prefijo de nombre. --}}
                 <x-sidebar-link :href="route('productos.index')" :active="request()->routeIs('productos.*')">Productos</x-sidebar-link>
+            @endif
+            @if ($veExportaciones)
+                {{-- La lista de empaque es el paso PREVIO a la factura de exportación, así
+                     que vive junto a los documentos que alimenta y no en un área aparte. --}}
+                <x-sidebar-link :href="route('facturacion.listas.index')" :active="$enListasEmpaque">Listas de empaque</x-sidebar-link>
             @endif
         </x-sidebar-group>
     @endif
@@ -88,16 +97,18 @@
         </x-sidebar-group>
     @endif
 
-    @if ($veExportaciones)
-        <x-sidebar-group titulo="Exportaciones" icono="exportaciones" clave="exportaciones" :activo="$grupoExportacionesActivo">
-            {{-- «Nueva lista de empaque» ya no ocupa una fila permanente: crear es una
-                 acción, no una sección, y el botón sigue estando en el listado y en el
-                 dashboard para quien tiene exportaciones.gestionar. --}}
-            <x-sidebar-link :href="route('exportaciones.index')" :active="$enListasEmpaque">Listas de empaque</x-sidebar-link>
-            <x-sidebar-link :href="route('exportaciones.clientes.index')" :active="$enExpClientes">Clientes y precios</x-sidebar-link>
-            <x-sidebar-link :href="route('exportaciones.productos.index')" :active="$enExpProductos">Catálogo de productos</x-sidebar-link>
-        </x-sidebar-group>
-    @endif
+    {{-- El grupo «Exportaciones» se retiró: sus tres destinos se reubicaron y ninguno
+         quedó sin puerta.
+
+            Catálogo de productos → pestaña «De exportación» dentro de Productos.
+            Clientes y precios    → bloque «Exportación» en la ficha del cliente.
+            Listas de empaque     → fila propia en «Ventas y facturación», arriba.
+
+         Las URL antiguas siguen funcionando y redirigen a su destino nuevo, así que un
+         favorito guardado no acaba en un 404. Las rutas y los controladores anteriores
+         no se borraron todavía: eso exige comprobar antes en producción que ya no les
+         queda ningún consumidor. --}}
+
 
     {{-- Administración: gente y rastro (quién entra, qué hizo, qué se cargó). Las
          herramientas técnicas de infraestructura viven aparte, en «Sistema». --}}

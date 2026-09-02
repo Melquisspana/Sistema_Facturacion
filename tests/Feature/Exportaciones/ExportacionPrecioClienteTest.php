@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Exportaciones;
 
+use App\Models\Cliente;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionItem;
@@ -56,7 +57,12 @@ class ExportacionPrecioClienteTest extends TestCase
 
     private function cliente(array $extra = []): ExportacionCliente
     {
+        // Perfil colgando de un cliente real del directorio: las acciones de la lista
+        // de precios viven ahora en su ficha (/clientes/{cliente}/exportacion).
+        $clienteDte = Cliente::factory()->exportacion()->create(['nombre' => 'CAROLINAS WHOLESALE LLC']);
+
         return ExportacionCliente::create($extra + [
+            'cliente_id' => $clienteDte->id,
             'nombre' => 'CAROLINAS WHOLESALE LLC',
             'direccion' => '11235 SOMERSET, BELTSVILLE, MD 20705 EEUU',
             'fda_reg_number' => '12015435846',
@@ -87,7 +93,7 @@ class ExportacionPrecioClienteTest extends TestCase
             'activo' => true,
         ]);
 
-        $respuesta = $this->actingAs($this->usuario())->post(route('exportaciones.store'),
+        $respuesta = $this->actingAs($this->usuario())->post(route('facturacion.listas.store'),
             $this->payload($cliente, [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 4]]));
 
         $respuesta->assertRedirect();
@@ -106,7 +112,7 @@ class ExportacionPrecioClienteTest extends TestCase
         $producto = $this->producto();
         $cliente = $this->cliente(); // sin lista de precios
 
-        $respuesta = $this->actingAs($this->usuario())->post(route('exportaciones.store'),
+        $respuesta = $this->actingAs($this->usuario())->post(route('facturacion.listas.store'),
             $this->payload($cliente, [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 2]]));
 
         $respuesta->assertRedirect();
@@ -125,7 +131,7 @@ class ExportacionPrecioClienteTest extends TestCase
             'activo' => false, // deshabilitado para el cliente
         ]);
 
-        $this->actingAs($this->usuario())->post(route('exportaciones.store'),
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.store'),
             $this->payload($cliente, [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 1]]));
 
         // Cae al base con aviso, porque la asignación está inactiva.
@@ -138,7 +144,7 @@ class ExportacionPrecioClienteTest extends TestCase
         $producto = $this->producto(['precio_caja' => null]); // sin precio base
         $cliente = $this->cliente(); // y sin precio de cliente
 
-        $respuesta = $this->actingAs($this->usuario())->post(route('exportaciones.store'),
+        $respuesta = $this->actingAs($this->usuario())->post(route('facturacion.listas.store'),
             $this->payload($cliente, [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 1]]));
 
         $respuesta->assertSessionHasErrors('items');
@@ -162,7 +168,7 @@ class ExportacionPrecioClienteTest extends TestCase
             'activo' => true,
         ]);
 
-        $this->actingAs($this->usuario())->post(route('exportaciones.store'),
+        $this->actingAs($this->usuario())->post(route('facturacion.listas.store'),
             $this->payload($cliente, [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 4]]));
         $exportacion = Exportacion::firstOrFail();
         $itemViejo = $exportacion->items()->firstOrFail();
@@ -170,7 +176,7 @@ class ExportacionPrecioClienteTest extends TestCase
         // El precio del cliente cambia DESPUÉS de creada la exportación.
         $asignacion->update(['precio_caja' => 350.00]);
 
-        $this->actingAs($this->usuario())->put(route('exportaciones.update', $exportacion),
+        $this->actingAs($this->usuario())->put(route('facturacion.listas.update', $exportacion),
             $this->payload($cliente, [
                 ['id' => $itemViejo->id, 'cantidad_cajas' => 7],
                 ['exportacion_producto_id' => $otro->id, 'cantidad_cajas' => 2],
@@ -196,7 +202,7 @@ class ExportacionPrecioClienteTest extends TestCase
         ]);
 
         $respuesta = $this->actingAs($this->usuario())->post(
-            route('exportaciones.clientes.productos.store', $cliente),
+            route('clientes.exportacion.productos.store', $cliente->cliente_id),
             ['exportacion_producto_id' => $producto->id, 'precio_caja' => 310.00],
         );
 
@@ -209,11 +215,23 @@ class ExportacionPrecioClienteTest extends TestCase
         // Nueva política: jefatura tiene lectura de exportaciones (no gestión).
         $jefa = User::factory()->create()->assignRole('jefatura');
 
-        $this->actingAs($jefa)->get(route('exportaciones.index'))->assertOk();
-        $this->actingAs($jefa)->get(route('exportaciones.clientes.index'))->assertOk();
+        $this->actingAs($jefa)->get(route('facturacion.listas.index'))->assertOk();
+        $this->actingAs($jefa)->get(route('productos.exportacion.index'))->assertOk();
 
-        // Pero no puede crear (la gestión es de administrador y facturación).
-        $this->actingAs($jefa)->get(route('exportaciones.clientes.create'))->assertForbidden();
-        $this->actingAs($jefa)->post(route('exportaciones.clientes.store'), [])->assertForbidden();
+        // Ve la ficha del cliente con su bloque de exportación, pero SIN los formularios:
+        // el bloque se dibuja en modo lectura para quien no tiene exportaciones.gestionar.
+        $cliente = Cliente::factory()->exportacion()->create();
+        ExportacionCliente::create([
+            'cliente_id' => $cliente->id, 'nombre' => $cliente->nombre, 'activo' => true,
+        ]);
+        $this->actingAs($jefa)->get(route('clientes.show', $cliente))->assertOk()
+            ->assertSee('Exportación')
+            ->assertDontSee(route('clientes.exportacion.update', $cliente), false);
+
+        // Y no puede gestionar nada: ni el perfil, ni la lista de precios, ni el catálogo.
+        $this->actingAs($jefa)->post(route('clientes.exportacion.habilitar', $cliente))->assertForbidden();
+        $this->actingAs($jefa)->post(route('clientes.exportacion.productos.store', $cliente), [])->assertForbidden();
+        $this->actingAs($jefa)->get(route('productos.exportacion.create'))->assertForbidden();
+        $this->actingAs($jefa)->get(route('facturacion.listas.create'))->assertForbidden();
     }
 }

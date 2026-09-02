@@ -602,7 +602,10 @@ class DashboardTest extends TestCase
 
         foreach ([
             'dashboard', 'clientes.index', 'productos.index', 'facturacion.index',
-            'documentos-recibidos.index', 'exportaciones.index', 'exportaciones.clientes.index',
+            'documentos-recibidos.index',
+            // Exportaciones se reubicó: las listas viven en Ventas y facturación y el
+            // catálogo es la segunda pestaña de Productos.
+            'facturacion.listas.index', 'productos.exportacion.index',
         ] as $ruta) {
             $this->actingAs($admin)->get(route($ruta))->assertOk();
         }

@@ -31,6 +31,29 @@
         </x-configuracion.seccion>
 
         <x-configuracion.seccion
+            titulo="Empresa exportadora"
+            descripcion="Identidad de la empresa en la lista de empaque: encabezado y número de registro FDA.">
+
+            <p class="mb-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                Estos datos son <span class="font-medium">de la empresa</span>, no del cliente ni del embarque: el mismo
+                número FDA vale para todas las listas y para todos los importadores. Hasta ahora se repetían en tres
+                sitios —la configuración, el campo FDA de cada perfil de cliente y una copia congelada dentro de cada
+                lista—, así que cambiarlo en uno lo dejaba viejo en los otros dos.
+            </p>
+            <p class="mb-3 text-xs text-gray-500">
+                El valor que se muestra es el que <span class="font-medium">de verdad va a imprimirse</span>. Mientras el
+                ajuste esté vacío responde el valor histórico del archivo de configuración, y por eso la lista de empaque
+                sigue saliendo hoy exactamente igual que antes.
+            </p>
+
+            <div class="divide-y divide-gray-100">
+                @foreach ($empresaExportadora as $ajuste)
+                    <x-configuracion.fila-fiscal :ajuste="$ajuste" />
+                @endforeach
+            </div>
+        </x-configuracion.seccion>
+
+        <x-configuracion.seccion
             titulo="Exportación"
             descripcion="Valores con los que nace un borrador de factura de exportación. El usuario puede cambiarlos en el editor antes de generar el documento.">
 

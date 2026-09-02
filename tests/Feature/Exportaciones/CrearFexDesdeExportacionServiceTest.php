@@ -410,10 +410,10 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         $this->item($lista);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('Cliente DTE no vinculado')
-            ->assertDontSee(route('exportaciones.crear-fex', $lista), false);
+            ->assertSee('Cliente del directorio no vinculado')
+            ->assertDontSee(route('facturacion.listas.facturar-rapido', $lista), false);
     }
 
     public function test_boton_crear_fex_deshabilitado_sin_lineas(): void
@@ -423,9 +423,9 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         $lista = $this->lista($clienteExpo);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('La Lista necesita productos antes de crear la FEX');
+            ->assertSee('La lista necesita productos antes de facturar');
     }
 
     public function test_boton_crear_fex_activo_cuando_corresponde(): void
@@ -436,10 +436,10 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         $this->item($lista);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('Crear factura de exportación')
-            ->assertSee(route('exportaciones.crear-fex', $lista), false);
+            ->assertSee('Facturar en el editor')
+            ->assertSee(route('facturacion.listas.facturar-rapido', $lista), false);
     }
 
     public function test_abrir_fex_aparece_tras_crearla(): void
@@ -451,10 +451,10 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         app(CrearFexDesdeExportacionService::class)->crear($lista);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista->fresh()))
+            ->get(route('facturacion.listas.show', $lista->fresh()))
             ->assertOk()
-            ->assertSee('Abrir factura de exportación')
-            ->assertDontSee('Crear factura de exportación');
+            ->assertSee('Facturas de exportación (1)')
+            ->assertDontSee('Crear FEX con estas líneas');
     }
 
     // ---------- acción web ----------
@@ -467,9 +467,9 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         $this->item($lista);
 
         $this->actingAs($this->usuario())
-            ->post(route('exportaciones.crear-fex', $lista))
+            ->post(route('facturacion.listas.facturar-rapido', $lista))
             ->assertRedirect()
-            ->assertSessionHas('status', 'Factura de exportación creada desde la Lista de Empaque.');
+            ->assertSessionHas('status', 'Factura de exportación creada desde la lista de empaque.');
 
         $lista->refresh();
         $this->assertNotNull($lista->dte_id);
@@ -485,7 +485,7 @@ class CrearFexDesdeExportacionServiceTest extends TestCase
         $dte = app(CrearFexDesdeExportacionService::class)->crear($lista);
 
         $this->actingAs($this->usuario())
-            ->post(route('exportaciones.crear-fex', $lista->fresh()))
+            ->post(route('facturacion.listas.facturar-rapido', $lista->fresh()))
             ->assertRedirect(route('facturacion.edit', $dte));
 
         $this->assertSame(1, Dte::where('tipo_dte', '11')->count());

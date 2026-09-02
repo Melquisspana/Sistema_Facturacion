@@ -54,12 +54,15 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
 
         $this->assertSame('CAROLINAS WHOLESALE LLC', $clienteExpo->nombreLegal());
 
+        // La ficha del cliente es la unica pantalla: muestra el nombre legal y, debajo,
+        // el bloque de exportacion. El alias interno del perfil ya NO se pide ni se
+        // muestra como si fuera un nombre alternativo — esa era la fuente del desfase.
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.clientes.show', $clienteExpo))
+            ->get(route('clientes.show', $clienteDte))
             ->assertOk()
             ->assertSee('CAROLINAS WHOLESALE LLC')
-            ->assertSee('Nombre legal')
-            ->assertSee('alias interno carolinas'); // nombre operativo, mostrado aparte
+            ->assertSee('Exportación')
+            ->assertDontSee('alias interno carolinas');
     }
 
     public function test_direccion_fiscal_se_muestra_desde_el_cliente_maestro(): void
@@ -72,9 +75,8 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
         $this->assertSame('13340 Mid Atlantic Blvd. Laurel, MD 20708 EEUU', $clienteExpo->direccionFiscal());
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.clientes.show', $clienteExpo))
+            ->get(route('clientes.show', $clienteDte))
             ->assertOk()
-            ->assertSee('Dirección fiscal')
             ->assertSee('13340 Mid Atlantic Blvd. Laurel, MD 20708 EEUU');
     }
 
@@ -82,25 +84,25 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
 
     public function test_direccion_entrega_bodega_solo_se_muestra_cuando_difiere(): void
     {
-        $clienteDte = Cliente::factory()->exportacion()->create(['direccion' => 'MISMA DIRECCION 123']);
-
         // Caso A: idéntica a la fiscal -> no hay dirección de entrega/bodega propia.
+        $clienteA = Cliente::factory()->exportacion()->create(['direccion' => 'MISMA DIRECCION 123']);
         $sinBodegaPropia = ExportacionCliente::create([
-            'cliente_id' => $clienteDte->id, 'nombre' => 'X', 'direccion' => 'MISMA DIRECCION 123', 'activo' => true,
+            'cliente_id' => $clienteA->id, 'nombre' => 'X', 'direccion' => 'MISMA DIRECCION 123', 'activo' => true,
         ]);
         $this->assertNull($sinBodegaPropia->direccionEntregaBodega());
 
         // Caso B: distinta -> es una dirección de entrega/bodega real, se expone.
+        $clienteB = Cliente::factory()->exportacion()->create(['direccion' => 'MISMA DIRECCION 123']);
         $conBodegaPropia = ExportacionCliente::create([
-            'cliente_id' => $clienteDte->id, 'nombre' => 'Y', 'direccion' => 'BODEGA DISTINTA 456', 'activo' => true,
+            'cliente_id' => $clienteB->id, 'nombre' => 'Y', 'direccion' => 'BODEGA DISTINTA 456', 'activo' => true,
         ]);
         $this->assertSame('BODEGA DISTINTA 456', $conBodegaPropia->direccionEntregaBodega());
 
         $resp = $this->actingAs($this->usuario())
-            ->get(route('exportaciones.clientes.show', $conBodegaPropia))
+            ->get(route('clientes.show', $clienteB))
             ->assertOk();
-        $resp->assertSee('Dirección de entrega/bodega');
-        $resp->assertSee('BODEGA DISTINTA 456');
+        $resp->assertSee('Dirección de entrega');
+        $resp->assertSee('BODEGA DISTINTA 456', false);
     }
 
     // ---------- 4: no se puede desincronizar nombre/dirección fiscal desde esta pantalla ----------
@@ -114,25 +116,27 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
             'cliente_id' => $clienteDte->id, 'nombre' => 'alias original', 'direccion' => null, 'activo' => true,
         ]);
 
-        // Intento de "editar" el perfil de exportación con valores que, si se
-        // filtraran hacia el Cliente maestro, lo desincronizarían.
+        // Intento de "editar" el perfil con valores que, si se filtraran hacia el
+        // Cliente maestro, lo desincronizarían. El formulario nuevo ni siquiera pide
+        // el nombre, así que se manda a mano para probar el caso hostil.
         $this->actingAs($this->usuario())
-            ->put(route('exportaciones.clientes.update', $clienteExpo), [
+            ->put(route('clientes.exportacion.update', $clienteDte), [
                 'nombre' => 'intento de cambiar el nombre legal',
                 'direccion' => 'intento de cambiar la direccion fiscal',
-                'activo' => true,
             ])
-            ->assertRedirect(route('exportaciones.clientes.show', $clienteExpo));
+            ->assertRedirect(route('clientes.show', $clienteDte));
 
         // El Cliente maestro es inmune: la pantalla nunca toca sus columnas.
         $clienteDte->refresh();
         $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteDte->nombre);
         $this->assertSame('DIRECCION FISCAL ORIGINAL', $clienteDte->direccion);
 
-        // Lo único que cambió es el perfil operativo propio.
+        // Y el «nombre» que viajaba en la petición se ignora: el perfil mantiene el
+        // del directorio, que es la fuente de verdad.
         $clienteExpo->refresh();
-        $this->assertSame('intento de cambiar el nombre legal', $clienteExpo->nombre);
-        $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteExpo->nombreLegal()); // sigue resolviendo al maestro
+        $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteExpo->nombre);
+        $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteExpo->nombreLegal());
+        $this->assertSame('intento de cambiar la direccion fiscal', $clienteExpo->direccion);
     }
 
     // ---------- 5: la FEX usa el Cliente maestro ----------
@@ -227,9 +231,10 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
         ]);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.clientes.show', $clienteExpo))
+            ->get(route('clientes.show', $diamond))
             ->assertOk()
-            ->assertSee('Documento provisional');
+            ->assertSee('Documento fiscal provisional')
+            ->assertSee('no se le puede facturar');
     }
 
     // ---------- 8: solo clientes de exportación activos aparecen al crear lista ----------
@@ -240,7 +245,7 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
         ExportacionCliente::create(['nombre' => 'CLIENTE INACTIVO OCULTO', 'activo' => false]);
 
         $resp = $this->actingAs($this->usuario())
-            ->get(route('exportaciones.create'))
+            ->get(route('facturacion.listas.create'))
             ->assertOk();
 
         $resp->assertSee('CLIENTE ACTIVO VISIBLE');

@@ -50,7 +50,7 @@
                     <div class="{{ $card }}">
                         <p class="text-xs text-gray-400 dark:text-paper-500">Listas de empaque (mes)</p>
                         <p class="mt-1 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">{{ number_format($stats['listas_recientes']) }}</p>
-                        <a href="{{ route('exportaciones.index') }}" class="text-xs text-indigo-600 hover:underline dark:text-indigo-400">Ver listas</a>
+                        <a href="{{ route('facturacion.listas.index') }}" class="text-xs text-indigo-600 hover:underline dark:text-indigo-400">Ver listas</a>
                     </div>
                 @endif
                 @if ($esAdmin)
@@ -148,7 +148,7 @@
                             @endif
                             {{-- Crear lista de empaque es ESCRITURA: solo con permiso de gestión. --}}
                             @can('exportaciones.gestionar')
-                                <a href="{{ route('exportaciones.create') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Nueva lista de empaque</a>
+                                <a href="{{ route('facturacion.listas.create') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Nueva lista de empaque</a>
                             @endcan
                             @if ($veOperativos)
                                 <a href="{{ route('documentos-recibidos.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Compras</a>

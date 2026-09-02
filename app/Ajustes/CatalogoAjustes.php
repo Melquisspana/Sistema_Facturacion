@@ -1228,6 +1228,68 @@ class CatalogoAjustes
             ),
 
             // ================================================================
+            // EMPRESA EXPORTADORA (lista de empaque). Son datos DE LA EMPRESA,
+            // no del cliente ni del embarque: el mismo número de registro FDA
+            // vale para todas las listas y para todos los importadores.
+            //
+            // Vivían en tres sitios a la vez —config, el campo FDA de cada perfil
+            // de cliente, y una copia congelada por lista—, así que editarlo en
+            // uno lo dejaba viejo en los otros dos. Se declaran acá para que haya
+            // UN lugar donde mirarlos.
+            //
+            // Persistencia::Ninguna y Editabilidad::Futura, igual que sus vecinos
+            // de esta sección: hoy el consumidor (App\Support\Exportaciones\
+            // DatosExportador) los lee de config como respaldo, y abrir el campo
+            // antes de cambiar eso daría una pantalla que dice «guardado» sin
+            // cambiar la lista siguiente.
+            // ================================================================
+            DefinicionAjuste::hacer(
+                clave: 'exportaciones.fda_reg_number',
+                seccion: 'fiscal_parametros',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Futura,
+                persistencia: Persistencia::Ninguna,
+                etiqueta: 'Número de registro FDA de la empresa',
+                descripcion: 'Va en la casilla FDA de la lista de empaque. Es el de la EMPRESA exportadora; el del importador, si lo tiene, se guarda en la ficha de ese cliente.',
+                claveConfig: 'exportaciones.fda_reg_number',
+                porDefecto: '',
+                reglas: ['maxlen:50'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'exportaciones.exportador_nombre',
+                seccion: 'fiscal_parametros',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Futura,
+                persistencia: Persistencia::Ninguna,
+                etiqueta: 'Nombre del exportador (lista de empaque)',
+                descripcion: 'Encabezado de la lista. Sin configurar se usa el valor histórico y, si tampoco existe, la razón social de la empresa emisora.',
+                claveConfig: 'exportaciones.exportador_nombre',
+                porDefecto: '',
+                reglas: ['maxlen:255'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'exportaciones.exportador_direccion',
+                seccion: 'fiscal_parametros',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Futura,
+                persistencia: Persistencia::Ninguna,
+                etiqueta: 'Dirección del exportador (lista de empaque)',
+                descripcion: 'Encabezado de la lista. Mismo respaldo que el nombre: valor histórico y, en su defecto, la dirección de la empresa emisora.',
+                claveConfig: 'exportaciones.exportador_direccion',
+                porDefecto: '',
+                reglas: ['maxlen:255'],
+            ),
+
+            // ================================================================
             // INVALIDACIÓN. Los datos del responsable y del solicitante son
             // obligatorios en el esquema del MH y hoy se leen del archivo del
             // servidor: son datos de PERSONAS, cambian con la plantilla de la

@@ -7,6 +7,11 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white shadow sm:rounded-lg p-6">
 
+                {{-- Selector de la entrada única «Productos». Es lo ÚNICO que se agregó a
+                     esta pantalla: los filtros, las columnas, la paginación, la policy y
+                     el controlador de productos nacionales quedaron exactamente igual. --}}
+                <x-productos.selector activo="nacionales" />
+
                 @if (session('status'))
                     <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
                         {{ session('status') }}

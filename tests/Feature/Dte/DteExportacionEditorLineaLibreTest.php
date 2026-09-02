@@ -81,7 +81,7 @@ class DteExportacionEditorLineaLibreTest extends TestCase
             ->get(route('facturacion.edit', $dte))
             ->assertOk()
             ->assertSee('Lista de Empaque')
-            ->assertSee(route('exportaciones.show', $dte->exportacionOrigen), false);
+            ->assertSee(route('facturacion.listas.show', $dte->exportacionOrigen), false);
     }
 
     public function test_editor_fex_muestra_etiqueta_cajas_y_precio_por_caja(): void

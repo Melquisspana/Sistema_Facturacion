@@ -79,7 +79,7 @@ class EliminarFlujoPrepararFacturaTest extends TestCase
         $usuario = $this->usuario();
         foreach ([$listaA, $listaB, $listaC, $listaD->fresh()] as $lista) {
             $this->actingAs($usuario)
-                ->get(route('exportaciones.show', $lista))
+                ->get(route('facturacion.listas.show', $lista))
                 ->assertOk()
                 ->assertDontSee('Preparar factura de exportación');
         }
@@ -93,10 +93,11 @@ class EliminarFlujoPrepararFacturaTest extends TestCase
         $this->item($lista);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista))
+            ->get(route('facturacion.listas.show', $lista))
             ->assertOk()
-            ->assertSee('Crear factura de exportación')
-            ->assertDontSee('Abrir factura de exportación')
+            ->assertSee('Crear FEX con estas líneas')
+            ->assertSee('Facturar en el editor')
+            ->assertSee('Facturas de exportación (0)')
             ->assertDontSee('Preparar factura de exportación');
     }
 
@@ -109,10 +110,10 @@ class EliminarFlujoPrepararFacturaTest extends TestCase
         app(CrearFexDesdeExportacionService::class)->crear($lista);
 
         $this->actingAs($this->usuario())
-            ->get(route('exportaciones.show', $lista->fresh()))
+            ->get(route('facturacion.listas.show', $lista->fresh()))
             ->assertOk()
-            ->assertSee('Abrir factura de exportación')
-            ->assertDontSee('Crear factura de exportación')
+            ->assertSee('Facturas de exportación (1)')
+            ->assertDontSee('Crear FEX con estas líneas')
             ->assertDontSee('Preparar factura de exportación');
     }
 
