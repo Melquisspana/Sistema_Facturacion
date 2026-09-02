@@ -60,6 +60,20 @@ class PpqSincronizarAlbaranesCommand extends Command
 
     public function handle(PpqGmailService $gmail, AlbaranPersistidor $persistidor): int
     {
+        // PRIMERA puerta, antes de mirar siquiera si Gmail está disponible: con el
+        // interruptor apagado, una corrida que ESCRIBE no llega a tocar el correo. Es la
+        // misma llave que gobierna la tarea programada (ver routes/console.php), y está
+        // acá además de allá porque `schedule:run` no es la única forma de invocar esto:
+        // un `--aplicar` tecleado de más, o un script viejo, entrarían por la puerta de
+        // al lado. El dry-run NO se bloquea: es el paso con el que se comprueba que todo
+        // anda antes de encender la automática.
+        if ((bool) $this->option('aplicar') && ! config('ppq.albaranes.sincronizacion_automatica', false)) {
+            $this->error('La sincronización automática de albaranes está apagada (PPQ_ALBARANES_AUTO_SYNC=false): no se consultó Gmail ni se escribió nada.');
+            $this->line('Probá primero en seco —sin --aplicar— y encendé el interruptor cuando el resultado sea el esperado. Ver docs/PPQ_ALBARANES_AUTOMATICO.md.');
+
+            return self::FAILURE;
+        }
+
         if (! $gmail->disponible()) {
             $this->error('Gmail no está disponible (integración deshabilitada o cuenta desconectada). Conectá la cuenta antes de sincronizar.');
 

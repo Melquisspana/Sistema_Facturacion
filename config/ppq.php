@@ -45,6 +45,29 @@ return [
         'storage_dir' => env('PPQ_ALBARANES_STORAGE_DIR', 'ppq/albaranes'),
 
         /*
+        | INTERRUPTOR DE LA SINCRONIZACIÓN AUTOMÁTICA. Apagado por defecto.
+        |
+        | `ppq.gmail.enabled` decide si el sistema puede hablar con Gmail; ESTE decide
+        | si además lo hace SOLO, cada cinco minutos, escribiendo en `ppq_albaranes`.
+        | Son dos cosas distintas y por eso son dos llaves: con una sola no habría forma
+        | de hacer la prueba manual —que necesita Gmail encendido— sin encender a la vez
+        | la automática.
+        |
+        | Sin esto, el día que alguien registre la tarea `schedule:run` en el servidor,
+        | PPQ empezaría a consultar Gmail por su cuenta sin que nadie lo hubiera
+        | decidido: la definición programada existe desde hace tiempo y no tenía ningún
+        | `when()`. Un módulo no puede encenderse como efecto secundario de instalar el
+        | planificador.
+        |
+        | Gobierna DOS puertas, no una: la tarea programada y el propio comando cuando
+        | se le pasa `--aplicar`. Así una invocación accidental a mano tampoco consulta
+        | Gmail con el interruptor apagado. El dry-run (sin `--aplicar`) sigue
+        | disponible: es justamente el paso previo con el que se comprueba que todo
+        | funciona ANTES de encender esto. Ver docs/PPQ_ALBARANES_AUTOMATICO.md.
+        */
+        'sincronizacion_automatica' => (bool) env('PPQ_ALBARANES_AUTO_SYNC', false),
+
+        /*
         | Código con el que el cliente identifica el albarán de ENTREGA. Los demás
         | (AC02 avería, AC04 devolución) son de CRÉDITO y no prueban ninguna entrega,
         | aunque compartan la orden de compra con el CCF.

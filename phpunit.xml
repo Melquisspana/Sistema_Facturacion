@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
          colors="true"
 >
     <testsuites>
@@ -43,6 +43,45 @@
              el .env real de la máquina. Los tests del punto de venta predeterminado lo fijan
              explícitamente con config()->set(). -->
         <env name="DTE_PUNTO_VENTA_PREDETERMINADO" value=""/>
+        <!-- DIRECCIONES DE LOS SERVICIOS DEL MH. Se fijan acá para que la suite no
+             dependa del .env de la máquina: el candado de endpoint oficial compara la
+             URL RESUELTA contra la oficial, y esa resolución da prioridad a estas claves.
+             Una máquina con un proxy en DTE_TRANSMISION_URL, o con un host copiado a
+             mano, hacía pasar o fallar pruebas por motivos ajenos al código.
+
+             LOS OCHO OVERRIDES POR AMBIENTE VAN VACÍOS, y es deliberado. Vacío no
+             significa «sin endpoint»: significa «sin override», y entonces la URL la
+             construye App\Support\Dte\EndpointsHacienda con los hosts y rutas OFICIALES
+             que lleva incorporados. El resultado es el mismo endpoint oficial, resuelto
+             siempre igual y sin mirar el entorno.
+
+             Escribir aquí las URLs oficiales en vez de dejarlas vacías PARECE más
+             explícito y es peor: `dte.ambientes.*.{...}_url` es el override de máxima
+             prioridad, así que ocuparlo desactiva la palanca con la que las pruebas del
+             candado apuntan a un host impostor para comprobar que se bloquea. Se probó,
+             y dejaba EndpointOficialHaciendaTest en rojo.
+
+             FIJAR ESTO NO ABRE NADA: la red sigue cerrada (ver más abajo). -->
+        <env name="DTE_TEST_AUTH_URL" value="" force="true"/>
+        <env name="DTE_TEST_RECEPCION_URL" value="" force="true"/>
+        <env name="DTE_TEST_ANULACION_URL" value="" force="true"/>
+        <env name="DTE_TEST_CONSULTA_URL" value="" force="true"/>
+        <env name="DTE_PROD_AUTH_URL" value="" force="true"/>
+        <env name="DTE_PROD_RECEPCION_URL" value="" force="true"/>
+        <env name="DTE_PROD_ANULACION_URL" value="" force="true"/>
+        <env name="DTE_PROD_CONSULTA_URL" value="" force="true"/>
+        <!-- Vacío por la misma razón, y además porque url_base sustituye el host de los
+             DOS ambientes a la vez: fijarlo a cualquier host haría que producción
+             resolviera contra él. -->
+        <env name="DTE_TRANSMISION_URL" value="" force="true"/>
+        <env name="DTE_TRANSMISION_ENDPOINT_AUTH" value="/seguridad/auth" force="true"/>
+        <env name="DTE_TRANSMISION_ENDPOINT_RECEPCION" value="/fesv/recepciondte" force="true"/>
+        <env name="DTE_TRANSMISION_ENDPOINT_ANULACION" value="/fesv/anulardte" force="true"/>
+        <env name="DTE_TRANSMISION_ENDPOINT_CONSULTA" value="/fesv/recepcion/consultadte" force="true"/>
+        <!-- Firmador local y URL pública del QR: mismos valores que la plantilla, para
+             que una máquina con el firmador en otro puerto no altere las pruebas. -->
+        <env name="DTE_FIRMADOR_URL" value="http://localhost:8080/firmardocumento" force="true"/>
+        <env name="DTE_PDF_QR_URL" value="https://admin.factura.gob.sv/consultaPublica" force="true"/>
         <env name="DTE_FIRMA_ENABLED" value="false"/>
         <env name="DTE_FIRMADOR_MOCK" value="false"/>
         <env name="MH_MOCK" value="false"/>
@@ -77,5 +116,11 @@
              el módulo APAGADO, igual que un servidor sin lector. Los tests del módulo lo
              encienden explícitamente con config()->set('asistencia.enabled', true). -->
         <env name="ASISTENCIA_ENABLED" value="false"/>
+        <!-- Sincronizaciones AUTOMÁTICAS (PPQ/albaranes desde Gmail y Compras desde IMAP):
+             la suite arranca con las dos apagadas, igual que un servidor recién instalado
+             y sin importar el .env de la máquina. Los tests que prueban el camino
+             encendido lo hacen con config()->set(). -->
+        <env name="PPQ_ALBARANES_AUTO_SYNC" value="false" force="true"/>
+        <env name="DOCUMENTOS_RECIBIDOS_AUTO_SYNC" value="false" force="true"/>
     </php>
 </phpunit>

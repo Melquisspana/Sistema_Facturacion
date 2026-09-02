@@ -50,11 +50,101 @@ npm run build
 
 ## 4. Base de datos
 
+### Decisión de alcance (tomada en el ensayo productivo)
+
+- **Se aplican las 34 migraciones pendientes, completas y de una sola vez**, incluidas
+  las **7 de Asistencia**. Estas crean tablas y quedan VACÍAS: no mueven ni un dato, no
+  tocan ninguna tabla existente y no encienden nada.
+
+      2026_08_20_200000_create_asistencia_dispositivos_table.php
+      2026_08_20_200100_create_asistencia_empleados_table.php
+      2026_08_20_200200_create_asistencia_huellas_table.php
+      2026_08_20_200300_create_asistencia_marcaciones_table.php
+      2026_08_21_090000_unicidad_de_ranura_activa_en_asistencia_huellas.php
+      2026_08_22_090000_add_indice_sensor_to_asistencia_dispositivos.php
+      2026_08_22_090100_create_asistencia_ordenes_enrolamiento_table.php
+
+  Dejarlas fuera obligaría a migrar por rutas parciales, que es justo lo que no se
+  hace (ver abajo). Aplicarlas cuesta unas tablas vacías; omitirlas cuesta un esquema
+  a medias que nadie sabría reconstruir después.
+
+- **Asistencia NO se configura ni se activa.** `ASISTENCIA_ENABLED` se queda en
+  `false` (su valor por defecto): sin eso, el módulo no expone rutas, ni pantallas, ni
+  comandos. Las tablas existen y nadie las usa.
+
+- **El firmware queda fuera del despliegue.** El lector de huella (`firmware/`) no es
+  parte de la aplicación: no se compila, no se sube y no se toca en esta ventana.
+
+- **No se ejecutan migraciones por rutas parciales.** Nada de `migrate --path=...`
+  para elegir un subconjunto. Migrar a trozos deja la tabla `migrations` diciendo una
+  cosa y el esquema otra, y el siguiente `migrate` aplica lo que quedó suelto en un
+  orden que ya no es el de los archivos. Se migra todo o no se migra.
+
+  > La excepción histórica es `docs/MIGRACION_PRODUCCION_CONFIGURACION.md`, que sí
+  > aplicaba por ruta: fue un procedimiento de UNA vez para el Centro de
+  > Configuración, con su propio ensayo y su propio rollback. No es el modelo a
+  > seguir acá y no se mezcla con este paso.
+
+### Comprobar antes de aplicar
+
+```cmd
+php artisan migrate:status
+```
+Contar las pendientes: tienen que ser **exactamente 34**. Si son más o menos,
+**detenerse** — significa que el código desplegado no es el que se ensayó, y aplicar
+un conjunto distinto del que se probó es exactamente lo que el ensayo existía para
+evitar.
+
+### Aplicar
+
 ```cmd
 php artisan migrate --force
 ```
 Revisar la salida: si alguna migración falla, **detenerse** y restaurar desde el
 backup del paso 1 antes de reintentar.
+
+## 4.1 Enlace de `public/storage`
+
+`storage:link` crea el enlace simbólico `public/storage` → `storage/app/public`. Sin
+él, todo lo que la app publique por esa vía devuelve 404; con él mal apuntado, sirve
+archivos de otro sitio. El comando **no es idempotente de forma segura**: si el enlace
+ya existe, aborta con un error, y con `--force` lo REEMPLAZA sin mirar a dónde
+apuntaba. Por eso este paso comprueba antes de tocar.
+
+**Comprobar primero** (PowerShell, no hace ningún cambio):
+
+```powershell
+$destino = Join-Path (Get-Location) 'storage\app\public'
+$enlace   = Join-Path (Get-Location) 'public\storage'
+if (-not (Test-Path $enlace)) {
+    'FALTA: hay que crear el enlace'
+} else {
+    $item = Get-Item $enlace -Force
+    if ($item.LinkType -eq $null) {
+        'OCUPADO: public\storage existe pero NO es un enlace — DETENERSE'
+    } elseif ((Resolve-Path $item.Target).Path -eq (Resolve-Path $destino).Path) {
+        'CORRECTO: ya apunta a storage\app\public — no hacer nada'
+    } else {
+        'INCORRECTO: apunta a ' + $item.Target + ' — DETENERSE'
+    }
+}
+```
+
+Según el resultado:
+
+- **CORRECTO** → no ejecutar nada. El enlace ya está bien y volver a crearlo solo
+  puede empeorarlo.
+- **FALTA** → crear el enlace, y solo entonces:
+  ```cmd
+  php artisan storage:link
+  ```
+- **INCORRECTO** u **OCUPADO** → **detenerse**. No se reemplaza automáticamente: lo
+  que hay ahí puede ser un directorio real con archivos dentro, o un enlace a una
+  ubicación que alguien puso a propósito. Borrarlo con `--force` destruiría lo
+  primero sin aviso. Hay que mirar qué es, decidir a mano y dejar constancia de la
+  decisión antes de seguir con el despliegue.
+
+Nunca usar `php artisan storage:link --force` como paso rutinario del despliegue.
 
 ## 5. Caches
 
@@ -96,6 +186,67 @@ con el código nuevo). Correrlo siempre que el deploy toque algo que un job ejec
   ```cmd
   php artisan backup:mysql-diario --origen=manual
   ```
+
+## 7.1 Qué se encenderá el día que exista `schedule:run`
+
+Hoy **no hay ninguna tarea de Windows que ejecute `php artisan schedule:run`**, así
+que las tareas de `routes/console.php` están definidas y dormidas. Este inventario
+existe para que el día que se registre esa tarea nadie se lleve una sorpresa: se
+activan **las cuatro a la vez**, sin más aviso.
+
+| Tarea | Cuándo | Interruptor propio | Qué toca |
+|---|---|---|---|
+| `backup:clean` | 01:00 diario | ninguno | solo los backups de spatie en el disco `local` |
+| `backup:run` | 01:30 diario | ninguno | zip de `storage/app` + dump completo de la BD → disco `local` |
+| `ppq:sincronizar-albaranes --aplicar` | cada 5 min | `PPQ_ALBARANES_AUTO_SYNC` (apagado por defecto) | lee Gmail; escribe solo `ppq_albaranes` |
+| `compras:sincronizar --aplicar` | cada 15 min | `DOCUMENTOS_RECIBIDOS_AUTO_SYNC` (apagado por defecto) | lee el buzón IMAP; escribe solo `documentos_recibidos` |
+
+**Ninguna de las cuatro se enciende sola.** Las dos que salen a Internet están detrás
+de su propio interruptor, apagado por defecto: PPQ tras `PPQ_ALBARANES_AUTO_SYNC` y
+Compras tras `DOCUMENTOS_RECIBIDOS_AUTO_SYNC`. Registrar `schedule:run` no activa
+ninguna de las dos; hace falta encenderla a propósito en el `.env`.
+
+> PPQ **no tenía** ese interruptor: era la única de las cuatro sin `when()`, así que
+> instalar el planificador la habría puesto a consultar Gmail cada cinco minutos sin
+> que nadie lo decidiera. Se añadió junto con este procedimiento. La llave protege
+> también al comando cuando se le pasa `--aplicar`, para que una invocación accidental
+> a mano tampoco toque el correo. El procedimiento de encendido —probar en seco
+> primero, encender después— está en `docs/PPQ_ALBARANES_AUTOMATICO.md`.
+
+Los dos respaldos (`backup:clean` y `backup:run`) no tienen interruptor y sí se
+activan al registrar la tarea. Es lo esperado: no salen de la máquina y no dependen de
+ninguna credencial externa.
+
+### Solape con la tarea de Windows «DTE Backup Diario»
+
+Son **dos respaldos distintos de la misma base**, no una duplicación dañina:
+
+| | `backup:run` (spatie, 01:30) | `backup:mysql-diario` (Windows, 02:00) |
+|---|---|---|
+| Qué guarda | `storage/app` + dump de la BD, en un `.zip` | solo el dump de la BD, en un `.sql` |
+| Dónde | disco `local` → `storage/app/private/<APP_NAME>/` | disco `backups` → `backups/auto-*.sql` |
+| Quién lo limpia | `backup:clean`, y solo su propia carpeta | el propio comando, y solo sus `auto-*.sql` |
+| Verificación | ninguna | SHA-256 + registro en `respaldo_ejecuciones` |
+
+Ninguno de los dos borra archivos del otro, y ninguno escribe donde escribe el otro.
+**No son intercambiables**: solo el de Windows alimenta `RespaldoEjecucion::hayValidoHoy()`
+y el «Backup del día» del Dashboard, y solo el de spatie incluye los archivos de
+`storage/app`. Retirar cualquiera de los dos pierde algo.
+
+Lo que sí conviene vigilar, sin que hoy sea un problema:
+
+1. **Dos dumps completos cada noche, con 30 minutos de diferencia.** Cuesta tiempo y
+   disco. Si `backup:run` se alargara más de media hora, los dos dumps correrían a la
+   vez sobre la misma base; ambos son de solo lectura, así que el riesgo es de carga,
+   no de integridad. Si molesta, lo correcto es separar los horarios, no quitar uno.
+2. **Los avisos de spatie quedan APAGADOS mientras `BACKUP_NOTIFICACIONES_CORREO` no
+   tenga un destinatario real.** No se manda nada al centinela: sin destinatario, el
+   canal de correo de las seis notificaciones queda vacío y no hay ningún intento de
+   entrega, ni con `MAIL_MAILER=smtp`. El respaldo se hace igual y Salud del sistema
+   sigue avisando —en amarillo— que los avisos no están configurados. Definir la
+   variable es lo que hace falta para que alguien se entere de un respaldo fallido.
+
+No se ha modificado ninguna programación: este apartado es el inventario que faltaba.
 
 ## 8. Verificar puertos
 

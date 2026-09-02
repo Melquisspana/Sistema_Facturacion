@@ -38,6 +38,12 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
         // sin esto, una marca escrita por un test se filtraría al siguiente.
         Configuracion::olvidarCache();
         $this->seed(DatosInicialesNegritaSeeder::class);
+
+        // La sincronización automática se prueba encendida: estas pruebas ejercitan la
+        // LÓGICA de la sincronización (ventana, idempotencia, salas, excepciones), no el
+        // interruptor. El interruptor tiene sus propias pruebas en
+        // PpqSincronizacionAutomaticaTest, y arranca apagado en toda la suite.
+        config(['ppq.albaranes.sincronizacion_automatica' => true]);
     }
 
     /** Marca de progreso guardada (último día leído completo), o null. */

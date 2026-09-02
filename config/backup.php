@@ -12,6 +12,17 @@ use Spatie\Backup\Tasks\Cleanup\Strategies\DefaultStrategy;
 use Spatie\Backup\Tasks\Monitor\HealthChecks\MaximumAgeInDays;
 use Spatie\Backup\Tasks\Monitor\HealthChecks\MaximumStorageInMegabytes;
 
+/*
+| CANALES DE AVISO, resueltos UNA vez para las seis notificaciones.
+|
+| Vacío = no se avisa por ningún medio. Es lo que corresponde cuando
+| BACKUP_NOTIFICACIONES_CORREO no tiene un destinatario real: el centinela sirve para
+| que spatie arranque, no para recibir correo, y con MAIL_MAILER=smtp mandarle avisos
+| sería un intento de entrega diario a un dominio inexistente.
+| Ver App\Support\Sistema\NotificacionesRespaldo::canalesDeAviso().
+*/
+$canalesDeAvisoDeRespaldo = NotificacionesRespaldo::canalesDeAviso(env('BACKUP_NOTIFICACIONES_CORREO'));
+
 return [
 
     'backup' => [
@@ -222,12 +233,12 @@ return [
      */
     'notifications' => [
         'notifications' => [
-            BackupHasFailedNotification::class => ['mail'],
-            UnhealthyBackupWasFoundNotification::class => ['mail'],
-            CleanupHasFailedNotification::class => ['mail'],
-            BackupWasSuccessfulNotification::class => ['mail'],
-            HealthyBackupWasFoundNotification::class => ['mail'],
-            CleanupWasSuccessfulNotification::class => ['mail'],
+            BackupHasFailedNotification::class => $canalesDeAvisoDeRespaldo,
+            UnhealthyBackupWasFoundNotification::class => $canalesDeAvisoDeRespaldo,
+            CleanupHasFailedNotification::class => $canalesDeAvisoDeRespaldo,
+            BackupWasSuccessfulNotification::class => $canalesDeAvisoDeRespaldo,
+            HealthyBackupWasFoundNotification::class => $canalesDeAvisoDeRespaldo,
+            CleanupWasSuccessfulNotification::class => $canalesDeAvisoDeRespaldo,
         ],
 
         /*
@@ -247,8 +258,14 @@ return [
              * TLD reservado .invalid. Salud del sistema lo reconoce y avisa que las
              * notificaciones no están configuradas, en vez de dejar el 'your@example.com'
              * de la plantilla, que parecía un destinatario ya puesto.
+             *
+             * La cadena VACÍA se normaliza al mismo centinela: `.env.example` declara la
+             * clave sin valor (es como se dice «rellenar en cada servidor»), y el default
+             * de `env()` no cubre ese caso porque la clave sí existe. Spatie validaba
+             * entonces `''` como correo y tumbaba el arranque. Ver
+             * {@see NotificacionesRespaldo::destinatarioConfigurado()}.
              */
-            'to' => env('BACKUP_NOTIFICACIONES_CORREO', NotificacionesRespaldo::SIN_CONFIGURAR),
+            'to' => NotificacionesRespaldo::destinatarioConfigurado(env('BACKUP_NOTIFICACIONES_CORREO')),
 
             'from' => [
                 'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),

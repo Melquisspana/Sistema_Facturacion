@@ -44,6 +44,19 @@ Schedule::command('backup:run')->daily()->at('01:30');
 */
 Schedule::command('ppq:sincronizar-albaranes --aplicar --solape=1')
     ->everyFiveMinutes()
+    // INTERRUPTOR. Igual que en Compras: `when()` se evalúa cuando el planificador decide
+    // si corre, no al registrar la tarea, así que la definición SIEMPRE existe —se puede
+    // inspeccionar con `schedule:list` y probar— pero no ejecuta nada hasta que se
+    // enciende en .env. Apagado por defecto.
+    //
+    // Sin esto, esta tarea era la ÚNICA de las cuatro sin llave propia: el día que el
+    // servidor registrara `schedule:run`, PPQ habría empezado a consultar Gmail cada
+    // cinco minutos y a escribir en `ppq_albaranes` sin que nadie lo decidiera. Instalar
+    // el planificador no puede encender un módulo de rebote.
+    //
+    // El comando comprueba la MISMA llave cuando recibe `--aplicar`, así que una
+    // invocación accidental por fuera del planificador tampoco consulta el correo.
+    ->when(fn () => (bool) config('ppq.albaranes.sincronizacion_automatica', false))
     ->withoutOverlapping(10)
     ->appendOutputTo(storage_path('logs/ppq-albaranes.log'));
 
