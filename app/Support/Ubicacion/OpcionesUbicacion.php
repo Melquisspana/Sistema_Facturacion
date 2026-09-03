@@ -14,7 +14,7 @@ use Illuminate\Support\Collection;
  *
  * Resuelve dos trampas de los datos:
  *  1. `municipios.nombre` quedó con el nombre PRE-2024 ("Ilobasco") mientras `codigo` ya
- *     es el de la agrupación nueva (10 = Cabañas Oeste) → se muestra `nombreFiscal()`.
+ *     es el de la agrupación nueva (11 = Cabañas Oeste) → se muestra `nombreFiscal()`.
  *  2. Varias filas de un departamento comparten el mismo código CAT-013 (son la misma
  *     agrupación) → se ofrece UNA sola opción por (departamento, código).
  *

@@ -89,12 +89,13 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     public function test_cabanas_oeste_con_ilobasco_es_valido(): void
     {
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasOeste = $this->municipio('10', '09');
+        $cabanasOeste = $this->municipio('11', '09');
 
-        // Datos del catálogo: Ilobasco es distrito 03 de Cabañas, agrupación Cabañas Oeste.
+        // Datos del catálogo oficial vigente (2026-07-01): Ilobasco es el distrito 03 de
+        // Cabañas y su agrupación, Cabañas Oeste, es el CAT-013 11.
         $this->assertSame('03', $ilobasco->codigo);
         $this->assertSame('Cabañas Oeste', $ilobasco->municipio);
-        $this->assertSame('10', $ilobasco->municipio_codigo);
+        $this->assertSame('11', $ilobasco->municipio_codigo);
 
         $this->assertNull(CoherenciaUbicacion::problema(
             $ilobasco->departamento_id, $cabanasOeste->id, $ilobasco->id
@@ -105,7 +106,7 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     public function test_cabanas_este_con_ilobasco_es_invalido(): void
     {
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasEste = $this->municipio('11', '09');
+        $cabanasEste = $this->municipio('10', '09');
 
         $problema = CoherenciaUbicacion::problema(
             $ilobasco->departamento_id, $cabanasEste->id, $ilobasco->id
@@ -163,11 +164,11 @@ class CoherenciaMunicipioDistritoTest extends TestCase
         $this->assertStringContainsString('d.departamento_id === m.departamento_id', $html);
         // Y cada distrito viaja con su municipio_codigo para poder filtrarlo.
         $this->assertMatchesRegularExpression('/"municipio_codigo":"\d{2}"/', $html);
-        // Ilobasco debe viajar marcado con el código de Cabañas Oeste (10), no con el de
-        // Cabañas Este (11). Se compara sin el acento porque el JSON del atributo escapa
-        // la ñ, lo que no es objeto de esta prueba.
+        // Ilobasco debe viajar marcado con el código de Cabañas Oeste (11 en el catálogo
+        // vigente), no con el de Cabañas Este (10). Se compara sin el acento porque el JSON
+        // del atributo escapa la ñ, lo que no es objeto de esta prueba.
         $this->assertMatchesRegularExpression(
-            '/"nombre":"Ilobasco","municipio":"Caba\S*as Oeste","municipio_codigo":"10"/',
+            '/"nombre":"Ilobasco","municipio":"Caba\S*as Oeste","municipio_codigo":"11"/',
             $html
         );
     }
@@ -212,20 +213,20 @@ class CoherenciaMunicipioDistritoTest extends TestCase
 
     public function test_el_selector_muestra_el_municipio_fiscal_2024_y_no_el_nombre_anterior(): void
     {
-        // La fila de código 10 en Cabañas debe mostrarse como "Cabañas Oeste" aunque su
+        // La fila de código 11 en Cabañas debe mostrarse como "Cabañas Oeste" aunque su
         // columna `nombre` diga "Ilobasco" (nombre municipal anterior).
         $depto = Departamento::where('codigo', '09')->firstOrFail();
         $municipio = Municipio::firstOrCreate(
             ['departamento_id' => $depto->id, 'nombre' => 'Ilobasco'],
-            ['codigo' => '10', 'activo' => true],
+            ['codigo' => '11', 'activo' => true],
         );
-        $municipio->update(['codigo' => '10']);
+        $municipio->update(['codigo' => '11']);
 
         $this->assertSame('Cabañas Oeste', $municipio->fresh()->nombreFiscal());
         $this->assertSame('Ilobasco', $municipio->fresh()->nombre, 'El nombre histórico no debe destruirse.');
 
-        // Y la fila 11 como "Cabañas Este".
-        $este = $this->municipio('11', '09');
+        // Y la fila 10 como "Cabañas Este".
+        $este = $this->municipio('10', '09');
         $this->assertSame('Cabañas Este', $este->nombreFiscal());
     }
 
@@ -254,7 +255,7 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasEste = $this->municipio('11', '09');
+        $cabanasEste = $this->municipio('10', '09');
 
         $this->actingAs($this->admin())
             ->post(route('clientes.sucursales.store', $cliente), [
@@ -274,7 +275,7 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasOeste = $this->municipio('10', '09');
+        $cabanasOeste = $this->municipio('11', '09');
 
         $this->actingAs($this->admin())
             ->post(route('clientes.sucursales.store', $cliente), [
@@ -321,7 +322,7 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     public function test_generar_falla_si_el_par_municipio_distrito_es_incompatible(): void
     {
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasEste = $this->municipio('11', '09');
+        $cabanasEste = $this->municipio('10', '09');
 
         ['dte' => $ccf] = $this->ccfConSala([
             'departamento_id' => $ilobasco->departamento_id,
@@ -378,7 +379,7 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasEste = $this->municipio('11', '09');
+        $cabanasEste = $this->municipio('10', '09');
 
         // Se fuerza la incoherencia en BD (saltando la validación del formulario), como
         // podría existir en datos históricos cargados antes de esta regla.
@@ -403,8 +404,8 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
         $ilobasco = $this->distrito('Ilobasco', '09');
-        $cabanasOeste = $this->municipio('10', '09');
-        $cabanasEste = $this->municipio('11', '09');
+        $cabanasOeste = $this->municipio('11', '09');
+        $cabanasEste = $this->municipio('10', '09');
 
         $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $cliente->id,

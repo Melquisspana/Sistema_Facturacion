@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Importacion\ImportadorCatalogosMh;
+use App\Support\Dte\CatalogoOficialMh;
 use Illuminate\Console\Command;
 use RuntimeException;
 
@@ -18,16 +19,20 @@ class ImportarCatalogosMhCommand extends Command
 
     public function handle(ImportadorCatalogosMh $importador): int
     {
-        $archivo = $this->option('archivo') ?: $importador->archivoPorDefecto();
-        if ($archivo === null) {
-            $this->error('No se encontró ningún .xlsx en resources/dte/catalogos. Colocá el Excel oficial ahí.');
-
-            return self::FAILURE;
-        }
-
-        $this->info('Importando catálogos desde: '.basename($archivo));
+        $archivo = $this->option('archivo') ?: null;
 
         try {
+            // Sin --archivo: el catálogo ACTIVO del registro, verificado por SHA-256 antes
+            // de tocar la base. Con --archivo: ese archivo tal cual, para inspeccionar una
+            // revisión todavía no registrada.
+            if ($archivo === null) {
+                $this->info('Catálogo activo: '.CatalogoOficialMh::version());
+                $this->line('  archivo: '.basename(CatalogoOficialMh::ruta()));
+                $this->line('  sha-256: '.CatalogoOficialMh::sha256Esperado().' (verificado)');
+            } else {
+                $this->warn('Importando un archivo AD-HOC (sin verificación de hash): '.basename($archivo));
+            }
+
             $r = $importador->importar($archivo);
         } catch (RuntimeException $e) {
             $this->error('Error: '.$e->getMessage());
@@ -42,7 +47,7 @@ class ImportarCatalogosMhCommand extends Command
         }
         $this->table(['Catálogo', 'Nombre', 'Registros'], $filas);
 
-        $this->info("Listo: {$r['secciones']} secciones, {$r['total']} registros importados.");
+        $this->info("Listo: {$r['secciones']} secciones, {$r['total']} registros importados desde {$r['archivo']}.");
 
         return self::SUCCESS;
     }

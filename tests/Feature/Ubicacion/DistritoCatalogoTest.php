@@ -55,10 +55,11 @@ class DistritoCatalogoTest extends TestCase
         $this->assertSame(0, Distrito::whereNull('codigo')->count(), 'Todo distrito debe tener su CAT-008.');
         $this->assertSame(0, Distrito::whereNull('municipio_codigo')->count(), 'Todo distrito debe estar vinculado a su municipio 2024.');
 
-        // Y el caso de referencia: Ilobasco es el distrito 03 de Cabañas, en Cabañas Oeste (10).
+        // Y el caso de referencia: Ilobasco es el distrito 03 de Cabañas, en Cabañas Oeste,
+        // que en el catálogo oficial vigente (2026-07-01) es el CAT-013 11, no el 10.
         $ilobasco = Distrito::where('nombre', 'Ilobasco')->firstOrFail();
         $this->assertSame('03', $ilobasco->codigo);
-        $this->assertSame('10', $ilobasco->municipio_codigo);
+        $this->assertSame('11', $ilobasco->municipio_codigo);
     }
 
     public function test_municipios_se_agrupan_por_departamento(): void

@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CatalogoMh;
 use App\Services\Dte\DteSchemaRepository;
-use App\Services\Importacion\ImportadorCatalogosMh;
+use App\Support\Dte\CatalogoOficialMh;
 use Illuminate\Console\Command;
 
 /**
@@ -42,8 +42,17 @@ class DteInsumosCommand extends Command
 
         // --- Excel de catálogos + estado de importación ---
         $this->newLine();
-        $excel = app(ImportadorCatalogosMh::class)->archivoPorDefecto();
-        $this->line('Excel de catálogos (resources/dte/catalogos): '.($excel ? 'PRESENTE ('.basename($excel).')' : 'FALTA'));
+        // Diagnóstico: nunca revienta. Reporta versión activa, presencia e integridad del
+        // hash, que es justo lo que se necesita saber cuando algo del catálogo va mal.
+        $version = CatalogoOficialMh::version();
+        $ruta = CatalogoOficialMh::ruta();
+        $estado = match (true) {
+            ! is_file($ruta) => 'FALTA',
+            CatalogoOficialMh::integro() => 'PRESENTE, SHA-256 OK',
+            default => 'PRESENTE pero SHA-256 NO COINCIDE (no se importará)',
+        };
+        $this->line("Excel de catálogos (resources/dte/catalogos): {$estado}");
+        $this->line("  versión activa: {$version} — ".basename($ruta));
         $secciones = CatalogoMh::distinct()->count('cat');
         $registros = CatalogoMh::count();
         $this->line("Importado a la BD (catalogos_mh): {$secciones} secciones, {$registros} registros.");
