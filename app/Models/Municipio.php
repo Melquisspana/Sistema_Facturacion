@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\Cache;
  *
  * Ojo con `nombre`: la tabla se reutilizó en la reforma 2024 y quedó con el nombre del
  * municipio ANTERIOR (p. ej. "Ilobasco", "Sensuntepeque") mientras `codigo` ya es el de la
- * agrupación NUEVA (10 = CABAÑAS OESTE, 11 = CABAÑAS ESTE). Por eso la interfaz mostraba
- * "Municipio: Ilobasco" cuando en realidad se estaba eligiendo "Cabañas Oeste".
+ * agrupación NUEVA (10 = CABAÑAS ESTE, 11 = CABAÑAS OESTE, según el catálogo oficial
+ * vigente desde el 2026-07-01). Por eso la interfaz mostraba "Municipio: Ilobasco" cuando
+ * en realidad se estaba eligiendo "Cabañas Oeste".
  *
  * Consecuencia práctica: varias filas de un mismo departamento comparten el mismo
  * `codigo` (San Salvador tiene 5 filas con código 22 y 4 con código 23). Son la MISMA
@@ -56,7 +57,7 @@ class Municipio extends Model
 
     /**
      * NOMBRE FISCAL OFICIAL del municipio 2024, resuelto desde CAT-013 por código.
-     * Ej.: la fila `codigo=10` del departamento Cabañas devuelve "Cabañas Oeste" aunque
+     * Ej.: la fila `codigo=11` del departamento Cabañas devuelve "Cabañas Oeste" aunque
      * su columna `nombre` siga diciendo "Ilobasco".
      *
      * Si el catálogo no está cargado o el código no aparece, cae al `nombre` histórico

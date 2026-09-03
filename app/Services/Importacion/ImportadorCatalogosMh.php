@@ -3,6 +3,7 @@
 namespace App\Services\Importacion;
 
 use App\Models\CatalogoMh;
+use App\Support\Dte\CatalogoOficialMh;
 use App\Support\Importacion\LectorXlsx;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -23,26 +24,39 @@ class ImportadorCatalogosMh
 {
     public function __construct(private readonly LectorXlsx $lector) {}
 
-    /** Ubica el .xlsx de catálogos en resources/dte/catalogos (cualquier nombre). */
-    public function archivoPorDefecto(): ?string
+    /**
+     * Ruta del catálogo oficial ACTIVO, ya verificado por SHA-256.
+     *
+     * Antes esto era un glob que devolvía «el primer .xlsx del directorio». Al conservar
+     * versionadas las revisiones anteriores (necesario para reproducir un DTE emitido bajo
+     * otra vigencia) ese criterio elegía la más vieja por orden alfabético. Ahora la
+     * versión activa se declara en config/catalogos_mh.php.
+     *
+     * @throws RuntimeException si falta el archivo o su hash no coincide
+     */
+    public function archivoPorDefecto(): string
     {
-        $archivos = glob(resource_path('dte/catalogos').DIRECTORY_SEPARATOR.'*.xlsx') ?: [];
-
-        return $archivos[0] ?? null;
+        return CatalogoOficialMh::rutaVerificada();
     }
 
     /**
      * Importa todos los catálogos del Excel.
      *
-     * @return array{cats: array<string, int>, nombres: array<string, string>, secciones: int, total: int}
+     * Sin `$ruta` usa el catálogo ACTIVO del registro, verificado por hash. Con `$ruta`
+     * explícita (opción `--archivo`) se importa ese archivo tal cual, sin verificar: es la
+     * vía para inspeccionar una revisión nueva ANTES de registrarla.
+     *
+     * @return array{cats: array<string, int>, nombres: array<string, string>, secciones: int, total: int, version: string, archivo: string}
      *
      * @throws RuntimeException
      */
     public function importar(?string $ruta = null): array
     {
+        $version = $ruta === null ? CatalogoOficialMh::version() : 'ad-hoc';
         $ruta ??= $this->archivoPorDefecto();
-        if ($ruta === null) {
-            throw new RuntimeException('No se encontró ningún .xlsx en resources/dte/catalogos.');
+
+        if (! is_file($ruta)) {
+            throw new RuntimeException("No se encontró el archivo de catálogos: {$ruta}");
         }
 
         $filas = $this->lector->filas($ruta);
@@ -104,6 +118,8 @@ class ImportadorCatalogosMh
             'nombres' => $nombres,
             'secciones' => count($conteo),
             'total' => array_sum($conteo),
+            'version' => $version,
+            'archivo' => basename($ruta),
         ];
     }
 }
