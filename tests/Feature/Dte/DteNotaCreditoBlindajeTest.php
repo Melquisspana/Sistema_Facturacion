@@ -468,8 +468,18 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $this->assertInvariantes($unCentavoMas, 'en la NC de base 100.01');
     }
 
-    /** Pronto pago conserva su regla vigente: nunca retiene, ni siquiera sobre un CCF que retuvo. */
-    public function test_pronto_pago_sobre_ccf_con_retencion_conserva_su_regla_y_no_retiene(): void
+    /**
+     * PRONTO PAGO sigue la MISMA regla que el resto de modalidades: si el receptor es gran
+     * contribuyente, el CCF relacionado retuvo y la base neta propia supera el umbral,
+     * retiene. Antes se excluía por su TIPO y salía sin retención aunque cumpliera las
+     * tres condiciones fiscales, dejando la NC corta frente al albarán del cliente.
+     *
+     * Base 200.00 → IVA 26.00 → retención 2.00 → total 224.00.
+     *
+     * Lo que NO cambia: el pronto pago sigue sin heredar el descuento global del CCF —esa
+     * sí es una regla por modalidad, y es independiente de la retención—.
+     */
+    public function test_pronto_pago_sobre_ccf_con_retencion_si_retiene_sobre_su_base(): void
     {
         $ccf = $this->ccfAceptado($this->cliente(true, 5), [[500.00, 1]]);
         $this->assertTrue((bool) $ccf->aplica_retencion_iva);
@@ -478,15 +488,34 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 200]);
         $nc->refresh();
 
-        $this->assertFalse((bool) $nc->aplica_retencion_iva);
-        $this->assertSame('0.00', (string) $nc->iva_retenido);
-        // Tampoco hereda el descuento global del CCF.
+        // El descuento global NO se hereda: la base es el concepto tal cual.
         $this->assertSame('0.00', (string) $nc->descuento_porcentaje_aplicado);
         $this->assertSame('200.00', (string) $nc->total_gravado);
         $this->assertSame('26.00', (string) $nc->iva);
-        $this->assertSame('226.00', (string) $nc->total_pagar);
+
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('2.00', (string) $nc->iva_retenido);
+        $this->assertSame('224.00', (string) $nc->total_pagar);
         $this->assertInvariantes($nc, 'en pronto pago');
-        $this->verShow($nc)->assertOk()->assertDontSee('Retención IVA 1%');
+        $this->verShow($nc)->assertOk();
+    }
+
+    /**
+     * El umbral, y no la modalidad, es lo que frena a las notas chicas: un pronto pago de
+     * $50.00 sobre el mismo CCF que retuvo NO retiene.
+     */
+    public function test_pronto_pago_bajo_el_umbral_sigue_sin_retener(): void
+    {
+        $ccf = $this->ccfAceptado($this->cliente(true, 5), [[500.00, 1]]);
+
+        $nc = $this->nc($ccf, TipoNotaCredito::ProntoPago);
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 50]);
+        $nc->refresh();
+
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('56.50', (string) $nc->total_pagar);
+        $this->assertInvariantes($nc, 'en pronto pago bajo el umbral');
     }
 
     // ================= 3. DESCUENTO 5 % =================
