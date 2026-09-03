@@ -42,7 +42,7 @@ class Dte extends Model
         'respuesta_mh', 'respuesta_mh_path', 'fecha_procesamiento_mh',
         'condicion_operacion', 'forma_pago', 'numero_orden_compra',
         'cod_incoterms', 'desc_incoterms', 'tipo_item_expor', 'recinto_fiscal', 'tipo_regimen', 'regimen',
-        'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'origen_averia', 'moneda',
+        'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'origen_averia', 'sucursal_hallazgo_id', 'moneda',
         'motivo_anulacion', 'observacion_anulacion', 'fecha_anulacion', 'invalidado_by',
         'codigo_generacion_invalidacion', 'tipo_anulacion', 'json_invalidacion_path', 'jws_invalidacion_path',
         'sello_invalidacion', 'respuesta_mh_invalidacion', 'respuesta_mh_invalidacion_path',
@@ -325,6 +325,16 @@ class Dte extends Model
             ->where('sello_recepcion', '!=', '')
             ->whereRaw('UPPER(sello_recepcion) NOT LIKE ?', ['MOCK%'])
             ->whereNotNull('fecha_procesamiento_mh');
+    }
+
+    /**
+     * Sala donde se ENCONTRÓ el producto averiado, cuando la avería salió de una revisión
+     * de inventario y no de una entrega. Puede no ser la sala receptora de la nota (esa es
+     * clienteSucursal, heredada del CCF); null en todo lo demás.
+     */
+    public function sucursalHallazgo(): BelongsTo
+    {
+        return $this->belongsTo(ClienteSucursal::class, 'sucursal_hallazgo_id');
     }
 
     /**

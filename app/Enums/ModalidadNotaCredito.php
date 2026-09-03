@@ -4,7 +4,6 @@ namespace App\Enums;
 
 use App\Models\ClientePerfilTipoNc;
 use App\Services\Dte\DteBorradorService;
-use App\Services\Dte\PerfilDocumentoResolver;
 
 /**
  * MODALIDAD OPERATIVA de una nota de crédito: las cuatro cosas que la gente de sala
@@ -14,9 +13,9 @@ use App\Services\Dte\PerfilDocumentoResolver;
  * Existe porque el selector de «Nueva nota de crédito» ofrecía las siete modalidades
  * internas en una lista plana —devolución, faltante, avería, pronto pago, descuento
  * posterior, ajuste comercial y otro—, y quien emite la nota no distingue esas siete:
- * distingue cuatro situaciones. Devolución y faltante son EL MISMO tratamiento fiscal
- * (albarán AC04 en el perfil de Calleja), y «descuento posterior» y «ajuste comercial»
- * nunca fueron otra cosa que el ajuste excepcional.
+ * distingue cuatro situaciones. Devolución y faltante son EL MISMO tratamiento fiscal,
+ * y «descuento posterior» y «ajuste comercial» nunca fueron otra cosa que el ajuste
+ * excepcional.
  *
  * Lo que NO hace esta enum:
  *  - No cambia ningún cálculo. El descuento sigue saliendo del perfil del cliente
@@ -24,8 +23,11 @@ use App\Services\Dte\PerfilDocumentoResolver;
  *    {@see DteBorradorService::decidirRetencionAutomatica()}.
  *  - No cambia lo que se guarda: la columna `dtes.tipo_nota_credito` sigue llevando el
  *    valor de TipoNotaCredito, así que los documentos ya emitidos se leen igual.
- *  - No fija el código de albarán. {@see codigoAlbaranReferencia()} es un rótulo para
- *    la pantalla; el código real lo declara el perfil documental de cada cliente.
+ *  - No sabe nada de códigos de albarán. Un cliente puede mapear cada modalidad a un
+ *    código propio, pero eso lo declara SU perfil documental
+ *    ({@see ClientePerfilTipoNc}) y solo existe para los clientes que lo
+ *    hayan configurado. La enum no puede traer códigos de ejemplo adentro: los volvería
+ *    la regla de todos, y para la mayoría de los clientes no hay ningún código.
  *
  * La INVALIDACIÓN oficial de un DTE no está acá a propósito: no es una modalidad de
  * nota de crédito sino un proceso aparte (ver `x-dte.invalidacion-oficial`).
@@ -62,24 +64,6 @@ enum ModalidadNotaCredito: string
             self::Averia => 'Producto dañado. Se acredita cualquier producto del catálogo, con su precio para este cliente.',
             self::ProntoPago => 'Descuento por pagar antes del plazo. Se captura como concepto por monto.',
             self::OtroAjuste => 'Ajuste excepcional que no es devolución, faltante, avería ni pronto pago.',
-        };
-    }
-
-    /**
-     * Código de albarán que la modalidad tiene en el perfil de Calleja, SOLO como
-     * rótulo de pantalla para que quien emite reconozca el documento del cliente.
-     *
-     * NO se usa para calcular ni para exportar: el código real de cada cliente vive en
-     * `cliente_perfil_tipos_nc.codigo_externo` y lo resuelve
-     * {@see PerfilDocumentoResolver::reglaNotaCredito()}. Un cliente
-     * con otro código ve el suyo, no este.
-     */
-    public function codigoAlbaranReferencia(): ?string
-    {
-        return match ($this) {
-            self::DevolucionFaltante => 'AC04',
-            self::Averia => 'AC02',
-            self::ProntoPago, self::OtroAjuste => null,
         };
     }
 
