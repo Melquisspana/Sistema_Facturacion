@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -266,14 +267,136 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
         }
     }
 
-    public function test_limita_los_resultados_a_veinte(): void
+    public function test_limita_los_resultados_a_una_pagina(): void
     {
         foreach (range(1, 30) as $n) {
             $this->ccf($n);
         }
 
-        $this->assertCount(BusquedaCcfParaNotaCredito::LIMITE, $this->buscar(''));
-        $this->assertSame(20, BusquedaCcfParaNotaCredito::LIMITE);
+        // El buscador ya no devuelve un tope plano sino UNA PÁGINA: el resto se alcanza
+        // avanzando, no ampliando la respuesta. Lo que se protege es que la respuesta
+        // nunca crezca con el histórico del cliente.
+        $this->assertCount(BusquedaCcfParaNotaCredito::POR_PAGINA, $this->buscar(''));
+        $this->assertSame(10, BusquedaCcfParaNotaCredito::POR_PAGINA);
+    }
+
+    public function test_la_paginacion_avanza_sin_repetir_ni_saltear_documentos(): void
+    {
+        foreach (range(1, 25) as $n) {
+            $this->ccf($n);
+        }
+
+        $usuario = $this->usuario();
+        $vistos = [];
+
+        foreach ([1, 2, 3] as $pagina) {
+            $r = $this->actingAs($usuario)->getJson(
+                route('facturacion.nota-credito.buscar-ccf', ['pagina' => $pagina])
+            )->assertOk();
+
+            $this->assertSame($pagina, $r->json('pagina'));
+            $this->assertSame($pagina > 1, $r->json('hay_previa'));
+            $vistos = array_merge($vistos, array_column($r->json('resultados'), 'id'));
+        }
+
+        // Tres páginas de 10 sobre 25 documentos: 25 distintos y ni uno repetido.
+        $this->assertCount(25, $vistos);
+        $this->assertSame(25, count(array_unique($vistos)));
+
+        // Y la última página se anuncia como última.
+        $this->assertFalse(
+            $this->actingAs($usuario)
+                ->getJson(route('facturacion.nota-credito.buscar-ccf', ['pagina' => 3]))
+                ->json('hay_mas')
+        );
+    }
+
+    public function test_cada_resultado_trae_lo_que_la_pantalla_debe_mostrar(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
+        $this->ccf(1120, [
+            'cliente_id' => $cliente->id,
+            'cliente_sucursal_id' => $sala->id,
+            'numero_orden_compra' => 'OC-55210',
+        ]);
+
+        $fila = $this->actingAs($this->usuario())
+            ->getJson(route('facturacion.nota-credito.buscar-ccf', ['q' => '1120']))
+            ->assertOk()->json('resultados.0');
+
+        // Los seis datos que negocio pidió ver en cada resultado.
+        $this->assertNotNull($fila['numero']);
+        $this->assertNotNull($fila['numero_control']);
+        $this->assertSame('OC-55210', $fila['orden_compra']);
+        $this->assertSame($sala->nombre, $fila['sala']);
+        $this->assertSame('20/07/2026', $fila['fecha']);
+        $this->assertSame('203.07', $fila['total']);
+    }
+
+    // ---------- Elegibilidad del CCF ----------
+
+    public function test_no_se_ofrece_un_ccf_de_otro_ambiente(): void
+    {
+        $deEsteAmbiente = $this->ccf(1120);
+        $dePruebasAjeno = $this->ccf(1121, ['ambiente' => '01']);
+
+        $ids = $this->buscar('');
+
+        $this->assertContains($deEsteAmbiente->id, $ids);
+        $this->assertNotContains(
+            $dePruebasAjeno->id,
+            $ids,
+            'Un CCF de otro ambiente no puede acreditarse: en producción esto sería un documento de pruebas.'
+        );
+    }
+
+    public function test_no_se_ofrece_un_ccf_con_invalidacion_sellada_ni_archivado(): void
+    {
+        $vigente = $this->ccf(1120);
+        $invalidado = $this->ccf(1121, ['sello_invalidacion' => '2026'.strtoupper(Str::random(36))]);
+        $archivado = $this->ccf(1122, ['archivado' => true]);
+
+        $ids = $this->buscar('');
+
+        $this->assertSame([$vigente->id], $ids);
+        $this->assertNotContains($invalidado->id, $ids);
+        $this->assertNotContains($archivado->id, $ids);
+    }
+
+    public function test_el_buscador_se_acota_al_cliente_y_a_la_sala_del_contexto(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $salaA = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
+        $salaB = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id]);
+        $otroCliente = Cliente::factory()->contribuyente()->create();
+
+        $enSalaA = $this->ccf(1120, ['cliente_id' => $cliente->id, 'cliente_sucursal_id' => $salaA->id]);
+        $enSalaB = $this->ccf(1121, ['cliente_id' => $cliente->id, 'cliente_sucursal_id' => $salaB->id]);
+        $ajeno = $this->ccf(1122, ['cliente_id' => $otroCliente->id]);
+
+        $usuario = $this->usuario();
+
+        $consulta = function (array $params) use ($usuario) {
+            return array_column(
+                $this->actingAs($usuario)
+                    ->getJson(route('facturacion.nota-credito.buscar-ccf', $params))
+                    ->assertOk()->json('resultados'),
+                'id'
+            );
+        };
+
+        // Con sala: solo esa sala.
+        $this->assertSame(
+            [$enSalaA->id],
+            $consulta(['cliente_id' => $cliente->id, 'cliente_sucursal_id' => $salaA->id])
+        );
+
+        // Sin sala (otra sala del mismo cliente): las dos, pero nunca el otro cliente.
+        $delCliente = $consulta(['cliente_id' => $cliente->id]);
+        $this->assertContains($enSalaA->id, $delCliente);
+        $this->assertContains($enSalaB->id, $delCliente);
+        $this->assertNotContains($ajeno->id, $delCliente, 'Una NC nunca puede cruzar de cliente.');
     }
 
     // ---------- Pantalla ----------
@@ -460,7 +583,11 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
 
         $conMuchos = $this->consultasDe($usuario);
 
-        $this->assertCount(18, $this->buscar('', $usuario), 'Debe haber 18 resultados para que la comparación valga.');
+        $this->assertCount(
+            BusquedaCcfParaNotaCredito::POR_PAGINA,
+            $this->buscar('', $usuario),
+            'La página debe venir llena para que la comparación valga.'
+        );
         $this->assertSame(
             $conPocos,
             $conMuchos,
@@ -483,7 +610,7 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
             ->getJson(route('facturacion.nota-credito.buscar-ccf'))->assertOk();
 
         // Vacía los listeners para que la siguiente medición arranque limpia.
-        DB::getEventDispatcher()->forget(\Illuminate\Database\Events\QueryExecuted::class);
+        DB::getEventDispatcher()->forget(QueryExecuted::class);
 
         return $n;
     }

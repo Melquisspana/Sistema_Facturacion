@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Facturacion;
 
+use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
+use App\Enums\AmbienteHacienda;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoDte;
+use App\Enums\MotivoAnulacion;
+use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
+use App\Enums\TipoImpuesto;
 use App\Enums\TipoItemExportacion;
 use App\Enums\TipoNotaCredito;
-use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
-use App\Enums\TipoAnulacionMh;
+use App\Exceptions\Dte\AnulacionException;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Exceptions\Dte\DteEvidenciaProtegidaException;
 use App\Exceptions\Dte\DteFirmaDeshabilitadaException;
@@ -33,9 +37,11 @@ use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Dte;
+use App\Models\DteEnvio;
 use App\Models\DteLinea;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
+use App\Models\Exportacion;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Dte\AlbaranNotaCreditoService;
@@ -51,19 +57,33 @@ use App\Services\Dte\DteJsonService;
 use App\Services\Dte\DteTransmisionResiliente;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\EnvioDteCorreoService;
+use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Dte\PrecioProductoResolver;
 use App\Services\Dte\PreflightEmisionProduccion;
 use App\Services\Dte\PreflightEmisionProduccionExportacion;
 use App\Services\Dte\PreflightEmisionProduccionFactura;
-use App\Services\Dte\PrecioProductoResolver;
+use App\Services\Exportaciones\VincularFexALista;
+use App\Support\Contabilidad\CorreoContabilidad;
+use App\Support\Dinero;
+use App\Support\Dte\CorreoReceptorDte;
+use App\Support\Dte\DatosExportacionPresentacion;
+use App\Support\Dte\OpcionesInvalidacion;
+use App\Support\Dte\OrdenProductosOc;
+use App\Support\Dte\ReceptorExportacionPresentacion;
+use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\Dte\ResuelveEmisorUnico;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
-use App\Models\DteEnvio;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -174,7 +194,7 @@ class DteController extends Controller
 
         // Etiqueta clara del ambiente que se está listando (nunca "producción" fijo:
         // depende del ambiente activo de esta instalación).
-        $ambienteListado = \App\Enums\AmbienteHacienda::tryFrom((string) config('dte.ambiente'))?->label()
+        $ambienteListado = AmbienteHacienda::tryFrom((string) config('dte.ambiente'))?->label()
             ?? (string) config('dte.ambiente');
 
         return view('facturacion.index', compact('dtes', 'filtros', 'clientes', 'ambienteListado'));
@@ -304,7 +324,7 @@ class DteController extends Controller
         $this->authorize('create', Dte::class);
 
         $lista = $request->filled('lista')
-            ? \App\Models\Exportacion::find($request->integer('lista'))
+            ? Exportacion::find($request->integer('lista'))
             : null;
 
         return view('facturacion.create-exportacion', $this->datosFormularioExportacion() + [
@@ -358,14 +378,14 @@ class DteController extends Controller
             return '';
         }
 
-        $lista = \App\Models\Exportacion::find($request->integer('lista_id'));
+        $lista = Exportacion::find($request->integer('lista_id'));
 
         if ($lista === null) {
             return ' La lista de empaque indicada ya no existe, así que la factura quedó sin vincular.';
         }
 
         try {
-            app(\App\Services\Exportaciones\VincularFexALista::class)->vincular($lista, $dte);
+            app(VincularFexALista::class)->vincular($lista, $dte);
         } catch (\Throwable $e) {
             return ' No se pudo vincular con la lista de empaque #'.$lista->id.': '.$e->getMessage()
                 .' La factura sí se creó; podés vincularla a mano desde la lista.';
@@ -407,25 +427,38 @@ class DteController extends Controller
     }
 
     /**
-     * Autocomplete de CCF relacionados para el formulario de Nota de Crédito (JSON).
+     * Buscador PAGINADO de CCF relacionados para el formulario de Nota de Crédito (JSON).
      *
-     * SOLO LECTURA. Ofrece EXACTAMENTE el mismo universo que ofrecía el select que
-     * reemplaza (CCF 03 con aceptación real del MH) y exige el MISMO permiso que la
-     * pantalla (`DtePolicy::create`). No decide nada: el id que el navegador devuelva
-     * lo revalida de cero storeNotaCreditoIndependiente() +
-     * DteBorradorService::crearNotaCredito(), igual que antes.
+     * SOLO LECTURA. Exige el MISMO permiso que la pantalla (`DtePolicy::create`) y no
+     * decide nada: el id que el navegador devuelva lo revalida de cero
+     * storeNotaCreditoIndependiente() + DteBorradorService::crearNotaCredito().
+     *
+     * `cliente_id` y `cliente_sucursal_id` son el CONTEXTO OPERATIVO del formulario, no
+     * un permiso: acotan lo que se ofrece a la sala en la que se está trabajando. Salir
+     * de la sala es una decisión explícita de quien emite (el formulario la cobra con
+     * advertencia y motivo obligatorio); salir del CLIENTE no se puede, y por eso el
+     * filtro de cliente se aplica acá y además se vuelve a exigir al guardar.
      */
     public function buscarCcfParaNotaCredito(
         Request $request,
         BusquedaCcfParaNotaCredito $busqueda,
-    ): \Illuminate\Http\JsonResponse {
+    ): JsonResponse {
         $this->authorize('create', Dte::class);
 
-        $resultados = $busqueda->buscar((string) $request->input('q', ''));
+        $pagina = $busqueda->paginar(
+            texto: (string) $request->input('q', ''),
+            pagina: max(1, (int) $request->input('pagina', 1)),
+            clienteId: $request->filled('cliente_id') ? $request->integer('cliente_id') : null,
+            salaId: $request->filled('cliente_sucursal_id') ? $request->integer('cliente_sucursal_id') : null,
+        );
 
         return response()->json([
             'ok' => true,
-            'resultados' => $busqueda->opciones($resultados),
+            'resultados' => $busqueda->opciones($pagina['resultados']),
+            'pagina' => $pagina['pagina'],
+            'por_pagina' => $pagina['por_pagina'],
+            'hay_mas' => $pagina['hay_mas'],
+            'hay_previa' => $pagina['hay_previa'],
         ]);
     }
 
@@ -451,13 +484,13 @@ class DteController extends Controller
 
         $request->merge($original !== null
             ? ['establecimiento_id' => $original->establecimiento_id, 'punto_venta_id' => $original->punto_venta_id]
-            : \App\Support\Dte\ResuelveEmisorUnico::resolver(
+            : ResuelveEmisorUnico::resolver(
                 $request->input('establecimiento_id'),
                 $request->input('punto_venta_id'),
             ));
 
         $datos = $request->validate([
-            'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
+            'tipo' => ['required', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
             'cliente_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
             'dte_relacionado_id' => ['nullable', 'integer', 'exists:dtes,id'],
@@ -547,7 +580,7 @@ class DteController extends Controller
                 'tipos' => TipoAnulacionMh::opciones(),
                 // Vocabulario humano del paso 1 del asistente: capa de PRESENTACIÓN sobre
                 // los MISMOS valores de CAT-024 (ver OpcionesInvalidacion).
-                'opciones_motivo' => \App\Support\Dte\OpcionesInvalidacion::opciones(),
+                'opciones_motivo' => OpcionesInvalidacion::opciones(),
                 // Candidatos a documento de reemplazo (solo los usa el tipo 1). Se precargan
                 // para que el paso 2 no dependa de una llamada previa; el autocomplete refina
                 // sobre la MISMA consulta. SOLO LECTURA: lo que se envíe lo revalidan el Form
@@ -603,7 +636,7 @@ class DteController extends Controller
         // sistema; la del ambiente es la única que aporta esta capa, y es de
         // presentación (el candado real vive en la policy y en evaluarCandados()).
         $confirmacionProduccion = null;
-        $esProduccion = $dte->ambiente === \App\Enums\AmbienteHacienda::Produccion;
+        $esProduccion = $dte->ambiente === AmbienteHacienda::Produccion;
         $puedeFirmarTransmitir = (bool) auth()->user()?->can('firmarTransmitir', $dte);
 
         // ¿Aplica la acción de producción a ESTE documento? El ambiente no entra en la
@@ -615,7 +648,7 @@ class DteController extends Controller
         // y no sale de aquí; la autorización de la ruta se sigue evaluando contra el
         // documento real, que rechazará el POST de un documento de pruebas.
         $comoProduccion = $esProduccion ? $dte : (clone $dte)->forceFill([
-            'ambiente' => \App\Enums\AmbienteHacienda::Produccion->value,
+            'ambiente' => AmbienteHacienda::Produccion->value,
         ]);
         $aplicaProduccion = (bool) auth()->user()?->can('generarTransmitirProduccion', $comoProduccion);
 
@@ -666,7 +699,7 @@ class DteController extends Controller
         //  - si el documento ya cae en el Reporte contadora (aceptado REAL ambiente 01).
         // Misma fuente que usa el job al enviar (CorreoContabilidad): la ficha no
         // puede decir "va copia a X" mientras el envío resuelve otra cosa.
-        $contabilidad = app(\App\Support\Contabilidad\CorreoContabilidad::class);
+        $contabilidad = app(CorreoContabilidad::class);
         $copiaContabilidad = [
             'activa' => $contabilidad->enviarCopia(),
             'correo' => $contabilidad->direccion(),
@@ -676,8 +709,8 @@ class DteController extends Controller
 
         // Datos FEX (tipo 11) ya guardados en el DTE, resueltos a etiquetas legibles.
         // Solo presentación: null si no es exportación.
-        $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
-        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
+        $datosExportacion = DatosExportacionPresentacion::resolver($dte);
+        $datosReceptor = ReceptorExportacionPresentacion::resolver($dte);
 
         // Salas del MISMO cliente que pueden RECIBIR una nota de crédito por monto
         // (pronto pago). Alimenta el selector "Sala receptora" del panel de NC: incluye
@@ -1147,7 +1180,7 @@ class DteController extends Controller
         Request $request,
         Dte $dte,
         BusquedaDocumentoReemplazo $reemplazos,
-    ): \Illuminate\Http\JsonResponse {
+    ): JsonResponse {
         $this->authorize('verInvalidacion', $dte);
 
         return response()->json([
@@ -1275,9 +1308,9 @@ class DteController extends Controller
     private function eventoInvalidacionDesdeRequest(Request $request): EventoInvalidacionData
     {
         $datos = $request->validate([
-            'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoAnulacionMh::cases()))],
-            'motivo' => ['nullable', 'string', 'max:1000', \Illuminate\Validation\Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::Otro->value)],
-            'reemplazo' => ['nullable', 'string', 'max:100', \Illuminate\Validation\Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::ErrorInformacion->value)],
+            'tipo' => ['required', Rule::in(array_map(fn ($t) => $t->value, TipoAnulacionMh::cases()))],
+            'motivo' => ['nullable', 'string', 'max:1000', Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::Otro->value)],
+            'reemplazo' => ['nullable', 'string', 'max:100', Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::ErrorInformacion->value)],
         ], [
             'motivo.required' => 'El motivo en texto es obligatorio para el tipo 3 (Otro).',
             'reemplazo.required' => 'El código de generación del documento de reemplazo es obligatorio para el tipo 1 (Error en la información).',
@@ -1355,7 +1388,7 @@ class DteController extends Controller
      * archivo bajo la carpeta oficial de JSON del disco configurado: rechaza path
      * traversal y rutas fuera de esa carpeta, y exige que el archivo exista.
      *
-     * @return array{0: string, 1: string}  [disco, ruta relativa al disco]
+     * @return array{0: string, 1: string} [disco, ruta relativa al disco]
      */
     private function rutaJsonSegura(Dte $dte): array
     {
@@ -1371,7 +1404,7 @@ class DteController extends Controller
      * indicada del disco configurado. Rechaza path traversal y rutas fuera de esa
      * carpeta, y exige que el archivo exista. No toca BD.
      *
-     * @return array{0: string, 1: string}  [disco, ruta relativa al disco]
+     * @return array{0: string, 1: string} [disco, ruta relativa al disco]
      */
     private function rutaArchivoSegura(?string $ruta, string $carpeta, string $tipoLabel): array
     {
@@ -1416,7 +1449,7 @@ class DteController extends Controller
         ] : null;
 
         // Receptor (solo FEX): mismo panel compacto que ficha/PDF/impresión.
-        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
+        $datosReceptor = ReceptorExportacionPresentacion::resolver($dte);
 
         // Info de retención para los totales (CCF): agente + umbral.
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
@@ -1510,7 +1543,7 @@ class DteController extends Controller
                     'origen_label' => $origenLabel,
                     'sin_precio' => $sinPrecio,
                     // Posición en la orden de compra (barcode/nombre); fuera de la lista al final.
-                    'oc_rank' => \App\Support\Dte\OrdenProductosOc::rank($p->codigo_barra, $p->nombre),
+                    'oc_rank' => OrdenProductosOc::rank($p->codigo_barra, $p->nombre),
                     'filtro' => mb_strtolower(trim(($p->codigo ?? '').' '.($p->codigo_barra ?? '').' '.$p->nombre)),
                 ];
             });
@@ -1554,7 +1587,7 @@ class DteController extends Controller
             $nuevo = $this->borradores->duplicarCcf($dte, $request->user());
         } catch (OrdenCompraRequeridaException $e) {
             return back()->with('error', 'No se pudo duplicar: '.$e->getMessage());
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return back()->with('error', 'No se pudo duplicar: '.implode(' ', collect($e->errors())->flatten()->all()));
         }
 
@@ -1568,18 +1601,18 @@ class DteController extends Controller
         $this->authorize('anular', $dte); // gestor + estado generado (DtePolicy)
 
         $datos = $request->validate([
-            'motivo_anulacion' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($m) => $m->value, \App\Enums\MotivoAnulacion::cases()))],
+            'motivo_anulacion' => ['required', Rule::in(array_map(fn ($m) => $m->value, MotivoAnulacion::cases()))],
             'observacion_anulacion' => ['nullable', 'string', 'max:1000'],
         ]);
 
         try {
             $anulacion->anular(
                 $dte,
-                \App\Enums\MotivoAnulacion::from($datos['motivo_anulacion']),
+                MotivoAnulacion::from($datos['motivo_anulacion']),
                 $datos['observacion_anulacion'] ?? null,
                 $request->user(),
             );
-        } catch (\App\Exceptions\Dte\AnulacionException $e) {
+        } catch (AnulacionException $e) {
             return back()->withErrors(['anular' => $e->getMessage()]);
         }
 
@@ -1651,7 +1684,7 @@ class DteController extends Controller
     {
         $this->authorize('enviarCorreo', $dte); // gestor + no borrador (DtePolicy)
 
-        $email = \App\Support\Dte\CorreoReceptorDte::resolver($dte);
+        $email = CorreoReceptorDte::resolver($dte);
         $email = is_string($email) ? strtolower(trim($email)) : '';
         if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $quien = $dte->clienteSucursal ? 'La sala/cliente' : 'El cliente';
@@ -1750,14 +1783,14 @@ class DteController extends Controller
             $generacion->generar($dte, request()->user());
         } catch (GeneracionException $e) {
             return back()->withErrors(['generar' => $e->getMessage()]);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+        } catch (UniqueConstraintViolationException $e) {
             // Conflicto de numeración a nivel de BD (p. ej. numero_interno/numero_control
             // duplicado entre ambientes): la transacción de generar() ya revirtió todo
             // (el documento sigue en borrador, sin correlativo consumido). Se registra el
             // error real en logs y se devuelve al editor con un mensaje claro, en vez de
             // dejar que se muestre como un 500 genérico. Cualquier otra excepción NO
             // prevista sigue sin capturarse aquí (Laravel la registra y la maneja normal).
-            \Illuminate\Support\Facades\Log::error('No se pudo generar el DTE por un conflicto de numeración en BD.', [
+            Log::error('No se pudo generar el DTE por un conflicto de numeración en BD.', [
                 'dte_id' => $dte->id,
                 'exception' => $e->getMessage(),
             ]);
@@ -1781,7 +1814,7 @@ class DteController extends Controller
         $this->authorize('create', Dte::class);
 
         $datos = $request->validate([
-            'tipo' => ['required', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, \App\Enums\TipoNotaCredito::cases()))],
+            'tipo' => ['required', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
             'motivo' => ['nullable', 'string', 'max:1000'],
             // Sala RECEPTORA de la NC. Opcional: sin ella se usa la del CCF. Solo las
             // modalidades por monto (pronto pago…) admiten una distinta; la coherencia
@@ -1938,19 +1971,19 @@ class DteController extends Controller
                 return [
                     'linea' => $lo,
                     'acreditado' => $acreditado,
-                    'disponible' => \App\Support\Dinero::redondear(
-                        \App\Support\Dinero::restar(\App\Support\Dinero::de($lo->cantidad), $acreditado), 4
+                    'disponible' => Dinero::redondear(
+                        Dinero::restar(Dinero::de($lo->cantidad), $acreditado), 4
                     ),
                 ];
             });
         }
 
-        $tiposImpuesto = \App\Enums\TipoImpuesto::opciones();
+        $tiposImpuesto = TipoImpuesto::opciones();
 
         // Albarán del cliente: el panel solo aparece si el cliente declaró un perfil que
         // mapea ESTA modalidad. Sin perfil, la pantalla es exactamente la de siempre.
         $albaranes = app(AlbaranNotaCreditoService::class);
-        $reglaAlbaran = app(\App\Services\Dte\PerfilDocumentoResolver::class)->reglaNotaCredito($nc);
+        $reglaAlbaran = app(PerfilDocumentoResolver::class)->reglaNotaCredito($nc);
         $albaran = $nc->albaran;
         $comparacionAlbaran = $albaranes->comparacion($nc);
         $avisosAlbaran = $albaranes->avisos($nc);
@@ -1975,7 +2008,7 @@ class DteController extends Controller
 
         try {
             $albaranes->registrar($dte, $request->only(['numero', 'fecha', 'total', 'tipo_codigo', 'sala_codigo']));
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return back()->withInput()->withErrors($e->errors());
         } catch (DocumentoInmutableException $e) {
             return back()->withErrors(['numero' => $e->getMessage()]);
@@ -1991,7 +2024,7 @@ class DteController extends Controller
 
         try {
             $albaranes->quitar($dte);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return back()->withErrors($e->errors());
         } catch (DocumentoInmutableException $e) {
             return back()->withErrors(['numero' => $e->getMessage()]);
@@ -2013,7 +2046,7 @@ class DteController extends Controller
 
         try {
             $this->borradores->agregarProductoNotaCreditoAveria($dte, $producto, $request->integer('cantidad'));
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return back()->withErrors($e->errors());
         }
 
@@ -2026,7 +2059,7 @@ class DteController extends Controller
      * cantidad 0/vacía quita la línea si existía. Reusa DteBorradorService; no cambia
      * reglas fiscales, no firma ni transmite.
      */
-    public function setCantidadProducto(Request $request, Dte $dte, Producto $producto): RedirectResponse|\Illuminate\Http\JsonResponse
+    public function setCantidadProducto(Request $request, Dte $dte, Producto $producto): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
 
@@ -2051,7 +2084,7 @@ class DteController extends Controller
 
         try {
             $res = $this->borradores->establecerCantidadProducto($dte, $producto, $cantidad);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return $this->errorLineas($request, $e->errors());
         }
 
@@ -2071,7 +2104,7 @@ class DteController extends Controller
      * Reusa establecerCantidadProducto (misma idempotencia, snapshot de precio y
      * recálculo de totales que el catálogo manual); no cambia reglas fiscales.
      */
-    public function escanearProducto(Request $request, Dte $dte): RedirectResponse|\Illuminate\Http\JsonResponse
+    public function escanearProducto(Request $request, Dte $dte): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
 
@@ -2107,7 +2140,7 @@ class DteController extends Controller
         return $this->respuestaLineas($request, $dte, $mensaje);
     }
 
-    public function storeLinea(AgregarLineaDteRequest $request, Dte $dte): RedirectResponse|\Illuminate\Http\JsonResponse
+    public function storeLinea(AgregarLineaDteRequest $request, Dte $dte): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
 
@@ -2141,7 +2174,7 @@ class DteController extends Controller
      * de Exportación. Reservado a FEX: DteBorradorService::agregarLineaLibre()
      * rechaza cualquier otro tipo de documento.
      */
-    public function storeLineaLibre(Request $request, Dte $dte): RedirectResponse|\Illuminate\Http\JsonResponse
+    public function storeLineaLibre(Request $request, Dte $dte): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
 
@@ -2152,7 +2185,7 @@ class DteController extends Controller
         return $this->respuestaLineas($request, $dte, 'Línea agregada.');
     }
 
-    public function updateLinea(ActualizarLineaDteRequest $request, Dte $dte, DteLinea $linea): RedirectResponse|\Illuminate\Http\JsonResponse
+    public function updateLinea(ActualizarLineaDteRequest $request, Dte $dte, DteLinea $linea): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
         $this->verificarLineaDelDte($dte, $linea);
@@ -2162,7 +2195,7 @@ class DteController extends Controller
         return $this->respuestaLineas($request, $dte, 'Línea actualizada.');
     }
 
-    public function destroyLinea(Request $request, Dte $dte, DteLinea $linea): RedirectResponse|\Illuminate\Http\JsonResponse
+    public function destroyLinea(Request $request, Dte $dte, DteLinea $linea): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
         $this->verificarLineaDelDte($dte, $linea);
@@ -2183,7 +2216,7 @@ class DteController extends Controller
      * las cantidades por producto para sincronizar el catálogo; si no, redirige como siempre
      * (fallback sin JS). NO recalcula ni cambia lógica fiscal: solo empaqueta el estado del $dte.
      */
-    private function respuestaLineas(Request $request, Dte $dte, ?string $mensaje = null): \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+    private function respuestaLineas(Request $request, Dte $dte, ?string $mensaje = null): RedirectResponse|JsonResponse
     {
         if (! $request->expectsJson()) {
             return $mensaje ? back()->with('status', $mensaje) : back();
@@ -2219,7 +2252,7 @@ class DteController extends Controller
      *
      * @param  array<string, string|array<int, string>>  $errors
      */
-    private function errorLineas(Request $request, array $errors): \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+    private function errorLineas(Request $request, array $errors): RedirectResponse|JsonResponse
     {
         if ($request->expectsJson()) {
             return response()->json([
@@ -2236,7 +2269,7 @@ class DteController extends Controller
      * Aplana clientes + sus sucursales activas en opciones para el buscador del CCF.
      * Cada opción lleva el cliente fiscal y, opcionalmente, la sala comercial.
      *
-     * @param  \Illuminate\Support\Collection<int, Cliente>  $clientes
+     * @param  Collection<int, Cliente>  $clientes
      * @return array<int, array<string, mixed>>
      */
     private function opcionesClienteSucursal($clientes): array
@@ -2270,7 +2303,7 @@ class DteController extends Controller
             'num_documento' => $cliente->num_documento,
             'nrc' => $cliente->nrc,
             // Regla única (OR): la exige el cliente o la sala. Coincide con el backend.
-            'requiere_oc' => \App\Support\Dte\ReglaOrdenCompra::requerida($cliente, $sucursal),
+            'requiere_oc' => ReglaOrdenCompra::requerida($cliente, $sucursal),
             // Agente de retención efectivo (override de sala → cliente).
             'es_agente_retencion' => $this->esAgenteRetencionEfectivo($cliente, $sucursal),
             // Valores aplicados (informativos en el formulario). El descuento es %.
@@ -2314,7 +2347,7 @@ class DteController extends Controller
      * Mapea clientes a opciones para el buscador, con descuento/condición aplicados
      * (a nivel cliente; informativos en el formulario).
      *
-     * @param  \Illuminate\Support\Collection<int, Cliente>  $clientes
+     * @param  Collection<int, Cliente>  $clientes
      * @return array<int, array<string, mixed>>
      */
     private function clientesInformativos($clientes): array
