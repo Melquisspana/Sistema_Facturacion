@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\Dte;
 
-use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -15,17 +15,18 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RepresentacionPdfDte;
 use Tests\TestCase;
 
 class DteNotaCreditoIndependienteTest extends TestCase
 {
-    use \Tests\Concerns\RepresentacionPdfDte;
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
+    use RepresentacionPdfDte;
 
     private DteBorradorService $borradores;
 
@@ -234,7 +235,7 @@ class DteNotaCreditoIndependienteTest extends TestCase
 
     // --- Salas por documento + orden de compra vinculada ---
 
-    private function ccfConOrden(array $emisor, string $oc, ?Cliente $cliente = null, ?\App\Models\ClienteSucursal $sucursal = null): Dte
+    private function ccfConOrden(array $emisor, string $oc, ?Cliente $cliente = null, ?ClienteSucursal $sucursal = null): Dte
     {
         $cliente ??= Cliente::factory()->contribuyente()->create();
         $dte = $this->borradores->crearBorrador([
@@ -271,7 +272,12 @@ class DteNotaCreditoIndependienteTest extends TestCase
             ->assertSee($estab->nombre)
             ->assertSee('Punto de venta:')
             ->assertSee($pv->nombre)
-            ->assertSee('Tipo de nota de crédito')
+            // La pantalla unificada ofrece las CUATRO modalidades operativas en vez del
+            // select plano con las siete internas.
+            ->assertSee('Devolución o faltante de entrega')
+            ->assertSee('Avería')
+            ->assertSee('Pronto pago')
+            ->assertSee('Otro ajuste')
             ->assertSee('CCF relacionado');
     }
 
@@ -300,7 +306,7 @@ class DteNotaCreditoIndependienteTest extends TestCase
         // propia: hereda la del CCF relacionado (regla obligatoria de CCF aceptado).
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
-        $oficina = \App\Models\ClienteSucursal::factory()->create([
+        $oficina = ClienteSucursal::factory()->create([
             'cliente_id' => $cliente->id, 'nombre' => 'Oficina Central',
             'permite_ccf' => false, 'permite_nota_credito' => true,
         ]);
@@ -372,7 +378,7 @@ class DteNotaCreditoIndependienteTest extends TestCase
     {
         $emisor = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
-        $sucursal = \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Selectos Santa Rosa']);
+        $sucursal = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Selectos Santa Rosa']);
         $ccf = $this->ccfConOrden($emisor, 'OC-IMPRESA', $cliente, $sucursal);
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'pronto_pago', 'motivo' => 'Pronto pago Calleja']);

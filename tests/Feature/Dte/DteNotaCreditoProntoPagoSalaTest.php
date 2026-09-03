@@ -20,8 +20,11 @@ use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -44,7 +47,7 @@ use Tests\TestCase;
  */
 class DteNotaCreditoProntoPagoSalaTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -140,6 +143,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::ProntoPago->value,
             'cliente_sucursal_id' => $oficina->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
             'motivo' => 'Pronto pago quincena 1',
         ], $this->usuario());
 
@@ -170,6 +174,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::ProntoPago->value,
             'cliente_sucursal_id' => $oficina->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
         ], $this->usuario());
 
         $this->assertSame($oficina->id, $nc->cliente_sucursal_id);
@@ -187,6 +192,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::DescuentoPosterior->value,
             'cliente_sucursal_id' => $otraSala->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
         ], $this->usuario());
 
         $this->assertSame($otraSala->id, $nc->cliente_sucursal_id);
@@ -293,7 +299,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('tiposQueNoAdmitenOtraSalaProvider')]
+    #[DataProvider('tiposQueNoAdmitenOtraSalaProvider')]
     public function test_devolucion_averia_y_faltante_no_admiten_una_sala_distinta(string $tipo): void
     {
         $cliente = $this->calleja();
@@ -306,11 +312,14 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
 
         $this->borradores->crearNotaCredito($ccf, [
             'tipo' => $tipo,
+            // La avería del data provider lo exige; el resto de los tipos lo descarta.
+            'origen_averia' => 'entrega',
             'cliente_sucursal_id' => $oficina->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
         ], $this->usuario());
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('tiposQueNoAdmitenOtraSalaProvider')]
+    #[DataProvider('tiposQueNoAdmitenOtraSalaProvider')]
     public function test_devolucion_averia_y_faltante_conservan_la_sala_del_ccf(string $tipo): void
     {
         $cliente = $this->calleja();
@@ -320,6 +329,8 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         // Enviar la MISMA sala del CCF es válido para cualquier tipo.
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => $tipo,
+            // La avería del data provider lo exige; el resto de los tipos lo descarta.
+            'origen_averia' => 'entrega',
             'cliente_sucursal_id' => $salaVenta->id,
         ], $this->usuario());
 
@@ -360,6 +371,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $prontoPago = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::ProntoPago->value,
             'cliente_sucursal_id' => $oficina->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
         ], $this->usuario());
         $this->borradores->agregarConceptoNotaCredito($prontoPago, [
             'descripcion' => 'Descuento por pronto pago',
@@ -391,6 +403,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::ProntoPago->value,
             'cliente_sucursal_id' => $oficina->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
         ], $this->usuario());
         $this->borradores->agregarConceptoNotaCredito($nc, [
             'descripcion' => 'Descuento por pronto pago', 'monto' => 25,
@@ -449,10 +462,11 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::ProntoPago->value,
             'cliente_sucursal_id' => $oficina->id,
+            'motivo' => 'Cobro centralizado en oficina central.',
             'motivo' => 'Pronto pago quincena 1',
         ], $usuario);
 
-        $actividad = \Spatie\Activitylog\Models\Activity::where('log_name', 'dte_nota_credito_sala')->latest('id')->first();
+        $actividad = Activity::where('log_name', 'dte_nota_credito_sala')->latest('id')->first();
 
         $this->assertNotNull($actividad, 'No se registró la actividad de cambio de sala.');
         $this->assertSame($nc->id, $actividad->subject_id);
@@ -476,7 +490,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
             'tipo' => TipoNotaCredito::ProntoPago->value,
         ], $this->usuario());
 
-        $this->assertSame(0, \Spatie\Activitylog\Models\Activity::where('log_name', 'dte_nota_credito_sala')->count());
+        $this->assertSame(0, Activity::where('log_name', 'dte_nota_credito_sala')->count());
     }
 
     // --- Endpoints / UI ---
@@ -492,6 +506,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
             ->post(route('facturacion.nota-credito.store', $ccf), [
                 'tipo' => TipoNotaCredito::ProntoPago->value,
                 'cliente_sucursal_id' => $oficina->id,
+                'motivo' => 'Cobro centralizado en oficina central.',
                 'motivo' => 'Pronto pago',
             ])
             ->assertRedirect();
@@ -512,6 +527,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
             ->post(route('facturacion.nota-credito.store', $ccf), [
                 'tipo' => TipoNotaCredito::DevolucionProducto->value,
                 'cliente_sucursal_id' => $oficina->id,
+                'motivo' => 'Cobro centralizado en oficina central.',
             ])
             ->assertSessionHasErrors('cliente_sucursal_id');
 

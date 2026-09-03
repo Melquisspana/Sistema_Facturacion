@@ -14,10 +14,12 @@ use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Observers\DteObserver;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteSchemaValidator;
 use App\Services\Dte\MapeadorDteSalida;
+use App\Services\Dte\Serializadores\SerializadorCcfMh;
 use App\Services\Dte\Serializadores\SerializadorNotaCreditoMh;
 use App\Support\Dinero;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -192,7 +194,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $this->assertTrue((bool) $ccf->aplica_retencion_iva);
         $producto = Producto::factory()->create(['precio_unitario' => 0.90, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -230,7 +232,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 200.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -375,7 +377,7 @@ class DteNotaCreditoRetencionTest extends TestCase
      * sigue siendo agente de retención, pero el CCF no llegó al umbral y por eso no
      * retuvo. Así la única condición ausente es la del documento relacionado. No se fuerza
      * el estado del CCF a mano porque un DTE aceptado es inmutable —lo impide
-     * {@see \App\Observers\DteObserver}—, que es justamente la garantía que protege a la
+     * {@see DteObserver}—, que es justamente la garantía que protege a la
      * NC histórica.
      */
     public function test_ccf_sin_retencion_no_contagia_retencion_a_la_nc_por_monto(): void
@@ -407,7 +409,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 200.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -450,7 +452,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 110.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -469,7 +471,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 102.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -575,7 +577,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         // GENERADO, que es cuando se arma el JSON que viaja a Hacienda.)
         $ccf = $this->ccfAceptado(aceptar: false);
 
-        $r = app(\App\Services\Dte\Serializadores\SerializadorCcfMh::class)
+        $r = app(SerializadorCcfMh::class)
             ->serializar(app(MapeadorDteSalida::class)->mapear($ccf))['resumen'];
 
         $this->assertSame(1.22, $r['ivaRete']);

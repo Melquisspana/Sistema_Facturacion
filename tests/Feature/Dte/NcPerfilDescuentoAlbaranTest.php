@@ -6,6 +6,7 @@ use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Enums\TipoNotaCredito;
+use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\ClientePerfilTipoNc;
@@ -20,9 +21,11 @@ use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Support\Dinero;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -38,7 +41,7 @@ use Tests\TestCase;
  */
 class NcPerfilDescuentoAlbaranTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -152,7 +155,8 @@ class NcPerfilDescuentoAlbaranTest extends TestCase
     private function crearNc(Dte $ccf, string $tipo): Dte
     {
         $this->actingAs($this->usuario())
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => $tipo, 'motivo' => 'Prueba'])
+            // `origen_averia` solo lo consume la avería; las demás modalidades lo descartan.
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => $tipo, 'motivo' => 'Prueba', 'origen_averia' => 'entrega'])
             ->assertRedirect();
 
         return Dte::where('tipo_dte', '05')->where('tipo_nota_credito', $tipo)->latest('id')->firstOrFail();
@@ -196,8 +200,8 @@ class NcPerfilDescuentoAlbaranTest extends TestCase
         $this->assertSame('0.14', $nc->descuento_global);   // 5 % redondeado UNA vez
         $this->assertSame('0.14', $nc->descuento_gravado);
         // Gravado NETO: lo que va en la columna GRAVADO del archivo del cliente.
-        $this->assertSame('2.75', \App\Support\Dinero::redondear(
-            \App\Support\Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2
+        $this->assertSame('2.75', Dinero::redondear(
+            Dinero::restar($nc->total_gravado, $nc->descuento_gravado), 2
         ));
         $this->assertSame('0.36', $nc->iva);
         $this->assertFalse((bool) $nc->aplica_retencion_iva);
@@ -531,7 +535,7 @@ class NcPerfilDescuentoAlbaranTest extends TestCase
 
         app(DteGeneracionService::class)->generar($nc->refresh());
 
-        $this->expectException(\App\Exceptions\Dte\DocumentoInmutableException::class);
+        $this->expectException(DocumentoInmutableException::class);
         app(AlbaranNotaCreditoService::class)->registrar($nc->refresh(), [
             'numero' => 'AC04/0033/00/9999', 'fecha' => '2026-08-15', 'total' => 1.00,
         ]);

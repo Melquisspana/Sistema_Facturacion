@@ -8,17 +8,16 @@ use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -27,7 +26,7 @@ use Tests\TestCase;
  */
 class DteNotaCreditoDesdeCcfTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -84,7 +83,8 @@ class DteNotaCreditoDesdeCcfTest extends TestCase
     private function crearNcDesdeCcf(Dte $ccf, string $tipo): Dte
     {
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => $tipo])
+            // `origen_averia` solo lo consume la avería; las demás modalidades lo descartan.
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => $tipo, 'origen_averia' => 'entrega'])
             ->assertRedirect();
 
         return Dte::where('tipo_dte', '05')->where('tipo_nota_credito', $tipo)->latest('id')->firstOrFail();
@@ -105,20 +105,25 @@ class DteNotaCreditoDesdeCcfTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $ccf))
             ->assertOk()
-            ->assertSee('Tipo de nota de crédito')
+            // La ficha del CCF ofrece ahora las cuatro modalidades operativas, las mismas
+            // que la pantalla «Nueva nota de crédito».
+            ->assertSee('Modalidad de la nota de crédito')
             ->assertSee('— Seleccione —')
+            ->assertSee('Devolución o faltante de entrega')
             ->assertSee('Avería')
             ->assertSee('Pronto pago');
     }
 
-    public function test_crear_nc_desde_ccf_sin_tipo_muestra_error(): void
+    public function test_crear_nc_desde_ccf_sin_modalidad_muestra_error(): void
     {
         $emisor = $this->emisor();
         $ccf = $this->ccfGenerado($emisor);
 
+        // La tarjeta del CCF postea ahora `modalidad`; sin nada elegido el error tiene que
+        // caer en ese campo, que es el que la pantalla puede señalar.
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => ''])
-            ->assertSessionHasErrors(['tipo' => 'Seleccione el tipo de nota de crédito.']);
+            ->post(route('facturacion.nota-credito.store', $ccf), ['modalidad' => '', 'tipo' => ''])
+            ->assertSessionHasErrors(['modalidad' => 'Seleccione la modalidad de la nota de crédito.']);
 
         $this->assertDatabaseMissing('dtes', ['tipo_dte' => '05', 'dte_relacionado_id' => $ccf->id]);
     }

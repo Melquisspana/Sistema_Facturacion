@@ -9,7 +9,6 @@ use App\Enums\TipoNotaCredito;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -17,10 +16,10 @@ use App\Models\User;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -29,7 +28,7 @@ use Tests\TestCase;
  */
 class DteTotalesPartialTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -191,6 +190,7 @@ class DteTotalesPartialTest extends TestCase
     {
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::Averia->value,
+            'origen_averia' => 'entrega',
             'motivo' => 'Producto averiado',
         ]);
         $this->borradores->agregarLineaDesdeProducto($nc, $this->producto($precio), cantidad: 1);

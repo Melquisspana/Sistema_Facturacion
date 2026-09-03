@@ -420,7 +420,7 @@ class ValidacionPreJsonTest extends TestCase
         $ccf = $this->aceptarCcf($this->ccfBorradorCompleto($emisor)); // gravado 20.00 (10 × 2)
 
         // Avería con productos manuales que SUMAN más que el CCF (10 × 3 = 30 > 20).
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia']);
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia', 'origen_averia' => 'entrega']);
         $this->borradores->agregarProductoNotaCreditoAveria($nc, $this->productoConUnidad(), 3);
 
         $this->assertTrue($this->superaSaldo($this->validacion->validar($nc->refresh())));
@@ -432,7 +432,7 @@ class ValidacionPreJsonTest extends TestCase
         $ccf = $this->aceptarCcf($this->ccfBorradorCompleto($emisor)); // gravado 20.00
 
         // Avería con producto manual que NO está en el CCF, dentro del saldo (10 × 1 = 10 ≤ 20).
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia']);
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia', 'origen_averia' => 'entrega']);
         $this->borradores->agregarProductoNotaCreditoAveria($nc, $this->productoConUnidad(), 1);
 
         // No debe aparecer el problema de saldo (sí otros, p.ej. estado borrador, irrelevantes aquí).
@@ -445,7 +445,7 @@ class ValidacionPreJsonTest extends TestCase
         $ccf = $this->aceptarCcf($this->ccfBorradorCompleto($emisor)); // gravado 20.00
 
         // NC #1 ya ACEPTADA consume 10.00 del saldo.
-        $nc1 = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia']);
+        $nc1 = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia', 'origen_averia' => 'entrega']);
         $this->borradores->agregarProductoNotaCreditoAveria($nc1, $this->productoConUnidad(), 1); // 10.00
         $nc1->refresh();
         // NC #1 ACEPTADA REALMENTE por el MH (consume saldo): sello real + fecha_procesamiento_mh.
@@ -459,7 +459,7 @@ class ValidacionPreJsonTest extends TestCase
             'unidad_medida_id' => UnidadMedida::whereNotNull('codigo')->first()->id,
             'precio_unitario' => 15, 'tipo_impuesto' => TipoImpuesto::Gravado->value,
         ]);
-        $nc2 = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia']);
+        $nc2 = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia', 'origen_averia' => 'entrega']);
         $this->borradores->agregarProductoNotaCreditoAveria($nc2, $caro, 1); // 15.00 > saldo 10.00
 
         $this->assertTrue($this->superaSaldo($this->validacion->validar($nc2->refresh())));

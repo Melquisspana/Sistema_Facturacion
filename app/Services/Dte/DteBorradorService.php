@@ -6,6 +6,7 @@ use App\DataTransferObjects\Dte\LineaDocumento;
 use App\DataTransferObjects\Dte\ResultadoCalculo;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
+use App\Enums\OrigenAveria;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -25,9 +26,11 @@ use App\Models\DteLinea;
 use App\Models\Producto;
 use App\Models\User;
 use App\Support\Dinero;
+use App\Support\Dte\ReglaOrdenCompra;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -148,11 +151,11 @@ class DteBorradorService
         }
 
         $validado = Validator::make($datos, [
-            'tipo_item_expor' => ['required', \Illuminate\Validation\Rule::in(array_map(fn (TipoItemExportacion $t) => $t->value, TipoItemExportacion::cases()))],
-            'recinto_fiscal' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '027')],
-            'tipo_regimen' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '033')],
-            'regimen' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '028')],
-            'cod_incoterms' => ['required', 'string', \Illuminate\Validation\Rule::exists('catalogos_mh', 'codigo')->where('cat', '031')],
+            'tipo_item_expor' => ['required', Rule::in(array_map(fn (TipoItemExportacion $t) => $t->value, TipoItemExportacion::cases()))],
+            'recinto_fiscal' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '027')],
+            'tipo_regimen' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '033')],
+            'regimen' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '028')],
+            'cod_incoterms' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '031')],
         ], [
             'recinto_fiscal.exists' => 'El recinto fiscal seleccionado no es válido (CAT-027).',
             'tipo_regimen.exists' => 'El tipo de régimen seleccionado no es válido (CAT-033).',
@@ -241,7 +244,7 @@ class DteBorradorService
      *
      * @param  array<string, mixed>  $datos
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function crearNotaCredito(?Dte $original, array $datos = [], ?User $usuario = null): Dte
     {
@@ -313,10 +316,28 @@ class DteBorradorService
         // posterior, ajuste comercial, otro) admiten una sala distinta del mismo cliente.
         $sucursalId = $this->resolverSalaNotaCredito($original, $tipo, $datos, $clienteId);
 
+        // Origen operativo de la avería: dato de trazabilidad, no fiscal. Se exige acá y
+        // no solo en el formulario para que valga igual por cualquier puerta de entrada
+        // (el formulario propio y la tarjeta del CCF crean la NC por este mismo método).
+        $origenAveria = $this->resolverOrigenAveria($tipo, $datos);
+
+        // Emitir a una sala distinta a la del CCF nunca es rutina: cambia la dirección
+        // impresa del receptor sin cambiar el cliente fiscal, y sin una explicación
+        // escrita nadie puede reconstruir después por qué se hizo. La pantalla lo avisa
+        // con un cartel; el motivo obligatorio es la parte que no depende del navegador.
+        if ($original !== null
+            && $sucursalId !== null
+            && (int) $sucursalId !== (int) $original->cliente_sucursal_id
+            && trim((string) ($datos['motivo'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'motivo' => 'Para emitir la nota de crédito a una sala distinta a la del CCF relacionado, el motivo es obligatorio: explique por qué.',
+            ]);
+        }
+
         // Orden de compra: se CONGELA desde el CCF relacionado (no se acepta del request).
         $ordenCompra = $original?->numero_orden_compra;
 
-        return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $usuario) {
+        return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $origenAveria, $usuario) {
             $nc = Dte::create([
                 'tipo_dte' => TipoDte::NotaCredito->value,
                 'tipo_nota_credito' => $tipo->value,
@@ -334,6 +355,7 @@ class DteBorradorService
                 'condicion_operacion' => $datos['condicion_operacion'] ?? 1,
                 'numero_orden_compra' => $ordenCompra,
                 'motivo' => $datos['motivo'] ?? null,
+                'origen_averia' => $origenAveria?->value,
                 'fecha_emision' => now()->toDateString(),
                 'hora_emision' => now()->toTimeString(),
                 'moneda' => $original?->moneda ?? 'USD',
@@ -367,6 +389,51 @@ class DteBorradorService
 
             return $nc->refresh();
         });
+    }
+
+    /**
+     * Origen operativo de una nota de crédito por AVERÍA ({@see OrigenAveria}).
+     *
+     * Solo la avería lo lleva, y lo lleva SIEMPRE: sin este dato no se distingue el
+     * producto dañado que apareció con el pedido en la mano del que apareció revisando
+     * un estante, y esas dos averías no se atienden igual. Se pide de entrada porque
+     * después nadie lo reconstruye.
+     *
+     * En cualquier otra modalidad el valor se DESCARTA en lugar de guardarse: un
+     * «origen de avería» colgado de un pronto pago no significaría nada y ensuciaría
+     * las consultas de trazabilidad.
+     *
+     * No es un valor fiscal: no entra al JSON del MH ni toca descuento, retención ni
+     * totales. Las averías ya emitidas se quedan en null (ver la migración); esto solo
+     * rige para las que se crean de ahora en adelante.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function resolverOrigenAveria(TipoNotaCredito $tipo, array $datos): ?OrigenAveria
+    {
+        if (! $tipo->esPorAveria()) {
+            return null;
+        }
+
+        $crudo = $datos['origen_averia'] ?? null;
+
+        if ($crudo instanceof OrigenAveria) {
+            return $crudo;
+        }
+
+        $origen = is_string($crudo) || is_int($crudo)
+            ? OrigenAveria::tryFrom((string) $crudo)
+            : null;
+
+        if ($origen === null) {
+            throw ValidationException::withMessages([
+                'origen_averia' => 'Indique dónde se detectó la avería: durante una entrega o en una revisión de inventario en sala.',
+            ]);
+        }
+
+        return $origen;
     }
 
     /**
@@ -458,8 +525,8 @@ class DteBorradorService
      * NO emite, genera, firma ni transmite, y NO toca el CCF original: la NC queda en
      * estado Borrador para revisión y emisión manual.
      *
-     * @throws \Illuminate\Validation\ValidationException si el CCF no es válido o ya no
-     *                                                    queda saldo acreditable en ninguna línea
+     * @throws ValidationException si el CCF no es válido o ya no
+     *                             queda saldo acreditable en ninguna línea
      */
     public function revertirCcfCompleto(?Dte $original, ?User $usuario = null): Dte
     {
@@ -503,7 +570,7 @@ class DteBorradorService
      * @param  array<string, mixed>  $datos  descripcion, monto, tipo_impuesto?
      *
      * @throws DocumentoInmutableException
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function agregarConceptoNotaCredito(Dte $nc, array $datos): DteLinea
     {
@@ -525,7 +592,7 @@ class DteBorradorService
         $validado = Validator::make($datos, [
             'descripcion' => ['required', 'string', 'max:1000'],
             'monto' => ['required', 'numeric', 'gt:0'],
-            'tipo_impuesto' => ['nullable', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoImpuesto::cases()))],
+            'tipo_impuesto' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoImpuesto::cases()))],
         ])->validate();
 
         $tipoImpuesto = $validado['tipo_impuesto'] ?? TipoImpuesto::Gravado->value;
@@ -561,7 +628,7 @@ class DteBorradorService
      * congela el snapshot, NO asigna dte_linea_original_id y NO valida saldo.
      *
      * @throws DocumentoInmutableException
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function agregarProductoNotaCreditoAveria(Dte $nc, Producto $producto, string|int|float $cantidad): DteLinea
     {
@@ -593,7 +660,7 @@ class DteBorradorService
      *
      * @throws DocumentoInmutableException
      * @throws SaldoAcreditableExcedidoException
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     public function acreditarLinea(Dte $nc, DteLinea $lineaOriginal, string|int|float $cantidad): DteLinea
     {
@@ -752,8 +819,8 @@ class DteBorradorService
             'cantidad' => ['required'],
             'precio_unitario' => ['required'],
             'descuento_monto' => ['nullable', 'numeric', 'min:0'],
-            'tipo_producto' => ['nullable', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoProducto::cases()))],
-            'tipo_impuesto' => ['nullable', \Illuminate\Validation\Rule::in(array_map(fn ($t) => $t->value, TipoImpuesto::cases()))],
+            'tipo_producto' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoProducto::cases()))],
+            'tipo_impuesto' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoImpuesto::cases()))],
         ])->validate();
 
         $descuento = $this->montoDe($validado['descuento_monto'] ?? 0);
@@ -1233,7 +1300,7 @@ class DteBorradorService
      */
     private function validarOrdenCompra(TipoDte $tipo, ?Cliente $cliente, ?ClienteSucursal $sucursal, ?string $numeroOrdenCompra): void
     {
-        $requiere = \App\Support\Dte\ReglaOrdenCompra::requerida($cliente, $sucursal);
+        $requiere = ReglaOrdenCompra::requerida($cliente, $sucursal);
 
         if ($tipo === TipoDte::CreditoFiscal
             && $requiere
@@ -1248,7 +1315,7 @@ class DteBorradorService
     /**
      * Resuelve la sucursal y verifica que pertenezca al cliente indicado.
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     private function resolverSucursal(ClienteSucursal|int|null $sucursal, ?Cliente $cliente): ?ClienteSucursal
     {
@@ -1273,7 +1340,7 @@ class DteBorradorService
      *
      * @param  array<string, mixed>  $datos
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
     private function validarDatosBorrador(array $datos, ?Cliente $cliente): TipoDte
     {

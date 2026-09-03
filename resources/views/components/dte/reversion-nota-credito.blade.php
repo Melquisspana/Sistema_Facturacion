@@ -1,15 +1,19 @@
 @props(['dte', 'salasNotaCredito' => []])
 
 {{--
-    Reversión con NOTA DE CRÉDITO — extraído tal cual de facturacion/show.blade.php.
+    Reversión con NOTA DE CRÉDITO — atajo desde la ficha del CCF.
 
     Es un concepto DISTINTO de la invalidación oficial y por eso vive en su propia
     tarjeta, con su propio encabezado y su propio color: aquí no hay ningún evento
     `anulardte`. Crear la nota deja un BORRADOR; nunca emite, firma ni transmite.
 
-    No cambia ninguna ruta, ningún campo ni ninguna regla: mismos formularios
-    (`nota-credito.revertir` y `nota-credito.store`), mismas abilities y mismas
-    validaciones de DteBorradorService.
+    Ofrece LAS MISMAS cuatro modalidades operativas que la pantalla «Nueva nota de
+    crédito» (ver App\Enums\ModalidadNotaCredito), para que el mismo trabajo no se pida
+    de dos formas distintas según por dónde se entre. La única diferencia es el atajo: acá
+    el CCF ya está elegido —es este documento— y no hay que buscarlo.
+
+    Mismas rutas de siempre (`nota-credito.revertir` y `nota-credito.store`), mismas
+    abilities y mismas validaciones de DteBorradorService.
 
     Solo lo usa el CCF (03) aceptado: es el único tipo con reversión por NC. Quien
     decide si se muestra es la vista contenedora (x-dte.acciones-documento).
@@ -56,44 +60,96 @@
         @endcan
     </div>
 
-    {{-- Otras notas de crédito: selector de tipo existente (parcial / avería / ajuste). --}}
+    {{-- Nota de crédito parcial: las cuatro modalidades operativas.
+
+         La INVALIDACIÓN oficial no está entre las opciones a propósito: no es una
+         modalidad de nota de crédito sino otro proceso, con su propia tarjeta. --}}
     <div class="mt-5 border-t border-gray-100 pt-4">
-        <h4 class="text-sm font-semibold text-gray-600 mb-2">Otras notas de crédito (parcial / avería / ajuste)</h4>
+        <h4 class="text-sm font-semibold text-gray-600 mb-2">Otra nota de crédito para este CCF</h4>
         @php
-            // Modalidades por MONTO: las únicas que admiten emitir la NC a una
-            // sala distinta a la del CCF (ver DteBorradorService).
-            $tiposPorMontoNc = collect(\App\Enums\TipoNotaCredito::cases())
-                ->filter(fn ($t) => $t->esPorMonto())->map(fn ($t) => $t->value)->values()->all();
+            $modalidadesNc = \App\Enums\ModalidadNotaCredito::cases();
+            // Modalidades que admiten emitir la NC a una sala distinta a la del CCF.
+            $modalidadesOtraSala = collect($modalidadesNc)
+                ->filter(fn ($m) => $m->permiteOtraSalaReceptora())->map(fn ($m) => $m->value)->values()->all();
+            // Modalidades que exigen declarar el origen operativo (avería).
+            $modalidadesConOrigen = collect($modalidadesNc)
+                ->filter(fn ($m) => $m->requiereOrigenAveria())->map(fn ($m) => $m->value)->values()->all();
+            $submotivosNc = collect($modalidadesNc)
+                ->mapWithKeys(fn ($m) => [$m->value => collect($m->submotivos())
+                    ->map(fn ($label, $valor) => ['valor' => $valor, 'label' => $label])->values()->all()])
+                ->all();
         @endphp
         <form method="POST" action="{{ route('facturacion.nota-credito.store', $dte) }}"
-              class="grid grid-cols-1 gap-3 items-end"
+              class="grid grid-cols-1 gap-3"
               x-data="{
+                  modalidad: @js(old('modalidad', '')),
                   tipo: @js(old('tipo', '')),
-                  porMonto: @js($tiposPorMontoNc),
-                  get permiteOtraSala() { return this.porMonto.includes(this.tipo); },
+                  otraSala: @js($modalidadesOtraSala),
+                  conOrigen: @js($modalidadesConOrigen),
+                  subs: @js($submotivosNc),
+                  salaCcf: @js((string) $dte->cliente_sucursal_id),
+                  salaNc: @js((string) old('cliente_sucursal_id', $dte->cliente_sucursal_id)),
+                  get permiteOtraSala() { return this.otraSala.includes(this.modalidad); },
+                  get pideOrigen() { return this.conOrigen.includes(this.modalidad); },
+                  get submotivos() { return this.subs[this.modalidad] ?? []; },
+                  {{-- Mismo criterio que el formulario grande: cruzar de sala cuesta una
+                       explicación escrita, y el servidor la exige igual. --}}
+                  get motivoObligatorio() { return this.permiteOtraSala && this.salaNc !== this.salaCcf; },
+                  onModalidad() {
+                      const s = this.submotivos;
+                      this.tipo = s.length > 0 ? (s.some(x => x.valor === this.tipo) ? this.tipo : s[0].valor) : '';
+                      if (! this.permiteOtraSala) { this.salaNc = this.salaCcf; }
+                  },
               }"
               onsubmit="return confirm('¿Crear una nota de crédito para este CCF?');">
             @csrf
             <div>
-                <x-input-label for="tipo_nc" value="Tipo de nota de crédito *" />
-                <select id="tipo_nc" name="tipo" x-model="tipo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
+                <x-input-label for="modalidad_nc" value="Modalidad de la nota de crédito *" />
+                <select id="modalidad_nc" name="modalidad" x-model="modalidad" @change="onModalidad()"
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" required>
                     <option value="">— Seleccione —</option>
-                    @foreach (\App\Enums\TipoNotaCredito::opciones() as $valor => $label)
-                        <option value="{{ $valor }}" @selected(old('tipo') === $valor)>{{ $label }}</option>
+                    @foreach ($modalidadesNc as $m)
+                        <option value="{{ $m->value }}" @selected(old('modalidad') === $m->value)>{{ $m->label() }}@if ($m->codigoAlbaranReferencia()) · {{ $m->codigoAlbaranReferencia() }}@endif</option>
                     @endforeach
                 </select>
-                <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
-                <p class="mt-1 text-xs text-gray-400">Devolución y faltante usan las líneas de este CCF. Avería permite otros productos. Pronto pago y ajustes usan conceptos manuales.</p>
+                <x-input-error :messages="$errors->get('modalidad')" class="mt-1" />
+                <p class="mt-1 text-xs text-gray-400">Devolución y faltante usan las líneas de este CCF. Avería permite otros productos. Pronto pago y otro ajuste usan conceptos por monto.</p>
             </div>
 
-            {{-- SALA RECEPTORA: solo para las notas por monto (pronto pago…).
-                 Permite emitir a una sala administrativa del mismo cliente que no
+            {{-- Submotivo (devolución vs. faltante): mismo tratamiento fiscal, dos hechos
+                 distintos que conviene no perder. --}}
+            <div x-show="submotivos.length > 0" x-cloak>
+                <x-input-label for="submotivo_nc" value="¿Cuál de los dos fue?" />
+                <select id="submotivo_nc" name="tipo" x-model="tipo"
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                    <template x-for="s in submotivos" :key="s.valor">
+                        <option :value="s.valor" x-text="s.label"></option>
+                    </template>
+                </select>
+                <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
+            </div>
+
+            {{-- Origen operativo de la avería: obligatorio, igual que en el formulario grande. --}}
+            <div x-show="pideOrigen" x-cloak class="rounded-md border border-amber-200 bg-amber-50 p-3">
+                <x-input-label for="origen_averia_nc" value="¿Dónde se detectó la avería? *" />
+                <select id="origen_averia_nc" name="origen_averia" :required="pideOrigen"
+                        class="mt-1 block w-full border-amber-300 rounded-md shadow-sm text-sm">
+                    <option value="">— Seleccione —</option>
+                    @foreach (\App\Enums\OrigenAveria::cases() as $origen)
+                        <option value="{{ $origen->value }}" @selected(old('origen_averia') === $origen->value)>{{ $origen->label() }}</option>
+                    @endforeach
+                </select>
+                <x-input-error :messages="$errors->get('origen_averia')" class="mt-1" />
+            </div>
+
+            {{-- SALA RECEPTORA: solo para las modalidades que la admiten (pronto pago, otro
+                 ajuste). Permite emitir a una sala administrativa del mismo cliente que no
                  tenga CCF propios. El CCF relacionado y el cliente NO cambian. --}}
             @if (! empty($salasNotaCredito))
                 <div x-show="permiteOtraSala" x-cloak
                      class="rounded-md border border-amber-200 bg-amber-50 p-3">
                     <x-input-label for="sala_nc_ccf" value="Sala receptora de la Nota de Crédito" />
-                    <select id="sala_nc_ccf" name="cliente_sucursal_id"
+                    <select id="sala_nc_ccf" name="cliente_sucursal_id" x-model="salaNc"
                             class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
                         @foreach ($salasNotaCredito as $sala)
                             <option value="{{ $sala['id'] }}"
@@ -109,16 +165,27 @@
                         Solo cambia el establecimiento y la dirección mostrados:
                         <strong>el CCF relacionado, el NIT/NRC del cliente y el saldo acreditable no cambian.</strong>
                     </p>
+                    <p class="mt-1.5 text-xs font-semibold text-amber-900" x-show="motivoObligatorio" x-cloak role="status">
+                        Vas a emitir a una sala distinta a la del CCF: el motivo pasa a ser obligatorio.
+                    </p>
                 </div>
-                <p class="text-xs text-gray-400" x-show="tipo !== '' && ! permiteOtraSala" x-cloak>
+                <p class="text-xs text-gray-400" x-show="modalidad !== '' && ! permiteOtraSala" x-cloak>
                     Esta nota se emite a la misma sala del CCF relacionado.
                 </p>
             @endif
+
             <div>
-                <x-input-label for="motivo" value="Motivo / observaciones (opcional)" />
+                <x-input-label for="motivo">
+                    <span>Motivo / observaciones</span>
+                    <span x-show="motivoObligatorio" x-cloak class="text-amber-700 font-semibold"> — obligatorio</span>
+                    <span x-show="! motivoObligatorio" class="text-gray-400 font-normal"> (opcional)</span>
+                </x-input-label>
                 <x-text-input id="motivo" name="motivo" type="text" class="mt-1 block w-full"
+                              ::required="motivoObligatorio"
                               placeholder="Ej. Devolución parcial de mercadería" :value="old('motivo')" />
+                <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
             </div>
+
             <div>
                 <button class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
                     Crear nota de crédito
