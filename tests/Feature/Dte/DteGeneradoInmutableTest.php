@@ -22,6 +22,7 @@ use Tests\TestCase;
 
 class DteGeneradoInmutableTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -154,22 +155,18 @@ class DteGeneradoInmutableTest extends TestCase
     {
         $dte = $this->ccfBorrador($this->emisor());
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $dte))
-            ->assertOk()
-            ->assertSee('BORRADOR');
+        $this->assertImprimeElPdf($dte, $this->usuario('facturacion'));
+        $this->assertStringContainsString('BORRADOR', $this->htmlDelPdf($dte));
     }
 
     public function test_impresion_generado_no_muestra_opciones_de_edicion(): void
     {
         $dte = $this->ccfGenerado($this->emisor());
 
-        $html = $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $dte))
-            ->assertOk()
-            ->assertDontSee('BORRADOR')
-            ->getContent();
+        $this->assertImprimeElPdf($dte, $this->usuario('facturacion'));
 
+        $html = $this->htmlDelPdf($dte);
+        $this->assertStringNotContainsString('BORRADOR', $html);
         $this->assertStringNotContainsString('Editar', $html);
         $this->assertStringNotContainsString('Eliminar', $html);
     }

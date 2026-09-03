@@ -18,6 +18,31 @@ class DtePdfService
     /** Objeto PDF listo para stream()/download()/output(). */
     public function pdf(Dte $dte): \Barryvdh\DomPDF\PDF
     {
+        return Pdf::loadView('facturacion.pdf', $this->datosVista($dte))->setPaper('letter');
+    }
+
+    /**
+     * La MISMA representación, renderizada a HTML sin pasar por Dompdf.
+     *
+     * Existe para poder inspeccionar el contenido del documento —en pruebas o al
+     * diagnosticar— sobre exactamente los mismos datos que salen impresos. Antes cada
+     * prueba armaba su propio `view('facturacion.pdf', compact(...))` con un subconjunto
+     * distinto de variables, así que podía pasar en verde con un emisor o un receptor que
+     * el PDF real nunca habría recibido.
+     */
+    public function html(Dte $dte): string
+    {
+        return view('facturacion.pdf', $this->datosVista($dte))->render();
+    }
+
+    /**
+     * FUENTE ÚNICA de las variables de la plantilla. Todo lo que se ve, se descarga, se
+     * imprime o se adjunta al correo sale de acá.
+     *
+     * @return array<string, mixed>
+     */
+    private function datosVista(Dte $dte): array
+    {
         $dte->loadMissing([
             'cliente.departamento', 'cliente.municipio', 'cliente.distrito', 'cliente.actividadEconomica', 'cliente.pais',
             'clienteSucursal.departamento', 'clienteSucursal.municipio', 'clienteSucursal.distrito.departamento',
@@ -31,12 +56,15 @@ class DtePdfService
         // y ubicación en 3 niveles. El emisor puede resolverse a una empresa distinta a la
         // del establecimiento, por eso se cargan sobre la instancia ya resuelta.
         $emisor?->loadMissing(['actividadEconomica', 'departamento', 'municipio', 'distrito']);
-        $logoSrc = $this->logoSrc();
-        $qrDataUri = $this->qrOficial($dte); // solo si hay sello (datos oficiales)
-        $datosExportacion = DatosExportacionPresentacion::resolver($dte);
-        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
 
-        return Pdf::loadView('facturacion.pdf', compact('dte', 'emisor', 'logoSrc', 'qrDataUri', 'datosExportacion', 'datosReceptor'))->setPaper('letter');
+        return [
+            'dte' => $dte,
+            'emisor' => $emisor,
+            'logoSrc' => $this->logoSrc(),
+            'qrDataUri' => $this->qrOficial($dte), // solo si hay sello (datos oficiales)
+            'datosExportacion' => DatosExportacionPresentacion::resolver($dte),
+            'datosReceptor' => \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte),
+        ];
     }
 
     /** Bytes del PDF (para adjuntar en correo). */

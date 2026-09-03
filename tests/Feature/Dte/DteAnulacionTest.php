@@ -26,6 +26,7 @@ use Tests\TestCase;
 
 class DteAnulacionTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -178,10 +179,11 @@ class DteAnulacionTest extends TestCase
         $ccf = $this->ccfGenerado($this->emisor());
         app(DteAnulacionService::class)->anular($ccf, MotivoAnulacion::DocumentoDuplicado);
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $ccf->refresh()))
-            ->assertOk()
-            ->assertSee('DOCUMENTO ANULADO / INVALIDADO INTERNAMENTE')
-            ->assertSee('Documento duplicado');
+        $ccf->refresh();
+        $this->assertImprimeElPdf($ccf, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($ccf);
+        $this->assertStringContainsString('DOCUMENTO ANULADO / INVALIDADO INTERNAMENTE', $html);
+        $this->assertStringContainsString('Documento duplicado', $html);
     }
 }

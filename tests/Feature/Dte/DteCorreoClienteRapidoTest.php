@@ -151,9 +151,15 @@ class DteCorreoClienteRapidoTest extends TestCase
         $content = $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $dte->refresh()))
             ->assertOk()
-            ->assertSee('Enviado por correo')   // badge en el encabezado
+            // El estado del correo lo informa la TARJETA DE ESTADO. La insignia «Enviado
+            // por correo» que había además en la cabecera de «Datos del documento» se
+            // retiró por redundante: decía lo mismo, dos bloques más abajo.
+            ->assertSee('Correo enviado')
             ->assertSee('Reenviar y abrir PDF') // el botón principal pasa a reenviar
             ->getContent();
+
+        // Y no vuelve a aparecer la insignia duplicada del encabezado.
+        $this->assertSame(0, substr_count($content, 'Enviado por correo'));
 
         // Ya enviado: el botón principal dice "Reenviar y abrir PDF", no "Enviar correo".
         $this->assertSame(0, substr_count($content, 'Enviar correo'));

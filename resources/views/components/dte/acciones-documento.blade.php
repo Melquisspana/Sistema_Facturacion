@@ -17,8 +17,16 @@
       · `mostrarReversion`  → solo el CCF aceptado tiene reversión con NC;
       · `salasNotaCredito`  → solo alimenta el selector de sala del bloque de NC.
 
-    La barra de arriba es acceso rápido; debajo van las tarjetas con el detalle. Los
-    dos conceptos correctivos quedan SEPARADOS a propósito:
+    La barra de arriba reúne las acciones NO destructivas sobre el documento —ver,
+    descargar, imprimir, correo y duplicar—; debajo van las tarjetas con el detalle.
+
+    La barra ya NO lleva atajos a «Revertir con NC» ni a «Invalidar oficialmente». Eran
+    los dos únicos botones de la fila con consecuencia fiscal, mezclados entre acciones
+    inocuas, y uno de ellos abría directamente el asistente de invalidación. Las dos
+    operaciones conservan sus tarjetas COMPLETAS más abajo, que es donde se explican los
+    candados, el estado y el motivo: se quitó el atajo, no la función.
+
+    Los dos conceptos correctivos siguen SEPARADOS a propósito:
 
       Invalidación oficial → evento `anulardte` ante Hacienda.
       Reversión con NC     → crea un borrador de nota de crédito, no transmite nada.
@@ -73,38 +81,41 @@
                 </a>
             @endif
 
-            @if ($mostrarReversion)
-                <a href="#reversion-nota-credito"
-                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                    Revertir con nota de crédito
-                </a>
-            @endif
+            {{-- DUPLICAR. Vive acá y no en la cabecera de «Datos del documento», que es
+                 donde estaba: duplicar CREA un documento nuevo, así que pertenece a las
+                 acciones, no a los datos.
 
-            @if ($puedeInvalidar)
-                @php
-                    // Mismo criterio que usa la tarjeta: candados del entorno O documento
-                    // no candidato. Si está bloqueada, el acceso rápido lleva a la tarjeta
-                    // (donde se explican las razones) en vez de abrir un asistente inútil.
-                    $invBloqueada = ($invalidacion['candados']['bloqueado'] ?? true)
-                        || ! ($invalidacion['puede_transmitir'] ?? false);
-                @endphp
-                @if ($invBloqueada || ($invalidacion['ya_invalidado'] ?? false))
-                    <a href="#invalidacion-oficial"
-                       class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        Invalidar oficialmente
-                    </a>
-                @else
-                    <button type="button" x-data="" x-on:click="$dispatch('open-modal', 'invalidar-dte')"
-                            class="inline-flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">
-                        Invalidar oficialmente
-                    </button>
-                @endif
+                 Solo para el CCF (03), que es el único tipo con flujo de duplicación
+                 seguro y probado: DteBorradorService::duplicarCcf() revalida la orden de
+                 compra, no copia número de control ni sello y deja un BORRADOR nuevo sin
+                 tocar el documento de origen. El controlador lo vuelve a exigir del lado
+                 del servidor ({@see DteController::duplicar}), de modo que esconder o
+                 mostrar el botón nunca es lo que decide.
+
+                 Los demás tipos NO se ofrecen: la factura (01) y la exportación (11) no
+                 tienen equivalente probado, y duplicar una nota de crédito (05) implicaría
+                 arrastrar el documento relacionado y el saldo acreditado, que es
+                 justamente donde una copia a ciegas haría daño. --}}
+            @if ($dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal && ! $dte->esEditable())
+                @can('create', \App\Models\Dte::class)
+                    <form method="POST" action="{{ route('facturacion.duplicar', $dte) }}" class="inline-flex"
+                          onsubmit="return confirm('¿Duplicar este CCF como un borrador nuevo? Este documento no se modifica.');">
+                        @csrf
+                        <button class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            Duplicar
+                        </button>
+                    </form>
+                @endcan
             @endif
         </div>
     </div>
 
     {{-- Tarjetas de detalle. Con las dos presentes van lado a lado; con una sola,
-         a ancho completo. Es la única diferencia de layout entre tipos. --}}
+         a ancho completo. Es la única diferencia de layout entre tipos.
+
+         Desde que la barra no lleva atajos, ESTAS tarjetas son el único acceso a la
+         reversión y a la invalidación. Siguen completas —candados, estado, motivo y el
+         asistente— y las abilities no cambiaron. --}}
     @if ($puedeInvalidar || $mostrarReversion)
         <div class="grid grid-cols-1 {{ $dosBloques ? 'xl:grid-cols-2' : '' }} gap-4 items-start">
             @if ($mostrarReversion)

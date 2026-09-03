@@ -687,4 +687,178 @@ class AccionesDocumentoUiTest extends TestCase
 
         Http::assertNothingSent();
     }
+
+    // ================================================================
+    // FICHA Y ACCIONES: dónde vive cada cosa (los cuatro tipos)
+    // ================================================================
+
+    /**
+     * El bloque GRANDE rojo de modo DTE («⚠ EMISIÓN REAL A PRODUCCIÓN POSIBLE») ya no va
+     * en la ficha. El mismo dato lo da el indicador COMPACTO del layout superior, que
+     * sigue presente: se quitó la duplicación, no el aviso.
+     */
+    public function test_la_ficha_no_lleva_el_bloque_grande_de_modo_dte(): void
+    {
+        foreach (self::TIPOS as $i => $tipo) {
+            $dte = $this->documentoAceptado($tipo, secuencia: 400 + $i);
+
+            $html = $this->actingAs($this->usuario('administrador'))
+                ->get(route('facturacion.show', $dte))
+                ->assertOk()
+                ->getContent();
+
+            $this->assertStringNotContainsString(
+                'EMISIÓN REAL A PRODUCCIÓN POSIBLE',
+                $html,
+                "El bloque grande de modo DTE sigue en la ficha de {$tipo->label()}."
+            );
+
+            // El indicador compacto del encabezado sí sigue ahí.
+            $this->assertStringContainsString('MODO', $html);
+        }
+    }
+
+    /**
+     * «Datos del documento» es la cabecera de los DATOS, no una segunda barra de
+     * acciones: solo conserva Imprimir (y Editar, la puerta al borrador). Ver PDF,
+     * Descargar PDF y Duplicar viven ahora en «Acciones del documento».
+     */
+    public function test_datos_del_documento_solo_conserva_imprimir(): void
+    {
+        foreach (self::TIPOS as $i => $tipo) {
+            $dte = $this->documentoAceptado($tipo, secuencia: 410 + $i);
+
+            $html = $this->actingAs($this->usuario('administrador'))
+                ->get(route('facturacion.show', $dte))
+                ->assertOk()
+                ->getContent();
+
+            $cabecera = $this->cabeceraDatosDelDocumento($html);
+
+            $this->assertStringContainsString('Imprimir', $cabecera, "Falta Imprimir en {$tipo->label()}.");
+
+            foreach (['Ver PDF', 'Descargar PDF', 'Ver PDF oficial', 'Descargar PDF oficial', 'Duplicar', 'Enviado por correo'] as $retirado) {
+                $this->assertStringNotContainsString(
+                    $retirado,
+                    $cabecera,
+                    "«{$retirado}» debía salir de «Datos del documento» en {$tipo->label()}."
+                );
+            }
+        }
+    }
+
+    /**
+     * La barra de «Acciones del documento» conserva ver, descargar, imprimir y correo, y
+     * ya NO ofrece los atajos con consecuencia fiscal: revertir con NC e invalidar. Las
+     * dos operaciones siguen accesibles por sus TARJETAS completas, más abajo.
+     */
+    public function test_la_barra_de_acciones_no_lleva_atajos_de_reversion_ni_invalidacion(): void
+    {
+        $this->abrirCandados();
+        Http::fake();
+        $ccf = $this->ccfConLineasAceptado(); // el único tipo con reversión con NC
+
+        $html = $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.show', $ccf))
+            ->assertOk()
+            ->getContent();
+
+        $barra = $this->barraDeAcciones($html);
+
+        foreach (['Ver PDF', 'Descargar PDF', 'Imprimir', 'Correo del cliente'] as $conserva) {
+            $this->assertStringContainsString($conserva, $barra, "La barra debe conservar «{$conserva}».");
+        }
+
+        $this->assertStringNotContainsString('Revertir con nota de crédito', $barra);
+        $this->assertStringNotContainsString('Invalidar oficialmente', $barra);
+
+        // Pero las TARJETAS completas siguen presentes en la ficha.
+        $this->assertStringContainsString('id="reversion-nota-credito"', $html);
+        $this->assertStringContainsString('id="invalidacion-oficial"', $html);
+        $this->assertStringContainsString('Invalidación oficial (evento anulardte)', $html);
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * DUPLICAR se mudó a «Acciones del documento», y solo para el CCF: es el único tipo
+     * con flujo de duplicación probado. El controlador lo vuelve a exigir del lado del
+     * servidor, así que esto fija la oferta visual, no el candado.
+     */
+    public function test_duplicar_vive_en_acciones_y_solo_para_el_ccf(): void
+    {
+        $ccf = $this->documentoAceptado(TipoDte::CreditoFiscal, secuencia: 420);
+
+        $html = $this->actingAs($this->usuario('administrador'))
+            ->get(route('facturacion.show', $ccf))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('Duplicar', $this->barraDeAcciones($html));
+        $this->assertStringContainsString(route('facturacion.duplicar', $ccf), $html);
+
+        // Los demás tipos no ofrecen Duplicar en ninguna parte de la ficha.
+        foreach ([TipoDte::Factura, TipoDte::NotaCredito, TipoDte::FacturaExportacion] as $i => $tipo) {
+            $otro = $this->documentoAceptado($tipo, secuencia: 430 + $i);
+
+            $this->actingAs($this->usuario('administrador'))
+                ->get(route('facturacion.show', $otro))
+                ->assertOk()
+                ->assertDontSee('Duplicar');
+        }
+    }
+
+    /**
+     * IMPRIMIR abre la MISMA representación PDF que ver/descargar/correo, no una vista
+     * HTML aparte. Los cuatro tipos comparten esa salida.
+     */
+    public function test_imprimir_entrega_la_representacion_pdf_en_los_cuatro_tipos(): void
+    {
+        foreach (self::TIPOS as $i => $tipo) {
+            $dte = $this->documentoAceptado($tipo, secuencia: 440 + $i);
+
+            $r = $this->actingAs($this->usuario('administrador'))
+                ->get(route('facturacion.imprimir', $dte));
+
+            $r->assertOk();
+            $this->assertSame(
+                'application/pdf',
+                strtok((string) $r->headers->get('content-type'), ';'),
+                "Imprimir debe entregar el PDF en {$tipo->label()}."
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------- recortes
+
+    /** Cabecera de la tarjeta «Datos del documento», hasta el inicio de la lista de datos. */
+    private function cabeceraDatosDelDocumento(string $html): string
+    {
+        $inicio = strpos($html, 'Datos del documento');
+        $this->assertNotFalse($inicio, 'No se encontró la sección «Datos del documento».');
+
+        $fin = strpos($html, '<dl', $inicio);
+        $this->assertNotFalse($fin, 'No se encontró el inicio de la lista de datos.');
+
+        return substr($html, $inicio, $fin - $inicio);
+    }
+
+    /** Barra de acceso rápido de «Acciones del documento», sin las tarjetas de detalle. */
+    private function barraDeAcciones(string $html): string
+    {
+        $inicio = strpos($html, 'id="acciones-documento"');
+        $this->assertNotFalse($inicio, 'No se encontró «Acciones del documento».');
+
+        // La barra termina donde empiezan las tarjetas de detalle; si no hay tarjetas,
+        // se toma un tramo suficiente para cubrir la fila de botones.
+        $fin = strpos($html, 'id="reversion-nota-credito"', $inicio);
+        if ($fin === false) {
+            $fin = strpos($html, 'id="invalidacion-oficial"', $inicio);
+        }
+        if ($fin === false) {
+            $fin = min(strlen($html), $inicio + 6000);
+        }
+
+        return substr($html, $inicio, $fin - $inicio);
+    }
 }

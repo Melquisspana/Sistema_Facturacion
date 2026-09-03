@@ -27,6 +27,7 @@ use Tests\TestCase;
  */
 class DteExportacionDatosVistaTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -130,14 +131,14 @@ class DteExportacionDatosVistaTest extends TestCase
         $cliente = Cliente::factory()->exportacion()->create();
         $fex = $this->generar($this->borradorConLinea(TipoDte::FacturaExportacion, $cliente));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $fex))
-            ->assertOk()
-            ->assertSee('Datos de exportación')
-            ->assertSee('01 — Terrestre San Bartolo')
-            ->assertSee('EX-1 — Exportación Definitiva')
-            ->assertSee('1000.000 — Exportación Definitiva, Régimen Común')
-            ->assertSee('09 — FOB-Libre a bordo');
+        $this->assertImprimeElPdf($fex, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($fex);
+        $this->assertStringContainsString('Datos de exportación', $html);
+        $this->assertStringContainsString('01 — Terrestre San Bartolo', $html);
+        $this->assertStringContainsString('EX-1 — Exportación Definitiva', $html);
+        $this->assertStringContainsString('1000.000 — Exportación Definitiva, Régimen Común', $html);
+        $this->assertStringContainsString('09 — FOB-Libre a bordo', $html);
     }
 
     public function test_ficha_show_fex_muestra_la_seccion(): void
@@ -173,10 +174,8 @@ class DteExportacionDatosVistaTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create();
         $ccf = $this->generar($this->borradorConLinea(TipoDte::CreditoFiscal, $cliente));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $ccf))
-            ->assertOk()
-            ->assertDontSee('Datos de exportación');
+        $this->assertImprimeElPdf($ccf, $this->usuario('facturacion'));
+        $this->assertStringNotContainsString('Datos de exportación', $this->htmlDelPdf($ccf));
     }
 
     public function test_show_ccf_no_muestra_el_bloque(): void
@@ -203,10 +202,8 @@ class DteExportacionDatosVistaTest extends TestCase
     {
         $factura = $this->generar($this->borradorConLinea(TipoDte::Factura, null));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $factura))
-            ->assertOk()
-            ->assertDontSee('Datos de exportación');
+        $this->assertImprimeElPdf($factura, $this->usuario('facturacion'));
+        $this->assertStringNotContainsString('Datos de exportación', $this->htmlDelPdf($factura));
     }
 
     public function test_show_factura_consumidor_final_no_muestra_el_bloque(): void

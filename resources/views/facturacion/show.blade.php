@@ -23,8 +23,14 @@
                  sin importar sello/estado. No confundir con el aviso de MODO DTE de abajo. --}}
             <x-ambiente-pruebas-aviso :dte="$dte" />
 
-            {{-- Aviso de MODO DTE (solo gestores): seguro (no emite producción) vs. emisión real posible. --}}
-            <x-modo-dte-aviso :modo="$modoDte ?? null" />
+            {{-- El aviso GRANDE de modo DTE ya no va en la ficha. El mismo dato —modo activo y
+                 si una emisión real a producción es posible— lo da el indicador COMPACTO del
+                 layout superior (<x-app-layout> → navigation), visible en todas las pantallas
+                 de facturación. Tenerlo dos veces empujaba hacia abajo el documento y hacía
+                 que la ficha se leyera como una advertencia en vez de como un documento.
+                 No cambia ningún candado ni validación: es solo dónde se muestra. Las
+                 pantallas de CREACIÓN sí conservan el banner detallado, porque ahí la
+                 advertencia precede a una acción que puede emitir de verdad. --}}
 
             {{-- Aviso operativo (solo gestores): correos en cola sin procesar hace >5 min.
                  Solo lectura de la tabla jobs; el controlador lo calcula únicamente para gestores. --}}
@@ -76,32 +82,22 @@
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>
+                    {{-- Este encabezado ya NO es una barra de acciones: es la cabecera de los
+                         DATOS. Solo quedan «Imprimir» —el gesto inmediato sobre el documento
+                         que se está mirando— y «Editar», que es la puerta al flujo de edición
+                         del borrador y no tiene otro lugar donde vivir.
+
+                         Se retiraron de acá, y ahora viven en «Acciones del documento» más
+                         abajo: Ver PDF, Descargar PDF y Duplicar. Estaban duplicados en las
+                         dos secciones, con etiquetas distintas para la misma ruta («Ver PDF
+                         oficial» arriba, «Ver PDF» abajo), lo que hacía dudar si eran o no
+                         la misma cosa.
+
+                         También se retiró la insignia «Enviado por correo»: la tarjeta de
+                         ESTADO, tres líneas más arriba, ya dice «Correo enviado / Correo
+                         falló / Pendiente de correo» sobre el mismo dato. --}}
                     <div class="flex items-center gap-3 flex-wrap">
-                        @php $pdfEtiqueta = $dte->estado === \App\Enums\EstadoDte::Aceptado ? 'PDF oficial' : 'PDF para revisión'; @endphp
                         <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="text-gray-600 hover:underline text-sm">Imprimir</a>
-                        <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" class="text-indigo-600 hover:underline text-sm">Ver {{ $pdfEtiqueta }}</a>
-                        <a href="{{ route('facturacion.pdf.descargar', $dte) }}" class="text-indigo-600 hover:underline text-sm">Descargar {{ $pdfEtiqueta }}</a>
-
-                        {{-- Solo el estado; la acción de enviar vive en la sección "Correo del cliente". --}}
-                        @can('enviarCorreo', $dte)
-                            @if ($dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true)))
-                                <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                                    <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
-                                    Enviado por correo
-                                </span>
-                            @endif
-                        @endcan
-
-                        {{-- Duplicar CCF: nuevo borrador con los mismos datos y líneas (no toca este documento). --}}
-                        @if ($dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal && ! $dte->esEditable())
-                            @can('create', App\Models\Dte::class)
-                                <form method="POST" action="{{ route('facturacion.duplicar', $dte) }}" class="inline-flex"
-                                      onsubmit="return confirm('¿Duplicar este CCF como un borrador nuevo? Este documento no se modifica.');">
-                                    @csrf
-                                    <button class="text-indigo-600 hover:underline text-sm">Duplicar</button>
-                                </form>
-                            @endcan
-                        @endif
 
                         @can('update', $dte)
                             <a href="{{ route('facturacion.edit', $dte) }}" class="text-indigo-600 hover:underline text-sm">Editar</a>
