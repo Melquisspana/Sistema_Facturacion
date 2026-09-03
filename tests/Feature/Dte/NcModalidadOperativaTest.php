@@ -5,6 +5,7 @@ namespace Tests\Feature\Dte;
 use App\Enums\ModalidadNotaCredito;
 use App\Enums\OrigenAveria;
 use App\Enums\TipoNotaCredito;
+use App\Models\ClientePerfilTipoNc;
 use App\Models\Dte;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -84,13 +85,29 @@ class NcModalidadOperativaTest extends TestCase
         $this->assertSame(TipoNotaCredito::Otro, ModalidadNotaCredito::OtroAjuste->tipoPorDefecto());
     }
 
-    /** El código de albarán de la pantalla es el que pidió negocio (AC04 / AC02). */
-    public function test_codigos_de_albaran_de_referencia(): void
+    /**
+     * La enum NO puede traer códigos de albarán adentro. Un código de ejemplo metido acá
+     * se convertiría en la regla de todos los clientes, y la inmensa mayoría no tiene
+     * ningún código: sus notas se emiten con las reglas fiscales generales. El código,
+     * cuando existe, lo declara el perfil documental del cliente
+     * ({@see ClientePerfilTipoNc}).
+     */
+    public function test_la_modalidad_no_conoce_codigos_de_albaran(): void
     {
-        $this->assertSame('AC04', ModalidadNotaCredito::DevolucionFaltante->codigoAlbaranReferencia());
-        $this->assertSame('AC02', ModalidadNotaCredito::Averia->codigoAlbaranReferencia());
-        $this->assertNull(ModalidadNotaCredito::ProntoPago->codigoAlbaranReferencia());
-        $this->assertNull(ModalidadNotaCredito::OtroAjuste->codigoAlbaranReferencia());
+        $this->assertFalse(
+            method_exists(ModalidadNotaCredito::class, 'codigoAlbaranReferencia'),
+            'La modalidad volvió a traer códigos de albarán cableados: deben salir del perfil del cliente.'
+        );
+
+        foreach (ModalidadNotaCredito::cases() as $m) {
+            foreach ([$m->label(), $m->descripcion()] as $texto) {
+                $this->assertDoesNotMatchRegularExpression(
+                    '/AC\d{2}/',
+                    $texto,
+                    "La modalidad {$m->value} nombra un código de albarán en un texto de pantalla."
+                );
+            }
+        }
     }
 
     /** Solo la avería pide origen operativo, y solo las por monto admiten otra sala. */

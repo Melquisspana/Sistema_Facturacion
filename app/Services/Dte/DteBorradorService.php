@@ -321,23 +321,38 @@ class DteBorradorService
         // (el formulario propio y la tarjeta del CCF crean la NC por este mismo método).
         $origenAveria = $this->resolverOrigenAveria($tipo, $datos);
 
-        // Emitir a una sala distinta a la del CCF nunca es rutina: cambia la dirección
-        // impresa del receptor sin cambiar el cliente fiscal, y sin una explicación
-        // escrita nadie puede reconstruir después por qué se hizo. La pantalla lo avisa
-        // con un cartel; el motivo obligatorio es la parte que no depende del navegador.
-        if ($original !== null
-            && $sucursalId !== null
-            && (int) $sucursalId !== (int) $original->cliente_sucursal_id
-            && trim((string) ($datos['motivo'] ?? '')) === '') {
+        // Sala donde se ENCONTRÓ el producto averiado. Solo la avería la lleva, y solo
+        // cuando el hallazgo no salió de una entrega. No es la sala receptora.
+        $salaHallazgo = $this->resolverSalaHallazgo($origenAveria, $datos, $clienteId);
+
+        // Cruzar de sala nunca es rutina. Hay dos formas de hacerlo y las dos cuestan lo
+        // mismo: una explicación escrita.
+        //
+        //   RECEPTORA distinta  → cambia el establecimiento y la dirección impresos en la
+        //                         nota, sin cambiar el cliente fiscal.
+        //   HALLAZGO distinto   → la avería se encontró en una sala y se acredita contra
+        //                         un CCF de otra sala del mismo cliente.
+        //
+        // Sin motivo escrito nadie puede reconstruir después por qué se hizo. La pantalla
+        // lo avisa con un cartel; esto es la parte que no depende del navegador.
+        $salaCcf = $original?->cliente_sucursal_id;
+        $receptoraCruzada = $original !== null && $sucursalId !== null
+            && (int) $sucursalId !== (int) $salaCcf;
+        $hallazgoCruzado = $original !== null && $salaHallazgo !== null
+            && (int) $salaHallazgo !== (int) $salaCcf;
+
+        if (($receptoraCruzada || $hallazgoCruzado) && trim((string) ($datos['motivo'] ?? '')) === '') {
             throw ValidationException::withMessages([
-                'motivo' => 'Para emitir la nota de crédito a una sala distinta a la del CCF relacionado, el motivo es obligatorio: explique por qué.',
+                'motivo' => $receptoraCruzada
+                    ? 'Para emitir la nota de crédito a una sala distinta a la del CCF relacionado, el motivo es obligatorio: explique por qué.'
+                    : 'La avería se encontró en una sala distinta a la del CCF relacionado: el motivo es obligatorio para dejar constancia de por qué se acredita contra ese CCF.',
             ]);
         }
 
         // Orden de compra: se CONGELA desde el CCF relacionado (no se acepta del request).
         $ordenCompra = $original?->numero_orden_compra;
 
-        return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $origenAveria, $usuario) {
+        return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $origenAveria, $salaHallazgo, $usuario) {
             $nc = Dte::create([
                 'tipo_dte' => TipoDte::NotaCredito->value,
                 'tipo_nota_credito' => $tipo->value,
@@ -356,6 +371,7 @@ class DteBorradorService
                 'numero_orden_compra' => $ordenCompra,
                 'motivo' => $datos['motivo'] ?? null,
                 'origen_averia' => $origenAveria?->value,
+                'sucursal_hallazgo_id' => $salaHallazgo,
                 'fecha_emision' => now()->toDateString(),
                 'hora_emision' => now()->toTimeString(),
                 'moneda' => $original?->moneda ?? 'USD',
@@ -434,6 +450,54 @@ class DteBorradorService
         }
 
         return $origen;
+    }
+
+    /**
+     * Sala donde se ENCONTRÓ el producto averiado.
+     *
+     * Solo tiene sentido en la avería detectada REVISANDO INVENTARIO: ahí el hallazgo
+     * ocurre en un estante concreto, que puede no ser la sala del CCF contra el que se
+     * acredita —se revisa una sala y el producto se facturó en un CCF de otra sala del
+     * mismo cliente—. En la avería detectada durante una entrega el lugar ya lo dice la
+     * entrega, y en las otras tres modalidades el dato no significa nada; en todos esos
+     * casos el valor se DESCARTA en vez de guardarse, para que nadie tenga que interpretar
+     * después qué quería decir una sala de hallazgo colgada de un pronto pago.
+     *
+     * Lo único que se valida acá es que la sala EXISTA y sea DEL MISMO CLIENTE. Que esté
+     * activa no se exige: una sala se desactiva cuando deja de operar, y la avería puede
+     * encontrarse justamente al vaciar el inventario de una sala que se está cerrando.
+     * Cruzar de CLIENTE, en cambio, no se permite nunca.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function resolverSalaHallazgo(?OrigenAveria $origen, array $datos, ?int $clienteId): ?int
+    {
+        if ($origen !== OrigenAveria::InventarioSala) {
+            return null;
+        }
+
+        $pedida = $datos['sucursal_hallazgo_id'] ?? null;
+        $pedida = ($pedida === '' || $pedida === null) ? null : (int) $pedida;
+
+        if ($pedida === null) {
+            return null;
+        }
+
+        $sucursal = ClienteSucursal::find($pedida);
+        if (! $sucursal) {
+            throw ValidationException::withMessages([
+                'sucursal_hallazgo_id' => 'La sala indicada no existe.',
+            ]);
+        }
+        if ($clienteId !== null && (int) $sucursal->cliente_id !== (int) $clienteId) {
+            throw ValidationException::withMessages([
+                'sucursal_hallazgo_id' => 'La sala donde se encontró la avería debe pertenecer al mismo cliente del CCF relacionado.',
+            ]);
+        }
+
+        return $pedida;
     }
 
     /**
@@ -721,6 +785,76 @@ class DteBorradorService
             $this->recalcular($nc);
 
             return $linea->refresh();
+        });
+    }
+
+    /**
+     * ESTABLECE la cantidad acreditada de una línea del CCF original, en lugar de sumarla.
+     *
+     * Es la operación que necesita la captura de productos para sentirse como la del CCF:
+     * ahí se escribe la cantidad que uno quiere y el borrador queda con esa cantidad,
+     * escriba uno una vez o cinco. {@see acreditarLinea()} SUMA —dos envíos de 3 dejan 6—,
+     * que es lo correcto para acreditar de a poco pero convierte cualquier corrección en
+     * una resta mental, y una línea acreditada de más no se podía arreglar sin borrarla.
+     *
+     * Cantidad vacía o 0 QUITA la línea, igual que en el catálogo del CCF. No es un caso
+     * especial escondido: es la forma natural de decir «esta línea al final no va».
+     *
+     * La cuenta del saldo se apoya en una propiedad de la transacción: la línea anterior
+     * se borra ANTES de volver a acreditar, así que el saldo disponible que ve
+     * {@see acreditarLinea()} ya no se cuenta a sí mismo. Sin eso, subir de 3 a 4 sobre un
+     * saldo de 5 fallaría por «3 + 4 > 5», que es una cuenta que no le importa a nadie. Y
+     * como todo ocurre dentro de la misma transacción, un saldo insuficiente deja la línea
+     * vieja intacta en vez de una nota a medias.
+     *
+     * @return array{accion: string, linea: DteLinea|null}
+     *
+     * @throws DocumentoInmutableException
+     * @throws SaldoAcreditableExcedidoException
+     * @throws ValidationException
+     */
+    public function establecerCantidadAcreditada(Dte $nc, DteLinea $lineaOriginal, string|int|float|null $cantidad): array
+    {
+        $this->verificarEditable($nc);
+
+        if ($nc->tipo_nota_credito !== null && ! $nc->tipo_nota_credito->esPorProductos()) {
+            throw ValidationException::withMessages([
+                'tipo' => 'Esta nota de crédito no acredita líneas del documento original.',
+            ]);
+        }
+
+        if ((int) $nc->dte_relacionado_id !== (int) $lineaOriginal->dte_id) {
+            throw ValidationException::withMessages([
+                'dte_linea_original_id' => 'La línea no pertenece al documento original de la nota de crédito.',
+            ]);
+        }
+
+        $existente = $nc->lineas()->where('dte_linea_original_id', $lineaOriginal->id)->first();
+
+        $vacia = $cantidad === null || $cantidad === ''
+            || Dinero::comparar(Dinero::de($cantidad), '0') <= 0;
+
+        if ($vacia) {
+            if ($existente === null) {
+                return ['accion' => 'sin_cambio', 'linea' => null];
+            }
+
+            $this->eliminarLinea($existente);
+
+            return ['accion' => 'eliminada', 'linea' => null];
+        }
+
+        return DB::transaction(function () use ($nc, $lineaOriginal, $cantidad, $existente) {
+            if ($existente !== null) {
+                $existente->delete();
+            }
+
+            $linea = $this->acreditarLinea($nc, $lineaOriginal, $cantidad);
+
+            return [
+                'accion' => $existente !== null ? 'actualizada' : 'agregada',
+                'linea' => $linea,
+            ];
         });
     }
 
