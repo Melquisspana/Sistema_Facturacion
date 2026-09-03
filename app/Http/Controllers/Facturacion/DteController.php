@@ -36,6 +36,8 @@ use App\Http\Requests\Dte\RevertirConNotaCreditoRequest;
 use App\Http\Requests\Dte\TransmitirInvalidacionRequest;
 use App\Models\CatalogoMh;
 use App\Models\Cliente;
+use App\Models\ClientePerfilDocumento;
+use App\Models\ClientePerfilTipoNc;
 use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -501,10 +503,9 @@ class DteController extends Controller
             'origen_averia' => ['nullable', Rule::enum(OrigenAveria::class)],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
             'cliente_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
-            // Sala del CONTEXTO operativo: dónde se estaba trabajando al buscar el CCF.
-            // No es la sala receptora; solo sirve para detectar que el CCF elegido vino
-            // de otra sala y cobrar por eso el motivo obligatorio.
-            'contexto_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
+            // Sala donde se ENCONTRÓ la avería. No es la sala receptora: solo la lleva la
+            // avería detectada revisando inventario, y puede diferir de la del CCF.
+            'sucursal_hallazgo_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
             'dte_relacionado_id' => ['nullable', 'integer', 'exists:dtes,id'],
             'establecimiento_id' => ['required', 'integer', 'exists:establecimientos,id'],
             'punto_venta_id' => ['required', 'integer', 'exists:puntos_venta,id'],
@@ -516,19 +517,6 @@ class DteController extends Controller
             $datos['tipo'] = $this->resolverTipoNotaCredito($datos)->value;
         } catch (ValidationException $e) {
             return back()->withInput()->withErrors($e->errors());
-        }
-
-        // CCF traído de OTRA SALA del mismo cliente. El cliente nunca puede cambiar (eso
-        // lo rechaza crearNotaCredito), pero cruzar de sala sí se permite —hay
-        // devoluciones que llegan a una sala contra un CCF de otra— y por eso se cobra
-        // con motivo escrito, igual que emitir la nota a otra sala.
-        if ($original !== null
-            && ! empty($datos['contexto_sucursal_id'])
-            && (int) $datos['contexto_sucursal_id'] !== (int) $original->cliente_sucursal_id
-            && trim((string) ($datos['motivo'] ?? '')) === '') {
-            return back()->withInput()->withErrors([
-                'motivo' => 'El CCF elegido es de otra sala del mismo cliente: el motivo es obligatorio para dejar constancia de por qué se acredita desde esa sala.',
-            ]);
         }
 
         // Sin CCF relacionado, el cliente es obligatorio (la NC necesita receptor).
@@ -1851,6 +1839,7 @@ class DteController extends Controller
             'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
             'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
             'origen_averia' => ['nullable', Rule::enum(OrigenAveria::class)],
+            'sucursal_hallazgo_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
             'motivo' => ['nullable', 'string', 'max:1000'],
             // Sala RECEPTORA de la NC. Opcional: sin ella se usa la del CCF. Solo las
             // modalidades por monto (pronto pago…) admiten una distinta; la coherencia
@@ -2043,9 +2032,47 @@ class DteController extends Controller
         return back()->with('status', 'Línea acreditada.');
     }
 
+    /**
+     * ESTABLECE la cantidad acreditada de una línea del CCF original (devolución/faltante).
+     *
+     * Es el gemelo de {@see setCantidadProducto()} para el otro flujo de captura, y existe
+     * para que las dos pantallas se manejen igual: se escribe la cantidad que se quiere y
+     * el borrador queda con esa cantidad; 0 o vacío quita la línea. La ruta vieja
+     * `acreditar` (que SUMA) sigue publicada y funcionando para quien ya la usaba.
+     *
+     * $dte = nota de crédito; $linea = línea del CCF original.
+     */
+    public function setCantidadAcreditada(Request $request, Dte $dte, DteLinea $linea): RedirectResponse|JsonResponse
+    {
+        $this->authorize('update', $dte);
+        abort_unless($dte->dte_relacionado_id && (int) $linea->dte_id === (int) $dte->dte_relacionado_id, 404);
+
+        $request->validate(['cantidad' => ['nullable', 'numeric', 'min:0']]);
+
+        $crudo = $request->input('cantidad');
+        $cantidad = ($crudo === null || $crudo === '') ? null : $crudo;
+
+        try {
+            $res = $this->borradores->establecerCantidadAcreditada($dte, $linea, $cantidad);
+        } catch (SaldoAcreditableExcedidoException $e) {
+            return $this->errorLineas($request, ['cantidad' => $e->getMessage()]);
+        } catch (ValidationException $e) {
+            return $this->errorLineas($request, $e->errors());
+        }
+
+        $mensaje = match ($res['accion']) {
+            'agregada' => 'Línea acreditada.',
+            'actualizada' => 'Cantidad acreditada actualizada.',
+            'eliminada' => 'Línea retirada de la nota de crédito.',
+            default => null,
+        };
+
+        return $this->respuestaLineas($request, $dte, $mensaje);
+    }
+
     private function editNotaCredito(Dte $nc): View
     {
-        $nc->load(['cliente', 'clienteSucursal', 'lineas', 'dteRelacionado.lineas']);
+        $nc->load(['cliente', 'clienteSucursal', 'lineas.lineaOriginal', 'dteRelacionado.lineas']);
         $original = $nc->dteRelacionado;
 
         $porProductos = $nc->tipo_nota_credito?->esPorProductos() ?? false;
@@ -2054,22 +2081,49 @@ class DteController extends Controller
         // Avería: catálogo de productos libres (mismo helper que el CCF).
         $productosDisponibles = $porAveria ? $this->productosDisponibles($nc) : [];
 
+        // Cantidad ya agregada por producto: prellena el input del catálogo y decide si el
+        // botón dice "Agregar" o "Actualizar". Mismo dato que usa el editor del CCF.
+        $cantidadesPorProducto = $nc->lineas
+            ->filter(fn (DteLinea $l) => $l->producto_id !== null)
+            ->mapWithKeys(fn (DteLinea $l) => [$l->producto_id => (int) $l->cantidad])
+            ->all();
+
         // Saldo acreditable por línea del original (solo NC por productos).
         $lineasOriginales = collect();
         if ($porProductos && $original) {
-            $lineasOriginales = $original->lineas->map(function (DteLinea $lo) {
+            // Lo que ESTA nota ya acredita de cada línea original, indexado por línea. Se
+            // resuelve una vez y no por fila: la tabla lo consulta para cada línea del CCF.
+            $enEstaNc = $nc->lineas
+                ->filter(fn (DteLinea $l) => $l->dte_linea_original_id !== null)
+                ->mapWithKeys(fn (DteLinea $l) => [$l->dte_linea_original_id => (string) $l->cantidad])
+                ->all();
+
+            $lineasOriginales = $original->lineas->map(function (DteLinea $lo) use ($enEstaNc) {
                 // Misma regla que DteBorradorService::saldoAcreditableDisponible(): el
                 // saldo ignora las NC invalidadas y las rechazadas ARCHIVADAS.
                 $acreditado = (string) (DteLinea::where('dte_linea_original_id', $lo->id)
                     ->whereHas('dte', fn ($q) => $q->consumeSaldoAcreditable())
                     ->sum('cantidad') ?? 0);
 
+                $disponible = Dinero::redondear(
+                    Dinero::restar(Dinero::de($lo->cantidad), $acreditado), 4
+                );
+
+                $propio = $enEstaNc[$lo->id] ?? null;
+
                 return [
                     'linea' => $lo,
                     'acreditado' => $acreditado,
-                    'disponible' => Dinero::redondear(
-                        Dinero::restar(Dinero::de($lo->cantidad), $acreditado), 4
-                    ),
+                    'disponible' => $disponible,
+                    // Lo que esta nota acredita hoy de esta línea (null = nada).
+                    'en_esta_nc' => $propio,
+                    // TOPE que puede escribirse en el input. El saldo disponible ya
+                    // descuenta lo que esta misma nota acredita, así que hay que
+                    // devolvérselo: si no, una línea con todo el saldo tomado por ella
+                    // misma se vería como "sin saldo" y no se podría ni corregir a la baja.
+                    'tope' => $propio === null
+                        ? $disponible
+                        : Dinero::redondear(Dinero::sumar($disponible, $propio), 4),
                 ];
             });
         }
@@ -2084,8 +2138,12 @@ class DteController extends Controller
         $comparacionAlbaran = $albaranes->comparacion($nc);
         $avisosAlbaran = $albaranes->avisos($nc);
 
+        // Info de retención para el resumen fiscal del panel (mismo dato que el CCF).
+        $esAgenteRetencion = $this->borradores->esAgenteRetencion($nc);
+
         return view('facturacion.edit-nc', compact(
             'nc', 'original', 'lineasOriginales', 'porProductos', 'porAveria', 'productosDisponibles', 'tiposImpuesto',
+            'cantidadesPorProducto', 'esAgenteRetencion',
             'reglaAlbaran', 'albaran', 'comparacionAlbaran', 'avisosAlbaran'
         ));
     }
@@ -2159,9 +2217,14 @@ class DteController extends Controller
     {
         $this->authorize('update', $dte);
 
-        // En una NC los productos entran por acreditación o por el catálogo de avería.
-        if ($dte->tipo_dte === TipoDte::NotaCredito) {
-            return $this->errorLineas($request, ['cantidad' => 'Use acreditar líneas o el catálogo de avería para una nota de crédito.']);
+        // En una NC, los productos LIBRES del catálogo solo los admite la avería: es la
+        // única modalidad que no se limita a las líneas del CCF original. Devolución y
+        // faltante entran por establecerCantidadAcreditada() (acreditan líneas del CCF con
+        // su saldo), y las modalidades por monto no llevan productos sino conceptos.
+        if ($dte->tipo_dte === TipoDte::NotaCredito && ! ($dte->tipo_nota_credito?->esPorAveria() ?? false)) {
+            return $this->errorLineas($request, [
+                'cantidad' => 'Esta nota de crédito no admite productos del catálogo: acredite líneas del CCF original o agregue conceptos por monto.',
+            ]);
         }
 
         $request->validate(['cantidad' => ['nullable', 'integer', 'min:0', 'max:999999']]);
@@ -2325,7 +2388,12 @@ class DteController extends Controller
         // mostrar un total desfasado (p. ej. seguir contando una línea recién eliminada).
         $dte->refresh();
         $dte->load('lineas');
-        $html = view('facturacion.partials.resumen-ccf', [
+
+        // La nota de crédito tiene su propio panel: mismo contrato (resumen_html), otro
+        // contenido, porque lo que hay que verificar no es lo mismo (línea original,
+        // saldo, modalidad). El editor AJAX no se entera de la diferencia.
+        $esNc = $dte->tipo_dte === TipoDte::NotaCredito;
+        $html = view($esNc ? 'facturacion.partials.resumen-nc' : 'facturacion.partials.resumen-ccf', [
             'dte' => $dte,
             'esAgenteRetencion' => $this->borradores->esAgenteRetencion($dte),
         ])->render();
@@ -2338,6 +2406,16 @@ class DteController extends Controller
                 ->filter(fn (DteLinea $l) => $l->producto_id !== null)
                 ->mapWithKeys(fn (DteLinea $l) => [$l->producto_id => (int) $l->cantidad])
                 ->all(),
+            // Cantidades ya acreditadas por línea ORIGINAL: es lo que sincroniza los inputs
+            // de la tabla de devolución/faltante, donde la clave no es el producto sino la
+            // línea del CCF (un mismo producto puede estar en dos líneas del original).
+            'acreditadas' => $esNc
+                ? $dte->lineas
+                    ->filter(fn (DteLinea $l) => $l->dte_linea_original_id !== null)
+                    ->mapWithKeys(fn (DteLinea $l) => [
+                        $l->dte_linea_original_id => rtrim(rtrim((string) $l->cantidad, '0'), '.'),
+                    ])->all()
+                : [],
             'sin_lineas' => $dte->lineas->isEmpty(),
         ]);
     }
@@ -2546,9 +2624,6 @@ class DteController extends Controller
                 'valor' => $m->value,
                 'label' => $m->label(),
                 'descripcion' => $m->descripcion(),
-                // Rótulo informativo (AC04/AC02). El código real lo declara el perfil del
-                // cliente; acá solo ayuda a reconocer el albarán de Calleja.
-                'codigo' => $m->codigoAlbaranReferencia(),
             ];
 
             $submotivosPorModalidad[$m->value] = collect($m->submotivos())
@@ -2568,6 +2643,24 @@ class DteController extends Controller
             'label' => $o->label(),
             'descripcion' => $o->descripcion(),
         ], OrigenAveria::cases());
+
+        // Códigos de albarán POR CLIENTE, y solo para los clientes que declararon un
+        // perfil documental. La inmensa mayoría no tiene ninguno y para ellos la pantalla
+        // no muestra código: la nota se emite con las reglas fiscales generales y no hay
+        // nada que rotular. Un código fijo en la interfaz haría parecer requisito de todos
+        // lo que es la exigencia particular de un cliente.
+        $codigosPorCliente = ClientePerfilDocumento::query()
+            ->where('activo', true)
+            ->with('tiposNc')
+            ->get()
+            ->mapWithKeys(fn (ClientePerfilDocumento $perfil) => [
+                $perfil->cliente_id => $perfil->tiposNc
+                    ->mapWithKeys(fn (ClientePerfilTipoNc $regla) => [
+                        // La pantalla razona en MODALIDADES; el perfil mapea modalidades
+                        // internas. Se traduce acá para que la vista no tenga que saberlo.
+                        (ModalidadNotaCredito::desdeTipo($regla->tipo_nota_credito)?->value ?? '') => $regla->codigo_externo,
+                    ])->filter(fn ($codigo, $modalidad) => $modalidad !== '')->all(),
+            ])->all();
 
         // Receptores: contribuyentes con salas que PERMITEN nota de crédito.
         $clientes = Cliente::query()
@@ -2597,6 +2690,7 @@ class DteController extends Controller
             'opcionesCcf' => $opcionesCcf,
             'modalidades' => $modalidades,
             'origenesAveria' => $origenesAveria,
+            'codigosPorCliente' => $codigosPorCliente,
             'salasPorCliente' => $salasPorCliente,
             'establecimientos' => Establecimiento::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']),
             'puntosVenta' => PuntoVenta::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre', 'establecimiento_id']),
@@ -2611,6 +2705,7 @@ class DteController extends Controller
                 'submotivosPorModalidad' => $submotivosPorModalidad,
                 'origenPorModalidad' => $origenPorModalidad,
                 'otraSalaPorModalidad' => $otraSalaPorModalidad,
+                'codigosPorCliente' => $codigosPorCliente,
                 // Solo el CCF PRESELECCIONADO (llegó por ?ccf= o se repintó con old()),
                 // indexado por id; el buscador va agregando los que traiga. No se embeben
                 // acá los 20 de la precarga: esos ya viajan como <option> del select de
@@ -2625,7 +2720,7 @@ class DteController extends Controller
                 'motivo' => (string) old('motivo', ''),
 
                 'clienteId' => (string) old('cliente_id', $preCcf?->cliente_id ?? ''),
-                'contextoSalaId' => (string) old('contexto_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
+                'salaHallazgoId' => (string) old('sucursal_hallazgo_id', ''),
                 'ccfId' => (string) old('dte_relacionado_id', $preCcf?->id ?? ''),
                 'salaNcId' => (string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
                 'establecimientoId' => (string) old('establecimiento_id', $preCcf?->establecimiento_id ?? ''),

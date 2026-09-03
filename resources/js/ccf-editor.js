@@ -1,5 +1,5 @@
-// Editor rápido de borrador (CCF / Factura / Exportación) tipo "carrito": agregar,
-// actualizar, quitar y escanear productos SIN recargar la página. Mejora progresiva
+// Editor rápido de borrador (CCF / Factura / Exportación / NOTA DE CRÉDITO) tipo
+// "carrito": agregar, actualizar, quitar y escanear productos SIN recargar la página. Mejora progresiva
 // sobre las rutas existentes: si el JS falla, los formularios hacen POST normal
 // (fallback). NO cambia lógica fiscal ni validaciones (el servidor re-valida siempre).
 //
@@ -50,20 +50,32 @@ function initCcfEditor() {
         });
     }
 
-    // Sincroniza los inputs de cantidad del catálogo (panel izquierdo) con el estado real,
-    // sin pisar el input que el usuario está editando.
-    function syncCatalogo(cantidades) {
+    // Sincroniza los inputs de cantidad del panel izquierdo con el estado real, sin pisar
+    // el input que el usuario está editando.
+    //
+    // Hay DOS catálogos posibles y se distinguen por el data-* del formulario:
+    //   data-producto → catálogo de productos (CCF, factura, exportación, NC por avería),
+    //                   indexado por producto_id;
+    //   data-linea    → líneas del CCF original (NC por devolución/faltante), indexado por
+    //                   la línea ORIGINAL. La clave no puede ser el producto: un mismo
+    //                   producto puede aparecer en dos líneas del CCF y se acreditan por
+    //                   separado.
+    // Un mapa vacío para el catálogo que no está en pantalla no hace nada, así que la
+    // misma función sirve a las dos pantallas sin preguntar cuál es.
+    function syncCatalogo(cantidades, acreditadas) {
         document.querySelectorAll('form[data-ajax="cantidad"]').forEach((form) => {
-            const pid = form.dataset.producto;
+            const porProducto = form.dataset.producto !== undefined;
+            const mapa = porProducto ? cantidades : acreditadas;
+            const clave = porProducto ? form.dataset.producto : form.dataset.linea;
             const input = form.querySelector('input[name="cantidad"]');
             const btn = form.querySelector('button');
-            const qty = cantidades && cantidades[pid] ? cantidades[pid] : null;
+            const qty = mapa && mapa[clave] ? mapa[clave] : null;
             if (input && document.activeElement !== input) {
                 input.value = qty !== null ? qty : '';
                 RING.forEach((c) => input.classList.toggle(c, !!qty));
             }
             if (btn) {
-                btn.textContent = qty ? 'Actualizar' : 'Agregar';
+                btn.textContent = qty ? 'Actualizar' : (porProducto ? 'Agregar' : 'Acreditar');
                 BTN_OFF.forEach((c) => btn.classList.toggle(c, !!qty));
                 BTN_ON.forEach((c) => btn.classList.toggle(c, !qty));
             }
@@ -178,10 +190,16 @@ function initCcfEditor() {
             if (miSeq < ultimaAplicada) return;
             ultimaAplicada = miSeq;
             if (resp.ok && data.ok) {
-                // El servidor manda el carrito/totales ya calculados y el mapa producto_id =>
-                // cantidad. Se aplica TODO de una: no queda nada "una acción atrás".
+                // Devolver los botones a su estado normal ANTES de repintar. setBusy restaura
+                // la etiqueta que el botón tenía al hacer clic ("Acreditar"), y si corriera
+                // después de syncCatalogo le pisaría la etiqueta correcta ("Actualizar"): la
+                // línea quedaba acreditada pero el botón seguía diciendo que faltaba hacerlo.
+                // El setBusy del finally se vuelve inocuo (ya no queda etiqueta guardada).
+                setBusy(botones, false);
+                // El servidor manda el carrito/totales ya calculados y los mapas de cantidad.
+                // Se aplica TODO de una: no queda nada "una acción atrás".
                 if (typeof data.resumen_html === 'string') panel.innerHTML = data.resumen_html;
-                syncCatalogo(data.cantidades || {});
+                syncCatalogo(data.cantidades || {}, data.acreditadas || {});
                 syncGenerar(data.sin_lineas);
                 showFlash(data.message, true);
                 // Foco por origen:

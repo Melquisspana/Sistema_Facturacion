@@ -144,9 +144,11 @@ class DteNotaCreditoAveriaTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.edit', $nc))
             ->assertOk()
-            ->assertSee('Productos para nota de crédito por avería')
+            // El editor de la NC quedó unificado con el del CCF: el panel de captura de la
+            // avería es el mismo catálogo de productos, con el mismo título.
+            ->assertSee('Productos disponibles')
             ->assertSee('CANILLITAS')
-            ->assertDontSee('Líneas del documento original');
+            ->assertDontSee('Líneas del CCF original');
     }
 
     // --- Producto libre (no del CCF) ---
