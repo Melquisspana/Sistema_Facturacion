@@ -226,13 +226,9 @@ class PresentacionCajaYReceptorFexTest extends TestCase
         $this->assertSame('99', $nc->lineas->first()->unidad_codigo);
         $this->assertNull($nc->lineas->first()->producto_id);
 
-        $html = view('facturacion.imprimir', [
-            'dte' => $nc->load(['cliente', 'clienteSucursal', 'lineas', 'dteRelacionado']),
-            'emisor' => $this->estab->empresa,
-            'logoSrc' => null,
-            'datosExportacion' => null,
-            'datosReceptor' => null,
-        ])->render();
+        // La representación es UNA sola: la del PDF. La maqueta de impresión aparte ya no
+        // existe, así que esto se comprueba donde de verdad se imprime.
+        $html = $this->htmlDelPdf($nc->load(['cliente', 'clienteSucursal', 'lineas', 'dteRelacionado']));
 
         $this->assertStringNotContainsString('>Cajas<', $html);
         $this->assertStringNotContainsString('>Caja<', $html);
