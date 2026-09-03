@@ -316,7 +316,8 @@
                  aviso (la política enviarCorreo sigue igual, esto es solo visibilidad en la UI). --}}
             @can('enviarCorreo', $dte)
                 @php
-                    $correoDefault = $dte->clienteSucursal?->correo ?: ($dte->cliente?->correo ?? '');
+                    // Misma regla sala → cliente que usa el envío y que imprime el PDF.
+                    $correoDefault = \App\Support\Dte\CorreoReceptorDte::resolver($dte) ?? '';
                     $envios = $dte->envios;
                     $ultimo = $envios->first();
                     $estadoEnvio = match ($ultimo?->estado) {

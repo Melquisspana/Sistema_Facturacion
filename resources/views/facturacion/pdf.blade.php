@@ -30,6 +30,20 @@
     $esFactura = $dte->tipo_dte === TipoDte::Factura;
     $baseLabel = $esFex ? 'Exportación' : 'Gravado';
 
+    // Correo EFECTIVO del receptor: sala primero, cliente después. Es el mismo criterio
+    // con el que se decide a quién se le envía el documento, resuelto en un solo lugar.
+    $correoReceptor = \App\Support\Dte\CorreoReceptorDte::paraMostrar($dte);
+
+    // CCF (03) y NC (05) comparten tratamiento de columnas: el IVA NO se desglosa por
+    // línea —solo en el resumen inferior— y la columna final «Total» es la base ya
+    // descontada y SIN IVA.
+    //
+    // Antes cada línea traía «Gravado», «IVA» y «Total», con Total = Gravado + IVA. Eso
+    // presentaba un total de línea con IVA en un documento cuyo precio va sin IVA, y
+    // obligaba a sumar tres columnas para entender una fila. Ahora el IVA aparece una
+    // sola vez, donde es exigible: el resumen.
+    $sinIvaPorLinea = $dte->tipo_dte === TipoDte::CreditoFiscal || $esNc;
+
     $hayExento   = (float) $dte->total_exento > 0;
     $hayNoSujeto = (float) $dte->total_no_sujeto > 0;
 
@@ -101,7 +115,15 @@
         : ($dte->estado === EstadoDte::Rechazado ? 'rechazado' : 'no transmitido');
     $preliminar = ! $tieneSello;
 
-    $colspan = 10 + ($hayNoSujeto ? 1 : 0) + ($hayExento ? 1 : 0);
+    // Columnas fijas: #, código, descripción, cantidad, presentación, precio, descuento
+    // y total. La de base («Gravado»/«Exportación») solo se pinta cuando aporta algo
+    // distinto del total, y la de IVA por línea no existe en CCF/NC.
+    $muestraColumnaBase = ! $sinIvaPorLinea || $hayExento || $hayNoSujeto;
+    $colspan = 8
+        + ($muestraColumnaBase ? 1 : 0)
+        + ($sinIvaPorLinea ? 0 : 1)
+        + ($hayNoSujeto ? 1 : 0)
+        + ($hayExento ? 1 : 0);
 @endphp
 <!DOCTYPE html>
 <html lang="es">
@@ -302,7 +324,11 @@
                     <table class="dbox-t">
                         <tr><td class="k">N° control</td><td class="v mono">@if($dte->numero_control){{ $dte->numero_control }}@else<span class="pend">pendiente</span>@endif</td></tr>
                         <tr><td class="k">Cód. gen.</td><td class="v mono">@if($dte->codigo_generacion){{ $dte->codigo_generacion }}@else<span class="pend">pendiente</span>@endif</td></tr>
-                        <tr class="key"><td class="k">N° interno</td><td class="v mono">{{ $dte->numero_interno ?? '—' }}</td></tr>
+                        {{-- El «N° interno» se retiró: es un consecutivo NUESTRO, sin valor
+                             ante Hacienda ni para el cliente, y competía visualmente con el
+                             número de control, que es el que identifica al documento. El
+                             número de control, el código de generación y el sello siguen
+                             arriba, intactos. --}}
                         <tr class="key"><td class="k">Fecha</td><td class="v">{{ $dte->fecha_emision?->format('d/m/Y') }}@if($dte->hora_emision) {{ $dte->hora_emision }}@endif</td></tr>
                         @if ($tieneSello)
                             <tr class="key"><td class="k">Sello rec.</td><td class="v live mono sello">{{ $dte->sello_recepcion }}</td></tr>
@@ -340,7 +366,10 @@
                         @if ($cli?->actividadEconomica?->nombre)<div class="f"><span class="k">Actividad:</span> {{ $cli->actividadEconomica->nombre }}</div>@endif
                     </td>
                     <td style="width: 50%;">
-                        @if ($esFex && ($datosReceptor['correo'] ?? null))<div class="f"><span class="k">Correo:</span> {{ $datosReceptor['correo'] }}</div>@endif
+                        {{-- Correo del receptor en los CUATRO tipos, no solo en la FEX. Es el
+                             dato con el que se entrega el documento, y cuando falta hay que
+                             verlo: por eso se imprime la leyenda en vez de dejar el hueco. --}}
+                        <div class="f"><span class="k">Correo:</span> @if ($correoReceptor === \App\Support\Dte\CorreoReceptorDte::SIN_CORREO)<span class="muted">{{ $correoReceptor }}</span>@else{{ $correoReceptor }}@endif</div>
                         @if ($recUbic)<div class="f"><span class="k">Ubicación:</span> {{ $recUbic }}</div>@endif
                         @if ($cli?->direccion)<div class="f"><span class="k">Dirección:</span> {{ $cli->direccion }}@if($cli->complemento_direccion) — {{ $cli->complemento_direccion }}@endif</div>@endif
                         @if ($esFex && ($datosReceptor['telefono'] ?? null))<div class="f"><span class="k">Teléfono:</span> {{ $datosReceptor['telefono'] }}</div>@endif
@@ -416,8 +445,8 @@
                 <th class="r">Desc.</th>
                 @if ($hayNoSujeto)<th class="r">No suj.</th>@endif
                 @if ($hayExento)<th class="r">Exento</th>@endif
-                <th class="r">{{ $baseLabel }}</th>
-                <th class="r">IVA</th>
+                @if ($muestraColumnaBase)<th class="r">{{ $baseLabel }}</th>@endif
+                @if (! $sinIvaPorLinea)<th class="r">IVA</th>@endif
                 <th class="r">Total</th>
             </tr>
         </thead>
@@ -447,9 +476,18 @@
                     <td class="r num">@if((float)$linea->descuento_monto > 0)-${{ number_format($linea->descuento_monto, 2) }}@else<span class="dash">—</span>@endif</td>
                     @if ($hayNoSujeto)<td class="r num">${{ number_format($linea->venta_no_sujeta, 2) }}</td>@endif
                     @if ($hayExento)<td class="r num">${{ number_format($linea->venta_exenta, 2) }}</td>@endif
-                    <td class="r num">${{ number_format($esFex ? $linea->venta_exportacion : $linea->venta_gravada, 2) }}</td>
-                    <td class="r num">${{ number_format($linea->iva_linea, 2) }}</td>
-                    <td class="r num"><strong>${{ number_format($linea->total_linea, 2) }}</strong></td>
+                    @if ($muestraColumnaBase)<td class="r num">${{ number_format($esFex ? $linea->venta_exportacion : $linea->venta_gravada, 2) }}</td>@endif
+                    @if (! $sinIvaPorLinea)<td class="r num">${{ number_format($linea->iva_linea, 2) }}</td>@endif
+                    @php
+                        // En CCF/NC el total de la línea es su base ya descontada y sin IVA:
+                        // la suma de los tres buckets, que es justo lo que se factura antes
+                        // del impuesto. En Factura (precio con IVA incluido) y en FEX se
+                        // conserva el total de línea tal como se calculó.
+                        $totalLinea = $sinIvaPorLinea
+                            ? (float) $linea->venta_gravada + (float) $linea->venta_exenta + (float) $linea->venta_no_sujeta
+                            : (float) $linea->total_linea;
+                    @endphp
+                    <td class="r num"><strong>${{ number_format($totalLinea, 2) }}</strong></td>
                 </tr>
             @empty
                 <tr><td colspan="{{ $colspan }}" style="text-align:center;color:#9AA0A8;padding:10px;">Sin líneas.</td></tr>
@@ -499,14 +537,16 @@
                         @endif
                         @if ($hayExento)<tr><td class="k">Ventas exentas</td><td class="v">${{ number_format($dte->total_exento, 2) }}</td></tr>@endif
                         @if ($hayNoSujeto)<tr><td class="k">Ventas no sujetas</td><td class="v">${{ number_format($dte->total_no_sujeto, 2) }}</td></tr>@endif
-                        <tr class="sub"><td class="k">Sumas de ventas</td><td class="v">${{ number_format($dte->subtotal, 2) }}</td></tr>
+                        @if (! $sinIvaPorLinea)
+                            <tr class="sub"><td class="k">Sumas de ventas</td><td class="v">${{ number_format($dte->subtotal, 2) }}</td></tr>
+                        @endif
                         {{-- Descuentos. El % del cliente se muestra en la etiqueta para que sea claro. --}}
                         @php($pctDesc = rtrim(rtrim(number_format((float) $dte->descuento_porcentaje_aplicado, 2), '0'), '.'))
                         <tr class="minus"><td class="k">Descuento global @if((float)$dte->descuento_porcentaje_aplicado > 0)({{ $pctDesc }}%)@endif</td><td class="v">-${{ number_format($descGlobal, 2) }}</td></tr>
                         @if ($descItems > 0)
                             <tr class="minus"><td class="k">Descuento por ítem y global</td><td class="v">-${{ number_format($descItemYGlobal, 2) }}</td></tr>
                         @endif
-                        <tr class="rule sub"><td class="k">Sub-total</td><td class="v">${{ number_format($subTotalNeto, 2) }}</td></tr>
+                        <tr class="rule sub"><td class="k">{{ $sinIvaPorLinea ? 'Subtotal gravado' : 'Sub-total' }}</td><td class="v">${{ number_format($subTotalNeto, 2) }}</td></tr>
                         {{-- Impuestos --}}
                         @if ($esFex)
                             <tr><td class="k">IVA (0%)</td><td class="v">${{ number_format($dte->iva, 2) }}</td></tr>
@@ -518,12 +558,18 @@
                         @if ($esFactura)
                             <tr><td colspan="2" class="tiny muted" style="font-style:italic;padding-top:2px;">Precios con IVA incluido.</td></tr>
                         @endif
-                        <tr class="sub"><td class="k">Monto total de la operación</td><td class="v">${{ number_format($dte->monto_total_operacion, 2) }}</td></tr>
-                        {{-- Retenciones --}}
+                        {{-- «Monto total de la operación» solo en Factura y FEX. En CCF/NC es un
+                             intermedio que el resumen ya deja implícito entre el IVA y el total, y
+                             en la NC coincide con el propio total. --}}
+                        @if (! $sinIvaPorLinea)
+                            <tr class="sub"><td class="k">Monto total de la operación</td><td class="v">${{ number_format($dte->monto_total_operacion, 2) }}</td></tr>
+                        @endif
+                        {{-- Retenciones. La de IVA lleva el porcentaje en la etiqueta: es el
+                             mismo 1 % que el cliente reconoce en su albarán. --}}
                         @if ((float)$dte->iva_retenido > 0)
-                            <tr class="minus"><td class="k">IVA retenido</td><td class="v">-${{ number_format($dte->iva_retenido, 2) }}</td></tr>
-                        @elseif ($esCcf)
-                            <tr class="zero"><td class="k">IVA retenido</td><td class="v">$0.00</td></tr>
+                            <tr class="minus"><td class="k">Retención IVA 1%</td><td class="v">-${{ number_format($dte->iva_retenido, 2) }}</td></tr>
+                        @elseif ($esCcf || $esNc)
+                            <tr class="zero"><td class="k">Retención IVA 1%</td><td class="v">$0.00</td></tr>
                         @endif
                         @if ((float)$dte->retencion_renta > 0)
                             <tr class="minus"><td class="k">Retención renta</td><td class="v">-${{ number_format($dte->retencion_renta, 2) }}</td></tr>
