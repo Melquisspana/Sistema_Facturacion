@@ -1651,7 +1651,7 @@ class DteController extends Controller
     {
         $this->authorize('enviarCorreo', $dte); // gestor + no borrador (DtePolicy)
 
-        $email = $dte->clienteSucursal?->correo ?: $dte->cliente?->correo;
+        $email = \App\Support\Dte\CorreoReceptorDte::resolver($dte);
         $email = is_string($email) ? strtolower(trim($email)) : '';
         if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $quien = $dte->clienteSucursal ? 'La sala/cliente' : 'El cliente';

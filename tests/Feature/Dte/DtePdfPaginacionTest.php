@@ -389,7 +389,15 @@ class DtePdfPaginacionTest extends TestCase
         foreach ($porPagina as $textos) {
             $todo = array_merge($todo, $textos);
         }
-        $etiquetas = ['Sumas de ventas', 'Sub-total', 'Monto total de la operación', 'Valor en letras'];
+        // El resumen NO es el mismo en los cuatro tipos, y no debe serlo: el CCF y la NC
+        // llevan el resumen corto —ventas gravadas, descuento, subtotal gravado, IVA y
+        // retención— sin los intermedios «Sumas de ventas» ni «Monto total de la
+        // operación», que ahí solo repetían cifras. La Factura y la FEX sí los conservan.
+        $esCcfONc = in_array($tipo, [TipoDte::CreditoFiscal, TipoDte::NotaCredito], true);
+
+        $etiquetas = $esCcfONc
+            ? ['Subtotal gravado', 'Descuento global', 'Retención IVA 1%', 'Valor en letras']
+            : ['Sumas de ventas', 'Sub-total', 'Monto total de la operación', 'Valor en letras'];
         $etiquetas[] = $tipo === TipoDte::FacturaExportacion ? 'Ventas exportación' : 'Ventas gravadas';
         $etiquetas[] = $tipo === TipoDte::NotaCredito ? 'Total a acreditar' : 'Total a pagar';
         foreach ($etiquetas as $etiqueta) {
