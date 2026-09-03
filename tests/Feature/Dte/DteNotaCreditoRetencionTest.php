@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Enums\TipoNotaCredito;
+use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -17,6 +19,7 @@ use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteSchemaValidator;
 use App\Services\Dte\MapeadorDteSalida;
 use App\Services\Dte\Serializadores\SerializadorNotaCreditoMh;
+use App\Support\Dinero;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\PreparaEmisorDte;
@@ -27,8 +30,12 @@ use Tests\TestCase;
  * retuvo Y su PROPIA base gravada neta supera dte.retencion_iva_umbral; el monto es el
  * 1 % de esa base (proporcional en devoluciones parciales, exacto en la reversión
  * total). Una NC bajo el umbral no retiene, aunque el original sí lo haya hecho: es lo
- * que trae el albarán real del cliente. Las NC por MONTO (pronto pago/concepto) siguen
- * sin retención.
+ * que trae el albarán real del cliente.
+ *
+ * La MODALIDAD no interviene: pronto pago, «otro», avería (AC02) y devolución (AC04)
+ * siguen todas la misma regla —receptor gran contribuyente + CCF relacionado sujeto a
+ * retención + base gravada neta propia mayor que el umbral—. Excluir las NC por monto
+ * por su tipo era el defecto: dejaba sin retener notas que fiscalmente sí debían.
  *
  * Caso de oro (CCF real de producción #145): gravado neto 121.73 · IVA 15.82 ·
  * total antes de retención 137.55 · retención 1.22 · total 136.33.
@@ -233,19 +240,266 @@ class DteNotaCreditoRetencionTest extends TestCase
         $this->assertSame('5.00', (string) $nc->descuento_porcentaje_aplicado);
     }
 
-    // ---------- Pronto pago / por monto: sin retención ----------
+    // ---------- Pronto pago / «otro»: retienen como cualquier otra modalidad ----------
 
-    public function test_pronto_pago_no_retiene(): void
+    /**
+     * EL CASO REAL que destapó el defecto (NC 14 sobre el CCF 94): NC de pronto pago con
+     * base gravada $124.30 a un gran contribuyente cuyo CCF retuvo. Debe retener $1.24 y
+     * totalizar $139.22. Antes salía por $140.46 —sin retención— porque la modalidad
+     * «por monto» estaba excluida por su TIPO, sin llegar a evaluar las condiciones
+     * fiscales.
+     *
+     * 124.30 × 13 % = 16.159 → 16.16 · 124.30 × 1 % = 1.243 → 1.24 · 140.46 − 1.24 = 139.22.
+     */
+    public function test_pronto_pago_retiene_el_caso_real_nc14_sobre_ccf94(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $this->assertTrue((bool) $ccf->aplica_retencion_iva, 'El CCF relacionado debe estar sujeto a retención.');
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Descuento por pronto pago', 'monto' => 124.30]);
+        $nc->refresh();
+
+        // La NC por monto no hereda el descuento comercial: su base neta es el concepto.
+        $this->assertSame('0.00', (string) $nc->descuento_porcentaje_aplicado);
+        $this->assertSame('124.30', (string) $nc->total_gravado);
+        $this->assertSame('16.16', (string) $nc->iva);
+        $this->assertSame('140.46', (string) $nc->total_antes_retencion);
+
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('1.24', (string) $nc->iva_retenido);
+        $this->assertSame('139.22', (string) $nc->total_pagar);
+    }
+
+    /** La modalidad «otro» sigue exactamente la misma regla que pronto pago. */
+    public function test_modalidad_otro_tambien_retiene_sobre_su_propia_base(): void
+    {
+        $ccf = $this->ccfAceptado();
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Otro->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Ajuste de concepto', 'monto' => 124.30]);
+        $nc->refresh();
+
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('1.24', (string) $nc->iva_retenido);
+        $this->assertSame('139.22', (string) $nc->total_pagar);
+    }
+
+    /**
+     * UMBRAL, borde exacto: la comparación es ESTRICTA. Una base de exactamente $100.00
+     * NO retiene; un centavo más sí. Es la misma semántica con la que se emitieron los
+     * CCF aceptados, y ahora también rige a las NC por monto.
+     */
+    public function test_base_de_exactamente_cien_no_retiene(): void
     {
         $ccf = $this->ccfAceptado();
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
-        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Descuento por pronto pago', 'monto' => 50]);
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 100.00]);
+        $nc->refresh();
+
+        $this->assertSame('100.00', (string) $nc->total_gravado);
+        $this->assertFalse((bool) $nc->aplica_retencion_iva, 'Exactamente el umbral NO retiene.');
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('113.00', (string) $nc->total_pagar);
+    }
+
+    public function test_un_centavo_sobre_el_umbral_ya_retiene(): void
+    {
+        $ccf = $this->ccfAceptado();
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 100.01]);
+        $nc->refresh();
+
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        // 100.01 × 1 % = 1.0001 → 1.00
+        $this->assertSame('1.00', (string) $nc->iva_retenido);
+    }
+
+    /**
+     * REDONDEO half-up sobre la base propia de la NC. 150.55 × 1 % = 1.5055 → 1.51 (no
+     * 1.50): el medio centavo sube. Y el IVA: 150.55 × 13 % = 19.5715 → 19.57.
+     */
+    public function test_la_retencion_redondea_half_up(): void
+    {
+        $ccf = $this->ccfAceptado();
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 150.55]);
+        $nc->refresh();
+
+        $this->assertSame('19.57', (string) $nc->iva);
+        $this->assertSame('1.51', (string) $nc->iva_retenido);
+        $this->assertSame('168.61', (string) $nc->total_pagar); // 150.55 + 19.57 − 1.51
+    }
+
+    /** El medio centavo EXACTO también sube: 112.50 × 1 % = 1.125 → 1.13. */
+    public function test_el_medio_centavo_exacto_sube(): void
+    {
+        $ccf = $this->ccfAceptado();
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 112.50]);
+        $nc->refresh();
+
+        $this->assertSame('1.13', (string) $nc->iva_retenido);
+    }
+
+    // ---------- Las tres condiciones fiscales, una a una ----------
+
+    /**
+     * RECEPTOR NO GRAN CONTRIBUYENTE: aunque la base supere el umbral, no hay retención
+     * posible. Acá el CCF tampoco retuvo (no podía), así que se comprueban las dos
+     * ausencias juntas, que es como se dan en la realidad.
+     */
+    public function test_receptor_no_gran_contribuyente_no_retiene_en_pronto_pago(): void
+    {
+        $ccf = $this->ccfAceptado(agenteRetencion: false);
+        $this->assertFalse((bool) $ccf->aplica_retencion_iva);
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 124.30]);
         $nc->refresh();
 
         $this->assertFalse((bool) $nc->aplica_retencion_iva);
         $this->assertSame('0.00', (string) $nc->iva_retenido);
-        $this->assertSame('0.00', (string) $nc->descuento_porcentaje_aplicado); // tampoco hereda descuento
+        $this->assertSame('140.46', (string) $nc->total_pagar);
+    }
+
+    /**
+     * CCF SIN RETENCIÓN pero receptor gran contribuyente: la NC NO inventa una retención
+     * que el original no tuvo.
+     *
+     * La condición se aísla con un CCF chico (2 × $10.00, base neta $19.00): el receptor
+     * sigue siendo agente de retención, pero el CCF no llegó al umbral y por eso no
+     * retuvo. Así la única condición ausente es la del documento relacionado. No se fuerza
+     * el estado del CCF a mano porque un DTE aceptado es inmutable —lo impide
+     * {@see \App\Observers\DteObserver}—, que es justamente la garantía que protege a la
+     * NC histórica.
+     */
+    public function test_ccf_sin_retencion_no_contagia_retencion_a_la_nc_por_monto(): void
+    {
+        $ccf = $this->ccfAceptado(precios: [10.00, 10.00]);
+        $this->assertFalse((bool) $ccf->aplica_retencion_iva, 'El CCF chico no debe retener.');
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 124.30]);
+        $nc->refresh();
+
+        // La base propia SÍ supera el umbral y el receptor SÍ es gran contribuyente: lo
+        // único que falta es la retención del original, y con eso basta para no retener.
+        $this->assertSame('124.30', (string) $nc->total_gravado);
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+        $this->assertSame('140.46', (string) $nc->total_pagar);
+    }
+
+    // ---------- Modalidades de albarán AC02 (avería) y AC04 (devolución) ----------
+
+    /**
+     * AC02 = avería. Ya retenía antes del arreglo y debe seguir reteniendo IGUAL: la
+     * corrección amplía las modalidades que pueden retener, no cambia las que ya podían.
+     * La avería SÍ lleva el descuento comercial: 200.00 − 5 % = 190.00 → 1.90.
+     */
+    public function test_ac02_averia_conserva_su_retencion_sobre_la_base_con_descuento(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $producto = Producto::factory()->create(['precio_unitario' => 200.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
+        $nc->refresh();
+
+        $this->assertSame('5.00', (string) $nc->descuento_porcentaje_aplicado);
+        $this->assertSame('200.00', (string) $nc->total_gravado);
+        $this->assertSame('10.00', (string) $nc->descuento_gravado);
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('1.90', (string) $nc->iva_retenido);
+    }
+
+    /**
+     * AC04 = devolución de producto. Retiene sobre su PROPIA base neta, no sobre la del
+     * CCF: se comprueba que el monto es exactamente el 1 % de esa base.
+     */
+    public function test_ac04_devolucion_retiene_sobre_su_propia_base(): void
+    {
+        $ccf = $this->ccfAceptado(precios: [300.00, 300.00]);
+        $linea = $ccf->lineas()->orderBy('numero_linea')->first();
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value], $this->usuario());
+        $this->borradores->acreditarLinea($nc, $linea, 1);
+        $nc->refresh();
+
+        $baseNeta = bcsub((string) $nc->total_gravado, (string) $nc->descuento_gravado, 2);
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+        $this->assertSame(
+            Dinero::redondear(bcmul($baseNeta, '0.01', 6), 2),
+            (string) $nc->iva_retenido,
+            'La retención debe ser el 1 % de la base neta PROPIA de la NC.'
+        );
+        $this->assertNotSame((string) $ccf->iva_retenido, (string) $nc->iva_retenido);
+    }
+
+    /**
+     * DESCUENTO: cuando la modalidad hereda el descuento comercial, la retención se
+     * calcula sobre la base YA DESCONTADA, nunca sobre el bruto.
+     */
+    public function test_la_retencion_se_calcula_despues_del_descuento_no_sobre_el_bruto(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $producto = Producto::factory()->create(['precio_unitario' => 110.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
+        $nc->refresh();
+
+        $this->assertSame('110.00', (string) $nc->total_gravado);
+        $this->assertSame('5.50', (string) $nc->descuento_gravado);
+        // 1 % de 104.50 = 1.045 → 1.05 (no 1.10, que sería el 1 % del bruto).
+        $this->assertSame('1.05', (string) $nc->iva_retenido);
+    }
+
+    /**
+     * DESCUENTO que hunde la base bajo el umbral: bruto 102.00 > 100, pero neto 96.90 no.
+     * El umbral se juzga sobre el NETO, así que no retiene.
+     */
+    public function test_el_descuento_puede_dejar_la_base_bajo_el_umbral(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $producto = Producto::factory()->create(['precio_unitario' => 102.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
+        $nc->refresh();
+
+        $this->assertSame('5.10', (string) $nc->descuento_gravado);  // neto 96.90
+        $this->assertFalse((bool) $nc->aplica_retencion_iva);
+        $this->assertSame('0.00', (string) $nc->iva_retenido);
+    }
+
+    /**
+     * NO RETROACTIVIDAD: una NC ya aceptada no se recalcula nunca. El arreglo rige para
+     * lo que se emita de acá en adelante; la NC histórica aceptada conserva sus montos.
+     */
+    public function test_una_nc_aceptada_no_se_recalcula_con_la_regla_nueva(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
+        $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 124.30]);
+
+        app(DteGeneracionService::class)->generar($nc);
+        $nc->refresh()->forceFill(['estado' => EstadoDte::Aceptado->value])->save();
+
+        $antes = $nc->refresh()->only(['total_gravado', 'iva', 'iva_retenido', 'total_pagar', 'aplica_retencion_iva']);
+
+        $this->expectException(DocumentoInmutableException::class);
+
+        try {
+            $this->borradores->recalcular($nc);
+        } finally {
+            $this->assertSame($antes, $nc->refresh()->only(array_keys($antes)));
+        }
     }
 
     // ---------- JSON del MH ----------

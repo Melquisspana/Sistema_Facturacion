@@ -913,8 +913,9 @@ class DteBorradorService
             $montoDescuento = $this->montoDescuentoDesdePorcentaje($dte, $documentos, $porcentaje);
             $dte->descuento_global = $montoDescuento;
 
-            // Retención AUTOMÁTICA: CCF + agente de retención + base gravada neta > umbral.
-            // La base se evalúa DESPUÉS del descuento (con el monto recién calculado).
+            // Retención AUTOMÁTICA: gran contribuyente + (CCF, o NC cuyo CCF retuvo) +
+            // base gravada neta > umbral. La base se evalúa DESPUÉS del descuento (con el
+            // monto recién calculado), nunca sobre el bruto.
             $aplicaRetencion = $this->decidirRetencionAutomatica($dte, $documentos, $montoDescuento);
 
             $resultado = $this->calculadora->calcular(
@@ -962,12 +963,18 @@ class DteBorradorService
     }
 
     /**
-     * Decide automáticamente si aplica retención de IVA: receptor agente de retención
-     * (CCF) o CCF relacionado que retuvo (NC), y base gravada NETA
-     * (total_gravado − descuento_gravado) > umbral.
+     * Decide automáticamente si aplica retención de IVA. En los DOS tipos que pueden
+     * retener el receptor debe ser gran contribuyente; lo que cambia es el resto:
+     *
+     *   CCF (03): receptor agente de retención.
+     *   NC  (05): receptor agente de retención Y CCF relacionado sujeto a retención,
+     *             cualquiera que sea la modalidad ({@see retencionHeredadaDeNotaCredito}).
+     *
+     * Y en ambos, base gravada NETA (total_gravado − descuento_gravado) > umbral.
      *
      * El umbral se evalúa SIEMPRE sobre la base neta del documento que se está
-     * calculando — también en las notas de crédito ({@see retencionHeredadaDeNotaCredito}).
+     * calculando — también en las notas de crédito, que juzgan su propio monto y no el
+     * del CCF original.
      *
      * @param  array<int, LineaDocumento>  $documentos
      */
@@ -1018,27 +1025,37 @@ class DteBorradorService
     }
 
     /**
-     * ¿La NC es de un tipo que PUEDE retener? Solo si el CCF relacionado retuvo: un
-     * original sin retención nunca contagia retención a sus notas.
+     * ¿La NC puede retener? Dos condiciones, ninguna de ellas la MODALIDAD:
      *
-     * Esto es solo la mitad de la decisión — la otra mitad es el umbral sobre la base
-     * neta de la PROPIA NC ({@see decidirRetencionAutomatica}). Heredar la decisión del
-     * CCF a secas producía notas chicas con retención que el cliente no reconoce: el
-     * caso real fue una NC por avería de $0.90 (base neta $0.85) sobre un CCF de Calleja
-     * que sí retuvo — el albarán del cliente vino por $0.96, SIN retención. Por eso la
-     * NC juzga su propio monto contra el mismo umbral que juzgó al original.
+     *   1. El receptor es gran contribuyente (agente de retención), resuelto con la misma
+     *      prioridad sucursal → cliente que en el CCF ({@see esAgenteRetencion}).
+     *   2. El CCF relacionado quedó sujeto a retención: un original que no retuvo nunca
+     *      contagia retención a sus notas, y una NC sin documento relacionado tampoco
+     *      tiene de dónde heredarla.
      *
-     * Solo heredan las NC por PRODUCTOS y por AVERÍA — el mismo criterio que el
-     * descuento global ({@see porcentajeDescuentoVigente}). Las NC por MONTO (pronto
-     * pago, concepto) son ajustes comerciales sin base gravada del original: siguen
-     * sin retención, como hasta ahora.
+     * La tercera condición —base gravada neta de la PROPIA NC mayor que el umbral— la
+     * aplica {@see decidirRetencionAutomatica}, nunca la del CCF original.
+     *
+     * POR QUÉ SE QUITÓ EL FILTRO POR MODALIDAD: antes solo heredaban las NC por PRODUCTOS
+     * y por AVERÍA; las NC por MONTO (pronto pago, descuento posterior, ajuste comercial,
+     * concepto «otro») quedaban excluidas por su tipo y salían SIN retención aunque
+     * cumplieran las tres condiciones fiscales. Eso dejaba la NC corta frente al albarán
+     * del cliente: el caso real fue una NC de pronto pago de base $124.30 que debía
+     * retener $1.24 y totalizar $139.22, y salía por $140.46.
+     *
+     * El filtro por modalidad se había puesto para que no retuvieran las notas chicas
+     * (una NC por avería de $0.90, base neta $0.85, sobre un CCF que sí retuvo). Pero de
+     * eso ya se encarga el UMBRAL sobre la base propia: con $0.85 no se retiene por
+     * monto, sea cual sea la modalidad. La modalidad era una aproximación al umbral, y
+     * además equivocada — la retención de IVA la determina el hecho imponible del
+     * documento, no el motivo comercial por el que se emite.
+     *
+     * El descuento global sí sigue dependiendo de la modalidad
+     * ({@see porcentajeDescuentoNotaCredito}): son dos reglas distintas y no se mezclan.
      */
     private function retencionHeredadaDeNotaCredito(Dte $nc): bool
     {
-        $hereda = ($nc->tipo_nota_credito?->esPorProductos() ?? false)
-            || ($nc->tipo_nota_credito?->esPorAveria() ?? false);
-
-        if (! $hereda) {
+        if (! $this->esAgenteRetencion($nc)) {
             return false;
         }
 
