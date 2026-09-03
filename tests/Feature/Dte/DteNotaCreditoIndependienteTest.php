@@ -216,7 +216,10 @@ class DteNotaCreditoIndependienteTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.create-nota-credito'))
             ->assertOk()
-            ->assertSee('La nota de crédito se emite contra un CCF aceptado por Hacienda.')
+            // El formulario dejó de abrir con un bloque explicativo: lo dice el propio
+            // buscador, que es lo primero de la pantalla.
+            ->assertSee('Buscar CCF relacionado')
+            ->assertSee('Solo CCF aceptados por Hacienda')
             ->assertSee($aceptado->numero_control)
             ->assertSee($aceptado->fecha_emision->format('d/m/Y'))
             ->assertSee(number_format((float) $aceptado->total_pagar, 2))
@@ -261,7 +264,9 @@ class DteNotaCreditoIndependienteTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.create-nota-credito'))
             ->assertOk()
-            ->assertSee('Cliente (contribuyente) / sala')
+            // El cliente ya no se elige aparte: lo determina el CCF, y por eso la pantalla
+            // abre por el buscador y no por un selector de cliente.
+            ->assertSee('Buscar CCF relacionado')
             // Un solo establecimiento y un solo PV → selects ocultos y autoseleccionados.
             ->assertDontSee('Establecimiento emisor')
             ->assertDontSee('Punto de venta emisor')
