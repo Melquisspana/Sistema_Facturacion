@@ -8,7 +8,6 @@ use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\DteLinea;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
@@ -16,10 +15,10 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -29,7 +28,7 @@ use Tests\TestCase;
  */
 class DteNotaCreditoAveriaTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -92,6 +91,7 @@ class DteNotaCreditoAveriaTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->post(route('facturacion.nota-credito.store', $ccf), [
                 'tipo' => 'averia',
+                'origen_averia' => 'entrega',
                 'motivo' => 'Producto averiado',
             ])->assertRedirect();
 
@@ -106,7 +106,7 @@ class DteNotaCreditoAveriaTest extends TestCase
         $ccf = $this->ccfGenerado($emisor, null, $this->producto());
 
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'motivo' => 'Avería'])
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'motivo' => 'Avería', 'origen_averia' => 'entrega'])
             ->assertRedirect();
 
         $this->assertDatabaseHas('dtes', [
@@ -124,6 +124,7 @@ class DteNotaCreditoAveriaTest extends TestCase
         $this->actingAs($this->usuario('facturacion'))
             ->post(route('facturacion.store-nota-credito'), [
                 'tipo' => 'averia',
+                'origen_averia' => 'entrega',
                 'cliente_id' => $cliente->id,
                 'establecimiento_id' => $emisor['estab']->id,
                 'punto_venta_id' => $emisor['pv']->id,
@@ -159,7 +160,7 @@ class DteNotaCreditoAveriaTest extends TestCase
 
         // NC avería desde el CCF (hereda cliente), pero se agrega OTRO producto.
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia'])
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'origen_averia' => 'entrega'])
             ->assertRedirect();
         $nc = Dte::where('tipo_dte', '05')->where('tipo_nota_credito', 'averia')->firstOrFail();
 
@@ -182,7 +183,7 @@ class DteNotaCreditoAveriaTest extends TestCase
         $ccf = $this->ccfGenerado($emisor, $cliente, $producto); // CCF con 5 unidades
 
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia'])
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'origen_averia' => 'entrega'])
             ->assertRedirect();
         $nc = Dte::where('tipo_dte', '05')->where('tipo_nota_credito', 'averia')->firstOrFail();
 
@@ -269,7 +270,7 @@ class DteNotaCreditoAveriaTest extends TestCase
         $this->assertSame('5.00', $ccf->descuento_porcentaje_aplicado);
 
         $this->actingAs($this->usuario('facturacion'))
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'motivo' => 'Avería'])
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => 'averia', 'motivo' => 'Avería', 'origen_averia' => 'entrega'])
             ->assertRedirect();
         $nc = Dte::where('tipo_dte', '05')->where('tipo_nota_credito', 'averia')->firstOrFail();
 

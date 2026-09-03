@@ -6,7 +6,9 @@ use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\AmbienteHacienda;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoDte;
+use App\Enums\ModalidadNotaCredito;
 use App\Enums\MotivoAnulacion;
+use App\Enums\OrigenAveria;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
@@ -421,7 +423,7 @@ class DteController extends Controller
             : null);
 
         return view('facturacion.create-nota-credito', array_merge(
-            $this->datosFormularioNotaCredito($ccfElegido),
+            $this->datosFormularioNotaCredito($ccfElegido, $preCcf),
             ['preCcf' => $preCcf],
         ));
     }
@@ -490,15 +492,44 @@ class DteController extends Controller
             ));
 
         $datos = $request->validate([
-            'tipo' => ['required', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
+            // MODALIDAD OPERATIVA (las cuatro de la pantalla nueva). `tipo` sigue
+            // aceptándose para no romper a quien ya postea la modalidad interna directa
+            // —la tarjeta del CCF y las pruebas existentes—; resolverTipoNotaCredito()
+            // decide cuál manda.
+            'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
+            'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
+            'origen_averia' => ['nullable', Rule::enum(OrigenAveria::class)],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
             'cliente_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
+            // Sala del CONTEXTO operativo: dónde se estaba trabajando al buscar el CCF.
+            // No es la sala receptora; solo sirve para detectar que el CCF elegido vino
+            // de otra sala y cobrar por eso el motivo obligatorio.
+            'contexto_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
             'dte_relacionado_id' => ['nullable', 'integer', 'exists:dtes,id'],
             'establecimiento_id' => ['required', 'integer', 'exists:establecimientos,id'],
             'punto_venta_id' => ['required', 'integer', 'exists:puntos_venta,id'],
             'motivo' => ['nullable', 'string', 'max:1000'],
             // numero_orden_compra NO se acepta: se copia del CCF relacionado.
         ]);
+
+        try {
+            $datos['tipo'] = $this->resolverTipoNotaCredito($datos)->value;
+        } catch (ValidationException $e) {
+            return back()->withInput()->withErrors($e->errors());
+        }
+
+        // CCF traído de OTRA SALA del mismo cliente. El cliente nunca puede cambiar (eso
+        // lo rechaza crearNotaCredito), pero cruzar de sala sí se permite —hay
+        // devoluciones que llegan a una sala contra un CCF de otra— y por eso se cobra
+        // con motivo escrito, igual que emitir la nota a otra sala.
+        if ($original !== null
+            && ! empty($datos['contexto_sucursal_id'])
+            && (int) $datos['contexto_sucursal_id'] !== (int) $original->cliente_sucursal_id
+            && trim((string) ($datos['motivo'] ?? '')) === '') {
+            return back()->withInput()->withErrors([
+                'motivo' => 'El CCF elegido es de otra sala del mismo cliente: el motivo es obligatorio para dejar constancia de por qué se acredita desde esa sala.',
+            ]);
+        }
 
         // Sin CCF relacionado, el cliente es obligatorio (la NC necesita receptor).
         if ($original === null && empty($datos['cliente_id'])) {
@@ -1814,16 +1845,25 @@ class DteController extends Controller
         $this->authorize('create', Dte::class);
 
         $datos = $request->validate([
-            'tipo' => ['required', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
+            // Misma pareja modalidad/tipo que el formulario propio: la tarjeta del CCF
+            // ofrece ahora las cuatro modalidades operativas, y `tipo` sigue aceptándose
+            // para no romper a los consumidores que ya posteaban la modalidad interna.
+            'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
+            'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
+            'origen_averia' => ['nullable', Rule::enum(OrigenAveria::class)],
             'motivo' => ['nullable', 'string', 'max:1000'],
             // Sala RECEPTORA de la NC. Opcional: sin ella se usa la del CCF. Solo las
             // modalidades por monto (pronto pago…) admiten una distinta; la coherencia
-            // (mismo cliente, activa, permite NC) la valida crearNotaCredito().
+            // (mismo cliente, activa, permite NC) y el motivo obligatorio al cambiarla
+            // los valida crearNotaCredito().
             'cliente_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
-        ], [
-            'tipo.required' => 'Seleccione el tipo de nota de crédito.',
-            'tipo.in' => 'Seleccione el tipo de nota de crédito.',
         ]);
+
+        try {
+            $datos['tipo'] = $this->resolverTipoNotaCredito($datos)->value;
+        } catch (ValidationException $e) {
+            return back()->withInput()->withErrors($e->errors());
+        }
 
         // crearNotaCredito lanza ValidationException si el original no es válido.
         $nc = $this->borradores->crearNotaCredito($dte, $datos, $request->user());
@@ -1906,6 +1946,62 @@ class DteController extends Controller
     }
 
     /** Mensaje de guía según la modalidad de la NC recién creada. */
+    /**
+     * Traduce lo que llegó del formulario a la MODALIDAD INTERNA con la que se guarda la
+     * nota ({@see TipoNotaCredito}), que es lo único que la base de datos y el motor
+     * fiscal conocen.
+     *
+     * Acepta dos vocabularios a propósito y en este orden:
+     *
+     *  1. `modalidad` — las cuatro opciones de la pantalla nueva ({@see
+     *     ModalidadNotaCredito}), con `tipo` opcional como SUBMOTIVO dentro de ella
+     *     (devolución vs. faltante, que son el mismo tratamiento fiscal pero dos hechos
+     *     distintos que conviene no perder).
+     *  2. `tipo` a secas — la modalidad interna directa. Es lo que ya posteaban la
+     *     tarjeta del CCF y las pruebas antes de esta pantalla, y sigue funcionando
+     *     igual: nadie tiene que migrar para seguir emitiendo.
+     *
+     * Un submotivo que NO pertenece a la modalidad elegida se rechaza en vez de
+     * ignorarse: enviar «pronto pago» dentro de «avería» es una contradicción, y
+     * resolverla en silencio guardaría una nota que no es la que se pidió.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function resolverTipoNotaCredito(array $datos): TipoNotaCredito
+    {
+        $modalidad = filled($datos['modalidad'] ?? null)
+            ? ModalidadNotaCredito::from((string) $datos['modalidad'])
+            : null;
+
+        $tipo = filled($datos['tipo'] ?? null)
+            ? TipoNotaCredito::from((string) $datos['tipo'])
+            : null;
+
+        if ($modalidad === null) {
+            if ($tipo === null) {
+                throw ValidationException::withMessages([
+                    'modalidad' => 'Seleccione la modalidad de la nota de crédito.',
+                ]);
+            }
+
+            return $tipo;
+        }
+
+        if ($tipo === null) {
+            return $modalidad->tipoPorDefecto();
+        }
+
+        if (! $modalidad->admiteTipo($tipo)) {
+            throw ValidationException::withMessages([
+                'tipo' => 'El submotivo elegido no corresponde a la modalidad «'.$modalidad->label().'».',
+            ]);
+        }
+
+        return $tipo;
+    }
+
     private function mensajeNotaCredito(Dte $nc): string
     {
         return match (true) {
@@ -2427,7 +2523,7 @@ class DteController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function datosFormularioNotaCredito(?int $ccfElegido = null): array
+    private function datosFormularioNotaCredito(?int $ccfElegido = null, ?Dte $preCcf = null): array
     {
         // CCF ACEPTADOS REALMENTE por Hacienda (sello real + fecha_procesamiento_mh; no
         // mock/simulado ni solo locales) que se pueden vincular. Solo los más RECIENTES:
@@ -2436,20 +2532,42 @@ class DteController extends Controller
         // el select de respaldo que funciona sin JavaScript.
         $ccfs = app(BusquedaCcfParaNotaCredito::class)->recientes(incluirId: $ccfElegido);
 
-        // Tipos de NC que afectan productos del CCF (exigen documento relacionado).
-        $tiposPorProductos = [];
-        // Tipos por MONTO (pronto pago, descuento posterior, ajuste comercial, otro): son
-        // los únicos que admiten emitir la NC a una sala distinta a la del CCF relacionado
-        // (ver DteBorradorService::resolverSalaNotaCredito).
-        $tiposPorMonto = [];
-        foreach (TipoNotaCredito::cases() as $t) {
-            if ($t->esPorProductos()) {
-                $tiposPorProductos[] = $t->value;
+        // Las CUATRO modalidades operativas de la pantalla, con su submotivo (cuando lo
+        // tiene) y las dos reglas que cambian la interfaz: quién pide origen de avería y
+        // quién admite una sala receptora distinta. Todo sale de la enum, para que la
+        // pantalla no pueda contradecir al servidor.
+        $modalidades = [];
+        $submotivosPorModalidad = [];
+        $origenPorModalidad = [];
+        $otraSalaPorModalidad = [];
+
+        foreach (ModalidadNotaCredito::cases() as $m) {
+            $modalidades[] = [
+                'valor' => $m->value,
+                'label' => $m->label(),
+                'descripcion' => $m->descripcion(),
+                // Rótulo informativo (AC04/AC02). El código real lo declara el perfil del
+                // cliente; acá solo ayuda a reconocer el albarán de Calleja.
+                'codigo' => $m->codigoAlbaranReferencia(),
+            ];
+
+            $submotivosPorModalidad[$m->value] = collect($m->submotivos())
+                ->map(fn (string $label, string $valor) => ['valor' => $valor, 'label' => $label])
+                ->values()->all();
+
+            if ($m->requiereOrigenAveria()) {
+                $origenPorModalidad[] = $m->value;
             }
-            if ($t->esPorMonto()) {
-                $tiposPorMonto[] = $t->value;
+            if ($m->permiteOtraSalaReceptora()) {
+                $otraSalaPorModalidad[] = $m->value;
             }
         }
+
+        $origenesAveria = array_map(fn (OrigenAveria $o) => [
+            'valor' => $o->value,
+            'label' => $o->label(),
+            'descripcion' => $o->descripcion(),
+        ], OrigenAveria::cases());
 
         // Receptores: contribuyentes con salas que PERMITEN nota de crédito.
         $clientes = Cliente::query()
@@ -2459,26 +2577,61 @@ class DteController extends Controller
             ->orderBy('nombre')
             ->get();
 
+        // Salas RECEPTORAS posibles por cliente (activas y que permiten NC). Alimenta el
+        // selector "Sala receptora" del formulario: una sala administrativa como "Bodega
+        // Oficina Central Calleja" aparece acá aunque nunca haya recibido un CCF propio.
+        $salasPorCliente = $clientes->mapWithKeys(fn (Cliente $c) => [
+            $c->id => $c->sucursales->map(fn (ClienteSucursal $s) => [
+                'id' => $s->id,
+                'nombre' => $s->nombre,
+            ])->values()->all(),
+        ])->all();
+
+        $opcionesCliente = $this->opcionesClienteSucursal($clientes);
+        // Misma forma que devuelve el buscador (BusquedaCcfParaNotaCredito::opciones): la
+        // ficha del CCF elegido se pinta igual venga de la precarga o de la búsqueda.
+        $opcionesCcf = app(BusquedaCcfParaNotaCredito::class)->opciones($ccfs);
+
         return [
-            'opcionesCliente' => $this->opcionesClienteSucursal($clientes),
-            // Misma forma que devuelve el autocomplete (BusquedaCcfParaNotaCredito::opciones):
-            // la tarjeta del CCF elegido se pinta igual venga de la precarga o del buscador.
-            'opcionesCcf' => app(BusquedaCcfParaNotaCredito::class)->opciones($ccfs),
-            'tiposNc' => TipoNotaCredito::opciones(),
-            'tiposPorProductos' => $tiposPorProductos,
-            'tiposPorMonto' => $tiposPorMonto,
-            // Salas RECEPTORAS posibles por cliente (activas y que permiten NC). Alimenta el
-            // selector "Sala receptora de la Nota de Crédito" del formulario: una sala
-            // administrativa como "Bodega Oficina Central Calleja" aparece aquí aunque nunca
-            // haya recibido un CCF propio.
-            'salasPorCliente' => $clientes->mapWithKeys(fn (Cliente $c) => [
-                $c->id => $c->sucursales->map(fn (ClienteSucursal $s) => [
-                    'id' => $s->id,
-                    'nombre' => $s->nombre,
-                ])->values()->all(),
-            ])->all(),
+            'opcionesCliente' => $opcionesCliente,
+            'opcionesCcf' => $opcionesCcf,
+            'modalidades' => $modalidades,
+            'origenesAveria' => $origenesAveria,
+            'salasPorCliente' => $salasPorCliente,
             'establecimientos' => Establecimiento::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']),
             'puntosVenta' => PuntoVenta::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre', 'establecimiento_id']),
+
+            // Estado inicial del componente Alpine, en UN solo objeto. Va aparte de los
+            // catálogos de arriba porque es lo que se repinta con old() tras un error de
+            // validación: si se armara dentro de la vista, cada campo tendría que acordarse
+            // de leer old() por su cuenta y alguno se olvidaría.
+            'datosNc' => [
+                'opcionesCliente' => $opcionesCliente,
+                'salasPorCliente' => $salasPorCliente,
+                'submotivosPorModalidad' => $submotivosPorModalidad,
+                'origenPorModalidad' => $origenPorModalidad,
+                'otraSalaPorModalidad' => $otraSalaPorModalidad,
+                // Solo el CCF PRESELECCIONADO (llegó por ?ccf= o se repintó con old()),
+                // indexado por id; el buscador va agregando los que traiga. No se embeben
+                // acá los 20 de la precarga: esos ya viajan como <option> del select de
+                // respaldo, y repetirlos en JSON duplicaría el HTML sin darle nada a nadie.
+                'ccfs' => collect($opcionesCcf)
+                    ->filter(fn (array $c) => $ccfElegido !== null && (int) $c['id'] === $ccfElegido)
+                    ->keyBy('id')->all(),
+
+                'modalidad' => (string) old('modalidad', ''),
+                'tipo' => (string) old('tipo', ''),
+                'origenAveria' => (string) old('origen_averia', ''),
+                'motivo' => (string) old('motivo', ''),
+
+                'clienteId' => (string) old('cliente_id', $preCcf?->cliente_id ?? ''),
+                'contextoSalaId' => (string) old('contexto_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
+                'ccfId' => (string) old('dte_relacionado_id', $preCcf?->id ?? ''),
+                'salaNcId' => (string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
+                'establecimientoId' => (string) old('establecimiento_id', $preCcf?->establecimiento_id ?? ''),
+                'puntoVentaId' => (string) old('punto_venta_id', $preCcf?->punto_venta_id ?? ''),
+                'ordenCompra' => (string) ($preCcf?->numero_orden_compra ?? ''),
+            ],
         ];
     }
 }

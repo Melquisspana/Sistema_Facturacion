@@ -431,7 +431,7 @@ class NcExportacionLoteTest extends TestCase
         app(DteGeneracionService::class)->generar($ccf);
         $ccf = $this->aceptarCcf($ccf);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value]);
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega']);
         foreach ($productos as $p) {
             $this->borradores->agregarProductoNotaCreditoAveria($nc, $p, 1);
         }

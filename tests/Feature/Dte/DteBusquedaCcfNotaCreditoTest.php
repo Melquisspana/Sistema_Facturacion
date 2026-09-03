@@ -414,12 +414,18 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
     }
 
     /**
-     * El objeto Alpine vive dentro del atributo `x-data="{…}"`, delimitado por comillas
-     * DOBLES: una comilla doble suelta en el JavaScript cierra el atributo antes de tiempo
-     * y el resto del componente cae al documento como TEXTO VISIBLE.
+     * El componente Alpine SOLÍA vivir dentro del atributo `x-data="{…}"`, delimitado por
+     * comillas dobles: una comilla doble suelta en el JavaScript cerraba el atributo antes
+     * de tiempo y el resto del componente caía al documento como TEXTO VISIBLE. Ya pasó
+     * una vez, con un `querySelector('option[value="'…)` en seleccionarCcf.
      *
-     * Ya pasó una vez (un `querySelector('option[value="'…)` en seleccionarCcf). assertSee()
-     * no lo detecta —el texto sigue estando en la respuesta—, así que acá se PARSEA el HTML
+     * La pantalla unificada quitó la trampa de raíz: el componente se registra en un
+     * <script> aparte (Alpine.data) y el atributo se reduce a una llamada de una línea, de
+     * modo que el código puede usar las comillas que necesite. Este test protege el mismo
+     * resultado que antes —que nada del componente llegue a la pantalla como texto— y
+     * además que la estructura nueva se conserve, porque es lo que hace imposible la falla.
+     *
+     * assertSee() no sirve acá (el texto sigue estando en la respuesta): se PARSEA el HTML
      * y se mira el texto renderizado, que es lo que ve el usuario.
      */
     public function test_la_pantalla_no_imprime_el_codigo_de_alpine_como_texto(): void
@@ -435,24 +441,31 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
         libxml_clear_errors();
         libxml_use_internal_errors($previo);
 
+        $xpath = new \DOMXPath($doc);
+
+        // textContent incluye el contenido de los <script>, que acá es justamente donde el
+        // componente DEBE estar. Se los quita antes de mirar, para juzgar solo lo visible.
+        foreach (iterator_to_array($xpath->query('//script')) as $script) {
+            $script->parentNode->removeChild($script);
+        }
         $texto = $doc->textContent;
 
-        foreach (['seleccionarCcf(', 'onCcfChange()', 'this.ccfs[', 'querySelector'] as $fragmento) {
+        foreach (['seleccionarCcf(', 'onCcfChange()', 'this.ccfs[', 'buscarCcf('] as $fragmento) {
             $this->assertStringNotContainsString(
                 $fragmento,
                 $texto,
-                "El componente Alpine se está imprimiendo como texto: apareció «{$fragmento}» en el DOM. "
-                .'Casi seguro hay una comilla doble dentro del atributo x-data.'
+                "El componente Alpine se está imprimiendo como texto: apareció «{$fragmento}» en el DOM."
             );
         }
 
-        // Y el atributo tiene que haber llegado ENTERO hasta el cierre del objeto. (El
-        // primer <form> del documento es el de logout del layout: hay que buscar el que
-        // lleva x-data.)
-        $form = (new \DOMXPath($doc))->query('//form[@x-data]')->item(0);
+        // El atributo x-data tiene que seguir siendo una sola llamada, sin cuerpo del
+        // componente adentro: es lo que evita que una comilla doble lo parta. (El primer
+        // <form> del documento es el de logout del layout: hay que buscar el que lleva x-data.)
+        $form = $xpath->query('//form[@x-data]')->item(0);
         $this->assertNotNull($form, 'No se encontró el formulario con x-data.');
         $xData = $form->getAttribute('x-data');
-        $this->assertStringContainsString('onCcfChange()', $xData, 'El x-data quedó truncado.');
+        $this->assertStringStartsWith('ncFormulario(', $xData);
+        $this->assertStringNotContainsString('=>', $xData, 'El cuerpo del componente volvió al atributo x-data.');
         $this->assertStringNotContainsString('"', $xData, 'El x-data no puede contener comillas dobles.');
     }
 
@@ -642,7 +655,7 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
         $this->assertContains($ccf->id, $this->buscar(''));
 
         // …y la NC creada con ese id da exactamente los mismos números de siempre.
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 

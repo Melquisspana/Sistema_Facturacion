@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Enums\TipoNotaCredito;
+use App\Exceptions\Dte\SaldoAcreditableExcedidoException;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
@@ -20,6 +21,7 @@ use App\Services\Dte\MapeadorDteSalida;
 use App\Services\Dte\Serializadores\SerializadorNotaCreditoMh;
 use App\Support\Dinero;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -131,10 +133,14 @@ class DteNotaCreditoBlindajeTest extends TestCase
 
     private function nc(Dte $ccf, TipoNotaCredito $tipo): Dte
     {
-        return $this->borradores->crearNotaCredito($ccf, ['tipo' => $tipo->value], $this->usuario());
+        return $this->borradores->crearNotaCredito($ccf, [
+            'tipo' => $tipo->value,
+            // Solo lo usa la avería; en el resto de las modalidades se descarta.
+            'origen_averia' => 'entrega',
+        ], $this->usuario());
     }
 
-    /** @return \Illuminate\Support\Collection<int, DteLinea> */
+    /** @return Collection<int, DteLinea> */
     private function lineasDe(Dte $dte)
     {
         return $dte->lineas()->orderBy('numero_linea')->get();
@@ -146,7 +152,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
      * compra, así que `numero_linea` NO conserva el orden de alta: identificar la línea
      * por su posición sería frágil.
      *
-     * @return \Illuminate\Support\Collection<string, DteLinea>
+     * @return Collection<string, DteLinea>
      */
     private function lineasPorPrecio(Dte $dte)
     {
@@ -671,7 +677,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
         try {
             $this->borradores->acreditarLinea($ncB, $linea, 3);
             $this->fail('Debió rechazar la acreditación por encima del saldo.');
-        } catch (\App\Exceptions\Dte\SaldoAcreditableExcedidoException $e) {
+        } catch (SaldoAcreditableExcedidoException $e) {
             // esperado
         }
 
@@ -696,7 +702,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
 
         // Otra acreditación puntual: rechazada.
         $nc = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
-        $this->expectException(\App\Exceptions\Dte\SaldoAcreditableExcedidoException::class);
+        $this->expectException(SaldoAcreditableExcedidoException::class);
         $this->borradores->acreditarLinea($nc, $linea, 1);
     }
 
