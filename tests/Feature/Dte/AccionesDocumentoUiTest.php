@@ -135,6 +135,29 @@ class AccionesDocumentoUiTest extends TestCase
     }
 
     /**
+     * Documento en BORRADOR: sin número de control, sin código de generación y sin sello.
+     * Es el único estado en el que la ability `update` concede editar, así que es el
+     * fixture con el que se comprueba dónde aparece el enlace «Editar».
+     */
+    private function documentoBorrador(TipoDte $tipo, int $secuencia = 1, string $ambiente = '00'): Dte
+    {
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
+
+        return Dte::create([
+            'tipo_dte' => $tipo->value,
+            'estado' => EstadoDte::Borrador->value,
+            'ambiente' => $ambiente,
+            'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id,
+            'cliente_id' => $cliente->id,
+            'fecha_emision' => '2026-07-20',
+            'hora_emision' => '22:26:52',
+            'total_pagar' => 113.00,
+        ]);
+    }
+
+    /**
      * CCF con una línea gravada, generado y ACEPTADO REALMENTE. Se construye por el
      * camino real (no insertando en BD) porque la reversión con NC copia las líneas y
      * necesita saldo acreditable.
@@ -720,8 +743,8 @@ class AccionesDocumentoUiTest extends TestCase
 
     /**
      * «Datos del documento» es la cabecera de los DATOS, no una segunda barra de
-     * acciones: solo conserva Imprimir (y Editar, la puerta al borrador). Ver PDF,
-     * Descargar PDF y Duplicar viven ahora en «Acciones del documento».
+     * acciones: conserva ÚNICAMENTE Imprimir. Ver PDF, Descargar PDF, Duplicar y Editar
+     * viven ahora en «Acciones del documento».
      */
     public function test_datos_del_documento_solo_conserva_imprimir(): void
     {
@@ -737,7 +760,7 @@ class AccionesDocumentoUiTest extends TestCase
 
             $this->assertStringContainsString('Imprimir', $cabecera, "Falta Imprimir en {$tipo->label()}.");
 
-            foreach (['Ver PDF', 'Descargar PDF', 'Ver PDF oficial', 'Descargar PDF oficial', 'Duplicar', 'Enviado por correo'] as $retirado) {
+            foreach (['Ver PDF', 'Descargar PDF', 'Ver PDF oficial', 'Descargar PDF oficial', 'Duplicar', 'Editar', 'Enviado por correo'] as $retirado) {
                 $this->assertStringNotContainsString(
                     $retirado,
                     $cabecera,
@@ -745,6 +768,72 @@ class AccionesDocumentoUiTest extends TestCase
                 );
             }
         }
+    }
+
+    /**
+     * EDITAR vive en «Acciones del documento», en los cuatro tipos, y CON LAS MISMAS
+     * condiciones que tenía en la cabecera: la ability `update`, que la policy concede
+     * solo mientras el documento sigue en borrador.
+     *
+     * Un borrador, además, es el caso donde la sección de acciones tiene que seguir
+     * renderizándose: si no lo hiciera, mudar el enlace lo habría escondido justo cuando
+     * aplica.
+     */
+    public function test_editar_vive_en_acciones_para_los_cuatro_tipos_en_borrador(): void
+    {
+        foreach (self::TIPOS as $i => $tipo) {
+            $dte = $this->documentoBorrador($tipo, secuencia: 450 + $i);
+
+            $html = $this->actingAs($this->usuario('administrador'))
+                ->get(route('facturacion.show', $dte))
+                ->assertOk()
+                ->getContent();
+
+            $this->assertStringContainsString(
+                'Editar',
+                $this->barraDeAcciones($html),
+                "Falta Editar en las acciones de {$tipo->label()}."
+            );
+            $this->assertStringContainsString(route('facturacion.edit', $dte), $html);
+
+            // Y ya no está en la cabecera de datos.
+            $this->assertStringNotContainsString('Editar', $this->cabeceraDatosDelDocumento($html));
+        }
+    }
+
+    /**
+     * La condición de estado NO se relajó al mudar el enlace: un documento ACEPTADO no
+     * es editable, así que Editar no aparece en ninguna parte de la ficha.
+     */
+    public function test_editar_no_aparece_en_un_documento_que_ya_no_es_editable(): void
+    {
+        foreach (self::TIPOS as $i => $tipo) {
+            $dte = $this->documentoAceptado($tipo, secuencia: 460 + $i);
+
+            $this->assertFalse($dte->esEditable());
+
+            $this->actingAs($this->usuario('administrador'))
+                ->get(route('facturacion.show', $dte))
+                ->assertOk()
+                ->assertDontSee('Editar');
+        }
+    }
+
+    /**
+     * El permiso tampoco se relajó: un rol sin `dte.gestionar` no ve Editar ni siquiera
+     * sobre un borrador.
+     */
+    public function test_editar_no_aparece_sin_permiso_de_gestion(): void
+    {
+        $borrador = $this->documentoBorrador(TipoDte::CreditoFiscal, secuencia: 470);
+        $lector = $this->usuario('contabilidad');
+
+        $this->assertFalse($lector->can('update', $borrador));
+
+        $this->actingAs($lector)
+            ->get(route('facturacion.show', $borrador))
+            ->assertOk()
+            ->assertDontSee('Editar');
     }
 
     /**

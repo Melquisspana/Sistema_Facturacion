@@ -83,25 +83,21 @@
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Datos del documento</h3>
                     {{-- Este encabezado ya NO es una barra de acciones: es la cabecera de los
-                         DATOS. Solo quedan «Imprimir» —el gesto inmediato sobre el documento
-                         que se está mirando— y «Editar», que es la puerta al flujo de edición
-                         del borrador y no tiene otro lugar donde vivir.
+                         DATOS. Queda ÚNICAMENTE «Imprimir», el gesto inmediato sobre el
+                         documento que se está mirando.
 
                          Se retiraron de acá, y ahora viven en «Acciones del documento» más
-                         abajo: Ver PDF, Descargar PDF y Duplicar. Estaban duplicados en las
-                         dos secciones, con etiquetas distintas para la misma ruta («Ver PDF
-                         oficial» arriba, «Ver PDF» abajo), lo que hacía dudar si eran o no
-                         la misma cosa.
+                         abajo: Ver PDF, Descargar PDF, Duplicar y Editar. Los tres primeros
+                         estaban duplicados en las dos secciones, con etiquetas distintas para
+                         la misma ruta («Ver PDF oficial» arriba, «Ver PDF» abajo), lo que
+                         hacía dudar si eran o no la misma cosa; Editar es una acción sobre el
+                         documento, no un dato suyo.
 
                          También se retiró la insignia «Enviado por correo»: la tarjeta de
                          ESTADO, tres líneas más arriba, ya dice «Correo enviado / Correo
                          falló / Pendiente de correo» sobre el mismo dato. --}}
                     <div class="flex items-center gap-3 flex-wrap">
                         <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="text-gray-600 hover:underline text-sm">Imprimir</a>
-
-                        @can('update', $dte)
-                            <a href="{{ route('facturacion.edit', $dte) }}" class="text-indigo-600 hover:underline text-sm">Editar</a>
-                        @endcan
                     </div>
                 </div>
                 <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

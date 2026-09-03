@@ -18,7 +18,9 @@
       · `salasNotaCredito`  → solo alimenta el selector de sala del bloque de NC.
 
     La barra de arriba reúne las acciones NO destructivas sobre el documento —ver,
-    descargar, imprimir, correo y duplicar—; debajo van las tarjetas con el detalle.
+    descargar, imprimir, correo, editar y duplicar—; debajo van las tarjetas con el
+    detalle. «Datos del documento», más arriba en la ficha, ya no lleva acciones: solo
+    conserva Imprimir.
 
     La barra ya NO lleva atajos a «Revertir con NC» ni a «Invalidar oficialmente». Eran
     los dos únicos botones de la fila con consecuencia fiscal, mezclados entre acciones
@@ -80,6 +82,25 @@
                     Correo del cliente
                 </a>
             @endif
+
+            {{-- EDITAR. Vive acá y no en la cabecera de «Datos del documento»: editar es una
+                 acción sobre el documento, no uno de sus datos.
+
+                 La condición es EXACTAMENTE la misma que tenía en la cabecera —la ability
+                 `update`—, que {@see \App\Policies\DtePolicy} concede solo mientras el
+                 documento sigue en borrador; el controlador la vuelve a exigir con
+                 `authorize('update')`. No se agregó ni se relajó ninguna condición de estado.
+
+                 Sirve a los CUATRO tipos: `facturacion.edit` es una sola ruta y el propio
+                 controlador desvía la nota de crédito a su pantalla de acreditación. Y esta
+                 sección se renderiza en cualquier estado, así que el enlace sigue apareciendo
+                 en los borradores, que es justo cuando aplica. --}}
+            @can('update', $dte)
+                <a href="{{ route('facturacion.edit', $dte) }}"
+                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Editar
+                </a>
+            @endcan
 
             {{-- DUPLICAR. Vive acá y no en la cabecera de «Datos del documento», que es
                  donde estaba: duplicar CREA un documento nuevo, así que pertenece a las
