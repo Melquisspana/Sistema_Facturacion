@@ -6,9 +6,14 @@ use App\Enums\AmbienteHacienda;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoDte;
 use App\Enums\MotivoAnulacion;
+use App\Enums\OrigenAveria;
+use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Enums\TipoNotaCredito;
 use App\Observers\DteObserver;
+use App\Services\Dte\DteInvalidacionService;
+use App\Services\Dte\ValidacionPreJsonService;
+use App\Support\Dte\ReglaOrdenCompra;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -37,7 +42,7 @@ class Dte extends Model
         'respuesta_mh', 'respuesta_mh_path', 'fecha_procesamiento_mh',
         'condicion_operacion', 'forma_pago', 'numero_orden_compra',
         'cod_incoterms', 'desc_incoterms', 'tipo_item_expor', 'recinto_fiscal', 'tipo_regimen', 'regimen',
-        'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'moneda',
+        'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'origen_averia', 'moneda',
         'motivo_anulacion', 'observacion_anulacion', 'fecha_anulacion', 'invalidado_by',
         'codigo_generacion_invalidacion', 'tipo_anulacion', 'json_invalidacion_path', 'jws_invalidacion_path',
         'sello_invalidacion', 'respuesta_mh_invalidacion', 'respuesta_mh_invalidacion_path',
@@ -59,9 +64,10 @@ class Dte extends Model
             'ambiente' => AmbienteHacienda::class,
             'condicion_operacion' => CondicionPago::class,
             'tipo_nota_credito' => TipoNotaCredito::class,
+            'origen_averia' => OrigenAveria::class,
             'motivo_anulacion' => MotivoAnulacion::class,
             'fecha_anulacion' => 'datetime',
-            'tipo_anulacion' => \App\Enums\TipoAnulacionMh::class,
+            'tipo_anulacion' => TipoAnulacionMh::class,
             'respuesta_mh_invalidacion' => 'array',
             'fecha_invalidacion' => 'datetime',
             'fecha_procesamiento_invalidacion' => 'datetime',
@@ -151,11 +157,11 @@ class Dte extends Model
 
     /**
      * ¿Este documento exige número de orden de compra? (regla única de dominio).
-     * Solo aplica al CCF; delega en {@see \App\Support\Dte\ReglaOrdenCompra}.
+     * Solo aplica al CCF; delega en {@see ReglaOrdenCompra}.
      */
     public function requiereOrdenCompra(): bool
     {
-        return \App\Support\Dte\ReglaOrdenCompra::requeridaParaDte($this);
+        return ReglaOrdenCompra::requeridaParaDte($this);
     }
 
     public function establecimiento(): BelongsTo
@@ -300,7 +306,7 @@ class Dte extends Model
      * Una rechazada SIN archivar sigue consumiendo saldo a propósito: puede corregirse y
      * reintentarse, así que el saldo permanece reservado hasta que alguien decida
      * archivarla. Borrador, generada, firmada, enviada y aceptada consumen siempre.
-     * (No confundir con {@see \App\Services\Dte\ValidacionPreJsonService::saldoGravadoDisponible()},
+     * (No confundir con {@see ValidacionPreJsonService::saldoGravadoDisponible()},
      * que valida contra Hacienda y por eso solo cuenta NC aceptadas realmente.)
      */
     public function scopeConsumeSaldoAcreditable(Builder $q): Builder
@@ -351,7 +357,7 @@ class Dte extends Model
      * Notas de crédito (tipo 05) EMITIDAS contra este documento (no en borrador), vía
      * `dte_relacionado_id`. Sirve para advertir de una posible DOBLE CORRECCIÓN FISCAL
      * antes de invalidar oficialmente el documento original ante el MH: por sí sola
-     * NO bloquea nada (ver {@see \App\Services\Dte\DteInvalidacionService}).
+     * NO bloquea nada (ver {@see DteInvalidacionService}).
      */
     public function notasCreditoRelacionadas(): HasMany
     {
