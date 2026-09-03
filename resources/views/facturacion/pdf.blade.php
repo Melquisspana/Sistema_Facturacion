@@ -267,8 +267,9 @@
         @php $motivoRechazo = data_get($dte->respuesta_mh, 'descripcionMsg'); @endphp
         <div class="st st-void"><b>RECHAZADO POR HACIENDA</b>@if ($motivoRechazo) · {{ \Illuminate\Support\Str::limit($motivoRechazo, 90) }}@endif</div>
     @else
-        {{-- Borrador / Generado / Firmado, aún NO aceptado: aviso pequeño y discreto (una línea). --}}
-        <div class="st-prelim">Preliminar · no válido fiscalmente</div>
+        {{-- Borrador / Generado / Firmado, aún NO aceptado: aviso pequeño y discreto (una
+             línea), con la marca de BORRADOR cuando corresponde. --}}
+        <div class="st-prelim">Preliminar · no válido fiscalmente @if ($esBorrador)· <b>BORRADOR</b>@endif</div>
     @endif
 
     <div class="topline"></div>
@@ -551,6 +552,7 @@
     <div class="pie">
         Representación gráfica generada el {{ now()->format('d/m/Y H:i') }}.
         @if ($preliminar) Documento PRELIMINAR — no equivale a un DTE emitido ante Hacienda hasta completar transmisión y sello de recepción. @endif
+        @if ($esNc && ! $tieneSello) Pendiente validación contra esquema oficial MH. @endif
     </div>
     </div>{{-- /.cierre --}}
 </body>

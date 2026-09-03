@@ -26,6 +26,7 @@ use Tests\TestCase;
  */
 class DteGeneracionOrdenOcTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -106,10 +107,17 @@ class DteGeneracionOrdenOcTest extends TestCase
         $dte = $this->ccfRevuelto();
         app(DteGeneracionService::class)->reordenarLineasSegunOc($dte);
 
-        $this->actingAs(User::factory()->create()->assignRole('facturacion'))
-            ->get(route('facturacion.imprimir', $dte->refresh()))
-            ->assertOk()
-            ->assertSeeInOrder(self::ORDEN_ESPERADO, false);
+        $dte->refresh();
+        $this->assertImprimeElPdf($dte, User::factory()->create()->assignRole('facturacion'));
+
+        // El orden de las líneas se comprueba sobre la representación real.
+        $html = $this->htmlDelPdf($dte);
+        $desde = 0;
+        foreach (self::ORDEN_ESPERADO as $texto) {
+            $posicion = strpos($html, $texto, $desde);
+            $this->assertNotFalse($posicion, "«{$texto}» no aparece después de la línea anterior: el orden de la OC no se respetó.");
+            $desde = $posicion + strlen($texto);
+        }
     }
 
     public function test_los_totales_no_cambian_al_reordenar(): void

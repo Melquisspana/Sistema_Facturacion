@@ -25,6 +25,7 @@ use Tests\TestCase;
 
 class DteNotaCreditoUiTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -266,11 +267,11 @@ class DteNotaCreditoUiTest extends TestCase
         $ccf = $this->ccfAceptado();
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'pronto_pago', 'motivo' => 'Pronto pago Calleja']);
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $nc))
-            ->assertOk()
-            ->assertSee('Pronto pago')
-            ->assertSee('Pronto pago Calleja')
-            ->assertSee('Pendiente validación contra esquema oficial MH');
+        $this->assertImprimeElPdf($nc, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($nc);
+        $this->assertStringContainsString('Pronto pago', $html);
+        $this->assertStringContainsString('Pronto pago Calleja', $html);
+        $this->assertStringContainsString('Pendiente validación contra esquema oficial MH', $html);
     }
 }

@@ -719,29 +719,25 @@ class DteController extends Controller
     }
 
     /**
-     * Vista imprimible / PDF preliminar INTERNO. Todos los lectores pueden verla.
-     * No es un DTE válido ante Hacienda (aún sin JSON/firma/sello).
+     * IMPRIMIR: entrega la MISMA representación PDF que `pdf()`, en línea, para que el
+     * visor del navegador la imprima tal cual.
+     *
+     * Antes esta ruta devolvía una vista HTML aparte (`facturacion.imprimir`) que era una
+     * SEGUNDA maqueta del documento, mantenida en paralelo a `facturacion.pdf`. Con dos
+     * plantillas para el mismo documento, lo que el usuario imprimía no era necesariamente
+     * lo que veía, descargaba o recibía por correo: cualquier corrección aplicada a una
+     * quedaba pendiente en la otra. Ahora hay una sola representación —la de
+     * {@see DtePdfService}— y las cuatro salidas (ver, descargar, imprimir y adjuntar al
+     * correo) se construyen con ella.
+     *
+     * Sigue siendo solo lectura: NO transmite, NO cambia estado, NO usa credenciales. Si
+     * no hay sello de recepción, el PDF se marca como preliminar. `view` (lectores).
      */
-    public function imprimir(Dte $dte): View
+    public function imprimir(Dte $dte): Response
     {
         $this->authorize('view', $dte);
 
-        $dte->load([
-            'cliente.departamento', 'cliente.municipio', 'cliente.actividadEconomica', 'cliente.pais',
-            'clienteSucursal.departamento', 'clienteSucursal.municipio', 'clienteSucursal.distrito.departamento',
-            'lineas',
-            'establecimiento.empresa.departamento', 'establecimiento.empresa.municipio',
-            'establecimiento.departamento', 'establecimiento.municipio',
-            'puntoVenta', 'dteRelacionado',
-        ]);
-
-        // Mismo criterio que el PDF: usa la empresa REAL (no el emisor placeholder).
-        $emisor = $this->resolverEmisorParaPdf($dte);
-        $logoSrc = $this->logoSrcPdf();
-        $datosExportacion = \App\Support\Dte\DatosExportacionPresentacion::resolver($dte);
-        $datosReceptor = \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte);
-
-        return view('facturacion.imprimir', compact('dte', 'emisor', 'logoSrc', 'datosExportacion', 'datosReceptor'));
+        return $this->construirPdf($dte)->stream($this->nombrePdf($dte));
     }
 
     /**

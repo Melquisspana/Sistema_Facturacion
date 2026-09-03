@@ -22,6 +22,7 @@ use Tests\TestCase;
 
 class DteImpresionTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -97,29 +98,28 @@ class DteImpresionTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja S.A. de C.V.']);
         $ccf = $this->generar($this->borradorConLinea(TipoDte::CreditoFiscal, $cliente));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $ccf))
-            ->assertOk()
-            ->assertSee('Representación gráfica preliminar')
-            ->assertSee($ccf->numero_interno)
-            ->assertSee('Calleja S.A. de C.V.')
-            ->assertSee('Dulce de leche artesanal')
-            ->assertSee('113.00') // total con IVA
-            ->assertDontSee('Precios con IVA incluido.'); // nota exclusiva de Factura consumidor final
+        $this->assertImprimeElPdf($ccf, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($ccf);
+        $this->assertStringContainsString('Documento PRELIMINAR', $html);
+        $this->assertStringContainsString('Calleja S.A. de C.V.', $html);
+        $this->assertStringContainsString('Dulce de leche artesanal', $html);
+        $this->assertStringContainsString('113.00', $html); // total con IVA
+        // Nota exclusiva de la Factura de consumidor final.
+        $this->assertStringNotContainsString('Precios con IVA incluido.', $html);
     }
 
     public function test_imprimir_factura_generada(): void
     {
         $factura = $this->generar($this->borradorConLinea(TipoDte::Factura, null));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $factura))
-            ->assertOk()
-            ->assertSee('Factura')
-            ->assertSee($factura->numero_interno)
-            ->assertSee('Consumidor final')
-            ->assertSee('Consumidor final sin identificar.')
-            ->assertSee('Precios con IVA incluido.');
+        $this->assertImprimeElPdf($factura, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($factura);
+        $this->assertStringContainsString('Factura', $html);
+        $this->assertStringContainsString('Consumidor final', $html);
+        $this->assertStringContainsString('Consumidor final sin identificar.', $html);
+        $this->assertStringContainsString('Precios con IVA incluido.', $html);
     }
 
     public function test_imprimir_exportacion_generada(): void
@@ -127,11 +127,8 @@ class DteImpresionTest extends TestCase
         $cliente = Cliente::factory()->exportacion()->create(['nombre' => 'Sweet Imports LLC']);
         $fex = $this->generar($this->borradorConLinea(TipoDte::FacturaExportacion, $cliente));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $fex))
-            ->assertOk()
-            ->assertSee($fex->numero_interno)
-            ->assertSee('Sweet Imports LLC');
+        $this->assertImprimeElPdf($fex, $this->usuario('facturacion'));
+        $this->assertStringContainsString('Sweet Imports LLC', $this->htmlDelPdf($fex));
     }
 
     public function test_imprimir_nota_credito_generada(): void
@@ -142,11 +139,9 @@ class DteImpresionTest extends TestCase
         $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), cantidad: 4);
         $nc = $this->generar($nc);
 
-        $this->actingAs($this->usuario('jefatura'))
-            ->get(route('facturacion.imprimir', $nc))
-            ->assertOk()
-            ->assertSee($nc->numero_interno)
-            ->assertSee($ccf->numero_control); // documento original relacionado (N° oficial MH)
+        $this->assertImprimeElPdf($nc, $this->usuario('jefatura'));
+        // Documento original relacionado, por su N° oficial del MH.
+        $this->assertStringContainsString($ccf->numero_control, $this->htmlDelPdf($nc));
     }
 
     public function test_invitado_no_puede_imprimir(): void
@@ -160,10 +155,8 @@ class DteImpresionTest extends TestCase
     {
         $ccf = $this->borradorConLinea(TipoDte::CreditoFiscal, Cliente::factory()->contribuyente()->create());
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $ccf))
-            ->assertOk()
-            ->assertSee('BORRADOR');
+        $this->assertImprimeElPdf($ccf, $this->usuario('facturacion'));
+        $this->assertStringContainsString('BORRADOR', $this->htmlDelPdf($ccf));
     }
 
     public function test_imprimir_muestra_departamento_municipio_distrito(): void
@@ -189,11 +182,11 @@ class DteImpresionTest extends TestCase
             TipoDte::CreditoFiscal, $cliente, ['cliente_sucursal_id' => $sucursal->id],
         ));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $ccf))
-            ->assertOk()
-            ->assertSee('Departamento: La Paz')
-            ->assertSee('Municipio: La Paz Oeste')
-            ->assertSee('Distrito: Olocuilta');
+        $this->assertImprimeElPdf($ccf, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($ccf);
+        $this->assertStringContainsString('Departamento: La Paz', $html);
+        $this->assertStringContainsString('Municipio: La Paz Oeste', $html);
+        $this->assertStringContainsString('Distrito: Olocuilta', $html);
     }
 }

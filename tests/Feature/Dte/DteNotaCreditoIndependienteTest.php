@@ -23,6 +23,7 @@ use Tests\TestCase;
 
 class DteNotaCreditoIndependienteTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -376,12 +377,12 @@ class DteNotaCreditoIndependienteTest extends TestCase
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'pronto_pago', 'motivo' => 'Pronto pago Calleja']);
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $nc))
-            ->assertOk()
-            ->assertSee('Selectos Santa Rosa')   // sala
-            ->assertSee('Pronto pago')            // tipo
-            ->assertSee('Pronto pago Calleja')    // motivo
-            ->assertSee('OC-IMPRESA');            // orden de compra vinculada
+        $this->assertImprimeElPdf($nc, $this->usuario('facturacion'));
+
+        $html = $this->htmlDelPdf($nc);
+        $this->assertStringContainsString('Selectos Santa Rosa', $html);  // sala
+        $this->assertStringContainsString('Pronto pago', $html);          // tipo
+        $this->assertStringContainsString('Pronto pago Calleja', $html);  // motivo
+        $this->assertStringContainsString('OC-IMPRESA', $html);           // orden de compra
     }
 }

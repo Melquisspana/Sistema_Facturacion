@@ -26,6 +26,7 @@ use Tests\TestCase;
  */
 class PresentacionCajaYReceptorFexTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -130,11 +131,9 @@ class PresentacionCajaYReceptorFexTest extends TestCase
     {
         $dte = $this->generar($this->fexConLineaLibre($this->clienteCarolinas(), cajas: 1, precioCaja: 2160));
 
-        $html = $this->actingAs($this->usuario())
-            ->get(route('facturacion.imprimir', $dte))
-            ->assertOk()
-            ->getContent();
+        $this->assertImprimeElPdf($dte, $this->usuario());
 
+        $html = $this->htmlDelPdf($dte);
         $this->assertStringContainsString('>Caja<', $html);
         $this->assertStringNotContainsString('>99<', $html);
     }
@@ -143,11 +142,11 @@ class PresentacionCajaYReceptorFexTest extends TestCase
     {
         $dte = $this->generar($this->fexConLineaLibre($this->clienteCarolinas()));
 
-        $pdfHtml = $this->htmlPdf($dte);
-        $imprimirHtml = $this->actingAs($this->usuario())->get(route('facturacion.imprimir', $dte))->getContent();
-
-        $this->assertStringNotContainsString('Present. 99', $pdfHtml);
-        $this->assertStringNotContainsString('Present. 99', $imprimirHtml);
+        // Ver e imprimir comparten UNA sola representación: basta comprobarla una vez,
+        // y que la ruta de impresión entregue justamente esa.
+        $this->assertStringNotContainsString('Present. 99', $this->htmlPdf($dte));
+        $this->assertStringNotContainsString('Present. 99', $this->htmlDelPdf($dte));
+        $this->assertImprimeElPdf($dte, $this->usuario());
     }
 
     // --- CCF: NO cambia el comportamiento existente (unidad normal, no 99) ---
@@ -324,12 +323,12 @@ class PresentacionCajaYReceptorFexTest extends TestCase
     {
         $dte = $this->generar($this->fexConLineaLibre($this->clienteCarolinas()));
 
-        $this->actingAs($this->usuario())
-            ->get(route('facturacion.imprimir', $dte))
-            ->assertOk()
-            ->assertSee('Destino')
-            ->assertSee('Estados Unidos')
-            ->assertSee('carolinaswholesalellc@aol.com');
+        $this->assertImprimeElPdf($dte, $this->usuario());
+
+        $html = $this->htmlDelPdf($dte);
+        $this->assertStringContainsString('Destino', $html);
+        $this->assertStringContainsString('Estados Unidos', $html);
+        $this->assertStringContainsString('carolinaswholesalellc@aol.com', $html);
     }
 
     public function test_telefono_se_muestra_solo_si_existe(): void

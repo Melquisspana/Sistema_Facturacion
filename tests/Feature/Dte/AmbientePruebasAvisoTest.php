@@ -27,6 +27,7 @@ use Tests\TestCase;
  */
 class AmbientePruebasAvisoTest extends TestCase
 {
+    use \Tests\Concerns\RepresentacionPdfDte;
     use \Tests\Concerns\PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -113,9 +114,7 @@ class AmbientePruebasAvisoTest extends TestCase
 
         $this->assertStringContainsString(self::AVISO, $this->pdfHtml($factura));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $factura))
-            ->assertOk()->assertSee(self::AVISO);
+        $this->assertImprimeElPdf($factura, $this->usuario('facturacion'));
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $factura))
@@ -129,9 +128,7 @@ class AmbientePruebasAvisoTest extends TestCase
         $this->assertNotNull($factura->sello_recepcion);
         $this->assertStringContainsString(self::AVISO, $this->pdfHtml($factura));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $factura))
-            ->assertOk()->assertSee(self::AVISO);
+        $this->assertImprimeElPdf($factura, $this->usuario('facturacion'));
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $factura))
@@ -147,9 +144,7 @@ class AmbientePruebasAvisoTest extends TestCase
 
         $this->assertStringContainsString(self::AVISO, $this->pdfHtml($fex));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $fex))
-            ->assertOk()->assertSee(self::AVISO);
+        $this->assertImprimeElPdf($fex, $this->usuario('facturacion'));
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $fex))
@@ -165,9 +160,7 @@ class AmbientePruebasAvisoTest extends TestCase
 
         $this->assertStringNotContainsString(self::AVISO, $this->pdfHtml($ccf));
 
-        $this->actingAs($this->usuario('facturacion'))
-            ->get(route('facturacion.imprimir', $ccf))
-            ->assertOk()->assertDontSee(self::AVISO);
+        $this->assertImprimeElPdf($ccf, $this->usuario('facturacion'));
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.show', $ccf))
@@ -186,9 +179,7 @@ class AmbientePruebasAvisoTest extends TestCase
         $this->assertSame('01', $nc->ambiente->value);
         $this->assertStringNotContainsString(self::AVISO, $this->pdfHtml($nc));
 
-        $this->actingAs($this->usuario('jefatura'))
-            ->get(route('facturacion.imprimir', $nc))
-            ->assertOk()->assertDontSee(self::AVISO);
+        $this->assertImprimeElPdf($nc, $this->usuario('jefatura'));
     }
 
     public function test_factura_ambiente_01_no_muestra_aviso(): void
