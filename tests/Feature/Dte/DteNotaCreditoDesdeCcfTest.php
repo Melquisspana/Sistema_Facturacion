@@ -130,43 +130,54 @@ class DteNotaCreditoDesdeCcfTest extends TestCase
 
     // --- Flujo según tipo ---
 
-    public function test_devolucion_redirige_a_lineas_originales(): void
+    /**
+     * Cada modalidad abre SU panel de captura y ninguno de los otros dos. Es la garantía
+     * que hace que la pantalla unificada no sea un cajón de sastre: el editor es uno solo,
+     * pero lo que se puede capturar sigue dependiendo de la modalidad.
+     *
+     * Los títulos cambiaron al unificar el editor con el del CCF («Líneas del CCF
+     * original», «Productos disponibles», «Agregar concepto»); lo que se protege es la
+     * exclusión mutua, no la redacción.
+     */
+    public function test_devolucion_abre_las_lineas_del_ccf_original(): void
     {
         $emisor = $this->emisor();
         $nc = $this->crearNcDesdeCcf($this->ccfGenerado($emisor), 'devolucion_producto');
 
         $this->editHtml($nc)->assertOk()
-            ->assertSee('Líneas del documento original')
-            ->assertDontSee('Productos para nota de crédito por avería')
-            ->assertDontSee('Agregar concepto de ajuste');
+            ->assertSee('Líneas del CCF original')
+            ->assertDontSee('Productos disponibles')
+            ->assertDontSee('Agregar concepto');
     }
 
-    public function test_faltante_redirige_a_lineas_originales(): void
+    public function test_faltante_abre_las_lineas_del_ccf_original(): void
     {
         $emisor = $this->emisor();
         $nc = $this->crearNcDesdeCcf($this->ccfGenerado($emisor), 'faltante_entrega');
 
-        $this->editHtml($nc)->assertOk()->assertSee('Líneas del documento original');
+        $this->editHtml($nc)->assertOk()->assertSee('Líneas del CCF original');
     }
 
-    public function test_averia_redirige_a_catalogo_de_productos(): void
+    public function test_averia_abre_el_catalogo_de_productos(): void
     {
         $emisor = $this->emisor();
         $nc = $this->crearNcDesdeCcf($this->ccfGenerado($emisor), 'averia');
 
         $this->editHtml($nc)->assertOk()
-            ->assertSee('Productos para nota de crédito por avería')
-            ->assertDontSee('Líneas del documento original');
+            ->assertSee('Productos disponibles')
+            ->assertDontSee('Líneas del CCF original')
+            ->assertDontSee('Agregar concepto');
     }
 
-    public function test_pronto_pago_redirige_a_conceptos_manuales(): void
+    public function test_pronto_pago_abre_los_conceptos_por_monto(): void
     {
         $emisor = $this->emisor();
         $nc = $this->crearNcDesdeCcf($this->ccfGenerado($emisor), 'pronto_pago');
 
         $this->editHtml($nc)->assertOk()
-            ->assertSee('Agregar concepto de ajuste')
-            ->assertDontSee('Líneas del documento original');
+            ->assertSee('Agregar concepto')
+            ->assertDontSee('Líneas del CCF original')
+            ->assertDontSee('Productos disponibles');
     }
 
     // --- Copias del CCF ---

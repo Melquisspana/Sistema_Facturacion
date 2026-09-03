@@ -8,7 +8,6 @@ use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
@@ -16,10 +15,10 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -29,7 +28,7 @@ use Tests\TestCase;
  */
 class DteCatalogoBorradorTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -280,7 +279,7 @@ class DteCatalogoBorradorTest extends TestCase
             ->get(route('facturacion.edit', $nc))
             ->assertOk()
             ->assertDontSee('Productos disponibles')
-            ->assertSee('Agregar concepto de ajuste');
+            ->assertSee('Agregar concepto');
     }
 
     public function test_nc_devolucion_mantiene_lineas_del_ccf_original(): void
@@ -301,7 +300,7 @@ class DteCatalogoBorradorTest extends TestCase
             ->get(route('facturacion.edit', $nc))
             ->assertOk()
             ->assertDontSee('Productos disponibles')
-            ->assertSee('Líneas del documento original')
+            ->assertSee('Líneas del CCF original')
             ->assertSee('CANILLITAS');
     }
 }
