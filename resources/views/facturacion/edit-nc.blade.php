@@ -177,7 +177,8 @@
                                     <span class="font-semibold text-gray-900">CCF <span x-text="elegido?.numero"></span>
                                         <span class="font-normal text-gray-600" x-text="elegido?.sala ? ('· ' + elegido.sala) : ''"></span>
                                     </span>
-                                    <button type="button" @click="limpiar()" class="text-xs font-medium text-indigo-700 hover:underline">Cambiar</button>
+                                    {{-- `-m-2 p-2`: agranda el área táctil a 32 px sin mover el layout. --}}
+                                    <button type="button" @click="limpiar()" class="-m-2 p-2 text-xs font-medium text-indigo-700 hover:underline">Cambiar</button>
                                 </div>
                                 <p class="mt-1 text-xs font-semibold text-amber-800" x-show="cruzaDeSala" x-cloak>
                                     Ese CCF es de otra sala del mismo cliente: el motivo es obligatorio.
