@@ -80,18 +80,13 @@
                                     @endif
                                 </dd>
                             </div>
-                            {{-- Origen operativo: solo la avería lo lleva. Las averías anteriores a
-                                 este campo no lo tienen, y ahí no se inventa nada: no se muestra. --}}
-                            @if ($nc->origen_averia)
+                            {{-- Sala a la que corresponde la avería. Solo aparece cuando difiere
+                                 de la receptora tiene sentido mostrarla siempre: es el dato que el
+                                 CCF relacionado no puede cambiar. --}}
+                            @if ($nc->sucursalAveria)
                                 <div>
-                                    <dt class="inline text-gray-400">Origen:</dt>
-                                    <dd class="inline font-medium text-gray-700">{{ $nc->origen_averia->label() }}</dd>
-                                </div>
-                            @endif
-                            @if ($nc->sucursalHallazgo)
-                                <div>
-                                    <dt class="inline text-gray-400">Sala del hallazgo:</dt>
-                                    <dd class="inline font-medium text-gray-700">{{ $nc->sucursalHallazgo->nombre }}</dd>
+                                    <dt class="inline text-gray-400">Sala de la avería:</dt>
+                                    <dd class="inline font-medium text-gray-700">{{ $nc->sucursalAveria->nombre }}</dd>
                                 </div>
                             @endif
                             <div>
@@ -113,6 +108,105 @@
                     </div>
                 </div>
             </div>
+
+            {{-- AVERÍA REGISTRADA SIN CCF. No es un aviso decorativo: mientras la nota no
+                 tenga documento relacionado no puede generarse, porque el esquema oficial
+                 del MH exige `documentoRelacionado` en toda NC (fe-nc-v3 y v4: está en el
+                 `required` de la raíz y el array lleva minItems 1). Se dice acá, arriba de
+                 todo, y se ofrece cómo resolverlo en el mismo lugar. --}}
+            @if ($nc->dte_relacionado_id === null)
+                <div class="rounded-md border border-amber-300 bg-amber-50 p-4" role="status">
+                    <p class="text-sm font-semibold text-amber-900">Avería registrada; falta relacionar un CCF para emitir.</p>
+                    <p class="mt-1 text-sm text-amber-800">
+                        El borrador está <strong>incompleto</strong>: Hacienda exige un documento relacionado
+                        en toda nota de crédito, así que <strong>no se puede generar, firmar ni transmitir</strong>
+                        hasta vincular un CCF aceptado del mismo cliente.
+                    </p>
+
+                    @can('update', $nc)
+                        <form method="POST" action="{{ route('facturacion.nota-credito.vincular-ccf', $nc) }}"
+                              class="mt-3"
+                              x-data="vincularCcf(@js(route('facturacion.nota-credito.buscar-ccf')), @js((string) $nc->cliente_id), @js((string) ($nc->sucursal_averia_id ?? $nc->cliente_sucursal_id)))">
+                            @csrf
+                            <div class="relative" @click.outside="abierto = false">
+                                <x-input-label for="vincular_buscar" value="Buscar un CCF aceptado de este cliente" />
+                                <input id="vincular_buscar" type="text" x-model="buscar" autocomplete="off"
+                                       @focus="buscarCcf(1)" @input.debounce.300ms="buscarCcf(1)"
+                                       placeholder="Correlativo, N.º de control u orden de compra…"
+                                       class="mt-1 block w-full border-amber-300 rounded-md shadow-sm text-sm">
+
+                                {{-- Por defecto solo la sala de la nota. Mirar las demás es
+                                     una decisión explícita, y se cobra con motivo. --}}
+                                <label class="mt-2 flex items-start gap-2 text-sm text-amber-900" x-show="salaNota !== ''" x-cloak>
+                                    <input type="checkbox" x-model="otrasSalas" @change="buscarCcf(1)"
+                                           class="mt-0.5 rounded border-amber-400 text-amber-600">
+                                    <span>Buscar también en <strong>otras salas</strong> del mismo cliente</span>
+                                </label>
+
+                                <ul x-show="abierto" x-cloak
+                                    class="absolute z-20 mt-1 w-full max-h-80 overflow-auto divide-y divide-gray-100 border border-gray-200 rounded-md bg-white shadow-lg text-sm">
+                                    <li x-show="cargando" class="px-3 py-2.5 text-gray-400">Buscando…</li>
+                                    <template x-for="c in resultados" :key="c.id">
+                                        <li @click="elegir(c)" class="px-3 py-2.5 cursor-pointer hover:bg-indigo-50">
+                                            <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+                                                <span class="font-medium text-gray-900">CCF <span x-text="c.numero"></span></span>
+                                                <span class="font-mono font-semibold text-gray-900" x-text="'$' + c.total"></span>
+                                            </div>
+                                            <div class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-gray-500">
+                                                <span x-show="c.sala" class="text-indigo-600" x-text="c.sala"></span>
+                                                <span x-text="c.fecha"></span>
+                                                <span x-show="c.orden_compra">OC <span x-text="c.orden_compra"></span></span>
+                                            </div>
+                                        </li>
+                                    </template>
+                                    <li x-show="! cargando && resultados.length === 0" class="px-3 py-2.5 text-gray-400">Sin coincidencias.</li>
+                                    <li class="flex items-center justify-between gap-2 bg-gray-50 px-3 py-1.5 text-xs">
+                                        <button type="button" @click="buscarCcf(pagina - 1)" :disabled="! hayPrevia || cargando"
+                                                class="rounded border border-gray-300 bg-white px-2 py-1 font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">&larr; Anterior</button>
+                                        <span class="text-gray-500">Página <span x-text="pagina"></span></span>
+                                        <button type="button" @click="buscarCcf(pagina + 1)" :disabled="! hayMas || cargando"
+                                                class="rounded border border-gray-300 bg-white px-2 py-1 font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente &rarr;</button>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <input type="hidden" name="dte_relacionado_id" :value="elegidoId">
+
+                            <div x-show="elegidoId !== ''" x-cloak class="mt-2 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm">
+                                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                                    <span class="font-semibold text-gray-900">CCF <span x-text="elegido?.numero"></span>
+                                        <span class="font-normal text-gray-600" x-text="elegido?.sala ? ('· ' + elegido.sala) : ''"></span>
+                                    </span>
+                                    <button type="button" @click="limpiar()" class="text-xs font-medium text-indigo-700 hover:underline">Cambiar</button>
+                                </div>
+                                <p class="mt-1 text-xs font-semibold text-amber-800" x-show="cruzaDeSala" x-cloak>
+                                    Ese CCF es de otra sala del mismo cliente: el motivo es obligatorio.
+                                    La sala de la avería no cambia.
+                                </p>
+                            </div>
+
+                            <div class="mt-2">
+                                <x-input-label for="motivo_vinculo">
+                                    <span>Motivo</span>
+                                    <span x-show="cruzaDeSala" x-cloak class="font-semibold text-amber-700"> — obligatorio</span>
+                                    <span x-show="! cruzaDeSala" class="font-normal text-gray-400"> (opcional)</span>
+                                </x-input-label>
+                                <x-text-input id="motivo_vinculo" name="motivo" type="text" class="mt-1 block w-full text-sm"
+                                              ::required="cruzaDeSala"
+                                              placeholder="Por qué se acredita contra ese CCF" />
+                                <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
+                            </div>
+
+                            <x-input-error :messages="$errors->get('dte_relacionado_id')" class="mt-1" />
+
+                            <button ::disabled="elegidoId === ''"
+                                    class="mt-3 inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                                Relacionar CCF
+                            </button>
+                        </form>
+                    @endcan
+                </div>
+            @endif
 
             {{-- Avisos que exigen confirmación explícita antes de generar (retención o
                  diferencia contra el albarán). Nunca se ajusta un valor fiscal en silencio. --}}
@@ -480,4 +574,79 @@
             </div>
         </div>
     </div>
+
+    {{-- Buscador del CCF a vincular. Va en un <script> y no dentro del atributo x-data:
+         una comilla doble ahí adentro cierra el atributo antes de tiempo y vuelca el resto
+         del componente al documento como texto visible. --}}
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('vincularCcf', (ruta, clienteId, salaAveria) => ({
+                ruta,
+                clienteId: String(clienteId ?? ''),
+                // Sala a la que corresponde la nota. Acota la búsqueda y es contra la que
+                // se juzga el cruce; vincular un CCF de otra sala NO la cambia.
+                salaNota: String(salaAveria ?? ''),
+                otrasSalas: false,
+                buscar: '',
+                abierto: false,
+                cargando: false,
+                resultados: [],
+                pagina: 1,
+                hayMas: false,
+                hayPrevia: false,
+                peticion: 0,
+                elegidoId: '',
+                elegido: null,
+
+                async buscarCcf(pagina) {
+                    const destino = Math.max(1, pagina || 1);
+                    this.abierto = true;
+                    this.cargando = true;
+                    // Solo la última petición pinta: escribir rápido no debe dejar en
+                    // pantalla el resultado de una consulta ya vieja.
+                    const propia = ++this.peticion;
+                    // Acotado al cliente de la nota: una NC nunca puede cruzar de cliente,
+                    // y el servidor lo vuelve a exigir al vincular. La sala acota además,
+                    // salvo que se pida explícitamente mirar las demás.
+                    const params = new URLSearchParams({
+                        q: this.buscar,
+                        pagina: String(destino),
+                        cliente_id: this.clienteId,
+                    });
+                    if (!this.otrasSalas && this.salaNota !== '') {
+                        params.set('cliente_sucursal_id', this.salaNota);
+                    }
+                    try {
+                        const r = await fetch(this.ruta + '?' + params.toString(), {
+                            headers: { Accept: 'application/json' },
+                            credentials: 'same-origin',
+                        });
+                        const data = await r.json();
+                        if (propia !== this.peticion) { return; }
+                        this.resultados = data.resultados ?? [];
+                        this.pagina = data.pagina ?? destino;
+                        this.hayMas = !!data.hay_mas;
+                        this.hayPrevia = !!data.hay_previa;
+                    } catch (e) {
+                        if (propia === this.peticion) {
+                            this.resultados = [];
+                            this.hayMas = false;
+                            this.hayPrevia = false;
+                        }
+                    } finally {
+                        if (propia === this.peticion) { this.cargando = false; }
+                    }
+                },
+                elegir(c) { this.elegido = c; this.elegidoId = String(c.id); this.abierto = false; this.buscar = ''; },
+                limpiar() { this.elegido = null; this.elegidoId = ''; },
+                // El CCF es de otra sala que aquella a la que corresponde la nota: se
+                // permite —es el mismo cliente— pero con explicación escrita, y el servidor
+                // la exige igual. La sala de la nota no se mueve por esto.
+                get cruzaDeSala() {
+                    return this.elegidoId !== '' && this.salaNota !== ''
+                        && String(this.elegido?.cliente_sucursal_id ?? '') !== this.salaNota;
+                },
+            }));
+        });
+    </script>
 </x-app-layout>

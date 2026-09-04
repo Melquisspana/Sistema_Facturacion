@@ -6,7 +6,6 @@ use App\DataTransferObjects\Dte\LineaDocumento;
 use App\DataTransferObjects\Dte\ResultadoCalculo;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
-use App\Enums\OrigenAveria;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -27,6 +26,7 @@ use App\Models\Producto;
 use App\Models\User;
 use App\Support\Dinero;
 use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\Dte\ResuelveEmisorUnico;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -255,10 +255,29 @@ class DteBorradorService
         // REGLA OBLIGATORIA: TODA Nota de Crédito (05) — devolución, avería, pronto pago,
         // cualquier tipo — debe estar vinculada a un CCF (03) ACEPTADO por Hacienda. Sin un CCF
         // aceptado relacionado no puede crearse ni emitirse (no existe oficialmente ante el MH).
-        if ($original === null) {
+        // La avería puede guardarse sin documento relacionado todavía. No es otra clase de
+        // avería: es un BORRADOR INCOMPLETO. El producto dañado existe y hay que anotarlo
+        // aunque en ese momento no se sepa contra qué CCF acreditarlo, y colgarlo de un CCF
+        // cualquiera sería inventar una relación fiscal que no ocurrió.
+        //
+        // Guardar no es emitir. El esquema oficial del MH para la NC (05) declara
+        // `documentoRelacionado` como requerido con minItems 1, tanto en v3 como en v4, así
+        // que sin CCF la nota NO puede generarse, firmarse ni transmitirse: el candado está
+        // en DteGeneracionService::validar() y en ValidacionPreJsonService.
+        //
+        // Las demás modalidades sí lo exigen desde el inicio: una devolución acredita
+        // líneas de un CCF concreto y un pronto pago descuenta sobre su monto; sin original
+        // no hay nada que acreditar ni sobre qué calcular.
+        $averiaSinCcf = $original === null && $tipo->esPorAveria();
+
+        if ($original === null && ! $averiaSinCcf) {
             throw ValidationException::withMessages([
                 'dte_relacionado_id' => 'Para generar una Nota de Crédito debe seleccionar un CCF aceptado relacionado.',
             ]);
+        }
+
+        if ($averiaSinCcf) {
+            return $this->crearAveriaSinCcf($datos, $tipo, $usuario);
         }
         if ($original->tipo_dte !== TipoDte::CreditoFiscal) {
             throw ValidationException::withMessages([
@@ -316,14 +335,8 @@ class DteBorradorService
         // posterior, ajuste comercial, otro) admiten una sala distinta del mismo cliente.
         $sucursalId = $this->resolverSalaNotaCredito($original, $tipo, $datos, $clienteId);
 
-        // Origen operativo de la avería: dato de trazabilidad, no fiscal. Se exige acá y
-        // no solo en el formulario para que valga igual por cualquier puerta de entrada
-        // (el formulario propio y la tarjeta del CCF crean la NC por este mismo método).
-        $origenAveria = $this->resolverOrigenAveria($tipo, $datos);
-
-        // Sala donde se ENCONTRÓ el producto averiado. Solo la avería la lleva, y solo
-        // cuando el hallazgo no salió de una entrega. No es la sala receptora.
-        $salaHallazgo = $this->resolverSalaHallazgo($origenAveria, $datos, $clienteId);
+        // Sala a la que CORRESPONDE la avería, independiente de la sala receptora.
+        $salaAveria = $this->resolverSalaAveria($tipo, $datos, $clienteId);
 
         // Cruzar de sala nunca es rutina. Hay dos formas de hacerlo y las dos cuestan lo
         // mismo: una explicación escrita.
@@ -338,21 +351,21 @@ class DteBorradorService
         $salaCcf = $original?->cliente_sucursal_id;
         $receptoraCruzada = $original !== null && $sucursalId !== null
             && (int) $sucursalId !== (int) $salaCcf;
-        $hallazgoCruzado = $original !== null && $salaHallazgo !== null
-            && (int) $salaHallazgo !== (int) $salaCcf;
+        $averiaCruzada = $original !== null && $salaAveria !== null
+            && (int) $salaAveria !== (int) $salaCcf;
 
-        if (($receptoraCruzada || $hallazgoCruzado) && trim((string) ($datos['motivo'] ?? '')) === '') {
+        if (($receptoraCruzada || $averiaCruzada) && trim((string) ($datos['motivo'] ?? '')) === '') {
             throw ValidationException::withMessages([
                 'motivo' => $receptoraCruzada
                     ? 'Para emitir la nota de crédito a una sala distinta a la del CCF relacionado, el motivo es obligatorio: explique por qué.'
-                    : 'La avería se encontró en una sala distinta a la del CCF relacionado: el motivo es obligatorio para dejar constancia de por qué se acredita contra ese CCF.',
+                    : 'La avería corresponde a una sala distinta a la del CCF relacionado: el motivo es obligatorio para dejar constancia de por qué se acredita contra ese CCF.',
             ]);
         }
 
         // Orden de compra: se CONGELA desde el CCF relacionado (no se acepta del request).
         $ordenCompra = $original?->numero_orden_compra;
 
-        return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $origenAveria, $salaHallazgo, $usuario) {
+        return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $salaAveria, $usuario) {
             $nc = Dte::create([
                 'tipo_dte' => TipoDte::NotaCredito->value,
                 'tipo_nota_credito' => $tipo->value,
@@ -370,8 +383,7 @@ class DteBorradorService
                 'condicion_operacion' => $datos['condicion_operacion'] ?? 1,
                 'numero_orden_compra' => $ordenCompra,
                 'motivo' => $datos['motivo'] ?? null,
-                'origen_averia' => $origenAveria?->value,
-                'sucursal_hallazgo_id' => $salaHallazgo,
+                'sucursal_averia_id' => $salaAveria,
                 'fecha_emision' => now()->toDateString(),
                 'hora_emision' => now()->toTimeString(),
                 'moneda' => $original?->moneda ?? 'USD',
@@ -408,77 +420,266 @@ class DteBorradorService
     }
 
     /**
-     * Origen operativo de una nota de crédito por AVERÍA ({@see OrigenAveria}).
+     * Vincula un CCF aceptado a una nota que se registró SIN documento relacionado.
      *
-     * Solo la avería lo lleva, y lo lleva SIEMPRE: sin este dato no se distingue el
-     * producto dañado que apareció con el pedido en la mano del que apareció revisando
-     * un estante, y esas dos averías no se atienden igual. Se pide de entrada porque
-     * después nadie lo reconstruye.
+     * Es el segundo tiempo de una avería guardada sin CCF: ya está anotada y ahora
+     * aparece un CCF del mismo cliente contra el cual acreditarla. Recién con esto la nota
+     * puede generarse, porque recién con esto tiene el `documentoRelacionado` que el
+     * esquema del MH exige.
      *
-     * En cualquier otra modalidad el valor se DESCARTA en lugar de guardarse: un
-     * «origen de avería» colgado de un pronto pago no significaría nada y ensuciaría
-     * las consultas de trazabilidad.
+     * Lo que se valida es lo mismo que al crear una nota normal, sin descuentos:
+     *  - la nota sigue siendo un borrador (un documento emitido es inmutable);
+     *  - todavía NO tiene documento relacionado (esto no sirve para cambiar de CCF: eso
+     *    sería mover una nota de un original a otro, que es otra cosa y no se permite acá);
+     *  - el CCF es un 03 ACEPTADO —real en producción—, del MISMO cliente, del mismo
+     *    ambiente, ni archivado ni con invalidación sellada;
+     *  - si el CCF es de OTRA SALA que la de la avería, hace falta motivo escrito.
      *
-     * No es un valor fiscal: no entra al JSON del MH ni toca descuento, retención ni
-     * totales. Las averías ya emitidas se quedan en null (ver la migración); esto solo
-     * rige para las que se crean de ahora en adelante.
+     * La sala de la avería NO se toca: a qué sala pertenece el producto dañado es un
+     * hecho, y el CCF que se le vincule después no lo cambia. Lo que sí se adopta del CCF es lo que la
+     * nota necesita para emitirse con su original: emisor, punto de venta, ambiente,
+     * orden de compra y la sala receptora del documento.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws DocumentoInmutableException
+     * @throws ValidationException
+     */
+    public function vincularCcfANotaCredito(Dte $nc, Dte $ccf, array $datos = [], ?User $usuario = null): Dte
+    {
+        $this->verificarEditable($nc);
+
+        if ($nc->tipo_dte !== TipoDte::NotaCredito) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'Solo una nota de crédito puede relacionarse con un CCF.',
+            ]);
+        }
+
+        if ($nc->dte_relacionado_id !== null) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'Esta nota de crédito ya tiene un CCF relacionado.',
+            ]);
+        }
+
+        $this->validarCcfRelacionable($ccf, $nc->cliente_id);
+
+        // Cruzar de sala es legítimo —el producto se encontró en una sala y se acredita
+        // contra un CCF de otra del mismo cliente—, pero nunca es rutina: sin explicación
+        // escrita nadie puede reconstruir después por qué se eligió ese CCF.
+        $salaAveria = $nc->sucursal_averia_id ?? $nc->cliente_sucursal_id;
+        $motivo = trim((string) ($datos['motivo'] ?? ''));
+
+        if ($salaAveria !== null
+            && (int) $salaAveria !== (int) $ccf->cliente_sucursal_id
+            && $motivo === '') {
+            throw ValidationException::withMessages([
+                'motivo' => 'El CCF elegido es de otra sala del mismo cliente: el motivo es obligatorio para dejar constancia de por qué se acredita contra ese CCF.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($nc, $ccf, $motivo, $usuario, $salaAveria) {
+            $nc->dte_relacionado_id = $ccf->id;
+            $nc->cliente_id = $ccf->cliente_id;
+            // Sala RECEPTORA del documento: la del CCF, como en cualquier nota por avería.
+            // La de la avería queda intacta, en su propia columna.
+            $nc->cliente_sucursal_id = $ccf->cliente_sucursal_id;
+            $nc->establecimiento_id = $ccf->establecimiento_id;
+            $nc->punto_venta_id = $ccf->punto_venta_id;
+            $nc->ambiente = $ccf->ambiente?->value ?? $nc->ambiente?->value;
+            $nc->numero_orden_compra = $ccf->numero_orden_compra;
+            if ($motivo !== '') {
+                $nc->motivo = $motivo;
+            }
+            $nc->save();
+
+            // El descuento y la retención dependen del CCF relacionado, que hasta recién
+            // no existía: sin recalcular, la nota conservaría los totales que tenía cuando
+            // no había original del cual heredar nada.
+            $this->recalcular($nc);
+
+            activity('dte_nota_credito_vinculo_ccf')
+                ->performedOn($nc)
+                ->causedBy($usuario ?? Auth::user())
+                ->withProperties([
+                    'dte_relacionado_id' => $ccf->id,
+                    'ccf_numero' => $ccf->numero_control ?? $ccf->numero_interno,
+                    'sala_ccf_id' => $ccf->cliente_sucursal_id,
+                    'sala_averia_id' => $salaAveria,
+                    'cruza_de_sala' => $salaAveria !== null && (int) $salaAveria !== (int) $ccf->cliente_sucursal_id,
+                    'motivo' => $motivo !== '' ? $motivo : null,
+                ])
+                ->log('vinculó un CCF aceptado a una avería registrada sin documento relacionado');
+
+            return $nc->refresh();
+        });
+    }
+
+    /**
+     * Reglas de ELEGIBILIDAD de un CCF como documento relacionado de una nota.
+     *
+     * Es la misma lista que aplica al crear una nota desde un CCF; vive aparte porque la
+     * vinculación posterior tiene que exigir exactamente lo mismo y no una versión
+     * relajada. Un CCF que no se podía elegir al crear tampoco puede colarse después.
+     *
+     * @throws ValidationException
+     */
+    private function validarCcfRelacionable(Dte $ccf, ?int $clienteId): void
+    {
+        if ($ccf->tipo_dte !== TipoDte::CreditoFiscal) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'El documento relacionado de una nota de crédito debe ser un Comprobante de Crédito Fiscal (CCF).',
+            ]);
+        }
+
+        if ($ccf->estado !== EstadoDte::Aceptado) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'Solo se puede relacionar un CCF ACEPTADO por Hacienda (estado actual: '.$ccf->estado->label().').',
+            ]);
+        }
+
+        if ($clienteId !== null && (int) $ccf->cliente_id !== (int) $clienteId) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'El CCF debe pertenecer al mismo cliente de la nota de crédito.',
+            ]);
+        }
+
+        // Ambiente: una nota de producción no puede acreditar un documento de pruebas.
+        if (($ccf->ambiente?->value ?? null) !== config('dte.ambiente')) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'El CCF pertenece a otro ambiente: no puede relacionarse con esta nota de crédito.',
+            ]);
+        }
+
+        if (filled($ccf->sello_invalidacion) || $ccf->archivado) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'El CCF fue invalidado o archivado: no puede relacionarse con una nota de crédito.',
+            ]);
+        }
+
+        // En PRODUCCIÓN no basta el estado Aceptado: hace falta aceptación REAL (sello
+        // oficial no-mock + fecha de procesamiento), igual que al crear la nota.
+        if (($ccf->ambiente?->value ?? null) === AmbienteHacienda::Produccion->value
+            && ! Dte::whereKey($ccf->id)->aceptadoRealMh()->exists()) {
+            throw ValidationException::withMessages([
+                'dte_relacionado_id' => 'En producción, la nota de crédito solo puede relacionarse con un CCF con aceptación REAL de Hacienda (sello oficial).',
+            ]);
+        }
+    }
+
+    /**
+     * Crea el borrador de una avería que TODAVÍA no tiene documento relacionado.
+     *
+     * Es un borrador INCOMPLETO, no un documento emitible: nace sin CCF, sin orden de
+     * compra y sin nada heredado, porque no hay de dónde heredarlo. El cliente y la sala
+     * los declara quien registra, y el emisor sale de la configuración como en cualquier
+     * otro documento propio.
+     *
+     * Lo que sí se valida acá es lo único que después no tendría arreglo: que haya
+     * cliente, y que la sala pertenezca a ese cliente. Cruzar de cliente no se permite
+     * nunca, ni siquiera antes de haber elegido un CCF.
      *
      * @param  array<string, mixed>  $datos
      *
      * @throws ValidationException
      */
-    private function resolverOrigenAveria(TipoNotaCredito $tipo, array $datos): ?OrigenAveria
+    private function crearAveriaSinCcf(array $datos, TipoNotaCredito $tipo, ?User $usuario): Dte
+    {
+        $clienteId = $datos['cliente_id'] ?? null;
+        if (blank($clienteId)) {
+            throw ValidationException::withMessages([
+                'cliente_id' => 'Indique el cliente al que corresponde la avería.',
+            ]);
+        }
+        $clienteId = (int) $clienteId;
+
+        $salaId = blank($datos['cliente_sucursal_id'] ?? null) ? null : (int) $datos['cliente_sucursal_id'];
+        if ($salaId !== null) {
+            $sala = ClienteSucursal::find($salaId);
+            if (! $sala || (int) $sala->cliente_id !== $clienteId) {
+                throw ValidationException::withMessages([
+                    'cliente_sucursal_id' => 'La sala debe pertenecer al cliente indicado.',
+                ]);
+            }
+        }
+
+        // Guardar una avería SIN documento relacionado es excepcional: lo normal es que el
+        // CCF exista. Sin una explicación escrita, un borrador incompleto a propósito no se
+        // distingue de uno que quedó a medias por descuido, y el que queda a medias no lo
+        // reclama nadie. El formulario además exige activar la excepción a mano; esto es la
+        // parte que no depende del navegador.
+        //
+        // Se comprueba DESPUÉS del cliente y la sala: si la sala es de otro cliente, ese es
+        // el problema concreto que hay que decir, y no la falta de motivo.
+        if (trim((string) ($datos['motivo'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'motivo' => 'Para guardar una avería sin CCF relacionado, explique el motivo de la excepción.',
+            ]);
+        }
+
+        $emisor = ResuelveEmisorUnico::resolver(
+            $datos['establecimiento_id'] ?? null,
+            $datos['punto_venta_id'] ?? null,
+        );
+
+        return DB::transaction(function () use ($datos, $tipo, $clienteId, $salaId, $emisor, $usuario) {
+            $nc = Dte::create([
+                'tipo_dte' => TipoDte::NotaCredito->value,
+                'tipo_nota_credito' => $tipo->value,
+                'estado' => EstadoDte::Borrador->value,
+                'ambiente' => config('dte.ambiente'),
+                'establecimiento_id' => $emisor['establecimiento_id'] ?? null,
+                'punto_venta_id' => $emisor['punto_venta_id'] ?? null,
+                'correlativo_id' => null,
+                'cliente_id' => $clienteId,
+                'cliente_sucursal_id' => $salaId,
+                // Sin CCF: no hay documento relacionado ni orden de compra que copiar.
+                'dte_relacionado_id' => null,
+                'numero_orden_compra' => null,
+                'condicion_operacion' => 1,
+                'motivo' => $datos['motivo'] ?? null,
+                // Sala a la que CORRESPONDE la avería: la declarada. No hay CCF del que
+                // difiera todavía, y cuando lo haya seguirá siendo esta.
+                'sucursal_averia_id' => $salaId,
+                'fecha_emision' => now()->toDateString(),
+                'hora_emision' => now()->toTimeString(),
+                'moneda' => 'USD',
+                'descuento_global' => '0.00',
+                'aplica_retencion_iva' => false,
+                'created_by' => $usuario?->id ?? Auth::id(),
+            ]);
+
+            $this->maquina->registrarCreacion($nc, $usuario, 'Registro de avería sin CCF relacionado todavía');
+
+            return $nc->refresh();
+        });
+    }
+
+    /**
+     * Sala a la que CORRESPONDE la avería.
+     *
+     * Solo la avería la lleva; en cualquier otra modalidad el valor se DESCARTA en vez de
+     * guardarse, para que nadie tenga que interpretar después qué significaba una sala de
+     * avería colgada de un pronto pago.
+     *
+     * Es independiente de la sala RECEPTORA del documento: acreditar contra un CCF de otra
+     * sala del mismo cliente no mueve de lugar al producto dañado.
+     *
+     * Lo único que se valida es que la sala EXISTA y sea DEL MISMO CLIENTE. Que esté
+     * activa no se exige: una sala se desactiva cuando deja de operar, y una avería puede
+     * anotarse justo al vaciar el inventario de una sala que se está cerrando. Cruzar de
+     * CLIENTE, en cambio, no se permite nunca.
+     *
+     * @param  array<string, mixed>  $datos
+     *
+     * @throws ValidationException
+     */
+    private function resolverSalaAveria(TipoNotaCredito $tipo, array $datos, ?int $clienteId): ?int
     {
         if (! $tipo->esPorAveria()) {
             return null;
         }
 
-        $crudo = $datos['origen_averia'] ?? null;
-
-        if ($crudo instanceof OrigenAveria) {
-            return $crudo;
-        }
-
-        $origen = is_string($crudo) || is_int($crudo)
-            ? OrigenAveria::tryFrom((string) $crudo)
-            : null;
-
-        if ($origen === null) {
-            throw ValidationException::withMessages([
-                'origen_averia' => 'Indique dónde se detectó la avería: durante una entrega o en una revisión de inventario en sala.',
-            ]);
-        }
-
-        return $origen;
-    }
-
-    /**
-     * Sala donde se ENCONTRÓ el producto averiado.
-     *
-     * Solo tiene sentido en la avería detectada REVISANDO INVENTARIO: ahí el hallazgo
-     * ocurre en un estante concreto, que puede no ser la sala del CCF contra el que se
-     * acredita —se revisa una sala y el producto se facturó en un CCF de otra sala del
-     * mismo cliente—. En la avería detectada durante una entrega el lugar ya lo dice la
-     * entrega, y en las otras tres modalidades el dato no significa nada; en todos esos
-     * casos el valor se DESCARTA en vez de guardarse, para que nadie tenga que interpretar
-     * después qué quería decir una sala de hallazgo colgada de un pronto pago.
-     *
-     * Lo único que se valida acá es que la sala EXISTA y sea DEL MISMO CLIENTE. Que esté
-     * activa no se exige: una sala se desactiva cuando deja de operar, y la avería puede
-     * encontrarse justamente al vaciar el inventario de una sala que se está cerrando.
-     * Cruzar de CLIENTE, en cambio, no se permite nunca.
-     *
-     * @param  array<string, mixed>  $datos
-     *
-     * @throws ValidationException
-     */
-    private function resolverSalaHallazgo(?OrigenAveria $origen, array $datos, ?int $clienteId): ?int
-    {
-        if ($origen !== OrigenAveria::InventarioSala) {
-            return null;
-        }
-
-        $pedida = $datos['sucursal_hallazgo_id'] ?? null;
+        $pedida = $datos['sucursal_averia_id'] ?? null;
         $pedida = ($pedida === '' || $pedida === null) ? null : (int) $pedida;
 
         if ($pedida === null) {
@@ -488,12 +689,12 @@ class DteBorradorService
         $sucursal = ClienteSucursal::find($pedida);
         if (! $sucursal) {
             throw ValidationException::withMessages([
-                'sucursal_hallazgo_id' => 'La sala indicada no existe.',
+                'sucursal_averia_id' => 'La sala indicada no existe.',
             ]);
         }
         if ($clienteId !== null && (int) $sucursal->cliente_id !== (int) $clienteId) {
             throw ValidationException::withMessages([
-                'sucursal_hallazgo_id' => 'La sala donde se encontró la avería debe pertenecer al mismo cliente del CCF relacionado.',
+                'sucursal_averia_id' => 'La sala de la avería debe pertenecer al mismo cliente del CCF relacionado.',
             ]);
         }
 

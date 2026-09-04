@@ -71,9 +71,6 @@
             // Modalidades que admiten emitir la NC a una sala distinta a la del CCF.
             $modalidadesOtraSala = collect($modalidadesNc)
                 ->filter(fn ($m) => $m->permiteOtraSalaReceptora())->map(fn ($m) => $m->value)->values()->all();
-            // Modalidades que exigen declarar el origen operativo (avería).
-            $modalidadesConOrigen = collect($modalidadesNc)
-                ->filter(fn ($m) => $m->requiereOrigenAveria())->map(fn ($m) => $m->value)->values()->all();
             $submotivosNc = collect($modalidadesNc)
                 ->mapWithKeys(fn ($m) => [$m->value => collect($m->submotivos())
                     ->map(fn ($label, $valor) => ['valor' => $valor, 'label' => $label])->values()->all()])
@@ -93,26 +90,19 @@
                   modalidad: @js(old('modalidad', '')),
                   tipo: @js(old('tipo', '')),
                   otraSala: @js($modalidadesOtraSala),
-                  conOrigen: @js($modalidadesConOrigen),
                   subs: @js($submotivosNc),
                   salaCcf: @js((string) $dte->cliente_sucursal_id),
                   salaNc: @js((string) old('cliente_sucursal_id', $dte->cliente_sucursal_id)),
-                  origen: @js(old('origen_averia', '')),
-                  salaHallazgo: @js((string) old('sucursal_hallazgo_id', '')),
                   get permiteOtraSala() { return this.otraSala.includes(this.modalidad); },
-                  get pideOrigen() { return this.conOrigen.includes(this.modalidad); },
                   get submotivos() { return this.subs[this.modalidad] ?? []; },
                   {{-- Mismo criterio que el formulario grande: las dos formas de cruzar de
                        sala cuestan lo mismo, una explicación escrita, y el servidor la
                        exige igual. --}}
-                  get receptoraCruzada() { return this.permiteOtraSala && this.salaNc !== this.salaCcf; },
-                  get hallazgoCruzado() { return this.pideOrigen && this.origen === 'inventario_sala' && this.salaHallazgo !== '' && this.salaHallazgo !== this.salaCcf; },
-                  get motivoObligatorio() { return this.receptoraCruzada || this.hallazgoCruzado; },
+                  get motivoObligatorio() { return this.permiteOtraSala && this.salaNc !== this.salaCcf; },
                   onModalidad() {
                       const s = this.submotivos;
                       this.tipo = s.length > 0 ? (s.some(x => x.valor === this.tipo) ? this.tipo : s[0].valor) : '';
                       if (! this.permiteOtraSala) { this.salaNc = this.salaCcf; }
-                      if (! this.pideOrigen) { this.origen = ''; this.salaHallazgo = ''; }
                   },
               }"
               onsubmit="return confirm('¿Crear una nota de crédito para este CCF?');">
@@ -141,36 +131,6 @@
                     </template>
                 </select>
                 <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
-            </div>
-
-            {{-- Origen operativo de la avería: obligatorio, igual que en el formulario grande. --}}
-            <div x-show="pideOrigen" x-cloak class="rounded-md border border-amber-200 bg-amber-50 p-3">
-                <x-input-label for="origen_averia_nc" value="¿Dónde se detectó la avería? *" />
-                <select id="origen_averia_nc" name="origen_averia" x-model="origen" :required="pideOrigen"
-                        class="mt-1 block w-full border-amber-300 rounded-md shadow-sm text-sm">
-                    <option value="">— Seleccione —</option>
-                    @foreach (\App\Enums\OrigenAveria::cases() as $origen)
-                        <option value="{{ $origen->value }}" @selected(old('origen_averia') === $origen->value)>{{ $origen->label() }}</option>
-                    @endforeach
-                </select>
-                <x-input-error :messages="$errors->get('origen_averia')" class="mt-1" />
-
-                {{-- Sala del HALLAZGO: solo cuando la avería salió de una revisión de
-                     inventario. Puede no ser la del CCF —se revisa una sala y el producto
-                     se facturó en otra del mismo cliente—, y ahí el motivo es obligatorio. --}}
-                @if (! empty($salasNotaCredito))
-                    <div class="mt-3" x-show="origen === 'inventario_sala'" x-cloak>
-                        <x-input-label for="sala_hallazgo_nc" value="Sala donde se encontró" />
-                        <select id="sala_hallazgo_nc" name="sucursal_hallazgo_id" x-model="salaHallazgo"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
-                            <option value="">— La misma del CCF —</option>
-                            @foreach ($salasNotaCredito as $sala)
-                                <option value="{{ $sala['id'] }}" @selected((int) old('sucursal_hallazgo_id') === (int) $sala['id'])>{{ $sala['nombre'] }}</option>
-                            @endforeach
-                        </select>
-                        <x-input-error :messages="$errors->get('sucursal_hallazgo_id')" class="mt-1" />
-                    </div>
-                @endif
             </div>
 
             {{-- SALA RECEPTORA: solo para las modalidades que la admiten (pronto pago, otro

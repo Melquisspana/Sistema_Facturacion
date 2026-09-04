@@ -8,7 +8,6 @@ use App\Enums\CondicionPago;
 use App\Enums\EstadoDte;
 use App\Enums\ModalidadNotaCredito;
 use App\Enums\MotivoAnulacion;
-use App\Enums\OrigenAveria;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDte;
@@ -493,6 +492,17 @@ class DteController extends Controller
                 $request->input('punto_venta_id'),
             ));
 
+        // El CCF es OBLIGATORIO por defecto, también en la avería: en la enorme mayoría de
+        // los casos existe. Guardar sin él es una excepción que hay que activar a mano en
+        // el formulario (`sin_ccf_excepcional`) y explicar por escrito; el borrador queda
+        // incompleto y bloqueado para emitir hasta que se le vincule uno.
+        //
+        // Sin ese pedido explícito, un `dte_relacionado_id` ausente es lo que parece: un
+        // dato que falta, y se rechaza como en cualquier otra modalidad.
+        $sinCcf = $original === null
+            && $request->boolean('sin_ccf_excepcional')
+            && ModalidadNotaCredito::tryFrom((string) $request->input('modalidad'))?->admiteGuardarSinCcf() === true;
+
         $datos = $request->validate([
             // MODALIDAD OPERATIVA (las cuatro de la pantalla nueva). `tipo` sigue
             // aceptándose para no romper a quien ya postea la modalidad interna directa
@@ -500,12 +510,14 @@ class DteController extends Controller
             // decide cuál manda.
             'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
             'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
-            'origen_averia' => ['nullable', Rule::enum(OrigenAveria::class)],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
             'cliente_sucursal_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
-            // Sala donde se ENCONTRÓ la avería. No es la sala receptora: solo la lleva la
-            // avería detectada revisando inventario, y puede diferir de la del CCF.
-            'sucursal_hallazgo_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
+            // Sala a la que CORRESPONDE la avería. Independiente de la del CCF: acreditar
+            // contra un CCF de otra sala no mueve de lugar al producto dañado.
+            'sucursal_averia_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
+            // Excepción explícita para guardar sin CCF. Sin esto, el documento relacionado
+            // es obligatorio en todas las modalidades.
+            'sin_ccf_excepcional' => ['nullable', 'boolean'],
             'dte_relacionado_id' => ['nullable', 'integer', 'exists:dtes,id'],
             'establecimiento_id' => ['required', 'integer', 'exists:establecimientos,id'],
             'punto_venta_id' => ['required', 'integer', 'exists:puntos_venta,id'],
@@ -519,10 +531,11 @@ class DteController extends Controller
             return back()->withInput()->withErrors($e->errors());
         }
 
-        // Sin CCF relacionado, el cliente es obligatorio (la NC necesita receptor).
-        if ($original === null && empty($datos['cliente_id'])) {
+        // Sin CCF relacionado solo puede seguir la avería de una visita sin pedido; para
+        // cualquier otra modalidad el CCF es obligatorio y lo exige crearNotaCredito().
+        if ($original === null && ! $sinCcf) {
             return back()->withInput()->withErrors([
-                'cliente_id' => 'Seleccione un cliente o un CCF relacionado para la nota de crédito.',
+                'dte_relacionado_id' => 'Seleccione el CCF aceptado que la nota de crédito acredita.',
             ]);
         }
 
@@ -1838,8 +1851,7 @@ class DteController extends Controller
             // para no romper a los consumidores que ya posteaban la modalidad interna.
             'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
             'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
-            'origen_averia' => ['nullable', Rule::enum(OrigenAveria::class)],
-            'sucursal_hallazgo_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
+            'sucursal_averia_id' => ['nullable', 'integer', 'exists:cliente_sucursales,id'],
             'motivo' => ['nullable', 'string', 'max:1000'],
             // Sala RECEPTORA de la NC. Opcional: sin ella se usa la del CCF. Solo las
             // modalidades por monto (pronto pago…) admiten una distinta; la coherencia
@@ -1993,6 +2005,13 @@ class DteController extends Controller
 
     private function mensajeNotaCredito(Dte $nc): string
     {
+        // Sin CCF la nota queda REGISTRADA pero no emitible: hay que decirlo acá, en el
+        // mensaje que se ve al terminar, y no solo cuando el botón de generar falle.
+        if ($nc->dte_relacionado_id === null) {
+            return 'Avería registrada; falta relacionar un CCF para emitir. '
+                .'Agregá los productos y vinculá después un CCF aceptado del mismo cliente.';
+        }
+
         return match (true) {
             $nc->tipo_nota_credito->esPorProductos() => 'Nota de crédito creada. Acredita las líneas del documento original.',
             $nc->tipo_nota_credito->esPorAveria() => 'Nota de crédito por avería creada. Agrega los productos del catálogo.',
@@ -2068,6 +2087,33 @@ class DteController extends Controller
         };
 
         return $this->respuestaLineas($request, $dte, $mensaje);
+    }
+
+    /**
+     * Vincula un CCF aceptado a una avería que se registró sin documento relacionado.
+     *
+     * Es lo que desbloquea la emisión: mientras la nota no tenga CCF no puede generarse,
+     * porque el esquema del MH exige `documentoRelacionado`. La elegibilidad del CCF y el
+     * motivo obligatorio al cruzar de sala los valida DteBorradorService.
+     */
+    public function vincularCcfNotaCredito(Request $request, Dte $dte): RedirectResponse
+    {
+        $this->authorize('update', $dte);
+
+        $datos = $request->validate([
+            'dte_relacionado_id' => ['required', 'integer', 'exists:dtes,id'],
+            'motivo' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $ccf = Dte::find($datos['dte_relacionado_id']);
+
+        try {
+            $this->borradores->vincularCcfANotaCredito($dte, $ccf, $datos, $request->user());
+        } catch (ValidationException $e) {
+            return back()->withInput()->withErrors($e->errors());
+        }
+
+        return back()->with('status', 'CCF relacionado. La nota de crédito ya puede generarse.');
     }
 
     private function editNotaCredito(Dte $nc): View
@@ -2417,6 +2463,11 @@ class DteController extends Controller
                     ])->all()
                 : [],
             'sin_lineas' => $dte->lineas->isEmpty(),
+            // Por qué NO se puede generar todavía. `sin_lineas` no alcanza: una NC sin
+            // documento relacionado tampoco puede generarse, y el editor tiene que saberlo
+            // o volvería a habilitar el botón que la vista acaba de pintar deshabilitado.
+            'generar_bloqueado' => $dte->lineas->isEmpty()
+                || ($esNc && $dte->dte_relacionado_id === null),
         ]);
     }
 
@@ -2616,7 +2667,7 @@ class DteController extends Controller
         // pantalla no pueda contradecir al servidor.
         $modalidades = [];
         $submotivosPorModalidad = [];
-        $origenPorModalidad = [];
+        $sinCcfPorModalidad = [];
         $otraSalaPorModalidad = [];
 
         foreach (ModalidadNotaCredito::cases() as $m) {
@@ -2630,19 +2681,13 @@ class DteController extends Controller
                 ->map(fn (string $label, string $valor) => ['valor' => $valor, 'label' => $label])
                 ->values()->all();
 
-            if ($m->requiereOrigenAveria()) {
-                $origenPorModalidad[] = $m->value;
+            if ($m->admiteGuardarSinCcf()) {
+                $sinCcfPorModalidad[] = $m->value;
             }
             if ($m->permiteOtraSalaReceptora()) {
                 $otraSalaPorModalidad[] = $m->value;
             }
         }
-
-        $origenesAveria = array_map(fn (OrigenAveria $o) => [
-            'valor' => $o->value,
-            'label' => $o->label(),
-            'descripcion' => $o->descripcion(),
-        ], OrigenAveria::cases());
 
         // Códigos de albarán POR CLIENTE, y solo para los clientes que declararon un
         // perfil documental. La inmensa mayoría no tiene ninguno y para ellos la pantalla
@@ -2689,7 +2734,6 @@ class DteController extends Controller
             'opcionesCliente' => $opcionesCliente,
             'opcionesCcf' => $opcionesCcf,
             'modalidades' => $modalidades,
-            'origenesAveria' => $origenesAveria,
             'codigosPorCliente' => $codigosPorCliente,
             'salasPorCliente' => $salasPorCliente,
             'establecimientos' => Establecimiento::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']),
@@ -2703,7 +2747,7 @@ class DteController extends Controller
                 'opcionesCliente' => $opcionesCliente,
                 'salasPorCliente' => $salasPorCliente,
                 'submotivosPorModalidad' => $submotivosPorModalidad,
-                'origenPorModalidad' => $origenPorModalidad,
+                'sinCcfPorModalidad' => $sinCcfPorModalidad,
                 'otraSalaPorModalidad' => $otraSalaPorModalidad,
                 'codigosPorCliente' => $codigosPorCliente,
                 // Solo el CCF PRESELECCIONADO (llegó por ?ccf= o se repintó con old()),
@@ -2716,11 +2760,11 @@ class DteController extends Controller
 
                 'modalidad' => (string) old('modalidad', ''),
                 'tipo' => (string) old('tipo', ''),
-                'origenAveria' => (string) old('origen_averia', ''),
                 'motivo' => (string) old('motivo', ''),
 
                 'clienteId' => (string) old('cliente_id', $preCcf?->cliente_id ?? ''),
-                'salaHallazgoId' => (string) old('sucursal_hallazgo_id', ''),
+                'clienteSalaId' => (string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
+                'salaAveriaId' => (string) old('sucursal_averia_id', ''),
                 'ccfId' => (string) old('dte_relacionado_id', $preCcf?->id ?? ''),
                 'salaNcId' => (string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
                 'establecimientoId' => (string) old('establecimiento_id', $preCcf?->establecimiento_id ?? ''),
