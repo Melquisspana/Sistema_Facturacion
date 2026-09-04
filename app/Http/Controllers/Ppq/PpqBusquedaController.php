@@ -13,6 +13,8 @@ use App\Services\Ppq\PpqBusquedaService;
 use App\Services\Ppq\PpqGmailService;
 use App\Services\Ppq\SalaResolver;
 use App\Services\Rutas\AlbaranLocalizador;
+use App\Services\Rutas\ResolucionAlbaran;
+use App\Support\NumeroAlbaran;
 use App\Support\PpqElegibilidad;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
@@ -82,6 +84,8 @@ class PpqBusquedaController extends Controller
         // ------------------- GMAIL: SOLO COMO FALLBACK -------------------
         $gmailDisponible = $gmail->disponible();
         $gmailConsultado = false;
+        $gmailAlbaranConsultado = false;
+        $gmailAlbaranError = null;
         $gmailError = null;
         $resolucion = null;
         // Gmail solo entra si la base local NO resolvió. «Resolver» es más que encontrar
@@ -147,6 +151,49 @@ class PpqBusquedaController extends Controller
             $albaranesPorOc += $albExactoOc;
         }
 
+        // Encontrar el CCF local no significa que su ALBARÁN también esté local. En
+        // producción la sincronización automática puede estar apagada: el DTE ya vive en
+        // `dtes`, pero el AC01 llega después al label de Gmail. Antes `resueltoLocalmente`
+        // cerraba TODO acceso a Gmail y dejaba esos CCF sin albarán aunque el correo ya
+        // hubiera llegado.
+        //
+        // Se mantiene la prioridad segura: primero `ppq_albaranes`; solo cuando no existe
+        // ningún candidato local se consulta el label de albaranes. Una ambigüedad o un
+        // tipo indeterminado NO se tapa buscando otro correo: requiere revisión humana.
+        $albaranesGmailPorDte = [];
+        if ($exacto !== null
+            && $tipo === '03'
+            && PpqBusquedaService::resuelveSinGmail($exacto)
+            && filled($exacto->numero_orden_compra)
+        ) {
+            $resolucionLocal = app(AlbaranLocalizador::class)->elegir(
+                $albaranesPorDte,
+                $albaranesPorOc,
+                $exacto->id,
+                $exacto->numero_orden_compra,
+            );
+
+            if ($resolucionLocal->estado === ResolucionAlbaran::SIN_CANDIDATOS && $gmailDisponible) {
+                $gmailAlbaranConsultado = true;
+                try {
+                    $candidato = $gmail->buscarAlbaranPorOc(
+                        $exacto->numero_orden_compra,
+                        optional($exacto->fecha_emision)->toDateString(),
+                        $exacto->total_pagar !== null ? (float) $exacto->total_pagar : null,
+                    );
+
+                    // Gmail puede devolver también AC02/AC04 para la misma OC. Solo el
+                    // AC01 prueba la entrega; cualquier otro tipo se ignora aquí.
+                    $tipoAlbaran = NumeroAlbaran::desde($candidato['numero_albaran'] ?? null)?->tipo;
+                    if ($candidato !== null && $tipoAlbaran === PpqAlbaran::tipoDeEntrega()) {
+                        $albaranesGmailPorDte[$exacto->id] = $candidato;
+                    }
+                } catch (GmailDesconectadoException $e) {
+                    $gmailAlbaranError = $e->getMessage();
+                }
+            }
+        }
+
         // Lotes editables a los que se puede agregar (borrador/listo).
         $lotesAbiertos = $this->lotesAbiertos();
 
@@ -169,6 +216,8 @@ class PpqBusquedaController extends Controller
             'gmailDebug' => $gmailDebug,
             'gmailDisponible' => $gmailDisponible,
             'gmailConsultado' => $gmailConsultado,
+            'gmailAlbaranConsultado' => $gmailAlbaranConsultado,
+            'gmailAlbaranError' => $gmailAlbaranError,
             'resueltoLocalmente' => $resueltoLocalmente,
             'localesOcultos' => $localesOcultos,
             'gmailError' => $gmailError,
@@ -176,6 +225,7 @@ class PpqBusquedaController extends Controller
             'yaUsados' => $yaUsados,
             'albaranesPorDte' => $albaranesPorDte,
             'albaranesPorOc' => $albaranesPorOc,
+            'albaranesGmailPorDte' => $albaranesGmailPorDte,
             'hayAvanzados' => $hayAvanzados,
             'lotesAbiertos' => $lotesAbiertos,
             'loteActivo' => $loteActivo,

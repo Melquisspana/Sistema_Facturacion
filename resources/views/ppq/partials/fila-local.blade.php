@@ -20,7 +20,9 @@
         ? null
         : ($albaranesPorDte[$dte->id] ?? ($albaranesPorOc[$dte->numero_orden_compra] ?? null));
     $alb = $resolucionAlb?->albaran;
-    $albMonto = $alb?->monto_albaran;
+    $albGmail = $esNcLocal ? null : ($albaranesGmailPorDte[$dte->id] ?? null);
+    $hayAlb = $alb !== null || $albGmail !== null;
+    $albMonto = $alb?->monto_albaran ?? ($albGmail['monto'] ?? null);
 
     $r = [
         'origen' => 'local',
@@ -37,9 +39,11 @@
         'motivoNoElegible' => \App\Support\PpqElegibilidad::motivoParaCobrar($dte),
         // Aviso que NO impide cobrar (modo «advertir» del perfil).
         'advertenciaCobro' => \App\Support\PpqElegibilidad::advertenciaParaCobrar($dte),
-        // El albarán de un resultado local sale siempre de `ppq_albaranes` (vía
-        // AlbaranLocalizador): esta pantalla no baja albaranes de Gmail.
-        'albaranFuente' => $alb !== null ? 'Albarán sincronizado' : null,
+        // La base manda; el resultado exacto solo cae a Gmail cuando el AC01 todavía
+        // no fue sincronizado.
+        'albaranFuente' => $alb !== null
+            ? 'Albarán sincronizado'
+            : ($albGmail !== null ? 'Consultado en Gmail' : null),
         'tipoDte' => $dte->tipo_dte->value,
         'numeroControl' => $dte->numero_control,
         'codigoGeneracion' => $dte->codigo_generacion,
@@ -50,14 +54,15 @@
         'sala' => \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra),
         'salaNombre' => $dte->clienteSucursal?->nombre, // nombre comercial vía la relación del CCF
 
-        'albaranNumero' => \App\Support\Albaran::numeroLimpio($alb?->numero_albaran),
-        'albaranFecha' => optional($alb?->fecha_albaran)->format('Y-m-d'),
+        'albaranNumero' => \App\Support\Albaran::numeroLimpio($alb?->numero_albaran ?? ($albGmail['numero_albaran'] ?? null)),
+        'albaranFecha' => optional($alb?->fecha_albaran)->format('Y-m-d') ?? ($albGmail['fecha'] ?? null),
         'albaranMonto' => $albMonto,
-        'salaAlbaran' => \App\Support\Albaran::salaDesdeNumero($alb?->numero_albaran),
+        'salaAlbaran' => \App\Support\Albaran::salaDesdeNumero($alb?->numero_albaran ?? ($albGmail['numero_albaran'] ?? null)),
         'diferencia' => $albMonto !== null ? round((float) $dte->total_pagar - (float) $albMonto, 2) : null,
-        'estado' => \App\Support\PpqConciliacion::estado($dte->total_pagar, $albMonto, $alb !== null),
+        'estado' => \App\Support\PpqConciliacion::estado($dte->total_pagar, $albMonto, $hayAlb),
         'dteId' => $dte->id,
         'albaranId' => $alb?->id,
+        'gmailMessageId' => $alb?->gmail_message_id ?? ($albGmail['gmail_message_id'] ?? null),
         'ccfRelacionado' => null,
         'yaEn' => $yaUsados[$dte->id] ?? null,
     ];

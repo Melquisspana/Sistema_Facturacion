@@ -324,6 +324,9 @@
                     @if (! empty($r['albaranId']))
                         <input type="hidden" name="ppq_albaran_id" value="{{ $r['albaranId'] }}">
                     @endif
+                    @if (! empty($r['gmailMessageId']))
+                        <input type="hidden" name="gmail_message_id" value="{{ $r['gmailMessageId'] }}">
+                    @endif
 
                     @if ($loteFijo)
                         <input type="hidden" name="lote" value="{{ $loteFijo->id }}">

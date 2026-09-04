@@ -7,6 +7,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqSala;
 use App\Services\Rutas\AlbaranLocalizador;
 use App\Support\Albaran;
+use App\Support\NumeroAlbaran;
 use App\Support\OrdenCompra;
 use App\Support\Sala;
 use Illuminate\Support\Carbon;
@@ -362,62 +363,26 @@ class PpqGmailService
         $oc = trim($oc);
 
         // 1) y 2) Búsqueda directa por OC y variantes.
-        $correo = null;
+        $tipoEntrega = PpqAlbaran::tipoDeEntrega();
         foreach ($this->variantesOc($oc) as $variante) {
             $correos = $this->gmail->buscarAlbaranes($variante, 5);
-            if ($correos !== []) {
-                $correo = $correos[0];
-                break;
+            foreach ($correos as $correo) {
+                $candidato = $this->datosAlbaranDeCorreo($correo);
+                $tipo = NumeroAlbaran::desde($candidato['numero_albaran'] ?? null)?->tipo;
+
+                // Una misma OC puede aparecer en correos AC01, AC02 y AC04. PPQ necesita
+                // la constancia de ENTREGA, no simplemente el primer resultado de Gmail.
+                if ($tipo === $tipoEntrega) {
+                    return $candidato + [
+                        'fuente' => self::ALBARAN_GMAIL,
+                        'debug' => ['busqueda' => 'oc', 'variante' => $variante],
+                    ];
+                }
             }
         }
 
         // 3) Fallback por fecha+sala+monto (solo lectura de Gmail).
-        if ($correo === null) {
-            return $this->albaranPorFechaSalaMonto($oc, $fecha, $monto);
-        }
-
-        $adjuntos = $this->gmail->adjuntos($correo['id']);
-
-        $debug = [
-            'asunto' => $correo['asunto'] ?? null,
-            'adjuntos' => array_map(fn ($a) => ['filename' => $a['filename'], 'mime' => $a['mime'], 'size' => strlen($a['data'])], $adjuntos),
-            'pdf_parseado' => false,
-            'parser' => null,
-        ];
-
-        // El albarán de Calleja viene como PDF: extraer texto y parsear monto/fecha/nº.
-        $datosPdf = null;
-        foreach ($adjuntos as $a) {
-            $esPdf = str_contains(strtolower($a['mime']), 'pdf') || str_ends_with(strtolower($a['filename']), '.pdf');
-            if (! $esPdf) {
-                continue;
-            }
-            $debug['pdf_parseado'] = true;
-            $debug['archivo'] = $this->guardarCopia($correo['id'], $a['filename'], $a['data']);
-            $datosPdf = $this->albaranParser->desdePdf($a['data']);
-            $debug['parser'] = $datosPdf['debug'];
-            break;
-        }
-        // Si no hay PDF, intentar un JSON adjunto.
-        if ($datosPdf === null) {
-            $json = $this->jsonDteDeAdjuntos($correo['id']);
-            if ($json !== null) {
-                $p = $this->parser->desdeJson($json);
-                $datosPdf = ['numero' => null, 'fecha' => $p['fecha'], 'oc' => $p['ordenCompra'], 'monto' => $p['monto']];
-            }
-        }
-
-        return [
-            'gmail_message_id' => $correo['id'],
-            'numero_albaran' => Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null),
-            'orden_compra' => ($datosPdf['oc'] ?? null) ?: $oc,
-            'sala' => OrdenCompra::salaDesde($oc),
-            'nombre_sala' => $datosPdf['nombre_sala'] ?? null,
-            'monto' => $datosPdf['monto'] ?? null,
-            'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
-            'fuente' => self::ALBARAN_GMAIL,
-            'debug' => $debug,
-        ];
+        return $this->albaranPorFechaSalaMonto($oc, $fecha, $monto);
     }
 
     /**

@@ -51,6 +51,7 @@ class PpqItemController extends Controller
             'numero_albaran' => ['nullable', 'string'],
             'fecha_albaran' => ['nullable', 'string'],
             'monto_albaran' => ['nullable', 'numeric'],
+            'gmail_message_id' => ['nullable', 'string', 'max:255'],
             'observaciones' => ['nullable', 'string', 'max:500'],
         ]);
 
