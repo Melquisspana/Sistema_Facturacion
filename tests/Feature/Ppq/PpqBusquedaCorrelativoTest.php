@@ -78,20 +78,34 @@ class PpqBusquedaCorrelativoTest extends TestCase
         $this->assertSame([$dte->id], $this->idsDe(['q' => 'DTE-03-M001P002-000000000000151']));
     }
 
-    public function test_encuentra_por_codigo_de_generacion_completo(): void
+    /**
+     * El código de generación pasó a la BÚSQUEDA AVANZADA y con coincidencia EXACTA.
+     * Antes se comparaba por subcadena desde el mismo campo que el número, y era una de
+     * las tres fuentes de resultados ajenos: es un UUID de 36 caracteres, así que cuatro
+     * dígitos aciertan dentro de él por puro azar.
+     */
+    public function test_encuentra_por_codigo_de_generacion_en_la_avanzada(): void
     {
         $dte = $this->dte('DTE-03-M001P001-0000000000000986', [
             'codigo_generacion' => 'A1B2C3D4-1111-2222-3333-444455556666',
         ]);
 
-        $this->assertSame([$dte->id], $this->idsDe(['q' => 'A1B2C3D4-1111-2222-3333-444455556666']));
+        $this->assertSame(
+            [$dte->id],
+            $this->idsDe(['codigo_generacion' => 'A1B2C3D4-1111-2222-3333-444455556666'])
+        );
     }
 
-    public function test_encuentra_por_sello_de_recepcion(): void
+    /**
+     * El sello de recepción dejó de ser un criterio de búsqueda. Nadie lo teclea —es una
+     * cadena larga y aleatoria— y buscarlo por subcadena arrastraba documentos ajenos
+     * igual que el código de generación. No está en la avanzada porque no se pidió.
+     */
+    public function test_el_sello_ya_no_es_un_criterio_de_busqueda(): void
     {
-        $dte = $this->dte('DTE-03-M001P001-0000000000000986', ['sello_recepcion' => 'SELLO2026XYZ99']);
+        $this->dte('DTE-03-M001P001-0000000000000986', ['sello_recepcion' => 'SELLO2026XYZ99']);
 
-        $this->assertSame([$dte->id], $this->idsDe(['q' => 'SELLO2026XYZ99']));
+        $this->assertSame([], $this->idsDe(['q' => 'SELLO2026XYZ99']));
     }
 
     // --- 3. Últimos cuatro ---------------------------------------------------
@@ -250,12 +264,23 @@ class PpqBusquedaCorrelativoTest extends TestCase
         $this->assertSame([$exacto->id], $this->idsDe(['q' => '0986']));
     }
 
-    public function test_un_termino_numerico_tambien_encuentra_por_orden_de_compra(): void
+    /**
+     * La orden de compra se busca por su PROPIO campo, en la avanzada. Casarla contra el
+     * número buscado era la tercera fuente de resultados ajenos: una sola OC ampara
+     * varios CCF de la misma sala, así que arrastraba a todos los hermanos.
+     */
+    public function test_la_orden_de_compra_se_busca_por_su_propio_campo(): void
     {
-        // Una orden de compra es solo dígitos: la rama del correlativo no puede
-        // dejarla fuera, que es lo que pasaba.
         $dte = $this->dte('DTE-03-M001P001-0000000000000986', ['numero_orden_compra' => '260600232009999']);
+        $hermano = $this->dte('DTE-03-M001P001-0000000000000987', ['numero_orden_compra' => '260600232009999']);
 
-        $this->assertSame([$dte->id], $this->idsDe(['q' => '260600232009999']));
+        // Por su campo: aparecen los dos, que es lo que se pidió.
+        $this->assertSame(
+            [$dte->id, $hermano->id],
+            $this->idsDe(['oc' => '260600232009999'])
+        );
+
+        // Pero tecleada en el buscador de número no devuelve nada: no es un número de CCF.
+        $this->assertSame([], $this->idsDe(['q' => '260600232009999']));
     }
 }
