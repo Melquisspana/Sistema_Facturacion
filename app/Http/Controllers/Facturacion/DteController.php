@@ -837,12 +837,6 @@ class DteController extends Controller
         return app(\App\Services\Dte\DtePdfService::class)->emisor($dte);
     }
 
-    /** Logo del emisor como data-URI (delegado). */
-    private function logoSrcPdf(): ?string
-    {
-        return app(\App\Services\Dte\DtePdfService::class)->logoSrc();
-    }
-
     /** Nombre del archivo PDF (delegado). */
     private function nombrePdf(Dte $dte): string
     {
