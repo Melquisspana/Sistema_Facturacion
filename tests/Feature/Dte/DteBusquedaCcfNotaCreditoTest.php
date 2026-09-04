@@ -655,7 +655,7 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
         $this->assertContains($ccf->id, $this->buscar(''));
 
         // …y la NC creada con ese id da exactamente los mismos números de siempre.
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 

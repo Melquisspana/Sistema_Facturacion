@@ -98,7 +98,7 @@ class NcCapturaProductosTest extends TestCase
     {
         return $this->borradores->crearNotaCredito($ccf, [
             'tipo' => $tipo->value,
-            'origen_averia' => 'entrega', // solo lo consume la avería
+            // solo lo consume la avería
         ], $this->usuario());
     }
 
@@ -341,7 +341,7 @@ class NcCapturaProductosTest extends TestCase
         $averia = $this->nc($ccf, TipoNotaCredito::Averia);
         $this->actingAs($usuario)->get(route('facturacion.edit', $averia))->assertOk()
             ->assertSee('Productos disponibles')
-            ->assertSee('Durante una entrega')
+            ->assertSee('Avería')
             ->assertSee('Generar nota de crédito');
 
         // Pronto pago: conceptos por monto + referencia del CCF.

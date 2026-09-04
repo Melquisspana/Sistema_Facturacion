@@ -143,7 +143,11 @@ class DteNotaCreditoIndependienteTest extends TestCase
         ]);
     }
 
-    public function test_nc_independiente_sin_cliente_ni_ccf_falla(): void
+    /**
+     * Sin CCF no se crea nada, salvo la avería de una visita sin pedido (que tiene su
+     * propio flujo y sus propias pruebas). El error apunta al CCF, que es lo que falta.
+     */
+    public function test_nc_sin_ccf_falla_salvo_la_averia_sin_pedido(): void
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
 
@@ -153,7 +157,7 @@ class DteNotaCreditoIndependienteTest extends TestCase
                 'establecimiento_id' => $estab->id,
                 'punto_venta_id' => $pv->id,
             ])
-            ->assertSessionHasErrors('cliente_id');
+            ->assertSessionHasErrors('dte_relacionado_id');
 
         $this->assertDatabaseCount('dtes', 0);
     }
@@ -224,8 +228,11 @@ class DteNotaCreditoIndependienteTest extends TestCase
             ->assertSee($aceptado->fecha_emision->format('d/m/Y'))
             ->assertSee(number_format((float) $aceptado->total_pagar, 2))
             ->assertDontSee($noAceptado->numero_control)
+            // «NC independiente» sigue sin existir: no hay un flujo de nota suelta. Lo que
+            // sí existe ahora es la avería de una visita sin pedido, que se registra sin
+            // documento relacionado y NO puede emitirse hasta vincularle un CCF; por eso la
+            // pantalla sí puede nombrar esa situación.
             ->assertDontSee('NC independiente')
-            ->assertDontSee('sin documento relacionado')
             ->assertDontSee('independiente');
     }
 

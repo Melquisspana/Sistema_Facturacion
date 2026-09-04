@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Ppq;
 
+use App\Enums\EstadoDte;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -12,8 +13,11 @@ use App\Models\ClientePerfilTipoNc;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
+use App\Models\Establecimiento;
 use App\Models\NcExportacion;
+use App\Models\NcExportacionItem;
 use App\Models\Producto;
+use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
@@ -21,10 +25,12 @@ use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\NcExportacionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -42,7 +48,7 @@ use Tests\TestCase;
  */
 class NcExportacionLoteTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -55,7 +61,7 @@ class NcExportacionLoteTest extends TestCase
      * establecimiento/punto de venta reiniciarían el correlativo y chocarían en
      * `dtes.numero_interno`, igual que en producción.
      *
-     * @var array{estab: \App\Models\Establecimiento, pv: \App\Models\PuntoVenta}|null
+     * @var array{estab: Establecimiento, pv: PuntoVenta}|null
      */
     private ?array $emisor = null;
 
@@ -104,7 +110,7 @@ class NcExportacionLoteTest extends TestCase
         return $cliente;
     }
 
-    /** @return array{estab: \App\Models\Establecimiento, pv: \App\Models\PuntoVenta} */
+    /** @return array{estab: Establecimiento, pv: PuntoVenta} */
     private function emisorUnico(): array
     {
         if ($this->emisor !== null) {
@@ -175,7 +181,7 @@ class NcExportacionLoteTest extends TestCase
             $nc->numero_control = 'DTE-05-M001P002-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT);
             $nc->sello_recepcion = '2026SELLO'.str_pad((string) $n, 31, 'X');
             $nc->fecha_procesamiento_mh = now();
-            $nc->estado = \App\Enums\EstadoDte::Aceptado;
+            $nc->estado = EstadoDte::Aceptado;
             $nc->save();
 
             $notas[] = $nc->refresh();
@@ -374,7 +380,7 @@ class NcExportacionLoteTest extends TestCase
 
         $servicio->crear($cliente, [$notas[0]->id], $this->usuario());
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         $servicio->crear($cliente, [$notas[0]->id, $notas[1]->id], $this->usuario());
     }
 
@@ -387,12 +393,12 @@ class NcExportacionLoteTest extends TestCase
 
         try {
             $servicio->crear($cliente, [$notas[0]->id, $notas[1]->id], $this->usuario());
-        } catch (\Illuminate\Validation\ValidationException) {
+        } catch (ValidationException) {
             // esperado
         }
 
         $this->assertSame(1, NcExportacion::count());
-        $this->assertSame(1, \App\Models\NcExportacionItem::count());
+        $this->assertSame(1, NcExportacionItem::count());
     }
 
     // -------------------------------------------------------- valores de la fila
@@ -431,7 +437,7 @@ class NcExportacionLoteTest extends TestCase
         app(DteGeneracionService::class)->generar($ccf);
         $ccf = $this->aceptarCcf($ccf);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega']);
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value]);
         foreach ($productos as $p) {
             $this->borradores->agregarProductoNotaCreditoAveria($nc, $p, 1);
         }
@@ -443,7 +449,7 @@ class NcExportacionLoteTest extends TestCase
         $nc->numero_control = 'DTE-05-M001P002-000000000000900';
         $nc->sello_recepcion = '2026SELLOAVERIA'.str_pad('', 25, 'X');
         $nc->fecha_procesamiento_mh = now();
-        $nc->estado = \App\Enums\EstadoDte::Aceptado;
+        $nc->estado = EstadoDte::Aceptado;
         $nc->fecha_emision = Carbon::today()->toDateString();
         $nc->save();
 
@@ -472,7 +478,7 @@ class NcExportacionLoteTest extends TestCase
     {
         $cliente = Cliente::factory()->contribuyente()->create();
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         app(NcExportacionService::class)->crear($cliente, [1], $this->usuario());
     }
 }

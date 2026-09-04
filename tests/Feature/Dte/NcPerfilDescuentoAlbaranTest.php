@@ -155,8 +155,7 @@ class NcPerfilDescuentoAlbaranTest extends TestCase
     private function crearNc(Dte $ccf, string $tipo): Dte
     {
         $this->actingAs($this->usuario())
-            // `origen_averia` solo lo consume la avería; las demás modalidades lo descartan.
-            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => $tipo, 'motivo' => 'Prueba', 'origen_averia' => 'entrega'])
+            ->post(route('facturacion.nota-credito.store', $ccf), ['tipo' => $tipo, 'motivo' => 'Prueba'])
             ->assertRedirect();
 
         return Dte::where('tipo_dte', '05')->where('tipo_nota_credito', $tipo)->latest('id')->firstOrFail();

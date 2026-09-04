@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Dte;
 
-use App\Enums\OrigenAveria;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -201,7 +200,6 @@ class NcFormularioGenericoTest extends TestCase
         // Y en la captura de la nota, el panel del albarán usa ese mismo código.
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::Averia->value,
-            'origen_averia' => OrigenAveria::Entrega->value,
         ], $this->usuario());
 
         $this->actingAs($this->usuario())->get(route('facturacion.edit', $nc))
@@ -231,7 +229,6 @@ class NcFormularioGenericoTest extends TestCase
 
         $averia = $this->borradores->crearNotaCredito($ccfA, [
             'tipo' => TipoNotaCredito::Averia->value,
-            'origen_averia' => OrigenAveria::Entrega->value,
         ], $this->usuario());
         $this->borradores->agregarProductoNotaCreditoAveria($averia, Producto::factory()->create([
             'precio_unitario' => 2, 'tipo_impuesto' => TipoImpuesto::Gravado->value,
@@ -292,20 +289,19 @@ class NcFormularioGenericoTest extends TestCase
      * Avería encontrada revisando inventario en una sala, acreditada contra un CCF de
      * OTRA sala del mismo cliente: se permite, se registra y exige motivo.
      */
-    public function test_averia_de_inventario_puede_cruzar_de_sala_con_motivo(): void
+    public function test_la_averia_puede_acreditarse_contra_un_ccf_de_otra_sala_con_motivo(): void
     {
         $emisor = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
         $salaCcf = $this->sala($cliente, 'Sucursal Norte');
-        $salaHallazgo = $this->sala($cliente, 'Sucursal Sur');
+        $salaAveria = $this->sala($cliente, 'Sucursal Sur');
         $ccf = $this->ccfAceptado($cliente, $salaCcf, $emisor);
 
         // Sin motivo: rechazado.
         $this->actingAs($this->usuario())
             ->post(route('facturacion.store-nota-credito'), [
                 'modalidad' => 'averia',
-                'origen_averia' => OrigenAveria::InventarioSala->value,
-                'sucursal_hallazgo_id' => $salaHallazgo->id,
+                'sucursal_averia_id' => $salaAveria->id,
                 'dte_relacionado_id' => $ccf->id,
                 'cliente_id' => $cliente->id,
                 'cliente_sucursal_id' => $salaCcf->id,
@@ -315,32 +311,30 @@ class NcFormularioGenericoTest extends TestCase
 
         $this->assertSame(0, Dte::where('tipo_dte', TipoDte::NotaCredito->value)->count());
 
-        // Con motivo: se crea, y la sala del hallazgo queda REGISTRADA.
+        // Con motivo: se crea, y la sala de la avería queda REGISTRADA.
         $this->actingAs($this->usuario())
             ->post(route('facturacion.store-nota-credito'), [
                 'modalidad' => 'averia',
-                'origen_averia' => OrigenAveria::InventarioSala->value,
-                'sucursal_hallazgo_id' => $salaHallazgo->id,
+                'sucursal_averia_id' => $salaAveria->id,
                 'dte_relacionado_id' => $ccf->id,
                 'cliente_id' => $cliente->id,
                 'cliente_sucursal_id' => $salaCcf->id,
                 'establecimiento_id' => $emisor['estab']->id,
                 'punto_venta_id' => $emisor['pv']->id,
-                'motivo' => 'Producto dañado hallado en el estante de Sucursal Sur.',
+                'motivo' => 'El producto dañado corresponde a la sala Sur.',
             ])->assertRedirect()->assertSessionHasNoErrors();
 
         $nc = Dte::where('tipo_dte', TipoDte::NotaCredito->value)->latest('id')->firstOrFail();
-        $this->assertSame(OrigenAveria::InventarioSala, $nc->origen_averia);
-        $this->assertSame($salaHallazgo->id, $nc->sucursal_hallazgo_id);
-        // La sala RECEPTORA sigue siendo la del CCF: el hallazgo no la cambia.
+        $this->assertSame($salaAveria->id, $nc->sucursal_averia_id);
+        // La sala RECEPTORA sigue siendo la del CCF: son datos distintos.
         $this->assertSame($salaCcf->id, $nc->cliente_sucursal_id);
 
         $this->actingAs($this->usuario())->get(route('facturacion.edit', $nc))
-            ->assertOk()->assertSee('Sala del hallazgo')->assertSee('Sucursal Sur');
+            ->assertOk()->assertSee('Sala de la avería')->assertSee('Sucursal Sur');
     }
 
     /** Cruzar de CLIENTE no se permite nunca, por ninguna vía. */
-    public function test_la_sala_del_hallazgo_no_puede_ser_de_otro_cliente(): void
+    public function test_la_sala_de_la_averia_no_puede_ser_de_otro_cliente(): void
     {
         $emisor = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
@@ -353,20 +347,72 @@ class NcFormularioGenericoTest extends TestCase
         $this->actingAs($this->usuario())
             ->post(route('facturacion.store-nota-credito'), [
                 'modalidad' => 'averia',
-                'origen_averia' => OrigenAveria::InventarioSala->value,
-                'sucursal_hallazgo_id' => $salaAjena->id,
+                'sucursal_averia_id' => $salaAjena->id,
                 'dte_relacionado_id' => $ccf->id,
                 'cliente_id' => $cliente->id,
                 'establecimiento_id' => $emisor['estab']->id,
                 'punto_venta_id' => $emisor['pv']->id,
                 'motivo' => 'Intento de cruzar de cliente.',
-            ])->assertSessionHasErrors('sucursal_hallazgo_id');
+            ])->assertSessionHasErrors('sucursal_averia_id');
 
         $this->assertSame(0, Dte::where('tipo_dte', TipoDte::NotaCredito->value)->count());
     }
 
     /** La avería detectada en una entrega no arrastra sala de hallazgo. */
-    public function test_la_averia_en_entrega_no_registra_sala_de_hallazgo(): void
+    /**
+     * La sala a la que CORRESPONDE la avería es independiente de la del CCF, también
+     * cuando la avería salió de una entrega: se entrega en una sala y el producto dañado
+     * puede ser de otra del mismo cliente. Cruzarlas exige motivo, pero se registra.
+     */
+    public function test_la_averia_registra_su_sala_aunque_venga_de_una_entrega(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $salaCcf = $this->sala($cliente, 'Sucursal Norte');
+        $otra = $this->sala($cliente, 'Sucursal Sur');
+        $ccf = $this->ccfAceptado($cliente, $salaCcf, $emisor);
+
+        $nc = $this->borradores->crearNotaCredito($ccf, [
+            'tipo' => TipoNotaCredito::Averia->value,
+            'sucursal_averia_id' => $otra->id,
+            'motivo' => 'El producto dañado corresponde a la sala Sur.',
+        ], $this->usuario());
+
+        $this->assertSame($otra->id, $nc->sucursal_averia_id);
+        // La sala RECEPTORA sigue siendo la del CCF: son datos distintos.
+        $this->assertSame($salaCcf->id, $nc->cliente_sucursal_id);
+    }
+
+    /**
+     * La sala de la avería se registra SIEMPRE, aunque no se elija una distinta: por
+     * defecto es la sala elegida en el formulario. Si quedara en null, una avería
+     * perfectamente normal se guardaría sin saber a qué sala corresponde.
+     */
+    public function test_la_averia_registra_por_defecto_la_sala_elegida(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $sala = $this->sala($cliente, 'Sucursal Norte');
+        $ccf = $this->ccfAceptado($cliente, $sala, $emisor);
+
+        $this->actingAs($this->usuario())
+            ->post(route('facturacion.store-nota-credito'), [
+                'modalidad' => 'averia',
+                'dte_relacionado_id' => $ccf->id,
+                'cliente_id' => $cliente->id,
+                'cliente_sucursal_id' => $sala->id,
+                // Lo que manda el formulario cuando no se elige otra sala: la de arriba.
+                'sucursal_averia_id' => $sala->id,
+                'establecimiento_id' => $emisor['estab']->id,
+                'punto_venta_id' => $emisor['pv']->id,
+            ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $nc = Dte::where('tipo_dte', TipoDte::NotaCredito->value)->latest('id')->firstOrFail();
+        $this->assertSame($sala->id, $nc->sucursal_averia_id);
+    }
+
+    /** Las modalidades que no son avería no arrastran sala de avería. */
+    public function test_una_devolucion_no_registra_sala_de_averia(): void
     {
         $emisor = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
@@ -375,14 +421,12 @@ class NcFormularioGenericoTest extends TestCase
         $ccf = $this->ccfAceptado($cliente, $sala, $emisor);
 
         $nc = $this->borradores->crearNotaCredito($ccf, [
-            'tipo' => TipoNotaCredito::Averia->value,
-            'origen_averia' => OrigenAveria::Entrega->value,
-            // Llega, pero no corresponde a este origen: se descarta en vez de guardarse.
-            'sucursal_hallazgo_id' => $otra->id,
+            'tipo' => TipoNotaCredito::DevolucionProducto->value,
+            // Llega, pero en una devolución no significa nada: se descarta.
+            'sucursal_averia_id' => $otra->id,
         ], $this->usuario());
 
-        $this->assertSame(OrigenAveria::Entrega, $nc->origen_averia);
-        $this->assertNull($nc->sucursal_hallazgo_id);
+        $this->assertNull($nc->sucursal_averia_id);
     }
 
     // ------------------------------------------------------- pronto pago

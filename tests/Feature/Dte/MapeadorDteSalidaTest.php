@@ -359,7 +359,7 @@ class MapeadorDteSalidaTest extends TestCase
         // CCF realmente aceptado por el MH (aceptarCcf setea sello real + fecha_procesamiento_mh).
         $ccf = $this->aceptarCcf($this->generarBorrador(TipoDte::CreditoFiscal, $emisor, $cliente)); // gravado 100
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia', 'origen_averia' => 'entrega']);
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia']);
         // Producto MANUAL que NO está en el CCF (avería lo permite); total dentro del saldo.
         $unidad = UnidadMedida::whereNotNull('codigo')->first();
         $manual = Producto::factory()->create([
