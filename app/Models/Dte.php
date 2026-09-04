@@ -6,7 +6,6 @@ use App\Enums\AmbienteHacienda;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoDte;
 use App\Enums\MotivoAnulacion;
-use App\Enums\OrigenAveria;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Enums\TipoNotaCredito;
@@ -42,7 +41,7 @@ class Dte extends Model
         'respuesta_mh', 'respuesta_mh_path', 'fecha_procesamiento_mh',
         'condicion_operacion', 'forma_pago', 'numero_orden_compra',
         'cod_incoterms', 'desc_incoterms', 'tipo_item_expor', 'recinto_fiscal', 'tipo_regimen', 'regimen',
-        'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'origen_averia', 'sucursal_hallazgo_id', 'moneda',
+        'fecha_emision', 'hora_emision', 'observaciones', 'motivo', 'tipo_nota_credito', 'sucursal_averia_id', 'moneda',
         'motivo_anulacion', 'observacion_anulacion', 'fecha_anulacion', 'invalidado_by',
         'codigo_generacion_invalidacion', 'tipo_anulacion', 'json_invalidacion_path', 'jws_invalidacion_path',
         'sello_invalidacion', 'respuesta_mh_invalidacion', 'respuesta_mh_invalidacion_path',
@@ -64,7 +63,6 @@ class Dte extends Model
             'ambiente' => AmbienteHacienda::class,
             'condicion_operacion' => CondicionPago::class,
             'tipo_nota_credito' => TipoNotaCredito::class,
-            'origen_averia' => OrigenAveria::class,
             'motivo_anulacion' => MotivoAnulacion::class,
             'fecha_anulacion' => 'datetime',
             'tipo_anulacion' => TipoAnulacionMh::class,
@@ -328,13 +326,14 @@ class Dte extends Model
     }
 
     /**
-     * Sala donde se ENCONTRÓ el producto averiado, cuando la avería salió de una revisión
-     * de inventario y no de una entrega. Puede no ser la sala receptora de la nota (esa es
-     * clienteSucursal, heredada del CCF); null en todo lo demás.
+     * Sala a la que CORRESPONDE una nota por avería. Puede no ser la sala receptora del
+     * documento (esa es clienteSucursal, la del CCF relacionado): cuando la avería se
+     * acredita contra un CCF de otra sala del mismo cliente, el producto dañado sigue
+     * siendo de la sala de acá. Null en el resto de las modalidades.
      */
-    public function sucursalHallazgo(): BelongsTo
+    public function sucursalAveria(): BelongsTo
     {
-        return $this->belongsTo(ClienteSucursal::class, 'sucursal_hallazgo_id');
+        return $this->belongsTo(ClienteSucursal::class, 'sucursal_averia_id');
     }
 
     /**
