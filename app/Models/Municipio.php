@@ -19,9 +19,9 @@ use Illuminate\Support\Facades\Cache;
  * en realidad se estaba eligiendo "Cabañas Oeste".
  *
  * Consecuencia práctica: varias filas de un mismo departamento comparten el mismo
- * `codigo` (San Salvador tiene 5 filas con código 22 y 4 con código 23). Son la MISMA
- * agrupación fiscal: para elegir/mostrar municipios usá siempre {@see nombreFiscal()} y
- * {@see fiscalesUnicos()}, nunca `nombre` a secas.
+ * `codigo` (en San Salvador, «Soyapango», «Ilopango» y «San Martín» comparten el 22 = SAN
+ * SALVADOR ESTE). Son la MISMA agrupación fiscal: para elegir/mostrar municipios usá
+ * siempre {@see nombreFiscal()} y {@see fiscalesUnicos()}, nunca `nombre` a secas.
  *
  * `nombre` NO se toca ni se renombra: lo usan el importador y datos históricos.
  */

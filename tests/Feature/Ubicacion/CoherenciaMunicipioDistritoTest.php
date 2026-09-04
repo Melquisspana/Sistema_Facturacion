@@ -234,8 +234,12 @@ class CoherenciaMunicipioDistritoTest extends TestCase
     {
         // San Salvador tiene varias filas históricas con el mismo código CAT-013: son la
         // MISMA agrupación fiscal y deben ofrecerse una sola vez.
+        //
+        // Los tres nombres son los distritos que REALMENTE forman San Salvador Este (22).
+        // Antes figuraba Cuscatancingo, que pertenece a San Salvador Centro (23): el
+        // ejemplo contradecía el catálogo aunque la prueba pasara.
         $depto = Departamento::where('codigo', '06')->firstOrFail();
-        foreach (['Soyapango', 'Ilopango', 'Cuscatancingo'] as $nombre) {
+        foreach (['Soyapango', 'Ilopango', 'San Martín'] as $nombre) {
             Municipio::updateOrCreate(
                 ['departamento_id' => $depto->id, 'nombre' => $nombre],
                 ['codigo' => '22', 'activo' => true],
