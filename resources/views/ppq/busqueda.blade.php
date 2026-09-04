@@ -71,8 +71,83 @@
                                class="flex-1 rounded-md border-gray-300 text-base py-3">
                         <button type="submit" class="rounded-md {{ $esNcModo ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700' }} px-6 text-sm font-medium text-white">Buscar</button>
                     </div>
-                    <p class="mt-1 text-xs text-gray-400">Escribí solo los últimos 4 dígitos del {{ $esNcModo ? 'NC' : 'CCF' }} (ej. 0986). El sistema lo busca y agrega los documentos al PPQ; <span class="font-medium">no</span> los marca como pagados.</p>
+                    <p class="mt-1 text-xs text-gray-400">
+                        Escribí el número del {{ $esNcModo ? 'NC' : 'CCF' }}: los últimos dígitos (ej. 0986) o el número de
+                        control completo. Devuelve <span class="font-medium">ese</span> documento, no parecidos.
+                        Agregarlo al PPQ <span class="font-medium">no</span> lo marca como pagado.
+                    </p>
                 </form>
+
+                {{-- BÚSQUEDA AVANZADA: plegada y aparte. Acá sí tiene sentido devolver
+                     varios resultados —se piden a propósito, combinando criterios—, y por
+                     eso no puede compartir caja con el buscador exacto: mezclarlas fue lo
+                     que hizo que teclear un número devolviera documentos ajenos. --}}
+                <details class="mt-4 border-t border-gray-100 pt-3" @if ($hayAvanzados) open @endif>
+                    <summary class="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-800">
+                        Búsqueda avanzada
+                        <span class="font-normal text-gray-400">— cuando no tenés el número a mano</span>
+                    </summary>
+
+                    <form method="GET" action="{{ route('ppq.index') }}" class="mt-3">
+                        @if ($loteActivo)
+                            <input type="hidden" name="lote" value="{{ $loteActivo->id }}">
+                        @endif
+                        <input type="hidden" name="tipo" value="{{ $tipo }}">
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <div>
+                                <label for="adv_oc" class="block text-xs font-medium text-gray-600">Orden de compra</label>
+                                <input id="adv_oc" type="text" name="oc" value="{{ $filtros['oc'] ?? '' }}"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                            <div>
+                                <label for="adv_cliente" class="block text-xs font-medium text-gray-600">Cliente</label>
+                                <input id="adv_cliente" type="text" name="cliente" value="{{ $filtros['cliente'] ?? '' }}"
+                                       placeholder="Razón social, nombre comercial o NIT"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                            <div>
+                                <label for="adv_sala" class="block text-xs font-medium text-gray-600">Sala</label>
+                                <input id="adv_sala" type="text" name="sala" value="{{ $filtros['sala'] ?? '' }}"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                            <div>
+                                <label for="adv_desde" class="block text-xs font-medium text-gray-600">Desde</label>
+                                <input id="adv_desde" type="date" name="fecha_desde" value="{{ $filtros['fecha_desde'] ?? '' }}"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                            <div>
+                                <label for="adv_hasta" class="block text-xs font-medium text-gray-600">Hasta</label>
+                                <input id="adv_hasta" type="date" name="fecha_hasta" value="{{ $filtros['fecha_hasta'] ?? '' }}"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                            <div>
+                                <label for="adv_monto" class="block text-xs font-medium text-gray-600">Monto exacto</label>
+                                <input id="adv_monto" type="number" step="0.01" name="monto" value="{{ $filtros['monto'] ?? '' }}"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                            <div>
+                                <label for="adv_control" class="block text-xs font-medium text-gray-600">Número de control</label>
+                                <input id="adv_control" type="text" name="numero_control" value="{{ $filtros['numero_control'] ?? '' }}"
+                                       class="mt-1 w-full rounded-md border-gray-300 text-sm font-mono">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label for="adv_codgen" class="block text-xs font-medium text-gray-600">Código de generación</label>
+                                <input id="adv_codgen" type="text" name="codigo_generacion" value="{{ $filtros['codigo_generacion'] ?? '' }}"
+                                       placeholder="UUID completo" class="mt-1 w-full rounded-md border-gray-300 text-sm font-mono">
+                            </div>
+                        </div>
+
+                        <div class="mt-3 flex flex-wrap items-center gap-3">
+                            <button type="submit" class="rounded-md bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
+                                Buscar avanzado
+                            </button>
+                            <a href="{{ route('ppq.index', array_filter(['tipo' => $tipo, 'lote' => $loteActivo?->id])) }}"
+                               class="text-xs text-gray-500 hover:underline">Limpiar filtros</a>
+                            <span class="text-xs text-gray-400">Devuelve varios resultados, paginados y por fecha reciente.</span>
+                        </div>
+                    </form>
+                </details>
             </div>
 
             {{--
@@ -103,6 +178,49 @@
                 <p class="text-xs text-gray-400">Buscando en la base local del sistema. Gmail no está configurado: solo faltarían los históricos de Conta (P001).</p>
             @else
                 <p class="text-xs text-gray-400">Buscando en la base local del sistema; Gmail queda como respaldo para los históricos de Conta (P001).</p>
+            @endif
+
+            {{-- ─────────────── RESULTADO EXACTO ───────────────
+                 Un número, un documento. Si ya está en un lote se muestra SOLO él, con su
+                 estado y su enlace: ofrecer alternativas ahí sería invitar a cobrar dos
+                 veces el mismo papel. --}}
+            @if ($buscoExacto && $exacto && ! in_array($exacto->id, $localesOcultos, true))
+                @if ($loteDelExacto)
+                    <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3" role="status">
+                        <p class="text-sm font-semibold text-amber-900">
+                            Ya está en PPQ — lote {{ $loteDelExacto->referencia ?? ('#'.$loteDelExacto->id) }}
+                        </p>
+                        <p class="mt-1 text-sm text-amber-800">
+                            Este documento ya fue agregado a un lote; no se puede agregar otra vez.
+                            <a href="{{ route('ppq.lotes.show', $loteDelExacto) }}" class="font-medium underline">Ver el lote</a>
+                        </p>
+                    </div>
+                @endif
+
+                @include('ppq.partials.fila-local', [
+                    'dte' => $exacto,
+                    'albaranesPorDte' => $albaranesPorDte,
+                    'albaranesPorOc' => $albaranesPorOc,
+                    'yaUsados' => $yaUsados,
+                ])
+            @endif
+
+            {{-- CCF no encontrado: ni local ni por correo. Se dice claramente, y no se
+                 rellena la pantalla con documentos que no son el que se pidió. --}}
+            @if ($buscoExacto && ! $exacto && (is_null($fichasGmail) || $fichasGmail === []))
+                <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-8 text-center">
+                    <p class="text-sm font-medium text-gray-700">{{ $esNcModo ? 'Nota de crédito' : 'CCF' }} no encontrado</p>
+                    <p class="mt-1 text-xs text-gray-500">
+                        No hay ningún documento con el número <span class="font-mono">{{ $filtros['q'] }}</span>
+                        en el ambiente actual.
+                        @if ($gmailError)
+                            El correo no se pudo consultar, así que un histórico de Conta podría existir y no verse.
+                        @elseif (! $gmailDisponible)
+                            El correo no está disponible, así que un histórico de Conta podría existir y no verse.
+                        @endif
+                    </p>
+                    <p class="mt-2 text-xs text-gray-400">Revisá el número, o probá la <strong>búsqueda avanzada</strong> por orden de compra, cliente o fecha.</p>
+                </div>
             @endif
 
             {{-- Resultados desde Gmail: FALLBACK, solo si la base local no resolvió --}}
@@ -170,73 +288,29 @@
                 // Solo pueden ser locales NO elegibles —los elegibles descartan la copia
                 // de Gmail, no al revés—. Ver PpqBusquedaController::completarFichasGmail().
                 $totalLocal = is_null($resultados) ? null : max(0, $resultados->total() - count($localesOcultos));
+                // El bloque de abajo es el de la BÚSQUEDA AVANZADA. El resultado exacto ya
+                // se dibujó arriba y no se repite acá.
                 // El bloque local se dibuja si tiene algo que mostrar, o si fue la ÚNICA
                 // fuente consultada: ahí hace falta para poder decir «sin resultados».
                 $mostrarLocales = ! is_null($resultados) && ($totalLocal > 0 || is_null($fichasGmail));
             @endphp
             @if ($mostrarLocales)
-                <p class="text-sm text-gray-500">{{ $totalLocal }} documento(s) encontrado(s) en el sistema.</p>
+                <p class="text-sm text-gray-500">
+                    Búsqueda avanzada: {{ $totalLocal }} documento(s) encontrado(s) en el sistema.
+                </p>
                 @forelse ($resultados as $dte)
                     @continue (in_array($dte->id, $localesOcultos, true))
-                    @php
-                        $esNcLocal = $dte->tipo_dte->value === '05';
-                        // En NC no se auto-vincula albarán (comparte OC con el CCF; es manual).
-                        // Los DOS indices guardan una RESOLUCION, no un albaran suelto: una
-                        // misma OC —y tambien un mismo documento— puede tener el albaran de
-                        // entrega y el de credito de la NC, y solo cuenta el de entrega
-                        // cuando es unico. El vinculo explicito manda sobre la OC.
-                        $resolucionAlb = $esNcLocal
-                            ? null
-                            : ($albaranesPorDte[$dte->id] ?? ($albaranesPorOc[$dte->numero_orden_compra] ?? null));
-                        $alb = $resolucionAlb?->albaran;
-                        $albMonto = $alb?->monto_albaran;
-                        $r = [
-                            'origen' => 'local',
-                            'esNc' => $esNcLocal,
-                            'fuente' => 'Sistema',
-                            // Por qué este documento NO se puede cobrar por PPQ (null si sí
-                            // se puede). Se muestra igual —esconderlo sería mentir sobre lo
-                            // que existe—, pero sin botones para agregarlo.
-                            //
-                            // Es `motivoParaCobrar` y no `motivo`: la primera cubre además
-                            // el CCF físico que el cliente exige de vuelta. Tienen que ser
-                            // exactamente la misma pregunta que hace el controlador al
-                            // guardar, o la pantalla ofrecería un botón que el backend
-                            // rechaza.
-                            'motivoNoElegible' => \App\Support\PpqElegibilidad::motivoParaCobrar($dte),
-                            // Aviso que NO impide cobrar (modo «advertir» del perfil).
-                            'advertenciaCobro' => \App\Support\PpqElegibilidad::advertenciaParaCobrar($dte),
-                            // El albarán de un resultado local sale siempre de `ppq_albaranes`
-                            // (vía AlbaranLocalizador): esta pantalla no baja albaranes de Gmail.
-                            'albaranFuente' => $alb !== null ? 'Albarán sincronizado' : null,
-                            'tipoDte' => $dte->tipo_dte->value,
-                            'numeroControl' => $dte->numero_control,
-                            'codigoGeneracion' => $dte->codigo_generacion,
-                            'sello' => $dte->sello_recepcion,
-                            'fecha' => optional($dte->fecha_emision)->format('Y-m-d'),
-                            'monto' => $dte->total_pagar,
-                            'ordenCompra' => $dte->numero_orden_compra,
-                            'sala' => \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra),
-                            'salaNombre' => $dte->clienteSucursal?->nombre, // nombre comercial vía la relación del CCF
-
-                            'albaranNumero' => \App\Support\Albaran::numeroLimpio($alb?->numero_albaran),
-                            'albaranFecha' => optional($alb?->fecha_albaran)->format('Y-m-d'),
-                            'albaranMonto' => $albMonto,
-                            'salaAlbaran' => \App\Support\Albaran::salaDesdeNumero($alb?->numero_albaran),
-                            'diferencia' => $albMonto !== null ? round((float) $dte->total_pagar - (float) $albMonto, 2) : null,
-                            'estado' => \App\Support\PpqConciliacion::estado($dte->total_pagar, $albMonto, $alb !== null),
-                            'dteId' => $dte->id,
-                            'albaranId' => $alb?->id,
-                            'ccfRelacionado' => null,
-                            'yaEn' => $yaUsados[$dte->id] ?? null,
-                        ];
-                    @endphp
-                    @include('ppq.partials.resultado', ['r' => $r])
+                    @include('ppq.partials.fila-local', [
+                        'dte' => $dte,
+                        'albaranesPorDte' => $albaranesPorDte,
+                        'albaranesPorOc' => $albaranesPorOc,
+                        'yaUsados' => $yaUsados,
+                    ])
                 @empty
-                    <div class="bg-white shadow sm:rounded-lg p-8 text-center text-gray-400">Sin resultados para esa búsqueda.</div>
+                    <div class="bg-white shadow sm:rounded-lg p-8 text-center text-gray-400">Sin resultados para esos filtros.</div>
                 @endforelse
                 <div>{{ $resultados->links() }}</div>
-            @elseif (is_null($fichasGmail) && is_null($resultados))
+            @elseif (is_null($fichasGmail) && is_null($resultados) && ! $buscoExacto)
                 <div class="bg-white shadow sm:rounded-lg p-8 text-center text-sm text-gray-500">
                     Escribí el número del CCF/NC (ej. <span class="font-mono">0986</span>) y presioná <strong>Buscar</strong>.
                 </div>

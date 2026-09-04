@@ -20,25 +20,37 @@ use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
- * Búsqueda rápida de CCF/NC para PPQ: por últimos 4 dígitos, orden de compra,
- * albarán, sala, fecha o monto. Solo consulta; desde aquí se agregan a un lote.
+ * Búsqueda de CCF/NC para PPQ. Solo consulta; desde aquí se agregan a un lote.
  *
- * ORDEN DE LAS FUENTES (Fase 1): la base local manda. Gmail solo se consulta cuando la
- * base no tiene un documento que resuelva la búsqueda —el caso real son los históricos
- * de Conta/P001, que este sistema nunca emitió—. Ver {@see self::index()}.
+ * ─────────────────────────── DOS buscadores ───────────────────────────
+ *
+ *   · PRINCIPAL (`q`) — un número, un documento. Es el trabajo diario: se teclea el
+ *     número del CCF y sale ESE CCF, o «no encontrado». Nunca devuelve parecidos.
+ *   · AVANZADA (`numero_control`, `codigo_generacion`, `oc`, `cliente`, `sala`,
+ *     `fecha_*`, `monto`) — plegada, para cuando no se tiene el número a mano. Ahí sí
+ *     tiene sentido devolver varios, paginados y por fecha reciente.
+ *
+ * ORDEN DE LAS FUENTES: la base local manda. Gmail solo se consulta cuando la base no
+ * tiene el documento —el caso real son los históricos de Conta/P001 que este sistema
+ * nunca emitió— y NUNCA cuando ya hubo coincidencia exacta local.
  */
 class PpqBusquedaController extends Controller
 {
     public function index(Request $request, PpqBusquedaService $busqueda, PpqGmailService $gmail, SalaResolver $salaResolver): View
     {
-        $filtros = $request->only(['q', 'oc', 'albaran', 'sala', 'fecha_desde', 'fecha_hasta', 'monto', 'tipo']);
+        $filtros = $request->only([
+            'q', 'oc', 'albaran', 'sala', 'cliente', 'numero_control', 'codigo_generacion',
+            'fecha_desde', 'fecha_hasta', 'monto', 'tipo',
+        ]);
         $q = trim((string) ($filtros['q'] ?? ''));
 
         // Búsqueda POR TIPO de documento (no se mezclan): por defecto CCF (03). El usuario
         // primero agrega todos los CCF y luego cambia a Nota de crédito (05) para agregar las NC.
         $tipo = in_array($filtros['tipo'] ?? null, ['03', '05'], true) ? $filtros['tipo'] : '03';
         $filtros['tipo'] = $tipo;
-        $hayFiltros = collect($filtros)->except('tipo')->filter(fn ($v) => filled($v))->isNotEmpty();
+        // Los criterios de la AVANZADA, sin contar el buscador exacto.
+        $filtrosAvanzados = collect($filtros)->except(['tipo', 'q'])->filter(fn ($v) => filled($v));
+        $hayAvanzados = $filtrosAvanzados->isNotEmpty();
 
         // --------------------------- BASE LOCAL PRIMERO ---------------------------
         //
@@ -47,20 +59,38 @@ class PpqBusquedaController extends Controller
         // buscar un CCF emitido por este mismo sistema —cuyo sello, cliente, sala y albarán
         // ya están guardados— saliera igual a la red a bajar y parsear el correo que lo
         // llevaba adjunto. La base ya sabía la respuesta.
-        $resultados = $hayFiltros ? $busqueda->buscar($filtros) : null;
+        // BUSCADOR PRINCIPAL: un número, un documento. Devuelve el DTE o null; nunca una
+        // lista de parecidos. Es lo que se usa a diario.
+        $exacto = $q !== '' ? $busqueda->buscarExacto($q, $tipo) : null;
+
+        // BUSCADOR AVANZADO: solo cuando se pidieron criterios avanzados. Los dos no se
+        // mezclan en la misma lista: si hay número exacto manda el número, y si no lo hay
+        // el usuario está usando la avanzada a propósito.
+        $resultados = $hayAvanzados ? $busqueda->buscar($filtros) : null;
 
         // Un documento local de PRODUCCIÓN, ACEPTADO REALMENTE por Hacienda y no
         // archivado resuelve la ficha entera: cierra la búsqueda y Gmail no se consulta.
         // Lo que NO la cierra: no encontrar nada, o encontrar solo borradores, documentos
         // de pruebas o sellos MOCK —ahí puede seguir habiendo un histórico de Conta/P001
         // en el correo, que es justo para lo que Gmail queda.
-        $resueltoLocalmente = $resultados !== null && $busqueda->hayResolutivoLocal($resultados);
+        //
+        // Con coincidencia EXACTA local no se consulta el correo, sin importar nada más:
+        // ya sabemos cuál es el documento.
+        $resueltoLocalmente = ($exacto !== null && PpqBusquedaService::resuelveSinGmail($exacto))
+            || ($resultados !== null && $busqueda->hayResolutivoLocal($resultados));
 
         // ------------------- GMAIL: SOLO COMO FALLBACK -------------------
         $gmailDisponible = $gmail->disponible();
         $gmailConsultado = false;
         $gmailError = null;
         $resolucion = null;
+        // Gmail solo entra si la base local NO resolvió. «Resolver» es más que encontrar
+        // algo con ese número: un borrador, un documento de pruebas o un sello MOCK
+        // coinciden por número pero NO son el documento que se busca, y el real puede
+        // seguir estando solo en el correo como histórico de Conta/P001. Cerrar la
+        // búsqueda con uno de esos escondería el documento verdadero.
+        //
+        // Con una coincidencia exacta ELEGIBLE, en cambio, la red no se toca.
         if ($gmailDisponible && $q !== '' && ! $resueltoLocalmente) {
             $gmailConsultado = true;
             try {
@@ -77,22 +107,45 @@ class PpqBusquedaController extends Controller
 
         // Documentos locales que NO se dibujan porque la ficha de Gmail los cubre mejor
         // (ver completarFichasGmail). Vacío siempre que no se haya consultado Gmail.
+        // Para decidir qué locales tapa Gmail hay que mirar TODOS los que se van a
+        // dibujar, incluido el resultado exacto: si no, el mismo documento saldría dos
+        // veces —la ficha local y la del correo—, que es justo el duplicado que este
+        // mecanismo existe para evitar.
+        $localesDibujados = collect($resultados !== null ? $resultados->items() : []);
+        if ($exacto !== null) {
+            $localesDibujados->push($exacto);
+        }
+
         $localesOcultos = [];
         if (is_array($fichasGmail)) {
-            $fichasGmail = $this->completarFichasGmail($fichasGmail, $tipo, $resultados, $salaResolver);
-            $localesOcultos = $this->localesCubiertosPorGmail($fichasGmail, $resultados);
+            $fichasGmail = $this->completarFichasGmail($fichasGmail, $tipo, $localesDibujados, $salaResolver);
+            $localesOcultos = $this->localesCubiertosPorGmail($fichasGmail, $localesDibujados);
         }
 
         // Para avisar duplicados: qué DTE de los resultados ya está en algún lote. Se
         // pasan los documentos enteros porque el cruce necesita su número de control:
         // los items históricos vienen de Gmail y no tienen `dte_id`.
-        $yaUsados = $resultados ? $busqueda->dtesYaUsados($resultados) : [];
+        // Para el aviso de duplicado: en qué lote está ya cada documento mostrado. Cubre
+        // tanto el resultado exacto como los de la avanzada.
+        // Se cruza sobre la MISMA colección que se va a dibujar. (`items()` y no
+        // `collect($resultados)`: sobre un paginador, collect() llama a toArray() y
+        // devuelve la estructura JSON del paginador, no los documentos.)
+        $yaUsados = $localesDibujados->isEmpty() ? [] : $busqueda->dtesYaUsados($localesDibujados);
+
+        // El lote donde YA está el documento exacto, si está en alguno. La vista lo usa
+        // para mostrar «Ya está en PPQ — lote X» con su enlace y bloquear que se agregue
+        // otra vez, en vez de ofrecer alternativas que nadie pidió.
+        $loteDelExacto = $exacto !== null && isset($yaUsados[$exacto->id])
+            ? PpqLote::find($yaUsados[$exacto->id])
+            : null;
 
         // Albaranes vinculados a los resultados (por dte_id directo o por OC).
         [$albaranesPorDte, $albaranesPorOc] = $this->albaranesDe($resultados);
-
-        // ¿Hay filtros avanzados aplicados? (para abrir el panel avanzado si sí).
-        $hayAvanzados = collect($filtros)->except('q')->filter(fn ($v) => filled($v))->isNotEmpty();
+        if ($exacto !== null) {
+            [$albExacto, $albExactoOc] = $this->albaranesDe(collect([$exacto]));
+            $albaranesPorDte += $albExacto;
+            $albaranesPorOc += $albExactoOc;
+        }
 
         // Lotes editables a los que se puede agregar (borrador/listo).
         $lotesAbiertos = $this->lotesAbiertos();
@@ -108,6 +161,9 @@ class PpqBusquedaController extends Controller
         return view('ppq.busqueda', [
             'filtros' => $filtros,
             'tipo' => $tipo,
+            'exacto' => $exacto,
+            'loteDelExacto' => $loteDelExacto,
+            'buscoExacto' => $q !== '',
             'resultados' => $resultados,
             'fichasGmail' => $fichasGmail,
             'gmailDebug' => $gmailDebug,
