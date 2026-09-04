@@ -158,7 +158,14 @@
                 esté caído no afecta nada y decirlo solo alarmaría de gratis.
             --}}
             @if ($resueltoLocalmente)
-                <p class="text-xs text-green-600">● Resuelto con la base local del sistema. No hizo falta consultar Gmail.</p>
+                <p class="text-xs text-green-600">
+                    ● CCF resuelto con la base local del sistema.
+                    @if ($gmailAlbaranConsultado)
+                        {{ $gmailAlbaranError ? 'No se pudo consultar Gmail para localizar su albarán.' : 'El albarán faltante se buscó en Gmail.' }}
+                    @else
+                        No hizo falta consultar Gmail.
+                    @endif
+                </p>
             @elseif ($gmailError)
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 flex items-center justify-between">
                     <span>
@@ -201,6 +208,7 @@
                     'dte' => $exacto,
                     'albaranesPorDte' => $albaranesPorDte,
                     'albaranesPorOc' => $albaranesPorOc,
+                    'albaranesGmailPorDte' => $albaranesGmailPorDte,
                     'yaUsados' => $yaUsados,
                 ])
             @endif
@@ -326,6 +334,7 @@
                         'dte' => $dte,
                         'albaranesPorDte' => $albaranesPorDte,
                         'albaranesPorOc' => $albaranesPorOc,
+                        'albaranesGmailPorDte' => $albaranesGmailPorDte,
                         'yaUsados' => $yaUsados,
                     ])
                 @empty

@@ -131,15 +131,15 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
      * Doble de GmailClient que CUENTA cada llamada. Cualquier consulta a Gmail queda
      * registrada, así que "cero llamadas" se puede afirmar y no suponer.
      */
-    private function gmailContador(array $correos = []): GmailClient
+    private function gmailContador(array $correos = [], array $albaranes = []): GmailClient
     {
-        return new class($correos) extends GmailClient
+        return new class($correos, $albaranes) extends GmailClient
         {
             /** @var array<int, string> */
             public array $llamadas = [];
 
             /** @param array<int, array{id: string, json: array<string, mixed>}> $correos */
-            public function __construct(public array $correos = []) {}
+            public function __construct(public array $correos = [], public array $albaranes = []) {}
 
             public function disponible(): bool
             {
@@ -176,6 +176,16 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
                     }
                 }
 
+                foreach ($this->albaranes as $correo) {
+                    if ($correo['id'] === $messageId) {
+                        return [[
+                            'filename' => 'albaran.json',
+                            'mime' => 'application/json',
+                            'data' => json_encode($correo['json']),
+                        ]];
+                    }
+                }
+
                 return [];
             }
 
@@ -183,7 +193,18 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
             {
                 $this->llamadas[] = 'buscarAlbaranes:'.$filtroTexto;
 
-                return [];
+                return array_values(array_map(
+                    fn ($correo) => [
+                        'id' => $correo['id'],
+                        'asunto' => $correo['asunto'],
+                        'snippet' => '',
+                        'fecha' => $correo['fecha'] ?? '2026-07-07',
+                    ],
+                    array_filter(
+                        $this->albaranes,
+                        fn ($correo) => str_contains((string) data_get($correo, 'json.apendice.0.valor'), $filtroTexto),
+                    ),
+                ));
             }
 
             public function buscarAlbaranesPorFecha(string $fecha, int $limite = 40): array
@@ -227,7 +248,7 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
 
     // ------------------------------------------------------------------ 1. local sin Gmail
 
-    public function test_dte_local_aceptado_se_encuentra_sin_ninguna_llamada_a_gmail(): void
+    public function test_dte_local_aceptado_no_vuelve_a_buscar_el_ccf_en_gmail(): void
     {
         $this->conectarGmail();
         $ccf = $this->ccfResolutivo('DTE-03-M001P002-000000000000986');
@@ -239,9 +260,12 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
 
         $resp->assertOk();
         $resp->assertSee($ccf->numero_control, false);
-        // LA AFIRMACIÓN CENTRAL DE LA FASE 1: la red no se tocó.
-        $this->assertSame([], $gmail->llamadas, 'Un DTE local aceptado NO debe disparar ninguna consulta a Gmail.');
-        $resp->assertSee('No hizo falta consultar Gmail', false);
+        // El CCF ya está resuelto localmente: nunca se vuelve a buscar en enviados. El
+        // albarán sí puede consultarse porque llega después y la sincronización automática
+        // puede estar apagada.
+        $this->assertNotContains('buscarEnviadosDetallado:0986', $gmail->llamadas);
+        $this->assertContains('buscarAlbaranes:260600232002345', $gmail->llamadas);
+        $resp->assertSee('El albarán faltante se buscó en Gmail', false);
     }
 
     public function test_el_dte_local_resuelve_toda_la_ficha_cliente_sala_y_albaran(): void
@@ -270,6 +294,126 @@ class PpqBusquedaLocalPrimeroTest extends TestCase
         $resp->assertSee('AC01/0232/00/7788', false);         // albarán, vía ppq_albaranes
         $resp->assertSee('Albarán sincronizado', false);      // y se dice de dónde salió
         $this->assertSame([], $gmail->llamadas);
+    }
+
+    public function test_un_ccf_local_sin_albaran_sincronizado_busca_solo_el_ac01_en_gmail(): void
+    {
+        $this->conectarGmail();
+        $oc = '260600232004055';
+        $ccf = $this->ccfResolutivo('DTE-03-M001P002-000000000004055', [
+            'numero_orden_compra' => $oc,
+            'total_pagar' => 113.58,
+        ]);
+        $gmail = $this->usarGmail($this->gmailContador([], [[
+            'id' => 'albaran-4055',
+            'asunto' => 'Entrega AC01/0232/00/4055',
+            'fecha' => '2026-07-08',
+            'json' => $this->jsonDte('DTE-03-M001P001-000000000004055', 'GEN-4055', oc: $oc),
+        ]]));
+
+        $resp = $this->actingAs($this->usuario())->get(route('ppq.index', ['q' => '4055']));
+
+        $resp->assertOk();
+        $resp->assertSee($ccf->numero_control, false);
+        $resp->assertSee('AC01/0232/00/4055', false);
+        $resp->assertSee('Consultado en Gmail', false);
+        $resp->assertSee('El albarán faltante se buscó en Gmail', false);
+        $this->assertNotContains('buscarEnviadosDetallado:4055', $gmail->llamadas);
+        $this->assertContains('buscarAlbaranes:'.$oc, $gmail->llamadas);
+    }
+
+    public function test_el_ac01_encontrado_para_un_ccf_local_se_conserva_al_agregarlo_al_lote(): void
+    {
+        $this->conectarGmail();
+        $oc = '260600232004056';
+        $ccf = $this->ccfResolutivo('DTE-03-M001P002-000000000004056', [
+            'numero_orden_compra' => $oc,
+            'total_pagar' => 113.58,
+        ]);
+        $this->usarGmail($this->gmailContador([], [[
+            'id' => 'albaran-4056',
+            'asunto' => 'Entrega AC01/0232/00/4056',
+            'fecha' => '2026-07-08',
+            'json' => $this->jsonDte('DTE-03-M001P001-000000000004056', 'GEN-4056', oc: $oc),
+        ]]));
+        $usuario = $this->usuario();
+        $lote = PpqLote::create(['referencia' => 'PPQ urgente', 'fecha' => now(), 'estado' => 'borrador']);
+
+        $this->actingAs($usuario)->get(route('ppq.index', ['q' => '4056']))
+            ->assertOk()
+            ->assertSee('value="albaran-4056"', false);
+
+        $this->actingAs($usuario)->post(route('ppq.lotes.items.store', $lote), [
+            'dte_id' => $ccf->id,
+            'sin_albaran' => '0',
+            'numero_albaran' => 'AC01/0232/00/4056',
+            'fecha_albaran' => '2026-07-08',
+            'monto_albaran' => '113.58',
+            'gmail_message_id' => 'albaran-4056',
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('ppq_albaranes', [
+            'numero_albaran' => 'AC01/0232/00/4056',
+            'numero_orden_compra' => $oc,
+            'tipo_codigo' => 'AC01',
+            'origen' => 'gmail',
+            'gmail_message_id' => 'albaran-4056',
+        ]);
+        $this->assertDatabaseHas('ppq_items', [
+            'ppq_lote_id' => $lote->id,
+            'dte_id' => $ccf->id,
+            'sin_albaran' => false,
+        ]);
+    }
+
+    public function test_un_albaran_de_credito_en_gmail_no_se_usa_como_prueba_de_entrega(): void
+    {
+        $this->conectarGmail();
+        $oc = '260600232004057';
+        $ccf = $this->ccfResolutivo('DTE-03-M001P002-000000000004057', ['numero_orden_compra' => $oc]);
+        $this->usarGmail($this->gmailContador([], [[
+            'id' => 'credito-4057',
+            'asunto' => 'Avería AC02/0232/00/4057',
+            'json' => $this->jsonDte('DTE-05-M001P001-000000000004057', 'GEN-NC-4057', '05', $oc),
+        ]]));
+
+        $resp = $this->actingAs($this->usuario())->get(route('ppq.index', ['q' => '4057']));
+
+        $resp->assertOk();
+        $resp->assertSee($ccf->numero_control, false);
+        $resp->assertDontSee('AC02/0232/00/4057', false);
+        $resp->assertSee('No se encontró albarán para esta orden de compra', false);
+    }
+
+    public function test_busca_el_ac01_aunque_gmail_devuelva_primero_una_nota_de_credito_de_la_misma_oc(): void
+    {
+        $this->conectarGmail();
+        $oc = '260600232004058';
+        $ccf = $this->ccfResolutivo('DTE-03-M001P002-000000000004058', [
+            'numero_orden_compra' => $oc,
+            'total_pagar' => 113.58,
+        ]);
+        $this->usarGmail($this->gmailContador([], [
+            [
+                'id' => 'nota-4058',
+                'asunto' => 'Crédito AC02/0232/00/4058',
+                'fecha' => '2026-07-08',
+                'json' => $this->jsonDte('DTE-05-M001P001-000000000004058', 'GEN-NC-4058', '05', $oc),
+            ],
+            [
+                'id' => 'albaran-4058',
+                'asunto' => 'Entrega AC01/0232/00/4058',
+                'fecha' => '2026-07-08',
+                'json' => $this->jsonDte('DTE-03-M001P001-000000000004058', 'GEN-4058', oc: $oc),
+            ],
+        ]));
+
+        $resp = $this->actingAs($this->usuario())->get(route('ppq.index', ['q' => '4058']));
+
+        $resp->assertOk();
+        $resp->assertSee($ccf->numero_control, false);
+        $resp->assertSee('AC01/0232/00/4058', false);
+        $resp->assertDontSee('AC02/0232/00/4058', false);
     }
 
     // ------------------------------------------------------------------ 2. Gmail como fallback
