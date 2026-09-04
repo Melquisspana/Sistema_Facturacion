@@ -194,7 +194,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $this->assertTrue((bool) $ccf->aplica_retencion_iva);
         $producto = Producto::factory()->create(['precio_unitario' => 0.90, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -232,7 +232,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 200.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -409,7 +409,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 200.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -452,7 +452,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 110.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 
@@ -471,7 +471,7 @@ class DteNotaCreditoRetencionTest extends TestCase
         $ccf = $this->ccfAceptado();
         $producto = Producto::factory()->create(['precio_unitario' => 102.00, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
 
-        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value, 'origen_averia' => 'entrega'], $this->usuario());
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Averia->value], $this->usuario());
         $this->borradores->agregarLineaDesdeProducto($nc, $producto, cantidad: 1);
         $nc->refresh();
 

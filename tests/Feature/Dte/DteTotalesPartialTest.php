@@ -190,7 +190,6 @@ class DteTotalesPartialTest extends TestCase
     {
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => TipoNotaCredito::Averia->value,
-            'origen_averia' => 'entrega',
             'motivo' => 'Producto averiado',
         ]);
         $this->borradores->agregarLineaDesdeProducto($nc, $this->producto($precio), cantidad: 1);

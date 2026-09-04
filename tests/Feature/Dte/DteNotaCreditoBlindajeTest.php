@@ -135,8 +135,6 @@ class DteNotaCreditoBlindajeTest extends TestCase
     {
         return $this->borradores->crearNotaCredito($ccf, [
             'tipo' => $tipo->value,
-            // Solo lo usa la avería; en el resto de las modalidades se descarta.
-            'origen_averia' => 'entrega',
         ], $this->usuario());
     }
 

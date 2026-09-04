@@ -312,8 +312,6 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
 
         $this->borradores->crearNotaCredito($ccf, [
             'tipo' => $tipo,
-            // La avería del data provider lo exige; el resto de los tipos lo descarta.
-            'origen_averia' => 'entrega',
             'cliente_sucursal_id' => $oficina->id,
             'motivo' => 'Cobro centralizado en oficina central.',
         ], $this->usuario());
@@ -329,8 +327,6 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         // Enviar la MISMA sala del CCF es válido para cualquier tipo.
         $nc = $this->borradores->crearNotaCredito($ccf, [
             'tipo' => $tipo,
-            // La avería del data provider lo exige; el resto de los tipos lo descarta.
-            'origen_averia' => 'entrega',
             'cliente_sucursal_id' => $salaVenta->id,
         ], $this->usuario());
 

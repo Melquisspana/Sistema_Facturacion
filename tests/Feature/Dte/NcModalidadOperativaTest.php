@@ -3,10 +3,8 @@
 namespace Tests\Feature\Dte;
 
 use App\Enums\ModalidadNotaCredito;
-use App\Enums\OrigenAveria;
 use App\Enums\TipoNotaCredito;
 use App\Models\ClientePerfilTipoNc;
-use App\Models\Dte;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -110,12 +108,17 @@ class NcModalidadOperativaTest extends TestCase
         }
     }
 
-    /** Solo la avería pide origen operativo, y solo las por monto admiten otra sala. */
+    /**
+     * Las dos reglas que la modalidad decide: quién puede guardarse sin CCF todavía, y
+     * quién admite emitirse a una sala distinta a la del CCF relacionado.
+     */
     public function test_reglas_por_modalidad(): void
     {
-        $this->assertTrue(ModalidadNotaCredito::Averia->requiereOrigenAveria());
+        // Solo la avería puede quedar como borrador incompleto: las demás no tienen
+        // sentido sin original (acreditan SUS líneas o descuentan sobre SU monto).
+        $this->assertTrue(ModalidadNotaCredito::Averia->admiteGuardarSinCcf());
         foreach ([ModalidadNotaCredito::DevolucionFaltante, ModalidadNotaCredito::ProntoPago, ModalidadNotaCredito::OtroAjuste] as $m) {
-            $this->assertFalse($m->requiereOrigenAveria());
+            $this->assertFalse($m->admiteGuardarSinCcf());
         }
 
         $this->assertTrue(ModalidadNotaCredito::ProntoPago->permiteOtraSalaReceptora());
@@ -124,20 +127,13 @@ class NcModalidadOperativaTest extends TestCase
         $this->assertFalse(ModalidadNotaCredito::Averia->permiteOtraSalaReceptora());
     }
 
-    /** El origen de avería es exactamente el par que pidió negocio. */
-    public function test_origenes_de_averia(): void
+    /**
+     * Hay UNA sola avería. La pantalla no la subdivide por cómo ni dónde apareció: eso se
+     * intentó y no aportaba nada operativo, solo clasificaba.
+     */
+    public function test_la_averia_es_una_sola_modalidad(): void
     {
-        $this->assertSame(['entrega', 'inventario_sala'], array_map(fn (OrigenAveria $o) => $o->value, OrigenAveria::cases()));
-        $this->assertSame('Durante una entrega', OrigenAveria::Entrega->label());
-        $this->assertSame('Revisión de inventario en sala', OrigenAveria::InventarioSala->label());
-    }
-
-    /** La columna nueva se castea a enum y acepta null (las averías ya emitidas). */
-    public function test_la_columna_origen_averia_se_castea(): void
-    {
-        $dte = new Dte(['origen_averia' => OrigenAveria::InventarioSala->value]);
-        $this->assertSame(OrigenAveria::InventarioSala, $dte->origen_averia);
-
-        $this->assertNull((new Dte)->origen_averia);
+        $this->assertSame([TipoNotaCredito::Averia], ModalidadNotaCredito::Averia->tiposInternos());
+        $this->assertSame([], ModalidadNotaCredito::Averia->submotivos());
     }
 }
