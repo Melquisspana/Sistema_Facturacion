@@ -77,7 +77,7 @@
                                        placeholder="Buscar por razón social, sala/sucursal, NIT o NRC…"
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm pr-20">
                                 <button type="button" x-show="clienteId !== ''" @click="limpiarCliente()" x-cloak
-                                        class="absolute right-2 top-8 h-6 px-2 text-xs text-gray-500 hover:text-gray-700">Limpiar</button>
+                                        class="absolute right-2 top-7 h-8 px-2 text-xs text-gray-500 hover:text-gray-700">Limpiar</button>
                                 <ul x-show="clienteAbierto" x-cloak
                                     class="absolute z-20 mt-1 w-full max-h-64 overflow-auto bg-white border border-gray-200 rounded-md shadow-lg text-sm">
                                     <template x-for="o in clientesFiltrados" :key="o.key">
@@ -281,8 +281,9 @@
                                                 <span class="font-normal text-gray-600"> · <span x-text="ccf?.cliente_nombre"></span></span>
                                                 <span class="ml-1 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">Aceptado</span>
                                             </p>
+                                            {{-- `-m-2 p-2`: agranda el área táctil a 32 px sin mover el layout. El texto solo mide 16 px de alto y en el teléfono era imposible de acertar. --}}
                                             <button type="button" @click="limpiarCcf()"
-                                                    class="text-xs font-medium text-indigo-700 hover:underline">Cambiar</button>
+                                                    class="-m-2 p-2 text-xs font-medium text-indigo-700 hover:underline">Cambiar</button>
                                         </div>
                                         <dl class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
                                             <div><dt class="inline text-gray-400">Sala:</dt> <dd class="inline text-indigo-700" x-text="ccf?.sala ?? '—'"></dd></div>
