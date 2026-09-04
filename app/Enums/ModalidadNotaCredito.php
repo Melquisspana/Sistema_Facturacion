@@ -137,8 +137,16 @@ enum ModalidadNotaCredito: string
         return null;
     }
 
-    /** La avería exige declarar dónde se detectó ({@see OrigenAveria}). */
-    public function requiereOrigenAveria(): bool
+    /**
+     * ¿Puede guardarse sin documento relacionado todavía?
+     *
+     * Solo la avería. El producto dañado existe y hay que anotarlo aunque en ese momento
+     * no se sepa contra qué CCF acreditarlo; las demás modalidades no tienen sentido sin
+     * original (una devolución acredita SUS líneas, un pronto pago descuenta sobre SU
+     * monto). No es otra clase de nota: es un borrador incompleto, y sigue sin poder
+     * emitirse hasta que se le vincule un CCF válido.
+     */
+    public function admiteGuardarSinCcf(): bool
     {
         return $this === self::Averia;
     }
