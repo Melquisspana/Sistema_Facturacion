@@ -15,6 +15,7 @@ use App\Models\DteLinea;
 use App\Models\User;
 use App\Support\Dinero;
 use App\Support\Dte\OrdenProductosOc;
+use App\Support\Dte\ReglaOrdenCompra;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -87,7 +88,7 @@ class DteGeneracionService
      * oficial + serialización + validación contra el schema del MH + archivo guardado).
      * Los tipos sin serializador oficial se generan sin JSON (comportamiento previo).
      *
-     * @throws GeneracionException  si el documento no se puede mapear/serializar/validar
+     * @throws GeneracionException si el documento no se puede mapear/serializar/validar
      */
     private function generarJsonOficial(Dte $dte): void
     {
@@ -175,9 +176,39 @@ class DteGeneracionService
         }
 
         $this->validarOrdenCompra($dte);
+        $this->validarDocumentoRelacionadoNc($dte);
 
         // Debe existir un correlativo válido para consumir.
         $this->resolverCorrelativo($dte);
+    }
+
+    /**
+     * Una Nota de Crédito (05) NO puede generarse sin documento relacionado.
+     *
+     * No es una preferencia nuestra: el esquema oficial del MH declara
+     * `documentoRelacionado` en el `required` de la raíz, como array con `minItems: 1`, y
+     * lo hace igual en fe-nc-v3 y en fe-nc-v4. Una nota sin CCF no tiene forma válida; la
+     * única manera de emitirla sería inventarle una relación, que es exactamente lo que no
+     * se puede hacer con un documento fiscal.
+     *
+     * Por eso el candado está acá, en el punto irreversible: la avería de una visita sin
+     * pedido SÍ puede registrarse y guardarse —el producto dañado existe—, pero se queda
+     * en borrador hasta que alguien le vincule un CCF aceptado del mismo cliente. La
+     * pantalla lo dice con todas las letras en vez de dejar el botón fallando sin motivo.
+     *
+     * @throws GeneracionException
+     */
+    private function validarDocumentoRelacionadoNc(Dte $dte): void
+    {
+        if ($dte->tipo_dte !== TipoDte::NotaCredito || $dte->dte_relacionado_id !== null) {
+            return;
+        }
+
+        throw new GeneracionException(
+            'Avería registrada; falta relacionar un CCF para emitir. '
+            .'Hacienda exige un documento relacionado en toda nota de crédito: '
+            .'vinculá un CCF aceptado del mismo cliente antes de generar.'
+        );
     }
 
     /**
@@ -191,7 +222,7 @@ class DteGeneracionService
             return;
         }
 
-        if (\App\Support\Dte\ReglaOrdenCompra::requeridaParaDte($dte) && blank($dte->numero_orden_compra)) {
+        if (ReglaOrdenCompra::requeridaParaDte($dte) && blank($dte->numero_orden_compra)) {
             throw new GeneracionException('Este cliente requiere número de orden de compra para emitir CCF.');
         }
     }

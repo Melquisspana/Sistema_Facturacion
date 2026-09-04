@@ -22,6 +22,10 @@
     $modalidad = \App\Enums\ModalidadNotaCredito::desdeTipo($dte->tipo_nota_credito);
     $porMonto = $dte->tipo_nota_credito?->esPorMonto() ?? false;
     $sinLineasPanel = $dte->lineas->isEmpty();
+    // Sin documento relacionado la nota NO puede generarse: el esquema del MH exige
+    // `documentoRelacionado` en toda NC. Es un bloqueo distinto al de «sin líneas» y hay
+    // que decirlo distinto, porque se resuelve de otra manera (vinculando un CCF).
+    $faltaCcf = $dte->dte_relacionado_id === null;
     $titulo = match (true) {
         $porMonto => 'Conceptos de la nota',
         ($dte->tipo_nota_credito?->esPorAveria() ?? false) => 'Productos acreditados',
@@ -111,17 +115,22 @@
 
     @can('update', $dte)
         <div class="bg-white shadow sm:rounded-lg p-4">
+            @php $bloqueado = $sinLineasPanel || $faltaCcf; @endphp
             <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
                   onsubmit="return confirm(@js($confirmGenerar ?? '¿Generar la nota de crédito? Ya no podrá editarse.'))">
                 @csrf
-                <button data-generar-btn @disabled($sinLineasPanel)
-                        @if ($sinLineasPanel) title="Agregá al menos una línea para generar." @endif
-                        class="w-full inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-medium rounded-md {{ $sinLineasPanel ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
+                <button data-generar-btn @disabled($bloqueado)
+                        @if ($faltaCcf) title="Falta relacionar un CCF aceptado para poder emitir."
+                        @elseif ($sinLineasPanel) title="Agregá al menos una línea para generar." @endif
+                        class="w-full inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-medium rounded-md {{ $bloqueado ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
                     Generar nota de crédito
                 </button>
             </form>
-            <p class="mt-2 text-xs text-gray-400">
-                @if ($sinLineasPanel)
+            <p class="mt-2 text-xs {{ $faltaCcf ? 'text-amber-700' : 'text-gray-400' }}">
+                @if ($faltaCcf)
+                    <strong>Avería registrada; falta relacionar un CCF para emitir.</strong>
+                    Hacienda exige un documento relacionado en toda nota de crédito.
+                @elseif ($sinLineasPanel)
                     Agregá al menos una línea para generar.
                 @else
                     Al generar se asigna el correlativo interno y la nota deja de ser editable. No firma ni transmite.

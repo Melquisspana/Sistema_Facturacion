@@ -94,11 +94,15 @@ function initCcfEditor() {
         return null;
     }
 
-    function syncGenerar(sinLineas) {
+    // El servidor decide si se puede generar; acá solo se refleja. No basta con mirar
+    // "¿hay líneas?": una nota de crédito sin documento relacionado tampoco puede
+    // generarse, y si el editor solo mirara las líneas volvería a habilitar el botón que
+    // el panel recién pintó deshabilitado.
+    function syncGenerar(bloqueado) {
         document.querySelectorAll('[data-generar-btn]').forEach((b) => {
-            b.disabled = !!sinLineas;
-            GEN_OFF.forEach((c) => b.classList.toggle(c, !!sinLineas));
-            GEN_ON.forEach((c) => b.classList.toggle(c, !sinLineas));
+            b.disabled = !!bloqueado;
+            GEN_OFF.forEach((c) => b.classList.toggle(c, !!bloqueado));
+            GEN_ON.forEach((c) => b.classList.toggle(c, !bloqueado));
         });
     }
 
@@ -200,7 +204,7 @@ function initCcfEditor() {
                 // Se aplica TODO de una: no queda nada "una acción atrás".
                 if (typeof data.resumen_html === 'string') panel.innerHTML = data.resumen_html;
                 syncCatalogo(data.cantidades || {}, data.acreditadas || {});
-                syncGenerar(data.sin_lineas);
+                syncGenerar(data.generar_bloqueado ?? data.sin_lineas);
                 showFlash(data.message, true);
                 // Foco por origen:
                 if (tipo === 'scanner' && scanner) {

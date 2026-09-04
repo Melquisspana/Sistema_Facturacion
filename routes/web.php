@@ -359,6 +359,13 @@ Route::middleware('auth')->group(function () {
             ->name('acreditar.cantidad')
             ->withoutScopedBindings();
 
+        // Vincular un CCF aceptado a una avería que se registró SIN documento relacionado
+        // (visita sin pedido). Es lo que la habilita a generarse: el esquema del MH exige
+        // `documentoRelacionado` en toda NC, así que hasta acá la nota solo existe como
+        // registro operativo.
+        Route::post('{dte}/nota-credito/vincular-ccf', [DteController::class, 'vincularCcfNotaCredito'])
+            ->name('nota-credito.vincular-ccf');
+
         // Fijar la cantidad de un producto en el borrador (auto-agregar/actualizar/quitar,
         // idempotente por producto). {producto} no es hijo de {dte}: sin scoped binding.
         Route::post('{dte}/productos/{producto}/cantidad', [DteController::class, 'setCantidadProducto'])
