@@ -213,12 +213,34 @@
                     <p class="mt-1 text-xs text-gray-500">
                         No hay ningún documento con el número <span class="font-mono">{{ $filtros['q'] }}</span>
                         en el ambiente actual.
-                        @if ($gmailError)
-                            El correo no se pudo consultar, así que un histórico de Conta podría existir y no verse.
-                        @elseif (! $gmailDisponible)
-                            El correo no está disponible, así que un histórico de Conta podría existir y no verse.
-                        @endif
                     </p>
+
+                    {{-- Los tres finales posibles NO significan lo mismo y no pueden decirse
+                         igual: «no existe» se corrige revisando el número, «el correo falló»
+                         se corrige reconectando, y «la sincronización está apagada» ni
+                         siquiera es un problema —es una decisión de configuración—. Darles el
+                         mismo texto mandaría a buscar por el lado equivocado. --}}
+                    @if ($gmailError)
+                        <p class="mt-2 text-xs text-amber-700">
+                            Además, el <strong>correo no se pudo consultar</strong> ahora mismo, así que un
+                            histórico de Conta (P001) podría existir y no verse. Reintentá cuando la conexión
+                            se restablezca.
+                        </p>
+                    @elseif (! $gmailConfigurado)
+                        <p class="mt-2 text-xs text-gray-500">
+                            La <strong>sincronización con el correo no está configurada</strong>, así que solo se
+                            buscó en la base local. Los históricos de Conta (P001) no se consultan.
+                        </p>
+                    @elseif (! $gmailDisponible)
+                        <p class="mt-2 text-xs text-gray-500">
+                            La <strong>sincronización con el correo está desconectada</strong>, así que solo se
+                            buscó en la base local. Los históricos de Conta (P001) no se consultan.
+                        </p>
+                    @elseif ($gmailConsultado)
+                        <p class="mt-2 text-xs text-gray-500">
+                            Se consultó también el correo y tampoco apareció ahí.
+                        </p>
+                    @endif
                     <p class="mt-2 text-xs text-gray-400">Revisá el número, o probá la <strong>búsqueda avanzada</strong> por orden de compra, cliente o fecha.</p>
                 </div>
             @endif
