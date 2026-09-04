@@ -13,8 +13,34 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Búsqueda de CCF/NC para el módulo PPQ. Solo CONSULTA documentos ya emitidos
- * (CCF tipo 03 y NC tipo 05); no toca la emisión. Soporta búsqueda por últimos
- * 4 dígitos del número de control, orden de compra, albarán, sala, fecha y monto.
+ * (CCF tipo 03 y NC tipo 05); no toca la emisión.
+ *
+ * ───────────────────────── DOS búsquedas, no una ─────────────────────────
+ *
+ *   · {@see buscarExacto()} — el buscador PRINCIPAL. Devuelve UN documento o ninguno.
+ *     Es el que se usa a diario: se teclea el número del CCF y sale ese CCF.
+ *   · {@see buscar()} — la búsqueda AVANZADA. Devuelve una página de resultados
+ *     filtrados por orden de compra, cliente, sala, fecha, monto, número de control o
+ *     código de generación. Puede devolver varios, y eso está bien: se pide a propósito.
+ *
+ * ────────────── Por qué se separaron: el defecto que arreglan ──────────────
+ *
+ * Antes había una sola búsqueda y el término se comparaba así:
+ *
+ *     correlativoExacto(numero_control)
+ *     OR codigo_generacion   LIKE %termino%
+ *     OR sello_recepcion     LIKE %termino%
+ *     OR numero_orden_compra LIKE %termino%
+ *
+ * La primera línea era exacta; las otras tres, subcadenas. `codigo_generacion` es un
+ * UUID de 36 caracteres y `sello_recepcion` una cadena larga y aleatoria: buscar cuatro
+ * dígitos DENTRO de ellos acierta por azar, y con suficientes documentos casi cualquier
+ * correlativo aparece incrustado en algún UUID o algún sello. La orden de compra sumaba
+ * lo suyo, porque una sola OC ampara varios CCF de la misma sala. De ahí salían los
+ * cinco a ocho resultados «parecidos» que no tenían relación con lo buscado.
+ *
+ * El buscador exacto no compara contra ninguno de esos tres campos: solo contra el
+ * número de control, y de forma exacta.
  */
 class PpqBusquedaService
 {
@@ -62,7 +88,113 @@ class PpqBusquedaService
     }
 
     /**
-     * @param  array<string, mixed>  $filtros  q, oc, albaran, sala, fecha_desde, fecha_hasta, monto, tipo
+     * EL BUSCADOR PRINCIPAL: un número, un documento. Devuelve `null` si no existe.
+     *
+     * Acepta las dos formas en que la gente escribe un número de CCF:
+     *
+     *   · el CORRELATIVO suelto («0986», «986») — es lo que se teclea a diario, los
+     *     últimos dígitos del documento;
+     *   · el NÚMERO DE CONTROL completo, con separadores o sin ellos
+     *     («DTE-03-M001P002-000000000000986» o «DTE03M001P002000000000000986»).
+     *
+     * Lo que NO hace: buscar parecidos. No compara contra el código de generación, el
+     * sello ni la orden de compra, que fue de donde salían los resultados ajenos. Un
+     * número parcial no devuelve nada, porque un número parcial no es un documento.
+     *
+     * NORMALIZACIÓN SEGURA. Del correlativo se quitan los ceros a la izquierda —«0986» y
+     * «986» son el mismo documento y el relleno lo pone el patrón—; del número de control
+     * se quitan separadores y se compara en mayúsculas, reusando la misma normalización
+     * con la que PPQ ya cruza sus items ({@see IdentidadPpq}). No se recorta ni se
+     * completa nada más: cualquier otra «ayuda» convertiría dos documentos distintos en
+     * uno solo.
+     *
+     * AMBIENTE. Los correlativos de pruebas y de producción cuentan por separado, así que
+     * el mismo número puede existir en los dos. Gana SIEMPRE el fiscalmente vigente —el de
+     * producción aceptado de verdad—, de modo que un documento simulado nunca puede
+     * hacerse pasar por uno real. El de pruebas se sigue pudiendo encontrar cuando es el
+     * único, y la pantalla lo muestra bloqueado.
+     *
+     * P001 / P002. Si el mismo correlativo existe en los dos puntos de venta, gana P002:
+     * tras el cambio ambos comparten numeración y el vigente es el nuevo. Es la regla que
+     * ya tenía la búsqueda y no cambia.
+     */
+    public function buscarExacto(string $numero, ?string $tipo = null): ?Dte
+    {
+        $numero = trim($numero);
+
+        if ($numero === '') {
+            return null;
+        }
+
+        $q = Dte::query()
+            ->whereIn('tipo_dte', $tipo !== null && in_array($tipo, self::TIPOS, true) ? [$tipo] : self::TIPOS)
+            ->noArchivados()
+            ->with(['cliente:id,nombre,nombre_comercial', 'clienteSucursal:id,nombre,codigo'])
+            // AMBIENTES SEPARADOS, con la misma regla que ya usa IdentidadPpq::dteLocal().
+            //
+            // No se filtra por el ambiente configurado, y a propósito: un documento de
+            // pruebas o un borrador SÍ tiene que poder encontrarse —la pantalla lo muestra
+            // bloqueado, porque esconderlo sería mentir sobre lo que existe—. Lo que no
+            // puede pasar es que DESPLACE a uno real.
+            //
+            // Por eso el desempate es, en orden: primero la VIGENCIA FISCAL (producción +
+            // aceptado de verdad ante Hacienda), que es lo que hace imposible que un
+            // documento simulado le robe el lugar a uno real cuando comparten correlativo;
+            // después el ambiente en el que se está trabajando; y a igualdad de todo, el
+            // más reciente.
+            ->orderByRaw(PpqElegibilidad::SQL_PRIORIDAD, PpqElegibilidad::bindingsPrioridad())
+            ->orderByRaw('CASE WHEN ambiente = ? THEN 0 ELSE 1 END', [(string) config('dte.ambiente')])
+            ->orderByDesc('id');
+
+        // Solo dígitos (ya sin separadores) = correlativo suelto.
+        $soloDigitos = preg_replace('/\D/', '', $numero);
+
+        if ($soloDigitos !== '' && $soloDigitos === $numero) {
+            $this->exactoPorCorrelativo($q, $soloDigitos);
+
+            return $q->first();
+        }
+
+        // Cualquier otra cosa se trata como número de control completo, normalizado de
+        // los dos lados para que dé igual cómo se hayan escrito los separadores.
+        $clave = IdentidadPpq::normalizar($numero);
+
+        if ($clave === null) {
+            return null;
+        }
+
+        return $q->where(IdentidadPpq::columnaNormalizada(), $clave)->first();
+    }
+
+    /**
+     * Acota la consulta al correlativo EXACTO, prefiriendo P002 cuando el mismo número
+     * existe en los dos puntos de venta.
+     */
+    private function exactoPorCorrelativo(Builder $q, string $digitos): void
+    {
+        $hayEnP002 = (clone $q)
+            ->reorder()
+            ->where('numero_control', 'like', '%P002-%')
+            ->where(fn (Builder $sub) => $this->correlativoExacto($sub, $digitos))
+            ->exists();
+
+        $q->where(function (Builder $sub) use ($digitos, $hayEnP002) {
+            // El grupo va anidado: sin él, el `AND P002` se pegaría solo al último
+            // patrón del OR en vez de a todos.
+            $sub->where(fn (Builder $c) => $this->correlativoExacto($c, $digitos));
+
+            if ($hayEnP002) {
+                $sub->where('numero_control', 'like', '%P002-%');
+            }
+        });
+    }
+
+    /**
+     * BÚSQUEDA AVANZADA: combina criterios y devuelve una página de resultados.
+     *
+     * @param  array<string, mixed>  $filtros  numero_control, codigo_generacion, oc,
+     *                                         cliente, sala, albaran, fecha_desde,
+     *                                         fecha_hasta, monto, tipo
      */
     public function buscar(array $filtros, int $porPagina = 25): LengthAwarePaginator
     {
@@ -125,78 +257,58 @@ class PpqBusquedaService
             $q->where('tipo_dte', $filtros['tipo']);
         }
 
-        // El texto va AL FINAL para que la comprobación de «¿existe ya en P002?»
+        if (filled($filtros['cliente'] ?? null)) {
+            $cliente = (string) $filtros['cliente'];
+            $q->whereHas('cliente', function (Builder $sub) use ($cliente) {
+                $sub->where('nombre', 'like', "%{$cliente}%")
+                    ->orWhere('nombre_comercial', 'like', "%{$cliente}%")
+                    ->orWhere('num_documento', 'like', "%{$cliente}%");
+            });
+        }
+
+        // Código de generación: EXACTO. Es un UUID, y buscarlo por subcadena era una de
+        // las tres fuentes de resultados ajenos (cuatro dígitos aciertan dentro de un
+        // UUID por puro azar). Quien lo pega, lo pega entero.
+        if (filled($filtros['codigo_generacion'] ?? null)) {
+            $q->whereRaw('UPPER(codigo_generacion) = ?', [mb_strtoupper(trim((string) $filtros['codigo_generacion']))]);
+        }
+
+        // El número va AL FINAL para que la comprobación de «¿existe ya en P002?»
         // se haga sobre la misma búsqueda que el usuario está viendo —mismo tipo,
         // mismas fechas, sin archivados— y no sobre la tabla entera. Si se
         // resolviera antes, un documento P002 de otro tipo o ya archivado podría
         // esconder el P001 que sí correspondía mostrar.
-        $this->aplicarTexto($q, trim((string) ($filtros['q'] ?? '')));
+        $this->aplicarNumeroControl($q, trim((string) ($filtros['numero_control'] ?? $filtros['q'] ?? '')));
 
         return $q->paginate($porPagina)->withQueryString();
     }
 
     /**
-     * Texto libre: últimos dígitos del número de control, número de control completo,
-     * código de generación, sello o número de orden de compra.
+     * Número de control de la BÚSQUEDA AVANZADA: coincidencia exacta del correlativo si
+     * viene suelto, o del número de control completo si viene entero.
+     *
+     * Sigue siendo exacto aunque esté en la avanzada. Lo que la avanzada permite es
+     * COMBINAR criterios (número + sala + fecha), no aflojar la comparación: buscar
+     * documentos «parecidos» a un número no le sirve a nadie, y era justo lo que devolvía
+     * resultados ajenos.
      */
-    private function aplicarTexto(Builder $q, string $texto): void
+    private function aplicarNumeroControl(Builder $q, string $texto): void
     {
         if ($texto === '') {
             return;
         }
 
-        // Un término SOLO de dígitos es un correlativo: es el caso de «escribo los
-        // últimos 4». Cualquier otra cosa —número de control completo, código de
-        // generación, sello, orden de compra con letras— es una referencia
-        // literal y se busca como subcadena, que es como se buscó siempre.
         if (ctype_digit($texto)) {
-            $this->aplicarCorrelativo($q, $texto);
+            $this->exactoPorCorrelativo($q, $texto);
 
             return;
         }
 
-        $q->where(function (Builder $sub) use ($texto) {
-            $sub->where('numero_control', 'like', "%{$texto}%")
-                ->orWhere('codigo_generacion', 'like', "%{$texto}%")
-                ->orWhere('sello_recepcion', 'like', "%{$texto}%")
-                ->orWhere('numero_orden_compra', 'like', "%{$texto}%");
-        });
-    }
+        $clave = IdentidadPpq::normalizar($texto);
 
-    /**
-     * Correlativo numérico. Contra el número de control se exige coincidencia
-     * EXACTA —no subcadena—, para que escribir `0340` no arrastre el `0003401`
-     * de otro documento. Contra el resto de campos se mantiene la subcadena,
-     * porque una orden de compra o un sello también pueden ser solo dígitos.
-     *
-     * Si ese mismo correlativo ya existe en P002, se muestra ese y no el
-     * histórico de P001: tras el cambio de punto de venta ambos comparten
-     * numeración y el vigente es el nuevo.
-     */
-    private function aplicarCorrelativo(Builder $q, string $digitos): void
-    {
-        $hayEnP002 = (clone $q)
-            // Sin el orden: a un EXISTS no le cambia la respuesta y le agrega el costo
-            // de ordenar (incluida la prioridad por CASE) para nada.
-            ->reorder()
-            ->where('numero_control', 'like', '%P002-%')
-            ->where(fn (Builder $sub) => $this->correlativoExacto($sub, $digitos))
-            ->exists();
-
-        $q->where(function (Builder $sub) use ($digitos, $hayEnP002) {
-            $sub->where(function (Builder $control) use ($digitos, $hayEnP002) {
-                // El grupo va anidado: sin él, el `AND P002` se pegaría solo al
-                // último patrón del `OR` en vez de a todos.
-                $control->where(fn (Builder $c) => $this->correlativoExacto($c, $digitos));
-
-                if ($hayEnP002) {
-                    $control->where('numero_control', 'like', '%P002-%');
-                }
-            })
-                ->orWhere('codigo_generacion', 'like', "%{$digitos}%")
-                ->orWhere('sello_recepcion', 'like', "%{$digitos}%")
-                ->orWhere('numero_orden_compra', 'like', "%{$digitos}%");
-        });
+        $clave === null
+            ? $q->whereRaw('1 = 0')
+            : $q->where(IdentidadPpq::columnaNormalizada(), $clave);
     }
 
     /**
