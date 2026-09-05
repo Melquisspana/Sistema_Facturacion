@@ -13,7 +13,7 @@ use Spatie\Backup\Tasks\Monitor\HealthChecks\MaximumAgeInDays;
 use Spatie\Backup\Tasks\Monitor\HealthChecks\MaximumStorageInMegabytes;
 
 /*
-| CANALES DE AVISO, resueltos UNA vez para las seis notificaciones.
+| CANALES DE AVISO, resueltos UNA vez para las notificaciones de incidencia.
 |
 | Vacío = no se avisa por ningún medio. Es lo que corresponde cuando
 | BACKUP_NOTIFICACIONES_CORREO no tiene un destinatario real: el centinela sirve para
@@ -236,9 +236,12 @@ return [
             BackupHasFailedNotification::class => $canalesDeAvisoDeRespaldo,
             UnhealthyBackupWasFoundNotification::class => $canalesDeAvisoDeRespaldo,
             CleanupHasFailedNotification::class => $canalesDeAvisoDeRespaldo,
-            BackupWasSuccessfulNotification::class => $canalesDeAvisoDeRespaldo,
-            HealthyBackupWasFoundNotification::class => $canalesDeAvisoDeRespaldo,
-            CleanupWasSuccessfulNotification::class => $canalesDeAvisoDeRespaldo,
+            // Los éxitos quedan en la bitácora y el panel de salud. Mandarlos por correo
+            // todas las noches genera ruido y hace más fácil ignorar el aviso importante:
+            // el que indica que el respaldo o su limpieza fallaron.
+            BackupWasSuccessfulNotification::class => [],
+            HealthyBackupWasFoundNotification::class => [],
+            CleanupWasSuccessfulNotification::class => [],
         ],
 
         /*

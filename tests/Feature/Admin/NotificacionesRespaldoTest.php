@@ -11,7 +11,12 @@ use Illuminate\Support\Facades\Storage;
 use Spatie\Backup\Config\Config as BackupConfig;
 use Spatie\Backup\Config\NotificationMailConfig;
 use Spatie\Backup\Notifications\Notifiable as SpatieNotifiable;
+use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
+use Spatie\Backup\Notifications\Notifications\BackupWasSuccessfulNotification;
+use Spatie\Backup\Notifications\Notifications\CleanupHasFailedNotification;
 use Spatie\Backup\Notifications\Notifications\CleanupWasSuccessfulNotification;
+use Spatie\Backup\Notifications\Notifications\HealthyBackupWasFoundNotification;
+use Spatie\Backup\Notifications\Notifications\UnhealthyBackupWasFoundNotification;
 use Tests\TestCase;
 
 /**
@@ -257,41 +262,38 @@ class NotificacionesRespaldoTest extends TestCase
         }
     }
 
-    /**
-     * Con un correo válido, el comportamiento no cambia: el canal sigue abierto y el
-     * aviso se manda al destinatario de verdad.
-     */
-    public function test_con_correo_valido_el_aviso_se_sigue_enviando(): void
+    public function test_con_correo_valido_solo_las_incidencias_envian_correo(): void
     {
         $this->correoSmtp();
         Storage::fake('local');
 
         config([
             'backup.notifications.mail.to' => NotificacionesRespaldo::destinatarioConfigurado('avisos@ejemplo.com'),
-            'backup.notifications.notifications' => array_map(
-                fn () => NotificacionesRespaldo::canalesDeAviso('avisos@ejemplo.com'),
-                config('backup.notifications.notifications')
-            ),
+            'backup.notifications.notifications' => [
+                BackupHasFailedNotification::class => ['mail'],
+                UnhealthyBackupWasFoundNotification::class => ['mail'],
+                CleanupHasFailedNotification::class => ['mail'],
+                BackupWasSuccessfulNotification::class => [],
+                HealthyBackupWasFoundNotification::class => [],
+                CleanupWasSuccessfulNotification::class => [],
+            ],
         ]);
 
         $this->recargarConfigDeSpatie();
 
         $this->assertSame('avisos@ejemplo.com', config('backup.notifications.mail.to'));
 
-        foreach ($this->canalesDeclarados() as $canales) {
-            $this->assertSame(['mail'], $canales);
-        }
+        $canales = config('backup.notifications.notifications');
+        $this->assertSame(['mail'], $canales[BackupHasFailedNotification::class]);
+        $this->assertSame(['mail'], $canales[UnhealthyBackupWasFoundNotification::class]);
+        $this->assertSame(['mail'], $canales[CleanupHasFailedNotification::class]);
+        $this->assertSame([], $canales[BackupWasSuccessfulNotification::class]);
+        $this->assertSame([], $canales[HealthyBackupWasFoundNotification::class]);
+        $this->assertSame([], $canales[CleanupWasSuccessfulNotification::class]);
 
         $this->artisan('backup:clean')->assertSuccessful();
 
-        // El destinatario de spatie es su propia clase Notifiable, que enruta el correo
-        // desde la configuración: es la que hay que interrogar.
-        Notification::assertSentTo(
-            new SpatieNotifiable,
-            CleanupWasSuccessfulNotification::class,
-            fn ($notificacion, array $canales, $notifiable) => $canales === ['mail']
-                && $notifiable->routeNotificationForMail() === 'avisos@ejemplo.com'
-        );
+        Notification::assertNotSentTo(new SpatieNotifiable, CleanupWasSuccessfulNotification::class);
     }
 
     /** Y el diagnóstico sigue diciendo la verdad: sin configurar. */
