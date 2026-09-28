@@ -54,7 +54,7 @@
                     @endif
                 </div>
 
-                <div class="space-y-8">
+                <div class="space-y-6">
                     @foreach ($secciones as $seccion)
                         <section aria-labelledby="seccion-{{ $loop->index }}">
                             <h3 id="seccion-{{ $loop->index }}" class="mb-2 flex items-baseline gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -65,7 +65,7 @@
                             <div class="divide-y divide-gray-100 rounded-lg border border-gray-200">
                                 @foreach ($seccion['productos'] as $grupo)
                                     @php $base = $grupo['base']; @endphp
-                                    <article id="producto-{{ $base->id }}" class="scroll-mt-24 p-3 sm:p-4 {{ $base->activo ? '' : 'opacity-70' }}">
+                                    <article id="producto-{{ $base->id }}" style="scroll-margin-top: 6rem" class="p-3 sm:p-4 {{ $base->activo ? '' : 'opacity-70' }}">
                                         <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                                             <div class="min-w-0">
                                                 <h4 class="font-semibold text-gray-800">
