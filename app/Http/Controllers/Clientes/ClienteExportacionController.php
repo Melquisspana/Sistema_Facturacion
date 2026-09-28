@@ -20,7 +20,7 @@ use Illuminate\Validation\ValidationException;
  * `clientes`; lo que se habilita acá es un perfil adicional (`exportacion_clientes`)
  * que cuelga de él y guarda ÚNICAMENTE lo que el directorio no tiene:
  *
- *   · el número de registro FDA del IMPORTADOR;
+ *   · (ya no el FDA: el de la lista es uno solo, el de la empresa);
  *   · un contacto operativo del embarque;
  *   · una dirección de entrega o bodega, cuando difiere de la fiscal;
  *   · la lista de precios por caja.
@@ -87,19 +87,17 @@ class ClienteExportacionController extends Controller
 
         $perfil = $this->perfil($cliente);
 
+        // El FDA ya no se pide por cliente: el que va en la lista de empaque es UNO,
+        // el de la empresa (Configuración → Parámetros fiscales). La columna del
+        // perfil queda como estaba, sin editarse desde acá.
         $datos = $request->validate([
-            'fda_reg_number' => ['nullable', 'string', 'max:50'],
             'contacto' => ['nullable', 'string', 'max:255'],
             'direccion' => ['nullable', 'string', 'max:255'],
         ], [], [
-            'fda_reg_number' => 'FDA del importador',
             'contacto' => 'contacto del embarque',
             'direccion' => 'dirección de entrega',
         ]);
 
-        // Guardar el campo ya es la revisión: si alguien escribe (o borra) el FDA a
-        // conciencia, la marca heredada de la migración deja de tener sentido.
-        $datos['fda_requiere_revision'] = false;
         // El nombre operativo se mantiene alineado con el del directorio, que es la
         // fuente de verdad; nunca se edita por separado.
         $datos['nombre'] = $cliente->nombre;

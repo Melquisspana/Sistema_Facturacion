@@ -10,48 +10,52 @@
         'precios' => $c->productos->mapWithKeys(fn ($a) => [(string) $a->exportacion_producto_id => (float) $a->precio_caja]),
     ])->values();
 
-    // Catálogo maestro activo (precio_base puede ser null: solo referencia).
+    // Catálogo activo: una entrada por presentación, con su sección del catálogo.
     $productosJs = $productos->map(fn ($p) => [
         'id' => (string) $p->id,
         'nombre' => $p->nombre_es,
         'nombre_en' => (string) $p->nombre_en,
         'unidad' => (string) $p->unidad,
         'upc' => (int) $p->unidades_por_caja,
+        // «Caja 12×12 · 144 u»: distingue presentaciones del mismo producto.
+        'etiqueta' => $p->etiquetaEmpaque(),
+        'gramos' => (float) $p->gramos_por_unidad,
         'precio_base' => $p->precio_caja !== null ? (float) $p->precio_caja : null,
         'neto' => (float) $p->peso_neto_caja_kg,
         'bruto' => (float) $p->peso_bruto_caja_kg,
+        'categoria' => $p->base?->categoria?->label() ?? 'Otros',
+        'orden' => $p->base?->categoria?->orden() ?? 99,
     ])->values();
 
-    // Filas iniciales: old() tras un error de validación, o los items guardados.
+    // Líneas iniciales: old() tras un error de validación, o los items guardados.
+    // Las guardadas (con id) conservan su snapshot; las nuevas se resuelven en Alpine.
     $snapshotDe = fn ($id) => $e?->items?->firstWhere('id', (int) $id);
-    $filas = collect(old('items') ?? ($e?->items ?? collect())->map(fn ($i) => [
+    $lineas = collect(old('items') ?? ($e?->items ?? collect())->map(fn ($i) => [
             'id' => $i->id,
             'exportacion_producto_id' => $i->exportacion_producto_id,
             'cantidad_cajas' => $i->cantidad_cajas,
+            'precio_caja' => (float) $i->precio_caja,
         ])->values()->all())
         ->map(function ($fila) use ($snapshotDe) {
             $item = ! empty($fila['id']) ? $snapshotDe($fila['id']) : null;
+            $precio = isset($fila['precio_caja']) && $fila['precio_caja'] !== '' && $fila['precio_caja'] !== null
+                ? (float) $fila['precio_caja']
+                : ($item !== null ? (float) $item->precio_caja : null);
 
             return [
-                'id' => $fila['id'] ?? null,
-                'exportacion_producto_id' => (string) ($fila['exportacion_producto_id'] ?? ''),
-                'cantidad_cajas' => (int) ($fila['cantidad_cajas'] ?? 1),
-                // Datos de solo lectura para la vista previa (snapshot para existentes;
-                // para filas nuevas los resuelve Alpine según el cliente elegido).
+                'id' => $item?->id,
+                'producto_id' => (string) ($item?->exportacion_producto_id ?? $fila['exportacion_producto_id'] ?? ''),
+                'cajas' => (int) ($fila['cantidad_cajas'] ?? 0) ?: '',
+                'precio' => $precio,
                 'nombre' => $item?->nombre_es ?? '',
                 'nombre_en' => $item?->nombre_en ?? '',
-                'unidad' => $item?->unidad ?? '',
-                'upc' => $item?->unidades_por_caja ?? 0,
-                'precio' => $item !== null ? (float) $item->precio_caja : 0,
+                'etiqueta' => $item !== null ? \App\Support\Exportaciones\EmpaqueExportacion::etiqueta($item->unidad, (int) $item->unidades_por_caja) : '',
+                'upc' => (int) ($item?->unidades_por_caja ?? 0),
                 'neto' => $item !== null ? (float) $item->peso_neto_caja_kg : 0,
                 'bruto' => $item !== null ? (float) $item->peso_bruto_caja_kg : 0,
-                'fuente' => $item !== null ? 'snapshot' : '',
-                // Estado transitorio del buscador (combobox) de la fila.
-                'busqueda' => '',
-                'abierto' => false,
-                'resaltado' => 0,
             ];
         })
+        ->filter(fn ($l) => $l['id'] !== null || $l['producto_id'] !== '')
         ->values();
 
     $encabezadoInicial = [
@@ -63,7 +67,7 @@
 @endphp
 
 <div class="space-y-6"
-     x-data="listaEmpaqueForm({{ Js::from($filas) }}, {{ Js::from($productosJs) }}, {{ Js::from($clientesJs) }}, {{ Js::from($encabezadoInicial) }})">
+     x-data="listaEmpaqueForm({{ Js::from($lineas) }}, {{ Js::from($productosJs) }}, {{ Js::from($clientesJs) }}, {{ Js::from($encabezadoInicial) }})">
 
     <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 space-y-5">
         <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Encabezado</h3>
@@ -155,144 +159,144 @@
         </div>
     </div>
 
-    <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 space-y-4">
+    {{-- HOJA DE PEDIDO. A cada cliente se le vende casi siempre lo mismo: se muestran
+         sus productos con su precio y solo se escriben las cajas de este embarque.
+         Lo que queda sin cajas no entra a la lista. --}}
+    <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-4 sm:p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Productos</h3>
-            <div class="flex items-center gap-4">
+            <div>
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Productos</h3>
+                <p class="text-xs text-gray-500" x-show="clienteId" x-cloak>
+                    Escribí las cajas de lo que lleva este pedido. Lo que queda vacío no entra.
+                </p>
+            </div>
+            <p class="text-sm tabular-nums text-gray-700" x-show="clienteId" x-cloak>
+                <span x-text="enviar().length"></span> productos ·
+                <span x-text="totalCajas"></span> cajas ·
+                <span x-text="peso(netoTotal)"></span> kg neto ·
+                <strong x-text="dinero(valorTotal)"></strong>
+            </p>
+        </div>
+
+        <p class="rounded-md bg-gray-50 px-3 py-6 text-center text-sm text-gray-500" x-show="!clienteId">
+            Elegí primero el cliente de exportación: aparecen sus productos con su precio.
+        </p>
+
+        <div x-show="clienteId" x-cloak class="space-y-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="min-w-56 flex-1">
+                    <label for="filtro_productos" class="sr-only">Buscar producto</label>
+                    <input id="filtro_productos" type="search" x-model="filtro" autocomplete="off"
+                           placeholder="Buscar en los productos del cliente… (maní, 12x18, coconut)"
+                           class="w-full rounded-md border-gray-300 text-sm">
+                </div>
+                <button type="button" @click="soloPedido = !soloPedido" :aria-pressed="soloPedido"
+                        :class="soloPedido ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+                        class="rounded-md border px-3 py-2 text-sm">
+                    Solo lo del pedido (<span x-text="enviar().length"></span>)
+                </button>
                 <label class="inline-flex items-center gap-2 text-xs text-gray-500" x-show="clienteTieneLista()">
                     <input type="checkbox" x-model="mostrarTodo" class="rounded border-gray-300">
-                    Mostrar todo el catálogo (los no asignados usan precio base)
+                    Todo el catálogo
                 </label>
-                <button type="button" @click="agregar()" :disabled="!clienteId"
-                        :class="clienteId ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-300 cursor-not-allowed'"
-                        class="rounded-md px-3 py-1.5 text-sm font-medium text-white">+ Agregar producto</button>
             </div>
-        </div>
-        <p class="text-xs text-amber-600" x-show="clienteId && !clienteTieneLista()" x-cloak>
-            Este cliente no tiene lista de precios propia: se muestra todo el catálogo con el PRECIO BASE como referencia.
-        </p>
-        @error('items') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
+            <p class="text-xs text-amber-600" x-show="!clienteTieneLista()">
+                Este cliente todavía no tiene productos asignados: se muestra todo el catálogo con el precio base.
+            </p>
+            @error('items') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
 
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
-                <thead>
-                    <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200">
-                        <th class="py-2 px-3 w-2/5">Producto</th>
-                        <th class="py-2 px-3 text-right">Cajas</th>
-                        <th class="py-2 px-3 text-right">Unid./caja</th>
-                        <th class="py-2 px-3 text-right">Precio caja</th>
-                        <th class="py-2 px-3 text-right">Precio unidad</th>
-                        <th class="py-2 px-3 text-right">Valor</th>
-                        <th class="py-2 px-3 text-right">Neto kg</th>
-                        <th class="py-2 px-3 text-right">Bruto kg</th>
-                        <th class="py-2 px-3"></th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    <template x-for="(fila, idx) in filas" :key="fila.key">
-                        <tr>
-                            <td class="py-2 px-3">
-                                {{-- Item existente: conserva su snapshot, solo se edita la cantidad. --}}
-                                <template x-if="fila.id">
-                                    <div>
-                                        <input type="hidden" :name="`items[${idx}][id]`" :value="fila.id">
-                                        <span class="font-medium text-gray-800" x-text="fila.nombre"></span>
-                                        <span class="ms-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500" title="Precios y pesos congelados al agregarlo">snapshot</span>
-                                    </div>
-                                </template>
-                                <template x-if="!fila.id">
-                                    {{-- Buscador tipo combobox: filtra por nombre es/en, unidades, empaque y precios. --}}
-                                    <div class="relative" @click.outside="fila.abierto = false">
-                                        <input type="hidden" :name="`items[${idx}][exportacion_producto_id]`" :value="fila.exportacion_producto_id">
-                                        <input type="text" autocomplete="off" spellcheck="false"
-                                               :value="fila.abierto ? fila.busqueda : (fila.nombre || '')"
-                                               @input="fila.busqueda = $event.target.value; fila.abierto = true; fila.resaltado = 0"
-                                               @focus="fila.busqueda = ''; fila.abierto = true; fila.resaltado = 0"
-                                               @keydown.down.prevent="fila.abierto = true; fila.resaltado = Math.min(fila.resaltado + 1, filtrados(fila).length - 1)"
-                                               @keydown.up.prevent="fila.resaltado = Math.max(fila.resaltado - 1, 0)"
-                                               @keydown.enter.prevent="elegirResaltado(fila)"
-                                               @keydown.escape="fila.abierto = false"
-                                               placeholder="Escribí para buscar producto…"
-                                               class="w-full rounded-md border-gray-300 text-sm">
-
-                                        {{-- Resultados --}}
-                                        <div x-show="fila.abierto" x-cloak
-                                             class="absolute left-0 z-20 mt-1 w-full min-w-[26rem] max-h-80 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                                            <template x-for="(p, i) in filtrados(fila)" :key="p.id">
-                                                <button type="button" @click="seleccionar(fila, p)" @mouseenter="fila.resaltado = i"
-                                                        :class="i === fila.resaltado ? 'bg-indigo-50' : ''"
-                                                        class="block w-full border-b border-gray-50 px-3 py-2 text-left text-sm">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="font-medium text-gray-800" x-text="p.nombre"></span>
-                                                        <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700" x-show="p.fuente === 'base'">precio base</span>
-                                                    </div>
-                                                    <div class="text-xs text-gray-400" x-show="p.nombre_en" x-text="p.nombre_en"></div>
-                                                    <div class="text-xs text-gray-500" x-text="`${p.upc} unidades · ${p.unidad || 'sin empaque'}`"></div>
-                                                    <div class="text-xs text-gray-600" x-text="`${dinero(p.precio)} caja · ${p.upc >= 1 ? dinero(p.precio / p.upc) : '—'} unidad`"></div>
-                                                </button>
-                                            </template>
-                                            <div x-show="filtrados(fila).length === 0" class="px-3 py-3 text-center text-xs text-gray-400">
-                                                Sin resultados. Probá con otro texto, o activá "Mostrar todo el catálogo".
-                                            </div>
-                                        </div>
-
-                                        {{-- Producto elegido: detalle legible bajo el buscador. --}}
-                                        <p class="mt-0.5 text-xs text-gray-500" x-show="fila.exportacion_producto_id && !fila.abierto" x-cloak
-                                           x-text="`${fila.upc} unidades · ${fila.unidad || 'sin empaque'} · ${dinero(fila.precio)} caja · ${fila.upc >= 1 ? dinero(fila.precio / fila.upc) : '—'} unidad`"></p>
-                                        <p class="mt-0.5 text-xs text-amber-600" x-show="fila.exportacion_producto_id && !fila.abierto && fila.fuente === 'base'" x-cloak>
-                                            Sin precio propio del cliente: usa el precio base del catálogo.
-                                        </p>
-                                    </div>
-                                </template>
-                            </td>
-                            <td class="py-2 px-3 text-right">
-                                <input type="number" min="1" step="1" required :name="`items[${idx}][cantidad_cajas]`"
-                                       x-model.number="fila.cantidad_cajas"
-                                       class="w-20 rounded-md border-gray-300 text-sm text-right">
-                            </td>
-                            <td class="py-2 px-3 text-right text-gray-600" x-text="fila.upc || '—'"></td>
-                            <td class="py-2 px-3 text-right text-gray-600">
-                                <span x-text="dinero(fila.precio)"></span>
-                            </td>
-                            <td class="py-2 px-3 text-right text-gray-600" title="Precio caja ÷ unidades por caja"
-                                x-text="fila.upc >= 1 ? dinero(fila.precio / fila.upc) : '—'"></td>
-                            <td class="py-2 px-3 text-right font-medium text-gray-800" x-text="dinero(fila.precio * (fila.cantidad_cajas || 0))"></td>
-                            <td class="py-2 px-3 text-right text-gray-600" x-text="peso(fila.neto * (fila.cantidad_cajas || 0))"></td>
-                            <td class="py-2 px-3 text-right text-gray-600" x-text="peso(fila.bruto * (fila.cantidad_cajas || 0))"></td>
-                            <td class="py-2 px-3 text-right">
-                                <button type="button" @click="quitar(idx)" class="text-red-600 hover:underline text-xs">Quitar</button>
-                            </td>
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                <table class="min-w-full text-sm">
+                    <caption class="sr-only">Productos de la lista de empaque</caption>
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                            <th scope="col" class="py-2 px-3 min-w-[15rem]">Producto</th>
+                            <th scope="col" class="py-2 px-3 text-right">Cajas</th>
+                            <th scope="col" class="py-2 px-3 text-right">Precio caja</th>
+                            <th scope="col" class="py-2 px-3 text-right">Valor</th>
+                            <th scope="col" class="hidden py-2 px-3 text-right lg:table-cell">Neto kg</th>
+                            <th scope="col" class="hidden py-2 px-3 text-right lg:table-cell">Bruto kg</th>
                         </tr>
+                    </thead>
+                    <template x-for="grupo in grupos()" :key="grupo.titulo">
+                        <tbody class="divide-y divide-gray-100">
+                            <tr class="bg-gray-50">
+                                <th scope="colgroup" colspan="6" class="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500" x-text="grupo.titulo"></th>
+                            </tr>
+                            <template x-for="l in grupo.lineas" :key="l.key">
+                                <tr :class="Number(l.estado.cajas) > 0 ? 'bg-indigo-50' : ''">
+                                    <td class="py-2 px-3 align-top">
+                                        <div class="font-medium text-gray-800" x-text="l.nombre"></div>
+                                        <div class="text-xs text-gray-500">
+                                            <span x-text="l.etiqueta"></span>
+                                            <span x-show="l.gramos" x-text="` · ${l.gramos} g`"></span>
+                                            <span class="italic" x-show="l.nombre_en" x-text="` · ${l.nombre_en}`"></span>
+                                        </div>
+                                        <span class="mt-0.5 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600" x-show="l.tipo === 'guardada'"
+                                              title="Ya estaba en la lista: conserva los pesos con los que se agregó">ya en la lista</span>
+                                        <span class="mt-0.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700" x-show="l.tipo === 'nueva' && l.conPrecioBase">precio base</span>
+                                    </td>
+                                    <td class="py-2 px-3 text-right align-top">
+                                        <input type="number" min="0" step="1" inputmode="numeric" x-model="l.estado.cajas" placeholder="—"
+                                               :aria-label="`Cajas de ${l.nombre}, ${l.etiqueta}`"
+                                               class="w-20 rounded-md border-gray-300 text-right text-sm tabular-nums">
+                                    </td>
+                                    <td class="py-2 px-3 text-right align-top">
+                                        <input type="number" min="0" step="0.01" :value="precioTexto(l)" @input="fijarPrecio(l, $event.target.value)"
+                                               :aria-label="`Precio por caja de ${l.nombre}, ${l.etiqueta}`"
+                                               class="w-24 rounded-md border-gray-300 text-right text-sm tabular-nums">
+                                        <p class="mt-0.5 ml-auto max-w-[10rem] text-right text-xs text-amber-600" x-show="avisoPrecio(l)" x-text="avisoPrecio(l)"></p>
+                                    </td>
+                                    <td class="py-2 px-3 text-right align-top font-medium tabular-nums text-gray-800"
+                                        x-text="Number(l.estado.cajas) > 0 ? dinero(precioDe(l) * l.estado.cajas) : ''"></td>
+                                    <td class="hidden py-2 px-3 text-right align-top tabular-nums text-gray-600 lg:table-cell"
+                                        x-text="Number(l.estado.cajas) > 0 ? peso(l.neto * l.estado.cajas) : ''"></td>
+                                    <td class="hidden py-2 px-3 text-right align-top tabular-nums text-gray-600 lg:table-cell"
+                                        x-text="Number(l.estado.cajas) > 0 ? peso(l.bruto * l.estado.cajas) : ''"></td>
+                                </tr>
+                            </template>
+                        </tbody>
                     </template>
-                    <tr x-show="filas.length === 0">
-                        <td colspan="9" class="py-6 text-center text-gray-400" x-text="clienteId ? 'Sin productos. Usá “+ Agregar producto”.' : 'Elegí primero el cliente de exportación.'"></td>
-                    </tr>
-                </tbody>
-                <tfoot>
-                    <tr class="border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
-                        <td class="py-2 px-3">Totales</td>
-                        <td class="py-2 px-3 text-right" x-text="totalCajas"></td>
-                        <td class="py-2 px-3"></td>
-                        <td class="py-2 px-3"></td>
-                        <td class="py-2 px-3"></td>
-                        <td class="py-2 px-3 text-right" x-text="dinero(valorTotal)"></td>
-                        <td class="py-2 px-3 text-right" x-text="peso(netoTotal)"></td>
-                        <td class="py-2 px-3 text-right" x-text="peso(brutoTotal)"></td>
-                        <td class="py-2 px-3"></td>
-                    </tr>
-                </tfoot>
-            </table>
+                    <tbody x-show="grupos().length === 0">
+                        <tr>
+                            <td colspan="6" class="py-6 text-center text-sm text-gray-400"
+                                x-text="soloPedido ? 'Todavía no hay cajas en este pedido.' : 'Ningún producto coincide con la búsqueda.'"></td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t border-gray-200 bg-gray-50 font-semibold text-gray-800">
+                            <td class="py-2 px-3">Totales</td>
+                            <td class="py-2 px-3 text-right tabular-nums" x-text="totalCajas"></td>
+                            <td class="py-2 px-3"></td>
+                            <td class="py-2 px-3 text-right tabular-nums" x-text="dinero(valorTotal)"></td>
+                            <td class="hidden py-2 px-3 text-right tabular-nums lg:table-cell" x-text="peso(netoTotal)"></td>
+                            <td class="hidden py-2 px-3 text-right tabular-nums lg:table-cell" x-text="peso(brutoTotal)"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            {{-- Solo viajan las líneas con cajas, con índices seguidos. --}}
+            <template x-for="(l, i) in enviar()" :key="l.key">
+                <div hidden>
+                    <input type="hidden" :name="`items[${i}][id]`" :value="l.estado.id ?? ''">
+                    <input type="hidden" :name="`items[${i}][exportacion_producto_id]`" :value="l.pid">
+                    <input type="hidden" :name="`items[${i}][cantidad_cajas]`" :value="l.estado.cajas">
+                    <input type="hidden" :name="`items[${i}][precio_caja]`" :value="precioDe(l)">
+                </div>
+            </template>
+
+            <p class="text-xs text-gray-400">
+                Vista previa aproximada: el Excel final calcula con las fórmulas de la plantilla. Si cambiás un precio, al
+                finalizar la lista ese pasa a ser el del cliente.
+            </p>
         </div>
-        <p class="text-xs text-gray-400">
-            Vista previa aproximada: el Excel final calcula con las fórmulas de la plantilla.
-            Los productos nuevos usan el precio del CLIENTE (o el base, avisando) y quedan congelados al guardar.
-        </p>
     </div>
 </div>
 
 <script>
-    function listaEmpaqueForm(filasIniciales, productos, clientes, encabezadoInicial) {
-        let siguienteKey = 0;
+    function listaEmpaqueForm(lineasIniciales, productos, clientes, encabezadoInicial) {
+        const iniciales = lineasIniciales || [];
 
         return {
             productos,
@@ -303,12 +307,21 @@
                 direccion: encabezadoInicial.direccion || '',
                 fda: encabezadoInicial.fda || '',
             },
+            filtro: '',
+            soloPedido: false,
             mostrarTodo: false,
-            filas: (filasIniciales || []).map(f => ({ ...f, key: siguienteKey++ })),
+            // Líneas que ya estaban en la lista: conservan su snapshot de nombre y pesos.
+            guardadas: iniciales.filter(l => l.id).map(l => ({ ...l, estado: { id: l.id, cajas: l.cajas, precio: l.precio } })),
+            // Una por presentación del catálogo: cajas y precio (null = el vigente).
+            nuevas: {},
 
             init() {
-                // Repoblar precios de filas nuevas tras un error de validación.
-                this.filas.filter(f => !f.id && f.exportacion_producto_id).forEach(f => this.aplicarProducto(f));
+                this.productos.forEach(p => { this.nuevas[p.id] = { id: null, cajas: '', precio: null }; });
+                iniciales.filter(l => !l.id && this.nuevas[l.producto_id]).forEach(l => {
+                    Object.assign(this.nuevas[l.producto_id], { cajas: l.cajas, precio: l.precio });
+                });
+                // Al editar, arrancar mostrando lo que ya lleva el pedido.
+                this.soloPedido = this.guardadas.length > 0;
             },
             clienteActual() {
                 return this.clientes.find(c => c.id === String(this.clienteId)) || null;
@@ -324,104 +337,97 @@
                     this.encabezado.direccion = c.direccion;
                     this.encabezado.fda = c.fda;
                 }
-                // Reprecificar las filas nuevas con la lista del cliente elegido; si un
-                // producto elegido ya no está disponible para este cliente, se limpia.
-                const idsVisibles = this.disponibles().map(p => p.id);
-                this.filas.filter(f => !f.id && f.exportacion_producto_id).forEach(f => {
-                    if (idsVisibles.includes(String(f.exportacion_producto_id))) {
-                        this.aplicarProducto(f);
-                    } else {
-                        f.exportacion_producto_id = '';
-                        f.nombre = ''; f.nombre_en = ''; f.unidad = ''; f.upc = 0;
-                        f.precio = 0; f.neto = 0; f.bruto = 0; f.fuente = '';
-                        f.busqueda = ''; f.abierto = false; f.resaltado = 0;
-                    }
-                });
+                // Otro cliente, otros precios: los escritos a mano se descartan.
+                Object.values(this.nuevas).forEach(n => { n.precio = null; });
             },
-            // Catálogo visible: solo los asignados al cliente (con su precio), o todo el
-            // catálogo con precio base si el cliente no tiene lista o se pide ver todo.
-            disponibles() {
+            producto(id) {
+                return this.productos.find(p => p.id === String(id)) || null;
+            },
+            vigente(pid) {
                 const c = this.clienteActual();
+                return c ? c.precios[pid] : undefined;
+            },
+            lineas() {
+                if (!this.clienteId) return [];
                 const conLista = this.clienteTieneLista();
-                return this.productos
-                    .map(p => {
-                        const precioCliente = c ? c.precios[p.id] : undefined;
-                        return {
-                            ...p,
-                            precio: precioCliente !== undefined ? precioCliente : (p.precio_base ?? 0),
-                            fuente: precioCliente !== undefined ? 'cliente' : 'base',
-                        };
-                    })
-                    .filter(p => !conLista || this.mostrarTodo || p.fuente === 'cliente');
-            },
-            agregar() {
-                if (!this.clienteId) return;
-                this.filas.push({
-                    key: siguienteKey++,
-                    id: null,
-                    exportacion_producto_id: '',
-                    cantidad_cajas: 1,
-                    nombre: '', nombre_en: '', unidad: '', upc: 0, precio: 0, neto: 0, bruto: 0, fuente: '',
-                    busqueda: '', abierto: false, resaltado: 0,
+                const yaGuardadas = new Set(this.guardadas.map(g => String(g.producto_id)));
+                const out = this.guardadas.map(g => {
+                    const p = this.producto(g.producto_id);
+                    return {
+                        key: 'i' + g.id, tipo: 'guardada', estado: g.estado, pid: g.producto_id,
+                        nombre: g.nombre, nombre_en: g.nombre_en, etiqueta: g.etiqueta, gramos: p ? p.gramos : null,
+                        upc: g.upc, neto: g.neto, bruto: g.bruto,
+                        categoria: p ? p.categoria : 'Otros', orden: p ? p.orden : 99,
+                    };
                 });
+                this.productos.forEach(p => {
+                    if (yaGuardadas.has(p.id)) return;
+                    const estado = this.nuevas[p.id];
+                    const delCliente = this.vigente(p.id) !== undefined;
+                    if (conLista && !this.mostrarTodo && !delCliente && !(Number(estado.cajas) > 0)) return;
+                    out.push({
+                        key: 'p' + p.id, tipo: 'nueva', estado, pid: p.id,
+                        nombre: p.nombre, nombre_en: p.nombre_en, etiqueta: p.etiqueta, gramos: p.gramos,
+                        upc: p.upc, neto: p.neto, bruto: p.bruto,
+                        categoria: p.categoria, orden: p.orden, conPrecioBase: !delCliente,
+                    });
+                });
+                return out;
             },
-            quitar(idx) {
-                this.filas.splice(idx, 1);
-            },
-            aplicarProducto(fila) {
-                const p = this.disponibles().find(p => p.id === String(fila.exportacion_producto_id))
-                    // Puede quedar fuera del filtro (cambió el cliente): buscar en todo el catálogo.
-                    || this.productos.map(p => ({ ...p, precio: p.precio_base ?? 0, fuente: 'base' }))
-                        .find(p => p.id === String(fila.exportacion_producto_id));
-                if (p) {
-                    const c = this.clienteActual();
-                    const precioCliente = c ? c.precios[p.id] : undefined;
-                    fila.nombre = p.nombre;
-                    fila.nombre_en = p.nombre_en || '';
-                    fila.unidad = p.unidad || '';
-                    fila.upc = p.upc;
-                    fila.neto = p.neto;
-                    fila.bruto = p.bruto;
-                    fila.precio = precioCliente !== undefined ? precioCliente : (p.precio_base ?? 0);
-                    fila.fuente = precioCliente !== undefined ? 'cliente' : 'base';
-                }
-            },
-            // --- Buscador (combobox) por fila ---
             normalizar(s) {
-                // Sin acentos ni mayúsculas: "marañón" encuentra "maranon" y viceversa.
-                return String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                // Sin acentos ni mayúsculas: "marañón" encuentra "maranon"; "12×18" encuentra "12x18".
+                return String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/×/g, 'x');
             },
-            // Filtra por nombre es/en, unidades por caja, empaque y precios (caja y unidad).
-            // Cada palabra escrita debe aparecer en algún campo. Máximo 40 resultados.
-            filtrados(fila) {
-                const lista = this.disponibles();
-                const q = this.normalizar(fila.busqueda).trim();
-                if (q === '') return lista.slice(0, 40);
-                const tokens = q.split(/\s+/);
-                return lista.filter(p => {
-                    const pajar = this.normalizar(
-                        `${p.nombre} ${p.nombre_en} ${p.unidad} ${p.upc} `
-                        + `${(Number(p.precio) || 0).toFixed(2)} `
-                        + `${p.upc >= 1 ? (p.precio / p.upc).toFixed(2) : ''}`
-                    );
+            grupos() {
+                const tokens = this.normalizar(this.filtro).trim().split(/\s+/).filter(Boolean);
+                const visibles = this.lineas().filter(l => {
+                    if (this.soloPedido && !(Number(l.estado.cajas) > 0)) return false;
+                    if (tokens.length === 0) return true;
+                    const pajar = this.normalizar(`${l.nombre} ${l.nombre_en} ${l.etiqueta} ${l.gramos ?? ''}g`);
                     return tokens.every(t => pajar.includes(t));
-                }).slice(0, 40);
+                });
+                visibles.sort((a, b) => a.orden - b.orden
+                    || this.normalizar(a.nombre).localeCompare(this.normalizar(b.nombre)) || a.upc - b.upc);
+                const grupos = [];
+                visibles.forEach(l => {
+                    const ultimo = grupos[grupos.length - 1];
+                    if (ultimo && ultimo.titulo === l.categoria) ultimo.lineas.push(l);
+                    else grupos.push({ titulo: l.categoria, lineas: [l] });
+                });
+                return grupos;
             },
-            seleccionar(fila, p) {
-                fila.exportacion_producto_id = p.id;
-                this.aplicarProducto(fila);
-                fila.abierto = false;
-                fila.busqueda = '';
+            // Todas las líneas con cajas, estén o no a la vista por el filtro.
+            enviar() {
+                return this.lineas().filter(l => Number(l.estado.cajas) > 0);
             },
-            elegirResaltado(fila) {
-                if (!fila.abierto) return;
-                const lista = this.filtrados(fila);
-                if (lista.length > 0) this.seleccionar(fila, lista[Math.min(fila.resaltado, lista.length - 1)]);
+            precioDe(l) {
+                if (l.estado.precio !== null && l.estado.precio !== '') return Number(l.estado.precio);
+                const v = this.vigente(l.pid);
+                if (v !== undefined) return v;
+                const p = this.producto(l.pid);
+                return p && p.precio_base !== null ? p.precio_base : 0;
             },
-            get totalCajas() { return this.filas.reduce((s, f) => s + (Number(f.cantidad_cajas) || 0), 0); },
-            get valorTotal() { return this.filas.reduce((s, f) => s + f.precio * (Number(f.cantidad_cajas) || 0), 0); },
-            get netoTotal() { return this.filas.reduce((s, f) => s + f.neto * (Number(f.cantidad_cajas) || 0), 0); },
-            get brutoTotal() { return this.filas.reduce((s, f) => s + f.bruto * (Number(f.cantidad_cajas) || 0), 0); },
+            // Lo escrito a mano se muestra tal cual (no se reformatea mientras se escribe).
+            precioTexto(l) {
+                if (l.estado.precio !== null && l.estado.precio !== '') return l.estado.precio;
+                return this.precioDe(l).toFixed(2);
+            },
+            fijarPrecio(l, valor) {
+                l.estado.precio = valor === '' ? null : valor;
+            },
+            // Qué pasa con el precio de la línea al finalizar la lista.
+            avisoPrecio(l) {
+                if (!(Number(l.estado.cajas) > 0)) return '';
+                const precio = this.precioDe(l);
+                if (precio <= 0) return 'Falta el precio.';
+                const v = this.vigente(l.pid);
+                if (v === undefined) return 'Al finalizar queda como su precio.';
+                return Math.abs(precio - v) > 0.004 ? `Antes ${this.dinero(v)}: al finalizar cambia.` : '';
+            },
+            get totalCajas() { return this.enviar().reduce((s, l) => s + (Number(l.estado.cajas) || 0), 0); },
+            get valorTotal() { return this.enviar().reduce((s, l) => s + this.precioDe(l) * (Number(l.estado.cajas) || 0), 0); },
+            get netoTotal() { return this.enviar().reduce((s, l) => s + l.neto * (Number(l.estado.cajas) || 0), 0); },
+            get brutoTotal() { return this.enviar().reduce((s, l) => s + l.bruto * (Number(l.estado.cajas) || 0), 0); },
             dinero(n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
             peso(n) { return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); },
         };

@@ -274,7 +274,7 @@ class ClienteController extends Controller
 
         $cliente->load([
             'exportacionClientes' => fn ($q) => $q->orderBy('id'),
-            'exportacionClientes.productos.producto:id,nombre_es,nombre_en,unidades_por_caja,precio_caja,activo',
+            'exportacionClientes.productos.producto:id,nombre_es,nombre_en,unidad,unidades_por_caja,precio_caja,activo',
         ]);
 
         $perfil = $cliente->exportacionClientes->first();
@@ -289,7 +289,8 @@ class ClienteController extends Controller
             ->where('activo', true)
             ->whereNotIn('id', $yaAsignados)
             ->orderBy('nombre_es')
-            ->get(['id', 'nombre_es', 'precio_caja']);
+            ->orderBy('unidades_por_caja')
+            ->get(['id', 'nombre_es', 'unidad', 'unidades_por_caja', 'precio_caja']);
 
         // Orígenes posibles para «copiar precios»: cualquier otro perfil que tenga al
         // menos un precio activo. El conteo se filtra en PHP y no con HAVING porque

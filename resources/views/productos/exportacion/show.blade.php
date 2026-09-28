@@ -3,6 +3,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ $producto->nombre_es }}
+                <span class="font-normal text-gray-500">· {{ $producto->etiquetaEmpaque() }}</span>
                 @unless ($producto->activo)
                     <span class="ms-2 inline-block rounded-full bg-gray-100 px-2.5 py-0.5 align-middle text-xs font-medium text-gray-600">Archivado</span>
                 @endunless
@@ -14,7 +15,7 @@
                     <form method="POST" action="{{ route('productos.exportacion.toggle-activo', $producto) }}">
                         @csrf @method('PATCH')
                         <button class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">
-                            {{ $producto->activo ? 'Archivar producto' : 'Reactivar producto' }}
+                            {{ $producto->activo ? 'Archivar presentación' : 'Reactivar presentación' }}
                         </button>
                     </form>
                 </div>
@@ -83,8 +84,8 @@
                     </div>
                 </dl>
                 <p class="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
-                    El precio base es solo de REFERENCIA. Al armar una lista manda el precio que tenga el cliente en su lista de
-                    precios; el base se usa únicamente cuando ese cliente no tiene precio propio, y en ese caso la lista lo avisa.
+                    El precio base es solo de REFERENCIA. Al armar una lista manda el precio vigente del cliente, que es el de su
+                    última lista de empaque finalizada; el base se usa únicamente cuando el cliente nunca lo ha comprado.
                 </p>
             </div>
 
@@ -93,7 +94,7 @@
                 <div class="border-b border-gray-200 px-6 py-4">
                     <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Clientes que lo compran</h3>
                     <p class="mt-1 text-xs text-gray-500">
-                        Los precios se administran desde la ficha de cada cliente, en su pestaña de exportación.
+                        Cada precio es el de la última lista de empaque finalizada de ese cliente.
                     </p>
                 </div>
                 <div class="overflow-x-auto">
@@ -153,7 +154,7 @@
             </div>
 
             <div class="flex flex-wrap items-center justify-between gap-3">
-                <a href="{{ route('productos.exportacion.index') }}" class="text-sm text-indigo-600 hover:underline">← Volver a productos de exportación</a>
+                <a href="{{ route('productos.exportacion.index') }}{{ $producto->exportacion_producto_base_id ? '#producto-'.$producto->exportacion_producto_base_id : '' }}" class="text-sm text-indigo-600 hover:underline">← Volver a productos de exportación</a>
 
                 @can('exportaciones.gestionar')
                     @php
@@ -168,7 +169,7 @@
                     @else
                         <p class="text-xs text-gray-500">
                             No se puede eliminar: {{ $producto->asignaciones->count() }} precio(s) de cliente y aparece en {{ $itemsCount }} lista(s).
-                            Usá <strong>Archivar producto</strong>.
+                            Usá <strong>Archivar presentación</strong>.
                         </p>
                     @endif
                 @endcan

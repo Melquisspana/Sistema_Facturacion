@@ -142,8 +142,10 @@ class ClientePerfilExportacionTest extends TestCase
 
         $resp = $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk();
 
-        // Los tres campos propios del embarque, y ninguno más.
-        $resp->assertSee('FDA del importador');
+        // Los dos campos propios del embarque, y ninguno más. El FDA no se pide por
+        // cliente: el de la lista es uno solo, el de la empresa.
+        $resp->assertDontSee('FDA del importador');
+        $resp->assertDontSee('name="fda_reg_number"', false);
         $resp->assertSee('Contacto del embarque');
         $resp->assertSee('Dirección de entrega o bodega');
 
@@ -171,7 +173,8 @@ class ClientePerfilExportacionTest extends TestCase
         $this->assertSame('DIRECCION FISCAL', $cliente->direccion);
 
         $perfil = $cliente->exportacionClientes()->first();
-        $this->assertSame('99887766', $perfil->fda_reg_number);
+        // El FDA ya no se guarda por cliente: el de la lista es el de la empresa.
+        $this->assertNull($perfil->fda_reg_number);
         $this->assertSame('BODEGA 456', $perfil->direccion);
         // El nombre operativo se mantiene alineado con el del directorio.
         $this->assertSame('NOMBRE LEGAL', $perfil->nombre);

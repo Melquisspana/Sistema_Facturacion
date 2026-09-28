@@ -193,7 +193,7 @@ class ExportacionesPresentacionTest extends TestCase
 
         $html = $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk()->getContent();
 
-        foreach (['exp_fda', 'exp_contacto', 'exp_direccion'] as $campo) {
+        foreach (['exp_contacto', 'exp_direccion'] as $campo) {
             $this->assertMatchesRegularExpression(
                 '/<label[^>]*for="'.$campo.'"/',
                 $html,
@@ -206,16 +206,18 @@ class ExportacionesPresentacionTest extends TestCase
     public function test_los_campos_de_precio_en_linea_llevan_etiqueta_aunque_no_se_vea(): void
     {
         $cliente = Cliente::factory()->exportacion()->create();
-        $perfil = ExportacionCliente::create(['cliente_id' => $cliente->id, 'nombre' => $cliente->nombre, 'activo' => true]);
-        $producto = $this->producto();
-        $perfil->productos()->create([
-            'exportacion_producto_id' => $producto->id, 'precio_caja' => 120, 'activo' => true,
-        ]);
+        ExportacionCliente::create(['cliente_id' => $cliente->id, 'nombre' => $cliente->nombre, 'activo' => true]);
+        $base = app(\App\Services\Exportaciones\CatalogoExportacion::class)->crearProducto(
+            ['nombre_es' => 'Maní dulce', 'nombre_en' => 'Sweet baked peanut'],
+            ['unidad' => 'Bolsa de polipropileno 12x12', 'unidades_por_caja' => 144, 'gramos_por_unidad' => 85, 'peso_neto_caja_kg' => 13],
+        );
 
-        $html = $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk()->getContent();
+        // Los precios por cliente se editan ahora desde el catálogo, una fila por cliente.
+        $html = $this->actingAs($this->usuario())->get(route('productos.exportacion.index'))->assertOk()->getContent();
 
         // Un input de precio por fila sin etiqueta se anuncia como «edición» a secas.
-        $this->assertMatchesRegularExpression('/<label class="sr-only" for="precio_\d+">/', $html);
+        $this->assertMatchesRegularExpression('/name="clientes\[\d+\]\[precio\]"[^>]*aria-label="Precio por caja para [^"]+"/s', $html);
+        $this->assertNotNull($base);
     }
 
     public function test_las_tablas_de_datos_tienen_encabezados_y_titulo_para_lectores_de_pantalla(): void

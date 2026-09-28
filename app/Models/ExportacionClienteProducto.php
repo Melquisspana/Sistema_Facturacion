@@ -20,6 +20,8 @@ class ExportacionClienteProducto extends Model
         'exportacion_cliente_id',
         'exportacion_producto_id',
         'precio_caja',
+        'precio_fijado_en',
+        'precio_desde_exportacion_id',
         'activo',
     ];
 
@@ -27,6 +29,7 @@ class ExportacionClienteProducto extends Model
     {
         return [
             'precio_caja' => 'decimal:2',
+            'precio_fijado_en' => 'date',
             'activo' => 'boolean',
         ];
     }
@@ -34,6 +37,12 @@ class ExportacionClienteProducto extends Model
     public function cliente(): BelongsTo
     {
         return $this->belongsTo(ExportacionCliente::class, 'exportacion_cliente_id');
+    }
+
+    /** Lista de empaque que dejó este precio como vigente, si salió de una. */
+    public function listaOrigen(): BelongsTo
+    {
+        return $this->belongsTo(Exportacion::class, 'precio_desde_exportacion_id');
     }
 
     public function producto(): BelongsTo

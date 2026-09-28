@@ -456,7 +456,7 @@ class BackfillExportacionesTest extends TestCase
 
     // -------------------------------- 5: el FDA de la empresa se marca, no se borra
 
-    public function test_el_fda_de_la_empresa_en_un_perfil_se_marca_para_revision_sin_borrarlo(): void
+    public function test_el_fda_viejo_del_perfil_se_conserva_y_ya_no_se_pide_en_la_ficha(): void
     {
         $cliente = Cliente::factory()->exportacion()->create();
         $perfil = ExportacionCliente::create([
@@ -473,11 +473,12 @@ class BackfillExportacionesTest extends TestCase
         // Pero no se devuelve como dato del importador mientras esté marcado.
         $this->assertNull($perfil->fdaImportador());
 
+        // La ficha ya no pide ni muestra el FDA por cliente: el de la lista es uno
+        // solo, el de la empresa. Guardar el perfil tampoco toca la columna.
         $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk()
-            ->assertSee('Revisá el FDA')
-            ->assertSee('00000000001');
+            ->assertDontSee('Revisá el FDA')
+            ->assertDontSee('name="fda_reg_number"', false);
 
-        // Guardar el campo a conciencia ES la revisión: la marca desaparece.
         $this->actingAs($this->usuario())->put(route('clientes.exportacion.update', $cliente), [
             'fda_reg_number' => '',
             'contacto' => '',
@@ -485,6 +486,6 @@ class BackfillExportacionesTest extends TestCase
         ]);
 
         $perfil->refresh();
-        $this->assertFalse($perfil->fda_requiere_revision);
+        $this->assertSame('00000000001', $perfil->fda_reg_number);
     }
 }

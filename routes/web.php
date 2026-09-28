@@ -25,6 +25,7 @@ use App\Http\Controllers\Configuracion\SistemaController;
 use App\Http\Controllers\Contabilidad\PaqueteContabilidadController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController;
+use App\Http\Controllers\Exportaciones\ExportacionProductoBaseController;
 use App\Http\Controllers\Exportaciones\ExportacionProductoController;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Facturacion\ListaEmpaqueController;
@@ -158,12 +159,20 @@ Route::middleware('auth')->group(function () {
             Route::get('crear', [ExportacionProductoController::class, 'create'])->middleware($gestionar)->name('create');
             Route::post('/', [ExportacionProductoController::class, 'store'])->middleware($gestionar)->name('store');
             // Literales antes de {producto}, o «importar» se resolvería como un id.
+            // Producto base («Maní dulce») y alta de presentaciones nuevas.
+            Route::get('base/{base}/editar', [ExportacionProductoBaseController::class, 'edit'])->middleware($gestionar)->name('base.edit');
+            Route::put('base/{base}', [ExportacionProductoBaseController::class, 'update'])->middleware($gestionar)->name('base.update');
+            Route::patch('base/{base}/toggle-activo', [ExportacionProductoBaseController::class, 'toggleActivo'])->middleware($gestionar)->name('base.toggle-activo');
+            Route::get('base/{base}/presentaciones/crear', [ExportacionProductoBaseController::class, 'createPresentacion'])->middleware($gestionar)->name('presentaciones.create');
+            Route::post('base/{base}/presentaciones', [ExportacionProductoBaseController::class, 'storePresentacion'])->middleware($gestionar)->name('presentaciones.store');
             Route::get('importar', [ExportacionProductoController::class, 'importarForm'])->middleware($gestionar)->name('importar');
             Route::post('importar', [ExportacionProductoController::class, 'importar'])->middleware($gestionar)->name('importar.run');
             Route::get('{producto}', [ExportacionProductoController::class, 'show'])->name('show');
             Route::get('{producto}/editar', [ExportacionProductoController::class, 'edit'])->middleware($gestionar)->name('edit');
             Route::put('{producto}', [ExportacionProductoController::class, 'update'])->middleware($gestionar)->name('update');
             Route::patch('{producto}/toggle-activo', [ExportacionProductoController::class, 'toggleActivo'])->middleware($gestionar)->name('toggle-activo');
+            // A qué clientes se vende la presentación y a qué precio.
+            Route::put('{producto}/clientes', [ExportacionProductoController::class, 'clientes'])->middleware($gestionar)->name('clientes');
             Route::delete('{producto}', [ExportacionProductoController::class, 'destroy'])->middleware($gestionar)->name('destroy');
         });
 

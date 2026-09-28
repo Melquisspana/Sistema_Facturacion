@@ -2,16 +2,26 @@
 
 namespace App\Http\Controllers\Exportaciones;
 
+use App\Enums\CategoriaProductoExportacion;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Exportaciones\ExportacionProductoRequest;
+use App\Http\Requests\Exportaciones\PresentacionExportacionRequest;
+use App\Http\Requests\Exportaciones\ProductoBaseExportacionRequest;
 use App\Models\ExportacionProducto;
+use App\Models\ExportacionProductoBase;
+use App\Services\Exportaciones\CatalogoExportacion;
 use App\Services\Exportaciones\ImportadorCatalogoExportacion;
+use App\Services\Exportaciones\ListaEmpaqueExcelService;
+use App\Services\Exportaciones\ListaPreciosExportacion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * Catálogo de productos de EXPORTACIÓN.
+ * Catálogo de productos de EXPORTACIÓN: listado agrupado, alta en un solo paso
+ * (producto + primera presentación) y gestión de cada presentación. El producto
+ * base se edita en {@see ExportacionProductoBaseController}.
  *
  * Vive bajo la entrada única «Productos», en la pestaña «De exportación». Sigue
  * siendo una tabla y un modelo distintos de los productos nacionales, y eso es
@@ -28,59 +38,93 @@ use Illuminate\View\View;
  */
 class ExportacionProductoController extends Controller
 {
+    /**
+     * Catálogo agrupado: categoría → producto → presentaciones. Son unos 50
+     * productos, así que se muestran todos; la búsqueda y el estado filtran
+     * presentaciones y un producto aparece si le queda alguna.
+     */
     public function index(Request $request): View
     {
         $busqueda = trim((string) $request->input('q', ''));
         $activo = (string) $request->input('activo', '1');
+        $like = '%'.$busqueda.'%';
 
-        $productos = ExportacionProducto::query()
-            // Para mostrar en qué clientes está asignado cada producto/presentación.
-            ->with(['asignaciones' => fn ($q) => $q->where('activo', true), 'asignaciones.cliente:id,nombre'])
-            ->withCount([
-                'asignaciones as asignaciones_activas_count' => fn ($q) => $q->where('activo', true),
+        $presentaciones = ExportacionProducto::query()
+            ->with([
+                'base',
+                // Todas, no solo las activas: el editor de clientes precarga el último
+                // precio de un cliente al que se le dejó de vender.
+                'asignaciones' => fn ($q) => $q->orderBy('exportacion_cliente_id'),
+                'asignaciones.cliente:id,nombre',
             ])
-            ->when($busqueda !== '', function ($q) use ($busqueda) {
-                $like = '%'.$busqueda.'%';
-                $q->where(fn ($w) => $w->where('nombre_es', 'like', $like)
-                    ->orWhere('nombre_en', 'like', $like)
-                    ->orWhere('codigo', 'like', $like)
-                    ->orWhere('unidad', 'like', $like));
-            })
-            // Tres estados explícitos: activos (por defecto), inactivos, todos. El
-            // filtro anterior era una casilla «incluir inactivos» que no permitía ver
-            // SOLO los archivados, que es justo lo que se necesita para revisarlos.
-            ->when($activo === '1', fn ($q) => $q->where('activo', true))
-            ->when($activo === '0', fn ($q) => $q->where('activo', false))
-            ->orderBy('nombre_es')
-            ->paginate(15)
-            ->withQueryString();
+            ->when($busqueda !== '', fn ($q) => $q->where(fn ($w) => $w
+                ->where('nombre_es', 'like', $like)
+                ->orWhere('nombre_en', 'like', $like)
+                ->orWhere('codigo', 'like', $like)
+                ->orWhere('unidad', 'like', $like)
+                ->orWhereHas('base', fn ($b) => $b->where('nombre_es', 'like', $like)->orWhere('nombre_en', 'like', $like))))
+            // Activa = la presentación Y su producto. Archivar el producto archiva todo.
+            ->when($activo === '1', fn ($q) => $q->where('activo', true)
+                ->where(fn ($w) => $w->whereNull('exportacion_producto_base_id')
+                    ->orWhereHas('base', fn ($b) => $b->where('activo', true))))
+            ->when($activo === '0', fn ($q) => $q->where(fn ($w) => $w->where('activo', false)
+                ->orWhereHas('base', fn ($b) => $b->where('activo', false))))
+            ->orderBy('unidades_por_caja')
+            ->orderBy('gramos_por_unidad')
+            ->get();
+
+        $productos = $presentaciones->whereNotNull('exportacion_producto_base_id')
+            ->groupBy('exportacion_producto_base_id')
+            ->map(fn ($grupo) => ['base' => $grupo->first()->base, 'presentaciones' => $grupo->values()])
+            ->sortBy(fn ($g) => Str::ascii(Str::lower($g['base']->nombre_es)))
+            ->values();
+
+        $secciones = collect(CategoriaProductoExportacion::cases())
+            ->map(fn (CategoriaProductoExportacion $c) => [
+                'titulo' => $c->label(),
+                'productos' => $productos->filter(fn ($g) => $g['base']->categoria === $c)->values(),
+            ])
+            ->push(['titulo' => 'Sin categoría', 'productos' => $productos->filter(fn ($g) => $g['base']->categoria === null)->values()])
+            ->filter(fn ($s) => $s['productos']->isNotEmpty())
+            ->values();
 
         return view('productos.exportacion.index', [
-            'productos' => $productos,
+            'secciones' => $secciones,
+            'sinAgrupar' => $presentaciones->whereNull('exportacion_producto_base_id')->sortBy('nombre_es')->values(),
+            'clientes' => app(ListaPreciosExportacion::class)->clientesActivos(),
             'filtros' => ['q' => $busqueda, 'activo' => $activo],
             'totales' => [
+                'productos' => ExportacionProductoBase::where('activo', true)->count(),
                 'activos' => ExportacionProducto::where('activo', true)->count(),
                 'inactivos' => ExportacionProducto::where('activo', false)->count(),
             ],
         ]);
     }
 
+    /** Alta en un solo paso: el producto y su primera presentación. */
     public function create(): View
     {
         return view('productos.exportacion.form', [
-            'producto' => new ExportacionProducto(['activo' => true]),
+            'base' => new ExportacionProductoBase(['activo' => true]),
+            'clientes' => app(ListaPreciosExportacion::class)->clientesActivos(),
         ]);
     }
 
-    public function store(ExportacionProductoRequest $request): RedirectResponse
+    public function store(ProductoBaseExportacionRequest $request, CatalogoExportacion $catalogo, ListaPreciosExportacion $precios): RedirectResponse
     {
-        $producto = ExportacionProducto::create(
-            $request->validated() + ['activo' => $request->boolean('activo', true)]
-        );
+        $datos = $request->validated();
+
+        // Producto, presentación y clientes van juntos: si falta un precio, no queda nada a medias.
+        $base = DB::transaction(function () use ($catalogo, $precios, $datos) {
+            $base = $catalogo->crearProducto($datos, $datos);
+            $precios->sincronizarClientes($base->presentaciones()->sole(), $datos['clientes'] ?? []);
+
+            return $base;
+        });
 
         return redirect()
-            ->route('productos.exportacion.show', $producto)
-            ->with('status', 'Producto de exportación creado.');
+            ->to(route('productos.exportacion.index').'#producto-'.$base->id)
+            ->with('status', "«{$base->nombre_es}» agregado al catálogo.");
     }
 
     /** Ficha del producto: sus datos de empaque y qué clientes lo compran y a qué precio. */
@@ -97,19 +141,43 @@ class ExportacionProductoController extends Controller
         ]);
     }
 
+    /** Editar una presentación: empaque, pesos y precio base. Los nombres son del producto. */
     public function edit(ExportacionProducto $producto): View
     {
-        return view('productos.exportacion.form', ['producto' => $producto]);
+        $producto->load('base');
+
+        return view('productos.exportacion.presentacion', [
+            'base' => $producto->base,
+            'presentacion' => $producto,
+        ]);
     }
 
-    public function update(ExportacionProductoRequest $request, ExportacionProducto $producto): RedirectResponse
+    public function update(PresentacionExportacionRequest $request, ExportacionProducto $producto, CatalogoExportacion $catalogo): RedirectResponse
     {
         // Solo cambia el catálogo: los items ya agregados a listas conservan su snapshot.
-        $producto->update($request->validated() + ['activo' => $request->boolean('activo', $producto->activo)]);
+        $catalogo->actualizarPresentacion($producto, $request->validated() + ['activo' => $request->boolean('activo', $producto->activo)]);
 
         return redirect()
-            ->route('productos.exportacion.show', $producto)
-            ->with('status', 'Producto de exportación actualizado.');
+            ->to(route('productos.exportacion.index').'#producto-'.$producto->exportacion_producto_base_id)
+            ->with('status', "Presentación actualizada: {$producto->nombre_es}, {$producto->etiquetaEmpaque()}.");
+    }
+
+    /** A qué clientes se vende esta presentación y a qué precio, desde el catálogo. */
+    public function clientes(Request $request, ExportacionProducto $producto, ListaPreciosExportacion $precios): RedirectResponse
+    {
+        $datos = $request->validate([
+            'clientes' => ['nullable', 'array'],
+            'clientes.*.activo' => ['nullable', 'boolean'],
+            'clientes.*.precio' => ['nullable', 'numeric', 'min:0'],
+        ], [], ['clientes.*.precio' => 'precio']);
+
+        $cambios = $precios->sincronizarClientes($producto, $datos['clientes'] ?? []);
+
+        return redirect()
+            ->to(route('productos.exportacion.index').'#producto-'.$producto->exportacion_producto_base_id)
+            ->with('status', $cambios === 0
+                ? "Sin cambios en los clientes de {$producto->nombre_es}, {$producto->etiquetaEmpaque()}."
+                : "Clientes actualizados: {$producto->nombre_es}, {$producto->etiquetaEmpaque()}.");
     }
 
     /**
@@ -171,7 +239,7 @@ class ExportacionProductoController extends Controller
 
         return 'No se puede eliminar: este producto '.implode(' y ', $partes).'. '
             .'Borrarlo se llevaría esos precios negociados por delante y no se pueden reconstruir. '
-            .'Archivalo con «Archivar producto»: deja de ofrecerse en listas nuevas y conserva todo su histórico.';
+            .'Archivala con «Archivar presentación»: deja de ofrecerse en listas nuevas y conserva todo su histórico.';
     }
 
     /** Formulario de importación del catálogo desde un Excel con el layout de la lista. */
@@ -180,7 +248,7 @@ class ExportacionProductoController extends Controller
         $archivoServidor = null;
 
         try {
-            $archivoServidor = app(\App\Services\Exportaciones\ListaEmpaqueExcelService::class)->rutaPlantilla();
+            $archivoServidor = app(ListaEmpaqueExcelService::class)->rutaPlantilla();
         } catch (\RuntimeException) {
             // Sin archivo guardado en el servidor: la vista lo indica y pide subir uno.
         }

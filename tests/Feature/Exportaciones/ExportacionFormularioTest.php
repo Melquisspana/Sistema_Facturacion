@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Exportaciones;
 
+use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionProducto;
 use App\Models\User;
@@ -65,8 +66,8 @@ class ExportacionFormularioTest extends TestCase
         $respuesta = $this->actingAs($this->usuario())->get(route('facturacion.listas.create'));
 
         $respuesta->assertOk();
-        // El combobox reemplaza al select: placeholder de búsqueda presente.
-        $respuesta->assertSee('Escribí para buscar producto', false);
+        // Hoja de pedido: los productos del cliente con un buscador para filtrarlos.
+        $respuesta->assertSee('Buscar en los productos del cliente', false);
         // Datos que Alpine usa para filtrar: nombre, empaque y precio del cliente.
         $respuesta->assertSee('Caja de caramelo naranja');
         $respuesta->assertSee('Bolsa 12X12');
@@ -87,13 +88,13 @@ class ExportacionFormularioTest extends TestCase
             'fecha' => '2026-07-09',
             'items' => [['exportacion_producto_id' => $producto->id, 'cantidad_cajas' => 3]],
         ]);
-        $exportacion = \App\Models\Exportacion::firstOrFail();
+        $exportacion = Exportacion::firstOrFail();
 
         $respuesta = $this->actingAs($this->usuario())->get(route('facturacion.listas.edit', $exportacion));
 
         $respuesta->assertOk();
-        // El buscador está disponible para agregar filas nuevas…
-        $respuesta->assertSee('Escribí para buscar producto', false);
+        // La hoja de pedido está disponible para sumar productos…
+        $respuesta->assertSee('Buscar en los productos del cliente', false);
         // …y el item existente viaja con su snapshot (precio del cliente al crear).
         $respuesta->assertSee('Caja de caramelo naranja');
         $respuesta->assertSee('150', false);

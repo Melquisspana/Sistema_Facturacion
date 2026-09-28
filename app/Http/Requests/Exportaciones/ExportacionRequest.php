@@ -32,6 +32,9 @@ class ExportacionRequest extends FormRequest
             'items.*.id' => ['nullable', 'integer', Rule::exists('exportacion_items', 'id')],
             'items.*.exportacion_producto_id' => ['required_without:items.*.id', 'nullable', 'integer', Rule::exists('exportacion_productos', 'id')],
             'items.*.cantidad_cajas' => ['required', 'integer', 'min:1'],
+            // Precio de la línea: vacío = el vigente del cliente (o el base). Si se
+            // cambia, al finalizar la lista pasa a ser el precio del cliente.
+            'items.*.precio_caja' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 
@@ -44,6 +47,7 @@ class ExportacionRequest extends FormRequest
             'items' => 'productos',
             'items.*.exportacion_producto_id' => 'producto',
             'items.*.cantidad_cajas' => 'cantidad de cajas',
+            'items.*.precio_caja' => 'precio por caja',
         ];
     }
 

@@ -13,6 +13,7 @@ use App\Models\ExportacionItem;
 use App\Models\ExportacionProducto;
 use App\Services\Exportaciones\CrearFexDesdeExportacionService;
 use App\Services\Exportaciones\ListaEmpaqueExcelService;
+use App\Services\Exportaciones\ListaPreciosExportacion;
 use App\Services\Exportaciones\VincularFexALista;
 use App\Support\Exportaciones\DatosExportador;
 use Illuminate\Http\RedirectResponse;
@@ -180,9 +181,12 @@ class ListaEmpaqueController extends Controller
 
             foreach ($enviados as $item) {
                 if (! empty($item['id'])) {
-                    $lista->items()
-                        ->whereKey((int) $item['id'])
-                        ->update(['cantidad_cajas' => (int) $item['cantidad_cajas']]);
+                    $cambios = ['cantidad_cajas' => (int) $item['cantidad_cajas']];
+                    if (isset($item['precio_caja']) && $item['precio_caja'] !== '') {
+                        $cambios['precio_caja'] = round((float) $item['precio_caja'], 2);
+                        $this->exigirPrecioValido($cambios['precio_caja']);
+                    }
+                    $lista->items()->whereKey((int) $item['id'])->update($cambios);
                 }
             }
 
@@ -363,19 +367,25 @@ class ListaEmpaqueController extends Controller
                 : 'Para finalizar la lista tiene que tener al menos una factura de exportación vinculada. Facturala primero.');
         }
 
-        $lista->update([
-            'estado' => Exportacion::ESTADO_FINALIZADA,
-            'finalizada_en' => now(),
-            'finalizada_por_user_id' => request()->user()?->id,
-            // Finalizar a mano ES la revisión que pedía un estado heredado: quien cierra
-            // la lista está confirmando qué era.
-            'requiere_revision' => false,
-            'revision_motivo' => null,
-        ]);
+        $cambios = DB::transaction(function () use ($lista) {
+            $lista->update([
+                'estado' => Exportacion::ESTADO_FINALIZADA,
+                'finalizada_en' => now(),
+                'finalizada_por_user_id' => request()->user()?->id,
+                // Finalizar a mano ES la revisión que pedía un estado heredado: quien cierra
+                // la lista está confirmando qué era.
+                'requiere_revision' => false,
+                'revision_motivo' => null,
+            ]);
+
+            // Los precios de esta lista pasan a ser los vigentes del cliente.
+            return app(ListaPreciosExportacion::class)->actualizarDesdeLista($lista);
+        });
 
         return redirect()
             ->route('facturacion.listas.show', $lista)
-            ->with('status', 'Lista finalizada. Ya no se edita: para corregirla hay que reabrirla indicando el motivo.');
+            ->with('status', 'Lista finalizada. Ya no se edita: para corregirla hay que reabrirla indicando el motivo.'
+                .$this->resumenPrecios($cambios));
     }
 
     /**
@@ -618,37 +628,70 @@ class ListaEmpaqueController extends Controller
             : null;
 
         // Un mismo producto repetido en el formulario se consolida sumando cajas.
-        $porProducto = [];
+        $lineas = [];
         foreach ($items as $item) {
-            $id = (int) $item['exportacion_producto_id'];
-            $porProducto[$id] = ($porProducto[$id] ?? 0) + (int) $item['cantidad_cajas'];
+            $clave = (int) $item['exportacion_producto_id'];
+            $lineas[$clave] ??= [
+                'producto_id' => $clave,
+                'cantidad' => 0,
+                'precio' => isset($item['precio_caja']) && $item['precio_caja'] !== '' ? round((float) $item['precio_caja'], 2) : null,
+            ];
+            $lineas[$clave]['cantidad'] += (int) $item['cantidad_cajas'];
         }
 
         $conPrecioBase = [];
 
-        foreach ($porProducto as $productoId => $cantidad) {
-            $producto = ExportacionProducto::findOrFail($productoId);
-            $precio = $cliente?->precioPara($producto->id);
+        foreach ($lineas as $linea) {
+            $producto = ExportacionProducto::findOrFail($linea['producto_id']);
+            $precio = $linea['precio'] ?? $cliente?->precioPara($producto->id);
 
             if ($precio === null) {
                 if ($producto->precio_caja === null) {
                     throw ValidationException::withMessages([
-                        'items' => "«{$producto->nombre_es}» no tiene precio para este cliente ni precio base: asignale un precio antes de usarlo.",
+                        'items' => "«{$producto->nombre_es}» no tiene precio para este cliente ni precio base: escribí el precio en la línea.",
                     ]);
                 }
                 $precio = (float) $producto->precio_caja;
                 $conPrecioBase[] = $producto->nombre_es;
             }
 
+            $this->exigirPrecioValido((float) $precio, $producto->nombre_es);
+
             ExportacionItem::create([
                 'exportacion_id' => $lista->id,
                 'exportacion_producto_id' => $producto->id,
-                'cantidad_cajas' => $cantidad,
+                'cantidad_cajas' => $linea['cantidad'],
                 'precio_caja' => $precio,
             ] + $producto->datosSnapshot());
         }
 
         return $conPrecioBase;
+    }
+
+    /** Nunca se factura a cero por descuido: toda línea lleva precio. */
+    private function exigirPrecioValido(float $precio, ?string $producto = null): void
+    {
+        if ($precio <= 0) {
+            throw ValidationException::withMessages([
+                'items' => ($producto !== null ? "«{$producto}»: " : '').'el precio por caja no puede quedar en $0.00.',
+            ]);
+        }
+    }
+
+    /** @param  list<array{producto: string, antes: ?float, ahora: float}>  $cambios */
+    private function resumenPrecios(array $cambios): string
+    {
+        if ($cambios === []) {
+            return '';
+        }
+
+        $dinero = fn (float $valor) => '$'.number_format($valor, 2);
+        $detalle = collect($cambios)->take(6)->map(fn ($c) => $c['antes'] === null
+            ? $c['producto'].' '.$dinero($c['ahora']).' (nuevo)'
+            : $c['producto'].' '.$dinero($c['antes']).' → '.$dinero($c['ahora']))->implode('; ');
+        $resto = count($cambios) > 6 ? ' y '.(count($cambios) - 6).' más' : '';
+
+        return " Precios del cliente actualizados: {$detalle}{$resto}.";
     }
 
     private function mensajeAvisoPrecios(array $conPrecioBase): ?string
@@ -663,9 +706,14 @@ class ListaEmpaqueController extends Controller
 
     private function productosParaFormulario(): Collection
     {
+        // Solo presentaciones activas de productos activos (o aún sin agrupar).
         return ExportacionProducto::where('activo', true)
+            ->with('base:id,categoria')
+            ->where(fn ($q) => $q->whereNull('exportacion_producto_base_id')
+                ->orWhereHas('base', fn ($b) => $b->where('activo', true)))
             ->orderBy('nombre_es')
-            ->get(['id', 'nombre_es', 'nombre_en', 'unidad', 'unidades_por_caja', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
+            ->orderBy('unidades_por_caja')
+            ->get(['id', 'exportacion_producto_base_id', 'nombre_es', 'nombre_en', 'unidad', 'unidades_por_caja', 'gramos_por_unidad', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
     }
 
     private function clientesParaFormulario(): Collection

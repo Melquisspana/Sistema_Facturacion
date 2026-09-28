@@ -98,17 +98,18 @@ class ProductosExportacionGestionTest extends TestCase
             ->assertSee('PRODUCTO ARCHIVADO');
     }
 
-    public function test_el_listado_pagina_de_quince_en_quince(): void
+    /**
+     * Son unos 50 productos agrupados por categoría: se ven todos de una vez. La
+     * paginación partía un mismo producto entre dos páginas.
+     */
+    public function test_el_listado_muestra_todo_el_catalogo_sin_paginar(): void
     {
         for ($i = 1; $i <= 17; $i++) {
             $this->producto(['nombre_es' => sprintf('Producto %02d', $i)]);
         }
 
-        $primera = $this->actingAs($this->usuario())->get(route('productos.exportacion.index'))->assertOk();
-        $primera->assertSee('Producto 01');
-        $primera->assertDontSee('Producto 17');
-
-        $this->actingAs($this->usuario())->get(route('productos.exportacion.index', ['page' => 2]))->assertOk()
+        $this->actingAs($this->usuario())->get(route('productos.exportacion.index'))->assertOk()
+            ->assertSee('Producto 01')
             ->assertSee('Producto 17');
     }
 

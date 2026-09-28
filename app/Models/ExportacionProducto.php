@@ -2,13 +2,20 @@
 
 namespace App\Models;
 
+use App\Support\Exportaciones\EmpaqueExportacion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Producto del catálogo de EXPORTACIÓN (lista de empaque). Independiente del
- * catálogo de productos DTE; solo alimenta el módulo de exportaciones.
+ * PRESENTACIÓN del catálogo de EXPORTACIÓN: un {@see ExportacionProductoBase}
+ * empacado de una forma concreta (unidades por caja, gramos, pesos). Es lo que se
+ * agrega a una lista de empaque y a lo que se le pone precio por cliente.
+ * Independiente del catálogo de productos DTE.
+ *
+ * `nombre_es` / `nombre_en` son copia de los del base: se guardan acá porque la
+ * lista, el Excel y la factura los leen de la presentación.
  */
 class ExportacionProducto extends Model
 {
@@ -17,6 +24,7 @@ class ExportacionProducto extends Model
     protected $table = 'exportacion_productos';
 
     protected $fillable = [
+        'exportacion_producto_base_id',
         'codigo',
         'nombre_es',
         'nombre_en',
@@ -45,6 +53,17 @@ class ExportacionProducto extends Model
             'peso_bruto_caja_lb' => 'decimal:2',
             'activo' => 'boolean',
         ];
+    }
+
+    public function base(): BelongsTo
+    {
+        return $this->belongsTo(ExportacionProductoBase::class, 'exportacion_producto_base_id');
+    }
+
+    /** «Caja 12×12 · 144 u»: distingue presentaciones del mismo producto. */
+    public function etiquetaEmpaque(): string
+    {
+        return EmpaqueExportacion::etiqueta($this->unidad, (int) $this->unidades_por_caja);
     }
 
     public function items(): HasMany

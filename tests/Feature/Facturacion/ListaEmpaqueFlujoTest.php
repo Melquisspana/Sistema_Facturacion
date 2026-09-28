@@ -356,6 +356,23 @@ class ListaEmpaqueFlujoTest extends TestCase
         $this->assertCount(1, $lista->fresh()->facturas());
     }
 
+    public function test_finalizar_deja_los_precios_de_la_lista_como_vigentes_del_cliente(): void
+    {
+        ['cliente' => $cliente, 'perfil' => $perfil] = $this->clienteHabilitado();
+        $producto = $this->producto();
+        $lista = $this->lista($perfil);
+        $lista->items()->update(['exportacion_producto_id' => $producto->id, 'precio_caja' => 150.00]);
+        $fex = $this->fex($cliente, 'DTE-11-M001P001-000000000000009');
+        $usuario = $this->usuario();
+
+        $this->actingAs($usuario)->post(route('facturacion.listas.facturas.vincular', $lista), ['dte_id' => $fex->id]);
+        $this->actingAs($usuario)->patch(route('facturacion.listas.finalizar', $lista))
+            ->assertSessionHas('status', fn ($mensaje) => str_contains($mensaje, 'Precios del cliente actualizados'));
+
+        $this->assertSame('150.00', ExportacionClienteProducto::where('exportacion_cliente_id', $perfil->id)
+            ->where('exportacion_producto_id', $producto->id)->value('precio_caja'));
+    }
+
     public function test_reabrir_exige_motivo_y_queda_auditado(): void
     {
         ['cliente' => $cliente, 'perfil' => $perfil] = $this->clienteHabilitado();
