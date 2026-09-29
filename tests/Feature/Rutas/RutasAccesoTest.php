@@ -11,29 +11,49 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Acceso al área Rutas / Cobros. Todo se comprueba en BACKEND, escribiendo la URL
+ * Acceso al área Rutas. Todo se comprueba en BACKEND, escribiendo la URL
  * directamente: el selector superior y la sidebar no participan de la decisión.
  *
- * En esta fase solo el administrador tiene `rutas.ver` y `rutas.gestionar`; no se
- * creó ningún rol nuevo.
+ * Administrador, facturación y jefatura tienen `rutas.ver` y `rutas.gestionar`
+ * (decisión del usuario, 26/09/2026). Contabilidad y producción no entran.
  */
 class RutasAccesoTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const ROLES_SIN_ACCESO = ['jefatura', 'facturacion', 'contabilidad', 'produccion'];
+    private const ROLES_CON_ACCESO = ['administrador', 'facturacion', 'jefatura'];
+
+    private const ROLES_SIN_ACCESO = ['contabilidad', 'produccion'];
 
     private function usuario(string $rol): User
     {
         return User::factory()->create(['activo' => true])->assignRole($rol);
     }
 
-    public function test_el_administrador_entra_al_area(): void
+    public function test_administrador_facturacion_y_jefatura_entran_y_gestionan(): void
     {
-        $this->actingAs($this->usuario('administrador'))
-            ->get(route('rutas.dashboard'))
-            ->assertOk()
-            ->assertSee('Cobros');
+        foreach (self::ROLES_CON_ACCESO as $rol) {
+            $usuario = $this->usuario($rol);
+
+            $this->actingAs($usuario)
+                ->get(route('rutas.dashboard'))
+                ->assertOk()
+                ->assertSee('Configurar rutas');
+
+            $this->actingAs($usuario)->get(route('rutas.salidas.create'))->assertOk();
+            $this->actingAs($usuario)->get(route('rutas.asignacion.index'))->assertOk();
+        }
+    }
+
+    /** Jefatura gestiona Rutas, pero nada fiscal: sigue sin emitir ni gestionar DTE. */
+    public function test_jefatura_gestiona_rutas_sin_ganar_permisos_fiscales(): void
+    {
+        $jefatura = $this->usuario('jefatura');
+
+        $this->assertTrue($jefatura->can('rutas.gestionar'));
+        $this->assertFalse($jefatura->can('dte.emitir'));
+        $this->assertFalse($jefatura->can('dte.gestionar'));
+        $this->assertFalse($jefatura->can('ppq.gestionar'));
     }
 
     public function test_los_demas_roles_reciben_403_en_todas_las_pantallas(): void
@@ -45,6 +65,7 @@ class RutasAccesoTest extends TestCase
             route('rutas.rutas.index'),
             route('rutas.rutas.show', $ruta),
             route('rutas.salidas.index'),
+            route('rutas.asignacion.index'),
         ];
 
         foreach (self::ROLES_SIN_ACCESO as $rol) {
@@ -67,7 +88,7 @@ class RutasAccesoTest extends TestCase
      */
     public function test_ver_sin_gestionar_no_puede_escribir(): void
     {
-        $usuario = $this->usuario('jefatura')->givePermissionTo('rutas.ver');
+        $usuario = $this->usuario('contabilidad')->givePermissionTo('rutas.ver');
         $ruta = Ruta::create(['nombre' => 'Santa Ana']);
 
         $this->actingAs($usuario)->get(route('rutas.rutas.index'))->assertOk();
@@ -78,6 +99,8 @@ class RutasAccesoTest extends TestCase
         $this->actingAs($usuario)->patch(route('rutas.rutas.toggle-activa', $ruta))->assertForbidden();
         $this->actingAs($usuario)->post(route('rutas.rutas.salas.store', $ruta), ['sucursales' => [1]])->assertForbidden();
         $this->actingAs($usuario)->get(route('rutas.salidas.create'))->assertForbidden();
+        $this->actingAs($usuario)->post(route('rutas.rutas.cobertura.store', $ruta), ['departamento_id' => 1])->assertForbidden();
+        $this->actingAs($usuario)->post(route('rutas.asignacion.aplicar'), ['sucursales' => [1]])->assertForbidden();
 
         // Y nada se escribió por el intento.
         $this->assertSame(1, Ruta::count());
@@ -113,6 +136,8 @@ class RutasAccesoTest extends TestCase
             route('rutas.salidas.create'),
             route('rutas.salidas.show', $salida),
             route('rutas.salidas.edit', $salida),
+            route('rutas.asignacion.index'),
+            route('rutas.asignacion.index', ['ruta_id' => $ruta->id]),
         ];
 
         foreach ($pantallas as $url) {
@@ -136,14 +161,15 @@ class RutasAccesoTest extends TestCase
 
     public function test_el_area_solo_es_visible_para_quien_tiene_el_permiso(): void
     {
-        $admin = $this->usuario('administrador');
-        $this->assertContains(AreaSistema::Rutas, AreaSistema::visiblesPara($admin));
+        foreach (self::ROLES_CON_ACCESO as $rol) {
+            $this->assertContains(AreaSistema::Rutas, AreaSistema::visiblesPara($this->usuario($rol)));
+        }
 
         foreach (self::ROLES_SIN_ACCESO as $rol) {
             $this->assertNotContains(
                 AreaSistema::Rutas,
                 AreaSistema::visiblesPara($this->usuario($rol)),
-                "El rol {$rol} no debería ver el área Rutas / Cobros.",
+                "El rol {$rol} no debería ver el área Rutas.",
             );
         }
     }
@@ -156,5 +182,20 @@ class RutasAccesoTest extends TestCase
     {
         $this->actingAs($this->usuario('facturacion'))->get(route('dashboard'))->assertOk();
         $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk();
+    }
+
+    /** Facturación y jefatura siguen aterrizando en Facturación: Rutas es un área más. */
+    public function test_facturacion_y_jefatura_siguen_aterrizando_en_facturacion(): void
+    {
+        foreach (['facturacion', 'jefatura'] as $rol) {
+            $this->assertSame(AreaSistema::Facturacion, AreaSistema::principalPara($this->usuario($rol)));
+        }
+    }
+
+    /** Los enlaces viejos de /rutas-cobros llevan al mismo lugar en /rutas. */
+    public function test_la_url_vieja_redirige_a_la_nueva(): void
+    {
+        $this->get('/rutas-cobros')->assertRedirect('/rutas/');
+        $this->get('/rutas-cobros/salidas/crear')->assertRedirect('/rutas/salidas/crear');
     }
 }

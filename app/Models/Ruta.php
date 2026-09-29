@@ -65,6 +65,12 @@ class Ruta extends Model
         return $this->hasMany(SalidaRuta::class, 'ruta_id');
     }
 
+    /** Departamentos completos y distritos que atiende. Alimenta la propuesta de salas. */
+    public function coberturas(): HasMany
+    {
+        return $this->hasMany(RutaCobertura::class, 'ruta_id');
+    }
+
     public function scopeActivas(Builder $query): Builder
     {
         return $query->where('activa', true);

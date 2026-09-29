@@ -1,12 +1,11 @@
 {{-- Campos compartidos por el alta y la edición de una salida.
 
      NO incluye `estado` ni `fecha_fin_real`: el estado se mueve con las acciones
-     del detalle (iniciar / finalizar / cancelar) y la fecha real la escribe el
-     acto de finalizar. Ponerlas acá invitaría a "corregir" el estado a mano. --}}
+     del detalle (terminar / cancelar) y la fecha real la escribe el acto de
+     terminar. Tampoco responsable: desde el 27/09/2026 solo se marca quiénes van. --}}
 @php
     $salida = $salida ?? null;
     $elegidos = old('personal', $salida?->participantes->pluck('rutas_personal_id')->all() ?? []);
-    $responsableElegido = old('responsable_id', $salida?->participantes->firstWhere('rol', \App\Enums\RolEnSalida::Responsable)?->rutas_personal_id);
 @endphp
 
 <div>
@@ -29,7 +28,7 @@
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
     <div>
         <label for="fecha_inicio" class="block text-sm font-medium text-gray-700 dark:text-paper-200">Fecha de inicio</label>
-        <input type="date" name="fecha_inicio" id="fecha_inicio" required
+        <input type="date" name="fecha_inicio" id="fecha_inicio"
                value="{{ old('fecha_inicio', $salida?->fecha_inicio?->toDateString() ?? now()->toDateString()) }}"
                class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
         <x-input-error :messages="$errors->get('fecha_inicio')" class="mt-1" />
@@ -67,31 +66,11 @@
         @empty
             <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-400">
                 No hay personal de campo activo.
-                <a href="{{ route('rutas.personal.create') }}" class="underline">Dá de alta a alguien primero</a>.
+                <a href="{{ route('rutas.rutas.index') }}#vendedores" class="underline">Agregá vendedores en Configurar rutas</a>.
             </p>
         @endforelse
     </div>
     <x-input-error :messages="$errors->get('personal')" class="mt-1" />
-</div>
-
-<div>
-    <label for="responsable_id" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
-        Responsable <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
-    </label>
-    <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
-        Quién queda a cargo de este viaje y reúne los documentos al volver. Se elige por salida:
-        la misma persona puede ir de acompañante en la siguiente.
-    </p>
-    <select name="responsable_id" id="responsable_id"
-            class="mt-2 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-        <option value="">Sin responsable designado</option>
-        @foreach ($personal as $persona)
-            <option value="{{ $persona->id }}" @selected($responsableElegido == $persona->id)>
-                {{ $persona->nombre }}@if (! $persona->puedeSerResponsable()) — no declara esa función @endif
-            </option>
-        @endforeach
-    </select>
-    <x-input-error :messages="$errors->get('responsable_id')" class="mt-1" />
 </div>
 
 <div>

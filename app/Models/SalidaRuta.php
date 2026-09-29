@@ -113,10 +113,10 @@ class SalidaRuta extends Model
             ->where('rol', RolEnSalida::Responsable->value);
     }
 
-    /** Documentos que viajaron en esta salida. */
-    public function documentos(): HasMany
+    /** Los CCF que lleva esta salida y qué pasó con cada uno. */
+    public function entregas(): HasMany
     {
-        return $this->hasMany(SalidaRutaDocumento::class, 'salida_ruta_id');
+        return $this->hasMany(SalidaRutaEntrega::class, 'salida_ruta_id');
     }
 
     // ------------------------------------------------------------ transiciones
@@ -157,33 +157,7 @@ class SalidaRuta extends Model
             return false;
         }
 
-        $aplicado = $this->update(['estado' => $destino] + $extra);
-
-        if ($aplicado) {
-            $this->sincronizarBloqueoDocumentos();
-        }
-
-        return $aplicado;
-    }
-
-    /**
-     * Libera (o mantiene) el candado de unicidad de los documentos de esta salida.
-     *
-     * `salida_ruta_documentos.bloqueo_asignacion` vale 1 mientras la salida está
-     * abierta y NULL cuando terminó; el índice único de esa tabla es el que impide
-     * que un documento esté en dos salidas abiertas a la vez (el porqué completo
-     * está en la migración de `salida_ruta_documentos`).
-     *
-     * Este es el ÚNICO lugar que escribe esa columna después del alta, y se invoca
-     * desde {@see transicionar()}. Al finalizar o cancelar, los documentos quedan
-     * libres para una salida futura sin perder la fila que prueba que estuvieron en
-     * esta: la historia se conserva, el candado se suelta.
-     */
-    public function sincronizarBloqueoDocumentos(): void
-    {
-        $this->documentos()->update([
-            'bloqueo_asignacion' => $this->estado->esTerminal() ? null : 1,
-        ]);
+        return $this->update(['estado' => $destino] + $extra);
     }
 
     /** Etiqueta breve para mensajes: «San Miguel · 14–16 ago 2026». */

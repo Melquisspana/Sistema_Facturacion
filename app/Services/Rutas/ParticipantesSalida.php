@@ -6,7 +6,6 @@ use App\Enums\RolEnSalida;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaParticipante;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -16,9 +15,8 @@ use Illuminate\Validation\ValidationException;
  * ─────────────────────── Por qué un servicio y no un `sync()` suelto ───────────────────────
  *
  * Un `sync()` de pivote no puede sostener las reglas que esto tiene: que haya como mucho un
- * responsable, que el responsable esté entre los participantes, y que quitar a alguien que
- * todavía tiene documentos en la mano no pase inadvertido. Repartidas por el controlador,
- * esas reglas se aplicarían en el alta y se olvidarían en la edición.
+ * responsable y que el responsable esté entre los participantes. Repartidas por el
+ * controlador, esas reglas se aplicarían en el alta y se olvidarían en la edición.
  *
  * ─────────────────────── Qué se comprueba y qué no ───────────────────────
  *
@@ -29,10 +27,6 @@ use Illuminate\Validation\ValidationException;
  * función es una SUGERENCIA para ordenar el selector, no un requisito: la operación real
  * designa a quien está disponible, y bloquear el formulario porque a alguien no le marcaron
  * una casilla lleva a que se marque cualquier cosa con tal de seguir.
- *
- * Tampoco se impide quitar a alguien que tiene documentos: eso se AVISA. Quitarlo de la
- * lista no le saca el papel de la mano, y borrar el rastro de quién lo tiene sería peor que
- * dejar la inconsistencia visible.
  */
 class ParticipantesSalida
 {
@@ -40,13 +34,15 @@ class ParticipantesSalida
      * Deja la salida exactamente con estas personas y este responsable.
      *
      * @param  array<int, int>  $personalIds
-     * @return array{agregados: array<int, string>, quitados: array<int, string>, responsable: ?string, advertencias: array<int, string>}
+     * @return array{agregados: array<int, string>, quitados: array<int, string>, responsable: ?string}
      *
      * @throws ValidationException
      */
     public function sincronizar(SalidaRuta $salida, array $personalIds, ?int $responsableId): array
     {
-        $personalIds = array_values(array_unique(array_filter($personalIds)));
+        // Del formulario llegan como texto ("3"); el responsable llega como entero. Sin
+        // normalizar, la comparación estricta de abajo decía que el responsable no iba.
+        $personalIds = array_values(array_unique(array_filter(array_map('intval', $personalIds))));
 
         if ($personalIds === []) {
             throw ValidationException::withMessages([
@@ -74,7 +70,6 @@ class ParticipantesSalida
             $actuales = $salida->participantes()->with('personal:id,nombre')->get()->keyBy('rutas_personal_id');
 
             $quitar = $actuales->keys()->diff($personalIds);
-            $advertencias = $this->advertirPorDocumentosEnMano($salida, $quitar->all());
 
             $salida->participantes()->whereIn('rutas_personal_id', $quitar->all())->delete();
 
@@ -109,47 +104,7 @@ class ParticipantesSalida
                 'agregados' => $agregados,
                 'quitados' => $actuales->only($quitar->all())->map(fn ($p) => $p->personal?->nombre ?? '—')->values()->all(),
                 'responsable' => $responsableId !== null ? $personas[$responsableId]->nombre : null,
-                'advertencias' => $advertencias,
             ];
         });
-    }
-
-    /**
-     * Avisa —no impide— si alguien que se está quitando de la salida todavía figura con
-     * documentos en la mano.
-     *
-     * No se bloquea a propósito: la persona pudo haberse bajado del viaje de verdad, y lo
-     * que hay que hacer es transferir esos papeles, no impedir que se corrija la lista. El
-     * aviso es lo que manda a alguien a hacerlo.
-     *
-     * @param  array<int, int>  $personalIds
-     * @return array<int, string>
-     */
-    private function advertirPorDocumentosEnMano(SalidaRuta $salida, array $personalIds): array
-    {
-        if ($personalIds === []) {
-            return [];
-        }
-
-        $documentos = $salida->documentos()->get();
-
-        if ($documentos->isEmpty()) {
-            return [];
-        }
-
-        $ultimos = app(Custodia::class)->ultimosVigentesDe($documentos->pluck('id')->all());
-
-        $porPersona = collect($ultimos)
-            ->filter(fn ($evento) => $evento->tipo->dejaEnPersonal() && in_array($evento->destino_personal_id, $personalIds, true))
-            ->groupBy('destino_personal_id');
-
-        return $porPersona
-            ->map(fn (Collection $eventos, $personalId) => sprintf(
-                '%s sigue figurando con %d documento(s) en la mano. Transferilos o registrá su recepción.',
-                $eventos->first()->destino?->nombre ?? 'Esa persona',
-                $eventos->count(),
-            ))
-            ->values()
-            ->all();
     }
 }

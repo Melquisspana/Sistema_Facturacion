@@ -22,6 +22,81 @@
 
             <x-rutas.avisos />
 
+            {{-- ============ Cobertura: qué lugares atiende la ruta ============
+                 Solo alimenta la PROPUESTA de ruta de cada sala; agregar o quitar un
+                 lugar no mueve ninguna sala. --}}
+            <div id="cobertura" class="mb-6 bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
+                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-ink-700">
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-200">Cobertura</h3>
+                        <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
+                            Departamentos completos y distritos que atiende. Con esto se propone la ruta de cada sala.
+                            @if ($ruta->frecuencia_objetivo_dias)
+                                Sale más o menos cada {{ $ruta->frecuencia_objetivo_dias }} días.
+                            @endif
+                        </p>
+                    </div>
+                    <a href="{{ route('rutas.asignacion.index', ['ruta_id' => $ruta->id]) }}"
+                       class="shrink-0 text-sm text-indigo-600 hover:underline dark:text-indigo-400">Ver salas propuestas →</a>
+                </div>
+
+                <div class="flex flex-wrap gap-2 px-5 py-4">
+                    @forelse ($coberturas as $cobertura)
+                        <span class="inline-flex items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5 text-xs font-medium {{ $cobertura->esDepartamento() ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' : 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' }}">
+                            {{ $cobertura->etiqueta() }}
+                            @can('rutas.gestionar')
+                                <form method="POST" action="{{ route('rutas.rutas.cobertura.destroy', [$ruta, $cobertura]) }}">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" title="Quitar de la cobertura" aria-label="Quitar {{ $cobertura->etiqueta() }}"
+                                            class="rounded-full px-1.5 leading-5 opacity-60 hover:bg-white/70 hover:opacity-100 dark:hover:bg-ink-700">×</button>
+                                </form>
+                            @endcan
+                        </span>
+                    @empty
+                        <p class="text-sm text-gray-500 dark:text-paper-400">Todavía no cubre ningún lugar.</p>
+                    @endforelse
+                </div>
+
+                @can('rutas.gestionar')
+                    <div class="grid grid-cols-1 gap-4 border-t border-gray-100 px-5 py-4 sm:grid-cols-2 dark:border-ink-700">
+                        <form method="POST" action="{{ route('rutas.rutas.cobertura.store', $ruta) }}" class="flex items-end gap-2">
+                            @csrf
+                            <div class="min-w-0 flex-1">
+                                <label for="departamento_id" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Departamento completo</label>
+                                <select id="departamento_id" name="departamento_id" required
+                                        class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                    <option value="">Elegí…</option>
+                                    @foreach ($departamentos as $departamento)
+                                        <option value="{{ $departamento->id }}">{{ $departamento->nombre }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <button class="shrink-0 rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Agregar</button>
+                        </form>
+
+                        <form method="POST" action="{{ route('rutas.rutas.cobertura.store', $ruta) }}" class="flex items-end gap-2">
+                            @csrf
+                            <div class="min-w-0 flex-1">
+                                <label for="distrito_id" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Solo un distrito (pueblo)</label>
+                                <select id="distrito_id" name="distrito_id" required
+                                        class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                    <option value="">Elegí…</option>
+                                    @foreach ($distritos as $nombreDepartamento => $lista)
+                                        <optgroup label="{{ $nombreDepartamento }}">
+                                            @foreach ($lista as $distrito)
+                                                <option value="{{ $distrito->id }}">{{ $distrito->nombre }}</option>
+                                            @endforeach
+                                        </optgroup>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <button class="shrink-0 rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Agregar</button>
+                        </form>
+                    </div>
+                @endcan
+            </div>
+
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
                 {{-- ============ Columna izquierda: lo que YA está en la ruta ============ --}}
@@ -44,6 +119,15 @@
                                             <span class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-ink-700 dark:text-paper-400">sala inactiva</span>
                                         @endunless
                                     </p>
+                                    @php $visita = $ultimasVisitas[$sala->id] ?? null; @endphp
+                                    <p class="text-xs {{ $visita ? 'text-gray-500 dark:text-paper-400' : 'text-gray-400 dark:text-paper-500' }}">
+                                        @if ($visita)
+                                            Última visita {{ $visita->translatedFormat('d M') }}
+                                            ({{ $visita->isToday() ? 'hoy' : 'hace '.(int) $visita->diffInDays(today()).' '.((int) $visita->diffInDays(today()) === 1 ? 'día' : 'días') }})
+                                        @else
+                                            Sin visitas registradas
+                                        @endif
+                                    </p>
                                 </div>
                                 @can('rutas.gestionar')
                                     <form method="POST" action="{{ route('rutas.rutas.salas.destroy', [$ruta, $sala]) }}">
@@ -65,107 +149,25 @@
                     </div>
                 </div>
 
-                {{-- ============ Columna derecha: buscar y asignar ============ --}}
+                {{-- ============ Columna derecha: buscar y agregar ============ --}}
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
                     <div class="border-b border-gray-100 px-5 py-4 dark:border-ink-700">
                         <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-200">Agregar salas</h3>
                         <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
-                            Buscá por nombre o código. Nada se asigna solo: siempre hay que confirmarlo acá.
+                            Escribí y aparecen: por nombre, código, cliente o pueblo. Si una ya está en otra ruta, agregarla la mueve acá.
                         </p>
                     </div>
-
-                    {{-- El buscador NO vuelca las 135 sucursales de golpe: hasta que
-                         no haya un criterio, no se lista nada. --}}
-                    <form method="GET" class="flex flex-wrap items-end gap-3 border-b border-gray-100 px-5 py-4 dark:border-ink-700">
-                        <div class="min-w-0 flex-1">
-                            <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Buscar sala</label>
-                            <input type="text" name="q" value="{{ request('q') }}" placeholder="Nombre o código…"
-                                   class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Cliente</label>
-                            <select name="cliente_id" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                                <option value="">Todos</option>
-                                @foreach ($clientes as $cliente)
-                                    <option value="{{ $cliente->id }}" @selected(request('cliente_id') == $cliente->id)>{{ $cliente->nombre }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Buscar</button>
-                        @if ($busco)
-                            <a href="{{ route('rutas.rutas.show', $ruta) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
-                        @endif
-                        <label class="flex w-full items-center gap-2 pt-1">
-                            <input type="checkbox" name="incluir_inactivas" value="1" @checked(request()->boolean('incluir_inactivas'))
-                                   class="rounded border-gray-300 text-indigo-600 dark:border-ink-600 dark:bg-ink-800">
-                            <span class="text-xs text-gray-500 dark:text-paper-400">Incluir salas inactivas</span>
-                        </label>
-                    </form>
-
-                    @if (! $busco)
-                        <p class="px-5 py-10 text-center text-sm text-gray-500 dark:text-paper-400">
-                            Escribí algo para buscar.<br>
-                            <span class="text-xs text-gray-400 dark:text-paper-500">
-                                O <a href="{{ route('rutas.rutas.show', [$ruta, 'todas' => 1]) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">ver todas las salas</a> página por página.
-                            </span>
-                        </p>
-                    @elseif ($candidatas->isEmpty())
-                        <p class="px-5 py-10 text-center text-sm text-gray-500 dark:text-paper-400">
-                            Ninguna sala coincide con la búsqueda.
-                        </p>
-                    @else
+                    <div class="px-5 py-4">
                         @can('rutas.gestionar')
-                            <form method="POST" action="{{ route('rutas.rutas.salas.store', $ruta) }}">
-                                @csrf
+                            <x-rutas.buscador-salas :ruta="$ruta" />
+                        @else
+                            <p class="text-sm text-gray-500 dark:text-paper-400">No tenés permiso para cambiar las salas de la ruta.</p>
                         @endcan
-
-                        <div class="max-h-[24rem] overflow-y-auto divide-y divide-gray-100 dark:divide-ink-700">
-                            @foreach ($candidatas as $sala)
-                                <label class="flex cursor-pointer items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-ink-700">
-                                    @can('rutas.gestionar')
-                                        <input type="checkbox" name="sucursales[]" value="{{ $sala->id }}"
-                                               class="shrink-0 rounded border-gray-300 text-indigo-600 dark:border-ink-600 dark:bg-ink-800">
-                                    @endcan
-                                    <span class="min-w-0 flex-1">
-                                        <span class="block truncate text-sm font-medium text-gray-800 dark:text-paper-100">{{ $sala->nombre }}</span>
-                                        <span class="block truncate text-xs text-gray-400 dark:text-paper-500">
-                                            {{ $sala->codigo ? $sala->codigo.' · ' : '' }}{{ $sala->cliente?->nombre }}
-                                            @unless ($sala->activo)
-                                                <span class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-ink-700 dark:text-paper-400">inactiva</span>
-                                            @endunless
-                                        </span>
-                                    </span>
-                                    {{-- Que ya tenga otra ruta se avisa ACÁ y no después:
-                                         asignarla la mueve, y eso debe verse antes de hacerlo. --}}
-                                    @if ($sala->ruta)
-                                        <span class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
-                                              title="Asignarla acá la mueve de ruta">
-                                            {{ $sala->ruta->nombre }}
-                                        </span>
-                                    @endif
-                                </label>
-                            @endforeach
-                        </div>
-
-                        @can('rutas.gestionar')
-                                <div class="flex items-center justify-between gap-3 border-t border-gray-100 px-5 py-4 dark:border-ink-700">
-                                    <p class="text-xs text-gray-400 dark:text-paper-500">
-                                        Marcá las que quieras y confirmá. Las que ya tienen ruta se moverán a «{{ $ruta->nombre }}».
-                                    </p>
-                                    <button class="shrink-0 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-                                        Asignar a la ruta
-                                    </button>
-                                </div>
-                            </form>
-                        @endcan
-
-                        <div class="px-5 pb-4">{{ $candidatas->links() }}</div>
-                    @endif
+                    </div>
                 </div>
             </div>
 
-            {{-- Salidas de esta ruta. Todavía sin documentos: el bloque siguiente
-                 traerá el seguimiento de CCF/albaranes. --}}
+            {{-- Salidas de esta ruta. --}}
             <div class="mt-8">
                 <div class="mb-3 flex items-center justify-between">
                     <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-200">Salidas de esta ruta</h3>

@@ -57,7 +57,7 @@ class SalidaRutaTest extends TestCase
 
     // ------------------------------------------------------------------- alta
 
-    public function test_crea_una_salida_planificada_con_su_creador(): void
+    public function test_crea_una_salida_en_curso_con_su_creador(): void
     {
         $admin = $this->admin();
         $ruta = $this->ruta();
@@ -66,8 +66,8 @@ class SalidaRutaTest extends TestCase
         $salida = $this->crearSalida($admin, $ruta, [$carlos->id], ['observaciones' => 'Llevar talonarios']);
 
         $this->assertSame($ruta->id, $salida->ruta_id);
-        // Nace planificada aunque la fecha sea hoy: iniciarla es un acto aparte.
-        $this->assertSame(EstadoSalidaRuta::Planificada, $salida->estado);
+        // «Salir a esta ruta» es salir ahora: nace en curso (27/09/2026).
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->estado);
         $this->assertSame($admin->id, $salida->created_by);
         $this->assertNull($salida->fecha_fin_real);
         $this->assertSame('Llevar talonarios', $salida->observaciones);
@@ -86,6 +86,30 @@ class SalidaRutaTest extends TestCase
             [$carlos->id, $jose->id, $ana->id],
             $salida->personal->pluck('id')->all(),
         );
+    }
+
+    /**
+     * Como lo manda el formulario: ids como texto. Antes rechazaba al responsable; desde el
+     * 27/09/2026 no hay responsable y lo que llegue en ese campo se ignora.
+     */
+    public function test_dos_vendedores_con_los_ids_como_texto_y_sin_responsable(): void
+    {
+        $admin = $this->admin();
+        $carlos = $this->vendedor('Carlos');
+        $jose = $this->vendedor('José');
+
+        $this->actingAs($admin)
+            ->post(route('rutas.salidas.store'), [
+                'ruta_id' => (string) $this->ruta()->id,
+                'fecha_inicio' => '2026-08-14',
+                'personal' => [(string) $carlos->id, (string) $jose->id],
+                'responsable_id' => (string) $jose->id,
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $this->assertSame(2, SalidaRuta::sole()->participantes()->count());
+        $this->assertNull(SalidaRuta::sole()->responsable);
     }
 
     public function test_exige_al_menos_un_participante(): void
@@ -159,7 +183,8 @@ class SalidaRutaTest extends TestCase
     public function test_no_se_puede_finalizar_una_salida_que_nunca_inicio(): void
     {
         $admin = $this->admin();
-        $salida = $this->crearSalida($admin, $this->ruta(), [$this->vendedor('Carlos')->id]);
+        // Las planificadas ya no se crean desde la pantalla, pero las viejas existen.
+        $salida = SalidaRuta::create(['ruta_id' => $this->ruta()->id, 'fecha_inicio' => '2026-08-14', 'estado' => EstadoSalidaRuta::Planificada]);
 
         $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida))
             ->assertRedirect()
@@ -237,19 +262,17 @@ class SalidaRutaTest extends TestCase
             'fecha_inicio' => '2026-08-14',
             'personal' => [$carlos->id, $jose->id],
         ]);
-        $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida));
         $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida));
 
         $descripciones = Activity::where('log_name', 'salida_ruta')->pluck('description');
 
         $this->assertContains('definió los participantes de la salida', $descripciones);
         $this->assertContains('cambió los participantes de la salida', $descripciones);
-        $this->assertContains('inició la salida', $descripciones);
         $this->assertContains('finalizó la salida', $descripciones);
 
-        $inicio = Activity::where('description', 'inició la salida')->sole();
-        $this->assertSame('planificada', $inicio->properties['estado_anterior']);
-        $this->assertSame('en_curso', $inicio->properties['estado_nuevo']);
+        $fin = Activity::where('description', 'finalizó la salida')->sole();
+        $this->assertSame('en_curso', $fin->properties['estado_anterior']);
+        $this->assertSame('finalizada', $fin->properties['estado_nuevo']);
     }
 
     public function test_editar_sin_cambiar_la_gente_no_ensucia_la_auditoria(): void
@@ -281,10 +304,8 @@ class SalidaRutaTest extends TestCase
             ->assertSee('En curso')
             ->assertSee('Carlos')
             ->assertSee('José')
-            // El resumen ya no es provisional: son datos reales. Una salida recién
-            // iniciada no tiene documentos todavía, y eso es lo que dice.
-            ->assertSee('Documentos de la salida')
-            ->assertDontSee('Próximo bloque')
-            ->assertSee('Esta salida todavía no tiene documentos.');
+            // La custodia del papel se retiró (26/09/2026).
+            ->assertDontSee('documentación física')
+            ->assertDontSee('Marcar documentación recibida');
     }
 }

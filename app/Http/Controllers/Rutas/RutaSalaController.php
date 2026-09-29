@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Rutas;
 use App\Http\Controllers\Controller;
 use App\Models\ClienteSucursal;
 use App\Models\Ruta;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -28,6 +29,42 @@ class RutaSalaController extends Controller
      * detalle deja marcar los resultados de la página, y obligar a un POST por
      * sala haría el trabajo interminable con 135 sucursales.
      */
+    /**
+     * Buscador instantáneo de salas: por nombre, código, cliente o pueblo. Devuelve también
+     * en qué ruta está cada una, para que agregarla a otra sea una decisión a la vista.
+     * Solo consulta; agregar sigue siendo {@see store()}.
+     */
+    public function buscar(Request $request): JsonResponse
+    {
+        $texto = trim((string) $request->string('q'));
+
+        if (mb_strlen($texto) < 2) {
+            return response()->json([]);
+        }
+
+        $like = '%'.$texto.'%';
+
+        $salas = ClienteSucursal::query()
+            ->where('activo', true)
+            ->where(fn ($q) => $q
+                ->where('nombre', 'like', $like)
+                ->orWhere('codigo', 'like', $like)
+                ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', $like))
+                ->orWhereHas('distrito', fn ($d) => $d->where('nombre', 'like', $like)))
+            ->with(['cliente:id,nombre', 'distrito:id,nombre', 'ruta:id,nombre'])
+            ->orderBy('nombre')
+            ->limit(20)
+            ->get();
+
+        return response()->json($salas->map(fn (ClienteSucursal $s) => [
+            'id' => $s->id,
+            'nombre' => $s->nombre,
+            'detalle' => collect([$s->codigo, $s->distrito?->nombre, $s->cliente?->nombre])->filter()->implode(' · '),
+            'ruta_id' => $s->ruta_id,
+            'ruta' => $s->ruta?->nombre,
+        ])->values());
+    }
+
     public function store(Request $request, Ruta $ruta): RedirectResponse
     {
         $datos = $request->validate([

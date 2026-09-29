@@ -3,7 +3,6 @@
 namespace App\Services\Rutas;
 
 use App\Models\PpqAlbaran;
-use App\Models\SalidaRutaDocumento;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -150,19 +149,5 @@ class AlbaranLocalizador
         }
 
         return $porOrden[$orden] ?? ResolucionAlbaran::vacia();
-    }
-
-    /**
-     * Índices ya armados a partir de una colección de documentos de salida.
-     *
-     * @param  Collection<int, SalidaRutaDocumento>  $documentos
-     * @return array{0: array<int, ResolucionAlbaran>, 1: array<string, ResolucionAlbaran>}
-     */
-    public function paraDocumentos(Collection $documentos): array
-    {
-        return $this->indices(
-            $documentos->map(fn ($d) => $d->dte_id)->all(),
-            $documentos->map(fn ($d) => $d->orden())->all(),
-        );
     }
 }

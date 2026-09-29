@@ -1,7 +1,5 @@
 <?php
 
-use App\Enums\EstadoCustodia;
-use App\Services\Rutas\AsignadorDocumentos;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;

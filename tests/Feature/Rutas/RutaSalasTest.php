@@ -192,32 +192,57 @@ class RutaSalasTest extends TestCase
 
     // ------------------------------------------------------------- buscador
 
-    public function test_el_detalle_no_lista_salas_hasta_que_se_busca(): void
+    // ------------------------------------------------------ buscador instantáneo
+
+    public function test_el_buscador_pide_al_menos_dos_letras(): void
     {
-        $ruta = Ruta::create(['nombre' => 'San Miguel']);
         $this->sala($this->cliente(), 'Sala sin asignar');
 
-        // Sin criterio no se vuelcan las 135 sucursales.
-        $sinBuscar = $this->actingAs($this->admin())->get(route('rutas.rutas.show', $ruta));
-        $sinBuscar->assertOk();
-        $this->assertNull($sinBuscar->viewData('candidatas'));
-
-        // Con criterio sí aparecen.
-        $buscando = $this->actingAs($this->admin())->get(route('rutas.rutas.show', [$ruta, 'q' => 'Sala']));
-        $this->assertNotNull($buscando->viewData('candidatas'));
-        $this->assertSame(1, $buscando->viewData('candidatas')->total());
+        $this->actingAs($this->admin())
+            ->getJson(route('rutas.salas.buscar', ['q' => 'S']))
+            ->assertOk()
+            ->assertExactJson([]);
     }
 
-    public function test_el_buscador_no_ofrece_las_salas_que_ya_estan_en_la_ruta(): void
+    /** Por nombre, cliente o pueblo; y dice en qué ruta está cada una. */
+    public function test_el_buscador_encuentra_por_nombre_cliente_o_pueblo_y_dice_su_ruta(): void
     {
-        $ruta = Ruta::create(['nombre' => 'San Miguel']);
+        $ruta = Ruta::create(['nombre' => 'Puerto']);
         $cliente = $this->cliente();
-        $this->sala($cliente, 'Sala ya asignada', ['ruta_id' => $ruta->id]);
-        $libre = $this->sala($cliente, 'Sala libre');
+        $enRuta = $this->sala($cliente, 'Selectos El Faro', ['ruta_id' => $ruta->id]);
+        $libre = $this->sala($cliente, 'Selectos Las Palmas');
+        $this->sala($cliente, 'Selectos cerrada', ['activo' => false]);
 
-        $respuesta = $this->actingAs($this->admin())->get(route('rutas.rutas.show', [$ruta, 'q' => 'Sala']));
+        $respuesta = $this->actingAs($this->admin())
+            ->getJson(route('rutas.salas.buscar', ['q' => 'selectos']))
+            ->assertOk()
+            ->assertJsonCount(2);
 
-        $ids = $respuesta->viewData('candidatas')->pluck('id')->all();
-        $this->assertSame([$libre->id], $ids);
+        $this->assertSame([$enRuta->id, $libre->id], array_column($respuesta->json(), 'id'));
+        $this->assertSame('Puerto', $respuesta->json('0.ruta'));
+        $this->assertNull($respuesta->json('1.ruta'));
+
+        // Por el nombre del cliente también.
+        $this->actingAs($this->admin())
+            ->getJson(route('rutas.salas.buscar', ['q' => $cliente->nombre]))
+            ->assertJsonCount(2);
+    }
+
+    public function test_el_buscador_exige_poder_ver_rutas(): void
+    {
+        $this->actingAs(User::factory()->create()->assignRole('contabilidad'))
+            ->getJson(route('rutas.salas.buscar', ['q' => 'Sala']))
+            ->assertForbidden();
+    }
+
+    public function test_la_pagina_de_la_ruta_trae_el_buscador(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Puerto']);
+
+        $this->actingAs($this->admin())
+            ->get(route('rutas.rutas.show', $ruta))
+            ->assertOk()
+            ->assertSee('Buscar sala por nombre, cliente o pueblo', false)
+            ->assertSee(route('rutas.salas.buscar'), false);
     }
 }

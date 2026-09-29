@@ -23,8 +23,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * dependencias. Este modelo nunca lee marcaciones ni exige que el módulo de Asistencia esté
  * encendido.
  *
- * No se borra: se desactiva. Alguien con historial de custodia no puede desaparecer sin
- * llevarse la respuesta a «¿quién tenía ese papel?».
+ * No se borra: se desactiva. Alguien que ya fue en salidas no puede desaparecer sin
+ * llevarse el historial de quién fue a dónde.
  */
 class PersonalRuta extends Model
 {
@@ -108,12 +108,6 @@ class PersonalRuta extends Model
         return $this->belongsToMany(SalidaRuta::class, 'salida_ruta_participantes', 'rutas_personal_id', 'salida_ruta_id')
             ->withPivot(['rol'])
             ->withTimestamps();
-    }
-
-    /** Eventos en los que ESTA persona quedó con el documento en la mano. */
-    public function custodiasRecibidas(): HasMany
-    {
-        return $this->hasMany(CustodiaDocumentoEvento::class, 'destino_personal_id');
     }
 
     // ---------------------------------------------------------------- lectura

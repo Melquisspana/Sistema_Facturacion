@@ -392,15 +392,11 @@ class ResumenConfiguracion
         // ninguna decisión de configuración.
         return new TarjetaResumen(
             clave: 'rutas',
-            titulo: 'Rutas / Cobros',
+            titulo: 'Rutas',
             estado: EstadoTarjeta::Activo,
             detalle: 'Módulo disponible; el acceso lo gobiernan los permisos de cada rol.',
-            lineas: [
-                'Serie con asignación automática: '.(string) config('rutas.punto_venta_automatico', 'sin definir'),
-                'Ventana de candidatos: '.(int) config('rutas.candidatos_dias_antes').' / '
-                    .(int) config('rutas.candidatos_dias_despues').' días',
-            ],
-            fuente: 'Archivo de configuración / .env',
+            lineas: [],
+            fuente: 'Permisos por rol',
         );
     }
 

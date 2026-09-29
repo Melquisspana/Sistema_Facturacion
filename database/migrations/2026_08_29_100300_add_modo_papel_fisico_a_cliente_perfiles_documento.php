@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\ModoPapelFisico;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -54,7 +53,7 @@ return new class extends Migration
     {
         Schema::table('cliente_perfiles_documento', function (Blueprint $table) {
             $table->string('modo_papel_fisico', 20)
-                ->default(ModoPapelFisico::NoRequerir->value)
+                ->default('no_requerir')
                 ->after('exige_albaran_en_nc')
                 ->comment('ModoPapelFisico: bloquear | advertir | no_requerir. Por defecto no_requerir = comportamiento histórico');
         });

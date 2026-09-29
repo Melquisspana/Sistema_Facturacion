@@ -1,56 +1,36 @@
-{{-- Sidebar del área Cobros (nombre técnico «rutas»: prefijo /rutas-cobros,
-     permisos rutas.*, App\Enums\AreaSistema::Rutas). Deliberadamente SIN enlaces
-     de Facturación ni de Planta: quien trabaja cobros no navega documentos
-     fiscales desde acá.
+{{-- Sidebar del área Rutas (nombre técnico «rutas»: prefijo /rutas, permisos rutas.*,
+     App\Enums\AreaSistema::Rutas). Deliberadamente SIN enlaces de Facturación ni de
+     Planta.
 
-     La única excepción es Pronto pago, que ES cobro aunque su ruta viva bajo
-     /ppq (área Facturación). Se dibuja acá porque es donde el usuario lo busca;
-     al entrar, la sidebar cambia sola a la de Facturación, que presenta el mismo
-     bloque con el mismo rótulo. No se movió ninguna ruta ni permiso.
+     La única excepción es Cobros Calleja, cuyo seguimiento de CCF vive en Facturación
+     (/cobros, /ppq): se dibuja acá porque las entregas y el cobro van de la mano; al
+     entrar, la sidebar cambia sola a la de Facturación. No se movió ninguna ruta ni
+     permiso.
 
      Ocultar no autoriza: cada grupo de rutas lleva su propio middleware. --}}
 <nav class="space-y-6 px-3 py-5">
 
-    <x-sidebar-group titulo="Cobros" icono="rutas">
-        <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard')">Resumen</x-sidebar-link>
-        @can('rutas.custodia.ver')
-            <x-sidebar-link :href="route('rutas.excepciones.index')" :active="request()->routeIs('rutas.excepciones.*')">Excepciones</x-sidebar-link>
-        @endcan
+    {{-- Tres puertas y nada más (el usuario pidió simple, 27/09/2026): el día a día, lo
+         que ya pasó y lo que se configura de vez en cuando. Asignación de salas y
+         vendedores viven dentro de «Configurar rutas». --}}
+    <x-sidebar-group titulo="Rutas" icono="rutas">
+        <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard')">Rutas</x-sidebar-link>
+        <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas anteriores</x-sidebar-link>
+        <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*', 'rutas.asignacion.*', 'rutas.personal.*')">Configurar rutas</x-sidebar-link>
     </x-sidebar-group>
 
-    {{-- Operación. Salidas va primero porque es lo que se mira todos los días; el
-         catálogo de rutas se toca de vez en cuando. La bandeja cruza todas las
-         salidas: es donde se contesta «qué me falta cobrar» sin abrir viaje por
-         viaje, y por eso va pegada a Salidas.
-
-         Recepción de CCF va con ellas —es operación diaria de oficina— y lleva su
-         propio permiso: quien recibe el papel no es quien lo llevó. --}}
-    <x-sidebar-group titulo="Operación" icono="operacion" clave="rutas-operacion"
-                     :activo="request()->routeIs('rutas.salidas.*', 'rutas.documentos.*', 'rutas.rutas.*', 'rutas.recepcion.*', 'rutas.personal.*')">
-        <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas</x-sidebar-link>
-        <x-sidebar-link :href="route('rutas.documentos.index')" :active="request()->routeIs('rutas.documentos.*')">Documentos por cobrar</x-sidebar-link>
-        @can('rutas.custodia.ver')
-            <x-sidebar-link :href="route('rutas.recepcion.index')" :active="request()->routeIs('rutas.recepcion.*')">Recepción de CCF</x-sidebar-link>
-        @endcan
-        @can('rutas.personal.ver')
-            <x-sidebar-link :href="route('rutas.personal.index')" :active="request()->routeIs('rutas.personal.*')">Personal operativo</x-sidebar-link>
-        @endcan
-        <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*')">Rutas</x-sidebar-link>
-    </x-sidebar-group>
-
-    {{-- Pronto pago: mismo permiso de siempre (ppq.ver). Se comprueba aparte del
-         permiso del área porque son dos puertas distintas: hoy solo el administrador
-         tiene rutas.ver y también ppq.ver, pero el enlace no debe aparecer para
-         quien no pueda entrar.
+    {{-- Cobros Calleja: mismo permiso de siempre (ppq.ver). Se comprueba aparte del
+         permiso del área porque son dos puertas distintas: el enlace no debe aparecer
+         para quien no pueda entrar.
 
          El rótulo es el MISMO que en la barra de Facturación, y a propósito: es el
          mismo módulo visto desde otra área, y llamarlo de dos maneras distintas
          obligaba al usuario a deducir que hablaban de lo mismo. Los nombres técnicos
          —permiso ppq.ver, prefijo /ppq, clave rutas-ppq— no se tocan. --}}
     @can('ppq.ver')
-        <x-sidebar-group titulo="Pronto pago" icono="ppq" clave="rutas-ppq" :activo="request()->routeIs('ppq.*')">
-            <x-sidebar-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index', 'ppq.albaranes_por_fecha')">Buscar CCF / NC</x-sidebar-link>
-            <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
+        <x-sidebar-group titulo="Cobros Calleja" icono="ppq" clave="rutas-ppq" :activo="request()->routeIs('ppq.*', 'cobros.*')">
+            <x-sidebar-link :href="route('cobros.index')" :active="request()->routeIs('cobros.*', 'ppq.index', 'ppq.albaranes_por_fecha')">Seguimiento de CCF</x-sidebar-link>
+            <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial de PPQ</x-sidebar-link>
         </x-sidebar-group>
     @endcan
 </nav>

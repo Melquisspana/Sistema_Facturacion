@@ -3,15 +3,15 @@
 namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
-use App\Enums\MotivoRevisionDocumento;
+use App\Enums\MotivoNoEntrega;
+use App\Enums\ResultadoEntrega;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\SalidaRutaRequest;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
-use App\Services\Rutas\Custodia;
+use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
-use App\Services\Rutas\SeguimientoDocumentos;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -22,10 +22,6 @@ use Illuminate\View\View;
  * Los cambios de estado NO son ediciones de un campo: son actos con nombre propio
  * (iniciar, finalizar, cancelar), cada uno con su ruta, su permiso y su registro
  * de auditoría. El modelo valida la transición; acá se traduce a mensaje.
- *
- * Todavía SIN documentos: el conteo que muestra el detalle es 0 fijo hasta que
- * exista la relación con CCF/albaranes. Se muestra igual para que la pantalla ya
- * tenga su forma definitiva, pero no se inventa ningún dato.
  */
 class SalidaRutaController extends Controller
 {
@@ -33,9 +29,10 @@ class SalidaRutaController extends Controller
     {
         $salidas = SalidaRuta::query()
             ->with(['ruta:id,nombre', 'personal:id,nombre'])
-            // El conteo de documentos es la pregunta del listado; se resuelve en la
-            // misma consulta y no fila por fila desde la vista.
-            ->withCount('documentos')
+            ->withCount([
+                'entregas',
+                'entregas as entregados_count' => fn ($q) => $q->where('resultado', ResultadoEntrega::Entregado->value),
+            ])
             ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
             ->when($request->filled('ruta_id'), fn ($q) => $q->where('ruta_id', $request->integer('ruta_id')))
             // Lo más reciente primero: el listado se abre para ver qué está pasando
@@ -57,65 +54,66 @@ class SalidaRutaController extends Controller
         return view('rutas.salidas.create', $this->datosFormulario());
     }
 
-    public function store(SalidaRutaRequest $request, ParticipantesSalida $participantes): RedirectResponse
+    public function store(SalidaRutaRequest $request, ParticipantesSalida $participantes, EntregasCcf $entregas): RedirectResponse
     {
         $datos = $request->validated();
 
         $salida = SalidaRuta::create([
             'ruta_id' => $datos['ruta_id'],
-            'fecha_inicio' => $datos['fecha_inicio'],
+            'fecha_inicio' => $datos['fecha_inicio'] ?? today()->toDateString(),
             'fecha_fin_estimada' => $datos['fecha_fin_estimada'] ?? null,
             'observaciones' => $datos['observaciones'] ?? null,
-            // Nace PLANIFICADA aunque la fecha sea hoy: hasta que alguien confirme
-            // que salió, la fecha de inicio es una intención. Iniciarla es un clic.
-            'estado' => EstadoSalidaRuta::Planificada,
+            // Nace EN CURSO: «Salir a esta ruta» es salir ahora (el usuario quitó el paso
+            // de planificar el 27/09/2026). Las planificadas viejas se siguen iniciando.
+            'estado' => EstadoSalidaRuta::EnCurso,
             'created_by' => $request->user()?->id,
         ]);
 
-        $resultado = $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null);
+        $resultado = $participantes->sincronizar($salida, $datos['personal'], null);
         $this->auditar($request, $salida, 'definió los participantes de la salida', [
             'participantes' => $resultado['agregados'],
             'responsable' => $resultado['responsable'],
         ]);
 
+        // Los CCF pendientes de la ruta se cargan solos: es lo que la salida va a llevar.
+        $cargados = $entregas->cargarPendientes($salida->load('ruta'), $request->user());
+
         return redirect()
             ->route('rutas.salidas.show', $salida)
-            ->with('status', 'Salida creada como planificada. Cuando arranque, marcala como iniciada.');
+            ->with('status', 'Salida en camino con '.$cargados.' CCF por entregar.');
     }
 
-    /**
-     * Detalle de la salida con su seguimiento documental.
-     *
-     * Los contadores y la lista salen de los MISMOS objetos ({@see SeguimientoDocumentos}),
-     * así que no pueden contradecirse. Entrega y nota de crédito no se guardan en
-     * ningún lado: se resuelven acá, en el momento, desde `ppq_albaranes` y `dtes`.
-     */
-    public function show(SalidaRuta $salida, SeguimientoDocumentos $seguimiento, Custodia $custodia): View
+    public function show(SalidaRuta $salida, EntregasCcf $servicio): View
     {
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
-        $documentos = $seguimiento->documentosDe($salida);
+        $entregas = $salida->entregas()
+            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre'])
+            ->get();
+
+        $resoluciones = $servicio->resolucionesAlbaran($entregas);
+
+        // Quién puede figurar como «entregó»: los que van, activos. Se preselecciona al
+        // responsable o, si va una sola persona, a ella.
+        $participantes = $salida->participantes
+            ->filter(fn ($p) => $p->personal?->activo)
+            ->sortBy(fn ($p) => $p->personal->nombre)
+            ->values();
+        $preseleccion = $salida->participantes->first(fn ($p) => $p->esResponsable())?->rutas_personal_id
+            ?? ($participantes->count() === 1 ? $participantes->first()->rutas_personal_id : null);
 
         return view('rutas.salidas.show', [
             'salida' => $salida,
-            'documentos' => $documentos,
-            'resumen' => $seguimiento->resumen($documentos),
-            // A quién se le puede dar un papel en esta salida: los que van y siguen activos.
-            // Sale de acá y no de la vista para que el selector no pueda ofrecer a nadie que
-            // el servicio vaya a rechazar después.
-            'participantes' => $salida->participantes
-                ->filter(fn ($p) => $p->personal?->activo)
-                ->sortBy(fn ($p) => $p->personal->nombre)
-                ->values(),
-            // La línea de tiempo de todos los documentos, en una consulta.
-            'historiales' => $custodia->historialesDe($documentos->pluck('id')->all()),
-            // Destinos posibles para mover un documento: otras salidas abiertas.
-            'destinos' => SalidaRuta::abiertas()
-                ->whereKeyNot($salida->id)
-                ->with('ruta:id,nombre')
-                ->orderByDesc('fecha_inicio')
-                ->get(),
-            'motivos' => MotivoRevisionDocumento::cases(),
+            'porSala' => $entregas
+                ->sortBy(fn ($e) => [$e->sala?->nombre ?? '', $e->dte?->numero_control ?? ''])
+                ->groupBy('cliente_sucursal_id'),
+            'resoluciones' => $resoluciones,
+            'resumen' => $servicio->resumen($entregas, $resoluciones),
+            'participantes' => $participantes,
+            'preseleccion' => $preseleccion,
+            'motivos' => MotivoNoEntrega::opciones(),
+            'abierta' => ! $salida->estado->esTerminal(),
+            'registrable' => in_array($salida->estado, [EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada], true),
         ]);
     }
 
@@ -141,7 +139,7 @@ class SalidaRutaController extends Controller
             'observaciones' => $datos['observaciones'] ?? null,
         ]);
 
-        $resultado = $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null);
+        $resultado = $participantes->sincronizar($salida, $datos['personal'], null);
 
         // Solo se audita si de verdad cambió la gente, para que el historial no se llene de
         // «cambió los participantes» vacíos.
@@ -153,15 +151,9 @@ class SalidaRutaController extends Controller
             ]);
         }
 
-        $respuesta = redirect()
+        return redirect()
             ->route('rutas.salidas.show', $salida)
             ->with('status', 'Salida actualizada.');
-
-        // Quitar a alguien no le saca el papel de la mano: si quedó con documentos, se
-        // avisa para que alguien los transfiera en vez de dejar la punta suelta.
-        return $resultado['advertencias'] === []
-            ? $respuesta
-            : $respuesta->with('error', implode(' ', $resultado['advertencias']));
     }
 
     // ------------------------------------------------------------- transiciones

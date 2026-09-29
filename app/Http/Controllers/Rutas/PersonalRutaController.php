@@ -6,12 +6,9 @@ use App\Enums\FuncionPersonalRuta;
 use App\Http\Controllers\Controller;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
-use App\Models\SalidaRutaDocumento;
 use App\Models\User;
-use App\Services\Rutas\Custodia;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -19,8 +16,8 @@ use Illuminate\View\View;
 /**
  * Catálogo del personal operativo: quién sale a vender, repartir, cobrar o quedar a cargo.
  *
- * Sin `destroy`, igual que las rutas: una persona con historial de custodia no se borra
- * —se llevaría por delante la respuesta a «¿quién tenía ese papel?»— sino que se desactiva.
+ * Sin `destroy`, igual que las rutas: una persona que ya fue en salidas no se borra —se
+ * llevaría por delante el historial de quién fue a dónde— sino que se desactiva.
  *
  * Los dos enlaces opcionales (usuario del sistema y empleado de Asistencia) son punteros de
  * IDENTIDAD para no duplicar a la misma persona, no dependencias: se pueden dejar vacíos y
@@ -76,12 +73,17 @@ class PersonalRutaController extends Controller
             return $persona;
         });
 
+        // Desde «Configurar rutas» el alta es en línea: se vuelve a la misma página.
+        if ($request->boolean('en_linea')) {
+            return back()->with('status', $personal->nombre.' quedó agregado como vendedor.');
+        }
+
         return redirect()
             ->route('rutas.personal.show', $personal)
             ->with('status', $personal->nombre.' quedó dado de alta.');
     }
 
-    public function show(PersonalRuta $personal, Custodia $custodia): View
+    public function show(PersonalRuta $personal): View
     {
         $personal->load([
             'funciones',
@@ -90,14 +92,7 @@ class PersonalRutaController extends Controller
             'participaciones.salida.ruta:id,nombre',
         ]);
 
-        // Qué papeles tiene esta persona en la mano AHORA. Es la pregunta que se le hace al
-        // catálogo el día que falta un documento, y por eso está en su ficha.
-        $enMano = $this->documentosEnManoDe($personal, $custodia);
-
-        return view('rutas.personal.show', [
-            'personal' => $personal,
-            'enMano' => $enMano,
-        ]);
+        return view('rutas.personal.show', ['personal' => $personal]);
     }
 
     public function edit(PersonalRuta $personal): View
@@ -128,68 +123,19 @@ class PersonalRutaController extends Controller
             ->with('status', 'Datos actualizados.');
     }
 
-    /**
-     * Activa o desactiva a la persona.
-     *
-     * Desactivar NO le quita los documentos que tenga en la mano: eso borraría el rastro de
-     * quién los tiene. Se avisa para que alguien los transfiera, y mientras tanto aparecen
-     * en la bandeja de excepciones.
-     */
-    public function toggleActivo(Request $request, PersonalRuta $personal, Custodia $custodia): RedirectResponse
+    /** Activa o desactiva a la persona. Su historial de salidas se conserva. */
+    public function toggleActivo(PersonalRuta $personal): RedirectResponse
     {
         $personal->update(['activo' => ! $personal->activo]);
 
         $mensaje = $personal->activo
             ? $personal->nombre.' vuelve a estar disponible para salidas.'
-            : $personal->nombre.' quedó inactivo: ya no se le asignan salidas ni documentos.';
+            : $personal->nombre.' quedó inactivo: ya no se le asignan salidas.';
 
-        $respuesta = back()->with('status', $mensaje);
-
-        if ($personal->activo) {
-            return $respuesta;
-        }
-
-        $enMano = $this->documentosEnManoDe($personal, $custodia);
-
-        return $enMano->isEmpty()
-            ? $respuesta
-            : $respuesta->with('error', sprintf(
-                '%s todavía figura con %d documento(s) físico(s) en la mano. Transferilos o registrá su recepción.',
-                $personal->nombre,
-                $enMano->count(),
-            ));
+        return back()->with('status', $mensaje);
     }
 
     // ------------------------------------------------------------------ apoyo
-
-    /**
-     * Los documentos cuyo último evento vigente los deja en manos de esta persona.
-     *
-     * Se resuelve sobre los documentos de sus salidas y no con una consulta directa a los
-     * eventos porque un evento viejo no dice dónde está el papel HOY: lo que cuenta es el
-     * último de cada documento, y esa regla vive en {@see Custodia}.
-     *
-     * @return Collection<int, SalidaRutaDocumento>
-     */
-    private function documentosEnManoDe(PersonalRuta $personal, Custodia $custodia)
-    {
-        $documentos = SalidaRutaDocumento::query()
-            ->whereIn('salida_ruta_id', $personal->participaciones()->select('salida_ruta_id'))
-            ->with(['dte:id,numero_control,total_pagar', 'salida.ruta:id,nombre'])
-            ->get();
-
-        if ($documentos->isEmpty()) {
-            return collect();
-        }
-
-        $ultimos = $custodia->ultimosVigentesDe($documentos->pluck('id')->all());
-
-        return $documentos->filter(function ($documento) use ($ultimos, $personal) {
-            $evento = $ultimos[$documento->id] ?? null;
-
-            return $evento?->tipo->dejaEnPersonal() && $evento->destino_personal_id === $personal->id;
-        })->values();
-    }
 
     /** @return array<string, mixed> */
     private function validar(Request $request, ?PersonalRuta $personal = null): array
@@ -218,7 +164,7 @@ class PersonalRutaController extends Controller
      * Deja a la persona exactamente con estas funciones.
      *
      * Borra y vuelve a insertar en vez de calcular diferencias: son cuatro filas como mucho,
-     * no llevan historial propio —el historial que importa es el de la custodia— y una
+     * no llevan historial propio —el que importa es el de las salidas— y una
      * sincronización simple no puede quedar a medias.
      *
      * @param  array<int, string>  $funciones

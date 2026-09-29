@@ -48,7 +48,7 @@
                                 <th class="py-3 px-4">Inicio</th>
                                 <th class="py-3 px-4">Regreso</th>
                                 <th class="py-3 px-4">Vendedores</th>
-                                <th class="py-3 px-4 text-center">Documentos</th>
+                                <th class="py-3 px-4 text-center">CCF entregados</th>
                                 <th class="py-3 px-4 text-center">Estado</th>
                                 <th class="py-3 px-4 text-right">Acciones</th>
                             </tr>
@@ -70,11 +70,8 @@
                                         @endif
                                     </td>
                                     <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->personal->pluck('nombre')->implode(' · ') ?: '—' }}</td>
-                                    {{-- Cuántos documentos lleva la salida. El desglose
-                                         (entregados, papel, NC) está en el detalle: en un
-                                         listado, cinco números por fila no se leen. --}}
-                                    <td class="py-3 px-4 text-center {{ $salida->documentos_count > 0 ? 'font-medium text-gray-700 dark:text-paper-200' : 'text-gray-400 dark:text-paper-500' }}">
-                                        {{ $salida->documentos_count }}
+                                    <td class="py-3 px-4 text-center tabular-nums {{ $salida->entregas_count > 0 ? 'text-gray-700 dark:text-paper-200' : 'text-gray-400 dark:text-paper-500' }}">
+                                        {{ $salida->entregados_count }} / {{ $salida->entregas_count }}
                                     </td>
                                     <td class="py-3 px-4 text-center"><x-rutas.estado-badge :estado="$salida->estado" /></td>
                                     <td class="py-3 px-4 text-right">

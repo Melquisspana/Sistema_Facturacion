@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Rutas;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\RutaRequest;
-use App\Models\Cliente;
-use App\Models\ClienteSucursal;
+use App\Models\Departamento;
+use App\Models\Distrito;
+use App\Models\PersonalRuta;
 use App\Models\Ruta;
+use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\PropuestaRutas;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
@@ -20,23 +22,33 @@ use Illuminate\View\View;
  */
 class RutaController extends Controller
 {
-    /** Resultados del buscador de salas. Suficiente para elegir sin scroll infinito. */
-    private const SALAS_POR_PAGINA = 15;
-
-    public function index(Request $request): View
+    /**
+     * «Configurar rutas»: todo lo que se toca de vez en cuando, en una sola página. Cada
+     * ruta con su frecuencia, los lugares que cubre y las salas que la cobertura le
+     * sugiere; y los vendedores. El usuario pidió menos pantallas (27/09/2026).
+     */
+    public function index(PropuestaRutas $propuestas): View
     {
-        $rutas = Ruta::query()
-            ->when($request->filled('q'), fn ($q) => $q->where('nombre', 'like', '%'.$request->string('q').'%'))
-            ->when($request->filled('activa'), fn ($q) => $q->where('activa', $request->boolean('activa')))
-            // El conteo de salas es la pregunta que se hace mirando el listado
-            // («¿esta ruta tiene salas o está vacía?»), así que se resuelve acá y
-            // no con una consulta por fila en la vista.
-            ->withCount('sucursales')
-            ->orderBy('nombre')
-            ->paginate(25)
-            ->withQueryString();
+        $clasificacion = $propuestas->clasificar();
 
-        return view('rutas.rutas.index', ['rutas' => $rutas]);
+        return view('rutas.rutas.index', [
+            'rutas' => Ruta::query()
+                ->with(['coberturas.departamento:id,nombre', 'coberturas.distrito:id,nombre,departamento_id', 'coberturas.distrito.departamento:id,nombre'])
+                ->withCount('sucursales')
+                ->orderByDesc('activa')
+                ->orderBy('nombre')
+                ->get(),
+            // Salas sin ruta que la cobertura le propone a cada ruta: ruta_id => [sala_id, …].
+            'sugeridas' => $clasificacion['proponer']
+                ->groupBy(fn ($fila) => $fila['ruta']->id)
+                ->map(fn ($filas) => $filas->map(fn ($fila) => $fila['sala']->id)->all()),
+            'sinCobertura' => $clasificacion['sinCobertura'],
+            'departamentos' => Departamento::orderBy('nombre')->get(['id', 'nombre']),
+            'distritos' => Distrito::with('departamento:id,nombre')->orderBy('nombre')->get(['id', 'nombre', 'departamento_id'])
+                ->groupBy(fn ($d) => $d->departamento?->nombre ?? '—')
+                ->sortKeys(),
+            'vendedores' => PersonalRuta::orderByDesc('activo')->orderBy('nombre')->get(['id', 'nombre', 'telefono', 'activo']),
+        ]);
     }
 
     public function create(): View
@@ -48,52 +60,42 @@ class RutaController extends Controller
     {
         $ruta = Ruta::create($request->validated());
 
+        if ($request->boolean('en_linea')) {
+            return back()->with('status', "Ruta «{$ruta->nombre}» creada. Agregale los lugares que cubre.");
+        }
+
         return redirect()
             ->route('rutas.rutas.show', $ruta)
             ->with('status', "Ruta «{$ruta->nombre}» creada.");
     }
 
     /**
-     * Detalle de la ruta: sus salas habituales y el buscador para asignar más.
-     *
-     * El buscador NO lista las 135 sucursales de golpe. Solo muestra resultados
-     * cuando hay algo que buscar o un filtro puesto, y de a
-     * {@see SALAS_POR_PAGINA}. Cada resultado indica si ya tiene otra ruta, para
-     * que reasignar sea una decisión informada y no un descubrimiento posterior.
+     * Detalle de la ruta: sus salas, su cobertura y la última visita de cada sala. Las
+     * salas se agregan con el buscador instantáneo ({@see RutaSalaController::buscar()}).
      */
-    public function show(Request $request, Ruta $ruta): View
+    public function show(Ruta $ruta, EntregasCcf $entregas): View
     {
         $asignadas = $ruta->sucursales()
             ->with('cliente:id,nombre')
             ->orderBy('nombre')
             ->get();
 
-        $busco = $request->filled('q') || $request->filled('cliente_id') || $request->boolean('todas');
-
-        $candidatas = null;
-        if ($busco) {
-            $candidatas = ClienteSucursal::query()
-                // Nunca las de esta ruta (ya están en la columna de al lado) y
-                // nunca las dadas de baja: el scope de SoftDeletes las excluye solo.
-                ->where(fn ($q) => $q->whereNull('ruta_id')->orWhere('ruta_id', '!=', $ruta->id))
-                ->when($request->filled('q'), function ($q) use ($request) {
-                    $buscar = '%'.$request->string('q').'%';
-                    $q->where(fn ($w) => $w->where('nombre', 'like', $buscar)->orWhere('codigo', 'like', $buscar));
-                })
-                ->when($request->filled('cliente_id'), fn ($q) => $q->where('cliente_id', $request->integer('cliente_id')))
-                ->when(! $request->boolean('incluir_inactivas'), fn ($q) => $q->where('activo', true))
-                ->with(['cliente:id,nombre', 'ruta:id,nombre'])
-                ->orderBy('nombre')
-                ->paginate(self::SALAS_POR_PAGINA)
-                ->withQueryString();
-        }
+        $coberturas = $ruta->coberturas()
+            ->with(['departamento:id,nombre', 'distrito:id,nombre,departamento_id', 'distrito.departamento:id,nombre'])
+            ->get()
+            // Departamentos completos primero; después los distritos, por nombre.
+            ->sortBy(fn ($c) => [$c->esDepartamento() ? 0 : 1, $c->etiqueta()])
+            ->values();
 
         return view('rutas.rutas.show', [
             'ruta' => $ruta,
+            'coberturas' => $coberturas,
+            'ultimasVisitas' => $entregas->ultimaVisitaPorSala($asignadas->pluck('id')->all()),
+            'departamentos' => Departamento::orderBy('nombre')->get(['id', 'nombre']),
+            'distritos' => Distrito::with('departamento:id,nombre')->orderBy('nombre')->get(['id', 'nombre', 'departamento_id'])
+                ->groupBy(fn ($d) => $d->departamento?->nombre ?? '—')
+                ->sortKeys(),
             'asignadas' => $asignadas,
-            'candidatas' => $candidatas,
-            'busco' => $busco,
-            'clientes' => Cliente::orderBy('nombre')->get(['id', 'nombre']),
         ]);
     }
 
@@ -105,6 +107,10 @@ class RutaController extends Controller
     public function update(RutaRequest $request, Ruta $ruta): RedirectResponse
     {
         $ruta->update($request->validated());
+
+        if ($request->boolean('en_linea')) {
+            return back()->with('status', "Ruta «{$ruta->nombre}» actualizada.");
+        }
 
         return redirect()
             ->route('rutas.rutas.show', $ruta)
