@@ -50,7 +50,7 @@
                                         @elseif (! $cliente->cliente)
                                             <span class="ms-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 align-middle">Sin vincular</span>
                                         @endif
-                                        <div class="text-xs text-gray-500">{{ $cliente->direccionFiscal() ?? $cliente->direccionEntregaBodega() ?? '—' }}</div>
+                                        <div class="text-xs text-gray-500">{{ $cliente->direccionFiscal() ?? '—' }}</div>
                                     </td>
                                     <td class="py-3 px-4 text-gray-600">{{ $cliente->fda_reg_number ?? '—' }}</td>
                                     <td class="py-3 px-4 text-gray-600">{{ $cliente->contacto ?? '—' }}</td>

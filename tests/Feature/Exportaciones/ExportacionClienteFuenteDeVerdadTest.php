@@ -80,63 +80,26 @@ class ExportacionClienteFuenteDeVerdadTest extends TestCase
             ->assertSee('100 Main St. Springfield, MD 20000 EEUU');
     }
 
-    // ---------- 3: dirección de entrega/bodega, opcional y separada ----------
+    // ---------- 3: el perfil ya no tiene dirección ni contacto propios ----------
 
-    public function test_direccion_entrega_bodega_solo_se_muestra_cuando_difiere(): void
+    /**
+     * La dirección de entrega y el contacto del embarque que quedaron guardados en
+     * perfiles viejos no se muestran: la ficha solo enseña los datos del cliente.
+     */
+    public function test_la_ficha_no_muestra_direccion_ni_contacto_viejos_del_perfil(): void
     {
-        // Caso A: idéntica a la fiscal -> no hay dirección de entrega/bodega propia.
-        $clienteA = Cliente::factory()->exportacion()->create(['direccion' => 'MISMA DIRECCION 123']);
-        $sinBodegaPropia = ExportacionCliente::create([
-            'cliente_id' => $clienteA->id, 'nombre' => 'X', 'direccion' => 'MISMA DIRECCION 123', 'activo' => true,
-        ]);
-        $this->assertNull($sinBodegaPropia->direccionEntregaBodega());
-
-        // Caso B: distinta -> es una dirección de entrega/bodega real, se expone.
-        $clienteB = Cliente::factory()->exportacion()->create(['direccion' => 'MISMA DIRECCION 123']);
-        $conBodegaPropia = ExportacionCliente::create([
-            'cliente_id' => $clienteB->id, 'nombre' => 'Y', 'direccion' => 'BODEGA DISTINTA 456', 'activo' => true,
-        ]);
-        $this->assertSame('BODEGA DISTINTA 456', $conBodegaPropia->direccionEntregaBodega());
-
-        $resp = $this->actingAs($this->usuario())
-            ->get(route('clientes.show', $clienteB))
-            ->assertOk();
-        $resp->assertSee('Dirección de entrega');
-        $resp->assertSee('BODEGA DISTINTA 456', false);
-    }
-
-    // ---------- 4: no se puede desincronizar nombre/dirección fiscal desde esta pantalla ----------
-
-    public function test_no_se_puede_desincronizar_nombre_ni_direccion_fiscal_desde_clientes_y_precios(): void
-    {
-        $clienteDte = Cliente::factory()->exportacion()->create([
-            'nombre' => 'NOMBRE LEGAL ORIGINAL', 'direccion' => 'DIRECCION FISCAL ORIGINAL',
-        ]);
-        $clienteExpo = ExportacionCliente::create([
-            'cliente_id' => $clienteDte->id, 'nombre' => 'alias original', 'direccion' => null, 'activo' => true,
+        $clienteDte = Cliente::factory()->exportacion()->create(['direccion' => 'DIRECCION FISCAL 123']);
+        ExportacionCliente::create([
+            'cliente_id' => $clienteDte->id, 'nombre' => 'Y', 'activo' => true,
+            'direccion' => 'BODEGA VIEJA 456', 'contacto' => 'contacto-viejo@ejemplo.test',
         ]);
 
-        // Intento de "editar" el perfil con valores que, si se filtraran hacia el
-        // Cliente maestro, lo desincronizarían. El formulario nuevo ni siquiera pide
-        // el nombre, así que se manda a mano para probar el caso hostil.
         $this->actingAs($this->usuario())
-            ->put(route('clientes.exportacion.update', $clienteDte), [
-                'nombre' => 'intento de cambiar el nombre legal',
-                'direccion' => 'intento de cambiar la direccion fiscal',
-            ])
-            ->assertRedirect(route('clientes.show', $clienteDte));
-
-        // El Cliente maestro es inmune: la pantalla nunca toca sus columnas.
-        $clienteDte->refresh();
-        $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteDte->nombre);
-        $this->assertSame('DIRECCION FISCAL ORIGINAL', $clienteDte->direccion);
-
-        // Y el «nombre» que viajaba en la petición se ignora: el perfil mantiene el
-        // del directorio, que es la fuente de verdad.
-        $clienteExpo->refresh();
-        $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteExpo->nombre);
-        $this->assertSame('NOMBRE LEGAL ORIGINAL', $clienteExpo->nombreLegal());
-        $this->assertSame('intento de cambiar la direccion fiscal', $clienteExpo->direccion);
+            ->get(route('clientes.show', $clienteDte))
+            ->assertOk()
+            ->assertSee('DIRECCION FISCAL 123')
+            ->assertDontSee('BODEGA VIEJA 456')
+            ->assertDontSee('contacto-viejo@ejemplo.test');
     }
 
     // ---------- 5: la FEX usa el Cliente maestro ----------

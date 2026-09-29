@@ -3,9 +3,8 @@
 
     El cliente es uno solo. Esto no es otro directorio ni otro registro paralelo:
     es la parte internacional del MISMO cliente, y por eso vive acá y no en un
-    módulo aparte. Nombre, documento, país y dirección fiscal no se repiten —se
-    leen de la ficha de arriba—; lo único que se pide es lo que el directorio no
-    guarda.
+    módulo aparte. Nombre, documento, país, dirección y contacto no se repiten —se
+    leen de la ficha de arriba—; lo único propio es la lista de precios.
 
     Se dibuja solo para clientes de tipo exportación: en un cliente nacional este
     bloque no existe y la ficha queda exactamente como estaba.
@@ -21,7 +20,7 @@
         <div>
             <h3 class="font-medium text-gray-700 dark:text-paper-100">Exportación</h3>
             <p class="text-sm text-gray-500 dark:text-paper-300">
-                Datos del embarque y lista de precios por caja. El nombre, el documento y la dirección fiscal salen de la ficha de arriba.
+                Lista de precios por caja. El nombre, el documento, la dirección y el contacto salen de la ficha de arriba.
             </p>
         </div>
         <div class="flex items-center gap-3">
@@ -44,8 +43,8 @@
 
     @if (! $perfil)
         <p class="text-sm text-gray-500 dark:text-paper-300">
-            Este cliente todavía no está habilitado para exportación. Habilitarlo no crea otro cliente: agrega su contacto de embarque
-            y su lista de precios sobre el mismo registro.
+            Este cliente todavía no está habilitado para exportación. Habilitarlo no crea otro cliente: agrega su lista de precios
+            sobre el mismo registro.
         </p>
     @else
         @unless ($perfil->activo)
@@ -66,38 +65,13 @@
             </p>
         @endif
 
-        {{-- Campos internacionales adicionales: SOLO los que el directorio no tiene. --}}
-        @if ($puedeGestionar)
-            <form method="POST" action="{{ route('clientes.exportacion.update', $cliente) }}" class="mb-6">
-                @csrf @method('PUT')
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                        <label for="exp_contacto" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Contacto del embarque</label>
-                        <input id="exp_contacto" type="text" name="contacto" value="{{ old('contacto', $perfil->contacto) }}"
-                               class="mt-1 w-full rounded-md border-gray-300 text-sm" placeholder="opcional">
-                        @error('contacto') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
-                    <div>
-                        <label for="exp_direccion" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Dirección de entrega o bodega</label>
-                        <input id="exp_direccion" type="text" name="direccion" value="{{ old('direccion', $perfil->direccion) }}"
-                               class="mt-1 w-full rounded-md border-gray-300 text-sm" placeholder="solo si difiere de la fiscal">
-                        <p class="mt-1 text-xs text-gray-400 dark:text-paper-500">Si es la misma que la fiscal, dejala vacía.</p>
-                        @error('direccion') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <x-primary-button>Guardar datos de exportación</x-primary-button>
-                </div>
-            </form>
-        @else
-            <dl class="mb-6 grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-                <div><dt class="text-gray-500 dark:text-paper-300">Contacto del embarque</dt><dd>{{ $perfil->contacto ?? '—' }}</dd></div>
-                <div><dt class="text-gray-500 dark:text-paper-300">Dirección de entrega</dt><dd>{{ $perfil->direccionEntregaBodega() ?? 'la misma que la fiscal' }}</dd></div>
-            </dl>
-        @endif
+        {{-- Ya no hay «Contacto del embarque» ni «Dirección de entrega o bodega»: eran
+             los mismos datos de la ficha del cliente, tecleados otra vez. Nada del FEX,
+             de la lista de empaque ni del JSON los leía. Las columnas siguen en la
+             tabla, sin uso. --}}
 
         {{-- Lista de precios --}}
-        <div class="border-t border-gray-100 dark:border-ink-600 pt-4">
+        <div>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h4 class="text-sm font-medium text-gray-700 dark:text-paper-100">
                     Lista de precios ({{ $perfil->productos->count() }} producto{{ $perfil->productos->count() === 1 ? '' : 's' }})

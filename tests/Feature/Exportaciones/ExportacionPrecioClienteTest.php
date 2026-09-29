@@ -226,7 +226,7 @@ class ExportacionPrecioClienteTest extends TestCase
         ]);
         $this->actingAs($jefa)->get(route('clientes.show', $cliente))->assertOk()
             ->assertSee('Exportación')
-            ->assertDontSee(route('clientes.exportacion.update', $cliente), false);
+            ->assertDontSee(route('clientes.exportacion.deshabilitar', $cliente), false);
 
         // Y no puede gestionar nada: ni el perfil, ni la lista de precios, ni el catálogo.
         $this->actingAs($jefa)->post(route('clientes.exportacion.habilitar', $cliente))->assertForbidden();

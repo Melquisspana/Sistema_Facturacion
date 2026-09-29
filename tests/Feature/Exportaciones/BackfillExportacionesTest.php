@@ -474,16 +474,10 @@ class BackfillExportacionesTest extends TestCase
         $this->assertNull($perfil->fdaImportador());
 
         // La ficha ya no pide ni muestra el FDA por cliente: el de la lista es uno
-        // solo, el de la empresa. Guardar el perfil tampoco toca la columna.
+        // solo, el de la empresa. Abrirla tampoco toca la columna.
         $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk()
             ->assertDontSee('Revisá el FDA')
             ->assertDontSee('name="fda_reg_number"', false);
-
-        $this->actingAs($this->usuario())->put(route('clientes.exportacion.update', $cliente), [
-            'fda_reg_number' => '',
-            'contacto' => '',
-            'direccion' => '',
-        ]);
 
         $perfil->refresh();
         $this->assertSame('00000000001', $perfil->fda_reg_number);

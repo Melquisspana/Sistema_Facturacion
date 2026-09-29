@@ -18,14 +18,12 @@ use Illuminate\Validation\ValidationException;
  *
  * NO ES OTRO DIRECTORIO DE CLIENTES. El cliente sigue siendo uno solo, en
  * `clientes`; lo que se habilita acá es un perfil adicional (`exportacion_clientes`)
- * que cuelga de él y guarda ÚNICAMENTE lo que el directorio no tiene:
+ * que cuelga de él y guarda ÚNICAMENTE lo que el directorio no tiene: la lista de
+ * precios por caja. (Ya no el FDA —el de la lista es uno solo, el de la empresa—
+ * ni el contacto del embarque o la dirección de entrega: eran los mismos datos de la
+ * ficha del cliente, tecleados otra vez. Sus columnas quedan en la tabla, sin uso.)
  *
- *   · (ya no el FDA: el de la lista es uno solo, el de la empresa);
- *   · un contacto operativo del embarque;
- *   · una dirección de entrega o bodega, cuando difiere de la fiscal;
- *   · la lista de precios por caja.
- *
- * Nombre, dirección fiscal, documento, país y correo NO se piden ni se copian: se
+ * Nombre, dirección, documento, país, contacto y correo NO se piden ni se copian: se
  * leen del cliente. Antes se tecleaban otra vez en un formulario aparte y acababan
  * divergiendo — un cliente con dos nombres según por qué pantalla se mirara.
  *
@@ -75,36 +73,6 @@ class ClienteExportacionController extends Controller
         $perfil->update(['activo' => false]);
 
         return $this->volver($cliente, 'Cliente deshabilitado para exportación. No se borró ningún precio: volver a habilitarlo lo deja como estaba.');
-    }
-
-    /**
-     * Guarda los campos internacionales que el directorio NO tiene. Deliberadamente
-     * cortos: todo lo demás vive en la ficha del cliente y no se duplica acá.
-     */
-    public function actualizar(Request $request, Cliente $cliente): RedirectResponse
-    {
-        $this->autorizarGestion();
-
-        $perfil = $this->perfil($cliente);
-
-        // El FDA ya no se pide por cliente: el que va en la lista de empaque es UNO,
-        // el de la empresa (Configuración → Parámetros fiscales). La columna del
-        // perfil queda como estaba, sin editarse desde acá.
-        $datos = $request->validate([
-            'contacto' => ['nullable', 'string', 'max:255'],
-            'direccion' => ['nullable', 'string', 'max:255'],
-        ], [], [
-            'contacto' => 'contacto del embarque',
-            'direccion' => 'dirección de entrega',
-        ]);
-
-        // El nombre operativo se mantiene alineado con el del directorio, que es la
-        // fuente de verdad; nunca se edita por separado.
-        $datos['nombre'] = $cliente->nombre;
-
-        $perfil->update($datos);
-
-        return $this->volver($cliente, 'Perfil de exportación actualizado.');
     }
 
     // ------------------------------------------------------------ lista de precios

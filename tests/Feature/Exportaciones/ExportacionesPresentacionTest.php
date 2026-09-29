@@ -186,23 +186,6 @@ class ExportacionesPresentacionTest extends TestCase
         $this->assertStringContainsString('focus-visible:outline', $html);
     }
 
-    public function test_los_campos_del_perfil_de_exportacion_tienen_etiqueta_asociada(): void
-    {
-        $cliente = Cliente::factory()->exportacion()->create();
-        ExportacionCliente::create(['cliente_id' => $cliente->id, 'nombre' => $cliente->nombre, 'activo' => true]);
-
-        $html = $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk()->getContent();
-
-        foreach (['exp_contacto', 'exp_direccion'] as $campo) {
-            $this->assertMatchesRegularExpression(
-                '/<label[^>]*for="'.$campo.'"/',
-                $html,
-                "El campo «{$campo}» no tiene una etiqueta asociada por for/id."
-            );
-            $this->assertMatchesRegularExpression('/id="'.$campo.'"/', $html);
-        }
-    }
-
     public function test_los_campos_de_precio_en_linea_llevan_etiqueta_aunque_no_se_vea(): void
     {
         $cliente = Cliente::factory()->exportacion()->create();

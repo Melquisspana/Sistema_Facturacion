@@ -106,7 +106,7 @@
                     @endif
                     <div>
                         <dt class="text-xs uppercase tracking-wide text-gray-400">Dirección de entrega/bodega</dt>
-                        <dd class="mt-0.5 text-gray-800">{{ $cliente->direccionEntregaBodega() ?? '— (igual a la fiscal, o sin definir)' }}</dd>
+                        <dd class="mt-0.5 text-gray-800">{{ $cliente->direccion ?? '—' }}</dd>
                     </div>
                     <div>
                         <dt class="text-xs uppercase tracking-wide text-gray-400">FDA reg. number</dt>

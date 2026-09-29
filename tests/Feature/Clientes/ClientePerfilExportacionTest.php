@@ -7,6 +7,7 @@ use App\Models\ExportacionClienteProducto;
 use App\Models\ExportacionProducto;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -130,9 +131,14 @@ class ClientePerfilExportacionTest extends TestCase
         $this->assertSame(0, $nacional->exportacionClientes()->count());
     }
 
-    // ------------------------------------- solo los campos internacionales que faltan
+    // ------------------------------- ningún dato del cliente se vuelve a pedir
 
-    public function test_solo_se_piden_los_campos_que_el_directorio_no_tiene(): void
+    /**
+     * El bloque ya no pide contacto del embarque ni dirección de entrega: eran los
+     * mismos datos de la ficha, tecleados otra vez. Lo único propio del perfil es la
+     * lista de precios, y no queda ruta para guardar otra cosa.
+     */
+    public function test_el_bloque_no_repite_ningun_dato_de_la_ficha(): void
     {
         $cliente = Cliente::factory()->exportacion()->create([
             'nombre' => 'IMPORTADOR ESTE INC.',
@@ -142,42 +148,16 @@ class ClientePerfilExportacionTest extends TestCase
 
         $resp = $this->actingAs($this->usuario())->get(route('clientes.show', $cliente))->assertOk();
 
-        // Los dos campos propios del embarque, y ninguno más. El FDA no se pide por
-        // cliente: el de la lista es uno solo, el de la empresa.
+        $resp->assertDontSee('Contacto del embarque');
+        $resp->assertDontSee('Dirección de entrega o bodega');
+        $resp->assertDontSee('Guardar datos de exportación');
         $resp->assertDontSee('FDA del importador');
         $resp->assertDontSee('name="fda_reg_number"', false);
-        $resp->assertSee('Contacto del embarque');
-        $resp->assertSee('Dirección de entrega o bodega');
-
-        // El nombre y el documento NO se vuelven a pedir dentro del bloque: se leen
-        // de la ficha, que es la fuente de verdad.
+        $resp->assertDontSee('name="contacto"', false);
         $resp->assertDontSee('name="nombre"', false);
         $resp->assertDontSee('name="num_documento"', false);
-    }
 
-    public function test_guardar_el_perfil_no_toca_los_datos_del_cliente(): void
-    {
-        $cliente = Cliente::factory()->exportacion()->create([
-            'nombre' => 'NOMBRE LEGAL', 'direccion' => 'DIRECCION FISCAL',
-        ]);
-        $this->actingAs($this->usuario())->post(route('clientes.exportacion.habilitar', $cliente));
-
-        $this->actingAs($this->usuario())->put(route('clientes.exportacion.update', $cliente), [
-            'fda_reg_number' => '99887766',
-            'contacto' => 'cliente.exportacion2@ejemplo.test',
-            'direccion' => 'BODEGA 456',
-        ])->assertRedirect(route('clientes.show', $cliente));
-
-        $cliente->refresh();
-        $this->assertSame('NOMBRE LEGAL', $cliente->nombre);
-        $this->assertSame('DIRECCION FISCAL', $cliente->direccion);
-
-        $perfil = $cliente->exportacionClientes()->first();
-        // El FDA ya no se guarda por cliente: el de la lista es el de la empresa.
-        $this->assertNull($perfil->fda_reg_number);
-        $this->assertSame('BODEGA 456', $perfil->direccion);
-        // El nombre operativo se mantiene alineado con el del directorio.
-        $this->assertSame('NOMBRE LEGAL', $perfil->nombre);
+        $this->assertFalse(Route::has('clientes.exportacion.update'));
     }
 
     // -------------------------------------------------------- lista de precios
@@ -272,9 +252,8 @@ class ClientePerfilExportacionTest extends TestCase
 
         $this->actingAs($jefa)->get(route('clientes.show', $cliente))->assertOk()
             ->assertSee('Exportación')
-            ->assertDontSee('Guardar datos de exportación');
+            ->assertDontSee('Deshabilitar para exportación');
 
-        $this->actingAs($jefa)->put(route('clientes.exportacion.update', $cliente), [])->assertForbidden();
         $this->actingAs($jefa)->post(route('clientes.exportacion.deshabilitar', $cliente))->assertForbidden();
     }
 }

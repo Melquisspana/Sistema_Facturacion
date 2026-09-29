@@ -101,27 +101,6 @@ class ExportacionCliente extends Model
         return $this->cliente?->direccion;
     }
 
-    /**
-     * Dirección de entrega/bodega propia de este perfil, mostrada SOLO cuando es
-     * literalmente distinta de la dirección fiscal (para no repetir el mismo dato
-     * dos veces). Comparación exacta (trim), a propósito: no intenta adivinar si
-     * dos direcciones "parecidas" son la misma — eso es una decisión de datos, no
-     * de presentación (ver el comando de auditoría de exportacion_clientes).
-     */
-    public function direccionEntregaBodega(): ?string
-    {
-        if (blank($this->direccion)) {
-            return null;
-        }
-
-        $fiscal = $this->direccionFiscal();
-        if ($fiscal !== null && trim($this->direccion) === trim($fiscal)) {
-            return null;
-        }
-
-        return $this->direccion;
-    }
-
     /** ¿El Cliente DTE vinculado todavía tiene el documento fiscal provisional (bloquea FEX)? */
     public function tieneDocumentoFiscalProvisional(): bool
     {
