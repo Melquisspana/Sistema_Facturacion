@@ -1,0 +1,195 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "DTE · de borrador a respuesta de Hacienda",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "visual_preset": "signal-flow"
+  },
+  "lanes": [
+    {
+      "id": "emision",
+      "label": "Emisión"
+    },
+    {
+      "id": "entrega",
+      "label": "Entrega"
+    },
+    {
+      "id": "incidencias",
+      "label": "Incidencias",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "borrador",
+    "revision",
+    "json",
+    "firma",
+    "envio",
+    "aceptado"
+  ],
+  "nodes": [
+    {
+      "id": "borrador",
+      "lane": "emision",
+      "col": 0,
+      "type": "frontend",
+      "label": "Borrador",
+      "sublabel": "Cliente y líneas"
+    },
+    {
+      "id": "revision",
+      "lane": "emision",
+      "col": 1,
+      "type": "security",
+      "label": "Preflight",
+      "sublabel": "Permiso y confirmación"
+    },
+    {
+      "id": "json",
+      "lane": "emision",
+      "col": 2,
+      "type": "backend",
+      "label": "Generar DTE",
+      "sublabel": "Numeración y JSON"
+    },
+    {
+      "id": "firma",
+      "lane": "emision",
+      "col": 3,
+      "type": "security",
+      "label": "Firmar",
+      "sublabel": "Solo si está generado"
+    },
+    {
+      "id": "envio",
+      "lane": "emision",
+      "col": 4,
+      "type": "external",
+      "label": "Transmitir",
+      "sublabel": "API de Hacienda"
+    },
+    {
+      "id": "aceptado",
+      "lane": "emision",
+      "col": 5,
+      "type": "database",
+      "label": "Aceptado",
+      "sublabel": "Guardar sello"
+    },
+    {
+      "id": "cola",
+      "lane": "entrega",
+      "col": 5,
+      "type": "messagebus",
+      "label": "Encolar correo",
+      "sublabel": "Automático si habilitado",
+      "width": 155
+    },
+    {
+      "id": "adjuntos",
+      "lane": "entrega",
+      "col": 4,
+      "type": "backend",
+      "label": "Enviar correo",
+      "sublabel": "Job con PDF y JSON"
+    },
+    {
+      "id": "rechazo",
+      "lane": "incidencias",
+      "col": 5,
+      "type": "database",
+      "label": "Rechazado",
+      "sublabel": "Guardar observaciones"
+    },
+    {
+      "id": "incierto",
+      "lane": "incidencias",
+      "col": 3,
+      "type": "backend",
+      "label": "Consultar / reintentar",
+      "sublabel": "Mismo documento firmado",
+      "width": 195
+    }
+  ],
+  "edges": [
+    {
+      "from": "borrador",
+      "to": "revision",
+      "role": "main"
+    },
+    {
+      "from": "revision",
+      "to": "json",
+      "role": "main"
+    },
+    {
+      "from": "json",
+      "to": "firma",
+      "role": "main"
+    },
+    {
+      "from": "firma",
+      "to": "envio",
+      "role": "main"
+    },
+    {
+      "from": "envio",
+      "to": "aceptado",
+      "label": "acepta",
+      "role": "main"
+    },
+    {
+      "from": "aceptado",
+      "to": "cola",
+      "label": "según ajustes",
+      "role": "async"
+    },
+    {
+      "from": "cola",
+      "to": "adjuntos",
+      "label": "procesar job",
+      "role": "async"
+    },
+    {
+      "from": "envio",
+      "to": "rechazo",
+      "label": "rechaza",
+      "role": "error"
+    },
+    {
+      "from": "envio",
+      "to": "incierto",
+      "label": "fallo transitorio",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Camino representado",
+      "items": [
+        "Acción de producción para Factura, CCF y FEX",
+        "Fallo de preflight o firma detiene la emisión"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Reintentos",
+      "items": [
+        "Consulta antes de reenviar; hasta 2 reenvíos",
+        "Sin resolución, informa el fallo sin activar contingencia"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Correo independiente",
+      "items": [
+        "También existe envío manual desde la pantalla",
+        "El job de correo conserva el estado fiscal"
+      ]
+    }
+  ]
+}

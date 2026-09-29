@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "workflow",
+  "input": "C:\\laragon\\www\\Facturacion\\docs\\diagramas\\emision-dte.workflow.json",
+  "output": "C:\\laragon\\www\\Facturacion\\docs\\diagramas\\emision-dte.html",
+  "specification": {
+    "sha256": "b5f80f4749423dd9934cf95cef064a182cfa32e29b2029120ddb0b6a5389073c",
+    "bytes": 4112
+  },
+  "artifact": {
+    "sha256": "b9b689a9ad0b1f18336987e723ce79126e30a9c4870f742bb0af553950f6aad4",
+    "bytes": 714582
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\laragon\\www\\Facturacion\\docs\\diagramas\\arquitectura.architecture.json",
+  "output": "C:\\laragon\\www\\Facturacion\\docs\\diagramas\\arquitectura.html",
+  "specification": {
+    "sha256": "4ebf1e8e9bbc1515a22bf28f102e002b84abbba6f1529d974c5690f6a4740c95",
+    "bytes": 4483
+  },
+  "artifact": {
+    "sha256": "2cf40d1d73bc256359891808b04b5444d9b432e39a8386ec682d475d66647f67",
+    "bytes": 715276
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

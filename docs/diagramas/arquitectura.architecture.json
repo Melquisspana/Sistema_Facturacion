@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "La Negrita · arquitectura del sistema",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "viewBox": [
+      1380,
+      760
+    ]
+  },
+  "components": [
+    {
+      "id": "pantallas",
+      "type": "frontend",
+      "label": "Pantallas web",
+      "sublabel": "Blade · Livewire · Alpine",
+      "pos": [
+        40,
+        320
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "acceso",
+      "type": "security",
+      "label": "Acceso y permisos",
+      "sublabel": "Sesión · roles · policies",
+      "pos": [
+        40,
+        70
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "laravel",
+      "type": "backend",
+      "label": "Aplicación Laravel 12",
+      "sublabel": "Rutas y controladores",
+      "pos": [
+        400,
+        320
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "datos",
+      "type": "database",
+      "label": "Datos del negocio",
+      "sublabel": "Modelos Eloquent",
+      "pos": [
+        400,
+        70
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "dte",
+      "type": "backend",
+      "label": "Servicios DTE",
+      "sublabel": "JSON · firma · transmisión",
+      "pos": [
+        760,
+        320
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "firmador",
+      "type": "external",
+      "label": "Firmador MH",
+      "sublabel": "Firma del documento",
+      "pos": [
+        760,
+        70
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "hacienda",
+      "type": "external",
+      "label": "API de Hacienda",
+      "sublabel": "Recepción y consulta",
+      "pos": [
+        1120,
+        320
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "cola",
+      "type": "messagebus",
+      "label": "Cola de correos",
+      "sublabel": "EnvioDteCorreoService",
+      "pos": [
+        400,
+        590
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "trabajador",
+      "type": "backend",
+      "label": "Trabajo de correo",
+      "sublabel": "EnviarDteCorreo · PDF/JSON",
+      "pos": [
+        760,
+        590
+      ],
+      "size": [
+        220,
+        80
+      ]
+    },
+    {
+      "id": "correo",
+      "type": "external",
+      "label": "Destinatarios",
+      "sublabel": "Cliente y contabilidad",
+      "pos": [
+        1120,
+        590
+      ],
+      "size": [
+        220,
+        80
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "pantallas",
+      "to": "laravel",
+      "label": "HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pantallas",
+      "to": "acceso",
+      "label": "autenticación"
+    },
+    {
+      "from": "laravel",
+      "to": "datos",
+      "label": "persistencia"
+    },
+    {
+      "from": "laravel",
+      "to": "dte",
+      "label": "emisión",
+      "variant": "emphasis"
+    },
+    {
+      "from": "dte",
+      "to": "firmador",
+      "label": "firma"
+    },
+    {
+      "from": "dte",
+      "to": "hacienda",
+      "label": "HTTP / JWT",
+      "variant": "emphasis"
+    },
+    {
+      "from": "laravel",
+      "to": "cola",
+      "label": "encolar",
+      "variant": "dashed",
+      "labelDy": 100
+    },
+    {
+      "from": "cola",
+      "to": "trabajador",
+      "label": "procesar",
+      "variant": "dashed"
+    },
+    {
+      "from": "trabajador",
+      "to": "correo",
+      "label": "correo"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Áreas del sistema",
+      "items": [
+        "Facturación, exportaciones y compras",
+        "Rutas, planta, asistencia y PPQ"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Emisión y entrega",
+      "items": [
+        "La transmisión se invoca desde el controlador",
+        "El correo se procesa mediante un job"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Alcance de este mapa",
+      "items": [
+        "Lectura del código local · 7 sep 2026",
+        "No verifica servicios ni configuración activa"
+      ]
+    }
+  ]
+}
