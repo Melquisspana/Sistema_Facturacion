@@ -45,6 +45,9 @@ class AlbaranParser
         ];
 
         $oc = $this->buscar($texto, '/(?:orden\s*de\s*compra|orden|o\.?\s*c\.?|OC)\D{0,15}(\d{8,})/i', $debug, 'oc');
+        // Formato actual de Calleja: «Pedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref.
+        // 26090011005235». La OC es la referencia de 14 dígitos que sigue a «Ref.».
+        $oc ??= $this->buscar($texto, '/Pedido\s+de\s+Compras[^\n]*?Ref\.?\s*(\d{14})\b/i', $debug, 'oc_pedido');
         // Código canónico del albarán (AC01/0236/00/6359), no la palabra "Total":
         // prefijo + 3 grupos numéricos, tolerando espacios y descartando el "/año".
         $numero = $this->buscar($texto, '/([A-Za-z]{1,4}\s*\d+(?:\s*\/\s*\d+){2,3})/', $debug, 'numero');

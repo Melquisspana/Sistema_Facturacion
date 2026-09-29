@@ -431,7 +431,7 @@ class NcFormularioGenericoTest extends TestCase
 
     // ------------------------------------------------------- pronto pago
 
-    public function test_pronto_pago_a_otra_sala_exige_motivo_y_conserva_el_cliente(): void
+    public function test_pronto_pago_a_otra_sala_admite_motivo_opcional_y_conserva_el_cliente(): void
     {
         $emisor = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create();
@@ -450,7 +450,7 @@ class NcFormularioGenericoTest extends TestCase
 
         $this->actingAs($this->usuario())
             ->post(route('facturacion.store-nota-credito'), $base)
-            ->assertSessionHasErrors('motivo');
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->actingAs($this->usuario())
             ->post(route('facturacion.store-nota-credito'), $base + ['motivo' => 'Cobro centralizado.'])

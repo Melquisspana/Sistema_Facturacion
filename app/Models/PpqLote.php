@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Enums\EstadoPpq;
+use App\Services\Ppq\FichaLotePpq;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 
 /**
  * Lote de Prontos Pagos: agrupa CCF/NC para generar el Excel de cobro de Calleja.
@@ -63,12 +65,14 @@ class PpqLote extends Model
     /**
      * Items en el ORDEN de cobro de Calleja: primero todos los CCF, después todas las NC; y
      * dentro de cada grupo por correlativo numérico ascendente (CCF 970, 971, 1000; NC 340, 341).
-     * Una NC con número menor igual va DESPUÉS de todos los CCF.
+     * Una NC con número menor igual va DESPUÉS de todos los CCF. A igual tipo y correlativo
+     * desempata el id, para que el Excel y la ficha paginada ({@see FichaLotePpq})
+     * den siempre el mismo orden.
      */
-    public function itemsOrdenados(): \Illuminate\Support\Collection
+    public function itemsOrdenados(): Collection
     {
         return $this->items
-            ->sortBy(fn (PpqItem $i) => [$i->ordenTipo(), $i->correlativoNumero()])
+            ->sortBy(fn (PpqItem $i) => [$i->ordenTipo(), $i->correlativoNumero(), (int) $i->id])
             ->values();
     }
 

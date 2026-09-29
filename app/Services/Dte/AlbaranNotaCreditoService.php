@@ -33,7 +33,14 @@ class AlbaranNotaCreditoService
     /**
      * Registra (o reemplaza) el albarán de una NC en borrador.
      *
-     * @param  array<string, mixed>  $datos  numero, fecha, total, tipo_codigo?, sala_codigo?
+     * SE PUEDE GUARDAR INCOMPLETO. Solo el NÚMERO es imprescindible acá, porque es lo que
+     * identifica al albarán y lo que permite comprobar que no esté ya acreditado por otra
+     * nota. La fecha y el total pueden llegar después: el papel entra a la oficina antes
+     * que su detalle, y obligar a tenerlo todo junto empujaba a escribir un total inventado
+     * para poder guardar el número. Lo que NO se puede es EMITIR con datos faltantes: eso
+     * lo frena {@see datosObligatoriosFaltantes()} al generar, del lado del servidor.
+     *
+     * @param  array<string, mixed>  $datos  numero, fecha?, total?, tipo_codigo?, sala_codigo?
      *
      * @throws DocumentoInmutableException
      * @throws ValidationException
@@ -44,8 +51,8 @@ class AlbaranNotaCreditoService
 
         $validado = Validator::make($datos, [
             'numero' => ['required', 'string', 'max:60'],
-            'fecha' => ['required', 'date'],
-            'total' => ['required', 'numeric', 'min:0'],
+            'fecha' => ['nullable', 'date'],
+            'total' => ['nullable', 'numeric', 'min:0'],
             'tipo_codigo' => ['nullable', 'string', 'max:10'],
             'sala_codigo' => ['nullable', 'string', 'max:10'],
         ], [], [
@@ -61,10 +68,12 @@ class AlbaranNotaCreditoService
             $albaran = DteAlbaran::updateOrCreate(
                 ['dte_id' => $nc->id],
                 $piezas + [
-                    'fecha' => $validado['fecha'],
+                    'fecha' => blank($validado['fecha'] ?? null) ? null : $validado['fecha'],
                     // El albarán imprime el abono en negativo; se guarda en positivo para
                     // no arrastrar dos convenios de signo. Ver la migración.
-                    'total' => number_format(abs((float) $validado['total']), 2, '.', ''),
+                    'total' => blank($validado['total'] ?? null)
+                        ? null
+                        : number_format(abs((float) $validado['total']), 2, '.', ''),
                     'ppq_albaran_id' => $this->ppqAlbaranEquivalente($nc, $piezas['numero']),
                 ]
             );
@@ -128,7 +137,13 @@ class AlbaranNotaCreditoService
             ]);
         }
 
-        $sala = trim((string) ($validado['sala_codigo'] ?? '')) ?: ($parseado?->sala ?? $this->salaDe($nc));
+        // PRECEDENCIA DE LA SALA: manda la que viene DENTRO del número completo. Si el
+        // operador escribió «AC04/0207/00/3874» o el nombre del PDF, esa es la sala que
+        // imprime el albarán y no puede quedar tapada por el valor que la pantalla trajo
+        // precargado. El campo suelto sirve para el caso que lo necesita —cuando solo se
+        // capturó el correlativo— y la sucursal del documento es el último recurso.
+        $sala = $parseado?->sala
+            ?: (trim((string) ($validado['sala_codigo'] ?? '')) ?: $this->salaDe($nc));
 
         return [
             'numero_canonico' => $parseado?->canonico ?? ($tipo.'/'.($sala ?? '0000').'/00/'.$numero),
@@ -191,7 +206,11 @@ class AlbaranNotaCreditoService
      * Comparación entre el total FISCAL de la nota y el total impreso en el albarán.
      * Null si la NC no tiene albarán registrado.
      *
-     * @return array{total_nc: string, total_albaran: string, diferencia: string, cuadra: bool}|null
+     * La TOLERANCIA viaja en el resultado porque es el dato que explica el color: con
+     * tolerancia 0.00 una diferencia de un centavo ya es una diferencia, y quien mira la
+     * pantalla tiene derecho a saber contra qué se está juzgando.
+     *
+     * @return array{total_nc: string, total_albaran: string, diferencia: string, cuadra: bool, tolerancia: string}|null
      */
     public function comparacion(Dte $nc): ?array
     {
@@ -214,6 +233,7 @@ class AlbaranNotaCreditoService
             'total_albaran' => $totalAlbaran,
             'diferencia' => $diferencia,
             'cuadra' => $cuadra,
+            'tolerancia' => Dinero::redondear($tolerancia, 2),
         ];
     }
 
@@ -252,8 +272,9 @@ class AlbaranNotaCreditoService
         if ($comparacion !== null && ! $comparacion['cuadra']) {
             $avisos[] = [
                 'clave' => 'diferencia',
-                'texto' => 'El total de la nota ('.$comparacion['total_nc'].') no coincide con el del albarán ('
-                    .$comparacion['total_albaran'].'). Diferencia: '.$comparacion['diferencia'].'.',
+                'texto' => 'El total de la nota de crédito ('.$comparacion['total_nc'].') no coincide con el '
+                    .'del albarán del cliente ('.$comparacion['total_albaran'].'). Diferencia: '
+                    .$comparacion['diferencia'].'.',
             ];
         }
 
@@ -261,11 +282,11 @@ class AlbaranNotaCreditoService
     }
 
     /**
-     * ¿Falta el albarán en una NC de un cliente que lo exige? A diferencia de los avisos,
-     * esto sí impide generar: no es una diferencia a valorar sino un dato que el cliente
-     * declaró obligatorio y sin el cual su Excel no se puede llenar.
+     * ¿Este cliente exige el albarán en ESTA nota? Solo si declaró un perfil que lo pide y
+     * que mapea la modalidad de la nota a un albarán suyo. Un pronto pago no nace de un
+     * albarán, y un cliente sin perfil —que son casi todos— nunca entra acá.
      */
-    public function faltaAlbaranObligatorio(Dte $nc): bool
+    public function exigeAlbaran(Dte $nc): bool
     {
         if ($nc->tipo_dte !== TipoDte::NotaCredito) {
             return false;
@@ -277,15 +298,59 @@ class AlbaranNotaCreditoService
             return false;
         }
 
-        // Solo lo exige en las modalidades que el cliente mapeó a un albarán suyo; un
-        // pronto pago no nace de un albarán y no debe quedar bloqueado por esta regla.
-        if ($this->perfiles->reglaNotaCredito($nc) === null) {
-            return false;
+        return $this->perfiles->reglaNotaCredito($nc) !== null;
+    }
+
+    /**
+     * Datos del albarán que FALTAN para poder emitir, en palabras. Vacío = no falta nada.
+     *
+     * A diferencia de los avisos, esto sí impide generar: no son diferencias a valorar sino
+     * datos que el cliente declaró imprescindibles y sin los cuales su archivo no se puede
+     * llenar. Devuelve una LISTA y no un booleano porque el operador necesita saber QUÉ le
+     * falta —el número, la fecha, el total— y no solo que algo falta; el mensaje de
+     * «registre el albarán» mandaba a llenar un formulario que a veces ya estaba a medias.
+     *
+     * Los cinco datos son exactamente los que piden los dos formatos del cliente: número,
+     * tipo y sala identifican la fila, la fecha decide el año y el mes con que se clasifica
+     * (la del ALBARÁN, no la de emisión de la nota) y el total es el que se contrasta.
+     *
+     * Solo aplica a quien lo exige ({@see exigeAlbaran()}): para el resto devuelve vacío y
+     * la pantalla de siempre no cambia.
+     *
+     * @return array<int, string>
+     */
+    public function datosObligatoriosFaltantes(Dte $nc): array
+    {
+        if (! $this->exigeAlbaran($nc)) {
+            return [];
         }
 
         $nc->loadMissing('albaran');
+        $albaran = $nc->albaran;
 
-        return $nc->albaran === null;
+        if ($albaran === null) {
+            return ['el albarán de crédito (número, fecha, total, tipo y sala)'];
+        }
+
+        $faltan = [];
+
+        if (blank($albaran->numero)) {
+            $faltan[] = 'el número del albarán';
+        }
+        if ($albaran->fecha === null) {
+            $faltan[] = 'la fecha del albarán';
+        }
+        if ($albaran->total === null) {
+            $faltan[] = 'el total del albarán';
+        }
+        if (blank($albaran->tipo_codigo)) {
+            $faltan[] = 'el tipo de albarán';
+        }
+        if (blank($albaran->sala_codigo)) {
+            $faltan[] = 'la sala del albarán';
+        }
+
+        return $faltan;
     }
 
     /** @throws DocumentoInmutableException|ValidationException */

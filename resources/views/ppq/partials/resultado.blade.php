@@ -8,7 +8,13 @@
     // Claves nuevas: se normalizan acá para no exigirle a cada llamador que las arme.
     $r['albaranFuente'] ??= null;
     $r['motivoNoElegible'] ??= null;
-    $r['advertenciaCobro'] ??= null;
+    // Albarán YA GUARDADO en la nota de crédito local (null en el CCF y en las fichas de
+    // Gmail, que no tienen documento local del que leerlo).
+    $r['albaranPropio'] ??= null;
+    // De dónde sale el CCF relacionado: 'vinculo' (guardado en la NC local) u 'oc'
+    // (coincidencia de orden de compra, que es lo único que se puede ofrecer cuando la
+    // ficha viene de un correo). El texto cambia porque no valen lo mismo.
+    $r['ccfRelacionadoFuente'] ??= 'oc';
 
     // CANDADO FISCAL. Un documento LOCAL que no se puede cobrar por PPQ se sigue
     // mostrando —existe, y ocultarlo sería mentir sobre lo que hay— pero sin ninguna
@@ -22,8 +28,12 @@
     $montoNum = $r['monto'] !== null ? (float) $r['monto'] : null;
     $montoCcf = $montoNum === null ? '—' : ($esNc ? '−$'.number_format(abs($montoNum), 2) : '$'.number_format($montoNum, 2));
 
-    // El albarán automático solo aplica al CCF; la NC lo captura a mano.
+    // El albarán automático solo aplica al CCF; el de la NC es el suyo propio.
     $hayAlbaran = ! $esNc && ! in_array($r['estado']['key'], ['sin_albaran'], true);
+    // Albarán de la NC ya guardado: si existe, no hay nada que volver a capturar.
+    // Estado según {@see \App\Services\Ppq\AlbaranPropioNc}: completo, parcial o inválido.
+    $albaranNc = $esNc ? $r['albaranPropio'] : null;
+    $ncEstado = $albaranNc['estado'] ?? null;
     $montoAlb = $r['albaranMonto'] !== null ? '$'.number_format((float) $r['albaranMonto'], 2) : '—';
     $difTxt = $r['diferencia'] !== null ? '$'.number_format((float) $r['diferencia'], 2) : '—';
     $sala = $r['sala'] ? str_pad($r['sala'], 4, '0', STR_PAD_LEFT) : null;
@@ -103,17 +113,6 @@
         </div>
     @endif
 
-    {{-- BLOQUE 0b — Aviso que NO impide cobrar. Es el modo «advertir» del perfil del
-         cliente: el documento entra al lote igual, pero conviene buscar el papel antes
-         de cerrarlo. Va en ámbar y no en rojo a propósito: rojo significa «no se puede»,
-         y acá sí se puede. --}}
-    @if (! $noElegible && filled($r['advertenciaCobro']))
-        <div class="border-l-4 border-amber-400 bg-amber-50 px-6 py-3">
-            <p class="text-sm font-semibold text-amber-800">Falta el documento físico</p>
-            <p class="mt-1 text-sm text-amber-700">{{ $r['advertenciaCobro'] }}</p>
-        </div>
-    @endif
-
     {{-- BLOQUE 1 — Documento encontrado --}}
     <div class="p-6">
         <div class="flex items-start justify-between gap-4">
@@ -159,7 +158,13 @@
         @if ($esNc && ! empty($r['ccfRelacionado']))
             <p class="mt-2 inline-flex items-center gap-1.5 rounded-md bg-indigo-50 ring-1 ring-indigo-200 px-2.5 py-1 text-xs text-indigo-700">
                 <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M8.75 3.75a.75.75 0 00-1.5 0v3.5h-3.5a.75.75 0 000 1.5h3.5v3.5a.75.75 0 001.5 0v-3.5h3.5a.75.75 0 000-1.5h-3.5v-3.5z"/></svg>
-                Relación sugerida: misma OC que el CCF <span class="font-mono font-semibold">{{ $r['ccfRelacionado'] }}</span>
+                @if ($r['ccfRelacionadoFuente'] === 'vinculo')
+                    {{-- Vínculo GUARDADO en la nota: el documento que se eligió acreditar
+                         al emitirla. No se presenta como sugerencia porque no lo es. --}}
+                    CCF relacionado: <span class="font-mono font-semibold">{{ $r['ccfRelacionado'] }}</span>
+                @else
+                    Relación sugerida: misma OC que el CCF <span class="font-mono font-semibold">{{ $r['ccfRelacionado'] }}</span>
+                @endif
             </p>
         @endif
     </div>
@@ -177,19 +182,66 @@
             <span class="text-sm text-gray-500">Sin acciones disponibles: este documento no se puede cobrar por PPQ.</span>
         </div>
     @elseif ($esNc)
-        {{-- BLOQUE 3 (NC) — Albarán de captura MANUAL + agregar (resta) --}}
+        {{-- BLOQUE 3 (NC) — Albarán de la nota: el GUARDADO si ya existe, captura manual si no --}}
         <div class="px-6 py-5 border-t border-gray-100">
             <div class="flex items-center justify-between mb-1">
                 <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Albarán de la nota de crédito</h4>
-                <span class="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">Captura manual</span>
+                {{-- Pastillas con colores que app.css ya adapta al tema oscuro. --}}
+                @if ($ncEstado === 'completo')
+                    <span class="rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">Guardado en la nota</span>
+                @elseif ($ncEstado === 'parcial')
+                    <span class="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800">Guardado, incompleto</span>
+                @elseif ($ncEstado === 'invalido')
+                    <span class="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">Revisar en la nota</span>
+                @else
+                    <span class="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">Captura manual</span>
+                @endif
             </div>
-            <p class="text-xs text-gray-500 mb-3">El albarán de la NC no llega por correo (sale del proceso físico de entrega/avería). Completalo a mano; si todavía no lo tenés, podés dejarlo en blanco.</p>
-            <a href="{{ $albaranFechaUrl }}" class="mb-4 inline-flex items-center gap-1.5 rounded-md bg-white ring-1 ring-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50">
-                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5a.25.25 0 00-.25.25v7.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-7.5a.25.25 0 00-.25-.25H4.75z" clip-rule="evenodd" /></svg>
-                Buscar albarán por fecha
-            </a>
+            @if ($ncEstado === 'invalido')
+                {{-- Lo guardado no identifica un albarán de crédito coherente: no se ofrece
+                     reutilizarlo ni capturar otro encima. Se corrige en la nota. --}}
+                <p class="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ $albaranNc['motivo'] }} Hay que corregirlo en la nota antes de llevarla a PPQ.</p>
+            @elseif ($albaranNc)
+                {{-- Ya se capturó al emitir la nota: se muestra y no se vuelve a pedir. Al
+                     agregarla al lote, el servidor lo relee de la base —no de estos
+                     valores— para que nada del navegador pueda suplantarlo. --}}
+                <p class="text-xs text-gray-500 mb-3">
+                    Es el albarán que originó esta nota, ya guardado al emitirla (no es el albarán de entrega del CCF).
+                    @if ($ncEstado === 'parcial')
+                        Se reutiliza lo guardado; completá abajo solo lo que falta para el PPQ (la nota no se modifica).
+                    @else
+                        No hay que volver a escribirlo: al agregarla al PPQ se reutiliza tal como está guardado.
+                    @endif
+                </p>
+                <dl class="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                    <div>
+                        <dt class="text-xs text-gray-500">N° de albarán</dt>
+                        <dd class="font-mono text-sm font-semibold text-gray-800">{{ $albaranNc['numero'] ?: '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-gray-500">Fecha del albarán</dt>
+                        <dd class="{{ empty($albaranNc['fecha']) ? 'text-amber-700 font-medium' : 'text-gray-700' }}">
+                            {{ \App\Support\Fecha::dmy($albaranNc['fecha']) ?: 'sin fecha' }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-gray-500">Monto del albarán</dt>
+                        <dd class="{{ $albaranNc['monto'] === null ? 'text-amber-700 font-medium' : 'font-mono text-gray-700' }}">
+                            {{ $albaranNc['monto'] !== null ? '$'.number_format((float) $albaranNc['monto'], 2) : 'sin monto' }}
+                        </dd>
+                    </div>
+                </dl>
+            @else
+                <p class="text-xs text-gray-500 mb-3">El albarán de la NC no llega por correo (sale del proceso físico de entrega/avería). Completalo a mano; si todavía no lo tenés, podés dejarlo en blanco.</p>
+                <a href="{{ $albaranFechaUrl }}" class="mb-4 inline-flex items-center gap-1.5 rounded-md bg-white ring-1 ring-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50">
+                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5a.25.25 0 00-.25.25v7.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-7.5a.25.25 0 00-.25-.25H4.75z" clip-rule="evenodd" /></svg>
+                    Buscar albarán por fecha
+                </a>
+            @endif
 
-            @if ($loteFijo === null && $lotesAbiertos->isEmpty())
+            @if ($ncEstado === 'invalido')
+                {{-- Sin formulario: el servidor también lo rechaza. --}}
+            @elseif ($loteFijo === null && $lotesAbiertos->isEmpty())
                 @can('ppq.gestionar')<a href="{{ route('ppq.lotes.create') }}" class="text-sm font-medium text-indigo-600 hover:underline">Crear un PPQ para agregar esta NC →</a>@endcan
             @else
                 <form method="POST" action="" onsubmit="this.action='{{ url('ppq/lotes') }}/'+this.lote.value+'/items'">
@@ -199,22 +251,31 @@
                     @endforeach
                     <input type="hidden" name="sin_albaran" value="0">
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">N° de albarán</label>
-                            <input type="text" name="numero_albaran" placeholder="AC01/0236/00/6359" class="w-full rounded-md border-gray-300 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Fecha del albarán</label>
-                            <input type="date" name="fecha_albaran" class="w-full rounded-md border-gray-300 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Monto del albarán</label>
-                            <div class="relative">
-                                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 text-sm">$</span>
-                                <input type="number" step="0.01" min="0" name="monto_albaran" placeholder="0.00" class="w-full rounded-md border-gray-300 text-sm pl-6">
+                    {{-- Con albarán guardado solo se dibujan los campos que FALTAN: lo que ya
+                         está en la nota no se recaptura, y un campo editable solo podría
+                         contradecirlo. Las observaciones son del item, no del albarán. --}}
+                    <div class="grid grid-cols-1 {{ $albaranNc ? 'sm:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4' }} gap-4">
+                        @unless ($albaranNc)
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">N° de albarán</label>
+                                <input type="text" name="numero_albaran" placeholder="AC01/0236/00/6359" class="w-full rounded-md border-gray-300 text-sm">
                             </div>
-                        </div>
+                        @endunless
+                        @if (! $albaranNc || in_array('fecha', $albaranNc['faltantes'], true))
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Fecha del albarán</label>
+                                <input type="date" name="fecha_albaran" class="w-full rounded-md border-gray-300 text-sm">
+                            </div>
+                        @endif
+                        @if (! $albaranNc || in_array('monto', $albaranNc['faltantes'], true))
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Monto del albarán</label>
+                                <div class="relative">
+                                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 text-sm">$</span>
+                                    <input type="number" step="0.01" min="0" name="monto_albaran" placeholder="0.00" class="w-full rounded-md border-gray-300 text-sm pl-6">
+                                </div>
+                            </div>
+                        @endif
                         <div>
                             <label class="block text-xs font-medium text-gray-600 mb-1">Observaciones</label>
                             <input type="text" name="observaciones" maxlength="500" placeholder="Avería, devolución…" class="w-full rounded-md border-gray-300 text-sm">

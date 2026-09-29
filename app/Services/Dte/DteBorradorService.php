@@ -6,6 +6,7 @@ use App\DataTransferObjects\Dte\LineaDocumento;
 use App\DataTransferObjects\Dte\ResultadoCalculo;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
+use App\Enums\ModalidadNotaCredito;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
@@ -338,23 +339,16 @@ class DteBorradorService
         // Sala a la que CORRESPONDE la avería, independiente de la sala receptora.
         $salaAveria = $this->resolverSalaAveria($tipo, $datos, $clienteId);
 
-        // Cruzar de sala nunca es rutina. Hay dos formas de hacerlo y las dos cuestan lo
-        // mismo: una explicación escrita.
-        //
-        //   RECEPTORA distinta  → cambia el establecimiento y la dirección impresos en la
-        //                         nota, sin cambiar el cliente fiscal.
-        //   HALLAZGO distinto   → la avería se encontró en una sala y se acredita contra
-        //                         un CCF de otra sala del mismo cliente.
-        //
-        // Sin motivo escrito nadie puede reconstruir después por qué se hizo. La pantalla
-        // lo avisa con un cartel; esto es la parte que no depende del navegador.
+        // Las modalidades que permiten otra receptora usan la sala elegida por el
+        // operador sin exigir explicación por ese cruce. La avería conserva su motivo.
         $salaCcf = $original?->cliente_sucursal_id;
         $receptoraCruzada = $original !== null && $sucursalId !== null
             && (int) $sucursalId !== (int) $salaCcf;
         $averiaCruzada = $original !== null && $salaAveria !== null
             && (int) $salaAveria !== (int) $salaCcf;
 
-        if (($receptoraCruzada || $averiaCruzada) && trim((string) ($datos['motivo'] ?? '')) === '') {
+        $permiteOtraReceptora = ModalidadNotaCredito::desdeTipo($tipo)?->permiteOtraSalaReceptora() ?? false;
+        if ((! $permiteOtraReceptora && $receptoraCruzada || $averiaCruzada) && trim((string) ($datos['motivo'] ?? '')) === '') {
             throw ValidationException::withMessages([
                 'motivo' => $receptoraCruzada
                     ? 'Para emitir la nota de crédito a una sala distinta a la del CCF relacionado, el motivo es obligatorio: explique por qué.'
@@ -881,6 +875,7 @@ class DteBorradorService
             $linea->save();
 
             $this->recalcular($nc);
+            $this->frenarExcesoSaldoCcf($nc);
 
             return $linea->refresh();
         });
@@ -1214,9 +1209,27 @@ class DteBorradorService
             $linea->save();
 
             $this->recalcular($dte);
+            if ($dte->tipo_nota_credito?->esPorMonto()) {
+                $this->frenarExcesoSaldoCcf($dte);
+            }
 
             return $linea->refresh();
         });
+    }
+
+    /**
+     * Revierte la operación en curso si la NC quedó acreditando más que el saldo de su
+     * CCF: Hacienda la rechazaría. Se llama DENTRO de la transacción del cambio, así que
+     * el borrador vuelve a como estaba.
+     *
+     * @throws ValidationException
+     */
+    private function frenarExcesoSaldoCcf(Dte $nc): void
+    {
+        $exceso = app(SaldoMontoCcf::class)->exceso($nc);
+        if ($exceso !== null) {
+            throw ValidationException::withMessages(['monto' => $exceso]);
+        }
     }
 
     /**

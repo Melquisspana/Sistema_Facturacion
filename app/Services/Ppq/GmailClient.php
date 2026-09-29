@@ -5,6 +5,8 @@ namespace App\Services\Ppq;
 use App\Ajustes\Integraciones\ConfiguracionGmail;
 use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Models\GmailCuenta;
+use App\Support\Correo\CuerpoHtml;
+use App\Support\Correo\MensajeActual;
 use Google\Client as GoogleClient;
 use Google\Service\Exception as GoogleServiceException;
 use Google\Service\Gmail;
@@ -325,7 +327,118 @@ class GmailClient
         });
     }
 
+    /**
+     * Solo los IDS de una página, sin bajar un solo cuerpo.
+     *
+     * Está separado de {@see mensajeCobro()} por una razón concreta: el barrido necesita
+     * saber QUÉ mensajes hay antes de decidir cuáles vale la pena bajar. Un mensaje que ya
+     * está registrado no debe consumir el presupuesto de la corrida ni costar una llamada
+     * más, y con la lista de ids eso se resuelve de un vistazo contra la base.
+     *
+     * Bajar primero y descartar después era justamente lo que hacía que una tarea con
+     * solape leyera una y otra vez los mismos correos ya procesados.
+     *
+     * @return array{ids: array<int, string>, siguiente: ?string}
+     */
+    public function idsDeCobros(string $query, ?string $token = null, int $max = 100): array
+    {
+        return $this->ejecutarGoogle(function () use ($query, $token, $max) {
+            $gmail = new Gmail($this->clienteAutenticado());
+
+            $parametros = ['q' => $query, 'maxResults' => max(1, $max)];
+            if ($token !== null) {
+                $parametros['pageToken'] = $token;
+            }
+
+            $lista = $gmail->users_messages->listUsersMessages('me', $parametros);
+
+            $ids = [];
+            foreach ($lista->getMessages() ?? [] as $m) {
+                $ids[] = $m->getId();
+            }
+
+            return ['ids' => $ids, 'siguiente' => $lista->getNextPageToken() ?: null];
+        });
+    }
+
+    /**
+     * UN mensaje con su cuerpo completo. Es la llamada cara, y por eso solo se hace sobre
+     * los ids que el barrido decidió procesar.
+     *
+     * @return array{id: string, threadId: ?string, asunto: ?string, remitente: ?string, fecha: ?string, cuerpo: string}
+     */
+    public function mensajeCobro(string $id): array
+    {
+        return $this->ejecutarGoogle(function () use ($id) {
+            $gmail = new Gmail($this->clienteAutenticado());
+            $full = $gmail->users_messages->get('me', $id, ['format' => 'full']);
+
+            return [
+                'id' => $id,
+                'threadId' => $full->getThreadId(),
+                'asunto' => $this->header($full, 'Subject'),
+                'remitente' => $this->header($full, 'From'),
+                'fecha' => $this->header($full, 'Date'),
+                'cuerpo' => $this->cuerpoCompleto($full),
+                'cuerpo_actual' => MensajeActual::desdePartes($this->textoPlano($full), $this->htmlCrudo($full)),
+            ];
+        });
+    }
+
     // ---------------------------------------------------------------- internos
+
+    /**
+     * Cuerpo completo del mensaje: el texto plano y, además, el HTML convertido a texto.
+     *
+     * Se juntan los DOS a propósito. El acuse de Calleja llega como texto, pero las
+     * observaciones vienen en una tabla HTML, y a veces la parte `text/plain` que genera su
+     * cliente de correo pierde justamente las filas de esa tabla. Buscar en la unión de las
+     * dos no puede encontrar de menos; quedarse con una sí.
+     */
+    private function cuerpoCompleto(object $mensaje): string
+    {
+        $cuerpo = CuerpoHtml::unir($this->textoPlano($mensaje), $this->htmlCrudo($mensaje));
+
+        // El snippet es el último recurso, no la fuente: son ~100 caracteres y las
+        // observaciones vienen en una tabla que no cabe ahí.
+        return $cuerpo !== '' ? $cuerpo : (string) $mensaje->getSnippet();
+    }
+
+    /** Texto plano del mensaje, juntando las partes `text/plain`. */
+    private function textoPlano(object $mensaje): string
+    {
+        $partes = [];
+
+        $this->recorrerPartes($mensaje->getPayload(), function ($parte) use (&$partes) {
+            if ((string) $parte->getMimeType() !== 'text/plain') {
+                return;
+            }
+            $data = $parte->getBody()?->getData();
+            if (filled($data)) {
+                $partes[] = $this->decodeUrl((string) $data);
+            }
+        });
+
+        return trim(implode("\n", $partes));
+    }
+
+    /** El HTML crudo del mensaje, juntando sus partes `text/html`. */
+    private function htmlCrudo(object $mensaje): string
+    {
+        $bloques = [];
+
+        $this->recorrerPartes($mensaje->getPayload(), function ($parte) use (&$bloques) {
+            if ((string) $parte->getMimeType() !== 'text/html') {
+                return;
+            }
+            $data = $parte->getBody()?->getData();
+            if (filled($data)) {
+                $bloques[] = $this->decodeUrl((string) $data);
+            }
+        });
+
+        return implode("\n", $bloques);
+    }
 
     /** @return array<int, array{id: string, snippet: string}> */
     protected function listar(string $q, int $limite): array

@@ -22,7 +22,7 @@ enum EstadoPpq: string
         return match ($this) {
             self::Borrador => 'Borrador',
             self::Listo => 'Listo',
-            self::Enviado => 'Enviado',
+            self::Enviado => 'Presentado',
             self::Pagado => 'Pagado',
             self::Observado => 'Observado',
         };

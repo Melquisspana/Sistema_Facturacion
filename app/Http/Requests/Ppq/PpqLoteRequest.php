@@ -22,7 +22,8 @@ class PpqLoteRequest extends FormRequest
         return [
             'referencia' => ['required', 'string', 'max:255'],
             'fecha' => ['required', 'date'],
-            'estado' => ['required', new Enum(EstadoPpq::class)],
+            // El estado se pone solo (borrador → presentado → pagado); se acepta si llega.
+            'estado' => ['sometimes', new Enum(EstadoPpq::class)],
             'cliente_id' => ['nullable', Rule::exists('clientes', 'id')],
             'observaciones' => ['nullable', 'string', 'max:2000'],
         ];

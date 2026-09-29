@@ -195,6 +195,23 @@ class PpqItem extends Model
         return $this->signo() * (float) $this->monto_dte;
     }
 
+    /**
+     * Diferencia documento − albarán CON SIGNO, en la misma convención que los montos que
+     * la acompañan en pantalla y en el Excel (NC en negativo). Null cuando no hay monto de
+     * albarán comparable. En un CCF da lo mismo que `diferencia`; en una NC, el opuesto.
+     *
+     * `diferencia` (persistida, sin signo) no se toca: la usan la tolerancia del lote y la
+     * clasificación, que miran magnitudes.
+     */
+    public function diferenciaConSigno(): ?float
+    {
+        if ($this->sin_albaran || $this->monto_albaran === null) {
+            return null;
+        }
+
+        return round($this->montoDteConSigno() - (float) $this->montoAlbaranConSigno(), 2);
+    }
+
     /** Monto del albarán con signo (negativo si es NC); null si no hay albarán. */
     public function montoAlbaranConSigno(): ?float
     {

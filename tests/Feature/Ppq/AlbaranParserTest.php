@@ -31,6 +31,17 @@ class AlbaranParserTest extends TestCase
         $this->assertNotEmpty($r['debug']['candidatos_monto']);        // debug con candidatos
     }
 
+    public function test_extrae_la_oc_de_la_referencia_del_pedido_de_compras(): void
+    {
+        // Forma real de los albaranes de Calleja (sep-2026): la OC va como «Ref.» del
+        // pedido, en la línea siguiente, sin la palabra «orden».
+        $texto = "COCO RAYADO LA NEGRITA 2 ONZAS\nAlbarán de Compras\n".
+            "Pedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref. \n26090011005235\n".
+            "AC01/0011/00/7488\nTOTAL ALBARAN 168.62";
+
+        $this->assertSame('26090011005235', $this->parser()->desdeTexto($texto)['oc']);
+    }
+
     public function test_monto_formato_europeo(): void
     {
         // 1.234,56 (punto miles, coma decimal)

@@ -11,7 +11,10 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use RuntimeException;
+use Throwable;
 
 /**
  * Formato de notas de crédito con datos de albarán: 17 columnas en tres bandas
@@ -86,9 +89,36 @@ class ExportadorNcAlbaranV1 implements ExportadorNc
         return 'albaran_nc_v1';
     }
 
+    public static function nombre(): string
+    {
+        return 'Notas de crédito con datos de albarán (17 columnas)';
+    }
+
+    public static function entrega(): string
+    {
+        return 'Este archivo se le manda al cliente por correo, a mano y fuera del sistema. '
+            .'Descargarlo no significa que se haya enviado.';
+    }
+
+    /**
+     * Este formato no bloquea ninguna nota por datos incompletos, y no es un descuido: las
+     * diecisiete columnas ya se venían llenando con lo que hubiera —una celda vacía es
+     * legible para quien recibe el correo y siempre se pudo completar a mano antes de
+     * enviarlo—, así que agregarle ahora un bloqueo cambiaría la regla de un formato en
+     * uso sin que nadie lo haya pedido. El aviso por datos faltantes lo introduce el
+     * formato de carga masiva, donde el archivo lo procesa una máquina y un hueco no se
+     * corrige después ({@see ExportadorNcCargaMasivaV1::faltantes()}).
+     *
+     * @return array<int, string>
+     */
+    public function faltantes(Dte $nc, ClientePerfilDocumento $perfil): array
+    {
+        return [];
+    }
+
     public function generar(NcExportacion $lote, ClientePerfilDocumento $perfil): string
     {
-        $libro = new Spreadsheet();
+        $libro = new Spreadsheet;
         $hoja = $libro->getActiveSheet();
         $hoja->setTitle('Hoja1');
 
@@ -102,14 +132,27 @@ class ExportadorNcAlbaranV1 implements ExportadorNc
 
         $this->formato($hoja, $fila - 1);
 
-        $ruta = tempnam(sys_get_temp_dir(), 'nc_albaran_').'.xlsx';
-        (new Xlsx($libro))->save($ruta);
-        $libro->disconnectWorksheets();
+        $ruta = tempnam(sys_get_temp_dir(), 'nc_albaran_');
+        if ($ruta === false) {
+            $libro->disconnectWorksheets();
+
+            throw new RuntimeException('No se pudo preparar el archivo de notas de crédito.');
+        }
+
+        try {
+            (new Xlsx($libro))->save($ruta);
+        } catch (Throwable $e) {
+            @unlink($ruta);
+
+            throw $e;
+        } finally {
+            $libro->disconnectWorksheets();
+        }
 
         return $ruta;
     }
 
-    private function encabezado(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $hoja): void
+    private function encabezado(Worksheet $hoja): void
     {
         foreach (self::BANDAS as $rango => $titulo) {
             $hoja->mergeCells($rango);
@@ -129,7 +172,7 @@ class ExportadorNcAlbaranV1 implements ExportadorNc
     }
 
     private function fila(
-        \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $hoja,
+        Worksheet $hoja,
         int $fila,
         Dte $nc,
         ClientePerfilDocumento $perfil,
@@ -176,12 +219,12 @@ class ExportadorNcAlbaranV1 implements ExportadorNc
         );
     }
 
-    private function texto(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $hoja, string $col, int $fila, string $valor): void
+    private function texto(Worksheet $hoja, string $col, int $fila, string $valor): void
     {
         $hoja->setCellValueExplicit($col.$fila, $valor, DataType::TYPE_STRING);
     }
 
-    private function monto(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $hoja, string $col, int $fila, string|float|null $valor): void
+    private function monto(Worksheet $hoja, string $col, int $fila, string|float|null $valor): void
     {
         if ($valor === null || $valor === '') {
             return;
@@ -190,7 +233,7 @@ class ExportadorNcAlbaranV1 implements ExportadorNc
         $hoja->setCellValue($col.$fila, round(abs((float) $valor), 2));
     }
 
-    private function formato(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $hoja, int $ultimaFila): void
+    private function formato(Worksheet $hoja, int $ultimaFila): void
     {
         if ($ultimaFila >= self::PRIMERA_FILA) {
             foreach (self::COLUMNAS_TEXTO as $col) {

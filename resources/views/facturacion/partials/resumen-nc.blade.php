@@ -16,8 +16,11 @@
     generar). No recalcula nada ni cambia lógica fiscal.
 
     Parámetros: $dte (la NC, requerido), $esAgenteRetencion (opcional), $confirmGenerar
-    (opcional).
+    (opcional), $albaranPendiente (opcional: qué datos del albarán faltan para generar).
 --}}
+@if ($avisoImporteTxt ?? null)
+    <div class="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200" role="status">{{ $avisoImporteTxt }}</div>
+@endif
 @php
     $modalidad = \App\Enums\ModalidadNotaCredito::desdeTipo($dte->tipo_nota_credito);
     $porMonto = $dte->tipo_nota_credito?->esPorMonto() ?? false;
@@ -26,6 +29,11 @@
     // `documentoRelacionado` en toda NC. Es un bloqueo distinto al de «sin líneas» y hay
     // que decirlo distinto, porque se resuelve de otra manera (vinculando un CCF).
     $faltaCcf = $dte->dte_relacionado_id === null;
+    // Datos del albarán que el CLIENTE declaró obligatorios y todavía no están. Es un
+    // tercer bloqueo, distinto de los dos anteriores y con su propia forma de resolverse
+    // (completar el albarán, arriba). Solo llega con valor para los clientes que lo exigen;
+    // para el resto es una lista vacía y el panel es el de siempre.
+    $faltaAlbaran = $albaranPendiente ?? [];
     $titulo = match (true) {
         $porMonto => 'Conceptos de la nota',
         ($dte->tipo_nota_credito?->esPorAveria() ?? false) => 'Productos acreditados',
@@ -115,23 +123,34 @@
 
     @can('update', $dte)
         <div class="bg-white shadow sm:rounded-lg p-4">
-            @php $bloqueado = $sinLineasPanel || $faltaCcf; @endphp
+            @php
+                // Acreditar más que el saldo del CCF: Hacienda la rechazaría.
+                $excedeCcf = filled($excesoSaldoCcf ?? null);
+                $bloqueado = $sinLineasPanel || $faltaCcf || $faltaAlbaran !== [] || $excedeCcf;
+            @endphp
             <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
                   onsubmit="return confirm(@js($confirmGenerar ?? '¿Generar la nota de crédito? Ya no podrá editarse.'))">
                 @csrf
                 <button data-generar-btn @disabled($bloqueado)
                         @if ($faltaCcf) title="Falta relacionar un CCF aceptado para poder emitir."
-                        @elseif ($sinLineasPanel) title="Agregá al menos una línea para generar." @endif
+                        @elseif ($sinLineasPanel) title="Agregá al menos una línea para generar."
+                        @elseif ($faltaAlbaran !== []) title="Faltan datos del albarán que este cliente exige."
+                        @elseif ($excedeCcf) title="La nota supera el saldo del CCF relacionado." @endif
                         class="w-full inline-flex items-center justify-center px-4 py-2.5 text-white text-sm font-medium rounded-md {{ $bloqueado ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700' }}">
                     Generar nota de crédito
                 </button>
             </form>
-            <p class="mt-2 text-xs {{ $faltaCcf ? 'text-amber-700' : 'text-gray-400' }}">
+            <p class="mt-2 text-xs {{ $faltaCcf || $faltaAlbaran !== [] || $excedeCcf ? 'text-amber-700' : 'text-gray-400' }}">
                 @if ($faltaCcf)
                     <strong>Avería registrada; falta relacionar un CCF para emitir.</strong>
                     Hacienda exige un documento relacionado en toda nota de crédito.
                 @elseif ($sinLineasPanel)
                     Agregá al menos una línea para generar.
+                @elseif ($faltaAlbaran !== [])
+                    <strong>Falta {{ implode(', ', $faltaAlbaran) }}.</strong>
+                    Este cliente lo exige para poder incluir la nota en su archivo.
+                @elseif ($excedeCcf)
+                    <strong>{{ $excesoSaldoCcf }}</strong>
                 @else
                     Al generar se asigna el correlativo interno y la nota deja de ser editable. No firma ni transmite.
                 @endif

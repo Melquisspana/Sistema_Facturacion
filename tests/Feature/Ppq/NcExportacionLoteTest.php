@@ -25,6 +25,7 @@ use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\NcExportacionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
@@ -68,6 +69,8 @@ class NcExportacionLoteTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Descargar archiva una copia: en pruebas va a un disco fingido.
+        Storage::fake((string) config('dte.storage.disk', 'local'));
         foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }

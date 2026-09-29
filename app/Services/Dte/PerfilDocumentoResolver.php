@@ -53,9 +53,15 @@ class PerfilDocumentoResolver
     }
 
     /**
-     * Regla declarada para la modalidad de ESTA nota de crédito, o null si el documento
-     * no es una NC, el cliente no tiene perfil, o esa modalidad no está mapeada. Los tres
-     * casos significan lo mismo para quien llama: seguí con el criterio de siempre.
+     * Regla que gobierna la modalidad de ESTA nota de crédito, o null si el documento no
+     * es una NC, el cliente no tiene perfil, o su modalidad operativa no está mapeada. Los
+     * tres casos significan lo mismo para quien llama: seguí con el criterio de siempre.
+     *
+     * Pregunta por {@see ClientePerfilDocumento::reglaOperativaPara()} y no por la fila
+     * exacta: devolución y faltante de entrega son la misma modalidad operativa y el mismo
+     * albarán del cliente, así que la regla declarada para una gobierna a las dos. Sin
+     * esto, un faltante de Calleja no encontraba regla y heredaba el descuento del CCF,
+     * que es precisamente lo que su albarán AC04 imprime en cero.
      */
     public function reglaNotaCredito(Dte $dte): ?ClientePerfilTipoNc
     {
@@ -63,7 +69,7 @@ class PerfilDocumentoResolver
             return null;
         }
 
-        return $this->para($dte)?->reglaPara($dte->tipo_nota_credito);
+        return $this->para($dte)?->reglaOperativaPara($dte->tipo_nota_credito);
     }
 
     /** Olvida lo memoizado. Necesario cuando un test cambia el perfil en caliente. */

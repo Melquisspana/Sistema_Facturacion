@@ -314,7 +314,7 @@
                 @else
                     <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-3 text-sm mb-4">
                         <div><dt class="text-gray-500 dark:text-paper-300">Código de proveedor</dt><dd class="font-mono">{{ $perfilDoc->codigo_proveedor ?? '—' }}</dd></div>
-                        <div><dt class="text-gray-500 dark:text-paper-300">Formato de exportación</dt><dd class="font-mono">{{ $perfilDoc->formato_export ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Formato de exportación</dt><dd>{{ $perfilDoc->formato_export ? \App\Services\Ppq\Exportadores\ExportadorNcFactory::etiqueta($perfilDoc->formato_export) : '—' }}</dd></div>
                         <div><dt class="text-gray-500 dark:text-paper-300">Albarán obligatorio</dt><dd>{{ $perfilDoc->exige_albaran_en_nc ? 'Sí' : 'No' }}</dd></div>
                         <div><dt class="text-gray-500 dark:text-paper-300">Tolerancia</dt><dd class="font-mono">{{ number_format((float) $perfilDoc->tolerancia_albaran, 2) }}</dd></div>
                     </dl>

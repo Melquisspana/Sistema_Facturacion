@@ -1,0 +1,7 @@
+# Filtros del Historial PPQ — revisión en desarrollo (24/09/2026)
+
+El índice `/ppq/lotes` ya paginaba 20 lotes; Claude Opus 5.5 añadió filtros visibles por cliente, estado, fecha del lote y un campo para referencia o número de lote. La lista conserva filtros entre páginas y ordena por fecha del lote descendente, con id descendente para desempatar. Mantiene el conteo de documentos y el total neto CCF menos NC por lote, calculados en la base sin cargar todos sus documentos. Un filtro sin resultados o una página fuera de rango tiene salida clara. La ficha del lote, Excel y conciliación no se modificaron.
+
+Codex revisó la primera entrega y pidió corregir entradas GET en forma de arreglo, formato Pint y contraste oscuro. Claude aplicó las correcciones en la misma SessionId `e4f53e43-f440-4a2e-b1a9-dd11860317ef`, con modelo efectivo `claude-opus-5-5`. Pruebas focalizadas finales (`PpqHistorialFiltrosTest` y `PpqModuloTest`): **50 pruebas y 184 aserciones**, todas correctas. Pint `--test` pasó. Se recompilaron los recursos visuales locales con Vite; no hubo despliegue.
+
+Codex abrió el historial en la aplicación local autenticada: mostró 3 lotes, buscó «julio» y obtuvo los 2 correspondientes; «Quitar filtros» restauró los 3. Se inspeccionó visualmente en tema oscuro y claro a ancho de escritorio y se restituyó el tema oscuro. Queda pendiente la revisión en móvil y una ficha de lote PPQ más manejable cuando contiene muchos documentos (la ficha actual carga todos). No se aplicaron migraciones adicionales ni se tocó producción, commit o push.

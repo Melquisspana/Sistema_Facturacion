@@ -2,7 +2,9 @@
 
 namespace App\Services\Ppq;
 
+use App\Enums\ProcedenciaArchivoNc;
 use App\Enums\TipoDte;
+use App\Exceptions\CopiaArchivadaInservibleException;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Dte;
@@ -10,12 +12,17 @@ use App\Models\NcExportacion;
 use App\Models\NcExportacionItem;
 use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Ppq\Exportadores\ExportadorNc;
 use App\Services\Ppq\Exportadores\ExportadorNcFactory;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 /**
  * LOTE de notas de crédito para el formato del cliente: se eligen las notas pendientes
@@ -32,9 +39,19 @@ use Illuminate\Validation\ValidationException;
  * veces la misma nota en dos archivos distintos, que para el cliente es un abono
  * duplicado. Por eso `nc_exportacion_items.dte_id` es único GLOBAL y no por lote.
  *
- * Regenerar es re-dibujar, no re-elegir: {@see archivo()} relee los items del lote y no
- * mira qué hay pendiente ahora. Como las notas exportadas están aceptadas por Hacienda y
- * por tanto son inmutables, el archivo regenerado sale idéntico.
+ * El archivo se genera UNA vez, releyendo los items del lote —nunca lo que hay pendiente
+ * ahora—, y se archiva con su SHA-256; las descargas siguientes sirven esa copia byte a
+ * byte ({@see archivo()}). Los lotes descargados antes de existir el archivado se
+ * reconstruyen una vez y quedan marcados como reconstrucción.
+ *
+ * El FORMATO queda congelado en el lote (`nc_exportaciones.formato`) y no se relee del
+ * perfil. Un cliente puede cambiar de formato —de un Excel que se adjunta a un correo a
+ * uno que se sube a su portal— y los lotes anteriores se generan con el formato con el
+ * que nacieron.
+ *
+ * Y ninguna nota entra con un hueco: cada formato declara qué datos necesita
+ * ({@see ExportadorNc::faltantes()}) y el sistema lo dice
+ * antes de armar el archivo, en vez de rellenar la celda con algo supuesto.
  */
 class NcExportacionService
 {
@@ -55,14 +72,37 @@ class NcExportacionService
      */
     public function pendientes(Cliente $cliente, array $filtros = []): Collection
     {
+        return $this->consultaPendientes($cliente, $filtros)->get();
+    }
+
+    /**
+     * Las MISMAS pendientes de {@see pendientes()}, por páginas: la pantalla no carga todas
+     * de golpe. Una sola consulta define las reglas y el orden (fecha, control, id), que
+     * termina en `id` y por eso es estable entre páginas.
+     *
+     * @param  array<string, mixed>  $filtros
+     * @return LengthAwarePaginator<Dte>
+     */
+    public function pendientesPaginadas(Cliente $cliente, array $filtros, int $porPagina, string $parametro): LengthAwarePaginator
+    {
+        return $this->consultaPendientes($cliente, $filtros)
+            ->paginate($porPagina, ['*'], $parametro)
+            ->withQueryString();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filtros
+     * @return Builder<Dte>
+     */
+    private function consultaPendientes(Cliente $cliente, array $filtros): Builder
+    {
         return $this->elegibles($cliente)
             ->whereDoesntHave('exportacionItem')
             ->tap(fn (Builder $q) => $this->aplicarFiltros($q, $filtros))
             ->with(['albaran', 'clienteSucursal:id,codigo,nombre'])
             ->orderBy('fecha_emision')
             ->orderBy('numero_control')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
     }
 
     /**
@@ -206,6 +246,7 @@ class NcExportacionService
                 ->get();
 
             $this->verificarSeleccion($notas, $dteIds);
+            $this->verificarDatosCompletos($notas, $perfil);
 
             $lote = NcExportacion::create([
                 'cliente_id' => $cliente->id,
@@ -229,12 +270,222 @@ class NcExportacionService
         });
     }
 
-    /** Genera (o regenera) el archivo del lote. Devuelve la ruta temporal. */
+    /**
+     * Registra que una persona CARGÓ el archivo del lote al portal del cliente. El sistema
+     * no lo sube ni lo comprueba: es la declaración de alguien, con su nombre y su fecha.
+     *
+     * Es un hecho aparte: no toca el `estado` del lote (generado/descargado), ni sus notas,
+     * ni ningún valor fiscal. Se registra una sola vez —la historia no se reescribe— y solo
+     * sobre un lote que se descargó alguna vez: no se puede haber subido un archivo que
+     * nunca salió del sistema.
+     *
+     * @throws ValidationException
+     */
+    public function registrarPresentacion(
+        NcExportacion $lote,
+        User $usuario,
+        ?Carbon $cuando = null,
+        ?string $referenciaPortal = null,
+        ?string $nota = null,
+    ): NcExportacion {
+        return DB::transaction(function () use ($lote, $usuario, $cuando, $referenciaPortal, $nota) {
+            $fila = NcExportacion::lockForUpdate()->findOrFail($lote->id);
+
+            if ($fila->presentada()) {
+                throw ValidationException::withMessages([
+                    'presentacion' => 'La carga de este archivo al portal ya estaba registrada el '
+                        .$fila->presentada_en->format('d/m/Y').'. No se vuelve a registrar.',
+                ]);
+            }
+
+            if (! $fila->descargadoAlgunaVez()) {
+                throw ValidationException::withMessages([
+                    'presentacion' => 'Este archivo nunca se descargó, así que no pudo subirse al portal. '
+                        .'Descárguelo, súbalo y después registre la carga.',
+                ]);
+            }
+
+            $fila->forceFill([
+                'presentada_en' => $cuando ?? now(),
+                'presentada_por' => $usuario->id,
+                'referencia_portal' => filled($referenciaPortal) ? trim($referenciaPortal) : null,
+                'presentada_nota' => filled($nota) ? trim($nota) : null,
+            ])->save();
+
+            activity('nc_exportacion')
+                ->performedOn($fila)
+                ->causedBy($usuario)
+                ->withProperties([
+                    'presentada_en' => $fila->presentada_en->toIso8601String(),
+                    'referencia_portal' => $fila->referencia_portal,
+                ])
+                ->log('registró la carga del archivo de notas de crédito al portal');
+
+            return $fila;
+        });
+    }
+
+    /**
+     * Ruta TEMPORAL con el archivo del lote (quien la sirve la borra al enviarla).
+     *
+     * ═════════ La primera vez se genera y archiva; después se sirve LA COPIA ═════════
+     *
+     * Con copia archivada (`archivo_hash` + `archivo_path`) se devuelven esos bytes tras
+     * comprobar su SHA-256, sin llamar al exportador ni leer el perfil actual. Copia
+     * ausente, ilegible, alterada o registro a medias: error claro, sin regenerar.
+     *
+     * Sin copia, se genera con el formato con el que nació el lote, se archiva verificada y
+     * se sirven esos mismos bytes. Si el lote YA se había descargado antes (sin copia),
+     * la copia se registra como RECONSTRUCCIÓN: la base no demuestra qué se bajó
+     * entonces. Todo bajo bloqueo de la fila: dos primeras descargas simultáneas no
+     * archivan dos archivos distintos.
+     *
+     * @throws RuntimeException
+     */
     public function archivo(NcExportacion $lote): string
     {
-        $perfil = $this->perfilExportador($lote->cliente);
+        return DB::transaction(function () use ($lote) {
+            $fila = NcExportacion::lockForUpdate()->findOrFail($lote->id);
 
-        return $this->exportadores->porSlug($lote->formato)->generar($lote, $perfil);
+            if ($fila->tieneCopiaArchivada()) {
+                $contenido = $this->leerCopia($fila);
+                $this->sincronizarCopia($lote, $fila);
+
+                return $this->temporal($contenido);
+            }
+
+            $procedencia = $fila->descargadoSinCopia()
+                ? ProcedenciaArchivoNc::Reconstruccion
+                : ProcedenciaArchivoNc::PrimeraDescarga;
+
+            $fila->loadMissing('cliente');
+            $perfil = $this->perfilExportador($fila->cliente);
+            $generado = $this->exportadores->porSlug($fila->formato)->generar($fila, $perfil);
+            $contenido = file_get_contents($generado);
+            @unlink($generado);
+
+            if ($contenido === false || $contenido === '') {
+                throw new RuntimeException("No se pudo generar el archivo del lote {$fila->referencia}.");
+            }
+
+            // Si archivar falla, la excepción deshace la transacción: el lote queda sin
+            // copia y la próxima descarga vuelve a intentarlo.
+            $this->guardarCopia($fila, $contenido, $procedencia);
+            $this->sincronizarCopia($lote, $fila);
+
+            return $this->temporal($contenido);
+        });
+    }
+
+    /**
+     * Los bytes archivados, verificados contra su huella.
+     *
+     * @throws RuntimeException
+     */
+    private function leerCopia(NcExportacion $lote): string
+    {
+        $referencia = $lote->referencia;
+
+        // Huella, ruta, procedencia y fecha: sin cualquiera de las cuatro no se sabe qué se
+        // archivó ni de dónde salió, y eso no se infiere.
+        if (! $lote->registroDeCopiaCompleto()) {
+            throw new CopiaArchivadaInservibleException("El lote {$referencia} tiene el registro de su copia incompleto "
+                .'(huella, ruta, procedencia o fecha de archivado vacía). No se regenera: revisar la copia '
+                .'archivada antes de volver a descargarlo.', (string) $referencia);
+        }
+
+        try {
+            $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
+            $existe = $disco->exists($lote->archivo_path);
+            $contenido = $existe ? $disco->get($lote->archivo_path) : null;
+        } catch (Throwable $e) {
+            throw new CopiaArchivadaInservibleException("No se pudo leer la copia archivada del lote {$referencia}: "
+                .$e->getMessage().'. No se regenera.', (string) $referencia, $e);
+        }
+
+        if (! $existe) {
+            throw new CopiaArchivadaInservibleException("No se encontró la copia archivada del lote {$referencia}. "
+                .'No se regenera un archivo distinto del que se archivó.', (string) $referencia);
+        }
+
+        if (! is_string($contenido) || ! hash_equals((string) $lote->archivo_hash, hash('sha256', $contenido))) {
+            throw new CopiaArchivadaInservibleException("La copia archivada del lote {$referencia} no coincide con su huella "
+                .'SHA-256 o no se pudo leer. No se sirve ni se regenera.', (string) $referencia);
+        }
+
+        return $contenido;
+    }
+
+    /**
+     * Guarda la copia direccionada por su contenido y solo registra la huella cuando la
+     * escritura está comprobada.
+     *
+     * @throws RuntimeException
+     */
+    private function guardarCopia(NcExportacion $lote, string $contenido, ProcedenciaArchivoNc $procedencia): void
+    {
+        $hash = hash('sha256', $contenido);
+        $directorio = trim((string) config('ppq.nc_exportaciones.storage_dir', 'ppq/nc-exportaciones'), '/');
+        $destino = $directorio.'/'.$hash.'.xlsx';
+
+        try {
+            $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
+            $escrito = $disco->put($destino, $contenido);
+            $releido = $escrito ? $disco->get($destino) : null;
+        } catch (Throwable $e) {
+            throw new RuntimeException("No se pudo archivar el archivo del lote {$lote->referencia}: "
+                .$e->getMessage(), 0, $e);
+        }
+
+        if (! is_string($releido) || ! hash_equals($hash, hash('sha256', $releido))) {
+            throw new RuntimeException("No se pudo archivar el archivo del lote {$lote->referencia}: "
+                .'la copia escrita no se pudo comprobar.');
+        }
+
+        $lote->forceFill([
+            'archivo_hash' => $hash,
+            'archivo_path' => $destino,
+            'archivo_origen' => $procedencia->value,
+            'archivado_en' => now(),
+        ])->save();
+    }
+
+    /** El modelo del llamador refleja la copia registrada, sin otra escritura. */
+    private function sincronizarCopia(NcExportacion $lote, NcExportacion $fila): void
+    {
+        if ($lote === $fila) {
+            return;
+        }
+
+        $campos = ['archivo_hash', 'archivo_path', 'archivo_origen', 'archivado_en'];
+        foreach ($campos as $campo) {
+            $lote->setAttribute($campo, $fila->getAttribute($campo));
+        }
+        $lote->syncOriginalAttributes($campos);
+    }
+
+    /**
+     * Copia temporal de los bytes para servirlos. Se usa el archivo de tempnam() tal cual
+     * (sin extensión, para no dejar un vacío huérfano); el nombre y el tipo de la descarga
+     * los pone el controlador.
+     *
+     * @throws RuntimeException
+     */
+    private function temporal(string $contenido): string
+    {
+        $ruta = tempnam(sys_get_temp_dir(), 'nc_lote_');
+
+        if ($ruta === false) {
+            throw new RuntimeException('No se pudo preparar la descarga del archivo del lote.');
+        }
+
+        if (file_put_contents($ruta, $contenido) !== strlen($contenido)) {
+            @unlink($ruta);
+
+            throw new RuntimeException('No se pudo preparar la descarga del archivo del lote.');
+        }
+
+        return $ruta;
     }
 
     /**
@@ -270,6 +521,87 @@ class NcExportacionService
                     .'se regenera con el mismo contenido y no duplica documentos.',
             ]);
         }
+    }
+
+    /**
+     * Ninguna nota entra en el archivo con un hueco donde el formato espera un dato.
+     *
+     * Qué hace falta lo decide el FORMATO, no este servicio: el de carga masiva necesita
+     * año y mes del albarán, el de correo tolera celdas vacías porque quien lo recibe es
+     * una persona. Acá solo se junta lo que cada formato reporta y se dice, nota por nota,
+     * qué falta. Se corta el lote entero —y no se exporta «lo que sí está»— porque un lote
+     * a medias obliga a rastrear después cuáles quedaron fuera, y las que entraron ya no
+     * pueden volver a salir en otro archivo.
+     *
+     * @param  Collection<int, Dte>  $notas
+     *
+     * @throws ValidationException
+     */
+    private function verificarDatosCompletos(Collection $notas, ClientePerfilDocumento $perfil): void
+    {
+        $exportador = $this->exportadores->para($perfil);
+
+        $problemas = [];
+        foreach ($notas as $nota) {
+            $faltantes = $exportador->faltantes($nota, $perfil);
+            if ($faltantes !== []) {
+                $problemas[] = ($nota->numero_control ?: ('#'.$nota->id)).': falta '.implode(', ', $faltantes);
+            }
+        }
+
+        if ($problemas !== []) {
+            throw ValidationException::withMessages([
+                'dtes' => 'No se generó ningún archivo: a estas notas les falta un dato que el formato '
+                    .'exige, y el sistema no lo inventa. Completalo y volvé a intentar. — '
+                    .implode(' · ', $problemas),
+            ]);
+        }
+    }
+
+    /**
+     * Qué le falta a cada nota para poder exportarse con el formato del cliente, para
+     * mostrarlo ANTES de generar nada. Devuelve solo las que tienen algo pendiente, con el
+     * id de la nota como clave.
+     *
+     * @param  Collection<int, Dte>  $notas
+     * @return array<int, array<int, string>>
+     */
+    public function faltantes(Cliente $cliente, Collection $notas): array
+    {
+        $exportador = $this->exportador($cliente);
+        $perfil = $this->perfiles->paraCliente($cliente->id);
+
+        if ($exportador === null || $perfil === null) {
+            return [];
+        }
+
+        $faltantes = [];
+        foreach ($notas as $nota) {
+            $suyos = $exportador->faltantes($nota, $perfil);
+            if ($suyos !== []) {
+                $faltantes[$nota->id] = $suyos;
+            }
+        }
+
+        return $faltantes;
+    }
+
+    /**
+     * Exportador configurado hoy para el cliente, o null si no tiene uno utilizable.
+     *
+     * Versión NO lanzadora de {@see perfilExportador()}, para las pantallas: entrar a ver
+     * el historial de un cliente mal configurado tiene que mostrar el historial, no una
+     * excepción. Generar sí falla, y con el motivo.
+     */
+    public function exportador(Cliente $cliente): ?ExportadorNc
+    {
+        $perfil = $this->perfiles->paraCliente($cliente->id);
+
+        if ($perfil === null || ! $perfil->exporta() || ! $this->exportadores->existe((string) $perfil->formato_export)) {
+            return null;
+        }
+
+        return $this->exportadores->para($perfil);
     }
 
     /**

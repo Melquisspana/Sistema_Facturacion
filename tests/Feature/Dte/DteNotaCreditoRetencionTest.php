@@ -107,6 +107,16 @@ class DteNotaCreditoRetencionTest extends TestCase
         return $aceptar ? $this->aceptarCcf($ccf) : $ccf->refresh();
     }
 
+    /**
+     * Estas pruebas miden la RETENCIÓN de notas por monto, no el tope que el saldo del
+     * CCF le pone a la nota (SaldoMontoCcf): el CCF de referencia totaliza 137.55 y varias
+     * notas de acá lo superan a propósito del cálculo, así que se le da saldo de sobra.
+     */
+    private function darSaldoHolgado(Dte $ccf): void
+    {
+        $ccf->forceFill(['monto_total_operacion' => '10000.00'])->saveQuietly();
+    }
+
     // ---------- El CCF de referencia ----------
 
     public function test_el_ccf_de_referencia_reproduce_el_caso_real(): void
@@ -256,6 +266,7 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_pronto_pago_retiene_el_caso_real_nc14_sobre_ccf94(): void
     {
         $ccf = $this->ccfAceptado();
+        $this->darSaldoHolgado($ccf);
         $this->assertTrue((bool) $ccf->aplica_retencion_iva, 'El CCF relacionado debe estar sujeto a retención.');
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
@@ -277,6 +288,7 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_modalidad_otro_tambien_retiene_sobre_su_propia_base(): void
     {
         $ccf = $this->ccfAceptado();
+        $this->darSaldoHolgado($ccf);
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::Otro->value], $this->usuario());
         $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Ajuste de concepto', 'monto' => 124.30]);
@@ -326,6 +338,7 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_la_retencion_redondea_half_up(): void
     {
         $ccf = $this->ccfAceptado();
+        $this->darSaldoHolgado($ccf);
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
         $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 150.55]);
@@ -358,6 +371,7 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_receptor_no_gran_contribuyente_no_retiene_en_pronto_pago(): void
     {
         $ccf = $this->ccfAceptado(agenteRetencion: false);
+        $this->darSaldoHolgado($ccf);
         $this->assertFalse((bool) $ccf->aplica_retencion_iva);
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
@@ -383,6 +397,7 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_ccf_sin_retencion_no_contagia_retencion_a_la_nc_por_monto(): void
     {
         $ccf = $this->ccfAceptado(precios: [10.00, 10.00]);
+        $this->darSaldoHolgado($ccf);
         $this->assertFalse((bool) $ccf->aplica_retencion_iva, 'El CCF chico no debe retener.');
 
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
@@ -487,6 +502,7 @@ class DteNotaCreditoRetencionTest extends TestCase
     public function test_una_nc_aceptada_no_se_recalcula_con_la_regla_nueva(): void
     {
         $ccf = $this->ccfAceptado();
+        $this->darSaldoHolgado($ccf);
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::ProntoPago->value], $this->usuario());
         $this->borradores->agregarConceptoNotaCredito($nc, ['descripcion' => 'Pronto pago', 'monto' => 124.30]);
 

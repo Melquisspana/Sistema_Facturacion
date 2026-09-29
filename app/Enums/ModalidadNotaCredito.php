@@ -93,6 +93,28 @@ enum ModalidadNotaCredito: string
     }
 
     /**
+     * ¿Las modalidades internas de esta modalidad operativa comparten la MISMA regla
+     * documental del cliente —código de albarán, origen del descuento, exigencias—?
+     *
+     * SOLO devolución y faltante de entrega. De esas dos hay evidencia: son el mismo hecho
+     * fiscal, caen en el mismo albarán del cliente (un AC04 de Calleja) y el propio
+     * formulario las ofrece como UNA sola opción, así que el perfil declara una y se espera
+     * que gobierne a las dos. Sin esto, un faltante no encontraba regla y heredaba el
+     * descuento del CCF que su albarán imprime en cero.
+     *
+     * Las demás devuelven `false` A PROPÓSITO, aunque «Otro ajuste» también agrupe varias
+     * internas. Que la pantalla las junte bajo un mismo rótulo NO es evidencia de que el
+     * cliente quiera el mismo código ni el mismo descuento para «descuento posterior»,
+     * «ajuste comercial» y «otro»: eso habría que verlo en los documentos de cada cliente,
+     * y nadie lo declaró. Un cliente que quiera compartirla siempre puede declarar la fila
+     * de cada modalidad interna, que es lo que manda.
+     */
+    public function comparteReglaDocumental(): bool
+    {
+        return $this === self::DevolucionFaltante;
+    }
+
+    /**
      * Submotivos que el formulario SÍ ofrece dentro de la modalidad. Solo devolución y
      * faltante: son dos hechos distintos con idéntico tratamiento fiscal, y perder la
      * distinción borraría información que el listado y el archivo del cliente ya usan.

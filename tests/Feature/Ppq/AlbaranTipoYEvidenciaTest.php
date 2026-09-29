@@ -7,13 +7,9 @@ use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PpqAlbaran;
-use App\Models\Ruta;
-use App\Models\SalidaRuta;
-use App\Models\SalidaRutaDocumento;
 use App\Services\Ppq\AlbaranPersistidor;
 use App\Services\Ppq\PpqGmailService;
 use App\Services\Rutas\AlbaranLocalizador;
-use App\Services\Rutas\AsignadorDocumentos;
 use App\Services\Rutas\ResolucionAlbaran;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -80,21 +76,13 @@ class AlbaranTipoYEvidenciaTest extends TestCase
         ]);
     }
 
-    /** Documento de una salida, con su CCF real detrás. */
-    private function documentoEnSalida(): SalidaRutaDocumento
+    /** Un CCF real de la sala 0232, con la orden de compra de las pruebas. */
+    private function ccf(): Dte
     {
         $cliente = Cliente::factory()->create(['nombre' => 'Calleja']);
         $sala = $cliente->sucursales()->create(['nombre' => 'Selectos San Miguel', 'codigo' => '0232']);
-        $ruta = Ruta::create(['nombre' => 'San Miguel']);
-        $sala->update(['ruta_id' => $ruta->id]);
 
-        $salida = SalidaRuta::create([
-            'ruta_id' => $ruta->id,
-            'fecha_inicio' => now()->toDateString(),
-            'estado' => 'en_curso',
-        ]);
-
-        $dte = Dte::create([
+        return Dte::create([
             'establecimiento_id' => $this->establecimiento()->id,
             'tipo_dte' => '03',
             'estado' => 'aceptado',
@@ -109,8 +97,12 @@ class AlbaranTipoYEvidenciaTest extends TestCase
             'hora_emision' => '10:00:00',
             'total_pagar' => 136.33,
         ]);
+    }
 
-        return app(AsignadorDocumentos::class)->agregarDte($salida, $dte, null);
+    /** Qué albarán de entrega le corresponde al CCF, por vínculo o por orden de compra. */
+    private function resolucion(Dte $dte): ResolucionAlbaran
+    {
+        return app(AlbaranLocalizador::class)->paraUno($dte->id, $dte->numero_orden_compra);
     }
 
     // ═════════════════════════ el tipo se deriva del propio número
@@ -138,81 +130,81 @@ class AlbaranTipoYEvidenciaTest extends TestCase
 
     public function test_un_unico_ac01_marca_el_documento_como_entregado(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
         $entrega = $this->albaran('AC01/0232/00/6715', 136.33);
 
-        $this->assertTrue($documento->entregado());
-        $this->assertSame($entrega->id, $documento->albaran()->id);
-        $this->assertNull($documento->entregaExcepcion());
+        $this->assertTrue($this->resolucion($dte)->estaVinculado());
+        $this->assertSame($entrega->id, $this->resolucion($dte)->albaran->id);
+        $this->assertNull($this->resolucion($dte)->motivo());
     }
 
     public function test_un_albaran_de_credito_sobre_la_misma_oc_no_marca_entrega(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         // Solo el AC02 de la nota de crédito. La OC es la misma, el monto es el del abono.
         $this->albaran('AC02/0232/00/6836', 2.89);
 
-        $this->assertFalse($documento->entregado());
-        $this->assertNull($documento->albaran());
-        $this->assertStringContainsString('no consta que sea de entrega', (string) $documento->entregaExcepcion());
+        $this->assertFalse($this->resolucion($dte)->estaVinculado());
+        $this->assertNull($this->resolucion($dte)->albaran);
+        $this->assertStringContainsString('no consta que sea de entrega', (string) $this->resolucion($dte)->motivo());
     }
 
     public function test_el_ac01_gana_aunque_convivan_el_de_entrega_y_el_de_credito(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         // Es el caso REAL de la base: la OC tiene el AC01 de la entrega y el albarán de
         // crédito de la NC, cargado a mano con el número suelto.
         $this->albaran('3211', 1.93);
         $entrega = $this->albaran('AC01/0232/00/6715', 136.33);
 
-        $this->assertTrue($documento->entregado());
-        $this->assertSame($entrega->id, $documento->albaran()->id);
+        $this->assertTrue($this->resolucion($dte)->estaVinculado());
+        $this->assertSame($entrega->id, $this->resolucion($dte)->albaran->id);
         // Y el monto que se usa es el de la entrega, no el del abono.
-        $this->assertSame('136.33', (string) $documento->albaran()->monto_albaran);
+        $this->assertSame('136.33', (string) $this->resolucion($dte)->albaran->monto_albaran);
     }
 
     public function test_con_dos_ac01_para_la_misma_oc_no_se_elige_ninguno(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         // Caso real: una OC con dos albaranes de entrega, de salas distintas.
         $this->albaran('AC01/0228/00/6556', 136.33);
         $this->albaran('AC01/0256/00/4816', 120.00);
 
-        $this->assertFalse($documento->entregado());
-        $this->assertStringContainsString('elegí a mano', (string) $documento->entregaExcepcion());
+        $this->assertFalse($this->resolucion($dte)->estaVinculado());
+        $this->assertStringContainsString('elegí a mano', (string) $this->resolucion($dte)->motivo());
     }
 
     public function test_un_albaran_sin_tipo_no_se_supone_de_entrega(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
         $this->albaran('3474', 9.31);
 
-        $this->assertFalse($documento->entregado());
-        $this->assertNotNull($documento->entregaExcepcion());
+        $this->assertFalse($this->resolucion($dte)->estaVinculado());
+        $this->assertNotNull($this->resolucion($dte)->motivo());
     }
 
     public function test_sin_ningun_albaran_no_hay_excepcion_solo_espera(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
-        $this->assertFalse($documento->entregado());
+        $this->assertFalse($this->resolucion($dte)->estaVinculado());
         // Esperar el albarán es lo normal; llamarlo excepción llenaría la bandeja de ruido.
-        $this->assertNull($documento->entregaExcepcion());
+        $this->assertNull($this->resolucion($dte)->motivo());
     }
 
     // ═════════════════════════ el vínculo explícito NO exime del tipo
 
     public function test_un_ac01_vinculado_por_dte_id_marca_entrega(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         $albaran = $this->albaran('AC01/0232/00/6715', 136.33, '260609990099999');
-        $albaran->update(['dte_id' => $documento->dte_id]);
+        $albaran->update(['dte_id' => $dte->id]);
 
-        $resolucion = app(AlbaranLocalizador::class)->paraUno($documento->dte_id, $documento->orden());
+        $resolucion = $this->resolucion($dte);
 
         $this->assertTrue($resolucion->estaVinculado());
         $this->assertSame($albaran->id, $resolucion->albaran->id);
@@ -245,11 +237,11 @@ class AlbaranTipoYEvidenciaTest extends TestCase
      */
     private function assertVinculoExplicitoNoPruebaEntrega(string $numero): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
-        $this->albaran($numero, 2.89, '260609990099999')->update(['dte_id' => $documento->dte_id]);
+        $this->albaran($numero, 2.89, '260609990099999')->update(['dte_id' => $dte->id]);
 
-        $resolucion = app(AlbaranLocalizador::class)->paraUno($documento->dte_id, $documento->orden());
+        $resolucion = $this->resolucion($dte);
 
         // El vínculo explícito dice DE QUIÉN es el albarán, no que pruebe una entrega.
         $this->assertFalse($resolucion->estaVinculado());
@@ -260,39 +252,39 @@ class AlbaranTipoYEvidenciaTest extends TestCase
 
     public function test_un_credito_vinculado_no_deja_que_la_oc_tape_el_error(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         // Hay un AC01 legítimo por la orden de compra…
         $this->albaran('AC01/0232/00/6715', 136.33);
         // …y alguien vinculó a mano el albarán de crédito de la NC a este mismo documento.
         $credito = $this->albaran('AC02/0232/00/6836', 2.89, '260609990099999');
-        $credito->update(['dte_id' => $documento->dte_id]);
+        $credito->update(['dte_id' => $dte->id]);
 
-        $resolucion = app(AlbaranLocalizador::class)->paraUno($documento->dte_id, $documento->orden());
+        $resolucion = $this->resolucion($dte);
 
         // NO se cae a la orden de compra: si lo hiciera, el documento aparecería entregado
         // y el vínculo mal puesto no se vería nunca.
         $this->assertFalse($resolucion->estaVinculado());
         $this->assertTrue($resolucion->esExcepcion());
-        $this->assertFalse($documento->entregado());
-        $this->assertNotNull($documento->entregaExcepcion());
+        $this->assertFalse($this->resolucion($dte)->estaVinculado());
+        $this->assertNotNull($this->resolucion($dte)->motivo());
     }
 
     public function test_el_ac01_explicito_gana_sobre_varios_candidatos_por_orden_de_compra(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         // Dos AC01 comparten la OC: por esa vía no se elige ninguno.
         $this->albaran('AC01/0228/00/6556', 136.33);
         $elegido = $this->albaran('AC01/0256/00/4816', 120.00);
 
-        $this->assertFalse($documento->entregado());
+        $this->assertFalse($this->resolucion($dte)->estaVinculado());
 
         // En cuanto alguien establece el vínculo explícito sobre uno de ellos —y es de
         // entrega—, la ambigüedad desaparece.
-        $elegido->update(['dte_id' => $documento->dte_id]);
+        $elegido->update(['dte_id' => $dte->id]);
 
-        $resolucion = app(AlbaranLocalizador::class)->paraUno($documento->dte_id, $documento->orden());
+        $resolucion = $this->resolucion($dte);
 
         $this->assertTrue($resolucion->estaVinculado());
         $this->assertSame($elegido->id, $resolucion->albaran->id);
@@ -300,14 +292,14 @@ class AlbaranTipoYEvidenciaTest extends TestCase
 
     public function test_dos_albaranes_de_entrega_vinculados_al_mismo_documento_no_eligen_ninguno(): void
     {
-        $documento = $this->documentoEnSalida();
+        $dte = $this->ccf();
 
         // El índice por `dte_id` también AGRUPA: antes se quedaba con el último que pasara.
         foreach (['AC01/0228/00/6556', 'AC01/0256/00/4816'] as $i => $numero) {
-            $this->albaran($numero, 136.33, '26060999009999'.$i)->update(['dte_id' => $documento->dte_id]);
+            $this->albaran($numero, 136.33, '26060999009999'.$i)->update(['dte_id' => $dte->id]);
         }
 
-        $resolucion = app(AlbaranLocalizador::class)->paraUno($documento->dte_id, $documento->orden());
+        $resolucion = $this->resolucion($dte);
 
         $this->assertFalse($resolucion->estaVinculado());
         $this->assertStringContainsString('vinculados a este documento', (string) $resolucion->motivo());

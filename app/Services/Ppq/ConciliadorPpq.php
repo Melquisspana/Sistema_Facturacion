@@ -4,12 +4,14 @@ namespace App\Services\Ppq;
 
 use App\Enums\OrigenConciliacionPpq;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
+use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Exceptions\Ppq\ConciliacionYaProcesadaException;
 use App\Models\PpqConciliacion;
 use App\Models\PpqConciliacionMovimiento;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
+use App\Services\Cobros\EvidenciaEntreCircuitos;
 use App\Support\Dinero;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +23,13 @@ use Illuminate\Support\Facades\DB;
  * Regla central, que no cambia: un CCF NO está pagado por estar en el PPQ. Solo se marca
  * PAGADO cuando aparece en el TXT como tipo CF, y una NC como APLICADA cuando aparece
  * como NC. El cruce es por número de documento NORMALIZADO y por tipo.
+ *
+ * ═══════════════════ Toda fila es del proveedor esperado, o nada se aplica ═══════════════════
+ *
+ * Antes de tocar un solo renglón se verifica, con {@see ValidadorCodigoProveedorTxt}, que
+ * CADA fila del archivo traiga el código 000123. Una fila ajena —o sin código— rechaza el
+ * archivo COMPLETO: que su número coincida con un renglón del lote no prueba que sea un
+ * pago de este emisor.
  *
  * ═══════════════════ LO QUE ESTE SERVICIO NO HACE (y antes sí) ═══════════════════
  *
@@ -82,6 +91,10 @@ class ConciliadorPpq
     /** Tipos del TXT que identifican un DOCUMENTO del lote y por tanto pueden colisionar. */
     private const TIPOS_DE_DOCUMENTO = ['CF', 'NC'];
 
+    public function __construct(
+        private readonly ValidadorCodigoProveedorTxt $validadorProveedor,
+    ) {}
+
     /**
      * Aplica el archivo al lote y devuelve el resumen para pantalla.
      *
@@ -92,10 +105,15 @@ class ConciliadorPpq
      *
      * @throws ConciliacionYaProcesadaException si ese mismo archivo ya se aplicó al lote
      * @throws ArchivoConciliacionInconsistenteException si el archivo se contradice
+     * @throws ArchivoProveedorInvalidoException si alguna fila trae un código de proveedor distinto del esperado
      */
     public function conciliar(PpqLote $lote, array $filas, ?User $usuario = null, ?ArchivoConciliacion $archivo = null): array
     {
         $lote->loadMissing('items');
+
+        // Antes que cualquier otra cosa, incluso de saber si el archivo ya se procesó: un
+        // archivo de otro proveedor no es evidencia de ningún pago de este lote.
+        $this->validadorProveedor->verificar($filas);
 
         if ($archivo !== null) {
             $anterior = PpqConciliacion::yaProcesado($lote->id, $archivo->hash);
@@ -193,6 +211,9 @@ class ConciliadorPpq
             'noEnPpq' => $this->noEnPpq($cf, $nc, $usadosCf, $usadosNc),
             'ajustesQd' => $qd,
             'totales' => $this->totales($cf, $nc, $qd, $ccfPagados, $ccfPendientes, $ncAplicadas, $ncPendientes, $conservados, $repetidas),
+            // Si este MISMO archivo ya dejó pagos o ajustes en el seguimiento de Cobros. Solo
+            // se informa: la conciliación del lote no cambia por eso.
+            'enCobros' => $archivo !== null ? app(EvidenciaEntreCircuitos::class)->enCobros($archivo->hash) : null,
         ];
     }
 
@@ -308,6 +329,8 @@ class ConciliadorPpq
      */
     private function aplicar(PpqItem $item, string $estado, array $fila): ?array
     {
+        // Campo heredado: `fecha_pago` guarda FECHA_DOCUMENTO del TXT, no la fecha
+        // efectiva del pago (que el archivo no informa). Las vistas deben rotularlo así.
         $fecha = $fila['fecha'] ?? null;
         $monto = $fila['valor'] === null ? null : $this->importe($fila['valor']);
 

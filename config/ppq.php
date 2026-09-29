@@ -32,6 +32,19 @@ return [
     | La copia se guarda direccionada por el SHA-256 de su contenido, así que
     | procesar dos veces el mismo archivo escribe el mismo lugar y no duplica nada.
     */
+    /*
+    | Archivo del portal de quedan: sala confirmada a mano para un CCF cuya OC trae otra
+    | sala que su albarán de entrega. Formato: "NUMERO_CONTROL:SALA,..." Solo se acepta si
+    | la sala coincide con la del número del albarán; no modifica DTE ni albarán.
+    */
+    'quedan' => [
+        'salas_confirmadas' => collect(explode(',', (string) env('PPQ_QUEDAN_SALAS_CONFIRMADAS', '')))
+            ->map(fn ($par) => array_map('trim', explode(':', $par, 2)))
+            ->filter(fn ($par) => count($par) === 2 && $par[0] !== '' && $par[1] !== '')
+            ->mapWithKeys(fn ($par) => [strtoupper($par[0]) => $par[1]])
+            ->all(),
+    ],
+
     'conciliacion' => [
         'storage_dir' => env('PPQ_CONCILIACION_STORAGE_DIR', 'ppq/conciliaciones'),
     ],

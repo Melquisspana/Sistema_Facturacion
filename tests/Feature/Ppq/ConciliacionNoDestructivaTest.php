@@ -345,7 +345,8 @@ class ConciliacionNoDestructivaTest extends TestCase
         $this->assertTrue($movimiento->deshizoUnPago());
     }
 
-    public function test_la_correccion_exige_un_motivo_que_explique_la_decision(): void
+    /** El motivo es opcional (decisión del usuario, 25/09/2026): sin él queda anotado igual. */
+    public function test_la_correccion_sin_motivo_queda_anotada(): void
     {
         $usuario = $this->usuario();
         $lote = $this->lote();
@@ -353,13 +354,12 @@ class ConciliacionNoDestructivaTest extends TestCase
 
         $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44))->assertOk();
 
-        // Un motivo de relleno no explica nada, y el día que el saldo no cuadre la
-        // pregunta va a ser exactamente esa.
         $this->actingAs($usuario)
-            ->post(route('ppq.lotes.items.revertir-cobro', [$lote, $item]), ['motivo' => 'error'])
-            ->assertSessionHasErrors('motivo');
+            ->post(route('ppq.lotes.items.revertir-cobro', [$lote, $item]), [])
+            ->assertSessionHasNoErrors();
 
-        $this->assertSame('pagado', $item->refresh()->conciliacion_estado);
+        $this->assertNotSame('pagado', $item->refresh()->conciliacion_estado);
+        $this->assertStringContainsString('sin motivo indicado', (string) $lote->conciliaciones()->latest('id')->value('motivo'));
     }
 
     public function test_no_se_puede_revertir_un_renglon_que_nunca_se_cobro(): void
@@ -626,5 +626,74 @@ class ConciliacionNoDestructivaTest extends TestCase
         $this->subir($lote, $usuario, $txt)->assertOk();
 
         $this->assertSame('pagado', $item->refresh()->conciliacion_estado);
+    }
+
+    // ══════════════════════════════ 10) código de proveedor
+
+    /**
+     * Una fila con otro código de proveedor rechaza el archivo ENTERO, aunque su número
+     * coincida con un renglón del lote: coincidir de número no prueba que sea el mismo
+     * emisor. Ni siquiera la fila del proveedor esperado se aplica.
+     */
+    public function test_una_fila_con_proveedor_ajeno_rechaza_el_archivo_completo(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $valido = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+        $ajeno = $this->item($lote, 'DTE-03-M001P001-000000000000968', 80.00);
+
+        $txt = implode("\n", [
+            $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44),
+            '009999;OTRO PROVEEDOR;CF;DTE03M001P001000000000000968;05-JUN-26;80.00',
+        ]);
+
+        $respuesta = $this->subir($lote, $usuario, $txt, 'mixto.txt');
+
+        $respuesta->assertRedirect(route('ppq.lotes.show', $lote))->assertSessionHas('error');
+        $this->assertStringContainsString('009999', session('error'));
+
+        $this->assertNull($valido->refresh()->conciliacion_estado);
+        $this->assertNull($ajeno->refresh()->conciliacion_estado);
+        $this->assertSame(0, PpqConciliacion::count());
+    }
+
+    /** Una NC con proveedor ajeno también rechaza el archivo entero, aunque haya una fila válida. */
+    public function test_una_nc_con_proveedor_ajeno_rechaza_el_archivo(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $ccf = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+        $nc = $this->item($lote, 'DTE-05-M001P001-000000000000339', 5.30, '05');
+
+        $txt = implode("\n", [
+            $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44),
+            '009999;OTRO;NC;DTE05M001P001000000000000339;08-JUN-26;-5.30',
+        ]);
+
+        $this->subir($lote, $usuario, $txt, 'nc-ajena.txt')
+            ->assertRedirect(route('ppq.lotes.show', $lote))->assertSessionHas('error');
+
+        $this->assertNull($ccf->refresh()->conciliacion_estado);
+        $this->assertNull($nc->refresh()->conciliacion_estado);
+        $this->assertSame(0, PpqConciliacion::count());
+    }
+
+    /** Un QD con proveedor ajeno también rechaza el archivo entero, aunque no impute a ningún renglón. */
+    public function test_un_qd_con_proveedor_ajeno_rechaza_el_archivo(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $ccf = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+
+        $txt = implode("\n", [
+            $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44),
+            '009999;OTRO;QD;PPQ/999;;-5.00',
+        ]);
+
+        $this->subir($lote, $usuario, $txt, 'qd-ajeno.txt')
+            ->assertRedirect(route('ppq.lotes.show', $lote))->assertSessionHas('error');
+
+        $this->assertNull($ccf->refresh()->conciliacion_estado);
+        $this->assertSame(0, PpqConciliacion::count());
     }
 }

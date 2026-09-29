@@ -79,9 +79,14 @@
             // documental. La mayoría no tiene y no ve ningún código: la nota se emite con
             // las reglas fiscales generales.
             $perfilNc = app(\App\Services\Dte\PerfilDocumentoResolver::class)->paraCliente($dte->cliente_id);
+            // Una modalidad operativa, un codigo: reglaOperativaPara() ya resuelve la
+            // modalidad interna hermana (devolucion/faltante comparten albaran), y es la
+            // MISMA resolucion que aplica el motor fiscal. Antes se recorrian los tipos
+            // internos aca a mano, y esa copia podia desalinearse del servidor.
             $codigosNc = collect($modalidadesNc)
-                ->mapWithKeys(fn ($m) => [$m->value => collect($m->tiposInternos())
-                    ->map(fn ($t) => $perfilNc?->reglaPara($t)?->codigo_externo)->filter()->first()])
+                ->mapWithKeys(fn ($m) => [
+                    $m->value => $perfilNc?->reglaOperativaPara($m->tipoPorDefecto())?->codigo_externo,
+                ])
                 ->filter()->all();
         @endphp
         <form method="POST" action="{{ route('facturacion.nota-credito.store', $dte) }}"

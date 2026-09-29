@@ -78,9 +78,10 @@ class ExcelCallejaExporter
             // nombre, cae al código de 4 dígitos (no se escribe texto de error en el archivo).
             $salaNombre = $item->salaNombre();
             $hoja->setCellValueExplicit([9, $fila], $salaNombre ?: $salaCodigo, DataType::TYPE_STRING);
-            // Diferencia (CCF − albarán); solo cuando hay albarán vinculado.
-            if (! $item->sin_albaran && $item->monto_albaran !== null) {
-                $hoja->setCellValue([10, $fila], (float) $item->diferencia);
+            // Diferencia = G − D, con el mismo signo que esas dos columnas (NC en negativo).
+            // Vacía cuando no hay monto de albarán comparable.
+            if (($diferencia = $item->diferenciaConSigno()) !== null) {
+                $hoja->setCellValue([10, $fila], $diferencia);
             }
             $fila++;
         }

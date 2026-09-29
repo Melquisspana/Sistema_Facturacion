@@ -48,6 +48,23 @@ class PpqBusquedaService
     private const TIPOS = ['03', '05'];
 
     /**
+     * Lo que la ficha de resultado necesita de cada documento, precargado EN BLOQUE para
+     * las dos búsquedas.
+     *
+     * `albaran` y `dteRelacionado` son los datos que la NC ya trae guardados —el albarán
+     * de crédito que la originó y el CCF que acredita— y que la pantalla muestra en vez
+     * de volver a pedirlos. Van acá y no en la vista porque una lista de 25 resultados
+     * dispararía dos consultas por fila; así son dos para la página entera. En un CCF las
+     * dos relaciones vienen vacías y no cuestan nada.
+     */
+    private const RELACIONES = [
+        'cliente:id,nombre,nombre_comercial',
+        'clienteSucursal:id,nombre,codigo',
+        'albaran',
+        'dteRelacionado:id,numero_control',
+    ];
+
+    /**
      * Ancho máximo que se le supone a la secuencia final del número de control.
      * La norma son 15 dígitos, pero hay documentos históricos con 16, así que el
      * correlativo se busca probando anchos en vez de dar uno por sentado.
@@ -129,7 +146,7 @@ class PpqBusquedaService
         $q = Dte::query()
             ->whereIn('tipo_dte', $tipo !== null && in_array($tipo, self::TIPOS, true) ? [$tipo] : self::TIPOS)
             ->noArchivados()
-            ->with(['cliente:id,nombre,nombre_comercial', 'clienteSucursal:id,nombre,codigo'])
+            ->with(self::RELACIONES)
             // AMBIENTES SEPARADOS, con la misma regla que ya usa IdentidadPpq::dteLocal().
             //
             // No se filtra por el ambiente configurado, y a propósito: un documento de
@@ -203,7 +220,7 @@ class PpqBusquedaService
             // Los rechazados ARCHIVADOS están fuera de la operación: no aparecen en la
             // búsqueda rápida de cobro (se consultan por el filtro dedicado o Auditoría).
             ->noArchivados()
-            ->with(['cliente:id,nombre,nombre_comercial', 'clienteSucursal:id,nombre,codigo'])
+            ->with(self::RELACIONES)
             // Los documentos ELEGIBLES para PPQ (producción + aceptados realmente por
             // Hacienda) van primero: son los que permiten no consultar Gmail y los únicos
             // que se pueden agregar a un lote. Es una PRIORIDAD, no un filtro: un borrador

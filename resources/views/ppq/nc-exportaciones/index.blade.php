@@ -23,16 +23,23 @@
                 </div>
             @endif
 
-            {{-- Qué es y qué NO hace. Lo segundo importa tanto como lo primero. --}}
+            {{-- Qué es y qué NO hace. Lo segundo importa tanto como lo primero. El texto de
+                 entrega lo declara el FORMATO activo (correo o portal), no esta vista. --}}
             <div class="rounded-md bg-blue-50 border border-blue-200 p-4 text-sm text-blue-700">
                 <p>
                     Armá el archivo que pide el cliente: <strong>una fila por nota de crédito</strong>, con los datos de
                     su albarán. Las notas se acumulan hasta que decidas generarlo, así que
                     <strong>un mismo archivo puede llevar notas de días distintos</strong>.
                 </p>
+                @if ($formato)
+                    <p class="mt-2">
+                        Formato de este cliente: <strong>{{ $formato['nombre'] }}</strong>.
+                        {{ $formato['entrega'] }}
+                    </p>
+                @endif
                 <p class="mt-2">
-                    El sistema <strong>no envía correos</strong>: registra el formato como generado y, al bajarlo, como
-                    descargado. Descargar o regenerar cuantas veces haga falta
+                    El sistema <strong>no envía ni carga nada por su cuenta</strong>: registra el formato como generado
+                    y, al bajarlo, como descargado. Descargarlo cuantas veces haga falta
                     <strong>no duplica ni vuelve a marcar documentos</strong>.
                 </p>
             </div>
@@ -123,9 +130,13 @@
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                     <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
                         <h3 class="font-medium text-gray-700 dark:text-paper-100">1 · Pendientes de incluir en un formato</h3>
-                        <span class="text-sm text-gray-500 dark:text-paper-300">
-                            {{ $pendientes->count() }} nota(s){{ $hayFiltros ? ' con los filtros aplicados' : '' }}
-                        </span>
+                        <p class="text-sm text-gray-500 dark:text-paper-300">
+                            @if ($pendientes->isNotEmpty())
+                                Mostrando {{ $pendientes->firstItem() }}–{{ $pendientes->lastItem() }} de {{ $pendientes->total() }} nota(s){{ $hayFiltros ? ' con los filtros aplicados' : '' }}
+                            @else
+                                {{ $pendientes->total() }} nota(s){{ $hayFiltros ? ' con los filtros aplicados' : '' }}
+                            @endif
+                        </p>
                     </div>
                     <p class="text-sm text-gray-500 dark:text-paper-300 mb-4">
                         Notas de {{ $cliente->nombre }} aceptadas por Hacienda, con albarán registrado, que todavía no
@@ -133,7 +144,43 @@
                         ninguna quede olvidada.
                     </p>
 
-                    @if ($pendientes->isEmpty())
+                    {{-- Datos que faltan, dichos ANTES de generar nada: el archivo no se arma
+                         con huecos ni con valores inventados. --}}
+                    @if ($faltantes)
+                        <div class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800" role="alert">
+                            <p class="font-medium">
+                                {{ count($faltantes) }} nota(s) de esta página no se pueden incluir todavía: les falta un
+                                dato que el formato exige y el sistema no lo inventa.
+                            </p>
+                            <ul class="mt-2 list-disc list-inside space-y-1">
+                                @foreach ($pendientes as $nc)
+                                    @if (isset($faltantes[$nc->id]))
+                                        <li>
+                                            <span class="font-mono">{{ $nc->numero_control }}</span>
+                                            — falta {{ implode(', ', $faltantes[$nc->id]) }}.
+                                        </li>
+                                    @endif
+                                @endforeach
+                            </ul>
+                            <p class="mt-2 text-xs">
+                                Completá el dato en el albarán de la nota y volvé a esta pantalla. Las demás sí se pueden
+                                generar.
+                            </p>
+                        </div>
+                    @endif
+
+                    @if ($pendientes->isEmpty() && $pendientes->currentPage() > 1)
+                        {{-- Página fuera de rango (enlace viejo, o se exportaron notas mientras tanto). --}}
+                        <p class="text-sm text-amber-700" role="status">
+                            @if ($pendientes->total() > 0)
+                                Esta página de pendientes no existe ({{ $pendientes->total() }} nota(s) en {{ $pendientes->lastPage() }} página(s)).
+                            @else
+                                Ya no quedan notas pendientes{{ $hayFiltros ? ' con estos filtros' : '' }}.
+                            @endif
+                            <a href="{{ $pendientes->url(1) }}" class="font-medium text-indigo-600 hover:underline">Ir a la primera página</a>@if ($hayFiltros)
+                                · <a href="{{ route('ppq.nc-exportaciones.index', ['cliente_id' => $cliente->id]) }}" class="font-medium text-indigo-600 hover:underline">Quitar filtros</a>@endif.
+                        </p>
+                    @elseif ($pendientes->isEmpty())
                         <p class="text-sm text-gray-500 dark:text-paper-300">
                             @if ($hayFiltros)
                                 Ninguna nota coincide con los filtros.
@@ -143,26 +190,52 @@
                             @endif
                         </p>
                     @else
-                        <form method="POST" action="{{ route('ppq.nc-exportaciones.store') }}" x-data="{ todas: true }">
+                        @php $puedeGestionar = auth()->user()?->can('ppq.gestionar') ?? false; @endphp
+                        {{-- Nada viene marcado: un lote se arma a propósito, no por no desmarcar.
+                             autocomplete=off evita que el navegador restaure marcas que no se enviaron. --}}
+                        {{-- La casilla general refleja las individuales: si se desmarca una, deja de
+                             aparentar «todas» (queda indeterminada). Solo cuenta las habilitadas. --}}
+                        <form method="POST" action="{{ route('ppq.nc-exportaciones.store') }}" autocomplete="off"
+                              x-data="{
+                                  todas: false,
+                                  casillas() { return Array.from(this.$el.querySelectorAll('input[data-nc]:not(:disabled)')) },
+                                  marcarPagina() { const v = this.$refs.general.checked; this.casillas().forEach(c => c.checked = v); this.sincronizar() },
+                                  sincronizar() {
+                                      const c = this.casillas();
+                                      const marcadas = c.filter(x => x.checked).length;
+                                      this.todas = c.length > 0 && marcadas === c.length;
+                                      if (this.$refs.general) { this.$refs.general.indeterminate = marcadas > 0 && marcadas < c.length }
+                                  },
+                              }">
                             @csrf
                             <input type="hidden" name="cliente_id" value="{{ $cliente->id }}">
 
+                            @if ($puedeGestionar)
+                                {{-- Alcance VISIBLE de la casilla general: solo esta página. --}}
+                                <div class="mb-2 flex flex-wrap items-center gap-2 text-sm">
+                                    <input id="marcar_pagina" type="checkbox" x-ref="general" x-model="todas" @change="marcarPagina()"
+                                           class="rounded border-gray-300">
+                                    <label for="marcar_pagina" class="font-medium text-gray-700 dark:text-paper-100">Marcar las de esta página</label>
+                                    <span class="text-xs text-gray-500 dark:text-paper-300">({{ $pendientes->count() - count($faltantes) }} disponible(s); las incompletas no se marcan)</span>
+                                </div>
+                            @endif
+
                             <div class="overflow-x-auto">
                                 <table class="min-w-full text-sm">
-                                    <caption class="sr-only">Notas de crédito pendientes de incluir en un formato</caption>
+                                    <caption class="sr-only">
+                                        Notas de crédito pendientes de incluir en un formato, página {{ $pendientes->currentPage() }} de {{ $pendientes->lastPage() }}
+                                    </caption>
                                     <thead class="bg-gray-50 text-gray-600 dark:text-paper-300">
                                         <tr>
-                                            <th scope="col" class="p-2 text-left w-10">
-                                                <label class="sr-only" for="marcar_todas">Marcar todas</label>
-                                                <input id="marcar_todas" type="checkbox" x-model="todas"
-                                                       @change="$el.closest('form').querySelectorAll('input[name=\'dtes[]\']').forEach(c => c.checked = todas)"
-                                                       checked class="rounded border-gray-300">
-                                            </th>
+                                            <th scope="col" class="p-2 text-left w-10"><span class="sr-only">Incluir</span></th>
                                             <th scope="col" class="p-2 text-left font-medium">Emitida</th>
                                             <th scope="col" class="p-2 text-left font-medium">Número de control</th>
                                             <th scope="col" class="p-2 text-left font-medium">Tipo</th>
                                             <th scope="col" class="p-2 text-left font-medium">Sala</th>
                                             <th scope="col" class="p-2 text-left font-medium">Albarán</th>
+                                            {{-- El año y el mes del formato de carga masiva salen de acá, no de la
+                                                 fecha de emisión de la nota: se muestra para poder comprobarlo. --}}
+                                            <th scope="col" class="p-2 text-left font-medium">Fecha albarán</th>
                                             <th scope="col" class="p-2 text-right font-medium">Total albarán</th>
                                             <th scope="col" class="p-2 text-right font-medium">Total nota</th>
                                             <th scope="col" class="p-2 text-right font-medium">Retención</th>
@@ -174,18 +247,36 @@
                                                 $alb = $nc->albaran;
                                                 $difiere = $alb?->total !== null
                                                     && round((float) $alb->total, 2) !== round((float) $nc->total_pagar, 2);
+                                                $faltaEnEsta = $faltantes[$nc->id] ?? [];
                                             @endphp
-                                            <tr>
+                                            <tr class="{{ $faltaEnEsta ? 'bg-amber-50' : '' }}">
                                                 <td class="p-2">
-                                                    <label class="sr-only" for="nc_{{ $nc->id }}">Incluir la nota {{ $nc->numero_control }}</label>
-                                                    <input id="nc_{{ $nc->id }}" type="checkbox" name="dtes[]" value="{{ $nc->id }}" checked
-                                                           class="rounded border-gray-300">
+                                                    @if ($puedeGestionar)
+                                                        <label class="sr-only" for="nc_{{ $nc->id }}">Incluir la nota {{ $nc->numero_control }}</label>
+                                                        {{-- Deshabilitada, no solo desmarcada: con un dato faltante no hay
+                                                             fila posible, y el servidor rechaza el lote entero igual. --}}
+                                                        <input id="nc_{{ $nc->id }}" type="checkbox" name="dtes[]" value="{{ $nc->id }}" data-nc
+                                                               @change="sincronizar()"
+                                                               @disabled((bool) $faltaEnEsta)
+                                                               @if ($faltaEnEsta) aria-describedby="falta_{{ $nc->id }}" @endif
+                                                               class="rounded border-gray-300 disabled:opacity-50">
+                                                    @endif
                                                 </td>
                                                 <td class="p-2 whitespace-nowrap">{{ $nc->fecha_emision?->format('d/m/Y') }}</td>
-                                                <td class="p-2 font-mono whitespace-nowrap">{{ $nc->numero_control }}</td>
+                                                <td class="p-2 font-mono whitespace-nowrap">
+                                                    {{ $nc->numero_control }}
+                                                    @if ($faltaEnEsta)
+                                                        <span id="falta_{{ $nc->id }}" class="block font-sans text-xs font-medium text-amber-700">
+                                                            Falta {{ implode(', ', $faltaEnEsta) }}
+                                                        </span>
+                                                    @endif
+                                                </td>
                                                 <td class="p-2 font-mono">{{ $alb?->tipo_codigo }}</td>
                                                 <td class="p-2 font-mono">{{ $alb?->sala_codigo ?? $nc->clienteSucursal?->codigo ?? '—' }}</td>
                                                 <td class="p-2 font-mono">{{ $alb?->numero_canonico }}</td>
+                                                <td class="p-2 whitespace-nowrap {{ $alb?->fecha === null ? 'text-amber-700 font-medium' : '' }}">
+                                                    {{ $alb?->fecha?->format('d/m/Y') ?? 'sin fecha' }}
+                                                </td>
                                                 <td class="p-2 text-right font-mono">{{ $alb?->total !== null ? number_format((float) $alb->total, 2) : '—' }}</td>
                                                 <td class="p-2 text-right font-mono {{ $difiere ? 'text-amber-700 font-semibold' : '' }}">
                                                     {{ number_format((float) $nc->total_pagar, 2) }}
@@ -200,108 +291,94 @@
                                 </table>
                             </div>
 
-                            @can('ppq.gestionar')
+                            @if ($puedeGestionar)
                                 <button class="mt-4 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
                                     Generar formato con las marcadas
                                 </button>
-                                <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">
-                                    Las marcadas dejan de estar pendientes y no podrán entrar en otro formato.
-                                    Podés mezclar notas de fechas distintas.
-                                </p>
+                                {{-- Una sola línea a propósito: la frase se busca entera en las pruebas. --}}
+                                <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">El archivo lleva solo las marcadas <strong>en esta página</strong>: cambiar de página no guarda la selección. Las marcadas dejan de estar pendientes y no podrán entrar en otro formato.</p>
                             @else
                                 <p class="mt-4 text-sm text-gray-500 dark:text-paper-300">
                                     Solo lectura: generar el formato requiere permiso de gestión de cobros.
                                 </p>
-                            @endcan
+                            @endif
                         </form>
+
+                        @if ($pendientes->hasPages())
+                            <nav class="mt-4" aria-label="Páginas de notas pendientes">{{ $pendientes->links() }}</nav>
+                        @endif
                     @endif
                 </div>
 
-                {{-- ---------- 2 · Ya incluidas ---------- --}}
+                {{-- ---------- 2 · Historial de archivos ---------- --}}
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                     <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                        <h3 class="font-medium text-gray-700 dark:text-paper-100">2 · Ya incluidas en un formato</h3>
-                        <span class="text-sm text-gray-500 dark:text-paper-300">{{ $yaEnLote->count() }} nota(s)</span>
+                        <h3 class="font-medium text-gray-700 dark:text-paper-100">2 · Historial de archivos</h3>
+                        @if ($lotes->total() > 0 && $lotes->isNotEmpty())
+                            <p class="text-sm text-gray-500 dark:text-paper-300">Mostrando {{ $lotes->firstItem() }}–{{ $lotes->lastItem() }} de {{ $lotes->total() }} archivo(s)</p>
+                        @endif
                     </div>
                     <p class="text-sm text-gray-500 dark:text-paper-300 mb-4">
-                        Estas ya viajaron en un archivo. No vuelven a pendientes ni pueden entrar en otro.
+                        Una fila por archivo, del más reciente al más antiguo. Las notas de cada uno están en su detalle.
+                        La primera descarga <strong>guarda una copia</strong> del archivo; las siguientes sirven esa misma
+                        copia. Los archivos bajados antes de que existiera la copia se reconstruyen desde sus notas y quedan
+                        marcados como <strong>reconstrucción</strong>. Descargar no agrega notas, y «Descargado» solo dice
+                        que alguien lo bajó, no que el cliente lo recibió.
                     </p>
 
-                    @if ($yaEnLote->isEmpty())
-                        <p class="text-sm text-gray-500 dark:text-paper-300">Ninguna nota exportada{{ $hayFiltros ? ' con los filtros aplicados' : ' todavía' }}.</p>
-                    @else
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full text-sm">
-                                <caption class="sr-only">Notas de crédito ya incluidas en un formato</caption>
-                                <thead class="bg-gray-50 text-gray-600 dark:text-paper-300">
-                                    <tr>
-                                        <th scope="col" class="p-2 text-left font-medium">Emitida</th>
-                                        <th scope="col" class="p-2 text-left font-medium">Número de control</th>
-                                        <th scope="col" class="p-2 text-left font-medium">Albarán</th>
-                                        <th scope="col" class="p-2 text-right font-medium">Total nota</th>
-                                        <th scope="col" class="p-2 text-left font-medium">Formato</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
-                                    @foreach ($yaEnLote as $nc)
-                                        <tr>
-                                            <td class="p-2 whitespace-nowrap">{{ $nc->fecha_emision?->format('d/m/Y') }}</td>
-                                            <td class="p-2 font-mono whitespace-nowrap">{{ $nc->numero_control }}</td>
-                                            <td class="p-2 font-mono">{{ $nc->albaran?->numero_canonico ?? '—' }}</td>
-                                            <td class="p-2 text-right font-mono">{{ number_format((float) $nc->total_pagar, 2) }}</td>
-                                            <td class="p-2 font-mono">{{ $nc->exportacionItem?->exportacion?->referencia ?? '—' }}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
-                </div>
-
-                {{-- ---------- 3 · Formatos generados ---------- --}}
-                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
-                    <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-1">3 · Formatos generados</h3>
-                    <p class="text-sm text-gray-500 dark:text-paper-300 mb-4">
-                        Volver a descargar uno lo <strong>regenera con el mismo contenido</strong>: las mismas notas, en
-                        el mismo orden. No agrega notas nuevas ni marca ningún documento adicional; solo suma una
-                        descarga al registro.
-                    </p>
-
-                    @if ($lotes->isEmpty())
+                    @if ($lotes->isEmpty() && $lotes->currentPage() > 1)
+                        <p class="text-sm text-amber-700" role="status">
+                            Esta página del historial no existe ({{ $lotes->total() }} archivo(s) en {{ $lotes->lastPage() }} página(s)).
+                            <a href="{{ $lotes->url(1) }}" class="font-medium text-indigo-600 hover:underline">Ir a la primera página</a>.
+                        </p>
+                    @elseif ($lotes->isEmpty())
                         <p class="text-sm text-gray-500 dark:text-paper-300">Todavía no se ha generado ningún formato para este cliente.</p>
                     @else
                         <div class="overflow-x-auto">
                             <table class="min-w-full text-sm">
-                                <caption class="sr-only">Formatos de notas de crédito generados para {{ $cliente->nombre }}</caption>
+                                <caption class="sr-only">Historial de archivos de notas de crédito de {{ $cliente->nombre }}, página {{ $lotes->currentPage() }} de {{ $lotes->lastPage() }}</caption>
                                 <thead class="bg-gray-50 text-gray-600 dark:text-paper-300">
                                     <tr>
-                                        <th scope="col" class="p-2 text-left font-medium">Referencia</th>
-                                        <th scope="col" class="p-2 text-left font-medium">Generado</th>
-                                        <th scope="col" class="p-2 text-right font-medium">Notas</th>
-                                        <th scope="col" class="p-2 text-left font-medium">Estado</th>
                                         <th scope="col" class="p-2 text-left font-medium">Archivo</th>
-                                        <th scope="col" class="p-2 text-right font-medium">Descargas</th>
+                                        <th scope="col" class="p-2 text-left font-medium">Generado</th>
+                                        <th scope="col" class="p-2 text-left font-medium">Cliente</th>
+                                        <th scope="col" class="p-2 text-right font-medium">NC</th>
+                                        <th scope="col" class="p-2 text-right font-medium" title="Suma del total a pagar de las notas del lote">Total NC</th>
+                                        <th scope="col" class="p-2 text-left font-medium">Estado</th>
                                         <th scope="col" class="p-2 text-right font-medium"><span class="sr-only">Acciones</span></th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
                                     @foreach ($lotes as $lote)
                                         <tr>
-                                            <td class="p-2 font-mono whitespace-nowrap">{{ $lote->referencia }}</td>
+                                            <td class="p-2">
+                                                <a href="{{ route('ppq.nc-exportaciones.show', $lote) }}" class="font-mono text-indigo-600 hover:underline">{{ $lote->referencia }}</a>
+                                                <span class="block font-mono text-xs text-gray-500 dark:text-paper-300 break-all">{{ $lote->archivo_nombre }}</span>
+                                                {{-- El formato con el que se armó ESE lote, no el que usa hoy el cliente. --}}
+                                                <span class="block text-xs text-gray-500 dark:text-paper-300">{{ \App\Services\Ppq\Exportadores\ExportadorNcFactory::etiqueta($lote->formato) }}</span>
+                                            </td>
                                             <td class="p-2 whitespace-nowrap">{{ $lote->created_at?->format('d/m/Y H:i') }}</td>
+                                            <td class="p-2">{{ $lote->cliente?->nombre }}</td>
                                             <td class="p-2 text-right font-mono">{{ $lote->items_count }}</td>
+                                            <td class="p-2 text-right font-mono">{{ number_format((float) $lote->total_notas, 2) }}</td>
                                             <td class="p-2">
                                                 <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $lote->estado->clase() }}"
                                                       title="{{ $lote->estado->detalle() }}">{{ $lote->estado->label() }}</span>
-                                            </td>
-                                            <td class="p-2 font-mono text-gray-500 dark:text-paper-300 break-all">{{ $lote->archivo_nombre }}</td>
-                                            <td class="p-2 text-right font-mono">
-                                                {{ $lote->descargas }}
-                                                @if ($lote->descargado_en)
-                                                    <span class="block text-xs text-gray-400 dark:text-paper-500 whitespace-nowrap">{{ $lote->descargado_en->format('d/m/Y H:i') }}</span>
+                                                {{-- Procedencia de la copia: la reconstrucción se dice, no se disfraza. --}}
+                                                @if ($lote->tieneCopiaArchivada() && ! $lote->registroDeCopiaCompleto())
+                                                    <span class="block text-xs text-red-700">Registro de la copia incompleto</span>
+                                                @elseif ($lote->archivo_origen)
+                                                    <span class="block text-xs {{ $lote->archivo_origen === \App\Enums\ProcedenciaArchivoNc::Reconstruccion ? 'text-amber-700' : 'text-gray-500 dark:text-paper-300' }}"
+                                                          title="{{ $lote->archivo_origen->detalle() }}">{{ $lote->archivo_origen->label() }}</span>
+                                                @elseif ($lote->descargadoSinCopia())
+                                                    <span class="block text-xs text-amber-700" title="{{ \App\Enums\ProcedenciaArchivoNc::Reconstruccion->detalle() }}">Sin copia: se reconstruirá</span>
                                                 @endif
                                             </td>
-                                            <td class="p-2 text-right whitespace-nowrap">
+                                            <td class="p-2 text-right whitespace-nowrap space-x-1">
+                                                <a href="{{ route('ppq.nc-exportaciones.show', $lote) }}"
+                                                   class="inline-flex rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                                    Ver notas<span class="sr-only"> del archivo {{ $lote->referencia }}</span>
+                                                </a>
                                                 <a href="{{ route('ppq.nc-exportaciones.descargar', $lote) }}"
                                                    class="inline-flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700">
                                                     Descargar Excel
@@ -314,10 +391,9 @@
                             </table>
                         </div>
 
-                        <p class="mt-4 text-xs text-gray-500 dark:text-paper-300">
-                            «Descargado» significa que alguien bajó el archivo, no que se le haya enviado al cliente.
-                            El envío por correo se hace fuera del sistema y se registrará acá cuando exista de verdad.
-                        </p>
+                        @if ($lotes->hasPages())
+                            <nav class="mt-4" aria-label="Páginas del historial de archivos">{{ $lotes->links() }}</nav>
+                        @endif
                     @endif
                 </div>
             @endif

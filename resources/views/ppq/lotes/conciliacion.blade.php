@@ -23,7 +23,27 @@
                     Este archivo solo actualizó los documentos que nombra: <strong>{{ $reporte['corrida']?->items_cambiados ?? 0 }}</strong> renglón(es).
                     Los demás quedaron como estaban.
                 </span>
+                <span class="mt-1 block">Las fechas del TXT son las de los documentos; Calleja no informa aquí la fecha real del pago.</span>
             </div>
+
+            {{-- El MISMO archivo (misma huella) ya dejó pagos o ajustes en el seguimiento de
+                 Cobros. Solo se avisa: el lote se concilió igual y no se copió nada. --}}
+            @if (! empty($reporte['enCobros']))
+                @php $enCobros = $reporte['enCobros']; @endphp
+                <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800" role="status">
+                    <p><strong>Este mismo archivo ya se aplicó en el seguimiento de Cobros.</strong></p>
+                    <p class="mt-1">
+                        @if ($enCobros['pagos'] > 0)
+                            Registró {{ $enCobros['pagos'] }} pago(s) en {{ $enCobros['documentos'] }} documento(s)
+                        @endif
+                        @if ($enCobros['ajustes'] > 0)
+                            {{ $enCobros['pagos'] > 0 ? 'y' : 'Registró' }} {{ $enCobros['ajustes'] }} ajuste(s)
+                        @endif
+                        desde el {{ $enCobros['primera']?->format('d/m/Y H:i') ?? 'fecha no registrada' }}.
+                    </p>
+                    <p class="mt-1">Los pagos del lote y los del seguimiento son registros separados: revisá que no se estén reclamando o dando por cobrados dos veces.</p>
+                </div>
+            @endif
 
             {{-- Renglones que YA estaban cobrados y que este archivo no menciona.
                  Es la sección que prueba que la corrida no borró nada: antes, un archivo
@@ -42,7 +62,7 @@
                             <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                                 <th class="py-2.5 px-3">N° de control</th>
                                 <th class="py-2.5 px-3">Estado</th>
-                                <th class="py-2.5 px-3">Fecha de pago</th>
+                                <th class="py-2.5 px-3">Fecha del documento (TXT)</th>
                                 <th class="py-2.5 px-3 text-right">Monto cobrado</th>
                             </tr></thead>
                             <tbody class="divide-y divide-gray-100">
@@ -104,7 +124,7 @@
                         <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                             <th class="py-2.5 px-3">N° de control</th>
                             <th class="py-2.5 px-3">Estado</th>
-                            <th class="py-2.5 px-3">Fecha de pago</th>
+                            <th class="py-2.5 px-3">Fecha del documento (TXT)</th>
                             <th class="py-2.5 px-3 text-right">Monto sistema</th>
                             <th class="py-2.5 px-3 text-right">Monto TXT</th>
                             <th class="py-2.5 px-3 text-right">Diferencia</th>
@@ -163,7 +183,7 @@
                             <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                                 <th class="py-2.5 px-3">N° de control</th>
                                 <th class="py-2.5 px-3">Estado</th>
-                                <th class="py-2.5 px-3">Fecha</th>
+                                <th class="py-2.5 px-3">Fecha del documento (TXT)</th>
                                 <th class="py-2.5 px-3 text-right">Monto sistema</th>
                                 <th class="py-2.5 px-3 text-right">Monto TXT</th>
                             </tr></thead>
@@ -200,7 +220,7 @@
                         <table class="min-w-full text-sm">
                             <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                                 <th class="py-2.5 px-3">N° PPQ / documento</th>
-                                <th class="py-2.5 px-3">Fecha</th>
+                                <th class="py-2.5 px-3">Fecha en TXT</th>
                                 <th class="py-2.5 px-3 text-right">Monto TXT</th>
                             </tr></thead>
                             <tbody class="divide-y divide-gray-100">
@@ -226,7 +246,7 @@
                             <thead><tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
                                 <th class="py-2.5 px-3">Tipo</th>
                                 <th class="py-2.5 px-3">N° de documento</th>
-                                <th class="py-2.5 px-3">Fecha</th>
+                                <th class="py-2.5 px-3">Fecha del documento (TXT)</th>
                                 <th class="py-2.5 px-3 text-right">Monto TXT</th>
                             </tr></thead>
                             <tbody class="divide-y divide-gray-100">

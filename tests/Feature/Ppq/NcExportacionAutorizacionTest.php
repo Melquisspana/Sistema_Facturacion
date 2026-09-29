@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Ppq;
 
+use App\Enums\EstadoNcExportacion;
 use App\Enums\OrigenDescuentoNc;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
@@ -13,6 +14,8 @@ use App\Models\NcExportacion;
 use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -39,6 +42,8 @@ class NcExportacionAutorizacionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // La descarga archiva una copia: en pruebas va a un disco fingido.
+        Storage::fake((string) config('dte.storage.disk', 'local'));
 
         foreach (PermisoSistema::todos() as $permiso) {
             Permission::findOrCreate($permiso, 'web');
@@ -103,7 +108,7 @@ class NcExportacionAutorizacionTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('rolesConPpqVer')]
+    #[DataProvider('rolesConPpqVer')]
     public function test_la_bandeja_se_ve_con_ppq_ver(RolSistema $rol): void
     {
         $usuario = $this->usuario($rol);
@@ -164,7 +169,7 @@ class NcExportacionAutorizacionTest extends TestCase
     public function test_descargar_registra_la_descarga_sin_marcar_el_lote_como_enviado(): void
     {
         $lote = $this->lote($this->clienteConPerfil());
-        $this->assertSame(\App\Enums\EstadoNcExportacion::Generado, $lote->estado);
+        $this->assertSame(EstadoNcExportacion::Generado, $lote->estado);
         $this->assertSame(0, $lote->descargas);
 
         $usuario = $this->usuario(RolSistema::Administrador);
@@ -172,11 +177,11 @@ class NcExportacionAutorizacionTest extends TestCase
         $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
 
         $lote->refresh();
-        $this->assertSame(\App\Enums\EstadoNcExportacion::Descargado, $lote->estado);
+        $this->assertSame(EstadoNcExportacion::Descargado, $lote->estado);
         $this->assertSame(2, $lote->descargas);
         $this->assertNotNull($lote->descargado_en);
         // No existe ningún estado «enviado» que un lote pueda alcanzar por descargarse.
-        $this->assertNotContains('enviado', array_column(\App\Enums\EstadoNcExportacion::cases(), 'value'));
+        $this->assertNotContains('enviado', array_column(EstadoNcExportacion::cases(), 'value'));
         // Y bajarlo dos veces no agregó ni quitó documentos.
         $this->assertSame(0, $lote->items()->count());
     }
@@ -221,7 +226,7 @@ class NcExportacionAutorizacionTest extends TestCase
         $this->actingAs($this->usuario(RolSistema::Administrador))
             ->get(route('ppq.nc-exportaciones.index', ['cliente_id' => $cliente->id]))
             ->assertOk()
-            ->assertSee('3 · Formatos generados');
+            ->assertSee('2 · Historial de archivos');
     }
 
     // ---------------------------------------------------------------- perfil del cliente

@@ -530,7 +530,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $this->assertSame(0, Dte::where('tipo_dte', TipoDte::NotaCredito->value)->count());
     }
 
-    public function test_el_formulario_independiente_ofrece_el_selector_de_sala_receptora(): void
+    public function test_el_formulario_independiente_pregunta_la_sala_solo_una_vez(): void
     {
         $cliente = $this->calleja();
         $salaVenta = $this->sala($cliente, 'Súper Selectos San Benito');
@@ -540,10 +540,29 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.create-nota-credito'))
             ->assertOk()
-            ->assertSee('Sala receptora de la Nota de Crédito')
+            ->assertDontSee('Sala receptora de la Nota de Crédito')
             ->assertSee('Bodega Oficina Central Calleja')
-            // El selector solo aplica a las modalidades por monto.
+            // La sala elegida arriba se usa en las modalidades por monto.
             ->assertSee('pronto_pago', false);
+    }
+
+    public function test_store_independiente_conserva_sala_administrativa_sin_motivo(): void
+    {
+        $cliente = $this->calleja();
+        $ccf = $this->ccfAceptado($cliente, $this->sala($cliente, 'Sala de venta'));
+        $oficina = $this->sala($cliente, 'Sala administrativa');
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('facturacion.store-nota-credito'), [
+                'modalidad' => 'pronto_pago',
+                'cliente_id' => $cliente->id,
+                'cliente_sucursal_id' => $oficina->id,
+                'dte_relacionado_id' => $ccf->id,
+            ])->assertSessionHasNoErrors()->assertRedirect();
+
+        $nc = Dte::where('tipo_dte', TipoDte::NotaCredito->value)->latest('id')->firstOrFail();
+        $this->assertSame($oficina->id, $nc->cliente_sucursal_id);
+        $this->assertEmpty($nc->motivo);
     }
 
     public function test_la_ficha_del_ccf_ofrece_el_selector_de_sala_receptora(): void

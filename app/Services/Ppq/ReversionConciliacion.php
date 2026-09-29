@@ -29,12 +29,11 @@ use Illuminate\Validation\ValidationException;
  *
  *   · es EXPLÍCITA — alguien la pide para un renglón concreto, no le pasa a un conjunto;
  *   · es AUTORIZADA — cuelga de su propio permiso, no del de agregar items a un lote;
- *   · es AUDITADA — deja motivo obligatorio, usuario, fecha y el valor que tenía antes,
+ *   · es AUDITADA — deja usuario, fecha, motivo (si se da) y el valor que tenía antes,
  *     en la misma bitácora que las corridas de archivo.
  *
- * El motivo es obligatorio a propósito y no tiene valor por defecto. Un pago que se
- * deshace sin explicación es indistinguible de un error, y el día que el saldo no cuadre
- * la pregunta va a ser exactamente esa.
+ * El motivo es opcional por decisión del usuario (25/09/2026); sin él queda anotado
+ * «sin motivo indicado», con quién y cuándo.
  *
  * No borra el renglón ni lo saca del lote: lo devuelve a «pendiente». El documento sigue
  * presentado y vuelve a contar como algo por cobrar, que es lo que significa haber
@@ -42,28 +41,20 @@ use Illuminate\Validation\ValidationException;
  */
 class ReversionConciliacion
 {
-    private const MOTIVO_MINIMO = 10;
+    private const SIN_MOTIVO = 'Cobro quitado a mano (sin motivo indicado).';
 
     /**
      * Devuelve el renglón a pendiente y deja constancia.
      *
-     * @throws ValidationException si el renglón no tiene nada que revertir o el motivo no
-     *                             alcanza para explicar la decisión
+     * @throws ValidationException si el renglón no tiene nada que revertir
      */
-    public function revertir(PpqItem $item, string $motivo, ?User $usuario = null): PpqConciliacion
+    public function revertir(PpqItem $item, ?string $motivo = null, ?User $usuario = null): PpqConciliacion
     {
-        $motivo = trim($motivo);
+        $motivo = trim((string) $motivo) ?: self::SIN_MOTIVO;
 
         if (! $item->estaConciliado()) {
             throw ValidationException::withMessages([
                 'motivo' => 'Ese renglón no tiene ningún cobro registrado: no hay nada que revertir.',
-            ]);
-        }
-
-        if (mb_strlen($motivo) < self::MOTIVO_MINIMO) {
-            throw ValidationException::withMessages([
-                'motivo' => 'Explicá por qué se quita este cobro (al menos '.self::MOTIVO_MINIMO.' caracteres). '
-                    .'Queda registrado con tu nombre y es lo que va a explicar la diferencia más adelante.',
             ]);
         }
 

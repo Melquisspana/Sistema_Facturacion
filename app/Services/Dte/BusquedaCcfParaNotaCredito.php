@@ -133,6 +133,24 @@ class BusquedaCcfParaNotaCredito
     }
 
     /**
+     * UN CCF concreto, si es de los que este buscador ofrece. Null si no lo es.
+     *
+     * Existe para que nadie tenga que reconstruir el universo por su cuenta. El
+     * formulario preseleccionaba el `?ccf=` con su propia consulta —solo
+     * `aceptadoRealMh()`— mientras la tarjeta y el select de respaldo se llenaban desde
+     * {@see base()}, que además acota por AMBIENTE, invalidación en firme y archivado. Un
+     * CCF que pasara la primera y no la segunda dejaba la pantalla mintiendo: se pintaba
+     * la tarjeta de «CCF · Aceptado» con todos los campos vacíos, el `<select>` que
+     * alimenta el POST no tenía su opción, y al guardar el formulario volvía a pedir el
+     * CCF que el usuario creía haber elegido. Pasó de verdad con un CCF de ambiente 01 en
+     * una instalación configurada en 00.
+     */
+    public function seleccionable(?int $id): ?Dte
+    {
+        return $id === null ? null : $this->base()->whereKey($id)->first();
+    }
+
+    /**
      * Forma de cada CCF para la vista y para el JSON del autocomplete: UNA sola
      * definición, para que la tarjeta de resultado y la del CCF ya elegido no puedan
      * divergir. Se conservan las claves que el formulario ya consumía
@@ -208,6 +226,9 @@ class BusquedaCcfParaNotaCredito
                 'id', 'numero_interno', 'numero_control', 'cliente_id', 'cliente_sucursal_id',
                 'numero_orden_compra', 'fecha_emision', 'total_pagar',
                 'establecimiento_id', 'punto_venta_id',
+                // Para medir el saldo que le queda al CCF (SaldoMontoCcf) y estimar la
+                // retención que heredará la nota.
+                'monto_total_operacion', 'aplica_retencion_iva',
             ]);
     }
 

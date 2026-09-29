@@ -300,7 +300,8 @@ class DteNotaCreditoTest extends TestCase
         $nc = $this->service->crearNotaCredito($ccf, ['tipo' => 'pronto_pago']);
 
         // No exige líneas del original; un concepto se agrega sin tocar saldo de productos.
-        $this->service->agregarConceptoNotaCredito($nc, ['descripcion' => 'Ajuste', 'monto' => 9999, 'tipo_impuesto' => 'gravado']);
+        // (El monto sí queda dentro del saldo del CCF, $113.00: más, Hacienda la rechaza.)
+        $this->service->agregarConceptoNotaCredito($nc, ['descripcion' => 'Ajuste', 'monto' => 90, 'tipo_impuesto' => 'gravado']);
 
         $this->assertCount(1, $nc->refresh()->lineas);
 

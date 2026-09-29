@@ -10,7 +10,9 @@ use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\PpqSala;
 use App\Services\Ppq\AlbaranPersistidor;
+use App\Services\Ppq\AlbaranPropioNc;
 use App\Services\Ppq\SalaResolver;
+use App\Support\Albaran;
 use App\Support\IdentidadPpq;
 use App\Support\OrdenCompra;
 use App\Support\PpqElegibilidad;
@@ -18,6 +20,7 @@ use App\Support\Sala;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -25,6 +28,11 @@ use Illuminate\Validation\Rule;
  *  - No permite el mismo CCF/NC dos veces en el lote (unique en BD + chequeo amable).
  *  - Avisa si el CCF/NC ya está usado en otro lote.
  *  - Avisa si el albarán ya fue vinculado antes.
+ *
+ * Una NOTA DE CRÉDITO local aporta lo que ya tiene guardado: su albarán de crédito
+ * (`dte_albaranes`) se reutiliza tal cual y no se vuelve a pedir. Los datos salen de la
+ * base y no del formulario, de modo que un envío manipulado no puede colgarle a la nota un
+ * albarán ajeno; si el envío nombra otro, se rechaza sin escribir nada.
  *
  * Y con un CANDADO FISCAL sobre los documentos LOCALES: solo entra al lote un CCF/NC de
  * producción aceptado realmente por Hacienda ({@see PpqElegibilidad}). Los históricos
@@ -61,13 +69,10 @@ class PpqItemController extends Controller
         // cobrar, pero eso es una cortesía, no una defensa: el `dte_id` viaja en un campo
         // oculto de un formulario POST y cualquiera puede cambiarlo. La única comprobación
         // que cuenta es esta, del lado del servidor, y usa LA MISMA regla que la pantalla
-        // ({@see PpqElegibilidad::motivoParaCobrar()}) para que no puedan discrepar.
-        //
-        // Cubre las dos condiciones: que el documento EXISTA ante Hacienda, y que el
-        // cliente no exija el CCF físico de vuelta o que ese papel ya haya regresado.
+        // ({@see PpqElegibilidad::motivo()}) para que no puedan discrepar.
         //
         // Va ANTES de registrar el albarán: un intento rechazado no debe dejar rastro.
-        $motivo = PpqElegibilidad::motivoParaCobrar($dte);
+        $motivo = PpqElegibilidad::motivo($dte);
         if ($motivo !== null) {
             return back()->with('error', 'Ese documento no se puede cobrar por PPQ y no se agregó al lote. '.$motivo);
         }
@@ -93,56 +98,125 @@ class PpqItemController extends Controller
         // albarán (notas de crédito / casos especiales). Marca explícita en el item.
         $sinAlbaran = $request->boolean('sin_albaran');
 
-        $albaran = null;
-        $avisoAlbaran = null;
-        if (! $sinAlbaran && ! empty($datos['ppq_albaran_id'])) {
-            $albaran = PpqAlbaran::find($datos['ppq_albaran_id']);
-            if ($albaran && $albaran->yaVinculado()) {
-                $avisoAlbaran = 'El albarán '.$albaran->numero_albaran.' ya estaba vinculado a otro item.';
-            }
-        } elseif (! $sinAlbaran && filled($datos['numero_albaran'] ?? null)) {
-            // Albarán manual (NC): registra/reusa por número + OC del documento.
-            try {
-                $albaran = $this->registrarAlbaran($datos + ['numero_orden_compra' => $dte->numero_orden_compra], $esNc ? 'manual' : 'gmail');
-            } catch (AlbaranDadoDeBajaException $e) {
-                return back()->with('error', $e->getMessage());
+        // ALBARÁN PROPIO DE LA NC. Se lee de la BASE, no del formulario: el albarán de
+        // crédito (AC02/AC04) que originó la nota ya se capturó para poder emitirla y
+        // vive en `dte_albaranes`. Aceptarlo del POST dejaría que un envío manipulado le
+        // colgara a la nota un albarán ajeno. El criterio (sin datos / completo / parcial
+        // / inválido) es el MISMO que usa la ficha: {@see AlbaranPropioNc}.
+        //
+        // `sin_albaran` sigue mandando: es una decisión explícita del operador.
+        $propio = $esNc && ! $sinAlbaran ? app(AlbaranPropioNc::class)->evaluar($dte) : null;
+        $efectivo = null;
+
+        if ($propio !== null && $propio['estado'] === AlbaranPropioNc::INVALIDO) {
+            return back()->with('error', 'No se agregó nada: '.$propio['motivo']
+                .' Hay que corregirlo en la nota antes de llevarla a PPQ.');
+        }
+
+        if ($propio !== null && $propio['estado'] !== AlbaranPropioNc::SIN_DATOS) {
+            // Lo guardado manda; el envío SOLO completa lo que falta (para el item PPQ: la
+            // nota emitida no se toca). El total fiscal de la NC nunca hace de monto.
+            $efectivo = [
+                'numero' => $propio['numero'],
+                'fecha' => $propio['fecha'] ?? Albaran::fecha($datos['fecha_albaran'] ?? null),
+                'monto' => $propio['monto'] ?? (filled($datos['monto_albaran'] ?? null)
+                    ? number_format(abs((float) $datos['monto_albaran']), 2, '.', '')
+                    : null),
+            ];
+
+            // Evidencia contradictoria —otro número, un `ppq_albaran_id` de otro documento
+            // u OC, o un registro PPQ previo con otro monto o fecha—: se corta ANTES de
+            // escribir nada y sin elegir una versión por cuenta propia.
+            if (($contra = app(AlbaranPropioNc::class)->contradiccion($dte, $efectivo, $datos)) !== null) {
+                return back()->with('error', 'No se agregó nada: '.$contra
+                    .' Revisá cuál corresponde; el albarán de la nota se corrige en el documento.');
             }
         }
 
         $salaCodigo = OrdenCompra::salaDesde($dte->numero_orden_compra);
         $salaNombre = Sala::nombrePreferido($salaCodigo, $dte->clienteSucursal?->nombre);
-        // Enriquecer el mapa auxiliar de PPQ (no fiscal) para futuros documentos de esta sala.
-        PpqSala::recordar($salaCodigo, $salaNombre, 'local');
 
-        $lote->items()->create([
-            'dte_id' => $dte->id,
-            'origen' => 'local',
-            'numero_control' => $dte->numero_control,
-            'codigo_generacion' => $dte->codigo_generacion,
-            'sello_recepcion' => $dte->sello_recepcion,
-            'tipo_dte' => $dte->tipo_dte?->value,
-            'fecha_documento' => $dte->fecha_emision,
-            'ppq_albaran_id' => $albaran?->id,
-            'sin_albaran' => $sinAlbaran || $albaran === null,
-            'numero_orden_compra' => $dte->numero_orden_compra,
-            'sala_nombre' => $salaNombre,
-            'monto_dte' => $dte->total_pagar,
-            'monto_albaran' => $albaran?->monto_albaran,
-            'observaciones' => $datos['observaciones'] ?? null,
-        ]);
+        // Albarán e item en UNA transacción: si el item no se puede crear, no queda un
+        // albarán registrado a medias que después aparezca solo en otra ficha.
+        try {
+            [$albaran, $avisoAlbaran] = DB::transaction(function () use ($efectivo, $sinAlbaran, $datos, $dte, $esNc, $lote, $salaNombre) {
+                $albaran = null;
+                $avisoAlbaran = null;
+
+                if ($efectivo !== null) {
+                    // Mismo punto único de persistencia que el resto (número + OC, nunca
+                    // duplica). No se usa `dte_albaranes.ppq_albaran_id`: ese vínculo se
+                    // resolvió por el correlativo suelto, que no distingue AC04 de AC01.
+                    $albaran = $this->registrarAlbaran([
+                        'numero_albaran' => $efectivo['numero'],
+                        'numero_orden_compra' => $dte->numero_orden_compra,
+                        'fecha_albaran' => $efectivo['fecha'],
+                        'monto_albaran' => $efectivo['monto'],
+                    ], 'manual');
+
+                    // El persistidor completa el monto vacío de un registro previo pero no la
+                    // fecha. Acá, y solo acá, se completa una fecha VACÍA con la de la nota
+                    // (ya comprobada compatible); nunca se pisa una existente. Dentro de la
+                    // transacción: si el item falla, la fecha vuelve a quedar vacía.
+                    if ($albaran->fecha_albaran === null && $efectivo['fecha'] !== null) {
+                        $albaran->update(['fecha_albaran' => $efectivo['fecha']]);
+                    }
+                } elseif (! $sinAlbaran && ! empty($datos['ppq_albaran_id'])) {
+                    $albaran = PpqAlbaran::find($datos['ppq_albaran_id']);
+                    if ($albaran && $albaran->yaVinculado()) {
+                        $avisoAlbaran = 'El albarán '.$albaran->numero_albaran.' ya estaba vinculado a otro item.';
+                    }
+                } elseif (! $sinAlbaran && filled($datos['numero_albaran'] ?? null)) {
+                    // Albarán manual (NC sin albarán propio guardado): registra/reusa por número + OC.
+                    $albaran = $this->registrarAlbaran($datos + ['numero_orden_compra' => $dte->numero_orden_compra], $esNc ? 'manual' : 'gmail');
+                }
+
+                $lote->items()->create([
+                    'dte_id' => $dte->id,
+                    'origen' => 'local',
+                    'numero_control' => $dte->numero_control,
+                    'codigo_generacion' => $dte->codigo_generacion,
+                    'sello_recepcion' => $dte->sello_recepcion,
+                    'tipo_dte' => $dte->tipo_dte?->value,
+                    'fecha_documento' => $dte->fecha_emision,
+                    'ppq_albaran_id' => $albaran?->id,
+                    'sin_albaran' => $sinAlbaran || $albaran === null,
+                    'numero_orden_compra' => $dte->numero_orden_compra,
+                    'sala_nombre' => $salaNombre,
+                    'monto_dte' => $dte->total_pagar,
+                    'monto_albaran' => $albaran?->monto_albaran,
+                    'observaciones' => $datos['observaciones'] ?? null,
+                ]);
+
+                return [$albaran, $avisoAlbaran];
+            });
+        } catch (AlbaranDadoDeBajaException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        // Enriquecer el mapa auxiliar de PPQ (no fiscal) para futuros documentos de esta
+        // sala. Después del alta: si el alta falla, no hay nada que recordar.
+        PpqSala::recordar($salaCodigo, $salaNombre, 'local');
 
         $tipoTxt = $esNc ? 'NC (resta)' : 'CCF';
         $mensaje = $albaran === null ? $tipoTxt.' agregado al lote sin albarán.' : $tipoTxt.' agregado al lote.';
+        if ($efectivo !== null && $albaran !== null) {
+            $mensaje .= ' Se reutilizó el albarán guardado en la nota ('.$albaran->numero_albaran.')';
+            // Lo que dice el mensaje sale de lo PERSISTIDO en el albarán PPQ, no de lo que
+            // llegó en el envío: un registro previo compatible puede haber aportado datos.
+            $persistido = ['fecha' => $albaran->fecha_albaran, 'monto' => $albaran->monto_albaran];
+            $completados = array_values(array_filter($propio['faltantes'], fn ($c) => $persistido[$c] !== null));
+            $pendientes = array_values(array_diff($propio['faltantes'], $completados));
+            $mensaje .= $completados === [] ? ', sin capturarlo de nuevo.' : '; se completó en PPQ: '.implode(' y ', $completados).'.';
+            if ($pendientes !== []) {
+                $mensaje .= ' Sigue sin '.implode(' ni ', $pendientes).'.';
+            }
+        }
         if ($otroLote) {
             $mensaje .= ' Aviso: ya estaba usado en el lote #'.$otroLote.'.';
         }
         if ($avisoAlbaran) {
             $mensaje .= ' '.$avisoAlbaran;
-        }
-        // El cliente pidió que solo se advierta sobre el CCF físico: el documento entró,
-        // pero conviene que alguien vaya a buscar el papel antes de cerrar el lote.
-        if ($advertencia = PpqElegibilidad::advertenciaParaCobrar($dte)) {
-            $mensaje .= ' '.$advertencia;
         }
 
         return back()->with('status', $mensaje);

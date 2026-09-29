@@ -46,7 +46,8 @@ class ClientePerfilDocumentoController extends Controller
             'cliente' => $cliente,
             'perfil' => $perfil,
             'modalidades' => $this->modalidades($perfil),
-            'formatos' => ExportadorNcFactory::slugs(),
+            // slug => nombre legible: en el desplegable se elige un formato, no un slug.
+            'formatos' => ExportadorNcFactory::opciones(),
             'origenes' => OrigenDescuentoNc::opciones(),
         ]);
     }

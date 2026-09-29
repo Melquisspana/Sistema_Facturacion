@@ -50,6 +50,20 @@
                     </div>
                 @endif
 
+                {{-- Se llegó con ?ccf= de un documento que este formulario NO puede
+                     acreditar (otro ambiente, invalidado en firme o archivado). Se dice acá
+                     y se arranca sin selección: pintar la tarjeta igual dejaba un CCF
+                     «elegido» que no viajaba en el POST, y al guardar se volvía a pedir. --}}
+                @if (! empty($ccfPedidoNoDisponible))
+                    <div class="mb-4 rounded-md bg-amber-50 border border-amber-300 p-4 text-sm text-amber-900" role="status">
+                        <p class="font-medium">El CCF con el que se entró no se puede acreditar desde acá.</p>
+                        <p class="mt-1">
+                            Solo se ofrecen los CCF aceptados por Hacienda del ambiente en el que corre el
+                            sistema, sin invalidación sellada y no archivados. Elegí abajo el CCF relacionado.
+                        </p>
+                    </div>
+                @endif
+
                 @if ($establecimientos->isEmpty() || $puntosVenta->isEmpty())
                     <div class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
                         <p class="font-medium">Falta configuración del emisor.</p>
@@ -64,6 +78,13 @@
                       x-data="ncFormulario(@js($datosNc))"
                       class="divide-y divide-gray-100">
                     @csrf
+                    @if ($cobroAjuste ?? null)
+                        <input type="hidden" name="cobro_ajuste_id" value="{{ $cobroAjuste->id }}">
+                        <div class="mb-4 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-ink-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+                            Nota de crédito para el ajuste {{ $cobroAjuste->referencia }} del archivo {{ $cobroAjuste->evidencia_nombre }}:
+                            el total a pagar de la nota será ${{ number_format(abs((float) $cobroAjuste->monto), 2) }}.
+                        </div>
+                    @endif
 
                     {{-- =============== Cliente y sala =============== --}}
                     <section class="pb-5" @click.outside="clienteAbierto = false">
@@ -154,25 +175,53 @@
                     <section class="py-5" x-show="esAveria && clienteId !== ''" x-cloak>
                         <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Avería</h3>
 
-                        <div class="mt-3 sm:w-1/2">
-                            {{-- Sala a la que CORRESPONDE la avería. Dato independiente: elegir
-                                 después un CCF de otra sala no la reemplaza.
-                                 La observación NO va acá: el formulario ya tiene un campo de
-                                 motivo/observaciones más abajo, y tener dos obliga a preguntarse
-                                 cuál de los dos vale. --}}
-                            <x-input-label for="sucursal_averia_id" value="Sala a la que corresponde" />
-                            {{-- El select NO lleva `name`: lo que viaja es el valor RESUELTO del
-                                 hidden de abajo. Dejarlo vacío significa «la sala elegida arriba»,
-                                 y esa sala tiene que quedar registrada igual; si el select
-                                 posteara directo, no elegir nada guardaría un null y la avería
-                                 quedaría sin sala. --}}
-                            <select id="sucursal_averia_id" x-model="salaAveriaId"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
-                                <option value="">— La sala elegida arriba —</option>
-                                <template x-for="s in salasCliente" :key="s.id">
-                                    <option :value="String(s.id)" x-text="s.nombre"></option>
-                                </template>
-                            </select>
+                        {{-- Sala a la que CORRESPONDE la avería.
+                             ANTES esto era un <select> abierto cuya primera opción decía
+                             «— La sala elegida arriba —»: preguntaba por segunda vez algo que
+                             el operador acababa de contestar dos secciones más arriba, y lo
+                             obligaba a leer una opción que solo significaba «lo mismo que ya
+                             dije». Ahora se AFIRMA la sala ya elegida y cambiarla es una
+                             acción secundaria, para el caso real en que el producto dañado
+                             pertenece a otra sala.
+                             La observación NO va acá: el formulario ya tiene un campo de
+                             motivo/observaciones más abajo, y tener dos obliga a preguntarse
+                             cuál de los dos vale. --}}
+                        <div class="mt-3">
+                            <div x-show="! otraSalaAveria" x-cloak
+                                 class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-sm">
+                                <span class="text-gray-500">La avería corresponde a</span>
+                                <span class="font-medium text-gray-800" x-text="nombreSala(salaBusquedaId) || '—'"></span>
+                                {{-- `-m-2 p-2`: área táctil de 32 px sin mover el layout. --}}
+                                <button type="button" @click="otraSalaAveria = true"
+                                        class="-m-2 p-2 text-xs font-medium text-indigo-700 hover:underline">
+                                    Corresponde a otra sala
+                                </button>
+                            </div>
+
+                            <div x-show="otraSalaAveria" x-cloak class="sm:w-1/2">
+                                <x-input-label for="sucursal_averia_id" value="Sala de la avería" />
+                                {{-- El select NO lleva `name`: lo que viaja es el valor RESUELTO
+                                     del hidden de abajo. Vacío significa «la misma de la nota», y
+                                     esa sala tiene que quedar registrada igual; si el select
+                                     posteara directo, no elegir nada guardaría un null y la
+                                     avería quedaría sin sala. --}}
+                                <select id="sucursal_averia_id" x-model="salaAveriaId"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    <template x-for="s in salasCliente" :key="s.id">
+                                        <option :value="String(s.id)" x-text="s.nombre"></option>
+                                    </template>
+                                </select>
+                                <button type="button" @click="volverALaSalaDeLaNota()"
+                                        class="mt-1.5 -m-2 p-2 text-xs font-medium text-gray-500 hover:underline">
+                                    Usar la sala de la nota
+                                </button>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Son dos relaciones distintas y las dos quedan registradas: la
+                                    <strong>sala de la avería</strong> es dónde está el producto dañado; la
+                                    <strong>sala de la nota</strong> —la del CCF— es a quién se le acredita.
+                                </p>
+                            </div>
+
                             <input type="hidden" name="sucursal_averia_id" :value="salaBusquedaId">
                             <x-input-error :messages="$errors->get('sucursal_averia_id')" class="mt-1" />
                         </div>
@@ -190,7 +239,12 @@
                             {{-- Buscador paginado: oculto hasta que Alpine arranca. Sin JS queda el
                                  select de respaldo, con el mismo name del POST. --}}
                             <div x-show="jsListo" x-cloak>
-                                <template x-if="ccfId === ''">
+                                {{-- El buscador aparece cuando no hay CCF elegido, o cuando se
+                                     pidió CAMBIAR el que hay. En el segundo caso la tarjeta de
+                                     abajo sigue visible: cambiar no es empezar de nuevo, y
+                                     borrar la selección para poder reemplazarla obligaba a
+                                     recordar de memoria cuál era y a volver a buscarlo. --}}
+                                <template x-if="ccfId === '' || cambiandoCcf">
                                     <div class="relative">
                                         <x-input-label for="ccf_buscar">
                                             <span>Buscar CCF relacionado</span>
@@ -206,7 +260,7 @@
                                              mezclar las demás obliga a distinguirlas a ojo. Salir de la
                                              sala es una decisión explícita, y se cobra con motivo. --}}
                                         <label class="mt-2 flex items-start gap-2 text-sm text-gray-700"
-                                               x-show="salaBusquedaId !== ''" x-cloak>
+                                               x-show="! permiteOtraSalaReceptora && salaBusquedaId !== ''" x-cloak>
                                             <input type="checkbox" x-model="otrasSalas" @change="buscarCcf(1)"
                                                    class="mt-0.5 rounded border-gray-300 text-amber-600">
                                             <span>Buscar también en <strong>otras salas</strong> del mismo cliente</span>
@@ -214,13 +268,16 @@
 
                                         <p class="mt-1 text-xs text-gray-400">
                                             Solo CCF aceptados por Hacienda, del mismo cliente. Los más recientes primero.
-                                            <span x-show="salaBusquedaId !== '' && ! otrasSalas" x-cloak>Acotado a la sala elegida.</span>
+                                            <span x-show="! permiteOtraSalaReceptora && salaBusquedaId !== '' && ! otrasSalas" x-cloak>Acotado a la sala elegida.</span>
                                         </p>
 
                                         {{-- Salida de EXCEPCIÓN, discreta y desmarcada. Casi siempre
                                              hay un CCF, así que el flujo principal es elegirlo; esto
                                              es para el caso raro en que todavía no se sabe cuál. --}}
-                                        <label class="mt-3 flex items-start gap-2 text-xs text-gray-500" x-show="esAveria" x-cloak>
+                                        {{-- Solo cuando NO hay CCF: mientras se busca un reemplazo
+                                             ya hay uno elegido y la excepción no viene al caso. --}}
+                                        <label class="mt-3 flex items-start gap-2 text-xs text-gray-500"
+                                               x-show="esAveria && ! cambiandoCcf" x-cloak>
                                             <input type="checkbox" name="sin_ccf_excepcional" value="1"
                                                    x-model="sinCcfExcepcional"
                                                    class="mt-0.5 rounded border-gray-300 text-amber-600">
@@ -237,7 +294,11 @@
                                             class="absolute z-20 mt-1 w-full max-h-96 overflow-auto divide-y divide-gray-100 border border-gray-200 rounded-md bg-white shadow-lg text-sm">
                                             <li x-show="ccfCargando" class="px-3 py-2.5 text-gray-400">Buscando…</li>
                                             <template x-for="c in ccfResultados" :key="c.id">
-                                                <li @click="seleccionarCcf(c)" class="px-3 py-2.5 cursor-pointer hover:bg-indigo-50">
+                                                {{-- Desde el ajuste del TXT el monto de la nota ya se conoce: un CCF
+                                                     cuyo saldo no alcanza se ve, pero no se puede elegir. --}}
+                                                <li @click="seleccionarCcf(c)"
+                                                    :aria-disabled="c.alcanza === false"
+                                                    :class="c.alcanza === false ? 'px-3 py-2.5 cursor-not-allowed opacity-50' : 'px-3 py-2.5 cursor-pointer hover:bg-indigo-50'">
                                                     <div class="flex flex-wrap items-baseline justify-between gap-x-3">
                                                         <span class="font-medium text-gray-900">
                                                             CCF <span x-text="c.numero"></span>
@@ -251,6 +312,8 @@
                                                         <span x-show="c.orden_compra">OC <span x-text="c.orden_compra"></span></span>
                                                         <span class="font-mono text-gray-400" x-text="c.numero_control"></span>
                                                     </div>
+                                                    <div x-show="c.alcanza === false" class="mt-0.5 text-xs font-medium text-red-600"
+                                                         x-text="'Saldo $' + c.saldo + ', menor que la nota ($' + c.monto_nota + ')'"></div>
                                                 </li>
                                             </template>
                                             <li x-show="! ccfCargando && ccfResultados.length === 0" class="px-3 py-2.5 text-gray-400">
@@ -269,12 +332,24 @@
                                                 </button>
                                             </li>
                                         </ul>
+
+                                        {{-- Salida del modo «cambiar» sin perder lo que ya estaba.
+                                             Va subrayado de entrada y no solo al pasar el mouse:
+                                             suelto entre el buscador y la tarjeta se leía como un
+                                             renglón de texto y no como la salida que es. --}}
+                                        <button type="button" x-show="cambiandoCcf" x-cloak
+                                                @click="cancelarCambioCcf()"
+                                                class="mt-2 p-2 -ml-2 text-xs font-medium text-indigo-700 underline hover:no-underline">
+                                            Cancelar y conservar el CCF elegido
+                                        </button>
                                     </div>
                                 </template>
 
                                 {{-- Resumen COMPACTO del CCF elegido: lo que hay que verificar. --}}
+                                {{-- La tarjeta del CCF elegido NO se esconde al pedir «Cambiar»:
+                                     es la referencia contra la que se compara el reemplazo. --}}
                                 <template x-if="ccfId !== ''">
-                                    <div class="rounded-md border border-indigo-300 bg-indigo-50/40 px-4 py-3">
+                                    <div class="mt-3 rounded-md border border-indigo-300 bg-indigo-50/40 px-4 py-3">
                                         <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                                             <p class="font-semibold text-gray-900">
                                                 CCF <span x-text="ccf?.numero"></span>
@@ -282,8 +357,11 @@
                                                 <span class="ml-1 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">Aceptado</span>
                                             </p>
                                             {{-- `-m-2 p-2`: agranda el área táctil a 32 px sin mover el layout. El texto solo mide 16 px de alto y en el teléfono era imposible de acertar. --}}
-                                            <button type="button" @click="limpiarCcf()"
+                                            <button type="button" x-show="! cambiandoCcf" @click="cambiarCcf()"
                                                     class="-m-2 p-2 text-xs font-medium text-indigo-700 hover:underline">Cambiar</button>
+                                            <span x-show="cambiandoCcf" x-cloak class="text-xs font-medium text-amber-700">
+                                                Elegí el nuevo CCF arriba; este sigue elegido hasta que lo hagas.
+                                            </span>
                                         </div>
                                         <dl class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
                                             <div><dt class="inline text-gray-400">Sala:</dt> <dd class="inline text-indigo-700" x-text="ccf?.sala ?? '—'"></dd></div>
@@ -305,7 +383,7 @@
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
                                     <option value="">— Seleccione un CCF aceptado por Hacienda —</option>
                                     @foreach ($opcionesCcf as $ccf)
-                                        <option value="{{ $ccf['id'] }}">{{ 'CCF '.($ccf['numero'] ?? $ccf['id']) }} · {{ $ccf['cliente_nombre'] ?? 'Cliente' }}{{ $ccf['sala'] ? ' — '.$ccf['sala'] : '' }} · {{ $ccf['fecha'] }} · ${{ $ccf['total'] }}{{ $ccf['numero_control'] ? ' · '.$ccf['numero_control'] : '' }}</option>
+                                        <option value="{{ $ccf['id'] }}" @disabled(($ccf['alcanza'] ?? true) === false)>{{ 'CCF '.($ccf['numero'] ?? $ccf['id']) }} · {{ $ccf['cliente_nombre'] ?? 'Cliente' }}{{ $ccf['sala'] ? ' — '.$ccf['sala'] : '' }} · {{ $ccf['fecha'] }} · ${{ $ccf['total'] }}{{ $ccf['numero_control'] ? ' · '.$ccf['numero_control'] : '' }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -313,17 +391,11 @@
                             <x-input-error :messages="$errors->get('dte_relacionado_id')" class="mt-1" />
                         </div>
 
-                        {{-- Sala receptora: solo pronto pago y otro ajuste pueden cambiarla. --}}
-                        <div class="mt-4" x-show="permiteOtraSalaReceptora && ccfId !== ''" x-cloak>
-                            <x-input-label for="sala_nc" value="Sala receptora de la Nota de Crédito" />
-                            <select id="sala_nc" x-model="salaNcId"
-                                    class="mt-1 block w-full sm:w-1/2 border-gray-300 rounded-md shadow-sm text-sm">
-                                <template x-for="s in salasCliente" :key="s.id">
-                                    <option :value="String(s.id)" x-text="s.nombre"></option>
-                                </template>
-                            </select>
-                            <p class="mt-1 text-xs text-gray-400">Predeterminada: la sala del CCF. Puede ser una sala administrativa del mismo cliente.</p>
-                        </div>
+                        <p class="mt-3 text-xs text-gray-600 dark:text-paper-300"
+                           x-show="permiteOtraSalaReceptora && receptoraCruzada" x-cloak>
+                            La nota sale a nombre de <span x-text="nombreSala(salaEnviada)"></span>.
+                            El CCF relacionado es de <span x-text="ccf?.sala || 'cliente sin sala'"></span>.
+                        </p>
 
                         {{-- Advertencia de sala cruzada: un solo cartel, con el porqué. --}}
                         <div x-show="salaCruzada" x-cloak role="status"
@@ -439,6 +511,9 @@
                 sinCcfPorModalidad: d.sinCcfPorModalidad,
                 otraSalaPorModalidad: d.otraSalaPorModalidad,
                 codigosPorCliente: d.codigosPorCliente,
+                // Ajuste del TXT del que sale la nota (o vacío): el buscador lo manda para
+                // que cada CCF venga marcado con si su saldo alcanza.
+                cobroAjusteId: d.cobroAjusteId ?? '',
                 ccfs: d.ccfs,
 
                 jsListo: false,
@@ -454,12 +529,21 @@
                 descuento: '0.00',
 
                 salaAveriaId: d.salaAveriaId,
+                // ¿Se está declarando una sala de avería DISTINTA a la de la nota? Arranca
+                // apagado: lo normal es que el producto dañado sea de la sala que ya se
+                // eligió, y volver a preguntarla era la redundancia que había que quitar.
+                // Con old() repintado tras un error de validación se abre solo, para no
+                // esconder una elección que el operador ya había hecho.
+                otraSalaAveria: d.salaAveriaId !== '',
                 // Alcance del buscador de CCF: por defecto, solo la sala elegida.
                 otrasSalas: false,
                 // Excepción para guardar sin CCF. Desmarcada: el CCF es obligatorio.
                 sinCcfExcepcional: false,
 
                 ccfId: d.ccfId,
+                // Se pidió reemplazar el CCF elegido. Mientras dura, el elegido SIGUE
+                // elegido: si no se confirma otro, no se perdió nada.
+                cambiandoCcf: false,
                 ccfBuscar: '',
                 ccfAbierto: false,
                 ccfCargando: false,
@@ -477,7 +561,14 @@
                     this.jsListo = true;
                     this.rutaBuscarCcf = this.$el.dataset.buscarCcf;
                     this.onModalidadChange();
-                    if (this.ccfId !== '') { this.onCcfChange(); }
+                    if (this.ccfId !== '') {
+                        // El id preseleccionado tiene que tener su <option> en el select de
+                        // respaldo, que es de donde sale el `dte_relacionado_id` del POST.
+                        // Sin esto, un CCF que no estuviera entre los 20 precargados se veía
+                        // elegido en pantalla y viajaba vacío al guardar.
+                        this.asegurarOpcionCcf(this.ccfId);
+                        this.onCcfChange();
+                    }
                     this.sincronizarCliente();
                 },
 
@@ -504,8 +595,26 @@
                     this.tipo = subs.length > 0
                         ? (subs.some((s) => s.valor === this.tipo) ? this.tipo : subs[0].valor)
                         : '';
-                    if (!this.esAveria) { this.salaAveriaId = ''; this.sinCcfExcepcional = false; }
+                    if (!this.esAveria) {
+                        this.salaAveriaId = '';
+                        this.otraSalaAveria = false;
+                        this.sinCcfExcepcional = false;
+                    }
                     if (!this.permiteOtraSalaReceptora) { this.salaNcId = this.salaCcfId; }
+                },
+
+                // Nombre de una sala del cliente por id. Sirve para AFIRMAR la sala ya
+                // elegida en vez de volver a preguntarla con un select.
+                nombreSala(id) {
+                    if (id === '' || id === null) { return ''; }
+                    return (this.salasCliente.find((s) => String(s.id) === String(id)) ?? {}).nombre ?? '';
+                },
+
+                // Vuelve a «la avería es de la sala de la nota». Deja salaAveriaId vacío: el
+                // hidden resuelve entonces la sala elegida arriba, que es la que se guarda.
+                volverALaSalaDeLaNota() {
+                    this.salaAveriaId = '';
+                    this.otraSalaAveria = false;
                 },
 
                 // ---- Cliente y sala ----
@@ -534,7 +643,7 @@
                     this.descuento = o.descuento_porcentaje ?? '0.00';
                     // Un CCF elegido para otro cliente deja de tener sentido; y al cambiar de
                     // sala el alcance del buscador cambia, así que se vuelve a la sala propia.
-                    if (cambioDeCliente) { this.limpiarCcf(); this.salaAveriaId = ''; }
+                    if (cambioDeCliente) { this.limpiarCcf(); this.volverALaSalaDeLaNota(); }
                     this.otrasSalas = false;
                 },
                 limpiarCliente() {
@@ -543,7 +652,7 @@
                     this.clienteBuscar = '';
                     this.condicionLabel = '—';
                     this.descuento = '0.00';
-                    this.salaAveriaId = '';
+                    this.volverALaSalaDeLaNota();
                     this.limpiarCcf();
                 },
                 sincronizarCliente() {
@@ -569,8 +678,9 @@
                     // El cliente SIEMPRE acota: una nota no puede cruzar de cliente, y el
                     // servidor lo vuelve a exigir al guardar.
                     if (this.clienteId !== '') { params.set('cliente_id', this.clienteId); }
+                    if (this.cobroAjusteId !== '') { params.set('cobro_ajuste', this.cobroAjusteId); }
                     // La sala acota salvo que se pida explícitamente mirar las demás.
-                    if (!this.otrasSalas && this.salaBusquedaId !== '') {
+                    if (!this.permiteOtraSalaReceptora && !this.otrasSalas && this.salaBusquedaId !== '') {
                         params.set('cliente_sucursal_id', this.salaBusquedaId);
                     }
 
@@ -599,25 +709,57 @@
                 // El id que viaja al POST sale del <select> de respaldo. Un CCF traído por el
                 // buscador puede no estar entre las opciones precargadas, así que primero se
                 // le agrega su <option> y solo después se fija ccfId.
-                seleccionarCcf(c) {
-                    this.ccfs[c.id] = c;
+                // Garantiza que el <select> de respaldo —la ÚNICA fuente del
+                // `dte_relacionado_id` que viaja— tenga la opción de este id. Es lo que
+                // hace que «elegido en pantalla» y «elegido en el POST» sean lo mismo.
+                asegurarOpcionCcf(id) {
                     const sel = this.$refs.selectCcf;
-                    if (sel && !Array.from(sel.options).some((o) => o.value === String(c.id))) {
+                    const c = this.ccfs[id];
+                    if (!sel || !c) { return; }
+                    if (!Array.from(sel.options).some((o) => o.value === String(id))) {
                         const o = document.createElement('option');
-                        o.value = c.id;
-                        o.textContent = 'CCF ' + (c.numero ?? c.id);
+                        o.value = id;
+                        o.textContent = 'CCF ' + (c.numero ?? id);
                         sel.appendChild(o);
                     }
+                },
+                seleccionarCcf(c) {
+                    // Saldo menor que la nota del ajuste: no se elige. El servidor lo
+                    // vuelve a medir con el total definitivo al guardar.
+                    if (!c || c.alcanza === false) { return; }
+                    this.ccfs[c.id] = c;
+                    this.asegurarOpcionCcf(c.id);
                     this.ccfId = String(c.id);
                     this.ccfAbierto = false;
                     this.ccfBuscar = '';
+                    this.cambiandoCcf = false;
                     // Con un CCF elegido la excepción sobra: se apaga sola para que el motivo
                     // no siga pidiéndose por una salida que ya no se está usando.
                     this.sinCcfExcepcional = false;
                     this.onCcfChange();
                 },
+                // «Cambiar»: abre el buscador SIN soltar el CCF actual. Si se cancela, o si
+                // no se elige nada, la nota conserva el que ya tenía.
+                cambiarCcf() {
+                    this.cambiandoCcf = true;
+                    this.ccfBuscar = '';
+                    this.ccfResultados = [];
+                    this.ccfPagina = 1;
+                    this.ccfHayMas = false;
+                    this.ccfHayPrevia = false;
+                    this.buscarCcf(1);
+                },
+                cancelarCambioCcf() {
+                    this.cambiandoCcf = false;
+                    this.ccfBuscar = '';
+                    this.ccfResultados = [];
+                    this.ccfAbierto = false;
+                },
+                // Soltar el CCF de verdad. Ya NO es lo que hace «Cambiar»: solo se usa
+                // cuando la selección deja de tener sentido sola (cambió el cliente).
                 limpiarCcf() {
                     this.ccfId = '';
+                    this.cambiandoCcf = false;
                     this.ccfBuscar = '';
                     this.ccfResultados = [];
                     this.ccfAbierto = false;
@@ -653,7 +795,7 @@
                 // modalidades que admiten otra); sin CCF, la sala elegida arriba.
                 get salaEnviada() {
                     if (this.ccfId === '') { return this.clienteSalaId; }
-                    return this.permiteOtraSalaReceptora ? this.salaNcId : this.salaCcfId;
+                    return this.permiteOtraSalaReceptora ? (this.clienteSalaId || this.salaCcfId) : this.salaCcfId;
                 },
                 get receptoraCruzada() {
                     return this.ccfId !== '' && this.salaEnviada !== '' && this.salaEnviada !== this.salaCcfId;
@@ -664,7 +806,7 @@
                     return this.ccfId !== '' && this.salaBusquedaId !== ''
                         && this.salaBusquedaId !== this.salaCcfId;
                 },
-                get salaCruzada() { return this.receptoraCruzada || this.averiaCruzada; },
+                get salaCruzada() { return !this.permiteOtraSalaReceptora && (this.receptoraCruzada || this.averiaCruzada); },
                 // Todo lo que se sale de lo normal cuesta una explicación escrita: cruzar de
                 // sala, y guardar sin CCF.
                 get motivoObligatorio() { return this.salaCruzada || this.sinCcfExcepcional; },

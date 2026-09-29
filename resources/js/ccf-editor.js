@@ -3,6 +3,11 @@
 // sobre las rutas existentes: si el JS falla, los formularios hacen POST normal
 // (fallback). NO cambia lógica fiscal ni validaciones (el servidor re-valida siempre).
 //
+// También guarda el ALBARÁN de crédito de una nota (data-ajax="albaran") y repinta con la
+// respuesta el bloque #albaran-nc-panel: la comparación entre el total de la NOTA y el del
+// ALBARÁN cambia tanto al guardar el albarán como al recalcular las líneas, y antes se
+// quedaba con los valores del último render completo hasta que alguien apretaba F5.
+//
 // Se activa solo en la pantalla de edición (cuando existe #resumen-panel); en el resto
 // de las páginas es un no-op.
 
@@ -13,6 +18,23 @@ function initCcfEditor() {
     const flash = document.getElementById('ccf-flash');
     const scanner = document.getElementById('escanear-barra');
     let flashTimer = null;
+
+    // Bloque del ALBARAN de una nota de credito (numero/fecha/total del papel del cliente,
+    // mas la comparacion contra el total fiscal de la nota). Se resuelve en cada respuesta y
+    // no una sola vez al arrancar, porque el propio bloque se reemplaza al repintarse.
+    function panelAlbaran() {
+        return document.getElementById('albaran-nc-panel');
+    }
+
+    // Repinta la comparacion NC vs. albaran con el HTML que mando el SERVIDOR. Acá no se
+    // resta nada ni se decide ningun color: los dos totales, la diferencia, la tolerancia y
+    // el veredicto vienen calculados. Se llama SOLO cuando la accion salio bien; si el
+    // guardado falla, el bloque queda como estaba y no muestra datos sin confirmar.
+    function syncAlbaran(html) {
+        if (typeof html !== 'string') return;
+        const destino = panelAlbaran();
+        if (destino) destino.outerHTML = html;
+    }
 
     // Secuencia de acciones para descartar respuestas que llegan FUERA DE ORDEN: si una
     // respuesta vieja llega después de aplicar una más nueva, no debe repintar el carrito
@@ -169,8 +191,10 @@ function initCcfEditor() {
         const botones = submitter ? [submitter]
             : Array.from(form.querySelectorAll('button[type="submit"], button:not([type])'));
         const esActualizar = (submitter && /actualizar/i.test(submitter.textContent));
+        const esQuitarAlbaran = (submitter && /quitar/i.test(submitter.textContent));
         const label = { scanner: 'Escaneando…', cantidad: esActualizar ? 'Actualizando…' : 'Agregando…',
-            update: 'Actualizando…', destroy: 'Eliminando…' }[tipo] || 'Procesando…';
+            update: 'Actualizando…', destroy: 'Eliminando…',
+            albaran: esQuitarAlbaran ? 'Quitando…' : 'Guardando…' }[tipo] || 'Procesando…';
         setBusy(botones, true, label);
 
         fetch(form.action, {
@@ -203,6 +227,10 @@ function initCcfEditor() {
                 // El servidor manda el carrito/totales ya calculados y los mapas de cantidad.
                 // Se aplica TODO de una: no queda nada "una acción atrás".
                 if (typeof data.resumen_html === 'string') panel.innerHTML = data.resumen_html;
+                // El albaran va DESPUES del resumen y ANTES de syncGenerar: el bloque del
+                // albaran trae su propio boton Generar, y syncGenerar tiene que alcanzar a
+                // los dos con el mismo estado.
+                syncAlbaran(data.albaran_html);
                 syncCatalogo(data.cantidades || {}, data.acreditadas || {});
                 syncGenerar(data.generar_bloqueado ?? data.sin_lineas);
                 showFlash(data.message, true);
@@ -224,6 +252,10 @@ function initCcfEditor() {
                         const siguiente = siguienteCantidadVisible(form);
                         if (siguiente) { siguiente.focus(); siguiente.select(); }
                     }
+                } else if (tipo === 'albaran') {
+                    // El bloque se reemplazo completo: el flash de arriba ya dice que se
+                    // guardo, y no movemos el foco para no arrastrar al operador lejos de
+                    // donde estaba trabajando.
                 } else if (tipo === 'update' && editabaEstaLinea && lineaInputId) {
                     // Actualización del carrito: el panel se re-renderizó, así que devolvemos el
                     // foco a la MISMA línea (no te movemos a otro input) para poder seguir

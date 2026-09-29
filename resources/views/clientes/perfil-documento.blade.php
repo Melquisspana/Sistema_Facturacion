@@ -85,10 +85,14 @@
                                         @error('formato_export') aria-invalid="true" aria-describedby="formato_export_error" @enderror
                                         class="mt-1 w-full rounded-md border-gray-300 text-sm">
                                     <option value="">— Sin exportación —</option>
-                                    @foreach ($formatos as $slug)
-                                        <option value="{{ $slug }}" @selected(old('formato_export', $perfil?->formato_export) === $slug)>{{ $slug }}</option>
+                                    @foreach ($formatos as $slug => $nombre)
+                                        <option value="{{ $slug }}" @selected(old('formato_export', $perfil?->formato_export) === $slug)>{{ $nombre }}</option>
                                     @endforeach
                                 </select>
+                                <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
+                                    Cambiarlo afecta solo a los formatos que se generen de ahora en adelante: los lotes
+                                    ya generados se siguen descargando con el formato con el que nacieron.
+                                </p>
                                 @error('formato_export')<p id="formato_export_error" class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
                             </div>
 

@@ -1,18 +1,24 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-start justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Lote PPQ #{{ $lote->id }} — {{ $lote->referencia }}</h2>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
                 <a href="{{ route('ppq.lotes.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Historial</a>
                 @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                     <a href="{{ route('ppq.index', ['lote' => $lote->id]) }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar / agregar CCF</a>
                 @else
                     <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
                 @endif
-                @if ($lote->items->isNotEmpty())
-                    <a href="{{ route('ppq.lotes.excel', $lote) }}" class="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
+                @if ($resumen['cantidad'] > 0)
+                    {{-- Paso 1 en el portal: el archivo de NC. Paso 2: el de quedan. --}}
+                    @can('ppq.gestionar')
+                        <a href="{{ route('ppq.lotes.archivo-nc', $lote) }}" class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                            1 · Archivo de NC
+                        </a>
+                    @endcan
+                    <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
-                        Generar Excel Calleja
+                        2 · Archivo de quedan
                     </a>
                 @endif
                 @if ($lote->esEditable())
@@ -31,13 +37,15 @@
             'observado' => 'bg-red-100 text-red-700',
         ];
 
-        $totalCcf = $lote->totalMontoDte();
-        $totalAlb = $lote->totalMontoAlbaran();
-        $difTotal = $lote->diferenciaTotal();
-        $sinAlb = $lote->cantidadSinAlbaran();
-        $conDif = $lote->cantidadConDiferencia();
-        $sinMonto = $lote->cantidadAlbaranSinMonto();
-        $otraSala = $lote->cantidadOtraSala();
+        // Totales y conteos del lote COMPLETO (no de la página visible).
+        $totalCcf = $resumen['total_dte'];
+        $totalAlb = $resumen['total_albaran'];
+        $difTotal = $resumen['diferencia_sin_explicar'];
+        $difDevoluciones = $resumen['diferencia_devoluciones'];
+        $sinAlb = $resumen['sin_albaran'];
+        $conDif = $resumen['con_diferencia'];
+        $sinMonto = $resumen['sin_monto'];
+        $otraSala = $resumen['otra_sala'];
         $estadoLote = \App\Support\PpqConciliacion::estadoLote($sinAlb, $conDif, $sinMonto, $otraSala);
         $money = fn ($v) => ((float) $v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
         $difBox = match ($estadoLote['key']) {
@@ -57,11 +65,18 @@
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
+            @if ($resumen['cantidad'] > 0)
+                <p class="text-xs text-gray-500">
+                    En el portal: primero el archivo de NC, después el de quedan (CCF y sus NC). Luego cargá aquí el reporte del caso.
+                    El TXT de pago se carga en <a href="{{ route('cobros.index') }}" class="text-indigo-600 hover:underline">Cobros Calleja</a> y actualiza este PPQ solo.
+                </p>
+            @endif
+
             {{-- Resumen superior --}}
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-4">
                     <div class="text-xs text-gray-500">Documentos</div>
-                    <div class="mt-1 text-2xl font-bold text-gray-900">{{ $lote->items->count() }}</div>
+                    <div class="mt-1 text-2xl font-bold text-gray-900">{{ $resumen['cantidad'] }}</div>
                     @if ($sinAlb > 0)
                         <div class="mt-1 text-xs text-amber-600">{{ $sinAlb }} sin albarán</div>
                     @endif
@@ -85,6 +100,11 @@
                     </div>
                     <div class="mt-1 text-2xl font-bold {{ $estadoLote['clase'] }}">{{ $money($difTotal) }}</div>
                     <div class="mt-0.5 text-xs {{ $estadoLote['clase'] }}">{{ $estadoLote['alerta'] ? $estadoLote['motivo'] : 'Todo cuadra' }}</div>
+                    @if ($difDevoluciones > 0)
+                        <div class="mt-0.5 text-xs text-gray-500" title="Calleja descuenta la devolución del albarán de entrega (con su descuento); la NC AC04 va sin descuento.">
+                            {{ $money($difDevoluciones) }} cubiertos por devoluciones AC04
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -99,46 +119,51 @@
                 @endif
             </div>
 
-            {{-- Conciliación contra el TXT de pagos de Calleja. Solo gestores de PPQ. --}}
-            @if ($lote->items->isNotEmpty() && auth()->user()->can('ppq.gestionar'))
+            {{-- Reporte del caso que devuelve el portal: deja el PPQ presentado. --}}
+            @if ($resumen['cantidad'] > 0 && auth()->user()->can('ppq.gestionar'))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
-                    <h3 class="text-sm font-semibold text-gray-700">Conciliar pagos (archivo TXT de Calleja)</h3>
-                    <p class="mt-1 text-xs text-gray-500">Subí el archivo <span class="font-mono">.txt</span> que manda Calleja. Marca cada CCF como <span class="font-medium text-green-700">pagado/conciliado</span> solo si aparece en el TXT (tipo CF) y las NC como aplicadas; el resto queda pendiente. No modifica el Excel oficial.</p>
-                    <form method="POST" action="{{ route('ppq.lotes.conciliar', $lote) }}" enctype="multipart/form-data" class="mt-3 flex flex-wrap items-center gap-3">
+                    <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de Calleja</h3>
+                    <p class="mt-1 text-xs text-gray-500">Después de reportar el caso en el portal, subí el Excel que devuelve. Lo que Calleja registró queda presentado; lo que no tomó vuelve a «por presentar» para el siguiente PPQ.</p>
+                    <form method="POST" action="{{ route('ppq.lotes.reporte-caso', $lote) }}" enctype="multipart/form-data" class="mt-3 flex flex-wrap items-end gap-3">
                         @csrf
-                        <input type="file" name="archivo" accept=".txt,text/plain" required
+                        <input type="file" name="reporte" accept=".xls,.xlsx" required
                                class="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100">
-                        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Conciliar</button>
+                        <div>
+                            <label for="caso" class="block text-xs text-gray-500">N.º de caso (del correo)</label>
+                            <input id="caso" name="caso" type="text" inputmode="numeric" class="mt-0.5 w-28 rounded-md border-gray-300 text-sm">
+                        </div>
+                        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Cargar reporte</button>
                     </form>
-                    @error('archivo')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
+                    @error('reporte')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
                 </div>
             @endif
 
-            {{-- Documentos del lote (tabla en el orden del Excel de Calleja) --}}
+            {{-- Documentos del lote: CCF primero y, en cada grupo, los más recientes arriba --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden">
-                <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                <div class="px-5 py-3 border-b border-gray-200 dark:border-ink-600 flex flex-wrap items-center justify-between gap-2">
                     <h3 class="text-sm font-semibold text-gray-700">Documentos del lote</h3>
-                    <span class="text-xs text-gray-400">Mismo orden de columnas que el Excel de Calleja</span>
+                    <span class="text-xs text-gray-500">
+                        @if ($items->isNotEmpty())
+                            Mostrando {{ $items->firstItem() }}–{{ $items->lastItem() }} de {{ $items->total() }} ·
+                        @endif
+                        CCF más recientes primero, con su albarán; los totales son del lote completo
+                    </span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
+                    <table class="w-full text-sm">
                         <thead>
                             <tr class="text-left text-xs uppercase tracking-wide text-gray-600 bg-gray-50 border-b border-gray-200">
-                                <th class="py-2.5 px-3">N° orden de compra</th>
-                                <th class="py-2.5 px-3">N° albarán</th>
-                                <th class="py-2.5 px-3">Fecha albarán</th>
-                                <th class="py-2.5 px-3 text-right">Monto albarán</th>
-                                <th class="py-2.5 px-3">Código de generación</th>
-                                <th class="py-2.5 px-3">N° de control</th>
-                                <th class="py-2.5 px-3 text-right">Monto CCF/NC</th>
-                                <th class="py-2.5 px-3">Sello de recepción</th>
+                                <th class="py-2.5 px-3">Documento</th>
+                                <th class="py-2.5 px-3">Albarán</th>
                                 <th class="py-2.5 px-3">Sala / CD</th>
+                                <th class="py-2.5 px-3 text-right">Monto albarán</th>
+                                <th class="py-2.5 px-3 text-right">Monto CCF/NC</th>
                                 <th class="py-2.5 px-3 text-center">Estado</th>
-                                <th class="py-2.5 px-3"></th>
+                                <th class="py-2.5 px-3"><span class="sr-only">Acción</span></th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
-                            @forelse ($lote->itemsOrdenados() as $item)
+                            @forelse ($items as $item)
                                 @php
                                     $tipo = $item->tipo_dte ?? $item->dte?->tipo_dte?->value;
                                     $control = $item->numero_control ?? $item->dte?->numero_control;
@@ -151,10 +176,24 @@
                                     $estado = $item->conciliacionEstado();
                                     $mismatch = $item->salaMismatch();
                                     $alerta = in_array($estado['key'], ['pequena', 'posible_nc'], true);
+                                    // Con el mismo signo que los montos de la fila (NC en negativo).
+                                    $difSigno = $item->diferenciaConSigno();
+                                    // Una NC que difiere de su albarán de crédito no es una «posible
+                                    // NC»: ya lo es. Misma alerta, texto propio; el CCF no cambia.
+                                    if ($estado['key'] === 'posible_nc' && $item->esNc()) {
+                                        $estado['label'] = 'Difiere del albarán de crédito';
+                                    }
+                                    // Diferencia cubierta por una NC de devolución (AC04) de la misma sala.
+                                    if (in_array($item->id, $resumen['explicadas'], true)) {
+                                        $estado = ['key' => 'coincide', 'label' => 'Cubierta por devolución AC04', 'clase' => 'bg-green-100 text-green-700'];
+                                        $alerta = false;
+                                    }
                                     $tip = match ($estado['key']) {
                                         'coincide' => 'El monto del albarán coincide con el del CCF/NC.',
-                                        'pequena' => 'Diferencia pequeña entre el albarán y el CCF/NC ($'.number_format((float) $item->diferencia, 2).').',
-                                        'posible_nc' => 'El monto difiere ($'.number_format((float) $item->diferencia, 2).'): posible nota de crédito o devolución.',
+                                        'pequena' => 'Diferencia pequeña entre el albarán y el CCF/NC ('.$money($difSigno).').',
+                                        'posible_nc' => $item->esNc()
+                                            ? 'El monto de la nota difiere del de su albarán de crédito ('.$money($difSigno).'): revisar descuento, retención o captura.'
+                                            : 'El monto difiere ('.$money($difSigno).'): posible nota de crédito o devolución.',
                                         'albaran_sin_monto' => 'Hay un albarán vinculado pero sin monto capturado; capturá el monto para conciliar.',
                                         default => 'Documento sin albarán vinculado.',
                                     };
@@ -164,30 +203,33 @@
                                     $montoDteSigno = $item->montoDteConSigno();
                                     $fmt = fn ($v) => ($v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
                                 @endphp
-                                <tr class="hover:bg-gray-50 even:bg-gray-50/40">
-                                    <td class="py-2 px-3 font-mono text-xs text-gray-700">{{ $item->numero_orden_compra ?: '—' }}</td>
+                                <tr class="align-top hover:bg-gray-50 dark:hover:bg-ink-700/40">
+                                    <td class="py-2 px-3" title="{{ $control }} · código {{ $codigo ?: '—' }} · sello {{ $sello ?: '—' }}">
+                                        <span class="font-mono font-semibold {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ preg_match('/(\d+)$/', (string) $control, $mc) ? (ltrim($mc[1], '0') ?: '0') : ($control ?: '—') }}</span>
+                                        <span class="text-[11px] {{ $item->esNc() ? 'text-rose-500 font-medium' : 'text-gray-400' }}">{{ $tipo === '05' ? 'NC' : 'CCF' }}</span>
+                                        @if ($item->numero_orden_compra)
+                                            <span class="block font-mono text-[11px] text-gray-400">OC {{ $item->numero_orden_compra }}</span>
+                                        @endif
+                                    </td>
                                     <td class="py-2 px-3 font-mono text-xs">
-                                        @if ($item->sin_albaran)
+                                        @if ($item->sin_albaran && ! $item->esNc())
                                             <span class="inline-block rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">sin albarán</span>
                                         @else
-                                            {{ $numAlb ?: '—' }}
+                                            {{ $numAlb ?: ($item->dte?->albaran?->numero_canonico ?? '—') }}
                                         @endif
                                         @if ($item->observaciones)
                                             <span class="cursor-help text-gray-400" title="{{ $item->observaciones }}">ⓘ</span>
                                         @endif
+                                        <span class="block font-sans text-[11px] text-gray-400">{{ optional($item->albaran?->fecha_albaran)->format('d/m/Y') }}</span>
                                     </td>
-                                    <td class="py-2 px-3 text-xs text-gray-600">{{ optional($item->albaran?->fecha_albaran)->format('d/m/Y') ?: '—' }}</td>
-                                    <td class="py-2 px-3 text-right {{ $item->esNc() ? 'text-rose-600' : 'text-gray-700' }}">{{ $montoAlbSigno !== null ? $fmt($montoAlbSigno) : '—' }}</td>
-                                    <td class="py-2 px-3 font-mono text-xs text-gray-700">{{ $codigo ?: '—' }}</td>
-                                    <td class="py-2 px-3 font-mono text-xs text-gray-700">{{ $control ?: '—' }} <span class="{{ $item->esNc() ? 'text-rose-500 font-medium' : 'text-gray-400' }}">{{ $tipo === '05' ? '(NC)' : '(CCF)' }}</span></td>
-                                    <td class="py-2 px-3 text-right font-medium {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ $fmt($montoDteSigno) }}</td>
-                                    <td class="py-2 px-3 font-mono text-xs text-gray-600">{{ $sello ? Str::limit($sello, 16) : '—' }}</td>
                                     <td class="py-2 px-3 text-gray-700">
-                                        <span class="block {{ $salaNombre ? 'font-medium text-gray-800' : 'text-amber-600' }}">{{ $salaDescripcion }}</span>
+                                        <span class="block {{ $salaNombre ? 'text-gray-800' : 'text-amber-600' }}">{{ $salaDescripcion }}</span>
                                         @if ($sala)
                                             <span class="block font-mono text-[11px] text-gray-400">{{ $sala }}</span>
                                         @endif
                                     </td>
+                                    <td class="py-2 px-3 text-right whitespace-nowrap {{ $item->esNc() ? 'text-rose-600' : 'text-gray-700' }}">{{ $montoAlbSigno !== null ? $fmt($montoAlbSigno) : '—' }}</td>
+                                    <td class="py-2 px-3 text-right whitespace-nowrap font-medium {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ $fmt($montoDteSigno) }}</td>
                                     <td class="py-2 px-3 text-center whitespace-nowrap">
                                         <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium {{ $estado['clase'] }}">
                                             @if ($alerta)
@@ -195,8 +237,8 @@
                                             @endif
                                             <span class="cursor-help" title="{{ $tip }}">{{ $estado['label'] }}</span>
                                         </span>
-                                        @if (! $item->sin_albaran && $item->monto_albaran !== null)
-                                            <span class="mt-1 block text-[11px] {{ abs((float) $item->diferencia) >= 0.01 ? 'text-red-600 font-medium' : 'text-gray-400' }}">Dif {{ $money($item->diferencia) }}</span>
+                                        @if ($difSigno !== null)
+                                            <span class="mt-1 block text-[11px] {{ abs($difSigno) >= 0.01 ? 'text-red-600 font-medium' : 'text-gray-400' }}">Dif {{ $money($difSigno) }}</span>
                                         @endif
                                         @if ($mismatch)
                                             <span class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium {{ $mismatch['clase'] }} cursor-help" title="{{ $mismatch['detalle'] }}">
@@ -204,46 +246,46 @@
                                             </span>
                                         @endif
                                         {{-- Estado de pago: solo "pagado" si el TXT de Calleja lo confirma --}}
-                                        <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium {{ $item->estadoPagoClase() }}" @if ($item->fecha_pago) title="Pago {{ \App\Support\Fecha::dmy($item->fecha_pago) }}" @endif>{{ $item->estadoPagoLabel() }}</span>
+                                        <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium {{ $item->estadoPagoClase() }}" @if ($item->fecha_pago) title="Fecha del documento en TXT: {{ \App\Support\Fecha::dmy($item->fecha_pago) }}" @endif>{{ $item->estadoPagoLabel() }}</span>
                                     </td>
-                                    <td class="py-2 px-3 text-right">
-                                        @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
-                                            <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm('¿Quitar este documento del lote?')">
+                                    <td class="py-2 px-3 text-right whitespace-nowrap">
+                                        {{-- Una sola acción: si está cobrado, quitar el cobro; si no, quitarlo del lote. --}}
+                                        @if ($item->estaConciliado())
+                                            @can('ppq.revertir-conciliacion')
+                                                <form method="POST" action="{{ route('ppq.lotes.items.revertir-cobro', [$lote, $item]) }}"
+                                                      onsubmit="const m = prompt('Motivo (opcional):'); if (m === null) return false; this.motivo.value = m; return true;">
+                                                    @csrf
+                                                    <input type="hidden" name="page" value="{{ $items->currentPage() }}">
+                                                    <input type="hidden" name="motivo" value="">
+                                                    <button class="text-xs text-amber-700 hover:underline">quitar cobro</button>
+                                                </form>
+                                            @endcan
+                                        @elseif ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
+                                            <form method="POST" action="{{ route('ppq.lotes.items.destroy', [$lote, $item]) }}" onsubmit="return confirm('¿Quitar este documento del PPQ?')">
                                                 @csrf @method('DELETE')
-                                                <button class="text-red-600 hover:underline text-xs">quitar</button>
-                                            </form>
-                                        @endif
-
-                                        {{-- Deshacer un cobro ya registrado. Es lo contrario de conciliar —contradice
-                                             lo que reportó el cliente— así que va con permiso propio y motivo
-                                             obligatorio, y queda en la bitácora del lote con el valor anterior.
-                                             Aparece aunque el lote no sea editable: un pago mal registrado hay que
-                                             poder corregirlo también en un lote ya cerrado. --}}
-                                        @if ($item->estaConciliado() && auth()->user()->can('ppq.revertir-conciliacion'))
-                                            <form method="POST" action="{{ route('ppq.lotes.items.revertir-cobro', [$lote, $item]) }}"
-                                                  class="mt-1"
-                                                  onsubmit="return confirm('Se va a quitar el cobro registrado de este documento. Volverá a contar como pendiente y quedará anotado con tu nombre. ¿Continuar?')">
-                                                @csrf
-                                                <input type="text" name="motivo" required minlength="10" maxlength="500"
-                                                       placeholder="Motivo (obligatorio)"
-                                                       class="w-40 rounded border-gray-300 text-[11px] py-0.5" />
-                                                <button class="mt-1 block w-full text-amber-700 hover:underline text-xs">quitar cobro</button>
+                                                <button class="text-xs text-red-600 hover:underline">quitar</button>
                                             </form>
                                         @endif
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="11" class="py-10 text-center text-gray-400">El lote no tiene documentos. <a href="{{ route('ppq.index', $lote->esEditable() ? ['lote' => $lote->id] : []) }}" class="text-indigo-600 hover:underline">Agregá CCF/NC desde la búsqueda</a>.</td></tr>
+                                <tr><td colspan="7" class="py-10 text-center text-gray-500">
+                                    @if ($resumen['cantidad'] > 0)
+                                        {{-- Página fuera de rango: el lote SÍ tiene documentos. --}}
+                                        Esta página no existe ({{ $resumen['cantidad'] }} documento(s) en {{ $items->lastPage() }} página(s)).
+                                        <a href="{{ $items->url(1) }}" class="text-indigo-600 hover:underline">Ir a la primera página</a>.
+                                    @else
+                                        El lote no tiene documentos. <a href="{{ route('ppq.index', $lote->esEditable() ? ['lote' => $lote->id] : []) }}" class="text-indigo-600 hover:underline">Agregá CCF/NC desde la búsqueda</a>.
+                                    @endif
+                                </td></tr>
                             @endforelse
                         </tbody>
-                        @if ($lote->items->isNotEmpty())
+                        @if ($resumen['cantidad'] > 0)
                             <tfoot>
                                 <tr class="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
-                                    <td class="py-2.5 px-3 text-xs uppercase text-gray-500" colspan="3">Totales (neto)</td>
+                                    <td class="py-2.5 px-3 text-xs uppercase text-gray-500" colspan="3">Totales del lote (neto)</td>
                                     <td class="py-2.5 px-3 text-right">{{ $money($totalAlb) }}</td>
-                                    <td colspan="2"></td>
                                     <td class="py-2.5 px-3 text-right">{{ $money($totalCcf) }}</td>
-                                    <td colspan="2"></td>
                                     <td class="py-2.5 px-3 text-center text-xs {{ $estadoLote['clase'] }}">Dif {{ $money($difTotal) }}</td>
                                     <td></td>
                                 </tr>
@@ -251,6 +293,9 @@
                         @endif
                     </table>
                 </div>
+                @if ($items->hasPages())
+                    <nav class="px-4 py-3 border-t border-gray-100 dark:border-ink-600" aria-label="Páginas de documentos del lote">{{ $items->links() }}</nav>
+                @endif
             </div>
 
             {{-- Historial de conciliaciones. Cada archivo de pagos procesado y cada

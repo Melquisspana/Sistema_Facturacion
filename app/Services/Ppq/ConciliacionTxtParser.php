@@ -2,6 +2,9 @@
 
 namespace App\Services\Ppq;
 
+use App\Support\Dinero;
+use Illuminate\Support\Carbon;
+
 /**
  * Lee el archivo TXT de pagos de Calleja (formato real, separado por ";"):
  *
@@ -12,6 +15,25 @@ namespace App\Services\Ppq;
  *
  * TIPO_DOCUMENTO: CF = CCF pagado, NC = nota de crédito aplicada, QD = ajuste/descuento PPQ.
  * Tolera el encoding (UTF-8/Windows-1252/ISO-8859-1) porque el nombre trae Ñ/acentos.
+ *
+ * ─────────────────────────── Los importes son CADENAS ───────────────────────────
+ *
+ * `valor` sale como cadena decimal exacta («-0.96»), no como `float`. Todo lo que hace el
+ * conciliador con ese número —compararlo contra el importe guardado, sumar el neto del
+ * archivo— va con {@see Dinero} (BCMath), y convertirlo a `float` para
+ * volverlo a convertir a cadena solo agrega una oportunidad de perder centavos.
+ *
+ * ────────────────── Por qué el separador decimal se busca así ──────────────────
+ *
+ * Calleja escribe los abonos chicos SIN el cero entero: `-.96` son NOVENTA Y SEIS
+ * CENTAVOS. La versión anterior calculaba la posición del separador con
+ * `max((int) strrpos(...))` y exigía `> 0`: en `.96` el punto está en la posición 0, la
+ * condición fallaba y se caía a la rama «sin decimales», que borraba el punto y dejaba
+ * −96 dólares. Sobre el archivo real del 07/09/2026 eso inflaba el total de NC de
+ * −$125.90 a −$220.94 y descuadraba el neto en $95.04.
+ *
+ * El fondo del error era usar `(int) false === 0` como «no encontrado», que es
+ * indistinguible de «encontrado en la primera posición». Acá se distinguen explícitamente.
  */
 class ConciliacionTxtParser
 {
@@ -23,7 +45,7 @@ class ConciliacionTxtParser
     ];
 
     /**
-     * @return array<int, array{linea:int, tipo:string, nombre:?string, numero:?string, numeroNorm:?string, fecha:?string, valor:?float, raw:string}>
+     * @return array<int, array{linea:int, tipo:string, nombre:?string, numero:?string, numeroNorm:?string, fecha:?string, valor:?string, raw:string}>
      */
     public function parse(string $contenido): array
     {
@@ -95,29 +117,57 @@ class ConciliacionTxtParser
         }
 
         // Fallback tolerante (Y-m-d, d/m/Y…); si no, null.
-        return rescue(fn () => \Illuminate\Support\Carbon::parse($texto)->format('Y-m-d'), null, false);
+        return rescue(fn () => Carbon::parse($texto)->format('Y-m-d'), null, false);
     }
 
-    /** "126.44" / "-5.3" / "-121.98" → float; null si vacío/no numérico. */
-    private function monto(string $texto): ?float
+    /**
+     * "126.44" / "-5.3" / "-.96" / "1,234.56" → cadena decimal exacta; null si vacío o no
+     * numérico. Ver la nota de la clase sobre por qué NO devuelve `float` y por qué el
+     * separador se localiza distinguiendo «no hay» de «está en la posición 0».
+     */
+    private function monto(string $texto): ?string
     {
         $texto = trim($texto);
         if ($texto === '') {
             return null;
         }
-        $signo = str_starts_with($texto, '-') ? -1 : 1;
-        $num = preg_replace('/[^0-9.,]/', '', $texto);
-        // El último separador es el decimal; el resto, miles.
-        $pos = max((int) strrpos($num, '.'), (int) strrpos($num, ','));
-        if ($pos > 0) {
-            $entero = preg_replace('/\D/', '', substr($num, 0, $pos));
-            $frac = preg_replace('/\D/', '', substr($num, $pos + 1));
-            $num = $entero.'.'.$frac;
-        } else {
-            $num = preg_replace('/\D/', '', $num);
+
+        $negativo = str_starts_with($texto, '-');
+        $num = (string) preg_replace('/[^0-9.,]/', '', $texto);
+        if ($num === '') {
+            return null;
         }
 
-        return $num === '' ? null : $signo * (float) $num;
+        // Último separador = el decimal; los anteriores son de miles. -1 significa «no hay
+        // separador», que es distinto de «está en la posición 0» (`.96`).
+        $punto = strrpos($num, '.');
+        $coma = strrpos($num, ',');
+        $sep = max($punto === false ? -1 : $punto, $coma === false ? -1 : $coma);
+
+        if ($sep >= 0) {
+            $entero = (string) preg_replace('/\D/', '', substr($num, 0, $sep));
+            $decimales = (string) preg_replace('/\D/', '', substr($num, $sep + 1));
+        } else {
+            $entero = (string) preg_replace('/\D/', '', $num);
+            $decimales = '';
+        }
+
+        // Sin un solo dígito a ningún lado no hay número (un ";.;" suelto, por ejemplo).
+        if ($entero === '' && $decimales === '') {
+            return null;
+        }
+
+        $entero = ltrim($entero, '0');
+        if ($entero === '') {
+            $entero = '0';
+        }
+
+        $valor = $decimales === '' ? $entero : $entero.'.'.$decimales;
+
+        // «-0.00» es cero: el signo sobra y guardarlo solo produce comparaciones raras.
+        $esCero = $entero === '0' && rtrim($decimales, '0') === '';
+
+        return $negativo && ! $esCero ? '-'.$valor : $valor;
     }
 
     /** Asegura UTF-8 (el TXT puede venir en Windows-1252/ISO-8859-1 por la Ñ/acentos). */
