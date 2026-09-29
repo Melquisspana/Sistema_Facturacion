@@ -37,6 +37,8 @@ class DteInvalidacionProduccionTest extends TestCase
 
     private const CCF_SELLO = '2026386FB99EC82E45A3931C61E4A8EB331A5CIU';
 
+    private const CCF_SUSTITUTO_CODIGO_GENERACION = 'B7E2C1A4-3D5F-4E6A-9B8C-0D1E2F3A4B5C';
+
     private const CCF_NUMERO_CONTROL = 'DTE-03-M001P099-000000000000001';
 
     protected function setUp(): void
@@ -88,13 +90,37 @@ class DteInvalidacionProduccionTest extends TestCase
         ]);
     }
 
-    private function evento(TipoAnulacionMh $tipo = TipoAnulacionMh::RescindirOperacion, ?string $motivo = null): EventoInvalidacionData
+    /**
+     * CCF SUSTITUTO del mismo emisor y ambiente, aceptado realmente por el MH. Hace falta
+     * porque el motivo 3 sobre un CCF exige documento sustituto (manual funcional, págs.
+     * impresas 13-16): antes de ese cambio, el motivo 3 lo tenía PROHIBIDO.
+     */
+    private function ccfSustituto(Dte $original): Dte
+    {
+        return Dte::create([
+            'tipo_dte' => TipoDte::CreditoFiscal->value,
+            'estado' => EstadoDte::Aceptado->value,
+            'ambiente' => $original->ambiente->value,
+            'establecimiento_id' => $original->establecimiento_id,
+            'punto_venta_id' => $original->punto_venta_id,
+            'cliente_id' => $original->cliente_id,
+            'numero_control' => 'DTE-03-M001P099-000000000000777',
+            'codigo_generacion' => self::CCF_SUSTITUTO_CODIGO_GENERACION,
+            'sello_recepcion' => '2026000000000000000000000000000000000000',
+            'respuesta_mh' => ['estado' => 'PROCESADO'],
+            'fecha_procesamiento_mh' => '2026-07-21 09:00:00',
+            'fecha_emision' => '2026-07-21', 'hora_emision' => '09:00:00',
+        ]);
+    }
+
+    private function evento(TipoAnulacionMh $tipo = TipoAnulacionMh::RescindirOperacion, ?string $motivo = null, ?string $reemplazo = null): EventoInvalidacionData
     {
         return new EventoInvalidacionData(
             tipoAnulacion: $tipo,
             nombreResponsable: 'Melqui Administrador', tipoDocResponsable: '13', numDocResponsable: '040000000',
             nombreSolicita: 'Calleja CxP', tipoDocSolicita: '36', numDocSolicita: '06145555551015',
             motivoAnulacion: $motivo,
+            codigoGeneracionReemplazo: $reemplazo,
         );
     }
 
@@ -236,19 +262,44 @@ class DteInvalidacionProduccionTest extends TestCase
         $this->servicio()->dryRun($dte, $this->evento(TipoAnulacionMh::Otro), true, true);
     }
 
+    /**
+     * CAMBIO DE EXPECTATIVA: además del motivo en texto, un CCF por motivo 3 ahora exige
+     * documento SUSTITUTO (manual funcional, págs. impresas 13-16). Antes el motivo 3 lo
+     * tenía prohibido, así que este caso pasaba sin sustituto; hoy sin él se bloquea (ver
+     * test_tipo3_sobre_ccf_sin_sustituto_falla).
+     */
     public function test_tipo3_con_motivo_valido_pasa(): void
     {
         Http::fake();
         $dte = $this->ccfAceptado(AmbienteHacienda::Pruebas->value);
-        $evento = $this->evento(TipoAnulacionMh::Otro, 'Documento emitido por duplicidad. La operación válida permanece '
-            .'respaldada por el DTE emitido y entregado desde Conta.');
+        $sustituto = $this->ccfSustituto($dte);
+        $evento = $this->evento(
+            TipoAnulacionMh::Otro,
+            'Documento emitido por duplicidad. La operación válida permanece respaldada por el DTE emitido y entregado desde Conta.',
+            $sustituto->codigo_generacion,
+        );
 
         $d = $this->servicio()->dryRun($dte, $evento, true, true);
 
         $this->assertTrue($d['schema']['valido'], implode(' | ', $d['schema']['errores']));
         $this->assertFalse($d['candados']['bloqueado'], implode(' | ', $d['candados']['razones']));
         $this->assertSame(3, $d['evento']['motivo']['tipoAnulacion']);
+        $this->assertSame(self::CCF_SUSTITUTO_CODIGO_GENERACION, $d['evento']['documento']['codigoGeneracionR']);
         Http::assertNothingSent();
+    }
+
+    /** Un CCF por motivo 3 SIN sustituto queda bloqueado: es la celda nueva de la matriz. */
+    public function test_tipo3_sobre_ccf_sin_sustituto_falla(): void
+    {
+        Http::fake();
+        $dte = $this->ccfAceptado(AmbienteHacienda::Pruebas->value);
+
+        $this->expectException(DteInvalidacionException::class);
+        try {
+            $this->servicio()->dryRun($dte, $this->evento(TipoAnulacionMh::Otro, 'Duplicado.'), true, true);
+        } finally {
+            Http::assertNothingSent();
+        }
     }
 
     // ---------- Variantes engañosas del endpoint, en los DOS ambientes ----------

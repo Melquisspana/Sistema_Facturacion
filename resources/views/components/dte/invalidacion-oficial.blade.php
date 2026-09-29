@@ -10,12 +10,21 @@
 
     Lo que NO cambia respecto de la versión anterior:
       · la ruta (facturacion.invalidacion.transmitir) y el payload
-        (tipo / motivo / reemplazo / confirmacion_invalidacion / confirmar_nc_relacionada);
-      · las reglas CAT-024 — el paso 2 solo PINTA lo que ya decían
-        TipoAnulacionMh::requiereDocumentoReemplazo() y requiereMotivoTexto();
+        (tipo / motivo / reemplazo / confirmacion_invalidacion);
       · la frase-barrera exacta INVALIDAR DTE, revalidada en servidor por
         TransmitirInvalidacionRequest;
       · los candados del entorno, que el servicio re-evalúa en cada intento.
+
+    De dónde salen los requisitos del paso 2: del SERVIDOR, ya resueltos para ESTE
+    documento (DteController::show → OpcionesInvalidacion::opciones($dte->tipo_dte) →
+    PoliticaInvalidacion). NO hay una segunda matriz en Alpine: la vista solo pinta las
+    banderas `requiere_reemplazo` / `requiere_motivo` que vienen en cada opción, porque
+    la regla depende del tipo de documento y no solo del motivo (una NC no lleva
+    sustituto en ninguno de los tres motivos; un CCF lo exige en el 1 y en el 3).
+
+    La antigua casilla «confirmo la NC relacionada» YA NO EXISTE: una nota de crédito o
+    de débito vigente PROHÍBE la invalidación, y esa prohibición no se confirma, se
+    resuelve invalidando primero la nota.
 
     Lo que cambia es CUÁNDO se ve cada cosa: el paso 1 habla en lenguaje de oficina, el
     código de catálogo aparece solo como texto secundario, y la frase de confirmación se
@@ -32,7 +41,10 @@
     // deshabilitada y se muestran las razones, sin ocultar la tarjeta.
     $bloqueadoReal = ($inv['candados']['bloqueado'] ?? true) || ! ($inv['puede_transmitir'] ?? false);
     $yaInvalidado = (bool) ($inv['ya_invalidado'] ?? false);
-    $tieneNc = (bool) ($inv['tiene_nc_relacionada'] ?? false);
+    // Dependencia fiscal: notas de crédito/débito ACEPTADAS por Hacienda y aún vigentes.
+    // Mientras existan, la invalidación está prohibida (no hay confirmación que la abra).
+    $notasVigentes = $inv['notas_vigentes'] ?? collect();
+    $bloqueadoPorNotas = (bool) ($inv['bloqueado_por_notas'] ?? false);
 
     // Un error de validación del servidor debe REABRIR el asistente en el último paso,
     // no dejar al usuario frente a un modal cerrado sin saber qué pasó.
@@ -67,22 +79,13 @@
                 busqueda: '',
                 buscando: false,
                 frase: '',
-                confirmoNc: false,
 
                 init() {
-                    // Al cambiar de motivo se limpia lo que el nuevo tipo NO admite: mandar
-                    // un reemplazo en un tipo 2/3 lo rechaza el serializador ("solo la
-                    // invalidación tipo 1 admite documento de reemplazo").
-                    this.$watch('tipo', () => {
-                        if (! this.requiereReemplazo) {
-                            this.elegido = null;
-                            this.manual = '';
-                            this.avanzado = false;
-                        }
-                        if (! this.requiereMotivo) {
-                            this.motivo = '';
-                        }
-                    });
+                    // Al cambiar de motivo se limpia lo que el nuevo motivo NO admite. Es
+                    // imprescindible, no cosmético: la matriz del servidor RECHAZA un
+                    // sustituto en las celdas que exigen null, así que un valor residual
+                    // del motivo anterior haría fallar el envío.
+                    this.$watch('tipo', () => this.limpiarLoQueNoAplica());
 
                     // Repintado tras un error de validación: recuperar el reemplazo elegido
                     // (o el código escrito a mano) y volver al paso donde estaba el usuario.
@@ -112,6 +115,16 @@
                 get requiereMotivo() {
                     return !! (this.opcion && this.opcion.requiere_motivo);
                 },
+                /** ¿El servidor tiene regla para este documento y este motivo? */
+                get soportado() {
+                    return !! (this.opcion && this.opcion.soportado);
+                },
+                get razonNoSoportado() {
+                    return (this.opcion && this.opcion.razon_no_soportado) || '';
+                },
+                get notaOperativa() {
+                    return (this.opcion && this.opcion.nota_operativa) || '';
+                },
                 /** Valor que viaja en el campo `reemplazo`: el elegido, o el manual del modo avanzado. */
                 get reemplazo() {
                     if (! this.requiereReemplazo) {
@@ -127,7 +140,7 @@
                 },
                 get puedeAvanzar() {
                     if (this.paso === 1) {
-                        return this.tipo !== null;
+                        return this.tipo !== null && this.soportado;
                     }
                     if (this.paso === 2) {
                         if (this.requiereReemplazo && this.reemplazo === '') { return false; }
@@ -139,10 +152,30 @@
                 /** El botón rojo solo se habilita con la frase-barrera exacta y los datos del tipo. */
                 get puedeTransmitir() {
                     return this.tipo !== null
+                        && this.soportado
                         && this.frase.trim() === FRASE
                         && (! this.requiereReemplazo || this.reemplazo !== '')
                         && (! this.requiereMotivo || this.motivo.trim() !== '');
                 },
+
+                /**
+                 * Deja el formulario coherente con el motivo elegido: sin sustituto donde la
+                 * matriz lo prohíbe y sin texto donde no se pide. Lo llama tanto el $watch
+                 * como el propio radio (x-on:change), para que el campo quede limpio en el
+                 * mismo gesto del usuario y no un tick después.
+                 */
+                limpiarLoQueNoAplica() {
+                    if (! this.requiereReemplazo) {
+                        this.elegido = null;
+                        this.manual = '';
+                        this.avanzado = false;
+                        this.busqueda = '';
+                    }
+                    if (! this.requiereMotivo) {
+                        this.motivo = '';
+                    }
+                },
+                alCambiarTipo() { this.limpiarLoQueNoAplica(); },
 
                 siguiente() { if (this.puedeAvanzar && this.paso < 3) { this.paso++; } },
                 atras() { if (this.paso > 1) { this.paso--; } },
@@ -238,8 +271,10 @@
                 if (! $dte->aceptadoRealmentePorMh()) {
                     $razonesUsuario[] = 'Este documento no tiene una aceptación real de Hacienda (aceptación simulada).';
                 }
-                if ($tieneNc) {
-                    $razonesUsuario[] = 'Este documento ya tiene una nota de crédito relacionada.';
+                // El texto completo —con el detalle de cada nota y su enlace— va en el
+                // bloque naranja de abajo; acá solo se nombra la causa para no repetirlo.
+                if ($bloqueadoPorNotas) {
+                    $razonesUsuario[] = 'Tiene una nota de crédito vigente en su contra (ver el detalle abajo).';
                 }
                 // Documento apto pero bloqueado por el entorno (modo seguro): un único mensaje simple.
                 if (($inv['puede_transmitir'] ?? false) && ($inv['candados']['bloqueado'] ?? false)) {
@@ -254,11 +289,29 @@
                 <ul class="mt-2 text-sm text-gray-600 list-disc list-inside space-y-1">
                     @foreach ($razonesUsuario as $razon)<li>{{ $razon }}</li>@endforeach
                 </ul>
-                @if ($tieneNc)
-                    <p class="mt-2 text-xs text-gray-500">
-                        Invalidarlo además de la nota de crédito podría causar una doble corrección fiscal. Revisá primero la nota relacionada.
-                    </p>
-                @endif
+            </div>
+        @endif
+
+        {{-- Dependencia fiscal: mientras exista una nota vigente no se invalida, y se dice
+             QUÉ hay que invalidar antes. El enlace solo aparece con permiso de ver la nota. --}}
+        @if ($bloqueadoPorNotas)
+            <div class="mt-4 rounded-md border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900">
+                <p class="font-semibold">Este comprobante tiene una nota de crédito vigente. Primero invalidá esa nota y luego volvé a intentar.</p>
+                <ul class="mt-2 space-y-1">
+                    @foreach ($notasVigentes as $nota)
+                        <li>
+                            <span class="font-medium">{{ $nota->tipo_dte?->label() ?? 'Nota' }}</span>
+                            <span class="font-mono">{{ $nota->numero_control ?? '—' }}</span>
+                            @can('view', $nota)
+                                — <a href="{{ route('facturacion.show', $nota) }}" class="underline hover:no-underline">ver la nota</a>
+                            @endcan
+                        </li>
+                    @endforeach
+                </ul>
+                <p class="mt-2 text-xs">
+                    No es una advertencia que se pueda confirmar: Hacienda no admite invalidar un comprobante
+                    mientras la nota que lo corrige siga vigente.
+                </p>
             </div>
         @endif
 
@@ -340,6 +393,12 @@
                                 </label>
                             </template>
                             <x-input-error :messages="$errors->get('tipo')" class="mt-1" />
+
+                            {{-- El servidor no tiene regla para este documento: se dice, no se
+                                 adopta la del CCF por defecto. --}}
+                            <div x-show="tipo !== null && ! soportado" x-cloak
+                                 class="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+                                 x-text="razonNoSoportado"></div>
                         </div>
 
                         {{-- ── PASO 2 · Campos condicionales ────────────────────────
@@ -348,14 +407,22 @@
                              para no mandar un reemplazo en un tipo 2/3 (que el
                              serializador rechazaría). --}}
                         <div x-show="paso === 2" x-cloak class="space-y-4">
-                            {{-- Documento de reemplazo: solo el tipo que lo exige. --}}
+                            {{-- Aclaración operativa del servidor (p. ej. el orden de la NC:
+                                 invalidar primero, emitir la corrección después). --}}
+                            <div x-show="notaOperativa !== ''" x-cloak
+                                 class="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"
+                                 x-text="notaOperativa"></div>
+
+                            {{-- Documento sustituto: solo las celdas de la matriz que lo exigen. --}}
                             <div x-show="requiereReemplazo" x-cloak>
-                                <p class="text-sm font-medium text-gray-700">¿Qué documento lo reemplaza?</p>
+                                <p class="text-sm font-medium text-gray-700">¿Qué documento lo sustituye?</p>
                                 <p class="mt-0.5 text-xs text-gray-500">
-                                    Esta lista es una <strong>ayuda para elegir</strong>, no un requisito: se muestran
-                                    documentos con aceptación real de Hacienda del mismo ambiente, porque son los que
-                                    Hacienda puede reconocer. Si el documento que buscás no aparece, podés escribir su
-                                    código con el modo avanzado.
+                                    Solo se pueden elegir documentos <strong>del mismo tipo, del mismo emisor y
+                                    ambiente, ya aceptados por Hacienda</strong> y no invalidados: son los mismos
+                                    requisitos que valida el servidor, así que lo que aparece acá es lo que se puede
+                                    usar. El modo avanzado sirve para escribir el código a mano, pero pasa por la
+                                    misma comprobación: un documento que no exista en este sistema no se puede
+                                    verificar y la invalidación se bloquea.
                                 </p>
 
                                 {{-- Documento ya elegido --}}
@@ -417,7 +484,7 @@
                                         <p class="mt-1 text-xs" x-show="manual.trim() !== ''" x-cloak
                                            :class="formatoManualValido ? 'text-gray-500' : 'text-amber-700'"
                                            x-text="formatoManualValido
-                                               ? 'Formato correcto. Hacienda igual puede rechazarlo si el documento no existe o no corresponde.'
+                                               ? 'El formato es correcto, pero eso no prueba nada: el servidor comprobará que el documento exista acá, sea del mismo tipo, emisor y ambiente, y esté aceptado por Hacienda.'
                                                : 'No parece un código de generación oficial (UUID en mayúsculas). Podés enviarlo, pero el sistema lo rechazará antes de transmitir.'"></p>
                                     </div>
                                 </div>
@@ -444,17 +511,6 @@
                                 Este motivo no necesita datos adicionales. Continuá para revisar el resumen.
                             </div>
 
-                            {{-- Riesgo de doble corrección fiscal: el checkbox existente, sin cambios. --}}
-                            @if ($tieneNc)
-                                <label class="flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 p-3 text-xs font-semibold text-orange-800">
-                                    <input type="checkbox" name="confirmar_nc_relacionada" value="1" x-model="confirmoNc"
-                                           class="mt-0.5 rounded border-orange-400 text-orange-600 focus:ring-orange-500">
-                                    <span>
-                                        Este documento ya tiene una nota de crédito relacionada.
-                                        Entiendo el riesgo de doble corrección fiscal y confirmo invalidar de todas formas.
-                                    </span>
-                                </label>
-                            @endif
                         </div>
 
                         {{-- ── PASO 3 · Resumen, advertencia y frase-barrera ──────── --}}
@@ -481,7 +537,7 @@
                                     <p class="mt-1 text-gray-800" x-text="motivo"></p>
                                 </div>
                                 <div class="p-3" x-show="requiereReemplazo" x-cloak>
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Documento de reemplazo</p>
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Documento sustituto</p>
                                     <template x-if="elegido">
                                         <p class="mt-1 text-gray-800">
                                             <span x-text="elegido?.tipo_label"></span> ·
@@ -584,7 +640,7 @@
                             <x-input-error :messages="$errors->get('motivo')" class="mt-1" />
                         </div>
                         <div class="md:col-span-2">
-                            <x-input-label for="inval_reemplazo" value="Código de generación de reemplazo (obligatorio si tipo = 1)" />
+                            <x-input-label for="inval_reemplazo" value="Código de generación del documento sustituto (solo donde la matriz lo exige)" />
                             <x-text-input id="inval_reemplazo" name="reemplazo" type="text" class="mt-1 block w-full font-mono" :value="old('reemplazo')" />
                             <x-input-error :messages="$errors->get('reemplazo')" class="mt-1" />
                         </div>
@@ -595,12 +651,6 @@
                                     Ejecutar aunque el mock esté apagado (no transmite nada)
                                 </label>
                             @endunless
-                            @if ($tieneNc)
-                                <label class="inline-flex items-center gap-2 text-xs text-orange-700 font-semibold">
-                                    <input type="checkbox" id="inval_confirmar_nc" name="confirmar_nc_relacionada" value="1" required class="rounded border-orange-400 text-orange-600 focus:ring-orange-500">
-                                    Entiendo el riesgo de doble corrección fiscal y confirmo invalidar de todas formas
-                                </label>
-                            @endif
                         </div>
                         <div class="md:col-span-3 flex flex-wrap gap-3">
                             <button class="inline-flex items-center px-4 py-2 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700">
@@ -617,14 +667,11 @@
                     <form method="POST" action="{{ route('facturacion.invalidacion.dry-run', $dte) }}" id="inval_dry_run_form"
                           onsubmit="this.querySelector('[name=tipo]').value = document.getElementById('inval_tipo').value;
                                     this.querySelector('[name=motivo]').value = document.getElementById('inval_motivo').value;
-                                    this.querySelector('[name=reemplazo]').value = document.getElementById('inval_reemplazo').value;
-                                    var ncChk = document.getElementById('inval_confirmar_nc');
-                                    this.querySelector('[name=confirmar_nc_relacionada]').value = (ncChk && ncChk.checked) ? '1' : '';">
+                                    this.querySelector('[name=reemplazo]').value = document.getElementById('inval_reemplazo').value;">
                         @csrf
                         <input type="hidden" name="tipo">
                         <input type="hidden" name="motivo">
                         <input type="hidden" name="reemplazo">
-                        <input type="hidden" name="confirmar_nc_relacionada">
                     </form>
                 @endif
 

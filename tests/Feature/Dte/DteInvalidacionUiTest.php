@@ -237,13 +237,37 @@ class DteInvalidacionUiTest extends TestCase
         $this->assertFalse($nc->tieneEventoInvalidacion());
     }
 
-    public function test_tipo_error_info_exige_codigo_de_reemplazo(): void
+    /**
+     * CAMBIO DE EXPECTATIVA (manual funcional, págs. impresas 13-16): este caso es una
+     * NOTA DE CRÉDITO, y la fila NC de la matriz lleva `codigoGeneracionR` en null en los
+     * TRES motivos. Antes el test exigía reemplazo para el motivo 1 aplicando la regla
+     * general de CAT-024 a todos los tipos; ahora el motivo 1 sobre una NC NO pide
+     * sustituto y, si alguien lo manda, se rechaza. La exigencia de sustituto para el
+     * motivo 1 se prueba sobre FE/CCF/FEX en MatrizInvalidacionHaciendaTest.
+     */
+    public function test_nc_motivo_1_no_pide_reemplazo_y_rechaza_el_que_se_envie(): void
     {
         $nc = $this->ncAceptada();
+        $usuario = $this->usuario('administrador');
 
-        $this->actingAs($this->usuario('administrador'))
-            ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::ErrorInformacion->value])
+        // Con reemplazo: la matriz lo PROHÍBE para la NC, así que se rechaza en servidor
+        // y no se firma nada.
+        $this->actingAs($usuario)
+            ->post(route('facturacion.invalidacion.mock', $nc), [
+                'tipo' => TipoAnulacionMh::ErrorInformacion->value,
+                'reemplazo' => 'A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D',
+            ])
             ->assertSessionHasErrors('reemplazo');
+
+        $this->assertFalse($nc->fresh()->tieneEventoInvalidacion());
+
+        // Sin reemplazo: no hay error de validación y el evento se firma en mock.
+        $this->actingAs($usuario)
+            ->post(route('facturacion.invalidacion.mock', $nc), ['tipo' => TipoAnulacionMh::ErrorInformacion->value])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('status');
+
+        $this->assertStringStartsWith('MOCK-INVAL-', (string) $nc->fresh()->sello_invalidacion);
     }
 
     // --- Candados (policy) ---

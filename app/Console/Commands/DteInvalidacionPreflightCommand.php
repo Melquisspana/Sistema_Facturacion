@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\AvisaOpcionNcRelacionadaObsoleta;
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
@@ -11,6 +12,7 @@ use App\Models\Dte;
 use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteTransmisionAuthService;
+use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Console\Command;
 
@@ -27,15 +29,17 @@ use Illuminate\Console\Command;
  */
 class DteInvalidacionPreflightCommand extends Command
 {
+    use AvisaOpcionNcRelacionadaObsoleta;
+
     protected $signature = 'dte:invalidacion-preflight {dte : ID del DTE aceptado a invalidar}
         {--tipo= : Tipo de anulación CAT-024 (1=Error info, 2=Rescindir, 3=Otro) — OBLIGATORIO y explícito}
         {--motivo= : Motivo en texto (obligatorio para tipo 3)}
-        {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}
-        {--confirmo-nc-relacionada : Diagnostica como si ya se hubiera confirmado la NC relacionada}';
+        {--reemplazo= : Código de generación del documento SUSTITUTO (según la matriz documento x motivo: FE/CCF/FEX lo exigen en los motivos 1 y 3; la NC nunca)}
+        {--confirmo-nc-relacionada : OBSOLETO y sin efecto. La dependencia de notas vigentes ya no se puede confirmar}';
 
     protected $description = 'Checklist de preflight para la invalidación real (solo lectura). No firma ni transmite.';
 
-    public function handle(DteInvalidacionService $inval, DteFirmaService $firma, DteTransmisionAuthService $auth): int
+    public function handle(DteInvalidacionService $inval, DteFirmaService $firma, DteTransmisionAuthService $auth, ValidadorReglasInvalidacion $reglas): int
     {
         $dte = Dte::find($this->argument('dte'));
         if (! $dte) {
@@ -78,7 +82,7 @@ class DteInvalidacionPreflightCommand extends Command
             $ok = $ok && $pasa;
         };
 
-        $confirmoNc = (bool) $this->option('confirmo-nc-relacionada');
+        $this->avisarOpcionObsoleta();
 
         // --- Estado del DTE ---
         $add($dte->estado === EstadoDte::Aceptado, 'DTE existe y está aceptado', 'tipo '.$dte->tipo_dte->value.' · estado: '.$dte->estado->value);
@@ -87,15 +91,20 @@ class DteInvalidacionPreflightCommand extends Command
         $add(! $dte->tieneEventoInvalidacion(), 'Sin evento de invalidación previo', $dte->tieneEventoInvalidacion() ? 'YA tiene' : 'sí');
         $add(! $dte->estaProtegidoComoEvidencia(), 'No protegido como evidencia',
             $dte->estaProtegidoComoEvidencia() ? 'PROTEGIDO — no se puede invalidar por ninguna vía' : 'no protegido');
-        $add(! $dte->tieneNotaCreditoRelacionada() || $confirmoNc, 'Sin NC relacionada (o confirmado)',
-            $dte->tieneNotaCreditoRelacionada()
-                ? ($confirmoNc ? 'tiene NC relacionada — confirmado con --confirmo-nc-relacionada' : 'TIENE NC relacionada — posible doble corrección fiscal, falta --confirmo-nc-relacionada')
-                : 'no tiene NC relacionada');
+        // Notas que BLOQUEAN, no cualquier nota relacionada: la política decide qué tipos
+        // dependen de ellas (hoy, solo el CCF).
+        $notasQueBloquean = $reglas->notasQueBloquean($dte);
+        $add($notasQueBloquean->isEmpty(), 'Sin nota de crédito/débito que lo bloquee',
+            $notasQueBloquean->isEmpty()
+                ? 'ninguna nota vigente bloquea la invalidación de este tipo de documento'
+                : 'BLOQUEADO — primero invalidá: '.$notasQueBloquean
+                    ->map(fn ($n) => ($n->tipo_dte?->label() ?? 'nota').' '.($n->numero_control ?? '—'))
+                    ->implode('; '));
 
         // --- Evento / schema / endpoint (dry-run interno) ---
         $esProduccion = $dte->ambiente === AmbienteHacienda::Produccion;
         try {
-            $d = $inval->dryRun($dte, $evento, false, false, $confirmoNc);
+            $d = $inval->dryRun($dte, $evento, false, false);
             // Referencia OFICIAL del ambiente propio del DTE (sin overrides), la misma
             // que usa DteInvalidacionService para bloquear. No se reescribe aquí.
             $endpointEsperado = EndpointsHacienda::anulacionOficial($dte->ambiente);

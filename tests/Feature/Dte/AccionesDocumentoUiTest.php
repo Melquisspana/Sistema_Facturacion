@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Support\Dte\OpcionesInvalidacion;
+use App\Support\Dte\PoliticaInvalidacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -298,20 +299,24 @@ class AccionesDocumentoUiTest extends TestCase
             ->assertOk();
 
         // El asistente recibe EXACTAMENTE las opciones de CAT-024 —ni una de más, ni una
-        // de menos— serializadas igual que las emite la vista.
+        // de menos— serializadas igual que las emite la vista, y YA RESUELTAS para el tipo
+        // de documento de la ficha (un CCF y una NC reciben banderas distintas).
         $respuesta->assertSee(
-            (string) Js::from(OpcionesInvalidacion::opciones()),
+            (string) Js::from(OpcionesInvalidacion::opciones(TipoDte::CreditoFiscal)),
             false
         );
 
         // Y cada una lleva su etiqueta oficial de catálogo y su título humano.
-        $opciones = collect(OpcionesInvalidacion::opciones())->keyBy('valor');
+        $opciones = collect(OpcionesInvalidacion::opciones(TipoDte::CreditoFiscal))->keyBy('valor');
         foreach (TipoAnulacionMh::cases() as $caso) {
             $this->assertArrayHasKey($caso->value, $opciones->all());
             $this->assertSame($caso->label(), $opciones[$caso->value]['etiqueta_oficial']);
         }
+        // El título del motivo 1 ya no promete un reemplazo: la fila NC de la matriz se
+        // invalida por error SIN documento sustituto, así que el título tenía que dejar de
+        // describir la regla de un solo tipo de documento.
         $this->assertSame(
-            ['Reemplazar el documento', 'Rescindir la operación', 'Otro motivo permitido'],
+            ['Error en el documento', 'Rescindir la operación', 'Otro motivo permitido'],
             $opciones->pluck('titulo')->all()
         );
 
@@ -331,32 +336,73 @@ class AccionesDocumentoUiTest extends TestCase
     }
 
     /**
-     * Las banderas de campos condicionales que consume la UI salen del enum, no de una
-     * copia: si mañana cambia `requiereDocumentoReemplazo()`, la UI cambia con él.
+     * CAMBIO DE EXPECTATIVA: antes, las banderas de campos condicionales salían del ENUM
+     * (`TipoAnulacionMh::requiereDocumentoReemplazo()`), que contestaba sin saber qué
+     * documento se invalidaba. Ya no existe ese método: la regla depende del tipo de
+     * documento (manual funcional, págs. impresas 13-16) y vive en PoliticaInvalidacion.
+     *
+     * Lo que se comprueba ahora es lo mismo en espíritu —la UI no tiene una copia propia
+     * de la matriz— pero contra la fuente correcta: para CADA tipo de documento, las
+     * banderas que recibe el asistente son exactamente las de la política.
      */
-    public function test_las_banderas_de_campos_condicionales_vienen_del_enum(): void
+    public function test_las_banderas_de_campos_condicionales_vienen_de_la_politica(): void
     {
-        $opciones = collect(OpcionesInvalidacion::opciones())->keyBy('valor');
+        foreach (self::TIPOS as $documento) {
+            $opciones = collect(OpcionesInvalidacion::opciones($documento))->keyBy('valor');
 
-        $this->assertSame(
-            collect(TipoAnulacionMh::cases())->pluck('value')->all(),
-            $opciones->keys()->all(),
-            'El paso 1 debe ofrecer los mismos valores de CAT-024 que el enum, en el mismo orden.'
+            $this->assertSame(
+                collect(TipoAnulacionMh::cases())->pluck('value')->all(),
+                $opciones->keys()->all(),
+                'El paso 1 debe ofrecer los mismos valores de CAT-024 que el enum, en el mismo orden.'
+            );
+
+            foreach (TipoAnulacionMh::cases() as $caso) {
+                $requisitos = PoliticaInvalidacion::requisitos($documento, $caso);
+
+                $this->assertSame($requisitos->requiereReemplazo, $opciones[$caso->value]['requiere_reemplazo'],
+                    "requiere_reemplazo debe venir de la política para {$documento->value}/{$caso->value}.");
+                $this->assertSame($requisitos->requiereMotivoTexto, $opciones[$caso->value]['requiere_motivo']);
+                $this->assertSame($requisitos->soportado, $opciones[$caso->value]['soportado']);
+                $this->assertSame($caso->label(), $opciones[$caso->value]['etiqueta_oficial']);
+            }
+        }
+    }
+
+    /**
+     * Y la matriz llega DISTINTA según el documento de la ficha: el mismo motivo 1 pide
+     * sustituto en un CCF y no lo pide en una NC. Es la prueba de que la UI no puede
+     * tener una matriz propia: recibe la del servidor ya resuelta.
+     */
+    public function test_la_ficha_recibe_las_banderas_del_documento_que_muestra(): void
+    {
+        $this->abrirCandados();
+        Http::fake();
+
+        $ccf = $this->documentoAceptado(TipoDte::CreditoFiscal, secuencia: 1);
+        $nc = $this->documentoAceptado(TipoDte::NotaCredito, secuencia: 2);
+        $usuario = $this->usuario('administrador');
+
+        $this->actingAs($usuario)->get(route('facturacion.show', $ccf))->assertOk()
+            ->assertSee((string) Js::from(OpcionesInvalidacion::opciones(TipoDte::CreditoFiscal)), false);
+
+        $this->actingAs($usuario)->get(route('facturacion.show', $nc))->assertOk()
+            ->assertSee((string) Js::from(OpcionesInvalidacion::opciones(TipoDte::NotaCredito)), false);
+
+        // Y no son las mismas: si lo fueran, la bandera no dependería del documento.
+        $this->assertNotSame(
+            OpcionesInvalidacion::opciones(TipoDte::CreditoFiscal),
+            OpcionesInvalidacion::opciones(TipoDte::NotaCredito)
         );
 
-        foreach (TipoAnulacionMh::cases() as $caso) {
-            $this->assertSame($caso->requiereDocumentoReemplazo(), $opciones[$caso->value]['requiere_reemplazo']);
-            $this->assertSame($caso->requiereMotivoTexto(), $opciones[$caso->value]['requiere_motivo']);
-            $this->assertSame($caso->label(), $opciones[$caso->value]['etiqueta_oficial']);
-        }
+        Http::assertNothingSent();
     }
 
     // ------------------------------- 3. Documento relacionado solo cuando aplica
 
     /**
-     * El buscador de reemplazo solo lo consume el tipo que lo exige (CAT-024 = 1). La UI
-     * lo esconde para los demás y, además, vacía el campo: el serializador rechaza un
-     * reemplazo en los tipos 2 y 3.
+     * El buscador de sustituto solo lo consumen las celdas de la matriz que lo exigen. La
+     * UI lo esconde para las demás y, además, vacía el campo: el servidor rechaza un
+     * sustituto donde la matriz obliga a `codigoGeneracionR` null.
      */
     public function test_el_buscador_de_reemplazo_solo_se_muestra_cuando_el_tipo_lo_exige(): void
     {
@@ -368,7 +414,7 @@ class AccionesDocumentoUiTest extends TestCase
             ->get(route('facturacion.show', $dte))
             ->assertOk()
             // El bloque existe pero va condicionado a la bandera del tipo elegido.
-            ->assertSee('¿Qué documento lo reemplaza?')
+            ->assertSee('¿Qué documento lo sustituye?')
             ->assertSee('x-show="requiereReemplazo"', false)
             ->assertSee('x-show="requiereMotivo"', false)
             // Y el valor que viaja se anula cuando el tipo no lo admite.
@@ -379,25 +425,31 @@ class AccionesDocumentoUiTest extends TestCase
     }
 
     /**
-     * El buscador ofrece SOLO documentos con aceptación real del MH en el mismo ambiente,
-     * nunca el propio documento ni un aceptado MOCK (cuyo código no existe en Hacienda).
-     * Es un filtro de conveniencia; la regla dura sigue en el serializador.
+     * CAMBIO DE EXPECTATIVA: el buscador ya no ofrece «cualquier documento aceptado». Se
+     * alineó con la verificación del servidor, así que además del ambiente y la aceptación
+     * real filtra por TIPO admisible como sustituto: lo que reemplaza a un CCF es otro
+     * CCF. Antes el candidato de este test era una FACTURA y se esperaba que apareciera;
+     * ahora aparece el CCF y la factura queda fuera, porque ofrecerla sería ofrecer un
+     * rechazo seguro del propio servidor.
      */
-    public function test_el_buscador_solo_ofrece_documentos_con_aceptacion_real_del_mismo_ambiente(): void
+    public function test_el_buscador_solo_ofrece_sustitutos_que_el_servidor_aceptaria(): void
     {
         Http::fake();
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
 
         $invalidado = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 1);
-        $candidato = $this->documentoAceptado(TipoDte::Factura, $cliente, 2);
+        $candidato = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 2);
+
+        // Otro tipo: fuera del universo (una factura no sustituye a un CCF).
+        $otroTipo = $this->documentoAceptado(TipoDte::Factura, $cliente, 5);
 
         // Aceptado MOCK: fuera del universo (su código no existe en el MH).
-        $mock = $this->documentoAceptado(TipoDte::Factura, $cliente, 3);
+        $mock = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 3);
         $mock->update(['sello_recepcion' => 'MOCK-SIMULADO-'.$mock->id, 'fecha_procesamiento_mh' => null]);
 
         // Otro ambiente (producción): fuera del universo. El ambiente se fija al crear
         // porque un DTE aceptado es inmutable (ver DteObserver).
-        $otroAmbiente = $this->documentoAceptado(TipoDte::Factura, $cliente, 4, ambiente: '01');
+        $otroAmbiente = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 4, ambiente: '01');
 
         $respuesta = $this->actingAs($this->usuario('administrador'))
             ->getJson(route('facturacion.invalidacion.buscar-reemplazo', $invalidado))
@@ -407,8 +459,39 @@ class AccionesDocumentoUiTest extends TestCase
 
         $this->assertContains($candidato->codigo_generacion, $codigos);
         $this->assertNotContains($invalidado->codigo_generacion, $codigos, 'Un documento no puede reemplazarse a sí mismo.');
-        $this->assertNotContains($mock->codigo_generacion, $codigos, 'Una aceptación MOCK no es ofrecible como reemplazo.');
-        $this->assertNotContains($otroAmbiente->codigo_generacion, $codigos, 'El reemplazo debe ser del mismo ambiente.');
+        $this->assertNotContains($otroTipo->codigo_generacion, $codigos, 'El sustituto debe ser del mismo tipo.');
+        $this->assertNotContains($mock->codigo_generacion, $codigos, 'Una aceptación MOCK no es ofrecible como sustituto.');
+        $this->assertNotContains($otroAmbiente->codigo_generacion, $codigos, 'El sustituto debe ser del mismo ambiente.');
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * El cliente NO es un filtro: una corrección puede cambiar los datos del receptor
+     * (manual funcional; el encargo lo señala de forma expresa). Los del mismo cliente se
+     * ofrecen PRIMERO, pero los de otro cliente siguen estando disponibles.
+     */
+    public function test_el_buscador_ordena_por_cliente_pero_no_excluye_a_los_demas(): void
+    {
+        Http::fake();
+        $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
+        $otroCliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Super Selectos, S.A. de C.V.']);
+
+        $invalidado = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 1);
+        $mismoCliente = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 2);
+        $receptorCorregido = $this->documentoAceptado(TipoDte::CreditoFiscal, $otroCliente, 3);
+
+        $codigos = collect(
+            $this->actingAs($this->usuario('administrador'))
+                ->getJson(route('facturacion.invalidacion.buscar-reemplazo', $invalidado))
+                ->assertOk()
+                ->json('resultados')
+        )->pluck('codigo_generacion')->all();
+
+        $this->assertContains($mismoCliente->codigo_generacion, $codigos);
+        $this->assertContains($receptorCorregido->codigo_generacion, $codigos,
+            'Un sustituto con otro receptor debe seguir siendo elegible: la corrección puede cambiar al receptor.');
+        $this->assertSame($mismoCliente->codigo_generacion, $codigos[0], 'Los del mismo cliente van primero.');
 
         Http::assertNothingSent();
     }
@@ -419,7 +502,7 @@ class AccionesDocumentoUiTest extends TestCase
         Http::fake();
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
         $invalidado = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 1);
-        $this->documentoAceptado(TipoDte::Factura, $cliente, 2);
+        $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 2);
 
         $fila = $this->actingAs($this->usuario('administrador'))
             ->getJson(route('facturacion.invalidacion.buscar-reemplazo', $invalidado))
@@ -442,9 +525,9 @@ class AccionesDocumentoUiTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
         $invalidado = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 1);
 
-        // Más candidatos que el tope.
+        // Más candidatos que el tope (del mismo tipo: son los únicos ofrecibles).
         for ($i = 2; $i <= 3 + \App\Services\Dte\BusquedaDocumentoReemplazo::LIMITE; $i++) {
-            $this->documentoAceptado(TipoDte::Factura, $cliente, $i);
+            $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, $i);
         }
 
         $url = route('facturacion.invalidacion.buscar-reemplazo', $invalidado);
@@ -487,7 +570,9 @@ class AccionesDocumentoUiTest extends TestCase
         Http::fake();
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);
         $invalidado = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 1);
-        $candidato = $this->documentoAceptado(TipoDte::Factura, $cliente, 2);
+        // Mismo tipo que el invalidado: desde que el buscador se alineó con la
+        // verificación del servidor, es el único que se ofrece como sustituto.
+        $candidato = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 2);
 
         $respuesta = $this->actingAs($this->usuario('administrador'))
             ->getJson(route('facturacion.invalidacion.buscar-reemplazo', $invalidado))

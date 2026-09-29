@@ -191,25 +191,63 @@ class SerializadorInvalidacionMhTest extends TestCase
         $this->assertNotEmpty($res['errores']);
     }
 
-    public function test_tipo_1_exige_documento_de_reemplazo(): void
+    /**
+     * CAMBIO DE EXPECTATIVA (Manual Funcional v2.0, págs. impresas 13-16).
+     *
+     * Antes: `test_tipo_1_exige_documento_de_reemplazo` afirmaba que CUALQUIER motivo 1
+     * exigía sustituto, y lo comprobaba justamente sobre una NC 05 — el único de los
+     * cuatro tipos para el que la regla NO aplica. La fila NC de la matriz lleva
+     * `codigoGeneracionR` en null en los TRES motivos: primero se invalida la nota y la
+     * corrección se emite después.
+     *
+     * Ahora: sobre una NC, el motivo 1 serializa null y un sustituto enviado se RECHAZA.
+     * La regla del motivo 1 con sustituto se prueba sobre FE/CCF/FEX en
+     * {@see MatrizInvalidacionHaciendaTest}, que es donde sí corresponde.
+     */
+    public function test_nc_motivo_1_no_lleva_sustituto_y_serializa_null(): void
     {
         $dte = $this->ncAceptada();
 
-        // Sin reemplazo → falla claramente.
+        $evento = app(SerializadorInvalidacionMh::class)
+            ->serializar($dte, $this->evento(TipoAnulacionMh::ErrorInformacion));
+
+        $this->assertNull($evento['documento']['codigoGeneracionR']);
+        $this->assertSame(1, $evento['motivo']['tipoAnulacion']);
+    }
+
+    public function test_nc_motivo_1_rechaza_un_sustituto_enviado(): void
+    {
+        $dte = $this->ncAceptada();
+
         try {
-            app(SerializadorInvalidacionMh::class)->serializar($dte, $this->evento(TipoAnulacionMh::ErrorInformacion));
-            $this->fail('Debió lanzar DteNoSerializableException por falta de documento de reemplazo.');
+            app(SerializadorInvalidacionMh::class)->serializar(
+                $dte,
+                $this->evento(TipoAnulacionMh::ErrorInformacion, reemplazo: 'A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D')
+            );
+            $this->fail('Debió rechazar el sustituto: la NC no admite documento de reemplazo en ningún motivo.');
         } catch (DteNoSerializableException $e) {
-            $this->assertStringContainsString('reemplazo', implode(' ', $e->problemas));
+            $this->assertStringContainsString('no admite documento de reemplazo', implode(' ', $e->problemas));
+        }
+    }
+
+    public function test_nc_motivo_3_exige_motivo_en_texto_y_sigue_sin_sustituto(): void
+    {
+        $dte = $this->ncAceptada();
+
+        // Sin texto → falla.
+        try {
+            app(SerializadorInvalidacionMh::class)->serializar($dte, $this->evento(TipoAnulacionMh::Otro));
+            $this->fail('El motivo 3 exige texto.');
+        } catch (DteNoSerializableException $e) {
+            $this->assertStringContainsString('texto', implode(' ', $e->problemas));
         }
 
-        // Con reemplazo válido → serializa y lo coloca en codigoGeneracionR.
-        $reemplazo = 'A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D';
+        // Con texto → serializa, y el sustituto sigue en null (fila NC de la matriz).
         $evento = app(SerializadorInvalidacionMh::class)
-            ->serializar($dte, $this->evento(TipoAnulacionMh::ErrorInformacion, reemplazo: $reemplazo));
+            ->serializar($dte, $this->evento(TipoAnulacionMh::Otro, motivo: 'Nota emitida por duplicado.'));
 
-        $this->assertSame($reemplazo, $evento['documento']['codigoGeneracionR']);
-        $this->assertSame(1, $evento['motivo']['tipoAnulacion']);
+        $this->assertNull($evento['documento']['codigoGeneracionR']);
+        $this->assertSame('Nota emitida por duplicado.', $evento['motivo']['motivoAnulacion']);
     }
 
     public function test_tipo_2_no_lleva_documento_de_reemplazo(): void

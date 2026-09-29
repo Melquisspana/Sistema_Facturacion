@@ -12,17 +12,20 @@ namespace App\Enums;
  *  2 = «Rescindir de la operación realizada.»
  *  3 = «Otro»
  *
- * Regla de negocio del evento de invalidación (schema invalidacion-schema-v3):
- *  - tipo 1 EXIGE `documento.codigoGeneracionR` (código de generación del DTE que
- *    reemplaza al invalidado). El schema lo declara nullable, así que esta regla la
- *    impone {@see \App\Services\Dte\Serializadores\SerializadorInvalidacionMh}.
- *  - tipos 2 y 3 NO llevan documento de reemplazo (codigoGeneracionR = null).
- *  - tipo 3 requiere `motivo.motivoAnulacion` en texto libre.
+ * ── Qué NO decide este enum ───────────────────────────────────────────────────
+ * Si hace falta documento SUSTITUTO no depende solo del motivo: depende también del
+ * TIPO DE DOCUMENTO que se invalida. Una NC 05 no lleva sustituto en ninguno de los
+ * tres motivos, mientras que FE/CCF/FEX lo exigen en los motivos 1 y 3 (Manual
+ * Funcional v2.0, págs. impresas 13-16). Por eso esa regla vive en
+ * {@see \App\Support\Dte\PoliticaInvalidacion} y aquí se eliminó el antiguo
+ * `requiereDocumentoReemplazo()`, que contestaba sin conocer el documento y por eso
+ * exigía sustituto para todo motivo 1 y lo prohibía para el motivo 3.
  *
- * TODO (pendiente de confirmar en el Manual Técnico del MH, no está en el repo en
- * texto): qué tipo corresponde exactamente para invalidar una NC tipo 05 aceptada y
- * si aplica una ventana de tiempo. Mientras no se confirme, el tipo se pasa de forma
- * EXPLÍCITA (no se asume) y la ventana de tiempo NO se valida aquí.
+ * Lo que sí es una regla del MOTIVO, sin contexto documental, es el texto libre: el
+ * tipo 3 exige `motivo.motivoAnulacion` en cualquier tipo de documento.
+ *
+ * Los PLAZOS de transmisión del evento tampoco se validan aquí ni en ningún otro punto
+ * todavía: siguen pendientes por una inconsistencia de la fuente (manual, págs. 11-12).
  */
 enum TipoAnulacionMh: int
 {
@@ -39,13 +42,7 @@ enum TipoAnulacionMh: int
         };
     }
 
-    /** ¿Este tipo exige el código de generación del documento de reemplazo? (solo tipo 1). */
-    public function requiereDocumentoReemplazo(): bool
-    {
-        return $this === self::ErrorInformacion;
-    }
-
-    /** ¿Este tipo exige un motivo en texto libre? (solo tipo 3). */
+    /** ¿Este tipo exige un motivo en texto libre? (solo tipo 3, en cualquier documento). */
     public function requiereMotivoTexto(): bool
     {
         return $this === self::Otro;

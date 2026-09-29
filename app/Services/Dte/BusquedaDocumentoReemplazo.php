@@ -2,38 +2,39 @@
 
 namespace App\Services\Dte;
 
+use App\Enums\TipoDte;
 use App\Models\Dte;
-use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
 use App\Support\Dte\CodigoGeneracion;
+use App\Support\Dte\EmisorDte;
+use App\Support\Dte\PoliticaInvalidacion;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
- * Busca los documentos que se pueden OFRECER como «documento de reemplazo» en la
- * invalidación tipo 1 de CAT-024 (`documento.codigoGeneracionR`). SOLO CONSULTA: no
- * crea, no valida fiscalmente, no toca la emisión ni el evento.
+ * Busca los documentos que se pueden OFRECER como «documento SUSTITUTO» del evento de
+ * invalidación (`documento.codigoGeneracionR`). SOLO CONSULTA: no crea, no transmite, no
+ * toca la emisión ni el evento.
  *
- * ── Por qué este universo y no otro ────────────────────────────────────────────
- * Las ÚNICAS reglas fiscales que hoy existen sobre el reemplazo viven en
- * {@see SerializadorInvalidacionMh::candados()}:
+ * ── Alineado con la validación del servidor ───────────────────────────────────
+ * El universo ofrecido es EXACTAMENTE el que acepta
+ * {@see VerificadorDocumentoReemplazo}, para que la lista no proponga nada que el
+ * servidor vaya a rechazar después:
  *
- *   1. el tipo 1 exige `codigoGeneracionR`;
- *   2. debe tener formato oficial (UUID v4 en mayúsculas);
- *   3. no puede ser el MISMO DTE que se invalida.
+ *   · del TIPO admisible según {@see PoliticaInvalidacion::tiposSustituto()} — lo que
+ *     reemplaza a un CCF es otro CCF, no cualquier documento aceptado;
+ *   · del MISMO emisor (mismo NIT ante Hacienda, ver {@see EmisorDte}) y del MISMO ambiente;
+ *   · ACEPTADO REALMENTE por el MH ({@see Dte::scopeAceptadoRealMh()}): un aceptado MOCK
+ *     no tiene código conocido por Hacienda y un invalidado ya no sustituye a nadie;
+ *   · distinto del documento que se invalida.
  *
- * No hay ninguna regla que ate el reemplazo a un tipo de DTE, a un cliente o a una
- * fecha concreta, así que este buscador NO inventa una. Lo que sí hace —y por eso es
- * un filtro de CONVENIENCIA, no una regla— es ofrecer solo documentos cuyo código de
- * generación EXISTE realmente en Hacienda: aceptados realmente por el MH
- * ({@see Dte::scopeAceptadoRealMh()}) y del MISMO ambiente que el documento a
- * invalidar. Un documento de apitest jamás reemplaza a uno de producción, y un
- * aceptado MOCK no tiene código conocido por el MH: ofrecerlos sería ofrecer un
- * rechazo seguro.
+ * Los del MISMO CLIENTE salen PRIMERO, pero el cliente NO es un filtro: una corrección
+ * puede cambiar los datos del receptor, y exigir el mismo `cliente_id` bloquearía justo
+ * el caso que el motivo 1 contempla. Ordenar no es excluir.
  *
- * Como ese filtro podría, en algún caso no previsto, dejar fuera un documento que el
- * MH sí aceptaría, la UI conserva un MODO AVANZADO donde el código se escribe a mano.
- * Lo que aquí se decide es qué se OFRECE; la validación dura sigue siendo la del
- * serializador y la del Form Request, sin cambios.
+ * El MODO AVANZADO de la UI (escribir el código a mano) no elude nada: ese código pasa
+ * por la misma verificación en servidor, y si el documento no existe localmente la
+ * operación se BLOQUEA con explicación, porque no hay forma autorizada de comprobar su
+ * aceptación ante el MH.
  *
  * La técnica de coincidencia exacta del correlativo se reutiliza de
  * {@see BusquedaCcfParaNotaCredito} (misma forma del número de control).
@@ -104,23 +105,36 @@ class BusquedaDocumentoReemplazo
     }
 
     /**
-     * Universo ofrecible: aceptados REALMENTE por el MH, mismo ambiente que el
-     * documento a invalidar, con código de generación presente y distinto al propio
-     * (regla 3 del serializador, aplicada aquí solo para no ofrecer lo que el
-     * serializador rechazaría). Los del mismo cliente salen primero: es el caso
-     * normal de un reemplazo, sin excluir al resto.
+     * Universo ofrecible: las MISMAS condiciones que verifica el servidor (tipo admisible,
+     * mismo emisor, mismo ambiente, aceptado realmente por el MH, distinto del propio).
+     * Los del mismo cliente salen primero —es el caso normal—, pero sin excluir al resto:
+     * una corrección puede cambiar los datos del receptor.
      */
     private function base(Dte $invalidado): Builder
     {
+        $tipos = $invalidado->tipo_dte !== null
+            ? array_map(fn (TipoDte $t) => $t->value, PoliticaInvalidacion::tiposSustituto($invalidado->tipo_dte))
+            : [];
+
+        // Mismo EMISOR = mismo NIT ante Hacienda, no la misma fila de `empresas` (ver
+        // EmisorDte): un contribuyente puede tener más de un registro interno.
+        $empresas = EmisorDte::empresasDelMismoEmisor($invalidado);
+
         $consulta = Dte::query()
             ->aceptadoRealMh()
             ->whereKeyNot($invalidado->id)
             ->where('ambiente', $invalidado->ambiente->value)
             ->whereNotNull('codigo_generacion')
+            // Tipo admisible como sustituto. Sin tipo resoluble no se ofrece nada: una
+            // lista vacía es mejor que una lista que el servidor va a rechazar entera.
+            ->whereIn('tipo_dte', $tipos)
+            // Mismo emisor: el establecimiento del sustituto pertenece a alguna de las
+            // empresas con ese NIT. Sin emisor resoluble no se ofrece nada.
+            ->whereHas('establecimiento', fn (Builder $e) => $e->whereIn('empresa_id', $empresas))
             ->with(['cliente:id,nombre,nombre_comercial,num_documento,nrc'])
             ->select([
                 'id', 'tipo_dte', 'estado', 'ambiente', 'numero_control', 'numero_interno',
-                'codigo_generacion', 'cliente_id', 'fecha_emision', 'total_pagar',
+                'codigo_generacion', 'cliente_id', 'establecimiento_id', 'fecha_emision', 'total_pagar',
             ]);
 
         if ($invalidado->cliente_id !== null) {
@@ -203,9 +217,10 @@ class BusquedaDocumentoReemplazo
 
     /**
      * ¿El código escrito a mano en el modo avanzado tiene el formato oficial? Espejo de
-     * presentación de la regla que ya aplica el serializador: sirve para avisar en la
-     * UI, nunca para autorizar. Un código con formato válido igual pasa por el
-     * serializador y por el MH.
+     * presentación de la PRIMERA de las reglas que aplica
+     * {@see VerificadorDocumentoReemplazo}: sirve para avisar en la UI, nunca para
+     * autorizar. Un formato correcto no prueba nada — el servidor sigue exigiendo que el
+     * documento exista aquí, sea del mismo emisor y ambiente, y esté aceptado por Hacienda.
      */
     public function formatoValido(?string $codigo): bool
     {

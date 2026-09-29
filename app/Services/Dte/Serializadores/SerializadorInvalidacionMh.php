@@ -5,7 +5,9 @@ namespace App\Services\Dte\Serializadores;
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
+use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\CodigoGeneracion;
+use App\Support\Dte\PoliticaInvalidacion;
 use Illuminate\Support\Carbon;
 
 /**
@@ -26,11 +28,19 @@ use Illuminate\Support\Carbon;
  * Candados de dominio (lanza {@see DteNoSerializableException} sin producir JSON):
  *  - Solo se serializa el evento de un DTE ACEPTADO REALMENTE por Hacienda
  *    (estado aceptado + sello real no-MOCK + fecha de procesamiento del MH).
- *  - tipoAnulacion=1 (Error en la información) EXIGE el código de generación del
- *    documento de reemplazo, distinto al del DTE invalidado.
+ *  - Las reglas FISCALES (matriz documento x motivo, verificación del sustituto y
+ *    dependencia de notas vigentes) las aplica {@see ValidadorReglasInvalidacion}, el
+ *    mismo objeto que usan el formulario, el preflight, el mock y la transmisión real.
+ *    Se re-evalúan AQUÍ, en el último momento antes de firmar: lo que se mostró al abrir
+ *    la pantalla no autoriza nada, y entre una cosa y otra pueden haber aparecido una
+ *    nota de crédito nueva o la invalidación del sustituto elegido.
  */
 class SerializadorInvalidacionMh
 {
+    public function __construct(
+        private readonly ValidadorReglasInvalidacion $reglas,
+    ) {}
+
     /**
      * @return array<string, mixed>
      *
@@ -71,29 +81,9 @@ class SerializadorInvalidacionMh
                 .'Estado actual: '.$dte->estado->label().'.';
         }
 
-        // Regla CAT-024: el tipo 1 (Error en la información) exige el código de
-        // generación del documento que REEMPLAZA al invalidado, y debe ser distinto.
-        if ($evento->tipoAnulacion->requiereDocumentoReemplazo()) {
-            $reemplazo = trim((string) $evento->codigoGeneracionReemplazo);
-            if ($reemplazo === '') {
-                $problemas[] = 'La invalidación tipo 1 (Error en la información) exige el código de '
-                    .'generación del documento de reemplazo (codigoGeneracionR).';
-            } elseif (! CodigoGeneracion::esValido($reemplazo)) {
-                $problemas[] = 'El código de generación del documento de reemplazo no tiene formato oficial (UUID v4 en mayúsculas).';
-            } elseif (strtoupper($reemplazo) === strtoupper((string) $dte->codigo_generacion)) {
-                $problemas[] = 'El documento de reemplazo no puede ser el mismo DTE que se está invalidando.';
-            }
-        } elseif (filled($evento->codigoGeneracionReemplazo)) {
-            // Tipos 2 y 3 NO llevan documento de reemplazo.
-            $problemas[] = 'Solo la invalidación tipo 1 admite documento de reemplazo; los tipos 2 y 3 no.';
-        }
-
-        // El tipo 3 (Otro) exige motivo en texto.
-        if ($evento->tipoAnulacion->requiereMotivoTexto() && blank($evento->motivoAnulacion)) {
-            $problemas[] = 'La invalidación tipo 3 (Otro) exige un motivo en texto (motivoAnulacion).';
-        }
-
-        return $problemas;
+        // Matriz documento x motivo, sustituto verificado y dependencias fiscales: una
+        // sola fuente, revalidada justo antes de firmar.
+        return array_merge($problemas, $this->reglas->problemas($dte, $evento));
     }
 
     /** @return array<string, mixed> Bloque `identificacion` del evento (UUID nuevo). */
@@ -157,8 +147,10 @@ class SerializadorInvalidacionMh
     {
         $r = $dte->cliente;
 
-        // Solo el tipo 1 lleva documento de reemplazo; para 2 y 3 va null.
-        $codigoGeneracionR = $evento->tipoAnulacion->requiereDocumentoReemplazo()
+        // El sustituto viaja SOLO en las celdas de la matriz que lo exigen; en el resto
+        // va null, aunque alguien haya intentado mandarlo (los candados ya lo rechazaron
+        // antes de llegar hasta aquí).
+        $codigoGeneracionR = PoliticaInvalidacion::requisitos($dte->tipo_dte, $evento->tipoAnulacion)->requiereReemplazo
             ? strtoupper(trim((string) $evento->codigoGeneracionReemplazo))
             : null;
 

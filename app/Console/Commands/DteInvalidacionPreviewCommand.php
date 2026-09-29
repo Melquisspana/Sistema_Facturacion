@@ -28,7 +28,7 @@ class DteInvalidacionPreviewCommand extends Command
     protected $signature = 'dte:invalidacion-preview {dte : ID del DTE aceptado a invalidar}
         {--tipo=2 : Tipo de anulación CAT-024 (1=Error info, 2=Rescindir, 3=Otro)}
         {--motivo= : Motivo en texto (obligatorio para tipo 3)}
-        {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}
+        {--reemplazo= : Código de generación del documento SUSTITUTO (según la matriz documento x motivo: FE/CCF/FEX lo exigen en los motivos 1 y 3; la NC nunca)}
         {--guardar : Guarda el evento de MOCK/inspección en storage/app/dte/invalidacion/preview}';
 
     protected $description = 'Vista previa del evento de invalidación de un DTE (serializa y valida contra el schema). No firma ni transmite.';

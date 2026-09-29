@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\AvisaOpcionNcRelacionadaObsoleta;
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\TipoAnulacionMh;
 use App\Exceptions\Dte\DteInvalidacionException;
@@ -22,13 +23,15 @@ use Illuminate\Console\Command;
  */
 class DteInvalidacionMockCommand extends Command
 {
+    use AvisaOpcionNcRelacionadaObsoleta;
+
     protected $signature = 'dte:invalidacion-mock {dte : ID del DTE aceptado a invalidar}
         {--tipo=2 : Tipo de anulación CAT-024 (1=Error info, 2=Rescindir, 3=Otro)}
         {--motivo= : Motivo en texto (obligatorio para tipo 3)}
-        {--reemplazo= : Código de generación del documento de reemplazo (obligatorio para tipo 1)}
+        {--reemplazo= : Código de generación del documento SUSTITUTO (según la matriz documento x motivo: FE/CCF/FEX lo exigen en los motivos 1 y 3; la NC nunca)}
         {--guardar : Persiste columnas nuevas + JSON/JWS en storage}
         {--confirmar : Permite correr el mock aunque DTE_INVALIDACION_MOCK=false (nunca transmite)}
-        {--confirmo-nc-relacionada : Confirma continuar aunque el documento tenga una Nota de Crédito relacionada (riesgo de doble corrección fiscal)}';
+        {--confirmo-nc-relacionada : OBSOLETO y sin efecto. Un comprobante con nota de crédito/débito VIGENTE no se invalida: primero se invalida la nota}';
 
     protected $description = 'Firma MOCK del evento de invalidación y persistencia en columnas dedicadas. No transmite ni cambia el estado del DTE.';
 
@@ -62,10 +65,7 @@ class DteInvalidacionMockCommand extends Command
 
         $this->warn('*** MOCK — NO se transmite a /fesv/anulardte, NO se cambia el estado del DTE ***');
 
-        if ($dte->tieneNotaCreditoRelacionada()) {
-            $this->warn('⚠ Este documento ya tiene una Nota de Crédito relacionada. Firmar la invalidación además '
-                .'puede producir una DOBLE CORRECCIÓN FISCAL. Requiere --confirmo-nc-relacionada.');
-        }
+        $this->avisarOpcionObsoleta();
 
         try {
             $r = $servicio->firmarMock(
@@ -73,7 +73,6 @@ class DteInvalidacionMockCommand extends Command
                 $evento,
                 persistir: (bool) $this->option('guardar'),
                 permitirSinMock: (bool) $this->option('confirmar'),
-                permitirNcRelacionada: (bool) $this->option('confirmo-nc-relacionada'),
             );
         } catch (DteInvalidacionException $e) {
             $this->error($e->getMessage());

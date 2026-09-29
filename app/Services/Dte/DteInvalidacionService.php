@@ -40,6 +40,11 @@ use Throwable;
  * firma real habilitada (no mock), endpoint exacto del ambiente propio del DTE (más
  * produccion_enabled si el DTE es de ambiente '01'), responsable/solicitante completos,
  * DTE aceptado realmente por el MH y sin evento de invalidación previo.
+ *
+ * A eso se suman las reglas FISCALES de {@see ValidadorReglasInvalidacion} (matriz
+ * documento x motivo, sustituto verificado y notas de crédito/débito vigentes). Esas NO
+ * admiten confirmación: un comprobante con una nota validada vigente queda bloqueado
+ * hasta que se invalide la nota, y no hay flag que lo salte.
  */
 class DteInvalidacionService
 {
@@ -49,6 +54,7 @@ class DteInvalidacionService
         private readonly DteFirmaService $firma,
         private readonly DteTransmisionAuthService $auth,
         private readonly DteStateMachine $maquina,
+        private readonly ValidadorReglasInvalidacion $reglas,
     ) {}
 
     /**
@@ -68,11 +74,11 @@ class DteInvalidacionService
      *
      * @throws DteInvalidacionException si el evento ni siquiera se puede construir
      */
-    public function dryRun(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal = false, bool $confirmoInvalidar = false, bool $confirmoNcRelacionada = false): array
+    public function dryRun(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal = false, bool $confirmoInvalidar = false): array
     {
         $eventoJson = $this->construirEvento($dte, $evento);
         $schema = $this->validador->validarInvalidacion($eventoJson);
-        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
+        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar);
 
         return [
             'transmitiria' => ! $candados['bloqueado'] && ($schema['estado'] ?? null) !== 'invalido',
@@ -104,7 +110,7 @@ class DteInvalidacionService
      *
      * @throws DteInvalidacionException
      */
-    public function transmitir(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar, bool $confirmoNcRelacionada = false): array
+    public function transmitir(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar): array
     {
         // Guarda de EVIDENCIA: primera y más dura de todas, independiente de los demás
         // candados y sin flag de override. Se verifica de nuevo aquí (no solo dentro de
@@ -112,7 +118,7 @@ class DteInvalidacionService
         // pasar una transmisión real sobre un documento protegido.
         $this->verificarNoProtegido($dte);
 
-        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar, $confirmoNcRelacionada);
+        $candados = $this->evaluarCandados($dte, $evento, $transmitirReal, $confirmoInvalidar);
         if ($candados['bloqueado']) {
             throw new DteInvalidacionException('Transmisión de invalidación bloqueada: '.implode(' | ', $candados['razones']));
         }
@@ -172,7 +178,7 @@ class DteInvalidacionService
      *
      * @return array{bloqueado: bool, razones: array<int, string>}
      */
-    public function evaluarCandados(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar, bool $confirmoNcRelacionada = false): array
+    public function evaluarCandados(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar): array
     {
         $r = [];
 
@@ -247,15 +253,14 @@ class DteInvalidacionService
             $r[] = 'El DTE ya tiene un evento de invalidación o está invalidado.';
         }
 
-        // Nota de Crédito relacionada: NO es un bloqueo automático (no hay base fiscal
-        // confirmada para prohibirlo) sino una CONFIRMACIÓN REFORZADA: bloquea salvo que
-        // se pase --confirmo-nc-relacionada (comando) / el checkbox equivalente (UI),
-        // asumiendo el riesgo de una posible doble corrección fiscal (NC + invalidación
-        // cubriendo la misma operación).
-        if ($dte->tieneNotaCreditoRelacionada() && ! $confirmoNcRelacionada) {
-            $r[] = 'El documento tiene una Nota de Crédito relacionada (posible doble corrección fiscal): '
-                .'pase --confirmo-nc-relacionada para invalidar de todas formas, bajo su responsabilidad.';
-        }
+        // Reglas FISCALES (matriz documento x motivo, sustituto verificado y dependencia
+        // de notas vigentes): mismas que aplica el serializador, evaluadas también aquí
+        // para que el panel y el dry-run expliquen el bloqueo antes de intentar nada.
+        //
+        // La dependencia de notas NO tiene override: el antiguo --confirmo-nc-relacionada
+        // ya no existe en esta firma, así que ninguna ruta —web, consola o llamada
+        // directa— puede saltarse la prohibición.
+        $r = array_merge($r, $this->reglas->problemas($dte, $evento));
 
         return ['bloqueado' => $r !== [], 'razones' => $r];
     }

@@ -363,22 +363,59 @@ class Dte extends Model
     }
 
     /**
-     * Notas de crédito (tipo 05) EMITIDAS contra este documento (no en borrador), vía
-     * `dte_relacionado_id`. Sirve para advertir de una posible DOBLE CORRECCIÓN FISCAL
-     * antes de invalidar oficialmente el documento original ante el MH: por sí sola
-     * NO bloquea nada (ver {@see DteInvalidacionService}).
+     * Notas de crédito (05) y de débito (06) emitidas contra este documento que están
+     * FISCALMENTE VIGENTES: aceptadas REALMENTE por Hacienda y no invalidadas.
+     *
+     * ── Por qué esta definición y no «cualquier relación» ─────────────────────
+     * Reemplaza a la antigua `notasCreditoRelacionadas()`, que contaba cualquier nota
+     * salvo las de borrador. Eso mezclaba hechos distintos: un rechazo, una firma mock o
+     * una nota ya invalidada NO son una corrección fiscal viva, y el manual funcional
+     * (págs. 13-16) prohíbe invalidar el documento original solo cuando existe una nota
+     * VALIDADA vigente. `aceptadoRealMh()` es justamente ese criterio: estado aceptado,
+     * sello real (no MOCK) y huella de procesamiento del MH; un estado Invalidado deja
+     * de cumplirlo por sí solo.
+     *
+     * ── Qué NO filtra, deliberadamente ────────────────────────────────────────
+     *  · `archivado`: archivar es un gesto de ORGANIZACIÓN interna, no una invalidación.
+     *    Una nota aceptada y archivada sigue existiendo ante Hacienda y sigue bloqueando.
+     *  · el AMBIENTE: la regla vale igual en apitest ('00') que en producción ('01'); la
+     *    relación ya es entre documentos del mismo emisor y ambiente.
+     *
+     * Incluye la ND 06 porque el MODELO puede representar esa relación aunque el sistema
+     * todavía no tenga flujo de emisión de notas de débito. LIMITACIÓN registrada: solo
+     * se protege lo que `dte_relacionado_id` puede expresar — una nota emitida en OTRO
+     * sistema contra este mismo documento no es visible aquí y no se puede detectar.
+     *
+     * Esta relación LISTA, no PROHÍBE. Responde «¿qué notas vigentes hay contra este
+     * documento?» para cualquier tipo, porque la pregunta tiene sentido para cualquiera.
+     * Convertir esa lista en un bloqueo es decisión de
+     * {@see \App\Support\Dte\PoliticaInvalidacion::dependeDeNotasVigentes()}, que hoy solo
+     * responde que sí para el CCF: poder representar una relación no acredita una
+     * prohibición fiscal.
      */
-    public function notasCreditoRelacionadas(): HasMany
+    public function notasFiscalesVigentes(): HasMany
     {
         return $this->notas()
-            ->where('tipo_dte', TipoDte::NotaCredito->value)
-            ->where('estado', '!=', EstadoDte::Borrador->value);
+            ->whereIn('tipo_dte', [TipoDte::NotaCredito->value, TipoDte::NotaDebito->value])
+            ->aceptadoRealMh();
     }
 
-    /** ¿Tiene al menos una Nota de Crédito emitida en su contra? */
-    public function tieneNotaCreditoRelacionada(): bool
+    /**
+     * ¿Tiene al menos una nota de crédito/débito fiscalmente vigente en su contra?
+     *
+     * Es una pregunta DESCRIPTIVA, no el candado. Que exista una nota vigente no implica
+     * que este documento no se pueda invalidar: quién depende de esas notas lo decide
+     * {@see \App\Support\Dte\PoliticaInvalidacion::dependeDeNotasVigentes()} —hoy, solo
+     * el CCF— y quién aplica esa decisión es
+     * {@see \App\Services\Dte\ValidadorReglasInvalidacion::notasQueBloquean()}. Cuando sí
+     * corresponde, el bloqueo no admite confirmación ni flag que lo salte.
+     */
+    public function tieneNotaFiscalVigente(): bool
     {
-        return $this->notasCreditoRelacionadas()->exists();
+        // Un documento aún sin persistir no tiene clave con la que relacionar notas: sin
+        // esta guarda la consulta buscaría `dte_relacionado_id is null` y arrastraría filas
+        // ajenas.
+        return $this->exists && $this->notasFiscalesVigentes()->exists();
     }
 
     /**

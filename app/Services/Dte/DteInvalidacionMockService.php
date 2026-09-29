@@ -20,9 +20,10 @@ use Illuminate\Support\Str;
  * (sello_recepcion / respuesta_mh / fecha_procesamiento_mh).
  *
  * Flujo:
- *  1. Candados (mock activo, NC aceptada realmente por MH, sin evento previo).
- *  2. Serializa el evento con {@see SerializadorInvalidacionMh} (revalida aceptación y
- *     reglas CAT-024) y lo valida contra invalidacion-schema-v3.json.
+ *  1. Candados del modo (mock activo, DTE aceptado realmente por MH, sin evento previo).
+ *  2. Serializa el evento con {@see SerializadorInvalidacionMh} (revalida la aceptación
+ *     real y TODAS las reglas fiscales: matriz documento x motivo, sustituto verificado y
+ *     dependencia de notas vigentes) y lo valida contra invalidacion-schema-v3.json.
  *  3. Firma MOCK: JWS ficticio marcado (misma forma que {@see DteFirmaService} mock).
  *  4. Si se pide persistir: guarda JSON + JWS en storage y escribe SOLO las columnas
  *     nuevas de invalidación, dentro de una transacción.
@@ -54,9 +55,9 @@ class DteInvalidacionMockService
      *
      * @throws DteInvalidacionException
      */
-    public function firmarMock(Dte $dte, EventoInvalidacionData $evento, bool $persistir = false, bool $permitirSinMock = false, bool $permitirNcRelacionada = false): array
+    public function firmarMock(Dte $dte, EventoInvalidacionData $evento, bool $persistir = false, bool $permitirSinMock = false): array
     {
-        $this->verificarCandados($dte, $permitirSinMock, $permitirNcRelacionada);
+        $this->verificarCandados($dte, $permitirSinMock);
 
         // 1) Serializar el evento (revalida aceptación real + reglas CAT-024).
         try {
@@ -105,12 +106,18 @@ class DteInvalidacionMockService
     }
 
     /**
-     * Candados previos: mock activo (o confirmado), NC aceptada realmente por MH y sin
-     * evento de invalidación previo. No toca BD ni escribe nada.
+     * Candados previos del MODO de ejecución: mock activo (o confirmado), DTE aceptado
+     * realmente por el MH y sin evento de invalidación previo. No toca BD ni escribe nada.
+     *
+     * Las reglas FISCALES (matriz documento x motivo, sustituto verificado y notas de
+     * crédito/débito vigentes) NO se repiten aquí: las aplica el serializador al armar el
+     * evento, vía {@see ValidadorReglasInvalidacion}, que es el mismo objeto que usa la
+     * transmisión real. Así el mock y el envío real no pueden divergir, y la simulación
+     * sirve de verdad para ensayar las mismas reglas sin red.
      *
      * @throws DteInvalidacionException
      */
-    private function verificarCandados(Dte $dte, bool $permitirSinMock, bool $permitirNcRelacionada = false): void
+    private function verificarCandados(Dte $dte, bool $permitirSinMock): void
     {
         // Evidencia PROTEGIDA: primero y sin flag de override posible.
         if ($dte->estaProtegidoComoEvidencia()) {
@@ -136,13 +143,6 @@ class DteInvalidacionMockService
             throw new DteInvalidacionException(
                 'El DTE ya tiene un evento de invalidación registrado (sello_invalidacion presente o estado invalidado). '
                 .'No se invalida dos veces.'
-            );
-        }
-        if ($dte->tieneNotaCreditoRelacionada() && ! $permitirNcRelacionada) {
-            throw new DteInvalidacionException(
-                'El documento tiene una Nota de Crédito relacionada (posible doble corrección fiscal): '
-                .'pase permitirNcRelacionada / --confirmo-nc-relacionada para invalidar de todas formas, '
-                .'bajo su responsabilidad.'
             );
         }
     }
