@@ -36,9 +36,12 @@ class RedirigirAreaPrincipal
             return $next($request);
         }
 
-        // No ve Facturación pero sí otra área habilitada: aterriza en la suya.
+        // No ve Facturación pero sí otra área habilitada: aterriza en la suya, y en la
+        // PUERTA que le corresponde. Un área puede tener más de una —«Gastos y pagos»
+        // tiene Gastos y Planilla—, así que mandar a todos al aterrizaje por defecto
+        // dejaría en un 403 a quien solo tiene permisos de planilla.
         if ($visibles !== []) {
-            return redirect()->route($visibles[0]->rutaInicio());
+            return redirect()->route($visibles[0]->rutaInicioPara($usuario));
         }
 
         // No ve ninguna área, pero PERTENECE a una que está apagada (rol

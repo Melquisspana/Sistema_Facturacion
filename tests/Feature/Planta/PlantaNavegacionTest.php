@@ -70,16 +70,27 @@ class PlantaNavegacionTest extends TestCase
             ->assertDontSee(self::MARCADOR_SELECTOR, false);
     }
 
-    /** D3 — los roles del área Facturación no ven selector, con el módulo encendido. */
+    /**
+     * D3 — los roles de Facturación no ven Planta, con el módulo encendido.
+     *
+     * Contabilidad tiene una sola área y no ve selector. Jefatura y facturación tienen
+     * también Rutas desde el 26/09/2026, así que ven selector, pero sin Planta.
+     */
     public function test_d3_los_roles_de_facturacion_no_ven_selector_con_el_modulo_encendido(): void
     {
         $this->encenderModulo();
 
-        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee(self::MARCADOR_SELECTOR, false);
+
+        foreach (['jefatura', 'facturacion'] as $rol) {
             $this->actingAs($this->usuario($rol))
                 ->get(route('dashboard'))
                 ->assertOk()
-                ->assertDontSee(self::MARCADOR_SELECTOR, false);
+                ->assertSee(self::MARCADOR_SELECTOR, false)
+                ->assertDontSee(route('planta.dashboard'), false);
         }
     }
 
@@ -100,7 +111,10 @@ class PlantaNavegacionTest extends TestCase
                 ->get(route('dashboard'))
                 ->assertOk();
 
-            $resp->assertDontSee(self::MARCADOR_SELECTOR, false);
+            // Jefatura y facturación ven selector por Rutas; Planta no aparece para nadie.
+            if ($rol === 'contabilidad') {
+                $resp->assertDontSee(self::MARCADOR_SELECTOR, false);
+            }
             $resp->assertDontSee(route('planta.dashboard'), false);
         }
     }
@@ -241,12 +255,15 @@ class PlantaNavegacionTest extends TestCase
         }
     }
 
-    /** Un rol de una sola área no ve selector: no hay nada entre lo que elegir. */
+    /**
+     * Un rol de una sola área no ve selector: no hay nada entre lo que elegir. Desde el
+     * 26/09/2026 solo contabilidad queda así; jefatura y facturación también ven Rutas.
+     */
     public function test_un_rol_de_una_sola_area_no_ve_el_selector(): void
     {
         $this->encenderModulo();
 
-        foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
+        foreach (['contabilidad'] as $rol) {
             $selector = $this->selectorDeAreasDelSidebar(
                 $this->actingAs($this->usuario($rol))->get(route('facturacion.index'))->assertOk()->getContent()
             );

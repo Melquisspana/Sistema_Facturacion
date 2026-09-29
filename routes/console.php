@@ -108,3 +108,126 @@ Schedule::command('compras:sincronizar --aplicar --solape=2')
     ->when(fn () => (bool) config('documentos_recibidos.sincronizacion_automatica', false))
     ->withoutOverlapping(20)
     ->appendOutputTo(storage_path('logs/compras-sincronizacion.log'));
+
+/*
+| Gastos recurrentes. Crea las obligaciones que les tocan a las reglas activas.
+|
+| ESTE PROCESO CREA DEUDA, y es el único del sistema que lo hace sin que una persona
+| apriete nada. De ahí que lleve TRES llaves, y hagan falta las tres:
+|   1. `GASTOS_ENABLED=true`               — el módulo existe;
+|   2. `GASTOS_RECURRENCIAS_AUTO=true`     — la generación desatendida está permitida;
+|   3. algo que ejecute `schedule:run`     — el planificador corre.
+| Con dos de tres, no genera. El comando comprueba la segunda ADEMÁS de este `when()`,
+| así que una invocación a mano con `--aplicar` tampoco escribe si está apagada.
+|
+| `--aplicar` no es decorativo: el comando es dry-run por defecto para que una corrida
+| manual sea segura, así que la tarea programada tiene que pedir el modo de aplicación
+| explícitamente.
+|
+| UNA VEZ AL DÍA y temprano: una obligación mensual no gana nada con generarse a las
+| 03:00 en vez de a las 06:00, pero conviene que exista antes de que alguien abra la
+| pantalla a trabajar. No cada cinco minutos: no hay nada que detectar «apenas llega»,
+| el calendario ya se sabe de antemano.
+|
+| Idempotente por índice único (regla + período): si corre dos veces, no duplica. Y si
+| el servidor estuvo caído, recupera solo dentro de la ventana configurada; lo anterior
+| se informa por salida y espera decisión humana.
+|
+| La salida se guarda: los períodos que quedaron fuera de la ventana solo sirven si
+| alguien puede leerlos después.
+*/
+Schedule::command('gastos:generar-recurrentes --aplicar')
+    ->dailyAt('05:30')
+    ->when(fn () => (bool) config('gastos.enabled', false)
+        && (bool) config('gastos.recurrencias.generacion_automatica', false))
+    ->withoutOverlapping(30)
+    ->appendOutputTo(storage_path('logs/gastos-recurrentes.log'));
+
+/*
+| Avisos de gastos: bandeja interna y resúmenes por correo.
+|
+| Va DESPUÉS de la generación del día, para que un vencimiento generado esta mañana
+| pueda avisarse hoy mismo si corresponde.
+|
+| No manda «todo salió bien» ni un correo por cada movimiento: solo avisa de
+| PENDIENTES REALES, y si no hay ninguno no escribe ni envía nada. Una corrida que no
+| hace nada es una corrida normal.
+|
+| Fuera de producción el correo NO sale: queda registrado como simulado por
+| App\Support\Correo\CandadoCorreoReal. Encender GASTOS_AVISOS_AUTO en una máquina de
+| desarrollo no le escribe a nadie.
+|
+| Diario aunque la mayoría tenga resumen semanal: la bandeja interna sí es diaria, y
+| el resumen semanal se emite únicamente el día de la semana que cada quien eligió.
+*/
+Schedule::command('gastos:avisos --aplicar')
+    ->dailyAt('06:00')
+    ->when(fn () => (bool) config('gastos.enabled', false)
+        && (bool) config('gastos.avisos.automaticos', false))
+    ->withoutOverlapping(20)
+    ->appendOutputTo(storage_path('logs/gastos-avisos.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Cobros Calleja — alta de documentos aceptados
+|--------------------------------------------------------------------------
+| Incorpora al seguimiento de cobros los CCF/NC que Hacienda ya aceptó.
+|
+| Es la pieza que hace que el módulo cumpla lo que promete: controlar CADA factura,
+| «incluidas las que nunca se presentaron». Mientras el alta dependiera solo del botón
+| de la pantalla, la factura olvidada era exactamente la que no entraba —y un agujero
+| que nadie ve no se puede reclamar—. El botón sigue estando, como recuperación.
+|
+| Solo LEE `dtes` ya aceptados y escribe en `cobro_documentos`: no emite, no firma, no
+| transmite, no cambia ningún estado fiscal y no bloquea filas que la emisión necesite.
+| Una corrida a mitad de una facturación no la estorba.
+|
+| INTERRUPTOR propio y apagado por defecto, igual que las demás tareas del sistema: la
+| definición existe siempre —se puede inspeccionar con `schedule:list` y probar en seco—
+| pero no ejecuta nada hasta que se enciende en .env. El comando comprueba la MISMA llave
+| cuando recibe `--aplicar`, así que una invocación accidental tampoco escribe.
+|
+| Cada hora y no cada cinco minutos: una factura que entra al seguimiento sesenta minutos
+| más tarde no cambia nada del cobro, y consultar `dtes` doce veces por hora tampoco.
+|
+| Lleva `--vincular`, pero eso NO enciende la vinculación por sí solo: el comando exige
+| además `cobros.vinculacion.automatica` (COBROS_VINCULACION_AUTO), una llave APARTE de la
+| del alta. Con esa segunda llave apagada —el valor de fábrica—, esta corrida da de alta los
+| CCF/NC aceptados de siempre y audita la vinculación sin escribir ningún vínculo. Se
+| enciende a mano cuando `cobros:sincronizar --cliente=ID --vincular` en seco, sobre datos
+| reales, respalde ese resultado.
+*/
+Schedule::command('cobros:sincronizar --aplicar --vincular')
+    ->everyTenMinutes() // el albarán se une a su CCF poco después de llegar al correo
+    ->when(fn () => (bool) config('cobros.alta.automatica', false))
+    ->withoutOverlapping(30)
+    ->appendOutputTo(storage_path('logs/cobros-alta.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Cobros Calleja — lectura de los acuses y observaciones del cliente
+|--------------------------------------------------------------------------
+| SOLO LECTURA del buzón: no envía, no responde, no marca como leído y no mueve
+| etiquetas. Escribe únicamente en `cobro_correos`, en `cobro_eventos` y en el acuse de
+| la solicitud correspondiente.
+|
+| TRES llaves, y cada una responde algo distinto: que el sistema pueda hablar con Gmail
+| (`ppq.gmail.enabled`), que este módulo pueda leer el buzón cuando alguien se lo pide
+| (`cobros.correo.enabled`), y que lo haga sin que nadie se lo pida (esta). Juntarlas
+| obligaría a encender la automática para poder probar la lectura, que es al revés de
+| como hay que hacerlo.
+|
+| Idempotente: la identidad es el id del mensaje de Gmail, así que releer el buzón no
+| crea filas nuevas ni vuelve a aplicar ningún acuse. Y pagina, así que una tanda grande
+| no deja el backlog viejo fuera para siempre.
+|
+| Cada media hora: el acuse de Calleja llega cuando llega y media hora de retraso no
+| cambia ninguna decisión de cobro.
+*/
+Schedule::command('cobros:leer-correos --aplicar')
+    ->everyThirtyMinutes()
+    ->when(fn () => (bool) config('ppq.gmail.enabled', false)
+        && (bool) config('cobros.correo.enabled', false)
+        && (bool) config('cobros.correo.automatica', false))
+    ->withoutOverlapping(15)
+    ->appendOutputTo(storage_path('logs/cobros-correos.log'));

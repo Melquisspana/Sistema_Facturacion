@@ -7,6 +7,8 @@ use App\Http\Controllers\Clientes\ClienteController;
 use App\Http\Controllers\Clientes\ClienteExportacionController;
 use App\Http\Controllers\Clientes\ClientePerfilDocumentoController;
 use App\Http\Controllers\Clientes\ClienteSucursalController;
+use App\Http\Controllers\Cobros\AjusteNotaCreditoController;
+use App\Http\Controllers\Cobros\CobrosController;
 use App\Http\Controllers\Configuracion\ContabilidadController;
 use App\Http\Controllers\Configuracion\CorrelativoController;
 use App\Http\Controllers\Configuracion\CorreoController;
@@ -113,7 +115,6 @@ Route::middleware('auth')->group(function () {
         ->group(function () {
             Route::post('habilitar', [ClienteExportacionController::class, 'habilitar'])->name('habilitar');
             Route::post('deshabilitar', [ClienteExportacionController::class, 'deshabilitar'])->name('deshabilitar');
-            Route::put('/', [ClienteExportacionController::class, 'actualizar'])->name('update');
 
             Route::post('productos', [ClienteExportacionController::class, 'agregarProducto'])->name('productos.store');
             Route::post('productos/asignar-catalogo', [ClienteExportacionController::class, 'asignarCatalogo'])->name('productos.asignar-catalogo');
@@ -460,6 +461,8 @@ Route::middleware('auth')->group(function () {
         Route::get('lotes/{lote}', [PpqLoteController::class, 'show'])->name('lotes.show');
         // Excel de Calleja desde un lote (phpspreadsheet).
         Route::get('lotes/{lote}/excel', [PpqLoteController::class, 'excel'])->name('lotes.excel');
+        // Archivo de carga masiva de quedan del portal (5 columnas): lectura, no presenta nada.
+        Route::get('lotes/{lote}/quedan', [PpqLoteController::class, 'quedan'])->name('lotes.quedan');
 
         // Escritura de PPQ (crear/editar/eliminar lotes e items, conciliar): solo
         // administrador y facturación (permiso ppq.gestionar). Jefatura/contabilidad
@@ -473,6 +476,9 @@ Route::middleware('auth')->group(function () {
             Route::delete('lotes/{lote}/items/{item}', [PpqItemController::class, 'destroy'])->name('lotes.items.destroy');
             // Conciliación del lote contra el TXT de pagos de Calleja.
             Route::post('lotes/{lote}/conciliar', [PpqLoteController::class, 'conciliar'])->name('lotes.conciliar');
+            // Archivo de NC del PPQ (formato aceptado) y reporte del caso que devuelve el portal.
+            Route::get('lotes/{lote}/archivo-nc', [PpqLoteController::class, 'archivoNc'])->name('lotes.archivo-nc');
+            Route::post('lotes/{lote}/reporte-caso', [PpqLoteController::class, 'reporteCaso'])->name('lotes.reporte-caso');
         });
 
         /*
@@ -495,8 +501,14 @@ Route::middleware('auth')->group(function () {
             ->name('nc-exportaciones.index');
         Route::get('nc-exportaciones/{lote}/descargar', [NcExportacionController::class, 'descargar'])
             ->name('nc-exportaciones.descargar');
+        // Ficha de un lote (solo lectura, mismo permiso que ver y descargar).
+        Route::get('nc-exportaciones/{lote}', [NcExportacionController::class, 'show'])
+            ->whereNumber('lote')->name('nc-exportaciones.show');
         Route::post('nc-exportaciones', [NcExportacionController::class, 'store'])
             ->middleware('permission:ppq.gestionar')->name('nc-exportaciones.store');
+        // Declarar que alguien CARGÓ el archivo al portal: un hecho aparte de descargarlo.
+        Route::post('nc-exportaciones/{lote}/presentar', [NcExportacionController::class, 'presentar'])
+            ->whereNumber('lote')->middleware('permission:ppq.gestionar')->name('nc-exportaciones.presentar');
 
         // Conexión OAuth de Gmail (solo administrador). Nunca muestra tokens.
         Route::middleware('permission:ppq.gmail')->group(function () {
@@ -504,6 +516,71 @@ Route::middleware('auth')->group(function () {
             Route::get('gmail/callback', [PpqGmailController::class, 'callback'])->name('gmail.callback');
             Route::delete('gmail', [PpqGmailController::class, 'desconectar'])->name('gmail.desconectar');
             Route::get('gmail/debug', [PpqGmailController::class, 'debug'])->name('gmail.debug');
+        });
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cobros Calleja — seguimiento de factura a pago
+    |--------------------------------------------------------------------------
+    | La bandeja PRINCIPAL del cobro: cada factura desde que Hacienda la acepta hasta
+    | que el cliente la paga, incluidas las que nunca se presentaron. Rutas sigue
+    | mostrando documentos, pero allí la pregunta es «qué llevo hoy», que es otra.
+    |
+    | Reutiliza los permisos de PPQ a propósito (`ppq.ver` / `ppq.gestionar`): es el
+    | mismo trabajo y la misma gente, y un permiso nuevo solo obligaría a resembrar
+    | roles para no ganar ningún control que no existiera ya.
+    |
+    | No emite, no firma, no transmite y no manda un solo correo.
+    */
+    Route::prefix('cobros')->name('cobros.')->middleware('permission:ppq.ver')->group(function () {
+        Route::get('/', [CobrosController::class, 'index'])->name('index');
+        Route::get('documentos/{documento}', [CobrosController::class, 'show'])->name('documentos.show');
+        // Ficha de solo lectura de una solicitud: abrirla no registra ni cambia nada.
+        Route::get('solicitudes/{solicitud}', [CobrosController::class, 'showSolicitud'])->name('solicitudes.show');
+        // Descargar un archivo ya generado basta con ver: no cambia nada y no presenta nada.
+        Route::get('solicitudes/{solicitud}/descargar', [CobrosController::class, 'descargarSolicitud'])
+            ->name('solicitudes.descargar');
+        // La auditoría de vinculación EN SECO también es lectura; aplicarla no (ver abajo).
+        Route::get('clientes/{cliente}/vinculacion', [CobrosController::class, 'auditarVinculacion'])
+            ->name('vinculacion');
+
+        Route::middleware('permission:ppq.gestionar')->group(function () {
+            // Ajuste QD del TXT ↔ su nota de crédito de pronto pago.
+            Route::get('ajustes/{ajuste}/notas-credito', [AjusteNotaCreditoController::class, 'index'])->name('ajustes.notas-credito');
+            Route::post('ajustes/{ajuste}/vincular-nc', [AjusteNotaCreditoController::class, 'store'])->name('ajustes.vincular-nc');
+            Route::post('ajustes/{ajuste}/desvincular-nc', [AjusteNotaCreditoController::class, 'destroy'])->name('ajustes.desvincular-nc');
+            Route::post('clientes/{cliente}/sincronizar', [CobrosController::class, 'sincronizar'])->name('sincronizar');
+            Route::post('clientes/{cliente}/vinculacion', [CobrosController::class, 'auditarVinculacion'])
+                ->name('vinculacion.aplicar');
+            Route::post('documentos/{documento}/vincular', [CobrosController::class, 'vincularManual'])
+                ->name('documentos.vincular');
+            Route::put('documentos/{documento}/observacion', [CobrosController::class, 'observacion'])
+                ->name('documentos.observacion');
+            Route::put('documentos/{documento}/revisado', [CobrosController::class, 'revisadoHistorico'])
+                ->name('documentos.revisado');
+            // Resolver un pago que quedó en revisión porque otro archivo ya informaba uno
+            // sobre el mismo documento: o es repetición, o es un abono más.
+            Route::put('documentos/{documento}/pagos/{evento}', [CobrosController::class, 'resolverPago'])
+                ->name('documentos.pagos.resolver');
+
+            // La vista previa no escribe nada, pero es el primer paso de preparar: mismo
+            // permiso. Preparar solo se confirma desde ella.
+            Route::post('clientes/{cliente}/solicitudes/previa', [CobrosController::class, 'previaSolicitud'])
+                ->name('solicitudes.previa');
+            Route::post('clientes/{cliente}/solicitudes', [CobrosController::class, 'crearSolicitud'])
+                ->name('solicitudes.store');
+            // Archivo de NC de los CCF de la vista previa: en el portal va ANTES del quedan.
+            Route::post('clientes/{cliente}/solicitudes/notas', [CobrosController::class, 'prepararNotas'])
+                ->name('solicitudes.notas');
+            Route::post('solicitudes/{solicitud}/presentar', [CobrosController::class, 'presentarSolicitud'])
+                ->name('solicitudes.presentar');
+            Route::post('solicitudes/{solicitud}/recibido', [CobrosController::class, 'recibidoSolicitud'])
+                ->name('solicitudes.recibido');
+
+            Route::post('clientes/{cliente}/pagos', [CobrosController::class, 'aplicarPagos'])->name('pagos');
+            // PPQ armado desde el Seguimiento con los CCF marcados.
+            Route::post('clientes/{cliente}/ppq', [CobrosController::class, 'crearPpq'])->name('ppq.crear');
         });
     });
 
@@ -789,3 +866,5 @@ require __DIR__.'/auth.php';
 require __DIR__.'/planta.php';
 require __DIR__.'/rutas.php';
 require __DIR__.'/asistencia.php';
+require __DIR__.'/gastos.php';
+require __DIR__.'/planilla.php';

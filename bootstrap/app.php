@@ -2,11 +2,22 @@
 
 use App\Ajustes\Excepciones\AlmacenAjustesNoDisponibleException;
 use App\Exceptions\Dte\PuntoVentaPredeterminadoInvalidoException;
+use App\Http\Middleware\AutenticaDispositivoAsistencia;
+use App\Http\Middleware\CloudflareAccessSso;
+use App\Http\Middleware\ModuloAsistenciaActivo;
+use App\Http\Middleware\ModuloGastosActivo;
+use App\Http\Middleware\ModuloGastosFase2;
+use App\Http\Middleware\ModuloPlanillaActivo;
+use App\Http\Middleware\ModuloPlantaActivo;
+use App\Http\Middleware\RedirigirAreaPrincipal;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleMiddleware;
+use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -24,7 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // login local de facturacion.test/localhost/Tailscale no se toca).
         $middleware->web(append: [
             SecurityHeaders::class,
-            \App\Http\Middleware\CloudflareAccessSso::class,
+            CloudflareAccessSso::class,
         ]);
 
         // Confiar en el proxy local (Tailscale Serve -> 127.0.0.1:80) para
@@ -41,16 +52,26 @@ return Application::configure(basePath: dirname(__DIR__))
         // áreas del sistema (ver App\Enums\AreaSistema):
         //  - modulo.planta   : 404 si el módulo Producción/Planta está apagado.
         //  - modulo.asistencia: 404 si el módulo Control de Asistencia está apagado.
+        //  - modulo.gastos   : 404 si el módulo Gastos está apagado; 403 si el
+        //                      usuario está desactivado.
+        //  - modulo.planilla : 404 si Planilla está apagado; 503 si faltan sus
+        //                      migraciones. Salarios: exige usuario activo.
+        //  - modulo.gastos.fase2 : 503 si faltan las migraciones de recurrencias y
+        //                      avisos. Es OTRA pregunta que «apagado»: el módulo está
+        //                      encendido y lo que falta es migrar.
         //  - dispositivo.asistencia: 401 sin token válido de lector biométrico.
         //  - area.principal  : aterrizaje por área; se usa SOLO en /dashboard.
         $middleware->alias([
-            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
-            'modulo.planta' => \App\Http\Middleware\ModuloPlantaActivo::class,
-            'modulo.asistencia' => \App\Http\Middleware\ModuloAsistenciaActivo::class,
-            'dispositivo.asistencia' => \App\Http\Middleware\AutenticaDispositivoAsistencia::class,
-            'area.principal' => \App\Http\Middleware\RedirigirAreaPrincipal::class,
+            'role' => RoleMiddleware::class,
+            'permission' => PermissionMiddleware::class,
+            'role_or_permission' => RoleOrPermissionMiddleware::class,
+            'modulo.planta' => ModuloPlantaActivo::class,
+            'modulo.asistencia' => ModuloAsistenciaActivo::class,
+            'modulo.gastos' => ModuloGastosActivo::class,
+            'modulo.gastos.fase2' => ModuloGastosFase2::class,
+            'modulo.planilla' => ModuloPlanillaActivo::class,
+            'dispositivo.asistencia' => AutenticaDispositivoAsistencia::class,
+            'area.principal' => RedirigirAreaPrincipal::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

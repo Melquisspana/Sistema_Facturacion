@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AreaSistema;
 use App\Models\Cliente;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -373,11 +374,13 @@ class NavigationTest extends TestCase
                 'configuracion.resumen',
                 'admin.salud-sistema',
             ]],
-            // Jefatura: lectura amplia, sin administración. Una sola área visible
-            // (dte.ver), así que el selector del panel no se dibuja: sin cambios.
-            'jefatura' => ['jefatura', $lecturaOperativa],
-            // Facturación: pierde el checklist de emisión real y no gana nada.
-            'facturacion' => ['facturacion', $lecturaOperativa],
+            // Jefatura: lectura amplia, sin administración. ENTRA 'rutas.dashboard':
+            // desde el 26/09/2026 planifica las salidas (rutas.ver + rutas.gestionar), así
+            // que ve dos áreas y el selector del panel se dibuja.
+            'jefatura' => ['jefatura', [...$lecturaOperativa, 'rutas.dashboard']],
+            // Facturación: pierde el checklist de emisión real. ENTRA 'rutas.dashboard',
+            // por la misma razón que jefatura: quien factura arma la salida.
+            'facturacion' => ['facturacion', [...$lecturaOperativa, 'rutas.dashboard']],
             // Contabilidad: lo mismo + auditoría (auditoria.ver). Sin cambios.
             'contabilidad' => ['contabilidad', [...$lecturaOperativa, 'auditoria.index']],
         ];
@@ -419,13 +422,10 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El área Cobros presenta salidas, bandeja, rutas, la custodia del papel y —visualmente— PPQ.
-     *
-     * Los tres enlaces de custodia (excepciones, recepción y personal) van con su propio
-     * permiso: quien solo mira documentos no los ve. Acá se comprueba con administrador, que
-     * los tiene todos; los roles sin permiso están cubiertos por las pruebas de autorización.
+     * El área Rutas presenta sus tres pantallas —Rutas, Salidas anteriores y Configurar
+     * rutas— y, visualmente, Cobros Calleja con los mismos enlaces que en Facturación.
      */
-    public function test_el_area_cobros_presenta_sus_enlaces_mas_prontos_pagos(): void
+    public function test_el_area_rutas_presenta_sus_enlaces_mas_cobros_calleja(): void
     {
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.dashboard'))->assertOk()->getContent();
 
@@ -435,22 +435,20 @@ class NavigationTest extends TestCase
                 // selector de áreas del panel, que es lo que permite volver desde un
                 // teléfono. No es una pantalla nueva para este rol.
                 'dashboard',
-                'rutas.dashboard', 'rutas.salidas.index', 'rutas.documentos.index', 'rutas.rutas.index',
-                // Custodia del CCF físico: la bandeja de lo que no cuadra, la pantalla de
-                // quien recibe en oficina y el catálogo de quienes salen a ruta.
-                'rutas.excepciones.index', 'rutas.recepcion.index', 'rutas.personal.index',
-                'ppq.index', 'ppq.lotes.index',
+                // Tres puertas (27/09/2026): asignación y vendedores viven en Configurar rutas.
+                'rutas.dashboard', 'rutas.salidas.index', 'rutas.rutas.index',
+                'cobros.index', 'ppq.lotes.index',
             ]),
             $this->enlacesDelSidebar($html),
         );
 
         $sidebar = $this->sidebarDe($html);
-        $this->assertStringContainsString('Resumen', $sidebar);
-        $this->assertStringContainsString('Documentos por cobrar', $sidebar);
-        $this->assertStringContainsString('Pronto pago', $sidebar);
-        $this->assertStringContainsString('Recepción de CCF', $sidebar);
-        $this->assertStringContainsString('Personal operativo', $sidebar);
-        $this->assertStringContainsString('Excepciones', $sidebar);
+        $this->assertStringContainsString('Salidas anteriores', $sidebar);
+        $this->assertStringContainsString('Configurar rutas', $sidebar);
+        $this->assertStringContainsString('Cobros Calleja', $sidebar);
+        // La custodia del papel se retiró (26/09/2026).
+        $this->assertStringNotContainsString('Recepción de CCF', $sidebar);
+        $this->assertStringNotContainsString('Excepciones', $sidebar);
     }
 
     public function test_jefatura_ve_secciones_operativas_de_lectura_pero_no_administracion(): void
@@ -657,25 +655,18 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El ÁREA sigue llamándose «Cobros» —es otra cosa, con más contenido— pero el
-     * módulo de PPQ se llama «Pronto pago» también aquí.
-     *
-     * En la primera versión de este cambio sólo se renombró la barra de Facturación
-     * y esta prueba fijaba lo contrario: que la barra del área conservara «Prontos
-     * Pagos». Era un nombre distinto para el mismo módulo según por dónde entraras,
-     * y eso obliga al usuario a deducir que hablan de lo mismo. El singular es ahora
-     * el único rótulo visible; los nombres técnicos (permiso ppq.ver, prefijo /ppq,
-     * rutas ppq.*) no cambiaron.
+     * El ÁREA se llama «Rutas» desde el 26/09/2026 (antes «Cobros», cuando cargaba la
+     * custodia del CCF físico), y el módulo de cobro se llama «Cobros Calleja» igual que
+     * en la barra de Facturación: un nombre distinto para el mismo módulo según por dónde
+     * se entre obliga a deducir que hablan de lo mismo.
      */
-    public function test_el_area_cobros_conserva_su_nombre_y_usa_el_mismo_rotulo_del_modulo(): void
+    public function test_el_area_se_llama_rutas_y_usa_el_mismo_rotulo_del_modulo_de_cobro(): void
     {
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.dashboard'))->assertOk()->getContent();
         $sidebar = $this->sidebarDe($html);
 
-        // El área conserva su nombre.
-        $this->assertStringContainsString('Cobros', $sidebar);
-        // Y el módulo se llama igual que en la barra de Facturación.
-        $this->assertStringContainsString('Pronto pago', $sidebar);
+        $this->assertSame('Rutas', AreaSistema::Rutas->label());
+        $this->assertStringContainsString('Cobros Calleja', $sidebar);
         $this->assertStringNotContainsString('Prontos Pagos', $sidebar);
     }
 
@@ -899,6 +890,9 @@ class NavigationTest extends TestCase
 
         $this->assertStringNotContainsString(route('planta.dashboard', [], false), $sidebar);
         $this->assertStringNotContainsString(route('asistencia.dashboard', [], false), $sidebar);
+        // Planilla también: apagada por defecto en la suite, igual que en un servidor
+        // recién instalado.
+        $this->assertStringNotContainsString('/planilla', $sidebar);
     }
 
     // ------------------------------------------------------------------ accesibilidad

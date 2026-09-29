@@ -17,6 +17,29 @@ enum PermisoSistema: string
     // Inicio.
     case DashboardVer = 'dashboard.ver';
 
+    // Gastos. ACCIÓN y ÁMBITO son ejes independientes: `gastos.personales` no es
+    // «más permiso», es OTRO alcance. Alguien puede registrar y pagar todo lo de la
+    // empresa sin ver un solo gasto personal, y el sistema tiene que poder demostrarlo
+    // (ver App\Services\Gastos\AccesoGastos y PagoMixtoTest).
+    case GastosVer = 'gastos.ver';
+    case GastosRegistrar = 'gastos.registrar';
+    case GastosPersonales = 'gastos.personales';
+    case GastosPagosRegistrar = 'gastos.pagos.registrar';
+    // Revertir un pago contradice algo ya asentado, igual que
+    // `ppq.revertir-conciliacion`: va con motivo obligatorio y permiso propio.
+    case GastosPagosCorregir = 'gastos.pagos.corregir';
+    // Ajustes de deuda (notas de crédito/débito y correcciones). Cambian lo que se
+    // debe SIN contrapartida de dinero, así que no lo cubre `gastos.registrar`.
+    case GastosAdministrar = 'gastos.administrar';
+    // Sacar los datos del sistema. Va aparte de `ver` porque una exportación se
+    // guarda, se reenvía y sobrevive a cualquier permiso que se quite después.
+    case GastosExportar = 'gastos.exportar';
+    // Reglas recurrentes. Permiso PROPIO y no cubierto por `gastos.registrar`: una
+    // regla no crea una deuda, crea una fábrica de deudas que sigue produciendo sin
+    // que nadie vuelva a apretar nada. Configurar mal un alquiler mensual son doce
+    // obligaciones falsas al año.
+    case GastosRecurrencias = 'gastos.recurrencias';
+
     // DTE (CCF, Factura, NC, FEX). La lógica fiscal/estado no cambia: estos
     // permisos solo gobiernan QUIÉN puede llegar a cada acción.
     case DteVer = 'dte.ver';
@@ -99,16 +122,12 @@ enum PermisoSistema: string
     case PlantaExistenciasVer = 'planta.existencias.ver';
     case PlantaMovimientosVer = 'planta.movimientos.ver';
 
-    // Rutas / Cobros. Área comercial de campo: qué ruta visita cada sala, qué
+    // Rutas. Área de campo: qué ruta atiende cada sala, cada cuánto se sale, qué
     // salidas se hacen y quién va en ellas. NO emite DTE, no toca correlativos,
     // firma, transmisión, PPQ ni Planta.
     //
-    // `ver` para entrar y consultar, `gestionar` para lo que escribe sobre rutas y
-    // salidas (crear/editar rutas, asignar salas, crear salidas y moverles el estado).
-    //
-    // Los verbos finos que anticipaba la fase anterior ya existen debajo: la custodia
-    // del CCF físico los necesitaba de verdad, porque quien lleva el papel y quien lo
-    // recibe en oficina TIENEN que ser dos actores distintos.
+    // `ver` para entrar y consultar, `gestionar` para lo que escribe: rutas y su
+    // cobertura, asignar salas, crear salidas y moverles el estado.
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
@@ -116,21 +135,6 @@ enum PermisoSistema: string
     // catálogo de personas es un marco de trabajo, no la operación del día.
     case RutasPersonalVer = 'rutas.personal.ver';
     case RutasPersonalGestionar = 'rutas.personal.gestionar';
-    // Custodia del CCF FÍSICO. Se parte en tres porque son tres actores distintos y
-    // ese es justamente el control que el módulo existe para dar:
-    //
-    //  - `ver`: consultar dónde está cada papel. Solo lectura.
-    //  - `registrar`: los hechos de CAMPO —entregar, transferir, reportar una
-    //    incidencia—. Los declara quien anduvo la ruta.
-    //  - `recepcion`: confirmar que el papel firmado volvió a la oficina. Lo declara
-    //    quien recibe, NUNCA quien lo llevaba: si un vendedor pudiera cerrar su propia
-    //    devolución, el control no controlaría nada.
-    //  - `corregir`: anular un registro mal hecho. Contradice algo ya asentado, así que
-    //    va con motivo obligatorio y con su propio permiso.
-    case RutasCustodiaVer = 'rutas.custodia.ver';
-    case RutasCustodiaRegistrar = 'rutas.custodia.registrar';
-    case RutasRecepcion = 'rutas.recepcion';
-    case RutasCustodiaCorregir = 'rutas.custodia.corregir';
 
     // Control de Asistencia (lector de huella ESP32). Área de personal: quién
     // marcó y a qué hora. NO emite DTE, no toca correlativos, firma, transmisión,
@@ -156,6 +160,26 @@ enum PermisoSistema: string
     // Contabilidad / reportes.
     case ReportesVer = 'reportes.ver';
     case ContabilidadEnviar = 'contabilidad.enviar';
+
+    // Planilla de control y recibos. CINCO permisos y no uno, porque acá conviven
+    // cosas de sensibilidad muy distinta y meterlas en el mismo saco obligaría a dar
+    // acceso a los salarios para dejar adjuntar un recibo firmado.
+    //
+    // `planilla.ver` es la ENTRADA: deja ver qué planillas existen, sus períodos y su
+    // estado, SIN un solo importe. Sirve para quien coordina el proceso.
+    case PlanillaVer = 'planilla.ver';
+    // Los IMPORTES. Es el permiso confidencial del módulo: sueldo por persona,
+    // descuentos y neto. Va aparte de `ver` a propósito, y también recorta informes,
+    // búsquedas y lo que se ve en la bitácora.
+    case PlanillaSalarios = 'planilla.salarios';
+    // Preparar, editar y confirmar. Confirmar CREA OBLIGACIONES, así que no puede ser
+    // lo mismo que mirar.
+    case PlanillaGestionar = 'planilla.gestionar';
+    // Declarar los pagos de planilla, individuales o por lote.
+    case PlanillaPagar = 'planilla.pagar';
+    // Documentos laborales: la hoja firmada y los recibos. Quien los archiva no
+    // necesita ver los sueldos de todos.
+    case PlanillaDocumentos = 'planilla.documentos';
 
     // Administración.
     case AuditoriaVer = 'auditoria.ver';
@@ -195,6 +219,9 @@ enum PermisoSistema: string
 
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
             // no sincroniza, no administra.
+            //
+            // La excepción es Rutas: organiza las salidas, así que las planifica y
+            // asigna salas (decisión del usuario, 26/09/2026). No le abre nada fiscal.
             RolSistema::Jefatura => self::valores([
                 self::DashboardVer,
                 self::DteVer,
@@ -204,6 +231,11 @@ enum PermisoSistema: string
                 self::ExportacionesVer,
                 self::DocumentosRecibidosVer,
                 self::ReportesVer,
+                self::RutasVer,
+                self::RutasGestionar,
+                // Y da de alta a los vendedores: sin ellos no se puede salir (27/09/2026).
+                self::RutasPersonalVer,
+                self::RutasPersonalGestionar,
             ]),
 
             // Facturación: operación diaria. Emite y gestiona DTE, PPQ y
@@ -228,6 +260,12 @@ enum PermisoSistema: string
                 self::DocumentosRecibidosVer,
                 self::ReportesVer,
                 self::PreparacionVer,
+                // Quien factura los CCF también arma la salida que los lleva, y da de alta
+                // a los vendedores que van en ella.
+                self::RutasVer,
+                self::RutasGestionar,
+                self::RutasPersonalVer,
+                self::RutasPersonalGestionar,
             ]),
 
             // Contabilidad: solo lectura contable + envío del paquete a la

@@ -79,6 +79,21 @@
                 </div>
             </div>
 
+            {{-- Rutas que ya toca visitar (o están por tocar), con sus CCF por entregar. --}}
+            @if (! empty($avisoRutas))
+                <a href="{{ route('rutas.dashboard') }}"
+                   class="mb-6 block rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:hover:bg-amber-500/15">
+                    <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">Rutas por visitar</p>
+                    <div class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                        @foreach ($avisoRutas as $aviso)
+                            <span class="{{ $aviso['estado'] === \App\Services\Rutas\RitmoRutas::ATRASADA ? 'text-red-700 dark:text-red-300' : 'text-amber-800 dark:text-amber-300' }}">
+                                <strong>{{ $aviso['ruta'] }}</strong> {{ $aviso['texto'] }}{{ $aviso['ccf'] > 0 ? ' · '.$aviso['ccf'].' CCF' : '' }}
+                            </span>
+                        @endforeach
+                    </div>
+                </a>
+            @endif
+
             <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
                 {{-- C: Actividad reciente. `items-start` en el grid evita el stretch por
                      defecto de CSS grid (que igualaría esta tarjeta a la altura de toda

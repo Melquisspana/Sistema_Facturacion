@@ -36,8 +36,8 @@ use App\Http\Requests\Dte\TransmitirInvalidacionRequest;
 use App\Models\CatalogoMh;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
-use App\Models\ClientePerfilTipoNc;
 use App\Models\ClienteSucursal;
+use App\Models\Cobros\CobroAjuste;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\DteEnvio;
@@ -47,6 +47,7 @@ use App\Models\Establecimiento;
 use App\Models\Exportacion;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Services\Cobros\NotaCreditoAjuste;
 use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
@@ -65,6 +66,8 @@ use App\Services\Dte\PrecioProductoResolver;
 use App\Services\Dte\PreflightEmisionProduccion;
 use App\Services\Dte\PreflightEmisionProduccionExportacion;
 use App\Services\Dte\PreflightEmisionProduccionFactura;
+use App\Services\Dte\SaldoMontoCcf;
+use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Services\Exportaciones\VincularFexALista;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dinero;
@@ -72,6 +75,7 @@ use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
 use App\Support\Dte\OpcionesInvalidacion;
 use App\Support\Dte\OrdenProductosOc;
+use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\ReceptorExportacionPresentacion;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
@@ -399,20 +403,40 @@ class DteController extends Controller
 
     /**
      * Formulario de la Nota de crédito como documento INDEPENDIENTE.
-     * Si llega ?ccf={id} y es un CCF generado, se preselecciona como relacionado.
+     * Si llega ?ccf={id} y es un CCF que este formulario puede acreditar, se preselecciona.
+     *
+     * La preselección se resuelve con el MISMO servicio que llena la tarjeta y el select
+     * de respaldo ({@see BusquedaCcfParaNotaCredito::seleccionable()}). Antes se resolvía
+     * acá con una consulta propia, más ancha, y un CCF que pasara esa y no la del buscador
+     * —el caso real: ambiente 01 en una instalación configurada en 00— dejaba la pantalla
+     * con una tarjeta de CCF vacía y un POST sin `dte_relacionado_id`: el operador creía
+     * haber elegido el documento y al guardar se lo volvían a pedir. Un solo universo
+     * significa que lo que se ve elegido es lo que viaja.
      */
-    public function createNotaCredito(Request $request): View
+    public function createNotaCredito(Request $request, BusquedaCcfParaNotaCredito $busqueda): View
     {
         $this->authorize('create', Dte::class);
 
+        $cobroAjuste = null;
+        $salaAjuste = null;
+        if ($request->filled('cobro_ajuste')) {
+            $request->validate(['cobro_ajuste' => ['integer', 'exists:cobro_ajustes,id']]);
+            $cobroAjuste = CobroAjuste::with('notaCredito')->findOrFail($request->integer('cobro_ajuste'));
+            $servicio = app(NotaCreditoAjuste::class);
+            $servicio->validarPendiente($cobroAjuste);
+            $salaAjuste = $servicio->salaPropuesta($cobroAjuste->cliente_id);
+        }
+
         $preCcf = null;
-        if ($request->filled('ccf')) {
-            // La NC solo se crea desde un CCF ACEPTADO REALMENTE por Hacienda (no mock/local).
-            $preCcf = Dte::query()
-                ->where('tipo_dte', TipoDte::CreditoFiscal->value)
-                ->aceptadoRealMh()
-                ->with('cliente')
-                ->find($request->integer('ccf'));
+        $ccfPedidoNoDisponible = null;
+        if (! $cobroAjuste && $request->filled('ccf')) {
+            $preCcf = $busqueda->seleccionable($request->integer('ccf'))?->loadMissing('cliente');
+
+            // Se pidió uno concreto y no es de los que se pueden acreditar. Se dice, en vez
+            // de abrir el formulario como si nada y dejar que el error salga al guardar.
+            if ($preCcf === null) {
+                $ccfPedidoNoDisponible = $request->integer('ccf');
+            }
         }
 
         // El formulario ya no precarga cientos de CCF: el buscador los consulta al
@@ -423,10 +447,28 @@ class DteController extends Controller
             ? (int) old('dte_relacionado_id')
             : null);
 
-        return view('facturacion.create-nota-credito', array_merge(
-            $this->datosFormularioNotaCredito($ccfElegido, $preCcf),
-            ['preCcf' => $preCcf],
-        ));
+        $formulario = $this->datosFormularioNotaCredito($ccfElegido, $preCcf);
+        if ($cobroAjuste) {
+            foreach ([
+                'clienteId' => ['cliente_id', $cobroAjuste->cliente_id],
+                'clienteSalaId' => ['cliente_sucursal_id', $salaAjuste ?? ''],
+                'modalidad' => ['modalidad', 'pronto_pago'],
+                'motivo' => ['motivo', 'Pronto pago '.$cobroAjuste->referencia],
+            ] as $campo => [$entrada, $valor]) {
+                $formulario['datosNc'][$campo] = (string) old($entrada, $valor);
+            }
+
+            // El monto de la nota ya se conoce: los CCF cuyo saldo no alcanza se
+            // muestran, pero no se pueden elegir (Hacienda rechazaría la nota).
+            $formulario['datosNc']['cobroAjusteId'] = (string) $cobroAjuste->id;
+            $precargados = $busqueda->recientes(incluirId: $ccfElegido);
+            $formulario['opcionesCcf'] = $servicio->anotarSaldos($formulario['opcionesCcf'], $precargados, $cobroAjuste);
+            $formulario['datosNc']['ccfs'] = collect($servicio->anotarSaldos(
+                array_values($formulario['datosNc']['ccfs']), $precargados, $cobroAjuste,
+            ))->keyBy('id')->all();
+        }
+
+        return view('facturacion.create-nota-credito', array_merge($formulario, compact('preCcf', 'ccfPedidoNoDisponible', 'cobroAjuste')));
     }
 
     /**
@@ -455,9 +497,19 @@ class DteController extends Controller
             salaId: $request->filled('cliente_sucursal_id') ? $request->integer('cliente_sucursal_id') : null,
         );
 
+        // Desde el ajuste del TXT el monto de la nota ya se conoce: cada CCF viaja con su
+        // saldo y con si alcanza, para no ofrecer como elegible uno que Hacienda rechazaría.
+        $resultados = $busqueda->opciones($pagina['resultados']);
+        if ($request->filled('cobro_ajuste')) {
+            $ajuste = CobroAjuste::find($request->integer('cobro_ajuste'));
+            if ($ajuste !== null) {
+                $resultados = app(NotaCreditoAjuste::class)->anotarSaldos($resultados, $pagina['resultados'], $ajuste);
+            }
+        }
+
         return response()->json([
             'ok' => true,
-            'resultados' => $busqueda->opciones($pagina['resultados']),
+            'resultados' => $resultados,
             'pagina' => $pagina['pagina'],
             'por_pagina' => $pagina['por_pagina'],
             'hay_mas' => $pagina['hay_mas'],
@@ -508,6 +560,7 @@ class DteController extends Controller
             // aceptándose para no romper a quien ya postea la modalidad interna directa
             // —la tarjeta del CCF y las pruebas existentes—; resolverTipoNotaCredito()
             // decide cuál manda.
+            'cobro_ajuste_id' => ['nullable', 'integer', 'exists:cobro_ajustes,id'],
             'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
             'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
@@ -533,7 +586,7 @@ class DteController extends Controller
 
         // Sin CCF relacionado solo puede seguir la avería de una visita sin pedido; para
         // cualquier otra modalidad el CCF es obligatorio y lo exige crearNotaCredito().
-        if ($original === null && ! $sinCcf) {
+        if ($original === null && (! $sinCcf || ! empty($datos['cobro_ajuste_id']))) {
             return back()->withInput()->withErrors([
                 'dte_relacionado_id' => 'Seleccione el CCF aceptado que la nota de crédito acredita.',
             ]);
@@ -541,9 +594,20 @@ class DteController extends Controller
 
         // crearNotaCredito valida coherencia (CCF emitido, cliente del original,
         // y exige relacionado en NC por productos) y lanza ValidationException.
-        $nc = $this->borradores->crearNotaCredito($original, $datos, $request->user());
+        $nc = ! empty($datos['cobro_ajuste_id'])
+            ? app(NotaCreditoAjuste::class)->crear(
+                CobroAjuste::findOrFail($datos['cobro_ajuste_id']),
+                $original, $datos, $request->user(),
+            )
+            : $this->borradores->crearNotaCredito($original, $datos, $request->user());
 
-        return redirect()->route('facturacion.edit', $nc)->with('status', $this->mensajeNotaCredito($nc));
+        // Desde el ajuste del TXT el concepto ya viene agregado: pedir que se agregue
+        // confundiría.
+        $mensaje = ! empty($datos['cobro_ajuste_id'])
+            ? 'Nota de crédito creada con el importe del TXT. Revisá el concepto y generala.'
+            : $this->mensajeNotaCredito($nc);
+
+        return redirect()->route('facturacion.edit', $nc)->with('status', $mensaje);
     }
 
     public function show(
@@ -554,6 +618,7 @@ class DteController extends Controller
         PreflightEmisionProduccionFactura $preflightFactura,
         PreflightEmisionProduccionExportacion $preflightExportacion,
         BusquedaDocumentoReemplazo $reemplazos,
+        ValidadorReglasInvalidacion $reglasInvalidacion,
     ): View {
         $this->authorize('view', $dte);
 
@@ -591,32 +656,38 @@ class DteController extends Controller
         $invalidacion = null;
         if (auth()->user()?->can('verInvalidacion', $dte)) {
             $evento = $this->eventoInvalidacionDesdeConfig(TipoAnulacionMh::RescindirOperacion);
+            // Notas de crédito/débito vigentes que PROHÍBEN invalidar este documento. La
+            // decisión de si el tipo documental depende de ellas la toma la política
+            // (hoy: solo el CCF), no la vista ni el modelo; acá solo se consume. Se listan
+            // para que quien factura sepa qué invalidar primero, y el enlace lo decide la
+            // vista según el permiso de ver cada nota.
+            $notasQueBloquean = $reglasInvalidacion->notasQueBloquean($dte);
+
             $invalidacion = [
                 'puede_mock' => auth()->user()->can('invalidarMock', $dte),
                 'puede_transmitir' => auth()->user()->can('transmitirInvalidacion', $dte),
                 'mock_activo' => (bool) config('dte.invalidacion.mock', false),
                 'ya_invalidado' => $dte->tieneEventoInvalidacion(),
                 'protegido' => $dte->estaProtegidoComoEvidencia(),
-                'tiene_nc_relacionada' => $dte->tieneNotaCreditoRelacionada(),
-                'notas_credito_relacionadas' => $dte->tieneNotaCreditoRelacionada()
-                    ? $dte->notasCreditoRelacionadas()->get(['id', 'numero_control', 'estado'])
-                    : collect(),
+                'bloqueado_por_notas' => $notasQueBloquean->isNotEmpty(),
+                'notas_vigentes' => $notasQueBloquean,
                 // Candados de la transmisión REAL evaluados como si el usuario pulsara el
                 // botón ahora (transmitirReal/confirmoInvalidar = true): así las razones
                 // reflejan solo los bloqueos reales del entorno (flags, firma, ambiente…),
-                // no las confirmaciones que el propio botón ya aporta. confirmoNcRelacionada
-                // se deja en false para que la NC relacionada aparezca como razón (el checkbox
-                // la resuelve al enviar). SOLO LECTURA: no firma ni transmite.
-                'candados' => $invalidacionService->evaluarCandados($dte, $evento, true, true, false),
+                // no las confirmaciones que el propio botón ya aporta. SOLO LECTURA: no
+                // firma ni transmite.
+                'candados' => $invalidacionService->evaluarCandados($dte, $evento, true, true),
                 'dry_run' => session('dry_run_invalidacion'),
                 'tipos' => TipoAnulacionMh::opciones(),
-                // Vocabulario humano del paso 1 del asistente: capa de PRESENTACIÓN sobre
-                // los MISMOS valores de CAT-024 (ver OpcionesInvalidacion).
-                'opciones_motivo' => OpcionesInvalidacion::opciones(),
-                // Candidatos a documento de reemplazo (solo los usa el tipo 1). Se precargan
-                // para que el paso 2 no dependa de una llamada previa; el autocomplete refina
-                // sobre la MISMA consulta. SOLO LECTURA: lo que se envíe lo revalidan el Form
-                // Request y SerializadorInvalidacionMh, igual que antes.
+                // Requisitos del paso 1 del asistente RESUELTOS PARA ESTE DOCUMENTO: la UI
+                // no tiene su propia matriz, lee la del servidor (ver OpcionesInvalidacion
+                // y PoliticaInvalidacion). Un CCF y una NC reciben banderas distintas.
+                'opciones_motivo' => OpcionesInvalidacion::opciones($dte->tipo_dte),
+                // Candidatos a documento sustituto (solo los usan las celdas que lo exigen).
+                // Se precargan para que el paso 2 no dependa de una llamada previa; el
+                // autocomplete refina sobre la MISMA consulta, con los MISMOS filtros que
+                // verifica el servidor. SOLO LECTURA: lo que se envíe lo revalidan el Form
+                // Request, ValidadorReglasInvalidacion y el serializador.
                 'reemplazos' => $reemplazos->opciones($reemplazos->buscar($dte)),
                 'buscar_reemplazo_url' => route('facturacion.invalidacion.buscar-reemplazo', $dte),
             ];
@@ -1227,11 +1298,10 @@ class DteController extends Controller
     {
         $this->authorize('verInvalidacion', $dte);
 
-        $evento = $this->eventoInvalidacionDesdeRequest($request);
-        $confirmarNc = $request->boolean('confirmar_nc_relacionada');
+        $evento = $this->eventoInvalidacionDesdeRequest($request, $dte);
 
         try {
-            $resumen = $invalidacionService->dryRun($dte, $evento, confirmoNcRelacionada: $confirmarNc);
+            $resumen = $invalidacionService->dryRun($dte, $evento);
         } catch (DteInvalidacionException $e) {
             return redirect()
                 ->route('facturacion.show', $dte)
@@ -1254,12 +1324,11 @@ class DteController extends Controller
     {
         $this->authorize('invalidarMock', $dte);
 
-        $evento = $this->eventoInvalidacionDesdeRequest($request);
+        $evento = $this->eventoInvalidacionDesdeRequest($request, $dte);
         $confirmar = $request->boolean('confirmar_sin_flag');
-        $confirmarNc = $request->boolean('confirmar_nc_relacionada');
 
         try {
-            $r = $mockService->firmarMock($dte, $evento, persistir: true, permitirSinMock: $confirmar, permitirNcRelacionada: $confirmarNc);
+            $r = $mockService->firmarMock($dte, $evento, persistir: true, permitirSinMock: $confirmar);
         } catch (DteInvalidacionException $e) {
             return redirect()
                 ->route('facturacion.show', $dte)
@@ -1277,7 +1346,8 @@ class DteController extends Controller
      *
      * Reutiliza tal cual {@see DteInvalidacionService::transmitir()} (NO duplica su lógica):
      * ese servicio RE-valida TODOS los candados (flags, firma real, ambiente/endpoint,
-     * doble invalidación, evidencia protegida, NC relacionada), solo transiciona
+     * doble invalidación, evidencia protegida, matriz documento x motivo, sustituto
+     * verificado y notas de crédito/débito vigentes), solo transiciona
      * Aceptado→Invalidado si Hacienda ACEPTA, conserva el estado en rechazo/fallo y registra
      * la auditoría. La frase exacta INVALIDAR DTE y la candidatura las valida el Form Request
      * en servidor. En el entorno actual (modo seguro) los candados la BLOQUEAN.
@@ -1294,12 +1364,14 @@ class DteController extends Controller
         );
 
         try {
+            // `confirmar_nc_relacionada` ya NO se lee: la dependencia de notas fiscales
+            // vigentes es una prohibición del MH, no un riesgo confirmable. El campo se
+            // sigue aceptando en el Form Request solo para no romper integraciones viejas.
             $r = $invalidacionService->transmitir(
                 $dte,
                 $evento,
                 transmitirReal: true,
                 confirmoInvalidar: true,
-                confirmoNcRelacionada: $request->boolean('confirmar_nc_relacionada'),
             );
         } catch (DteEvidenciaProtegidaException|DteInvalidacionException $e) {
             // Candado o evidencia protegida: nada se transmitió ni persistió (estado conservado).
@@ -1331,15 +1403,46 @@ class DteController extends Controller
      * Valida los campos del formulario de invalidación (tipo CAT-024, motivo, reemplazo) y
      * construye el EventoInvalidacionData con el responsable/solicitante de config.
      */
-    private function eventoInvalidacionDesdeRequest(Request $request): EventoInvalidacionData
+    private function eventoInvalidacionDesdeRequest(Request $request, Dte $dte): EventoInvalidacionData
     {
+        // Normalización previa: un campo vacío es «sin valor», no un valor enviado. El
+        // hidden del asistente viaja siempre, incluso cuando el motivo no pide sustituto.
+        //
+        // Se reutilizan los normalizadores del Form Request de la transmisión real —no una
+        // copia— para que mock y dry-run traten la entrada EXACTAMENTE igual. Solo tocan
+        // cadenas: un `reemplazo[]=x` llega intacto al validador, que lo rechaza por la
+        // regla `string`, en vez de reventar en un `(string)` sobre un arreglo.
+        $request->merge([
+            'reemplazo' => TransmitirInvalidacionRequest::normalizarCodigo($request->input('reemplazo')),
+            'motivo' => TransmitirInvalidacionRequest::normalizarTexto($request->input('motivo')),
+        ]);
+
+        // MISMA matriz que el Form Request de la transmisión real: mock y dry-run no pueden
+        // aceptar un evento que el envío real rechazaría. Con un `tipo` no escalar no se
+        // deduce nada (`(int) ['3']` sería el motivo 1): se cae al motivo 2, que no exige
+        // sustituto, y la regla de `tipo` reporta la falla real.
+        $requisitos = function () use ($request, $dte) {
+            $entrada = $request->input('tipo');
+            $motivo = is_scalar($entrada) ? TipoAnulacionMh::tryFrom((int) $entrada) : null;
+
+            return PoliticaInvalidacion::requisitos($dte->tipo_dte, $motivo ?? TipoAnulacionMh::RescindirOperacion);
+        };
+
         $datos = $request->validate([
             'tipo' => ['required', Rule::in(array_map(fn ($t) => $t->value, TipoAnulacionMh::cases()))],
-            'motivo' => ['nullable', 'string', 'max:1000', Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::Otro->value)],
-            'reemplazo' => ['nullable', 'string', 'max:100', Rule::requiredIf(fn () => (int) $request->input('tipo') === TipoAnulacionMh::ErrorInformacion->value)],
+            // Límite 200: el de invalidacion-schema-v3 para motivo.motivoAnulacion.
+            'motivo' => ['nullable', 'string', 'max:200', Rule::requiredIf(fn () => $requisitos()->requiereMotivoTexto)],
+            'reemplazo' => [
+                'nullable', 'string', 'max:36',
+                Rule::requiredIf(fn () => $requisitos()->requiereReemplazo),
+                Rule::prohibitedIf(fn () => $requisitos()->prohibeReemplazo()),
+            ],
         ], [
             'motivo.required' => 'El motivo en texto es obligatorio para el tipo 3 (Otro).',
-            'reemplazo.required' => 'El código de generación del documento de reemplazo es obligatorio para el tipo 1 (Error en la información).',
+            'reemplazo.required' => 'Para este documento y motivo hace falta el código de generación del documento '
+                .'que lo sustituye, previamente aceptado por Hacienda.',
+            'reemplazo.prohibited' => 'Esta combinación de documento y motivo no admite documento de reemplazo: '
+                .'el evento debe viajar con codigoGeneracionR en null.',
         ]);
 
         return $this->eventoInvalidacionDesdeConfig(
@@ -1786,11 +1889,22 @@ class DteController extends Controller
         // 'update' exige borrador + gestor (administrador/facturación).
         $this->authorize('update', $dte);
 
-        // El albarán obligatorio SÍ frena: es un dato que el cliente declaró
-        // imprescindible, no una diferencia a valorar.
-        if ($albaranes->faltaAlbaranObligatorio($dte)) {
-            return back()->withErrors(['generar' => 'Registre el albarán de esta nota de crédito antes de generarla: '
-                .'el cliente lo exige para poder incluirla en su formato de notas de crédito.']);
+        // Los datos del albarán que el cliente declaró obligatorios SÍ frenan: no son
+        // diferencias a valorar sino datos imprescindibles. Se dice QUÉ falta, porque el
+        // albarán puede estar guardado a medias y «registre el albarán» mandaría a llenar
+        // un formulario que ya tiene la mitad escrita.
+        // Una NC que acredita más que el saldo de su CCF la rechaza Hacienda: se frena
+        // acá, antes de consumir correlativo.
+        $excesoCcf = app(SaldoMontoCcf::class)->exceso($dte);
+        if ($excesoCcf !== null) {
+            return back()->withErrors(['generar' => $excesoCcf]);
+        }
+
+        $faltanDelAlbaran = $albaranes->datosObligatoriosFaltantes($dte);
+        if ($faltanDelAlbaran !== []) {
+            return back()->withErrors(['generar' => 'Antes de generar esta nota de crédito falta '
+                .implode(', ', $faltanDelAlbaran).'. El cliente lo exige para poder incluirla en su '
+                .'formato de notas de crédito.']);
         }
 
         // Retención y diferencia contra el albarán NO bloquean: se muestran y se confirman.
@@ -2170,22 +2284,60 @@ class DteController extends Controller
 
         $tiposImpuesto = TipoImpuesto::opciones();
 
-        // Albarán del cliente: el panel solo aparece si el cliente declaró un perfil que
-        // mapea ESTA modalidad. Sin perfil, la pantalla es exactamente la de siempre.
-        $albaranes = app(AlbaranNotaCreditoService::class);
-        $reglaAlbaran = app(PerfilDocumentoResolver::class)->reglaNotaCredito($nc);
-        $albaran = $nc->albaran;
-        $comparacionAlbaran = $albaranes->comparacion($nc);
-        $avisosAlbaran = $albaranes->avisos($nc);
-
         // Info de retención para el resumen fiscal del panel (mismo dato que el CCF).
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($nc);
 
-        return view('facturacion.edit-nc', compact(
+        return view('facturacion.edit-nc', array_merge(compact(
             'nc', 'original', 'lineasOriginales', 'porProductos', 'porAveria', 'productosDisponibles', 'tiposImpuesto',
-            'cantidadesPorProducto', 'esAgenteRetencion',
-            'reglaAlbaran', 'albaran', 'comparacionAlbaran', 'avisosAlbaran'
-        ));
+            'cantidadesPorProducto', 'esAgenteRetencion'
+        ), $this->estadoAlbaranNc($nc)));
+    }
+
+    /**
+     * Estado del albarán de una NC, en la forma que consumen los dos partials que lo
+     * muestran (`albaran-nc` y `resumen-nc`).
+     *
+     * Existe como helper porque lo pide TRES veces el mismo trabajo: al abrir el editor, al
+     * volver de guardar el albarán y al volver de recalcular las líneas. Mientras cada una
+     * lo armaba por su cuenta, la comparación solo se rehacía en la primera y quedaba vieja
+     * hasta el siguiente F5.
+     *
+     * @return array<string, mixed>
+     */
+    private function estadoAlbaranNc(Dte $nc): array
+    {
+        $albaranes = app(AlbaranNotaCreditoService::class);
+
+        // El panel solo aparece si el cliente declaró un perfil que mapea ESTA modalidad.
+        // Sin perfil, la pantalla es exactamente la de siempre.
+        return [
+            'reglaAlbaran' => app(PerfilDocumentoResolver::class)->reglaNotaCredito($nc),
+            'avisoImporteTxt' => app(NotaCreditoAjuste::class)->avisoImporte($nc),
+            'excesoSaldoCcf' => app(SaldoMontoCcf::class)->exceso($nc),
+            'albaran' => $nc->albaran,
+            'comparacionAlbaran' => $albaranes->comparacion($nc),
+            'avisosAlbaran' => $albaranes->avisos($nc),
+            'albaranPendiente' => $albaranes->datosObligatoriosFaltantes($nc),
+            'confirmGenerar' => $this->confirmarGenerarNc($nc),
+        ];
+    }
+
+    /**
+     * Texto del confirm de «Generar» de una NC. Lo arma el servidor porque lo necesitan dos
+     * partials distintos y porque enumera datos del documento (modalidad, sala, líneas,
+     * total) que tienen que ser los de AHORA y no los del último render completo.
+     */
+    private function confirmarGenerarNc(Dte $nc): string
+    {
+        $modalidad = ModalidadNotaCredito::desdeTipo($nc->tipo_nota_credito);
+
+        return 'Generar la nota de crédito:'."\n\n"
+            .'Modalidad: '.($modalidad?->label() ?? '—')."\n"
+            .'Cliente: '.($nc->cliente?->nombre ?? '—')."\n"
+            .'Sala: '.($nc->clienteSucursal?->nombre ?? '—')."\n"
+            .'Líneas: '.$nc->lineas->count()."\n"
+            .'Total: $'.number_format((float) $nc->total_pagar, 2)."\n\n"
+            .'Se consume el correlativo interno y la nota ya no podrá editarse. ¿Continuar?';
     }
 
     /**
@@ -2196,35 +2348,37 @@ class DteController extends Controller
      * No toca ningún valor fiscal: la nota sigue valiendo lo que calculó el motor. Si el
      * total del albarán difiere, la diferencia se muestra al generar.
      */
-    public function guardarAlbaranNc(Request $request, Dte $dte, AlbaranNotaCreditoService $albaranes): RedirectResponse
+    public function guardarAlbaranNc(Request $request, Dte $dte, AlbaranNotaCreditoService $albaranes): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
 
         try {
             $albaranes->registrar($dte, $request->only(['numero', 'fecha', 'total', 'tipo_codigo', 'sala_codigo']));
         } catch (ValidationException $e) {
-            return back()->withInput()->withErrors($e->errors());
+            // En AJAX NO se repinta nada: un guardado que falló no puede dejar en pantalla
+            // números nuevos como si estuvieran confirmados. Solo viaja el mensaje.
+            return $this->errorLineas($request, $e->errors());
         } catch (DocumentoInmutableException $e) {
-            return back()->withErrors(['numero' => $e->getMessage()]);
+            return $this->errorLineas($request, ['numero' => $e->getMessage()]);
         }
 
-        return back()->with('status', 'Albarán registrado en la nota de crédito.');
+        return $this->respuestaLineas($request, $dte, 'Albarán registrado en la nota de crédito.');
     }
 
     /** Quita el albarán del borrador y lo libera para otra nota de crédito. */
-    public function quitarAlbaranNc(Dte $dte, AlbaranNotaCreditoService $albaranes): RedirectResponse
+    public function quitarAlbaranNc(Request $request, Dte $dte, AlbaranNotaCreditoService $albaranes): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $dte);
 
         try {
             $albaranes->quitar($dte);
         } catch (ValidationException $e) {
-            return back()->withErrors($e->errors());
+            return $this->errorLineas($request, $e->errors());
         } catch (DocumentoInmutableException $e) {
-            return back()->withErrors(['numero' => $e->getMessage()]);
+            return $this->errorLineas($request, ['numero' => $e->getMessage()]);
         }
 
-        return back()->with('status', 'Albarán quitado de la nota de crédito.');
+        return $this->respuestaLineas($request, $dte, 'Albarán quitado de la nota de crédito.');
     }
 
     /**
@@ -2433,15 +2587,34 @@ class DteController extends Controller
         // contenido, porque lo que hay que verificar no es lo mismo (línea original,
         // saldo, modalidad). El editor AJAX no se entera de la diferencia.
         $esNc = $dte->tipo_dte === TipoDte::NotaCredito;
+
+        // Estado del albarán: se resuelve UNA vez y alimenta los dos bloques que dependen
+        // de él —el panel fiscal (para el botón Generar) y la comparación contra el
+        // albarán—. Recalcular las líneas mueve el total de la nota, así que la
+        // comparación cambia con cada acción y tiene que viajar de vuelta; antes se
+        // quedaba con los números del último render completo hasta que alguien apretaba F5.
+        $albaranNc = $esNc ? $this->estadoAlbaranNc($dte) : [];
+
         $html = view($esNc ? 'facturacion.partials.resumen-nc' : 'facturacion.partials.resumen-ccf', [
             'dte' => $dte,
             'esAgenteRetencion' => $this->borradores->esAgenteRetencion($dte),
+            'confirmGenerar' => $albaranNc['confirmGenerar'] ?? null,
+            'albaranPendiente' => $albaranNc['albaranPendiente'] ?? [],
+            // Cambiar una línea mueve el total: los dos avisos tienen que volver medidos.
+            'avisoImporteTxt' => $albaranNc['avisoImporteTxt'] ?? null,
+            'excesoSaldoCcf' => $albaranNc['excesoSaldoCcf'] ?? null,
         ])->render();
 
         return response()->json([
             'ok' => true,
             'message' => $mensaje,
             'resumen_html' => $html,
+            // Bloque del albarán ya repintado, con los dos totales, la diferencia, el color
+            // y los avisos que el SERVIDOR acaba de calcular. Null cuando el documento no
+            // es una NC: el editor entonces no toca nada.
+            'albaran_html' => $esNc
+                ? view('facturacion.partials.albaran-nc', ['nc' => $dte] + $albaranNc)->render()
+                : null,
             'cantidades' => $dte->lineas
                 ->filter(fn (DteLinea $l) => $l->producto_id !== null)
                 ->mapWithKeys(fn (DteLinea $l) => [$l->producto_id => (int) $l->cantidad])
@@ -2458,10 +2631,13 @@ class DteController extends Controller
                 : [],
             'sin_lineas' => $dte->lineas->isEmpty(),
             // Por qué NO se puede generar todavía. `sin_lineas` no alcanza: una NC sin
-            // documento relacionado tampoco puede generarse, y el editor tiene que saberlo
-            // o volvería a habilitar el botón que la vista acaba de pintar deshabilitado.
+            // documento relacionado tampoco puede generarse, ni una NC a la que le faltan
+            // datos del albarán que su cliente declaró obligatorios. El editor tiene que
+            // saberlo o volvería a habilitar el botón que la vista acaba de pintar
+            // deshabilitado. Los tres motivos son los MISMOS que frena el servidor.
             'generar_bloqueado' => $dte->lineas->isEmpty()
-                || ($esNc && $dte->dte_relacionado_id === null),
+                || ($esNc && $dte->dte_relacionado_id === null)
+                || ($albaranNc['albaranPendiente'] ?? []) !== [],
         ]);
     }
 
@@ -2481,7 +2657,11 @@ class DteController extends Controller
             ], 422);
         }
 
-        return back()->withErrors($errors);
+        // withInput() para el camino SIN JavaScript: el formulario del albarán se repinta
+        // con old() y, sin esto, un error de validación borraba lo que el operador acababa
+        // de escribir. Los formularios de líneas no leen old() —sus valores salen de la
+        // base—, así que para ellos el input flasheado no cambia nada.
+        return back()->withInput()->withErrors($errors);
     }
 
     /**
@@ -2688,17 +2868,21 @@ class DteController extends Controller
         // no muestra código: la nota se emite con las reglas fiscales generales y no hay
         // nada que rotular. Un código fijo en la interfaz haría parecer requisito de todos
         // lo que es la exigencia particular de un cliente.
+        //
+        // Se recorre por MODALIDAD y se pregunta por reglaOperativaPara(): es la MISMA
+        // resolución que aplica el motor fiscal, incluida la hermandad devolución/faltante.
+        // Al revés —recorriendo las filas del perfil y traduciendo cada una a su
+        // modalidad— dos filas de la misma modalidad se pisaban entre sí y el código
+        // rotulado dependía del orden de la consulta.
         $codigosPorCliente = ClientePerfilDocumento::query()
             ->where('activo', true)
             ->with('tiposNc')
             ->get()
             ->mapWithKeys(fn (ClientePerfilDocumento $perfil) => [
-                $perfil->cliente_id => $perfil->tiposNc
-                    ->mapWithKeys(fn (ClientePerfilTipoNc $regla) => [
-                        // La pantalla razona en MODALIDADES; el perfil mapea modalidades
-                        // internas. Se traduce acá para que la vista no tenga que saberlo.
-                        (ModalidadNotaCredito::desdeTipo($regla->tipo_nota_credito)?->value ?? '') => $regla->codigo_externo,
-                    ])->filter(fn ($codigo, $modalidad) => $modalidad !== '')->all(),
+                $perfil->cliente_id => collect(ModalidadNotaCredito::cases())
+                    ->mapWithKeys(fn (ModalidadNotaCredito $m) => [
+                        $m->value => $perfil->reglaOperativaPara($m->tipoPorDefecto())?->codigo_externo,
+                    ])->filter()->all(),
             ])->all();
 
         // Receptores: contribuyentes con salas que PERMITEN nota de crédito.
@@ -2723,6 +2907,16 @@ class DteController extends Controller
         // Misma forma que devuelve el buscador (BusquedaCcfParaNotaCredito::opciones): la
         // ficha del CCF elegido se pinta igual venga de la precarga o de la búsqueda.
         $opcionesCcf = app(BusquedaCcfParaNotaCredito::class)->opciones($ccfs);
+
+        // Un id elegido que NO quedó entre las opciones no puede seguir figurando como
+        // elegido: la tarjeta se pintaría sin datos y el `<select>` que alimenta el POST no
+        // tendría su opción, así que el formulario viajaría sin documento relacionado y
+        // volvería a pedir el CCF al guardar. Mejor arrancar sin selección y que se elija
+        // una vez, de verdad.
+        $ccfDisponible = collect($opcionesCcf)->contains(fn (array $c) => (int) $c['id'] === $ccfElegido);
+        if (! $ccfDisponible) {
+            $ccfElegido = null;
+        }
 
         return [
             'opcionesCliente' => $opcionesCliente,
@@ -2759,7 +2953,10 @@ class DteController extends Controller
                 'clienteId' => (string) old('cliente_id', $preCcf?->cliente_id ?? ''),
                 'clienteSalaId' => (string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
                 'salaAveriaId' => (string) old('sucursal_averia_id', ''),
-                'ccfId' => (string) old('dte_relacionado_id', $preCcf?->id ?? ''),
+                // Sale de $ccfElegido —ya comprobado contra las opciones— y no de old() ni
+                // de $preCcf por separado: es el único id del que se sabe que la pantalla
+                // puede describir Y que el POST puede llevar.
+                'ccfId' => (string) ($ccfElegido ?? ''),
                 'salaNcId' => (string) old('cliente_sucursal_id', $preCcf?->cliente_sucursal_id ?? ''),
                 'establecimientoId' => (string) old('establecimiento_id', $preCcf?->establecimiento_id ?? ''),
                 'puntoVentaId' => (string) old('punto_venta_id', $preCcf?->punto_venta_id ?? ''),

@@ -32,7 +32,7 @@
 
             <x-slot name="content">
                 @foreach ($areas as $area)
-                    <x-dropdown-link :href="route($area->rutaInicio())"
+                    <x-dropdown-link :href="route($area->rutaInicioPara(auth()->user()))"
                                      @class(['font-semibold text-indigo-700 dark:text-indigo-300' => $area === $activa])>
                         {{ $area->label() }}
                     </x-dropdown-link>

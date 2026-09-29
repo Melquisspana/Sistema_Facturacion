@@ -75,11 +75,18 @@
          cerrado, y renombrarla les reiniciaría esa preferencia sin ningún motivo. Es
          un identificador técnico, no un rótulo. --}}
     @if ($vePpq)
-        <x-sidebar-group titulo="Pronto pago" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
-            <x-sidebar-link :href="route('ppq.index')" :active="request()->routeIs('ppq.index', 'ppq.albaranes_por_fecha')">Buscar CCF / NC</x-sidebar-link>
-            <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial PPQ</x-sidebar-link>
+        <x-sidebar-group titulo="Cobros Calleja" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
+            {{-- «Buscar CCF / NC» ya no va en el menú: es un botón dentro del Seguimiento. --}}
+            <x-sidebar-link :href="route('cobros.index')" :active="request()->routeIs('cobros.*', 'ppq.index', 'ppq.albaranes_por_fecha')">Seguimiento de CCF</x-sidebar-link>
+            <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial de PPQ</x-sidebar-link>
         </x-sidebar-group>
     @endif
+
+    {{-- Gastos ya NO vive acá: es un ÁREA propia (ver App\Enums\AreaSistema y
+         layouts/partials/sidebar-gastos.blade.php). Se movió porque había crecido
+         hasta tener su propio listado, pagos, informes y repeticiones: como grupo
+         dentro de Facturación obligaba a elegir entre un menú largo o esconderle
+         pantallas. Se llega por el selector de áreas de arriba. --}}
 
     @if ($veContabilidad)
         <x-sidebar-group titulo="Contabilidad" icono="contabilidad" clave="contabilidad" :activo="$grupoContabilidadActivo">

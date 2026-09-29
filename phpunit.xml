@@ -116,6 +116,22 @@
              el módulo APAGADO, igual que un servidor sin lector. Los tests del módulo lo
              encienden explícitamente con config()->set('asistencia.enabled', true). -->
         <env name="ASISTENCIA_ENABLED" value="false"/>
+        <!-- Módulo Gastos: mismo criterio, el suite arranca con el módulo APAGADO sin
+             importar el .env real. Los tests del módulo lo encienden explícitamente con
+             config()->set('gastos.enabled', true), y uno comprueba justamente que
+             apagado devuelve 404. -->
+        <env name="GASTOS_ENABLED" value="false"/>
+        <!-- Módulo Planilla: mismo criterio. Faltaba esta línea, y se notó el día que
+             PLANILLA_ENABLED pasó a true en un .env real: el enlace /planilla apareció
+             en el menú y NavigationTest falló, que es exactamente para lo que está.
+             Los tests del módulo lo encienden con config()->set('planilla.enabled', true). -->
+        <env name="PLANILLA_ENABLED" value="false"/>
+        <!-- Recurrencias y avisos de Gastos: los dos procesos que actúan SOLOS. La suite
+             arranca con los dos apagados sin importar el .env, igual que un servidor
+             recién instalado. Los tests del módulo los encienden con config()->set(), y
+             hay pruebas que comprueban justamente que apagados no generan ni envían. -->
+        <env name="GASTOS_RECURRENCIAS_AUTO" value="false"/>
+        <env name="GASTOS_AVISOS_AUTO" value="false"/>
         <!-- Sincronizaciones AUTOMÁTICAS (PPQ/albaranes desde Gmail y Compras desde IMAP):
              la suite arranca con las dos apagadas, igual que un servidor recién instalado
              y sin importar el .env de la máquina. Los tests que prueban el camino

@@ -11,6 +11,9 @@
         'comercial' => 'M4 8.5h16M6 8.5V6.75A1.75 1.75 0 0 1 7.75 5h8.5A1.75 1.75 0 0 1 18 6.75V8.5m1 0v10.75A1.75 1.75 0 0 1 17.25 21H6.75A1.75 1.75 0 0 1 5 19.25V8.5h14Z',
         'facturacion' => 'M7 3.5h7l4 4v13a.5.5 0 0 1-.5.5H7a.5.5 0 0 1-.5-.5v-16a.5.5 0 0 1 .5-.5Z M9.5 12h5M9.5 15.5h5M9.5 8.5h2',
         'ppq' => 'M11 4.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13Z M20 20l-4.3-4.3',
+        // Planilla: una lista de personas con sus líneas. Distinta del libro de
+        // 'contabilidad' y de la nave de 'planta', que conviven con ella en el selector.
+        'planilla' => 'M7 4.5h10a.5.5 0 0 1 .5.5v14a.5.5 0 0 1-.5.5H7a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5Z M9.5 9h5M9.5 12.5h5M9.5 16h3',
         'contabilidad' => 'M5 4.5h14a.5.5 0 0 1 .5.5v14a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5Z M8 8.5h8M8 12h3M8 15.5h3M14 12h2M14 15.5h2',
         'exportaciones' => 'M11 3.5v17M3.6 8h14.8M3.6 14h14.8 M11 3.5a13 13 0 0 1 3.6 8.5A13 13 0 0 1 11 20.5 13 13 0 0 1 7.4 12 13 13 0 0 1 11 3.5Z',
         // Cobros: billete con moneda. Distinto de 'ppq' (lupa: buscar CCF/NC) y de

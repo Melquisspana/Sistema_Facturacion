@@ -5,10 +5,11 @@ namespace App\Http\Controllers;
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
-use App\Models\Dte;
 use App\Models\DocumentoRecibido;
+use App\Models\Dte;
 use App\Models\Exportacion;
 use App\Services\Dte\DteTransmisionService;
+use App\Services\Rutas\AvisoRutas;
 use App\Services\Sistema\DiagnosticoSistemaService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Http\Request;
@@ -91,6 +92,8 @@ class DashboardController extends Controller
             'esGestorDte' => $esGestorDte,
             'veOperativos' => $veOperativos,
             'veFacturacion' => $veFacturacion,
+            // Rutas que ya toca visitar. Vacío sin permiso o sin el módulo: nunca rompe el panel.
+            'avisoRutas' => app(AvisoRutas::class)->para($usuario),
         ]);
     }
 

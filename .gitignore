@@ -46,3 +46,10 @@ Thumbs.db
 # Firmware del lector de asistencia: secretos locales (SSID, password Wi-Fi,
 # token del lector). Solo se versiona la plantilla secretos.h.example.
 /firmware/asistencia/secretos.h
+/firmware/asistencia_es3c28p/secretos.h
+/firmware/asistencia_es3c28p/respaldo_fabrica/
+
+# Evidencias locales de corridas de la suite (JUnit + salida). No se versionan:
+# son fotos de un árbol de trabajo concreto, pesan MB y quedan obsoletas al primer
+# cambio. Ver evidencias/<carpeta>/README.md.
+/evidencias/

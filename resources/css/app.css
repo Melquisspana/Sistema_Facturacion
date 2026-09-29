@@ -213,8 +213,22 @@ html.dark {
 .dark .border-blue-200 { border-color: rgba(56, 189, 248, .35); }
 .dark .text-blue-700 { color: #38bdf8; }
 
+/* El celeste marca «esto está a medio llenar / falta confirmar algo», y estaba a
+   medias en oscuro: solo bg-sky-100 y text-sky-700 tenían override. Las 21 vistas
+   que usan bg-sky-50 —entre ellas el bloque «Completar y activar» de una regla por
+   completar— seguían pintando el celeste CLARO del tema claro, y encima el texto
+   gris del tema oscuro es claro: letra clara sobre fondo claro, ilegible. */
+.dark .bg-sky-50 { background-color: rgba(56, 189, 248, .10); }
 .dark .bg-sky-100 { background-color: rgba(56, 189, 248, .18); }
+.dark .border-sky-200,
+.dark .border-sky-300 { border-color: rgba(56, 189, 248, .35); }
 .dark .text-sky-700 { color: #38bdf8; }
+.dark .text-sky-600,
+.dark .text-sky-800,
+.dark .text-sky-900 { color: #7dd3fc; }
+.dark .ring-sky-200,
+.dark .ring-sky-500,
+.dark .ring-sky-600 { --tw-ring-color: rgba(56, 189, 248, .35); }
 
 .dark .bg-indigo-100 { background-color: rgba(129, 140, 248, .18); }
 .dark .text-indigo-700 { color: #a5abfa; }

@@ -27,7 +27,7 @@
             @foreach ($areas as $area)
                 @php $esActiva = $area === $activa; @endphp
                 <li>
-                    <a href="{{ route($area->rutaInicio()) }}"
+                    <a href="{{ route($area->rutaInicioPara(auth()->user())) }}"
                        @if ($esActiva) aria-current="true" @endif
                        class="ms-1 flex items-center gap-2 rounded-r-md border-l-2 px-3 py-1.5 text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:focus-visible:outline-indigo-400 {{ $esActiva
                            ? 'border-indigo-600 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/15 dark:text-indigo-300'

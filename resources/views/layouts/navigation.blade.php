@@ -23,6 +23,33 @@
     $veClientes = $usuario->can('viewAny', App\Models\Cliente::class);
     $veProductos = $usuario->can('viewAny', App\Models\Producto::class);
     $veFacturacion = $usuario->can('viewAny', App\Models\Dte::class);
+    // Gastos: doble condición porque el módulo tiene interruptor propio mientras se
+    // construye (GASTOS_ENABLED). Ocultar NO autoriza: el candado real es
+    // `modulo.gastos` + `permission:gastos.ver` en routes/gastos.php.
+    $veGastos = config('gastos.enabled') && $usuario->can('gastos.ver');
+
+    // ¿La fase 2 —recurrencias y avisos— está MIGRADA en esta base? Es otra pregunta
+    // que «está encendido el módulo»: entre desplegar el código y correr las
+    // migraciones hay una ventana, y durante esa ventana el menú no puede ofrecer
+    // pantallas que van a fallar, ni —peor— consultar tablas que no existen.
+    //
+    // Se pregunta UNA vez acá y se hereda por @include. Antes el contador de avisos
+    // consultaba la base desde el sidebar, y en una base sin migrar eso devolvía 500
+    // en TODAS las pantallas, incluido el dashboard. Un menú no puede tumbar la
+    // aplicación: ver App\Services\Gastos\InstalacionGastos.
+    $gastosInstalacion = app(App\Services\Gastos\InstalacionGastos::class);
+    $gastosFase2 = $veGastos && $gastosInstalacion->fase2Instalada();
+    $gastosAvisosSinLeer = $gastosFase2 ? $gastosInstalacion->avisosSinLeer($usuario) : 0;
+
+    // Planilla vive DENTRO del área «Gastos y pagos», pero con su propia llave. Tener
+    // `gastos.ver` no muestra ni el título del grupo: los sueldos son confidenciales y
+    // hasta la existencia del menú dice algo.
+    //
+    // Nótese que NO se pregunta nada a la base. La comprobación de si las tablas de
+    // Planilla están migradas la hace el middleware `modulo.planilla` cuando alguien
+    // entra; el menú no puede permitirse esa consulta, por la misma razón por la que el
+    // contador de avisos dejó de hacerla.
+    $vePlanilla = config('planilla.enabled') && $usuario->can('planilla.ver');
 
     // Activos por item (rutas actuales, sin cambios de lógica).
     $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
@@ -55,9 +82,10 @@
     // cuelga del mismo prefijo de nombre, así que `productos.*` las enciende las dos y
     // no hay que mantener ninguna lista de excepciones.
     $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*');
-    $grupoCobrosActivo = request()->routeIs('ppq.*');
+    $grupoCobrosActivo = request()->routeIs('ppq.*', 'cobros.*');
     $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
     $grupoAdministracionActivo = request()->routeIs('usuarios.*', 'auditoria.*', 'importaciones.*');
+    $grupoGastosActivo = request()->routeIs('gastos.*');
     // Configuración ya no es un grupo colapsable sino una entrada directa, así que
     // esto no marca «qué grupo contiene la ruta» sino simplemente si estamos dentro
     // del Centro de Configuración. Cubre sus catorce pantallas de una vez.

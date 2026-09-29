@@ -13,6 +13,10 @@ use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ImapMailboxClient;
 use App\Services\DocumentosRecibidos\NullMailboxClient;
 use App\Services\Dte\DteTransmisionService;
+use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Gastos\Contracts\ProteccionDeGastos;
+use App\Services\Gastos\InstalacionGastos;
+use App\Services\Planilla\ProteccionPlanilla;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Cache\Factory;
@@ -45,13 +49,28 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Ajustes::class);
         $this->app->singleton(ConfiguracionCorreoRuntime::class);
 
+        // Estado del esquema de Gastos. Singleton para que la comprobación de «¿están
+        // migradas las tablas de fase 2?» cueste una consulta por petición y no una por
+        // consumidor: la responde el menú, que se dibuja en todas las pantallas.
+        $this->app->singleton(InstalacionGastos::class);
+
+        // Quién protege las obligaciones que Gastos no creó. Gastos define la interfaz
+        // y pregunta; Planilla contesta por los sueldos. Singleton porque memoriza la
+        // lista de obligaciones protegidas, y esa lista la consultan casi todas las
+        // consultas de la pantalla de Gastos dentro de la misma petición.
+        //
+        // ProteccionPlanilla ya se desactiva sola si sus tablas no están migradas, así
+        // que se puede atar siempre. SinProteccion queda como la respuesta neutra para
+        // las pruebas que no quieren saber nada de planilla.
+        $this->app->singleton(ProteccionDeGastos::class, ProteccionPlanilla::class);
+
         // Perfil documental del cliente. Singleton por la misma razón que el resolver de
         // ajustes: memoriza qué clientes tienen perfil, y recalcular una nota de crédito
         // lo consulta varias veces mientras cuadra los totales. Compartir la instancia
         // dentro de la petición convierte esas consultas en una sola —y hace que
         // PerfilDocumentoResolver::olvidar() sirva de verdad para quien cambie un perfil
         // en caliente, en vez de limpiar la memoria de una instancia que nadie usa.
-        $this->app->singleton(\App\Services\Dte\PerfilDocumentoResolver::class);
+        $this->app->singleton(PerfilDocumentoResolver::class);
 
         // Fuente de correo de "Documentos recibidos" (INDEPENDIENTE de Gmail/PPQ):
         // driver 'imap' → lector IMAP de solo lectura (Yahoo); cualquier otro valor,
