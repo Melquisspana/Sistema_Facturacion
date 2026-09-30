@@ -3,6 +3,7 @@
 namespace App\Models\Cobros;
 
 use App\Models\Cliente;
+use App\Models\Concerns\RecortaTextosAColumna;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,6 +24,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CobroCorreo extends Model
 {
     use HasFactory;
+    use RecortaTextosAColumna;
+
+    /** @return array<string, int> */
+    public static function largosDeTexto(): array
+    {
+        return [
+            'asunto' => 255,
+            'remitente' => 190,
+        ];
+    }
 
     protected $table = 'cobro_correos';
 

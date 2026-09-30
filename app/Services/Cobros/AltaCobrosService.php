@@ -291,10 +291,10 @@ class AltaCobrosService
             ->whereNotNull('fecha_emision')
             ->whereDate('fecha_emision', '<', $corte->toDateString())
             ->whereDoesntHave('eventos')
-            ->update([
+            ->update(CobroDocumento::recortarTextos([
                 'revisar_historico' => true,
                 'revisar_historico_motivo' => self::MOTIVO_SIN_ANTECEDENTE,
-            ]);
+            ]));
     }
 
     /**
