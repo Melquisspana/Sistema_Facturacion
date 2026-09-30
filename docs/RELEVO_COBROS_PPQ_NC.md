@@ -26,7 +26,7 @@ El usuario también desea que ambos revisen el proyecto en general, por etapas. 
 ### Crear quedan y controlar cobros
 
 - Acción principal clara para preparar el formato de quedan con los CCF aptos, revisar su contenido y descargarlo para subirlo a Calleja. Mostrar qué impide incluir los demás y cómo resolverlo.
-- Usar la plantilla solicitada por el usuario: C:/Users/<usuario>/Desktop/FORMATO DE CARGA MASIVA QUEDAN.xlsx. Inspeccionarla antes de definir columnas. El Excel antiguo 000123202609040951.xlsx fue aportado como evidencia del circuito anterior, no como plantilla nueva.
+- Usar la plantilla solicitada por el usuario: C:/Users/<usuario>/Desktop/FORMATO DE CARGA MASIVA QUEDAN.xlsx. Inspeccionarla antes de definir columnas. El Excel antiguo <oc>.xlsx fue aportado como evidencia del circuito anterior, no como plantilla nueva.
 - El usuario dice que Calleja ya aceptó el formato de NC, pero que PPQ sigue siendo el mismo. Verificar qué exportación está usando realmente y qué queda por adaptar. La aceptación del formato de NC no prueba la del formato de quedan.
 - Archivo generado/descargado, presentado, recibido, observado y pagado son hechos diferentes. Mantener evidencias y no cambiar uno por inferencia del otro.
 - Cargar el TXT recibido al pagar y mostrar qué documentos y montos confirma, qué diferencias quedan y cuáles no aparecen en esa evidencia. No declarar impagos por ausencia en un TXT ni contar dos veces una misma evidencia. Mantener revisión de pagos potencialmente repetidos entre archivos distintos.
@@ -37,7 +37,7 @@ El usuario también desea que ambos revisen el proyecto en general, por etapas. 
 
 - Investigar el descuadre que el usuario ve en PPQ con devoluciones AC04. Mostrar comparaciones y descuentos con significado claro, sin alterar importes para que visualmente coincidan.
 - Según lo desarrollado anteriormente para Calleja, devolución/faltante AC04 no hereda el descuento del CCF; avería AC02 sí aplica su regla correspondiente. Verificar la implementación vigente y el recorrido completo, no solo el total de emisión.
-- Ejemplo reportado y probado anteriormente: AC04 3874, PDF 26-08-0207-00-003874-AC04-0001.PDF, Santa Rosa de Lima: gravado 0.98 + IVA 0.13 = 1.11, descuento 0.00; el resultado incorrecto era 1.05 al heredar 5 %. Avería de referencia: 2.89 - 0.14 = 2.75 + IVA 0.36 = 3.11. Confirmar documentos reales antes de extrapolar estas cifras.
+- Ejemplo ficticio: devolución sin descuento, con base 100.00 + IVA 13.00 = 113.00. Confirmar los datos operativos en el sistema antes de emitir.
 - Mantener separadas las magnitudes de CCF, albarán, NC, descuentos, retenciones y pago cuando corresponda; explicar diferencias legítimas. Evitar descontar dos veces una NC y conservar las reglas fiscales ya comprobadas.
 - Preservar el formato de NC que el usuario confirmó aceptado. No recalcular ni modificar DTE emitidos.
 

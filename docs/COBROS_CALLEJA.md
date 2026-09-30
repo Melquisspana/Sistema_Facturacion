@@ -96,7 +96,7 @@ dejan fuera vuelven a la bandeja.
 
 ### 5. Guardar el acuse del cliente
 
-Cuando Calleja responde —`RECIBIDO (000123202609040951)`, `REFERENCIA #31001`,
+Cuando Calleja responde —`RECIBIDO (<oc>)`, `REFERENCIA #31001`,
 `PROGRAMACION DE PAGO: 07/09/2026`— se captura la referencia y la fecha programada en la
 fila de la solicitud, o se lee del correo (paso 7).
 

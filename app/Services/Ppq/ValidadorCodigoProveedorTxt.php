@@ -11,7 +11,7 @@ use App\Services\Cobros\AplicadorPagosTxt;
  * {@see AplicadorPagosTxt} registren un solo pago, una NC
  * aplicada o un ajuste QD.
  *
- * Los pagos de este circuito Calleja son siempre del proveedor 000123. Una fila con un código distinto —o sin
+ * Los pagos deben pertenecer al proveedor configurado. Una fila con un código distinto —o sin
  * código— no es un pago suyo, así que el archivo se rechaza ENTERO en cuanto aparece
  * la primera: coincidir de número de documento con algo local no prueba que sea el
  * mismo emisor, y aplicar solo las filas «buenas» dejaría un archivo a medio procesar
@@ -19,7 +19,16 @@ use App\Services\Cobros\AplicadorPagosTxt;
  */
 class ValidadorCodigoProveedorTxt
 {
-    public const CODIGO_CALLEJA = '000123';
+    public static function codigoConfigurado(): string
+    {
+        $codigo = trim((string) config('ppq.codigo_proveedor'));
+
+        if ($codigo === '') {
+            throw new ArchivoProveedorInvalidoException('', '', 0);
+        }
+
+        return $codigo;
+    }
 
     /**
      * @param  array<int, array<string, mixed>>  $filas  salida de ConciliacionTxtParser::parse()
@@ -28,11 +37,13 @@ class ValidadorCodigoProveedorTxt
      */
     public function verificar(array $filas): void
     {
+        $esperado = self::codigoConfigurado();
+
         foreach ($filas as $fila) {
             $codigo = self::codigoDe($fila);
 
-            if ($codigo !== self::CODIGO_CALLEJA) {
-                throw new ArchivoProveedorInvalidoException(self::CODIGO_CALLEJA, $codigo, (int) ($fila['linea'] ?? 0));
+            if ($codigo !== $esperado) {
+                throw new ArchivoProveedorInvalidoException($esperado, $codigo, (int) ($fila['linea'] ?? 0));
             }
         }
     }

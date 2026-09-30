@@ -21,9 +21,9 @@ class DteInvalidacionMockTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000104';
+    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000010';
 
-    private const NC_SELLO = '2026000000000000000000000000000000000000'; // 40 chars
+    private const NC_SELLO = '2026000000000000000000000000000000000003'; // 40 chars
 
     private const NC_NUMERO_CONTROL = 'DTE-05-M001P001-000000000000020';
 
@@ -38,7 +38,7 @@ class DteInvalidacionMockTest extends TestCase
     private function ncAceptada(bool $aceptada = true): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);

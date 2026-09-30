@@ -19,11 +19,14 @@ use App\Services\Dte\DteConsultaService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteTransmisionAuthService;
 use App\Services\Dte\DteTransmisionResiliente;
+use App\Services\Dte\DteTransmisionService;
 use App\Support\Dte\EndpointsHacienda;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -43,12 +46,12 @@ use Tests\TestCase;
  */
 class ConsultaYReintentosDteTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private const JWS = 'eyJhbGciOiJSUzI1NiJ9.eyJkdGUiOiJmYWtlIn0.firma-falsa';
 
-    private const CG = '00000000-0000-4000-8000-000000000101';
+    private const CG = '00000000-0000-4000-8000-000000000001';
 
     private Establecimiento $estab;
 
@@ -133,7 +136,7 @@ class ConsultaYReintentosDteTest extends TestCase
      * `catch (Throwable)` de DteTransmisionService y salía disfrazado de 'error_conexion',
      * es decir, el test "fallaba" simulando justo lo contrario de lo que quería probar.
      */
-    private function recepcionAceptada(): \GuzzleHttp\Promise\PromiseInterface
+    private function recepcionAceptada(): PromiseInterface
     {
         return Http::response([
             'estado' => 'PROCESADO',
@@ -974,7 +977,7 @@ class ConsultaYReintentosDteTest extends TestCase
         ]);
 
         $dte = $this->ccfFirmado();
-        app(\App\Services\Dte\DteTransmisionService::class)->transmitir($dte);
+        app(DteTransmisionService::class)->transmitir($dte);
         $this->consulta()->consultar($dte);
 
         foreach (['seguridad/auth', 'recepciondte', 'consultadte'] as $servicio) {
@@ -997,7 +1000,7 @@ class ConsultaYReintentosDteTest extends TestCase
         config()->set('dte.transmision.allow_production', true);
         config()->set('dte.transmision.url_base', 'https://recepcion.impostora.test');
 
-        $candados = app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados();
+        $candados = app(DteTransmisionService::class)->evaluarCandados();
 
         $this->assertTrue($candados['bloqueado']);
         $this->assertStringContainsString('productivo exacto', implode(' ', $candados['razones']));
@@ -1013,7 +1016,7 @@ class ConsultaYReintentosDteTest extends TestCase
         config()->set('dte.transmision.allow_production', true);
         config()->set('dte.transmision.url_base', '');   // host oficial
 
-        $candados = app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados();
+        $candados = app(DteTransmisionService::class)->evaluarCandados();
 
         $this->assertStringNotContainsString('productivo exacto', implode(' ', $candados['razones']));
         Http::assertNothingSent();
@@ -1032,7 +1035,7 @@ class ConsultaYReintentosDteTest extends TestCase
         config()->set('dte.transmision.ambiente', 'testing');
         config()->set('dte.transmision.url_base', 'https://recepcion.test');
 
-        $candados = app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados();
+        $candados = app(DteTransmisionService::class)->evaluarCandados();
 
         $this->assertTrue($candados['bloqueado']);
         $this->assertStringContainsString('de apitest exacto', implode(' ', $candados['razones']));
@@ -1047,7 +1050,7 @@ class ConsultaYReintentosDteTest extends TestCase
         config()->set('dte.transmision.ambiente', 'testing');
         config()->set('dte.transmision.url_base', EndpointsHacienda::HOST_PRUEBAS);
 
-        $candados = app(\App\Services\Dte\DteTransmisionService::class)->evaluarCandados();
+        $candados = app(DteTransmisionService::class)->evaluarCandados();
 
         $this->assertStringNotContainsString('apitest exacto', implode(' ', $candados['razones']));
         $this->assertFalse($candados['bloqueado'], implode(' | ', $candados['razones']));
@@ -1069,7 +1072,7 @@ class ConsultaYReintentosDteTest extends TestCase
     /** El TTL del cache del token vive SIEMPRE por debajo de la vigencia configurada. */
     public function test_el_ttl_del_token_queda_por_debajo_de_la_vigencia(): void
     {
-        $auth = app(\App\Services\Dte\DteTransmisionAuthService::class);
+        $auth = app(DteTransmisionAuthService::class);
 
         foreach ([24, 12, 48, 1] as $horas) {
             config()->set('dte.transmision.token_vigencia_horas', $horas);
@@ -1088,7 +1091,7 @@ class ConsultaYReintentosDteTest extends TestCase
      */
     public function test_la_vigencia_no_depende_del_ambiente(): void
     {
-        $auth = app(\App\Services\Dte\DteTransmisionAuthService::class);
+        $auth = app(DteTransmisionAuthService::class);
         config()->set('dte.transmision.token_vigencia_horas', 24);
 
         config()->set('dte.transmision.ambiente', 'testing');
@@ -1105,7 +1108,7 @@ class ConsultaYReintentosDteTest extends TestCase
      */
     public function test_el_token_nunca_se_reutiliza_mas_alla_del_ciclo_diario(): void
     {
-        $auth = app(\App\Services\Dte\DteTransmisionAuthService::class);
+        $auth = app(DteTransmisionAuthService::class);
         config()->set('dte.transmision.token_vigencia_horas', 24);
 
         foreach (['testing', 'produccion'] as $ambiente) {
@@ -1124,7 +1127,7 @@ class ConsultaYReintentosDteTest extends TestCase
             $fuente = (string) file_get_contents($archivo);
 
             $this->assertStringNotContainsString('47 * 3600', $fuente);
-            $this->assertStringNotContainsString("? 24 : 48", $fuente);
+            $this->assertStringNotContainsString('? 24 : 48', $fuente);
         }
     }
 

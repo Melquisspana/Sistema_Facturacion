@@ -153,7 +153,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
-    public function test_factura_con_descuento_de_linea_ventaGravada_bruta_menos_descuento(): void
+    public function test_factura_con_descuento_de_linea_venta_gravada_bruta_menos_descuento(): void
     {
         // 1 × 11.30 (IVA incluido) − descuento 1.13 = 10.17 bruto; base 9.00, IVA 1.17.
         $linea = new LineaDteData(
@@ -320,7 +320,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         ]);
 
         $emisor = new EmisorDteData(
-            nit: '06140000000901', nrc: '1000017', nombre: 'Titular Ejemplo Peña',
+            nit: '06140000000901', nrc: '1000017', nombre: 'Titular de Ejemplo',
             codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
             actividadEconomica: '10730', departamento: '08', municipio: '23', distrito: '05',
             direccion: 'Calle de Ejemplo 123, Localidad A',
@@ -385,7 +385,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
         ]);
 
         $emisor = new EmisorDteData(
-            nit: '06140000000901', nrc: '1000017', nombre: 'Titular Ejemplo Peña',
+            nit: '06140000000901', nrc: '1000017', nombre: 'Titular de Ejemplo',
             codigoEstablecimiento: 'M001', codigoPuntoVenta: 'P001',
             actividadEconomica: '10730', departamento: '08', municipio: '23', distrito: '05',
             direccion: 'Calle de Ejemplo 123, Localidad A',
@@ -504,7 +504,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
             ventaGravada: '100.00', iva: '13.00',
         );
         $relacionado = new DocumentoRelacionadoDteData(
-            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-000000000105', fechaEmision: '2026-06-16',
+            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-0000000000A1', fechaEmision: '2026-06-16',
         );
         $nc = new DteSalidaData(
             identificacion: $this->ident('05', 3), emisor: $this->emisor(), resumen: $this->resumenCcf(),
@@ -571,7 +571,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
 
     public function test_nota_credito_serializa_y_valida_con_documento_relacionado(): void
     {
-        $uuid = '00000000-0000-4000-8000-000000000105'; // codigoGeneracion oficial (UUID v4) del CCF
+        $uuid = '00000000-0000-4000-8000-0000000000A1'; // codigoGeneracion oficial (UUID v4) del CCF
         $relacionado = new DocumentoRelacionadoDteData(
             tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: $uuid, fechaEmision: '2026-06-16',
         );
@@ -597,7 +597,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
     public function test_nota_credito_v3_usa_nit_directo_en_receptor(): void
     {
         $relacionado = new DocumentoRelacionadoDteData(
-            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-000000000105', fechaEmision: '2026-06-16',
+            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-0000000000A1', fechaEmision: '2026-06-16',
         );
         $base = fn (ReceptorDteData $r) => new DteSalidaData(
             identificacion: $this->ident('05', 3), emisor: $this->emisor(), resumen: $this->resumenCcf(),
@@ -625,7 +625,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
             actividadEconomica: '10730', departamento: '06', municipio: '14', distrito: '0617', direccion: 'Av',
         );
         $relacionado = new DocumentoRelacionadoDteData(
-            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-000000000105', fechaEmision: '2026-06-16',
+            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-0000000000A1', fechaEmision: '2026-06-16',
         );
         $salida = new DteSalidaData(
             identificacion: $this->ident('05', 3), emisor: $emisor, resumen: $this->resumenCcf(),
@@ -643,7 +643,7 @@ class SerializadoresMhMultiTipoTest extends TestCase
     public function test_nota_credito_v3_con_descuento_global_cuadra(): void
     {
         $relacionado = new DocumentoRelacionadoDteData(
-            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-000000000105', fechaEmision: '2026-06-16',
+            tipoDocumento: '03', tipoGeneracion: 2, numeroDocumento: '00000000-0000-4000-8000-0000000000A1', fechaEmision: '2026-06-16',
         );
         // CCF con descuento global del 5%: gravado bruto 100, descuGravada 5, neto 95, IVA 95×0.13=12.35.
         $resumen = new ResumenDteData(

@@ -37,12 +37,19 @@ class DatosInicialesNegritaSeeder extends Seeder
 {
     // --- Valores editables del emisor ---
     private const EMPRESA_RAZON_SOCIAL = 'Dulces La Negrita, S.A. de C.V.';
+
     private const EMPRESA_NOMBRE_COMERCIAL = 'Dulces La Negrita';
+
     private const EMPRESA_NIT = '0000-000000-000-0';   // EDITAR con el NIT real
+
     private const EMPRESA_NRC = '000000-0';            // EDITAR con el NRC real
+
     private const EMPRESA_TELEFONO = '2200-0000';
+
     private const EMPRESA_CORREO = 'facturacion@example.com';
+
     private const ESTAB_CODIGO = 'M001';
+
     private const PUNTO_VENTA_CODIGO = 'P001';
 
     public function run(): void
@@ -81,7 +88,7 @@ class DatosInicialesNegritaSeeder extends Seeder
                 'pais_id' => $pais?->id,
                 'departamento_id' => $depto?->id,
                 'municipio_id' => $muni?->id,
-                'direccion' => 'Olocuilta, La Paz',
+                'direccion' => 'Calle de Ejemplo 123, Localidad A',
                 'telefono' => self::EMPRESA_TELEFONO,
                 'correo' => self::EMPRESA_CORREO,
                 'ambiente' => '00', // pruebas
@@ -100,7 +107,7 @@ class DatosInicialesNegritaSeeder extends Seeder
                 'pais_id' => $pais?->id,
                 'departamento_id' => $depto?->id,
                 'municipio_id' => $muni?->id,
-                'direccion' => 'Olocuilta, La Paz',
+                'direccion' => 'Calle de Ejemplo 123, Localidad A',
                 'telefono' => self::EMPRESA_TELEFONO,
                 'correo' => self::EMPRESA_CORREO,
                 'activo' => true,
@@ -135,7 +142,7 @@ class DatosInicialesNegritaSeeder extends Seeder
     private function clienteCalleja(?Pais $pais, ?Departamento $depto, ?Municipio $muni, ?ActividadEconomica $actividad): void
     {
         $calleja = Cliente::updateOrCreate(
-            ['num_documento' => '0614-010101-001-1'], // EDITAR con el NIT real de Calleja
+            ['num_documento' => '0614-010101-101-0'], // EDITAR con el NIT real de Calleja
             [
                 'codigo' => 'CAL-001',
                 'tipo_cliente' => TipoCliente::Contribuyente->value,
@@ -249,7 +256,7 @@ class DatosInicialesNegritaSeeder extends Seeder
      */
     private function productosCalleja(?UnidadMedida $unidad): void
     {
-        $calleja = Cliente::where('num_documento', '0614-010101-001-1')->first();
+        $calleja = Cliente::where('num_documento', '0614-010101-101-0')->first();
         if (! $calleja) {
             return;
         }
@@ -309,7 +316,7 @@ class DatosInicialesNegritaSeeder extends Seeder
     private function preciosEspeciales(): void
     {
         $pepitoria = Producto::where('codigo', 'DUL-001')->first();
-        $calleja = Cliente::where('num_documento', '0614-010101-001-1')->first();
+        $calleja = Cliente::where('num_documento', '0614-010101-101-0')->first();
         $exportacion = Cliente::where('codigo', 'EXP-001')->first();
 
         if ($pepitoria && $calleja) {

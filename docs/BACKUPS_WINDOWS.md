@@ -156,7 +156,7 @@ Recomendado: mantener al menos **una copia off-site** y, si es posible, cifrar e
    - los archivos de `storage/app` respaldados.
 3. **Restaurar la base de datos** (con la BD destino creada/vacía):
    ```cmd
-   "C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root dulces_negrita < "C:\ruta\al\dump.sql"
+   "C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root base_ejemplo < "C:\ruta\al\dump.sql"
    ```
    (Ajustá la ruta de `mysql.exe`, el usuario y el nombre de la base.)
 4. **Restaurar archivos**: copiá los archivos del zip de vuelta a

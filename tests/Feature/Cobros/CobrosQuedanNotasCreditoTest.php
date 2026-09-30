@@ -19,11 +19,13 @@ use App\Models\NcExportacion;
 use App\Models\NcExportacionItem;
 use App\Models\PpqAlbaran;
 use App\Models\User;
+use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -433,8 +435,8 @@ class CobrosQuedanNotasCreditoTest extends TestCase
         $this->assertEqualsCanonicalizing([$documento->id, $sinNotas->id], $solicitud->items()->pluck('cobro_documento_id')->all());
 
         // Pero el ARCHIVO de quedan sí lleva la NC, después de los CCF, con su AC04.
-        $ruta = app(\App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1::class)->generar($solicitud->fresh());
-        $hoja = \PhpOffice\PhpSpreadsheet\IOFactory::load($ruta)->getActiveSheet();
+        $ruta = app(ExportadorSolicitudCargaMasivaV1::class)->generar($solicitud->fresh());
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
         @unlink($ruta);
         $this->assertSame(4, $hoja->getHighestDataRow(), 'Encabezado + 2 CCF + 1 NC.');
         $this->assertSame('AC04', $hoja->getCell('E4')->getValue());

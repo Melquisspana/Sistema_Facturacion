@@ -15,7 +15,7 @@
 > seguro**. No se transmitió nada a producción.
 
 - **DTE `id=71`** (CCF, cliente Calleja S.A. de C.V., total $42.78) **ACEPTADO por apitest**.
-- **Sello de recepción real:** `2026000000000000000000000000000000000000`.
+- **Sello de recepción real:** `2026000000000000000000000000000000000002`.
 - **`respuesta_mh` guardada** (BD + `storage/app/dte/respuestas/…json`): `estado=PROCESADO`,
   `codigoMsg=001`, `descripcionMsg=RECIBIDO`, `fhProcesamiento=30/06/2026 22:07:54`.
   `Dte::aceptadoRealmentePorMh()` = **true** (sello real, no `MOCK`).
@@ -42,9 +42,9 @@ quedan solo en el DTE #71 (firma + aceptación).
 - **DTE `id=74`** (Nota de Crédito tipo 05, devolución parcial: 1 × «DULCE DE MIEL»,
   total **$1.02**) **ACEPTADO por apitest**.
 - **Referencia al CCF #71 aceptado**: `documentoRelacionado` apunta al `codigoGeneracion`
-  real del CCF #71 (`00000000-0000-4000-8000-000000000106`, tipoDocumento `03`,
+  real del CCF #71 (`00000000-0000-4000-8000-000000000002`, tipoDocumento `03`,
   tipoGeneracion `2`). El descuento del #71 (5% global) se acredita proporcionalmente.
-- **Sello de recepción real:** `2026000000000000000000000000000000000000`.
+- **Sello de recepción real:** `2026000000000000000000000000000000000003`.
 - **`respuesta_mh` guardada** (BD + `storage/app/dte/respuestas/…json`): `estado=PROCESADO`,
   `codigoMsg=001`, `descripcionMsg=RECIBIDO`, `ambiente=00`, `fhProcesamiento=30/06/2026 22:48:44`,
   sin observaciones. `Dte::aceptadoRealmentePorMh()` = **true** (sello real, no `MOCK`).

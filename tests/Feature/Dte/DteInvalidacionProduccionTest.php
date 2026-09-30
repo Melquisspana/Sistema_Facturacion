@@ -14,10 +14,11 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteInvalidacionService;
+use App\Support\Dte\CandadoEndpointOficial;
+use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use App\Support\Dte\EndpointsHacienda;
 use Tests\TestCase;
 
 /**
@@ -33,11 +34,11 @@ class DteInvalidacionProduccionTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const CCF_CODIGO_GENERACION = 'A3C1F2B4-9D3E-4C77-8B12-0F5E6A7D8C90';
+    private const CCF_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000011';
 
-    private const CCF_SELLO = '2026386FB99EC82E45A3931C61E4A8EB331A5CIU';
+    private const CCF_SELLO = '2026000000000000000000000000000000000004';
 
-    private const CCF_SUSTITUTO_CODIGO_GENERACION = 'B7E2C1A4-3D5F-4E6A-9B8C-0D1E2F3A4B5C';
+    private const CCF_SUSTITUTO_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000012';
 
     private const CCF_NUMERO_CONTROL = 'DTE-03-M001P099-000000000000001';
 
@@ -65,7 +66,7 @@ class DteInvalidacionProduccionTest extends TestCase
     private function ccfAceptado(string $ambiente): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -106,7 +107,7 @@ class DteInvalidacionProduccionTest extends TestCase
             'cliente_id' => $original->cliente_id,
             'numero_control' => 'DTE-03-M001P099-000000000000777',
             'codigo_generacion' => self::CCF_SUSTITUTO_CODIGO_GENERACION,
-            'sello_recepcion' => '2026000000000000000000000000000000000000',
+            'sello_recepcion' => '2026000000000000000000000000000000000005',
             'respuesta_mh' => ['estado' => 'PROCESADO'],
             'fecha_procesamiento_mh' => '2026-07-21 09:00:00',
             'fecha_emision' => '2026-07-21', 'hora_emision' => '09:00:00',
@@ -306,7 +307,7 @@ class DteInvalidacionProduccionTest extends TestCase
 
     /**
      * El candado del endpoint de anulación es el mismo que el de los otros tres
-     * servicios ({@see \App\Support\Dte\CandadoEndpointOficial}) y ya valía en los dos
+     * servicios ({@see CandadoEndpointOficial}) y ya valía en los dos
      * ambientes; esto lo fija contra las variantes que un chequeo laxo dejaría pasar:
      * el subdominio que EMPIEZA por el host oficial, el puerto, el esquema, el host del
      * otro ambiente, el query, el fragmento y la ruta parecida. Nada se transmite.

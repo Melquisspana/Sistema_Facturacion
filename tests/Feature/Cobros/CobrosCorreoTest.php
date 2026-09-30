@@ -56,16 +56,16 @@ class CobrosCorreoTest extends TestCase
             'sala_codigo' => '0017',
         ]);
 
-        $dte = $this->dteVerificableCobros($cliente, 'DTE-03-M001P002-000000000000119', '2026-08-26', '77.74');
+        $dte = $this->dteVerificableCobros($cliente, 'DTE-03-M001P002-000000000090059', '2026-08-26', '100.00');
         $documento = CobroDocumento::create([
             'cliente_id' => $cliente->id,
             'origen' => OrigenCobroDocumento::Dte->value,
             'dte_id' => $dte->id,
             'tipo_dte' => '03',
-            'numero_control' => 'DTE-03-M001P002-000000000000119',
-            'codigo_generacion' => '00000000-0000-4000-8000-000000000102',
+            'numero_control' => 'DTE-03-M001P002-000000000090059',
+            'codigo_generacion' => '00000000-0000-4000-8000-000000000017',
             'fecha_emision' => '2026-08-26',
-            'monto' => '77.74',
+            'monto' => '100.00',
             'ppq_albaran_id' => $albaran->id,
         ]);
 
@@ -112,12 +112,12 @@ class CobrosCorreoTest extends TestCase
     {
         $leido = app(CorreoCobroParser::class)->interpretar(
             'OBSERVACIONES REF 31001',
-            'El CCF DTE-03-M001P002-000000000000119 no trae su nota de crédito.',
+            'El CCF DTE-03-M001P002-000000000090059 no trae su nota de crédito.',
         );
 
         $this->assertSame('observaciones', $leido['tipo']);
         $this->assertSame('31001', $leido['referencia_calleja']);
-        $this->assertSame(['DTE03M001P002000000000000119'], $leido['numeros_control']);
+        $this->assertSame(['DTE03M001P002000000000090059'], $leido['numeros_control']);
     }
 
     /** Un correo que no se reconoce no se fuerza a ninguna categoría. */
@@ -135,13 +135,13 @@ class CobrosCorreoTest extends TestCase
     {
         $leido = app(CorreoCobroParser::class)->interpretar(
             'OBSERVACIONES REF 31001',
-            'Revisar 00000000-0000-4000-8000-000000000102 y 00000000-0000-4000-8000-000000000103 '
-                .'(00000000-0000-4000-8000-000000000102 otra vez).',
+            'Revisar 00000000-0000-4000-8000-000000000017 y 00000000-0000-4000-8000-000000000018 '
+                .'(00000000-0000-4000-8000-000000000017 otra vez).',
         );
 
         $this->assertSame([
-            '00000000-0000-4000-8000-000000000102',
-            '00000000-0000-4000-8000-000000000103',
+            '00000000-0000-4000-8000-000000000017',
+            '00000000-0000-4000-8000-000000000018',
         ], $leido['codigos_generacion']);
     }
 
@@ -252,7 +252,7 @@ class CobrosCorreoTest extends TestCase
         app(LectorCorreosCobro::class)->procesar($cliente, [
             $this->mensaje([
                 'asunto' => 'OBSERVACIONES REF 31001',
-                'cuerpo' => 'El CCF DTE-03-M001P002-000000000000119 viene sin su nota de crédito.',
+                'cuerpo' => 'El CCF DTE-03-M001P002-000000000090059 viene sin su nota de crédito.',
             ]),
         ]);
 
@@ -300,7 +300,7 @@ class CobrosCorreoTest extends TestCase
         app(LectorCorreosCobro::class)->procesar($cliente, [
             $this->mensaje([
                 'asunto' => 'OBSERVACIONES REF 31001',
-                'cuerpo' => 'Documento 00000000-0000-4000-8000-000000000102 observado.',
+                'cuerpo' => 'Documento 00000000-0000-4000-8000-000000000017 observado.',
             ]),
         ]);
 

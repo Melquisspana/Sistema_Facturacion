@@ -132,12 +132,12 @@ tocó código funcional, facturación ni cálculos):
 - **Backup real creado correctamente** con `spatie/laravel-backup` (`backup:run`):
   ZIP con dump de la base + archivos de `storage/app`, en
   `storage\app\private\Dulces La Negrita\`.
-- **Restauración probada en base temporal** `dulces_negrita_restore_test`
+- **Restauración probada en base temporal** `base_ejemplo`
   (nunca sobre la base real):
   - **31 tablas** detectadas.
   - Conteos verificados: **clientes 9, productos 23, dtes 25, users 1**.
   - **Base temporal eliminada** al finalizar la prueba.
-  - **Base real `dulces_negrita` intacta** (verificado por separado).
+  - **Base real `base_ejemplo` intacta** (verificado por separado).
 - **Scripts creados** (en `scripts\`): `backup-run.bat`, `backup-clean.bat`,
   `backup-restore-test.bat`.
 - **Documentación creada**: `docs\BACKUPS_WINDOWS.md` y `docs\RESTORE_BACKUP_WINDOWS.md`.
@@ -158,7 +158,7 @@ protecciones; no se tocó código):
 - **Auditoría de usuarios realizada.** Hoy existe **un solo usuario**:
   `admin@dulceslanegrita.test` (rol administrador, activo) — el **admin temporal**
   sembrado por `UsuarioAdminInicialSeeder`. Es el único administrador activo y usa
-  un correo de prueba (`.test`) con contraseña por defecto.
+  un correo de prueba (`.test`) con contraseña aleatoria, mostrada una sola vez por consola; debe cambiarse al entrar.
 - **Protecciones confirmadas (ya existían y tienen test verde)** para no quedar sin
   administrador:
   - No se puede **inactivar** al último administrador activo.
@@ -341,9 +341,9 @@ Se realizó la **primera firma LOCAL real** de un DTE con el firmador local del 
 **No se transmitió nada a Hacienda.**
 
 - DTE **#30** firmado localmente (CCF 03).
-- numeroControl: `DTE-03-M001P001-000000000000012`
-- codigoGeneracion: `00000000-0000-4000-8000-000000000101`
-- Archivo firmado (JWS): `storage/app/dte/firmados/dte-03-30-00000000-0000-4000-8000-000000000101.jws`
+- numeroControl: `<numero-control>`
+- codigoGeneracion: `00000000-0000-4000-8000-000000000001`
+- Archivo firmado (JWS): `storage/app/dte/firmados/dte-03-30-00000000-0000-4000-8000-000000000001.jws`
 - Mensaje confirmado: **FIRMADO LOCALMENTE / SIN TRANSMISIÓN / NO ENVIADO A HACIENDA**.
 
 Implementación usada (`DteFirmaService::firmar()` + `php artisan dte:firmar {id}`):

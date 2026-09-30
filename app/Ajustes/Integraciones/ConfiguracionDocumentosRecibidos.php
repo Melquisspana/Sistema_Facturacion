@@ -154,7 +154,7 @@ class ConfiguracionDocumentosRecibidos
     }
 
     /**
-     * Deja un correo reconocible sin publicarlo entero: `du••••••@yahoo.com`.
+     * Deja un correo reconocible sin publicarlo entero: `co••••••@example.com`.
      *
      * Sirve para que quien administra confirme de un vistazo QUÉ buzón está
      * configurado sin que la pantalla reparta una dirección completa. El dominio

@@ -24,9 +24,9 @@ class SerializadorInvalidacionMhTest extends TestCase
     use RefreshDatabase;
 
     /** Datos reales de la NC #74 aceptada por apitest (sello/UUID/numero de control). */
-    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000104';
+    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000010';
 
-    private const NC_SELLO = '2026000000000000000000000000000000000000'; // 40 chars
+    private const NC_SELLO = '2026000000000000000000000000000000000003'; // 40 chars
 
     private const NC_NUMERO_CONTROL = 'DTE-05-M001P001-000000000000020'; // 31 chars
 
@@ -38,7 +38,7 @@ class SerializadorInvalidacionMhTest extends TestCase
     private function ncAceptada(bool $aceptada = true): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña',
+            'razon_social' => 'Titular de Ejemplo',
             'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901',
             'nrc' => '1000017',
@@ -134,7 +134,7 @@ class SerializadorInvalidacionMhTest extends TestCase
         // NO COINCIDE CON DTE"): identificacion.fecEmi debe ser la fecha del DTE original
         // (2026-06-30), NO la fecha actual. Congelamos "now" en una fecha DISTINTA para
         // que el comportamiento anterior (now()) fallara.
-        \Illuminate\Support\Carbon::setTestNow('2026-07-15 09:30:00');
+        Carbon::setTestNow('2026-07-15 09:30:00');
         try {
             $dte = $this->ncAceptada();
             $evento = app(SerializadorInvalidacionMh::class)->serializar($dte, $this->evento());
@@ -144,7 +144,7 @@ class SerializadorInvalidacionMhTest extends TestCase
             // horEmi SÍ es la del momento del evento (now); se documenta el comportamiento.
             $this->assertSame('09:30:00', $evento['identificacion']['horEmi']);
         } finally {
-            \Illuminate\Support\Carbon::setTestNow();
+            Carbon::setTestNow();
         }
     }
 
@@ -222,7 +222,7 @@ class SerializadorInvalidacionMhTest extends TestCase
         try {
             app(SerializadorInvalidacionMh::class)->serializar(
                 $dte,
-                $this->evento(TipoAnulacionMh::ErrorInformacion, reemplazo: 'A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D')
+                $this->evento(TipoAnulacionMh::ErrorInformacion, reemplazo: '00000000-0000-4000-8000-000000000015')
             );
             $this->fail('Debió rechazar el sustituto: la NC no admite documento de reemplazo en ningún motivo.');
         } catch (DteNoSerializableException $e) {
@@ -299,7 +299,7 @@ class SerializadorInvalidacionMhTest extends TestCase
     public function test_evento_serializado_conserva_utf8_correcto_en_nombre_responsable_y_solicitante(): void
     {
         $dte = $this->ncAceptada();
-        $nombre = 'Titular Ejemplo Peña';
+        $nombre = 'Titular de Ejemplo';
         $evento = new EventoInvalidacionData(
             tipoAnulacion: TipoAnulacionMh::RescindirOperacion,
             nombreResponsable: $nombre, tipoDocResponsable: '36', numDocResponsable: '06140000000901',
@@ -312,7 +312,7 @@ class SerializadorInvalidacionMhTest extends TestCase
         $this->assertSame($nombre, $eventoJson['motivo']['nombreSolicita']);
 
         $codificado = (string) json_encode($eventoJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $this->assertStringContainsString('Titular Ejemplo Peña', $codificado);
+        $this->assertStringContainsString('Titular de Ejemplo', $codificado);
         // Patrón de mojibake típico de la doble codificación UTF-8/Windows-1252: NO debe
         // aparecer en el JSON generado por el código (sí aparece hoy en el .env real).
         $this->assertStringNotContainsString('Ã¡', $codificado);

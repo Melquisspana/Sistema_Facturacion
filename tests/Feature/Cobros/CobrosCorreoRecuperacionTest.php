@@ -72,15 +72,15 @@ class CobrosCorreoRecuperacionTest extends TestCase
             'sala_codigo' => '0017',
         ]);
 
-        $dte = $this->dteVerificableCobros($cliente, 'DTE-03-M001P002-000000000000119', '2026-08-26', '77.74');
+        $dte = $this->dteVerificableCobros($cliente, 'DTE-03-M001P002-000000000090059', '2026-08-26', '100.00');
         $documento = CobroDocumento::create([
             'cliente_id' => $cliente->id,
             'origen' => OrigenCobroDocumento::Dte->value,
             'dte_id' => $dte->id,
             'tipo_dte' => '03',
-            'numero_control' => 'DTE-03-M001P002-000000000000119',
-            'codigo_generacion' => '00000000-0000-4000-8000-000000000102',
-            'monto' => '77.74',
+            'numero_control' => 'DTE-03-M001P002-000000000090059',
+            'codigo_generacion' => '00000000-0000-4000-8000-000000000017',
+            'monto' => '100.00',
             'ppq_albaran_id' => $albaran->id,
         ]);
 
@@ -163,14 +163,14 @@ class CobrosCorreoRecuperacionTest extends TestCase
         $html = '<html><head><style>td{color:red}</style></head><body>'
             .'<p>Estimados,&nbsp;revisar:</p>'
             .'<table><tr><th>Documento</th><th>Monto</th><th>Motivo</th></tr>'
-            .'<tr><td>DTE-03-M001P002-000000000000119</td><td>77.74</td><td>FALTA NOTA DE CREDITO</td></tr>'
-            .'<tr><td>DTE-03-M001P001-000000000001186</td><td>141.25</td><td>NO APARECE EN REPORTERIA</td></tr>'
+            .'<tr><td>DTE-03-M001P002-000000000090059</td><td>100.00</td><td>FALTA NOTA DE CREDITO</td></tr>'
+            .'<tr><td>DTE-03-M001P001-000000000090060</td><td>200.00</td><td>NO APARECE EN REPORTERIA</td></tr>'
             .'</table><script>alert(1)</script></body></html>';
 
         $texto = CuerpoHtml::aTexto($html);
 
         // Las celdas quedaron separadas: el número no se soldó al importe.
-        $this->assertStringContainsString("DTE-03-M001P002-000000000000119\t77.74", $texto);
+        $this->assertStringContainsString("DTE-03-M001P002-000000000090059\t100.00", $texto);
         $this->assertStringContainsString('FALTA NOTA DE CREDITO', $texto);
         $this->assertStringContainsString('NO APARECE EN REPORTERIA', $texto);
 
@@ -185,8 +185,8 @@ class CobrosCorreoRecuperacionTest extends TestCase
         // Y el parser encuentra los DOS documentos.
         $leido = app(CorreoCobroParser::class)->interpretar('OBSERVACIONES REF 31001', $texto);
         $this->assertSame([
-            'DTE03M001P002000000000000119',
-            'DTE03M001P001000000000001186',
+            'DTE03M001P002000000000090059',
+            'DTE03M001P001000000000090060',
         ], $leido['numeros_control']);
     }
 
@@ -197,7 +197,7 @@ class CobrosCorreoRecuperacionTest extends TestCase
         $solicitud = $this->solicitudPresentada($cliente);
         $documento = $solicitud->documentos()->firstOrFail();
 
-        $html = '<table><tr><td>DTE-03-M001P002-000000000000119</td>'
+        $html = '<table><tr><td>DTE-03-M001P002-000000000090059</td>'
             .'<td>FALTA NOTA DE CREDITO</td></tr></table>';
 
         app(LectorCorreosCobro::class)->procesar($cliente, [[

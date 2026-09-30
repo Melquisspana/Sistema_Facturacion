@@ -5,13 +5,13 @@ namespace Tests\Feature\Dte;
 use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
+use App\Http\Requests\Dte\TransmitirInvalidacionRequest;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Models\User;
-use App\Http\Requests\Dte\TransmitirInvalidacionRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -44,7 +44,7 @@ class InvalidacionEntradaNoEscalarTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const SELLO = '2026000000000000000000000000000000000000'; // 40 chars
+    private const SELLO = '2026000000000000000000000000000000000003'; // 40 chars
 
     protected function setUp(): void
     {
@@ -78,7 +78,7 @@ class InvalidacionEntradaNoEscalarTest extends TestCase
     private function ccfAceptado(): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -158,7 +158,7 @@ class InvalidacionEntradaNoEscalarTest extends TestCase
 
         $respuesta = $this->actingAs($this->admin())->post(route($ruta, $ccf), [
             'tipo' => TipoAnulacionMh::ErrorInformacion->value,
-            'reemplazo' => ['A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D'],
+            'reemplazo' => ['00000000-0000-4000-8000-000000000015'],
             'motivo' => ['texto'],
             'confirmacion_invalidacion' => TransmitirInvalidacionRequest::FRASE,
             'confirmar_sin_flag' => '1',
