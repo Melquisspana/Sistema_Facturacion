@@ -2,21 +2,21 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -25,7 +25,7 @@ use Tests\TestCase;
  */
 class DteSeguridadCheckTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private const PW = 'SECRETO_QUE_NO_DEBE_APARECER';
@@ -59,7 +59,7 @@ class DteSeguridadCheckTest extends TestCase
         app(DteGeneracionService::class)->generar($dte);
         $dte->refresh();
 
-        $cg = '00000000-0000-4000-8000-000000000101';
+        $cg = '00000000-0000-4000-8000-000000000001';
         $rutaJson = 'dte/json/dte-03-'.$dte->id.'-'.$cg.'.json';
         $rutaJws = 'dte/firmados/dte-03-'.$dte->id.'-'.$cg.'.jws';
         Storage::disk('local')->put($rutaJson, '{"ok":true}');
@@ -69,7 +69,7 @@ class DteSeguridadCheckTest extends TestCase
         $dte->json_generado_path = $rutaJson;
         $dte->json_firmado_path = $rutaJws;
         // Flujo alineado: un documento firmado está en estado Firmado.
-        $dte->estado = \App\Enums\EstadoDte::Firmado;
+        $dte->estado = EstadoDte::Firmado;
         $dte->save();
 
         return $dte->refresh();
@@ -137,7 +137,7 @@ class DteSeguridadCheckTest extends TestCase
         $ccf = $this->ccfFirmado();
         // Volver a Generado y quitar el firmado para llegar al bloqueo de firma.
         $ccf->json_firmado_path = null;
-        $ccf->estado = \App\Enums\EstadoDte::Generado;
+        $ccf->estado = EstadoDte::Generado;
         $ccf->save();
 
         $this->artisan('dte:firmar', ['dte' => $ccf->id])

@@ -3,62 +3,54 @@
 namespace Tests\Feature\Seeders;
 
 use App\Models\User;
+use App\Support\PasswordRules;
 use Database\Seeders\UsuarioAdminInicialSeeder;
+use Illuminate\Console\Command;
+use Illuminate\Console\OutputStyle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Mockery;
+use Spatie\Activitylog\Models\Activity;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 class UsuarioAdminInicialSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const EMAIL = 'admin@dulceslanegrita.test';
-
-    private const PASSWORD = '<retirada>';
-
-    public function test_crea_el_usuario_admin(): void
+    public function test_crea_password_aleatoria_la_anuncia_una_vez_y_no_la_cambia(): void
     {
-        $this->seed(UsuarioAdminInicialSeeder::class);
+        $mostrada = null;
+        $command = Mockery::mock(Command::class);
+        $command->shouldReceive('getOutput')->andReturn(new OutputStyle(
+            new ArrayInput([]),
+            new BufferedOutput,
+        ));
+        $command->shouldReceive('warn')->once()->withArgs(function (string $mensaje) use (&$mostrada) {
+            $mostrada = substr($mensaje, strlen('Contraseña inicial: '));
 
-        $admin = User::where('email', self::EMAIL)->first();
-        $this->assertNotNull($admin);
-        $this->assertSame('Administrador', $admin->name);
-        $this->assertTrue((bool) $admin->activo);
-        $this->assertTrue(Hash::check(self::PASSWORD, $admin->password));
-    }
+            return str_starts_with($mensaje, 'Contraseña inicial: ');
+        });
+        $command->shouldReceive('warn')->once()->with('Cámbiela al entrar. No se volverá a mostrar.');
 
-    public function test_asigna_rol_administrador(): void
-    {
-        $this->seed(UsuarioAdminInicialSeeder::class);
+        $seeder = app(UsuarioAdminInicialSeeder::class);
+        $seeder->setCommand($command);
+        // Evita salida de sub-seeders: solo se captura el anuncio del administrador.
+        $seeder->setContainer(app());
+        $seeder->run();
 
-        $admin = User::where('email', self::EMAIL)->firstOrFail();
+        $admin = User::where('email', 'admin@dulceslanegrita.test')->sole();
+        $hash = $admin->password;
         $this->assertTrue($admin->hasRole('administrador'));
-    }
+        $this->assertTrue(Hash::check($mostrada, $hash));
+        $this->assertTrue(Validator::make(['password' => $mostrada], ['password' => [PasswordRules::reglas()]])->passes());
+        $this->assertStringNotContainsString($mostrada, Activity::all()->toJson());
 
-    public function test_es_idempotente_y_no_duplica(): void
-    {
-        $this->seed(UsuarioAdminInicialSeeder::class);
-        $this->seed(UsuarioAdminInicialSeeder::class);
+        $seeder->run();
 
-        $this->assertSame(1, User::where('email', self::EMAIL)->count());
-        $admin = User::where('email', self::EMAIL)->firstOrFail();
-        $this->assertSame(1, $admin->roles()->count());
-    }
-
-    public function test_no_cambia_la_contrasena_de_un_usuario_existente(): void
-    {
-        // Usuario admin preexistente con OTRA contraseña.
-        $existente = User::factory()->create([
-            'email' => self::EMAIL,
-            'password' => Hash::make('OtraClaveDistinta1!'),
-        ]);
-
-        $this->seed(UsuarioAdminInicialSeeder::class);
-
-        $existente->refresh();
-        $this->assertTrue(Hash::check('OtraClaveDistinta1!', $existente->password), 'No debe pisar la contraseña existente.');
-        $this->assertFalse(Hash::check(self::PASSWORD, $existente->password));
-        // Pero sí le asegura el rol administrador.
-        $this->assertTrue($existente->hasRole('administrador'));
+        $this->assertSame($hash, $admin->fresh()->password);
+        $this->assertSame(1, User::where('email', $admin->email)->count());
     }
 }

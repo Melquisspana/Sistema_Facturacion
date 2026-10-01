@@ -19,7 +19,7 @@
      la fecha, el método, o la cifra del recibo.
 
      EL SALDO PROVISIONAL SE DICE. Proveedor A y Proveedor B se cargaron con un saldo acordado de
-     palabra; Distribuidora Ejemplo con un estado de cuenta en la mano. Los tres se deben igual,
+     palabra; Distribuidora Ejemplo, S.A. de C.V. con un estado de cuenta en la mano. Los tres se deben igual,
      pero no son el mismo dato, y la fila lo marca en vez de presentarlos como iguales. --}}
 <div class="border-t border-gray-100 first:border-t-0">
     <div class="flex items-center justify-between gap-3 px-4 py-3">

@@ -397,7 +397,7 @@ class CobrosSolicitudTest extends TestCase
         $albaran = $this->albaranReal();
         $nc = $this->documento($cliente, [
             'tipo_dte' => '05',
-            'numero_control' => 'DTE-05-M001P002-000000000000025',
+            'numero_control' => 'DTE-05-M001P002-000000000090001',
         ]);
         $nc->forceFill(['ppq_albaran_id' => $albaran->id])->save();
 

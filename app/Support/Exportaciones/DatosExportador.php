@@ -16,9 +16,8 @@ use App\Models\Empresa;
  * CADENA DE RESOLUCIÓN, en este orden y sin saltos:
  *
  *   1. Configuración → Parámetros fiscales (el ajuste administrable).
- *   2. `config('exportaciones.*')`, el valor histórico. Es el RESPALDO que hace
- *      segura la migración: mientras nadie configure nada, todo sigue dando
- *      exactamente el mismo resultado que antes.
+ *   2. `config('exportaciones.*')`, configurado desde el entorno, sin datos
+ *      operativos por defecto. Una instalación sin configurar devuelve vacío.
  *   3. Para nombre y dirección, la Empresa emisora registrada. Es la fuente más
  *      correcta conceptualmente, pero va última a propósito: la razón social
  *      fiscal no siempre es el nombre con el que se exporta, y cambiar eso en

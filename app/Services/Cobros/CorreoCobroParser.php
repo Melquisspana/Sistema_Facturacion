@@ -60,7 +60,7 @@ class CorreoCobroParser
     /** Código de generación: UUID en mayúsculas, como lo escribe el MH. */
     private const CODIGO_GENERACION = '/\b([0-9A-F]{8}-\s*[0-9A-F]{4}-\s*[0-9A-F]{4}-\s*[0-9A-F]{4}-\s*[0-9A-F]{12})\b/i';
 
-    /** Número de control: `DTE-03-M001P002-000000000000119`, con o sin guiones. */
+    /** Número de control: `DTE-03-M001P002-000000000090059`, con o sin guiones. */
     private const NUMERO_CONTROL = '/\bDTE[-\s]*\d{2}[-\s]*[A-Z]\d{3,4}[A-Z]\d{3,4}[-\s]*\d{6,20}\b/i';
 
     /**

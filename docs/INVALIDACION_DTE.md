@@ -129,7 +129,7 @@ alinearía a `dte.hora_emision`. Test de regresión:
 ## Resultado real (NC #74)
 
 - **Invalidada oficialmente en apitest el 2026-07-01 08:49.**
-- `estado = Invalidado` · `sello_invalidacion = 2026000000000000000000000000000000000000`
+- `estado = Invalidado` · `sello_invalidacion = 2026000000000000000000000000000000000001`
   · `codigoMsg 001` "Invalidación Recibida y Procesada".
 - `sello_recepcion` original **intacto**. Evidencia de ambos intentos (rechazo + aceptación)
   conservada en `dte/invalidacion/respuestas/`.

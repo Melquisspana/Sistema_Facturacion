@@ -220,7 +220,7 @@ class QuedanCallejaExporterTest extends TestCase
         $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
 
         // Ya viajó en un lote anterior: no se repite.
-        $repetida = $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000018', 'AC02/0207/00/3854');
+        $repetida = $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000090008', 'AC02/0207/00/3854');
         $anterior->items()->create(['dte_id' => $repetida->dte_id, 'origen' => 'local', 'tipo_dte' => '05',
             'numero_control' => $repetida->numero_control, 'monto_dte' => 5.00, 'sin_albaran' => true]);
 

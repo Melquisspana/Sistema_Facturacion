@@ -105,7 +105,7 @@ ninguna tabla existente y no migra datos. Su `down()` borra solo esas siete.
 
 ### Estado en destino: desconocido
 
-En el entorno de origen (`dulces_negrita_dev`) figura como **pendiente**. En destino **no se
+En el entorno de origen (`base_ejemplo`) figura como **pendiente**. En destino **no se
 ha comprobado** y no se puede comprobar desde acá. El primer paso del §4 es precisamente
 mirarlo allá.
 
@@ -156,7 +156,7 @@ distinto: si el sistema *puede* hablar con Gmail, si este módulo *puede* leer e
 lo hace *solo*.
 
 **Configuración de datos, no de `.env`:** para que Calleja use el formato nuevo de NC hay que
-poner su perfil documental en `carga_masiva_nc_v1`. En `dulces_negrita_dev` ya está hecho
+poner su perfil documental en `carga_masiva_nc_v1`. En `base_ejemplo` ya está hecho
 (cliente id 10, NIT `0614-555555-101-5`).
 
 En destino **no se ha comprobado** qué formato tiene configurado, ni con qué id existe el

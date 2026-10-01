@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Auth\CloudflareAccessJwtService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 /**
@@ -22,8 +23,11 @@ class CloudflareAccessSsoTest extends TestCase
     use RefreshDatabase;
 
     private const HOST = 'facturacion.example.com';
+
     private const TEAM = 'equipo-test.cloudflareaccess.com';
+
     private const AUD = 'aud-de-prueba-1234567890abcdef';
+
     private const KID = 'kid-de-prueba';
 
     /** @var \OpenSSLAsymmetricKey */
@@ -52,6 +56,17 @@ class CloudflareAccessSsoTest extends TestCase
     }
 
     // ---------- Infraestructura de firma (solo en tests) ----------
+
+    public function test_sin_host_configurado_no_ejecuta_sso(): void
+    {
+        config(['cloudflare_access.allowed_host' => '']);
+        $this->usuarioSso();
+
+        $this->entrarConJwt($this->jwt())->assertRedirect(route('login'));
+
+        $this->assertGuest();
+        Http::assertNothingSent();
+    }
 
     /** @return array{0: \OpenSSLAsymmetricKey, 1: string} */
     private function generarClaveYCertificado(): array
@@ -175,7 +190,7 @@ class CloudflareAccessSsoTest extends TestCase
 
         $this->entrarConJwt($this->jwt());
 
-        $registro = \Spatie\Activitylog\Models\Activity::query()
+        $registro = Activity::query()
             ->where('description', 'Inicio de sesión SSO (Cloudflare Access)')->first();
         $this->assertNotNull($registro);
         $this->assertSame($usuario->id, (int) $registro->causer_id);

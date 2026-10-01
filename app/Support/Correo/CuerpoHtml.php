@@ -11,9 +11,9 @@ namespace App\Support\Correo;
  * número de control en una celda y el motivo en otra. `strip_tags` a secas pega todas las
  * celdas de una fila sin separador, así que
  *
- *     <td>DTE-03-M001P002-000000000000119</td><td>77.74</td>
+ *     <td>DTE-03-M001P002-000000000090059</td><td>77.74</td>
  *
- * se convierte en `DTE-03-M001P002-00000000000011977.74`, y ahí ya no hay número de control
+ * se convierte en `DTE-03-M001P002-00000000009005977.74`, y ahí ya no hay número de control
  * que reconocer: el importe quedó soldado al final. Los documentos observados se perdían
  * enteros, en silencio.
  *

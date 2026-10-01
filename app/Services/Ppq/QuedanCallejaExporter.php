@@ -86,6 +86,8 @@ class QuedanCallejaExporter
      */
     public function generar(PpqLote $lote): string
     {
+        ValidadorCodigoProveedorTxt::codigoConfigurado();
+
         $ccf = $this->ccfDelLote($lote);
 
         if ($ccf->isEmpty()) {
@@ -426,7 +428,7 @@ class QuedanCallejaExporter
      */
     public function nombreArchivo(PpqLote $lote): string
     {
-        $codigo = (string) config('ppq.codigo_proveedor', '000123');
+        $codigo = ValidadorCodigoProveedorTxt::codigoConfigurado();
 
         return $codigo.'-QUEDAN-LOTE'.$lote->id.'-'.now('America/El_Salvador')->format('YmdHi').'.xlsx';
     }

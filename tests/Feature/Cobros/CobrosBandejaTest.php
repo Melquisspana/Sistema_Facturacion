@@ -287,16 +287,16 @@ class CobrosBandejaTest extends TestCase
         $alta = app(AltaCobrosService::class);
 
         $alta->incorporar($cliente, [
-            'numero_control' => 'DTE-03-M001P001-000000000001186',
-            'monto' => '141.25',
+            'numero_control' => 'DTE-03-M001P001-000000000090060',
+            'monto' => '200.00',
         ]);
 
         $this->expectException(ValidationException::class);
 
         // El mismo número escrito SIN guiones: la identidad es la misma.
         $alta->incorporar($cliente, [
-            'numero_control' => 'DTE03M001P001000000000001186',
-            'monto' => '141.25',
+            'numero_control' => 'DTE03M001P001000000000090060',
+            'monto' => '200.00',
         ]);
     }
 
@@ -306,13 +306,13 @@ class CobrosBandejaTest extends TestCase
         $cliente = $this->cliente();
 
         $documento = app(AltaCobrosService::class)->incorporar($cliente, [
-            'numero_control' => 'DTE-03-M001P002-000000000000119',
-            'monto' => '77.74',
+            'numero_control' => 'DTE-03-M001P002-000000000090059',
+            'monto' => '100.00',
         ]);
 
         $this->assertSame('M001', $documento->establecimiento_codigo);
         $this->assertSame('P002', $documento->punto_venta_codigo);
-        $this->assertSame('DTE03M001P002000000000000119', $documento->numero_control_norm);
+        $this->assertSame('DTE03M001P002000000000090059', $documento->numero_control_norm);
     }
 
     /**

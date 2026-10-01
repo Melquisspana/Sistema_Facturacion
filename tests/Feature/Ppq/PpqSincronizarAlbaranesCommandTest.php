@@ -14,6 +14,8 @@ use App\Services\Ppq\DteCorreoParser;
 use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\JsonAdjuntoDecoder;
 use App\Services\Ppq\PpqGmailService;
+use App\Support\OrdenCompra;
+use App\Support\Sala;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,7 +35,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        \App\Support\Sala::olvidarCache();
+        Sala::olvidarCache();
         // La marca de progreso vive en `configuraciones` y el modelo cachea en estático:
         // sin esto, una marca escrita por un test se filtraría al siguiente.
         Configuracion::olvidarCache();
@@ -129,7 +131,7 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
             'gmail_message_id' => $id,
             'numero_albaran' => $numero,
             'orden_compra' => $oc,
-            'sala' => $oc ? \App\Support\OrdenCompra::salaDesde($oc) : null,
+            'sala' => $oc ? OrdenCompra::salaDesde($oc) : null,
             'nombre_sala' => null,
             'monto' => $monto,
             'fecha' => $fecha,

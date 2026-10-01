@@ -9,7 +9,7 @@ class JsonAdjuntoDecoderTest extends TestCase
 {
     private function decoder(): JsonAdjuntoDecoder
     {
-        return new JsonAdjuntoDecoder();
+        return new JsonAdjuntoDecoder;
     }
 
     public function test_utf8_directo(): void

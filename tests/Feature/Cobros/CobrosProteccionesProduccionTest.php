@@ -31,7 +31,7 @@ class CobrosProteccionesProduccionTest extends TestCase
     use PreparaEmisorDte;
     use RefreshDatabase;
 
-    private function documento(int $numero = 119, array $datos = []): CobroDocumento
+    private function documento(int $numero = 90059, array $datos = []): CobroDocumento
     {
         $cliente = Cliente::first() ?? Cliente::factory()->contribuyente()->create();
 
@@ -39,9 +39,9 @@ class CobrosProteccionesProduccionTest extends TestCase
             'cliente_id' => $cliente->id,
             'tipo_dte' => '03',
             'numero_control' => 'DTE-03-M001P002-'.str_pad((string) $numero, 15, '0', STR_PAD_LEFT),
-            'codigo_generacion' => $numero === 119 ? '00000000-0000-4000-8000-000000000102' : strtoupper((string) Str::uuid()),
+            'codigo_generacion' => $numero === 90059 ? '00000000-0000-4000-8000-000000000017' : strtoupper((string) Str::uuid()),
             'fecha_emision' => '2026-08-26',
-            'monto' => '77.74',
+            'monto' => '100.00',
         ]);
     }
 
@@ -50,7 +50,7 @@ class CobrosProteccionesProduccionTest extends TestCase
         return PpqAlbaran::create($datos + [
             'numero_albaran' => 'AC01/0207/00/3874', 'tipo_codigo' => 'AC01',
             'sala_codigo' => '0207', 'numero_orden_compra' => '26080207003463',
-            'fecha_albaran' => '2026-08-26', 'monto_albaran' => '77.74',
+            'fecha_albaran' => '2026-08-26', 'monto_albaran' => '100.00',
         ]);
     }
 
@@ -101,7 +101,7 @@ class CobrosProteccionesProduccionTest extends TestCase
 
     public function test_historico_completo_no_se_presenta_por_servicio_ni_por_http(): void
     {
-        $doc = $this->documento(119, ['ppq_albaran_id' => $this->albaran()->id, 'revisar_historico' => true]);
+        $doc = $this->documento(90059, ['ppq_albaran_id' => $this->albaran()->id, 'revisar_historico' => true]);
         $this->assertFalse($doc->estaCompletoParaPresentar());
         $this->rechaza(fn () => app(SolicitudCobroService::class)->crear($doc->cliente, [$doc->id]));
         $usuario = User::factory()->create()->assignRole('administrador');
@@ -111,7 +111,7 @@ class CobrosProteccionesProduccionTest extends TestCase
 
     public function test_pago_parcial_completo_y_en_revision_impiden_presentar_la_factura_entera(): void
     {
-        $doc = $this->documento(119, ['ppq_albaran_id' => $this->albaran()->id]);
+        $doc = $this->documento(90059, ['ppq_albaran_id' => $this->albaran()->id]);
         foreach (['parcial', 'pagado', 'diferencia'] as $estado) {
             $doc->forceFill(['pago_estado' => $estado, 'monto_pagado' => '10.00'])->save();
             $this->rechaza(fn () => app(SolicitudCobroService::class)->crear($doc->cliente, [$doc->id]));
@@ -124,7 +124,7 @@ class CobrosProteccionesProduccionTest extends TestCase
 
     public function test_revision_exige_evidencia_conserva_motivo_y_no_se_reabre_al_sincronizar(): void
     {
-        $doc = $this->documento(119, ['revisar_historico' => true, 'revisar_historico_motivo' => 'Lote anterior']);
+        $doc = $this->documento(90059, ['revisar_historico' => true, 'revisar_historico_motivo' => 'Lote anterior']);
         $user = User::factory()->create();
         $servicio = app(RevisionHistoricaService::class);
         $this->rechaza(fn () => $servicio->resolver($doc, $user, 'habilitar_presentacion', 'Revisado', ''));
@@ -139,7 +139,7 @@ class CobrosProteccionesProduccionTest extends TestCase
 
     public function test_revision_que_confirma_cobro_no_inventa_pago_ni_habilita_presentacion(): void
     {
-        $doc = $this->documento(119, ['revisar_historico' => true]);
+        $doc = $this->documento(90059, ['revisar_historico' => true]);
         app(RevisionHistoricaService::class)->resolver($doc, User::factory()->create(), 'mantener_bloqueo', 'Ya cobrado por PPQ', 'Lote de junio');
         $this->assertTrue($doc->refresh()->revisar_historico);
         $this->assertSame('0.00', $doc->monto_pagado);
@@ -200,8 +200,8 @@ class CobrosProteccionesProduccionTest extends TestCase
 
     private function observaciones(): string
     {
-        return "00000000-0000-4000-8000-000000000102\tDTE-03-M001P002-000000000000119\t77.74\tFALTA NOTA DE CREDITO\n"
-            ."00000000-0000-4000-8000-000000000103\tDTE-03-M001P001-000000000001186\t141.25\tNO APARECE EN REPORTERIA\n"
+        return "00000000-0000-4000-8000-000000000017\tDTE-03-M001P002-000000000090059\t100.00\tFALTA NOTA DE CREDITO\n"
+            ."00000000-0000-4000-8000-000000000018\tDTE-03-M001P001-000000000090060\t200.00\tNO APARECE EN REPORTERIA\n"
             ."[cid:0803C54C-1234-1234-1234-123456789ABC]\n________________________\n"
             ."De: Cuentas por pagar\nRECIBIDO (000123202609040951)\nREFERENCIA #31001\nPROGRAMACION DE PAGO: 07/09/2026";
     }
@@ -227,7 +227,7 @@ class CobrosProteccionesProduccionTest extends TestCase
         $lector->procesar($doc->cliente, [$mensaje]);
         $correo = CobroCorreo::firstOrFail();
         $this->assertSame('sin_asociar', $correo->estado);
-        $this->assertStringContainsString('1186', $correo->motivo);
+        $this->assertStringContainsString('90060', $correo->motivo);
         $this->assertStringContainsString('RECIBIDO', $correo->cuerpo, 'Se conserva la evidencia íntegra.');
         $this->assertSame(1, $doc->eventos()->count());
         $this->assertStringContainsString('FALTA NOTA DE CREDITO', $doc->eventos()->first()->detalle);
@@ -250,7 +250,7 @@ class CobrosProteccionesProduccionTest extends TestCase
     public function test_html_actual_no_se_pierde_por_historial_del_texto_plano(): void
     {
         $actual = MensajeActual::desdePartes("Hola\nOn Friday wrote:\nRECIBIDO (000123202609040951)",
-            '<p>OBSERVACIONES REF 31001</p><table><tr><td>DTE-03-M001P002-000000000000119</td><td>FALTA NC</td></tr></table><div class="gmail_quote">RECIBIDO (000123202609040951)</div>');
+            '<p>OBSERVACIONES REF 31001</p><table><tr><td>DTE-03-M001P002-000000000090059</td><td>FALTA NC</td></tr></table><div class="gmail_quote">RECIBIDO (000123202609040951)</div>');
         $this->assertStringContainsString('FALTA NC', $actual);
         $this->assertStringNotContainsString('RECIBIDO', $actual);
         $this->assertCount(1, app(CorreoCobroParser::class)->interpretar('Observaciones', $actual)['documentos']);
@@ -269,12 +269,12 @@ class CobrosProteccionesProduccionTest extends TestCase
 
     public function test_saltos_visuales_dentro_de_la_celda_no_dividen_la_identidad(): void
     {
-        $html = '<table><tr><td><p>C04E2D83-2DCF-4B46-<br>8EB4-502893362BC2</p></td>'
-            .'<td><p>DTE-03-M001P002-<br>000000000000119</p></td><td>77.74</td><td>FALTA NC</td></tr></table>';
+        $html = '<table><tr><td><p>00000000-0000-4000-<br>8000-000000000017</p></td>'
+            .'<td><p>DTE-03-M001P002-<br>000000000090059</p></td><td>100.00</td><td>FALTA NC</td></tr></table>';
         $actual = MensajeActual::desdePartes('', $html);
         $leido = app(CorreoCobroParser::class)->interpretar('OBSERVACIONES REF 31001', $actual);
         $this->assertCount(1, $leido['documentos']);
-        $this->assertSame('00000000-0000-4000-8000-000000000102', $leido['documentos'][0]['codigo_generacion']);
-        $this->assertSame('DTE03M001P002000000000000119', $leido['documentos'][0]['numero_control']);
+        $this->assertSame('00000000-0000-4000-8000-000000000017', $leido['documentos'][0]['codigo_generacion']);
+        $this->assertSame('DTE03M001P002000000000090059', $leido['documentos'][0]['numero_control']);
     }
 }

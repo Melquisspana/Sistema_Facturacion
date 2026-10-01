@@ -24,8 +24,8 @@ operador pegue las dos líneas correctas manualmente.
 ## Líneas correctas a pegar
 
 ```
-DTE_INVALIDACION_RESP_NOMBRE="Titular Ejemplo Peña"
-DTE_INVALIDACION_SOL_NOMBRE="Titular Ejemplo Peña"
+DTE_INVALIDACION_RESP_NOMBRE="Titular de Ejemplo"
+DTE_INVALIDACION_SOL_NOMBRE="Titular de Ejemplo"
 ```
 
 ## Cómo editarlas SIN corromper el archivo
@@ -51,10 +51,10 @@ $lineas = [System.IO.File]::ReadAllLines($ruta, [System.Text.Encoding]::UTF8)
 
 for ($i = 0; $i -lt $lineas.Length; $i++) {
     if ($lineas[$i] -like 'DTE_INVALIDACION_RESP_NOMBRE=*') {
-        $lineas[$i] = 'DTE_INVALIDACION_RESP_NOMBRE="Titular Ejemplo Peña"'
+        $lineas[$i] = 'DTE_INVALIDACION_RESP_NOMBRE="Titular de Ejemplo"'
     }
     if ($lineas[$i] -like 'DTE_INVALIDACION_SOL_NOMBRE=*') {
-        $lineas[$i] = 'DTE_INVALIDACION_SOL_NOMBRE="Titular Ejemplo Peña"'
+        $lineas[$i] = 'DTE_INVALIDACION_SOL_NOMBRE="Titular de Ejemplo"'
     }
 }
 
@@ -72,7 +72,7 @@ corras vos cuando quieras.
 ```cmd
 php artisan tinker --execute="echo config('dte.invalidacion.responsable.nombre');"
 ```
-Debe mostrar `Titular Ejemplo Peña` (sin `Ã`). También podés confirmar con
+Debe mostrar `Titular de Ejemplo` (sin `Ã`). También podés confirmar con
 `php artisan dte:invalidacion-preflight 145 --tipo=3 --motivo="..."` (solo lectura)
 y revisar el bloque "motivo del evento" del JSON impreso.
 

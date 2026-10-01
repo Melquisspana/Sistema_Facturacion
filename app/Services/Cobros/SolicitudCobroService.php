@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Exceptions\CopiaArchivadaInservibleException;
+use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
@@ -18,6 +19,7 @@ use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudFactory;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\NcExportacionService;
+use App\Services\Ppq\ValidadorCodigoProveedorTxt;
 use App\Support\Dinero;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
@@ -147,8 +149,7 @@ class SolicitudCobroService
         array $documentoIds,
         ?User $usuario = null,
         ?string $huellaEsperada = null,
-    ): NcExportacion
-    {
+    ): NcExportacion {
         $documentoIds = $this->normalizar($documentoIds);
 
         return DB::transaction(function () use ($cliente, $documentoIds, $usuario, $huellaEsperada) {
@@ -778,8 +779,14 @@ class SolicitudCobroService
      */
     private function nombreArchivo(Cliente $cliente): string
     {
-        $codigo = $this->perfiles->paraCliente($cliente->id)?->codigo_proveedor
-            ?: (string) config('ppq.codigo_proveedor', '000123');
+        $codigo = trim((string) $this->perfiles->paraCliente($cliente->id)?->codigo_proveedor);
+        if ($codigo === '') {
+            try {
+                $codigo = ValidadorCodigoProveedorTxt::codigoConfigurado();
+            } catch (ArchivoProveedorInvalidoException $e) {
+                throw ValidationException::withMessages(['codigo_proveedor' => $e->getMessage()]);
+            }
+        }
 
         return $codigo.now('America/El_Salvador')->format('YmdHi').'.xlsx';
     }

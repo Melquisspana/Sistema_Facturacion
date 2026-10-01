@@ -2,16 +2,36 @@
 
 namespace Tests\Feature\Ppq;
 
+use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Establecimiento;
+use App\Models\GmailCuenta;
+use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
+use App\Services\Ppq\AlbaranParser;
+use App\Services\Ppq\ConciliacionTxtParser;
+use App\Services\Ppq\DteCorreoParser;
+use App\Services\Ppq\ExcelCallejaExporter;
+use App\Services\Ppq\GmailClient;
+use App\Services\Ppq\JsonAdjuntoDecoder;
+use App\Services\Ppq\PpqGmailService;
+use App\Services\Ppq\SalaResolver;
+use App\Support\Albaran;
+use App\Support\Fecha;
 use App\Support\OrdenCompra;
+use App\Support\PpqConciliacion;
+use App\Support\PpqElegibilidad;
+use App\Support\Sala;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -27,7 +47,7 @@ class PpqModuloTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        \App\Support\Sala::olvidarCache(); // el caché estático no debe filtrar nombres entre tests
+        Sala::olvidarCache(); // el caché estático no debe filtrar nombres entre tests
 
         // Desde que la conciliación CONSERVA el archivo de pagos como evidencia, subir un
         // TXT escribe en disco. Sin fingirlo, la prueba de conciliación de esta clase
@@ -55,7 +75,7 @@ class PpqModuloTest extends TestCase
      *
      * Antes se creaba en el ambiente de pruebas y sin sello. Daba igual mientras nada
      * lo comprobara, pero desde que existe el candado fiscal de PPQ
-     * ({@see \App\Support\PpqElegibilidad}) un documento así NO se puede agregar a un
+     * ({@see PpqElegibilidad}) un documento así NO se puede agregar a un
      * lote —y con razón: no existe ante Hacienda—. Estas pruebas hablan de cobrar CCF
      * reales, así que el helper ahora construye uno real.
      */
@@ -68,8 +88,8 @@ class PpqModuloTest extends TestCase
             'ambiente' => '01',
             'cliente_id' => $this->calleja()->id,
             'numero_control' => $numeroControl,
-            'codigo_generacion' => strtoupper(\Illuminate\Support\Str::uuid()->toString()),
-            'sello_recepcion' => '2026'.strtoupper(\Illuminate\Support\Str::random(36)),
+            'codigo_generacion' => strtoupper(Str::uuid()->toString()),
+            'sello_recepcion' => '2026'.strtoupper(Str::random(36)),
             'fecha_procesamiento_mh' => now(),
             'numero_orden_compra' => $oc,
             'fecha_emision' => now(),
@@ -88,17 +108,17 @@ class PpqModuloTest extends TestCase
         $this->assertNull(OrdenCompra::salaDesde('123'));
         $this->assertSame('0986', OrdenCompra::ultimosDigitos('DTE-03-M001P001-0000000000000986'));
         // Sin sucursal con ese código en la BD, la etiqueta es solo el código.
-        $this->assertSame('0260', \App\Support\Sala::etiqueta('0260'));
-        $this->assertNull(\App\Support\Sala::nombre('0260'));
+        $this->assertSame('0260', Sala::etiqueta('0260'));
+        $this->assertNull(Sala::nombre('0260'));
     }
 
     public function test_sala_muestra_nombre_cuando_la_sucursal_tiene_codigo(): void
     {
         $this->calleja()->sucursales()->create(['nombre' => 'Selectos Santa Rosa', 'codigo' => '0230']);
 
-        $this->assertSame('Selectos Santa Rosa', \App\Support\Sala::nombre('0230'));
-        $this->assertSame('0230 - Selectos Santa Rosa', \App\Support\Sala::etiqueta('0230'));
-        $this->assertSame('0231', \App\Support\Sala::etiqueta('0231')); // sin mapeo -> solo código
+        $this->assertSame('Selectos Santa Rosa', Sala::nombre('0230'));
+        $this->assertSame('0230 - Selectos Santa Rosa', Sala::etiqueta('0230'));
+        $this->assertSame('0231', Sala::etiqueta('0231')); // sin mapeo -> solo código
     }
 
     public function test_comando_asigna_codigo_de_sala_a_una_sucursal(): void
@@ -130,7 +150,7 @@ class PpqModuloTest extends TestCase
     public function test_numero_albaran_limpio(): void
     {
         $sucio = 'Albarán AC01/0230 /00 /2878 - Titular de Ejemplo Fecha: 03/06/2026';
-        $this->assertSame('AC01/0230/00/2878', \App\Support\Albaran::numeroLimpio($sucio));
+        $this->assertSame('AC01/0230/00/2878', Albaran::numeroLimpio($sucio));
     }
 
     public function test_excel_exporta_oc_y_sala_como_texto(): void
@@ -142,8 +162,8 @@ class PpqModuloTest extends TestCase
             'origen' => 'gmail', 'numero_control' => 'DTE-03-X', 'numero_orden_compra' => '26050230001794', 'monto_dte' => 100.0,
         ]);
 
-        $ruta = app(\App\Services\Ppq\ExcelCallejaExporter::class)->generar($lote->fresh());
-        $hoja = \PhpOffice\PhpSpreadsheet\IOFactory::load($ruta)->getActiveSheet();
+        $ruta = app(ExcelCallejaExporter::class)->generar($lote->fresh());
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
 
         $this->assertSame('26050230001794', (string) $hoja->getCell('A2')->getValue()); // OC completa, no científica
         $this->assertSame('0230', (string) $hoja->getCell('I2')->getValue());            // sin sucursal: cae al código
@@ -155,7 +175,7 @@ class PpqModuloTest extends TestCase
         config(['ppq.codigo_proveedor' => '000123']);
         $lote = PpqLote::create(['referencia' => 'No importa', 'fecha' => now(), 'estado' => 'borrador']);
 
-        $nombre = app(\App\Services\Ppq\ExcelCallejaExporter::class)->nombreArchivo($lote);
+        $nombre = app(ExcelCallejaExporter::class)->nombreArchivo($lote);
         $esperado = '000123'.now('America/El_Salvador')->format('YmdHi').'.xlsx';
 
         // {codigo}{YYYYMMDDHHmm}.xlsx — sin guiones, espacios, underscores ni "PPQ".
@@ -177,9 +197,9 @@ class PpqModuloTest extends TestCase
             'fecha_albaran' => '2026-06-15', 'sin_albaran' => '0',
         ]);
 
-        \App\Support\Sala::olvidarCache();
-        $ruta = app(\App\Services\Ppq\ExcelCallejaExporter::class)->generar($lote->fresh());
-        $hoja = \PhpOffice\PhpSpreadsheet\IOFactory::load($ruta)->getActiveSheet();
+        Sala::olvidarCache();
+        $ruta = app(ExcelCallejaExporter::class)->generar($lote->fresh());
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
 
         $this->assertSame('Súper Selectos La Sultana', (string) $hoja->getCell('I2')->getValue()); // nombre, no código
         $this->assertSame('15/06/2026', (string) $hoja->getCell('C2')->getValue());                 // fecha d/m/Y
@@ -397,7 +417,7 @@ class PpqModuloTest extends TestCase
             'sala_codigo' => '0236',
             'cliente_sucursal_id' => null,
         ]);
-        $this->assertSame(0, \App\Models\PpqAlbaran::where('cliente_sucursal_id', $sucursal->id)->count());
+        $this->assertSame(0, PpqAlbaran::where('cliente_sucursal_id', $sucursal->id)->count());
     }
 
     /**
@@ -410,7 +430,7 @@ class PpqModuloTest extends TestCase
         $admin = $this->usuario('administrador');
         $lote = PpqLote::create(['referencia' => 'BAJA', 'fecha' => now(), 'estado' => 'borrador']);
 
-        \App\Models\PpqAlbaran::create([
+        PpqAlbaran::create([
             'numero_albaran' => 'AC01/0236/00/6359', 'numero_orden_compra' => '26060236004586',
             'origen' => 'manual',
         ])->delete();
@@ -422,8 +442,8 @@ class PpqModuloTest extends TestCase
         ])->assertRedirect()->assertSessionHas('error');
 
         // Ni duplicado, ni resucitado, ni item creado a medias.
-        $this->assertSame(0, \App\Models\PpqAlbaran::count());
-        $this->assertSame(1, \App\Models\PpqAlbaran::onlyTrashed()->count());
+        $this->assertSame(0, PpqAlbaran::count());
+        $this->assertSame(1, PpqAlbaran::onlyTrashed()->count());
         $this->assertSame(0, $lote->items()->count());
     }
 
@@ -464,12 +484,12 @@ class PpqModuloTest extends TestCase
     public function test_gmail_no_configurado_no_esta_disponible(): void
     {
         config(['ppq.gmail.enabled' => false]);
-        $this->assertFalse(app(\App\Services\Ppq\GmailClient::class)->disponible());
+        $this->assertFalse(app(GmailClient::class)->disponible());
     }
 
     public function test_gmail_cuenta_marcar_desconectada_limpia_tokens_muertos(): void
     {
-        $cuenta = \App\Models\GmailCuenta::create([
+        $cuenta = GmailCuenta::create([
             'email' => 'ppq@example.com',
             'access_token' => json_encode(['access_token' => 'x']),
             'refresh_token' => 'r',
@@ -495,7 +515,7 @@ class PpqModuloTest extends TestCase
             'ppq.gmail.client_secret' => 'secret-x',
             'ppq.gmail.redirect_uri' => 'https://ejemplo.test/ppq/gmail/callback',
         ]);
-        \App\Models\GmailCuenta::create([
+        GmailCuenta::create([
             'email' => 'ppq@example.com',
             'access_token' => json_encode(['access_token' => 'expirado']),
             'refresh_token' => 'refresh-muerto',
@@ -504,13 +524,13 @@ class PpqModuloTest extends TestCase
     }
 
     /** Doble de GmailClient que simula un token muerto: cualquier búsqueda revienta con invalid_grant. */
-    private function gmailDesconectadoFake(): \App\Services\Ppq\GmailClient
+    private function gmailDesconectadoFake(): GmailClient
     {
-        return new class extends \App\Services\Ppq\GmailClient
+        return new class extends GmailClient
         {
             public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
             {
-                throw new \App\Exceptions\Ppq\GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.');
+                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.');
             }
         };
     }
@@ -518,7 +538,7 @@ class PpqModuloTest extends TestCase
     public function test_invalid_grant_no_rompe_la_busqueda_y_muestra_banner_de_reconectar_a_admin(): void
     {
         $this->conectarGmailFalsa();
-        $this->app->instance(\App\Services\Ppq\GmailClient::class, $this->gmailDesconectadoFake());
+        $this->app->instance(GmailClient::class, $this->gmailDesconectadoFake());
         $admin = $this->usuario('administrador');
 
         $resp = $this->actingAs($admin)->get(route('ppq.index', ['q' => '0940']));
@@ -531,7 +551,7 @@ class PpqModuloTest extends TestCase
     public function test_invalid_grant_banner_no_ofrece_reconectar_a_no_admin(): void
     {
         $this->conectarGmailFalsa();
-        $this->app->instance(\App\Services\Ppq\GmailClient::class, $this->gmailDesconectadoFake());
+        $this->app->instance(GmailClient::class, $this->gmailDesconectadoFake());
         $facturacion = $this->usuario('facturacion');
 
         $resp = $this->actingAs($facturacion)->get(route('ppq.index', ['q' => '0940']));
@@ -547,7 +567,7 @@ class PpqModuloTest extends TestCase
         // por-correo, que ya tiene su propio try/catch genérico) revienta con el token
         // muerto: debe SUBIR como GmailDesconectadoException, no quedar tragada como un
         // simple "error" de ese correo puntual.
-        $gmail = new class extends \App\Services\Ppq\GmailClient
+        $gmail = new class extends GmailClient
         {
             public function buscarEnviadosDetallado(string $numero, int $limite = 15): array
             {
@@ -561,24 +581,24 @@ class PpqModuloTest extends TestCase
 
             public function adjuntos(string $messageId): array
             {
-                throw new \App\Exceptions\Ppq\GmailDesconectadoException('La conexión con Gmail expiró o fue revocada.');
+                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada.');
             }
         };
 
-        $service = new \App\Services\Ppq\PpqGmailService(
+        $service = new PpqGmailService(
             $gmail,
-            new \App\Services\Ppq\DteCorreoParser(),
-            new \App\Services\Ppq\JsonAdjuntoDecoder(),
-            new \App\Services\Ppq\AlbaranParser(),
+            new DteCorreoParser,
+            new JsonAdjuntoDecoder,
+            new AlbaranParser,
         );
 
-        $this->expectException(\App\Exceptions\Ppq\GmailDesconectadoException::class);
+        $this->expectException(GmailDesconectadoException::class);
         $service->resolverCcf('0940');
     }
 
     public function test_variantes_de_numero_incluyen_padded(): void
     {
-        $variantes = app(\App\Services\Ppq\GmailClient::class)->variantesNumero('1011');
+        $variantes = app(GmailClient::class)->variantesNumero('1011');
 
         // El usuario escribe solo "1011"; el sistema genera las variantes que Gmail necesita
         // y prueba primero la MÁS específica (padded al control completo), dejando el número
@@ -596,9 +616,9 @@ class PpqModuloTest extends TestCase
      *
      * @param  array<int, array{id: string, numeros: array<int, string>, dte: bool}>  $buzon
      */
-    private function gmailFake(array $buzon): \App\Services\Ppq\GmailClient
+    private function gmailFake(array $buzon): GmailClient
     {
-        return new class($buzon) extends \App\Services\Ppq\GmailClient
+        return new class($buzon) extends GmailClient
         {
             /** @param array<int, array{id: string, numeros: array<int, string>, dte: bool}> $buzon */
             public function __construct(private array $buzon) {}
@@ -703,9 +723,9 @@ class PpqModuloTest extends TestCase
      *
      * @param  array<int, array{id: string, json: array<string, mixed>}>  $correos
      */
-    private function gmailFakeConAdjuntos(array $correos): \App\Services\Ppq\GmailClient
+    private function gmailFakeConAdjuntos(array $correos): GmailClient
     {
-        return new class($correos) extends \App\Services\Ppq\GmailClient
+        return new class($correos) extends GmailClient
         {
             /** @param array<int, array{id: string, json: array<string, mixed>}> $correos */
             public function __construct(private array $correos) {}
@@ -755,11 +775,11 @@ class PpqModuloTest extends TestCase
             ['id' => 'dte-9999',        'json' => $json('DTE-03-M001P001-000000000009999', 'GEN-D')], // ajeno
         ]);
 
-        $service = new \App\Services\Ppq\PpqGmailService(
+        $service = new PpqGmailService(
             $gmail,
-            new \App\Services\Ppq\DteCorreoParser(),
-            new \App\Services\Ppq\JsonAdjuntoDecoder(),
-            new \App\Services\Ppq\AlbaranParser(),
+            new DteCorreoParser,
+            new JsonAdjuntoDecoder,
+            new AlbaranParser,
         );
 
         $res = $service->resolverCcf('1078');
@@ -778,7 +798,7 @@ class PpqModuloTest extends TestCase
         // una corrida anterior del parser que no pudo extraerlo). Quitar y volver
         // a agregar el CCF NO arreglaba nada porque firstOrCreate() devolvía esa
         // misma fila sin actualizarla. Ahora debe autocorregirse.
-        $viejo = \App\Models\PpqAlbaran::create([
+        $viejo = PpqAlbaran::create([
             'numero_albaran' => 'AC01/0230/00/2878',
             'numero_orden_compra' => '26050230001794',
             'monto_albaran' => null,
@@ -798,20 +818,20 @@ class PpqModuloTest extends TestCase
         ])->assertRedirect();
 
         // La fila VIEJA se autocorrigió (mismo id, ya no NULL) — no se creó una duplicada.
-        $this->assertSame($viejo->id, \App\Models\PpqAlbaran::where('numero_albaran', 'AC01/0230/00/2878')->where('numero_orden_compra', '26050230001794')->sole()->id);
+        $this->assertSame($viejo->id, PpqAlbaran::where('numero_albaran', 'AC01/0230/00/2878')->where('numero_orden_compra', '26050230001794')->sole()->id);
         $this->assertSame('138.87', (string) $viejo->refresh()->monto_albaran);
 
         // El item nuevo ya trae el monto (no queda "Albarán sin monto").
         $item = PpqItem::where('ppq_lote_id', $lote->id)->firstOrFail();
         $this->assertSame('138.87', (string) $item->monto_albaran);
-        $estado = \App\Support\PpqConciliacion::estado($item->monto_dte, $item->monto_albaran, $item->tieneAlbaran());
+        $estado = PpqConciliacion::estado($item->monto_dte, $item->monto_albaran, $item->tieneAlbaran());
         $this->assertNotSame('albaran_sin_monto', $estado['key']);
     }
 
     public function test_registrar_albaran_no_pisa_un_monto_ya_bueno(): void
     {
         // Si la fila YA tenía un monto correcto, un reparseo con otro valor NO debe pisarlo.
-        \App\Models\PpqAlbaran::create([
+        PpqAlbaran::create([
             'numero_albaran' => 'AC01/0236/00/1', 'numero_orden_compra' => 'OC-X',
             'monto_albaran' => 100.00, 'fecha_albaran' => '2026-06-01', 'origen' => 'gmail',
         ]);
@@ -876,7 +896,7 @@ class PpqModuloTest extends TestCase
             'hora_emision' => now()->format('H:i:s'), 'total_pagar' => 50.0,
         ]);
 
-        $resolver = app(\App\Services\Ppq\SalaResolver::class);
+        $resolver = app(SalaResolver::class);
         // Solo con la OC (como llega un CCF de Gmail) ya resuelve el nombre comercial.
         $this->assertSame('Súper Selectos Ilobasco', $resolver->nombre('26060218001234'));
         $this->assertNull($resolver->nombre('99999999999')); // OC desconocida
@@ -890,16 +910,16 @@ class PpqModuloTest extends TestCase
 
     public function test_helper_fecha_formatea_dmy_y_tolera_formatos(): void
     {
-        $this->assertSame('15/06/2026', \App\Support\Fecha::dmy('2026-06-15'));        // ISO → d/m/Y
-        $this->assertSame('05/06/2026', \App\Support\Fecha::dmy('05/06/2026'));        // ya d/m/Y: se respeta (no se lee como m/d)
-        $this->assertSame('20/06/2026', \App\Support\Fecha::dmy(\Illuminate\Support\Carbon::parse('2026-06-20')));
-        $this->assertNull(\App\Support\Fecha::dmy(''));
-        $this->assertNull(\App\Support\Fecha::dmy(null));
+        $this->assertSame('15/06/2026', Fecha::dmy('2026-06-15'));        // ISO → d/m/Y
+        $this->assertSame('05/06/2026', Fecha::dmy('05/06/2026'));        // ya d/m/Y: se respeta (no se lee como m/d)
+        $this->assertSame('20/06/2026', Fecha::dmy(Carbon::parse('2026-06-20')));
+        $this->assertNull(Fecha::dmy(''));
+        $this->assertNull(Fecha::dmy(null));
     }
 
     public function test_parser_txt_lee_formato_real_calleja(): void
     {
-        $parser = new \App\Services\Ppq\ConciliacionTxtParser();
+        $parser = new ConciliacionTxtParser;
         $filas = $parser->parse(
             "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n".
             "000123;Titular de Ejemplo;QD;PPQ/19891;;-121.98\n".
@@ -936,7 +956,7 @@ class PpqModuloTest extends TestCase
             ."000123;TITULAR DE EJEMPLO;NC;DTE05M001P001000000000000339;08-JUN-26;-5.30\n"
             ."000123;TITULAR DE EJEMPLO;CF;DTE03M001P001000000000000967;05-JUN-26;126.44\n"
             ."000123;TITULAR DE EJEMPLO;CF;DTE03M001P001000000000000965;05-JUN-26;178.14\n";
-        $archivo = \Illuminate\Http\UploadedFile::fake()->createWithContent('pagos.txt', $contenido);
+        $archivo = UploadedFile::fake()->createWithContent('pagos.txt', $contenido);
 
         $resp = $this->actingAs($admin)
             ->post(route('ppq.lotes.conciliar', $lote), ['archivo' => $archivo])
