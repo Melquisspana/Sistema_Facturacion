@@ -1,0 +1,21 @@
+Copyright (c) 2026 Melqui (https://github.com/Melquisspana). Todos los derechos reservados.
+
+Este repositorio es público únicamente para que pueda consultarse como muestra de
+trabajo (portafolio). Que el código sea visible no concede ninguna licencia.
+
+Sin autorización previa y por escrito del titular, no se permite copiar, modificar,
+distribuir, sublicenciar, vender, desplegar ni usar este software o partes de él,
+ni crear obras derivadas, con fines comerciales o no comerciales.
+
+Sí se permite leer el código en GitHub y usar las funciones que la plataforma ofrece
+a cualquier repositorio público, como verlo o hacer un fork dentro de GitHub, conforme
+a sus Términos de Servicio. Un fork no otorga ningún otro derecho sobre el código.
+
+Las bibliotecas de terceros que usa el proyecto (instaladas por Composer y npm, y no
+incluidas en este repositorio) conservan sus propias licencias.
+
+EL SOFTWARE SE MUESTRA «TAL CUAL», SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA.
+EN NINGÚN CASO EL TITULAR SERÁ RESPONSABLE DE RECLAMACIONES, DAÑOS U OTRAS
+RESPONSABILIDADES DERIVADAS DEL SOFTWARE O DE SU USO.
+
+Para solicitar permisos, abrí un issue en el repositorio.

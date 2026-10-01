@@ -160,6 +160,9 @@ abstract class TestCase extends BaseTestCase
             sqliteDatabase: $config->get('database.connections.sqlite.database'),
             driverConexionActiva: (string) $config->get("database.connections.{$conexionPorDefecto}.driver"),
             nombreBaseActiva: (string) $config->get("database.connections.{$conexionPorDefecto}.database"),
+            mysqlEfimeraDeCi: self::mysqlEfimeraDeCiSolicitada(),
+            hostBaseActiva: (string) $config->get("database.connections.{$conexionPorDefecto}.host"),
+            urlBaseActiva: (string) $config->get("database.connections.{$conexionPorDefecto}.url"),
         );
 
         if ($motivo === null) {
@@ -175,9 +178,33 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * ¿Pidió el entorno la ÚNICA excepción al candado: la MySQL efímera de la CI?
+     *
+     * Existe porque SQLite no hace cumplir el largo de un VARCHAR ni bloquea filas con
+     * lockForUpdate, y producción corre en MySQL: hay errores que solo aparecen ahí. La
+     * CI levanta un contenedor MySQL que vive minutos y no guarda nada, y es el único
+     * sitio donde la suite puede usar otra base.
+     *
+     * Hacen falta las DOS señales del proceso: `GITHUB_ACTIONS=true`, que pone el
+     * runner de GitHub, y la bandera explícita `PRUEBAS_MYSQL_EFIMERA=1`, que solo pone
+     * el job de MySQL del workflow. Ninguna de las dos está en una máquina de
+     * desarrollo, así que el incidente original —una caché de configuración apuntando a
+     * MySQL— sigue bloqueado. Y aun con las dos, {@see motivoMysqlEfimeraInsegura()}
+     * exige que la base sea exactamente `testing` en un host local.
+     */
+    public static function mysqlEfimeraDeCiSolicitada(): bool
+    {
+        return getenv('GITHUB_ACTIONS') === 'true' && getenv('PRUEBAS_MYSQL_EFIMERA') === '1';
+    }
+
+    /**
      * Lógica PURA del candado (sin botar la app, testeable de forma aislada). Devuelve
      * `null` si la configuración de base es segura para pruebas, o un motivo si NO lo es.
      * Aborta ante CUALQUIERA de las condiciones peligrosas.
+     *
+     * Con `$mysqlEfimeraDeCi` no se relaja nada por defecto: se cambia la pregunta.
+     * En vez de «¿es SQLite :memory:?» se exige que sea la MySQL desechable de la CI y
+     * ninguna otra.
      */
     public static function motivoBaseDeDatosInsegura(
         bool $esEntornoTesting,
@@ -185,9 +212,16 @@ abstract class TestCase extends BaseTestCase
         mixed $sqliteDatabase,
         string $driverConexionActiva,
         string $nombreBaseActiva,
+        bool $mysqlEfimeraDeCi = false,
+        string $hostBaseActiva = '',
+        string $urlBaseActiva = '',
     ): ?string {
         if (! $esEntornoTesting) {
             return 'el entorno activo no es testing';
+        }
+
+        if ($mysqlEfimeraDeCi) {
+            return self::motivoMysqlEfimeraInsegura($conexionPorDefecto, $driverConexionActiva, $nombreBaseActiva, $hostBaseActiva, $urlBaseActiva);
         }
 
         if ($conexionPorDefecto !== 'sqlite') {
@@ -204,6 +238,42 @@ abstract class TestCase extends BaseTestCase
 
         if (str_contains(strtolower($nombreBaseActiva), 'dulces_negrita')) {
             return "el nombre de base contiene 'dulces_negrita'";
+        }
+
+        return null;
+    }
+
+    /**
+     * La MySQL de la CI solo pasa si es EXACTAMENTE la del contenedor del workflow: una
+     * base llamada `testing` en el propio runner. Cualquier otro nombre o host (una base
+     * de desarrollo, un servidor remoto) se bloquea aunque la CI haya pedido la
+     * excepción.
+     *
+     * La URL de conexión tiene que estar VACÍA: Laravel la aplica por encima de host y
+     * database al conectar, así que con una URL puesta lo que aquí se revisa no sería la
+     * base que RefreshDatabase termina vaciando.
+     */
+    private static function motivoMysqlEfimeraInsegura(
+        string $conexionPorDefecto,
+        string $driverConexionActiva,
+        string $nombreBaseActiva,
+        string $hostBaseActiva,
+        string $urlBaseActiva,
+    ): ?string {
+        if ($conexionPorDefecto !== 'mysql' || strtolower($driverConexionActiva) !== 'mysql') {
+            return 'se pidió la MySQL efímera de la CI pero la conexión activa no es mysql';
+        }
+
+        if ($urlBaseActiva !== '') {
+            return 'la MySQL efímera de la CI no admite una URL de conexión (DB_URL), que pisaría host y base';
+        }
+
+        if ($nombreBaseActiva !== 'testing') {
+            return "la MySQL efímera de la CI debe llamarse 'testing', no '{$nombreBaseActiva}'";
+        }
+
+        if (! in_array($hostBaseActiva, ['127.0.0.1', 'localhost'], true)) {
+            return "la MySQL efímera de la CI debe estar en el runner, no en '{$hostBaseActiva}'";
         }
 
         return null;

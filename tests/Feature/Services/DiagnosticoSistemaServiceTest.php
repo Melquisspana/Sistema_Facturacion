@@ -5,6 +5,7 @@ namespace Tests\Feature\Services;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
+use App\Models\Configuracion;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
@@ -14,6 +15,8 @@ use App\Services\Sistema\DiagnosticoSistemaService;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Tests\Concerns\PreparaEnlaceStorage;
 use Tests\TestCase;
 
 /**
@@ -22,11 +25,13 @@ use Tests\TestCase;
  */
 class DiagnosticoSistemaServiceTest extends TestCase
 {
+    use PreparaEnlaceStorage;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->asegurarEnlaceDeStorage();
         WorkerHeartbeat::olvidar();
     }
 
@@ -70,12 +75,55 @@ class DiagnosticoSistemaServiceTest extends TestCase
         }
     }
 
+    public function test_storage_link_ausente_es_critico_y_explica_como_crearlo(): void
+    {
+        $tmp = sys_get_temp_dir().'/diagnostico-storage-'.bin2hex(random_bytes(8));
+        $rutaPublica = public_path();
+        mkdir($tmp);
+
+        try {
+            $this->app->usePublicPath($tmp);
+
+            $d = $this->servicio()->evaluar();
+
+            $check = collect($d['checks'])->firstWhere('clave', 'storage_link');
+            $this->assertSame('critico', $check['nivel']);
+            $this->assertStringContainsString('php artisan storage:link', $check['detalle']);
+        } finally {
+            $this->app->usePublicPath($rutaPublica);
+            rmdir($tmp);
+        }
+    }
+
+    public function test_storage_link_presente_es_correcto(): void
+    {
+        $tmp = sys_get_temp_dir().'/diagnostico-storage-'.bin2hex(random_bytes(8));
+        $rutaPublica = public_path();
+        mkdir($tmp);
+
+        try {
+            $this->app->usePublicPath($tmp);
+            mkdir($tmp.'/storage');
+
+            $d = $this->servicio()->evaluar();
+
+            $check = collect($d['checks'])->firstWhere('clave', 'storage_link');
+            $this->assertSame('correcto', $check['nivel']);
+        } finally {
+            $this->app->usePublicPath($rutaPublica);
+            if (is_dir($tmp.'/storage')) {
+                rmdir($tmp.'/storage');
+            }
+            rmdir($tmp);
+        }
+    }
+
     public function test_failed_jobs_es_critico_y_domina_el_nivel_global(): void
     {
         WorkerHeartbeat::pulse();
         $this->respaldoValidoHoy();
         DB::table('failed_jobs')->insert([
-            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+            'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
             'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
         ]);
 
@@ -132,7 +180,7 @@ class DiagnosticoSistemaServiceTest extends TestCase
         WorkerHeartbeat::pulse();
         $this->respaldoValidoHoy();
         $this->avisosRespaldoConfigurados();
-        \App\Models\Configuracion::set('correo.auto_envio', false);
+        Configuracion::set('correo.auto_envio', false);
 
         $d = $this->servicio()->evaluar();
 

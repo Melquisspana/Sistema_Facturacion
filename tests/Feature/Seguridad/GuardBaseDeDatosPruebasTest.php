@@ -55,6 +55,100 @@ class GuardBaseDeDatosPruebasTest extends TestCase
         $this->assertNotNull($motivo, 'Esta configuración es peligrosa y el candado debía devolver un motivo de bloqueo.');
     }
 
+    /**
+     * La ÚNICA excepción: la MySQL desechable del job de la CI, pedida de forma explícita,
+     * llamada `testing` y en el propio runner.
+     */
+    public function test_la_mysql_efimera_de_la_ci_no_bloquea(): void
+    {
+        $this->assertNull(TestCase::motivoBaseDeDatosInsegura(
+            esEntornoTesting: true,
+            conexionPorDefecto: 'mysql',
+            sqliteDatabase: ':memory:',
+            driverConexionActiva: 'mysql',
+            nombreBaseActiva: 'testing',
+            mysqlEfimeraDeCi: true,
+            hostBaseActiva: '127.0.0.1',
+        ));
+    }
+
+    /**
+     * Pedir la excepción NO abre la puerta a cualquier MySQL: cada desvío del contenedor
+     * de la CI se sigue bloqueando.
+     *
+     * @return array<string, array{0: bool, 1: string, 2: string, 3: string, 4: string}>
+     */
+    public static function mysqlQueNoEsLaEfimeraDeLaCi(): array
+    {
+        return [
+            // esTesting, default, driverActivo, nombreBaseActiva, host
+            'entorno no es testing' => [false, 'mysql', 'mysql', 'testing', '127.0.0.1'],
+            'la base de desarrollo' => [true, 'mysql', 'mysql', 'dulces_negrita', '127.0.0.1'],
+            'otro nombre de base' => [true, 'mysql', 'mysql', 'facturacion', '127.0.0.1'],
+            'un host remoto' => [true, 'mysql', 'mysql', 'testing', 'db.ejemplo.test'],
+            'la conexión no es mysql' => [true, 'sqlite', 'sqlite', 'testing', '127.0.0.1'],
+        ];
+    }
+
+    #[DataProvider('mysqlQueNoEsLaEfimeraDeLaCi')]
+    public function test_pedir_la_mysql_de_la_ci_no_abre_otra_base(
+        bool $esTesting,
+        string $default,
+        string $driver,
+        string $nombre,
+        string $host,
+    ): void {
+        $motivo = TestCase::motivoBaseDeDatosInsegura($esTesting, $default, ':memory:', $driver, $nombre, true, $host);
+
+        $this->assertNotNull($motivo, 'Solo la MySQL efímera de la CI puede pasar el candado.');
+    }
+
+    /** Una URL de conexión pisa host y base al conectar: con ella no hay excepción. */
+    public function test_la_mysql_de_la_ci_con_url_de_conexion_se_bloquea(): void
+    {
+        $this->assertNotNull(TestCase::motivoBaseDeDatosInsegura(
+            esEntornoTesting: true,
+            conexionPorDefecto: 'mysql',
+            sqliteDatabase: ':memory:',
+            driverConexionActiva: 'mysql',
+            nombreBaseActiva: 'testing',
+            mysqlEfimeraDeCi: true,
+            hostBaseActiva: '127.0.0.1',
+            urlBaseActiva: 'mysql://usuario@db.ejemplo.test/dulces_negrita',
+        ));
+    }
+
+    /** Sin la bandera explícita, la MySQL de la CI se bloquea como cualquier otra. */
+    public function test_sin_la_bandera_la_mysql_de_la_ci_se_bloquea(): void
+    {
+        $this->assertNotNull(TestCase::motivoBaseDeDatosInsegura(
+            esEntornoTesting: true,
+            conexionPorDefecto: 'mysql',
+            sqliteDatabase: ':memory:',
+            driverConexionActiva: 'mysql',
+            nombreBaseActiva: 'testing',
+            hostBaseActiva: '127.0.0.1',
+        ));
+    }
+
+    /** Hacen falta las DOS señales del proceso; una sola no alcanza. */
+    public function test_la_excepcion_exige_runner_de_github_y_bandera_explicita(): void
+    {
+        $antes = [getenv('GITHUB_ACTIONS'), getenv('PRUEBAS_MYSQL_EFIMERA')];
+
+        try {
+            foreach ([['true', '1', true], ['true', false, false], [false, '1', false], ['1', '1', false]] as [$gha, $bandera, $esperado]) {
+                $gha === false ? putenv('GITHUB_ACTIONS') : putenv("GITHUB_ACTIONS={$gha}");
+                $bandera === false ? putenv('PRUEBAS_MYSQL_EFIMERA') : putenv("PRUEBAS_MYSQL_EFIMERA={$bandera}");
+
+                $this->assertSame($esperado, TestCase::mysqlEfimeraDeCiSolicitada());
+            }
+        } finally {
+            $antes[0] === false ? putenv('GITHUB_ACTIONS') : putenv("GITHUB_ACTIONS={$antes[0]}");
+            $antes[1] === false ? putenv('PRUEBAS_MYSQL_EFIMERA') : putenv("PRUEBAS_MYSQL_EFIMERA={$antes[1]}");
+        }
+    }
+
     public function test_el_guard_real_lanza_excepcion_con_mensaje_claro(): void
     {
         // Simula EXACTAMENTE la config envenenada del incidente (caché vieja apuntando
