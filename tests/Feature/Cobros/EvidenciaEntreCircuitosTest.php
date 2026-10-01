@@ -20,7 +20,7 @@ class EvidenciaEntreCircuitosTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const CONTROL = 'DTE-03-M001P002-000000000000119';
+    private const CONTROL = 'DTE-03-M001P002-000000000090059';
 
     private function escenario(): array
     {

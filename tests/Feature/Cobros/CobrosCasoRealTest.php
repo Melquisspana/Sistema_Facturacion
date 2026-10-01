@@ -23,14 +23,14 @@ use Tests\TestCase;
  * EL CASO REAL: el archivo de pagos que Calleja mandó el 07/09/2026 aplicado al
  * seguimiento de cobros.
  *
- * Es la prueba que define el módulo, y corre sobre el ARCHIVO REAL
- * (`tests/Fixtures/Ppq/pagos-000123-20260907.txt`) y sobre los documentos reales de la
+ * Es la prueba que define el módulo, y corre sobre el FIXTURE FICTICIO
+ * (`tests/Fixtures/Ppq/pagos-000123-20260907.txt`) y sobre los documentos ficticios de la
  * solicitud histórica: los 45 CCF y las 13 NC que el cliente informó, más el ajuste QD.
  *
  * Lo que comprueba no es que «funcione», sino las cuatro cosas que, si se rompen, el
  * sistema afirma algo falso sobre el dinero:
  *
- *  1. los totales del archivo son los que el cliente informó;
+ *  1. los totales del archivo son los del ejemplo ficticio;
  *  2. las DOS facturas que el archivo no menciona siguen SIN pago, sin que nadie las
  *     declare pagadas ni les borre nada;
  *  3. cargar el archivo dos veces no cobra nada dos veces;
@@ -43,10 +43,10 @@ class CobrosCasoRealTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** Las dos facturas del Excel histórico que el TXT NO menciona, con su motivo real. */
+    /** Las dos facturas del Excel histórico que el TXT NO menciona, con su motivo ilustrativo. */
     private const AUSENTES = [
-        'DTE-03-M001P002-000000000000119' => ['monto' => '77.74', 'motivo' => 'FALTA NOTA DE CREDITO'],
-        'DTE-03-M001P001-000000000001186' => ['monto' => '141.25', 'motivo' => 'NO APARECE EN REPORTERIA'],
+        'DTE-03-M001P002-000000000090059' => ['monto' => '100.00', 'motivo' => 'FALTA NOTA DE CREDITO'],
+        'DTE-03-M001P001-000000000090060' => ['monto' => '200.00', 'motivo' => 'NO APARECE EN REPORTERIA'],
     ];
 
     private function archivoReal(): string
@@ -116,7 +116,7 @@ class CobrosCasoRealTest extends TestCase
     // ------------------------------------------------------------------ dorada
 
     /**
-     * DORADA · el archivo real aplicado entero: 45 CF, 13 NC, el QD, y las dos facturas
+     * DORADA · el fixture ficticio aplicado entero: 45 CF, 13 NC, el QD, y las dos facturas
      * ausentes intactas.
      */
     public function test_dorada_el_archivo_real_se_aplica_y_cuadra_con_lo_informado(): void
@@ -127,15 +127,15 @@ class CobrosCasoRealTest extends TestCase
         $filas = app(ConciliacionTxtParser::class)->parse($this->archivoReal());
         $informe = app(AplicadorPagosTxt::class)->aplicar($cliente, $filas, $this->archivo());
 
-        // 1 · Los totales del archivo son los que el cliente informó.
+        // 1 · Los totales del archivo son los del ejemplo ficticio.
         $t = $informe['totales'];
         $this->assertSame(45, $t['cantidad_cf']);
         $this->assertSame(13, $t['cantidad_nc']);
         $this->assertSame(1, $t['cantidad_qd']);
-        $this->assertSame('6826.42', $t['total_cf']);
-        $this->assertSame('-125.90', $t['total_nc']);
-        $this->assertSame('-107.21', $t['total_qd']);
-        $this->assertSame('6593.31', $t['neto_archivo']);
+        $this->assertSame('4500.00', $t['total_cf']);
+        $this->assertSame('-60.50', $t['total_nc']);
+        $this->assertSame('-25.00', $t['total_qd']);
+        $this->assertSame('4414.50', $t['neto_archivo']);
 
         // 2 · Los 58 documentos del archivo quedaron aplicados; ninguno sin identificar.
         $this->assertCount(58, $informe['aplicados']);
@@ -209,14 +209,14 @@ class CobrosCasoRealTest extends TestCase
         $ajuste = CobroAjuste::firstOrFail();
         $this->assertSame('PPQ/31001', $ajuste->referencia);
         $this->assertSame('31001', $ajuste->referencia_calleja);
-        $this->assertSame(0, Dinero::comparar('-107.21', $ajuste->monto));
+        $this->assertSame(0, Dinero::comparar('-25.00', $ajuste->monto));
         $this->assertSame('pendiente_nc', $ajuste->estado);
         $this->assertSame('NC de pronto pago pendiente', $ajuste->label());
         $this->assertNull($ajuste->nc_dte_id, 'No se emite ninguna NC automáticamente.');
 
         // Y no tocó ninguna factura: la suma de lo cobrado es la de CF + NC, sin el ajuste.
         $cobrado = Dinero::redondear((string) CobroDocumento::sum('monto_pagado'));
-        $esperado = Dinero::redondear(Dinero::sumar('6826.42', '125.90')); // magnitudes
+        $esperado = Dinero::redondear(Dinero::sumar('4500.00', '60.50')); // magnitudes
         $this->assertSame($esperado, $cobrado, 'El QD no puede haberse repartido entre las facturas.');
 
         $this->assertSame(0, CobroEvento::where('tipo', TipoEventoCobro::Ajuste->value)->count());

@@ -10,19 +10,18 @@ use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteTransmisionService;
-use Database\Seeders\CatalogosMhSeeder;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -32,7 +31,7 @@ use Tests\TestCase;
  */
 class DteTransmisionTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private const JWS = 'eyJhbGciOiJSUzI1NiJ9.eyJkdGUiOiJmYWtlIn0.firma-falsa';
@@ -92,7 +91,7 @@ class DteTransmisionTest extends TestCase
     private function ccfFirmado(): Dte
     {
         $ccf = $this->ccfGenerado();
-        $cg = '00000000-0000-4000-8000-000000000101';
+        $cg = '00000000-0000-4000-8000-000000000001';
         $rutaJson = 'dte/json/dte-03-'.$ccf->id.'-'.$cg.'.json';
         $rutaJws = 'dte/firmados/dte-03-'.$ccf->id.'-'.$cg.'.jws';
         Storage::disk('local')->put($rutaJson, '{"identificacion":{"codigoGeneracion":"'.$cg.'"}}');

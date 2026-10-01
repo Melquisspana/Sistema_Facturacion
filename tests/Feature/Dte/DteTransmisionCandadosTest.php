@@ -9,18 +9,17 @@ use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Services\Dte\DteTransmisionService;
-use Database\Seeders\CatalogosMhSeeder;
 use App\Support\Dte\EndpointsHacienda;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -30,7 +29,7 @@ use Tests\TestCase;
  */
 class DteTransmisionCandadosTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private Establecimiento $estab;
@@ -83,7 +82,7 @@ class DteTransmisionCandadosTest extends TestCase
         app(DteGeneracionService::class)->generar($dte);
         $dte->refresh();
 
-        $cg = '00000000-0000-4000-8000-000000000101';
+        $cg = '00000000-0000-4000-8000-000000000001';
         Storage::disk('local')->put('dte/json/dte-03-'.$dte->id.'-'.$cg.'.json', '{"ok":true}');
         Storage::disk('local')->put('dte/firmados/dte-03-'.$dte->id.'-'.$cg.'.jws', 'eyJ.fake.jws.compacta');
         $dte->numero_control = 'DTE-03-M001P001-000000000000012';

@@ -8,26 +8,16 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * Los IMPORTES del TXT de pagos de Calleja, leídos exactos.
- *
- * Esta clase existe por un centavo que costaba noventa y cinco dólares: Calleja escribe
- * los abonos chicos sin el cero entero (`-.96`) y el parser los convertía en −96. Sobre el
- * archivo real del 07/09/2026 eso inflaba el total de notas de crédito de −$125.90 a
- * −$220.94 y descuadraba el neto del archivo en $95.04, que es exactamente la clase de
- * error que nadie ve hasta que el cliente paga distinto de lo que dice el sistema.
- *
- * La prueba dorada corre sobre el ARCHIVO REAL (`tests/Fixtures/Ppq/`), no sobre un
- * ejemplo inventado: los cuatro totales que compara son los que el cliente informó.
- *
- * No toca la base de datos ni la red: es solo el lector del archivo.
+ * Importes exactos sobre un fixture ficticio: conserva filas CF/NC/QD y el caso
+ * de abono sin cero entero que el parser debe interpretar como centavos.
  */
 class ConciliacionTxtImportesTest extends TestCase
 {
-    /** El archivo real que mandó Calleja el 07/09/2026. */
+    /** Fixture ficticio con la misma estructura que el TXT de pagos de Calleja. */
     private function archivoReal(): string
     {
         $ruta = base_path('tests/Fixtures/Ppq/pagos-000123-20260907.txt');
-        $this->assertFileExists($ruta, 'Falta el TXT real de referencia.');
+        $this->assertFileExists($ruta, 'Falta el TXT ficticio de referencia.');
 
         return (string) file_get_contents($ruta);
     }
@@ -50,8 +40,8 @@ class ConciliacionTxtImportesTest extends TestCase
     // ------------------------------------------------------------------ dorada
 
     /**
-     * DORADA · el archivo real cuadra con lo que Calleja informó: 45 CF por $6,826.42,
-     * 13 NC por −$125.90, el ajuste QD de −$107.21 y un neto de $6,593.31.
+     * DORADA · el fixture ficticio cuadra con sus totales conocidos: 45 CF por $4,500.00,
+     * 13 NC por −$60.50, el ajuste QD de −$25.00 y un neto de $4,414.50.
      */
     public function test_dorada_el_txt_real_de_calleja_da_los_totales_informados(): void
     {
@@ -66,39 +56,39 @@ class ConciliacionTxtImportesTest extends TestCase
         $this->assertCount(1, $qd, 'El archivo trae un solo ajuste QD.');
         $this->assertCount(59, $filas, 'Encabezado descartado: 45 + 13 + 1.');
 
-        $this->assertSame('6826.42', $this->total($filas, 'CF'));
-        $this->assertSame('-125.90', $this->total($filas, 'NC'));
-        $this->assertSame('-107.21', $this->total($filas, 'QD'));
+        $this->assertSame('4500.00', $this->total($filas, 'CF'));
+        $this->assertSame('-60.50', $this->total($filas, 'NC'));
+        $this->assertSame('-25.00', $this->total($filas, 'QD'));
 
         $neto = Dinero::sumar(Dinero::sumar($this->total($filas, 'CF'), $this->total($filas, 'NC')), $this->total($filas, 'QD'));
-        $this->assertSame('6593.31', Dinero::redondear($neto));
+        $this->assertSame('4414.50', Dinero::redondear($neto));
     }
 
     /**
-     * DORADA · la fila exacta del error: `-.96` son noventa y seis centavos.
+     * DORADA · la fila exacta del error: `-.50` son cincuenta centavos.
      *
-     * Se comprueba el valor Y que no sea el viejo −96: la diferencia entre los dos es la
+     * Se comprueba el valor Y que no sea el viejo −50: la diferencia entre los dos es la
      * que descuadraba el archivo entero.
      */
-    public function test_dorada_el_abono_escrito_sin_cero_entero_vale_noventa_y_seis_centavos(): void
+    public function test_dorada_el_abono_escrito_sin_cero_entero_vale_cincuenta_centavos(): void
     {
         $filas = app(ConciliacionTxtParser::class)->parse($this->archivoReal());
 
         $fila = null;
         foreach ($filas as $f) {
-            if ($f['numeroNorm'] === 'DTE05M001P001000000000000385') {
+            if ($f['numeroNorm'] === 'DTE05M001P001000000000090013') {
                 $fila = $f;
                 break;
             }
         }
 
-        $this->assertNotNull($fila, 'La NC 385 tiene que estar en el archivo real.');
-        $this->assertStringContainsString(';-.96', $fila['raw'], 'En el archivo viene escrita sin el cero entero.');
-        $this->assertSame(0, Dinero::comparar('-0.96', $fila['valor']));
-        $this->assertSame(-1, Dinero::comparar('-1', $fila['valor']), 'No puede ser −96 ni ningún otro valor menor que −1.');
+        $this->assertNotNull($fila, 'La NC de ejemplo tiene que estar en el fixture ficticio.');
+        $this->assertStringContainsString(';-.50', $fila['raw'], 'En el archivo viene escrita sin el cero entero.');
+        $this->assertSame(0, Dinero::comparar('-0.50', $fila['valor']));
+        $this->assertSame(-1, Dinero::comparar('-1', $fila['valor']), 'No puede ser −50 ni ningún otro valor menor que −1.');
     }
 
-    /** El ajuste QD del archivo real: referencia PPQ/31001 y −$107.21, sin fecha. */
+    /** El ajuste QD del fixture ficticio: referencia PPQ/31001 y −$25.00, sin fecha. */
     public function test_el_ajuste_qd_conserva_su_referencia_y_no_trae_fecha(): void
     {
         $filas = app(ConciliacionTxtParser::class)->parse($this->archivoReal());
@@ -107,7 +97,7 @@ class ConciliacionTxtImportesTest extends TestCase
 
         $this->assertSame('PPQ/31001', $qd['numero']);
         $this->assertSame('PPQ31001', $qd['numeroNorm']);
-        $this->assertSame(0, Dinero::comparar('-107.21', $qd['valor']));
+        $this->assertSame(0, Dinero::comparar('-25.00', $qd['valor']));
         $this->assertNull($qd['fecha'], 'El QD viene con la fecha vacía y no se inventa ninguna.');
     }
 
@@ -121,7 +111,7 @@ class ConciliacionTxtImportesTest extends TestCase
     public static function importes(): array
     {
         return [
-            'sin cero entero, negativo' => ['-.96', '-0.96'],
+            'sin cero entero, negativo' => ['-.50', '-0.50'],
             'sin cero entero, positivo' => ['.96', '0.96'],
             'normal' => ['126.44', '126.44'],
             'un solo decimal' => ['-5.3', '-5.3'],
@@ -166,11 +156,13 @@ class ConciliacionTxtImportesTest extends TestCase
         }
     }
 
-    /** El nombre con Ñ sobrevive al encoding del archivo real (viene en Windows-1252). */
+    /** El nombre con Ñ sobrevive al encoding con que Calleja manda el TXT (Windows-1252). */
     public function test_el_nombre_del_proveedor_conserva_la_enie(): void
     {
-        $filas = app(ConciliacionTxtParser::class)->parse($this->archivoReal());
+        $contenido = "000123;TITULAR DE EJEMPLO PE\xD1A;CF;DTE03M001P001000000000000001;05-JUN-26;1.00\n";
 
-        $this->assertStringContainsString('ESPAÑA', (string) $filas[0]['nombre']);
+        $filas = app(ConciliacionTxtParser::class)->parse($contenido);
+
+        $this->assertStringContainsString('PEÑA', (string) $filas[0]['nombre']);
     }
 }

@@ -35,9 +35,11 @@ class ExcelCallejaExporter
     /** Genera el .xlsx en un archivo temporal y devuelve su ruta. */
     public function generar(PpqLote $lote): string
     {
+        ValidadorCodigoProveedorTxt::codigoConfigurado();
+
         $lote->loadMissing(['items.dte.clienteSucursal:id,nombre,codigo', 'items.albaran']);
 
-        $hoja = (new Spreadsheet())->getActiveSheet();
+        $hoja = (new Spreadsheet)->getActiveSheet();
         $hoja->setTitle('PPQ Calleja');
 
         // Encabezados.
@@ -103,7 +105,7 @@ class ExcelCallejaExporter
      */
     public function nombreArchivo(PpqLote $lote): string
     {
-        $codigo = (string) config('ppq.codigo_proveedor', '000123');
+        $codigo = ValidadorCodigoProveedorTxt::codigoConfigurado();
 
         return $codigo.now('America/El_Salvador')->format('YmdHi').'.xlsx';
     }

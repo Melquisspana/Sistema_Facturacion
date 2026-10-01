@@ -33,7 +33,7 @@ use Tests\TestCase;
  *
  * EL CASO REAL que obligó a esto es el albarán de crédito
  * `26-08-0207-00-003874-AC04-0001.PDF` de Calleja: sala 0207 (Santa Rosa de Lima), albarán
- * AC04 número 3874 del 27/08/2026, contra el CCF DTE-03-M001P002-000000000000119. Un solo
+ * AC04 número 3874 del 27/08/2026, contra el CCF DTE-03-M001P002-000000000090059. Un solo
  * renglón —DULCE DE TAMARINDO, facturado 10, recibido 9, una unidad de diferencia— con
  * costo proveedor $0.9800, y el papel imprime:
  *

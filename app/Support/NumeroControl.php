@@ -3,7 +3,7 @@
 namespace App\Support;
 
 /**
- * El número de control de un DTE, descompuesto: `DTE-03-M001P002-000000000000119` son el
+ * El número de control de un DTE, descompuesto: `DTE-03-M001P002-000000000090059` son el
  * TIPO (03), el ESTABLECIMIENTO (M001), el PUNTO DE VENTA (P002) y el CORRELATIVO.
  *
  * ──────────────────── Por qué hace falta guardar estas piezas ────────────────────
@@ -25,7 +25,7 @@ namespace App\Support;
 final class NumeroControl
 {
     /**
-     * `DTE-03-M001P002-000000000000119`, tolerando separadores y espacios. El bloque de
+     * `DTE-03-M001P002-000000000090059`, tolerando separadores y espacios. El bloque de
      * serie es una letra + dígitos, repetido: `M001P002`.
      */
     private const PATRON = '/^DTE[-\s]*(\d{2})[-\s]*([A-Z]\d{3,4})([A-Z]\d{3,4})[-\s]*(\d+)$/i';

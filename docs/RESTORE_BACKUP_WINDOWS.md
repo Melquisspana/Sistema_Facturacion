@@ -1,9 +1,9 @@
 # Probar la restauración de un backup en Windows / Laragon
 
 Guía para **validar** que un backup se puede restaurar, **sin tocar la base real**.
-La prueba se hace siempre en una base **temporal**: `dulces_negrita_restore_test`.
+La prueba se hace siempre en una base **temporal**: `base_ejemplo`.
 
-> ⚠️ **ADVERTENCIA**: nunca restaures encima de la base real (`dulces_negrita`) sin
+> ⚠️ **ADVERTENCIA**: nunca restaures encima de la base real (`base_ejemplo`) sin
 > haber hecho antes un backup nuevo. Una restauración sobre la base real **sobre­escribe
 > todo**. Para solo *probar* el backup, usá la base temporal de esta guía.
 
@@ -47,7 +47,7 @@ dir /b /o-d "C:\laragon\www\Facturacion\storage\app\private\Dulces La Negrita\*.
 
 Dentro del backup, el dump está en la subcarpeta `db-dumps`:
 ```
-db-dumps\mysql-dulces_negrita.sql
+db-dumps\mysql-base_ejemplo.sql
 ```
 Ese `.sql` es el respaldo de la base. (El resto del zip son archivos de `storage/app`.)
 
@@ -57,7 +57,7 @@ Ese `.sql` es el respaldo de la base. (El resto del zip son archivos de `storage
 
 **Nunca uses la base real.** Creá una aparte:
 ```cmd
-"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root -e "CREATE DATABASE dulces_negrita_restore_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root -e "CREATE DATABASE base_ejemplo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 ```
 (Ajustá la ruta de `mysql.exe` si tu versión de MySQL es distinta.)
 
@@ -66,9 +66,9 @@ Ese `.sql` es el respaldo de la base. (El resto del zip son archivos de `storage
 ## 5. Importar el dump en la base temporal
 
 ```cmd
-"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root dulces_negrita_restore_test < "C:\temp\restore_test\db-dumps\mysql-dulces_negrita.sql"
+"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root base_ejemplo < "C:\temp\restore_test\db-dumps\mysql-base_ejemplo.sql"
 ```
-> Fijate que el destino sea **`dulces_negrita_restore_test`** y NO `dulces_negrita`.
+> Fijate que el destino sea **`base_ejemplo`** y NO `base_ejemplo`.
 
 ---
 
@@ -76,11 +76,11 @@ Ese `.sql` es el respaldo de la base. (El resto del zip son archivos de `storage
 
 Cantidad de tablas:
 ```cmd
-"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root -e "SELECT COUNT(*) AS tablas FROM information_schema.tables WHERE table_schema='dulces_negrita_restore_test';"
+"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root -e "SELECT COUNT(*) AS tablas FROM information_schema.tables WHERE table_schema='base_ejemplo';"
 ```
 Filas en tablas clave:
 ```cmd
-"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root dulces_negrita_restore_test -e "SELECT 'clientes' t, COUNT(*) n FROM clientes UNION ALL SELECT 'productos', COUNT(*) FROM productos UNION ALL SELECT 'dtes', COUNT(*) FROM dtes UNION ALL SELECT 'users', COUNT(*) FROM users;"
+"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root base_ejemplo -e "SELECT 'clientes' t, COUNT(*) n FROM clientes UNION ALL SELECT 'productos', COUNT(*) FROM productos UNION ALL SELECT 'dtes', COUNT(*) FROM dtes UNION ALL SELECT 'users', COUNT(*) FROM users;"
 ```
 Si ves un número razonable de tablas y filas, el backup es restaurable. ✅
 
@@ -89,7 +89,7 @@ Si ves un número razonable de tablas y filas, el backup es restaurable. ✅
 ## 7. Borrar la base temporal al final
 
 ```cmd
-"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root -e "DROP DATABASE IF EXISTS dulces_negrita_restore_test;"
+"C:\laragon\bin\mysql\mysql-8.4.3-winx64\bin\mysql.exe" -u root -e "DROP DATABASE IF EXISTS base_ejemplo;"
 ```
 Y borrá la carpeta temporal donde extrajiste el zip (`C:\temp\restore_test`).
 
@@ -99,7 +99,7 @@ Y borrá la carpeta temporal donde extrajiste el zip (`C:\temp\restore_test`).
 
 `scripts\backup-restore-test.bat` hace los pasos 1–7 de forma guiada y segura:
 
-- Restaura **solo** en `dulces_negrita_restore_test` (jamás toca `dulces_negrita`;
+- Restaura **solo** en `base_ejemplo` (jamás toca `base_ejemplo`;
   tiene una guarda que aborta si por error ambas coinciden).
 - **Pide confirmación** (`SI`) antes de continuar.
 - Usa el **último ZIP** de `storage\app\private\Dulces La Negrita`.
@@ -126,7 +126,7 @@ Esto **sobreescribe** la base real. Hacelo únicamente si la base real se dañó
 
 1. **Backup nuevo primero** (si la base aún responde): `scripts\backup-run.bat`.
 2. Poné el sistema en mantenimiento si aplica.
-3. Importá el dump sobre `dulces_negrita` (mismo comando del paso 5 pero con la base real).
+3. Importá el dump sobre `base_ejemplo` (mismo comando del paso 5 pero con la base real).
 4. Restaurá los archivos de `storage/app` del zip a su lugar.
 5. Limpiá caches: `php artisan config:clear`, `cache:clear`, `view:clear`.
 6. Verificá la app.

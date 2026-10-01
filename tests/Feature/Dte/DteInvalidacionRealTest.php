@@ -14,6 +14,7 @@ use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteInvalidacionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Activitylog\Models\Activity;
@@ -23,9 +24,9 @@ class DteInvalidacionRealTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000104';
+    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000010';
 
-    private const NC_SELLO = '2026000000000000000000000000000000000000';
+    private const NC_SELLO = '2026000000000000000000000000000000000003';
 
     protected function setUp(): void
     {
@@ -63,7 +64,7 @@ class DteInvalidacionRealTest extends TestCase
     private function ncAceptada(bool $aceptada = true, string $ambiente = '00'): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -276,7 +277,7 @@ class DteInvalidacionRealTest extends TestCase
         // estado Invalidado).
         $dte = $this->ncAceptada();
         $dte->respuesta_mh_invalidacion = ['resultado' => 'rechazado', 'descripcionMsg' => '[identificacion.fecEmi] DATO NO COINCIDE CON DTE'];
-        $dte->codigo_generacion_invalidacion = '00000000-0000-4000-8000-000000000107';
+        $dte->codigo_generacion_invalidacion = '00000000-0000-4000-8000-000000000013';
         $dte->respuesta_mh_invalidacion_path = 'dte/invalidacion/respuestas/previo.json';
         $dte->tipo_anulacion = TipoAnulacionMh::RescindirOperacion->value;
         $dte->save();
@@ -367,8 +368,8 @@ class DteInvalidacionRealTest extends TestCase
     {
         $dte = $this->ncAceptada();
         $dte->estado = EstadoDte::Invalidado->value;
-        $dte->sello_invalidacion = '2026000000000000000000000000000000000000';
-        $dte->codigo_generacion_invalidacion = '00000000-0000-4000-8000-000000000109';
+        $dte->sello_invalidacion = '2026000000000000000000000000000000000001';
+        $dte->codigo_generacion_invalidacion = '00000000-0000-4000-8000-000000000014';
         $dte->tipo_anulacion = TipoAnulacionMh::RescindirOperacion->value;
         $dte->save();
 
@@ -466,7 +467,7 @@ class DteInvalidacionRealTest extends TestCase
         Http::fake([
             '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE'], 200),
             '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE-TOKEN']], 200),
-            '*anulardte*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'),
+            '*anulardte*' => fn () => throw new ConnectionException('timeout'),
         ]);
         $dte = $this->ncAceptada();
 

@@ -28,7 +28,7 @@ class DteInvalidacionUiTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const NC_SELLO = '2026000000000000000000000000000000000000'; // 40 chars
+    private const NC_SELLO = '2026000000000000000000000000000000000003'; // 40 chars
 
     protected function setUp(): void
     {
@@ -64,7 +64,7 @@ class DteInvalidacionUiTest extends TestCase
     private function ncAceptada(bool $aceptada = true): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -83,7 +83,7 @@ class DteInvalidacionUiTest extends TestCase
             'punto_venta_id' => $pv->id,
             'cliente_id' => $cliente->id,
             'numero_control' => 'DTE-05-M001P001-000000000000020',
-            'codigo_generacion' => '00000000-0000-4000-8000-000000000104',
+            'codigo_generacion' => '00000000-0000-4000-8000-000000000010',
             'sello_recepcion' => $aceptada ? self::NC_SELLO : null,
             'respuesta_mh' => $aceptada ? ['estado' => 'PROCESADO', 'selloRecibido' => self::NC_SELLO] : null,
             'fecha_procesamiento_mh' => $aceptada ? '2026-06-30 22:48:44' : null,
@@ -255,7 +255,7 @@ class DteInvalidacionUiTest extends TestCase
         $this->actingAs($usuario)
             ->post(route('facturacion.invalidacion.mock', $nc), [
                 'tipo' => TipoAnulacionMh::ErrorInformacion->value,
-                'reemplazo' => 'A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D',
+                'reemplazo' => '00000000-0000-4000-8000-000000000015',
             ])
             ->assertSessionHasErrors('reemplazo');
 

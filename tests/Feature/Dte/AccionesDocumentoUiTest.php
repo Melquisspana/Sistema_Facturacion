@@ -14,6 +14,7 @@ use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Support\Dte\OpcionesInvalidacion;
@@ -99,7 +100,7 @@ class AccionesDocumentoUiTest extends TestCase
     private function emisor(): array
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -526,7 +527,7 @@ class AccionesDocumentoUiTest extends TestCase
         $invalidado = $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, 1);
 
         // Más candidatos que el tope (del mismo tipo: son los únicos ofrecibles).
-        for ($i = 2; $i <= 3 + \App\Services\Dte\BusquedaDocumentoReemplazo::LIMITE; $i++) {
+        for ($i = 2; $i <= 3 + BusquedaDocumentoReemplazo::LIMITE; $i++) {
             $this->documentoAceptado(TipoDte::CreditoFiscal, $cliente, $i);
         }
 
@@ -535,7 +536,7 @@ class AccionesDocumentoUiTest extends TestCase
         // Sin parámetros y con intentos explícitos de ampliar el techo: siempre el tope.
         foreach (['', '?limite=500', '?limit=500', '?per_page=500', '?q=&limite=500'] as $query) {
             $this->assertCount(
-                \App\Services\Dte\BusquedaDocumentoReemplazo::LIMITE,
+                BusquedaDocumentoReemplazo::LIMITE,
                 $this->actingAs($this->usuario('administrador'))->getJson($url.$query)->assertOk()->json('resultados'),
                 "El buscador no debe devolver más de su tope con «{$query}»."
             );

@@ -20,6 +20,7 @@ use App\Support\Dte\PoliticaInvalidacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -66,9 +67,9 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const CCF_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000104';
+    private const CCF_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000010';
 
-    private const CCF_SELLO = '2026000000000000000000000000000000000000'; // 40 chars
+    private const CCF_SELLO = '2026000000000000000000000000000000000003'; // 40 chars
 
     private const CCF_NUMERO_CONTROL = 'DTE-03-M001P002-000000000000001';
 
@@ -139,8 +140,8 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
             'punto_venta_id' => $ccf->punto_venta_id,
             'cliente_id' => $ccf->cliente_id,
             'numero_control' => 'DTE-'.$tipo->value.'-M001P002-'.str_pad((string) ++$this->secuencia, 15, '0', STR_PAD_LEFT),
-            'codigo_generacion' => strtoupper((string) \Illuminate\Support\Str::uuid()),
-            'sello_recepcion' => '2026000000000000000000000000000000000000',
+            'codigo_generacion' => strtoupper((string) Str::uuid()),
+            'sello_recepcion' => '2026000000000000000000000000000000000005',
             'respuesta_mh' => ['estado' => 'PROCESADO'],
             'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
@@ -150,7 +151,7 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
     private function ccfAceptado(): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -195,7 +196,7 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
             'establecimiento_id' => $original->establecimiento_id, 'punto_venta_id' => $original->punto_venta_id, 'cliente_id' => $original->cliente_id,
             'dte_relacionado_id' => $original->id,
             'numero_control' => 'DTE-'.$tipo->value.'-M001P002-'.str_pad((string) ++$this->secuencia, 15, '0', STR_PAD_LEFT),
-            'codigo_generacion' => strtoupper((string) \Illuminate\Support\Str::uuid()),
+            'codigo_generacion' => strtoupper((string) Str::uuid()),
             'sello_recepcion' => $sello,
             'fecha_procesamiento_mh' => $conFechaMh && $sello !== null ? '2026-07-20 23:10:00' : null,
             'archivado' => $archivada,

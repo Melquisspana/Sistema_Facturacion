@@ -5,10 +5,11 @@ namespace Database\Seeders;
 use App\Enums\RolSistema;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Usuario ADMINISTRADOR inicial TEMPORAL para pruebas/desarrollo.
+ * Usuario ADMINISTRADOR inicial con contraseña aleatoria de un solo anuncio.
  *
  * ⚠️ Es un acceso de desarrollo: en PRODUCCIÓN se debe cambiar la contraseña de
  * inmediato (o eliminar este usuario) y administrar los accesos desde el módulo
@@ -24,8 +25,8 @@ use Spatie\Permission\PermissionRegistrar;
 class UsuarioAdminInicialSeeder extends Seeder
 {
     private const NOMBRE = 'Administrador';
+
     private const EMAIL = 'admin@dulceslanegrita.test';
-    private const PASSWORD = '<retirada>'; // temporal: cambiar en producción
 
     public function run(): void
     {
@@ -34,22 +35,32 @@ class UsuarioAdminInicialSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $admin = User::where('email', self::EMAIL)->first();
+        $password = null;
+
+        if (! $admin || blank($admin->password)) {
+            $password = Str::password(max(24, (int) config('security.password.min_length', 12)));
+        }
 
         if (! $admin) {
             // El cast 'hashed' del modelo hashea la contraseña automáticamente.
             $admin = User::create([
                 'name' => self::NOMBRE,
                 'email' => self::EMAIL,
-                'password' => self::PASSWORD,
+                'password' => $password,
                 'activo' => true,
             ]);
         } elseif (blank($admin->password)) {
             // Solo se repone la contraseña si está vacía; no se pisa una existente.
-            $admin->update(['password' => self::PASSWORD]);
+            $admin->update(['password' => $password]);
         }
 
         if (! $admin->hasRole(RolSistema::Administrador->value)) {
             $admin->assignRole(RolSistema::Administrador->value);
+        }
+
+        if ($password !== null && $this->command) {
+            $this->command->warn('Contraseña inicial: '.$password);
+            $this->command->warn('Cámbiela al entrar. No se volverá a mostrar.');
         }
     }
 }

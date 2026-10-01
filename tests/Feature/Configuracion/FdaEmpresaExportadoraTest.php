@@ -30,6 +30,7 @@ class FdaEmpresaExportadoraTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutVite();
         Role::findOrCreate('administrador', 'web');
         Role::findOrCreate('facturacion', 'web');
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -38,6 +39,26 @@ class FdaEmpresaExportadoraTest extends TestCase
     private function admin(): User
     {
         return User::factory()->create()->assignRole('administrador');
+    }
+
+    public function test_sin_datos_el_encabezado_esta_vacio_y_el_formulario_permite_editar(): void
+    {
+        config([
+            'exportaciones.exportador_nombre' => '',
+            'exportaciones.exportador_direccion' => '',
+            'exportaciones.fda_reg_number' => '',
+        ]);
+
+        $this->assertSame([
+            'exportador_nombre' => '',
+            'exportador_direccion' => '',
+            'fda_reg_number' => '',
+        ], app(DatosExportador::class)->paraEncabezado());
+
+        $this->actingAs($this->admin())->get(route('facturacion.listas.create'))
+            ->assertOk()
+            ->assertSee('name="exportador_nombre"', false)
+            ->assertSee('name="exportador_direccion"', false);
     }
 
     // ------------------------------------------------------ resolución con respaldo

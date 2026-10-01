@@ -9,9 +9,9 @@
 La primera firma local real fue **exitosa** y **sin transmisión a Hacienda**:
 
 - DTE **#30** (CCF 03) firmado localmente con el firmador local del MH.
-- numeroControl: `DTE-03-M001P001-000000000000012`
-- codigoGeneracion: `00000000-0000-4000-8000-000000000101`
-- JWS: `storage/app/dte/firmados/dte-03-30-00000000-0000-4000-8000-000000000101.jws`
+- numeroControl: `<numero-control>`
+- codigoGeneracion: `00000000-0000-4000-8000-000000000001`
+- JWS: `storage/app/dte/firmados/dte-03-30-00000000-0000-4000-8000-000000000001.jws`
 - Confirmado: **FIRMADO LOCALMENTE / SIN TRANSMISIÓN / NO ENVIADO A HACIENDA**.
 
 No se transmitió a Hacienda, no se guardó sello de recepción y el estado **no** pasó a

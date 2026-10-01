@@ -42,8 +42,9 @@ return [
     /*
     | ÚNICO host donde el SSO corre. Cualquier otro host (facturacion.test,
     | localhost, IP local, Tailscale) queda fuera: login local normal.
+    | Sin allowed_host configurado, el SSO permanece apagado.
     */
-    'allowed_host' => (string) env('CLOUDFLARE_ACCESS_ALLOWED_HOST', 'facturacion.example.com'),
+    'allowed_host' => (string) env('CLOUDFLARE_ACCESS_ALLOWED_HOST', ''),
 
     /*
     | Certificados públicos del team (endpoint oficial de Cloudflare):
