@@ -54,21 +54,21 @@
         </x-sidebar-group>
     @endif
 
-    {{-- Pronto pago. PPQ vive acá por lo que ES —el cobro de Calleja—, no por dónde
-         está su ruta: /ppq pertenece técnicamente al área Facturación (el área se
-         deriva de la URL, ver App\Enums\AreaSistema) y por eso se dibuja en este
-         sidebar. No se movió ni un controlador ni un prefijo.
+    {{-- Cobros Calleja. El grupo contiene el ciclo de cobro de Calleja: seguimiento
+         del CCF hasta el pago e historial de PPQ. /ppq y /cobros pertenecen
+         técnicamente al área Facturación (el área se deriva de la URL, ver
+         App\Enums\AreaSistema) y por eso se dibuja en este sidebar. No se movió
+         ni un controlador ni un prefijo.
 
-         SE LLAMABA «Cobros» Y DENTRO DECÍA «Prontos Pagos». Dos rótulos para dos
-         filas: el de fuera prometía más de lo que hay —cobros a secas es todo el
-         ciclo, y acá sólo está el pronto pago— y el de dentro repetía la misma idea
-         un escalón más abajo. Ahora el grupo se llama por lo que contiene y las dos
-         opciones cuelgan directamente de él.
+         SE LLAMABA «Cobros» Y LUEGO «Pronto pago». Cuando sólo contenía PPQ, ese
+         nombre describía sus dos filas y el subtítulo «Prontos Pagos» sobraba.
+         Ahora el seguimiento abarca el ciclo de cobro completo, por eso el grupo
+         se llama «Cobros Calleja»: Seguimiento de CCF e Historial de PPQ cuelgan
+         directamente de él, sin un subtítulo que repita la misma idea.
 
-         «Cobros» sigue siendo el nombre del ÁREA (AreaSistema::label), que es otra
-         cosa y no se toca: ahí sí caben Salidas, Documentos por cobrar y Rutas junto
-         a este bloque. La barra de esa área usa el MISMO rótulo «Pronto pago» para el
-         mismo módulo, para que no se llame de dos maneras según por dónde entres.
+         El ÁREA se llama «Rutas» y su barra ofrece también este módulo. Las dos
+         barras usan el MISMO rótulo «Cobros Calleja» y las mismas dos opciones,
+         para que el módulo no se llame de dos maneras según por dónde entres.
 
          La clave del colapsable sigue siendo «cobros» a propósito: es la llave de
          localStorage donde ya está guardado si cada usuario tiene el grupo abierto o

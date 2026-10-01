@@ -1,0 +1,68 @@
+name: Reportar un error
+description: Informar un comportamiento incorrecto con un ejemplo reproducible.
+labels:
+  - tipo:error
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Este formulario es público. Usá solo datos inventados, también en capturas y registros.
+        No incluyas nombres de clientes o empleados, NIT/NRC, correos, datos del servidor ni credenciales.
+        Para vulnerabilidades, usá el reporte privado indicado en SECURITY.md.
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo
+      options:
+        - Facturación DTE
+        - Invalidación
+        - Cobros / PPQ
+        - Rutas
+        - Gastos
+        - Planilla
+        - Exportación
+        - Asistencia
+        - Planta
+        - Configuración
+        - Infraestructura
+    validations:
+      required: true
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: Qué pasó
+      description: Describí el comportamiento observado usando datos inventados.
+    validations:
+      required: true
+  - type: textarea
+    id: que-se-esperaba
+    attributes:
+      label: Qué se esperaba
+      description: Explicá cuál debería ser el resultado.
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducir
+      description: Enumerá los pasos y las condiciones necesarias con datos inventados.
+    validations:
+      required: true
+  - type: dropdown
+    id: severidad
+    attributes:
+      label: Severidad
+      options:
+        - Crítica — impide el uso general del sistema
+        - Alta — bloquea una función principal
+        - Media — afecta una función con alternativa disponible
+        - Baja — problema menor o visual
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacidad
+    attributes:
+      label: Confirmación de privacidad
+      options:
+        - label: Confirmo que no incluyo datos reales de clientes ni credenciales
+          required: true

@@ -1,0 +1,57 @@
+name: Proponer una mejora
+description: Proponer un cambio con un problema y criterios de aceptación claros.
+labels:
+  - tipo:mejora
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Este formulario es público. Usá solo datos inventados, también en capturas y registros.
+        No incluyas nombres de clientes o empleados, NIT/NRC, correos, datos del servidor ni credenciales.
+        Para vulnerabilidades, usá el reporte privado indicado en SECURITY.md.
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo
+      options:
+        - Facturación DTE
+        - Invalidación
+        - Cobros / PPQ
+        - Rutas
+        - Gastos
+        - Planilla
+        - Exportación
+        - Asistencia
+        - Planta
+        - Configuración
+        - Infraestructura
+    validations:
+      required: true
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema que resuelve
+      description: Explicá la necesidad y a quién beneficia sin identificar personas ni empresas reales.
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+      description: Describí el cambio y el comportamiento deseado con ejemplos inventados.
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      description: Enumerá condiciones verificables para considerar terminada la mejora.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacidad
+    attributes:
+      label: Confirmación de privacidad
+      options:
+        - label: Confirmo que no incluyo datos reales de clientes ni credenciales
+          required: true

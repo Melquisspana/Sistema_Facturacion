@@ -71,9 +71,9 @@ class NavigationTest extends TestCase
 
     /**
      * La sidebar SIN el selector de áreas: la lista de secciones del área activa.
-     * Elegir un área y navegar dentro de una son operaciones distintas, y algunos
-     * nombres viven legítimamente en las dos (el área «Cobros» y el grupo «Pronto
-     * pago» hablan de cosas distintas aunque se parezcan).
+     * Elegir un área y navegar dentro de una son operaciones distintas: «Rutas»
+     * identifica el área y «Cobros Calleja» es un grupo de secciones que también
+     * aparece en la barra de Facturación.
      */
     private function seccionesDelSidebar(string $html): string
     {
@@ -111,7 +111,7 @@ class NavigationTest extends TestCase
         foreach ([
             'Inicio',
             'Ventas y facturación',
-            'Pronto pago',
+            'Cobros Calleja',
             'Contabilidad',
             'Administración', 'Sistema',
         ] as $categoria) {
@@ -343,7 +343,10 @@ class NavigationTest extends TestCase
         $lecturaOperativa = [
             'dashboard',
             'clientes.index', 'productos.index', 'facturacion.index',
-            'ppq.index', 'ppq.lotes.index',
+            // SALE 'ppq.index' y ENTRA 'cobros.index': el seguimiento de CCF de
+            // Cobros Calleja reemplazó la búsqueda de PPQ como primera fila;
+            // se conserva el mismo permiso ppq.ver.
+            'cobros.index', 'ppq.lotes.index',
             'documentos-recibidos.index', 'facturacion.reporte-contadora', 'contabilidad.paquete',
             // Exportaciones ya no aporta tres filas: aporta UNA, la de listas de empaque,
             // dentro de Ventas y facturación. El catálogo de productos de exportación se
@@ -457,7 +460,7 @@ class NavigationTest extends TestCase
         // NO Administración, Configuración ni Sistema.
         $resp = $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk();
 
-        $resp->assertSee('Pronto pago');
+        $resp->assertSee('Cobros Calleja');
         $resp->assertSee('Contabilidad');
         // Exportaciones ya no es una sección; su parte visible es la fila de listas.
         $resp->assertSee('Listas de empaque');
@@ -498,7 +501,7 @@ class NavigationTest extends TestCase
 
         foreach ([
             'clientes.index', 'productos.index', 'facturacion.index',
-            'ppq.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
+            'cobros.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
             'contabilidad.paquete', 'facturacion.listas.index',
             'usuarios.index', 'auditoria.index', 'importaciones.index',
             'configuracion.resumen', 'admin.salud-sistema',
@@ -623,34 +626,36 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El bloque de PPQ en la barra de Facturación se llama «Pronto pago» y cuelga
+     * El grupo «Cobros Calleja» en la barra de Facturación cuelga
      * sus dos opciones directamente, sin subtítulo intermedio.
      *
-     * Antes el grupo se llamaba «Cobros» y dentro llevaba un subtítulo «Prontos
-     * Pagos»: el rótulo de fuera prometía todo el ciclo de cobro cuando acá sólo
-     * está el pronto pago, y el de dentro repetía la misma idea un escalón más
-     * abajo. Con dos opciones, ese escalón no agrupaba nada.
+     * Primero se llamó «Cobros», luego «Pronto pago» al limitarse a PPQ y retirar
+     * el subtítulo «Prontos Pagos». Ahora contiene el ciclo de cobro completo,
+     * desde el seguimiento del CCF hasta el pago, junto al historial de PPQ:
+     * por eso se llama «Cobros Calleja», igual que en la barra del área Rutas.
      */
-    public function test_pronto_pago_es_un_grupo_plano_en_la_barra_de_facturacion(): void
+    public function test_cobros_calleja_es_un_grupo_plano_en_la_barra_de_facturacion(): void
     {
-        // Sobre las SECCIONES, no sobre el panel entero: «Cobros» sigue —y debe
-        // seguir— apareciendo como nombre del área en el selector de arriba, que es
-        // justo la distinción que este renombrado hace visible.
+        // Sobre las SECCIONES, no sobre el selector de áreas: acá se fija el
+        // nombre y el contenido del grupo dentro de la barra de Facturación.
         $secciones = $this->seccionesDelSidebar(
             $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
         );
 
-        $this->assertStringContainsString('Pronto pago', $secciones);
+        $this->assertStringContainsString('Cobros Calleja', $secciones);
 
         // Ni el rótulo viejo del grupo ni el subtítulo que llevaba dentro.
-        $this->assertStringNotContainsString('Cobros', $secciones);
+        $this->assertStringNotContainsString('Pronto pago', $secciones);
         $this->assertStringNotContainsString('Prontos Pagos', $secciones);
 
-        // Y las dos opciones siguen ahí, en orden.
+        // La búsqueda es un botón dentro del Seguimiento, no una fila del menú.
+        $this->assertStringNotContainsString('Buscar CCF / NC', $secciones);
+
+        // Las dos opciones cuelgan directamente del grupo, en este orden.
         $this->assertMatchesRegularExpression(
-            '/Pronto pago.*Buscar CCF \/ NC.*Historial PPQ/su',
+            '/Cobros Calleja.*Seguimiento de CCF.*Historial de PPQ/su',
             $secciones,
-            'Bajo «Pronto pago» deben colgar Buscar CCF / NC e Historial PPQ, en ese orden.',
+            'Bajo «Cobros Calleja» deben colgar Seguimiento de CCF e Historial de PPQ, en ese orden.',
         );
     }
 

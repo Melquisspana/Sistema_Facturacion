@@ -5,15 +5,21 @@ namespace Tests\Feature;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
-use App\Models\Dte;
+use App\Models\ClienteSucursal;
 use App\Models\DocumentoRecibido;
+use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
+use App\Models\RespaldoEjecucion;
 use App\Models\User;
+use App\Support\WorkerHeartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEnlaceStorage;
 use Tests\TestCase;
 
 /**
@@ -24,11 +30,13 @@ use Tests\TestCase;
  */
 class DashboardTest extends TestCase
 {
+    use PreparaEnlaceStorage;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->asegurarEnlaceDeStorage();
         foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
@@ -125,7 +133,7 @@ class DashboardTest extends TestCase
     {
         // Igual que el listado de Facturación y el PDF: nombre fiscal + sala debajo.
         $dte = $this->dte(['ambiente' => '01']);
-        $sala = \App\Models\ClienteSucursal::factory()->create([
+        $sala = ClienteSucursal::factory()->create([
             'cliente_id' => $dte->cliente_id,
             'nombre' => 'Súper Selectos San Benito',
         ]);
@@ -155,13 +163,13 @@ class DashboardTest extends TestCase
         // UNA sola consulta a `clientes` y UNA a `cliente_sucursales`, no una por fila.
         for ($i = 1; $i <= 5; $i++) {
             $dte = $this->dte(['ambiente' => '01', 'numero_control' => 'DTE-03-M001P001-00000000000010'.$i]);
-            $sala = \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $dte->cliente_id, 'nombre' => 'Sala '.$i]);
+            $sala = ClienteSucursal::factory()->create(['cliente_id' => $dte->cliente_id, 'nombre' => 'Sala '.$i]);
             $dte->cliente_sucursal_id = $sala->id;
             Dte::withoutEvents(fn () => $dte->save());
         }
 
         $consultas = [];
-        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$consultas) {
+        DB::listen(function ($q) use (&$consultas) {
             $consultas[] = $q->sql;
         });
 
@@ -192,7 +200,7 @@ class DashboardTest extends TestCase
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         $cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'CLIENTE DASHBOARD SA']);
-        $sala = \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Sala Tope']);
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'nombre' => 'Sala Tope']);
 
         $numeros = [];
         for ($i = 1; $i <= $cantidad; $i++) {
@@ -265,7 +273,7 @@ class DashboardTest extends TestCase
         $this->documentosProduccion(20);
 
         $consultas = [];
-        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$consultas) {
+        DB::listen(function ($q) use (&$consultas) {
             $consultas[] = $q->sql;
         });
 
@@ -471,8 +479,8 @@ class DashboardTest extends TestCase
 
     public function test_todo_en_orden_sin_datos_ni_problemas_reales(): void
     {
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -492,8 +500,8 @@ class DashboardTest extends TestCase
         // el estado global queda en "advertencia", que en desarrollo es el estado
         // seguro esperado. Debe verse como "Entorno seguro de desarrollo" en azul
         // (sky), no como alerta naranja/roja.
-        \App\Support\WorkerHeartbeat::olvidar();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::olvidar();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -509,14 +517,14 @@ class DashboardTest extends TestCase
 
     public function test_failed_jobs_muestra_atencion_inmediata(): void
     {
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
         ]);
-        \Illuminate\Support\Facades\DB::table('failed_jobs')->insert([
-            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
             'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
         ]);
 
@@ -548,8 +556,8 @@ class DashboardTest extends TestCase
         // Sin backup de hoy + un job fallido: varios críticos (jobs fallidos, backup, y
         // el worker también pasa a crítico con failed_jobs > 0), todos nombrados. No se
         // fija el número exacto para no acoplar el test al detalle de cada check.
-        \Illuminate\Support\Facades\DB::table('failed_jobs')->insert([
-            'uuid' => (string) \Illuminate\Support\Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
             'payload' => '{}', 'exception' => 'fake', 'failed_at' => now(),
         ]);
 
@@ -562,8 +570,8 @@ class DashboardTest extends TestCase
 
     public function test_sin_criticos_no_se_muestra_motivo(): void
     {
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -578,13 +586,13 @@ class DashboardTest extends TestCase
         // El caso real de hoy: dos intentos manuales fallidos (error intermitente de
         // socket) + un backup exitoso el mismo día. El sistema NO debe quedar en
         // "Atención inmediata": hay un backup válido del día.
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => false,
             'archivo_ruta' => null, 'archivo_tamano_bytes' => null,
             'sha256' => null, 'mensaje' => 'mysqldump terminó con código 2.', 'origen' => 'manual',
         ]);
-        \App\Models\RespaldoEjecucion::create([
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-hoy.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('b', 64), 'mensaje' => 'ok', 'origen' => 'manual',
