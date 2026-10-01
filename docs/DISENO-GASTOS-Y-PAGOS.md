@@ -314,7 +314,7 @@ Próximo paso: revisar alcance, bocetos y decisiones 1–3. Solo después de esa
 
 ## Estado de la implementación — corte 1 de fase 1 (8 de septiembre de 2026)
 
-Solo desarrollo. Sin commit, sin push, sin despliegue, sin tocar producción ni `C:\rclone`. Base de pruebas SQLite `:memory:`; base de desarrollo local `dulces_negrita_dev` (no existe una base de producción en esta máquina). No se transmitió ningún DTE, no se ejecutó ningún pago bancario y no se envió ningún correo.
+Solo desarrollo. Sin commit, sin push, sin despliegue, sin tocar producción ni `C:\rclone`. Base de pruebas SQLite `:memory:`; base de desarrollo local `base_ejemplo` (no existe una base de producción en esta máquina). No se transmitió ningún DTE, no se ejecutó ningún pago bancario y no se envió ningún correo.
 
 **Corrección previa.** El archivo de rutas usaba una Closure dentro del array de middleware del grupo. Eso rompía la resolución de rutas con `Object of class Closure could not be converted to string` y por eso se había retirado su inclusión de `routes/web.php`. Ahora el interruptor vive en `App\Http\Middleware\ModuloGastosActivo` (alias `modulo.gastos`), como en Planta y Asistencia, y el grupo usa `['auth', 'modulo.gastos', 'permission:gastos.ver']`. `routes/gastos.php` volvió a `routes/web.php` y el enlace volvió al menú, detrás de `GASTOS_ENABLED` y de `gastos.ver`.
 
@@ -340,7 +340,7 @@ Solo desarrollo. Sin commit, sin push, sin despliegue, sin tocar producción ni 
 
 ### Comprobaciones pedidas antes de cerrar el corte
 
-**Concurrencia real contra MySQL, no solo reintentos en serie.** Reenviar una petición una detrás de otra prueba idempotencia, no aislamiento. Se corrieron cuatro carreras con DOS PROCESOS PHP simultáneos contra `dulces_negrita_dev`, sincronizados a un instante de arranque pactado (cada proceso calienta conexión y clases, luego espera en bucle hasta la misma marca de tiempo):
+**Concurrencia real contra MySQL, no solo reintentos en serie.** Reenviar una petición una detrás de otra prueba idempotencia, no aislamiento. Se corrieron cuatro carreras con DOS PROCESOS PHP simultáneos contra `base_ejemplo`, sincronizados a un instante de arranque pactado (cada proceso calienta conexión y clases, luego espera en bucle hasta la misma marca de tiempo):
 
 | Carrera | Situación | Resultado |
 |---|---|---|
@@ -370,7 +370,7 @@ Lo que **sigue sin comprobarse** y hay que mirar en el teléfono de verdad: la c
 
 Sobre un pago de 100.00 (60.00 empresarial + 40.00 personal), quien solo alcanza empresa obtiene **una** aplicación de 60.00 y subtotal 6000; `pagoCompleto()` sigue devolviendo `false`, así que no ve el total de 100.00, ni la referencia, ni la nota, ni el método, ni la fecha, ni el comprobante compartido, ni el concepto del gasto personal. La pantalla lo refleja con un bloque «Aplicado a este gasto: USD 60.00» sin cabecera. Un pago solo personal devuelve cero aplicaciones y subtotal 0 para ese mismo lector.
 
-**Migración ajena ejecutada en esta sesión.** Junto a la de Gastos corrió `2026_09_04_090000_corregir_cat013_ciudad_delgado_y_cuscatancingo`, que estaba **pendiente de antes** en la base de desarrollo (viene del commit `edb315f`, no de este corte). No estaba señalada de antemano; debió estarlo. Es el hotfix CAT-013 que reagrupa Ciudad Delgado y Cuscatancingo bajo San Salvador **Centro** (23) en vez de **Este** (22). Resultado verificado en `dulces_negrita_dev`:
+**Migración ajena ejecutada en esta sesión.** Junto a la de Gastos corrió `2026_09_04_090000_corregir_cat013_ciudad_delgado_y_cuscatancingo`, que estaba **pendiente de antes** en la base de desarrollo (viene del commit `edb315f`, no de este corte). No estaba señalada de antemano; debió estarlo. Es el hotfix CAT-013 que reagrupa Ciudad Delgado y Cuscatancingo bajo San Salvador **Centro** (23) en vez de **Este** (22). Resultado verificado en `base_ejemplo`:
 
 | Fila | Antes | Después |
 |---|---|---|
@@ -513,7 +513,7 @@ Cerrada la limitación que quedaba abierta: la suite corre sobre SQLite `:memory
 
 **Sobre una base aislada, clonada de desarrollo con sus datos reales.** No una base vacía: el riesgo de esta migración es que agrega una columna con clave foránea a `gastos_eventos`, que ya tenía filas. El clon llegó con 17 gastos, 7 pagos y 26 eventos, y la migración corrió encima; los 26 eventos sobrevivieron.
 
-**La base de uso no se tocó, y se comprobó al terminar:** `dulces_negrita_dev` sigue con 0 tablas de fase 2, sin la columna `regla_id`, con sus 17 gastos y 26 eventos, y su última migración sigue siendo la de fase 1. Se usó `migrate`, nunca `migrate:fresh`; la conexión se desvió por variable de entorno sin editar `.env`; se confirmó con `db:show` antes de ejecutar; y el script de validación lleva un candado que lo aborta si la base conectada no es la aislada.
+**La base de uso no se tocó, y se comprobó al terminar:** `base_ejemplo` sigue con 0 tablas de fase 2, sin la columna `regla_id`, con sus 17 gastos y 26 eventos, y su última migración sigue siendo la de fase 1. Se usó `migrate`, nunca `migrate:fresh`; la conexión se desvió por variable de entorno sin editar `.env`; se confirmó con `db:show` antes de ejecutar; y el script de validación lleva un candado que lo aborta si la base conectada no es la aislada.
 
 **Lo que confirmó el motor real y SQLite no podía confirmar:** el índice único `(regla_id, periodo)` rechaza el duplicado desde MySQL —probado con un `INSERT` directo, no con una comprobación de PHP—; las tres consultas del listado (`cuotasAbiertas`, `esperandoMontoAbiertos`, `totales`) corren y devuelven centavos enteros; y el `whereRaw` con `COALESCE` que reemplazó al `HAVING` funciona en los dos motores.
 
@@ -546,7 +546,7 @@ Lo que se agregó: el servicio `InstalacionGastos` (memoizado por petición), el
 
 ### Fase 2 instalada en desarrollo (10 de septiembre de 2026)
 
-Aplicada en `dulces_negrita_dev` con respaldo previo (`backups/dulces_negrita_dev-antes-gastos-fase2-20260910-165157.sql`, 96 tablas), conexión confirmada con `db:show`, y `--path` al fichero exacto para que ninguna migración ajena pudiera colarse. Nunca `migrate:fresh`. **Todos los conteos idénticos antes y después**; las seis tablas nuevas nacieron vacías y `gastos_eventos.regla_id` quedó NULL en las 26 filas existentes.
+Aplicada en `base_ejemplo` con respaldo previo (`backups/base_ejemplo-antes-gastos-fase2-20260910-165157.sql`, 96 tablas), conexión confirmada con `db:show`, y `--path` al fichero exacto para que ninguna migración ajena pudiera colarse. Nunca `migrate:fresh`. **Todos los conteos idénticos antes y después**; las seis tablas nuevas nacieron vacías y `gastos_eventos.regla_id` quedó NULL en las 26 filas existentes.
 
 Un paso que no es migración: `gastos.recurrencias` es un permiso nuevo y los permisos viven en `PermisoSistema` + `RolesSeeder`. Sin él, `/gastos/reglas` daba 403 y no había nada que verificar. Se comparó en seco qué cambiaría el seeder —solo agregar ese permiso a `administrador`, sin quitar nada ni tocar otros roles— y el resultado fue exactamente ese: 66 → 67 permisos.
 
@@ -815,11 +815,11 @@ crea es por el **neto**, nunca por el bruto.
 ## Integración de Planilla al desarrollo habitual (11 de septiembre de 2026)
 
 Cierre del corte de fase 3. Planilla deja de vivir en una base aislada y pasa a
-`dulces_negrita_dev`, alcanzable con las cuentas de siempre.
+`base_ejemplo`, alcanzable con las cuentas de siempre.
 
 ### Lo que se hizo, en orden
 
-1. **Respaldo completo** de `dulces_negrita_dev` (1,53 MB), con su sha256, **y
+1. **Respaldo completo** de `base_ejemplo` (1,53 MB), con su sha256, **y
    verificado restaurándolo** en una base desechable: 102 tablas, 17 gastos, 6
    empleados, 14 huellas, 157 DTE, 3 usuarios — idénticos. Un respaldo sin restaurar no
    es un respaldo, es un archivo.
@@ -849,7 +849,7 @@ repeticiones, avisos), Planilla (inicio, formatos, empleados, anticipos, abrir) 
 pantallas en 200. Y el candado por el otro lado: la cuenta de **jefatura** recibe 403 en
 Planilla, porque no tiene permisos laborales.
 
-`dulces_negrita_dev` queda con **cero planillas**, a propósito: la primera la hace una
+`base_ejemplo` queda con **cero planillas**, a propósito: la primera la hace una
 persona, con datos de verdad.
 
 ### El ejemplo del cierre: 100 − 40 = 60, y el desembolso es 100

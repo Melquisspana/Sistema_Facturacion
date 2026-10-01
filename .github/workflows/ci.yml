@@ -1,0 +1,229 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Solo hace falta leer el código; no se publican cambios ni artefactos.
+permissions:
+  contents: read
+
+# Un push nuevo cancela la ejecución anterior de la misma referencia.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruebas:
+    name: PHPUnit
+    # Los PR internos ya se verifican por push; los de forks necesitan esta ejecución.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: mbstring, dom, fileinfo, gd, zip, intl, bcmath, pdo_sqlite, sqlite3, xml, xmlreader, xmlwriter, simplexml, libxml, iconv, openssl, tokenizer, ctype
+
+      - name: Localizar caché de Composer
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      # Se guardan descargas; composer install sigue comprobando el lock en cada ejecución.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
+
+      - name: Instalar dependencias PHP
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias del frontend
+        run: npm ci
+
+      # Las vistas usan @vite: sin public/build/manifest.json los layouts dan 500
+      # (ViteManifestNotFoundException). También comprobamos que el frontend compile.
+      - name: Compilar frontend
+        run: npm run build
+
+      # phpunit.xml fija SQLite :memory: y el entorno de pruebas, pero no APP_KEY.
+      # Esta clave evita MissingAppKeyException; el .env es desechable y sin secretos.
+      - name: Preparar clave de la aplicación
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # Un solo proceso; tests/bootstrap.php ya fija memory_limit=1G.
+      - name: Ejecutar PHPUnit
+        run: vendor/bin/phpunit
+
+  estilo:
+    name: Pint (archivos cambiados)
+    # Evita también duplicar el chequeo de estilo en PR internos.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # El historial completo permite hallar el ancestro común con master.
+          fetch-depth: 0
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          # Composer verifica los requisitos de toda la aplicación, incluso para Pint.
+          extensions: mbstring, dom, fileinfo, gd, zip, intl, bcmath, pdo_sqlite, sqlite3, xml, xmlreader, xmlwriter, simplexml, libxml, iconv, openssl, tokenizer, ctype
+
+      - name: Localizar caché de Composer
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
+
+      - name: Instalar dependencias PHP
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      # Hay unos 97 archivos heredados sin formatear: revisar todo mezclaría cambios
+      # ajenos en cada PR. La regla del proyecto es formatear solo lo que se toca.
+      - name: Comprobar estilo de los archivos PHP cambiados
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          REF_NAME: ${{ github.ref_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BASE="origin/$BASE_REF"
+            range=("$BASE...HEAD")
+          elif [[ "$EVENT_NAME" == "push" && "$REF_NAME" == "master" ]]; then
+            BASE="$BEFORE"
+            if [[ "$BASE" == "0000000000000000000000000000000000000000" ]] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+              echo "::notice::Sin commit anterior disponible en master; se omite Pint."
+              exit 0
+            fi
+            range=("$BASE" HEAD)
+          else
+            # Las ramas y las ejecuciones manuales se comparan con su origen en master.
+            BASE=$(git merge-base origin/master HEAD)
+            range=("$BASE...HEAD")
+          fi
+
+          # NUL y un array conservan los nombres con espacios; vendor queda excluido.
+          git diff --name-only --diff-filter=ACMR -z "${range[@]}" -- '*.php' ':(exclude)vendor/**' > "$RUNNER_TEMP/pint-files"
+          mapfile -d '' -t files < "$RUNNER_TEMP/pint-files"
+
+          if (( ${#files[@]} == 0 )); then
+            echo "::notice::No hay archivos PHP cambiados; se omite Pint."
+            exit 0
+          fi
+
+          vendor/bin/pint --test "${files[@]}"
+
+  pruebas-mysql:
+    name: PHPUnit (MySQL estricto)
+    # SOLO A PEDIDO por ahora (Actions → CI → Run workflow). SQLite no hace cumplir el
+    # largo de los VARCHAR y hay un error conocido de ese tipo en Cobros que todavía no
+    # está corregido: correrlo en cada push lo dejaría en rojo sin decir nada nuevo.
+    # Cuando ese arreglo entre a master, esta condición pasa a ser la de los otros jobs:
+    #   github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # NO BLOQUEANTE al principio por deuda conocida (el VARCHAR de AplicadorPagosTxt,
+    # entre otras). No se ignoran los fallos: cuando quede verde tras los arreglos,
+    # quitar esta línea para que el job pase a ser obligatorio.
+    continue-on-error: true
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: testing
+          # Contraseña DESECHABLE de CI, sin secretos ni datos reales: el contenedor
+          # vive minutos y el puerto solo sirve a las pruebas del runner temporal.
+          MYSQL_ROOT_PASSWORD: ci-solo-pruebas
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-solo-pruebas"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: mbstring, dom, fileinfo, gd, zip, intl, bcmath, pdo_sqlite, sqlite3, xml, xmlreader, xmlwriter, simplexml, libxml, iconv, openssl, tokenizer, ctype, pdo_mysql, mysqli
+
+      - name: Localizar caché de Composer
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      # Se guardan descargas; composer install sigue comprobando el lock en cada ejecución.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('composer.lock') }}
+
+      - name: Instalar dependencias PHP
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias del frontend
+        run: npm ci
+
+      # Las vistas usan @vite: sin public/build/manifest.json los layouts dan 500
+      # (ViteManifestNotFoundException). También comprobamos que el frontend compile.
+      - name: Compilar frontend
+        run: npm run build
+
+      # phpunit.xml fija SQLite :memory: y el entorno de pruebas, pero no APP_KEY.
+      # Esta clave evita MissingAppKeyException; el .env es desechable y sin secretos.
+      - name: Preparar clave de la aplicación
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # PHPUnit respeta estas variables: los <env> de DB no tienen force="true".
+      # Laravel aplica el modo estricto ('strict' => true en config/database.php);
+      # no hace falta configurarlo en el servidor MySQL.
+      # Un solo proceso; tests/bootstrap.php ya fija memory_limit=1G.
+      # PRUEBAS_MYSQL_EFIMERA pide la única excepción al candado de Tests\TestCase, que
+      # solo acepta esta base `testing` del runner (ver mysqlEfimeraDeCiSolicitada()).
+      - name: Ejecutar PHPUnit
+        env:
+          PRUEBAS_MYSQL_EFIMERA: '1'
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: ci-solo-pruebas
+          DB_URL: ''
+        run: vendor/bin/phpunit

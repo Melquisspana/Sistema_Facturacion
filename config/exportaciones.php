@@ -9,7 +9,7 @@ return [
     'plantilla' => env('EXPORTACIONES_PLANTILLA', 'templates/exportaciones/lista_empaque.xlsx'),
 
     // Valores por defecto del encabezado al crear una exportación (editables en el formulario).
-    'exportador_nombre' => env('EXPORTACIONES_EXPORTADOR', 'Titular de Ejemplo'),
-    'exportador_direccion' => env('EXPORTACIONES_EXPORTADOR_DIR', 'Calle de Ejemplo 123, Localidad A'),
-    'fda_reg_number' => env('EXPORTACIONES_FDA', '00000000001'),
+    'exportador_nombre' => env('EXPORTACIONES_EXPORTADOR', ''),
+    'exportador_direccion' => env('EXPORTACIONES_EXPORTADOR_DIR', ''),
+    'fda_reg_number' => env('EXPORTACIONES_FDA', ''),
 ];

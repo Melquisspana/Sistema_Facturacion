@@ -34,7 +34,7 @@ use Illuminate\Support\Facades\DB;
  * ═══════════════════ Las cuatro reglas que no se negocian ═══════════════════
  *
  *  0. **Toda fila es del proveedor esperado, o el archivo no se aplica.** Los pagos de
- *     este circuito son siempre del proveedor 000123; una
+ *     este circuito son siempre del proveedor configurado; una
  *     fila con otro código —o sin código— no es un pago suyo, aunque su número coincida
  *     con un documento local. Se verifica ANTES de tocar nada, con
  *     {@see ValidadorCodigoProveedorTxt}: una sola fila ajena rechaza el
@@ -117,7 +117,7 @@ class AplicadorPagosTxt
             'otros_tipos' => $otrosTipos,
             'ajustes' => [],
             'conservados' => [],
-            'proveedor' => $this->proveedor($filas, ValidadorCodigoProveedorTxt::CODIGO_CALLEJA),
+            'proveedor' => $this->proveedor($filas, ValidadorCodigoProveedorTxt::codigoConfigurado()),
             // Si este MISMO archivo ya se concilió en algún lote PPQ. Solo se informa: el
             // tratamiento de acá no cambia ni se copia nada de allá.
             'en_ppq' => app(EvidenciaEntreCircuitos::class)->enPpq($archivo->hash),

@@ -146,7 +146,7 @@ se transmitió nada a Hacienda; el modo se mantuvo **PARALELO SEGURO** en todo m
 
 **Prueba técnica de firmador (real local, sin mock):**
 - Health check `GET .../firmardocumento/status` → **HTTP 200** ("Application is running").
-- Se generó un **CCF throwaway** (interno **#101**, `DTE-03-M001P001-000000000000051`, cliente
+- Se generó un **CCF throwaway** (interno **#101**, `<numero-control>`, cliente
   contribuyente de prueba, 1 línea) **solo** para probar la firma — **no** es del piloto.
 - Firma real con el **NIT del emisor** (`DTE_FIRMA_NIT`, desde `.env`) → **`firmo=true`**,
   estado Generado→**Firmado**, **JWS real** (3 partes, sin marcador MOCK), **sin sello**

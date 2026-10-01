@@ -153,7 +153,7 @@ final class PanelGastos
             'este_mes' => $filas->filter(fn ($g) => $proxima($g) !== null && $proxima($g) >= $dia && $proxima($g) <= $finDeMes)->values(),
             'mas_adelante' => $filas->filter(fn ($g) => $proxima($g) !== null && $proxima($g) > $finDeMes)->values(),
             // Cuentas abiertas: se debe, pero no hay fecha que reclamar. Acá viven
-            // Proveedor A, Proveedor B y Distribuidora Ejemplo, y de acá sale el botón «Abonar».
+            // Proveedor A, Proveedor B y Distribuidora Ejemplo, S.A. de C.V., y de acá sale el botón «Abonar».
             'sin_fecha' => $filas->filter(fn ($g) => $proxima($g) === null)->values(),
             // Existen y tienen período; lo que no tienen es importe. No suman.
             'esperando_recibo' => $esperando,

@@ -8,7 +8,6 @@ use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -68,7 +67,7 @@ class DteEstadoTecnicoTest extends TestCase
         app(DteGeneracionService::class)->generar($dte);
         $dte->refresh();
 
-        $cg = '00000000-0000-4000-8000-000000000101';
+        $cg = '00000000-0000-4000-8000-000000000001';
         Storage::disk('local')->put('dte/json/dte-03-'.$dte->id.'-'.$cg.'.json', '{"ok":true}');
         Storage::disk('local')->put('dte/firmados/dte-03-'.$dte->id.'-'.$cg.'.jws', 'eyJhbGciOiJSUzUxMiJ9.cuerpo.firma-falsa-larga');
         $dte->numero_control = 'DTE-03-M001P001-000000000000012';

@@ -29,9 +29,9 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000104';
+    private const NC_CODIGO_GENERACION = '00000000-0000-4000-8000-000000000010';
 
-    private const NC_SELLO = '2026000000000000000000000000000000000000'; // 40 chars
+    private const NC_SELLO = '2026000000000000000000000000000000000003'; // 40 chars
 
     private const NC_NUMERO_CONTROL = 'DTE-05-M001P002-000000000000001';
 
@@ -72,7 +72,7 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
     private function ncAceptada(): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -239,7 +239,7 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
     private function ccfAceptadaProduccion(): Dte
     {
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => '06140000000901', 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -256,9 +256,9 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
             'ambiente' => '01',
             'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $cliente->id,
             'numero_control' => self::NC_NUMERO_CONTROL,
-            'codigo_generacion' => '00000000-0000-4000-8000-000000000107',
-            'sello_recepcion' => '2026386FB99EC82E45A3931C61E4A8EB331A5CIU',
-            'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => '2026386FB99EC82E45A3931C61E4A8EB331A5CIU'],
+            'codigo_generacion' => '00000000-0000-4000-8000-000000000013',
+            'sello_recepcion' => '2026000000000000000000000000000000000004',
+            'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => '2026000000000000000000000000000000000004'],
             'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);

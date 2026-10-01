@@ -73,7 +73,7 @@ class DtePdfPreliminarTest extends TestCase
         app(DteGeneracionService::class)->generar($dte);
         $dte->refresh();
         $dte->numero_control = 'DTE-03-M001P001-000000000000012';
-        $dte->codigo_generacion = '00000000-0000-4000-8000-000000000101';
+        $dte->codigo_generacion = '00000000-0000-4000-8000-000000000001';
         $dte->json_generado_path = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
         $dte->save();
 
@@ -135,7 +135,7 @@ class DtePdfPreliminarTest extends TestCase
         $html = $this->html($ccf);
 
         $this->assertStringContainsString('DTE-03-M001P001-000000000000012', $html);
-        $this->assertStringContainsString('00000000-0000-4000-8000-000000000101', $html);
+        $this->assertStringContainsString('00000000-0000-4000-8000-000000000001', $html);
         // La numeración NO debe mostrarse como pendiente.
         $this->assertStringNotContainsString('<span class="pend">pendiente</span>', $html);
     }

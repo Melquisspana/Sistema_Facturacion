@@ -8,12 +8,15 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Models\RespaldoEjecucion;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
+use App\Support\WorkerHeartbeat;
 use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEnlaceStorage;
 use Tests\TestCase;
 
 /**
@@ -21,11 +24,13 @@ use Tests\TestCase;
  */
 class SaludSistemaTest extends TestCase
 {
+    use PreparaEnlaceStorage;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->asegurarEnlaceDeStorage();
         foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
@@ -110,7 +115,7 @@ class SaludSistemaTest extends TestCase
 
     public function test_detecta_backup_valido_de_hoy(): void
     {
-        \App\Models\RespaldoEjecucion::create([
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -191,9 +196,9 @@ class SaludSistemaTest extends TestCase
         // es 'correcto' sin ningún check individual en advertencia/crítico.
         // Reset del throttle de proceso: garantiza que este pulse() escriba el latido
         // aunque otro test lo haya pulsado hace <15s (aislamiento independiente del orden).
-        \App\Support\WorkerHeartbeat::olvidar();
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::olvidar();
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -215,8 +220,8 @@ class SaludSistemaTest extends TestCase
         // Todo operativo en verde, pero un único administrador activo: eso es una
         // advertencia real de seguridad (conviene tener respaldo), NUNCA crítico.
         config(['app.debug' => false]);
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -234,8 +239,8 @@ class SaludSistemaTest extends TestCase
         // la PRESENTACIÓN en desarrollo: texto "Entorno seguro de desarrollo", pill
         // "Desarrollo" y paleta azul (sky) informativa, sin lenguaje de alerta.
         config(['app.debug' => false]);
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',
@@ -250,7 +255,7 @@ class SaludSistemaTest extends TestCase
 
     public function test_estado_general_critico_por_backup_vencido(): void
     {
-        \App\Support\WorkerHeartbeat::pulse();
+        WorkerHeartbeat::pulse();
         // Sin ningún RespaldoEjecucion (nunca corrió el backup): crítico real.
         $this->actingAs($this->usuario('administrador'))->ver()
             ->assertOk()
@@ -269,8 +274,8 @@ class SaludSistemaTest extends TestCase
         // Ambiente de desarrollo típico: transmisión deshabilitada, dry-run activo,
         // cola vacía, worker activo, backup de hoy. Nada de esto debe ser "crítico".
         config(['app.debug' => false, 'dte.transmision.enabled' => false, 'dte.transmision.dry_run' => true]);
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',

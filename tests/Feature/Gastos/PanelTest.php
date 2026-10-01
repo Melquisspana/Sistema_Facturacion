@@ -191,7 +191,7 @@ class PanelTest extends TestCase
     public function test_las_dos_cifras_van_separadas_y_no_hay_ninguna_que_las_sume(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78');
         $this->crearRegla($u, ['dia_mes' => 28, 'vigente_desde' => '2026-09-01', 'importe' => '48.00']);
 
         $datos = $this->panel($u);
@@ -305,13 +305,13 @@ class PanelTest extends TestCase
     {
         $u = $this->operador();
         $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
 
         $datos = $this->panel($u);
         $porNombre = $datos['sin_fecha']->keyBy('beneficiario');
 
         $this->assertTrue($porNombre['Proveedor A']->esProvisional());
-        $this->assertFalse($porNombre['Distribuidora Ejemplo']->esProvisional());
+        $this->assertFalse($porNombre['Distribuidora Ejemplo, S.A. de C.V.']->esProvisional());
 
         // Provisional NO significa que no se deba: suma igual que cualquier otra.
         $this->assertSame(235678, (int) $datos['se_debe']);
@@ -382,14 +382,14 @@ class PanelTest extends TestCase
     public function test_la_pantalla_abre_y_muestra_las_dos_cifras(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
             ->assertSee('Se debe hoy')
             ->assertSee('Se espera este mes')
             ->assertSee('956.78')
-            ->assertSee('Distribuidora Ejemplo');
+            ->assertSee('Distribuidora Ejemplo, S.A. de C.V.');
     }
 
     public function test_pagar_desde_la_pantalla_salda_la_obligacion(): void
@@ -920,8 +920,8 @@ class PanelTest extends TestCase
     {
         $u = $this->operador();
         $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
-        $this->cuentaAbierta($u, 'Rosa Hernández', '1000.00', 'provisional');
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Proveedor B Hernández', '1000.00', 'provisional');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
 
         $datos = $this->panel($u);
 
@@ -955,7 +955,7 @@ class PanelTest extends TestCase
     public function test_sin_vencidos_se_resuelve_en_una_linea(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
@@ -968,7 +968,7 @@ class PanelTest extends TestCase
     public function test_entrar_al_area_abre_el_panel(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
 
         // La raíz del área ES el panel, no una redirección hacia él.
         $this->actingAs($u)->get('/gastos')
@@ -993,7 +993,7 @@ class PanelTest extends TestCase
     public function test_el_listado_clasico_sigue_existiendo_con_su_busqueda_y_sus_filtros(): void
     {
         $u = $this->operador();
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
         $this->cuentaAbierta($u, 'Proveedor A', '1400.00', 'provisional');
 
         // Sigue en pie, en su URL propia, y sigue filtrando.
@@ -1002,13 +1002,13 @@ class PanelTest extends TestCase
         $this->actingAs($u)->get(route('gastos.index'))
             ->assertOk()
             ->assertSee('Buscar y filtrar')
-            ->assertSee('Distribuidora Ejemplo')
+            ->assertSee('Distribuidora Ejemplo, S.A. de C.V.')
             ->assertSee('Proveedor A');
 
         // La búsqueda por texto recorta de verdad.
-        $this->actingAs($u)->get(route('gastos.index', ['q' => 'Distribuidora Ejemplo']))
+        $this->actingAs($u)->get(route('gastos.index', ['q' => 'Distribuidora Ejemplo, S.A. de C.V.']))
             ->assertOk()
-            ->assertSee('Distribuidora Ejemplo')
+            ->assertSee('Distribuidora Ejemplo, S.A. de C.V.')
             ->assertDontSee('Proveedor A');
 
         // Y las pestañas siguen ahí.
@@ -1198,11 +1198,11 @@ class PanelTest extends TestCase
     public function test_quien_solo_ve_no_recibe_los_botones_de_accion(): void
     {
         $u = $this->usuario([PermisoSistema::GastosVer]);
-        $this->cuentaAbierta($u, 'Distribuidora Ejemplo', '956.78', 'confirmado');
+        $this->cuentaAbierta($u, 'Distribuidora Ejemplo, S.A. de C.V.', '956.78', 'confirmado');
 
         $this->actingAs($u)->get(route('gastos.panel'))
             ->assertOk()
-            ->assertSee('Distribuidora Ejemplo')
+            ->assertSee('Distribuidora Ejemplo, S.A. de C.V.')
             ->assertDontSee('Compré y pagué')
             ->assertDontSee('>Abonar<', false);
     }

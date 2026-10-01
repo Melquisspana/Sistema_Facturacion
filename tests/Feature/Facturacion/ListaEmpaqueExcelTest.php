@@ -58,6 +58,12 @@ class ListaEmpaqueExcelTest extends TestCase
     {
         parent::setUp();
 
+        config([
+            'exportaciones.exportador_nombre' => 'Titular de Ejemplo',
+            'exportaciones.exportador_direccion' => 'Calle de Ejemplo 123, Localidad A',
+            'exportaciones.fda_reg_number' => '00000000001',
+        ]);
+
         foreach (['administrador', 'jefatura'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }

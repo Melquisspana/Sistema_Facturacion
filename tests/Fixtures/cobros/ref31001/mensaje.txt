@@ -1,0 +1,94 @@
+CODIGO DE GENERACION DEL CCF´S  Y/O  N/C´S
+NUMERO DE CONTROL DEL CCF´S  Y/O  N/C´S
+ MONTO DEL CCF´S  Y/O  N/C´S
+NUMERO DEL SELLO DE RECEPCION
+SALA DE VENTA O CD
+OBSERVACIONES
+00000000-0000-4000-8000-000000000017
+DTE-03-M001P002-000000000090059
+ $100.00
+2026000000000000000000000000000000000006
+Sucursal A
+FALTA NOTA DE CREDITO
+00000000-0000-4000-8000-000000000018
+DTE-03-M001P001-000000000090060
+ $200.00
+2026000000000000000000000000000000000007
+Sucursal B
+NO APARECE EN REPORTERIA
+
+
+
+
+   [cid:00000000-0000-4000-8000-000000000019]
+
+
+  *
+NEGOCIACIONES DE ANTICIPOS DEBE SER SEÑALADA EN PESTAÑA DE ASUNTO= (ANTICIPO, SOLICITUD DE QUEDAN ACREEDOR), Aplicable para Acreedores.
+
+  *
+RECEPCION DE SOLICITUDES: De lunes a viernes en horario 8:00AM - 5:00PM, fuera de horario establecido es de carácter RECHAZADO.
+
+  *
+ FACTURAS ANULADAS, SUSTITUIDAS, O REFACTURADAS deben venir reflejadas obligatoriamente junto con NC DE ANULACION Y CCF NUEVO.
+
+Contacto.
+Contacto Uno   22220000 extensión #100
+Contacto Dos.  22220000 extensión #100
+Contacto Tres 22220000 extensión #100
+________________________________
+De: Cuentas por Pagar Quedan <contacto@cliente.example.com>
+Enviado: viernes, 4 de septiembre de 2026 14:09
+Para: Responsable de Ejemplo <facturacion@example.com>
+Asunto: RE: SOLICITUD DE QUEDAN (PRONTO PAGO)
+
+Buen Dia.
+
+  *
+RECIBIDO (000123202609040951)
+  *
+REFERENCIA #31001
+  *
+PROGRAMACION DE PAGO: 07/09/2026
+
+Atte.
+Contacto Dos
+Depto. de Cuentas Por Pagar
+Calleja, S.A. de C.V.
+
+
+
+
+   [cid:00000000-0000-4000-8000-000000000020]
+
+
+  *
+NEGOCIACIONES DE ANTICIPOS DEBE SER SEÑALADA EN PESTAÑA DE ASUNTO= (ANTICIPO, SOLICITUD DE QUEDAN ACREEDOR), Aplicable para Acreedores.
+
+  *
+RECEPCION DE SOLICITUDES: De lunes a viernes en horario 8:00AM - 5:00PM, fuera de horario establecido es de carácter RECHAZADO.
+
+  *
+ FACTURAS ANULADAS, SUSTITUIDAS, O REFACTURADAS deben venir reflejadas obligatoriamente junto con NC DE ANULACION Y CCF NUEVO.
+
+Contacto.
+Contacto Uno   22220000 extensión #100
+Contacto Dos.  22220000 extensión #100
+Contacto Tres 22220000 extensión #100
+________________________________
+De: Responsable de Ejemplo <facturacion@example.com>
+Enviado: viernes, 4 de septiembre de 2026 09:51
+Para: Cuentas por Pagar Quedan <contacto@cliente.example.com>
+Asunto: SOLICITUD DE QUEDAN (PRONTO PAGO)
+
+Buenos días
+
+Adjunto documento
+
+--
+Dulces La Negrita
+Departamento de Facturación Electrónica
+📧 facturacion@example.com
+📍 Calle de Ejemplo 123, Localidad A
+
+  Este correo puede contener documentos tributarios electrónicos y archivos relacionados con su compra.

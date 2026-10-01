@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Models\RespaldoEjecucion;
 use App\Models\User;
+use App\Support\WorkerHeartbeat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEnlaceStorage;
 use Tests\TestCase;
 
 /**
@@ -17,11 +20,13 @@ use Tests\TestCase;
  */
 class SaludSistemaTransmisionDteTest extends TestCase
 {
+    use PreparaEnlaceStorage;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->asegurarEnlaceDeStorage();
         foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
@@ -113,8 +118,8 @@ class SaludSistemaTransmisionDteTest extends TestCase
         // para el banner general — si el sistema puede transmitir REAL a producción
         // ahora mismo, eso es "atención inmediata" real, no un dato meramente informativo.
         config(['app.debug' => false]);
-        \App\Support\WorkerHeartbeat::pulse();
-        \App\Models\RespaldoEjecucion::create([
+        WorkerHeartbeat::pulse();
+        RespaldoEjecucion::create([
             'iniciado_en' => now(), 'terminado_en' => now(), 'exitoso' => true,
             'archivo_ruta' => 'auto-test.sql', 'archivo_tamano_bytes' => 100,
             'sha256' => str_repeat('a', 64), 'mensaje' => 'ok', 'origen' => 'automatico',

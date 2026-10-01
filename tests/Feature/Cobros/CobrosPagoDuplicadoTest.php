@@ -88,7 +88,7 @@ class CobrosPagoDuplicadoTest extends TestCase
             'cliente_id' => $cliente->id,
             'origen' => OrigenCobroDocumento::Externo->value,
             'tipo_dte' => '03',
-            'numero_control' => 'DTE-03-M001P002-000000000000119',
+            'numero_control' => 'DTE-03-M001P002-000000000090059',
             'fecha_emision' => '2026-08-26',
             'monto' => $monto,
         ]);
@@ -100,7 +100,7 @@ class CobrosPagoDuplicadoTest extends TestCase
         // El relleno va en un comentario del nombre del proveedor: cambia el CONTENIDO —y
         // por tanto la huella— sin cambiar lo que el archivo informa.
         $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n"
-            ."000123;TITULAR DE EJEMPLO{$relleno};CF;DTE03M001P002000000000000119;26-AGO-26;{$importe}\n";
+            ."000123;TITULAR DE EJEMPLO{$relleno};CF;DTE03M001P002000000000090059;26-AGO-26;{$importe}\n";
 
         return app(AplicadorPagosTxt::class)->aplicar(
             $cliente,
@@ -288,14 +288,14 @@ class CobrosPagoDuplicadoTest extends TestCase
             'cliente_id' => $cliente->id,
             'origen' => OrigenCobroDocumento::Externo->value,
             'tipo_dte' => '03',
-            'numero_control' => 'DTE-03-M001P002-000000000000120',
+            'numero_control' => 'DTE-03-M001P002-000000000090017',
             'monto' => '50.00',
         ]);
 
         $this->aplicar($cliente, '100.00', 'remesa-1.txt');
 
         $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n"
-            ."000123;TITULAR DE EJEMPLO;CF;DTE03M001P002000000000000120;26-AGO-26;50.00\n";
+            ."000123;TITULAR DE EJEMPLO;CF;DTE03M001P002000000000090017;26-AGO-26;50.00\n";
         $informe = app(AplicadorPagosTxt::class)->aplicar(
             $cliente,
             app(ConciliacionTxtParser::class)->parse($txt),
@@ -382,7 +382,7 @@ class CobrosPagoDuplicadoTest extends TestCase
             'cliente_id' => $cliente->id,
             'origen' => OrigenCobroDocumento::Externo->value,
             'tipo_dte' => '03',
-            'numero_control' => 'DTE-03-M001P002-000000000000122',
+            'numero_control' => 'DTE-03-M001P002-000000000090016',
             'monto' => '10.00',
         ]);
 

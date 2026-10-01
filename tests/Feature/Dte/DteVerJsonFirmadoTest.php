@@ -7,18 +7,17 @@ use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
-use Database\Seeders\CatalogosMhSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -28,7 +27,7 @@ use Tests\TestCase;
  */
 class DteVerJsonFirmadoTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private const JWS = 'eyJhbGciOiJSUzI1NiJ9.eyJkdGUiOiJmYWtlIn0.firma-falsa-de-prueba';
@@ -74,7 +73,7 @@ class DteVerJsonFirmadoTest extends TestCase
     private function ccfFirmado(): Dte
     {
         $ccf = $this->ccfGenerado();
-        $cg = '00000000-0000-4000-8000-000000000101';
+        $cg = '00000000-0000-4000-8000-000000000001';
         $ruta = 'dte/firmados/dte-03-'.$ccf->id.'-'.$cg.'.jws';
         Storage::disk('local')->put($ruta, self::JWS);
 
@@ -105,7 +104,7 @@ class DteVerJsonFirmadoTest extends TestCase
         $this->actingAs($this->usuario('administrador'))
             ->get(route('facturacion.firmado.descargar', $ccf))
             ->assertOk()
-            ->assertDownload('dte-03-'.$ccf->id.'-00000000-0000-4000-8000-000000000101.jws');
+            ->assertDownload('dte-03-'.$ccf->id.'-00000000-0000-4000-8000-000000000001.jws');
     }
 
     public function test_consulta_no_puede_ver_el_jws(): void

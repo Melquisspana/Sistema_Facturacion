@@ -365,7 +365,7 @@ apagada a propósito) y que ninguno falla por un error de configuración inesper
 Si algo falla después del paso 4 (migraciones ya corridas):
 1. Restaurar la BD desde el dump del paso 1:
    ```cmd
-   mysql -u root dulces_negrita < ruta\al\dump-de-antes.sql
+   mysql -u root base_ejemplo < ruta\al\dump-de-antes.sql
    ```
 2. Restaurar `.env` desde `.env.backup-antes-deploy-*`.
 3. Volver el código a la versión anterior:

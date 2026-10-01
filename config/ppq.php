@@ -94,9 +94,9 @@ return [
     // Cliente por defecto del módulo (Calleja). Solo referencia para filtros/UI.
     'cliente_default_id' => env('PPQ_CLIENTE_DEFAULT_ID', null),
 
-    // Código de proveedor que Calleja asigna al emisor (TITULAR DE EJEMPLO). Se usa SOLO para nombrar el
-    // archivo Excel exportado: {codigo}{YYYYMMDDHHmm}.xlsx (ej. 000123202606300350.xlsx).
-    'codigo_proveedor' => env('PPQ_CODIGO_PROVEEDOR', '000123'),
+    // Obligatorio: valida el emisor de cada fila TXT y nombra el Excel exportado.
+    // Sin configurarlo se rechazan los TXT y las exportaciones. Ejemplo ficticio: 000123.
+    'codigo_proveedor' => env('PPQ_CODIGO_PROVEEDOR'),
 
     /*
     |--------------------------------------------------------------------------

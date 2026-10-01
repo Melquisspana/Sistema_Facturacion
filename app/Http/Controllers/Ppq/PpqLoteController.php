@@ -270,7 +270,11 @@ class PpqLoteController extends Controller
         if ($lote->items()->count() === 0) {
             return redirect()->route('ppq.lotes.show', $lote)->with('error', 'El lote no tiene documentos para exportar.');
         }
-        $ruta = $exporter->generar($lote);
+        try {
+            $ruta = $exporter->generar($lote);
+        } catch (ArchivoProveedorInvalidoException $e) {
+            return redirect()->route('ppq.lotes.show', $lote)->with('error', $e->getMessage());
+        }
 
         return response()->download($ruta, $exporter->nombreArchivo($lote))->deleteFileAfterSend();
     }
@@ -284,7 +288,7 @@ class PpqLoteController extends Controller
     {
         try {
             $ruta = $exporter->generar($lote);
-        } catch (ArchivoQuedanIncompletoException $e) {
+        } catch (ArchivoQuedanIncompletoException|ArchivoProveedorInvalidoException $e) {
             return redirect()->route('ppq.lotes.show', $lote)->with('error', $e->getMessage());
         }
 

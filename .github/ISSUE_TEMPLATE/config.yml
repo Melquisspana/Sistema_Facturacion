@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Reportar una vulnerabilidad
+    url: https://github.com/Melquisspana/Sistema_Facturacion/security/advisories/new
+    about: "No abras un issue público: usá el reporte privado."

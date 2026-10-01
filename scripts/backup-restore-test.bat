@@ -2,8 +2,10 @@
 REM ==========================================================================
 REM  PRUEBA SEGURA DE RESTAURACION DE BACKUP.
 REM
-REM  Restaura el ultimo backup SOLO en una base TEMPORAL llamada
-REM  "dulces_negrita_restore_test". NUNCA toca la base real "dulces_negrita".
+REM  Restaura el ultimo backup SOLO en la base TEMPORAL configurada.
+REM  Defina BACKUP_REAL_DB y BACKUP_RESTORE_TEST_DB antes de ejecutar.
+REM  Ejemplo: BACKUP_REAL_DB=base_ejemplo
+REM           BACKUP_RESTORE_TEST_DB=base_ejemplo_restore_test
 REM
 REM  - Pide confirmacion antes de continuar.
 REM  - Usa el ZIP mas reciente de storage\app\private\Dulces La Negrita.
@@ -22,8 +24,15 @@ REM MySQL de Laragon (ultima version instalada); si no se detecta, usar el del P
 set "MYSQL_BIN="
 for /d %%D in ("C:\laragon\bin\mysql\mysql-*") do set "MYSQL_BIN=%%D\bin\mysql.exe"
 if not defined MYSQL_BIN set "MYSQL_BIN=mysql"
-set "REAL_DB=dulces_negrita"
-set "TEMP_DB=dulces_negrita_restore_test"
+REM Validar sin interpolar los valores en codigo de shell ni SQL.
+powershell -NoProfile -Command "if ($env:BACKUP_REAL_DB -notmatch '\A[a-zA-Z0-9_]+\z' -or $env:BACKUP_RESTORE_TEST_DB -notmatch '\A[a-zA-Z0-9_]+_restore_test\z') { exit 1 }"
+if errorlevel 1 (
+    echo ERROR: configure BACKUP_REAL_DB y BACKUP_RESTORE_TEST_DB con nombres validos.
+    echo La base temporal debe terminar en _restore_test.
+    goto :fin
+)
+set "REAL_DB=%BACKUP_REAL_DB%"
+set "TEMP_DB=%BACKUP_RESTORE_TEST_DB%"
 set "WORK_DIR=%TEMP%\restore_test_%RANDOM%"
 
 echo ==========================================================================

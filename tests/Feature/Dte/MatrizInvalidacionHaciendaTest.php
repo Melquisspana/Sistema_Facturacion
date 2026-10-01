@@ -94,7 +94,7 @@ class MatrizInvalidacionHaciendaTest extends TestCase
         $this->credencialesApitestFicticias();
 
         $empresa = Empresa::create([
-            'razon_social' => 'Titular Ejemplo Peña', 'nombre_comercial' => 'Dulces La Negrita',
+            'razon_social' => 'Titular de Ejemplo', 'nombre_comercial' => 'Dulces La Negrita',
             'nit' => self::NIT_EMISOR, 'nrc' => '1000017', 'telefono' => '22220000',
             'correo' => 'facturacion@example.com', 'ambiente' => '00', 'activo' => true,
         ]);
@@ -360,7 +360,7 @@ class MatrizInvalidacionHaciendaTest extends TestCase
 
         $casos = [
             'el mismo documento que se invalida' => [$ccf->codigo_generacion, 'no puede ser el mismo DTE'],
-            'inexistente (UUID bien formado)' => ['A1B2C3D4-E5F6-4A8B-9C0D-1E2F3A4B5C6D', 'no existe en este sistema'],
+            'inexistente (UUID bien formado)' => ['00000000-0000-4000-8000-000000000015', 'no existe en este sistema'],
             'formato no oficial' => ['no-es-un-uuid', 'no tiene formato oficial'],
             'de otro tipo' => [$this->aceptado(TipoDte::Factura)->codigo_generacion, 'del mismo tipo'],
             'de otro emisor' => [$this->aceptado(TipoDte::CreditoFiscal, estab: $estabAjeno)->codigo_generacion, 'otro emisor'],

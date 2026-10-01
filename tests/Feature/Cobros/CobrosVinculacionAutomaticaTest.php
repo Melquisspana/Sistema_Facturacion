@@ -228,7 +228,7 @@ class CobrosVinculacionAutomaticaTest extends TestCase
 
     public function test_actualiza_candidatos_si_cambian_aunque_el_motivo_siga_igual(): void
     {
-        $ccf = $this->documento($this->dte('DTE-03-M001P002-000000000000040'));
+        $ccf = $this->documento($this->dte('DTE-03-M001P002-000000000090041'));
         $anteriorA = $this->albaranEntrega('AC01/0017/00/0040');
         $anteriorB = $this->albaranEntrega('AC01/0017/00/0041');
 
