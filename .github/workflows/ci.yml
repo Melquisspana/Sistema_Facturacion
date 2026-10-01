@@ -141,17 +141,15 @@ jobs:
 
   pruebas-mysql:
     name: PHPUnit (MySQL estricto)
-    # SOLO A PEDIDO por ahora (Actions → CI → Run workflow). SQLite no hace cumplir el
-    # largo de los VARCHAR y hay un error conocido de ese tipo en Cobros que todavía no
-    # está corregido: correrlo en cada push lo dejaría en rojo sin decir nada nuevo.
-    # Cuando ese arreglo entre a master, esta condición pasa a ser la de los otros jobs:
-    #   github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
-    if: github.event_name == 'workflow_dispatch'
+    # SQLite no hace cumplir el largo de los VARCHAR ni los bloqueos: este job corre la
+    # suite contra MySQL en modo estricto en cada push, con la misma condición que los
+    # otros jobs. Se activó junto con el arreglo de los textos largos de Cobros.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    # NO BLOQUEANTE al principio por deuda conocida (el VARCHAR de AplicadorPagosTxt,
-    # entre otras). No se ignoran los fallos: cuando quede verde tras los arreglos,
-    # quitar esta línea para que el job pase a ser obligatorio.
+    # NO BLOQUEANTE al principio: puede haber más deuda de MySQL que SQLite no muestra.
+    # No se ignoran los fallos: cuando quede verde, quitar esta línea para que el job
+    # pase a ser obligatorio.
     continue-on-error: true
     services:
       mysql:

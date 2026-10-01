@@ -49,7 +49,7 @@ class CobrosTextosLargoColumnaTest extends TestCase
     // Mismo formato de CobrosPagoDuplicadoTest: el proveedor cambia la huella del TXT.
     private function aplicar(Cliente $cliente, string $importe, string $nombre, string $relleno = ''): array
     {
-        $codigo = ValidadorCodigoProveedorTxt::CODIGO_CALLEJA;
+        $codigo = ValidadorCodigoProveedorTxt::codigoConfigurado();
         $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n"
             ."{$codigo};PROVEEDOR FICTICIO{$relleno};CF;DTE03M001P002000000000000719;26-AGO-26;{$importe}\n";
 
