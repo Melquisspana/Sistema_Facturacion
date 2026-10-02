@@ -72,8 +72,128 @@
                     @if ($documento->albaran)
                         <p class="mt-1 text-xs font-mono">{{ $documento->albaran->numero_albaran }}</p>
                     @endif
+                    @if ($corregible)
+                        @if ($movible)
+                            <button type="button" x-data x-on:click="$dispatch('open-modal', 'corregir-vinculo')"
+                                    class="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 hover:underline">
+                                {{ $documento->albaran ? 'Vincular con otro albarán' : 'Elegir albarán' }}
+                            </button>
+                        @else
+                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">Ya está en una solicitud o tiene pagos: el albarán no se cambia desde aquí.</p>
+                        @endif
+                    @endif
                 </div>
             </div>
+
+            {{-- ---------- Corregir vínculo: elegir el albarán entre sugeridos ---------- --}}
+            @if ($corregible && $movible)
+                @php
+                    $salaHoy = $documento->albaran?->sala_codigo ?: \App\Support\OrdenCompra::salaDesde($documento->dte?->numero_orden_compra);
+                @endphp
+                <x-modal name="corregir-vinculo" maxWidth="2xl" :show="$errors->has('ppq_albaran_id') && old('desde_corregir')" focusable>
+                    <form method="POST" action="{{ route('cobros.documentos.vincular', $documento) }}" class="p-6 space-y-4"
+                          x-data="{
+                              sugeridos: @js($sugeridos),
+                              resultados: [],
+                              q: '',
+                              buscando: false,
+                              buscado: false,
+                              elegido: null,
+                              nota: '',
+                              url: @js(route('cobros.documentos.albaranes', $documento)),
+                              elegir(a) {
+                                  if (a.tomado_por) return;
+                                  this.elegido = a;
+                                  this.nota = ('Elegido en «Corregir vínculo»: ' + (a.motivos.length ? a.motivos.join(', ') : 'búsqueda por número') + '.').slice(0, 255);
+                              },
+                              async buscar() {
+                                  if (this.q.trim().length < 3) { this.resultados = []; this.buscado = false; return; }
+                                  this.buscando = true;
+                                  try {
+                                      const r = await fetch(this.url + '?q=' + encodeURIComponent(this.q.trim()), { headers: { 'Accept': 'application/json' } });
+                                      this.resultados = r.ok ? await r.json() : [];
+                                  } catch (e) {
+                                      this.resultados = [];
+                                  } finally {
+                                      this.buscando = false;
+                                      this.buscado = true;
+                                  }
+                              },
+                          }">
+                        @csrf
+                        <input type="hidden" name="desde_corregir" value="1">
+                        <input type="hidden" name="ppq_albaran_id" x-bind:value="elegido ? elegido.id : ''">
+
+                        <div>
+                            <h2 class="text-lg font-medium text-gray-900 dark:text-paper-100">{{ $documento->albaran ? 'Vincular con otro albarán' : 'Elegir albarán' }}</h2>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">
+                                Ahora: <span class="font-mono">{{ $documento->albaran?->numero_albaran ?? 'sin albarán' }}</span>
+                                · {{ $salaHoy ? \App\Support\Sala::descripcion($salaHoy).' ('.$salaHoy.')' : 'sin sala' }}.
+                                La factura ante Hacienda no cambia.
+                            </p>
+                        </div>
+
+                        <template x-for="lista in [{ titulo: 'Sugeridos', filas: sugeridos, vacio: 'No hay albaranes parecidos cerca de la fecha del CCF. Búsquelo por número.' }, { titulo: 'Resultados de la búsqueda', filas: resultados, vacio: buscado ? 'Ningún albarán de entrega con ese número.' : null }]">
+                            <div x-show="lista.titulo === 'Sugeridos' || q.trim().length >= 3">
+                                <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300" x-text="lista.titulo"></h3>
+                                <p x-show="lista.filas.length === 0 && lista.vacio" class="mt-1 text-sm text-gray-500 dark:text-paper-300" x-text="lista.vacio"></p>
+                                <ul class="mt-2 space-y-2">
+                                    <template x-for="a in lista.filas" :key="lista.titulo + a.id">
+                                        <li>
+                                            <button type="button" x-on:click="elegir(a)" x-bind:disabled="!!a.tomado_por"
+                                                    x-bind:aria-pressed="elegido && elegido.id === a.id ? 'true' : 'false'"
+                                                    x-bind:class="elegido && elegido.id === a.id ? 'ring-2 ring-indigo-500' : 'ring-1 ring-gray-200 dark:ring-ink-600'"
+                                                    class="w-full rounded-md p-3 text-left text-sm hover:bg-gray-50 dark:hover:bg-ink-700 disabled:opacity-50">
+                                                <span class="flex flex-wrap items-baseline justify-between gap-2">
+                                                    <span class="font-mono font-semibold text-gray-800 dark:text-paper-100" x-text="a.numero"></span>
+                                                    <span class="font-mono text-gray-700 dark:text-paper-100" x-text="a.monto === null ? '—' : a.monto"></span>
+                                                </span>
+                                                <span class="block text-gray-600 dark:text-paper-300">
+                                                    <span x-text="a.sala_nombre"></span> <span class="font-mono text-xs" x-text="a.sala ? '(' + a.sala + ')' : ''"></span>
+                                                    · <span x-text="a.fecha || 'sin fecha'"></span>
+                                                </span>
+                                                <span x-show="a.motivos.length" class="block text-xs text-emerald-700 dark:text-emerald-300" x-text="'Se sugiere por: ' + a.motivos.join(', ')"></span>
+                                                <span x-show="a.tomado_por" class="block text-xs text-rose-700" x-text="'Ya vinculado a ' + a.tomado_por"></span>
+                                            </button>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                        <div>
+                            <x-input-label for="buscar_albaran" value="¿No está? Buscar por número de albarán" />
+                            <x-text-input id="buscar_albaran" type="search" autocomplete="off" class="mt-1 block w-full font-mono"
+                                          placeholder="Por ejemplo 0062/00/1234" x-model="q" x-on:input.debounce.400ms="buscar()"
+                                          x-on:keydown.enter.prevent="buscar()" />
+                            <p x-show="buscando" class="mt-1 text-xs text-gray-500 dark:text-paper-300">Buscando…</p>
+                        </div>
+
+                        <div x-show="elegido" class="rounded-md bg-gray-50 dark:bg-ink-700 p-3 text-sm text-gray-700 dark:text-paper-100" aria-live="polite">
+                            <template x-if="elegido">
+                                <div class="space-y-1">
+                                    <p>Quedará vinculado a <strong class="font-mono" x-text="elegido.numero"></strong>,
+                                        sala <strong x-text="elegido.sala_nombre"></strong> <span class="font-mono text-xs" x-text="elegido.sala ? '(' + elegido.sala + ')' : ''"></span>,
+                                        como vinculado a mano por usted.</p>
+                                    <template x-for="aviso in elegido.avisos">
+                                        <p class="text-xs text-amber-700 dark:text-amber-300" x-text="'Ojo: ' + aviso"></p>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div>
+                            <x-input-label for="nota_vinculo" value="Nota (queda en el historial)" />
+                            <x-text-input id="nota_vinculo" name="nota" type="text" maxlength="255" required class="mt-1 block w-full" x-model="nota" />
+                        </div>
+
+                        <div class="flex justify-end gap-2">
+                            <x-secondary-button x-on:click="$dispatch('close')">Cancelar</x-secondary-button>
+                            <x-primary-button x-bind:disabled="!elegido">Vincular este albarán</x-primary-button>
+                        </div>
+                    </form>
+                </x-modal>
+            @endif
 
             {{-- ---------- Vinculación pendiente ---------- --}}
             @if ($veredicto['estado'] === \App\Enums\Cobros\EstadoVinculacionAlbaran::Revisar && $veredicto['candidatos'] !== [])

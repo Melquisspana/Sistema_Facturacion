@@ -2,7 +2,10 @@
 
 namespace App\Services\Cobros;
 
+use App\Enums\Cobros\EstadoPagoCobro;
+use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\EstadoVinculacionAlbaran;
+use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqAlbaran;
@@ -403,7 +406,7 @@ class VinculadorAlbaranes
      *
      * @return array<int, string>
      */
-    private function contradicciones(CobroDocumento $documento, PpqAlbaran $albaran): array
+    public function contradicciones(CobroDocumento $documento, PpqAlbaran $albaran): array
     {
         $problemas = [];
 
@@ -577,6 +580,12 @@ class VinculadorAlbaranes
             if (trim((string) $nota) === '') {
                 throw ValidationException::withMessages(['nota' => 'Indique la evidencia que respalda esta vinculación.']);
             }
+            // MOVER el albarán de un CCF ya presentado o cobrado cambiaría el respaldo de algo
+            // que el cliente ya recibió: eso no se hace desde un clic.
+            $anterior = $documento->ppq_albaran_id === null ? null : PpqAlbaran::find($documento->ppq_albaran_id);
+            if ($anterior !== null && $anterior->id !== $albaran->id && ! $this->albaranMovible($documento)) {
+                throw ValidationException::withMessages(['ppq_albaran_id' => 'El CCF ya está en una solicitud o tiene pagos: su albarán no se cambia desde aquí.']);
+            }
             $albaran = PpqAlbaran::lockForUpdate()->findOrFail($albaran->id);
             $ocupado = CobroDocumento::where('ppq_albaran_id', $albaran->id)->where('id', '!=', $documento->id)->lockForUpdate()->exists();
             if ($ocupado || ! $albaran->esDeEntrega()
@@ -599,17 +608,51 @@ class VinculadorAlbaranes
                 'vinculado_por' => $usuario->id,
             ])->save();
 
+            $salaAntes = $anterior === null ? null : ($anterior->sala_codigo ?: Albaran::salaDesdeNumero($anterior->numero_albaran));
+            $salaDespues = $albaran->sala_codigo ?: Albaran::salaDesdeNumero($albaran->numero_albaran);
+
+            $documento->eventos()->create([
+                'tipo' => TipoEventoCobro::Vinculacion->value,
+                'origen' => 'manual',
+                'fecha' => today()->toDateString(),
+                'detalle' => 'Albarán '.($anterior?->numero_albaran ?? 'ninguno').' → '.$albaran->numero_albaran
+                    .' (sala '.($salaAntes ?? '—').' → '.($salaDespues ?? '—').'). '.$nota,
+                'user_id' => $usuario->id,
+                'datos' => [
+                    'albaran_anterior_id' => $anterior?->id,
+                    'albaran_anterior' => $anterior?->numero_albaran,
+                    'albaran_id' => $albaran->id,
+                    'albaran' => $albaran->numero_albaran,
+                    'sala_anterior' => $salaAntes,
+                    'sala_nueva' => $salaDespues,
+                    'contradicciones' => $contradicciones,
+                ],
+            ]);
+
             activity('cobros_vinculacion')
                 ->performedOn($documento)
                 ->causedBy($usuario)
                 ->withProperties([
                     'albaran_id' => $albaran->id,
                     'albaran_numero' => $albaran->numero_albaran,
+                    'antes' => ['albaran_id' => $anterior?->id, 'albaran_numero' => $anterior?->numero_albaran, 'sala' => $salaAntes],
+                    'despues' => ['albaran_id' => $albaran->id, 'albaran_numero' => $albaran->numero_albaran, 'sala' => $salaDespues],
                     'contradicciones' => $contradicciones,
                     'nota' => $nota,
                 ])
                 ->log('vinculó a mano el albarán del documento de cobro');
         }, 3);
+    }
+
+    /**
+     * ¿Se le puede cambiar el albarán? Solo si el CCF no está en una solicitud ni tiene
+     * pagos (ni siquiera en revisión): ahí el vínculo ya respalda algo presentado o cobrado.
+     */
+    public function albaranMovible(CobroDocumento $documento): bool
+    {
+        return $documento->presentacion_estado === EstadoPresentacionCobro::SinPresentar
+            && $documento->pago_estado === EstadoPagoCobro::Pendiente
+            && ! $documento->tienePagosEnRevision();
     }
 
     /**
