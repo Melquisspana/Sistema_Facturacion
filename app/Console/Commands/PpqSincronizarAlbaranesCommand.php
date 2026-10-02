@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Exceptions\Ppq\GmailDesconectadoException;
+use App\Exceptions\Ppq\GmailNoDisponibleException;
 use App\Models\Configuracion;
 use App\Models\PpqAlbaran;
 use App\Services\Ppq\AlbaranPersistidor;
@@ -133,8 +134,10 @@ class PpqSincronizarAlbaranesCommand extends Command
                 }
             }
         } catch (GmailDesconectadoException $e) {
-            $this->error('Gmail se desconectó durante la sincronización: '.$e->getMessage());
-            $this->warn('Lo procesado hasta acá '.($aplicar ? 'quedó guardado' : 'no se guardó (dry-run)').'. Reconectá la cuenta y volvé a correr: es idempotente.');
+            $pasajero = $e instanceof GmailNoDisponibleException;
+            $this->error(($pasajero ? 'Gmail no respondió durante la sincronización: ' : 'Gmail se desconectó durante la sincronización: ').$e->getMessage());
+            $this->warn('Lo procesado hasta acá '.($aplicar ? 'quedó guardado' : 'no se guardó (dry-run)').'. '
+                .($pasajero ? 'La cuenta sigue conectada; la próxima corrida reintenta sola.' : 'Reconectá la cuenta y volvé a correr: es idempotente.'));
             $this->warn('La marca de progreso NO se movió: la próxima corrida vuelve a leer esta ventana.');
 
             return self::FAILURE;
