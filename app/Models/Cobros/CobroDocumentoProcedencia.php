@@ -2,6 +2,7 @@
 
 namespace App\Models\Cobros;
 
+use App\Models\Concerns\RecortaTextosAColumna;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -12,6 +13,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class CobroDocumentoProcedencia extends Model
 {
+    use RecortaTextosAColumna;
+
+    /** @return array<string, int> */
+    public static function largosDeTexto(): array
+    {
+        return [
+            'adjunto_nombre' => 160,
+        ];
+    }
+
     public const FUENTE_GMAIL_ENVIADOS = 'gmail_enviados';
 
     protected $table = 'cobro_documento_procedencias';

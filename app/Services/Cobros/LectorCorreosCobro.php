@@ -8,9 +8,12 @@ use App\Models\Cobros\CobroCorreo;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
 use App\Models\Cobros\CobroSolicitud;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Guarda y ASOCIA los correos con que el cliente responde a una solicitud.
@@ -53,11 +56,11 @@ class LectorCorreosCobro
      * Procesa una tanda de mensajes ya leídos del buzón.
      *
      * @param  array<int, array{id: string, threadId?: ?string, asunto: ?string, cuerpo?: ?string, remitente?: ?string, fecha?: ?string}>  $mensajes
-     * @return array{nuevos: int, repetidos: int, asociados: int, sin_asociar: int, correos: Collection<int, CobroCorreo>}
+     * @return array{nuevos: int, repetidos: int, asociados: int, sin_asociar: int, fallidos: int, correos: Collection<int, CobroCorreo>}
      */
     public function procesar(Cliente $cliente, array $mensajes): array
     {
-        $resumen = ['nuevos' => 0, 'repetidos' => 0, 'asociados' => 0, 'sin_asociar' => 0];
+        $resumen = ['nuevos' => 0, 'repetidos' => 0, 'asociados' => 0, 'sin_asociar' => 0, 'fallidos' => 0];
         $correos = collect();
 
         foreach ($mensajes as $mensaje) {
@@ -70,7 +73,20 @@ class LectorCorreosCobro
                 continue;
             }
 
-            $correo = DB::transaction(fn () => $this->guardarYAsociar($cliente, $mensaje));
+            try {
+                $correo = DB::transaction(fn () => $this->guardarYAsociar($cliente, $mensaje));
+            } catch (Throwable $e) {
+                // La transacción revierte también los eventos: el mensaje se reintentará
+                // sin dejar una fila parcial que lo haga parecer ya procesado.
+                Log::warning('No se pudo procesar un correo de cobros.', [
+                    'gmail_message_id' => $mensaje['id'],
+                    'clase' => $e::class,
+                    'error' => $this->textoDeError($e, $mensaje),
+                ]);
+                $resumen['fallidos']++;
+
+                continue;
+            }
 
             $resumen['nuevos']++;
             $correo->estado === 'asociado' ? $resumen['asociados']++ : $resumen['sin_asociar']++;
@@ -78,6 +94,26 @@ class LectorCorreosCobro
         }
 
         return $resumen + ['correos' => $correos];
+    }
+
+    /** @param array<string, mixed> $mensaje */
+    private function textoDeError(Throwable $error, array $mensaje): string
+    {
+        // QueryException agrega SQL con los valores del correo. El error del motor basta
+        // para diagnosticar; tampoco se pasa la excepción al logger (incluiría su traza).
+        $texto = $error instanceof QueryException
+            ? ($error->getPrevious()?->getMessage() ?? 'Error de base de datos.')
+            : $error->getMessage();
+        $campos = array_intersect_key($mensaje, array_flip(['asunto', 'cuerpo', 'cuerpo_actual', 'remitente']));
+        $privados = array_merge(array_values($campos), array_values(CobroCorreo::recortarTextos($campos)));
+
+        foreach ($privados as $valor) {
+            if (is_string($valor) && $valor !== '') {
+                $texto = str_replace($valor, '[omitido]', $texto);
+            }
+        }
+
+        return $texto;
     }
 
     /** @param array<string, mixed> $mensaje */

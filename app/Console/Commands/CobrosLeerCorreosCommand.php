@@ -103,9 +103,9 @@ class CobrosLeerCorreosCommand extends Command
 
         $resumen = $lector->procesar($cliente, $mensajes);
 
-        // CONFIRMAR va DESPUÉS de procesar, y solo llega acá si el procesamiento no lanzó.
-        // Aunque hubiera fallado a mitad, la marca se movería únicamente sobre lo que
-        // quedó registrado de verdad.
+        // CONFIRMAR va DESPUÉS de procesar. La marca se mueve únicamente sobre lo que quedó
+        // registrado de verdad: un mensaje que falló no está en `cobro_correos`, y como el
+        // barrido nunca se declara completo con algo sin registrar, se vuelve a traer.
         $progreso = $barrido->confirmarAvance($cliente, $query, $tanda);
 
         $this->table(
@@ -121,11 +121,12 @@ class CobrosLeerCorreosCommand extends Command
         );
 
         $this->info(sprintf(
-            '%d nuevo(s), %d ya estaban, %d asociado(s), %d sin asociar (quedan a la vista para revisión manual).',
+            '%d nuevo(s), %d ya estaban, %d asociado(s), %d sin asociar (quedan a la vista para revisión manual), %d fallido(s) (se reintentarán).',
             $resumen['nuevos'],
             $resumen['repetidos'],
             $resumen['asociados'],
             $resumen['sin_asociar'],
+            $resumen['fallidos'],
         ));
 
         $this->line('  '.$progreso->resumen());

@@ -4,6 +4,7 @@ namespace App\Models\Cobros;
 
 use App\Enums\Cobros\EstadoEventoCobro;
 use App\Enums\Cobros\TipoEventoCobro;
+use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -28,6 +29,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CobroEvento extends Model
 {
     use HasFactory;
+    use RecortaTextosAColumna;
+
+    /** @return array<string, int> */
+    public static function largosDeTexto(): array
+    {
+        return [
+            'estado_motivo' => 255,
+            'evidencia_nombre' => 160,
+        ];
+    }
 
     protected $table = 'cobro_eventos';
 

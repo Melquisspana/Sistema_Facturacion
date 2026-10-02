@@ -364,16 +364,15 @@ class AplicadorPagosTxt
         // Se dice lo que se sabe y lo que no. Las dos lecturas posibles van en el motivo
         // porque son exactamente las dos que la persona tiene que distinguir.
         $motivo = sprintf(
-            'Ya había un pago de %s informado en «%s». Este archivo («%s») informa %s sobre el mismo '
-                .'documento, cuyo importe es %s. Puede ser que el cliente REPITIERA el pago anterior, o que '
-                .'sean DOS ABONOS que juntos suman %s. El archivo no lo dice, así que este importe no se '
-                .'cuenta hasta que alguien lo decida.',
+            'Anterior: %s; este pago: %s; documento: %s; suma: %s. '
+                .'Puede que REPITIERA el pago o sean DOS ABONOS. No cuenta hasta decidirlo. '
+                .'Archivos: «%s» / «%s».',
             $anterior,
-            $previo->evidencia_nombre ?: 'un archivo anterior',
-            $archivo->nombre,
             $nuevo,
             $facturado,
             $sumados,
+            $previo->evidencia_nombre ?: 'un archivo anterior',
+            $archivo->nombre,
         );
 
         return [EstadoEventoCobro::EnRevision, $motivo];

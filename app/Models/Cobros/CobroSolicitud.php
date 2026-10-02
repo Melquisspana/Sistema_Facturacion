@@ -4,6 +4,7 @@ namespace App\Models\Cobros;
 
 use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Models\Cliente;
+use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\User;
 use App\Support\Dinero;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -24,6 +25,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class CobroSolicitud extends Model
 {
     use HasFactory;
+    use RecortaTextosAColumna;
+
+    /** @return array<string, int> */
+    public static function largosDeTexto(): array
+    {
+        return [
+            'presentada_nota' => 255,
+        ];
+    }
 
     protected $table = 'cobro_solicitudes';
 

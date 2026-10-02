@@ -534,7 +534,9 @@ class VinculadorAlbaranes
             // La columna es VARCHAR(255) y el motivo puede listar muchos CCF de la misma OC.
             // Se recorta SOLO al guardar (auditar() lo sigue dando entero); el comienzo
             // conserva la categoría y los candidatos se guardan completos.
-            $motivoGuardado = $veredicto['motivo'] === null ? null : Str::limit($veredicto['motivo'], 252);
+            $motivoGuardado = CobroDocumento::recortarTextos([
+                'vinculacion_motivo' => $veredicto['motivo'],
+            ])['vinculacion_motivo'];
 
             if ($soloSiCambia
                 && $documento->vinculacion_estado === $veredicto['estado']

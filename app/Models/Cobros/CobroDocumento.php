@@ -10,6 +10,7 @@ use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Models\Cliente;
+use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\User;
@@ -35,6 +36,16 @@ use Illuminate\Support\Collection;
 class CobroDocumento extends Model
 {
     use HasFactory;
+    use RecortaTextosAColumna;
+
+    /** @return array<string, int> */
+    public static function largosDeTexto(): array
+    {
+        return [
+            'vinculacion_motivo' => 255,
+            'revisar_historico_motivo' => 255,
+        ];
+    }
 
     protected $table = 'cobro_documentos';
 
