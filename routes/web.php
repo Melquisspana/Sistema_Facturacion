@@ -559,6 +559,9 @@ Route::middleware('auth')->group(function () {
                 ->name('vinculacion.aplicar');
             Route::post('documentos/{documento}/vincular', [CobrosController::class, 'vincularManual'])
                 ->name('documentos.vincular');
+            // Buscador de la ventana «Corregir vínculo»: solo lee.
+            Route::get('documentos/{documento}/albaranes', [CobrosController::class, 'buscarAlbaranes'])
+                ->name('documentos.albaranes');
             Route::put('documentos/{documento}/observacion', [CobrosController::class, 'observacion'])
                 ->name('documentos.observacion');
             Route::put('documentos/{documento}/revisado', [CobrosController::class, 'revisadoHistorico'])

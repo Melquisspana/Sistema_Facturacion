@@ -32,6 +32,9 @@ enum TipoEventoCobro: string
     /** Nota interna. No afecta ningún acumulado. */
     case Nota = 'nota';
 
+    /** Una persona eligió a mano el albarán del documento (con el anterior y el nuevo). */
+    case Vinculacion = 'vinculacion';
+
     public function label(): string
     {
         return match ($this) {
@@ -42,6 +45,7 @@ enum TipoEventoCobro: string
             self::Ajuste => 'Ajuste informado',
             self::Reversion => 'Reversión',
             self::Nota => 'Nota interna',
+            self::Vinculacion => 'Vinculación manual de albarán',
         };
     }
 

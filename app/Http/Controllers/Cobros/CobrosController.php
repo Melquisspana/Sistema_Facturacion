@@ -29,6 +29,7 @@ use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
 use App\Services\Cobros\RevisionHistoricaService;
 use App\Services\Cobros\SolicitudCobroService;
+use App\Services\Cobros\SugerenciasAlbaran;
 use App\Services\Cobros\VinculadorAlbaranes;
 use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
@@ -38,6 +39,7 @@ use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -181,15 +183,31 @@ class CobrosController extends Controller
     }
 
     /** Ficha de un documento: su historia completa. */
-    public function show(CobroDocumento $documento): View
+    public function show(Request $request, CobroDocumento $documento, SugerenciasAlbaran $sugerencias): View
     {
         $documento->loadMissing(['albaran', 'solicitud', 'eventos.usuario', 'dte', 'cliente']);
+
+        // «Corregir vínculo»: solo para quien puede vincular, en un CCF vigente.
+        $corregible = $documento->tipo_dte === '03' && ! $documento->estaInvalidado()
+            && $request->user()?->can('ppq.gestionar');
+        $movible = $documento->ppq_albaran_id === null || $this->vinculador->albaranMovible($documento);
 
         return view('cobros.show', [
             'documento' => $documento,
             'veredicto' => $this->vinculador->auditar($documento),
             'notas' => $this->notasDelCcf($documento),
+            'corregible' => $corregible,
+            'movible' => $movible,
+            'sugeridos' => $corregible && $movible ? $sugerencias->para($documento) : [],
         ]);
+    }
+
+    /** Albaranes de entrega por número, para elegir uno que no salió entre los sugeridos. */
+    public function buscarAlbaranes(Request $request, CobroDocumento $documento, SugerenciasAlbaran $sugerencias): JsonResponse
+    {
+        $texto = $request->validate(['q' => ['nullable', 'string', 'max:40']])['q'] ?? '';
+
+        return response()->json($sugerencias->buscar($documento, $texto));
     }
 
     /**
