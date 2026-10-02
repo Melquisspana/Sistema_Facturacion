@@ -10,10 +10,11 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
-- Integración continua en GitHub Actions con PHPUnit, un job de PHPUnit con MySQL estricto (por ahora solo a pedido y no bloqueante) y Pint sobre los archivos cambiados.
+- Integración continua en GitHub Actions con PHPUnit, un job de PHPUnit con MySQL estricto (en cada push desde #1, todavía no bloqueante) y Pint sobre los archivos cambiados.
 - Plantillas de pull requests e issues para documentar cambios, pruebas y criterios de aceptación.
 - Política de reporte privado de vulnerabilidades en `SECURITY.md`.
 - Registro de decisiones del proyecto y primera decisión sobre ramas y pull requests.
+- Decisión 0002, en propuesta: cómo aplicar las migraciones pendientes y las destructivas en producción. Relacionado con #5.
 - `LICENSE` con todos los derechos reservados: el código es público como portafolio, no de uso libre (`composer.json` pasa de `MIT` a `proprietary`).
 
 ### Cambiado
@@ -22,6 +23,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Cobros: los textos libres que genera el sistema (motivos, notas, asuntos) se recortan al largo de su columna. Con MySQL estricto, un motivo demasiado largo revertía la aplicación completa de un TXT de pagos. Además, un correo que falla ya no detiene la lectura del buzón: se registra, se cuenta y se reintenta. #1 cierra #4.
 - Las pruebas del diagnóstico del sistema (Salud del sistema, Dashboard y `DiagnosticoSistemaService`) ya no dependen de que exista `public/storage` en la máquina: fallaban en todo checkout nuevo y en la CI. Se agregan pruebas del chequeo del enlace, que no tenía ninguna.
 
 - `NavigationTest` actualizado al menú vigente de Cobros con el seguimiento de CCF.
