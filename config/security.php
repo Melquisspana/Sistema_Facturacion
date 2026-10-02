@@ -58,8 +58,8 @@ return [
     ],
 
     /*
-    | Política de contraseñas (se aplicará en la gestión de usuarios y reglas
-    | de validación en la fase de seguridad/usuarios).
+    | Política de contraseñas: Password::defaults() en AppServiceProvider, así que rige
+    | en el panel de usuarios, en el perfil propio y en el restablecimiento por correo.
     */
     'password' => [
         'min_length' => (int) env('PASSWORD_MIN_LENGTH', 12),
@@ -70,10 +70,13 @@ return [
 
     /*
     | Límite de intentos de inicio de sesión (protección contra fuerza bruta).
-    | Se conectará al controlador de login en la fase de seguridad/usuarios.
+    | Lo aplica App\Http\Requests\Auth\LoginRequest.
     */
     'login_throttle' => [
+        // Intentos fallidos por cuenta (correo + IP) antes de bloquear.
         'max_attempts' => (int) env('LOGIN_MAX_ATTEMPTS', 5),
+        // Techo por IP sumando todas las cuentas (prueba de una contraseña contra muchas).
+        'max_attempts_por_ip' => (int) env('LOGIN_MAX_ATTEMPTS_POR_IP', 20),
         'decay_minutes' => (int) env('LOGIN_DECAY_MINUTES', 1),
     ],
 ];

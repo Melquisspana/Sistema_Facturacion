@@ -24,6 +24,13 @@ class PasswordController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
+        // El observer de User ya cerró las otras sesiones de esta cuenta; acá queda el rastro.
+        activity('acceso')
+            ->causedBy($request->user())
+            ->performedOn($request->user())
+            ->withProperties(['ip' => $request->ip()])
+            ->log('Cambió su propia contraseña');
+
         return back()->with('status', 'password-updated');
     }
 }

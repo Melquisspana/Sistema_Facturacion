@@ -3,6 +3,7 @@
 use App\Ajustes\Excepciones\AlmacenAjustesNoDisponibleException;
 use App\Exceptions\Dte\PuntoVentaPredeterminadoInvalidoException;
 use App\Http\Middleware\AutenticaDispositivoAsistencia;
+use App\Http\Middleware\CerrarSesionUsuarioInactivo;
 use App\Http\Middleware\CloudflareAccessSso;
 use App\Http\Middleware\ModuloAsistenciaActivo;
 use App\Http\Middleware\ModuloGastosActivo;
@@ -36,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             SecurityHeaders::class,
             CloudflareAccessSso::class,
+            // Un usuario desactivado sale en la petición siguiente, no al vencer su sesión.
+            CerrarSesionUsuarioInactivo::class,
         ]);
 
         // Confiar en el proxy local (Tailscale Serve -> 127.0.0.1:80) para

@@ -8,6 +8,7 @@ use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
+use App\Listeners\AuditoriaAccesos;
 use App\Services\Asistencia\AutenticadorDispositivo;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ImapMailboxClient;
@@ -17,6 +18,7 @@ use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Gastos\Contracts\ProteccionDeGastos;
 use App\Services\Gastos\InstalacionGastos;
 use App\Services\Planilla\ProteccionPlanilla;
+use App\Support\PasswordRules;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Cache\Factory;
@@ -28,6 +30,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -92,6 +95,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Una sola política de contraseñas (config/security.php) para TODO cambio de
+        // contraseña: el panel de usuarios ya la usaba, pero el cambio desde el perfil y el
+        // restablecimiento por correo caían en el mínimo de 8 de Laravel.
+        Password::defaults(fn () => PasswordRules::reglas());
+
+        // Bitácora de accesos: login, logout, intentos fallidos, bloqueos y restablecimientos.
+        Event::subscribe(AuditoriaAccesos::class);
+
         // SEGUNDA BARRERA del candado de correo real ({@see \App\Support\Correo\CandadoCorreoReal}):
         // fuera de producción se fuerza el mailer a `log`, así ni un flujo que se olvide de
         // consultar el candado (o los correos propios de Laravel, como el reset de contraseña)
