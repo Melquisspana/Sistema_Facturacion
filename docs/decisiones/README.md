@@ -41,3 +41,4 @@ Puede agregarse una sección de referencias relacionadas. Usá solo datos invent
 | Decisión | Estado | Fecha |
 | --- | --- | --- |
 | [0001. Flujo con ramas y pull requests](0001-flujo-con-ramas-y-pull-requests.md) | Aceptada | 2026-09-28 |
+| [0002. Aplicar migraciones pendientes y migraciones destructivas](0002-migraciones-pendientes-y-destructivas.md) | Propuesta | 2026-09-29 |
