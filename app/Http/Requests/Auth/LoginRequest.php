@@ -43,24 +43,41 @@ class LoginRequest extends FormRequest
         $this->ensureIsNotRateLimited();
 
         if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
-            RateLimiter::hit($this->throttleKey());
+            $this->registrarIntentoFallido();
 
             throw ValidationException::withMessages([
                 'email' => trans('auth.failed'),
             ]);
         }
 
-        // Un usuario inactivo no puede iniciar sesión.
+        // Un usuario inactivo no puede iniciar sesión. Recibe el MISMO mensaje que una
+        // contraseña equivocada: uno distinto confirmaría que la contraseña era correcta.
         if (! Auth::user()->activo) {
             Auth::logout();
-            RateLimiter::hit($this->throttleKey());
+            $this->registrarIntentoFallido();
 
             throw ValidationException::withMessages([
-                'email' => 'Esta cuenta está inactiva. Contacte al administrador.',
+                'email' => trans('auth.failed'),
             ]);
         }
 
+        // Solo se limpia el contador de la cuenta: el de la IP sigue, para que entrar con
+        // una cuenta propia no reinicie el cupo con que se prueban las ajenas.
         RateLimiter::clear($this->throttleKey());
+    }
+
+    /** Cuenta el fallo para la cuenta (correo + IP) y para la IP sola. */
+    private function registrarIntentoFallido(): void
+    {
+        $decaimiento = $this->decaimientoSegundos();
+
+        RateLimiter::hit($this->throttleKey(), $decaimiento);
+        RateLimiter::hit($this->throttleKeyIp(), $decaimiento);
+    }
+
+    private function decaimientoSegundos(): int
+    {
+        return max(1, (int) config('security.login_throttle.decay_minutes', 1)) * 60;
     }
 
     /**
@@ -70,13 +87,22 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+        $porCuenta = max(1, (int) config('security.login_throttle.max_attempts', 5));
+        $porIp = max($porCuenta, (int) config('security.login_throttle.max_attempts_por_ip', 20));
+
+        $clave = match (true) {
+            RateLimiter::tooManyAttempts($this->throttleKey(), $porCuenta) => $this->throttleKey(),
+            RateLimiter::tooManyAttempts($this->throttleKeyIp(), $porIp) => $this->throttleKeyIp(),
+            default => null,
+        };
+
+        if ($clave === null) {
             return;
         }
 
         event(new Lockout($this));
 
-        $seconds = RateLimiter::availableIn($this->throttleKey());
+        $seconds = RateLimiter::availableIn($clave);
 
         throw ValidationException::withMessages([
             'email' => trans('auth.throttle', [
@@ -92,5 +118,14 @@ class LoginRequest extends FormRequest
     public function throttleKey(): string
     {
         return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+    }
+
+    /**
+     * Techo por IP, aparte del de cada cuenta: sin él, probar UNA contraseña contra
+     * muchas cuentas desde la misma máquina nunca tocaba el límite.
+     */
+    public function throttleKeyIp(): string
+    {
+        return 'login-ip|'.$this->ip();
     }
 }

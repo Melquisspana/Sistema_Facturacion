@@ -459,7 +459,9 @@ class RegistrarGastoTest extends TestCase
         $usuario = $this->operador();
         $usuario->update(['activo' => false]);
 
-        $this->actingAs($usuario->fresh())->get(route('gastos.create'))->assertForbidden();
+        // Ya no llega al 403 del módulo: el middleware global cierra la sesión antes.
+        $this->actingAs($usuario->fresh())->get(route('gastos.create'))->assertRedirect(route('login'));
+        $this->assertGuest();
     }
 
     public function test_sin_permiso_de_registrar_no_se_abre_el_formulario(): void
