@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Qué tan firme es el importe de una obligación.
  *
- * Nace de un caso real y no de una abstracción: Proveedor A y Proveedor B se cargaron con un saldo
- * ACORDADO DE PALABRA al arrancar  mientras que el de Distribuidora Ejemplo salió
+ * Nace de un caso real y no de una abstracción: dos proveedores se cargaron con un saldo
+ * ACORDADO DE PALABRA al arrancar, mientras que el de un tercero salió
  * de un estado de cuenta en papel. Los tres se deben igual y los tres suman al mismo
  * total, pero no valen lo mismo como dato: el primero puede moverse cuando aparezca el
  * papel, el segundo no.
