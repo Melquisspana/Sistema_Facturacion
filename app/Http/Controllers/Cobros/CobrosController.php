@@ -77,6 +77,7 @@ class CobrosController extends Controller
         'listos' => 'Entregados, por presentar',
         'presentados' => 'En PPQ / presentados',
         'pagados' => 'Pagados',
+        'diferencias' => 'Pagos con diferencia',
     ];
 
     /** Documentos por página de la bandeja. */
@@ -900,7 +901,10 @@ class CobrosController extends Controller
             'no_entregados' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNull('ppq_albaran_id'),
             'listos' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNotNull('ppq_albaran_id'),
             'presentados' => $q->where('pago_estado', $pendiente)->whereIn('presentacion_estado', $enCurso),
-            'pagados' => $q->where('pago_estado', '!=', $pendiente),
+            // Pagado es solo lo que cuadra con el CCF menos sus NC; un faltante o un cobro de
+            // más va aparte para que nadie lo dé por cobrado (issue #14).
+            'pagados' => $q->where('pago_estado', EstadoPagoCobro::Pagado->value),
+            'diferencias' => $q->whereIn('pago_estado', [EstadoPagoCobro::Parcial->value, EstadoPagoCobro::Diferencia->value]),
             default => $q,
         };
     }

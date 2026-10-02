@@ -98,11 +98,12 @@
                         ['listos', 'Entregados, por presentar', 'text-emerald-600 dark:text-emerald-400', 'border-l-emerald-500'],
                         ['presentados', 'En PPQ / presentados', 'text-sky-600 dark:text-sky-400', 'border-l-sky-500'],
                         ['pagados', 'Pagados', 'text-indigo-600 dark:text-indigo-300', 'border-l-indigo-500'],
+                        ['diferencias', 'Pagos con diferencia', 'text-rose-600 dark:text-rose-300', 'border-rose-500'],
                     ];
                 @endphp
 
                 {{-- ---------- Etapas ---------- --}}
-                <nav aria-label="Etapas" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                <nav aria-label="Etapas" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                     @foreach ($tarjetas as [$clave, $titulo, $color, $borde])
                         <a href="{{ route('cobros.index', $conMes + array_filter(['etapa' => $clave])) }}"
                            @class(['block rounded-xl border-l-4 bg-white dark:bg-ink-800 p-4 shadow-sm ring-1 transition hover:shadow-md', $borde,
@@ -181,11 +182,13 @@
                                     <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
                                         @foreach ($documentos as $doc)
                                             @php
-                                                $pagado = $doc->pago_estado !== \App\Enums\Cobros\EstadoPagoCobro::Pendiente;
+                                                $pagado = $doc->pago_estado === \App\Enums\Cobros\EstadoPagoCobro::Pagado;
+                                                $conDiferencia = in_array($doc->pago_estado, [\App\Enums\Cobros\EstadoPagoCobro::Parcial, \App\Enums\Cobros\EstadoPagoCobro::Diferencia], true);
                                                 $pres = $doc->presentacion_estado;
                                                 $estado = match (true) {
                                                     $doc->estaInvalidado() => 'invalidado',
                                                     $pagado => 'pagado',
+                                                    $conDiferencia => 'diferencia',
                                                     in_array($pres, [\App\Enums\Cobros\EstadoPresentacionCobro::Presentada, \App\Enums\Cobros\EstadoPresentacionCobro::Recibida], true) => 'presentado',
                                                     $pres === \App\Enums\Cobros\EstadoPresentacionCobro::Preparada => 'en_ppq',
                                                     $doc->esNc() => 'nc',
@@ -246,6 +249,7 @@
                                                         [$texto, $clase] = match ($estado) {
                                                             'invalidado' => ['Invalidado', 'bg-rose-100 text-rose-700'],
                                                             'pagado' => ['Pagado'.($doc->fecha_pago ? ' '.$doc->fecha_pago->format('d/m') : ''), 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-200'],
+                                                            'diferencia' => [$doc->pago_estado->label(), 'bg-rose-100 text-rose-700'],
                                                             'presentado' => ['Presentado, sin pagar', 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-200'],
                                                             'en_ppq' => ['En PPQ', 'bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-900/30 dark:text-sky-200 dark:ring-sky-800'],
                                                             'nc' => ['Va con su CCF', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300'],
@@ -259,6 +263,8 @@
                                                     </span>
                                                     @if ($estado === 'invalidado')
                                                         <span class="mt-0.5 block text-gray-500 dark:text-paper-300">{{ in_array($pres, [\App\Enums\Cobros\EstadoPresentacionCobro::Preparada, \App\Enums\Cobros\EstadoPresentacionCobro::Presentada, \App\Enums\Cobros\EstadoPresentacionCobro::Recibida], true) ? 'Estaba en PPQ o presentado: revíselo' : 'Tiene pago registrado: revíselo' }}</span>
+                                                    @elseif ($estado === 'diferencia')
+                                                        <a href="{{ route('cobros.documentos.show', $doc) }}" class="mt-0.5 block text-gray-500 dark:text-paper-300 hover:underline">Cobrado {{ number_format((float) $doc->monto_pagado, 2) }}: revíselo</a>
                                                     @elseif ($estado === 'no_entregado')
                                                         <span class="mt-0.5 block text-gray-500 dark:text-paper-300">El albarán no ha llegado al correo</span>
                                                     @elseif ($estado === 'revisar')
