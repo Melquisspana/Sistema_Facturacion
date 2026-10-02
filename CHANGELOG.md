@@ -15,6 +15,7 @@ El historial anterior a este archivo está en el registro de git.
 - Política de reporte privado de vulnerabilidades en `SECURITY.md`.
 - Registro de decisiones del proyecto y primera decisión sobre ramas y pull requests.
 - Decisión 0002, en propuesta: cómo aplicar las migraciones pendientes y las destructivas en producción. Relacionado con #5.
+- `README.md` como portada del proyecto: qué hace el sistema explicado sin tecnicismos, capturas tomadas sobre una base desechable con datos inventados (`docs/img/`), tecnología, arquitectura, calidad y seguridad.
 - `LICENSE` con todos los derechos reservados: el código es público como portafolio, no de uso libre (`composer.json` pasa de `MIT` a `proprietary`).
 
 ### Cambiado
