@@ -14,6 +14,7 @@ use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\User;
+use App\Services\Dte\SaldoMontoCcf;
 use App\Support\Dinero;
 use App\Support\IdentidadPpq;
 use Illuminate\Database\Eloquent\Builder;
@@ -277,10 +278,28 @@ class CobroDocumento extends Model
         return $fecha === null ? null : Carbon::today()->diffInDays($fecha->startOfDay(), false);
     }
 
-    /** Saldo por cobrar: importe del documento menos lo informado. */
+    /**
+     * Lo que el cliente tiene que pagar por este documento: su importe menos las notas de
+     * crédito aceptadas sobre él. No hay pagos parciales: el cliente paga el CCF MENOS sus
+     * NC, y la línea del CCF en el archivo de pagos llega neta (regla del negocio, issue #14).
+     * Una NC, o un documento sin DTE propio, se espera completo.
+     */
+    public function facturadoEfectivo(): string
+    {
+        $monto = Dinero::redondear($this->monto ?? '0');
+        if ($this->esNc() || $this->dte_id === null) {
+            return $monto;
+        }
+
+        $notas = app(SaldoMontoCcf::class)->descontadoEnCobro([$this->dte_id])[$this->dte_id];
+
+        return Dinero::redondear(Dinero::restar($monto, $notas));
+    }
+
+    /** Saldo por cobrar: lo que se espera cobrar menos lo informado. */
     public function saldo(): string
     {
-        return Dinero::redondear(Dinero::restar($this->monto ?? '0', $this->monto_pagado ?? '0'));
+        return Dinero::redondear(Dinero::restar($this->facturadoEfectivo(), $this->monto_pagado ?? '0'));
     }
 
     /**
@@ -427,7 +446,7 @@ class CobroDocumento extends Model
         $this->forceFill([
             'monto_pagado' => $cobrado,
             'fecha_pago' => $fecha?->toDateString(),
-            'pago_estado' => self::estadoDePago($this->monto, $cobrado)->value,
+            'pago_estado' => self::estadoDePago($this->facturadoEfectivo(), $cobrado)->value,
         ])->save();
 
         $this->completarCircuitoPorPago();
@@ -457,7 +476,8 @@ class CobroDocumento extends Model
     }
 
     /**
-     * El estado de pago que corresponde a un importe facturado y uno cobrado.
+     * El estado de pago que corresponde a un importe facturado (ya descontadas las NC,
+     * {@see facturadoEfectivo()}) y uno cobrado.
      *
      * La tolerancia sale de la misma llave que usa PPQ para decir «el monto coincide»
      * (`ppq.diferencia_coincide`): dos centavos de redondeo no son una diferencia que
@@ -483,11 +503,12 @@ class CobroDocumento extends Model
             return EstadoPagoCobro::Pagado;
         }
 
-        // Cobrado de MÁS: no es un pago parcial, es algo que no cuadra y hay que mirar.
+        // Cobrado de MÁS (p. ej. la línea llegó bruta, sin restar una NC): no cuadra.
         if (Dinero::comparar($diferencia, '0') < 0) {
             return EstadoPagoCobro::Diferencia;
         }
 
+        // De menos y sin NC que lo explique: no existen pagos parciales, es un faltante.
         return EstadoPagoCobro::Parcial;
     }
 }

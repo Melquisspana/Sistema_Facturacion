@@ -94,7 +94,7 @@ class CobrosCcfInvalidadoTest extends TestCase
         $respuesta = $this->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk();
         $respuesta->assertDontSee($invalidado->numero_control)->assertSee($vigente->numero_control);
         $this->assertSame([$vigente->id], $respuesta->viewData('documentos')->pluck('id')->all());
-        $this->assertSame(['' => 1, 'no_entregados' => 1, 'listos' => 0, 'presentados' => 0, 'pagados' => 0], $respuesta->viewData('etapas'));
+        $this->assertSame(['' => 1, 'no_entregados' => 1, 'listos' => 0, 'presentados' => 0, 'pagados' => 0, 'diferencias' => 0], $respuesta->viewData('etapas'));
         $this->assertSame(1, $respuesta->viewData('contadores')['total']);
         $this->assertSame(1, $respuesta->viewData('contadores')['sin_albaran']);
         $this->assertSame(['2026-09'], array_column($respuesta->viewData('meses'), 'mes'));

@@ -128,10 +128,13 @@ class CobrosBandejaTest extends TestCase
         $respuesta->assertSeeText('Entregados, por presentar');
         $respuesta->assertSeeText('En PPQ / presentados');
         $this->assertSame(2, $respuesta->viewData('etapas')['no_entregados']);
-        $this->assertSame(2, $respuesta->viewData('etapas')['pagados']);
+        // No hay pagos parciales: el de 40 de 100 es un faltante y va aparte (issue #14).
+        $this->assertSame(1, $respuesta->viewData('etapas')['pagados']);
+        $this->assertSame(1, $respuesta->viewData('etapas')['diferencias']);
         $respuesta->assertSeeText('Julio 2026');
         $respuesta->assertSeeText('Agosto 2026');
         $respuesta->assertSeeText('Pagado');
+        $respuesta->assertSeeText('Faltante');
         $respuesta->assertDontSeeText('Pago parcial');
 
         // La factura sin albarán se ve, y se dice qué le falta.
