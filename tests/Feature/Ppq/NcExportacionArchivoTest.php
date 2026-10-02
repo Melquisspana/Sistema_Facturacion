@@ -135,7 +135,7 @@ class NcExportacionArchivoTest extends TestCase
 
     private function descargar(NcExportacion $lote): TestResponse
     {
-        return $this->actingAs($this->usuario())->get(route('ppq.nc-exportaciones.descargar', $lote));
+        return $this->actingAs($this->usuario())->post(route('ppq.nc-exportaciones.descargar', $lote));
     }
 
     /** Bytes que la respuesta entregaría (el temporal todavía existe en la prueba). */

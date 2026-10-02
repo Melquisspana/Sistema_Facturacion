@@ -70,10 +70,13 @@
                         </dd>
                     </div>
                     <div class="flex items-end">
-                        <a href="{{ route('ppq.nc-exportaciones.descargar', $lote) }}"
-                           class="inline-flex items-center rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700">
-                            Descargar Excel<span class="sr-only"> del archivo {{ $lote->referencia }}</span>
-                        </a>
+                        <form method="POST" action="{{ route('ppq.nc-exportaciones.descargar', $lote) }}">
+                            @csrf
+                            <button type="submit"
+                                    class="inline-flex items-center rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700">
+                                Descargar Excel<span class="sr-only"> del archivo {{ $lote->referencia }}</span>
+                            </button>
+                        </form>
                     </div>
                 </dl>
 

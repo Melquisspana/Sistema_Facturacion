@@ -148,7 +148,7 @@ class NcExportacionAutorizacionTest extends TestCase
         $this->assertFalse($usuario->can(PermisoSistema::PpqGestionar->value));
 
         $this->actingAs($usuario)
-            ->get(route('ppq.nc-exportaciones.descargar', $lote))
+            ->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertOk()
             ->assertDownload($lote->archivo_nombre);
     }
@@ -158,7 +158,7 @@ class NcExportacionAutorizacionTest extends TestCase
         $lote = $this->lote($this->clienteConPerfil());
 
         $this->actingAs($this->usuario(RolSistema::Produccion))
-            ->get(route('ppq.nc-exportaciones.descargar', $lote))
+            ->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertForbidden();
     }
 
@@ -173,8 +173,8 @@ class NcExportacionAutorizacionTest extends TestCase
         $this->assertSame(0, $lote->descargas);
 
         $usuario = $this->usuario(RolSistema::Administrador);
-        $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
-        $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
+        $this->actingAs($usuario)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
+        $this->actingAs($usuario)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
 
         $lote->refresh();
         $this->assertSame(EstadoNcExportacion::Descargado, $lote->estado);

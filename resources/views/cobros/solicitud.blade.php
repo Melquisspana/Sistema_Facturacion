@@ -79,10 +79,13 @@
             <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                 <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
                     <h3 class="font-medium text-gray-700 dark:text-paper-100">Archivo preparado y descargas</h3>
-                    <a href="{{ route('cobros.solicitudes.descargar', $solicitud) }}"
-                       class="inline-flex rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700">
-                        Descargar el archivo original<span class="sr-only"> de {{ $solicitud->referencia }}</span>
-                    </a>
+                    <form method="POST" action="{{ route('cobros.solicitudes.descargar', $solicitud) }}" class="inline">
+                        @csrf
+                        <button type="submit"
+                                class="inline-flex rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700">
+                            Descargar el archivo original<span class="sr-only"> de {{ $solicitud->referencia }}</span>
+                        </button>
+                    </form>
                 </div>
                 <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
                     <div>

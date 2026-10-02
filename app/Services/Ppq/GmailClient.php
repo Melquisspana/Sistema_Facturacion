@@ -96,9 +96,19 @@ class GmailClient
     }
 
     /** URL de consentimiento OAuth (paso 1 de la conexión). */
-    public function authUrl(): string
+    /**
+     * @param  string|null  $state  valor aleatorio que vuelve en el callback; el controlador
+     *                              lo guarda en la sesión y lo exige al regreso (anti-CSRF
+     *                              del flujo OAuth)
+     */
+    public function authUrl(?string $state = null): string
     {
-        return $this->clienteBase()->createAuthUrl();
+        $client = $this->clienteBase();
+        if ($state !== null) {
+            $client->setState($state);
+        }
+
+        return $client->createAuthUrl();
     }
 
     /**

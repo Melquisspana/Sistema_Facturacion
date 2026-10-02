@@ -195,9 +195,9 @@ class RegistroDescargasTest extends TestCase
         $ana = $this->usuario('Usuario Primero');
         $beto = $this->usuario('Usuario Segundo');
 
-        $h1 = $this->huellaServida($this->actingAs($ana)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk());
+        $h1 = $this->huellaServida($this->actingAs($ana)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk());
         $this->travel(5)->minutes();
-        $h2 = $this->huellaServida($this->actingAs($beto)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk());
+        $h2 = $this->huellaServida($this->actingAs($beto)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk());
 
         $lote->refresh();
         $this->assertSame(2, $lote->descargas, 'El contador se conserva.');
@@ -246,11 +246,11 @@ class RegistroDescargasTest extends TestCase
         $lote = $this->lote($this->cliente('Calleja, S.A. de C.V.'));
         $usuario = $this->usuario('Usuario Primero');
 
-        $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
+        $this->actingAs($usuario)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
         $lote->refresh();
         Storage::disk((string) config('dte.storage.disk', 'local'))->delete($lote->archivo_path);
 
-        $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))
+        $this->actingAs($usuario)->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertRedirect(route('ppq.nc-exportaciones.show', $lote));
 
         $this->assertSame(1, $lote->refresh()->descargas);
@@ -266,8 +266,8 @@ class RegistroDescargasTest extends TestCase
         $mio = $this->usuario('Descargador Propio');
         $otro = $this->usuario('Descargador Ajeno');
 
-        $this->actingAs($mio)->get(route('ppq.nc-exportaciones.descargar', $propio))->assertOk();
-        $this->actingAs($otro)->get(route('ppq.nc-exportaciones.descargar', $ajeno))->assertOk();
+        $this->actingAs($mio)->post(route('ppq.nc-exportaciones.descargar', $propio))->assertOk();
+        $this->actingAs($otro)->post(route('ppq.nc-exportaciones.descargar', $ajeno))->assertOk();
         $antes = Activity::count();
 
         $html = $this->actingAs($lector)->get(route('ppq.nc-exportaciones.show', $propio))->assertOk()->getContent();
@@ -304,8 +304,8 @@ class RegistroDescargasTest extends TestCase
         $beto = $this->usuario('Usuario Segundo');
         $solicitud = $this->solicitud($cliente, $ana);
 
-        $h1 = $this->huellaServida($this->actingAs($ana)->get(route('cobros.solicitudes.descargar', $solicitud))->assertOk());
-        $h2 = $this->huellaServida($this->actingAs($beto)->get(route('cobros.solicitudes.descargar', $solicitud))->assertOk());
+        $h1 = $this->huellaServida($this->actingAs($ana)->post(route('cobros.solicitudes.descargar', $solicitud))->assertOk());
+        $h2 = $this->huellaServida($this->actingAs($beto)->post(route('cobros.solicitudes.descargar', $solicitud))->assertOk());
 
         $solicitud->refresh();
         $this->assertSame(2, $solicitud->descargas);
@@ -325,11 +325,11 @@ class RegistroDescargasTest extends TestCase
         $usuario = $this->usuario('Usuario Primero');
         $solicitud = $this->solicitud($cliente, $usuario);
 
-        $this->actingAs($usuario)->get(route('cobros.solicitudes.descargar', $solicitud))->assertOk();
+        $this->actingAs($usuario)->post(route('cobros.solicitudes.descargar', $solicitud))->assertOk();
         $solicitud->refresh();
         Storage::disk((string) config('dte.storage.disk', 'local'))->put($solicitud->archivo_path, 'otro contenido');
 
-        $this->actingAs($usuario)->get(route('cobros.solicitudes.descargar', $solicitud))
+        $this->actingAs($usuario)->post(route('cobros.solicitudes.descargar', $solicitud))
             ->assertRedirect(route('cobros.index', ['cliente_id' => $cliente->id]));
 
         $this->assertSame(1, $solicitud->refresh()->descargas);

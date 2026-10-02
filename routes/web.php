@@ -477,7 +477,8 @@ Route::middleware('auth')->group(function () {
             // Conciliación del lote contra el TXT de pagos de Calleja.
             Route::post('lotes/{lote}/conciliar', [PpqLoteController::class, 'conciliar'])->name('lotes.conciliar');
             // Archivo de NC del PPQ (formato aceptado) y reporte del caso que devuelve el portal.
-            Route::get('lotes/{lote}/archivo-nc', [PpqLoteController::class, 'archivoNc'])->name('lotes.archivo-nc');
+            // POST: preparar el archivo CREA un formato de exportación y marca sus NC.
+            Route::post('lotes/{lote}/archivo-nc', [PpqLoteController::class, 'archivoNc'])->name('lotes.archivo-nc');
             Route::post('lotes/{lote}/reporte-caso', [PpqLoteController::class, 'reporteCaso'])->name('lotes.reporte-caso');
         });
 
@@ -499,7 +500,9 @@ Route::middleware('auth')->group(function () {
         // documentos como enviados.
         Route::get('nc-exportaciones', [NcExportacionController::class, 'index'])
             ->name('nc-exportaciones.index');
-        Route::get('nc-exportaciones/{lote}/descargar', [NcExportacionController::class, 'descargar'])
+        // POST: cada descarga queda contada en la bitácora de descargas preparadas; un GET
+        // la registraba con un simple enlace o con la precarga del navegador.
+        Route::post('nc-exportaciones/{lote}/descargar', [NcExportacionController::class, 'descargar'])
             ->name('nc-exportaciones.descargar');
         // Ficha de un lote (solo lectura, mismo permiso que ver y descargar).
         Route::get('nc-exportaciones/{lote}', [NcExportacionController::class, 'show'])
@@ -538,8 +541,9 @@ Route::middleware('auth')->group(function () {
         Route::get('documentos/{documento}', [CobrosController::class, 'show'])->name('documentos.show');
         // Ficha de solo lectura de una solicitud: abrirla no registra ni cambia nada.
         Route::get('solicitudes/{solicitud}', [CobrosController::class, 'showSolicitud'])->name('solicitudes.show');
-        // Descargar un archivo ya generado basta con ver: no cambia nada y no presenta nada.
-        Route::get('solicitudes/{solicitud}/descargar', [CobrosController::class, 'descargarSolicitud'])
+        // Descargar un archivo ya generado basta con ver: no presenta nada. Va por POST porque
+        // la descarga queda contada en la bitácora (un GET la contaba con un enlace o precarga).
+        Route::post('solicitudes/{solicitud}/descargar', [CobrosController::class, 'descargarSolicitud'])
             ->name('solicitudes.descargar');
         // La auditoría de vinculación EN SECO también es lectura; aplicarla no (ver abajo).
         Route::get('clientes/{cliente}/vinculacion', [CobrosController::class, 'auditarVinculacion'])

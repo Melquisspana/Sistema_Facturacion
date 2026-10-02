@@ -347,7 +347,7 @@ class CobrosQuedanNotasCreditoTest extends TestCase
         $this->assertNull($lote->refresh()->presentada_en);
 
         // Descargar no la registra.
-        $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
+        $this->actingAs($usuario)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
         $this->assertNull($lote->refresh()->presentada_en);
         $this->assertSame(EstadoNcExportacion::Descargado, $lote->estado);
 
@@ -381,7 +381,7 @@ class CobrosQuedanNotasCreditoTest extends TestCase
             ->assertSessionHasErrors('presentacion');
 
         // Y la copia archivada se sigue redescargando.
-        $this->actingAs($usuario)->get(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
+        $this->actingAs($usuario)->post(route('ppq.nc-exportaciones.descargar', $lote))->assertOk();
     }
 
     // ------------------------------------------------------------------ quedan

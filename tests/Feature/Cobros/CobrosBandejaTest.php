@@ -13,6 +13,7 @@ use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqAlbaran;
 use App\Models\User;
 use App\Services\Cobros\AltaCobrosService;
+use App\Services\Cobros\VinculadorAlbaranes;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -399,5 +400,22 @@ class CobrosBandejaTest extends TestCase
         $documento->refresh();
         $this->assertNull($documento->ppq_albaran_id);
         $this->assertNull($documento->vinculado_en);
+    }
+
+    /**
+     * Aplicar la vinculación escribe: solo por POST (ruta con ppq.gestionar y CSRF). Un GET
+     * con `aplicar=1` —un enlace, una precarga del navegador— sigue siendo el ensayo en seco.
+     */
+    public function test_un_get_con_aplicar_sigue_siendo_el_ensayo_en_seco(): void
+    {
+        $cliente = $this->cliente();
+        $this->documento($cliente);
+
+        $this->partialMock(VinculadorAlbaranes::class, fn ($m) => $m->shouldNotReceive('aplicar'));
+
+        $this->actingAs($this->usuario())
+            ->get(route('cobros.vinculacion', ['cliente' => $cliente, 'aplicar' => 1]))
+            ->assertOk()
+            ->assertSee('ensayo en seco', false);
     }
 }

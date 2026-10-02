@@ -8,6 +8,12 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Seguridad
+
+- Gastos: la cuenta de un proveedor ya no muestra obligaciones protegidas (sueldos de planilla) a quien no tiene permiso de verlas. Aplica la misma protección que el resto de las consultas del módulo. #31
+- Las acciones que escribían por GET ahora van por POST con CSRF: preparar el archivo de NC de un lote PPQ, descargar un formato de NC y descargar el archivo de una solicitud de cobro (las dos descargas quedan contadas en la bitácora). Un GET a la auditoría de vinculación de albaranes es siempre el ensayo en seco. #31
+- Conexión OAuth de Gmail: el regreso exige un `state` aleatorio ligado a la sesión que inició la conexión, y el error ya no muestra el mensaje técnico en pantalla. #31
+
 ## [2026.10.02] - 2026-10-02
 
 Primer despliegue con etiqueta. Incluye #1, #2, #29 y #30. No trae migraciones.

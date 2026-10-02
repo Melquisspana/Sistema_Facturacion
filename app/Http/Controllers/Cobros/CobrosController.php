@@ -352,7 +352,9 @@ class CobrosController extends Controller
 
         $auditoria = $this->vinculador->auditarLote($documentos);
 
-        if (! $request->boolean('aplicar')) {
+        // Aplicar escribe vínculos: solo por POST (ruta con ppq.gestionar y CSRF). Un GET,
+        // aunque traiga `aplicar`, es siempre la auditoría en seco.
+        if (! $request->isMethod('post') || ! $request->boolean('aplicar')) {
             return view('cobros.vinculacion', [
                 'cliente' => $cliente,
                 'auditoria' => $auditoria,
