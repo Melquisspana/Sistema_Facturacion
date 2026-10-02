@@ -126,7 +126,7 @@
                                 $origen = old("modalidades.{$clave}.descuento_origen", $m['descuento_origen']);
                             @endphp
                             <fieldset class="rounded-md border border-gray-200 dark:border-ink-600 p-4"
-                                      x-data="{ usar: {{ $usar ? 'true' : 'false' }}, origen: '{{ $origen }}' }">
+                                      x-data="{ usar: {{ $usar ? 'true' : 'false' }}, origen: @js($origen) }">
                                 <legend class="px-1">
                                     <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-paper-100">
                                         <input type="checkbox" name="modalidades[{{ $clave }}][usar]" value="1"

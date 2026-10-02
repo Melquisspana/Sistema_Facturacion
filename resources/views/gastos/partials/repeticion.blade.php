@@ -17,7 +17,7 @@
     NO se pregunta el importe. Sale del propio gasto: es la diferencia entre
     «configurar una repetición» y «volver a capturar el gasto».
 --}}
-<div x-data="{ frecuencia: '{{ old($prefijo.'.frecuencia', 'mensual') }}' }" class="grid gap-3 sm:grid-cols-2">
+<div x-data="{ frecuencia: @js(old($prefijo.'.frecuencia', 'mensual')) }" class="grid gap-3 sm:grid-cols-2">
 
     <div>
         <label for="{{ $prefijo }}-frecuencia" class="block text-sm font-medium text-gray-700">¿Cada cuánto?</label>

@@ -20,7 +20,7 @@
     pide mes y día. El servidor vuelve a validar lo mismo, así que la interfaz es
     una ayuda y nunca el candado.
 --}}
-<div x-data="{ frecuencia: '{{ $v('frecuencia', 'mensual') }}', modo: '{{ $v('monto_modo', 'fijo') }}', ambito: '{{ $v('ambito', 'empresarial') }}' }" class="space-y-6">
+<div x-data="{ frecuencia: @js($v('frecuencia', 'mensual')), modo: @js($v('monto_modo', 'fijo')), ambito: @js($v('ambito', 'empresarial')) }" class="space-y-6">
 
     <section class="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Qué se paga</h2>

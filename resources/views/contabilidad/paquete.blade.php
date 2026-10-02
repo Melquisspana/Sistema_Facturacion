@@ -305,7 +305,7 @@
                             </dl>
 
                             <form method="POST" action="{{ route('contabilidad.paquete.enviar') }}" class="mt-4"
-                                  onsubmit="return this.frase.value.trim() === @json($fraseEnvio) || (alert('Escribí la frase exacta: {{ $fraseEnvio }}'), false);">
+                                  onsubmit="return this.frase.value.trim() === @js($fraseEnvio) || (alert(@js('Escribí la frase exacta: '.$fraseEnvio)), false);">
                                 @csrf
                                 <input type="hidden" name="mes" value="{{ $rango['mes'] }}">
                                 <input type="hidden" name="anio" value="{{ $rango['anio'] }}">

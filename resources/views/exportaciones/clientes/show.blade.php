@@ -155,7 +155,7 @@
                 @if ($otrosClientes->isNotEmpty())
                     <form id="copiar-precios" method="POST" action="{{ route('exportaciones.clientes.productos.copiar', $cliente) }}"
                           class="{{ $errors->has('origen_id') || $errors->has('modo') ? '' : 'hidden' }} px-6 py-4 bg-indigo-50 border-b border-indigo-100"
-                          onsubmit="return confirm('¿Copiar los productos/precios activos del cliente origen hacia «{{ $cliente->nombre }}»? Las exportaciones ya creadas no cambian.');">
+                          onsubmit="return confirm(@js('¿Copiar los productos/precios activos del cliente origen hacia «'.$cliente->nombre.'»? Las exportaciones ya creadas no cambian.'));">
                         @csrf
                         <div class="flex flex-wrap items-end gap-4">
                         <div class="grow max-w-md">
