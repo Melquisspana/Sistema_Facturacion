@@ -120,8 +120,8 @@ class DteController extends Controller
             'estado' => $request->input('estado'),
             'cliente_id' => $request->input('cliente_id'),
             'cliente_sucursal_id' => $request->input('cliente_sucursal_id'),
-            'fecha_desde' => $request->input('fecha_desde'),
-            'fecha_hasta' => $request->input('fecha_hasta'),
+            'fecha_desde' => self::fechaDeFiltro($request->input('fecha_desde')),
+            'fecha_hasta' => self::fechaDeFiltro($request->input('fecha_hasta')),
         ];
 
         $dtes = Dte::query()
@@ -220,8 +220,8 @@ class DteController extends Controller
         $filtros = [
             'q' => trim((string) $request->input('q', '')),
             'tipo_dte' => $request->input('tipo_dte'),
-            'fecha_desde' => $request->input('fecha_desde'),
-            'fecha_hasta' => $request->input('fecha_hasta'),
+            'fecha_desde' => self::fechaDeFiltro($request->input('fecha_desde')),
+            'fecha_hasta' => self::fechaDeFiltro($request->input('fecha_hasta')),
         ];
 
         $dtes = Dte::query()
@@ -2963,5 +2963,19 @@ class DteController extends Controller
                 'ordenCompra' => (string) ($preCcf?->numero_orden_compra ?? ''),
             ],
         ];
+    }
+
+    /**
+     * Fecha de un filtro del listado: solo `AAAA-MM-DD` de calendario válida; cualquier
+     * otra cosa se descarta. El valor vuelve a la vista (estado de Alpine), así que no
+     * se devuelve nada que el usuario haya escrito sin pasar por este formato.
+     */
+    private static function fechaDeFiltro(mixed $valor): ?string
+    {
+        if (! is_string($valor) || ! preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $valor, $m)) {
+            return null;
+        }
+
+        return checkdate((int) $m[2], (int) $m[3], (int) $m[1]) ? $valor : null;
     }
 }

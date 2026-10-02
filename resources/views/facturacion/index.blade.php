@@ -157,8 +157,8 @@
                 <form method="GET" action="{{ route('facturacion.index') }}"
                       x-data="{
                           open: @js($panelAbiertoInicial),
-                          desde: '{{ $filtros['fecha_desde'] }}',
-                          hasta: '{{ $filtros['fecha_hasta'] }}',
+                          desde: @js($filtros['fecha_desde'] ?? ''),
+                          hasta: @js($filtros['fecha_hasta'] ?? ''),
                       }"
                       class="mb-5">
 

@@ -191,6 +191,27 @@ class CoberturaPaqueteTest extends TestCase
         $resp->assertSee('Período completo', false);
     }
 
+    /**
+     * La comprobación en el navegador de la frase de envío vive en un atributo con
+     * comillas dobles: la frase tiene que salir como literal JS con comillas simples
+     * (`@js`); con `@json` sus comillas dobles cortaban el atributo y la validación
+     * del lado del cliente no corría nunca (el servidor la valida igual).
+     */
+    public function test_la_frase_de_envio_sale_como_literal_js_sin_romper_el_atributo(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        Configuracion::set('contabilidad.correo', self::CORREO);
+        Configuracion::olvidarCache();
+        $this->agostoCubierto();
+        $this->compra('2026-08-05', '2026-08-05');
+
+        $this->actingAs($this->contable())
+            ->get(route('contabilidad.paquete', ['mes' => 8, 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee("=== 'ENVIAR A CONTABILIDAD'", false)
+            ->assertDontSee('=== "ENVIAR A CONTABILIDAD"', false);
+    }
+
     public function test_un_periodo_con_dias_sin_revisar_avisa_y_deshabilita_el_envio(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
