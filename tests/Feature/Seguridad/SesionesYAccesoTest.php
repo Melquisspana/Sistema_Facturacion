@@ -169,6 +169,32 @@ class SesionesYAccesoTest extends TestCase
         $this->assertNotSame(trans('auth.failed'), session('errors')->first('email'));
     }
 
+    /**
+     * Detrás del túnel de Cloudflare (o de Tailscale Serve) TODO llega desde 127.0.0.1, el
+     * proxy de confianza. El techo por IP tiene que contar la IP del visitante que el proxy
+     * pone al final de X-Forwarded-For; si contara 127.0.0.1, veinte fallos de cualquiera
+     * dejarían sin login a todos los que entran por Internet.
+     */
+    public function test_detras_del_proxy_de_confianza_el_techo_cuenta_la_ip_real_del_visitante(): void
+    {
+        config(['security.login_throttle.max_attempts' => 5, 'security.login_throttle.max_attempts_por_ip' => 6]);
+        $desdeProxy = fn (string $reenviada) => $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+            ->withHeader('X-Forwarded-For', $reenviada);
+
+        foreach (range(1, 6) as $i) {
+            $desdeProxy('203.0.113.10')->post('/login', ['email' => "cuenta{$i}@example.com", 'password' => 'mala']);
+        }
+
+        // Otro visitante, mismo proxy: no hereda el bloqueo.
+        $desdeProxy('203.0.113.20')->post('/login', ['email' => 'nueva@example.com', 'password' => 'mala'])
+            ->assertSessionHasErrors(['email' => trans('auth.failed')]);
+
+        // El atacante no se libra anteponiendo una IP inventada: manda la del final.
+        $desdeProxy('198.51.100.99, 203.0.113.10')->post('/login', ['email' => 'otra@example.com', 'password' => 'mala'])
+            ->assertSessionHasErrors('email');
+        $this->assertNotSame(trans('auth.failed'), session('errors')->first('email'));
+    }
+
     public function test_una_cuenta_inactiva_recibe_el_mismo_mensaje_que_una_contrasena_equivocada(): void
     {
         $usuario = User::factory()->create(['activo' => false, 'password' => Hash::make('password')]);
