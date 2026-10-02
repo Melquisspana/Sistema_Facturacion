@@ -8,6 +8,16 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.02] - 2026-10-02
+
+Primer despliegue con etiqueta. Incluye #1, #2, #29 y #30. No trae migraciones.
+
+### Seguridad
+
+- Los datos reales de la empresa salen del código: el código de proveedor de los TXT de pagos, los datos del exportador y el host de Cloudflare Access se leen del entorno (`PPQ_CODIGO_PROVEEDOR`, `EXPORTACIONES_*`, `CLOUDFLARE_ACCESS_ALLOWED_HOST`), sin valores operativos por defecto. Si falta el código de proveedor, el TXT se rechaza con un mensaje que lo dice. El seeder del administrador inicial ya no trae una contraseña fija. #2
+- Los datos que llegan a Alpine y a `confirm()` se escapan como literal de JavaScript (`@js`), y las fechas de los filtros de Facturación e Invalidaciones solo aceptan `AAAA-MM-DD` válidas. #29
+- Un usuario desactivado pierde sus sesiones abiertas en la petición siguiente. La política de contraseñas de `config/security.php` se aplica también al cambio desde el perfil y al restablecimiento por correo. Los inicios y cierres de sesión, los intentos fallidos, los bloqueos y los restablecimientos quedan en Auditoría (módulo «Acceso») con la IP real del cliente. Se agrega un techo de intentos de inicio de sesión por IP (`LOGIN_MAX_ATTEMPTS_POR_IP`). #30
+
 ### Agregado
 
 - Integración continua en GitHub Actions con PHPUnit, un job de PHPUnit con MySQL estricto (en cada push desde #1, todavía no bloqueante) y Pint sobre los archivos cambiados.
