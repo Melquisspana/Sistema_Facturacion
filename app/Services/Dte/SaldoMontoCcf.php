@@ -23,6 +23,12 @@ use Illuminate\Support\Collection;
  * que siguen vigentes (generada, firmada, enviada o aceptada, sin invalidación). Un
  * borrador no cuenta: todavía no existe para Hacienda, y si llegara a generarse, el
  * candado de generar lo vuelve a medir contra lo que haya en ese momento.
+ *
+ * El seguimiento de cobros usa la MISMA consulta de notas ({@see descontadoEnCobro()}),
+ * con dos diferencias que no son otra regla sino otra pregunta: solo cuentan las NC ya
+ * ACEPTADAS (el cliente descuenta lo que Hacienda recibió, no lo que está en camino), y
+ * se suma `total_pagar`, porque el importe que se cobra del CCF también es su total a
+ * pagar (neto de retención).
  */
 class SaldoMontoCcf
 {
@@ -50,15 +56,7 @@ class SaldoMontoCcf
             return [];
         }
 
-        $usado = Dte::query()
-            ->where('tipo_dte', TipoDte::NotaCredito->value)
-            ->whereIn('dte_relacionado_id', $ccfs->pluck('id'))
-            ->whereIn('estado', array_map(fn (EstadoDte $e) => $e->value, self::ESTADOS_VIGENTES))
-            ->where(fn ($q) => $q->whereNull('sello_invalidacion')->orWhere('sello_invalidacion', ''))
-            ->when($excluirNcId !== null, fn ($q) => $q->whereKeyNot($excluirNcId))
-            ->groupBy('dte_relacionado_id')
-            ->selectRaw('dte_relacionado_id, SUM(monto_total_operacion) AS usado')
-            ->pluck('usado', 'dte_relacionado_id');
+        $usado = $this->sumaDeNotas($ccfs->pluck('id')->all(), self::ESTADOS_VIGENTES, 'monto_total_operacion', $excluirNcId);
 
         return $ccfs->mapWithKeys(fn (Dte $c) => [
             $c->id => Dinero::redondear(Dinero::restar(
@@ -66,6 +64,43 @@ class SaldoMontoCcf
                 (string) ($usado[$c->id] ?? '0'),
             )),
         ])->all();
+    }
+
+    /**
+     * Cuánto descuenta el cliente del cobro de cada CCF por sus notas de crédito: total a
+     * pagar de las NC ACEPTADAS por Hacienda y sin invalidar. CCF sin notas → '0'.
+     *
+     * @param  array<int, int>  $ccfIds
+     * @return array<int, string> [ccf_id => descuento]
+     */
+    public function descontadoEnCobro(array $ccfIds): array
+    {
+        $suma = $ccfIds === [] ? collect() : $this->sumaDeNotas($ccfIds, [EstadoDte::Aceptado], 'total_pagar');
+
+        return collect($ccfIds)->mapWithKeys(fn (int $id) => [
+            $id => Dinero::redondear((string) ($suma[$id] ?? '0')),
+        ])->all();
+    }
+
+    /**
+     * Las NC que pesan sobre cada CCF: relacionadas a él, en uno de los estados dados y sin
+     * sello de invalidación. La comparten el saldo para emitir NC y el cobro.
+     *
+     * @param  array<int, int>  $ccfIds
+     * @param  array<int, EstadoDte>  $estados
+     * @return Collection<int, string> [ccf_id => suma de la columna]
+     */
+    private function sumaDeNotas(array $ccfIds, array $estados, string $columna, ?int $excluirNcId = null): Collection
+    {
+        return Dte::query()
+            ->where('tipo_dte', TipoDte::NotaCredito->value)
+            ->whereIn('dte_relacionado_id', $ccfIds)
+            ->whereIn('estado', array_map(fn (EstadoDte $e) => $e->value, $estados))
+            ->where(fn ($q) => $q->whereNull('sello_invalidacion')->orWhere('sello_invalidacion', ''))
+            ->when($excluirNcId !== null, fn ($q) => $q->whereKeyNot($excluirNcId))
+            ->groupBy('dte_relacionado_id')
+            ->selectRaw("dte_relacionado_id, SUM({$columna}) AS usado")
+            ->pluck('usado', 'dte_relacionado_id');
     }
 
     /**

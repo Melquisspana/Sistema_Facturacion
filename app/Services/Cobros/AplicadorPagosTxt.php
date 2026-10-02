@@ -148,9 +148,8 @@ class AplicadorPagosTxt
                     'fila' => $fila,
                     'evento' => $evento,
                     'monto_archivo' => $this->magnitud($fila['valor']),
-                    'diferencia' => Dinero::redondear(
-                        Dinero::restar($documento->monto ?? '0', $documento->monto_pagado ?? '0')
-                    ),
+                    // Contra lo esperado (el CCF menos sus NC aceptadas), no contra el bruto.
+                    'diferencia' => $documento->saldo(),
                 ];
 
                 // Tres destinos, no dos: lo que se aplicó, lo que ya estaba igual, y lo que

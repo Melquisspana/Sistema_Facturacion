@@ -20,10 +20,14 @@ enum EstadoPagoCobro: string
     /** Nadie ha informado un solo centavo sobre este documento. */
     case Pendiente = 'pendiente';
 
-    /** Se cobró menos que el total y la diferencia todavía no se explicó. */
+    /**
+     * Se cobró MENOS de lo esperado (el CCF menos sus NC aceptadas). No es un abono: el
+     * cliente no paga por partes, así que es un faltante que alguien debe revisar. El valor
+     * guardado sigue siendo 'parcial' para no reescribir filas existentes.
+     */
     case Parcial = 'parcial';
 
-    /** Lo cobrado coincide con el importe del documento, dentro de la tolerancia. */
+    /** Lo cobrado coincide con el CCF menos sus NC aceptadas, dentro de la tolerancia. */
     case Pagado = 'pagado';
 
     /** Lo cobrado no coincide: de más, o de menos con tratamiento explícito pendiente. */
@@ -33,7 +37,7 @@ enum EstadoPagoCobro: string
     {
         return match ($this) {
             self::Pendiente => 'Pendiente de pago',
-            self::Parcial => 'Pago parcial',
+            self::Parcial => 'Faltante',
             self::Pagado => 'Pagada',
             self::Diferencia => 'Diferencia',
         };
@@ -43,8 +47,8 @@ enum EstadoPagoCobro: string
     {
         return match ($this) {
             self::Pendiente => 'Ningún archivo de pago la menciona todavía.',
-            self::Parcial => 'Se cobró menos que el importe del documento.',
-            self::Pagado => 'Lo cobrado coincide con el importe del documento.',
+            self::Parcial => 'Se cobró menos que el CCF menos sus notas de crédito aceptadas. Requiere revisión.',
+            self::Pagado => 'Lo cobrado coincide con el CCF menos sus notas de crédito aceptadas.',
             self::Diferencia => 'Lo cobrado no coincide con el importe. Requiere decisión.',
         };
     }
