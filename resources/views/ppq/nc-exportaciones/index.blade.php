@@ -379,11 +379,14 @@
                                                    class="inline-flex rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">
                                                     Ver notas<span class="sr-only"> del archivo {{ $lote->referencia }}</span>
                                                 </a>
-                                                <a href="{{ route('ppq.nc-exportaciones.descargar', $lote) }}"
-                                                   class="inline-flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700">
-                                                    Descargar Excel
-                                                    <span class="sr-only">del formato {{ $lote->referencia }}</span>
-                                                </a>
+                                                <form method="POST" action="{{ route('ppq.nc-exportaciones.descargar', $lote) }}" class="inline">
+                                                    @csrf
+                                                    <button type="submit"
+                                                            class="inline-flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700">
+                                                        Descargar Excel
+                                                        <span class="sr-only">del formato {{ $lote->referencia }}</span>
+                                                    </button>
+                                                </form>
                                             </td>
                                         </tr>
                                     @endforeach

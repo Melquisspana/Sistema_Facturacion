@@ -428,10 +428,10 @@ class NcExportacionCargaMasivaTest extends TestCase
         $lote = $servicio->crear($cliente, [$notas[0]->id], $this->usuario());
 
         $this->actingAs($this->usuario())
-            ->get(route('ppq.nc-exportaciones.descargar', $lote))
+            ->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertOk();
         $this->actingAs($this->usuario())
-            ->get(route('ppq.nc-exportaciones.descargar', $lote))
+            ->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertOk();
 
         $lote->refresh();

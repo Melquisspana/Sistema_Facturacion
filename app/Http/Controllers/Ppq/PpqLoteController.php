@@ -195,7 +195,7 @@ class PpqLoteController extends Controller
      * Archivo de NC (formato aceptado por Calleja) con las NC del PPQ que aún no están en
      * ningún formato; si ya lo están todas, descarga el formato donde quedaron.
      */
-    public function archivoNc(Request $request, PpqLote $lote, NcExportacionService $exportaciones): RedirectResponse
+    public function archivoNc(Request $request, PpqLote $lote, NcExportacionService $exportaciones): BinaryFileResponse|RedirectResponse
     {
         $ids = $lote->items()->where('tipo_dte', '05')->whereNotNull('dte_id')
             ->whereHas('dte', fn ($q) => $q->where('estado', EstadoDte::Aceptado->value))
@@ -211,7 +211,7 @@ class PpqLoteController extends Controller
             $formatos = $yaExportadas->unique()->values();
 
             return $formatos->count() === 1
-                ? redirect()->route('ppq.nc-exportaciones.descargar', $formatos->first())
+                ? $this->descargarFormato(NcExportacion::findOrFail($formatos->first()))
                 : redirect()->route('ppq.nc-exportaciones.index')->with('status', 'Las NC de este PPQ ya están en los formatos '
                     .NcExportacion::whereIn('id', $formatos)->pluck('referencia')->implode(', ').'.');
         }
@@ -223,7 +223,17 @@ class PpqLoteController extends Controller
             return redirect()->route('ppq.lotes.show', $lote)->with('error', collect($e->errors())->flatten()->implode(' '));
         }
 
-        return redirect()->route('ppq.nc-exportaciones.descargar', $formato);
+        return $this->descargarFormato($formato);
+    }
+
+    /**
+     * La descarga del formato ya no es un GET al que redirigir (va por POST porque queda
+     * contada en la bitácora): se sirve en esta misma respuesta, con la misma lógica y el
+     * mismo registro que el botón «Descargar Excel».
+     */
+    private function descargarFormato(NcExportacion $formato): BinaryFileResponse|RedirectResponse
+    {
+        return app(NcExportacionController::class)->descargar($formato);
     }
 
     /** Reporte del caso que devuelve el portal: el PPQ queda presentado y lo no tomado vuelve a por presentar. */

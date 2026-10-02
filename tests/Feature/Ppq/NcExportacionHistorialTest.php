@@ -253,7 +253,7 @@ class NcExportacionHistorialTest extends TestCase
         $nueva = $this->nc($cliente, '3.00'); // pendiente, emitida después
 
         $this->actingAs($this->usuario(RolSistema::Jefatura))
-            ->get(route('ppq.nc-exportaciones.descargar', $lote))
+            ->post(route('ppq.nc-exportaciones.descargar', $lote))
             ->assertOk();
 
         $this->assertSame(2, $lote->items()->count());

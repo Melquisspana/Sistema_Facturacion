@@ -6,6 +6,7 @@ use App\Models\Gastos\Cuota;
 use App\Models\Gastos\Gasto;
 use App\Models\Gastos\Pago;
 use App\Models\User;
+use App\Services\Gastos\Contracts\ProteccionDeGastos;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -43,6 +44,7 @@ final class CuentaProveedor
         private AccesoGastos $acceso,
         private SaldosGastos $saldos,
         private RegistrarPago $pagos,
+        private ProteccionDeGastos $proteccion,
     ) {}
 
     /**
@@ -58,6 +60,10 @@ final class CuentaProveedor
             ->where('g.moneda', $moneda)
             ->whereNotNull('g.importe')
             ->when(! $usuario->can('gastos.personales'), fn ($q) => $q->where('g.ambito', 'empresarial'))
+            // Las obligaciones de planilla también son gastos con el nombre del empleado como
+            // beneficiario: sin este recorte, escribir ese nombre en «proveedor» mostraba la
+            // cuota y el saldo de un sueldo a quien no tiene `planilla.salarios`.
+            ->when($this->proteccion->ocultosPara($usuario), fn ($q, $ocultos) => $q->whereNotIn('g.id', $ocultos))
             // Más antiguas primero: por fecha de la compra, y con el id como desempate
             // para que el orden sea estable entre dos compras del mismo día.
             ->orderBy('g.created_at')

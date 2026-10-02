@@ -615,7 +615,7 @@ class CobrosSolicitudTest extends TestCase
 
         $solicitud = $this->solicitudArchivable();
 
-        $respuesta = $this->actingAs($admin)->get(route('cobros.solicitudes.descargar', $solicitud));
+        $respuesta = $this->actingAs($admin)->post(route('cobros.solicitudes.descargar', $solicitud));
         $respuesta->assertOk();
         // Excel, aunque el temporal no tenga extensión, y con el nombre de la solicitud.
         $respuesta->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -629,7 +629,7 @@ class CobrosSolicitudTest extends TestCase
 
         Storage::disk((string) config('dte.storage.disk', 'local'))->delete($solicitud->archivo_path);
 
-        $this->actingAs($admin)->get(route('cobros.solicitudes.descargar', $solicitud))
+        $this->actingAs($admin)->post(route('cobros.solicitudes.descargar', $solicitud))
             ->assertRedirect(route('cobros.index', ['cliente_id' => $solicitud->cliente_id]));
         $this->assertSame(1, $solicitud->refresh()->descargas, 'Una descarga fallida no se cuenta.');
     }
@@ -665,7 +665,7 @@ class CobrosSolicitudTest extends TestCase
         $antes = $solicitud->refresh()->only(['archivo_hash', 'archivo_path', 'descargas', 'presentada_en']);
         $estadoAntes = $solicitud->estado;
 
-        $respuesta = $this->actingAs($admin)->get(route('cobros.solicitudes.descargar', $solicitud));
+        $respuesta = $this->actingAs($admin)->post(route('cobros.solicitudes.descargar', $solicitud));
 
         $respuesta->assertRedirect(route('cobros.index', ['cliente_id' => $solicitud->cliente_id]));
         $respuesta->assertSessionHas('error', fn ($m) => str_contains((string) $m, $solicitud->referencia)

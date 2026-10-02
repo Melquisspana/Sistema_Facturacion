@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Ppq\GmailClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * Conexión OAuth2 de la cuenta de Gmail para PPQ (solo administrador). Nunca
@@ -14,6 +15,8 @@ use Illuminate\Http\Request;
  */
 class PpqGmailController extends Controller
 {
+    private const CLAVE_STATE = 'ppq_gmail_oauth_state';
+
     public function conectar(GmailClient $gmail): RedirectResponse
     {
         if (! $gmail->configurado()) {
@@ -21,7 +24,12 @@ class PpqGmailController extends Controller
                 ->with('error', 'Faltan credenciales de Gmail en .env (GMAIL_CLIENT_ID/SECRET/REDIRECT_URI y PPQ_GMAIL_ENABLED=true).');
         }
 
-        return redirect()->away($gmail->authUrl());
+        // `state` aleatorio atado a ESTA sesión: sin él, un enlace preparado con el código de
+        // autorización de otra cuenta conectaba el sistema al Gmail de un tercero.
+        $state = Str::random(40);
+        session()->put(self::CLAVE_STATE, $state);
+
+        return redirect()->away($gmail->authUrl($state));
     }
 
     public function callback(Request $request, GmailClient $gmail): RedirectResponse
@@ -29,6 +37,12 @@ class PpqGmailController extends Controller
         if ($request->filled('error')) {
             return redirect()->route('ppq.index')->with('error', 'Autorización de Gmail cancelada.');
         }
+        $esperado = $request->session()->pull(self::CLAVE_STATE);
+        if (! is_string($esperado) || ! hash_equals($esperado, (string) $request->query('state', ''))) {
+            return redirect()->route('ppq.index')
+                ->with('error', 'La autorización de Gmail no corresponde a una conexión iniciada desde este sistema. Volvé a conectar.');
+        }
+
         $codigo = (string) $request->query('code', '');
         if ($codigo === '') {
             return redirect()->route('ppq.index')->with('error', 'Google no devolvió el código de autorización.');
@@ -37,7 +51,10 @@ class PpqGmailController extends Controller
         try {
             $cuenta = $gmail->conectar($codigo, $request->user()?->id);
         } catch (\Throwable $e) {
-            return redirect()->route('ppq.index')->with('error', 'No se pudo conectar Gmail: '.$e->getMessage());
+            // El detalle técnico va al registro, no a la pantalla.
+            report($e);
+
+            return redirect()->route('ppq.index')->with('error', 'No se pudo conectar Gmail. El detalle quedó en el registro del sistema.');
         }
 
         return redirect()->route('ppq.index')
