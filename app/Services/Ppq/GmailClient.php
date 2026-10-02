@@ -4,6 +4,7 @@ namespace App\Services\Ppq;
 
 use App\Ajustes\Integraciones\ConfiguracionGmail;
 use App\Exceptions\Ppq\GmailDesconectadoException;
+use App\Exceptions\Ppq\GmailNoDisponibleException;
 use App\Models\GmailCuenta;
 use App\Support\Correo\CuerpoHtml;
 use App\Support\Correo\MensajeActual;
@@ -86,9 +87,7 @@ class GmailClient
      */
     public function perfil(): array
     {
-        $servicio = new Gmail($this->clienteAutenticado());
-
-        $perfil = $this->ejecutarGoogle(fn () => $servicio->users->getProfile('me'));
+        $perfil = $this->ejecutarGoogle(fn () => (new Gmail($this->clienteAutenticado()))->users->getProfile('me'));
 
         return [
             'email' => $perfil->getEmailAddress(),
@@ -465,7 +464,8 @@ class GmailClient
         });
     }
 
-    private function clienteBase(): GoogleClient
+    /** Protegido para que un doble de prueba le inyecte un cliente HTTP falso. */
+    protected function clienteBase(): GoogleClient
     {
         $client = new GoogleClient;
         $client->setClientId($this->configuracion()->clientId());
@@ -494,47 +494,104 @@ class GmailClient
         }
 
         if ($client->isAccessTokenExpired() && filled($cuenta->refresh_token)) {
-            try {
-                $nuevo = $client->fetchAccessTokenWithRefreshToken($cuenta->refresh_token);
-            } catch (\Throwable $e) {
-                $this->marcarCuentaDesconectada();
-                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.', previous: $e);
-            }
-            if (isset($nuevo['error'])) {
-                $this->marcarCuentaDesconectada();
-                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada ('.$nuevo['error'].'). Reconectá la cuenta.');
-            }
-            $nuevo['refresh_token'] ??= $cuenta->refresh_token; // Google no lo reenvía
-            $this->guardarToken($nuevo, $cuenta->email, $cuenta->conectado_por);
-            $client->setAccessToken($nuevo);
+            $this->renovarToken($client, $cuenta);
         }
 
         return $client;
     }
 
     /**
-     * Ejecuta una llamada real a la API de Gmail. Si Google responde que el
-     * token es inválido (invalid_grant/401/403), marca la cuenta como
-     * desconectada y convierte el error en GmailDesconectadoException para
-     * que el llamador pueda degradar a la búsqueda local en vez de un 500.
+     * Pide a Google un access token nuevo con el refresh_token y lo persiste.
+     *
+     * Borrar el refresh_token es irreversible: obliga a que alguien reconecte la
+     * cuenta a mano. Por eso solo se hace cuando Google lo pide explícitamente
+     * con `invalid_grant`. Cualquier otro fallo (red caída al arrancar la PC,
+     * Google con un 5xx, `invalid_client` por una credencial mal cargada) deja
+     * la cuenta intacta y la próxima corrida reintenta.
+     */
+    private function renovarToken(GoogleClient $client, GmailCuenta $cuenta): void
+    {
+        try {
+            $nuevo = $client->fetchAccessTokenWithRefreshToken($cuenta->refresh_token);
+        } catch (\Throwable $e) {
+            throw new GmailNoDisponibleException('No se pudo contactar a Google para renovar el acceso a Gmail. Se reintentará en la próxima corrida.', previous: $e);
+        }
+
+        if (($nuevo['error'] ?? null) === 'invalid_grant') {
+            $this->marcarCuentaDesconectada();
+            throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada (invalid_grant). Reconectá la cuenta.');
+        }
+        if (! isset($nuevo['access_token'])) {
+            throw new GmailNoDisponibleException('Google no renovó el acceso a Gmail ('.($nuevo['error'] ?? 'respuesta sin token').'). Se reintentará en la próxima corrida.');
+        }
+
+        $nuevo['refresh_token'] ??= $cuenta->refresh_token; // Google no lo reenvía
+        $this->guardarToken($nuevo, $cuenta->email, $cuenta->conectado_por);
+        $client->setAccessToken($nuevo);
+    }
+
+    /**
+     * Ejecuta una llamada real a la API de Gmail.
+     *
+     * Un 401 dice que ESTE access token no sirve, no que la autorización se haya
+     * perdido. Pasa, por ejemplo, con el reloj de la PC atrasado: el cliente cree
+     * vigente un token que Google ya dio por vencido y nunca lo renueva. Así que
+     * primero se renueva a la fuerza y se reintenta una vez. La cuenta solo se
+     * desconecta si la renovación responde `invalid_grant`.
+     *
+     * $fn debe construir el cliente ADENTRO (con clienteAutenticado()) para que el
+     * reintento tome el token recién guardado.
      */
     private function ejecutarGoogle(callable $fn): mixed
     {
         try {
             return $fn();
         } catch (GoogleServiceException $e) {
-            if ($this->esErrorAuth($e)) {
-                $this->marcarCuentaDesconectada();
-                throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.', previous: $e);
+            if ($e->getCode() !== 401) {
+                throw $this->traducirErrorGoogle($e);
             }
-            throw $e;
+        }
+
+        $cuenta = GmailCuenta::actual();
+        if (! $cuenta || blank($cuenta->refresh_token)) {
+            // Sin refresh_token no hay con qué renovar: solo queda reautorizar.
+            $this->marcarCuentaDesconectada();
+            throw new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada. Reconectá la cuenta.');
+        }
+        $this->renovarToken($this->clienteBase(), $cuenta);
+
+        try {
+            return $fn();
+        } catch (GoogleServiceException $e) {
+            if ($e->getCode() === 401) {
+                // El token se acaba de renovar sin problema, así que la autorización
+                // existe: borrarla no arreglaría nada.
+                throw new GmailNoDisponibleException('Gmail rechazó un token recién renovado. Se reintentará en la próxima corrida.', previous: $e);
+            }
+            throw $this->traducirErrorGoogle($e);
         }
     }
 
-    private function esErrorAuth(GoogleServiceException $e): bool
+    /**
+     * Errores de la API que no son un 401. Un 403 (cuota, API deshabilitada,
+     * permisos) no se arregla borrando el token, así que no desconecta: se informa
+     * con el motivo de Google. Si de verdad faltara un permiso, reconectar desde
+     * Integraciones lo resuelve.
+     */
+    private function traducirErrorGoogle(GoogleServiceException $e): \Throwable
     {
-        return in_array($e->getCode(), [401, 403], true)
-            || str_contains(strtolower($e->getMessage()), 'invalid_grant');
+        if (str_contains(strtolower($e->getMessage()), 'invalid_grant')) {
+            $this->marcarCuentaDesconectada();
+
+            return new GmailDesconectadoException('La conexión con Gmail expiró o fue revocada (invalid_grant). Reconectá la cuenta.', previous: $e);
+        }
+        if ($e->getCode() === 403) {
+            $motivo = $e->getErrors()[0]['reason'] ?? 'acceso denegado';
+
+            return new GmailNoDisponibleException('Gmail rechazó la consulta ('.$motivo.'). Se reintentará en la próxima corrida.', previous: $e);
+        }
+
+        return $e;
     }
 
     private function marcarCuentaDesconectada(): void

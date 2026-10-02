@@ -47,7 +47,7 @@ class GmailCuenta extends Model
     }
 
     /**
-     * Google revocó/expiró el token (invalid_grant, 401, 403): limpia el
+     * Google revocó/expiró la autorización (invalid_grant al renovar): limpia el
      * access_token y el refresh_token para que conectada() refleje que hay
      * que reautorizar. Conserva email/conectado_por como referencia histórica.
      */
