@@ -67,6 +67,9 @@ return [
 
     'timezone' => env('APP_TIMEZONE', 'UTC'),
 
+    // El guardado sigue en UTC (app.timezone); esta zona decide qué día es «hoy» para el negocio (decisión 0004).
+    'zona_negocio' => env('APP_ZONA_NEGOCIO', 'America/El_Salvador'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration
