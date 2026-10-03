@@ -17,6 +17,7 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
+use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -246,6 +247,121 @@ class EntregasSalidaTest extends TestCase
     }
 
     // ══════════════════════════════ registrar
+
+    public function test_no_se_registra_en_una_salida_finalizada(): void
+    {
+        $this->ccf();
+        $salida = $this->salida();
+        $this->servicio()->cargarPendientes($salida);
+        $entrega = $salida->entregas()->sole();
+        $salida->finalizar();
+        $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$salida, $entrega]), [
+            'resultado' => 'entregado', 'entregado_por_id' => $this->carlos->id,
+        ])->assertSessionHasErrors('salida');
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+    }
+
+    public function test_no_entregado_requiere_deshacer_antes_de_entregar(): void
+    {
+        $this->ccf();
+        $salida = $this->salida();
+        $this->servicio()->cargarPendientes($salida);
+        $entrega = $salida->entregas()->sole();
+        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
+        $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
+        $datos = ['resultado' => 'entregado', 'entregado_por_id' => $this->carlos->id];
+        $this->actingAs($this->admin())->patch($url, $datos)->assertSessionHasErrors('entrega');
+        $this->assertSame(ResultadoEntrega::NoEntregado, $entrega->refresh()->resultado);
+        $this->servicio()->deshacer($entrega);
+        $this->patch($url, $datos)->assertSessionHas('status');
+        $this->assertSame(ResultadoEntrega::Entregado, $entrega->refresh()->resultado);
+    }
+
+    public function test_no_se_registra_dos_veces_entregado(): void
+    {
+        $this->ccf();
+        $salida = $this->salida();
+        $this->servicio()->cargarPendientes($salida);
+        $entrega = $salida->entregas()->sole();
+        $this->entregar($entrega);
+        $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$salida, $entrega]), [
+            'resultado' => 'entregado', 'entregado_por_id' => $this->carlos->id,
+        ])->assertSessionHasErrors('entrega');
+    }
+
+    public function test_no_se_entrega_un_ccf_ya_entregado_en_otra_salida(): void
+    {
+        $this->ccf();
+        $primera = $this->salida();
+        $this->servicio()->cargarPendientes($primera);
+        $entrega = $primera->entregas()->sole();
+        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
+        $segunda = $this->salida(EstadoSalidaRuta::Planificada);
+        $this->servicio()->cargarPendientes($segunda);
+        $segunda->iniciar();
+        $this->entregar($segunda->entregas()->sole());
+        $this->servicio()->deshacer($entrega);
+        $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.update', [$primera, $entrega]), [
+            'resultado' => 'entregado', 'entregado_por_id' => $this->carlos->id,
+        ])->assertSessionHasErrors(['entrega' => 'Ese CCF ya consta como entregado en otra salida.']);
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+    }
+
+    public function test_deshacer_no_deja_pendiente_en_dos_salidas_abiertas(): void
+    {
+        $this->ccf();
+        $primera = $this->salida();
+        $this->servicio()->cargarPendientes($primera);
+        $entrega = $primera->entregas()->sole();
+        $this->servicio()->registrar($entrega, ['resultado' => 'no_entregado', 'motivo_no_entrega' => MotivoNoEntrega::SinTiempo->value], null, OrigenRegistroEntrega::Oficina);
+        $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada));
+        $this->actingAs($this->admin())->patch(route('rutas.salidas.entregas.deshacer', [$primera, $entrega]))
+            ->assertSessionHasErrors(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
+        $this->assertSame(ResultadoEntrega::NoEntregado, $entrega->refresh()->resultado);
+    }
+
+    public function test_cargar_recomprueba_una_lista_vieja_de_pendientes(): void
+    {
+        $dte = $this->ccf();
+        $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada));
+        $doble = \Mockery::mock(EntregasCcf::class, [app(AlbaranLocalizador::class)])->makePartial();
+        $doble->shouldReceive('pendientesDeRuta')->once()->andReturn(collect([$dte]));
+        $this->instance(EntregasCcf::class, $doble);
+        $segunda = $this->salida();
+        $this->assertSame(0, $this->servicio()->cargarPendientes($segunda));
+        $this->assertSame(0, $segunda->entregas()->count());
+    }
+
+    public function test_agregar_rechaza_un_ccf_en_otra_salida_abierta(): void
+    {
+        $dte = $this->ccf();
+        $this->servicio()->cargarPendientes($this->salida(EstadoSalidaRuta::Planificada));
+        $segunda = $this->salida();
+        $this->actingAs($this->admin())->post(route('rutas.salidas.entregas.store', $segunda), ['numero_control' => $dte->numero_control])
+            ->assertSessionHasErrors(['numero_control' => 'Ese CCF ya va sin registrar en otra salida abierta.']);
+        $this->assertSame(0, $segunda->entregas()->count());
+    }
+
+    public function test_la_hoja_marca_invalidado_y_la_sala_no_lo_entrega(): void
+    {
+        $dte = $this->ccf();
+        $this->ccf();
+        $this->ccf();
+        $salida = $this->salida();
+        $this->servicio()->cargarPendientes($salida);
+        $entrega = $salida->entregas()->where('dte_id', $dte->id)->sole();
+        $dte->update(['estado' => 'invalidado']);
+        $respuesta = $this->actingAs($this->admin())->get(route('rutas.salidas.show', $salida))
+            ->assertOk()->assertSee('Invalidado · no entregar')
+            ->assertSee('Todo entregado');
+        $dom = new \DOMDocument;
+        @$dom->loadHTML($respuesta->getContent());
+        $xpath = new \DOMXPath($dom);
+        $url = route('rutas.salidas.entregas.update', [$salida, $entrega]);
+        $this->assertSame(0, $xpath->query('//form[@action="'.$url.'"]//input[@name="resultado"]')->length);
+        $this->assertSame(2, $this->servicio()->registrarSala($salida, $this->sala->id, $this->carlos->id, null, OrigenRegistroEntrega::Oficina));
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+    }
 
     public function test_no_entregado_exige_motivo_y_otro_exige_nota(): void
     {
