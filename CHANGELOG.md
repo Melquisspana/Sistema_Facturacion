@@ -2,11 +2,23 @@
 
 Este archivo registra los cambios relevantes del proyecto siguiendo el formato de Keep a Changelog, con categorías en español y las entradas más recientes primero.
 
-Cada despliegue a producción lleva la etiqueta `vAAAA.MM.DD` y su entrada en este archivo, con la fecha y los cambios incluidos. Los cambios pendientes se agrupan en `[Sin publicar]`. No se incluyen datos del servidor ni detalles operativos del despliegue.
+Cada despliegue a producción lleva la etiqueta `vAAAA.MM.DD` (con `.2`, `.3`… si hay más de uno el mismo día) y su entrada en este archivo, con la fecha y los cambios incluidos. Los cambios pendientes se agrupan en `[Sin publicar]`. No se incluyen datos del servidor ni detalles operativos del despliegue.
 
 El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
+
+## [2026.10.02.2] - 2026-10-02
+
+Segundo despliegue del día. Incluye #31, #34 y #35. No trae migraciones. El cambio de Gastos del #31 queda en el código, pero el módulo de Gastos todavía no está en producción.
+
+### Agregado
+
+- Ficha del CCF: botón «Elegir albarán» / «Vincular con otro albarán» para corregir un CCF cuya orden de compra no encuentra su albarán. Sugiere hasta 10 albaranes de entrega puntuados por monto, OC, sala parecida y fecha, con buscador por número y vista previa antes de confirmar. Cada corrección queda en el historial del CCF y en la bitácora; no se puede mover el albarán de un CCF que ya está en una solicitud o tiene pagos. #35
+
+### Cambiado
+
+- Seguimiento de CCF: un CCF figura como pagado cuando lo cobrado coincide con su total menos las NC aceptadas y sin invalidar. Los pagos que no cuadran (faltante o diferencia) pasan a la pestaña nueva «Pagos con diferencia». #34
 
 ### Seguridad
 
