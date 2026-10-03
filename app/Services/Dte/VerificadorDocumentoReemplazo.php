@@ -8,6 +8,7 @@ use App\Models\Dte;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\Dte\EmisorDte;
 use App\Support\Dte\PoliticaInvalidacion;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Verifica EN SERVIDOR el «documento sustituto» (`documento.codigoGeneracionR`) del
@@ -44,6 +45,24 @@ use App\Support\Dte\PoliticaInvalidacion;
  */
 class VerificadorDocumentoReemplazo
 {
+    /**
+     * Sustitutos usados por otros eventos aceptados. Los eventos anteriores a esta
+     * regla no guardaron codigoGeneracionR y no pueden detectarse.
+     * La gramática de Eloquent resuelve la extracción JSON para SQLite y MySQL.
+     */
+    public static function usosDeSustitutos(?int $excluirDteId = null): Builder
+    {
+        return Dte::query()->whereNotNull('sello_invalidacion')->where('sello_invalidacion', '!=', '')
+            ->whereNotNull('respuesta_mh_invalidacion->codigoGeneracionR')
+            ->where('respuesta_mh_invalidacion->codigoGeneracionR', '!=', '')
+            ->when($excluirDteId !== null, fn (Builder $q) => $q->whereKeyNot($excluirDteId));
+    }
+
+    public static function columnaCodigoSustituto(Builder $consulta): string
+    {
+        return 'UPPER('.$consulta->getQuery()->getGrammar()->wrap('respuesta_mh_invalidacion->codigoGeneracionR').')';
+    }
+
     /**
      * @return array{0: ?Dte, 1: array<int, string>} [sustituto verificado o null, problemas]
      */
@@ -100,6 +119,12 @@ class VerificadorDocumentoReemplazo
     {
         $problemas = [];
 
+        $usos = self::usosDeSustitutos($invalidado->id);
+        $usado = $usos->whereRaw(self::columnaCodigoSustituto($usos).' = ?', [strtoupper((string) $sustituto->codigo_generacion)])->first();
+        if ($usado !== null) {
+            $problemas[] = 'Este documento de reemplazo ya se usó para invalidar el '.($usado->tipo_dte?->label() ?? 'documento').' '.($usado->numero_control ?? $usado->numero_interno ?? '#'.$usado->id).'. Cada documento nuevo reemplaza a uno solo: emití otro documento corregido para este caso.';
+        }
+
         $tiposAdmitidos = $invalidado->tipo_dte !== null
             ? PoliticaInvalidacion::tiposSustituto($invalidado->tipo_dte)
             : [];
@@ -135,5 +160,4 @@ class VerificadorDocumentoReemplazo
 
         return $problemas;
     }
-
 }

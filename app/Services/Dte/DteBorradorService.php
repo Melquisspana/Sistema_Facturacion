@@ -800,7 +800,7 @@ class DteBorradorService
 
             $lineasAcreditadas = 0;
             foreach ($original->lineas as $lineaOriginal) {
-                $disponible = $this->saldoAcreditableDisponible($lineaOriginal);
+                $disponible = $this->saldoAcreditableDisponible($lineaOriginal, $nc->id);
                 if (Dinero::comparar($disponible, '0') <= 0) {
                     continue; // línea ya totalmente acreditada por NC previas
                 }
@@ -945,7 +945,8 @@ class DteBorradorService
             ]);
         }
 
-        $this->validarSaldoAcreditable($lineaOriginal, $cantidad);
+        $propio = (string) $nc->lineas()->where('dte_linea_original_id', $lineaOriginal->id)->sum('cantidad');
+        $this->validarSaldoAcreditable($lineaOriginal, Dinero::sumar($propio, $cantidad), $nc->id);
 
         return DB::transaction(function () use ($nc, $lineaOriginal, $cantidad) {
             // Descuento DE LÍNEA del original, prorrateado a la fracción acreditada. El descuento
@@ -1030,19 +1031,19 @@ class DteBorradorService
         $vacia = $cantidad === null || $cantidad === ''
             || Dinero::comparar(Dinero::de($cantidad), '0') <= 0;
 
-        if ($vacia) {
-            if ($existente === null) {
-                return ['accion' => 'sin_cambio', 'linea' => null];
-            }
-
-            $this->eliminarLinea($existente);
-
-            return ['accion' => 'eliminada', 'linea' => null];
+        if ($vacia && $existente === null) {
+            return ['accion' => 'sin_cambio', 'linea' => null];
         }
 
-        return DB::transaction(function () use ($nc, $lineaOriginal, $cantidad, $existente) {
-            if ($existente !== null) {
-                $existente->delete();
+        return DB::transaction(function () use ($nc, $lineaOriginal, $cantidad, $existente, $vacia) {
+            // acreditarLinea agrega filas: establecer reemplaza TODAS las propias.
+            foreach ($nc->lineas()->where('dte_linea_original_id', $lineaOriginal->id)->get() as $previa) {
+                $previa->delete();
+            }
+            if ($vacia) {
+                $this->recalcular($nc);
+
+                return ['accion' => 'eliminada', 'linea' => null];
             }
 
             $linea = $this->acreditarLinea($nc, $lineaOriginal, $cantidad);
@@ -1060,17 +1061,9 @@ class DteBorradorService
      * Fuente única del cálculo de saldo, reutilizada por {@see validarSaldoAcreditable()}
      * (acreditación puntual) y por {@see revertirCcfCompleto()} (reversión total).
      */
-    private function saldoAcreditableDisponible(DteLinea $lineaOriginal): string
+    private function saldoAcreditableDisponible(DteLinea $lineaOriginal, ?int $excluirNcId = null): string
     {
-        // Qué NC dejan de consumir saldo (invalidadas y rechazadas archivadas) vive en
-        // Dte::scopeConsumeSaldoAcreditable(), única fuente de la regla.
-        $yaAcreditado = Dinero::de(
-            DteLinea::where('dte_linea_original_id', $lineaOriginal->id)
-                ->whereHas('dte', fn ($q) => $q->consumeSaldoAcreditable())
-                ->sum('cantidad') ?? 0
-        );
-
-        return Dinero::restar(Dinero::de($lineaOriginal->cantidad), $yaAcreditado);
+        return app(SaldoMontoCcf::class)->saldoLinea($lineaOriginal, $excluirNcId);
     }
 
     /**
@@ -1079,9 +1072,9 @@ class DteBorradorService
      *
      * @throws SaldoAcreditableExcedidoException
      */
-    private function validarSaldoAcreditable(DteLinea $lineaOriginal, string $cantidad): void
+    private function validarSaldoAcreditable(DteLinea $lineaOriginal, string $cantidad, ?int $excluirNcId = null): void
     {
-        if (Dinero::comparar($cantidad, $this->saldoAcreditableDisponible($lineaOriginal)) > 0) {
+        if (Dinero::comparar($cantidad, $this->saldoAcreditableDisponible($lineaOriginal, $excluirNcId)) > 0) {
             throw new SaldoAcreditableExcedidoException(
                 'No se puede acreditar más que el saldo disponible de la línea original.'
             );

@@ -45,6 +45,27 @@ class DteGeneracionService
         $this->validar($dte);
 
         return DB::transaction(function () use ($dte, $usuario) {
+            if ($dte->tipo_dte === TipoDte::NotaCredito && $dte->dte_relacionado_id !== null) {
+                // Dos NC concurrentes se serializan por el CCF. SQLite no bloquea;
+                // lockForUpdate lo ejerce el job MySQL de la CI.
+                $ccf = Dte::whereKey($dte->dte_relacionado_id)->lockForUpdate()->first();
+                $saldo = app(SaldoMontoCcf::class);
+                if ($problema = $saldo->exceso($dte)) {
+                    throw new GeneracionException($problema);
+                }
+                foreach ($dte->lineas()->whereNotNull('dte_linea_original_id')->get()->groupBy('dte_linea_original_id') as $id => $lineas) {
+                    $original = DteLinea::whereKey($id)->first();
+                    if ($original === null || $ccf === null || (int) $original->dte_id !== (int) $ccf->id) {
+                        throw new GeneracionException('La línea de esta nota no pertenece al CCF relacionado.');
+                    }
+                    $disponible = $saldo->saldoLinea($original, $dte->id);
+                    $cantidad = $lineas->reduce(fn (string $total, DteLinea $l) => Dinero::sumar($total, (string) $l->cantidad), '0');
+                    if (Dinero::comparar($cantidad, $disponible) > 0) {
+                        throw new GeneracionException('La línea '.$original->numero_linea.' del CCF '.($ccf->numero_control ?? $ccf->numero_interno ?? '#'.$ccf->id).' ya fue acreditada por otra nota: quedan '.$disponible.'.');
+                    }
+                }
+            }
+
             // Bloquea la fila del correlativo para evitar números duplicados.
             $correlativo = Correlativo::whereKey($this->resolverCorrelativo($dte)->id)
                 ->lockForUpdate()

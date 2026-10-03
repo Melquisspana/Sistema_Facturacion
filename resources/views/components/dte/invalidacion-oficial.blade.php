@@ -274,7 +274,7 @@
                 // El texto completo —con el detalle de cada nota y su enlace— va en el
                 // bloque naranja de abajo; acá solo se nombra la causa para no repetirlo.
                 if ($bloqueadoPorNotas) {
-                    $razonesUsuario[] = 'Tiene una nota de crédito vigente en su contra (ver el detalle abajo).';
+                    $razonesUsuario[] = 'Tiene notas relacionadas que bloquean la invalidación (ver el detalle abajo).';
                 }
                 // Documento apto pero bloqueado por el entorno (modo seguro): un único mensaje simple.
                 if (($inv['puede_transmitir'] ?? false) && ($inv['candados']['bloqueado'] ?? false)) {
@@ -296,12 +296,15 @@
              QUÉ hay que invalidar antes. El enlace solo aparece con permiso de ver la nota. --}}
         @if ($bloqueadoPorNotas)
             <div class="mt-4 rounded-md border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900">
-                <p class="font-semibold">Este comprobante tiene una nota de crédito vigente. Primero invalidá esa nota y luego volvé a intentar.</p>
+                @foreach (app(\App\Services\Dte\ValidadorReglasInvalidacion::class)->problemasDeDependencias($dte) as $mensaje)
+                    <p class="font-semibold">{{ $mensaje }}</p>
+                @endforeach
                 <ul class="mt-2 space-y-1">
                     @foreach ($notasVigentes as $nota)
                         <li>
                             <span class="font-medium">{{ $nota->tipo_dte?->label() ?? 'Nota' }}</span>
-                            <span class="font-mono">{{ $nota->numero_control ?? '—' }}</span>
+                            <span class="font-mono">{{ $nota->numero_control ?? $nota->numero_interno ?? '#'.$nota->id }}</span>
+                            <span>({{ $nota->estado->label() }})</span>
                             @can('view', $nota)
                                 — <a href="{{ route('facturacion.show', $nota) }}" class="underline hover:no-underline">ver la nota</a>
                             @endcan
@@ -309,8 +312,7 @@
                     @endforeach
                 </ul>
                 <p class="mt-2 text-xs">
-                    No es una advertencia que se pueda confirmar: Hacienda no admite invalidar un comprobante
-                    mientras la nota que lo corrige siga vigente.
+                    Resolvé las notas indicadas antes de invalidar este comprobante.
                 </p>
             </div>
         @endif

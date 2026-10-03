@@ -12,8 +12,10 @@ use App\Models\Dte;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -111,6 +113,31 @@ class DteInvalidacionService
      * @throws DteInvalidacionException
      */
     public function transmitir(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar): array
+    {
+        $locks = [];
+        try {
+            $claves = ['dte-invalidacion:'.$dte->id];
+            if (filled($evento->codigoGeneracionReemplazo)) {
+                $claves[] = 'dte-invalidacion-sustituto:'.strtoupper(trim($evento->codigoGeneracionReemplazo));
+            }
+            foreach ($claves as $clave) {
+                $lock = Cache::lock($clave, 120);
+                if (! $lock->get()) {
+                    throw new DteInvalidacionException('Ya hay una invalidación de este documento en curso. Esperá su resultado y revisá el documento antes de reintentar.');
+                }
+                $locks[] = $lock;
+            }
+            $dte->refresh();
+
+            return $this->transmitirConBloqueo($dte, $evento, $transmitirReal, $confirmoInvalidar);
+        } finally {
+            foreach (array_reverse($locks) as $lock) {
+                $lock->release();
+            }
+        }
+    }
+
+    private function transmitirConBloqueo(Dte $dte, EventoInvalidacionData $evento, bool $transmitirReal, bool $confirmoInvalidar): array
     {
         // Guarda de EVIDENCIA: primera y más dura de todas, independiente de los demás
         // candados y sin flag de override. Se verifica de nuevo aquí (no solo dentro de
@@ -334,6 +361,7 @@ class DteInvalidacionService
         Storage::disk($disco)->put($rutaResp, (string) json_encode(is_array($cuerpo) ? $cuerpo : ['mensaje' => $interpretado['mensaje']], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         $respuestaMh = [
+            'codigoGeneracionR' => filled($evento->codigoGeneracionReemplazo) ? strtoupper(trim($evento->codigoGeneracionReemplazo)) : null,
             'resultado' => $interpretado['resultado'],
             'estado' => is_array($cuerpo) ? ($cuerpo['estado'] ?? null) : null,
             'http_status' => $interpretado['http_status'],
@@ -343,7 +371,18 @@ class DteInvalidacionService
             'observaciones' => $interpretado['observaciones'] ?? [],
         ];
 
-        DB::transaction(function () use ($dte, $evento, $codigoEvento, $rutaJson, $rutaJws, $rutaResp, $respuestaMh, $interpretado, $cuerpo, $aceptado, $ahora) {
+        $tardia = DB::transaction(function () use ($dte, $evento, $codigoEvento, $rutaJson, $rutaJws, $rutaResp, $respuestaMh, $interpretado, $cuerpo, $aceptado, $ahora) {
+            $actual = Dte::whereKey($dte->id)->lockForUpdate()->firstOrFail();
+            $dte->setRawAttributes($actual->getAttributes(), true);
+            if ($dte->estado === EstadoDte::Invalidado || filled($dte->sello_invalidacion)) {
+                activity('dte_invalidacion')->performedOn($dte)->withProperties([
+                    'codigo_generacion_evento' => $codigoEvento,
+                    'resultado_mh' => $interpretado['resultado'],
+                    'respuesta_tardia_path' => $rutaResp,
+                ])->log('Llegó una respuesta tardía de invalidación y se conservó el evento aceptado.');
+
+                return true;
+            }
             $dte->codigo_generacion_invalidacion = $codigoEvento;
             $dte->tipo_anulacion = $evento->tipoAnulacion->value;
             $dte->json_invalidacion_path = $rutaJson;
@@ -392,6 +431,12 @@ class DteInvalidacionService
                     : 'transmitió (REAL) el evento de invalidación — Hacienda lo RECHAZÓ');
         });
 
+        if ($tardia) {
+            return $this->resultado($interpretado['resultado'], $interpretado['http_status'],
+                'Llegó una respuesta tardía: se conservó el evento de invalidación aceptado.', $dte->sello_invalidacion, $dte,
+                $dte->estado === EstadoDte::Invalidado || filled($dte->sello_invalidacion));
+        }
+
         return $this->resultado(
             $interpretado['resultado'],
             $interpretado['http_status'],
@@ -408,7 +453,7 @@ class DteInvalidacionService
      *
      * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>, cuerpo: array<string, mixed>|null}
      */
-    private function interpretar(\Illuminate\Http\Client\Response $resp): array
+    private function interpretar(Response $resp): array
     {
         $status = $resp->status();
         $cuerpo = $resp->json();

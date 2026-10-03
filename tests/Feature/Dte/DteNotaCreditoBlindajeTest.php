@@ -616,6 +616,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
 
         $nc1 = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
         $this->borradores->acreditarLinea($nc1, $lineas[0], 1);
+        app(DteGeneracionService::class)->generar($nc1);
 
         $nc2 = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
 
@@ -640,6 +641,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $lineas = $this->lineasDe($ccf);
         $nc1 = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
         $this->borradores->acreditarLinea($nc1, $lineas[0], 1);
+        app(DteGeneracionService::class)->generar($nc1);
         $nc2 = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
 
         // Cada mitad: 64.07 − 5 % = 60.87 → bajo los $100 → sin retención.
@@ -667,6 +669,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
 
         $ncA = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
         $this->borradores->acreditarLinea($ncA, $linea, 3);
+        app(DteGeneracionService::class)->generar($ncA);
         $totalesA = $ncA->refresh()->only(['total_gravado', 'iva', 'iva_retenido', 'total_pagar']);
         $ccfAntes = $ccf->refresh()->only(['estado', 'total_pagar', 'iva_retenido', 'sello_recepcion']);
 
@@ -696,7 +699,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $ccf = $this->ccfAceptado($this->cliente(true, 5), [[250.00, 2]]);
         $linea = $this->lineasDe($ccf)->first();
 
-        $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
+        app(DteGeneracionService::class)->generar($this->borradores->revertirCcfCompleto($ccf, $this->usuario()));
 
         // Otra acreditación puntual: rechazada.
         $nc = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
@@ -707,7 +710,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
     public function test_una_segunda_reversion_total_se_rechaza_sin_dejar_borrador(): void
     {
         $ccf = $this->ccfAceptado($this->cliente(true, 5), [[250.00, 2]]);
-        $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
+        app(DteGeneracionService::class)->generar($this->borradores->revertirCcfCompleto($ccf, $this->usuario()));
 
         $ncsAntes = Dte::where('tipo_dte', TipoDte::NotaCredito->value)->count();
 
@@ -831,6 +834,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $this->assertSame(1, $soloUno->lineas()->count());
         $this->assertSame('50.00', (string) $soloUno->total_gravado);
         $this->assertInvariantes($soloUno, 'devolviendo un solo producto');
+        app(DteGeneracionService::class)->generar($soloUno);
 
         // (b) Cantidades parciales de dos productos distintos.
         $dosParciales = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
@@ -841,6 +845,7 @@ class DteNotaCreditoBlindajeTest extends TestCase
         $this->assertSame('70.00', (string) $dosParciales->total_gravado);
         $this->assertSame([1, 2], $this->lineasDe($dosParciales)->pluck('numero_linea')->all());
         $this->assertInvariantes($dosParciales, 'devolviendo dos productos parcialmente');
+        app(DteGeneracionService::class)->generar($dosParciales);
 
         // (c) La reversión total solo toma lo que queda: 2 del segundo y 2 del tercero.
         $resto = $this->borradores->revertirCcfCompleto($ccf, $this->usuario())->refresh();

@@ -18,6 +18,7 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
@@ -30,7 +31,7 @@ use Tests\TestCase;
  */
 class DteNotaCreditoReversionTest extends TestCase
 {
-    use \Tests\Concerns\PreparaEmisorDte;
+    use PreparaEmisorDte;
     use RefreshDatabase;
 
     private DteBorradorService $borradores;
@@ -119,9 +120,10 @@ class DteNotaCreditoReversionTest extends TestCase
         $ccf = $this->ccfAceptado([['cantidad' => 10, 'precio' => 10]]);
         $lineaOriginal = $ccf->lineas->first();
 
-        // NC parcial previa que acredita 4 de 10 (borrador, cuenta para el saldo).
+        // NC parcial previa generada: solo entonces reserva saldo.
         $ncParcial = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value]);
         $this->borradores->acreditarLinea($ncParcial, $lineaOriginal, '4');
+        app(DteGeneracionService::class)->generar($ncParcial);
 
         $nc = $this->borradores->revertirCcfCompleto($ccf, $this->usuario('facturacion'));
         $nc->load('lineas');
@@ -138,6 +140,7 @@ class DteNotaCreditoReversionTest extends TestCase
         // Acredita TODO el saldo con una NC previa.
         $ncPrevia = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value]);
         $this->borradores->acreditarLinea($ncPrevia, $lineaOriginal, '10');
+        app(DteGeneracionService::class)->generar($ncPrevia);
 
         $ncAntes = Dte::where('tipo_dte', TipoDte::NotaCredito->value)->count();
 

@@ -3,7 +3,9 @@
 namespace App\Services\Dte;
 
 use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
+use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
+use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\RequisitosInvalidacion;
@@ -89,7 +91,7 @@ class ValidadorReglasInvalidacion
     }
 
     /**
-     * Notas vigentes que además PROHÍBEN invalidar este documento; vacía cuando no hay
+     * Notas aceptadas realmente o en trámite que PROHÍBEN invalidar este documento; vacía cuando no hay
      * notas o cuando el tipo documental no depende de ellas según
      * {@see PoliticaInvalidacion::dependeDeNotasVigentes()}.
      *
@@ -108,7 +110,13 @@ class ValidadorReglasInvalidacion
             return new Collection;
         }
 
-        return $this->notasVigentes($dte);
+        return Dte::query()->where('dte_relacionado_id', $dte->id)
+            ->whereIn('tipo_dte', [TipoDte::NotaCredito->value, TipoDte::NotaDebito->value])
+            // Sin filtro por sello_invalidacion: una invalidación real deja la nota en estado
+            // Invalidado, y una MOCK es simulada (para Hacienda la nota sigue vigente).
+            ->where(fn ($q) => $q->whereIn('estado', [EstadoDte::Generado->value, EstadoDte::Firmado->value, EstadoDte::Enviado->value])
+                ->orWhere(fn ($aceptadas) => $aceptadas->aceptadoRealMh()))
+            ->get();
     }
 
     /** @return array<int, string> */
@@ -150,7 +158,7 @@ class ValidadorReglasInvalidacion
      *
      * @return array<int, string>
      */
-    private function problemasDeDependencias(Dte $dte): array
+    public function problemasDeDependencias(Dte $dte): array
     {
         $notas = $this->notasQueBloquean($dte);
 
@@ -158,12 +166,22 @@ class ValidadorReglasInvalidacion
             return [];
         }
 
-        $detalle = $notas
-            ->map(fn (Dte $n) => ($n->tipo_dte?->label() ?? 'Nota').' '.($n->numero_control ?? '—'))
-            ->implode('; ');
+        $mensajes = [];
+        foreach ($notas->groupBy(fn (Dte $n) => $n->estado->value) as $estado => $grupo) {
+            $tipos = $grupo->pluck('tipo_dte')->unique();
+            $nombre = $tipos->count() > 1 ? 'notas de crédito/débito'
+                : ($tipos->first() === TipoDte::NotaDebito ? 'una nota de débito' : 'una nota de crédito');
+            $detalle = $grupo->map(fn (Dte $n) => ($n->tipo_dte?->label() ?? 'Nota').' '.($n->numero_control ?? $n->numero_interno ?? '#'.$n->id))->implode('; ');
+            if ($estado === EstadoDte::Aceptado->value) {
+                $vigencia = $grupo->count() > 1 ? ' vigentes. Primero invalidá esas notas' : ' vigente. Primero invalidá esa nota';
+                $mensajes[] = 'Este comprobante tiene '.$nombre.$vigencia.' y luego volvé a intentar. Nota(s) que lo bloquean: '.$detalle.'.';
+            } else {
+                $anular = $estado === EstadoDte::Generado->value ? ' o anulala si no se va a enviar' : '';
+                $mensajes[] = 'Este comprobante tiene '.$nombre.' que todavía no tiene respuesta de Hacienda (estado: '.EstadoDte::from($estado)->label().'). Terminá de enviarla o consultá su estado'.$anular.': si Hacienda la acepta, invalidala primero; si la rechaza, deja de bloquear. Nota(s) que lo bloquean: '.$detalle.'.';
+            }
+        }
 
-        return ['Este comprobante tiene una nota de crédito vigente. Primero invalidá esa nota y luego volvé a '
-            .'intentar. Nota(s) que lo bloquean: '.$detalle.'.'];
+        return $mensajes;
     }
 
     /** Explicación concreta de por qué ESTE documento y ESTE motivo no admiten sustituto. */

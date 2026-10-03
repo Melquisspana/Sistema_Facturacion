@@ -251,7 +251,7 @@
                                                 <th class="px-3 py-2">Producto</th>
                                                 <th class="px-3 py-2 text-right">Precio</th>
                                                 <th class="px-3 py-2 text-right">Original</th>
-                                                <th class="px-3 py-2 text-right">Acreditada</th>
+                                                <th class="px-3 py-2 text-right">En otras notas</th>
                                                 <th class="px-3 py-2 text-right">Disponible</th>
                                                 <th class="px-3 py-2">Acreditar</th>
                                             </tr>

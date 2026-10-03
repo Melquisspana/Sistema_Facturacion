@@ -114,7 +114,7 @@ class DteNotaCreditoRetencionTest extends TestCase
      */
     private function darSaldoHolgado(Dte $ccf): void
     {
-        $ccf->forceFill(['monto_total_operacion' => '10000.00'])->saveQuietly();
+        $ccf->forceFill(['monto_total_operacion' => '10000.00', 'total_gravado' => '10000.00'])->saveQuietly();
     }
 
     // ---------- El CCF de referencia ----------
@@ -223,6 +223,7 @@ class DteNotaCreditoRetencionTest extends TestCase
 
         $nc1 = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value], $this->usuario());
         $this->borradores->acreditarLinea($nc1, $lineas[0], 1);
+        app(DteGeneracionService::class)->generar($nc1);
 
         // La reversión posterior solo puede cubrir el saldo restante (la otra línea).
         $nc2 = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());

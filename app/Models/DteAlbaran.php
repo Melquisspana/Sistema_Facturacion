@@ -65,9 +65,9 @@ class DteAlbaran extends Model
     }
 
     /**
-     * Albaranes cuya NC todavía «ocupa» el albarán. Reutiliza el MISMO criterio de
-     * vigencia del saldo acreditable ({@see Dte::scopeConsumeSaldoAcreditable()}) para no
-     * tener dos definiciones distintas de «NC que aún cuenta»: quedan fuera las
+     * Albaranes cuya NC todavía «ocupa» el albarán, incluso borradores.
+     * Usa {@see Dte::scopeConsumeSaldoAcreditable()}; el saldo fiscal vive en
+     * SaldoMontoCcf y tiene otra finalidad. Quedan fuera las
      * invalidadas y las rechazadas-archivadas, y el scope global de SoftDeletes deja
      * fuera los borradores eliminados. En los tres casos el albarán vuelve a estar libre.
      */

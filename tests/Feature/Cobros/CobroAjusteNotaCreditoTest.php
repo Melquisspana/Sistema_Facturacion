@@ -60,7 +60,7 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $this->ccf = $this->aceptarCcf($ccf);
         // Saldo holgado: estas pruebas miden el importe, no el tope del CCF (ver las de
         // saldo más abajo).
-        DB::table('dtes')->where('id', $this->ccf->id)->update(['monto_total_operacion' => '1000.00']);
+        DB::table('dtes')->where('id', $this->ccf->id)->update(['monto_total_operacion' => '1000.00', 'total_gravado' => '884.96']);
         $this->ccf->refresh();
     }
 

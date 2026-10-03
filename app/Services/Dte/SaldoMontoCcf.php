@@ -5,7 +5,9 @@ namespace App\Services\Dte;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Dte;
+use App\Models\DteLinea;
 use App\Support\Dinero;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -20,7 +22,7 @@ use Illuminate\Support\Collection;
  * en CCF y NC). Comparar el total a pagar mezclaría un neto de retención con un bruto.
  *
  * Saldo = total del CCF − totales de las OTRAS notas de crédito ya generadas sobre él
- * que siguen vigentes (generada, firmada, enviada o aceptada, sin invalidación). Un
+ * que siguen vigentes (generada, firmada, enviada o aceptada, sin invalidación REAL). Un
  * borrador no cuenta: todavía no existe para Hacienda, y si llegara a generarse, el
  * candado de generar lo vuelve a medir contra lo que haya en ese momento.
  *
@@ -32,6 +34,41 @@ use Illuminate\Support\Collection;
  */
 class SaldoMontoCcf
 {
+    /**
+     * Regla única del saldo: Rechazado es terminal y no reserva, esté archivado o no.
+     * Borrador no existe para Hacienda; el candado al generar lo vuelve a medir.
+     * Una invalidación MOCK es simulada: la NC sigue vigente para Hacienda.
+     */
+    private function notasQuePesan(Builder $consulta, array $ccfIds, ?int $excluirNcId = null): Builder
+    {
+        return $consulta->where('tipo_dte', TipoDte::NotaCredito->value)
+            ->whereIn('dte_relacionado_id', $ccfIds)
+            ->whereIn('estado', array_map(fn (EstadoDte $e) => $e->value, self::ESTADOS_VIGENTES))
+            ->where(fn ($q) => $q->whereNull('sello_invalidacion')->orWhere('sello_invalidacion', '')
+                ->orWhereRaw('UPPER(sello_invalidacion) LIKE ?', ['MOCK%']))
+            ->when($excluirNcId !== null, fn ($q) => $q->whereKeyNot($excluirNcId));
+    }
+
+    /** Cantidades acreditadas por otras notas, en una consulta para todas las líneas. */
+    public function acreditadoPorLineas(Collection $originales, ?int $excluirNcId = null): array
+    {
+        if ($originales->isEmpty()) {
+            return [];
+        }
+
+        return DteLinea::query()->whereIn('dte_linea_original_id', $originales->pluck('id'))
+            ->whereHas('dte', fn (Builder $q) => $this->notasQuePesan($q, $originales->pluck('dte_id')->unique()->all(), $excluirNcId))
+            ->selectRaw('dte_linea_original_id, SUM(cantidad) AS acreditado')
+            ->groupBy('dte_linea_original_id')->pluck('acreditado', 'dte_linea_original_id')->all();
+    }
+
+    public function saldoLinea(DteLinea $original, ?int $excluirNcId = null): string
+    {
+        $usado = $this->acreditadoPorLineas(collect([$original]), $excluirNcId);
+
+        return Dinero::restar(Dinero::de($original->cantidad), (string) ($usado[$original->id] ?? '0'));
+    }
+
     private const ESTADOS_VIGENTES = [
         EstadoDte::Generado,
         EstadoDte::Firmado,
@@ -84,7 +121,7 @@ class SaldoMontoCcf
 
     /**
      * Las NC que pesan sobre cada CCF: relacionadas a él, en uno de los estados dados y sin
-     * sello de invalidación. La comparten el saldo para emitir NC y el cobro.
+     * invalidación real. Un sello MOCK no libera saldo. La comparten emisión y cobro.
      *
      * @param  array<int, int>  $ccfIds
      * @param  array<int, EstadoDte>  $estados
@@ -92,12 +129,8 @@ class SaldoMontoCcf
      */
     private function sumaDeNotas(array $ccfIds, array $estados, string $columna, ?int $excluirNcId = null): Collection
     {
-        return Dte::query()
-            ->where('tipo_dte', TipoDte::NotaCredito->value)
-            ->whereIn('dte_relacionado_id', $ccfIds)
+        return $this->notasQuePesan(Dte::query(), $ccfIds, $excluirNcId)
             ->whereIn('estado', array_map(fn (EstadoDte $e) => $e->value, $estados))
-            ->where(fn ($q) => $q->whereNull('sello_invalidacion')->orWhere('sello_invalidacion', ''))
-            ->when($excluirNcId !== null, fn ($q) => $q->whereKeyNot($excluirNcId))
             ->groupBy('dte_relacionado_id')
             ->selectRaw("dte_relacionado_id, SUM({$columna}) AS usado")
             ->pluck('usado', 'dte_relacionado_id');
@@ -106,6 +139,8 @@ class SaldoMontoCcf
     /**
      * Mensaje si la NC acredita más que el saldo de su CCF; null si cabe (o si no tiene
      * CCF relacionado, que es otro bloqueo con su propio aviso).
+     * Compara dos columnas: Hacienda rechaza por gravado (codigoMsg 016), mientras
+     * monto_total_operacion también cubre lo exento y no sujeto.
      */
     public function exceso(Dte $nc): ?string
     {
@@ -121,9 +156,20 @@ class SaldoMontoCcf
         $saldo = $this->saldo($ccf, $nc->id);
         $total = Dinero::redondear($nc->monto_total_operacion ?? '0');
 
-        return Dinero::comparar($total, $saldo) > 0
-            ? self::mensaje($ccf, $saldo, $total)
-            : null;
+        if (Dinero::comparar($total, $saldo) > 0) {
+            return self::mensaje($ccf, $saldo, $total);
+        }
+
+        // Hacienda rechaza por gravado (016); el total también cubre lo exento/no sujeto.
+        $usado = $this->sumaDeNotas([$ccf->id], self::ESTADOS_VIGENTES, 'total_gravado', $nc->id);
+        $saldoGravado = Dinero::redondear(Dinero::restar($ccf->total_gravado ?? '0', (string) ($usado[$ccf->id] ?? '0')));
+        $gravado = Dinero::redondear($nc->total_gravado ?? '0');
+        if (Dinero::comparar($gravado, $saldoGravado) > 0) {
+            return sprintf('El CCF %s tiene un saldo gravado de $%s, menor que el gravado de la nota ($%s). Hacienda la rechazaría: elegí otro CCF o bajá el monto.',
+                $ccf->numero_interno ?? $ccf->numero_control ?? ('#'.$ccf->id), number_format((float) $saldoGravado, 2), number_format((float) $gravado, 2));
+        }
+
+        return null;
     }
 
     public static function mensaje(Dte $ccf, string $saldo, string $total): string

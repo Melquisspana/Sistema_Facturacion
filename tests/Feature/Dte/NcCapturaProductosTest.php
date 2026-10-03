@@ -192,6 +192,8 @@ class NcCapturaProductosTest extends TestCase
 
         $primera = $this->nc($ccf, TipoNotaCredito::DevolucionProducto);
         $this->borradores->establecerCantidadAcreditada($primera, $original, 7);
+        // Un borrador no reserva saldo (regla única en SaldoMontoCcf): la primera se genera.
+        app(DteGeneracionService::class)->generar($primera);
 
         $segunda = $this->nc($ccf, TipoNotaCredito::FaltanteEntrega);
         $this->borradores->establecerCantidadAcreditada($segunda, $original, 3); // 7 + 3 = 10, justo

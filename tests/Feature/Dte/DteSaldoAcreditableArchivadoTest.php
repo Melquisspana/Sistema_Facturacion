@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Enums\TipoNotaCredito;
+use App\Exceptions\Dte\GeneracionException;
 use App\Exceptions\Dte\SaldoAcreditableExcedidoException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
@@ -15,8 +16,9 @@ use App\Models\Producto;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\SaldoMontoCcf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
@@ -31,11 +33,11 @@ use Tests\TestCase;
  * operación, pero sus líneas seguían consumiendo todo el saldo del CCF, dejando
  * imposible emitir la NC corregida.
  *
- * Regla (única fuente: `Dte::scopeConsumeSaldoAcreditable()`):
+ * Regla (única fuente: SaldoMontoCcf):
  *  - INVALIDADA → libera saldo.
  *  - RECHAZADA **y ARCHIVADA** → libera saldo.
- *  - RECHAZADA sin archivar → SIGUE consumiendo (puede corregirse y reintentarse).
- *  - borrador / generada / firmada / enviada / aceptada → consumen siempre.
+ *  - RECHAZADA sin archivar y BORRADOR → no reservan saldo.
+ *  - generada / firmada / enviada / aceptada → consumen sin invalidación real.
  *
  * Archivar nunca modifica ni elimina la NC rechazada: solo cambia dónde se la ve.
  */
@@ -64,7 +66,7 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
     }
 
     /** CCF ACEPTADO por Hacienda con una línea gravada 10 × 10 (saldo inicial 10). */
-    private function ccfAceptado(): Dte
+    private function ccfAceptado(int $cantidad = 10): Dte
     {
         static $n = 0;
         $n++; // punto de venta propio por CCF: numero_interno es único por ambiente
@@ -82,7 +84,7 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
             'punto_venta_id' => $pv->id,
         ]);
         $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
-        $this->borradores->agregarLineaDesdeProducto($ccf, $producto, cantidad: 10);
+        $this->borradores->agregarLineaDesdeProducto($ccf, $producto, cantidad: $cantidad);
 
         app(DteGeneracionService::class)->generar($ccf);
 
@@ -97,7 +99,7 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
     private function ncQueConsumeTodo(Dte $ccf, EstadoDte $estado): Dte
     {
         $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value]);
-        $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), cantidad: 10);
+        $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), cantidad: (string) $ccf->lineas()->first()->cantidad);
         $nc->update(['estado' => $estado->value]);
 
         return $nc->refresh();
@@ -126,14 +128,114 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
 
     // ---------- Qué consume y qué libera saldo ----------
 
-    public function test_nc_rechazada_sin_archivar_sigue_consumiendo_saldo(): void
+    public function test_nc_rechazada_sin_archivar_libera_toda_la_linea(): void
+    {
+        $ccf = $this->ccfAceptado(5);
+        $this->ncQueConsumeTodo($ccf, EstadoDte::Rechazado);
+        $this->assertSame('5.0000', (string) $this->acreditarEnNcNueva($ccf, 5)->cantidad);
+    }
+
+    public function test_invalidacion_mock_sigue_pesando_en_el_saldo(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $nc = $this->ncQueConsumeTodo($ccf, EstadoDte::Aceptado);
+        $nc->update(['sello_invalidacion' => 'mOcK-INVAL-123']);
+        $saldo = app(SaldoMontoCcf::class);
+        $this->assertSame('0.00', $saldo->saldo($ccf));
+        $this->assertSame($nc->total_pagar, $saldo->descontadoEnCobro([$ccf->id])[$ccf->id]);
+        $otra = $this->borradores->crearNotaCredito($ccf);
+        $otra->monto_total_operacion = '1';
+        $this->assertNotNull($saldo->exceso($otra));
+    }
+
+    public function test_exceso_frena_gravado_aunque_quepa_en_total(): void
+    {
+        $ccf = $this->ccfAceptado();
+        DB::table('dtes')->where('id', $ccf->id)->update(['total_exento' => '100', 'monto_total_operacion' => '213']);
+        $ccf->refresh();
+        $nc = $this->borradores->crearNotaCredito($ccf);
+        $nc->monto_total_operacion = '114.13';
+        $nc->total_gravado = '101';
+        $this->assertStringContainsString('saldo gravado', app(SaldoMontoCcf::class)->exceso($nc) ?? '');
+    }
+
+    public function test_generar_segunda_nc_frena_exceso_sin_consumir_correlativo(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $primera = $this->borradores->crearNotaCredito($ccf);
+        $segunda = $this->borradores->crearNotaCredito($ccf);
+        $this->borradores->acreditarLinea($primera, $ccf->lineas()->first(), 9);
+        $this->borradores->acreditarLinea($segunda, $ccf->lineas()->first(), 9);
+        app(DteGeneracionService::class)->generar($primera);
+        $antes = Correlativo::where('tipo_dte', '05')->first()->ultimo_numero;
+        try {
+            app(DteGeneracionService::class)->generar($segunda);
+            $this->fail('La segunda NC debe fallar.');
+        } catch (GeneracionException $e) {
+            $this->assertStringContainsString('CCF', $e->getMessage());
+        }
+        $this->assertSame(EstadoDte::Borrador, $segunda->refresh()->estado);
+        $this->assertSame($antes, Correlativo::where('tipo_dte', '05')->first()->ultimo_numero);
+    }
+
+    public function test_generar_dos_borradores_frena_por_cantidad_de_linea(): void
+    {
+        $ccf = $this->ccfAceptado();
+        $primera = $this->borradores->crearNotaCredito($ccf);
+        $segunda = $this->borradores->crearNotaCredito($ccf);
+        $this->borradores->acreditarLinea($primera, $ccf->lineas()->first(), 10);
+        $this->borradores->acreditarLinea($segunda, $ccf->lineas()->first(), 10);
+        app(DteGeneracionService::class)->generar($primera);
+        // Aísla el candado de cantidades del candado de importes.
+        $segunda->update(['monto_total_operacion' => '0', 'total_gravado' => '0']);
+        $this->expectException(GeneracionException::class);
+        $this->expectExceptionMessage('La línea 1 del CCF');
+        app(DteGeneracionService::class)->generar($segunda);
+    }
+
+    public function test_guarda_tope_excluye_lo_acreditado_en_esta_nota(): void
+    {
+        $ccf = $this->ccfAceptado(5);
+        $nc = $this->borradores->crearNotaCredito($ccf);
+        $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), 3);
+        $this->actingAs($this->usuario())->get(route('facturacion.edit', $nc))->assertOk()
+            ->assertViewHas('lineasOriginales', fn ($lineas) => (float) $lineas->first()['tope'] === 5.0
+                && (float) $lineas->first()['acreditado'] === 0.0
+                && (float) $lineas->first()['en_esta_nc'] === 3.0);
+    }
+
+    public function test_establecer_cantidad_reemplaza_todas_las_acreditaciones_propias(): void
+    {
+        $ccf = $this->ccfAceptado(5);
+        $nc = $this->borradores->crearNotaCredito($ccf);
+        $original = $ccf->lineas()->first();
+        $this->borradores->acreditarLinea($nc, $original, 2);
+        $this->borradores->acreditarLinea($nc, $original, 1);
+        $this->borradores->establecerCantidadAcreditada($nc, $original, 4);
+        $this->assertCount(1, $nc->lineas()->get());
+        $this->assertSame(4.0, (float) $nc->lineas()->sum('cantidad'));
+        $this->borradores->acreditarLinea($nc, $original, 1);
+        $this->borradores->establecerCantidadAcreditada($nc, $original, 0);
+        $this->assertCount(0, $nc->lineas()->get());
+    }
+
+    public function test_editor_suma_las_acreditaciones_propias_de_la_misma_linea(): void
+    {
+        $ccf = $this->ccfAceptado(5);
+        $nc = $this->borradores->crearNotaCredito($ccf);
+        $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), 2);
+        $this->borradores->acreditarLinea($nc, $ccf->lineas()->first(), 1);
+        $this->actingAs($this->usuario())->get(route('facturacion.edit', $nc))->assertOk()
+            ->assertViewHas('lineasOriginales', fn ($lineas) => (float) $lineas->first()['en_esta_nc'] === 3.0
+                && (float) $lineas->first()['tope'] === 5.0);
+    }
+
+    public function test_nc_rechazada_sin_archivar_no_reserva_saldo(): void
     {
         $ccf = $this->ccfAceptado();
         $this->ncQueConsumeTodo($ccf, EstadoDte::Rechazado);
 
-        // Puede corregirse y reintentarse: el saldo sigue reservado hasta archivarla.
-        $this->expectException(SaldoAcreditableExcedidoException::class);
-        $this->acreditarEnNcNueva($ccf, 1);
+        $this->assertSame('10.00', $this->acreditarEnNcNueva($ccf, 1)->venta_gravada);
     }
 
     public function test_nc_rechazada_y_archivada_libera_el_saldo(): void
@@ -148,7 +250,7 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
         $this->assertSame('100.00', $linea->venta_gravada);
     }
 
-    public function test_desarchivar_vuelve_a_consumir_el_saldo(): void
+    public function test_desarchivar_rechazada_no_reserva_saldo(): void
     {
         $ccf = $this->ccfAceptado();
         $nc = $this->ncQueConsumeTodo($ccf, EstadoDte::Rechazado);
@@ -158,8 +260,7 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
 
         $this->assertFalse($nc->refresh()->estaArchivado());
 
-        $this->expectException(SaldoAcreditableExcedidoException::class);
-        $this->acreditarEnNcNueva($ccf, 1);
+        $this->assertSame('10.00', $this->acreditarEnNcNueva($ccf, 1)->venta_gravada);
     }
 
     public function test_nc_invalidada_libera_el_saldo(): void
@@ -184,7 +285,7 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
 
     public function test_los_estados_en_curso_consumen_el_saldo(): void
     {
-        foreach ([EstadoDte::Borrador, EstadoDte::Generado, EstadoDte::Firmado, EstadoDte::Enviado] as $estado) {
+        foreach ([EstadoDte::Generado, EstadoDte::Firmado, EstadoDte::Enviado] as $estado) {
             $ccf = $this->ccfAceptado();
             $this->ncQueConsumeTodo($ccf, $estado);
 
@@ -204,13 +305,8 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
         $ccf = $this->ccfAceptado();
         $rechazada = $this->ncQueConsumeTodo($ccf, EstadoDte::Rechazado);
 
-        // Antes de archivar, el CCF no tiene saldo y la reversión total falla.
-        try {
-            $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
-            $this->fail('Con la NC rechazada sin archivar no debería quedar saldo que revertir.');
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('dte_relacionado_id', $e->errors());
-        }
+        // El rechazo es terminal: la reversión no depende del archivo.
+        $this->assertCount(1, $this->borradores->revertirCcfCompleto($ccf, $this->usuario())->lineas);
 
         $this->archivar($rechazada);
 
@@ -229,13 +325,13 @@ class DteSaldoAcreditableArchivadoTest extends TestCase
         $rechazada = $this->ncQueConsumeTodo($ccf, EstadoDte::Rechazado);
         $nueva = $this->borradores->crearNotaCredito($ccf, ['tipo' => TipoNotaCredito::DevolucionProducto->value]);
 
-        // Con la rechazada sin archivar la pantalla no ofrece saldo…
+        // Una rechazada no reserva, incluso antes de archivarla.
         $this->actingAs($this->usuario())
             ->get(route('facturacion.edit', $nueva))
             ->assertOk()
             ->assertViewHas('lineasOriginales', function ($lineas) {
-                return (string) $lineas->first()['acreditado'] === '10'
-                    && (float) $lineas->first()['disponible'] === 0.0;
+                return (float) $lineas->first()['acreditado'] === 0.0
+                    && (float) $lineas->first()['disponible'] === 10.0;
             });
 
         $this->archivar($rechazada);

@@ -2249,15 +2249,13 @@ class DteController extends Controller
             // resuelve una vez y no por fila: la tabla lo consulta para cada línea del CCF.
             $enEstaNc = $nc->lineas
                 ->filter(fn (DteLinea $l) => $l->dte_linea_original_id !== null)
-                ->mapWithKeys(fn (DteLinea $l) => [$l->dte_linea_original_id => (string) $l->cantidad])
+                ->groupBy('dte_linea_original_id')
+                ->map(fn ($lineas) => $lineas->reduce(fn (string $total, DteLinea $l) => Dinero::sumar($total, (string) $l->cantidad), '0'))
                 ->all();
 
-            $lineasOriginales = $original->lineas->map(function (DteLinea $lo) use ($enEstaNc) {
-                // Misma regla que DteBorradorService::saldoAcreditableDisponible(): el
-                // saldo ignora las NC invalidadas y las rechazadas ARCHIVADAS.
-                $acreditado = (string) (DteLinea::where('dte_linea_original_id', $lo->id)
-                    ->whereHas('dte', fn ($q) => $q->consumeSaldoAcreditable())
-                    ->sum('cantidad') ?? 0);
+            $otras = app(SaldoMontoCcf::class)->acreditadoPorLineas($original->lineas, $nc->id);
+            $lineasOriginales = $original->lineas->map(function (DteLinea $lo) use ($enEstaNc, $otras) {
+                $acreditado = Dinero::redondear((string) ($otras[$lo->id] ?? '0'), 4);
 
                 $disponible = Dinero::redondear(
                     Dinero::restar(Dinero::de($lo->cantidad), $acreditado), 4
@@ -2271,13 +2269,8 @@ class DteController extends Controller
                     'disponible' => $disponible,
                     // Lo que esta nota acredita hoy de esta línea (null = nada).
                     'en_esta_nc' => $propio,
-                    // TOPE que puede escribirse en el input. El saldo disponible ya
-                    // descuenta lo que esta misma nota acredita, así que hay que
-                    // devolvérselo: si no, una línea con todo el saldo tomado por ella
-                    // misma se vería como "sin saldo" y no se podría ni corregir a la baja.
-                    'tope' => $propio === null
-                        ? $disponible
-                        : Dinero::redondear(Dinero::sumar($disponible, $propio), 4),
+                    // El saldo excluye esta nota: este es también el tope del input.
+                    'tope' => $disponible,
                 ];
             });
         }
