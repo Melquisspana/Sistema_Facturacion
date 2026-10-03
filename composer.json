@@ -12,7 +12,6 @@
         "google/apiclient": "^2.19",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
-        "livewire/livewire": "^4.3",
         "opis/json-schema": "^2.6",
         "phpoffice/phpspreadsheet": "^5.8",
         "smalot/pdfparser": "^2.12",
