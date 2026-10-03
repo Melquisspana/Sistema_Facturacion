@@ -2,6 +2,7 @@
 
 namespace App\Services\Asistencia;
 
+use App\Support\HoraNegocio;
 use Illuminate\Support\Carbon;
 
 /**
@@ -24,7 +25,9 @@ class HoraOficial
 {
     public function zona(): string
     {
-        return (string) config('asistencia.zona_horaria');
+        $zona = config('asistencia.zona_horaria');
+
+        return filled($zona) ? (string) $zona : HoraNegocio::zona();
     }
 
     /** Ahora, en la zona oficial (para mostrar en pantalla). */
