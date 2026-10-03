@@ -166,6 +166,7 @@ class DteInvalidacionMockService
 
         // Respuesta MOCK "como del MH" (simulada; no hubo transmisión).
         $respuesta = [
+            'codigoGeneracionR' => filled($evento->codigoGeneracionReemplazo) ? strtoupper(trim($evento->codigoGeneracionReemplazo)) : null,
             'estado' => 'PROCESADO',
             'descripcionMsg' => 'Invalidación SIMULADA (DTE_INVALIDACION_MOCK): no se transmitió nada a Hacienda.',
             'selloRecibido' => $sello,

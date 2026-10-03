@@ -9,6 +9,7 @@ use App\Support\Dte\EmisorDte;
 use App\Support\Dte\PoliticaInvalidacion;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Busca los documentos que se pueden OFRECER como «documento SUSTITUTO» del evento de
@@ -120,7 +121,9 @@ class BusquedaDocumentoReemplazo
         // EmisorDte): un contribuyente puede tener más de un registro interno.
         $empresas = EmisorDte::empresasDelMismoEmisor($invalidado);
 
+        $usos = VerificadorDocumentoReemplazo::usosDeSustitutos($invalidado->id);
         $consulta = Dte::query()
+            ->whereNotIn(DB::raw('UPPER(codigo_generacion)'), $usos->selectRaw(VerificadorDocumentoReemplazo::columnaCodigoSustituto($usos)))
             ->aceptadoRealMh()
             ->whereKeyNot($invalidado->id)
             ->where('ambiente', $invalidado->ambiente->value)

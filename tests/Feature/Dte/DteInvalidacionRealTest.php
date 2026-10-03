@@ -7,16 +7,24 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteInvalidacionException;
+use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
+use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteInvalidacionService;
+use App\Services\Dte\DteTransmisionService;
+use App\Services\Dte\ValidadorReglasInvalidacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
@@ -104,6 +112,145 @@ class DteInvalidacionRealTest extends TestCase
     }
 
     // ---------- Candados ----------
+
+    public static function estadosDeNotaEnTramite(): array
+    {
+        return [['generado'], ['firmado'], ['enviado']];
+    }
+
+    private function otroDocumento(Dte $base, TipoDte $tipo, EstadoDte $estado): Dte
+    {
+        $otro = $base->replicate();
+        $otro->tipo_dte = $tipo;
+        $otro->estado = $estado;
+        $otro->codigo_generacion = (string) Str::uuid();
+        $otro->numero_control = 'DTE-'.$tipo->value.'-M001P001-'.str_pad((string) random_int(100, 999999), 15, '0', STR_PAD_LEFT);
+        $otro->save();
+
+        return $otro;
+    }
+
+    #[DataProvider('estadosDeNotaEnTramite')]
+    public function test_nota_en_tramite_bloquea_invalidacion_ccf(string $estado): void
+    {
+        $nc = $this->ncAceptada();
+        $ccf = $this->otroDocumento($nc, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        DB::table('dtes')->where('id', $nc->id)->update(['estado' => $estado, 'dte_relacionado_id' => $ccf->id]);
+        $reglas = app(ValidadorReglasInvalidacion::class);
+        $this->assertStringContainsString('todavía no tiene respuesta de Hacienda', implode(' ', $reglas->problemas($ccf, $this->evento())));
+        $candados = $this->servicio()->evaluarCandados($ccf, $this->evento(), true, true);
+        $this->assertTrue($candados['bloqueado']);
+        $this->assertStringContainsString('todavía no tiene respuesta', implode(' ', $candados['razones']));
+    }
+
+    public function test_nota_de_debito_se_identifica_correctamente(): void
+    {
+        $nc = $this->ncAceptada();
+        $ccf = $this->otroDocumento($nc, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        DB::table('dtes')->where('id', $nc->id)->update(['tipo_dte' => '06', 'dte_relacionado_id' => $ccf->id]);
+        $mensaje = implode(' ', app(ValidadorReglasInvalidacion::class)->problemas($ccf, $this->evento()));
+        $this->assertStringContainsString('nota de débito', $mensaje);
+        $this->assertStringNotContainsString('nota de crédito', $mensaje);
+    }
+
+    public static function casosCcfInvalidado(): array
+    {
+        return [[true, false], [false, false], [true, true], [false, true]];
+    }
+
+    #[DataProvider('casosCcfInvalidado')]
+    public function test_transmitir_nc_con_ccf_invalidado_no_envia(bool $mock, bool $soloSello): void
+    {
+        $nc = $this->ncAceptada();
+        $ccf = $this->otroDocumento($nc, TipoDte::CreditoFiscal, $soloSello ? EstadoDte::Aceptado : EstadoDte::Invalidado);
+        DB::table('dtes')->where('id', $ccf->id)->update(['sello_invalidacion' => 'SELLO-INVALIDACION']);
+        DB::table('dtes')->where('id', $nc->id)->update(['estado' => 'firmado', 'dte_relacionado_id' => $ccf->id, 'sello_recepcion' => null, 'json_firmado_path' => 'dte/firmados/nota.jws']);
+        Storage::disk('local')->put('dte/firmados/nota.jws', 'FAKE.JWS.SIGNATURE');
+        config()->set('dte.transmision.mock', $mock);
+        config()->set('dte.transmision.enabled', true);
+        config()->set('dte.transmision.dry_run', false);
+        config()->set('dte.transmision.real_confirmation', true);
+        config()->set('dte.transmision.modo_operacion', 'principal');
+        $this->fakeHttp(['estado' => 'PROCESADO']);
+        $servicio = app(DteTransmisionService::class);
+        $nc->refresh();
+        $check = collect($servicio->preflight($nc)['checks'])->firstWhere('etiqueta', 'CCF de la nota vigente');
+        $this->assertNotNull($check);
+        $this->assertFalse($check['ok']);
+        $this->assertFalse($servicio->preflight($nc)['listo']);
+        try {
+            $servicio->transmitir($nc);
+            $this->fail('La nota no se puede transmitir.');
+        } catch (DteTransmisionException $e) {
+            $this->assertStringContainsString('El CCF de esta nota', $e->getMessage());
+        }
+        Http::assertNothingSent();
+        $this->assertSame(EstadoDte::Firmado, $nc->refresh()->estado);
+    }
+
+    public function test_invalidacion_con_lock_ocupado_no_envia(): void
+    {
+        $dte = $this->ncAceptada();
+        $lock = Cache::lock('dte-invalidacion:'.$dte->id, 120);
+        $this->assertTrue($lock->get());
+        Http::fake();
+        try {
+            $this->servicio()->transmitir($dte, $this->evento(), true, true);
+            $this->fail('Debe impedir invalidaciones concurrentes.');
+        } catch (DteInvalidacionException $e) {
+            $this->assertStringContainsString('Ya hay una invalidación', $e->getMessage());
+        } finally {
+            $lock->release();
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_respuesta_tardia_conserva_evento_aceptado(): void
+    {
+        $dte = $this->ncAceptada();
+        $aceptado = ['estado' => 'invalidado', 'sello_invalidacion' => 'SELLO-OTRO', 'codigo_generacion_invalidacion' => '00000000-0000-4000-8000-000000000099', 'json_invalidacion_path' => 'otro.json', 'jws_invalidacion_path' => 'otro.jws', 'respuesta_mh_invalidacion_path' => 'respuesta-otra.json', 'respuesta_mh_invalidacion' => json_encode(['resultado' => 'aceptado', 'selloRecibido' => 'SELLO-OTRO'])];
+        Http::fake([
+            '*firmardocumento*' => Http::response(['status' => 'OK', 'body' => 'FAKE.JWS.SIGNATURE']),
+            '*seguridad/auth*' => Http::response(['status' => 'OK', 'body' => ['token' => 'Bearer FAKE']]),
+            '*anulardte*' => function () use ($dte, $aceptado) {
+                DB::table('dtes')->where('id', $dte->id)->update($aceptado);
+
+                return Http::response(['estado' => 'RECHAZADO', 'descripcionMsg' => 'Respuesta tardía']);
+            },
+        ]);
+        $resultado = $this->servicio()->transmitir($dte, $this->evento(), true, true);
+        $fila = (array) DB::table('dtes')->where('id', $dte->id)->first();
+        foreach ($aceptado as $campo => $valor) {
+            $this->assertSame($valor, $fila[$campo], $campo);
+        }
+        $this->assertTrue($resultado['invalidado']);
+        $this->assertStringContainsString('se conservó', $resultado['mensaje']);
+    }
+
+    public function test_sustituto_reutilizado_bloquea_y_no_se_ofrece(): void
+    {
+        $base = $this->ncAceptada();
+        $a = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Invalidado);
+        $b = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $c = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        DB::table('dtes')->where('id', $a->id)->update(['sello_invalidacion' => 'SELLO-A', 'respuesta_mh_invalidacion' => json_encode(['codigoGeneracionR' => strtolower($c->codigo_generacion)])]);
+        $evento = new EventoInvalidacionData(tipoAnulacion: TipoAnulacionMh::ErrorInformacion, codigoGeneracionReemplazo: strtoupper($c->codigo_generacion), nombreResponsable: 'Responsable', tipoDocResponsable: '13', numDocResponsable: '040000000', nombreSolicita: 'Solicitante', tipoDocSolicita: '13', numDocSolicita: '040000001');
+        $problemas = app(ValidadorReglasInvalidacion::class)->problemas($b, $evento);
+        $this->assertStringContainsString('ya se usó para invalidar', implode(' ', $problemas));
+        $this->assertTrue($this->servicio()->evaluarCandados($b, $evento, true, true)['bloqueado']);
+        $this->assertFalse(app(BusquedaDocumentoReemplazo::class)->buscar($b)->contains('id', $c->id));
+    }
+
+    public function test_invalidacion_real_guarda_codigo_del_sustituto(): void
+    {
+        $base = $this->ncAceptada();
+        $b = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $c = $this->otroDocumento($base, TipoDte::CreditoFiscal, EstadoDte::Aceptado);
+        $evento = new EventoInvalidacionData(tipoAnulacion: TipoAnulacionMh::ErrorInformacion, codigoGeneracionReemplazo: strtoupper($c->codigo_generacion), nombreResponsable: 'Responsable', tipoDocResponsable: '13', numDocResponsable: '040000000', nombreSolicita: 'Solicitante', tipoDocSolicita: '13', numDocSolicita: '040000001');
+        $this->fakeHttp(['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-INVALIDACION']);
+        $this->servicio()->transmitir($b, $evento, true, true);
+        $this->assertSame(strtoupper($c->codigo_generacion), $b->refresh()->respuesta_mh_invalidacion['codigoGeneracionR'] ?? null);
+    }
 
     public function test_bloquea_si_faltan_las_confirmaciones(): void
     {

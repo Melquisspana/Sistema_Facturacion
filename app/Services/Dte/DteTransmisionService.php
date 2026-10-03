@@ -2,16 +2,19 @@
 
 namespace App\Services\Dte;
 
-use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -54,6 +57,10 @@ class DteTransmisionService
             }
         };
 
+        $problemaCcf = $this->problemaDelCcf($dte);
+        if ($this->esNotaConRelacionado($dte)) {
+            $add($problemaCcf === null, 'CCF de la nota vigente', $problemaCcf ?? 'El documento relacionado permite el envío.');
+        }
         $esFirmado = $dte->estado === EstadoDte::Firmado;
         $add($esFirmado, 'Estado firmado', $esFirmado
             ? 'El documento está firmado (listo para transmitir).'
@@ -142,7 +149,7 @@ class DteTransmisionService
      *
      * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null}
      *
-     * @throws DteTransmisionException             si falla una precondición
+     * @throws DteTransmisionException si falla una precondición
      * @throws DteTransmisionDeshabilitadaException si la transmisión está deshabilitada
      */
     public function transmitir(Dte $dte): array
@@ -305,8 +312,8 @@ class DteTransmisionService
             // El MH devuelve fhProcesamiento como "d/m/Y H:i:s"; Carbon::parse lo leería
             // como formato americano. Probar el formato MH primero, luego parse libre.
             $dte->fecha_procesamiento_mh =
-                rescue(fn () => \Illuminate\Support\Carbon::createFromFormat('d/m/Y H:i:s', $fh), null, false)
-                ?: rescue(fn () => \Illuminate\Support\Carbon::parse($fh), null, false);
+                rescue(fn () => Carbon::createFromFormat('d/m/Y H:i:s', $fh), null, false)
+                ?: rescue(fn () => Carbon::parse($fh), null, false);
         }
 
         $dte->save();
@@ -325,7 +332,7 @@ class DteTransmisionService
      */
     private function transmitirMock(Dte $dte): array
     {
-        $sello = 'MOCK-SIMULADO-'.strtoupper(substr((string) \Illuminate\Support\Str::uuid(), 0, 16));
+        $sello = 'MOCK-SIMULADO-'.strtoupper(substr((string) Str::uuid(), 0, 16));
         $mensaje = 'Transmisión SIMULADA (MH_MOCK=true): no se envió nada a Hacienda. Sello ficticio para pruebas locales.';
 
         // Cuerpo "como del MH" para que persistirRespuesta también pueble la fecha de
@@ -599,6 +606,10 @@ class DteTransmisionService
         $jwsExiste = filled($dte->json_firmado_path) && $this->rutaFirmadaValida($dte->json_firmado_path)
             && Storage::disk($disco)->exists($this->normalizar($dte->json_firmado_path));
 
+        $problemaCcf = $this->problemaDelCcf($dte);
+        if ($this->esNotaConRelacionado($dte)) {
+            $add($problemaCcf === null, 'CCF de la nota vigente', $problemaCcf ?? 'El documento relacionado permite el envío.');
+        }
         // --- Documento ---
         $add($dte->estado === EstadoDte::Firmado, 'Documento firmado', $dte->estado->label());
         $add($jwsExiste, 'JWS firmado', $jwsExiste ? 'presente' : 'falta');
@@ -624,7 +635,7 @@ class DteTransmisionService
         $add(! $c['flags']['es_produccion'] || $c['flags']['allow_production'], 'Producción permitida', $c['flags']['es_produccion'] ? ($c['flags']['allow_production'] ? 'sí' : 'NO') : 'n/a (no es producción)');
 
         $precondicionesOk = $dte->estado === EstadoDte::Firmado && $jwsExiste
-            && blank($dte->sello_recepcion) && ! $dte->esAnulado();
+            && blank($dte->sello_recepcion) && ! $dte->esAnulado() && $problemaCcf === null;
 
         return [
             'listo' => $precondicionesOk && ! $c['bloqueado'],
@@ -679,6 +690,9 @@ class DteTransmisionService
      */
     private function verificarPrecondiciones(Dte $dte): void
     {
+        if ($problema = $this->problemaDelCcf($dte)) {
+            throw new DteTransmisionException($problema);
+        }
         if ($dte->estado === EstadoDte::Aceptado) {
             throw new DteTransmisionException('El documento ya está aceptado; no se retransmite.');
         }
@@ -705,15 +719,32 @@ class DteTransmisionService
         }
     }
 
+    private function esNotaConRelacionado(Dte $dte): bool
+    {
+        return in_array($dte->tipo_dte, [TipoDte::NotaCredito, TipoDte::NotaDebito], true) && $dte->dte_relacionado_id !== null;
+    }
+
+    /** Consulta fresca: la nota no puede enviarse si su CCF dejó de estar vigente. */
+    private function problemaDelCcf(Dte $dte): ?string
+    {
+        if (! $this->esNotaConRelacionado($dte)) {
+            return null;
+        }
+        $ccf = $dte->dteRelacionado()->first();
+        if ($ccf === null || $ccf->estado !== EstadoDte::Aceptado || $ccf->tieneEventoInvalidacion()) {
+            return 'El CCF de esta nota fue invalidado (o ya no está aceptado): esta nota no se puede enviar. Revisá el comprobante relacionado antes de continuar.';
+        }
+
+        return null;
+    }
+
     /**
-     * Interpreta la respuesta de recepción (real o simulada con Http::fake) según el
-     * Manual Técnico (4.2.1) SIN persistir nada. El MH responde por el campo `estado`
-     * (PROCESADO = aceptado, RECHAZADO = rechazado) y un RECHAZADO puede venir con
-     * HTTP 400; por eso se clasifica por `estado` antes que por el código HTTP.
+     * Interpreta la respuesta sin persistir: el estado del MH manda incluso si
+     * RECHAZADO llega con HTTP 400.
      *
      * @return array{resultado: string, http_status: int|null, mensaje: string, sello: string|null, observaciones: array<int, string>}
      */
-    private function interpretarRespuesta(\Illuminate\Http\Client\Response $resp): array
+    private function interpretarRespuesta(Response $resp): array
     {
         $status = $resp->status();
         $cuerpo = $resp->json();

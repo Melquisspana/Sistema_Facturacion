@@ -10,8 +10,8 @@ use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Enums\TipoNotaCredito;
 use App\Observers\DteObserver;
-use App\Services\Dte\DteInvalidacionService;
-use App\Services\Dte\ValidacionPreJsonService;
+use App\Services\Dte\ValidadorReglasInvalidacion;
+use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\ReglaOrdenCompra;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
@@ -294,18 +294,8 @@ class Dte extends Model
     }
 
     /**
-     * Scope: documentos que CONSUMEN saldo acreditable del CCF original. Fuente única de
-     * la regla, usada por el cálculo de saldo por línea (borrador y pantalla de NC).
-     *
-     * Deja de consumir saldo una NC que ya no puede llegar a Hacienda:
-     *  - INVALIDADA: anulada oficialmente, su acreditación vuelve a estar disponible.
-     *  - RECHAZADA **y ARCHIVADA**: rechazo asumido y retirado de la operación diaria.
-     *
-     * Una rechazada SIN archivar sigue consumiendo saldo a propósito: puede corregirse y
-     * reintentarse, así que el saldo permanece reservado hasta que alguien decida
-     * archivarla. Borrador, generada, firmada, enviada y aceptada consumen siempre.
-     * (No confundir con {@see ValidacionPreJsonService::saldoGravadoDisponible()},
-     * que valida contra Hacienda y por eso solo cuenta NC aceptadas realmente.)
+     * Documentos que todavía ocupan un albarán: incluye borradores y rechazadas
+     * sin archivar. No define el saldo fiscal; esa regla vive en SaldoMontoCcf.
      */
     public function scopeConsumeSaldoAcreditable(Builder $q): Builder
     {
@@ -389,7 +379,7 @@ class Dte extends Model
      * Esta relación LISTA, no PROHÍBE. Responde «¿qué notas vigentes hay contra este
      * documento?» para cualquier tipo, porque la pregunta tiene sentido para cualquiera.
      * Convertir esa lista en un bloqueo es decisión de
-     * {@see \App\Support\Dte\PoliticaInvalidacion::dependeDeNotasVigentes()}, que hoy solo
+     * {@see PoliticaInvalidacion::dependeDeNotasVigentes()}, que hoy solo
      * responde que sí para el CCF: poder representar una relación no acredita una
      * prohibición fiscal.
      */
@@ -405,9 +395,9 @@ class Dte extends Model
      *
      * Es una pregunta DESCRIPTIVA, no el candado. Que exista una nota vigente no implica
      * que este documento no se pueda invalidar: quién depende de esas notas lo decide
-     * {@see \App\Support\Dte\PoliticaInvalidacion::dependeDeNotasVigentes()} —hoy, solo
+     * {@see PoliticaInvalidacion::dependeDeNotasVigentes()} —hoy, solo
      * el CCF— y quién aplica esa decisión es
-     * {@see \App\Services\Dte\ValidadorReglasInvalidacion::notasQueBloquean()}. Cuando sí
+     * {@see ValidadorReglasInvalidacion::notasQueBloquean()}. Cuando sí
      * corresponde, el bloqueo no admite confirmación ni flag que lo salte.
      */
     public function tieneNotaFiscalVigente(): bool

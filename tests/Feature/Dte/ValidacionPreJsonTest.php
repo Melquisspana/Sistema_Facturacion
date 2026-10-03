@@ -411,7 +411,7 @@ class ValidacionPreJsonTest extends TestCase
 
     private function superaSaldo(array $problemas): bool
     {
-        return (bool) collect($problemas)->first(fn ($p) => str_contains($p, 'no puede superar el monto disponible'));
+        return (bool) collect($problemas)->first(fn ($p) => str_contains($p, 'El CCF ') && str_contains($p, 'menor que'));
     }
 
     public function test_bloquea_nc_averia_si_gravada_supera_la_del_ccf(): void

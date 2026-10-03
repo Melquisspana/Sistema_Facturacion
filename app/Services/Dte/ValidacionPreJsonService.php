@@ -19,6 +19,8 @@ use App\Support\Ubicacion\CoherenciaUbicacion;
  */
 class ValidacionPreJsonService
 {
+    public function __construct(private readonly SaldoMontoCcf $saldo) {}
+
     /**
      * @return array<int, string> Problemas encontrados (vacío = válido).
      */
@@ -73,11 +75,8 @@ class ValidacionPreJsonService
                 // (excluye mock/simulado y aceptaciones solo locales, cuyo codigoGeneracion no
                 // existe en el MH → codigoMsg 014 "NO EXISTE UN REGISTRO CON ESTE DATO").
                 $problemas[] = 'La Nota de Crédito debe relacionarse con un CCF aceptado realmente por Hacienda.';
-            } elseif (Dinero::comparar((string) $dte->total_gravado, $this->saldoGravadoDisponible($rel, $dte)) > 0) {
-                // El MH rechaza una NC cuyo monto gravado supere el del CCF relacionado
-                // (codigoMsg 016). Aplica también a avería (productos manuales): el total
-                // gravado debe caber en el saldo disponible del CCF.
-                $problemas[] = 'La Nota de Crédito no puede superar el monto disponible del CCF relacionado.';
+            } elseif ($exceso = $this->saldo->exceso($dte)) {
+                $problemas[] = $exceso;
             }
         }
 
@@ -87,24 +86,6 @@ class ValidacionPreJsonService
     public function aprobado(Dte $dte): bool
     {
         return $this->validar($dte) === [];
-    }
-
-    /**
-     * Saldo gravado disponible de un CCF para emitir notas de crédito:
-     * total_gravado del CCF − Σ total_gravado de NC (05) REALMENTE ACEPTADAS por el MH
-     * relacionadas a ese CCF (excluye la NC actual). Las NC rechazadas/invalidadas o solo
-     * aceptadas localmente/mock NO consumen saldo.
-     */
-    private function saldoGravadoDisponible(Dte $ccf, Dte $ncActual): string
-    {
-        $yaAcreditado = (string) Dte::query()
-            ->where('tipo_dte', TipoDte::NotaCredito->value)
-            ->where('dte_relacionado_id', $ccf->id)
-            ->aceptadoRealMh()
-            ->when($ncActual->id !== null, fn ($q) => $q->where('id', '!=', $ncActual->id))
-            ->sum('total_gravado');
-
-        return Dinero::redondear(Dinero::restar((string) $ccf->total_gravado, $yaAcreditado), 2);
     }
 
     /**
