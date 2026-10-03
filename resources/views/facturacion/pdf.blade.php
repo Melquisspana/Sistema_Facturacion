@@ -311,7 +311,7 @@
                         @if ($emActividad)<div class="emi"><span class="k">Actividad</span> {{ $emActividad }}</div>@endif
                         @if ($emUbic || $emDir)<div class="emi">@if($emUbic){{ $emUbic }}@endif @if($emDir)· {{ $emDir }}@endif</div>@endif
                         <div class="emi">Estab.: {{ $dte->establecimiento?->nombre ?? '—' }}@if($dte->establecimiento?->codigo) ({{ $dte->establecimiento->codigo }})@endif · PV: {{ $dte->puntoVenta?->nombre ?? '—' }}@if($dte->puntoVenta?->codigo) ({{ $dte->puntoVenta->codigo }})@endif</div>
-                        @if ($emTel || $emCorreo)<div class="emi">@if($emTel){{ $emTel }}@endif@if($emCorreo) · {{ $emCorreo }}@endif</div>@endif
+                        @if ($emTel || $emCorreo)<div class="emi">@if($emTel){{ $emTel }}@endif @if($emCorreo) · {{ $emCorreo }}@endif</div>@endif
                     </td>
                 </tr></table>
             </td>
@@ -357,7 +357,7 @@
     <div class="sec rec nobreak">
         <div class="sec-h">Receptor</div>
         <div class="sec-b">
-            <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif@if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
+            <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif @if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
             <table style="margin-top:3px;">
                 <tr>
                     <td style="width: 50%; padding-right: 10px;">
@@ -507,7 +507,7 @@
             <td style="width: 53%; padding-right: 12px;">
                 <div class="letras"><span class="k">Valor en letras</span><br>{{ $valorLetras }}</div>
                 @if ($dte->observaciones || $dte->motivo)
-                    <div class="cond-line">@if($dte->motivo)<span class="k">Motivo:</span> {{ $dte->motivo }} @endif@if($dte->observaciones)<span class="k">Observaciones:</span> {{ $dte->observaciones }}@endif</div>
+                    <div class="cond-line">@if($dte->motivo)<span class="k">Motivo:</span> {{ $dte->motivo }} @endif @if($dte->observaciones)<span class="k">Observaciones:</span> {{ $dte->observaciones }}@endif</div>
                 @endif
                 <div class="cond-line"><span class="k">Condición de la operación:</span> <strong>{{ $dte->condicion_operacion?->label() ?? '—' }}</strong></div>
                 <table class="firmas2">
