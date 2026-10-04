@@ -5,6 +5,7 @@ namespace App\Services\Contabilidad;
 use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
+use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\DtePdfService;
 use App\Services\Reportes\ReporteContadoraExcel;
 use App\Support\Archivos\ArchivoAlmacenado;
@@ -19,8 +20,9 @@ use ZipArchive;
  *
  * SOLO LECTURA: no vuelve a descargar correos, no envía nada, no toca DTE emitidos,
  * correlativos ni transmisión. El PDF de ventas se regenera vía DtePdfService (mismo
- * servicio que "ver/descargar PDF" e email, idempotente); el JSON de ventas se lee del
- * archivo ya guardado en `json_generado_path` (no se regenera ni transmite nada).
+ * servicio que "ver/descargar PDF" e email, idempotente); el JSON de ventas es el archivo
+ * de entrega con firma y sello de {@see ArchivoEntregaDteService}, el mismo que recibe el
+ * cliente (armado en memoria desde la evidencia guardada; no se regenera ni transmite nada).
  *
  * DOS COSAS QUE ANTES SE PERDÍAN EN SILENCIO:
  *
@@ -40,6 +42,7 @@ class PaqueteContabilidadZip
         private readonly DocumentosRecibidosExcel $comprasExcel,
         private readonly ReporteContadoraExcel $ventasExcel,
         private readonly DtePdfService $ventasPdf,
+        private readonly ArchivoEntregaDteService $entregas,
     ) {}
 
     /**
@@ -106,24 +109,22 @@ class PaqueteContabilidadZip
         if ($incluirVentas) {
             $zip->addFromString("ventas/reporte_contadora_{$etiqueta}.xlsx", $this->xlsx($this->ventasExcel->generar($ventas)));
 
-            $discoDte = (string) config('dte.storage.disk', 'local');
             /** @var Dte $dte */
             foreach ($ventas as $dte) {
                 $zip->addFromString('ventas/pdf/'.$dte->id.'_'.$this->ventasPdf->nombre($dte), $this->ventasPdf->bytes($dte));
                 $ventasPdf++;
 
-                $archivo = ArchivoAlmacenado::leer($discoDte, $dte->json_generado_path);
-                if ($archivo->presente()) {
-                    $zip->addFromString('ventas/json/'.$dte->id.'_'.basename((string) $dte->json_generado_path), (string) $archivo->contenido);
+                // El mismo archivo que recibe el cliente (documento + firma + sello), del
+                // servicio único de entrega; si no está completo, el LEEME dice por qué.
+                $entrega = $this->entregas->construir($dte);
+                if ($entrega->completo()) {
+                    $zip->addFromString('ventas/json/'.$dte->id.'_'.$entrega->nombre, (string) $entrega->contenido);
                     $ventasJson++;
 
                     continue;
                 }
 
-                // Un DTE sin JSON oficial guardado es un hecho conocido y esperable; un
-                // JSON que está pero no se puede leer es un problema del servidor. Se
-                // reportan los dos, con palabras distintas.
-                $incidencias[] = 'Venta #'.$dte->id.' ('.($dte->numero_control ?: 'sin número').'): '.$archivo->explicacion();
+                $incidencias[] = 'Venta #'.$dte->id.' ('.($dte->numero_control ?: 'sin número').'): '.$entrega->explicacion();
             }
         }
 

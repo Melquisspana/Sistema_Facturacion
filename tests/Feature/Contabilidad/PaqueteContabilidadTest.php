@@ -10,6 +10,7 @@ use App\Models\Establecimiento;
 use App\Models\User;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
+use App\Services\Dte\ArchivoEntregaDteService;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -20,6 +21,7 @@ use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaArchivoEntregaDte;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -30,6 +32,7 @@ use ZipArchive;
  */
 class PaqueteContabilidadTest extends TestCase
 {
+    use PreparaArchivoEntregaDte;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -274,12 +277,11 @@ class PaqueteContabilidadTest extends TestCase
         // clases de prueba: una podía borrarlo mientras otra lo estaba usando.
         $venta->json_generado_path = 'dte/json/dte-03-'.$venta->id.'-'.$venta->codigo_generacion.'.json';
 
-        // Se afirma lo intermedio: si el disco falla, la prueba lo dice ACÁ y no tres
-        // aserciones más abajo con un "falta el archivo" que no explica nada.
-        $this->assertTrue(Storage::disk('local')->put($venta->json_generado_path, '{"identificacion":{"x":1}}'));
+        // Evidencia coherente (JSON + JWS + sello). Se afirma lo intermedio: si el disco
+        // falla, la prueba lo dice ACÁ y no con un "falta el archivo" que no explica nada.
+        $this->prepararArchivoEntrega($venta);
         $this->assertSame('local', config('dte.storage.disk'), 'el ZIP lee del disco configurado en dte.storage.disk');
         $this->assertTrue(Storage::disk('local')->exists($venta->json_generado_path));
-        $venta->save();
 
         $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection, new Collection([$venta]), false, true);
 
@@ -289,11 +291,17 @@ class PaqueteContabilidadTest extends TestCase
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $nombres[] = $zip->getNameIndex($i);
         }
+        $rutaJson = 'ventas/json/'.$venta->id.'_'.strtoupper($venta->codigo_generacion).'.json';
+        $json = $zip->getFromName($rutaJson);
         $zip->close();
         @unlink($r['ruta']);
 
         $this->assertContains('ventas/pdf/'.$venta->id.'_dte-03-'.$venta->id.'.pdf', $nombres);
-        $this->assertContains('ventas/json/'.$venta->id.'_'.basename($venta->json_generado_path), $nombres);
+        $this->assertContains($rutaJson, $nombres);
+        // La contadora recibe EXACTAMENTE el archivo del cliente: documento + firma + sello.
+        $this->assertSame(app(ArchivoEntregaDteService::class)->construir($venta)->contenido, $json);
+        $this->assertSame($venta->sello_recepcion, json_decode($json, true)['selloRecibido']);
+        $this->assertArrayHasKey('firmaElectronica', json_decode($json, true));
         $this->assertSame(1, $r['ventas_pdf']);
         $this->assertSame(1, $r['ventas_json']);
     }

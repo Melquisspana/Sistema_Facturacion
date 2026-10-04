@@ -136,17 +136,16 @@ class AdjuntosAlmacenamientoTest extends TestCase
 
         $venta = $this->venta();
         $venta->json_generado_path = 'dte/json/dte-03-'.$venta->id.'-'.$venta->codigo_generacion.'.json';
-        // El put() se AFIRMA: si el disco falso fallara, la prueba lo dice acá y no
-        // tres aserciones más abajo con un "falta el archivo" que no explica nada.
-        $this->assertTrue(Storage::disk('local')->put($venta->json_generado_path, '{"identificacion":{"x":1}}'));
+        // Evidencia coherente (JSON + JWS + sello): el ZIP lleva el archivo de entrega.
+        $this->prepararArchivoEntrega($venta);
+        $this->assertTrue(Storage::disk('local')->exists($venta->json_generado_path));
         $this->assertSame('local', config('dte.storage.disk'));
-        $venta->save();
 
         $r = app(PaqueteContabilidadZip::class)->generar('2026-07', new Collection, new Collection([$venta]), false, true);
         $nombres = $this->contenidoZip($r['ruta']);
         @unlink($r['ruta']);
 
-        $this->assertContains('ventas/json/'.$venta->id.'_'.basename($venta->json_generado_path), $nombres);
+        $this->assertContains('ventas/json/'.$venta->id.'_'.strtoupper($venta->codigo_generacion).'.json', $nombres);
         $this->assertSame(1, $r['ventas_json']);
         $this->assertSame([], $r['incidencias']);
     }
