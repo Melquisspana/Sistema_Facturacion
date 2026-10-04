@@ -88,7 +88,7 @@ class SalidaRutaController extends Controller
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
         $entregas = $salida->entregas()
-            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre'])
+            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id,estado', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre'])
             ->get();
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
@@ -108,12 +108,13 @@ class SalidaRutaController extends Controller
                 ->sortBy(fn ($e) => [$e->sala?->nombre ?? '', $e->dte?->numero_control ?? ''])
                 ->groupBy('cliente_sucursal_id'),
             'resoluciones' => $resoluciones,
+            'noVigentes' => $servicio->noVigentes($entregas),
             'resumen' => $servicio->resumen($entregas, $resoluciones),
             'participantes' => $participantes,
             'preseleccion' => $preseleccion,
             'motivos' => MotivoNoEntrega::opciones(),
             'abierta' => ! $salida->estado->esTerminal(),
-            'registrable' => in_array($salida->estado, [EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada], true),
+            'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,
         ]);
     }
 

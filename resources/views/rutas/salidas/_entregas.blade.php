@@ -31,7 +31,7 @@
 @forelse ($porSala as $entregas)
     @php
         $sala = $entregas->first()->sala;
-        $pendientesSala = $entregas->filter(fn ($e) => $e->estaPendiente() && ! ($resoluciones[$e->dte_id] ?? null)?->estaVinculado())->count();
+        $pendientesSala = $entregas->filter(fn ($e) => $e->estaPendiente() && ! isset($noVigentes[$e->dte_id]) && ! ($resoluciones[$e->dte_id] ?? null)?->estaVinculado())->count();
     @endphp
     <div class="{{ $caja }} mt-4 overflow-hidden">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-ink-700">
@@ -58,6 +58,9 @@
                     <div class="flex items-center justify-between gap-3">
                         <div class="min-w-0">
                             <p class="truncate font-mono text-xs text-gray-600 dark:text-paper-300">{{ $entrega->dte?->numero_control ?? '—' }}</p>
+                            @if (isset($noVigentes[$entrega->dte_id]))
+                                <span class="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ $noVigentes[$entrega->dte_id] }} · no entregar</span>
+                            @endif
                             <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
                         </div>
 
@@ -85,7 +88,7 @@
                     </div>
 
                     {{-- Por marcar: dos botones grandes --}}
-                    @if ($puedeMarcar && $entrega->estaPendiente() && ! $albaran)
+                    @if ($puedeMarcar && $entrega->estaPendiente() && ! $albaran && ! isset($noVigentes[$entrega->dte_id]))
                         <div class="mt-3 grid grid-cols-2 gap-2">
                             <form method="POST" action="{{ route('rutas.salidas.entregas.update', [$salida, $entrega]) }}">
                                 @csrf @method('PATCH')
