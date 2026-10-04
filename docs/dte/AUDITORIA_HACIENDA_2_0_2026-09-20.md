@@ -57,6 +57,8 @@ Criterios de cierre: matriz FE/CCF/NC/FEX por motivos 1/2/3; sustituto sin sello
 
 ### 2. Invalidación: plazos y fechas
 
+Actualización 04/10/2026: el plazo de transmisión se implementa según la tabla y sus ejemplos; ver [decisión 0005](../decisiones/0005-plazos-de-invalidacion.md), incluido el calendario oficial pendiente de confirmar.
+
 No se encontró validación de las ventanas normativas en las rutas de invalidación revisadas. El serializador toma siempre la fecha de emisión del documento original.
 
 El manual funcional, página 11, distingue fecha de generación y fecha de transmisión:

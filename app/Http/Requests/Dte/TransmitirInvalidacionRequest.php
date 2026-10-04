@@ -2,28 +2,33 @@
 
 namespace App\Http\Requests\Dte;
 
+use App\DataTransferObjects\Dte\Salida\EventoInvalidacionData;
 use App\Enums\TipoAnulacionMh;
 use App\Models\Dte;
+use App\Policies\DtePolicy;
+use App\Services\Dte\DteInvalidacionService;
+use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\RequisitosInvalidacion;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /**
  * Valida y autoriza la TRANSMISIÓN REAL del evento de invalidación (anulardte) desde la web.
  *
  * La autorización de CANDIDATURA vive en la política
- * ({@see \App\Policies\DtePolicy::transmitirInvalidacion()}). Aquí, además, se valida en
+ * ({@see DtePolicy::transmitirInvalidacion()}). Aquí, además, se valida en
  * SERVIDOR la frase-barrera exacta `INVALIDAR DTE` (no basta el JS) y los campos CAT-024
  * según la MATRIZ del documento concreto ({@see PoliticaInvalidacion}), no según el motivo
  * por sí solo: un POST manipulado que pida sustituto para una NC, o que lo omita en un CCF
  * por motivo 3, se rechaza aquí sin llegar al servicio.
  *
  * Los candados DUROS restantes (flags, firma real, ambiente, doble invalidación, evidencia
- * protegida, sustituto verificado y notas de crédito/débito vigentes) los RE-valida
- * {@see \App\Services\Dte\DteInvalidacionService} en cada intento, inmediatamente antes de
- * firmar: lo validado aquí es la FORMA de la petición, no una autorización que siga
- * valiendo un rato después.
+ * protegida, sustituto verificado, notas de crédito/débito vigentes y plazo) los RE-valida
+ * {@see DteInvalidacionService} en cada intento, inmediatamente antes de
+ * firmar: aquí también se aplican las reglas fiscales, pero no es una autorización que
+ * siga valiendo un rato después.
  */
 class TransmitirInvalidacionRequest extends FormRequest
 {
@@ -110,6 +115,28 @@ class TransmitirInvalidacionRequest extends FormRequest
             // del MH, no un riesgo que quien factura pueda asumir con una casilla.
             'confirmar_nc_relacionada' => ['nullable', 'boolean'],
         ];
+    }
+
+    /** Revalida las reglas fiscales antes de llegar al controlador. */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+            $dte = $this->route('dte');
+            if (! $dte instanceof Dte) {
+                return;
+            }
+            $evento = new EventoInvalidacionData(
+                tipoAnulacion: TipoAnulacionMh::from((int) $this->input('tipo')),
+                motivoAnulacion: $this->input('motivo'),
+                codigoGeneracionReemplazo: $this->input('reemplazo'),
+            );
+            foreach (app(ValidadorReglasInvalidacion::class)->problemas($dte, $evento) as $problema) {
+                $validator->errors()->add('confirmacion_invalidacion', $problema);
+            }
+        }];
     }
 
     /**

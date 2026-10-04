@@ -16,6 +16,7 @@ use App\Models\PuntoVenta;
 use App\Services\Dte\DteInvalidacionService;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -86,7 +87,7 @@ class DteInvalidacionProduccionTest extends TestCase
             'codigo_generacion' => self::CCF_CODIGO_GENERACION,
             'sello_recepcion' => self::CCF_SELLO,
             'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => self::CCF_SELLO],
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);
     }
@@ -109,7 +110,7 @@ class DteInvalidacionProduccionTest extends TestCase
             'codigo_generacion' => self::CCF_SUSTITUTO_CODIGO_GENERACION,
             'sello_recepcion' => '2026000000000000000000000000000000000005',
             'respuesta_mh' => ['estado' => 'PROCESADO'],
-            'fecha_procesamiento_mh' => '2026-07-21 09:00:00',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-21', 'hora_emision' => '09:00:00',
         ]);
     }

@@ -17,6 +17,7 @@ use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\ValidadorReglasInvalidacion;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -92,7 +93,7 @@ class DteInvalidacionRealTest extends TestCase
             'codigo_generacion' => self::NC_CODIGO_GENERACION,
             'sello_recepcion' => $aceptada ? self::NC_SELLO : null,
             'respuesta_mh' => $aceptada ? ['estado' => 'PROCESADO', 'selloRecibido' => self::NC_SELLO] : null,
-            'fecha_procesamiento_mh' => $aceptada ? '2026-06-30 22:48:44' : null,
+            'fecha_procesamiento_mh' => $aceptada ? HoraNegocio::ahora()->format('Y-m-d H:i:s') : null,
             'fecha_emision' => '2026-06-30', 'hora_emision' => '22:26:52',
         ]);
     }

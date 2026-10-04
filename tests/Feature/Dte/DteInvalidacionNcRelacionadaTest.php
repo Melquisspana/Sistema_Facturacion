@@ -17,6 +17,7 @@ use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\PoliticaInvalidacion;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -143,7 +144,7 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
             'codigo_generacion' => strtoupper((string) Str::uuid()),
             'sello_recepcion' => '2026000000000000000000000000000000000005',
             'respuesta_mh' => ['estado' => 'PROCESADO'],
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);
     }
@@ -171,7 +172,7 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
             'codigo_generacion' => self::CCF_CODIGO_GENERACION,
             'sello_recepcion' => self::CCF_SELLO,
             'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => self::CCF_SELLO],
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);
     }
@@ -198,7 +199,7 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
             'numero_control' => 'DTE-'.$tipo->value.'-M001P002-'.str_pad((string) ++$this->secuencia, 15, '0', STR_PAD_LEFT),
             'codigo_generacion' => strtoupper((string) Str::uuid()),
             'sello_recepcion' => $sello,
-            'fecha_procesamiento_mh' => $conFechaMh && $sello !== null ? '2026-07-20 23:10:00' : null,
+            'fecha_procesamiento_mh' => $conFechaMh && $sello !== null ? HoraNegocio::ahora()->format('Y-m-d H:i:s') : null,
             'archivado' => $archivada,
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:40:00',
         ]);
@@ -324,14 +325,14 @@ class DteInvalidacionNcRelacionadaTest extends TestCase
 
         $usuario = User::factory()->create()->assignRole('administrador');
 
-        $this->actingAs($usuario)
+        $this->actingAs($usuario)->from(route('facturacion.show', $ccf))
             ->post(route('facturacion.invalidacion.transmitir', $ccf), [
                 'tipo' => TipoAnulacionMh::RescindirOperacion->value,
                 'confirmacion_invalidacion' => 'INVALIDAR DTE',
                 'confirmar_nc_relacionada' => '1',
             ])
             ->assertRedirect(route('facturacion.show', $ccf))
-            ->assertSessionHas('error');
+            ->assertSessionHasErrors('confirmacion_invalidacion');
 
         $ccf->refresh();
         $this->assertSame(EstadoDte::Aceptado, $ccf->estado);

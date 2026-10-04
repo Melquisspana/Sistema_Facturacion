@@ -7,8 +7,10 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Models\Dte;
+use App\Support\Dte\PlazoInvalidacion;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\RequisitosInvalidacion;
+use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -17,7 +19,7 @@ use Illuminate\Database\Eloquent\Collection;
  * formulario web, el Form Request, el preview/preflight de consola, el serializador, el
  * servicio mock y la transmisión real.
  *
- * Tres bloques, en orden:
+ * Cuatro bloques, en orden:
  *
  *  1. MATRIZ documento × motivo ({@see PoliticaInvalidacion}): qué exige y qué prohíbe.
  *  2. SUSTITUTO ({@see VerificadorDocumentoReemplazo}): existe, es del mismo emisor y
@@ -28,6 +30,9 @@ use Illuminate\Database\Eloquent\Collection;
  *     no este validador y menos el modelo: listar relaciones y prohibir invalidar son
  *     responsabilidades distintas.
  *
+ *  4. PLAZO de transmisión desde el día del sello, hasta el último segundo local
+ *     ({@see PlazoInvalidacion}, decisión 0005). Tampoco admite override.
+ *
  * El bloque 3 NO tiene override. No hay checkbox, parámetro HTTP ni bandera de consola
  * que lo salte: el antiguo `--confirmo-nc-relacionada` (y su casilla equivalente en la
  * web) trataba una regla fiscal como si fuera un riesgo asumible por quien factura. Se
@@ -36,9 +41,6 @@ use Illuminate\Database\Eloquent\Collection;
  *
  * Esta clase NO evalúa los candados del ENTORNO (flags, firma, endpoint, producción):
  * esos siguen en {@see DteInvalidacionService::evaluarCandados()}, que llama a esta.
- * Tampoco valida plazos: el cálculo de fechas queda explícitamente PENDIENTE por una
- * inconsistencia de la fuente (manual funcional, págs. 11-12) — ver
- * docs/dte/AUDITORIA_HACIENDA_2_0_2026-09-20.md, punto 2.
  */
 class ValidadorReglasInvalidacion
 {
@@ -54,7 +56,7 @@ class ValidadorReglasInvalidacion
 
     /**
      * Todos los problemas fiscales del evento, en lenguaje de quien factura. Lista vacía
-     * = el evento cumple la matriz, el sustituto y las dependencias.
+     * = el evento cumple la matriz, el sustituto, las dependencias y el plazo.
      *
      * @return array<int, string>
      */
@@ -72,7 +74,33 @@ class ValidadorReglasInvalidacion
             $this->problemasDeMotivo($requisitos, $evento),
             $this->problemasDeReemplazo($dte, $evento, $requisitos),
             $this->problemasDeDependencias($dte),
+            $this->problemasDePlazo($dte),
         );
+    }
+
+    /** @return array<int, string> */
+    public function problemasDePlazo(Dte $dte): array
+    {
+        if ($dte->fecha_procesamiento_mh === null) {
+            return [];
+        }
+
+        // fhProcesamiento es hora LOCAL marcada como UTC: conservar el día tal cual.
+        $fechaSello = $dte->fecha_procesamiento_mh->format('Y-m-d');
+        $plazo = new PlazoInvalidacion;
+        $limite = $plazo->limite($dte->tipo_dte, $fechaSello);
+        if (! now()->greaterThan($limite)) {
+            return [];
+        }
+
+        $mensaje = 'Fuera de plazo: el documento obtuvo el sello el '.$dte->fecha_procesamiento_mh->format('d/m/Y')
+            .' y el plazo para invalidarlo venció el '.HoraNegocio::aLocal($limite)->format('d/m/Y')
+            .' a las 23:59:59 (hora de El Salvador). Hacienda no da sello a una invalidación fuera de plazo.';
+        if (! $plazo->calendarioCompleto($dte->tipo_dte, $fechaSello)) {
+            $mensaje .= ' (calculado sin calendario de días inhábiles '.$plazo->anioCalendario($fechaSello).'; cargarlo en config/dte.php)';
+        }
+
+        return [$mensaje];
     }
 
     /**
