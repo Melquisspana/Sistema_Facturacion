@@ -238,6 +238,62 @@
                 <div class="mt-3">
                     <x-correo-simulado-aviso />
                 </div>
+                {{-- El ZIP y el envío se arman en segundo plano (un mes completo tarda más de lo
+                     que Cloudflare espera). Mientras alguno está en curso, la pantalla consulta
+                     el estado cada 5 s y se recarga sola cuando termina. --}}
+                @php
+                    $zipEnCurso = ($estadoZip['estado'] ?? null) === 'generando';
+                    $envioEnCurso = ($estadoEnvio['estado'] ?? null) === 'enviando';
+                @endphp
+                @if ($estadoZip)
+                    <div id="estado-paquete-zip" class="mt-3 rounded-md border p-3 text-sm {{ match ($estadoZip['estado'] ?? null) { 'listo' => 'bg-green-50 border-green-200 text-green-700', 'error' => 'bg-red-50 border-red-200 text-red-700', default => 'bg-amber-50 border-amber-200 text-amber-800 dark:text-amber-300' } }}">
+                        @if ($zipEnCurso)
+                            <p class="font-semibold">Generando el ZIP… (empezó {{ $estadoZip['iniciado_en'] ?? '' }})</p>
+                            <p class="mt-1 text-xs">Puede tardar unos minutos. Podés quedarte en esta pantalla: se actualiza sola.</p>
+                        @elseif (($estadoZip['estado'] ?? null) === 'listo')
+                            <div class="flex flex-wrap items-center gap-3">
+                                <p>ZIP listo ({{ $estadoZip['terminado_en'] ?? '' }}): {{ $estadoZip['compras'] ?? 0 }} compras, {{ $estadoZip['ventas'] ?? 0 }} ventas.</p>
+                                <a href="{{ route('contabilidad.paquete.descargar', $filtros) }}"
+                                   class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                                    Descargar {{ $estadoZip['nombre_descarga'] ?? 'ZIP' }}
+                                </a>
+                            </div>
+                        @else
+                            <p class="font-semibold">{{ $estadoZip['mensaje'] ?? 'No se pudo generar el paquete.' }}</p>
+                            <p class="mt-1 text-xs">Podés volver a intentarlo con «Generar ZIP».</p>
+                        @endif
+                    </div>
+                @endif
+                @if ($estadoEnvio)
+                    <div id="estado-paquete-envio" class="mt-3 rounded-md border p-3 text-sm {{ match ($estadoEnvio['estado'] ?? null) { 'enviado', 'simulado' => 'bg-green-50 border-green-200 text-green-700', 'envio_fallido' => 'bg-red-50 border-red-200 text-red-700', default => 'bg-amber-50 border-amber-200 text-amber-800 dark:text-amber-300' } }}">
+                        @if ($envioEnCurso)
+                            <p class="font-semibold">Enviando a contabilidad… (empezó {{ $estadoEnvio['iniciado_en'] ?? '' }})</p>
+                            <p class="mt-1 text-xs">Puede tardar unos minutos. Esta pantalla se actualiza sola.</p>
+                        @else
+                            <p>{{ $estadoEnvio['mensaje'] ?? '' }} <span class="text-xs">({{ $estadoEnvio['terminado_en'] ?? '' }})</span></p>
+                        @endif
+                    </div>
+                @endif
+                @if ($zipEnCurso || $envioEnCurso)
+                    <script>
+                        (function () {
+                            const url = @js(route('contabilidad.paquete.estado', $filtros));
+                            const vigilar = function () {
+                                fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                                    .then(function (r) { return r.ok ? r.json() : null; })
+                                    .then(function (e) {
+                                        if (e && e.zip !== 'generando' && e.envio !== 'enviando') {
+                                            window.location.reload();
+                                        } else {
+                                            setTimeout(vigilar, 5000);
+                                        }
+                                    })
+                                    .catch(function () { setTimeout(vigilar, 5000); });
+                            };
+                            setTimeout(vigilar, 5000);
+                        })();
+                    </script>
+                @endif
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                     <form method="POST" action="{{ route('contabilidad.paquete.generar') }}">
                         @csrf

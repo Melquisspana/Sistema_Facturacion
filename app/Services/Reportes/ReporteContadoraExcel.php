@@ -95,7 +95,11 @@ class ReporteContadoraExcel
             $hoja->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $ruta = tempnam(sys_get_temp_dir(), 'reporte_contadora_').'.xlsx';
+        // tempnam() CREA el archivo semilla; el writer necesita la extensión .xlsx, así
+        // que se borra la semilla para no dejar un temporal huérfano por cada Excel.
+        $semilla = tempnam(sys_get_temp_dir(), 'reporte_contadora_');
+        $ruta = $semilla.'.xlsx';
+        @unlink($semilla);
         (new Xlsx($hoja->getParent()))->save($ruta);
 
         return $ruta;
