@@ -5,7 +5,10 @@ namespace App\Services\Dte;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Support\Dte\DatosExportacionPresentacion;
+use App\Support\Dte\ReceptorExportacionPresentacion;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Endroid\QrCode\Builder\Builder;
+use Endroid\QrCode\Writer\PngWriter;
 
 /**
  * Construye la representación gráfica (PDF) de un DTE con la plantilla
@@ -63,7 +66,7 @@ class DtePdfService
             'logoSrc' => $this->logoSrc(),
             'qrDataUri' => $this->qrOficial($dte), // solo si hay sello (datos oficiales)
             'datosExportacion' => DatosExportacionPresentacion::resolver($dte),
-            'datosReceptor' => \App\Support\Dte\ReceptorExportacionPresentacion::resolver($dte),
+            'datosReceptor' => ReceptorExportacionPresentacion::resolver($dte),
         ];
     }
 
@@ -126,23 +129,31 @@ class DtePdfService
     }
 
     /**
-     * QR OFICIAL como data-URI SOLO si el documento ya tiene sello de recepción y los
+     * URL de consulta oficial SOLO si el documento ya tiene sello de recepción y los
      * datos oficiales necesarios. Si falta cualquiera, devuelve null (no se inventa).
      */
-    private function qrOficial(Dte $dte): ?string
+    public function urlConsultaQr(Dte $dte): ?string
     {
         if (blank($dte->sello_recepcion) || blank($dte->codigo_generacion) || ! $dte->fecha_emision) {
             return null;
         }
 
-        $url = rtrim((string) config('dte.pdf.consulta_qr_url', ''), '/')
+        return rtrim((string) config('dte.pdf.consulta_qr_url', ''), '/')
             .'?ambiente='.$dte->ambiente->value
             .'&codGen='.$dte->codigo_generacion
             .'&fechaEmi='.$dte->fecha_emision->format('Y-m-d');
+    }
+
+    private function qrOficial(Dte $dte): ?string
+    {
+        $url = $this->urlConsultaQr($dte);
+        if ($url === null) {
+            return null;
+        }
 
         try {
-            return (new \Endroid\QrCode\Builder\Builder())
-                ->build(writer: new \Endroid\QrCode\Writer\PngWriter(), data: $url, size: 130, margin: 2)
+            return (new Builder)
+                ->build(writer: new PngWriter, data: $url, size: 130, margin: 2)
                 ->getDataUri();
         } catch (\Throwable $e) {
             return null;

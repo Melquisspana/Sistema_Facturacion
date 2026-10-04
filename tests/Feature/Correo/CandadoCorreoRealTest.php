@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaArchivoEntregaDte;
 use Tests\TestCase;
 
 /**
@@ -38,6 +39,7 @@ use Tests\TestCase;
  */
 class CandadoCorreoRealTest extends TestCase
 {
+    use PreparaArchivoEntregaDte;
     use RefreshDatabase;
 
     private const CORREO_CONTA = 'contabilidad@empresa.com';
@@ -133,9 +135,8 @@ class CandadoCorreoRealTest extends TestCase
         ]);
 
         $ruta = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
-        Storage::disk('local')->put($ruta, '{"identificacion":{"x":1}}');
         $dte->json_generado_path = $ruta;
-        $dte->save();
+        $this->prepararArchivoEntrega($dte);
 
         return $dte->refresh();
     }

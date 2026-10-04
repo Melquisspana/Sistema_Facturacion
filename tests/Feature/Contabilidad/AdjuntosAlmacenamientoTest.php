@@ -17,6 +17,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Tests\Concerns\PreparaArchivoEntregaDte;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -34,6 +35,7 @@ use ZipArchive;
  */
 class AdjuntosAlmacenamientoTest extends TestCase
 {
+    use PreparaArchivoEntregaDte;
     use RefreshDatabase;
 
     /** Nombre de un disco que NO existe: la forma más limpia de romper el almacenamiento. */
@@ -235,8 +237,7 @@ class AdjuntosAlmacenamientoTest extends TestCase
 
         $venta = $this->venta();
         $venta->json_generado_path = 'dte/json/dte-03-'.$venta->id.'-'.$venta->codigo_generacion.'.json';
-        $this->assertTrue(Storage::disk('local')->put($venta->json_generado_path, '{"identificacion":{"x":1}}'));
-        $venta->save();
+        $this->prepararArchivoEntrega($venta);
 
         // El archivo tiene que seguir ahí justo antes de que el job lo lea. Si no está, el
         // problema es el disco de prueba y no el adjunto: que lo diga esta línea.
@@ -251,8 +252,8 @@ class AdjuntosAlmacenamientoTest extends TestCase
         $this->assertNull($envio->error);
     }
 
-    /** Un DTE sin JSON generado se envía solo con el PDF, y eso no es un error. */
-    public function test_el_correo_sin_json_no_registra_error(): void
+    /** Un aceptado sin evidencia se envía con PDF y deja la incidencia fiscal. */
+    public function test_el_correo_sin_json_registra_entrega_incompleta(): void
     {
         Storage::fake('local');
         $this->seed(DatosInicialesNegritaSeeder::class);
@@ -267,7 +268,7 @@ class AdjuntosAlmacenamientoTest extends TestCase
         $envio->refresh();
         $this->assertSame('enviado', $envio->estado);
         $this->assertSame('PDF', $envio->adjuntos);
-        $this->assertNull($envio->error, 'no tener JSON es normal: no se reporta como fallo');
+        $this->assertStringContainsString('Entrega fiscal incompleta', $envio->error);
     }
 
     /**

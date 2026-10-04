@@ -49,6 +49,7 @@ use App\Models\Producto;
 use App\Models\PuntoVenta;
 use App\Services\Cobros\NotaCreditoAjuste;
 use App\Services\Dte\AlbaranNotaCreditoService;
+use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
 use App\Services\Dte\DteAnulacionService;
@@ -71,6 +72,7 @@ use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Services\Exportaciones\VincularFexALista;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dinero;
+use App\Support\Dte\ArchivoEntregaDte;
 use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
 use App\Support\Dte\OpcionesInvalidacion;
@@ -934,13 +936,25 @@ class DteController extends Controller
     }
 
     /**
-     * Descargar el JSON oficial PRELIMINAR ya generado. Solo lectura; mismas garantías
-     * que verJson (no regenera, no toca BD, no firma, no transmite).
+     * Descargar la entrega fiscal con firma y sello; fuera de alcance fiscal conserva
+     * el JSON técnico preliminar. Solo lectura: no regenera, firma ni toca BD.
      */
-    public function descargarJson(Dte $dte): StreamedResponse
+    public function descargarJson(Dte $dte): StreamedResponse|RedirectResponse
     {
-        $this->authorize('verJson', $dte);
+        // El mismo permiso de gestor permite diagnosticar un aceptado sin ruta JSON.
+        $this->authorize($dte->estado === EstadoDte::Aceptado ? 'verEstadoTecnico' : 'verJson', $dte);
 
+        $entrega = app(ArchivoEntregaDteService::class)->construir($dte);
+        if ($entrega->completo()) {
+            return response()->streamDownload(fn () => print $entrega->contenido, $entrega->nombre, [
+                'Content-Type' => 'application/json; charset=utf-8',
+            ]);
+        }
+        if ($entrega->estado === ArchivoEntregaDte::INCOMPLETO) {
+            return back()->with('error', $entrega->explicacion().' '.implode('; ', $entrega->recuperacion).'.');
+        }
+
+        $this->authorize('verJson', $dte);
         [$disco, $ruta] = $this->rutaJsonSegura($dte);
 
         return Storage::disk($disco)->download($ruta, basename($ruta), [
