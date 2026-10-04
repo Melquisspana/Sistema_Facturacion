@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Facturacion;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\DteEnvio;
+use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\EnvioDteCorreoService;
 use App\Services\Reportes\ReporteContadoraExcel;
 use App\Services\Reportes\ReporteContadoraQuery;
 use App\Support\Contabilidad\CorreoContabilidad;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -67,19 +67,19 @@ class ReporteContadoraController extends Controller
      * por eso no usa la ruta de JSON de Facturación. SOLO lectura del archivo local:
      * nunca genera el JSON (eso movería la numeración oficial). Sin JSON → 404.
      */
-    public function descargarJson(Dte $dte): StreamedResponse
+    public function descargarJson(Dte $dte): StreamedResponse|RedirectResponse
     {
         abort_unless($dte->aceptadoRealmentePorMh(), 403);
 
-        $disco = (string) config('dte.storage.disk', 'local');
-        abort_unless(filled($dte->json_generado_path) && Storage::disk($disco)->exists($dte->json_generado_path), 404);
-
-        $nombre = ($dte->numero_control ?: 'dte-'.$dte->id).'.json';
+        $entrega = app(ArchivoEntregaDteService::class)->construir($dte);
+        if (! $entrega->completo()) {
+            return back()->with('error', $entrega->explicacion().' '.implode('; ', $entrega->recuperacion).'.');
+        }
 
         return response()->streamDownload(
-            fn () => print (string) Storage::disk($disco)->get($dte->json_generado_path),
-            preg_replace('/[^A-Za-z0-9_.-]+/', '_', $nombre),
-            ['Content-Type' => 'application/json'],
+            fn () => print $entrega->contenido,
+            $entrega->nombre,
+            ['Content-Type' => 'application/json; charset=utf-8'],
         );
     }
 

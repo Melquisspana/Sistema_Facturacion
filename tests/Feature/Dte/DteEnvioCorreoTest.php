@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaArchivoEntregaDte;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -38,6 +39,7 @@ use Tests\TestCase;
  */
 class DteEnvioCorreoTest extends TestCase
 {
+    use PreparaArchivoEntregaDte;
     use PreparaEmisorDte;
     use RefreshDatabase;
 
@@ -99,6 +101,9 @@ class DteEnvioCorreoTest extends TestCase
             $dte->estado = EstadoDte::Aceptado;
         }
         $dte->save();
+
+        // La entrega fiscal exige JSON y JWS coherentes, además del sello.
+        $this->prepararArchivoEntrega($dte);
 
         return $dte->refresh();
     }

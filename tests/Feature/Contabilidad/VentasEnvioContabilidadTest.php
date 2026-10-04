@@ -23,6 +23,7 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaArchivoEntregaDte;
 use Tests\TestCase;
 
 /**
@@ -36,6 +37,7 @@ use Tests\TestCase;
  */
 class VentasEnvioContabilidadTest extends TestCase
 {
+    use PreparaArchivoEntregaDte;
     use RefreshDatabase;
 
     private const CORREO_CONTA = 'contabilidad@empresa.com';
@@ -86,10 +88,9 @@ class VentasEnvioContabilidadTest extends TestCase
 
         if ($conJson) {
             $ruta = 'dte/json/dte-03-'.$dte->id.'-'.$dte->codigo_generacion.'.json';
-            Storage::disk('local')->put($ruta, '{"identificacion":{"x":1}}');
             // json_generado_path no es fillable: se asigna directo (el observer lo permite).
             $dte->json_generado_path = $ruta;
-            $dte->save();
+            $this->prepararArchivoEntrega($dte);
         }
 
         return $dte->refresh();
@@ -330,16 +331,16 @@ class VentasEnvioContabilidadTest extends TestCase
         $this->actingAs($user)
             ->get(route('facturacion.reporte-contadora.json', $dte))
             ->assertOk()
-            ->assertHeader('content-type', 'application/json');
+            ->assertHeader('content-type', 'application/json; charset=utf-8');
     }
 
-    public function test_json_faltante_da_404_y_no_se_genera(): void
+    public function test_json_faltante_redirige_con_error_y_no_se_genera(): void
     {
         $dte = $this->venta(conJson: false);
 
         $this->actingAs($this->usuario('contabilidad'))
             ->get(route('facturacion.reporte-contadora.json', $dte))
-            ->assertNotFound();
+            ->assertRedirect()->assertSessionHas('error');
 
         $this->assertNull($dte->refresh()->json_generado_path); // no se generó nada
     }
