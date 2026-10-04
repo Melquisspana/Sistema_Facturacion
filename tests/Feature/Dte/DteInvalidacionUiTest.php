@@ -11,6 +11,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
@@ -86,7 +87,7 @@ class DteInvalidacionUiTest extends TestCase
             'codigo_generacion' => '00000000-0000-4000-8000-000000000010',
             'sello_recepcion' => $aceptada ? self::NC_SELLO : null,
             'respuesta_mh' => $aceptada ? ['estado' => 'PROCESADO', 'selloRecibido' => self::NC_SELLO] : null,
-            'fecha_procesamiento_mh' => $aceptada ? '2026-06-30 22:48:44' : null,
+            'fecha_procesamiento_mh' => $aceptada ? HoraNegocio::ahora()->format('Y-m-d H:i:s') : null,
             'fecha_emision' => '2026-06-30',
             'hora_emision' => '22:26:52',
         ]);

@@ -205,6 +205,30 @@
     <div class="flex items-start justify-between gap-3 flex-wrap">
         <div>
             <h3 class="font-semibold text-gray-700">Invalidación oficial (evento anulardte)</h3>
+            @if ($dte->fecha_procesamiento_mh)
+                @php
+                    // Solo informativo: una tabla de inhábiles mal escrita no debe tumbar la
+                    // ficha del documento (la validación fiscal sí la rechaza y bloquea).
+                    $plazo = new \App\Support\Dte\PlazoInvalidacion;
+                    $fechaSello = $dte->fecha_procesamiento_mh->format('Y-m-d');
+                    try {
+                        $limite = $plazo->limite($dte->tipo_dte, $fechaSello);
+                        $calendarioCompleto = $plazo->calendarioCompleto($dte->tipo_dte, $fechaSello);
+                    } catch (\InvalidArgumentException $e) {
+                        $limite = null;
+                    }
+                @endphp
+                <p class="mt-1 text-sm text-gray-500">
+                    @if ($limite)
+                        Plazo para transmitir la invalidación: {{ \App\Support\HoraNegocio::aLocal($limite)->format('d/m/Y') }} a las 23:59:59 (hora de El Salvador).
+                        @unless ($calendarioCompleto)
+                            (calculado sin calendario de días inhábiles {{ $plazo->anioCalendario($fechaSello) }}; cargarlo en config/dte.php)
+                        @endunless
+                    @else
+                        No se pudo calcular el plazo: la tabla de días inhábiles de la configuración no es válida.
+                    @endif
+                </p>
+            @endif
             <p class="mt-1 text-sm text-gray-500 max-w-prose">
                 Anula el documento <strong>ante Hacienda</strong>. Solo se marca Invalidado si Hacienda acepta el evento;
                 si lo rechaza o falla el envío, el documento conserva su estado. No se deshace.

@@ -72,6 +72,16 @@ class DteInvalidacionPreflightCommand extends Command
             codigoGeneracionReemplazo: $this->option('reemplazo') ?: null,
         );
 
+        // Un evento fiscalmente inválido no necesita consultar siquiera el firmador.
+        $problemas = $reglas->problemas($dte, $evento);
+        if ($problemas !== []) {
+            foreach ($problemas as $problema) {
+                $this->error($problema);
+            }
+
+            return self::FAILURE;
+        }
+
         $this->warn('*** PREFLIGHT — SOLO LECTURA. NO firma para envío, NO transmite, NO cambia el estado ***');
         $this->newLine();
 

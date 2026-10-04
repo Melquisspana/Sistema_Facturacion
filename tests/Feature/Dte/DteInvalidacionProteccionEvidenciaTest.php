@@ -14,6 +14,7 @@ use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -92,7 +93,7 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
             'codigo_generacion' => self::NC_CODIGO_GENERACION,
             'sello_recepcion' => self::NC_SELLO,
             'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => self::NC_SELLO],
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);
     }
@@ -259,7 +260,7 @@ class DteInvalidacionProteccionEvidenciaTest extends TestCase
             'codigo_generacion' => '00000000-0000-4000-8000-000000000013',
             'sello_recepcion' => '2026000000000000000000000000000000000004',
             'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => '2026000000000000000000000000000000000004'],
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);
     }

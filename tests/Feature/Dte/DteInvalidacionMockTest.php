@@ -13,6 +13,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteInvalidacionMockService;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -60,7 +61,7 @@ class DteInvalidacionMockTest extends TestCase
             'codigo_generacion' => self::NC_CODIGO_GENERACION,
             'sello_recepcion' => $aceptada ? self::NC_SELLO : null,
             'respuesta_mh' => $aceptada ? ['estado' => 'PROCESADO', 'selloRecibido' => self::NC_SELLO] : null,
-            'fecha_procesamiento_mh' => $aceptada ? '2026-06-30 22:48:44' : null,
+            'fecha_procesamiento_mh' => $aceptada ? HoraNegocio::ahora()->format('Y-m-d H:i:s') : null,
             'fecha_emision' => '2026-06-30',
             'hora_emision' => '22:26:52',
         ]);

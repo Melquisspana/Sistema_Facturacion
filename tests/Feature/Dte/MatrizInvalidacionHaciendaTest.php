@@ -18,8 +18,11 @@ use App\Services\Dte\DteInvalidacionMockService;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\DteSchemaValidator;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
+use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\PoliticaInvalidacion;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -45,10 +48,8 @@ use Tests\TestCase;
  *    el preview/preflight de consola, el serializador, el mock y la transmisión real, y
  *    que ninguna denegación produzca efectos fiscales, archivos ni llamadas al firmador
  *    o a Hacienda.
- *  · NO: los PLAZOS de transmisión del evento. Siguen sin implementarse por una
- *    inconsistencia de la fuente (manual, págs. 11-12) descrita en
- *    docs/dte/AUDITORIA_HACIENDA_2_0_2026-09-20.md, punto 2. Esta suite no los da por
- *    resueltos ni los da por inexistentes.
+ *  · SÍ: bloqueo por plazo en las vías de invalidación. Las fechas y los bordes del
+ *    calendario se prueban en PlazoInvalidacionTest (decisión 0005).
  *  · NO: aceptación real del MH. Toda la red va con Http::fake; un test verde aquí NO
  *    acredita que Hacienda acepte el evento.
  *
@@ -58,6 +59,57 @@ use Tests\TestCase;
 class MatrizInvalidacionHaciendaTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_plazo_invalidacion_bloquea_todas_las_vias_sin_efectos(): void
+    {
+        $this->fakeHttp();
+        config(['dte.invalidacion.dias_inhabiles' => ['2026' => ['2026-05-01']]]);
+        $ccf = $this->aceptado(TipoDte::CreditoFiscal);
+        $ccf->forceFill(['fecha_procesamiento_mh' => '2026-04-25 23:30:00'])->saveQuietly();
+        $evento = $this->evento(TipoAnulacionMh::RescindirOperacion);
+        $this->travelTo(Carbon::parse('2026-05-15 23:59:59', 'America/El_Salvador'));
+        $this->assertSame([], app(ValidadorReglasInvalidacion::class)->problemas($ccf, $evento));
+        $this->assertFalse(app(DteInvalidacionService::class)->dryRun($ccf, $evento, true, true)['candados']['bloqueado']);
+        $this->artisan('dte:invalidacion-preview', ['dte' => $ccf->id, '--tipo' => 2])->assertSuccessful();
+        $this->actingAs($this->admin())->get(route('facturacion.show', $ccf))
+            ->assertOk()->assertSee('15/05/2026')->assertSee('23:59:59 (hora de El Salvador)');
+
+        $this->travelTo(Carbon::parse('2026-05-16 00:00:00', 'America/El_Salvador'));
+        $this->assertStringContainsString('Fuera de plazo', implode(' ', app(ValidadorReglasInvalidacion::class)->problemas($ccf, $evento)));
+        $this->actingAs($this->admin())->post(route('facturacion.invalidacion.transmitir', $ccf), [
+            'tipo' => 2, 'confirmacion_invalidacion' => 'INVALIDAR DTE',
+        ])->assertSessionHasErrors('confirmacion_invalidacion');
+
+        foreach ([DteInvalidacionMockService::class, DteInvalidacionService::class, SerializadorInvalidacionMh::class] as $servicio) {
+            try {
+                match ($servicio) {
+                    DteInvalidacionMockService::class => app($servicio)->firmarMock($ccf, $evento, persistir: true, permitirSinMock: true),
+                    DteInvalidacionService::class => app($servicio)->transmitir($ccf, $evento, true, true),
+                    default => app($servicio)->serializar($ccf, $evento),
+                };
+                $this->fail('Debió bloquear el plazo: '.$servicio);
+            } catch (DteInvalidacionException|DteNoSerializableException $e) {
+                $detalle = $e instanceof DteNoSerializableException ? implode(' ', $e->problemas) : $e->getMessage();
+                $this->assertStringContainsString('Fuera de plazo', $detalle);
+            }
+        }
+        Http::assertNothingSent();
+        foreach (['dte:invalidacion-preview', 'dte:invalidacion-preflight'] as $comando) {
+            $this->artisan($comando, ['dte' => $ccf->id, '--tipo' => 2])->assertFailed();
+        }
+        $this->artisan('dte:invalidacion-real', [
+            'dte' => $ccf->id, '--tipo' => 2, '--transmitir-real' => true, '--confirmo-invalidar' => true,
+        ])->assertFailed();
+        Http::assertNothingSent();
+        $ccf->refresh();
+        $this->assertSame(EstadoDte::Aceptado, $ccf->estado);
+        $this->assertNull($ccf->sello_invalidacion);
+        $this->assertNull($ccf->json_invalidacion_path);
+        $this->assertNull($ccf->jws_invalidacion_path);
+        $this->assertNull($ccf->codigo_generacion_invalidacion);
+        $this->assertNull($ccf->respuesta_mh_invalidacion);
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
 
     private const NIT_EMISOR = '06140000000901';
 
@@ -135,7 +187,7 @@ class MatrizInvalidacionHaciendaTest extends TestCase
             'codigo_generacion' => strtoupper((string) Str::uuid()),
             'sello_recepcion' => $sello,
             'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => $sello],
-            'fecha_procesamiento_mh' => $selloMock ? null : '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => $selloMock ? null : HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20',
             'hora_emision' => '22:26:52',
             'total_pagar' => 113.00,

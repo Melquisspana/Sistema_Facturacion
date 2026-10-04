@@ -12,6 +12,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Models\User;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -98,7 +99,7 @@ class InvalidacionEntradaNoEscalarTest extends TestCase
             'codigo_generacion' => strtoupper((string) Str::uuid()),
             'sello_recepcion' => self::SELLO,
             'respuesta_mh' => ['estado' => 'PROCESADO', 'selloRecibido' => self::SELLO],
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20', 'hora_emision' => '22:26:52',
         ]);
     }

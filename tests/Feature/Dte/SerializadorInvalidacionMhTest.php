@@ -15,6 +15,7 @@ use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteSchemaValidator;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -73,7 +74,7 @@ class SerializadorInvalidacionMhTest extends TestCase
         ]);
         $dte->estado = $aceptada ? EstadoDte::Aceptado : EstadoDte::Generado;
         // aceptadoRealmentePorMh() exige huella de procesamiento real del MH.
-        $dte->fecha_procesamiento_mh = $aceptada ? Carbon::parse('2026-06-30 22:48:44') : null;
+        $dte->fecha_procesamiento_mh = $aceptada ? HoraNegocio::ahora()->format('Y-m-d H:i:s') : null;
 
         $estab->setRelation('empresa', $empresa);
         $dte->setRelation('establecimiento', $estab);

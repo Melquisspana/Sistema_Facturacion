@@ -302,15 +302,17 @@ return [
 
     /*
     | Evento de INVALIDACIÓN oficial (anulación de un DTE ya aceptado por el MH).
-    | FASE DE PREPARACIÓN: solo se genera y valida el evento JSON; NO se firma ni se
-    | transmite a /fesv/anulardte todavía. Los datos del responsable/solicitante son
-    | obligatorios en el schema y hoy NO están en la BD: se leen de .env.
+    | La firma y transmisión a /fesv/anulardte exigen los candados explícitos de abajo.
+    | Los datos del responsable/solicitante son obligatorios en el schema y se configuran
+    | por entorno.
     |
-    | TODO (pendiente de confirmar en el Manual Técnico del MH, no está en texto en el
-    | repo): qué tipoAnulacion (CAT-024) corresponde para una NC tipo 05 aceptada y si
-    | aplica ventana de tiempo. Mientras no se confirme, el tipo se pasa EXPLÍCITO.
+    | El tipoAnulacion (CAT-024) se pasa EXPLÍCITO y se valida con la matriz fiscal.
+    | El plazo de transmisión se calcula desde el sello (decisión 0005).
     */
     'invalidacion' => [
+        // Se carga con el calendario oficial del MH; no se inventan fechas.
+        // Formato: ['2026' => ['2026-05-01', ...]]. Sin tabla se calcula sin feriados.
+        'dias_inhabiles' => [],
         // Versión del schema del evento (invalidacion-schema-v3.json).
         'version' => (int) env('DTE_INVALIDACION_VERSION', 3),
         // MODO MOCK (Fase C): firma SIMULADA del evento, sin firmador real y sin
