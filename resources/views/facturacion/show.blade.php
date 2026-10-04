@@ -658,7 +658,7 @@
                                         </a>
                                         <a href="{{ route('facturacion.json.descargar', $dte) }}"
                                            class="inline-flex items-center px-4 py-2 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800">
-                                            Descargar JSON generado
+                                            {{ $dte->aceptadoRealmentePorMh() ? 'Descargar JSON con firma y sello' : 'Descargar JSON generado' }}
                                         </a>
                                     </div>
                                 @endcan
@@ -778,7 +778,7 @@
                                 @if ($dte->json_generado_path)
                                     @can('verJson', $dte)
                                         <a href="{{ route('facturacion.json', $dte) }}" target="_blank" class="inline-flex items-center px-3 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">Ver JSON generado</a>
-                                        <a href="{{ route('facturacion.json.descargar', $dte) }}" class="inline-flex items-center px-3 py-2 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800">Descargar JSON</a>
+                                        <a href="{{ route('facturacion.json.descargar', $dte) }}" class="inline-flex items-center px-3 py-2 bg-gray-700 text-white text-sm rounded-md hover:bg-gray-800">{{ $dte->aceptadoRealmentePorMh() ? 'Descargar JSON con firma y sello' : 'Descargar JSON' }}</a>
                                     @endcan
                                 @endif
                                 @if ($dte->json_firmado_path)

@@ -8,6 +8,7 @@ use App\Mail\DteCorreo;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
+use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\DtePdfService;
 use App\Support\Archivos\ArchivoAlmacenado;
 use App\Support\Contabilidad\CorreoContabilidad;
@@ -90,16 +91,14 @@ class EnviarDteCorreo implements ShouldQueue
                 $mail->send(new DteCorreo($dte, $bytes, $extra, $plantilla, $envio->canal));
             }
 
-            // Un fallo de ALMACENAMIENTO queda escrito en el historial aunque el correo
-            // haya salido: el envío fue real, pero incompleto por un problema del
-            // servidor, y quien lo mire después tiene que poder distinguirlo de un DTE
-            // que simplemente no tenía JSON.
-            $aviso = $incidencias === [] ? null : 'Adjuntos no incluidos por error de almacenamiento — '.implode(' · ', $incidencias);
+            // La falta de entrega fiscal y los errores de almacenamiento quedan
+            // visibles en el historial, también cuando el candado simula el envío.
+            $aviso = $incidencias === [] ? null : implode(' · ', $incidencias);
 
             $envio->update([
                 'estado' => $simular ? 'simulado' : 'enviado',
                 'adjuntos' => implode(', ', array_merge(['PDF'], $nombres)),
-                'error' => $simular ? $candado->motivo() : $aviso,
+                'error' => $simular ? implode(' · ', array_filter([$candado->motivo(), $aviso])) : $aviso,
             ]);
             $this->auditar($envio, $bccContabilidad);
         } catch (\Throwable $e) {
@@ -129,18 +128,9 @@ class EnviarDteCorreo implements ShouldQueue
     }
 
     /**
-     * Adjuntos extra: JSON oficial (si existe) y JWS firmado (si existe y está
-     * habilitado en Configuración: correo.adjuntar_jws).
-     *
-     * POR QUÉ NO ALCANZA CON `exists()`. Los discos del proyecto están declarados con
-     * `throw => false`, así que un disco mal configurado, un permiso denegado o un
-     * nombre de disco inexistente hacen que `exists()` devuelva `false` sin decir nada:
-     * el JSON no viajaba y el correo salía igual, marcado como enviado, sin un solo
-     * error. Un archivo que el DTE nunca generó y un disco roto se veían idénticos.
-     *
-     * {@see ArchivoAlmacenado} los separa. Un JSON simplemente ausente es normal (no
-     * todos los DTE lo tienen) y no se reporta; un ERROR de almacenamiento sí, con el
-     * disco y el motivo, en el log y en la columna `adjuntos` del historial de envío.
+     * Adjuntos extra: entrega fiscal completa y JWS opcional. El servicio distingue
+     * evidencia faltante, almacenamiento fallido y documentos sin alcance fiscal;
+     * cada incidencia queda en el log y en el historial sin impedir el envío del PDF.
      *
      * @return array{0: array<int, array{contenido: string, nombre: string, mime: string}>, 1: array<int, string>, 2: array<int, string>}
      */
@@ -151,12 +141,12 @@ class EnviarDteCorreo implements ShouldQueue
         $nombres = [];
         $incidencias = [];
 
-        $json = ArchivoAlmacenado::leer($disco, $dte->json_generado_path);
-        if ($json->presente()) {
-            $extra[] = ['contenido' => (string) $json->contenido, 'nombre' => 'dte-'.$dte->id.'.json', 'mime' => 'application/json'];
+        $entrega = app(ArchivoEntregaDteService::class)->construir($dte);
+        if ($entrega->completo()) {
+            $extra[] = ['contenido' => $entrega->contenido, 'nombre' => $entrega->nombre, 'mime' => 'application/json'];
             $nombres[] = 'JSON';
-        } elseif ($json->fallo()) {
-            $incidencias[] = 'JSON: '.$json->explicacion();
+        } else {
+            $incidencias[] = $entrega->explicacion();
         }
 
         if (Ajustes::bool('correo.adjuntar_jws', false)) {
@@ -165,7 +155,7 @@ class EnviarDteCorreo implements ShouldQueue
                 $extra[] = ['contenido' => (string) $jws->contenido, 'nombre' => 'dte-'.$dte->id.'.jws', 'mime' => 'application/jose'];
                 $nombres[] = 'JWS';
             } elseif ($jws->fallo()) {
-                $incidencias[] = 'JWS: '.$jws->explicacion();
+                $incidencias[] = 'Adjuntos no incluidos por error de almacenamiento — JWS: '.$jws->explicacion();
             }
         }
 
