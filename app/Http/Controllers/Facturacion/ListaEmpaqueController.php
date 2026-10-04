@@ -16,6 +16,7 @@ use App\Services\Exportaciones\ListaEmpaqueExcelService;
 use App\Services\Exportaciones\ListaPreciosExportacion;
 use App\Services\Exportaciones\VincularFexALista;
 use App\Support\Exportaciones\DatosExportador;
+use App\Support\HoraNegocio;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -234,7 +235,7 @@ class ListaEmpaqueController extends Controller
 
         $copia = DB::transaction(function () use ($lista) {
             $copia = $lista->replicate(['dte_id', 'finalizada_en', 'finalizada_por_user_id', 'requiere_revision', 'revision_motivo']);
-            $copia->fecha = now()->toDateString();
+            $copia->fecha = HoraNegocio::fechaHoy();
             $copia->estado = Exportacion::ESTADO_BORRADOR;
             $copia->dte_id = null;
             $copia->finalizada_en = null;

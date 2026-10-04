@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
@@ -92,6 +93,16 @@ class DteNotaCreditoDesdeCcfTest extends TestCase
     private function editHtml(Dte $nc)
     {
         return $this->actingAs($this->usuario('facturacion'))->get(route('facturacion.edit', $nc));
+    }
+
+    public function test_nc_fija_fecha_y_hora_local_al_crear(): void
+    {
+        config(['app.zona_negocio' => 'America/El_Salvador']);
+        $ccf = $this->ccfGenerado($this->emisor());
+        $this->travelTo(Carbon::parse('2026-10-04 01:00:00', 'UTC'));
+        $nc = $this->borradores->crearNotaCredito($ccf)->fresh();
+        $this->assertSame('2026-10-03', $nc->fecha_emision->format('Y-m-d'));
+        $this->assertSame('19:00:00', $nc->hora_emision);
     }
 
     // --- Formulario en el CCF ---

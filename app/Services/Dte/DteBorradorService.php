@@ -28,6 +28,7 @@ use App\Models\User;
 use App\Support\Dinero;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
+use App\Support\HoraNegocio;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -87,6 +88,7 @@ class DteBorradorService
         // La retención NO se decide aquí ni se acepta del request: se evalúa
         // automáticamente al recalcular (agente de retención + umbral de monto).
         return DB::transaction(function () use ($datos, $tipo, $cliente, $sucursal, $numeroOrdenCompra, $usuario) {
+            $ahora = HoraNegocio::ahora();
             $dte = Dte::create([
                 'tipo_dte' => $tipo->value,
                 'estado' => EstadoDte::Borrador->value,
@@ -99,8 +101,8 @@ class DteBorradorService
                 'dte_relacionado_id' => $datos['dte_relacionado_id'] ?? null,
                 'condicion_operacion' => $datos['condicion_operacion'] ?? 1,
                 'numero_orden_compra' => $numeroOrdenCompra,
-                'fecha_emision' => $datos['fecha_emision'] ?? now()->toDateString(),
-                'hora_emision' => $datos['hora_emision'] ?? now()->toTimeString(),
+                'fecha_emision' => $datos['fecha_emision'] ?? $ahora->format('Y-m-d'),
+                'hora_emision' => $datos['hora_emision'] ?? $ahora->format('H:i:s'),
                 'observaciones' => $datos['observaciones'] ?? null,
                 'moneda' => $datos['moneda'] ?? 'USD',
                 // El descuento del cliente/sucursal es un PORCENTAJE. El monto se
@@ -360,6 +362,7 @@ class DteBorradorService
         $ordenCompra = $original?->numero_orden_compra;
 
         return DB::transaction(function () use ($original, $datos, $tipo, $clienteId, $sucursalId, $ordenCompra, $salaAveria, $usuario) {
+            $ahora = HoraNegocio::ahora();
             $nc = Dte::create([
                 'tipo_dte' => TipoDte::NotaCredito->value,
                 'tipo_nota_credito' => $tipo->value,
@@ -378,8 +381,8 @@ class DteBorradorService
                 'numero_orden_compra' => $ordenCompra,
                 'motivo' => $datos['motivo'] ?? null,
                 'sucursal_averia_id' => $salaAveria,
-                'fecha_emision' => now()->toDateString(),
-                'hora_emision' => now()->toTimeString(),
+                'fecha_emision' => $ahora->format('Y-m-d'),
+                'hora_emision' => $ahora->format('H:i:s'),
                 'moneda' => $original?->moneda ?? 'USD',
                 'descuento_global' => '0.00',
                 'aplica_retencion_iva' => false,
@@ -616,6 +619,7 @@ class DteBorradorService
         );
 
         return DB::transaction(function () use ($datos, $tipo, $clienteId, $salaId, $emisor, $usuario) {
+            $ahora = HoraNegocio::ahora();
             $nc = Dte::create([
                 'tipo_dte' => TipoDte::NotaCredito->value,
                 'tipo_nota_credito' => $tipo->value,
@@ -634,8 +638,8 @@ class DteBorradorService
                 // Sala a la que CORRESPONDE la avería: la declarada. No hay CCF del que
                 // difiera todavía, y cuando lo haya seguirá siendo esta.
                 'sucursal_averia_id' => $salaId,
-                'fecha_emision' => now()->toDateString(),
-                'hora_emision' => now()->toTimeString(),
+                'fecha_emision' => $ahora->format('Y-m-d'),
+                'hora_emision' => $ahora->format('H:i:s'),
                 'moneda' => 'USD',
                 'descuento_global' => '0.00',
                 'aplica_retencion_iva' => false,
