@@ -19,6 +19,7 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Support\Dte\OpcionesInvalidacion;
 use App\Support\Dte\PoliticaInvalidacion;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -129,7 +130,9 @@ class AccionesDocumentoUiTest extends TestCase
             'numero_control' => 'DTE-'.$tipo->value.'-M001P001-'.str_pad((string) $secuencia, 15, '0', STR_PAD_LEFT),
             'codigo_generacion' => strtoupper((string) Str::uuid()),
             'sello_recepcion' => '2026'.strtoupper(Str::random(36)),
-            'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
+            // Sello reciente (hora local guardada como UTC, decisión 0004): el plazo de
+            // invalidación (decisión 0005) no debe vencer con el paso del tiempo.
+            'fecha_procesamiento_mh' => HoraNegocio::ahora()->format('Y-m-d H:i:s'),
             'fecha_emision' => '2026-07-20',
             'hora_emision' => '22:26:52',
             'total_pagar' => 113.00,
