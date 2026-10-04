@@ -133,7 +133,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700">Fecha *</label>
-                <input type="date" name="fecha" value="{{ old('fecha', optional($e?->fecha)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" required
+                <input type="date" name="fecha" value="{{ old('fecha', optional($e?->fecha)->format('Y-m-d') ?? \App\Support\HoraNegocio::ahora()->format('Y-m-d')) }}" required
                        class="mt-1 w-full rounded-md border-gray-300 text-sm">
                 @error('fecha') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>

@@ -13,24 +13,33 @@ use App\Services\Dte\MapeadorDteSalida;
 use App\Services\Dte\Serializadores\SerializadorFacturaMh;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
-class FechaEmisionDteUtcCaracterizacionTest extends TestCase
+class FechaEmisionDteHoraLocalTest extends TestCase
 {
     use PreparaEmisorDte;
     use RefreshDatabase;
 
-    /**
-     * Caracteriza fecEmi/horEmi en UTC. NO es el comportamiento deseado: lo corrige
-     * el issue #46 tras ensayo con Hacienda; esta prueba evita que las etapas de
-     * la decisión 0004 lo cambien sin querer. Al resolver #46 se actualiza.
-     */
-    public function test_borrador_y_json_conservan_fecha_y_hora_de_emision_utc(): void
+    public static function instantes(): array
+    {
+        return [
+            ['2026-10-03 23:59:00', '2026-10-03', '17:59:00', null],
+            ['2026-10-04 00:00:00', '2026-10-03', '18:00:00', null],
+            ['2026-10-04 05:59:00', '2026-10-03', '23:59:00', null],
+            ['2026-10-04 06:00:00', '2026-10-04', '00:00:00', null],
+            ['2026-10-04 11:59:00', '2026-10-04', '05:59:00', null],
+            ['2026-10-04 01:00:00', '2026-10-03', '19:00:00', '2026-10-05 15:00:00'],
+        ];
+    }
+
+    #[DataProvider('instantes')]
+    public function test_borrador_y_json_conservan_emision_local(string $instante, string $fecha, string $hora, ?string $generarEn): void
     {
         $this->assertSame('UTC', config('app.timezone'));
         config(['app.zona_negocio' => 'America/El_Salvador']);
-        $this->travelTo(Carbon::parse('2026-10-04 01:00:00', 'UTC'));
+        $this->travelTo(Carbon::parse($instante, 'UTC'));
         $this->seedCatalogosDte();
         ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte();
         $correlativo = Correlativo::create([
@@ -46,18 +55,23 @@ class FechaEmisionDteUtcCaracterizacionTest extends TestCase
             'cliente_id' => null,
         ], $usuario);
         $dte->refresh();
-        $this->assertSame('2026-10-04', $dte->fecha_emision->format('Y-m-d'));
-        $this->assertSame('01:00:00', $dte->hora_emision);
+        $this->assertSame($fecha, $dte->fecha_emision->format('Y-m-d'));
+        $this->assertSame($hora, $dte->hora_emision);
 
         $producto = Producto::factory()->create([
             'unidad_medida_id' => UnidadMedida::whereNotNull('codigo')->firstOrFail()->id,
             'precio_unitario' => 1.13,
         ]);
         $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 1);
+        if ($generarEn !== null) {
+            $this->travelTo(Carbon::parse($generarEn, 'UTC'));
+        }
         app(DteGeneracionService::class)->generar($dte, $usuario);
+        $this->assertSame($fecha, $dte->fresh()->fecha_emision->format('Y-m-d'));
+        $this->assertSame($hora, $dte->fresh()->hora_emision);
         $salida = app(MapeadorDteSalida::class)->mapear($dte->fresh());
         $json = app(SerializadorFacturaMh::class)->serializar($salida);
-        $this->assertSame('2026-10-04', $json['identificacion']['fecEmi']);
-        $this->assertSame('01:00:00', $json['identificacion']['horEmi']);
+        $this->assertSame($fecha, $json['identificacion']['fecEmi']);
+        $this->assertSame($hora, $json['identificacion']['horEmi']);
     }
 }

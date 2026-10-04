@@ -4,6 +4,8 @@ namespace App\Services\Dte;
 
 use App\Models\Producto;
 use App\Models\ProductoPrecioCliente;
+use App\Support\HoraNegocio;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -38,7 +40,7 @@ class PrecioProductoResolver
      */
     public function resolverConOrigen(Producto $producto, ?int $clienteId = null, ?int $sucursalId = null, ?Carbon $fecha = null): array
     {
-        $fecha ??= Carbon::today();
+        $fecha ??= HoraNegocio::hoy();
 
         if ($sucursalId !== null) {
             $precio = $this->buscarPorSucursal($producto->id, $sucursalId, $fecha);
@@ -80,7 +82,7 @@ class PrecioProductoResolver
         );
     }
 
-    private function precioVigente(\Illuminate\Database\Eloquent\Builder $query, Carbon $fecha): ?string
+    private function precioVigente(Builder $query, Carbon $fecha): ?string
     {
         $precio = $query
             ->where('activo', true)

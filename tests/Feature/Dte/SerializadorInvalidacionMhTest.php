@@ -135,7 +135,7 @@ class SerializadorInvalidacionMhTest extends TestCase
         // NO COINCIDE CON DTE"): identificacion.fecEmi debe ser la fecha del DTE original
         // (2026-06-30), NO la fecha actual. Congelamos "now" en una fecha DISTINTA para
         // que el comportamiento anterior (now()) fallara.
-        Carbon::setTestNow('2026-07-15 09:30:00');
+        Carbon::setTestNow(Carbon::parse('2026-10-04 01:00:00', 'UTC'));
         try {
             $dte = $this->ncAceptada();
             $evento = app(SerializadorInvalidacionMh::class)->serializar($dte, $this->evento());
@@ -143,7 +143,7 @@ class SerializadorInvalidacionMhTest extends TestCase
             $this->assertSame('2026-06-30', $evento['identificacion']['fecEmi'], 'fecEmi del evento debe ser la fecha del DTE, no now().');
             $this->assertSame($evento['documento']['fecEmi'], $evento['identificacion']['fecEmi'], 'identificacion.fecEmi y documento.fecEmi deben coincidir.');
             // horEmi SÍ es la del momento del evento (now); se documenta el comportamiento.
-            $this->assertSame('09:30:00', $evento['identificacion']['horEmi']);
+            $this->assertSame('19:00:00', $evento['identificacion']['horEmi']);
         } finally {
             Carbon::setTestNow();
         }

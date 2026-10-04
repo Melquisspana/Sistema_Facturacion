@@ -79,11 +79,11 @@
                         \App\Enums\TipoDte::FacturaExportacion->value => 'Factura de exportación',
                         \App\Enums\TipoDte::NotaCredito->value => 'Nota de crédito',
                     ];
-                    $hoy = now()->toDateString();
-                    $semIni = now()->startOfWeek()->toDateString();
-                    $semFin = now()->endOfWeek()->toDateString();
-                    $mesIni = now()->startOfMonth()->toDateString();
-                    $mesFin = now()->endOfMonth()->toDateString();
+                    $hoy = \App\Support\HoraNegocio::ahora()->toDateString();
+                    $semIni = \App\Support\HoraNegocio::ahora()->startOfWeek()->toDateString();
+                    $semFin = \App\Support\HoraNegocio::ahora()->endOfWeek()->toDateString();
+                    $mesIni = \App\Support\HoraNegocio::ahora()->startOfMonth()->toDateString();
+                    $mesFin = \App\Support\HoraNegocio::ahora()->endOfMonth()->toDateString();
 
                     // Contador de filtros activos: solo valores reales (sin contar "Todos"/vacíos).
                     $filtrosActivos = collect([

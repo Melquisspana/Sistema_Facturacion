@@ -8,7 +8,7 @@ use App\Models\Dte;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\Dte\PoliticaInvalidacion;
-use Illuminate\Support\Carbon;
+use App\Support\HoraNegocio;
 
 /**
  * Serializa el EVENTO DE INVALIDACIÓN oficial de un DTE ya aceptado por el MH, a la
@@ -97,10 +97,10 @@ class SerializadorInvalidacionMh
         $fecEmiDte = $dte->fecha_emision?->format('Y-m-d') ?? '';
 
         // horEmi: el MH NO rechazó la hora (solo fecEmi). El evento es un acto distinto
-        // al DTE, así que su hora es la del momento de la invalidación (now()). Si un
+        // al DTE, así que su hora es la del momento de la invalidación (hora de El Salvador). Si un
         // rechazo futuro indicara que horEmi también debe coincidir con la del DTE
         // (dte.hora_emision), se cambiaría aquí; por ahora se deja documentado.
-        $horEmiEvento = Carbon::now()->format('H:i:s');
+        $horEmiEvento = HoraNegocio::ahora()->format('H:i:s');
 
         return [
             'version' => (int) config('dte.invalidacion.version', 3),
@@ -108,7 +108,7 @@ class SerializadorInvalidacionMh
             // UUID NUEVO del evento: SIEMPRE distinto al codigoGeneracion del DTE.
             'codigoGeneracion' => CodigoGeneracion::generar(),
             'fecEmi' => $fecEmiDte,      // = documento.fecEmi (fecha del DTE invalidado)
-            'horEmi' => $horEmiEvento,   // hora del evento (now); ver nota arriba
+            'horEmi' => $horEmiEvento,   // hora local del evento; ver nota arriba
             'fusion' => null,
         ];
     }

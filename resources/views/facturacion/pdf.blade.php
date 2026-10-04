@@ -596,7 +596,7 @@
     </div>
 
     <div class="pie">
-        Representación gráfica generada el {{ now()->format('d/m/Y H:i') }}.
+        Representación gráfica generada el {{ \App\Support\HoraNegocio::ahora()->format('d/m/Y H:i') }}.
         @if ($preliminar) Documento PRELIMINAR — no equivale a un DTE emitido ante Hacienda hasta completar transmisión y sello de recepción. @endif
         @if ($esNc && ! $tieneSello) Pendiente validación contra esquema oficial MH. @endif
     </div>
