@@ -41,7 +41,7 @@ class DocumentosRecibidosExcel
      */
     public function generar(Collection $documentos): string
     {
-        $hoja = (new Spreadsheet())->getActiveSheet();
+        $hoja = (new Spreadsheet)->getActiveSheet();
         $hoja->setTitle('Documentos recibidos');
 
         foreach (self::COLUMNAS as $i => $titulo) {
