@@ -334,6 +334,9 @@ class PaqueteContabilidadTest extends TestCase
 
         $this->actingAs($this->usuario('contabilidad'))
             ->post(route('contabilidad.paquete.generar'), ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 1, 'incluir_ventas' => 1])
+            ->assertRedirect();
+
+        $this->get(route('contabilidad.paquete.descargar', ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 1, 'incluir_ventas' => 1]))
             ->assertOk()
             ->assertDownload('documentos_contabilidad_2026-07.zip');
 
@@ -354,6 +357,9 @@ class PaqueteContabilidadTest extends TestCase
         // afirmar que esté completo, así que el ZIP sale marcado. Sigue descargándose.
         $this->actingAs($this->usuario('administrador'))
             ->post(route('contabilidad.paquete.generar'), ['mes' => 1, 'anio' => 2020])
+            ->assertRedirect();
+
+        $this->get(route('contabilidad.paquete.descargar', ['mes' => 1, 'anio' => 2020]))
             ->assertOk()
             ->assertDownload('documentos_contabilidad_2020-01_INCOMPLETO.zip');
     }
@@ -368,7 +374,8 @@ class PaqueteContabilidadTest extends TestCase
 
         $this->actingAs($this->usuario('administrador'))
             ->post(route('contabilidad.paquete.generar'), ['mes' => 7, 'anio' => 2026])
-            ->assertOk();
+            ->assertRedirect()
+            ->assertSessionHas('status');
 
         $this->assertSame($dtes, Dte::count());
         $this->assertEquals($correl, Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());

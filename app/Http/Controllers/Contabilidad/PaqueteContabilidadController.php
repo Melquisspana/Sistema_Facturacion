@@ -2,43 +2,50 @@
 
 namespace App\Http\Controllers\Contabilidad;
 
-use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Http\Controllers\Controller;
-use App\Mail\PaqueteContabilidadCorreo;
-use App\Models\DocumentoRecibido;
+use App\Jobs\EnviarPaqueteContabilidad;
+use App\Jobs\GenerarPaqueteContabilidad;
+use App\Services\Contabilidad\AuditoriaPaquete;
 use App\Services\Contabilidad\CoberturaPaquete;
+use App\Services\Contabilidad\EstadoPaquete;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
-use App\Services\Reportes\ReporteContadoraQuery;
+use App\Services\Contabilidad\PeriodoPaquete;
 use App\Support\Contabilidad\CorreoContabilidad;
-use App\Support\Correo\CandadoCorreoReal;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Throwable;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Paquete mensual para contabilidad (herramienta INTERNA; la contadora no entra al
  * sistema). Junta COMPRAS (documentos recibidos) y VENTAS (reporte contadora) por
  * rango, muestra un resumen y genera un ZIP para enviarlo por fuera.
  *
- * SOLO LECTURA: no vuelve a descargar correos, no envía nada, no toca DTE emitidos,
- * correlativos, firmador ni transmisión. No cambia estados al generar el ZIP.
+ * El ZIP y el envío se arman EN SEGUNDO PLANO ({@see GenerarPaqueteContabilidad},
+ * {@see EnviarPaqueteContabilidad}): un mes completo regenera un PDF por venta y pasaba
+ * de los 100 s que Cloudflare espera una respuesta. La pantalla consulta el estado
+ * ({@see EstadoPaquete}) hasta que está listo.
+ *
+ * SOLO LECTURA: no vuelve a descargar correos, no toca DTE emitidos, correlativos,
+ * firmador ni transmisión. No cambia estados al generar el ZIP.
  */
 class PaqueteContabilidadController extends Controller
 {
     /** Frase exacta que el usuario debe escribir para confirmar el envío. */
     public const FRASE_ENVIO = 'ENVIAR A CONTABILIDAD';
 
+    public function __construct(private readonly PeriodoPaquete $periodo) {}
+
     public function index(Request $request, CoberturaPaquete $cobertura): View
     {
-        $rango = $this->rango($request);
-        $compras = $this->compras($rango);
-        $ventas = $this->ventas($rango);
+        $rango = $this->periodo->rango($request);
+        $compras = $this->periodo->compras($rango);
+        $ventas = $this->periodo->ventas($rango);
         $incluirCompras = $request->boolean('incluir_compras', true);
         $incluirVentas = $request->boolean('incluir_ventas', true);
 
@@ -72,6 +79,8 @@ class PaqueteContabilidadController extends Controller
         // algo que el servidor va a rechazar.
         $bloqueaCobertura = $incluirCompras && $cob['bloquea_envio'];
 
+        $usuarioId = (int) $request->user()->id;
+
         return view('contabilidad.paquete', [
             'rango' => $rango,
             'incluirCompras' => $incluirCompras,
@@ -83,6 +92,9 @@ class PaqueteContabilidadController extends Controller
             'bloqueaCobertura' => $bloqueaCobertura,
             'fraseEnvio' => self::FRASE_ENVIO,
             'ultimoEnvio' => $this->ultimoEnvioExitoso(),
+            'estadoZip' => EstadoPaquete::para($usuarioId, 'zip', $rango, $incluirCompras, $incluirVentas)->leer(),
+            'estadoEnvio' => EstadoPaquete::para($usuarioId, 'envio', $rango, $incluirCompras, $incluirVentas)->leer(),
+            'filtros' => $this->filtros($request, $rango, $incluirCompras, $incluirVentas),
         ]);
     }
 
@@ -117,17 +129,15 @@ class PaqueteContabilidadController extends Controller
     }
 
     /**
-     * Descarga el ZIP del período.
+     * Pide el ZIP del período: lo arma un job y la pantalla avisa cuando está listo.
      *
      * La descarga NO se bloquea aunque el período esté incompleto: es la forma de
      * revisar qué hay mientras se recupera lo que falta, y a veces la contadora necesita
      * un avance. Lo que no puede pasar es que un paquete incompleto se confunda con uno
      * cerrado, así que el aviso viaja CON el archivo: el nombre lleva `_INCOMPLETO` y el
-     * LEEME.txt abre con los días faltantes. La cobertura se recalcula acá y no se
-     * hereda de la pantalla: entre que se miró el resumen y se apretó el botón pueden
-     * haber pasado diez minutos.
+     * LEEME.txt abre con los días faltantes. La cobertura la recalcula el job.
      */
-    public function generar(Request $request, PaqueteContabilidadZip $zip, CoberturaPaquete $cobertura): BinaryFileResponse|RedirectResponse
+    public function generar(Request $request): RedirectResponse
     {
         $incluirCompras = $request->boolean('incluir_compras', true);
         $incluirVentas = $request->boolean('incluir_ventas', true);
@@ -135,34 +145,64 @@ class PaqueteContabilidadController extends Controller
             return back()->with('error', 'Elegí al menos una fuente (compras o ventas) para generar el paquete.');
         }
 
-        $rango = $this->rango($request);
-        $compras = $incluirCompras ? $this->compras($rango) : new Collection;
-        $ventas = $incluirVentas ? $this->ventas($rango) : new Collection;
+        $rango = $this->periodo->rango($request);
+        $usuarioId = (int) $request->user()->id;
+        $volver = redirect()->route('contabilidad.paquete', $this->filtros($request, $rango, $incluirCompras, $incluirVentas));
 
-        // Sin compras incluidas la cobertura del buzón no dice nada del paquete: un ZIP
-        // solo de ventas no puede estar incompleto por correos sin leer.
-        $cob = $incluirCompras ? $cobertura->para($rango['desde'], $rango['hasta']) : null;
+        $estado = EstadoPaquete::para($usuarioId, 'zip', $rango, $incluirCompras, $incluirVentas);
+        if ($estado->enCurso()) {
+            return $volver->with('error', 'Este paquete ya se está generando. Esperá a que termine.');
+        }
 
-        $r = $zip->generar($rango['etiqueta'], $compras, $ventas, $incluirCompras, $incluirVentas, $cob);
+        EstadoPaquete::limpiarViejos();
+        $estado->iniciar('generando', 'Generando el paquete…');
+        GenerarPaqueteContabilidad::dispatch($usuarioId, $rango, $incluirCompras, $incluirVentas);
 
-        return response()
-            ->download($r['ruta'], $zip->nombreArchivo($rango['etiqueta'], $r['incompleto']))
-            ->deleteFileAfterSend();
+        // Con la cola sincrónica (desarrollo, pruebas) el job ya terminó.
+        return match ($estado->leer()['estado'] ?? null) {
+            'listo' => $volver->with('status', 'El paquete está listo: descargalo abajo.'),
+            'error' => $volver->with('error', (string) $estado->leer()['mensaje']),
+            default => $volver->with('status', 'Generando el paquete. Puede tardar unos minutos: esta pantalla avisa cuando esté listo.'),
+        };
+    }
+
+    /** Estado del ZIP y del envío del período, para que la pantalla se actualice sola. */
+    public function estado(Request $request): JsonResponse
+    {
+        $rango = $this->periodo->rango($request);
+        $compras = $request->boolean('incluir_compras', true);
+        $ventas = $request->boolean('incluir_ventas', true);
+        $usuarioId = (int) $request->user()->id;
+
+        return response()->json([
+            'zip' => EstadoPaquete::para($usuarioId, 'zip', $rango, $compras, $ventas)->leer()['estado'] ?? null,
+            'envio' => EstadoPaquete::para($usuarioId, 'envio', $rango, $compras, $ventas)->leer()['estado'] ?? null,
+        ]);
+    }
+
+    /**
+     * Descarga el ZIP ya armado. Cada usuario solo ve los suyos: la ruta sale del usuario
+     * autenticado, no de un parámetro.
+     */
+    public function descargar(Request $request): StreamedResponse
+    {
+        $rango = $this->periodo->rango($request);
+        $estado = EstadoPaquete::para(
+            (int) $request->user()->id, 'zip', $rango,
+            $request->boolean('incluir_compras', true), $request->boolean('incluir_ventas', true),
+        );
+        $datos = $estado->leer();
+
+        abort_unless(($datos['estado'] ?? null) === 'listo' && Storage::disk('local')->exists($estado->rutaZip()), 404);
+
+        return Storage::disk('local')->download($estado->rutaZip(), (string) $datos['nombre_descarga']);
     }
 
     /**
      * Envía el MISMO paquete mensual por correo a `contabilidad.correo`. Solo tras
-     * confirmación con la frase exacta. Un único correo, sin BCC ni copias.
-     *
-     * Respeta el CANDADO de correo real ({@see CandadoCorreoReal}): fuera de producción
-     * no se llama al transporte, se audita como simulado y no se marca nada.
-     *
-     * NO toca DTE emitidos, correlativos, firmador ni transmisión a Hacienda; las
-     * ventas son solo lectura para el ZIP. NO toca el buzón Yahoo. Si el envío
-     * termina EXITOSO, marca como "enviado" únicamente los `documentos_recibidos`
-     * (compras) incluidos en el rango que estaban en "pendiente" (no toca
-     * "ignorado" ni los que ya estaban "enviado"). Si el envío falla: no cambia
-     * ningún estado, no borra el ZIP y avisa claro.
+     * confirmación con la frase exacta. Un único correo, sin BCC ni copias. El armado y
+     * el envío los hace {@see EnviarPaqueteContabilidad} en segundo plano; acá quedan
+     * todas las guardas, para que un pedido inválido ni siquiera llegue a la cola.
      *
      * COBERTURA: si el período de compras no está completamente revisado, el envío se
      * BLOQUEA. No hay forma de forzarlo desde acá, y es deliberado. Este botón hace dos
@@ -174,7 +214,7 @@ class PaqueteContabilidadController extends Controller
      * mandar un avance puede bajarlo y enviarlo a mano, con el aviso puesto. Un atajo en
      * el código agregaría riesgo sin agregar ninguna capacidad que no exista ya.
      */
-    public function enviar(Request $request, PaqueteContabilidadZip $zip, CoberturaPaquete $cobertura): RedirectResponse
+    public function enviar(Request $request, PaqueteContabilidadZip $zip, CoberturaPaquete $cobertura, AuditoriaPaquete $auditoria): RedirectResponse
     {
         $incluirCompras = $request->boolean('incluir_compras', true);
         $incluirVentas = $request->boolean('incluir_ventas', true);
@@ -194,9 +234,9 @@ class PaqueteContabilidadController extends Controller
         }
 
         // 3) Debe haber documentos en el rango para las fuentes incluidas.
-        $rango = $this->rango($request);
-        $compras = $incluirCompras ? $this->compras($rango) : new Collection;
-        $ventas = $incluirVentas ? $this->ventas($rango) : new Collection;
+        $rango = $this->periodo->rango($request);
+        $compras = $incluirCompras ? $this->periodo->compras($rango) : new Collection;
+        $ventas = $incluirVentas ? $this->periodo->ventas($rango) : new Collection;
         if ($compras->isEmpty() && $ventas->isEmpty()) {
             return back()->with('error', 'No hay documentos en el rango seleccionado: no hay nada que enviar.');
         }
@@ -205,7 +245,7 @@ class PaqueteContabilidadController extends Controller
         //    hereda de la pantalla: es la última barrera antes de que el correo salga.
         $cob = $incluirCompras ? $cobertura->para($rango['desde'], $rango['hasta']) : null;
         if ($cob !== null && $cob['bloquea_envio']) {
-            $this->auditar('bloqueado', $correo, $rango, [
+            $auditoria->registrar($request->user(), 'bloqueado', $correo, $rango, [
                 'compras_cantidad' => $compras->count(), 'compras_total' => round((float) $compras->sum('total'), 2),
                 'ventas_cantidad' => $ventas->count(), 'ventas_total' => round((float) $ventas->sum('total_pagar'), 2),
             ], $zip->nombreArchivo($rango['etiqueta'], true), $cob['motivo'], null, $cob);
@@ -214,63 +254,26 @@ class PaqueteContabilidadController extends Controller
                 .$cob['motivo'].' Podés descargar el paquete marcado como incompleto mientras tanto.');
         }
 
-        $resumen = [
-            'compras_cantidad' => $compras->count(),
-            'compras_total' => round((float) $compras->sum('total'), 2),
-            'ventas_cantidad' => $ventas->count(),
-            'ventas_total' => round((float) $ventas->sum('total_pagar'), 2),
-            'desde' => $rango['desde'],
-            'hasta' => $rango['hasta'],
-            'incluir_compras' => $incluirCompras,
-            'incluir_ventas' => $incluirVentas,
-        ];
-
-        // 5) Mismo ZIP que el paquete mensual.
-        $r = $zip->generar($rango['etiqueta'], $compras, $ventas, $incluirCompras, $incluirVentas, $cob);
-        $nombreZip = $zip->nombreArchivo($rango['etiqueta'], $r['incompleto']);
-
-        // CANDADO de correo real: fuera de producción NO se llama al transporte. Se audita
-        // como 'simulado' y NO se marca ninguna compra como enviada (las ventas nunca se
-        // tocan en este flujo). El ZIP se generó igual, así que el ensayo es realista.
-        $candado = app(CandadoCorreoReal::class);
-        if ($candado->debeSimular()) {
-            $this->auditar('simulado', $correo, $rango, $resumen, $nombreZip, $candado->motivo(), 0);
-            @unlink($r['ruta']);
-
-            return back()->with('status', "Paquete {$rango['etiqueta']} NO enviado: ".$candado->motivo()
-                .' Se registró como simulado y no se marcó ninguna compra como enviada.');
+        // 5) Candado: no se lanza un segundo envío igual mientras el primero sigue en curso.
+        $usuarioId = (int) $request->user()->id;
+        $volver = redirect()->route('contabilidad.paquete', $this->filtros($request, $rango, $incluirCompras, $incluirVentas));
+        $estado = EstadoPaquete::para($usuarioId, 'envio', $rango, $incluirCompras, $incluirVentas);
+        if ($estado->enCurso()) {
+            return $volver->with('error', 'Este paquete ya se está enviando. Esperá a que termine.');
         }
 
-        try {
-            $bytes = (string) file_get_contents($r['ruta']);
+        EstadoPaquete::limpiarViejos();
+        $estado->iniciar('enviando', 'Preparando y enviando el paquete a '.$correo.'…');
+        EnviarPaqueteContabilidad::dispatch($usuarioId, $correo, $rango, $incluirCompras, $incluirVentas);
 
-            // Configuración de correo vigente antes de construir el transporte: este
-            // envío es INLINE (no pasa por la cola), así que no lo cubre el listener
-            // de JobProcessing y tiene que pedirla por su cuenta.
-            app(ConfiguracionCorreoRuntime::class)->aplicar();
+        // Con la cola sincrónica (desarrollo, pruebas) el job ya terminó.
+        $final = $estado->leer();
 
-            // 5) Un solo correo a contabilidad, con el ZIP adjunto.
-            Mail::to($correo)->send(new PaqueteContabilidadCorreo($rango['etiqueta'], $bytes, $nombreZip, $resumen));
-        } catch (Throwable $e) {
-            // Falla: no cambia estados, no borra el ZIP; registra auditoría "fallido".
-            $this->auditar('fallido', $correo, $rango, $resumen, $nombreZip, $e->getMessage());
-
-            return back()->with('error', 'No se pudo enviar el paquete a contabilidad: '.$e->getMessage().' (no se cambió ningún estado).');
-        }
-
-        // Éxito: marca como "enviado" solo las compras incluidas que estaban "pendiente"
-        // (no toca "ignorado" ni las ya "enviado"). Las ventas/DTE no se tocan nunca.
-        $marcadas = 0;
-        if ($incluirCompras && $compras->isNotEmpty()) {
-            $marcadas = DocumentoRecibido::whereIn('id', $compras->pluck('id'))
-                ->where('estado', 'pendiente')
-                ->update(['estado' => 'enviado']);
-        }
-
-        $this->auditar('enviado', $correo, $rango, $resumen, $nombreZip, null, $marcadas);
-        @unlink($r['ruta']);
-
-        return back()->with('status', "Paquete {$rango['etiqueta']} enviado a {$correo} ({$resumen['compras_cantidad']} compras, {$resumen['ventas_cantidad']} ventas). {$marcadas} compra(s) marcada(s) como enviada(s). Las ventas no se modificaron.");
+        return match ($final['estado'] ?? null) {
+            'enviado', 'simulado' => $volver->with('status', (string) $final['mensaje']),
+            'envio_fallido' => $volver->with('error', (string) $final['mensaje']),
+            default => $volver->with('status', 'Enviando el paquete a '.$correo.'. Puede tardar unos minutos: esta pantalla avisa cuando termine.'),
+        };
     }
 
     /** Correo de contabilidad configurado, o null si no existe o no es válido. */
@@ -280,108 +283,21 @@ class PaqueteContabilidadController extends Controller
     }
 
     /**
-     * Registra la auditoría del intento de envío (usuario, destino, rango, conteos, ZIP,
-     * estado). Un envío BLOQUEADO por cobertura también se audita, con los días que
-     * faltaban: si mañana alguien pregunta por qué el paquete de agosto salió tarde, la
-     * respuesta tiene que estar escrita en algún lado.
+     * Filtros de la pantalla, para volver a ella y para consultar/descargar el mismo
+     * paquete que se pidió.
      *
-     * @param  array<string, mixed>  $resumen
-     * @param  array<string, mixed>|null  $cobertura
+     * @param  array{mes: int, anio: int}  $rango
+     * @return array<string, mixed>
      */
-    private function auditar(string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error, ?int $comprasMarcadas = null, ?array $cobertura = null): void
+    private function filtros(Request $request, array $rango, bool $incluirCompras, bool $incluirVentas): array
     {
-        activity('paquete_contabilidad')
-            ->causedBy(auth()->user())
-            ->withProperties(array_filter([
-                'correo_destino' => $correo,
-                'rango' => $rango['desde'].' a '.$rango['hasta'],
-                'etiqueta' => $rango['etiqueta'],
-                'compras_cantidad' => $resumen['compras_cantidad'],
-                'compras_total' => $resumen['compras_total'],
-                'ventas_cantidad' => $resumen['ventas_cantidad'],
-                'ventas_total' => $resumen['ventas_total'],
-                'compras_marcadas_enviadas' => $comprasMarcadas,
-                'cobertura_incompleta' => $cobertura === null ? null : ! $cobertura['cubierto'],
-                'dias_faltantes' => $cobertura === null ? null : collect($cobertura['dias_pendientes'])->pluck('dia')->all(),
-                'zip' => $nombreZip,
-                'estado' => $estado,
-                'error' => $error,
-            ], fn ($v) => $v !== null))
-            ->log("Envío de paquete de contabilidad {$rango['etiqueta']}: {$estado}");
-    }
-
-    /**
-     * Compras del período, por FECHA FISCAL (la de emisión del documento).
-     *
-     * Antes se recortaba por `fecha_correo` reutilizando el filtro de la pantalla de
-     * Compras. Eso ponía cada CCF en el mes en que llegó el correo, no en el que se
-     * emitió: un CCF del 31 de agosto que el proveedor manda el 2 de septiembre caía en
-     * septiembre, y uno emitido el 1 de septiembre que llegó adelantado caía en agosto.
-     * Para contabilidad eso es un documento en el período equivocado. Las ventas siempre
-     * se recortaron por `fecha_emision`; ahora las dos fuentes usan el mismo criterio.
-     *
-     * También se excluye lo marcado `ignorado`: el filtro anterior (`vista: bandeja`) no
-     * filtraba por estado, así que lo que alguien había apartado a propósito viajaba
-     * igual a la contadora.
-     *
-     * Las compras SIN fecha fiscal legible no entran en ningún período. No se cuelan por
-     * la fecha del correo: se cuentan aparte en la cobertura para que alguien las
-     * resuelva ({@see CoberturaPaquete}).
-     */
-    private function compras(array $rango): Collection
-    {
-        return DocumentoRecibido::query()
-            ->paraContabilidad()
-            ->periodoFiscal($rango['desde'], $rango['hasta'])
-            ->orderBy('fecha_dte')->orderBy('id')
-            ->get();
-    }
-
-    /** Ventas del rango (documentos emitidos). Reutiliza el query del Reporte contadora. */
-    private function ventas(array $rango): Collection
-    {
-        $f = ReporteContadoraQuery::filtros([
-            'fecha_desde' => $rango['desde'], 'fecha_hasta' => $rango['hasta'],
-        ]);
-
-        return ReporteContadoraQuery::query($f)->get();
-    }
-
-    /**
-     * Resuelve el rango: fecha_desde/hasta explícitas, o mes+año (default mes actual).
-     *
-     * @return array{desde: string, hasta: string, etiqueta: string, mes: int, anio: int}
-     */
-    private function rango(Request $request): array
-    {
-        $desde = $this->fecha($request->input('fecha_desde'));
-        $hasta = $this->fecha($request->input('fecha_hasta'));
-
-        if ($desde && $hasta) {
-            $d = Carbon::parse($desde);
-            $h = Carbon::parse($hasta);
-            $etiqueta = $d->isSameMonth($h) ? $d->format('Y-m') : $d->format('Y-m-d').'_a_'.$h->format('Y-m-d');
-
-            return ['desde' => $desde, 'hasta' => $hasta, 'etiqueta' => $etiqueta, 'mes' => (int) $d->month, 'anio' => (int) $d->year];
-        }
-
-        $mes = max(1, min(12, (int) $request->input('mes', now()->month)));
-        $anio = (int) $request->input('anio', now()->year);
-        $inicio = Carbon::create($anio, $mes, 1)->startOfMonth();
-
-        return [
-            'desde' => $inicio->toDateString(),
-            'hasta' => $inicio->copy()->endOfMonth()->toDateString(),
-            'etiqueta' => $inicio->format('Y-m'),
-            'mes' => $mes,
-            'anio' => $anio,
-        ];
-    }
-
-    private function fecha(mixed $v): ?string
-    {
-        $v = is_string($v) ? trim($v) : '';
-
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : null;
+        return array_filter([
+            'mes' => $rango['mes'],
+            'anio' => $rango['anio'],
+            'fecha_desde' => $request->input('fecha_desde'),
+            'fecha_hasta' => $request->input('fecha_hasta'),
+            'incluir_compras' => $incluirCompras ? 1 : 0,
+            'incluir_ventas' => $incluirVentas ? 1 : 0,
+        ], fn ($v) => $v !== null && $v !== '');
     }
 }

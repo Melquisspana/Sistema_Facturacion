@@ -41,7 +41,7 @@ class DocumentosRecibidosExcel
      */
     public function generar(Collection $documentos): string
     {
-        $hoja = (new Spreadsheet())->getActiveSheet();
+        $hoja = (new Spreadsheet)->getActiveSheet();
         $hoja->setTitle('Documentos recibidos');
 
         foreach (self::COLUMNAS as $i => $titulo) {
@@ -80,7 +80,11 @@ class DocumentosRecibidosExcel
             $hoja->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $ruta = tempnam(sys_get_temp_dir(), 'documentos_recibidos_').'.xlsx';
+        // tempnam() CREA el archivo semilla; el writer necesita la extensión .xlsx, así
+        // que se borra la semilla para no dejar un temporal huérfano por cada Excel.
+        $semilla = tempnam(sys_get_temp_dir(), 'documentos_recibidos_');
+        $ruta = $semilla.'.xlsx';
+        @unlink($semilla);
         (new Xlsx($hoja->getParent()))->save($ruta);
 
         return $ruta;

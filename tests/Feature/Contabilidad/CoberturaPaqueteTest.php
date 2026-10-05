@@ -281,6 +281,9 @@ class CoberturaPaqueteTest extends TestCase
 
         $this->actingAs($this->admin())
             ->post(route('contabilidad.paquete.generar'), ['mes' => 8, 'anio' => 2026, 'incluir_compras' => 1])
+            ->assertRedirect();
+
+        $this->get(route('contabilidad.paquete.descargar', ['mes' => 8, 'anio' => 2026, 'incluir_compras' => 1]))
             ->assertOk()
             ->assertDownload('documentos_contabilidad_2026-08_INCOMPLETO.zip');
 
@@ -295,6 +298,9 @@ class CoberturaPaqueteTest extends TestCase
 
         $this->actingAs($this->admin())
             ->post(route('contabilidad.paquete.generar'), ['mes' => 8, 'anio' => 2026, 'incluir_compras' => 1])
+            ->assertRedirect();
+
+        $this->get(route('contabilidad.paquete.descargar', ['mes' => 8, 'anio' => 2026, 'incluir_compras' => 1]))
             ->assertOk()
             ->assertDownload('documentos_contabilidad_2026-08.zip');
     }
@@ -403,6 +409,9 @@ class CoberturaPaqueteTest extends TestCase
 
         $this->actingAs($this->admin())
             ->post(route('contabilidad.paquete.generar'), ['mes' => 8, 'anio' => 2026, 'incluir_compras' => 0, 'incluir_ventas' => 1])
+            ->assertRedirect();
+
+        $this->get(route('contabilidad.paquete.descargar', ['mes' => 8, 'anio' => 2026, 'incluir_compras' => 0, 'incluir_ventas' => 1]))
             ->assertOk()
             ->assertDownload('documentos_contabilidad_2026-08.zip');
     }

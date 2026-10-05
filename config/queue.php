@@ -40,7 +40,9 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Mayor que el $timeout más largo de un job (el paquete de contabilidad usa
+            // 1200 s): si no, la cola relanza el job mientras el primero sigue corriendo.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1320),
             'after_commit' => false,
         ],
 

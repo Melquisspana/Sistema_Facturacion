@@ -437,6 +437,10 @@ Route::middleware('auth')->group(function () {
     Route::prefix('contabilidad')->name('contabilidad.')->middleware('permission:reportes.ver')->group(function () {
         Route::get('paquete', [PaqueteContabilidadController::class, 'index'])->name('paquete');
         Route::post('paquete/generar', [PaqueteContabilidadController::class, 'generar'])->name('paquete.generar');
+        // El ZIP se arma en segundo plano: la pantalla consulta el estado y descarga el
+        // archivo del propio usuario cuando está listo.
+        Route::get('paquete/estado', [PaqueteContabilidadController::class, 'estado'])->name('paquete.estado');
+        Route::get('paquete/descargar', [PaqueteContabilidadController::class, 'descargar'])->name('paquete.descargar');
         // Envío MANUAL del paquete a contabilidad (requiere frase exacta). No cambia estados.
         // Solo administrador y contabilidad (permiso contabilidad.enviar); facturación NO.
         Route::post('paquete/enviar', [PaqueteContabilidadController::class, 'enviar'])

@@ -41,6 +41,9 @@ class DteDuplicarCcfTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // El DTE toma la fecha de El Salvador (UTC-6) y las aserciones la de la app (UTC):
+        // entre las 18:00 y la medianoche local son días distintos. A mediodía UTC coinciden.
+        $this->travelTo(now()->setTime(12, 0));
         foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }

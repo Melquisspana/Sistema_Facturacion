@@ -3,6 +3,7 @@
 namespace App\Services\Reportes;
 
 use App\Models\Dte;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -46,7 +47,7 @@ class ReporteContadoraExcel
      */
     public function generar(Collection $dtes): string
     {
-        $hoja = (new Spreadsheet())->getActiveSheet();
+        $hoja = (new Spreadsheet)->getActiveSheet();
         $hoja->setTitle('Reporte contadora');
 
         foreach (self::COLUMNAS as $i => $titulo) {
@@ -78,7 +79,7 @@ class ReporteContadoraExcel
             $hoja->setCellValue([13, $fila], (float) $dte->total_pagar);
             $hoja->setCellValue([14, $fila], $enviado ? 'Sí' : 'No');
             $hoja->setCellValue([15, $fila], $enviado && $dte->ultimo_envio_fecha
-                ? \Illuminate\Support\Carbon::parse($dte->ultimo_envio_fecha)->format('d/m/Y H:i')
+                ? Carbon::parse($dte->ultimo_envio_fecha)->format('d/m/Y H:i')
                 : '');
 
             $fila++;
@@ -95,7 +96,11 @@ class ReporteContadoraExcel
             $hoja->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $ruta = tempnam(sys_get_temp_dir(), 'reporte_contadora_').'.xlsx';
+        // tempnam() CREA el archivo semilla; el writer necesita la extensión .xlsx, así
+        // que se borra la semilla para no dejar un temporal huérfano por cada Excel.
+        $semilla = tempnam(sys_get_temp_dir(), 'reporte_contadora_');
+        $ruta = $semilla.'.xlsx';
+        @unlink($semilla);
         (new Xlsx($hoja->getParent()))->save($ruta);
 
         return $ruta;
