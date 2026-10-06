@@ -113,9 +113,9 @@
 
             {{-- Metadatos del lote --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                <div><dt class="text-xs text-gray-500">Estado</dt><dd class="mt-0.5"><span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $badge[$lote->estado->value] ?? 'bg-gray-100 text-gray-700' }}">{{ $lote->estado->label() }}</span></dd></div>
+                <div><dt class="text-xs text-gray-500">Estado</dt><dd class="mt-0.5"><span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $estadoReal['estado']['clase'] }}">{{ $estadoReal['estado']['label'] }}</span></dd></div>
                 <div><dt class="text-xs text-gray-500">Fecha</dt><dd class="mt-0.5 text-gray-700">{{ $lote->fecha->format('d/m/Y') }}</dd></div>
-                <div><dt class="text-xs text-gray-500">Cliente</dt><dd class="mt-0.5 text-gray-700">{{ $lote->cliente?->nombre ?? '—' }}</dd></div>
+                <div><dt class="text-xs text-gray-500">Cliente</dt><dd class="mt-0.5 text-gray-700">{{ $lote->cliente?->nombre ?? $estadoReal['cliente_derivado']?->nombre ?? '—' }}</dd></div>
                 <div><dt class="text-xs text-gray-500">Creado</dt><dd class="mt-0.5 text-gray-700">{{ $lote->created_at?->format('d/m/Y') ?? '—' }}</dd></div>
                 @if ($lote->observaciones)
                     <div class="col-span-2 sm:col-span-4"><dt class="text-xs text-gray-500">Observaciones</dt><dd class="mt-0.5 text-gray-700">{{ $lote->observaciones }}</dd></div>

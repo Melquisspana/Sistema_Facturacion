@@ -76,8 +76,8 @@ class PpqHistorialFiltrosTest extends TestCase
         $julio = $this->lote($a, 'PPQ julio', '2026-07-01');
 
         // Cliente + estado + rango: solo el de junio en borrador de Calleja.
-        $this->assertSame([$buscado->id], $this->ids($this->historial([
-            'cliente_id' => $a->id, 'estado' => 'borrador', 'desde' => '2026-06-01', 'hasta' => '2026-06-30',
+        $this->assertSame([$pagado->id, $buscado->id], $this->ids($this->historial([
+            'cliente_id' => $a->id, 'estado' => 'anterior', 'desde' => '2026-06-01', 'hasta' => '2026-06-30',
         ])->assertOk()));
 
         // Texto + cliente.
@@ -91,7 +91,7 @@ class PpqHistorialFiltrosTest extends TestCase
         $this->assertContains($julio->id, $this->ids($this->historial(['q' => (string) $julio->id])));
 
         // Estado solo.
-        $this->assertSame([$pagado->id], $this->ids($this->historial(['estado' => 'pagado'])));
+        $this->assertSame([], $this->ids($this->historial(['estado' => 'pagado'])));
     }
 
     public function test_un_filtro_invalido_se_ignora_sin_romper_la_pantalla(): void
@@ -149,25 +149,25 @@ class PpqHistorialFiltrosTest extends TestCase
             $cliente, 'PPQ '.$i, $i <= 30 ? '2026-06-10' : '2026-06-'.str_pad((string) ($i - 19), 2, '0', STR_PAD_LEFT)
         ));
         foreach (range(1, 5) as $i) {
-            $this->lote($cliente, 'PPQ pagado '.$i, '2026-06-10', 'pagado');
+            $borradores->push($this->lote($cliente, 'PPQ pagado '.$i, '2026-06-10', 'pagado'));
         }
         $usuario = $this->usuario();
 
         $vistos = [];
         foreach ([1, 2, 3] as $pagina) {
-            $respuesta = $this->historial(['estado' => 'borrador', 'cliente_id' => $cliente->id, 'page' => $pagina], $usuario)->assertOk();
+            $respuesta = $this->historial(['estado' => 'anterior', 'cliente_id' => $cliente->id, 'page' => $pagina], $usuario)->assertOk();
             $paginador = $respuesta->viewData('lotes');
-            $this->assertSame(45, $paginador->total());
+            $this->assertSame(50, $paginador->total());
             $vistos = array_merge($vistos, $paginador->pluck('id')->all());
 
             if ($pagina < 3) {
                 $siguiente = $paginador->url($pagina + 1);
-                $this->assertStringContainsString('estado=borrador', $siguiente);
+                $this->assertStringContainsString('estado=anterior', $siguiente);
                 $this->assertStringContainsString('cliente_id='.$cliente->id, $siguiente);
             }
         }
 
-        $this->assertCount(45, array_unique($vistos), 'Ningún lote repetido.');
+        $this->assertCount(50, array_unique($vistos), 'Ningún lote repetido.');
         $this->assertEqualsCanonicalizing($borradores->pluck('id')->all(), $vistos, 'Ningún lote perdido.');
 
         // Orden: fecha descendente y, a igual fecha, id descendente.
@@ -208,7 +208,7 @@ class PpqHistorialFiltrosTest extends TestCase
         $cliente = Cliente::factory()->contribuyente()->create();
         $this->lote($cliente, 'PPQ uno', '2026-06-10');
 
-        $this->historial(['estado' => 'borrador'], $this->usuario(RolSistema::Jefatura))
+        $this->historial(['estado' => 'anterior'], $this->usuario(RolSistema::Jefatura))
             ->assertOk()
             ->assertSee('PPQ uno')
             ->assertDontSee(route('ppq.lotes.create'), false);

@@ -94,28 +94,41 @@
                                 <th scope="col" class="py-3 px-4">Fecha</th>
                                 <th scope="col" class="py-3 px-4">Cliente</th>
                                 <th scope="col" class="py-3 px-4">Estado</th>
-                                <th scope="col" class="py-3 px-4 text-center">Documentos</th>
+                                <th scope="col" class="py-3 px-4">Avance</th><th scope="col" class="py-3 px-4 text-center">Documentos</th>
                                 <th scope="col" class="py-3 px-4 text-right">Total CCF/NC</th>
                                 <th scope="col" class="py-3 px-4 text-right"><span class="sr-only">Acciones</span></th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-ink-600">
                             @forelse ($lotes as $lote)
+                                @php($real = $estadosReales[$lote->id])
                                 <tr class="hover:bg-gray-50 dark:hover:bg-ink-700">
                                     <td class="py-3 px-4 text-gray-400 dark:text-paper-500">{{ $lote->id }}</td>
                                     <td class="py-3 px-4 font-medium text-gray-800 dark:text-paper-100">
                                         <a href="{{ route('ppq.lotes.show', $lote) }}" class="hover:text-indigo-600 dark:hover:text-indigo-300">{{ $lote->referencia }}</a>
                                     </td>
                                     <td class="py-3 px-4 text-gray-600 dark:text-paper-300 whitespace-nowrap">{{ $lote->fecha->format('d/m/Y') }}</td>
-                                    <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $lote->cliente?->nombre ?? '—' }}</td>
+                                    <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $lote->cliente?->nombre ?? $real['cliente_derivado']?->nombre ?? '—' }}</td>
                                     <td class="py-3 px-4">
-                                        <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $badge[$lote->estado->value] ?? 'bg-gray-100 text-gray-700 dark:bg-ink-700 dark:text-paper-100' }}">{{ $lote->estado->label() }}</span>
+                                        <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium {{ $real['estado']['clase'] }}">{{ $real['estado']['label'] }}</span>
+                                        @if ($real['estado']['key'] === 'presentado')
+                                            <div class="text-xs text-gray-500 dark:text-paper-300">{{ $real['fecha']?->format('d/m/Y') }}</div>
+                                        @endif
+                                        @if ($real['devueltos'] > 0)
+                                            <div class="text-xs text-gray-600 dark:text-paper-300">Devuelto: {{ $real['devueltos'] }}</div>
+                                        @endif
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="text-xs text-gray-600 dark:text-paper-300">{{ $real['pagados'] }} de {{ $real['ccf_total'] }} pagados</div>
+                                        <div class="mt-1 w-full rounded-full bg-gray-100 dark:bg-ink-700" role="progressbar" aria-label="CCF pagados" aria-valuenow="{{ $real['pagados'] }}" aria-valuemin="0" aria-valuemax="{{ max(1, $real['ccf_total']) }}">
+                                            <div class="rounded-full bg-green-600 py-0.5" style="width: {{ $real['ccf_total'] > 0 ? round(100 * $real['pagados'] / $real['ccf_total'], 2) : 0 }}%"></div>
+                                        </div>
                                     </td>
                                     <td class="py-3 px-4 text-center">
                                         <span class="inline-flex items-center justify-center min-w-[1.75rem] rounded-full bg-gray-100 dark:bg-ink-700 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-paper-100">{{ $lote->items_count }}</span>
                                     </td>
-                                    @php($t = (float) ($lote->total_dte ?? 0))
-                                    <td class="py-3 px-4 text-right font-semibold text-gray-800 dark:text-paper-100 whitespace-nowrap">{{ ($t < 0 ? '−$' : '$').number_format(abs($t), 2) }}</td>
+                                    @php($t = $real['total_neto'])
+                                    <td class="py-3 px-4 text-right font-semibold text-gray-800 dark:text-paper-100 whitespace-nowrap">{{ ($t < 0 ? '−$' : '$').number_format(abs($t), 2) }}<div class="text-xs font-medium text-gray-500 dark:text-paper-300">Cobrado ${{ number_format($real['cobrado'], 2) }} · Pendiente ${{ number_format($real['pendiente'], 2) }}</div></td>
                                     <td class="py-3 px-4">
                                         <div class="flex items-center justify-end gap-3">
                                             <a href="{{ route('ppq.lotes.show', $lote) }}" class="text-indigo-600 dark:text-indigo-300 hover:underline">Ver<span class="sr-only"> el lote {{ $lote->referencia }}</span></a>
@@ -129,7 +142,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="8" class="py-10 text-center text-gray-500 dark:text-paper-300">
+                                <tr><td colspan="9" class="py-10 text-center text-gray-500 dark:text-paper-300">
                                     @if ($lotes->currentPage() > 1 && $lotes->total() > 0)
                                         Esta página no existe ({{ $lotes->total() }} lote(s) en {{ $lotes->lastPage() }} página(s)).
                                         <a href="{{ $lotes->url(1) }}" class="text-indigo-600 dark:text-indigo-300 hover:underline">Ir a la primera página</a>.

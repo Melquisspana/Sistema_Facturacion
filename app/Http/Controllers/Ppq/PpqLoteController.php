@@ -19,6 +19,7 @@ use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
 use App\Services\Ppq\ConciliadorPpq;
+use App\Services\Ppq\EstadoRealLotePpq;
 use App\Services\Ppq\ExcelCallejaExporter;
 use App\Services\Ppq\FichaLotePpq;
 use App\Services\Ppq\NcExportacionService;
@@ -26,6 +27,7 @@ use App\Services\Ppq\QuedanCallejaExporter;
 use App\Services\Ppq\ReversionConciliacion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -57,8 +59,7 @@ class PpqLoteController extends Controller
                 ->selectRaw("COALESCE(SUM(CASE WHEN tipo_dte = '05' THEN -monto_dte ELSE monto_dte END), 0)")
                 ->whereColumn('ppq_lote_id', 'ppq_lotes.id')])
             ->with('cliente:id,nombre,nombre_comercial')
-            ->when($filtros['cliente_id'] !== '', fn ($q) => $q->where('cliente_id', (int) $filtros['cliente_id']))
-            ->when($filtros['estado'] !== '', fn ($q) => $q->where('estado', $filtros['estado']))
+            ->when($filtros['cliente_id'] !== '', fn ($q) => $q->where(fn ($w) => $w->where('cliente_id', (int) $filtros['cliente_id'])->orWhereNull('cliente_id')))
             ->when($filtros['desde'] !== '', fn ($q) => $q->whereDate('fecha', '>=', $filtros['desde']))
             ->when($filtros['hasta'] !== '', fn ($q) => $q->whereDate('fecha', '<=', $filtros['hasta']))
             ->when($filtros['q'] !== '', function ($q) use ($filtros) {
@@ -74,18 +75,38 @@ class PpqLoteController extends Controller
                 });
             })
             ->orderByDesc('fecha')
-            ->orderByDesc('id')
-            ->paginate(20)
-            ->withQueryString();
+            ->orderByDesc('id');
+
+        $servicio = app(EstadoRealLotePpq::class);
+        if ($filtros['estado'] !== '' || $filtros['cliente_id'] !== '') {
+            $todos = $lotes->get();
+            $estadosReales = $servicio->calcular($todos);
+            $filtrados = $todos->filter(function ($lote) use ($filtros, $estadosReales) {
+                $real = $estadosReales[$lote->id];
+
+                return ($filtros['estado'] === '' || $real['estado']['key'] === $filtros['estado'])
+                    && ($filtros['cliente_id'] === '' || (int) ($lote->cliente_id ?? $real['cliente_derivado']?->id) === (int) $filtros['cliente_id']);
+            })->values();
+            $pagina = LengthAwarePaginator::resolveCurrentPage();
+            $lotes = new LengthAwarePaginator($filtrados->forPage($pagina, 20)->values(), $filtrados->count(), 20, $pagina, [
+                'path' => $request->url(), 'query' => $request->query(),
+            ]);
+        } else {
+            $lotes = $lotes->paginate(20)->withQueryString();
+            $estadosReales = $servicio->calcular($lotes->getCollection());
+        }
 
         return view('ppq.lotes.index', [
             'lotes' => $lotes,
-            'estados' => EstadoPpq::opciones(),
+            'estados' => EstadoRealLotePpq::opciones(),
+            'estadosReales' => $estadosReales,
             'filtros' => $filtros,
             'hayFiltros' => collect($filtros)->contains(fn ($v) => $v !== ''),
-            // Solo clientes que tienen lotes: ofrecer otros daría listas vacías.
+            // Clientes con lotes, más los de cobros (perfil documental activo): un lote viejo
+            // sin cliente guardado se filtra por el que se deriva de sus documentos.
             'clientes' => Cliente::query()
-                ->whereIn('id', PpqLote::query()->whereNotNull('cliente_id')->select('cliente_id'))
+                ->where(fn ($q) => $q->whereIn('id', PpqLote::query()->whereNotNull('cliente_id')->select('cliente_id'))
+                    ->orWhereHas('perfilDocumento', fn ($p) => $p->where('activo', true)))
                 ->orderBy('nombre')
                 ->get(['id', 'nombre']),
         ]);
@@ -120,7 +141,7 @@ class PpqLoteController extends Controller
 
         return [
             'cliente_id' => ctype_digit($cliente) ? $cliente : '',
-            'estado' => EstadoPpq::tryFrom($estado) !== null ? $estado : '',
+            'estado' => in_array($estado, array_column(EstadoRealLotePpq::opciones(), 'value'), true) ? $estado : '',
             'desde' => $fecha('desde'),
             'hasta' => $fecha('hasta'),
             'q' => mb_substr($texto('q'), 0, 60),
@@ -169,6 +190,7 @@ class PpqLoteController extends Controller
         return view('ppq.lotes.show', [
             'lote' => $lote,
             'resumen' => $ficha->resumen($filas),
+            'estadoReal' => app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id],
             'items' => $ficha->pagina($ficha->idsRecientesPrimero($filas)),
         ]);
     }
