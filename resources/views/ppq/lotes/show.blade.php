@@ -1,4 +1,8 @@
 <x-app-layout>
+    @php
+        $quedan = app(\App\Services\Ppq\QuedanCallejaExporter::class);
+        $quedan->precargarDocumentos($lote, $items->getCollection());
+    @endphp
     <x-slot name="header">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Lote PPQ #{{ $lote->id }} — {{ $lote->referencia }}</h2>
@@ -178,6 +182,13 @@
                                     $salaDescripcion = $item->salaDescripcion();
                                     $estado = $item->conciliacionEstado();
                                     $mismatch = $item->salaMismatch();
+                                    $salaConfirmada = $quedan->salaConfirmada($item);
+                                    $avisoSalaManual = $quedan->avisoSalaManual($item);
+                                    if ($avisoSalaManual !== null && \App\Support\NumeroAlbaran::desde($item->albaran?->numero_albaran)?->sala === $salaConfirmada) {
+                                        $mismatch = null;
+                                    } else {
+                                        $avisoSalaManual = null;
+                                    }
                                     $alerta = in_array($estado['key'], ['pequena', 'posible_nc'], true);
                                     // Con el mismo signo que los montos de la fila (NC en negativo).
                                     $difSigno = $item->diferenciaConSigno();
@@ -247,6 +258,9 @@
                                             <span class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium {{ $mismatch['clase'] }} cursor-help" title="{{ $mismatch['detalle'] }}">
                                                 ⚠ {{ $mismatch['label'] }} ({{ $mismatch['sala_albaran'] }})
                                             </span>
+                                        @endif
+                                        @if ($avisoSalaManual)
+                                            <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium bg-green-100 text-green-700 cursor-help" title="{{ $avisoSalaManual }}">Sala confirmada por vínculo manual ({{ $salaConfirmada }})</span>
                                         @endif
                                         {{-- Estado de pago: solo "pagado" si el TXT de Calleja lo confirma --}}
                                         <span class="mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium {{ $item->estadoPagoClase() }}" @if ($item->fecha_pago) title="Fecha del documento en TXT: {{ \App\Support\Fecha::dmy($item->fecha_pago) }}" @endif>{{ $item->estadoPagoLabel() }}</span>

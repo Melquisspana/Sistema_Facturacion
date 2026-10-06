@@ -5,6 +5,8 @@ namespace Tests\Feature\Ppq;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
 use App\Exceptions\Ppq\ArchivoQuedanIncompletoException;
+use App\Models\Cliente;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
@@ -103,6 +105,69 @@ class QuedanCallejaExporterTest extends TestCase
     private function exportador(): QuedanCallejaExporter
     {
         return app(QuedanCallejaExporter::class);
+    }
+
+    private function casoVinculoManual(bool $manual = true, bool $incoherente = false): PpqLote
+    {
+        config(['ppq.quedan.salas_confirmadas' => []]);
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $lote = $this->lote();
+        $lote->update(['cliente_id' => $cliente->id]);
+        $albaran = $this->albaran('AC01/0262/00/247', '26050262001794');
+        if ($incoherente) {
+            $albaran->update(['sala_codigo' => '0620']);
+        }
+        $item = $this->ccf($lote, 'DTE-03-M001P002-000000000000247', '26050620001794', $albaran);
+        CobroDocumento::create([
+            'cliente_id' => $cliente->id,
+            'origen' => 'externo',
+            'tipo_dte' => '03',
+            'numero_control' => str_replace('-', '', $item->numero_control),
+            'fecha_emision' => '2026-05-15',
+            'monto' => 10,
+            'ppq_albaran_id' => $albaran->id,
+            'vinculado_por' => $manual ? $this->usuario()->id : null,
+            'vinculado_en' => '2026-10-06 10:00:00',
+        ]);
+
+        return $lote;
+    }
+
+    public function test_vinculo_manual_confirma_sala_del_numero_y_la_muestra_en_la_ficha(): void
+    {
+        $lote = $this->casoVinculoManual();
+        $ruta = $this->exportador()->generar($lote->fresh());
+        $libro = IOFactory::load($ruta);
+        @unlink($ruta);
+        $this->assertSame('0262', $libro->getActiveSheet()->getCell('A2')->getValue());
+        $libro->disconnectWorksheets();
+        $this->actingAs($this->usuario())->get(route('ppq.lotes.show', $lote))
+            ->assertOk()
+            ->assertSee('Sala confirmada por vínculo manual (0262)')
+            ->assertSee('sala confirmada por vínculo manual de')
+            ->assertSee('06/10/2026 10:00');
+    }
+
+    public function test_vinculo_sin_usuario_no_confirma_sala(): void
+    {
+        $lote = $this->casoVinculoManual(manual: false);
+        $this->expectExceptionMessage('contradicción de sala');
+        $this->exportador()->generar($lote->fresh());
+    }
+
+    public function test_vinculo_manual_no_permite_sala_incoherente_en_el_propio_albaran(): void
+    {
+        $lote = $this->casoVinculoManual(incoherente: true);
+        $this->expectExceptionMessage('contradicción de sala');
+        $this->exportador()->generar($lote->fresh());
+    }
+
+    public function test_configuracion_tiene_prioridad_sobre_vinculo_manual(): void
+    {
+        $lote = $this->casoVinculoManual();
+        config(['ppq.quedan.salas_confirmadas' => ['DTE-03-M001P002-000000000000247' => '0620']]);
+        $this->expectExceptionMessage('sala confirmada 0620, pero el número del albarán indica 0262');
+        $this->exportador()->generar($lote->fresh());
     }
 
     public function test_genera_encabezados_hoja_tipos_y_orden_de_la_plantilla(): void

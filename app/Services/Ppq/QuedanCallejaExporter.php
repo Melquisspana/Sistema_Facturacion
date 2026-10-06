@@ -4,10 +4,12 @@ namespace App\Services\Ppq;
 
 use App\Enums\EstadoDte;
 use App\Exceptions\Ppq\ArchivoQuedanIncompletoException;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
+use App\Support\IdentidadPpq;
 use App\Support\NumeroAlbaran;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -89,6 +91,7 @@ class QuedanCallejaExporter
         ValidadorCodigoProveedorTxt::codigoConfigurado();
 
         $ccf = $this->ccfDelLote($lote);
+        $this->precargarDocumentos($lote, $lote->items);
 
         if ($ccf->isEmpty()) {
             throw new ArchivoQuedanIncompletoException([
@@ -298,12 +301,68 @@ class QuedanCallejaExporter
     }
 
     /** Sala confirmada a mano para este CCF (por número de control), o null. */
-    private function salaConfirmada(PpqItem $item): ?string
+    public function salaConfirmada(PpqItem $item): ?string
     {
         $control = strtoupper(trim((string) ($item->numero_control ?? $item->dte?->numero_control)));
         $sala = config('ppq.quedan.salas_confirmadas', [])[$control] ?? null;
 
-        return filled($sala) ? str_pad(trim((string) $sala), 4, '0', STR_PAD_LEFT) : null;
+        if (filled($sala)) {
+            return str_pad(trim((string) $sala), 4, '0', STR_PAD_LEFT);
+        }
+        if (($item->tipo_dte ?? $item->dte?->tipo_dte?->value) !== '03' || ! $item->tieneAlbaran()) {
+            return null;
+        }
+        if (! $item->relationLoaded('documentoSalaConfirmada')) {
+            $item->lote->loadMissing(['items.dte', 'items.albaran']);
+            $this->precargarDocumentos($item->lote, $item->lote->items->reject(fn ($i) => $i->id === $item->id)->push($item));
+        }
+        $documento = $item->getRelation('documentoSalaConfirmada');
+        if ($documento?->vinculado_por === null || (int) $documento->ppq_albaran_id !== (int) $item->ppq_albaran_id) {
+            return null;
+        }
+        $albaran = $item->albaran;
+        $partes = NumeroAlbaran::desde($albaran->numero_albaran);
+        $registrada = filled($albaran->sala_codigo) ? str_pad((string) $albaran->sala_codigo, 4, '0', STR_PAD_LEFT) : null;
+        if ($partes?->sala !== null && $registrada !== null && $partes->sala !== $registrada) {
+            return null;
+        }
+
+        return $partes?->sala ?? $registrada;
+    }
+
+    /** Una consulta para todos los documentos del lote o de la página visible. */
+    public function precargarDocumentos(PpqLote $lote, Collection $items): void
+    {
+        $documentos = CobroDocumento::query()
+            ->leftJoin('users as usuario_vinculo', 'usuario_vinculo.id', '=', 'cobro_documentos.vinculado_por')
+            ->select('cobro_documentos.*', 'usuario_vinculo.name as usuario_vinculo_nombre')
+            ->where('cobro_documentos.tipo_dte', '03')
+            ->when($lote->cliente_id !== null, fn ($q) => $q->where('cobro_documentos.cliente_id', $lote->cliente_id))
+            ->where(fn ($q) => $q
+                ->whereIn('cobro_documentos.dte_id', $items->pluck('dte_id')->filter()->all())
+                ->orWhereIn('numero_control_norm', IdentidadPpq::claves($items->map(fn (PpqItem $i) => $i->numero_control ?? $i->dte?->numero_control))))
+            ->get();
+        $porDte = $documentos->keyBy('dte_id');
+        $porControl = $documentos->keyBy('numero_control_norm');
+
+        foreach ($items as $item) {
+            $documento = ($item->dte_id !== null ? $porDte->get($item->dte_id) : null)
+                ?? $porControl->get(IdentidadPpq::normalizar($item->numero_control ?? $item->dte?->numero_control));
+            $item->setRelation('documentoSalaConfirmada', $documento);
+        }
+    }
+
+    /** Rastro visible de la confirmación manual, sin añadir motivos de rechazo. */
+    public function avisoSalaManual(PpqItem $item): ?string
+    {
+        $control = strtoupper(trim((string) ($item->numero_control ?? $item->dte?->numero_control)));
+        if (filled(config('ppq.quedan.salas_confirmadas', [])[$control] ?? null) || $this->salaConfirmada($item) === null) {
+            return null;
+        }
+        $documento = $item->getRelation('documentoSalaConfirmada');
+
+        return 'sala confirmada por vínculo manual de '.($documento->usuario_vinculo_nombre ?? '#'.$documento->vinculado_por)
+            .' el '.($documento->vinculado_en?->format('d/m/Y H:i') ?? 'fecha no registrada');
     }
 
     /**
