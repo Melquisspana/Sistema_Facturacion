@@ -120,6 +120,18 @@ class DteTransmisionService
 
         $jws = trim((string) Storage::disk($disco)->get($this->normalizar($dte->json_firmado_path)));
         $version = (int) (config('dte.json.versiones')[$dte->tipo_dte->value] ?? 0);
+        // El JSON ya generado fija la versión, aunque la bandera cambie después.
+        // Si no se puede leer, se conserva el respaldo histórico desde config.
+        try {
+            if (filled($dte->json_generado_path)) {
+                $json = json_decode((string) Storage::disk($disco)->get($this->normalizar($dte->json_generado_path)), true);
+                if (isset($json['identificacion']['version'])) {
+                    $version = (int) $json['identificacion']['version'];
+                }
+            }
+        } catch (Throwable) {
+            // Archivo ausente o disco no disponible: respaldo desde config.
+        }
 
         // Campos del body de recepción uno-a-uno según el Manual Técnico (4.2.1):
         // ambiente, idEnvio, version, tipoDte, documento, codigoGeneracion.

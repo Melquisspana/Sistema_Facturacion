@@ -3,6 +3,8 @@
 namespace App\Services\Dte;
 
 use App\Enums\TipoDte;
+use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Helper;
 
 /**
  * Valida un array PHP contra el JSON Schema OFICIAL del MH (el que está en
@@ -36,7 +38,8 @@ class DteSchemaValidator
      */
     public function validar(array $datos, TipoDte $tipo): array
     {
-        $info = $this->repo->paraTipo($tipo);
+        $version = isset($datos['identificacion']['version']) ? (int) $datos['identificacion']['version'] : null;
+        $info = $this->repo->paraTipo($tipo, $version);
         if ($info === null) {
             return $this->resultado('sin_schema', false, true, [], 'No hay schema oficial colocado para '.$tipo->label().'.');
         }
@@ -52,7 +55,7 @@ class DteSchemaValidator
             );
         }
 
-        $schemaJson = (string) $this->repo->leer($tipo);
+        $schemaJson = (string) file_get_contents($info['ruta']);
 
         return $this->validarContraSchema($datos, $schemaJson);
     }
@@ -110,7 +113,7 @@ class DteSchemaValidator
     }
 
     /**
-     * @return array<int, string>  errores (vacío = válido)
+     * @return array<int, string> errores (vacío = válido)
      */
     private function validarConOpis(mixed $payload, string $schemaJson): array
     {
@@ -124,9 +127,9 @@ class DteSchemaValidator
         // (cantidad/precioUni/ventaGravada usan multipleOf 1e-8, por eso no puede
         // bajar de 8). No recalcula nada ni toca los montos; solo afina la tolerancia
         // del validador, sin dejar pasar violaciones reales (0.015, 0.001, etc. fallan).
-        \Opis\JsonSchema\Helper::$numberScale = 8;
+        Helper::$numberScale = 8;
 
-        $validator = new $clase();
+        $validator = new $clase;
         $validator->setMaxErrors(250); // por defecto opis se detiene en el primer error
         $resultado = $validator->validate($payload, json_decode($schemaJson));
 
@@ -135,7 +138,7 @@ class DteSchemaValidator
         }
 
         $errores = [];
-        $formateador = new \Opis\JsonSchema\Errors\ErrorFormatter();
+        $formateador = new ErrorFormatter;
         foreach ($formateador->formatKeyed($resultado->error()) as $puntero => $mensajes) {
             foreach ((array) $mensajes as $mensaje) {
                 $errores[] = ($puntero !== '' ? $puntero : '/').': '.$mensaje;
@@ -151,7 +154,7 @@ class DteSchemaValidator
     private function validarConJustinrainbow(mixed $payload, string $schemaJson): array
     {
         $clase = self::JUSTINRAINBOW;
-        $validador = new $clase();
+        $validador = new $clase;
         $validador->validate($payload, json_decode($schemaJson));
 
         if ($validador->isValid()) {

@@ -63,7 +63,7 @@ class DteJsonService
 
             // Mapear (usa la numeración recién asignada) y serializar al array oficial del tipo.
             $salida = $this->mapeador->mapear($dte);
-            $oficial = $this->serializadores->para($dte->tipo_dte)->serializar($salida);
+            $oficial = $this->serializadores->para($dte->tipo_dte, $salida->identificacion->version)->serializar($salida);
 
             // 6. Validar contra el schema oficial del tipo; si falla, ROLLBACK (sin numeración ni path).
             $res = $this->validador->validar($oficial, $dte->tipo_dte);

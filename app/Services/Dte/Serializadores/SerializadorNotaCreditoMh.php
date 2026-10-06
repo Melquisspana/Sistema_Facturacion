@@ -11,14 +11,15 @@ use App\Support\Dte\CodigoGeneracion;
  * Serializa una Nota de Crédito (05) al array oficial, estructura VERSIÓN 3 (fe-nc-v3),
  * idéntica a la NC que el MH aceptó en producción.
  *
- * POR QUÉ v3 Y NO v4: el MH RECHAZA la NC tipo 05 en estructura v4. Enviar el `resumen.totalIva`
- * (y el `totalIva` por línea) de la v4 produce `codigoMsg 020 · [resumen.totalIva] CALCULO
- * INCORRECTO`, sin importar el valor del IVA (se confirmó con el caso base 1.00 × 0.13 = 0.13).
- * La estructura aceptada por el MH para tipo 05 es la v3 (espejo del CCF + documentoRelacionado):
- * el IVA va SOLO en resumen.tributos. Referencia de oro y comparador en
- * resources/dte/ejemplos/05_nota_credito/. NO volver a v4 ni reintroducir totalIva.
+ * ANTECEDENTE: el intento histórico de v4 envió IVA en resumen.totalIva y recibió
+ * `codigoMsg 020 · [resumen.totalIva] CALCULO INCORRECTO`, incluso con base 1.00 e
+ * IVA 0.13. La Normativa de Cumplimiento 2.0, Anexo IV, pp.116 y 118-120, aclara
+ * que al ajustar CCF el IVA va en tributos y totalIva es cero (se usa para CRE).
+ * Ese rechazo no demuestra que v4 sea inválida. SerializadorNotaCreditoV4Mh aplica
+ * esas reglas detrás de DTE_NC_VERSION; esta v3 conserva su estructura aceptada.
+ * Referencia de oro y comparador en resources/dte/ejemplos/05_nota_credito/.
  *
- * Particularidades de la v3 (a diferencia de la v4 que NO acepta el MH para tipo 05):
+ * Particularidades de la v3 (la aceptación de la nueva v4 se prueba por separado):
  *  - identificacion.version = 3, sin `fusion`.
  *  - El IVA va SOLO en resumen.tributos[0].valor (calculado sobre subTotal = totalGravada −
  *    descuGravada). NO hay `totalIva` por línea ni en el resumen.
