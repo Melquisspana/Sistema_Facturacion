@@ -40,7 +40,7 @@ class EstadoRealLotePpq
         $controles = $items->map(fn ($i) => IdentidadPpq::normalizar($i->numero_control))->filter()->unique();
         $documentos = CobroDocumento::query()->where(function ($q) use ($ids, $controles) {
             $q->whereIn('dte_id', $ids)->orWhereIn('numero_control_norm', $controles);
-        })->with(['cliente', 'eventos' => fn ($q) => $q->whereIn('tipo', ['recibido', 'nota'])])->get();
+        })->with(['cliente', 'eventos' => fn ($q) => $q->whereIn('tipo', ['recibido', 'presentacion', 'nota'])])->get();
         $porDte = $documentos->filter(fn ($d) => $d->dte_id !== null)->groupBy('dte_id');
         $porControl = $documentos->groupBy('numero_control_norm');
 
@@ -74,7 +74,7 @@ class EstadoRealLotePpq
                 if (in_array($doc->presentacion_estado, [EstadoPresentacionCobro::Presentada, EstadoPresentacionCobro::Recibida], true)) {
                     $r['presentados']++;
                     foreach ($doc->eventos as $evento) {
-                        if ($evento->tipo === TipoEventoCobro::Recibido) {
+                        if (in_array($evento->tipo, [TipoEventoCobro::Recibido, TipoEventoCobro::Presentacion], true)) {
                             $fecha = $evento->fecha ?? $evento->created_at;
                             if ($fecha && ($r['fecha'] === null || $fecha->lt($r['fecha']))) {
                                 $r['fecha'] = $fecha;

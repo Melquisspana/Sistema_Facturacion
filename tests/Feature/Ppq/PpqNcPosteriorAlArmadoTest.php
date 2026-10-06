@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -118,6 +119,82 @@ class PpqNcPosteriorAlArmadoTest extends TestCase
         $nc = $this->dte('05', ['dte_relacionado_id' => $doc->dte_id, 'total_pagar' => '4.75']);
 
         return [$doc, $lote, $nc];
+    }
+
+    public function test_marcar_presentado_registra_fecha_evento_y_auditoria_y_envia_nc_al_proximo(): void
+    {
+        [$doc, $lote] = $this->armar();
+        $lote->update(['fecha' => today()->subDays(3), 'observaciones' => 'Conservar.']);
+        $usuario = $this->usuario();
+        $fecha = today()->subDay();
+        $this->actingAs($usuario)->post(route('ppq.lotes.marcar-presentado', $lote), ['fecha' => $fecha->toDateString()])
+            ->assertSessionHas('status', 'PPQ marcado como presentado el '.$fecha->format('d/m/Y').': 1 CCF.');
+        $this->assertSame('enviado', $lote->refresh()->estado->value);
+        $this->assertStringContainsString('Conservar.', $lote->observaciones);
+        $this->assertStringContainsString('marcado a mano por '.$usuario->name, $lote->observaciones);
+        $this->assertSame('presentada', $doc->refresh()->presentacion_estado->value);
+        $evento = $doc->eventos()->where('tipo', 'presentacion')->sole();
+        $this->assertSame($fecha->toDateString(), $evento->fecha->toDateString());
+        $this->assertSame('ppq-'.$lote->id.'-presentado', $evento->referencia_linea);
+        $this->assertSame($usuario->id, $evento->user_id);
+        $actividad = Activity::where('description', 'ppq.marcado_presentado')->sole();
+        $this->assertSame($lote->id, $actividad->subject_id);
+        $this->assertSame($usuario->id, $actividad->causer_id);
+        $this->assertSame(['fecha' => $fecha->toDateString(), 'ccf' => 1], $actividad->properties->all());
+        $real = app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id];
+        $this->assertSame('presentado', $real['estado']['key']);
+        $this->assertSame($fecha->toDateString(), $real['fecha']->toDateString());
+        $this->post(route('ppq.lotes.marcar-presentado', $lote), ['fecha' => $fecha->toDateString()])
+            ->assertSessionHas('error', 'Este PPQ ya figura como presentado.');
+        $this->assertSame(1, $doc->eventos()->where('tipo', 'presentacion')->count());
+        $this->travel(1)->minutes();
+        $nc = $this->dte('05', ['estado' => 'borrador', 'dte_relacionado_id' => $doc->dte_id]);
+        DB::transaction(fn () => $nc->update(['estado' => 'aceptado']));
+        $this->assertFalse(app(NcPosterioresLotePpq::class)->admite($lote));
+        $this->assertSame(1, $lote->items()->count());
+        $this->get(route('ppq.lotes.show', $lote))->assertSeeText('NC posterior a la presentación');
+        $nuevo = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);
+        $this->assertSame(1, $nuevo->items()->where('dte_id', $nc->id)->count());
+    }
+
+    public function test_marcar_presentado_valida_permiso_y_fechas(): void
+    {
+        [, $lote] = $this->armar();
+        $lote->update(['fecha' => today()->subDays(2)]);
+        $usuario = User::factory()->create();
+        $usuario->givePermissionTo('ppq.ver');
+        $this->actingAs($usuario)->post(route('ppq.lotes.marcar-presentado', $lote), ['fecha' => today()->toDateString()])->assertForbidden();
+        $this->actingAs($this->usuario());
+        foreach ([today()->addDay()->toDateString(), today()->subDays(3)->toDateString(), null] as $fecha) {
+            $this->post(route('ppq.lotes.marcar-presentado', $lote), ['fecha' => $fecha])->assertSessionHasErrors('fecha');
+        }
+        $this->assertSame('borrador', $lote->refresh()->estado->value);
+    }
+
+    public function test_boton_marcar_presentado_solo_en_armado_o_anterior_no_pagado(): void
+    {
+        [$doc, $lote] = $this->armar();
+        $this->actingAs($this->usuario())->get(route('ppq.lotes.show', $lote))->assertSeeText('Marcar como presentado');
+        $doc->update(['presentacion_estado' => 'recibida']);
+        $this->get(route('ppq.lotes.show', $lote))->assertDontSeeText('Marcar como presentado');
+        $anterior = PpqLote::create(['referencia' => 'Viejo', 'fecha' => today(), 'estado' => 'borrador']);
+        $this->get(route('ppq.lotes.show', $anterior))->assertSeeText('Marcar como presentado');
+        $this->post(route('ppq.lotes.marcar-presentado', $anterior), ['fecha' => today()->toDateString()])->assertSessionHas('status');
+        $this->post(route('ppq.lotes.marcar-presentado', $anterior), ['fecha' => today()->toDateString()])->assertSessionHas('error');
+        $this->get(route('ppq.lotes.show', $anterior))->assertDontSeeText('Marcar como presentado');
+        $anterior->update(['estado' => 'pagado']);
+        $this->get(route('ppq.lotes.show', $anterior))->assertDontSeeText('Marcar como presentado');
+    }
+
+    public function test_fecha_presentado_toma_el_evento_mas_antiguo(): void
+    {
+        [$doc, $lote] = $this->armar();
+        $doc->update(['presentacion_estado' => 'recibida']);
+        foreach (['presentacion' => today()->subDays(2), 'recibido' => today()->subDay()] as $tipo => $fecha) {
+            $doc->eventos()->create(['tipo' => $tipo, 'origen' => 'manual', 'fecha' => $fecha]);
+        }
+        $real = app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id];
+        $this->assertSame(today()->subDays(2)->toDateString(), $real['fecha']->toDateString());
     }
 
     /** Historia vieja: una NC aceptada antes de armar el lote, o ya enviada en un archivo de NC, no se barre. */

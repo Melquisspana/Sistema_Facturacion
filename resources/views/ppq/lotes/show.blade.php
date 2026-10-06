@@ -142,6 +142,24 @@
             </div>
 
             {{-- Reporte del caso que devuelve el portal: deja el PPQ presentado. --}}
+            @if (in_array($estadoReal['estado']['key'], ['armado', 'anterior'], true) && !in_array($lote->estado, [\App\Enums\EstadoPpq::Enviado, \App\Enums\EstadoPpq::Pagado], true))
+                @can('ppq.gestionar')
+                    <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
+                        <form method="POST" action="{{ route('ppq.lotes.marcar-presentado', $lote) }}" class="flex flex-wrap items-end gap-3"
+                              onsubmit="return confirm('¿Marcar este PPQ como presentado en el portal el ' + this.elements.fecha.value.split('-').reverse().join('/') + '? Ya no aceptará NC nuevas.');">
+                            @csrf
+                            <div>
+                                <label for="fecha-presentacion" class="block text-xs text-gray-500">Fecha de presentación en el portal</label>
+                                <input id="fecha-presentacion" name="fecha" type="date" required value="{{ old('fecha', today()->toDateString()) }}"
+                                       min="{{ $lote->fecha->toDateString() }}" max="{{ today()->toDateString() }}" class="mt-0.5 rounded-md border-gray-300 text-sm">
+                            </div>
+                            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Marcar como presentado</button>
+                        </form>
+                        @error('fecha')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
+                    </div>
+                @endcan
+            @endif
+
             @if ($resumen['cantidad'] > 0 && auth()->user()->can('ppq.gestionar'))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
                     <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de Calleja</h3>
