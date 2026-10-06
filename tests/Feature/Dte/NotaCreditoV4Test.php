@@ -293,7 +293,9 @@ class NotaCreditoV4Test extends TestCase
             } elseif ($modalidad === 'averia') {
                 $servicio->agregarLineaDesdeProducto($nc, Producto::factory()->create(['precio_unitario' => 150.01, 'tipo_impuesto' => TipoImpuesto::Gravado->value]), cantidad: 1);
             } else {
-                $linea = $servicio->acreditarLinea($nc, $ccf->lineas->first(), 1);
+                // Por numero_linea, en la CI salió primero la línea de 250.02 (orden no fijo entre entornos):
+                // se toma por id (la primera creada, 150.01) para que la prueba no dependa del azar.
+                $linea = $servicio->acreditarLinea($nc, $ccf->lineas()->reorder('id')->first(), 1);
                 if ($modalidad === 'descuento_linea') {
                     $servicio->actualizarLinea($linea, ['cantidad' => 1, 'descuento_monto' => 1.01]);
                     $this->assertSame('149.00', (string) $nc->refresh()->total_gravado);
