@@ -15,6 +15,7 @@ use App\Models\NcExportacion;
 use App\Models\NcExportacionItem;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
+use App\Services\Cobros\LiberarCcfDeLoteBorrado;
 use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
@@ -27,6 +28,7 @@ use App\Services\Ppq\ReversionConciliacion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -266,13 +268,23 @@ class PpqLoteController extends Controller
         return redirect()->route('ppq.lotes.show', $lote)->with('status', $mensaje);
     }
 
-    public function destroy(PpqLote $lote): RedirectResponse
+    public function destroy(Request $request, PpqLote $lote, LiberarCcfDeLoteBorrado $liberador): RedirectResponse
     {
-        $lote->delete();
+        $resultado = DB::transaction(function () use ($lote, $liberador, $request) {
+            $resultado = $liberador->liberar($lote, $request->user());
+            $lote->delete();
+
+            return $resultado;
+        });
+        $mensaje = 'Lote PPQ eliminado. '.$resultado['liberados']->count().' CCF volvieron a por presentar.';
+        if ($resultado['conservados']->isNotEmpty()) {
+            $mensaje .= ' No se tocaron '.$resultado['conservados']->count().': '
+                .$resultado['conservados']->map(fn ($fila) => $fila['documento']->correlativoCorto().' ('.$fila['motivo'].')')->implode('; ').'.';
+        }
 
         return redirect()
             ->route('ppq.lotes.index')
-            ->with('status', 'Lote PPQ eliminado.');
+            ->with('status', $mensaje);
     }
 
     public function excel(PpqLote $lote, ExcelCallejaExporter $exporter): BinaryFileResponse|RedirectResponse

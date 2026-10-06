@@ -25,6 +25,7 @@ use App\Models\PpqAlbaran;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
 use App\Services\Cobros\RevisionHistoricaService;
@@ -68,6 +69,8 @@ use Throwable;
  */
 class CobrosController extends Controller
 {
+    public const MAX_PPQ = 500;
+
     /** Claves de filtro aceptadas. Todas OPCIONALES: acotan lo que se ve, no lo que existe. */
     private const FILTROS = ['presentacion', 'pago', 'vinculacion', 'desde', 'hasta', 'sala', 'tipo', 'q', 'revisar', 'pago_revision', 'mes', 'etapa'];
 
@@ -103,6 +106,9 @@ class CobrosController extends Controller
 
     /** Descargas preparadas por página en la ficha de una solicitud. */
     private const DESCARGAS_POR_PAGINA = 20;
+
+    /** @var array<int, array<int, int>> por cliente, ver {@see saldadosConNc()} */
+    private array $saldadosConNc = [];
 
     public function __construct(
         private readonly AltaCobrosService $alta,
@@ -158,7 +164,25 @@ class CobrosController extends Controller
             ->paginate(self::SOLICITUDES_POR_PAGINA, ['*'], 'solicitudes_page')
             ->withQueryString();
 
+        // Lo que puede entrar en un PPQ: de TODO el cliente (para recordar lo marcado en otras
+        // páginas) y dentro del filtro actual (para «Seleccionar todas las pendientes»).
+        $elegibilidad = app(ElegibilidadPpqSeguimiento::class);
+        $clavesPpq = $elegibilidad->claves();
+        $listosPpq = $elegibilidad->listos(CobroDocumento::deCliente($cliente->id)->sinInvalidadosRetirables()
+            ->whereKeyNot($this->saldadosConNc($cliente))
+            ->when(config('dte.ambiente') === '01', fn ($q) => $q->whereDoesntHave('dte', fn ($d) => $d->where('ambiente', '00'))), $clavesPpq);
+        $listosEnFiltro = $elegibilidad->listos($this->consulta($cliente, $filtros), $clavesPpq);
+        $totalListosEnFiltro = '0';
+        foreach ($listosEnFiltro as $monto) {
+            $totalListosEnFiltro = Dinero::sumar($totalListosEnFiltro, $monto);
+        }
+
         return view('cobros.index', [
+            'listosPpq' => $listosPpq,
+            'listosEnFiltro' => $listosEnFiltro,
+            'cantidadListosEnFiltro' => $listosEnFiltro->count(),
+            'totalListosEnFiltro' => Dinero::redondear($totalListosEnFiltro),
+            'motivosPpq' => $documentos->getCollection()->mapWithKeys(fn ($doc) => [$doc->id => $elegibilidad->motivo($doc, $clavesPpq)]),
             'clientes' => $clientes,
             'cliente' => $cliente,
             // Sin Gmail no entran albaranes: se avisa arriba para que no pase inadvertido.
@@ -728,14 +752,22 @@ class CobrosController extends Controller
     public function crearPpq(Request $request, Cliente $cliente, CrearPpqDesdeSeguimiento $creador): RedirectResponse
     {
         $datos = $request->validate([
-            'documentos' => ['required', 'array', 'min:1'],
+            'documentos' => ['required', 'array', 'min:1', 'max:'.self::MAX_PPQ],
             'documentos.*' => ['integer', 'distinct'],
-        ], ['documentos.required' => 'Marque al menos un CCF entregado para crear el PPQ.']);
+        ], [
+            'documentos.required' => 'Marque al menos un CCF entregado para crear el PPQ.',
+            'documentos.max' => 'El máximo por PPQ es de 500 CCF. Quite algunos de la selección.',
+        ]);
 
         $lote = $creador->crear($cliente, array_map('intval', $datos['documentos']), $request->user());
 
+        $ccf = $lote->items()->where('tipo_dte', '03');
+        $cantidad = (clone $ccf)->count();
+        $total = number_format((float) $ccf->sum('monto_dte'), 2);
+        $documentos = $lote->items()->count();
+
         return redirect()->route('ppq.lotes.show', $lote)
-            ->with('status', "PPQ creado con {$lote->items()->count()} documento(s). Descargá el archivo de NC y el de quedan.");
+            ->with('status', "PPQ creado con {$cantidad} CCF por \${$total} ({$documentos} documento(s) con sus NC). Descargá el archivo de NC y el de quedan.");
     }
 
     // ─────────────────────────────────── internos ───────────────────────────────────
@@ -834,11 +866,23 @@ class CobrosController extends Controller
             });
     }
 
+    /**
+     * CCF que sus NC dejan en saldo 0: fuera del Seguimiento. Se calcula una vez por petición
+     * porque la bandeja arma muchas consultas (tarjetas, meses, lista).
+     *
+     * @return array<int, int>
+     */
+    private function saldadosConNc(Cliente $cliente): array
+    {
+        return $this->saldadosConNc[$cliente->id] ??= CobroDocumento::idsSaldadosConNc($cliente->id);
+    }
+
     /** @return Builder<CobroDocumento> */
     private function consultaSinMes(Cliente $cliente, array $filtros): Builder
     {
         return CobroDocumento::deCliente($cliente->id)
             ->sinInvalidadosRetirables()
+            ->whereKeyNot($this->saldadosConNc($cliente))
             ->where('tipo_dte', $filtros['tipo'] === '05' ? '05' : '03')
             // Fuera los DTE de otro ambiente (pruebas en el servidor real).
             ->when(config('dte.ambiente') === '01', fn ($q) => $q->whereDoesntHave('dte', fn ($d) => $d->where('ambiente', '00')))
@@ -864,7 +908,8 @@ class CobrosController extends Controller
      */
     private function contadores(Cliente $cliente): array
     {
-        $base = fn () => CobroDocumento::deCliente($cliente->id)->sinInvalidadosRetirables();
+        $base = fn () => CobroDocumento::deCliente($cliente->id)->sinInvalidadosRetirables()
+            ->whereKeyNot($this->saldadosConNc($cliente));
 
         $presentacion = [];
         foreach (EstadoPresentacionCobro::cases() as $estado) {

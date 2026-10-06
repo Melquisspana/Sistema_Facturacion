@@ -352,7 +352,7 @@
 
             @if ($lote->esEditable() && auth()->user()->can('ppq.gestionar'))
                 <div class="flex justify-end">
-                    <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote?')">
+                    <form method="POST" action="{{ route('ppq.lotes.destroy', $lote) }}" onsubmit="return confirm('¿Eliminar todo el lote? Los CCF sin pagar vuelven a por presentar.')">
                         @csrf @method('DELETE')
                         <button class="text-sm text-red-600 hover:underline">Eliminar lote</button>
                     </form>

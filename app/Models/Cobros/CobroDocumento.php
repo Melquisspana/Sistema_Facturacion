@@ -172,6 +172,31 @@ class CobroDocumento extends Model
         return $q->whereHas('dte', fn (Builder $d) => $d->where('estado', EstadoDte::Invalidado->value));
     }
 
+    /**
+     * CCF del cliente que sus NC aceptadas y vigentes dejan en saldo 0 ({@see facturadoEfectivo()})
+     * y sin ningún cobro informado. No hay nada que presentar ni cobrar: el Seguimiento no
+     * los muestra ni los cuenta, igual que a los invalidados.
+     *
+     * @return array<int, int>
+     */
+    public static function idsSaldadosConNc(int $clienteId): array
+    {
+        $documentos = static::deCliente($clienteId)->where('tipo_dte', '03')->whereNotNull('dte_id')
+            ->whereIn('dte_id', Dte::query()->where('tipo_dte', '05')->where('estado', EstadoDte::Aceptado->value)
+                ->whereNotNull('dte_relacionado_id')->select('dte_relacionado_id'))
+            ->get(['id', 'dte_id', 'monto', 'monto_pagado']);
+        if ($documentos->isEmpty()) {
+            return [];
+        }
+
+        $notas = app(SaldoMontoCcf::class)->descontadoEnCobro($documentos->pluck('dte_id')->unique()->values()->all());
+
+        return $documentos
+            ->filter(fn (self $d) => Dinero::comparar(Dinero::restar($d->monto ?? '0', $notas[$d->dte_id] ?? '0'), '0') <= 0
+                && Dinero::comparar($d->monto_pagado ?? '0', '0') === 0)
+            ->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+    }
+
     /** Conserva a la vista los invalidados con presentación o pago que requieren revisión. */
     public function scopeSinInvalidadosRetirables(Builder $q): Builder
     {

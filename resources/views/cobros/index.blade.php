@@ -163,8 +163,52 @@
                     @else
                         @php $puedeGestionar = auth()->user()?->can('ppq.gestionar') ?? false; $listasEnPagina = 0; @endphp
                         <form method="POST" autocomplete="off" action="{{ route('cobros.ppq.crear', $cliente) }}"
-                              x-data="{ marcados: 0 }" x-on:change="marcados = $el.querySelectorAll('input[name=\'documentos[]\']:checked').length">
+                              x-data="{
+                                  montos: @js($listosPpq), filtro: @js($listosEnFiltro->keys()->map(fn ($id) => (string) $id)->values()),
+                                  pagina: @js($documentos->getCollection()->pluck('id')->map(fn ($id) => (string) $id)->values()),
+                                  clave: 'ppq-seleccion-{{ $cliente->id }}', seleccion: [], enviando: false,
+                                  init() {
+                                      try { const guardados = JSON.parse(localStorage.getItem(this.clave) || '[]');
+                                          if (Array.isArray(guardados)) this.seleccion = [...new Set(guardados.map(String))].filter(id => Object.hasOwn(this.montos, id));
+                                      } catch (e) {}
+                                      this.guardar();
+                                  },
+                                  guardar() { try { localStorage.setItem(this.clave, JSON.stringify(this.seleccion)); } catch (e) {} },
+                                  get marcados() { return this.seleccion.length; },
+                                  get total() { return (this.seleccion.reduce((s, id) => s + Math.round(Number(this.montos[id]) * 100), 0) / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); },
+                                  get fuera() { return this.seleccion.filter(id => !this.pagina.includes(id)); },
+                                  cambiar(id, marcado) { this.seleccion = marcado ? [...new Set([...this.seleccion, id])] : this.seleccion.filter(v => v !== id); this.guardar(); },
+                                  quitar() { this.seleccion = []; this.guardar(); },
+                                  todas() {
+                                      const ids = [...new Set([...this.seleccion, ...this.filtro])];
+                                      if (ids.length > {{ \App\Http\Controllers\Cobros\CobrosController::MAX_PPQ }}) { alert('El máximo por PPQ es de 500 CCF. Seleccione hasta 500.'); return; }
+                                      this.seleccion = ids; this.guardar();
+                                  },
+                                  enviar(evento) {
+                                      if (this.enviando || !this.marcados) { evento.preventDefault(); return; }
+                                      if (this.marcados > 500) { alert('El máximo por PPQ es de 500 CCF. Quite algunos de la selección.'); evento.preventDefault(); return; }
+                                      if (!confirm('Se creará un PPQ con ' + this.marcados + ' CCF por $' + this.total + '. ¿Continuar?')) { evento.preventDefault(); return; }
+                                      this.enviando = true;
+                                      try { localStorage.removeItem(this.clave); } catch (e) {}
+                                  }
+                              }" x-on:submit="enviar($event)">
                             @csrf
+                            @if ($puedeGestionar)
+                                {{-- Lo marcado en OTRAS páginas viaja oculto; el servidor vuelve a validar cada CCF. --}}
+                                <template x-for="id in fuera" :key="id">
+                                    <input type="hidden" name="documentos[]" :value="id">
+                                </template>
+                                <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                                    <span class="text-sm text-gray-700 dark:text-paper-100" x-text="marcados + ' CCF marcados · $' + total">0 CCF marcados · $0.00</span>
+                                    <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
+                                    @if ($cantidadListosEnFiltro > 0)
+                                        <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="todas()">Seleccionar todas las pendientes ({{ $cantidadListosEnFiltro }} · ${{ number_format((float) $totalListosEnFiltro, 2) }})</button>
+                                        @if ($cantidadListosEnFiltro > 500)
+                                            <span class="text-xs text-gray-500 dark:text-paper-300">El máximo por PPQ es de 500 CCF.</span>
+                                        @endif
+                                    @endif
+                                </div>
+                            @endif
                             <div class="overflow-x-auto">
                                 <table class="min-w-full text-sm">
                                     <caption class="sr-only">CCF de {{ $cliente->nombre }}, página {{ $documentos->currentPage() }} de {{ $documentos->lastPage() }}</caption>
@@ -196,7 +240,11 @@
                                                     $doc->revisar_historico => 'revisar',
                                                     default => 'listo',
                                                 };
-                                                $presentable = $estado === 'listo';
+                                                $presentable = isset($listosPpq[$doc->id]);
+                                                $motivoPpq = $motivosPpq[$doc->id] ?? null;
+                                                if ($estado === 'listo' && ! $presentable) {
+                                                    $estado = 'bloqueado_ppq';
+                                                }
                                                 $listasEnPagina += $presentable ? 1 : 0;
                                                 $notas = $doc->dte_id ? ($notasPorCcf[$doc->dte_id] ?? collect()) : collect();
                                                 $invalidadas = $notas->where('estado', \App\Enums\EstadoDte::Invalidado)->count();
@@ -207,6 +255,7 @@
                                                     @if ($presentable && $puedeGestionar)
                                                         <label class="sr-only" for="doc_{{ $doc->id }}">Incluir {{ $doc->numero_control }}</label>
                                                         <input id="doc_{{ $doc->id }}" type="checkbox" name="documentos[]" value="{{ $doc->id }}"
+                                                               :checked="seleccion.includes('{{ $doc->id }}')" x-on:change="cambiar('{{ $doc->id }}', $event.target.checked)"
                                                                class="h-5 w-5 rounded border-gray-300 text-indigo-600">
                                                     @endif
                                                 </td>
@@ -255,6 +304,11 @@
                                                             'nc' => ['Va con su CCF', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300'],
                                                             'no_entregado' => ['No entregado', 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'],
                                                             'revisar' => ['Revisar', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300'],
+                                                            'bloqueado_ppq' => [match ($motivoPpq) {
+                                                                'ya está en un PPQ' => 'En otro PPQ',
+                                                                'tiene pagos en revisión' => 'Pago en revisión',
+                                                                default => ucfirst($motivoPpq ?? 'Revisar'),
+                                                            }, 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300'],
                                                             default => ['Entregado · listo', 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200'],
                                                         };
                                                     @endphp
@@ -283,8 +337,10 @@
                                     · {{ $listasEnPagina }} listo(s) en esta página
                                 </p>
                                 @if ($puedeGestionar)
+                                    <span class="text-sm text-gray-700 dark:text-paper-100" x-text="marcados + ' CCF marcados · $' + total">0 CCF marcados · $0.00</span>
+                                    <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
                                     <button class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                                            @disabled($listasEnPagina === 0)>
+                                            :disabled="enviando || marcados === 0">
                                         Crear PPQ con lo marcado
                                         <span x-show="marcados > 0" x-text="'(' + marcados + ')'"></span>
                                     </button>

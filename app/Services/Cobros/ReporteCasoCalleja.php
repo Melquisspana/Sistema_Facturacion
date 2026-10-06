@@ -109,7 +109,7 @@ class ReporteCasoCalleja
 Caso {$caso} de Calleja."),
             ]);
             $lote = $lote->id;
-            $anteriores = PpqItem::where('ppq_lote_id', '<', $lote)->pluck('numero_control')
+            $anteriores = PpqItem::whereHas('lote')->where('ppq_lote_id', '<', $lote)->pluck('numero_control')
                 ->map(fn ($n) => IdentidadPpq::normalizar($n))->filter()->flip();
 
             foreach (PpqItem::where('ppq_lote_id', $lote)->pluck('numero_control') as $control) {
@@ -136,7 +136,7 @@ Caso {$caso} de Calleja."),
     private function loteDelCaso(array $claves): ?int
     {
         $conteo = [];
-        foreach (PpqItem::whereNotNull('numero_control')->get(['ppq_lote_id', 'numero_control']) as $item) {
+        foreach (PpqItem::whereHas('lote')->whereNotNull('numero_control')->get(['ppq_lote_id', 'numero_control']) as $item) {
             if (in_array(IdentidadPpq::normalizar($item->numero_control), $claves, true)) {
                 $conteo[$item->ppq_lote_id] = ($conteo[$item->ppq_lote_id] ?? 0) + 1;
             }
