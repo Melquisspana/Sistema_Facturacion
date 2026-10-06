@@ -454,7 +454,9 @@ return [
     'pdf' => [
         // Logo del emisor (PNG/JPG/SVG). Si el archivo no existe, el PDF no se rompe:
         // se muestra solo el texto. Cambiá la ruta acá o por .env (DTE_PDF_LOGO_PATH).
-        'logo_path' => env('DTE_PDF_LOGO_PATH', public_path('images/dte/logo-transparent.png')),
+        // logo-pdf.png es logo-transparent.png reducido a 3× el tamaño impreso (64×96 px)
+        // y en paleta: ~12 KB en vez de ~200 KB por cada PDF.
+        'logo_path' => env('DTE_PDF_LOGO_PATH', public_path('images/dte/logo-pdf.png')),
         // URL base de la consulta pública del MH para el QR OFICIAL (solo se usa cuando
         // existe sello de recepción; nunca se inventa un QR).
         'consulta_qr_url' => env('DTE_PDF_QR_URL', 'https://admin.factura.gob.sv/consultaPublica'),

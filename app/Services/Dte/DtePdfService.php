@@ -21,7 +21,11 @@ class DtePdfService
     /** Objeto PDF listo para stream()/download()/output(). */
     public function pdf(Dte $dte): \Barryvdh\DomPDF\PDF
     {
-        return Pdf::loadView('facturacion.pdf', $this->datosVista($dte))->setPaper('letter');
+        // Subconjunto de fuentes: sin esto Dompdf incrusta las DejaVu completas (~1,5 MB)
+        // en CADA PDF. El paquete mensual de contabilidad llegó a 240 MB por eso.
+        return Pdf::loadView('facturacion.pdf', $this->datosVista($dte))
+            ->setPaper('letter')
+            ->setOption('enable_font_subsetting', true);
     }
 
     /**
