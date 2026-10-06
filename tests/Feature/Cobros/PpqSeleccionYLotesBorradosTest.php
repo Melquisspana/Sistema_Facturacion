@@ -18,6 +18,7 @@ use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
+use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -137,12 +138,14 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
     {
         $this->travelTo(now()->startOfSecond());
         $doc = $this->ccf();
-        $this->crear([$doc]);
+        $devueltoDe = $this->crear([$doc]);
+        $devueltoDe->update(['observaciones' => 'Caso 999 de Calleja.']);
         $this->travel(1)->seconds();
         $doc->refresh()->forceFill(['presentacion_estado' => 'sin_presentar'])->save();
         CobroEvento::create([
             'cobro_documento_id' => $doc->id, 'tipo' => 'nota', 'origen' => 'manual',
             'referencia_linea' => 'caso-999-fuera', 'fecha' => today(),
+            'datos' => ['caso' => '999'],
         ]);
         $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->claves()->has($doc->numero_control_norm));
         $this->travel(1)->seconds();
@@ -173,6 +176,65 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         }
         $this->assertSame(0, PpqLote::count());
         $this->assertCount(0, app(ElegibilidadPpqSeguimiento::class)->listos(CobroDocumento::deCliente($this->cliente->id)));
+    }
+
+    public function test_fuera_de_otro_caso_no_libera_el_lote_armado(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        $doc = $this->ccf();
+        $anterior = PpqLote::forceCreate(['id' => 12, 'referencia' => 'Anterior', 'fecha' => today(), 'estado' => 'enviado',
+            'cliente_id' => $this->cliente->id, 'observaciones' => 'Caso 123 de Calleja.']);
+        $actual = $this->crear([$doc]);
+        $this->assertSame(13, $actual->id);
+        $actual->update(['observaciones' => 'Caso 12 de Calleja.']);
+        $this->travel(1)->seconds();
+        $doc->refresh()->update(['presentacion_estado' => 'sin_presentar']);
+        $evento = CobroEvento::create(['cobro_documento_id' => $doc->id, 'tipo' => 'nota', 'origen' => 'manual',
+            'referencia_linea' => 'caso-123-fuera', 'fecha' => today(), 'datos' => ['caso' => '123']]);
+        $elegibilidad = app(ElegibilidadPpqSeguimiento::class);
+        $this->assertSame('ya está en un PPQ', $elegibilidad->motivo($doc->fresh(), $elegibilidad->claves()));
+        $this->assertCount(0, $elegibilidad->listos(CobroDocumento::deCliente($this->cliente->id)));
+        $evento->update(['datos' => ['caso' => '12', 'ppq_lote_id' => $anterior->id]]);
+        $this->assertTrue($elegibilidad->claves()->has($doc->numero_control_norm), 'El id del lote prevalece sobre las observaciones.');
+        $this->actingAs($this->usuario())->post(route('cobros.ppq.crear', $this->cliente), ['documentos' => [$doc->id]])
+            ->assertSessionHasErrors('documentos');
+        $this->assertSame(2, PpqLote::count());
+    }
+
+    public function test_item_con_solo_dte_id_bloquea_y_se_conserva_al_borrar_otro(): void
+    {
+        $doc = $this->ccf();
+        $borrado = $this->crear([$doc]);
+        $otro = PpqLote::create(['referencia' => 'Solo id', 'fecha' => today(), 'estado' => 'borrador']);
+        $otro->items()->create(['tipo_dte' => '03', 'dte_id' => $doc->dte_id, 'numero_control' => null, 'monto_dte' => 100]);
+        $otro->items()->update(['numero_control' => null]);
+        $doc->refresh()->update(['presentacion_estado' => 'sin_presentar']);
+        $elegibilidad = app(ElegibilidadPpqSeguimiento::class);
+        $claves = $elegibilidad->claves($borrado->id);
+        $this->assertSame($otro->id, $claves->get('dte:'.$doc->dte_id));
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $doc->fresh()->presentacion_estado);
+        $this->assertSame('ya está en un PPQ', $elegibilidad->motivo($doc->fresh(), $claves));
+        $this->assertCount(0, $elegibilidad->listos(CobroDocumento::deCliente($this->cliente->id), $claves));
+        $otro->items()->update(['numero_control' => 'DTE-03-CONTROL-DISTINTO']);
+        $this->assertSame('ya está en un PPQ', $elegibilidad->motivo($doc->fresh(), $elegibilidad->claves($borrado->id)));
+        $doc->update(['presentacion_estado' => 'preparada']);
+        $this->actingAs($this->usuario())->delete(route('ppq.lotes.destroy', $borrado))
+            ->assertSessionHas('status', fn ($mensaje) => str_contains($mensaje, "sigue en el PPQ #{$otro->id}"));
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $doc->refresh()->presentacion_estado);
+    }
+
+    public function test_fuera_del_mismo_lote_se_guarda_con_id_y_libera(): void
+    {
+        $doc = $this->ccf();
+        $registrado = $this->ccf();
+        $lote = $this->crear([$doc, $registrado]);
+        $this->travel(1)->seconds();
+        app(ReporteCasoCalleja::class)->aplicar($this->cliente,
+            ['caso' => '999', 'documentos' => [$registrado->numero_control_norm => 'REGISTRADO']], null, $lote);
+        $evento = CobroEvento::where('referencia_linea', 'caso-999-fuera')->sole();
+        $this->assertSame($lote->id, $evento->datos['ppq_lote_id']);
+        $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->claves()->has($doc->numero_control_norm));
+        $this->assertSame(1, $this->crear([$doc->fresh()])->items()->count());
     }
 
     public function test_doble_envio_crea_un_solo_lote(): void

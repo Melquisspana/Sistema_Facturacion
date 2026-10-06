@@ -104,7 +104,7 @@ class ReporteCasoCalleja
             // El PPQ queda presentado, con su número de caso.
             $lote->update([
                 'estado' => $lote->estado === EstadoPpq::Pagado ? EstadoPpq::Pagado->value : EstadoPpq::Enviado->value,
-                'observaciones' => str_contains((string) $lote->observaciones, "Caso {$caso}") ? $lote->observaciones
+                'observaciones' => preg_match('/\bCaso\s+'.preg_quote((string) $caso, '/').'\b(?!\d)/i', (string) $lote->observaciones) ? $lote->observaciones
                     : trim(((string) $lote->observaciones)."
 Caso {$caso} de Calleja."),
             ]);
@@ -123,7 +123,7 @@ Caso {$caso} de Calleja."),
                 CobroEvento::firstOrCreate(
                     ['cobro_documento_id' => $doc->id, 'tipo' => TipoEventoCobro::Nota->value, 'referencia_linea' => 'caso-'.$caso.'-fuera'],
                     ['origen' => 'manual', 'fecha' => today()->toDateString(), 'user_id' => $usuario?->id,
-                        'detalle' => "Calleja no lo tomó en el caso {$caso}: va en el siguiente PPQ.", 'datos' => ['caso' => $caso]],
+                        'detalle' => "Calleja no lo tomó en el caso {$caso}: va en el siguiente PPQ.", 'datos' => ['caso' => $caso, 'ppq_lote_id' => $lote]],
                 );
                 $resultado['devueltos'][] = $doc;
             }

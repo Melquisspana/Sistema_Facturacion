@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Ppq;
 
+use App\Enums\Cobros\EstadoPagoCobro;
+use App\Enums\Cobros\EstadoPresentacionCobro;
+use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Enums\EstadoPpq;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
@@ -11,6 +14,8 @@ use App\Exceptions\Ppq\ConciliacionYaProcesadaException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Ppq\PpqLoteRequest;
 use App\Models\Cliente;
+use App\Models\Cobros\CobroDocumento;
+use App\Models\Cobros\CobroEvento;
 use App\Models\NcExportacion;
 use App\Models\NcExportacionItem;
 use App\Models\PpqItem;
@@ -24,8 +29,10 @@ use App\Services\Ppq\EstadoRealLotePpq;
 use App\Services\Ppq\ExcelCallejaExporter;
 use App\Services\Ppq\FichaLotePpq;
 use App\Services\Ppq\NcExportacionService;
+use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\Ppq\QuedanCallejaExporter;
 use App\Services\Ppq\ReversionConciliacion;
+use App\Support\IdentidadPpq;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -193,8 +200,71 @@ class PpqLoteController extends Controller
             'lote' => $lote,
             'resumen' => $ficha->resumen($filas),
             'estadoReal' => app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id],
+            'ncNuevas' => app(NcPosterioresLotePpq::class)->notas($lote),
+            'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
+            'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
             'items' => $ficha->pagina($ficha->idsRecientesPrimero($filas)),
         ]);
+    }
+
+    public function agregarNc(Request $request, PpqLote $lote, NcPosterioresLotePpq $notas): RedirectResponse
+    {
+        return DB::transaction(function () use ($request, $lote, $notas) {
+            $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            if (! $notas->admite($actual)) {
+                return redirect()->route('ppq.lotes.show', $lote)
+                    ->with('error', 'Este PPQ ya se presentó: las NC nuevas no se agregan.');
+            }
+            $cantidad = $notas->agregar($actual, $request->user());
+
+            return redirect()->route('ppq.lotes.show', $lote)->with('status', "Se agregaron {$cantidad} NC al PPQ.");
+        });
+    }
+
+    /** Registra la presentación manual del lote y sus CCF pendientes, con auditoría. */
+    public function marcarPresentado(Request $request, PpqLote $lote): RedirectResponse
+    {
+        return DB::transaction(function () use ($request, $lote) {
+            $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            $real = app(EstadoRealLotePpq::class)->calcular(collect([$actual]))[$actual->id];
+            if (! in_array($real['estado']['key'], ['armado', 'anterior'], true)
+                || in_array($actual->estado, [EstadoPpq::Enviado, EstadoPpq::Pagado], true)) {
+                return redirect()->route('ppq.lotes.show', $lote)->with('error', 'Este PPQ ya figura como presentado.');
+            }
+            $datos = $request->validate(['fecha' => ['required', 'date_format:Y-m-d', 'before_or_equal:today',
+                'after_or_equal:'.$actual->fecha->toDateString()]]);
+            $fecha = Carbon::parse($datos['fecha']);
+            $usuario = $request->user();
+            $items = $actual->items->where('tipo_dte', '03');
+            $claves = $items->pluck('numero_control')->map(fn ($n) => IdentidadPpq::normalizar($n))->filter();
+            $documentos = CobroDocumento::where('tipo_dte', '03')
+                ->when($actual->cliente_id !== null, fn ($q) => $q->where('cliente_id', $actual->cliente_id))
+                ->where(fn ($q) => $q->whereIn('dte_id', $items->pluck('dte_id')->filter())
+                    ->orWhereIn('numero_control_norm', $claves))
+                ->whereIn('presentacion_estado', [EstadoPresentacionCobro::Preparada->value, EstadoPresentacionCobro::SinPresentar->value])
+                ->where('pago_estado', EstadoPagoCobro::Pendiente->value)
+                ->orderBy('id')->lockForUpdate()->get();
+            foreach ($documentos as $doc) {
+                $doc->update(['presentacion_estado' => EstadoPresentacionCobro::Presentada->value]);
+                CobroEvento::firstOrCreate([
+                    'cobro_documento_id' => $doc->id, 'tipo' => TipoEventoCobro::Presentacion->value,
+                    'referencia_linea' => "ppq-{$actual->id}-presentado",
+                ], [
+                    'origen' => 'manual', 'fecha' => $datos['fecha'], 'user_id' => $usuario->id,
+                    'detalle' => "Presentado en el portal con el PPQ {$actual->referencia} (marcado a mano).",
+                ]);
+            }
+            $actual->update([
+                'estado' => EstadoPpq::Enviado,
+                'observaciones' => trim(($actual->observaciones ?? '')."\nPresentado en el portal el {$fecha->format('d/m/Y')} (marcado a mano por {$usuario->name})."),
+            ]);
+            $cantidad = $documentos->count();
+            activity()->performedOn($actual)->causedBy($usuario)
+                ->withProperties(['fecha' => $datos['fecha'], 'ccf' => $cantidad])->log('ppq.marcado_presentado');
+
+            return redirect()->route('ppq.lotes.show', $lote)
+                ->with('status', "PPQ marcado como presentado el {$fecha->format('d/m/Y')}: {$cantidad} CCF.");
+        });
     }
 
     public function edit(PpqLote $lote): View

@@ -93,7 +93,8 @@ class LiberarCcfDeLoteBorrado
         if ($doc->cobro_solicitud_id !== null) {
             return 'va en la solicitud '.($doc->solicitud?->referencia ?? '#'.$doc->cobro_solicitud_id);
         }
-        if (($otro = $ocupadas->get($doc->numero_control_norm)) !== null) {
+        if (($otro = $ocupadas->get($doc->numero_control_norm)
+            ?? ($doc->dte_id !== null ? $ocupadas->get('dte:'.$doc->dte_id) : null)) !== null) {
             return "sigue en el PPQ #{$otro}, que no está borrado";
         }
         $recibido = $doc->eventos->first();
