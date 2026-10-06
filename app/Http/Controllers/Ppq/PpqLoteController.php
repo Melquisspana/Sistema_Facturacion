@@ -24,6 +24,7 @@ use App\Services\Ppq\EstadoRealLotePpq;
 use App\Services\Ppq\ExcelCallejaExporter;
 use App\Services\Ppq\FichaLotePpq;
 use App\Services\Ppq\NcExportacionService;
+use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\Ppq\QuedanCallejaExporter;
 use App\Services\Ppq\ReversionConciliacion;
 use Illuminate\Http\RedirectResponse;
@@ -193,8 +194,25 @@ class PpqLoteController extends Controller
             'lote' => $lote,
             'resumen' => $ficha->resumen($filas),
             'estadoReal' => app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id],
+            'ncNuevas' => app(NcPosterioresLotePpq::class)->notas($lote),
+            'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
+            'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
             'items' => $ficha->pagina($ficha->idsRecientesPrimero($filas)),
         ]);
+    }
+
+    public function agregarNc(Request $request, PpqLote $lote, NcPosterioresLotePpq $notas): RedirectResponse
+    {
+        return DB::transaction(function () use ($request, $lote, $notas) {
+            $actual = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+            if (! $notas->admite($actual)) {
+                return redirect()->route('ppq.lotes.show', $lote)
+                    ->with('error', 'Este PPQ ya se presentó: las NC nuevas no se agregan.');
+            }
+            $cantidad = $notas->agregar($actual, $request->user());
+
+            return redirect()->route('ppq.lotes.show', $lote)->with('status', "Se agregaron {$cantidad} NC al PPQ.");
+        });
     }
 
     public function edit(PpqLote $lote): View
