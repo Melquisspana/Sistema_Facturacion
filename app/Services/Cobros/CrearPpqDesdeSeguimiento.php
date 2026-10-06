@@ -10,6 +10,7 @@ use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\PpqLote;
 use App\Models\User;
+use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -29,6 +30,8 @@ class CrearPpqDesdeSeguimiento
     public function crear(Cliente $cliente, array $ids, ?User $usuario = null): PpqLote
     {
         return DB::transaction(function () use ($cliente, $ids, $usuario) {
+            // Dos armados del mismo cliente no pueden tomar simultáneamente una NC suelta.
+            Cliente::whereKey($cliente->id)->lockForUpdate()->firstOrFail();
             $documentos = CobroDocumento::deCliente($cliente->id)->whereIn('id', $ids)->where('tipo_dte', '03')
                 ->orderBy('id')->lockForUpdate()->get();
             $documentos->load('albaran', 'dte', 'eventos');
@@ -83,22 +86,15 @@ class CrearPpqDesdeSeguimiento
                 $notas = Dte::where('dte_relacionado_id', $doc->dte_id)->where('tipo_dte', '05')
                     ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')->get();
                 foreach ($notas as $nc) {
-                    if ($enLotes->has(IdentidadPpq::normalizar($nc->numero_control))) {
+                    if ($enLotes->has(IdentidadPpq::normalizar($nc->numero_control)) || $enLotes->has('dte:'.$nc->id)) {
                         continue;
                     }
-                    $lote->items()->create([
-                        'dte_id' => $nc->id,
-                        'origen' => 'local',
-                        'numero_control' => $nc->numero_control,
-                        'codigo_generacion' => $nc->codigo_generacion,
-                        'sello_recepcion' => $nc->sello_recepcion,
-                        'tipo_dte' => '05',
-                        'fecha_documento' => $nc->fecha_emision,
-                        'sin_albaran' => true,
-                        'numero_orden_compra' => $nc->numero_orden_compra,
-                        'monto_dte' => $nc->total_pagar,
-                    ]);
+                    $lote->items()->create(NcPosterioresLotePpq::datosItemNc($nc));
                 }
+            }
+
+            foreach (app(NcPosterioresLotePpq::class)->sueltasDelCliente($cliente) as $nc) {
+                $lote->items()->create(NcPosterioresLotePpq::datosItemNc($nc));
             }
 
             return $lote;

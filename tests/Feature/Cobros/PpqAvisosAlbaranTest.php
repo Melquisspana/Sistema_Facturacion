@@ -175,6 +175,6 @@ class PpqAvisosAlbaranTest extends TestCase
         $doc = $this->ccf();
         $lote = PpqLote::create(['referencia' => 'Ficticio', 'fecha' => today(), 'estado' => 'borrador', 'cliente_id' => $this->cliente->id]);
         $lote->items()->create(['tipo_dte' => '03', 'dte_id' => $doc->dte_id, 'numero_control' => 'OTRO-999', 'ppq_albaran_id' => $doc->ppq_albaran_id, 'monto_dte' => '100.00']);
-        $this->assertNull(app(ElegibilidadPpqSeguimiento::class)->avisos(collect([$doc->id]))[$doc->id]['duplicado']);
+        $this->assertNull(app(ElegibilidadPpqSeguimiento::class)->avisos(collect([$doc->id]))[$doc->id]['duplicado'] ?? null);
     }
 }

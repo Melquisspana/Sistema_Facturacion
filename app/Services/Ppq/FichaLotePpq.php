@@ -216,7 +216,7 @@ class FichaLotePpq
             : PpqItem::query()
                 ->whereIn('id', $corte)
                 ->with([
-                    'dte:id,tipo_dte,numero_control,codigo_generacion,sello_recepcion,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id',
+                    'dte:id,tipo_dte,numero_control,codigo_generacion,sello_recepcion,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id,dte_relacionado_id',
                     'dte.clienteSucursal:id,nombre,codigo',
                     'albaran:id,numero_albaran,tipo_codigo,fecha_albaran,monto_albaran,sala_codigo',
                 ])

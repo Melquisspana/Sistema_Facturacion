@@ -168,6 +168,7 @@
                                   montos: @js($listosPpq), filtro: @js($listosEnFiltro->keys()->map(fn ($id) => (string) $id)->values()),
                                   pagina: @js($documentos->getCollection()->pluck('id')->map(fn ($id) => (string) $id)->values()),
                                   clave: 'ppq-seleccion-{{ $cliente->id }}', seleccion: [], enviando: false,
+                                  ncPosteriores: {{ $ncSueltas->count() }}, montoNcPosteriores: {{ $ncSueltas->sum('total_pagar') }},
                                   init() {
                                       try { const guardados = JSON.parse(localStorage.getItem(this.clave) || '[]');
                                           if (Array.isArray(guardados)) this.seleccion = [...new Set(guardados.map(String))].filter(id => Object.hasOwn(this.montos, id));
@@ -192,7 +193,8 @@
                                       if (this.enviando || !this.marcados) { evento.preventDefault(); return; }
                                       if (this.marcados > 500) { alert('El máximo por PPQ es de 500 CCF. Quite algunos de la selección.'); evento.preventDefault(); return; }
                                       const aviso = this.recientes || this.duplicados ? ' Atención: ' + this.recientes + ' con albarán reciente (puede que el portal no los encuentre) y ' + this.duplicados + ' posibles duplicados.' : '';
-                                      if (!confirm('Se creará un PPQ con ' + this.marcados + ' CCF por $' + this.total + '.' + aviso + ' ¿Continuar?')) { evento.preventDefault(); return; }
+                                      const nc = this.ncPosteriores ? ' y ' + this.ncPosteriores + ' NC posteriores a una presentación por −$' + this.montoNcPosteriores.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '';
+                                      if (!confirm('Se creará un PPQ con ' + this.marcados + ' CCF por $' + this.total + nc + '.' + aviso + ' ¿Continuar?')) { evento.preventDefault(); return; }
                                       this.enviando = true;
                                       try { localStorage.removeItem(this.clave); } catch (e) {}
                                   }
@@ -356,6 +358,9 @@
                                         Crear PPQ con lo marcado
                                         <span x-show="marcados > 0" x-text="'(' + marcados + ')'"></span>
                                     </button>
+                                    @if ($ncSueltas->isNotEmpty())
+                                        <span class="text-xs text-gray-500 dark:text-paper-300" title="{{ $ncSueltas->pluck('numero_control')->implode(', ') }}">Se agregarán también {{ $ncSueltas->count() }} NC posteriores a una presentación (−${{ number_format((float) $ncSueltas->sum('total_pagar'), 2) }})</span>
+                                    @endif
                                 @else
                                     <p class="text-xs text-gray-500 dark:text-paper-300">Solo lectura.</p>
                                 @endif

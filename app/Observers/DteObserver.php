@@ -3,11 +3,15 @@
 namespace App\Observers;
 
 use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Facades\Ajustes;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Services\Dte\EnvioDteCorreoService;
+use App\Services\Ppq\NcPosterioresLotePpq;
+use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Inmutabilidad del DTE a nivel de modelo (defensa que no depende del controller).
@@ -98,6 +102,15 @@ class DteObserver
     {
         if (! $dte->wasChanged('estado') || $dte->estado !== EstadoDte::Aceptado) {
             return;
+        }
+        if ($dte->tipo_dte === TipoDte::NotaCredito && $dte->dte_relacionado_id) {
+            DB::afterCommit(function () use ($dte) {
+                try {
+                    app(NcPosterioresLotePpq::class)->alAceptarse($dte);
+                } catch (Throwable $e) {
+                    report($e);
+                }
+            });
         }
         if (! Ajustes::bool('correo.auto_envio', false)) {
             return;

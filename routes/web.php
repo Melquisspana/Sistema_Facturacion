@@ -476,6 +476,8 @@ Route::middleware('auth')->group(function () {
             Route::get('lotes/{lote}/editar', [PpqLoteController::class, 'edit'])->name('lotes.edit');
             Route::put('lotes/{lote}', [PpqLoteController::class, 'update'])->name('lotes.update');
             Route::delete('lotes/{lote}', [PpqLoteController::class, 'destroy'])->name('lotes.destroy');
+            Route::post('lotes/{lote}/agregar-nc', [PpqLoteController::class, 'agregarNc'])->name('lotes.agregar-nc');
+            Route::post('lotes/{lote}/marcar-presentado', [PpqLoteController::class, 'marcarPresentado'])->name('lotes.marcar-presentado');
             Route::post('lotes/{lote}/items', [PpqItemController::class, 'store'])->name('lotes.items.store');
             Route::delete('lotes/{lote}/items/{item}', [PpqItemController::class, 'destroy'])->name('lotes.items.destroy');
             // Conciliación del lote contra el TXT de pagos de Calleja.

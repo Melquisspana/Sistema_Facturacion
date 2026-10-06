@@ -61,6 +61,25 @@
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
+            @if ($ncNuevas->isNotEmpty())
+                <div class="rounded-md bg-gray-100 p-3 text-sm text-gray-700 dark:bg-ink-700 dark:text-paper-100">
+                    @if ($admiteNcNuevas)
+                        <p>Hay {{ $ncNuevas->count() }} NC nuevas de CCF de este PPQ</p>
+                        @can('ppq.gestionar')
+                            <form method="POST" action="{{ route('ppq.lotes.agregar-nc', $lote) }}">
+                                @csrf
+                                <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Agregar NC nuevas ({{ $ncNuevas->count() }})</button>
+                            </form>
+                        @endcan
+                    @else
+                        <p>NC posterior a la presentación: {{ $ncNuevas->count() }} NC de CCF de este PPQ se emitieron después de presentarlo. No se agregan a este lote.</p>
+                        @foreach ($ncNuevas as $nc)
+                            <p>{{ $nc->numero_control }} · {{ $money($nc->total_pagar) }}</p>
+                        @endforeach
+                    @endif
+                </div>
+            @endif
+
             @if (session('status'))
                 <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
             @endif
@@ -123,6 +142,24 @@
             </div>
 
             {{-- Reporte del caso que devuelve el portal: deja el PPQ presentado. --}}
+            @if (in_array($estadoReal['estado']['key'], ['armado', 'anterior'], true) && !in_array($lote->estado, [\App\Enums\EstadoPpq::Enviado, \App\Enums\EstadoPpq::Pagado], true))
+                @can('ppq.gestionar')
+                    <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
+                        <form method="POST" action="{{ route('ppq.lotes.marcar-presentado', $lote) }}" class="flex flex-wrap items-end gap-3"
+                              onsubmit="return confirm('¿Marcar este PPQ como presentado en el portal el ' + this.elements.fecha.value.split('-').reverse().join('/') + '? Ya no aceptará NC nuevas.');">
+                            @csrf
+                            <div>
+                                <label for="fecha-presentacion" class="block text-xs text-gray-500">Fecha de presentación en el portal</label>
+                                <input id="fecha-presentacion" name="fecha" type="date" required value="{{ old('fecha', today()->toDateString()) }}"
+                                       min="{{ $lote->fecha->toDateString() }}" max="{{ today()->toDateString() }}" class="mt-0.5 rounded-md border-gray-300 text-sm">
+                            </div>
+                            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Marcar como presentado</button>
+                        </form>
+                        @error('fecha')<p class="mt-2 text-xs text-red-600">{{ $message }}</p>@enderror
+                    </div>
+                @endcan
+            @endif
+
             @if ($resumen['cantidad'] > 0 && auth()->user()->can('ppq.gestionar'))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
                     <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de Calleja</h3>
@@ -210,6 +247,9 @@
                                     <td class="py-2 px-3" title="{{ $control }} · código {{ $codigo ?: '—' }} · sello {{ $sello ?: '—' }}">
                                         <span class="font-mono font-semibold {{ $item->esNc() ? 'text-rose-600' : 'text-gray-800' }}">{{ preg_match('/(\d+)$/', (string) $control, $mc) ? (ltrim($mc[1], '0') ?: '0') : ($control ?: '—') }}</span>
                                         <span class="text-[11px] {{ $item->esNc() ? 'text-rose-500 font-medium' : 'text-gray-400' }}">{{ $tipo === '05' ? 'NC' : 'CCF' }}</span>
+                                        @if ($item->esNc() && $item->dte?->dte_relacionado_id && ! $idsCcfLote->has($item->dte->dte_relacionado_id))
+                                            <span class="inline-block rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">NC posterior</span>
+                                        @endif
                                         @if ($item->numero_orden_compra)
                                             <span class="block font-mono text-[11px] text-gray-400">OC {{ $item->numero_orden_compra }}</span>
                                         @endif

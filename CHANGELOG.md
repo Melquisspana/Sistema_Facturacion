@@ -8,6 +8,31 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.06.3] - 2026-10-06
+
+Tercer despliegue del día. Incluye #64 y #65. No trae migraciones. La nota de crédito versión 4 (#58) queda en el código, pero no se desplegó.
+
+### Agregado
+
+- Seguimiento de CCF: botón «Seleccionar todas las pendientes» (respeta el filtro, hasta 500 CCF por PPQ). La selección se conserva al cambiar de página, y antes de crear el PPQ se confirma la cantidad y el monto. #64
+- Comandos de reparación idempotentes: `ppq:liberar-lotes-borrados` (devuelve a «por presentar» los CCF de un lote que se borró antes del arreglo) y `ppq:completar-cliente-lotes` (completa el cliente de los lotes que no lo tienen). Los dos admiten `--dry-run`. #64 #65
+
+### Cambiado
+
+- Historial de PPQ: el estado de cada lote se calcula a partir de sus CCF en el Seguimiento (pagado, con diferencias, en cobro, presentado, armado) y ya no depende de la columna guardada. #65
+
+### Corregido
+
+- Borrar un PPQ devuelve sus CCF a «por presentar», salvo los que tienen pago, van en una solicitud, siguen en otro PPQ vigente o figuran en un caso de Calleja. Un doble clic ya no crea dos lotes. #64
+
+## [2026.10.06.2] - 2026-10-06
+
+Segundo despliegue del día. Incluye #62. No trae migraciones.
+
+### Cambiado
+
+- El PDF del DTE incluye solo los caracteres usados de cada fuente y usa un logo reducido. Una factura bajó a unos 100 KB, y el paquete mensual de contabilidad pasó de 240 MB a 36 MB. #62
+
 ## [2026.10.06] - 2026-10-06
 
 Incluye #37, #38, #47, #48, #50, #55 y #56. No trae migraciones. También entra la matriz de invalidación de Hacienda (documento sustituto y notas vigentes), que es la base de #38 y #50 y todavía no estaba en producción. El código de #44 (Rutas) queda en el repositorio, pero no se desplegó: depende de la reorganización de Rutas, que necesita migraciones pendientes.

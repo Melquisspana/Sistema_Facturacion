@@ -36,6 +36,7 @@ use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
 use App\Services\Ppq\GmailClient;
+use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use DateTimeImmutable;
@@ -184,6 +185,7 @@ class CobrosController extends Controller
             'avisosPpq' => $avisosPpq,
             'duplicadosEnFiltro' => $duplicadosEnFiltro,
             'listosPpq' => $listosPpq,
+            'ncSueltas' => app(NcPosterioresLotePpq::class)->sueltasDelCliente($cliente),
             'listosEnFiltro' => $listosEnFiltro,
             'cantidadListosEnFiltro' => $listosEnFiltro->count(),
             'totalListosEnFiltro' => Dinero::redondear($totalListosEnFiltro),
@@ -773,9 +775,18 @@ class CobrosController extends Controller
         $cantidad = (clone $ccf)->count();
         $total = number_format((float) $ccf->sum('monto_dte'), 2);
         $documentos = $lote->items()->count();
+        $idsCcf = (clone $ccf)->whereNotNull('dte_id')->pluck('dte_id');
+        $posteriores = $lote->items()->where('tipo_dte', '05')
+            ->whereHas('dte', fn ($q) => $q->whereNotNull('dte_relacionado_id')->whereNotIn('dte_relacionado_id', $idsCcf))
+            ->get(['monto_dte']);
+        $mensaje = "PPQ creado con {$cantidad} CCF por \${$total} ({$documentos} documento(s) con sus NC). Descargá el archivo de NC y el de quedan.";
+        if ($posteriores->isNotEmpty()) {
+            $monto = number_format((float) $posteriores->sum('monto_dte'), 2);
+            $mensaje .= " Incluye {$posteriores->count()} NC posteriores a una presentación (\${$monto}).";
+        }
 
         return redirect()->route('ppq.lotes.show', $lote)
-            ->with('status', "PPQ creado con {$cantidad} CCF por \${$total} ({$documentos} documento(s) con sus NC). Descargá el archivo de NC y el de quedan.{$aviso}");
+            ->with('status', $mensaje.$aviso);
     }
 
     // ─────────────────────────────────── internos ───────────────────────────────────

@@ -22,12 +22,12 @@ use Illuminate\Support\Collection;
 class ElegibilidadPpqSeguimiento
 {
     /**
-     * Números de control normalizados que ya ocupan un lote VIGENTE, con el id de ese lote.
+     * Identidades ocupadas en un lote VIGENTE: número normalizado o «dte:{id}» => id del lote.
      *
      * No cuentan los lotes borrados (borrado blando: sus items quedan) ni los CCF que Calleja
      * no tomó en un caso («va en el siguiente PPQ»): esos tienen un evento `caso-…-fuera`
-     * posterior al item. Si después se vuelven a meter en otro lote, el item nuevo es
-     * posterior al evento y vuelve a bloquear.
+     * posterior al item y perteneciente a ese mismo lote. Si después se vuelven a meter
+     * en otro lote, el item nuevo es posterior al evento y vuelve a bloquear.
      *
      * @return Collection<string, int> clave normalizada => id del lote
      */
@@ -35,23 +35,41 @@ class ElegibilidadPpqSeguimiento
     {
         $items = PpqItem::whereHas('lote')
             ->when($sinLote !== null, fn ($q) => $q->where('ppq_lote_id', '!=', $sinLote))
-            ->get(['ppq_lote_id', 'numero_control', 'created_at']);
+            ->with('lote:id,observaciones')
+            ->get(['ppq_lote_id', 'dte_id', 'numero_control', 'created_at']);
 
         $devoluciones = CobroEvento::where('tipo', TipoEventoCobro::Nota->value)
             ->where('referencia_linea', 'like', 'caso-%-fuera')
-            ->join('cobro_documentos', 'cobro_documentos.id', '=', 'cobro_eventos.cobro_documento_id')
-            ->select('numero_control_norm')->selectRaw('MAX(cobro_eventos.created_at) as devuelto_en')
-            ->groupBy('numero_control_norm')->pluck('devuelto_en', 'numero_control_norm');
+            ->with('documento:id,dte_id,numero_control_norm')->get();
+        $porControl = $devoluciones->groupBy(fn ($evento) => $evento->documento?->numero_control_norm);
+        $porDte = $devoluciones->filter(fn ($evento) => $evento->documento?->dte_id !== null)
+            ->groupBy(fn ($evento) => $evento->documento->dte_id);
 
         $claves = collect();
         foreach ($items as $item) {
             $clave = IdentidadPpq::normalizar($item->numero_control);
-            if ($clave === null) {
+            $eventos = ($clave !== null ? $porControl->get($clave, collect()) : collect())
+                ->merge($item->dte_id !== null ? $porDte->get($item->dte_id, collect()) : collect())->unique('id');
+            $liberado = $eventos->contains(function ($evento) use ($item) {
+                if ($item->created_at === null || $evento->created_at === null || $evento->created_at->lt($item->created_at)) {
+                    return false;
+                }
+                if (array_key_exists('ppq_lote_id', $evento->datos ?? [])) {
+                    return (int) $evento->datos['ppq_lote_id'] === (int) $item->ppq_lote_id;
+                }
+                $caso = $evento->datos['caso'] ?? null;
+
+                return $caso !== null && preg_match('/\bCaso\s+'.preg_quote((string) $caso, '/').'\b(?!\d)/i',
+                    (string) $item->lote?->observaciones) === 1;
+            });
+            if ($liberado) {
                 continue;
             }
-            $devuelto = $devoluciones->get($clave);
-            if ($devuelto === null || $item->created_at === null || $item->created_at->gt($devuelto)) {
+            if ($clave !== null) {
                 $claves->put($clave, (int) $item->ppq_lote_id);
+            }
+            if ($item->dte_id !== null) {
+                $claves->put('dte:'.$item->dte_id, (int) $item->ppq_lote_id);
             }
         }
 
@@ -86,8 +104,9 @@ class ElegibilidadPpqSeguimiento
     {
         $claves ??= $this->claves();
 
-        return $this->consulta($q)->get(['id', 'numero_control', 'monto'])
-            ->reject(fn ($doc) => $claves->has(IdentidadPpq::normalizar($doc->numero_control)))
+        return $this->consulta($q)->get(['id', 'dte_id', 'numero_control', 'monto'])
+            ->reject(fn ($doc) => $claves->has(IdentidadPpq::normalizar($doc->numero_control))
+                || ($doc->dte_id !== null && $claves->has('dte:'.$doc->dte_id)))
             ->mapWithKeys(fn ($doc) => [$doc->id => (string) $doc->monto]);
     }
 
@@ -149,7 +168,8 @@ class ElegibilidadPpqSeguimiento
             $doc->revisar_historico => 'falta la revisión histórica',
             in_array($doc->presentacion_estado, [EstadoPresentacionCobro::Presentada, EstadoPresentacionCobro::Recibida], true) => 'ya se presentó',
             $doc->presentacion_estado === EstadoPresentacionCobro::Preparada,
-            $claves->has(IdentidadPpq::normalizar($doc->numero_control)) => 'ya está en un PPQ',
+            $claves->has(IdentidadPpq::normalizar($doc->numero_control)),
+            $doc->dte_id !== null && $claves->has('dte:'.$doc->dte_id) => 'ya está en un PPQ',
             default => null,
         };
     }
