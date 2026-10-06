@@ -2,14 +2,12 @@
 
 namespace App\Services\Cobros;
 
-use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\EstadoDte;
 use App\Enums\EstadoPpq;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
-use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Support\IdentidadPpq;
@@ -30,33 +28,28 @@ class CrearPpqDesdeSeguimiento
      */
     public function crear(Cliente $cliente, array $ids, ?User $usuario = null): PpqLote
     {
-        $documentos = CobroDocumento::deCliente($cliente->id)->whereIn('id', $ids)->where('tipo_dte', '03')
-            ->with('albaran', 'dte')->get();
+        return DB::transaction(function () use ($cliente, $ids, $usuario) {
+            $documentos = CobroDocumento::deCliente($cliente->id)->whereIn('id', $ids)->where('tipo_dte', '03')
+                ->orderBy('id')->lockForUpdate()->get();
+            $documentos->load('albaran', 'dte', 'eventos');
 
-        if ($documentos->count() !== count(array_unique($ids))) {
-            throw ValidationException::withMessages(['documentos' => 'Algún documento marcado no es un CCF de este cliente.']);
-        }
-
-        $enLotes = PpqItem::query()->pluck('numero_control')->map(fn ($n) => IdentidadPpq::normalizar($n))->filter()->flip();
-        $problemas = [];
-        foreach ($documentos as $doc) {
-            $motivo = match (true) {
-                $doc->estaInvalidado() => 'fue invalidado en Hacienda',
-                $doc->albaran === null => 'no tiene albarán (no entregado)',
-                $doc->pago_estado !== EstadoPagoCobro::Pendiente => 'ya tiene pago',
-                in_array($doc->presentacion_estado, [EstadoPresentacionCobro::Presentada, EstadoPresentacionCobro::Recibida], true) => 'ya se presentó',
-                $enLotes->has(IdentidadPpq::normalizar($doc->numero_control)) => 'ya está en un PPQ',
-                default => null,
-            };
-            if ($motivo !== null) {
-                $problemas[] = $doc->correlativoCorto().': '.$motivo;
+            if ($documentos->count() !== count(array_unique($ids))) {
+                throw ValidationException::withMessages(['documentos' => 'Algún documento marcado no es un CCF de este cliente.']);
             }
-        }
-        if ($problemas !== []) {
-            throw ValidationException::withMessages(['documentos' => 'No se creó el PPQ. '.implode('; ', $problemas).'.']);
-        }
 
-        return DB::transaction(function () use ($cliente, $documentos, $usuario, $enLotes) {
+            $elegibilidad = app(ElegibilidadPpqSeguimiento::class);
+            $enLotes = $elegibilidad->claves();
+            $problemas = [];
+            foreach ($documentos as $doc) {
+                $motivo = $elegibilidad->motivo($doc, $enLotes);
+                if ($motivo !== null) {
+                    $problemas[] = $doc->correlativoCorto().': '.$motivo;
+                }
+            }
+            if ($problemas !== []) {
+                throw ValidationException::withMessages(['documentos' => 'No se creó el PPQ. '.implode('; ', $problemas).'.']);
+            }
+
             $lote = PpqLote::create([
                 'referencia' => 'PPQ '.now()->locale('es')->translatedFormat('j \d\e F Y'),
                 'fecha' => today(),

@@ -214,7 +214,8 @@ class CobrosBandejaPaginacionTest extends TestCase
         $pagina1->assertSeeText('1 listo(s) en esta página');
 
         $pagina2 = $this->bandeja($cliente, ['page' => 2])->assertOk();
-        $pagina2->assertDontSee('name="documentos[]"', false);
+        // Sin casillas: lo marcado en la página 1 solo viaja oculto (selección entre páginas).
+        $pagina2->assertDontSee('type="checkbox" name="documentos[]"', false);
         $pagina2->assertSeeText('0 listo(s) en esta página');
         $pagina1->assertSeeText('Crear PPQ con lo marcado');
 
