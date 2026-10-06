@@ -50,7 +50,7 @@ class DteSchemaRepository
      *
      * @return array{tipo: string, carpeta: string, archivo: string, ruta: string, version: int}|null
      */
-    public function paraTipo(TipoDte $tipo): ?array
+    public function paraTipo(TipoDte $tipo, ?int $version = null): ?array
     {
         $dir = $this->carpeta($tipo);
         if (! is_dir($dir)) {
@@ -62,9 +62,10 @@ class DteSchemaRepository
             return null;
         }
 
-        $version = (int) (config('dte.json.versiones')[$tipo->value] ?? 0);
+        $version ??= (int) (config('dte.json.versiones')[$tipo->value] ?? 0);
 
-        // Prefiere el archivo cuya versión coincida con la configurada (-v3 o _v3).
+        // Una versión explícita (del documento o de config) exige su propio archivo.
+        // Caer al primero ocultaría un schema ausente y validaría otra versión.
         $elegido = null;
         foreach ($archivos as $archivo) {
             if ($version > 0 && preg_match('/[-_]v'.$version.'\.json$/i', $archivo)) {
@@ -72,7 +73,9 @@ class DteSchemaRepository
                 break;
             }
         }
-        $elegido ??= $archivos[0];
+        if ($elegido === null) {
+            return null;
+        }
 
         return [
             'tipo' => $tipo->value,
@@ -117,9 +120,9 @@ class DteSchemaRepository
     }
 
     /** Contenido crudo del schema (sin parsear) o null si falta. */
-    public function leer(TipoDte $tipo): ?string
+    public function leer(TipoDte $tipo, ?int $version = null): ?string
     {
-        $info = $this->paraTipo($tipo);
+        $info = $this->paraTipo($tipo, $version);
 
         return $info ? file_get_contents($info['ruta']) : null;
     }

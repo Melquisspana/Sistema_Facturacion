@@ -69,7 +69,7 @@ class DteJsonPreviewCommand extends Command
 
         // 2) Serializar al array oficial del tipo.
         try {
-            $oficial = $serializadores->para($dte->tipo_dte)->serializar($salida);
+            $oficial = $serializadores->para($dte->tipo_dte, $salida->identificacion->version)->serializar($salida);
         } catch (DteNoSerializableException $e) {
             $this->error('No se puede serializar a JSON oficial:');
             foreach ($e->problemas as $p) {
@@ -171,4 +171,3 @@ class DteJsonPreviewCommand extends Command
         return 'DTE-'.$tipoCode.'-'.$estable.$puntoVenta.'-'.str_pad((string) $dteId, 15, '0', STR_PAD_LEFT);
     }
 }
-

@@ -472,9 +472,13 @@ return [
         'versiones' => [
             '01' => 2, // Factura            (fe-f-v2.json)
             '03' => 4, // Crédito Fiscal     (fe-ccf-v4.json)
-            '05' => 3, // Nota de Crédito    (fe-nc-v3.json) — el MH acepta v3 para tipo 05
+            // 3 = estructura aceptada en producción; 4 = Hacienda 2.0, activar solo
+            // tras aceptación en pruebas del MH. Volver a 3 = cambiar la variable.
+            '05' => (int) env('DTE_NC_VERSION', 3),
             '11' => 3, // Factura Exportación (fe-fex-v3.json)
         ],
+
+        'nc_v4_calculo' => 'ajuste_ccf',
 
         // Esquema del evento de INVALIDACIÓN (no es un tipo de DTE; se usará en la
         // fase de anulación oficial). Archivo: resources/dte/schemas/invalidacion/.
