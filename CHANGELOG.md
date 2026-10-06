@@ -8,6 +8,27 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.06] - 2026-10-06
+
+Incluye #37, #38, #47, #48, #50, #55 y #56. No trae migraciones. También entra la matriz de invalidación de Hacienda (documento sustituto y notas vigentes), que es la base de #38 y #50 y todavía no estaba en producción. El código de #44 (Rutas) queda en el repositorio, pero no se desplegó: depende de la reorganización de Rutas, que necesita migraciones pendientes.
+
+### Agregado
+
+- Archivo del DTE con firma y sello: el correo al cliente, la descarga del JSON, el reporte de la contadora y el ZIP de contabilidad entregan el documento con `firmaElectronica` y `selloRecibido`, sin recodificar el original. Botón «Descargar JSON con firma y sello» en los documentos aceptados, y comando de solo lectura `dte:entrega-check`. #48
+- Plazo para invalidar según el manual funcional: CCF, NC y ND hasta el 10.º día hábil del mes siguiente al sello; factura y exportación, 3 meses. Se vence a las 23:59:59 hora de El Salvador. Fuera de plazo, el documento se detiene antes de firmar o transmitir, y la ficha muestra el límite. #50
+- Paquete mensual de contabilidad en segundo plano: la pantalla muestra «Generando…» y luego ofrece «Descargar», sin el corte de Cloudflare. #56
+
+### Cambiado
+
+- Invalidación: matriz documento × motivo de Hacienda, documento sustituto verificado y de un solo uso, y bloqueo cuando hay notas de crédito o débito vigentes o en trámite (ya no se puede confirmar para saltarlo). Durante la transmisión se toma un candado por documento. #38
+- Una sola regla de saldo del CCF para las notas de crédito: las rechazadas y los borradores ya no reservan saldo, y al generar se vuelve a medir bajo bloqueo. #38
+- Hora de negocio única (`HoraNegocio`) para «hoy», la fecha y la hora de emisión, y la hora del evento de invalidación. #47 #55
+- Laravel 12.69.3 y dependencias PHP sin avisos de seguridad; se quitó Livewire, que no se usaba. #37
+
+### Problemas conocidos
+
+- «Enviar a contabilidad» no puede mandar el ZIP mensual por correo: pesa más que el límite de Gmail. Mientras se resuelve en #60, se descarga y se comparte a mano.
+
 ## [2026.10.02.2] - 2026-10-02
 
 Segundo despliegue del día. Incluye #31, #34 y #35. No trae migraciones. El cambio de Gastos del #31 queda en el código, pero el módulo de Gastos todavía no está en producción.
