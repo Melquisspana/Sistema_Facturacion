@@ -2,6 +2,8 @@
 
 namespace App\Services\Ppq;
 
+use Smalot\PdfParser\Parser;
+
 /**
  * Extrae los datos de un albarán de Calleja desde el PDF adjunto: número, fecha,
  * orden de compra y monto. Devuelve también una traza de debug (texto extraído,
@@ -21,7 +23,7 @@ class AlbaranParser
         $texto = '';
         $error = null;
         try {
-            $parser = new \Smalot\PdfParser\Parser();
+            $parser = new Parser;
             $texto = $parser->parseContent($pdfBytes)->getText();
         } catch (\Throwable $e) {
             $error = 'No se pudo leer el PDF: '.$e->getMessage();
@@ -52,15 +54,39 @@ class AlbaranParser
         // prefijo + 3 grupos numéricos, tolerando espacios y descartando el "/año".
         $numero = $this->buscar($texto, '/([A-Za-z]{1,4}\s*\d+(?:\s*\/\s*\d+){2,3})/', $debug, 'numero');
         $numero = $numero !== null ? preg_replace('/\s+/', '', $numero) : null;
-        // Fecha real dd/mm/aaaa con día 01-31 y mes 01-12 (excluye trozos del código
-        // como "36/00/6359", cuyo "mes" 00 no es válido).
-        $fecha = $this->buscar($texto, '#\b((?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:\d{4}|\d{2}))\b#', $debug, 'fecha');
+        $fecha = $this->fecha($texto, $debug);
         $monto = $this->monto($texto, $debug);
         // Nombre de sala si el PDF lo trae en texto ("SÚPER SELECTOS …"). Best-effort:
         // en muchos albaranes va en el logo/imagen y NO se puede extraer -> null.
         $nombreSala = $this->nombreSala($texto, $debug);
 
         return ['numero' => $numero, 'fecha' => $fecha, 'oc' => $oc, 'monto' => $monto, 'nombre_sala' => $nombreSala, 'debug' => $debug];
+    }
+
+    /**
+     * Fecha del ALBARÁN (su creación): la que usa el portal de Calleja para buscarlo por
+     * año y mes. NO es la del pedido. El PDF trae antes «Pedido de Compras 00/5235/26 de
+     * Fecha 23/09/2026», y tomar la primera fecha del texto daba el mes del pedido: un
+     * albarán creado el 01/10 salía con mes 9 y el portal no lo encontraba.
+     *
+     * Orden: la fecha rotulada como de creación, emisión o del albarán → la primera fecha
+     * que no sea la del pedido → la del pedido, solo si no hay otra.
+     */
+    private function fecha(string $texto, array &$debug): ?string
+    {
+        // Fecha real dd/mm/aaaa con día 01-31 y mes 01-12 (excluye trozos del código
+        // como "36/00/6359", cuyo "mes" 00 no es válido).
+        $fechaRe = '((?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:\d{4}|\d{2}))';
+
+        $rotulada = $this->buscar($texto, '#(?:fecha\s*(?:de\s*)?(?:creaci[oó]n|emisi[oó]n|albar[aá]n)|f\.\s*creaci[oó]n)\D{0,20}'.$fechaRe.'\b#iu', $debug, 'fecha_rotulada');
+        if ($rotulada !== null) {
+            return $rotulada;
+        }
+
+        $sinPedido = preg_replace('#Pedido\s+de\s+Compras?[^\n]*?de\s+Fecha\s*'.$fechaRe.'#iu', ' ', $texto) ?? $texto;
+        $otra = $this->buscar($sinPedido, '#\b'.$fechaRe.'\b#', $debug, 'fecha');
+
+        return $otra ?? $this->buscar($texto, '#\b'.$fechaRe.'\b#', $debug, 'fecha_pedido');
     }
 
     /**
