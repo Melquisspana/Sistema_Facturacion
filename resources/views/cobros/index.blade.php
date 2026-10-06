@@ -164,6 +164,7 @@
                         @php $puedeGestionar = auth()->user()?->can('ppq.gestionar') ?? false; $listasEnPagina = 0; @endphp
                         <form method="POST" autocomplete="off" action="{{ route('cobros.ppq.crear', $cliente) }}"
                               x-data="{
+                                  avisos: @js(collect($avisosPpq)->map(fn ($aviso) => ['r' => $aviso['reciente'], 'd' => $aviso['duplicado'] !== null])),
                                   montos: @js($listosPpq), filtro: @js($listosEnFiltro->keys()->map(fn ($id) => (string) $id)->values()),
                                   pagina: @js($documentos->getCollection()->pluck('id')->map(fn ($id) => (string) $id)->values()),
                                   clave: 'ppq-seleccion-{{ $cliente->id }}', seleccion: [], enviando: false,
@@ -176,18 +177,22 @@
                                   guardar() { try { localStorage.setItem(this.clave, JSON.stringify(this.seleccion)); } catch (e) {} },
                                   get marcados() { return this.seleccion.length; },
                                   get total() { return (this.seleccion.reduce((s, id) => s + Math.round(Number(this.montos[id]) * 100), 0) / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); },
+                                  get recientes() { return this.seleccion.filter(id => this.avisos[id]?.r).length; },
+                                  get duplicados() { return this.seleccion.filter(id => this.avisos[id]?.d).length; },
+                                  quitarRecientes() { this.seleccion = this.seleccion.filter(id => !this.avisos[id]?.r); this.guardar(); },
                                   get fuera() { return this.seleccion.filter(id => !this.pagina.includes(id)); },
                                   cambiar(id, marcado) { this.seleccion = marcado ? [...new Set([...this.seleccion, id])] : this.seleccion.filter(v => v !== id); this.guardar(); },
                                   quitar() { this.seleccion = []; this.guardar(); },
                                   todas() {
-                                      const ids = [...new Set([...this.seleccion, ...this.filtro])];
+                                      const ids = [...new Set([...this.seleccion, ...this.filtro.filter(id => !this.avisos[id]?.d)])];
                                       if (ids.length > {{ \App\Http\Controllers\Cobros\CobrosController::MAX_PPQ }}) { alert('El máximo por PPQ es de 500 CCF. Seleccione hasta 500.'); return; }
                                       this.seleccion = ids; this.guardar();
                                   },
                                   enviar(evento) {
                                       if (this.enviando || !this.marcados) { evento.preventDefault(); return; }
                                       if (this.marcados > 500) { alert('El máximo por PPQ es de 500 CCF. Quite algunos de la selección.'); evento.preventDefault(); return; }
-                                      if (!confirm('Se creará un PPQ con ' + this.marcados + ' CCF por $' + this.total + '. ¿Continuar?')) { evento.preventDefault(); return; }
+                                      const aviso = this.recientes || this.duplicados ? ' Atención: ' + this.recientes + ' con albarán reciente (puede que el portal no los encuentre) y ' + this.duplicados + ' posibles duplicados.' : '';
+                                      if (!confirm('Se creará un PPQ con ' + this.marcados + ' CCF por $' + this.total + '.' + aviso + ' ¿Continuar?')) { evento.preventDefault(); return; }
                                       this.enviando = true;
                                       try { localStorage.removeItem(this.clave); } catch (e) {}
                                   }
@@ -201,8 +206,9 @@
                                 <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                                     <span class="text-sm text-gray-700 dark:text-paper-100" x-text="marcados + ' CCF marcados · $' + total">0 CCF marcados · $0.00</span>
                                     <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="quitar()">Quitar selección</button>
-                                    @if ($cantidadListosEnFiltro > 0)
-                                        <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="todas()">Seleccionar todas las pendientes ({{ $cantidadListosEnFiltro }} · ${{ number_format((float) $totalListosEnFiltro, 2) }})</button>
+                                    <button type="button" class="text-sm text-indigo-600 hover:underline" x-show="recientes > 0" x-cloak x-on:click="quitarRecientes()" x-text="'Quitar los de albarán reciente (' + recientes + ')'">Quitar los de albarán reciente</button>
+                                    @if ($cantidadListosEnFiltro > 0 || $duplicadosEnFiltro > 0)
+                                        <button type="button" class="text-sm text-indigo-600 hover:underline" x-on:click="todas()">Seleccionar todas las pendientes ({{ $cantidadListosEnFiltro }} · ${{ number_format((float) $totalListosEnFiltro, 2) }}){{ $duplicadosEnFiltro > 0 ? '; '.$duplicadosEnFiltro.' posibles duplicados no incluidos' : '' }}</button>
                                         @if ($cantidadListosEnFiltro > 500)
                                             <span class="text-xs text-gray-500 dark:text-paper-300">El máximo por PPQ es de 500 CCF.</span>
                                         @endif
@@ -315,6 +321,12 @@
                                                     <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium {{ $clase }}">
                                                         <span class="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true"></span>{{ $texto }}
                                                     </span>
+                                                    @if ($avisosPpq[$doc->id]['reciente'] ?? false)
+                                                        <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title="Llegó hace pocos días: puede no estar en el portal de Calleja todavía">Albarán reciente</span>
+                                                    @endif
+                                                    @if ($avisosPpq[$doc->id]['duplicado'] ?? null)
+                                                        <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-rose-100 text-rose-700" title="{{ $avisosPpq[$doc->id]['duplicado'] }}">Posible duplicado</span>
+                                                    @endif
                                                     @if ($estado === 'invalidado')
                                                         <span class="mt-0.5 block text-gray-500 dark:text-paper-300">{{ in_array($pres, [\App\Enums\Cobros\EstadoPresentacionCobro::Preparada, \App\Enums\Cobros\EstadoPresentacionCobro::Presentada, \App\Enums\Cobros\EstadoPresentacionCobro::Recibida], true) ? 'Estaba en PPQ o presentado: revíselo' : 'Tiene pago registrado: revíselo' }}</span>
                                                     @elseif ($estado === 'diferencia')

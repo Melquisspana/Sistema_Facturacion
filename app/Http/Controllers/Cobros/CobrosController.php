@@ -172,12 +172,17 @@ class CobrosController extends Controller
             ->whereKeyNot($this->saldadosConNc($cliente))
             ->when(config('dte.ambiente') === '01', fn ($q) => $q->whereDoesntHave('dte', fn ($d) => $d->where('ambiente', '00'))), $clavesPpq);
         $listosEnFiltro = $elegibilidad->listos($this->consulta($cliente, $filtros), $clavesPpq);
+        $avisosPpq = $elegibilidad->avisos($listosPpq->keys());
+        $duplicadosEnFiltro = $listosEnFiltro->filter(fn ($monto, $id) => ($avisosPpq[$id]['duplicado'] ?? null) !== null)->count();
+        $listosEnFiltro = $listosEnFiltro->reject(fn ($monto, $id) => ($avisosPpq[$id]['duplicado'] ?? null) !== null);
         $totalListosEnFiltro = '0';
         foreach ($listosEnFiltro as $monto) {
             $totalListosEnFiltro = Dinero::sumar($totalListosEnFiltro, $monto);
         }
 
         return view('cobros.index', [
+            'avisosPpq' => $avisosPpq,
+            'duplicadosEnFiltro' => $duplicadosEnFiltro,
             'listosPpq' => $listosPpq,
             'listosEnFiltro' => $listosEnFiltro,
             'cantidadListosEnFiltro' => $listosEnFiltro->count(),
@@ -759,6 +764,9 @@ class CobrosController extends Controller
             'documentos.max' => 'El máximo por PPQ es de 500 CCF. Quite algunos de la selección.',
         ]);
 
+        $avisos = app(ElegibilidadPpqSeguimiento::class)->avisos(collect($datos['documentos']));
+        $duplicados = collect($avisos)->whereNotNull('duplicado')->count();
+        $aviso = $duplicados > 0 ? " Atención: el lote incluyó {$duplicados} posibles duplicados." : '';
         $lote = $creador->crear($cliente, array_map('intval', $datos['documentos']), $request->user());
 
         $ccf = $lote->items()->where('tipo_dte', '03');
@@ -767,7 +775,7 @@ class CobrosController extends Controller
         $documentos = $lote->items()->count();
 
         return redirect()->route('ppq.lotes.show', $lote)
-            ->with('status', "PPQ creado con {$cantidad} CCF por \${$total} ({$documentos} documento(s) con sus NC). Descargá el archivo de NC y el de quedan.");
+            ->with('status', "PPQ creado con {$cantidad} CCF por \${$total} ({$documentos} documento(s) con sus NC). Descargá el archivo de NC y el de quedan.{$aviso}");
     }
 
     // ─────────────────────────────────── internos ───────────────────────────────────
