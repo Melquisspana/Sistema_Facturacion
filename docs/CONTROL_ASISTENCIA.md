@@ -998,6 +998,22 @@ persona) salen de los datos de la orden; el `POST /progreso` es secundario —un
 fallo de red ahí no aborta nada— pero es lo que hace que quien mira la web vea lo
 mismo que quien está frente al lector.
 
+**El lector ES3C28P** (`firmware/asistencia_es3c28p/`, ESP32-S3 con pantalla de
+2.8") es un port del mismo sketch. Se compila con
+`--fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB`.
+
+**Dedo fantasma.** El AS608 de ese lector devuelve `FINGERPRINT_OK` en `getImage()`
+sin nadie apoyado (medido el 06/10/2026: 67 de 67 lecturas en 20 s, con el Wi-Fi
+apagado). Esa imagen vacía no tiene minucias e `image2Tz()` la rechaza con
+`FEATUREFAIL`. La marcación ya lo descartaba como ruido; el índice del sensor y el
+enrolamiento no: el índice se posponía para siempre («hay un dedo») y el servidor
+nunca podía reservar ranura. En ese firmware «hay un dedo» es una imagen que
+`image2Tz()` convierte, en tres sitios: la guarda del índice, la espera del dedo
+del enrolamiento (que ahora deja la imagen ya convertida en su charBuffer) y la
+espera del retiro. Un dedo real mal apoyado se sigue esperando hasta el plazo; si
+dio imágenes que no sirvieron por otra causa, el desenlace es
+`captura_defectuosa` y no `timeout_dedo`. `firmware/asistencia/` no cambió.
+
 **Lo que el lector todavía no puede alegar.** No existe un motivo para «este dedo
 ya está enrolado en otra ranura», así que el firmware **no** lo detecta: inventar un
 código rompería el contrato. Si hiciera falta, es un cambio de
