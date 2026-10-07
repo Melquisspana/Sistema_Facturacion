@@ -28,7 +28,7 @@ class AsistenciaMarcacionFactory extends Factory
     /** @return array<string, mixed> */
     public function definition(): array
     {
-        $instante = Carbon::now('UTC');
+        $instante = Carbon::now((string) config('app.timezone'));
 
         return [
             'asistencia_empleado_id' => AsistenciaEmpleado::factory(),
@@ -46,7 +46,7 @@ class AsistenciaMarcacionFactory extends Factory
     public function en(Carbon $instante): static
     {
         return $this->state(fn () => [
-            'marcado_at' => $instante->copy()->setTimezone('UTC'),
+            'marcado_at' => $instante->copy()->setTimezone((string) config('app.timezone')),
             'fecha_local' => $this->fechaLocal($instante),
         ]);
     }
