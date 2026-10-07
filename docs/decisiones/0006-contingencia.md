@@ -48,6 +48,12 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
   - Al entrar por B no pasa por Cloudflare Access: protege solo el inicio de sesión de la aplicación, igual que en cualquier acceso desde adentro.
 - **Descartadas**: el archivo `hosts` en las PC y una CA local o mkcert (exigen instalar algo en cada PC), y el DNS local con el mismo dominio y Let's Encrypt (el router del proveedor y la malla en modo punto de acceso no ofrecen DNS local).
 
+**Aviso al abrir el dominio sin internet.** Una redirección desde Cloudflare no sirve: sin internet, las PC tampoco llegan a Cloudflare. Se propone un *service worker* mínimo en el propio dominio. Se instala solo al visitar el sitio, sin tocar las PC.
+- Se registra solo para usuarios con sesión iniciada. Al instalarse guarda **una única página estática**: «Sin internet: entrá por la red de la casa». La página trae un botón al favorito B, con la dirección local tomada de la configuración del servidor y no del repositorio, y la instrucción del hotspot. La ruta que la genera exige sesión, así que la dirección local no queda expuesta a visitantes.
+- Solo intercepta **navegaciones GET**, y primero intenta la red. Sirve la página guardada solo si la red **falla**, o si Cloudflare responde que no llega al servidor (502, 504 o 52x). Cualquier otra respuesta pasa intacta.
+- No guarda en caché ninguna otra respuesta (nada con datos), no toca POST, el inicio de sesión ni las descargas, y se borra la caché al cerrar sesión.
+- Para «Hacienda no responde» ya está el aviso de contingencia dentro de la aplicación; esta página es solo para cuando no hay internet.
+
 **Ensayo antes de necesitarlo**:
 1. Desconectar el router de internet y conectar el servidor y una PC al hotspot: entrar por el dominio, iniciar sesión, emitir un documento de prueba en el ambiente 00 y transmitirlo.
 2. Sin hotspot: entrar por el favorito B, aceptar el aviso del certificado, **iniciar sesión**, emitir y firmar un documento de prueba y comprobar que queda pendiente de envío.
@@ -100,7 +106,7 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
 - El MH puede **revocar la autorización** de emitir DTE si el emisor no resguarda la seguridad y exactitud de lo emitido (MF p.20). Hay que guardar los JWS, eventos y respuestas con respaldo, como ya se hace con los DTE.
 - **Ambigüedad de la fuente**: el Cuadro 5 (NCu p.19) dice «Evento de Invalidación» en la fila de contingencia; el Cuadro 7 (p.30) y el MF (p.19) la aclaran. Se toman las 24 horas desde el cese para el evento de contingencia.
 
-## Plan de implementación (4 PR chicos)
+## Plan de implementación (5 PR chicos)
 
 1. **Modo contingencia y documentos transitorios.** Necesita una migración nueva: tabla `contingencias` con tipo, motivo, inicio, cese y estado; requiere autorización según la decisión 0002. Incluye:
    - activar y terminar con permiso y auditoría;
@@ -118,7 +124,10 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
    - Envío en grupos de hasta 100, consulta programada por `codigoLote`, aplicación de sellos y rechazos por documento, y plazo de 72 horas.
    - La bandeja «Pendientes de envío».
    - Pruebas: lote mixto con procesados y rechazados, consulta sin resultado todavía, vencimiento.
-4. **Detección y cierre.**
+4. **Aviso sin internet** (independiente, chico).
+   - Service worker de la sección 1.1, la ruta con sesión de la página «Sin internet» y la limpieza al cerrar sesión.
+   - Pruebas: la página no lleva datos y su ruta exige sesión. Prueba manual: red cortada, error 52x de Cloudflare, login, POST y descargas sin cambios.
+5. **Detección y cierre.**
    - Entrada automática desde `DteTransmisionResiliente`, con el tipo 1 o 3 según la conexión, y prueba de reconexión cada 15 minutos que registra el cese (tarea programada).
    - Vhost HTTPS de la red local con certificado autofirmado, reserva DHCP y el ensayo de la sección 1.1 (hotspot e inicio de sesión por la red local).
    - Avisos de plazo, reenvío del archivo completo al cliente cuando llega el sello y separación en el reporte de la contadora.
