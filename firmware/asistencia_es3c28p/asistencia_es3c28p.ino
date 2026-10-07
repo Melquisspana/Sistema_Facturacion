@@ -5678,6 +5678,17 @@ void setup() {
     115200
   );
 
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  // Serial es el USB nativo (HWCDC). Enchufado a una PC sin nadie leyendo el
+  // puerto, cada print espera hasta 100 ms a que se vacie el buffer: el loop
+  // se arrastra y el lector parece apagado (visto el 07/10/2026). Sin espera,
+  // lo que no entra se descarta; el diagnostico por Serial sigue funcionando
+  // cuando hay un monitor abierto.
+  Serial.setTxTimeoutMs(
+    0
+  );
+#endif
+
   delay(
     400
   );
