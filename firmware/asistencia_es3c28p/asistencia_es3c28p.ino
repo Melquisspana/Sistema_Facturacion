@@ -16,6 +16,8 @@
 
 #include "logo.h"
 
+#include "voces.h"
+
 #include "secretos.h"
 
 // =====================================================
@@ -228,8 +230,17 @@ enum Sonido : uint8_t {
   SONIDO_ERROR,
   SONIDO_ADVERTENCIA,
   SONIDO_COOLDOWN,
-  SONIDO_ARRANQUE
+  SONIDO_ARRANQUE,
+
+  // Tono + frase hablada (voces.h).
+  SONIDO_VOZ_ENTRADA,
+  SONIDO_VOZ_SALIDA,
+  SONIDO_VOZ_YA_MARCASTE,
+  SONIDO_VOZ_NO_REGISTRADA
 };
+
+// false = solo tonos, como antes de las voces.
+#define LECTOR_HABLA true
 
 
 // =====================================================
@@ -705,6 +716,51 @@ void audioTono(
 }
 
 
+// Escribe una frase grabada (PCM mono de voces.h, a AUDIO_HZ) en los dos
+// canales. Bloquea, pero solo a la tarea de audio.
+void audioFrase(
+  const int16_t* pcm,
+  uint32_t total
+) {
+
+  const size_t MUESTRAS_BLOQUE =
+    256;
+
+  int16_t bloque[MUESTRAS_BLOQUE * 2];
+
+  uint32_t hechas =
+    0;
+
+  while (
+    hechas < total
+  ) {
+
+    size_t n =
+      min(
+        (uint32_t) MUESTRAS_BLOQUE,
+        total - hechas
+      );
+
+    for (
+      size_t i = 0;
+      i < n;
+      i++
+    ) {
+
+      bloque[i * 2] = pcm[hechas + i];
+      bloque[i * 2 + 1] = pcm[hechas + i];
+    }
+
+    i2s.write(
+      (uint8_t*) bloque,
+      n * 2 * sizeof(int16_t)
+    );
+
+    hechas += n;
+  }
+}
+
+
 void tareaAudio(
   void* arg
 ) {
@@ -761,6 +817,36 @@ void tareaAudio(
         audioTono(880, 80);
         audioTono(1175, 80);
         audioTono(1568, 120);
+        break;
+
+      // Las voces repiten el tono de su caso y despues dicen la frase: el
+      // tono avisa al instante y la frase confirma que paso.
+      case SONIDO_VOZ_ENTRADA:
+      case SONIDO_VOZ_SALIDA:
+        audioTono(1318, 90);
+        audioTono(1760, 140);
+        audioTono(0, 120);
+        if (s == SONIDO_VOZ_ENTRADA) {
+          audioFrase(VOZ_ENTRADA_PCM, VOZ_ENTRADA_LARGO);
+        } else {
+          audioFrase(VOZ_SALIDA_PCM, VOZ_SALIDA_LARGO);
+        }
+        break;
+
+      case SONIDO_VOZ_YA_MARCASTE:
+        audioTono(990, 50);
+        audioTono(0, 60);
+        audioTono(990, 50);
+        audioTono(0, 120);
+        audioFrase(VOZ_YA_MARCASTE_PCM, VOZ_YA_MARCASTE_LARGO);
+        break;
+
+      case SONIDO_VOZ_NO_REGISTRADA:
+        audioTono(330, 140);
+        audioTono(0, 70);
+        audioTono(330, 140);
+        audioTono(0, 120);
+        audioFrase(VOZ_NO_REGISTRADA_PCM, VOZ_NO_REGISTRADA_LARGO);
         break;
     }
 
@@ -944,6 +1030,44 @@ void beepCooldown() {
 
   led(50, 50, 0);
   sonar(SONIDO_COOLDOWN);
+}
+
+
+// -------------------------------------------------- Con voz (LECTOR_HABLA)
+//
+// Mismo LED que su beep; el sonido es el tono de siempre seguido de la frase.
+// `tipo` es el tipo_label que manda Laravel («Entrada» / «Salida»). Si llega
+// otra cosa no se adivina: solo suena el tono de exito.
+
+void avisarMarcacion(
+  const String& tipo
+) {
+
+  led(0, 60, 0);
+
+  if (!LECTOR_HABLA) {
+    sonar(SONIDO_EXITO);
+  } else if (tipo.equalsIgnoreCase("Entrada")) {
+    sonar(SONIDO_VOZ_ENTRADA);
+  } else if (tipo.equalsIgnoreCase("Salida")) {
+    sonar(SONIDO_VOZ_SALIDA);
+  } else {
+    sonar(SONIDO_EXITO);
+  }
+}
+
+
+void avisarYaMarcaste() {
+
+  led(50, 50, 0);
+  sonar(LECTOR_HABLA ? SONIDO_VOZ_YA_MARCASTE : SONIDO_COOLDOWN);
+}
+
+
+void avisarNoRegistrada() {
+
+  led(60, 0, 0);
+  sonar(LECTOR_HABLA ? SONIDO_VOZ_NO_REGISTRADA : SONIDO_ERROR);
 }
 
 
@@ -6045,7 +6169,9 @@ void loop() {
 
       // Recien aca: el AS608 encontro la huella hace rato, pero el unico que
       // decide si hubo marcacion es el servidor.
-      beepExito();
+      avisarMarcacion(
+        respuesta.tipo
+      );
 
       esperarRetiroConMensaje(
         1200,
@@ -6075,7 +6201,7 @@ void loop() {
         respuesta.esperaSegundos
       );
 
-      beepCooldown();
+      avisarYaMarcaste();
 
       esperarRetiroConMensaje(
         1200,
@@ -6103,7 +6229,7 @@ void loop() {
 
       mostrarDesconocida();
 
-      beepError();
+      avisarNoRegistrada();
 
       esperarRetiroConMensaje(
         1200,
@@ -6218,7 +6344,7 @@ void loop() {
 
     mostrarDesconocida();
 
-    beepError();
+    avisarNoRegistrada();
 
     esperarRetiroConMensaje(
       1200,
