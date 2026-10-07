@@ -110,6 +110,45 @@ class ElegibilidadPpqSeguimiento
             ->mapWithKeys(fn ($doc) => [$doc->id => (string) $doc->monto]);
     }
 
+    /** @return array<int, array{reciente: bool, duplicado: ?string}> */
+    public function avisos(Collection $ids): array
+    {
+        if ($ids->isEmpty()) {
+            return [];
+        }
+        $listos = $this->listos(CobroDocumento::whereKey($ids->all()));
+        $docs = CobroDocumento::whereKey($listos->keys()->all())->with('albaran')->get();
+        $albaranes = $docs->pluck('ppq_albaran_id')->unique();
+        $items = PpqItem::whereHas('lote')->whereIn('ppq_albaran_id', $albaranes)
+            ->orderBy('id')->get()->groupBy('ppq_albaran_id');
+        $otros = CobroDocumento::whereIn('ppq_albaran_id', $albaranes)
+            ->where(fn ($q) => $q->where('pago_estado', EstadoPagoCobro::Pagado->value)
+                ->orWhereIn('presentacion_estado', [EstadoPresentacionCobro::Presentada->value, EstadoPresentacionCobro::Recibida->value]))
+            ->orderBy('id')->get()->groupBy('ppq_albaran_id');
+        $limite = now()->subDays(max(0, (int) config('cobros.dias_albaran_reciente', 5)));
+        $avisos = [];
+        foreach ($docs as $doc) {
+            $item = ($items->get($doc->ppq_albaran_id) ?? collect())->first(fn ($item) => $item->dte_id !== $doc->dte_id
+                && IdentidadPpq::normalizar($item->numero_control) !== IdentidadPpq::normalizar($doc->numero_control));
+            $otro = ($otros->get($doc->ppq_albaran_id) ?? collect())->first(fn ($otro) => $otro->id !== $doc->id);
+            $duplicado = null;
+            if ($item !== null) {
+                $correlativo = preg_match('/(\d+)$/', (string) $item->numero_control, $m)
+                    ? (ltrim($m[1], '0') ?: '0') : (string) $item->numero_control;
+                $duplicado = "El albarán ya va con {$correlativo} en el PPQ #{$item->ppq_lote_id}";
+            } elseif ($otro !== null) {
+                $estado = $otro->pago_estado === EstadoPagoCobro::Pagado ? 'pagado' : 'presentado';
+                $duplicado = "El albarán ya va con {$otro->correlativoCorto()}, {$estado}";
+            }
+            $avisos[$doc->id] = [
+                'reciente' => $doc->albaran?->created_at !== null && $doc->albaran->created_at->betweenIncluded($limite, now()),
+                'duplicado' => $duplicado,
+            ];
+        }
+
+        return $avisos;
+    }
+
     /**
      * Por qué un CCF NO puede entrar en un PPQ, o null si puede.
      *
