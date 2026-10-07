@@ -129,6 +129,43 @@ class SerializadorInvalidacionMhTest extends TestCase
         $this->assertSame('P001', $evento['emisor']['codPuntoVentaMH']);
     }
 
+    /** Normativa 2.0, Anexo V, campos 24-27 (p.124-125). Issue #54. */
+    public function test_codigos_mh_del_evento_son_los_del_numero_de_control_del_dte(): void
+    {
+        $dte = $this->ncAceptada();
+        $evento = app(SerializadorInvalidacionMh::class)->serializar($dte, $this->evento());
+
+        // DTE-05-M001P001-…: establecimiento y punto de venta del documento invalidado.
+        $this->assertSame(substr(self::NC_NUMERO_CONTROL, 7, 4), $evento['emisor']['codEstableMH']);
+        $this->assertSame(substr(self::NC_NUMERO_CONTROL, 11, 4), $evento['emisor']['codPuntoVentaMH']);
+        $this->assertNull($evento['emisor']['codEstable']);
+        $this->assertNull($evento['emisor']['codPuntoVenta']);
+    }
+
+    public function test_codigos_mh_de_otro_punto_de_transmision_por_configuracion(): void
+    {
+        config(['dte.invalidacion.cod_estable_mh' => 'S002', 'dte.invalidacion.cod_punto_venta_mh' => 'P007']);
+
+        $evento = app(SerializadorInvalidacionMh::class)->serializar($this->ncAceptada(), $this->evento());
+
+        $this->assertSame('S002', $evento['emisor']['codEstableMH']);
+        $this->assertSame('P007', $evento['emisor']['codPuntoVentaMH']);
+    }
+
+    public function test_codigos_mh_con_formato_invalido_detienen_el_evento(): void
+    {
+        config(['dte.invalidacion.cod_estable_mh' => 'X01', 'dte.invalidacion.cod_punto_venta_mh' => 'CAJA']);
+
+        try {
+            app(SerializadorInvalidacionMh::class)->serializar($this->ncAceptada(), $this->evento());
+            $this->fail('Debió detener el evento por los códigos MH.');
+        } catch (DteNoSerializableException $e) {
+            $texto = implode(' ', $e->problemas);
+            $this->assertStringContainsString('«X01»', $texto);
+            $this->assertStringContainsString('«CAJA»', $texto);
+        }
+    }
+
     public function test_fecemi_del_evento_coincide_con_la_fecha_del_dte_no_con_now(): void
     {
         // REGRESIÓN (rechazo real anulardte codigoMsg 027 "[identificacion.fecEmi] DATO
