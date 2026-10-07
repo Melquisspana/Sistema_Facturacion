@@ -26,9 +26,16 @@ Fuentes. Las páginas son las impresas en cada documento; los PDF quedan fuera d
 
 - **Causas válidas**: caso fortuito o fuerza mayor que impida transmitir. Por ejemplo: falla del proveedor de internet o de energía, o que la plataforma del MH no esté disponible (NCu p.30, Cuadro 7; MF p.18). Los códigos son los de CAT-005: 1 MH no disponible, 2 sistema del emisor no disponible, 3 falla de internet del emisor, 4 falla de energía del emisor, 5 otro, con motivo de hasta 500 caracteres (MF p.18).
 - **Requisito previo**: haber agotado la política de reintentos. Son 8 segundos de espera, consulta del estado y hasta 2 reenvíos (NCu p.30, 13.2.1; MT pp.14-15, 3.3; MF p.19). Ya está implementada.
-- **Quién decide**: una persona con permiso de administración, no el sistema solo. El sistema **propone** entrar en contingencia cuando la política de reintentos termina con `contingencia_requerida`, y también permite activarla a mano en los casos que el sistema no detecta (por ejemplo, sin internet desde la oficina). Al activarla se registran el tipo (CAT-005), el motivo, la fecha y la hora de inicio (hora de El Salvador), con auditoría.
-- **Mientras dura**: el sistema intenta reconectar al MH **por lo menos cada 15 minutos** (NCu p.30) y avisa cuando el servicio responde. La salida también la confirma una persona, que fija la fecha y la hora del **cese**: desde ese momento corre el plazo del evento.
+- **Entrada automática** (permitida: la norma solo exige agotar la política de reintentos, y deja en manos del emisor diseñar sus condiciones de contingencia; MF pp.17 y 19, NCu p.30). Cuando la política termina con `contingencia_requerida`, el sistema entra solo en contingencia. Elige el tipo con una comprobación de conexión: **1** si hay internet pero el MH no responde, **3** si no hay salida a internet. Muestra el aviso en pantalla y deja auditoría. Un administrador puede corregir el tipo o el motivo antes de enviar el evento, y también puede activarla a mano (por ejemplo, tipo 2 o 4).
+- **Mientras dura**: el sistema intenta reconectar al MH **por lo menos cada 15 minutos** (NCu p.30). La primera reconexión correcta se registra como **cese**, la fecha y hora desde la que corre el plazo del evento. Se avisa con «Volvió la conexión: enviá el aviso a Hacienda», y el administrador puede ajustar el cese antes de enviar.
 - Si la contingencia dura **más de 3 días seguidos**, antes de transmitir el evento hay que presentar al MH un **Informe Técnico de Contingencia** (NCu p.31, 13.2.1.1). El sistema avisa desde el tercer día; el informe se presenta fuera del sistema.
+
+### 1.1 Seguir trabajando sin internet
+
+- **El servidor está en el local.** Sin internet, la aplicación sigue respondiendo por la red local, con **la dirección local del servidor, que se guarda fuera del repositorio** (junto con los datos de despliegue). Cloudflare solo da el acceso desde afuera; el inicio de sesión y la aplicación no dependen de él.
+- **El firmador también es local**, así que generar y **firmar** sin internet funciona. Solo la transmisión al MH necesita salida a internet.
+- Hay que probar el acceso por la red local **antes** de necesitarlo: un ensayo con el router desconectado de internet, iniciando sesión, emitiendo un documento de prueba en el ambiente 00 y entregándolo.
+- **Corte de luz del servidor**: fuera del alcance del sistema. Si el servidor se apaga, no hay aplicación, ni firma, ni registro. Se recomienda una **UPS** para el servidor, el router y el equipo del firmador, con autonomía para cerrar ordenadamente. Lo que se facture a mano durante el corte se regulariza fuera de este flujo; consultarlo con la contadora y el MH.
 
 ### 2. El documento durante la interrupción
 
@@ -94,7 +101,8 @@ Fuentes. Las páginas son las impresas en cada documento; los PDF quedan fuera d
    - La bandeja «Pendientes de envío».
    - Pruebas: lote mixto con procesados y rechazados, consulta sin resultado todavía, vencimiento.
 4. **Detección y cierre.**
-   - Propuesta automática desde `DteTransmisionResiliente` y prueba de reconexión cada 15 minutos (tarea programada).
+   - Entrada automática desde `DteTransmisionResiliente`, con el tipo 1 o 3 según la conexión, y prueba de reconexión cada 15 minutos que registra el cese (tarea programada).
+   - Ensayo documentado del acceso por la red local, sin internet.
    - Avisos de plazo, reenvío del archivo completo al cliente cuando llega el sello y separación en el reporte de la contadora.
    - Prueba de extremo a extremo en el ambiente de pruebas del MH: contingencia simulada, evento, lote y sellos.
 
@@ -102,7 +110,7 @@ Antes del PR 1 hay que resolver la hora local de `fecEmi`/`horEmi` (decisión 00
 
 ## Consecuencias
 
-Permite seguir facturando sin el MH sin perder el control fiscal. Agrega dos tablas, tareas programadas y una bandeja nueva. La responsabilidad de declarar la contingencia y de cumplir los plazos queda en una persona, con el sistema avisando y bloqueando lo que no corresponde.
+Permite seguir facturando sin el MH sin perder el control fiscal. Agrega dos tablas, tareas programadas y una bandeja nueva. El sistema entra y sale solo, avisa los plazos y bloquea lo que no corresponde. Revisar el tipo y el motivo y presentar el informe técnico o una prórroga queda en una persona.
 
 ## Pendiente confirmar con el MH
 
