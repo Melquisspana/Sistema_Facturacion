@@ -5396,9 +5396,11 @@ void sondearEnrolamiento() {
 // =====================================================
 // ATENDER EL ENROLAMIENTO
 //
-// UNICO punto de entrada desde el loop, y solo desde la rama NOFINGER. Todo lo
-// que hay aca dentro puede tardar segundos, asi que nada de esto puede correr
-// con un dedo apoyado ni entre el getImage() del loop y identificarHuella().
+// Punto de entrada desde el loop: en la rama NOFINGER y, por el dedo
+// fantasma, tambien cuando identificarHuella() termina sin ninguna lectura
+// valida (RH_SIN_LECTURA). Todo lo que hay aca dentro puede tardar segundos,
+// asi que nada de esto puede correr con un dedo reconocible apoyado ni entre
+// el getImage() del loop y identificarHuella().
 // =====================================================
 
 void atenderEnrolamiento() {
@@ -5675,6 +5677,17 @@ void setup() {
   Serial.begin(
     115200
   );
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  // Serial es el USB nativo (HWCDC). Enchufado a una PC sin nadie leyendo el
+  // puerto, cada print espera hasta 100 ms a que se vacie el buffer: el loop
+  // se arrastra y el lector parece apagado (visto el 07/10/2026). Sin espera,
+  // lo que no entra se descarta; el diagnostico por Serial sigue funcionando
+  // cuando hay un monitor abierto.
+  Serial.setTxTimeoutMs(
+    0
+  );
+#endif
 
   delay(
     400
@@ -6262,6 +6275,13 @@ void loop() {
 
       mostrarListo();
     }
+
+    // Con el dedo fantasma (ver esImagenFantasma) el sensor casi nunca
+    // devuelve NOFINGER, y la rama NOFINGER era el unico sitio del sondeo:
+    // las ordenes de la web no llegaban al lector («le doy a registrar y no
+    // pasa nada»). Aca identificarHuella() ya termino sin ninguna lectura
+    // valida, asi que no hay imagen que perder ni marcacion en curso.
+    atenderEnrolamiento();
 
     delay(
       60
