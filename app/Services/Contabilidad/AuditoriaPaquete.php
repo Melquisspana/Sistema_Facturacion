@@ -17,7 +17,7 @@ class AuditoriaPaquete
      * @param  array<string, mixed>  $resumen
      * @param  array<string, mixed>|null  $cobertura
      */
-    public function registrar(?User $usuario, string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error, ?int $comprasMarcadas = null, ?array $cobertura = null): void
+    public function registrar(?User $usuario, string $estado, string $correo, array $rango, array $resumen, string $nombreZip, ?string $error, ?int $comprasMarcadas = null, ?array $cobertura = null, ?string $archivoDriveId = null): void
     {
         activity('paquete_contabilidad')
             ->causedBy($usuario)
@@ -33,6 +33,7 @@ class AuditoriaPaquete
                 'cobertura_incompleta' => $cobertura === null ? null : ! $cobertura['cubierto'],
                 'dias_faltantes' => $cobertura === null ? null : collect($cobertura['dias_pendientes'])->pluck('dia')->all(),
                 'zip' => $nombreZip,
+                'drive_archivo_id' => $archivoDriveId,
                 'estado' => $estado,
                 'error' => $error,
             ], fn ($v) => $v !== null))

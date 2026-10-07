@@ -348,7 +348,7 @@
                         <div class="fixed inset-0 bg-gray-900/50" onclick="document.getElementById('modal-enviar-contabilidad').classList.add('hidden')"></div>
                         <div class="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg p-6">
                             <h3 class="text-lg font-semibold text-gray-900">Confirmar envío a contabilidad</h3>
-                            <p class="mt-1 text-sm text-gray-500">Revisá los datos. Se enviará un solo correo con el ZIP adjunto. Si el envío es exitoso, las compras pendientes incluidas en este rango se marcarán como "enviado" (no toca ignoradas ni ya enviadas). Las ventas no se modifican.</p>
+                            <p class="mt-1 text-sm text-gray-500">Revisá los datos. El ZIP se subirá a Google Drive y se compartirá solo con el correo de contabilidad. Se enviará un solo correo con el enlace, sin adjuntos. Si el envío es exitoso, las compras pendientes incluidas en este rango se marcarán como "enviado" (no toca ignoradas ni ya enviadas). Las ventas no se modifican.</p>
 
                             <dl class="mt-4 divide-y divide-gray-100 text-sm">
                                 <div class="flex justify-between py-1.5"><dt class="text-gray-500">Correo destino</dt><dd class="font-medium text-gray-900">{{ $correoContabilidad }}</dd></div>

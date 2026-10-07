@@ -14,6 +14,8 @@ use App\Models\GmailCuenta;
 use App\Models\User;
 use App\Models\VerificacionConfiguracion;
 use App\Services\Ppq\GmailClient;
+use Google\Service\Drive;
+use Google\Service\Gmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Spatie\Activitylog\Models\Activity;
@@ -41,6 +43,16 @@ class IntegracionGmailTest extends TestCase
     private const REFRESH = '1//refresh-token-secretisimo';
 
     private const SECRETO = 'GOCSPX-secreto-de-cliente-9x';
+
+    public function test_pantalla_informa_si_falta_permiso_drive(): void
+    {
+        $cuenta = $this->cuentaConectada();
+        $this->actingAs($this->admin())->get(route('configuracion.integraciones.gmail'))
+            ->assertOk()->assertSee('Falta autorizar Drive');
+        $cuenta->update(['scopes' => Gmail::GMAIL_READONLY.' '.Drive::DRIVE_FILE]);
+        $this->get(route('configuracion.integraciones.gmail'))
+            ->assertOk()->assertSee('Drive autorizado para los paquetes de contabilidad')->assertDontSee('Falta autorizar Drive');
+    }
 
     protected function setUp(): void
     {
