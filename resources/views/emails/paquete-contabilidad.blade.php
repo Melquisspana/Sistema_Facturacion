@@ -1,7 +1,7 @@
 <x-mail::message>
 # Paquete de contabilidad {{ $etiqueta }}
 
-Adjunto el paquete de documentos para contabilidad correspondiente al periodo
+En Google Drive está el paquete de documentos para contabilidad correspondiente al periodo
 **{{ $resumen['desde'] }}** a **{{ $resumen['hasta'] }}**.
 
 @if ($resumen['incluir_compras'])
@@ -11,8 +11,11 @@ Adjunto el paquete de documentos para contabilidad correspondiente al periodo
 - **Ventas (emitidos):** {{ number_format($resumen['ventas_cantidad']) }} documentos — total ${{ number_format($resumen['ventas_total'], 2) }}
 @endif
 
-El detalle completo va en el archivo ZIP adjunto (Excel de compras y ventas, y los
-PDF/JSON de cada documento).
+El detalle completo está en el ZIP de Drive (Excel de compras y ventas, y los PDF/JSON de cada documento).
+
+<x-mail::button :url="$enlaceDrive">Abrir paquete en Drive</x-mail::button>
+
+El acceso está autorizado solo para este correo de contabilidad. Abrí el enlace con esa cuenta de Google.
 
 Gracias,
 Dulces La Negrita

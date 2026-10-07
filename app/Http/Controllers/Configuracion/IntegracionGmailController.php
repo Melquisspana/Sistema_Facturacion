@@ -73,6 +73,7 @@ class IntegracionGmailController extends Controller
                 'conectada' => $cuenta?->conectada() === true,
                 'correo' => $cuenta?->email,
                 'scopes' => $cuenta?->scopes,
+                'drive_autorizado' => $cuenta?->conectada() === true && $cuenta->tienePermisoDrive(),
                 'conectado_por' => $cuenta?->conectado_por
                     ? User::find($cuenta->conectado_por)?->name
                     : null,

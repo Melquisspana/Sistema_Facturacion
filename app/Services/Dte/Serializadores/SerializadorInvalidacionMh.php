@@ -82,9 +82,47 @@ class SerializadorInvalidacionMh
                 .'Estado actual: '.$dte->estado->label().'.';
         }
 
+        // Códigos MH del establecimiento y punto de venta desde donde se transmite: con
+        // formato inválido el MH rechaza el evento, así que se detiene antes de firmar.
+        [$codEstableMH, $codPuntoVentaMH] = $this->codigosMh($dte);
+        if (! preg_match('/^[MSBP]\d{3}$/', $codEstableMH)) {
+            $problemas[] = 'El código de establecimiento asignado por el MH («'.$codEstableMH.'») no tiene el formato '
+                .'M000, S000, B000 o P000 (Normativa 2.0, Anexo V, campo 24).';
+        }
+        if (! preg_match('/^P\d{3}$/', $codPuntoVentaMH)) {
+            $problemas[] = 'El código de punto de venta asignado por el MH («'.$codPuntoVentaMH.'») no tiene el formato '
+                .'P000 que usa el número de control (Normativa 2.0, Anexo V, campo 26).';
+        }
+
         // Matriz documento x motivo, sustituto verificado y dependencias fiscales: una
         // sola fuente, revalidada justo antes de firmar.
         return array_merge($problemas, $this->reglas->problemas($dte, $evento));
+    }
+
+    /**
+     * Códigos MH del establecimiento y del punto de venta DESDE DONDE SE TRANSMITE el evento.
+     *
+     * Normativa 2.0, Anexo V, Sección 3 (p.124): el emisor es el mismo del DTE, pero el
+     * establecimiento y el punto de venta son los de donde se transmite el evento, «no
+     * necesariamente» los del documento. Campos 24 y 26 (p.125): códigos asignados por el
+     * MH (M000, S000, B000, P000). Los internos del contribuyente (campos 25 y 27) son
+     * opcionales y van null.
+     *
+     * Este sistema transmite desde el mismo establecimiento y punto de venta que emitió el
+     * DTE: sus códigos son los del número de control, que ya tienen el formato del MH. Si
+     * algún día se transmite desde otro, se fija por configuración
+     * (dte.invalidacion.cod_estable_mh / cod_punto_venta_mh) sin tocar código.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function codigosMh(Dte $dte): array
+    {
+        $dte->loadMissing(['establecimiento', 'puntoVenta']);
+
+        return [
+            (string) config('dte.invalidacion.cod_estable_mh') ?: (string) ($dte->establecimiento?->codigo ?? ''),
+            (string) config('dte.invalidacion.cod_punto_venta_mh') ?: (string) ($dte->puntoVenta?->codigo ?? ''),
+        ];
     }
 
     /** @return array<string, mixed> Bloque `identificacion` del evento (UUID nuevo). */
@@ -118,16 +156,7 @@ class SerializadorInvalidacionMh
     private function emisor(Dte $dte): array
     {
         $emp = $dte->establecimiento?->empresa;
-        $codEstable = (string) ($dte->establecimiento?->codigo ?? '');
-        $codPuntoVenta = (string) ($dte->puntoVenta?->codigo ?? '');
-
-        // TODO (INSUMOS_PENDIENTES): confirmar contra el MH si codEstableMH/codPuntoVentaMH
-        // son los códigos internos (M001/P001) o códigos asignados por Hacienda. Mientras
-        // no se confirme, se usan los internos (los mismos que arma el número de control),
-        // y los códigos "del contribuyente" (codEstable/codPuntoVenta) quedan null.
-        // Overridables por config sin tocar código: dte.invalidacion.cod_estable_mh / cod_punto_venta_mh.
-        $codEstableMH = (string) config('dte.invalidacion.cod_estable_mh') ?: $codEstable;
-        $codPuntoVentaMH = (string) config('dte.invalidacion.cod_punto_venta_mh') ?: $codPuntoVenta;
+        [$codEstableMH, $codPuntoVentaMH] = $this->codigosMh($dte);
 
         return [
             'nit' => $this->soloDigitos($emp?->nit),

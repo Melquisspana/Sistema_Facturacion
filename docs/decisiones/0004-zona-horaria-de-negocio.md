@@ -1,12 +1,25 @@
-# 0004. Zona horaria: guardar en UTC y calcular el día de negocio en hora de El Salvador
+# 0004. Zona horaria: guardar y calcular el día de negocio en hora de El Salvador
 
 ## Estado
 
-Propuesta
+Propuesta, corregida el 2026-10-06 (ver «Corrección» abajo; issue #59).
 
 ## Fecha
 
 2026-10-03
+
+## Corrección (2026-10-06)
+
+La premisa de esta decisión era falsa para producción. Al preparar el despliegue v2026.10.06 se comprobó que **producción usa `APP_TIMEZONE=America/El_Salvador`**: guarda y calcula «hoy» en hora local desde siempre. Solo desarrollo y CI corrían en UTC, porque `APP_TIMEZONE` no estaba definida.
+
+Queda así:
+
+- **Zona de guardado: hora de El Salvador en todos los entornos.** `config/app.php` usa `America/El_Salvador` por defecto, y `.env.example` lo deja explícito. Desarrollo y CI prueban igual que producción. No se migra producción a UTC: no hay datos que convertir y el riesgo no se justifica.
+- `HoraNegocio` sigue siendo la fuente explícita del día de negocio. Como hoy coincide con `app.timezone`, las etapas 2 a 4 de abajo (Gastos, Cobros, planificador y pantallas) dejan de corregir un corrimiento en producción. Quedan como limpieza: usar `HoraNegocio` donde la fecha de negocio importa, para no depender de la configuración.
+- `inicioDelDiaUtc()` y `finDelDiaUtc()` solo sirven para comparar instantes en memoria (hoy, `PlazoInvalidacion`). **No se usan como parámetro de una consulta**: Laravel escribe la hora del Carbon sin convertirla a `app.timezone`.
+- **Hallazgo corregido**: Asistencia guardaba `marcado_at` con un Carbon en UTC (`HoraOficial::instante()`). Con la aplicación en hora local, Eloquent escribía la hora UTC y al leerla la tomaba como local, seis horas corrida. `fecha_local` estaba bien. Ahora el instante se crea en `app.timezone`. Si producción ya tiene marcaciones, las anteriores a este cambio necesitan revisión aparte, de solo lectura primero.
+- `fecha_procesamiento_mh` (la `fhProcesamiento` local de Hacienda) queda en la misma zona que el resto de la base en todos los entornos.
+- La «Decisión (propuesta)» y el «Plan de despliegue» de abajo se conservan como historia. Donde dicen «guardar en UTC», manda esta corrección.
 
 ## Contexto
 

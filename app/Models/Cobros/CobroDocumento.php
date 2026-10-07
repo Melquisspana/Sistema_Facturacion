@@ -318,7 +318,45 @@ class CobroDocumento extends Model
 
         $notas = app(SaldoMontoCcf::class)->descontadoEnCobro([$this->dte_id])[$this->dte_id];
 
-        return Dinero::redondear(Dinero::restar($monto, $notas));
+        // Calleja manda dos formatos de archivo de pagos: la línea CF NETA (CCF − NC) o la
+        // línea CF por el TOTAL más una línea NC negativa aparte. En el segundo, la NC ya
+        // tiene su propio cobro en su documento: restarla otra vez del CCF lo dejaba «con
+        // diferencia» aunque estaba pagado (regresión del issue #14).
+        return Dinero::redondear(Dinero::sumar(Dinero::restar($monto, $notas), $this->notasCobradasAparte()));
+    }
+
+    /**
+     * Total de las NC aceptadas de este CCF que ya tienen su PROPIO descuento registrado: un
+     * evento de pago aplicado en el seguimiento de la NC, venga de su línea en un archivo de
+     * pagos o de un registro manual. Esas no se restan del CCF.
+     */
+    private function notasCobradasAparte(): string
+    {
+        $suma = Dte::query()
+            ->where('dte_relacionado_id', $this->dte_id)
+            ->where('tipo_dte', '05')
+            ->where('estado', EstadoDte::Aceptado->value)
+            ->whereIn('id', self::query()->where('tipo_dte', '05')->whereNotNull('dte_id')
+                ->whereHas('eventos', fn (Builder $e) => $e->where('tipo', TipoEventoCobro::Pago->value)
+                    ->where('estado', EstadoEventoCobro::Aplicado->value)->whereNotNull('monto'))
+                ->select('dte_id'))
+            ->sum('total_pagar');
+
+        return Dinero::redondear((string) $suma);
+    }
+
+    /**
+     * El CCF de esta NC, si tiene seguimiento. Cuando la NC recibe su propio cobro, el
+     * efectivo de su CCF cambia ({@see facturadoEfectivo()}) y hay que recalcularlo.
+     */
+    private function ccfDeEstaNc(): ?self
+    {
+        if (! $this->esNc() || $this->dte_id === null) {
+            return null;
+        }
+        $ccfId = Dte::whereKey($this->dte_id)->value('dte_relacionado_id');
+
+        return $ccfId === null ? null : self::query()->where('tipo_dte', '03')->where('dte_id', $ccfId)->first();
     }
 
     /** Saldo por cobrar: lo que se espera cobrar menos lo informado. */
@@ -475,6 +513,13 @@ class CobroDocumento extends Model
         ])->save();
 
         $this->completarCircuitoPorPago();
+
+        // La línea NC suele venir DESPUÉS de la CF en el mismo archivo: su CCF ya cobrado se
+        // recalcula para dejar de restarla. Solo si el CCF tiene cobro; si no, no cambia nada.
+        $ccf = $this->ccfDeEstaNc();
+        if ($ccf !== null && Dinero::comparar($ccf->monto_pagado ?? '0', '0') !== 0) {
+            $ccf->recalcularPago();
+        }
     }
 
     /**

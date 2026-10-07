@@ -39,6 +39,7 @@ use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
 use App\Support\Dinero;
+use App\Support\IdentidadPpq;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -176,6 +177,7 @@ class CobrosController extends Controller
         $avisosPpq = $elegibilidad->avisos($listosPpq->keys());
         $duplicadosEnFiltro = $listosEnFiltro->filter(fn ($monto, $id) => ($avisosPpq[$id]['duplicado'] ?? null) !== null)->count();
         $listosEnFiltro = $listosEnFiltro->reject(fn ($monto, $id) => ($avisosPpq[$id]['duplicado'] ?? null) !== null);
+        $noSeleccionables = $this->noSeleccionables($cliente, $filtros, $listosPpq, $clavesPpq, $elegibilidad);
         $totalListosEnFiltro = '0';
         foreach ($listosEnFiltro as $monto) {
             $totalListosEnFiltro = Dinero::sumar($totalListosEnFiltro, $monto);
@@ -184,6 +186,7 @@ class CobrosController extends Controller
         return view('cobros.index', [
             'avisosPpq' => $avisosPpq,
             'duplicadosEnFiltro' => $duplicadosEnFiltro,
+            'noSeleccionables' => $noSeleccionables,
             'listosPpq' => $listosPpq,
             'ncSueltas' => app(NcPosterioresLotePpq::class)->sueltasDelCliente($cliente),
             'listosEnFiltro' => $listosEnFiltro,
@@ -894,6 +897,36 @@ class CobrosController extends Controller
     private function saldadosConNc(Cliente $cliente): array
     {
         return $this->saldadosConNc[$cliente->id] ??= CobroDocumento::idsSaldadosConNc($cliente->id);
+    }
+
+    /**
+     * CCF que la tarjeta «Entregados, por presentar» cuenta pero no se pueden meter en un PPQ,
+     * con el motivo. La tarjeta mira solo pago, presentación y albarán; la casilla además
+     * descarta lo que sigue en un PPQ vigente, la revisión histórica y los pagos en revisión.
+     * Sin esta lista, la tarjeta decía 44 y el botón 43 sin explicar cuál faltaba.
+     *
+     * @param  Collection<int, string>  $listos  id => monto, de {@see ElegibilidadPpqSeguimiento::listos()}
+     * @param  Collection<string, int>  $claves
+     * @return Collection<int, string> textos «CCF 200: sigue en el PPQ #13»
+     */
+    private function noSeleccionables(Cliente $cliente, array $filtros, Collection $listos, Collection $claves, ElegibilidadPpqSeguimiento $elegibilidad): Collection
+    {
+        return $this->aplicarEtapa($this->consultaSinEtapa($cliente, $filtros), 'listos')
+            ->whereKeyNot($listos->keys()->all())
+            ->with(['dte:id,estado', 'eventos'])
+            ->porRecencia()
+            ->get()
+            ->map(function (CobroDocumento $doc) use ($claves, $elegibilidad) {
+                $motivo = $elegibilidad->motivo($doc, $claves) ?? 'no cumple las condiciones';
+                $lote = $claves->get(IdentidadPpq::normalizar($doc->numero_control))
+                    ?? ($doc->dte_id !== null ? $claves->get('dte:'.$doc->dte_id) : null);
+                if ($motivo === 'ya está en un PPQ' && $lote !== null) {
+                    $motivo = "sigue en el PPQ #{$lote}";
+                }
+
+                return 'CCF '.$doc->correlativoCorto().': '.$motivo;
+            })
+            ->values();
     }
 
     /** @return Builder<CobroDocumento> */

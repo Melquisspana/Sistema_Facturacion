@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Ppq\GmailClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -51,10 +52,11 @@ class PpqGmailController extends Controller
         try {
             $cuenta = $gmail->conectar($codigo, $request->user()?->id);
         } catch (\Throwable $e) {
-            // El detalle técnico va al registro, no a la pantalla.
-            report($e);
+            // Solo la clase y el código: el mensaje de una excepción OAuth puede traer
+            // el código de autorización o datos del token.
+            Log::warning('No se pudo conectar Gmail/Drive.', ['excepcion' => $e::class, 'codigo' => $e->getCode()]);
 
-            return redirect()->route('ppq.index')->with('error', 'No se pudo conectar Gmail. El detalle quedó en el registro del sistema.');
+            return redirect()->route('ppq.index')->with('error', 'No se pudo conectar Gmail y Drive. Revisá la configuración de Google y volvé a autorizar.');
         }
 
         return redirect()->route('ppq.index')

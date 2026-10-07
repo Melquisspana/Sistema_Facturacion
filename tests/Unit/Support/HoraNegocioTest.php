@@ -15,7 +15,11 @@ class HoraNegocioTest extends TestCase
     {
         parent::setUp();
         config(['app.zona_negocio' => 'America/El_Salvador']);
-        $this->assertSame('UTC', config('app.timezone'));
+        // A propósito con la aplicación en UTC (no es el valor por defecto desde el issue
+        // #59): prueba que HoraNegocio no depende de app.timezone. La aplicación se vuelve
+        // a crear en cada prueba y restaura la zona de la configuración.
+        config(['app.timezone' => 'UTC']);
+        date_default_timezone_set('UTC');
     }
 
     public function test_hoy_respeta_el_dia_local_en_los_bordes_utc(): void
