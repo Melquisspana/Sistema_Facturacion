@@ -8,6 +8,18 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.06.6] - 2026-10-06
+
+Sexto despliegue del día. Incluye #69 y #71. No trae migraciones.
+
+### Agregado
+
+- Seguimiento de CCF: avisos «Albarán reciente» (registrado hace menos de `COBROS_DIAS_ALBARAN_RECIENTE` días, 5 por defecto, que quizá todavía no esté en el portal de Calleja) y «Posible duplicado» (otro documento ya cobró con ese albarán), y botón «Quitar los de albarán reciente» de la selección. #69
+
+### Corregido
+
+- Archivo de quedan: si el albarán de un CCF se eligió a mano en el Seguimiento, su sala vale como confirmada y ya no hace falta anotarla en `PPQ_QUEDAN_SALAS_CONFIRMADAS`. #71
+
 ## [2026.10.06.5] - 2026-10-06
 
 Quinto despliegue del día. Incluye #68. No trae migraciones.
