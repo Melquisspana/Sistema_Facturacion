@@ -34,23 +34,20 @@ Fuentes. Las páginas son las impresas en cada documento; los PDF quedan fuera d
 
 El servidor y el firmador están en el local: sin internet se puede **generar y firmar**. Solo la transmisión al MH necesita salida a internet. El problema es **entrar** al sistema: siempre se entra por el dominio público, a través de Cloudflare, y producción usa cookies de sesión seguras (`SESSION_SECURE_COOKIE`), que el navegador solo guarda con HTTPS. Por `http://` a la IP local no se puede iniciar sesión.
 
-**Plan recomendado** (sin instalar nada en las PC del local):
+**Plan** (sin instalar nada en las PC del local y sin pasos con el teléfono, porque quienes usan el sistema no tendrían por qué saber hacerlos):
 
-- **A. Si se cae el internet del local**: el servidor y las PC no tienen wifi. El servidor recupera internet con un celular por **cable USB**: el anclaje USB de Android o «Compartir internet» del iPhone por USB, que Windows toma como una red más sin instalar nada. Otra opción es un adaptador wifi USB. Con eso:
-  - el servidor **transmite al MH normalmente** y el túnel de Cloudflare vuelve: la contingencia queda solo para cuando el MH no responde;
-  - las PC, conectadas por cable al router sin internet, siguen sin llegar a Cloudflare: entran por el **plan B** (red local), y desde la laptop con wifi se puede usar el dominio de siempre;
-  - el servidor queda con dos redes. Hay que comprobar que Windows mande la salida a internet por el celular y no por el router caído (si hace falta, prioridad de la interfaz USB), sin perder la red local, que sigue por el cable.
-  - **Si el anclaje USB no resulta viable, el plan B pasa a ser el principal** y el servidor queda en contingencia hasta que vuelva el internet.
-- **B. Respaldo sin internet ni hotspot**: un vhost de Apache solo para la red local, con **HTTPS y certificado autofirmado**, más un favorito «Facturación (sin internet)» en cada PC que apunta a **la dirección local del servidor (se guarda fuera del repositorio)**.
+- **Acceso por la red local**: un vhost de Apache solo para la red local, con **HTTPS y certificado autofirmado**, más un favorito «Facturación (sin internet)» en cada PC que apunta a **la dirección local del servidor (se guarda fuera del repositorio)**.
   - El navegador avisa que el certificado no es de confianza («Avanzado → Continuar»). El aviso puede volver al reiniciar el navegador o después de un tiempo.
   - Como la conexión es HTTPS, la cookie segura se guarda y el inicio de sesión funciona.
   - Para que el favorito no cambie, la IP del servidor queda fija con una **reserva DHCP** en el router del proveedor, o en el sistema de malla si el router no lo permite.
-- Para que B funcione hay que comprobar en la configuración del servidor, no en el repositorio:
+- **Aviso automático** al abrir el dominio sin internet, con el botón al favorito (ver abajo).
+- **Contingencia automática**: sin internet, el servidor tampoco llega al MH. Los documentos se generan, firman y entregan como transitorios (sección 2) y se regularizan al volver la conexión (secciones 3 y 4).
+- Para que el acceso por la red local funcione hay que comprobar en la configuración del servidor, no en el repositorio:
   - que `SESSION_DOMAIN` esté vacío, porque una cookie atada al dominio público no se guarda al entrar por IP;
   - que la aplicación no fuerce la URL pública en las redirecciones (hoy no lo hace: no hay `forceRootUrl`);
   - que el vhost de la red local no se publique hacia internet.
-  - Al entrar por B no pasa por Cloudflare Access: protege solo el inicio de sesión de la aplicación, igual que en cualquier acceso desde adentro.
-- **Descartadas**: el archivo `hosts` en las PC y una CA local o mkcert (exigen instalar algo en cada PC), y el DNS local con el mismo dominio y Let's Encrypt (el router del proveedor y la malla en modo punto de acceso no ofrecen DNS local).
+  - Al entrar por la red local no pasa por Cloudflare Access: protege solo el inicio de sesión de la aplicación, igual que en cualquier acceso desde adentro.
+- **Descartadas**: conectar el servidor a internet con el celular (hotspot o anclaje USB; requiere pasos que no todos saben hacer), el archivo `hosts` en las PC y una CA local o mkcert (exigen instalar algo en cada PC), y el DNS local con el mismo dominio y Let's Encrypt (el router del proveedor y la malla en modo punto de acceso no ofrecen DNS local).
 
 **Aviso al abrir el dominio sin internet.** Una redirección desde Cloudflare no sirve: sin internet, las PC tampoco llegan a Cloudflare. Se propone un *service worker* mínimo en el propio dominio. Se instala solo al visitar el sitio, sin tocar las PC.
 - Se registra solo para usuarios con sesión iniciada. Al instalarse guarda **una única página estática**: «Sin internet: entrá por la red de la casa». La página trae un botón al favorito B, con la dirección local tomada de la configuración del servidor y no del repositorio, y la instrucción del hotspot. La ruta que la genera exige sesión, así que la dirección local no queda expuesta a visitantes.
@@ -59,10 +56,11 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
 - Para «Hacienda no responde» ya está el aviso de contingencia dentro de la aplicación; esta página es solo para cuando no hay internet.
 
 **Ensayo antes de necesitarlo**:
-1. Desconectar el router de internet. Conectar el celular **por USB** al servidor y activar el anclaje: comprobar que el servidor sale a internet por el celular, que el MH responde y que el servidor sigue accesible en la red local.
-2. Desde una PC por cable, entrar por el favorito B, aceptar el aviso del certificado, **iniciar sesión**, emitir un documento de prueba en el ambiente 00 y transmitirlo (sale por el celular del servidor).
-3. Sin el celular: repetir el paso 2 y comprobar que el documento queda firmado y pendiente de envío (contingencia).
-4. Reiniciar el router y comprobar que el servidor conserva su IP.
+1. Desconectar el router de internet.
+2. Desde una PC, abrir el dominio de siempre: debe aparecer el aviso «Sin internet» con el botón (cuando exista el PR del aviso).
+3. Entrar por el favorito, aceptar el aviso del certificado, **iniciar sesión**, emitir un documento de prueba en el ambiente 00 y comprobar que queda firmado, entregado como transitorio y pendiente de envío (contingencia).
+4. Reconectar el router: comprobar que el sistema registra el cese y que el evento y el lote se envían.
+5. Reiniciar el router y comprobar que el servidor conserva su IP.
 
 **Corte de luz del servidor**: fuera del alcance del sistema. Si el servidor se apaga, no hay aplicación, ni firma, ni registro. Se recomienda una **UPS** para el servidor, el router y la malla, con autonomía para cerrar ordenadamente. Lo que se facture a mano durante el corte se regulariza fuera de este flujo; consultarlo con la contadora y el MH.
 
@@ -134,7 +132,7 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
    - Pruebas: la página no lleva datos y su ruta exige sesión. Prueba manual: red cortada, error 52x de Cloudflare, login, POST y descargas sin cambios.
 5. **Detección y cierre.**
    - Entrada automática desde `DteTransmisionResiliente`, con el tipo 1 o 3 según la conexión, y prueba de reconexión cada 15 minutos que registra el cese (tarea programada).
-   - Vhost HTTPS de la red local con certificado autofirmado, reserva DHCP y el ensayo de la sección 1.1 (anclaje USB del celular e inicio de sesión por la red local).
+   - Vhost HTTPS de la red local con certificado autofirmado, reserva DHCP y el ensayo de la sección 1.1 (inicio de sesión por la red local y contingencia de punta a punta).
    - Avisos de plazo, reenvío del archivo completo al cliente cuando llega el sello y separación en el reporte de la contadora.
    - Prueba de extremo a extremo en el ambiente de pruebas del MH: contingencia simulada, evento, lote y sellos.
 
