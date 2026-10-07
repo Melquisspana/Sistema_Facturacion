@@ -140,7 +140,7 @@ Requisitos previos ya resueltos: hora local (#59, decisión 0004), códigos MH d
 
 ### Plan detallado (07/10/2026)
 
-Cada parte tiene su issue con el encargo completo (archivos, criterios de aceptación, pruebas y riesgos): parte 1 #ISSUE1, parte 2 #ISSUE2, parte 3 #ISSUE3, parte 4 #ISSUE4 y parte 5 #ISSUE5. Orden: 1 → 2 → 3 → 5; la 4 es independiente y puede ir en cualquier momento. Ajustes respecto de la lista anterior:
+Cada parte tiene su issue con el encargo completo (archivos, criterios de aceptación, pruebas y riesgos): parte 1 #88, parte 2 #89, parte 3 #90, parte 4 #91 y parte 5 #92. Orden: 1 → 2 → 3 → 5; la 4 es independiente y puede ir en cualquier momento. Ajustes respecto de la lista anterior:
 
 - **Migración 1** (parte 1): crea `contingencias`, `contingencia_eventos` y en `dtes` las columnas `contingencia_id` y `contingencia_evento_id`. La tabla de eventos va aquí para poder dividir en partes de 1000 documentos sin una tercera migración. Las columnas `tipo_modelo`, `tipo_operacion`, `tipo_contingencia` y `motivo_contingencia` ya existen en `dtes`.
 - **Migración 2** (parte 3): crea `lotes_dte` y `dtes.lote_dte_id`.
