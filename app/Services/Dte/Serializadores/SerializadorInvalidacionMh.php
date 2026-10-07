@@ -7,6 +7,7 @@ use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\CodigoGeneracion;
+use App\Support\Dte\DocumentoIdentidadMh;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\HoraNegocio;
 
@@ -177,12 +178,13 @@ class SerializadorInvalidacionMh
             'tipoAnulacion' => $e->tipoAnulacion->value,
             // Texto libre; null salvo tipo 3 (validado en los candados).
             'motivoAnulacion' => $e->motivoAnulacion,
-            'nombreResponsable' => (string) ($e->nombreResponsable ?? ''),
+            // Documentos en el formato del MH (NIT sin guiones, DUI 00000000-0), issue #52.
+            'nombreResponsable' => trim((string) ($e->nombreResponsable ?? '')),
             'tipDocResponsable' => (string) ($e->tipoDocResponsable ?? ''),
-            'numDocResponsable' => (string) ($e->numDocResponsable ?? ''),
-            'nombreSolicita' => (string) ($e->nombreSolicita ?? ''),
+            'numDocResponsable' => (string) DocumentoIdentidadMh::normalizarNumero($e->tipoDocResponsable, $e->numDocResponsable ?? ''),
+            'nombreSolicita' => trim((string) ($e->nombreSolicita ?? '')),
             'tipDocSolicita' => (string) ($e->tipoDocSolicita ?? ''),
-            'numDocSolicita' => (string) ($e->numDocSolicita ?? ''),
+            'numDocSolicita' => (string) DocumentoIdentidadMh::normalizarNumero($e->tipoDocSolicita, $e->numDocSolicita ?? ''),
         ];
     }
 
