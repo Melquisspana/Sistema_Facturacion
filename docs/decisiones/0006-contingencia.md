@@ -105,7 +105,7 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
 - Un documento firmado y no transmitido **presume ingresos gravados** (art. 199 del Código Tributario; NCu p.18), y si no se transmite a tiempo **no queda emitido** (NCu p.24). Por eso la bandeja y los avisos de plazo son obligatorios, no opcionales.
 - **Doble transmisión**: un documento cuyo envío quedó en duda pudo haber entrado al MH. Antes de incluirlo en el evento, se consulta su estado; si ya tiene sello, sale de la contingencia (es la misma regla de la política de reintentos).
 - Las **declaraciones de IVA** deben reflejar las ventas hechas en contingencia (NCu p.31). El reporte de la contadora tiene que mostrarlas, separando las que tienen sello de las que no.
-- **Hora**: `fecEmi`, `horEmi` y las fechas del evento deben ir en hora de El Salvador. Hoy `fecEmi` y `horEmi` salen en UTC (decisión 0004). La contingencia **no** debe implementarse antes de resolver eso, porque el MH compara fechas.
+- **Hora**: `fecEmi`, `horEmi` y las fechas del evento van en hora de El Salvador. Ya es así en todos los entornos: producción guarda en hora local, y desarrollo y CI también (decisión 0004 corregida, issue #59). Las pruebas de la contingencia tienen que cubrir los bordes del día local.
 - El MH puede **revocar la autorización** de emitir DTE si el emisor no resguarda la seguridad y exactitud de lo emitido (MF p.20). Hay que guardar los JWS, eventos y respuestas con respaldo, como ya se hace con los DTE.
 - **Ambigüedad de la fuente**: el Cuadro 5 (NCu p.19) dice «Evento de Invalidación» en la fila de contingencia; el Cuadro 7 (p.30) y el MF (p.19) la aclaran. Se toman las 24 horas desde el cese para el evento de contingencia.
 
@@ -136,7 +136,7 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
    - Avisos de plazo, reenvío del archivo completo al cliente cuando llega el sello y separación en el reporte de la contadora.
    - Prueba de extremo a extremo en el ambiente de pruebas del MH: contingencia simulada, evento, lote y sellos.
 
-Antes del PR 1 hay que resolver la hora local de `fecEmi`/`horEmi` (decisión 0004), #52 (responsable) y #54 (códigos del MH).
+Requisitos previos ya resueltos: hora local (#59, decisión 0004), códigos MH del establecimiento y punto de venta (#54). El responsable y el solicitante (#52) están en revisión. El evento de contingencia usa el mismo responsable del emisor.
 
 ## Consecuencias
 
