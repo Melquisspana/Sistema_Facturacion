@@ -183,6 +183,17 @@ int8_t fpTx =
 
 Preferences preferencias;
 
+// LUZ DEL SENSOR
+//
+// El AS608 enciende su luz en cada getImage() y la apaga al terminar: como el
+// loop consulta cada 100 ms y se detiene en cada peticion HTTP, la luz
+// parpadea sin ritmo. Con esto queda fija: se enciende al arrancar con
+// LEDcontrol(true) y se vuelve a encender justo despues de cada captura
+// (capturarImagen). Cuesta un paquete UART de ~2 ms por captura.
+//
+// false = comportamiento de fabrica (parpadeo).
+#define SENSOR_LUZ_FIJA true
+
 
 // =====================================================
 // AUDIO: ES8311 + amplificador FM8002E + bocina
@@ -480,6 +491,8 @@ int peticionEnrolamiento(
 );
 
 bool sincronizarIndiceSensor();
+
+uint8_t capturarImagen();
 
 String construirListaOcupadas(
   uint16_t &capacidadEfectiva
@@ -2497,7 +2510,7 @@ ResultadoHuella identificarHuella(
     } else {
 
       p =
-        finger.getImage();
+        capturarImagen();
     }
 
     if (
@@ -2701,7 +2714,7 @@ void esperarRetiroConMensaje(
   ) {
 
     uint8_t p =
-      finger.getImage();
+      capturarImagen();
 
     if (
       p ==
@@ -3965,7 +3978,7 @@ bool sincronizarIndiceSensor() {
   // un sensor que la devuelve casi siempre, exigir NOFINGER pospondria el
   // indice para siempre y el servidor nunca podria reservar ranura.
   uint8_t imagen =
-    finger.getImage();
+    capturarImagen();
 
   bool hayDedo =
     imagen !=
@@ -4381,6 +4394,30 @@ bool esImagenFantasma(
 
 
 // =====================================================
+// CAPTURAR UNA IMAGEN
+//
+// getImage() y, con SENSOR_LUZ_FIJA, la luz otra vez encendida. Todo el
+// firmware captura por aca para que ningun camino la deje apagada. Volver a
+// encender la luz no toca el buffer de imagen: image2Tz() despues sigue
+// convirtiendo la imagen recien capturada.
+// =====================================================
+
+uint8_t capturarImagen() {
+
+  uint8_t p =
+    finger.getImage();
+
+#if SENSOR_LUZ_FIJA
+  finger.LEDcontrol(
+    true
+  );
+#endif
+
+  return p;
+}
+
+
+// =====================================================
 // ESPERAR EL DEDO (ENROLAMIENTO)
 //
 // Devuelve FINGERPRINT_OK cuando hay un dedo y su imagen ya quedo convertida
@@ -4421,7 +4458,7 @@ uint8_t esperarDedoEnrolamiento(
     mantenerWiFi();
 
     uint8_t p =
-      finger.getImage();
+      capturarImagen();
 
     if (
       p ==
@@ -4524,7 +4561,7 @@ bool esperarRetiroDeEnrolamiento(
     mantenerWiFi();
 
     uint8_t p =
-      finger.getImage();
+      capturarImagen();
 
     bool retirado =
       p ==
@@ -5757,6 +5794,12 @@ void setup() {
     (unsigned long) fpBaudios
   );
 
+#if SENSOR_LUZ_FIJA
+  finger.LEDcontrol(
+    true
+  );
+#endif
+
   bool sensorEnBusI2C =
     fpRx == I2C_SDA ||
     fpRx == I2C_SCL ||
@@ -5875,7 +5918,7 @@ void loop() {
   mantenerWiFi();
 
   uint8_t p =
-    finger.getImage();
+    capturarImagen();
 
   if (
     p ==
