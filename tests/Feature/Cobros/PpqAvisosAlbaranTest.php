@@ -177,4 +177,23 @@ class PpqAvisosAlbaranTest extends TestCase
         $lote->items()->create(['tipo_dte' => '03', 'dte_id' => $doc->dte_id, 'numero_control' => 'OTRO-999', 'ppq_albaran_id' => $doc->ppq_albaran_id, 'monto_dte' => '100.00']);
         $this->assertNull(app(ElegibilidadPpqSeguimiento::class)->avisos(collect([$doc->id]))[$doc->id]['duplicado'] ?? null);
     }
+
+    /** La tarjeta cuenta 3 entregados por presentar, el botón 1: la vista dice cuáles faltan y por qué. */
+    public function test_explica_los_entregados_que_no_se_pueden_seleccionar(): void
+    {
+        $this->ccf();
+        $enOtroLote = $this->ccf();   // como el CCF 200: sin presentar, pero su item sigue en un lote vigente
+        $lote = PpqLote::create(['referencia' => 'Lote viejo', 'fecha' => today(), 'estado' => 'borrador', 'cliente_id' => $this->cliente->id]);
+        $lote->items()->create(['tipo_dte' => '03', 'dte_id' => $enOtroLote->dte_id, 'numero_control' => $enOtroLote->numero_control, 'monto_dte' => '100.00']);
+        $historico = $this->ccf();
+        $historico->refresh()->forceFill(['revisar_historico' => true])->save();
+
+        $respuesta = $this->actingAs($this->usuario())->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk();
+
+        $this->assertSame(3, $respuesta->viewData('etapas')['listos']);
+        $respuesta->assertSeeText('Seleccionar todas las pendientes (1 ·')
+            ->assertSeeText('2 no se pueden seleccionar')
+            ->assertSeeText('CCF '.$enOtroLote->correlativoCorto().": sigue en el PPQ #{$lote->id}")
+            ->assertSeeText('CCF '.$historico->correlativoCorto().': falta la revisión histórica');
+    }
 }
