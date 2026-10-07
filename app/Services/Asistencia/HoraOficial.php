@@ -15,7 +15,7 @@ use Illuminate\Support\Carbon;
  *
  * Dos tiempos, un instante:
  *  - {@see ahora()} devuelve el instante en la zona OFICIAL, para mostrar.
- *  - {@see instante()} lo devuelve en UTC, que es como se guarda.
+ *  - {@see instante()} lo devuelve en la zona de GUARDADO (app.timezone).
  * Son el mismo momento visto de dos formas, nunca dos lecturas distintas del
  * reloj.
  *
@@ -36,10 +36,15 @@ class HoraOficial
         return Carbon::now($this->zona());
     }
 
-    /** El MISMO instante en UTC (como se guarda en base). */
+    /**
+     * El MISMO instante en la zona de guardado (app.timezone), que es como se escribe en
+     * la base. Eloquent no convierte zonas al guardar: un Carbon en UTC con la aplicación
+     * en hora de El Salvador (producción) se escribía con la hora UTC y se leía seis horas
+     * corrido (issue #59).
+     */
     public function instante(): Carbon
     {
-        return Carbon::now('UTC');
+        return Carbon::now((string) config('app.timezone'));
     }
 
     /**
