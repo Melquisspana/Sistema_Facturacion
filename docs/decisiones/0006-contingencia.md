@@ -32,10 +32,28 @@ Fuentes. Las páginas son las impresas en cada documento; los PDF quedan fuera d
 
 ### 1.1 Seguir trabajando sin internet
 
-- **El servidor está en el local.** Sin internet, la aplicación sigue respondiendo por la red local, con **la dirección local del servidor, que se guarda fuera del repositorio** (junto con los datos de despliegue). Cloudflare solo da el acceso desde afuera; el inicio de sesión y la aplicación no dependen de él.
-- **El firmador también es local**, así que generar y **firmar** sin internet funciona. Solo la transmisión al MH necesita salida a internet.
-- Hay que probar el acceso por la red local **antes** de necesitarlo: un ensayo con el router desconectado de internet, iniciando sesión, emitiendo un documento de prueba en el ambiente 00 y entregándolo.
-- **Corte de luz del servidor**: fuera del alcance del sistema. Si el servidor se apaga, no hay aplicación, ni firma, ni registro. Se recomienda una **UPS** para el servidor, el router y el equipo del firmador, con autonomía para cerrar ordenadamente. Lo que se facture a mano durante el corte se regulariza fuera de este flujo; consultarlo con la contadora y el MH.
+El servidor y el firmador están en el local: sin internet se puede **generar y firmar**. Solo la transmisión al MH necesita salida a internet. El problema es **entrar** al sistema: siempre se entra por el dominio público, a través de Cloudflare, y producción usa cookies de sesión seguras (`SESSION_SECURE_COOKIE`), que el navegador solo guarda con HTTPS. Por `http://` a la IP local no se puede iniciar sesión.
+
+**Plan recomendado** (sin instalar nada en las PC del local):
+
+- **A. Si se cae el internet del local**: conectar el servidor y la PC de trabajo al **hotspot de un celular**. El túnel de Cloudflare se restablece solo y se sigue trabajando con el dominio de siempre, con transmisión normal. Así la contingencia queda para cuando **el MH** no responde.
+- **B. Respaldo sin internet ni hotspot**: un vhost de Apache solo para la red local, con **HTTPS y certificado autofirmado**, más un favorito «Facturación (sin internet)» en cada PC que apunta a **la dirección local del servidor (se guarda fuera del repositorio)**.
+  - El navegador avisa que el certificado no es de confianza («Avanzado → Continuar»). El aviso puede volver al reiniciar el navegador o después de un tiempo.
+  - Como la conexión es HTTPS, la cookie segura se guarda y el inicio de sesión funciona.
+  - Para que el favorito no cambie, la IP del servidor queda fija con una **reserva DHCP** en el router del proveedor, o en el sistema de malla si el router no lo permite.
+- Para que B funcione hay que comprobar en la configuración del servidor, no en el repositorio:
+  - que `SESSION_DOMAIN` esté vacío, porque una cookie atada al dominio público no se guarda al entrar por IP;
+  - que la aplicación no fuerce la URL pública en las redirecciones (hoy no lo hace: no hay `forceRootUrl`);
+  - que el vhost de la red local no se publique hacia internet.
+  - Al entrar por B no pasa por Cloudflare Access: protege solo el inicio de sesión de la aplicación, igual que en cualquier acceso desde adentro.
+- **Descartadas**: el archivo `hosts` en las PC y una CA local o mkcert (exigen instalar algo en cada PC), y el DNS local con el mismo dominio y Let's Encrypt (el router del proveedor y la malla en modo punto de acceso no ofrecen DNS local).
+
+**Ensayo antes de necesitarlo**:
+1. Desconectar el router de internet y conectar el servidor y una PC al hotspot: entrar por el dominio, iniciar sesión, emitir un documento de prueba en el ambiente 00 y transmitirlo.
+2. Sin hotspot: entrar por el favorito B, aceptar el aviso del certificado, **iniciar sesión**, emitir y firmar un documento de prueba y comprobar que queda pendiente de envío.
+3. Reiniciar el router y comprobar que el servidor conserva su IP.
+
+**Corte de luz del servidor**: fuera del alcance del sistema. Si el servidor se apaga, no hay aplicación, ni firma, ni registro. Se recomienda una **UPS** para el servidor, el router y la malla, con autonomía para cerrar ordenadamente. Lo que se facture a mano durante el corte se regulariza fuera de este flujo; consultarlo con la contadora y el MH.
 
 ### 2. El documento durante la interrupción
 
@@ -102,7 +120,7 @@ Fuentes. Las páginas son las impresas en cada documento; los PDF quedan fuera d
    - Pruebas: lote mixto con procesados y rechazados, consulta sin resultado todavía, vencimiento.
 4. **Detección y cierre.**
    - Entrada automática desde `DteTransmisionResiliente`, con el tipo 1 o 3 según la conexión, y prueba de reconexión cada 15 minutos que registra el cese (tarea programada).
-   - Ensayo documentado del acceso por la red local, sin internet.
+   - Vhost HTTPS de la red local con certificado autofirmado, reserva DHCP y el ensayo de la sección 1.1 (hotspot e inicio de sesión por la red local).
    - Avisos de plazo, reenvío del archivo completo al cliente cuando llega el sello y separación en el reporte de la contadora.
    - Prueba de extremo a extremo en el ambiente de pruebas del MH: contingencia simulada, evento, lote y sellos.
 
