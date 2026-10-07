@@ -138,6 +138,24 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
 
 Requisitos previos ya resueltos: hora local (#59, decisión 0004), códigos MH del establecimiento y punto de venta (#54). El responsable y el solicitante (#52) están en revisión. El evento de contingencia usa el mismo responsable del emisor.
 
+### Plan detallado (07/10/2026)
+
+Cada parte tiene su issue con el encargo completo (archivos, criterios de aceptación, pruebas y riesgos): parte 1 #ISSUE1, parte 2 #ISSUE2, parte 3 #ISSUE3, parte 4 #ISSUE4 y parte 5 #ISSUE5. Orden: 1 → 2 → 3 → 5; la 4 es independiente y puede ir en cualquier momento. Ajustes respecto de la lista anterior:
+
+- **Migración 1** (parte 1): crea `contingencias`, `contingencia_eventos` y en `dtes` las columnas `contingencia_id` y `contingencia_evento_id`. La tabla de eventos va aquí para poder dividir en partes de 1000 documentos sin una tercera migración. Las columnas `tipo_modelo`, `tipo_operacion`, `tipo_contingencia` y `motivo_contingencia` ya existen en `dtes`.
+- **Migración 2** (parte 3): crea `lotes_dte` y `dtes.lote_dte_id`.
+- Ninguna se ejecuta sin el OK de Melqui (decisión 0002).
+- Todo queda detrás de un interruptor (`DTE_CONTINGENCIA_ENABLED`, apagado por defecto). Con él apagado, el sistema se comporta como hoy.
+- **Documento transitorio** = firmado, con `contingencia_id` y sin sello. No se agrega un estado nuevo a `EstadoDte`. Un transitorio nunca sale por la recepción normal: solo por evento y lote.
+- **El documento que dispara la contingencia** (parte 5): se regenera con los cuatro campos y se vuelve a firmar con el mismo código de generación y número de control, **solo** si la última consulta confirmó que el MH no lo tiene (`no_encontrado`). `estado_recepcion_incierto` nunca activa la contingencia.
+- El vhost de la red local, la IP fija y el favorito salen de la parte 5: son tareas del servidor, fuera del repositorio.
+
+### Decisiones pendientes de Melqui
+
+- Cuánto esperar antes de entrar en contingencia automática: al primer documento que no entra, o tras unos minutos sin respuesta del MH.
+- Si el aviso de contingencia a Hacienda lo envía el sistema solo al volver la conexión, o una persona con el botón.
+- Quiénes pueden activar, terminar y enviar el aviso (permiso `dte.contingencia`).
+
 ## Consecuencias
 
 Permite seguir facturando sin el MH sin perder el control fiscal. Agrega dos tablas, tareas programadas y una bandeja nueva. El sistema entra y sale solo, avisa los plazos y bloquea lo que no corresponde. Revisar el tipo y el motivo y presentar el informe técnico o una prórroga queda en una persona.
