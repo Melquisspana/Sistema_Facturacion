@@ -215,6 +215,13 @@
                                             <span class="text-xs text-gray-500 dark:text-paper-300">El máximo por PPQ es de 500 CCF.</span>
                                         @endif
                                     @endif
+                                    {{-- Lo que la tarjeta «Entregados, por presentar» cuenta pero no se puede marcar, y por qué. --}}
+                                    @if ($noSeleccionables->isNotEmpty())
+                                        <span class="text-xs text-gray-500 dark:text-paper-300">
+                                            {{ $noSeleccionables->count() }} {{ $noSeleccionables->count() === 1 ? 'no se puede seleccionar' : 'no se pueden seleccionar' }}:
+                                            {{ $noSeleccionables->take(10)->implode('; ') }}{{ $noSeleccionables->count() > 10 ? '; y '.($noSeleccionables->count() - 10).' más' : '' }}.
+                                        </span>
+                                    @endif
                                 </div>
                             @endif
                             <div class="overflow-x-auto">
