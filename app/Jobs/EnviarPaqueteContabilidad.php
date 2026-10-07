@@ -11,6 +11,8 @@ use App\Services\Contabilidad\CoberturaPaquete;
 use App\Services\Contabilidad\EstadoPaquete;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\Contabilidad\PeriodoPaquete;
+use App\Services\Contabilidad\PermisoDriveFaltante;
+use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -52,7 +54,7 @@ class EnviarPaqueteContabilidad implements ShouldQueue
         public bool $incluirVentas,
     ) {}
 
-    public function handle(PaqueteContabilidadZip $zip, PeriodoPaquete $periodo, CoberturaPaquete $cobertura, AuditoriaPaquete $auditoria): void
+    public function handle(PaqueteContabilidadZip $zip, PeriodoPaquete $periodo, CoberturaPaquete $cobertura, AuditoriaPaquete $auditoria, SubidaDrivePaqueteContrato $drive): void
     {
         $usuario = User::find($this->usuarioId);
         $estado = $this->estado();
@@ -87,21 +89,27 @@ class EnviarPaqueteContabilidad implements ShouldQueue
             return;
         }
 
+        $archivoDrive = null;
+        $subido = false;
         try {
-            $bytes = (string) file_get_contents($r['ruta']);
+            $archivoDrive = $drive->subir($r['ruta'], $nombreZip, $this->rango['anio'], $this->rango['mes'], $this->correo);
+            $subido = true;
 
             // Configuración de correo vigente antes de construir el transporte. En la cola
             // también la aplica el listener de JobProcessing; pedirla acá no cuesta nada
             // y cubre el driver sync.
             app(ConfiguracionCorreoRuntime::class)->aplicar();
 
-            Mail::to($this->correo)->send(new PaqueteContabilidadCorreo($this->rango['etiqueta'], $bytes, $nombreZip, $resumen));
+            Mail::to($this->correo)->send(new PaqueteContabilidadCorreo($this->rango['etiqueta'], $archivoDrive['webViewLink'], $nombreZip, $resumen));
         } catch (Throwable $e) {
             // Falla: no cambia estados; el ZIP queda en paquetes/ (se limpia a las 24 h)
             // por si hay que revisarlo; registra auditoría "fallido".
-            $auditoria->registrar($usuario, 'fallido', $this->correo, $this->rango, $resumen, $nombreZip, $e->getMessage());
+            $mensaje = $e instanceof PermisoDriveFaltante
+                ? 'Falta autorizar Drive en Configuración → Integraciones.'
+                : ($subido ? 'No se pudo enviar el correo con el enlace de Drive. Reintentá el envío.' : 'No se pudo subir o compartir el ZIP en Drive. Revisá la autorización y que la Google Drive API esté habilitada; después reintentá.');
+            $auditoria->registrar($usuario, 'fallido', $this->correo, $this->rango, $resumen, $nombreZip, $mensaje, archivoDriveId: $archivoDrive['id'] ?? null);
             GenerarPaqueteContabilidad::guardarZip($r['ruta'], $estado->rutaZip());
-            $estado->terminar('envio_fallido', 'No se pudo enviar el paquete a contabilidad: '.$e->getMessage().' (no se cambió ningún estado).');
+            $estado->terminar('envio_fallido', 'No se pudo enviar el paquete a contabilidad: '.$mensaje.' (no se cambió ningún estado).');
 
             return;
         }
@@ -115,7 +123,7 @@ class EnviarPaqueteContabilidad implements ShouldQueue
                 ->update(['estado' => 'enviado']);
         }
 
-        $auditoria->registrar($usuario, 'enviado', $this->correo, $this->rango, $resumen, $nombreZip, null, $marcadas);
+        $auditoria->registrar($usuario, 'enviado', $this->correo, $this->rango, $resumen, $nombreZip, null, $marcadas, archivoDriveId: $archivoDrive['id']);
         @unlink($r['ruta']);
 
         $estado->terminar('enviado', "Paquete {$this->rango['etiqueta']} enviado a {$this->correo} ({$resumen['compras_cantidad']} compras, {$resumen['ventas_cantidad']} ventas). {$marcadas} compra(s) marcada(s) como enviada(s). Las ventas no se modificaron.");
@@ -123,7 +131,7 @@ class EnviarPaqueteContabilidad implements ShouldQueue
 
     public function failed(Throwable $e): void
     {
-        $this->estado()->terminar('envio_fallido', 'No se pudo preparar el paquete para enviarlo: '.$e->getMessage().' (no se envió nada ni se cambió ningún estado).');
+        $this->estado()->terminar('envio_fallido', 'No se pudo preparar el paquete para enviarlo (no se envió nada ni se cambió ningún estado). Reintentá el envío.');
     }
 
     private function estado(): EstadoPaquete

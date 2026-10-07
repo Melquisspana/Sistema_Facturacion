@@ -9,11 +9,14 @@ use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
+use App\Services\Contabilidad\SubidaDrivePaquete;
+use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
@@ -34,11 +37,15 @@ class EnviarPaqueteContabilidadTest extends TestCase
 {
     use RefreshDatabase;
 
+    private DrivePaqueteFalso $drive;
+
     private const CORREO = 'contabilidad@empresa.com';
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->drive = new DrivePaqueteFalso;
+        $this->app->instance(SubidaDrivePaqueteContrato::class, $this->drive);
         foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }
@@ -205,7 +212,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
         Mail::assertNothingSent();
     }
 
-    public function test_envia_un_solo_correo_a_contabilidad_con_zip_adjunto(): void
+    public function test_envia_un_solo_correo_a_contabilidad_con_enlace_sin_adjunto(): void
     {
         $this->simularProduccionCorreo();
         Mail::fake();
@@ -224,7 +231,8 @@ class EnviarPaqueteContabilidadTest extends TestCase
                 && ! $mail->hasCc(self::CORREO)
                 && ! $mail->hasBcc(self::CORREO)
                 && $mail->nombreZip === 'documentos_contabilidad_2026-07.zip'
-                && strlen($mail->zipBytes) > 0;
+                && $mail->enlaceDrive === 'https://drive.google.com/file/d/drive-paquete-1/view'
+                && $mail->attachments() === [];
         });
     }
 
@@ -244,6 +252,67 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $this->assertSame(self::CORREO, $log->getExtraProperty('correo_destino'));
         $this->assertSame('documentos_contabilidad_2026-07.zip', $log->getExtraProperty('zip'));
         $this->assertNotNull($log->causer_id);
+        $this->assertSame('drive-paquete-1', $log->getExtraProperty('drive_archivo_id'));
+        $this->assertArrayHasKey('Paquetes contabilidad/2026/07/documentos_contabilidad_2026-07.zip', $this->drive->archivos);
+        $this->assertSame(self::CORREO, $this->drive->llamadas[0]['correo']);
+    }
+
+    public function test_falla_drive_sin_enviar_ni_marcar_y_sin_exponer_tokens(): void
+    {
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        Log::spy();
+        $this->conCorreo();
+        $compra = $this->compra('2026-07-05', 100);
+        $this->drive->error = new \RuntimeException('access_token=secreto refresh_token=secreto client_secret=secreto');
+
+        $respuesta = $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]));
+        $respuesta->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'Drive') && ! str_contains($mensaje, 'secreto'));
+        Mail::assertNothingSent();
+        $this->assertSame('pendiente', $compra->fresh()->estado);
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail();
+        $this->assertSame('fallido', $log->getExtraProperty('estado'));
+        $this->assertStringNotContainsString('secreto', $log->properties->toJson());
+        Log::shouldNotHaveReceived('error');
+        Log::shouldNotHaveReceived('warning');
+        Log::shouldNotHaveReceived('debug');
+    }
+
+    public function test_sin_scope_informa_autorizar_drive_y_no_marca(): void
+    {
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        $this->conCorreo();
+        $compra = $this->compra('2026-07-05', 100);
+        // El servicio real verifica el permiso antes de construir el cliente OAuth.
+        $this->app->bind(SubidaDrivePaqueteContrato::class, SubidaDrivePaquete::class);
+        $this->app->forgetInstance(SubidaDrivePaqueteContrato::class);
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
+            ->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'Falta autorizar Drive en Configuración → Integraciones'));
+        Mail::assertNothingSent();
+        $this->assertSame('pendiente', $compra->fresh()->estado);
+        $this->assertSame('fallido', Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail()->getExtraProperty('estado'));
+    }
+
+    public function test_reintento_tras_fallo_del_correo_reutiliza_archivo(): void
+    {
+        $this->simularProduccionCorreo();
+        $this->conCorreo();
+        $compra = $this->compra('2026-07-05', 100);
+        $usuario = $this->usuario('administrador');
+        $transporte = Mail::getFacadeRoot();
+        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('SMTP caído'));
+        $this->actingAs($usuario)->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))->assertSessionHas('error');
+        $this->assertSame('pendiente', $compra->fresh()->estado);
+        Mail::swap($transporte);
+        Mail::fake();
+        $this->actingAs($usuario)->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))->assertSessionHas('status');
+        $this->assertCount(1, $this->drive->archivos);
+        $this->assertCount(2, $this->drive->llamadas);
+        Mail::assertSentCount(1);
+        $this->assertSame('enviado', $compra->fresh()->estado);
     }
 
     public function test_si_falla_el_envio_no_cambia_estados_y_audita_fallido(): void
@@ -423,6 +492,7 @@ class EnviarPaqueteContabilidadTest extends TestCase
             ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
             ->assertSessionHas('status');
 
+        $this->assertSame([], $this->drive->llamadas);
         // No se llamó al transporte y la compra sigue pendiente.
         Mail::assertNothingSent();
         $this->assertSame('pendiente', $compra->fresh()->estado);

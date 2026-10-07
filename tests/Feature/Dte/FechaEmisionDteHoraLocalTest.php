@@ -22,7 +22,23 @@ class FechaEmisionDteHoraLocalTest extends TestCase
     use PreparaEmisorDte;
     use RefreshDatabase;
 
+    /**
+     * Cada instante corre con la aplicación en hora de El Salvador (producción y valor por
+     * defecto, issue #59) y en UTC: la emisión debe salir igual en las dos.
+     */
     public static function instantes(): array
+    {
+        $casos = [];
+        foreach (self::instantesUtc() as $i => $caso) {
+            foreach (['America/El_Salvador', 'UTC'] as $zona) {
+                $casos["#{$i} {$zona}"] = [...$caso, $zona];
+            }
+        }
+
+        return $casos;
+    }
+
+    private static function instantesUtc(): array
     {
         return [
             ['2026-10-03 23:59:00', '2026-10-03', '17:59:00', null],
@@ -35,9 +51,10 @@ class FechaEmisionDteHoraLocalTest extends TestCase
     }
 
     #[DataProvider('instantes')]
-    public function test_borrador_y_json_conservan_emision_local(string $instante, string $fecha, string $hora, ?string $generarEn): void
+    public function test_borrador_y_json_conservan_emision_local(string $instante, string $fecha, string $hora, ?string $generarEn, string $zonaApp): void
     {
-        $this->assertSame('UTC', config('app.timezone'));
+        config(['app.timezone' => $zonaApp]);
+        date_default_timezone_set($zonaApp);
         config(['app.zona_negocio' => 'America/El_Salvador']);
         $this->travelTo(Carbon::parse($instante, 'UTC'));
         $this->seedCatalogosDte();

@@ -10,6 +10,8 @@ use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
 use App\Listeners\AuditoriaAccesos;
 use App\Services\Asistencia\AutenticadorDispositivo;
+use App\Services\Contabilidad\SubidaDrivePaquete;
+use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ImapMailboxClient;
 use App\Services\DocumentosRecibidos\NullMailboxClient;
@@ -48,6 +50,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(RepositorioAjustes::class, static fn ($app) => new RepositorioAjustes(
             $app->make(Factory::class)->store()
         ));
+        $this->app->bind(SubidaDrivePaqueteContrato::class, SubidaDrivePaquete::class);
         $this->app->singleton(CatalogoAjustes::class);
         $this->app->singleton(Ajustes::class);
         $this->app->singleton(ConfiguracionCorreoRuntime::class);

@@ -60,14 +60,16 @@ return [
     |--------------------------------------------------------------------------
     |
     | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | will be used by the PHP date and date-time functions. Producción usa
+    | America/El_Salvador; el valor por defecto es el mismo para que desarrollo
+    | y CI guarden y prueben igual que producción (decisión 0004, issue #59).
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'UTC'),
+    'timezone' => env('APP_TIMEZONE', 'America/El_Salvador'),
 
-    // El guardado sigue en UTC (app.timezone); esta zona decide qué día es «hoy» para el negocio (decisión 0004).
+    // Producción guarda en hora de El Salvador (app.timezone); esta zona decide qué día es «hoy»
+    // para el negocio. Por defecto son la misma en todos los entornos (decisión 0004, issue #59).
     'zona_negocio' => env('APP_ZONA_NEGOCIO', 'America/El_Salvador'),
 
     /*

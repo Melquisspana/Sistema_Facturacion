@@ -9,6 +9,7 @@ use App\Enums\RolSistema;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Cobros\CobroEvento;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
@@ -185,5 +186,104 @@ class CobrosEstadoPagoNetoDeNcTest extends TestCase
         $diferencias->assertSee($faltante->numero_control);
         $diferencias->assertDontSee($pagado->numero_control);
         $diferencias->assertSeeText('Faltante');
+    }
+
+    /** El documento de seguimiento de una NC, como lo da de alta el Seguimiento. */
+    private function seguimientoNc(Dte $nc): CobroDocumento
+    {
+        return CobroDocumento::create([
+            'cliente_id' => $this->cliente->id, 'origen' => OrigenCobroDocumento::Dte->value, 'dte_id' => $nc->id,
+            'tipo_dte' => '05', 'numero_control' => $nc->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => $nc->total_pagar,
+        ]);
+    }
+
+    /** @param  array<int, array{0: string, 1: string, 2: string}>  $lineas  [tipo, numero_control, valor] */
+    private function archivo(array $lineas, string $nombre): void
+    {
+        $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n";
+        foreach ($lineas as [$tipo, $numero, $valor]) {
+            $txt .= "000123;TITULAR DE EJEMPLO;{$tipo};".str_replace('-', '', $numero).";10-SEP-26;{$valor}\n";
+        }
+
+        app(AplicadorPagosTxt::class)->aplicar(
+            $this->cliente,
+            app(ConciliacionTxtParser::class)->parse($txt),
+            ArchivoConciliacion::desdeContenido($txt, $nombre),
+        );
+    }
+
+    /**
+     * Formato «bruto» real de Calleja: la línea CF por el TOTAL del CCF y la NC en su propia
+     * línea negativa. El CCF queda pagado, venga la NC antes o después de la CF.
+     */
+    public function test_cf_por_el_total_y_nc_en_linea_aparte_queda_pagado(): void
+    {
+        foreach (['nc_despues' => false, 'nc_antes' => true] as $caso => $ncPrimero) {
+            $documento = $this->ccf();
+            $nc = $this->nc($documento->dte, '12.34');
+            $seguimientoNc = $this->seguimientoNc($nc);
+            $lineas = [['CF', $documento->numero_control, '100.00'], ['NC', $nc->numero_control, '-12.34']];
+
+            $this->archivo($ncPrimero ? array_reverse($lineas) : $lineas, "bruto-{$caso}.txt");
+
+            $this->assertSame(EstadoPagoCobro::Pagado, $documento->refresh()->pago_estado, $caso);
+            $this->assertSame(EstadoPagoCobro::Pagado, $seguimientoNc->refresh()->pago_estado, $caso);
+            $this->assertSame(0, Dinero::comparar('100.00', $documento->facturadoEfectivo()), $caso);
+        }
+    }
+
+    /** El mismo archivo puede traer un CCF neto y otro bruto: los dos quedan pagados. */
+    public function test_archivo_mezclado_neto_y_bruto_queda_pagado(): void
+    {
+        $neto = $this->ccf();
+        $this->nc($neto->dte, '12.34');
+        $bruto = $this->ccf();
+        $ncBruto = $this->nc($bruto->dte, '4.75');
+        $this->seguimientoNc($ncBruto);
+
+        $this->archivo([
+            ['CF', $neto->numero_control, '87.66'],
+            ['CF', $bruto->numero_control, '100.00'],
+            ['NC', $ncBruto->numero_control, '-4.75'],
+        ], 'mezclado.txt');
+
+        $this->assertSame(EstadoPagoCobro::Pagado, $neto->refresh()->pago_estado);
+        $this->assertSame(EstadoPagoCobro::Pagado, $bruto->refresh()->pago_estado);
+    }
+
+    /**
+     * Caso del CCF 35: la NC se registró como descontada A MANO (sin archivo de pagos) y el
+     * CCF se cobró por su total. También cuenta como descuento propio de la NC.
+     */
+    public function test_nc_descontada_con_pago_manual_tampoco_se_resta(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '6.50');
+        $seguimientoNc = $this->seguimientoNc($nc);
+        CobroEvento::create(['cobro_documento_id' => $seguimientoNc->id, 'tipo' => 'pago', 'origen' => 'manual',
+            'monto' => '6.50', 'fecha' => '2026-08-04', 'detalle' => 'Descontada por Calleja (registro manual).']);
+
+        $this->archivo([['CF', $documento->numero_control, '100.00']], 'sin-linea-nc.txt');
+
+        $this->assertSame(0, Dinero::comparar('100.00', $documento->refresh()->facturadoEfectivo()));
+        $this->assertSame(EstadoPagoCobro::Pagado, $documento->pago_estado);
+    }
+
+    /** Reparación de los CCF que quedaron «con diferencia» con la regla anterior. */
+    public function test_comando_recalcula_los_afectados_y_es_idempotente(): void
+    {
+        $documento = $this->ccf();
+        $nc = $this->nc($documento->dte, '1.93');
+        $this->seguimientoNc($nc);
+        $this->archivo([['CF', $documento->numero_control, '100.00'], ['NC', $nc->numero_control, '-1.93']], 'agosto.txt');
+        $documento->refresh()->forceFill(['pago_estado' => EstadoPagoCobro::Diferencia->value])->save();   // como quedó en producción
+
+        $this->artisan('cobros:recalcular-pagos', ['--dry-run' => true])
+            ->expectsOutputToContain('Cambiarían: 1 de')->assertSuccessful();
+        $this->assertSame(EstadoPagoCobro::Diferencia, $documento->refresh()->pago_estado);
+
+        $this->artisan('cobros:recalcular-pagos')->expectsOutputToContain('Recalculados: 1 de')->assertSuccessful();
+        $this->assertSame(EstadoPagoCobro::Pagado, $documento->refresh()->pago_estado);
+        $this->artisan('cobros:recalcular-pagos')->expectsOutputToContain('Recalculados: 0 de')->assertSuccessful();
     }
 }

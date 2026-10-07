@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Google\Service\Drive;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -39,6 +40,11 @@ class GmailCuenta extends Model
     public static function actual(): ?self
     {
         return static::query()->latest('id')->first();
+    }
+
+    public function tienePermisoDrive(): bool
+    {
+        return in_array(Drive::DRIVE_FILE, preg_split('/\s+/', trim((string) $this->scopes)), true);
     }
 
     public function conectada(): bool

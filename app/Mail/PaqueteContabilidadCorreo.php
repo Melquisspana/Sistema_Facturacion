@@ -11,7 +11,7 @@ use Illuminate\Queue\SerializesModels;
 
 /**
  * Correo del PAQUETE mensual para contabilidad (herramienta interna: la contadora no
- * entra al sistema). Lleva el mismo ZIP que genera el paquete mensual adjunto y un
+ * entra al sistema). Lleva el enlace al ZIP que genera el paquete mensual y un
  * resumen del periodo. Envío MANUAL y solo tras confirmación con frase exacta.
  *
  * NO tiene nada que ver con DTE emitidos, correlativos, firmador ni transmisión a
@@ -26,7 +26,7 @@ class PaqueteContabilidadCorreo extends Mailable
 
     public function __construct(
         public string $etiqueta,
-        public string $zipBytes,
+        public string $enlaceDrive,
         public string $nombreZip,
         public array $resumen,
     ) {}
@@ -40,6 +40,7 @@ class PaqueteContabilidadCorreo extends Mailable
     {
         return new Content(markdown: 'emails.paquete-contabilidad', with: [
             'etiqueta' => $this->etiqueta,
+            'enlaceDrive' => $this->enlaceDrive,
             'resumen' => $this->resumen,
         ]);
     }
@@ -47,8 +48,6 @@ class PaqueteContabilidadCorreo extends Mailable
     /** @return array<int, Attachment> */
     public function attachments(): array
     {
-        return [
-            Attachment::fromData(fn () => $this->zipBytes, $this->nombreZip)->withMime('application/zip'),
-        ];
+        return [];
     }
 }
