@@ -7,6 +7,8 @@ use App\Exceptions\Ppq\GmailNoDisponibleException;
 use App\Models\GmailCuenta;
 use App\Services\Ppq\GmailClient;
 use Google\Client as GoogleClient;
+use Google\Service\Drive;
+use Google\Service\Gmail;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
@@ -34,6 +36,40 @@ class GmailRenovacionTokenTest extends TestCase
     private const REFRESH = '1//refresh-de-prueba';
 
     private MockHandler $respuestas;
+
+    public function test_oauth_pide_drive_file_y_conserva_permisos_otorgados(): void
+    {
+        parse_str(parse_url($this->cliente()->authUrl('estado-prueba'), PHP_URL_QUERY), $query);
+        $this->assertStringContainsString(Drive::DRIVE_FILE, $query['scope']);
+        $this->assertStringContainsString(Gmail::GMAIL_READONLY, $query['scope']);
+        $this->assertSame('true', $query['include_granted_scopes']);
+        $this->assertSame('estado-prueba', $query['state']);
+    }
+
+    public function test_renovar_preserva_scope_drive_si_google_no_reenvia_scopes(): void
+    {
+        $this->cuenta(vencido: true);
+        $scopes = Gmail::GMAIL_READONLY.' '.Drive::DRIVE_FILE;
+        GmailCuenta::actual()->update(['scopes' => $scopes]);
+        $this->respuestas->append(
+            $this->respuestaJson(200, ['access_token' => 'token-ficticio', 'expires_in' => 3600]),
+            $this->respuestaJson(200, ['emailAddress' => 'ppq@ejemplo.com']),
+        );
+        $this->cliente()->perfil();
+        $this->assertSame($scopes, GmailCuenta::actual()->scopes);
+        $this->assertTrue(GmailCuenta::actual()->tienePermisoDrive());
+    }
+
+    public function test_conexion_guarda_scopes_reales_sin_asumir_drive_concedido(): void
+    {
+        $this->respuestas->append(
+            $this->respuestaJson(200, ['access_token' => 'token-ficticio', 'expires_in' => 3600, 'scope' => Gmail::GMAIL_READONLY]),
+            $this->respuestaJson(200, ['emailAddress' => 'ppq@ejemplo.com']),
+        );
+        $cuenta = $this->cliente()->conectar('codigo-ficticio');
+        $this->assertFalse($cuenta->tienePermisoDrive());
+        $this->assertSame(Gmail::GMAIL_READONLY, $cuenta->scopes);
+    }
 
     protected function setUp(): void
     {

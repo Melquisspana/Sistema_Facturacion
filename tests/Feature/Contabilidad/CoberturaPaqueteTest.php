@@ -8,6 +8,7 @@ use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
+use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,6 +41,7 @@ class CoberturaPaqueteTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->app->instance(SubidaDrivePaqueteContrato::class, new DrivePaqueteFalso);
         foreach (['administrador', 'contabilidad'] as $rol) {
             Role::findOrCreate($rol, 'web');
         }

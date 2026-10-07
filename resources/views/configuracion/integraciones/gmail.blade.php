@@ -92,6 +92,15 @@
                 </div>
             </div>
 
+            @if (! $conexion['drive_autorizado'])
+                <p class="mt-3 text-sm text-amber-700">Falta autorizar Drive para enviar el paquete de contabilidad. Se usará esta misma cuenta y solo se compartirán los ZIP con el correo de contabilidad.</p>
+                @if ($configuracion->completo())
+                    <a href="{{ route('ppq.gmail.conectar') }}" class="inline-block mt-2 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white">Autorizar Drive</a>
+                @endif
+            @else
+                <p class="mt-3 text-sm text-green-700">Drive autorizado para los paquetes de contabilidad.</p>
+            @endif
+
             <p class="mt-3 text-xs text-gray-400">
                 La prueba consulta el perfil de la cuenta. <span class="font-medium">No descarga correos ni sincroniza nada.</span>
                 Desconectar borra los permisos guardados; los documentos ya descargados no se tocan.

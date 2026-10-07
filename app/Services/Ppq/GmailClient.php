@@ -9,6 +9,7 @@ use App\Models\GmailCuenta;
 use App\Support\Correo\CuerpoHtml;
 use App\Support\Correo\MensajeActual;
 use Google\Client as GoogleClient;
+use Google\Service\Drive;
 use Google\Service\Exception as GoogleServiceException;
 use Google\Service\Gmail;
 use Illuminate\Support\Carbon;
@@ -482,7 +483,8 @@ class GmailClient
         // Única vía por la que sale el secreto: hacia el cliente de Google.
         $client->setClientSecret($this->configuracion()->clientSecret());
         $client->setRedirectUri($this->configuracion()->redirectUri());
-        $client->setScopes([Gmail::GMAIL_READONLY]);
+        $client->setScopes([Gmail::GMAIL_READONLY, Drive::DRIVE_FILE]);
+        $client->setIncludeGrantedScopes(true);
         $client->setAccessType('offline');
         $client->setPrompt('consent');
 
@@ -490,7 +492,7 @@ class GmailClient
     }
 
     /** Cliente con token válido (refresca y persiste si expiró). */
-    private function clienteAutenticado(): GoogleClient
+    public function clienteAutenticado(): GoogleClient
     {
         $cuenta = GmailCuenta::actual();
         if (! $cuenta || ! $cuenta->conectada()) {
@@ -617,7 +619,7 @@ class GmailClient
             'access_token' => json_encode($token),
             'refresh_token' => $token['refresh_token'] ?? $cuenta->refresh_token,
             'expires_at' => isset($token['expires_in']) ? Carbon::now()->addSeconds((int) $token['expires_in']) : null,
-            'scopes' => Gmail::GMAIL_READONLY,
+            'scopes' => $token['scope'] ?? $cuenta->scopes ?? Gmail::GMAIL_READONLY,
             'conectado_por' => $userId ?? $cuenta->conectado_por,
         ]);
         $cuenta->save();
