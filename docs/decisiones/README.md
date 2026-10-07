@@ -44,3 +44,5 @@ Puede agregarse una sección de referencias relacionadas. Usá solo datos invent
 | [0002. Aplicar migraciones pendientes y migraciones destructivas](0002-migraciones-pendientes-y-destructivas.md) | Propuesta | 2026-09-29 |
 | [0003. Sustituto de un solo uso](0003-sustituto-de-un-solo-uso.md) | Aceptada | 2026-10-03 |
 | [0004. Zona horaria: guardar y calcular el día de negocio en hora de El Salvador](0004-zona-horaria-de-negocio.md) | Propuesta (corregida el 2026-10-06) | 2026-10-03 |
+| [0005. Plazos para transmitir el evento de invalidación](0005-plazos-de-invalidacion.md) | Aceptada | 2026-10-04 |
+| [0006. Contingencia: emitir sin conexión con Hacienda y regularizar después](0006-contingencia.md) | Propuesta | 2026-10-06 |
