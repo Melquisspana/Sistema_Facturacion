@@ -8,6 +8,28 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.06.5] - 2026-10-06
+
+Quinto despliegue del día. Incluye #68. No trae migraciones.
+
+### Agregado
+
+- Una NC aceptada después de armar un PPQ entra sola al lote de su CCF, si el lote sigue «Armado». La ficha del lote ofrece «Agregar NC nuevas» para las anteriores al cambio. Si el lote ya se presentó, avisa «NC posterior a la presentación». #68
+- Las NC aceptadas después de presentar el lote de su CCF se suman solas al próximo PPQ del cliente, con aviso en el Seguimiento y en la confirmación. #68
+- Ficha del lote: «Marcar como presentado» con fecha, para los lotes que se subieron al portal sin cargar el reporte de caso. #68
+
+### Corregido
+
+- Un CCF ya no puede quedar en dos lotes vigentes. Un «va en el siguiente PPQ» de un caso solo libera el item del lote al que pertenece ese caso. #68
+
+## [2026.10.06.4] - 2026-10-06
+
+Cuarto despliegue del día. Incluye #67. No trae migraciones.
+
+### Corregido
+
+- Archivo de quedan: la fecha del albarán se lee de su PDF como la fecha de creación del albarán, y ya no la del pedido de compras. Los albaranes creados en un mes distinto al del pedido salían con el mes equivocado y el portal no los encontraba. El comando `ppq:recalcular-fecha-albaranes` (con `--dry-run` y `--desde`) corrige los ya guardados; en producción cambió 42 fechas, 17 de ellas de septiembre a octubre. #67
+
 ## [2026.10.06.3] - 2026-10-06
 
 Tercer despliegue del día. Incluye #64 y #65. No trae migraciones. La nota de crédito versión 4 (#58) queda en el código, pero no se desplegó.
