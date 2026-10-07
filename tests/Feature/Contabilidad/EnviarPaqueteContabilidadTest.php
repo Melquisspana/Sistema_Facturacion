@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Contabilidad;
 
+use App\Jobs\EnviarPaqueteContabilidad;
 use App\Mail\PaqueteContabilidadCorreo;
 use App\Models\Configuracion;
 use App\Models\Correlativo;
@@ -14,6 +15,7 @@ use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use Database\Seeders\DatosInicialesNegritaSeeder;
+use Google\Service\Exception as GoogleServiceException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -274,9 +276,53 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail();
         $this->assertSame('fallido', $log->getExtraProperty('estado'));
         $this->assertStringNotContainsString('secreto', $log->properties->toJson());
+        $this->assertStringContainsString('RuntimeException', (string) $log->getExtraProperty('error_tecnico'));
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn ($mensaje, $contexto) => str_contains($contexto['motivo'], 'access_token=[oculto]')
+            && ! str_contains(json_encode($contexto), 'secreto'));
         Log::shouldNotHaveReceived('error');
-        Log::shouldNotHaveReceived('warning');
         Log::shouldNotHaveReceived('debug');
+    }
+
+    public function test_falla_de_google_registra_codigo_y_reason_en_log_y_auditoria(): void
+    {
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        Log::spy();
+        $this->conCorreo();
+        $compra = $this->compra('2026-07-05', 100);
+        $cuerpo = '{"error": {"code": 403, "message": "Drive API disabled", "errors": [{"reason": "accessNotConfigured"}]}}';
+        $this->drive->error = new GoogleServiceException($cuerpo, 403, null, [['reason' => 'accessNotConfigured', 'message' => 'Google Drive API has not been used in project 123 before or it is disabled.']]);
+
+        $this->actingAs($this->usuario('administrador'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
+            ->assertSessionHas('error', fn ($mensaje) => str_contains($mensaje, 'Google respondió 403 accessNotConfigured'));
+
+        Mail::assertNothingSent();
+        $this->assertSame('pendiente', $compra->fresh()->estado);
+        $motivo = (string) Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail()->getExtraProperty('error_tecnico');
+        $this->assertStringContainsString('HTTP 403 accessNotConfigured', $motivo);
+        $this->assertStringContainsString('has not been used in project 123', $motivo);
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn ($mensaje, $contexto) => $contexto['etapa'] === 'drive'
+            && str_contains($contexto['motivo'], 'Google\Service\Exception HTTP 403 accessNotConfigured'));
+    }
+
+    public function test_el_motivo_tecnico_tacha_credenciales_y_se_acota(): void
+    {
+        $previa = new \RuntimeException("Authorization: Bearer ya29.tokenSecretoAbc\n{\"refresh_token\": \"1//0gRefreshSecreto123\", \"client_secret\": \"cs-secreto\"} access_token=at-secreto");
+        $motivo = EnviarPaqueteContabilidad::motivoTecnico(new \RuntimeException('Fallo al subir '.str_repeat('x', 900), 0, $previa));
+
+        foreach (['ya29.', '1//0g', 'Secreto', 'secreto'] as $prohibido) {
+            $this->assertStringNotContainsString($prohibido, $motivo);
+        }
+        $this->assertStringNotContainsString("\n", $motivo);
+        $this->assertLessThanOrEqual(500, mb_strlen($motivo));
+
+        $corto = EnviarPaqueteContabilidad::motivoTecnico(new \RuntimeException('envoltura', 0, $previa));
+        $this->assertStringContainsString('causa: RuntimeException: Authorization: [oculto]', $corto);
+        $this->assertStringContainsString('access_token=[oculto]', $corto);
+        foreach (['ya29.', '1//0g', 'ecreto'] as $prohibido) {
+            $this->assertStringNotContainsString($prohibido, $corto);
+        }
     }
 
     public function test_sin_scope_informa_autorizar_drive_y_no_marca(): void

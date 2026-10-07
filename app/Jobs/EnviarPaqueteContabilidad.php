@@ -14,11 +14,13 @@ use App\Services\Contabilidad\PeriodoPaquete;
 use App\Services\Contabilidad\PermisoDriveFaltante;
 use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Support\Correo\CandadoCorreoReal;
+use Google\Service\Exception as GoogleServiceException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
@@ -107,9 +109,19 @@ class EnviarPaqueteContabilidad implements ShouldQueue
             $mensaje = $e instanceof PermisoDriveFaltante
                 ? 'Falta autorizar Drive en Configuración → Integraciones.'
                 : ($subido ? 'No se pudo enviar el correo con el enlace de Drive. Reintentá el envío.' : 'No se pudo subir o compartir el ZIP en Drive. Revisá la autorización y que la Google Drive API esté habilitada; después reintentá.');
-            $auditoria->registrar($usuario, 'fallido', $this->correo, $this->rango, $resumen, $nombreZip, $mensaje, archivoDriveId: $archivoDrive['id'] ?? null);
+            // El motivo técnico (saneado) va al log y a la auditoría: sin él, un 403 de
+            // Google se ve igual que una red caída y no hay por dónde empezar.
+            $motivo = self::motivoTecnico($e);
+            Log::warning('Paquete de contabilidad: falló el envío.', [
+                'etapa' => $subido ? 'correo' : 'drive',
+                'etiqueta' => $this->rango['etiqueta'],
+                'motivo' => $motivo,
+            ]);
+            $auditoria->registrar($usuario, 'fallido', $this->correo, $this->rango, $resumen, $nombreZip, $mensaje, archivoDriveId: $archivoDrive['id'] ?? null, errorTecnico: $motivo);
             GenerarPaqueteContabilidad::guardarZip($r['ruta'], $estado->rutaZip());
-            $estado->terminar('envio_fallido', 'No se pudo enviar el paquete a contabilidad: '.$mensaje.' (no se cambió ningún estado).');
+            $google = $e instanceof GoogleServiceException ? self::codigoGoogle($e) : null;
+            $estado->terminar('envio_fallido', 'No se pudo enviar el paquete a contabilidad: '.$mensaje
+                .($google ? " (Google respondió {$google})" : '').' (no se cambió ningún estado).');
 
             return;
         }
@@ -132,6 +144,62 @@ class EnviarPaqueteContabilidad implements ShouldQueue
     public function failed(Throwable $e): void
     {
         $this->estado()->terminar('envio_fallido', 'No se pudo preparar el paquete para enviarlo (no se envió nada ni se cambió ningún estado). Reintentá el envío.');
+    }
+
+    /** Tope del motivo técnico que se guarda en el log y la auditoría. */
+    private const MAX_MOTIVO = 500;
+
+    /**
+     * Clase y mensaje de la excepción (y de su causa, si la hay), en una línea, sin
+     * credenciales y acotado. De un error HTTP de Google toma el código y el «reason»
+     * (403 accessNotConfigured, insufficientPermissions, storageQuotaExceeded…) en vez
+     * del cuerpo JSON crudo.
+     */
+    public static function motivoTecnico(Throwable $e): string
+    {
+        $partes = [];
+        for ($actual = $e, $nivel = 0; $actual && $nivel < 3; $actual = $actual->getPrevious(), $nivel++) {
+            $texto = $actual::class;
+            if ($actual instanceof GoogleServiceException) {
+                $texto .= ' HTTP '.self::codigoGoogle($actual);
+                $detalle = $actual->getErrors()[0]['message'] ?? null;
+                $texto .= ': '.(is_string($detalle) && $detalle !== '' ? $detalle : $actual->getMessage());
+            } else {
+                $texto .= ': '.$actual->getMessage();
+            }
+            $partes[] = $texto;
+        }
+
+        $motivo = preg_replace('/\s+/u', ' ', implode(' ← causa: ', $partes)) ?? '';
+
+        return mb_substr(trim(self::sinCredenciales($motivo)), 0, self::MAX_MOTIVO);
+    }
+
+    /** «403 accessNotConfigured»: código HTTP y reason del primer error de Google. */
+    private static function codigoGoogle(GoogleServiceException $e): string
+    {
+        $reason = $e->getErrors()[0]['reason'] ?? null;
+
+        return trim($e->getCode().' '.(is_string($reason) ? preg_replace('/[^A-Za-z0-9_.-]/', '', $reason) : ''));
+    }
+
+    /** Tacha tokens, cabeceras Authorization y secretos que pudieran venir en el texto. */
+    private static function sinCredenciales(string $texto): string
+    {
+        // \x27 es la comilla simple: así los patrones no chocan con la cadena PHP.
+        return preg_replace([
+            '~\bAuthorization\b\s*[:=]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;"\x27}]+~i',
+            '~\bBearer\s+[A-Za-z0-9\-._\~+/]+=*~i',
+            '~(["\x27]?)\b(access_token|refresh_token|id_token|client_secret|token|code|key|password)\b\1\s*[:=]\s*["\x27]?[^\s"\x27&,;}]+["\x27]?~i',
+            '~\bya29\.[A-Za-z0-9\-_.]+~',
+            '~\b1//[A-Za-z0-9\-_]{10,}~',
+        ], [
+            'Authorization: [oculto]',
+            'Bearer [oculto]',
+            '$2=[oculto]',
+            '[oculto]',
+            '[oculto]',
+        ], $texto) ?? '';
     }
 
     private function estado(): EstadoPaquete
