@@ -512,8 +512,14 @@ void fallarEnrolamiento(
   bool adjuntarIndice
 );
 
+bool esImagenFantasma(
+  uint8_t conversion
+);
+
 uint8_t esperarDedoEnrolamiento(
-  unsigned long maximoMs
+  unsigned long maximoMs,
+  uint8_t buffer,
+  uint8_t& errorCaptura
 );
 
 bool esperarRetiroDeEnrolamiento(
@@ -3954,9 +3960,30 @@ bool sincronizarIndiceSensor() {
   // encima. El unico sitio que llama aca ya comprobo NOFINGER, pero esta
   // funcion tambien se invoca desde setup() y desde el fallo por ranura
   // ocupada, asi que la comprobacion vive aca dentro.
+  //
+  // Una imagen vacia (dedo fantasma, ver esImagenFantasma) no es un dedo: con
+  // un sensor que la devuelve casi siempre, exigir NOFINGER pospondria el
+  // indice para siempre y el servidor nunca podria reservar ranura.
+  uint8_t imagen =
+    finger.getImage();
+
+  bool hayDedo =
+    imagen !=
+    FINGERPRINT_NOFINGER;
+
   if (
-    finger.getImage() !=
-    FINGERPRINT_NOFINGER
+    imagen ==
+    FINGERPRINT_OK
+  ) {
+
+    hayDedo =
+      !esImagenFantasma(
+        finger.image2Tz(1)
+      );
+  }
+
+  if (
+    hayDedo
   ) {
 
     Serial.println(
@@ -4326,10 +4353,45 @@ void fallarEnrolamiento(
 
 
 // =====================================================
+// DEDO FANTASMA
+//
+// Hay AS608 que devuelven FINGERPRINT_OK en getImage() sin nadie apoyado. En
+// el lector ES3C28P se midio el 06/10/2026: 67 de 67 lecturas en 20 s, con el
+// Wi-Fi apagado, y luz verde parpadeando sola. Esa imagen vacia no tiene
+// minucias e image2Tz() la rechaza con FINGERPRINT_FEATUREFAIL.
+//
+// La marcacion ya lo tolera (identificarHuella reintenta y lo descarta como
+// ruido). Lo que no lo toleraba era todo lo que confiaba en getImage() a secas
+// para saber si habia un dedo: el indice del sensor se posponia para siempre y
+// el enrolamiento tomaba la imagen vacia como primera captura.
+//
+// Un dedo real mal apoyado tambien puede dar FEATUREFAIL. Tratarlo como "sin
+// dedo" solo hace que se le siga esperando, que es lo correcto: la persona lo
+// reacomoda dentro del mismo plazo.
+// =====================================================
+
+bool esImagenFantasma(
+  uint8_t conversion
+) {
+
+  return
+    conversion ==
+    FINGERPRINT_FEATUREFAIL;
+}
+
+
+// =====================================================
 // ESPERAR EL DEDO (ENROLAMIENTO)
 //
-// Devuelve FINGERPRINT_OK cuando hay imagen, FINGERPRINT_TIMEOUT si se agoto
-// la espera, o el codigo de error del sensor si dejo de responder.
+// Devuelve FINGERPRINT_OK cuando hay un dedo y su imagen ya quedo convertida
+// en `buffer` (image2Tz), FINGERPRINT_TIMEOUT si se agoto la espera, o el
+// codigo de error del sensor si dejo de responder.
+//
+// Convierte aca dentro porque solo la conversion distingue un dedo de la
+// imagen vacia del fantasma. Si hubo un dedo real cuya imagen no sirvio
+// (IMAGEMESS, INVALIDIMAGE...), se sigue esperando a que lo reacomode y el
+// ultimo codigo queda en `errorCaptura`: con el plazo agotado, quien llama
+// reporta captura_defectuosa en vez de timeout_dedo.
 //
 // Llama a mantenerWiFi() porque el loop esta bloqueado mientras se enrola y
 // una espera de 20 s no puede dejar la reconexion sin atender. No repinta
@@ -4337,7 +4399,9 @@ void fallarEnrolamiento(
 // =====================================================
 
 uint8_t esperarDedoEnrolamiento(
-  unsigned long maximoMs
+  unsigned long maximoMs,
+  uint8_t buffer,
+  uint8_t& errorCaptura
 ) {
 
   unsigned long inicio =
@@ -4345,6 +4409,9 @@ uint8_t esperarDedoEnrolamiento(
 
   int erroresSeguidos =
     0;
+
+  errorCaptura =
+    FINGERPRINT_OK;
 
   while (
     millis() - inicio <
@@ -4360,7 +4427,46 @@ uint8_t esperarDedoEnrolamiento(
       p ==
       FINGERPRINT_OK
     ) {
-      return FINGERPRINT_OK;
+
+      erroresSeguidos =
+        0;
+
+      uint8_t conv =
+        finger.image2Tz(
+          buffer
+        );
+
+      if (
+        conv ==
+        FINGERPRINT_OK
+      ) {
+
+        Serial.printf(
+          "image2Tz(%u) = 0\n",
+          buffer
+        );
+
+        return FINGERPRINT_OK;
+      }
+
+      if (
+        !esImagenFantasma(
+          conv
+        )
+      ) {
+
+        Serial.printf(
+          "image2Tz(%u) = %u, se espera que reacomode el dedo\n",
+          buffer,
+          conv
+        );
+
+        errorCaptura =
+          conv;
+      }
+
+      delay(60);
+      continue;
     }
 
     if (
@@ -4420,9 +4526,27 @@ bool esperarRetiroDeEnrolamiento(
     uint8_t p =
       finger.getImage();
 
+    bool retirado =
+      p ==
+      FINGERPRINT_NOFINGER;
+
+    // La imagen vacia del fantasma tambien cuenta como dedo retirado; sin
+    // esto un sensor que la devuelve casi siempre nunca juntaria tres
+    // NOFINGER seguidos. Se convierte en el buffer 2 a proposito: la primera
+    // captura vive en el 1 y el 2 lo pisa de todos modos la segunda.
     if (
       p ==
-      FINGERPRINT_NOFINGER
+      FINGERPRINT_OK
+    ) {
+
+      retirado =
+        esImagenFantasma(
+          finger.image2Tz(2)
+        );
+    }
+
+    if (
+      retirado
     ) {
 
       sinDedo++;
@@ -4617,10 +4741,41 @@ void ejecutarEnrolamiento(
     orden.nombreCorto
   );
 
+  uint8_t errorCaptura =
+    FINGERPRINT_OK;
+
   uint8_t p =
     esperarDedoEnrolamiento(
-      ENROL_TIMEOUT_DEDO_MS
+      ENROL_TIMEOUT_DEDO_MS,
+      1,
+      errorCaptura
     );
+
+  if (
+    p ==
+    FINGERPRINT_TIMEOUT &&
+    errorCaptura !=
+    FINGERPRINT_OK
+  ) {
+
+    fallarEnrolamiento(
+      orden,
+      "captura_defectuosa",
+      "La primera imagen no sirvio (codigo " +
+        String(errorCaptura) +
+        ").",
+      "MALA LECTURA",
+      "Limpie el dedo",
+      false
+    );
+
+    mostrarListo();
+
+    enrolando =
+      false;
+
+    return;
+  }
 
   if (
     p ==
@@ -4668,41 +4823,7 @@ void ejecutarEnrolamiento(
     return;
   }
 
-  uint8_t conv =
-    finger.image2Tz(1);
-
-  Serial.print(
-    "image2Tz(1) = "
-  );
-
-  Serial.println(
-    conv
-  );
-
-  if (
-    conv !=
-    FINGERPRINT_OK
-  ) {
-
-    fallarEnrolamiento(
-      orden,
-      "captura_defectuosa",
-      "La primera imagen no sirvio (codigo " +
-        String(conv) +
-        ").",
-      "MALA LECTURA",
-      "Limpie el dedo",
-      false
-    );
-
-    mostrarListo();
-
-    enrolando =
-      false;
-
-    return;
-  }
-
+  // La imagen ya quedo convertida en el charBuffer 1 (esperarDedoEnrolamiento).
   reportarProgreso(
     orden,
     "primera_captura"
@@ -4752,8 +4873,36 @@ void ejecutarEnrolamiento(
 
   p =
     esperarDedoEnrolamiento(
-      ENROL_TIMEOUT_DEDO_MS
+      ENROL_TIMEOUT_DEDO_MS,
+      2,
+      errorCaptura
     );
+
+  if (
+    p ==
+    FINGERPRINT_TIMEOUT &&
+    errorCaptura !=
+    FINGERPRINT_OK
+  ) {
+
+    fallarEnrolamiento(
+      orden,
+      "captura_defectuosa",
+      "La segunda imagen no sirvio (codigo " +
+        String(errorCaptura) +
+        ").",
+      "MALA LECTURA",
+      "Limpie el dedo",
+      false
+    );
+
+    mostrarListo();
+
+    enrolando =
+      false;
+
+    return;
+  }
 
   if (
     p ==
@@ -4801,41 +4950,7 @@ void ejecutarEnrolamiento(
     return;
   }
 
-  conv =
-    finger.image2Tz(2);
-
-  Serial.print(
-    "image2Tz(2) = "
-  );
-
-  Serial.println(
-    conv
-  );
-
-  if (
-    conv !=
-    FINGERPRINT_OK
-  ) {
-
-    fallarEnrolamiento(
-      orden,
-      "captura_defectuosa",
-      "La segunda imagen no sirvio (codigo " +
-        String(conv) +
-        ").",
-      "MALA LECTURA",
-      "Limpie el dedo",
-      false
-    );
-
-    mostrarListo();
-
-    enrolando =
-      false;
-
-    return;
-  }
-
+  // La imagen ya quedo convertida en el charBuffer 2 (esperarDedoEnrolamiento).
   reportarProgreso(
     orden,
     "segunda_captura"
