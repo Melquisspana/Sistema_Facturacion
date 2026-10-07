@@ -36,7 +36,11 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
 
 **Plan recomendado** (sin instalar nada en las PC del local):
 
-- **A. Si se cae el internet del local**: conectar el servidor y la PC de trabajo al **hotspot de un celular**. El túnel de Cloudflare se restablece solo y se sigue trabajando con el dominio de siempre, con transmisión normal. Así la contingencia queda para cuando **el MH** no responde.
+- **A. Si se cae el internet del local**: el servidor y las PC no tienen wifi. El servidor recupera internet con un celular por **cable USB**: el anclaje USB de Android o «Compartir internet» del iPhone por USB, que Windows toma como una red más sin instalar nada. Otra opción es un adaptador wifi USB. Con eso:
+  - el servidor **transmite al MH normalmente** y el túnel de Cloudflare vuelve: la contingencia queda solo para cuando el MH no responde;
+  - las PC, conectadas por cable al router sin internet, siguen sin llegar a Cloudflare: entran por el **plan B** (red local), y desde la laptop con wifi se puede usar el dominio de siempre;
+  - el servidor queda con dos redes. Hay que comprobar que Windows mande la salida a internet por el celular y no por el router caído (si hace falta, prioridad de la interfaz USB), sin perder la red local, que sigue por el cable.
+  - **Si el anclaje USB no resulta viable, el plan B pasa a ser el principal** y el servidor queda en contingencia hasta que vuelva el internet.
 - **B. Respaldo sin internet ni hotspot**: un vhost de Apache solo para la red local, con **HTTPS y certificado autofirmado**, más un favorito «Facturación (sin internet)» en cada PC que apunta a **la dirección local del servidor (se guarda fuera del repositorio)**.
   - El navegador avisa que el certificado no es de confianza («Avanzado → Continuar»). El aviso puede volver al reiniciar el navegador o después de un tiempo.
   - Como la conexión es HTTPS, la cookie segura se guarda y el inicio de sesión funciona.
@@ -55,9 +59,10 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
 - Para «Hacienda no responde» ya está el aviso de contingencia dentro de la aplicación; esta página es solo para cuando no hay internet.
 
 **Ensayo antes de necesitarlo**:
-1. Desconectar el router de internet y conectar el servidor y una PC al hotspot: entrar por el dominio, iniciar sesión, emitir un documento de prueba en el ambiente 00 y transmitirlo.
-2. Sin hotspot: entrar por el favorito B, aceptar el aviso del certificado, **iniciar sesión**, emitir y firmar un documento de prueba y comprobar que queda pendiente de envío.
-3. Reiniciar el router y comprobar que el servidor conserva su IP.
+1. Desconectar el router de internet. Conectar el celular **por USB** al servidor y activar el anclaje: comprobar que el servidor sale a internet por el celular, que el MH responde y que el servidor sigue accesible en la red local.
+2. Desde una PC por cable, entrar por el favorito B, aceptar el aviso del certificado, **iniciar sesión**, emitir un documento de prueba en el ambiente 00 y transmitirlo (sale por el celular del servidor).
+3. Sin el celular: repetir el paso 2 y comprobar que el documento queda firmado y pendiente de envío (contingencia).
+4. Reiniciar el router y comprobar que el servidor conserva su IP.
 
 **Corte de luz del servidor**: fuera del alcance del sistema. Si el servidor se apaga, no hay aplicación, ni firma, ni registro. Se recomienda una **UPS** para el servidor, el router y la malla, con autonomía para cerrar ordenadamente. Lo que se facture a mano durante el corte se regulariza fuera de este flujo; consultarlo con la contadora y el MH.
 
@@ -129,7 +134,7 @@ El servidor y el firmador están en el local: sin internet se puede **generar y 
    - Pruebas: la página no lleva datos y su ruta exige sesión. Prueba manual: red cortada, error 52x de Cloudflare, login, POST y descargas sin cambios.
 5. **Detección y cierre.**
    - Entrada automática desde `DteTransmisionResiliente`, con el tipo 1 o 3 según la conexión, y prueba de reconexión cada 15 minutos que registra el cese (tarea programada).
-   - Vhost HTTPS de la red local con certificado autofirmado, reserva DHCP y el ensayo de la sección 1.1 (hotspot e inicio de sesión por la red local).
+   - Vhost HTTPS de la red local con certificado autofirmado, reserva DHCP y el ensayo de la sección 1.1 (anclaje USB del celular e inicio de sesión por la red local).
    - Avisos de plazo, reenvío del archivo completo al cliente cuando llega el sello y separación en el reporte de la contadora.
    - Prueba de extremo a extremo en el ambiente de pruebas del MH: contingencia simulada, evento, lote y sellos.
 
