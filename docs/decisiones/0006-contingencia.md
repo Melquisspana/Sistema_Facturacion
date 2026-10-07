@@ -150,11 +150,11 @@ Cada parte tiene su issue con el encargo completo (archivos, criterios de acepta
 - **El documento que dispara la contingencia** (parte 5): se regenera con los cuatro campos y se vuelve a firmar con el mismo código de generación y número de control, **solo** si la última consulta confirmó que el MH no lo tiene (`no_encontrado`). `estado_recepcion_incierto` nunca activa la contingencia.
 - El vhost de la red local, la IP fija y el favorito salen de la parte 5: son tareas del servidor, fuera del repositorio.
 
-### Decisiones pendientes de Melqui
+### Decisiones de Melqui (07/10/2026)
 
-- Cuánto esperar antes de entrar en contingencia automática: al primer documento que no entra, o tras unos minutos sin respuesta del MH.
-- Si el aviso de contingencia a Hacienda lo envía el sistema solo al volver la conexión, o una persona con el botón.
-- Quiénes pueden activar, terminar y enviar el aviso (permiso `dte.contingencia`).
+- **Entrada**: enseguida, al primer documento que no entra después de la política de reintentos. Sin espera adicional.
+- **Aviso a Hacienda al volver la conexión**: lo envía una persona con el botón; si nadie lo hace en **12 horas** desde el cese, el sistema lo envía solo (queda la mitad del plazo de 24 horas para corregir un rechazo).
+- **Permiso** `dte.contingencia` (activar, terminar y enviar el aviso a mano): solo administradores, como la invalidación. La entrada automática no depende del usuario.
 
 ## Consecuencias
 
