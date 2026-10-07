@@ -8,6 +8,22 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.07] - 2026-10-07
+
+Incluye #73, #74, #76, #77 y #78. No trae migraciones.
+
+### Agregado
+
+- Paquete de contabilidad: «Enviar a contabilidad» sube el ZIP a Google Drive y manda un correo con el enlace, compartido solo con el correo de contabilidad. Hay que autorizar Drive en Configuración → Integraciones. #74
+- Seguimiento de CCF: explica cuántos CCF no se pueden seleccionar y por qué. #73
+- Comando `cobros:recalcular-pagos` (con `--dry-run` y `--cliente`), que vuelve a calcular el estado de pago a partir de los eventos. #76
+
+### Corregido
+
+- Un CCF pagado por su total, con la NC descontada en una línea aparte del TXT, ya figura como pagado. En producción se recalcularon 14 CCF: 10 pasaron a pagados, y 4 cuya NC nunca se descontó pasaron a «Diferencia». #76
+- Desarrollo y CI usan la hora de El Salvador, igual que producción. Asistencia guarda la hora de la marcación sin desfase. #77
+- Evento de invalidación: los códigos de establecimiento y punto de venta del MH salen del número de control del DTE, con validación de su formato. #78
+
 ## [2026.10.06.6] - 2026-10-06
 
 Sexto despliegue del día. Incluye #69 y #71. No trae migraciones.
