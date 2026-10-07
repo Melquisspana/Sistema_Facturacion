@@ -418,6 +418,9 @@ class DteInvalidacionService
                 ->withProperties([
                     'codigo_generacion_evento' => $codigoEvento,
                     'tipo_anulacion' => $evento->tipoAnulacion->value,
+                    // Quién lo pidió (nombre y tipo de documento; el número queda en el evento).
+                    'solicitante' => $evento->nombreSolicita,
+                    'tipo_doc_solicitante' => $evento->tipoDocSolicita,
                     'resultado_mh' => $interpretado['resultado'],
                     'http_status' => $interpretado['http_status'],
                     'ambiente' => $dte->ambiente->value,

@@ -531,6 +531,37 @@
                             </div>
                             <input type="hidden" name="motivo" :value="requiereMotivo ? motivo : ''">
 
+                            {{-- Quién pide la anulación (Normativa 2.0, Anexo V, campos 115-117). Vacío = el de la configuración. --}}
+                            @php
+                                $tipoSolicitante = (string) old('solicitante_tipo_doc', config('dte.invalidacion.solicita.tipo_doc'));
+                            @endphp
+                            <div class="rounded-md border border-gray-200 p-3 space-y-2">
+                                <p class="text-sm font-medium text-gray-700">¿Quién pide la anulación?</p>
+                                <p class="text-xs text-gray-500">Viene con el solicitante de la configuración. Cambialo si lo pide otra persona, por ejemplo el cliente.</p>
+                                <div class="grid gap-2 sm:grid-cols-3">
+                                    <div>
+                                        <x-input-label for="inval_sol_nombre" value="Nombre" />
+                                        <x-text-input id="inval_sol_nombre" name="solicitante_nombre" type="text" maxlength="100" class="mt-1 block w-full"
+                                                      :value="old('solicitante_nombre', config('dte.invalidacion.solicita.nombre'))" />
+                                    </div>
+                                    <div>
+                                        <x-input-label for="inval_sol_tipo" value="Documento" />
+                                        <select id="inval_sol_tipo" name="solicitante_tipo_doc" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                            <option value="">De la configuración</option>
+                                            @foreach (\App\Support\Dte\DocumentoIdentidadMh::TIPOS as $codigo => $nombreTipo)
+                                                <option value="{{ $codigo }}" @selected($tipoSolicitante === (string) $codigo)>{{ $nombreTipo }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="inval_sol_num" value="Número" />
+                                        <x-text-input id="inval_sol_num" name="solicitante_num_doc" type="text" maxlength="25" class="mt-1 block w-full font-mono"
+                                                      :value="old('solicitante_num_doc', config('dte.invalidacion.solicita.num_doc'))" />
+                                    </div>
+                                </div>
+                                <x-input-error :messages="array_merge($errors->get('solicitante_nombre'), $errors->get('solicitante_tipo_doc'), $errors->get('solicitante_num_doc'))" class="mt-1" />
+                            </div>
+
                             {{-- Ni reemplazo ni motivo: el tipo elegido no pide nada más. --}}
                             <div x-show="! requiereReemplazo && ! requiereMotivo" x-cloak
                                  class="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">

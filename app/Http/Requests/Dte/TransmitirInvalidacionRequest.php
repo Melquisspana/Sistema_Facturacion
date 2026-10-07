@@ -8,6 +8,7 @@ use App\Models\Dte;
 use App\Policies\DtePolicy;
 use App\Services\Dte\DteInvalidacionService;
 use App\Services\Dte\ValidadorReglasInvalidacion;
+use App\Support\Dte\DocumentoIdentidadMh;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\RequisitosInvalidacion;
 use Illuminate\Foundation\Http\FormRequest;
@@ -108,12 +109,45 @@ class TransmitirInvalidacionRequest extends FormRequest
                 // ignora en silencio.
                 Rule::prohibitedIf(fn () => $this->requisitos()?->prohibeReemplazo() === true),
             ],
+            // Quien SOLICITA el evento (Normativa 2.0, Anexo V, campos 115-117): puede
+            // cambiar en cada invalidación. Vacío = el valor de la configuración.
+            ...self::reglasSolicitante(),
             // Frase-barrera exacta validada en SERVIDOR (defensa en profundidad, no solo JS).
             'confirmacion_invalidacion' => ['required', 'string', Rule::in([self::FRASE])],
             // OBSOLETO: se sigue ACEPTANDO para no romper integraciones antiguas, pero ya no
             // se lee en ninguna parte. La dependencia de notas fiscales vigentes es una regla
             // del MH, no un riesgo que quien factura pueda asumir con una casilla.
             'confirmar_nc_relacionada' => ['nullable', 'boolean'],
+        ];
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    public static function reglasSolicitante(): array
+    {
+        return [
+            'solicitante_nombre' => ['nullable', 'string', 'max:100'],
+            'solicitante_tipo_doc' => ['nullable', 'string', Rule::in(array_keys(DocumentoIdentidadMh::TIPOS))],
+            'solicitante_num_doc' => ['nullable', 'string', 'max:25'],
+        ];
+    }
+
+    /**
+     * Solicitante del evento: lo escrito en el formulario o, si viene vacío, el de la
+     * configuración. Se valida después con el resto de las reglas fiscales.
+     *
+     * @param  array<string, mixed>  $entrada
+     * @return array{nombre: ?string, tipo: ?string, numero: ?string}
+     */
+    public static function solicitanteDe(array $entrada): array
+    {
+        $valor = fn (string $campo, string $config) => filled($entrada[$campo] ?? null)
+            ? trim((string) $entrada[$campo])
+            : (config('dte.invalidacion.solicita.'.$config) ?: null);
+
+        return [
+            'nombre' => $valor('solicitante_nombre', 'nombre'),
+            'tipo' => $valor('solicitante_tipo_doc', 'tipo_doc'),
+            'numero' => $valor('solicitante_num_doc', 'num_doc'),
         ];
     }
 
@@ -128,8 +162,12 @@ class TransmitirInvalidacionRequest extends FormRequest
             if (! $dte instanceof Dte) {
                 return;
             }
+            $solicita = self::solicitanteDe($this->all());
             $evento = new EventoInvalidacionData(
                 tipoAnulacion: TipoAnulacionMh::from((int) $this->input('tipo')),
+                nombreSolicita: $solicita['nombre'],
+                tipoDocSolicita: $solicita['tipo'],
+                numDocSolicita: $solicita['numero'],
                 motivoAnulacion: $this->input('motivo'),
                 codigoGeneracionReemplazo: $this->input('reemplazo'),
             );

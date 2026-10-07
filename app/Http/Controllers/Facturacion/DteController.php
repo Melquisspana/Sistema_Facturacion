@@ -1375,6 +1375,7 @@ class DteController extends Controller
             TipoAnulacionMh::from((int) $request->input('tipo')),
             $request->input('motivo'),
             $request->input('reemplazo'),
+            TransmitirInvalidacionRequest::solicitanteDe($request->all()),
         );
 
         try {
@@ -1451,6 +1452,7 @@ class DteController extends Controller
                 Rule::requiredIf(fn () => $requisitos()->requiereReemplazo),
                 Rule::prohibitedIf(fn () => $requisitos()->prohibeReemplazo()),
             ],
+            ...TransmitirInvalidacionRequest::reglasSolicitante(),
         ], [
             'motivo.required' => 'El motivo en texto es obligatorio para el tipo 3 (Otro).',
             'reemplazo.required' => 'Para este documento y motivo hace falta el código de generación del documento '
@@ -1463,24 +1465,30 @@ class DteController extends Controller
             TipoAnulacionMh::from((int) $datos['tipo']),
             $datos['motivo'] ?? null,
             $datos['reemplazo'] ?? null,
+            TransmitirInvalidacionRequest::solicitanteDe($datos),
         );
     }
 
     /**
-     * Arma el EventoInvalidacionData tomando responsable/solicitante de config('dte.invalidacion.*')
-     * (mismos datos que usa el comando dte:invalidacion-mock). El tipo/motivo/reemplazo los
-     * aporta quien invoca.
+     * Arma el EventoInvalidacionData con el responsable de config('dte.invalidacion.*') —la
+     * persona designada por el emisor— y el solicitante del formulario si lo hay (si no, el
+     * de config, igual que los comandos de consola). El tipo/motivo/reemplazo los aporta
+     * quien invoca.
+     *
+     * @param  array{nombre: ?string, tipo: ?string, numero: ?string}|null  $solicitante
      */
-    private function eventoInvalidacionDesdeConfig(TipoAnulacionMh $tipo, ?string $motivo = null, ?string $reemplazo = null): EventoInvalidacionData
+    private function eventoInvalidacionDesdeConfig(TipoAnulacionMh $tipo, ?string $motivo = null, ?string $reemplazo = null, ?array $solicitante = null): EventoInvalidacionData
     {
+        $solicitante ??= TransmitirInvalidacionRequest::solicitanteDe([]);
+
         return new EventoInvalidacionData(
             tipoAnulacion: $tipo,
             nombreResponsable: config('dte.invalidacion.responsable.nombre') ?: null,
             tipoDocResponsable: config('dte.invalidacion.responsable.tipo_doc') ?: null,
             numDocResponsable: config('dte.invalidacion.responsable.num_doc') ?: null,
-            nombreSolicita: config('dte.invalidacion.solicita.nombre') ?: null,
-            tipoDocSolicita: config('dte.invalidacion.solicita.tipo_doc') ?: null,
-            numDocSolicita: config('dte.invalidacion.solicita.num_doc') ?: null,
+            nombreSolicita: $solicitante['nombre'],
+            tipoDocSolicita: $solicitante['tipo'],
+            numDocSolicita: $solicitante['numero'],
             motivoAnulacion: $motivo,
             codigoGeneracionReemplazo: $reemplazo,
         );

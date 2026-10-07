@@ -7,6 +7,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Models\Dte;
+use App\Support\Dte\DocumentoIdentidadMh;
 use App\Support\Dte\PlazoInvalidacion;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\RequisitosInvalidacion;
@@ -74,8 +75,32 @@ class ValidadorReglasInvalidacion
             $this->problemasDeMotivo($requisitos, $evento),
             $this->problemasDeReemplazo($dte, $evento, $requisitos),
             $this->problemasDeDependencias($dte),
+            $this->problemasDePersonas($evento),
             $this->problemasDePlazo($dte),
         );
+    }
+
+    /**
+     * Responsable y solicitante (Normativa 2.0, Anexo V, campos 112-117; issue #52). Solo
+     * se revisa a quien trae algún dato: que falten por completo ya lo reportan los
+     * candados del entorno, con la pista de configuración.
+     *
+     * @return array<int, string>
+     */
+    private function problemasDePersonas(EventoInvalidacionData $evento): array
+    {
+        $problemas = [];
+        foreach ([
+            'el responsable' => [$evento->nombreResponsable, $evento->tipoDocResponsable, $evento->numDocResponsable],
+            'el solicitante' => [$evento->nombreSolicita, $evento->tipoDocSolicita, $evento->numDocSolicita],
+        ] as $rol => [$nombre, $tipo, $numero]) {
+            if (blank($nombre) && blank($tipo) && blank($numero)) {
+                continue;
+            }
+            $problemas = array_merge($problemas, DocumentoIdentidadMh::problemas($rol, $nombre, $tipo, $numero));
+        }
+
+        return $problemas;
     }
 
     /** @return array<int, string> */

@@ -8,6 +8,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoAnulacionMh;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\DteNoSerializableException;
+use App\Http\Requests\Dte\TransmitirInvalidacionRequest;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -15,6 +16,7 @@ use App\Models\Establecimiento;
 use App\Models\PuntoVenta;
 use App\Services\Dte\DteSchemaValidator;
 use App\Services\Dte\Serializadores\SerializadorInvalidacionMh;
+use App\Support\Dte\DocumentoIdentidadMh;
 use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -355,5 +357,62 @@ class SerializadorInvalidacionMhTest extends TestCase
         // aparecer en el JSON generado por el código (sí aparece hoy en el .env real).
         $this->assertStringNotContainsString('Ã¡', $codificado);
         $this->assertStringNotContainsString('Ã±', $codificado);
+    }
+
+    // ── Responsable y solicitante (Normativa 2.0, Anexo V, campos 112-117; issue #52) ──
+
+    public function test_documentos_de_las_personas_salen_en_formato_mh(): void
+    {
+        $evento = new EventoInvalidacionData(
+            tipoAnulacion: TipoAnulacionMh::RescindirOperacion,
+            nombreResponsable: '  Persona Responsable  ', tipoDocResponsable: '13', numDocResponsable: '04000000-0',
+            nombreSolicita: 'Cliente de Ejemplo', tipoDocSolicita: '36', numDocSolicita: '0614-555555-101-5',
+        );
+
+        $motivo = app(SerializadorInvalidacionMh::class)->serializar($this->ncAceptada(), $evento)['motivo'];
+
+        $this->assertSame('Persona Responsable', $motivo['nombreResponsable']);
+        $this->assertSame('04000000-0', $motivo['numDocResponsable']);
+        $this->assertSame('06145555551015', $motivo['numDocSolicita']);
+    }
+
+    public function test_documento_invalido_del_solicitante_detiene_el_evento(): void
+    {
+        $evento = new EventoInvalidacionData(
+            tipoAnulacion: TipoAnulacionMh::RescindirOperacion,
+            nombreResponsable: 'Persona Responsable', tipoDocResponsable: '13', numDocResponsable: '040000000',
+            nombreSolicita: 'Cliente de Ejemplo', tipoDocSolicita: '13', numDocSolicita: '1234',
+        );
+
+        try {
+            app(SerializadorInvalidacionMh::class)->serializar($this->ncAceptada(), $evento);
+            $this->fail('Debió detener el evento por el DUI del solicitante.');
+        } catch (DteNoSerializableException $e) {
+            $this->assertStringContainsString('El DUI de el solicitante', implode(' ', $e->problemas));
+        }
+    }
+
+    public function test_solicitante_del_formulario_reemplaza_al_de_la_configuracion(): void
+    {
+        config(['dte.invalidacion.solicita' => ['nombre' => 'Solicitante Configurado', 'tipo_doc' => '13', 'num_doc' => '040000001']]);
+
+        $this->assertSame(
+            ['nombre' => 'Cliente de Ejemplo', 'tipo' => '36', 'numero' => '06145555551015'],
+            TransmitirInvalidacionRequest::solicitanteDe(['solicitante_nombre' => ' Cliente de Ejemplo ', 'solicitante_tipo_doc' => '36', 'solicitante_num_doc' => '06145555551015']),
+        );
+        $this->assertSame(
+            ['nombre' => 'Solicitante Configurado', 'tipo' => '13', 'numero' => '040000001'],
+            TransmitirInvalidacionRequest::solicitanteDe(['solicitante_nombre' => '', 'solicitante_tipo_doc' => null]),
+        );
+    }
+
+    public function test_reglas_de_documento_por_tipo_cat_022(): void
+    {
+        $this->assertSame([], DocumentoIdentidadMh::problemas('el solicitante', 'Nombre', '36', '061455555'));
+        $this->assertSame([], DocumentoIdentidadMh::problemas('el solicitante', 'Nombre', '03', 'AB123456'));
+        $this->assertNotSame([], DocumentoIdentidadMh::problemas('el solicitante', 'Nombre', '36', '0614555555'));
+        $this->assertNotSame([], DocumentoIdentidadMh::problemas('el solicitante', 'Nombre', '99', '061455555'));
+        $this->assertNotSame([], DocumentoIdentidadMh::problemas('el solicitante', str_repeat('a', 101), '03', 'AB1'));
+        $this->assertNotSame([], DocumentoIdentidadMh::problemas('el solicitante', 'Nombre', '37', str_repeat('9', 21)));
     }
 }
