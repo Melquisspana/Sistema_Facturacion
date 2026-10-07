@@ -330,8 +330,9 @@ return [
         // ambiente='01' y que el endpoint resuelto sea EXACTAMENTE
         // https://api.dtes.mh.gob.sv/fesv/anulardte (ver DteInvalidacionService).
         'produccion_enabled' => (bool) env('DTE_INVALIDACION_PRODUCCION_ENABLED', false),
-        // Overrides de los códigos MH del emisor SOLO si se confirma que difieren de
-        // los internos (M001/P001). Vacío = usar los internos del establecimiento/PV.
+        // Códigos MH del establecimiento y punto de venta DESDE DONDE se transmite el evento
+        // (Normativa 2.0, Anexo V, campos 24 y 26). Vacío = los del DTE, que ya tienen el
+        // formato del MH (M001/P001 del número de control). Solo si se transmite desde otro.
         'cod_estable_mh' => env('DTE_INVALIDACION_COD_ESTABLE_MH', ''),
         'cod_punto_venta_mh' => env('DTE_INVALIDACION_COD_PUNTO_VENTA_MH', ''),
         // Datos de quien REALIZA el evento (responsable). Obligatorios en el schema.
