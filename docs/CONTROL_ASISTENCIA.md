@@ -1014,6 +1014,19 @@ espera del retiro. Un dedo real mal apoyado se sigue esperando hasta el plazo; s
 dio imágenes que no sirvieron por otra causa, el desenlace es
 `captura_defectuosa` y no `timeout_dedo`. `firmware/asistencia/` no cambió.
 
+El fantasma también dejaba al lector **sin sondear**: el sondeo solo ocurría en la
+rama `NOFINGER` del loop, y con el sensor devolviendo imágenes vacías esa rama casi
+no se pisaba. En producción, el 07/10/2026, «Registrar huella» no hacía nada por
+ratos. En el ES3C28P el loop sondea además cuando `identificarHuella()` termina sin
+ninguna lectura válida (`RH_SIN_LECTURA`): ahí ya no hay imagen que perder ni
+marcación en curso.
+
+**Cancelar una orden mientras el lector ya captura deja una plantilla huérfana.** El
+07/10/2026 se canceló desde la web una orden que el lector ya estaba grabando: la
+plantilla quedó en la ranura y el resultado llegó sobre una orden final, que no crea
+nada. La persona marcaba con `huella_desconocida`. Se arregla con «Anotar una ranura
+ya grabada» y el número que el lector devuelve al reconocer el dedo.
+
 **Lo que el lector todavía no puede alegar.** No existe un motivo para «este dedo
 ya está enrolado en otra ranura», así que el firmware **no** lo detecta: inventar un
 código rompería el contrato. Si hiciera falta, es un cambio de
