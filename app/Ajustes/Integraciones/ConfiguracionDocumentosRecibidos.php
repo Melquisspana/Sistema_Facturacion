@@ -89,6 +89,15 @@ class ConfiguracionDocumentosRecibidos
         return (int) $this->ajustes->entero('documentos_recibidos.limite', 30);
     }
 
+    /**
+     * ¿Las filas viejas sin `identidad` (solo con el UID crudo) son de este buzón?
+     * Sí para el principal, de donde salieron; un segundo buzón no las reconoce.
+     */
+    public function reconoceFilasSinIdentidad(): bool
+    {
+        return true;
+    }
+
     /** Ruta del servidor: se lee, no se edita desde la aplicación. */
     public function storageDir(): string
     {

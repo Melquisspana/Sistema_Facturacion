@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Ajustes\Ajustes;
 use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
+use App\Ajustes\Integraciones\ConfiguracionBuzonAdicional;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
@@ -90,6 +91,18 @@ class AppServiceProvider extends ServiceProvider
             static fn ($app) => $app->make(ConfiguracionDocumentosRecibidos::class)->lecturaActivada()
                 ? $app->make(ImapMailboxClient::class)
                 : new NullMailboxClient
+        );
+
+        // Segundo buzón de compras (opcional, solo .env): mismo lector, otra configuración.
+        $this->app->bind(
+            ConfiguracionBuzonAdicional::LECTOR,
+            static function ($app) {
+                $configuracion = $app->make(ConfiguracionBuzonAdicional::class);
+
+                return $configuracion->lecturaActivada()
+                    ? new ImapMailboxClient($configuracion)
+                    : new NullMailboxClient;
+            }
         );
     }
 

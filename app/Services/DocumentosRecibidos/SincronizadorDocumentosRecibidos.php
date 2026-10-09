@@ -266,13 +266,17 @@ class SincronizadorDocumentosRecibidos
      * identidad: guardaban el UID crudo en `gmail_message_id` y todavía no tienen
      * `identidad`. Se acota a ESAS filas (`identidad IS NULL`) a propósito — así un UID
      * repetido de otra carpeta no puede hacerse pasar por un documento nuevo ya visto.
+     * Y solo para el buzón del que salieron esas filas: en un segundo buzón el mismo
+     * número de UID es otro correo, y reconocerlo por ahí lo daría por visto sin serlo.
      */
     private function buscarExistente(string $identidad, ?int $uid): ?DocumentoRecibido
     {
+        $legado = $uid !== null && $this->configuracion->reconoceFilasSinIdentidad();
+
         return DocumentoRecibido::query()
-            ->where(function ($q) use ($identidad, $uid) {
+            ->where(function ($q) use ($identidad, $uid, $legado) {
                 $q->where('identidad', $identidad);
-                if ($uid !== null) {
+                if ($legado) {
                     $q->orWhere(fn ($sub) => $sub->whereNull('identidad')->where('gmail_message_id', (string) $uid));
                 }
             })
@@ -389,9 +393,9 @@ class SincronizadorDocumentosRecibidos
             'buzon_carpeta' => $carpeta,
             'uid' => $uid,
             'uid_validity' => $uidValidity,
-            // Se sigue escribiendo el UID acá para no romper la unicidad histórica ni las
-            // pantallas que lo muestran; ya NO es la clave de deduplicación.
-            'gmail_message_id' => $uid !== null ? (string) $uid : $identidad,
+            // Ya NO es la clave de deduplicación (lo es `identidad`). Columna ÚNICA: con el UID, dos buzones (o una carpeta reconstruida) chocan
+            // en el mismo número y el correo se rechaza. La identidad no choca.
+            'gmail_message_id' => $identidad,
             'origen_email' => $this->buzon->fuente(),
             'asunto' => $mensaje['asunto'] ?? null,
             'remitente' => $mensaje['remitente'] ?? null,
