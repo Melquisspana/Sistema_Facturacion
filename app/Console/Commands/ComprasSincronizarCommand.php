@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Ajustes\Integraciones\ConfiguracionBuzonAdicional;
 use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Services\DocumentosRecibidos\BitacoraSincronizacionCompras;
 use App\Services\DocumentosRecibidos\Buzon\IdentidadCorreo;
@@ -33,6 +34,10 @@ use Illuminate\Support\Facades\Cache;
  * truncado por el límite, cortado a mitad o con error queda sin cerrar, y la corrida
  * siguiente vuelve a él. Es la pieza que evita perder correos: la versión anterior
  * avanzaba la marca por encima de los que el límite había dejado afuera.
+ *
+ * DOS BUZONES durante un cambio de correo: si hay un buzón adicional configurado
+ * ({@see ConfiguracionBuzonAdicional}), se lee después del principal, con su propio
+ * progreso (por carpeta) y la misma deduplicación, bajo el mismo bloqueo.
  */
 class ComprasSincronizarCommand extends Command
 {
@@ -43,12 +48,16 @@ class ComprasSincronizarCommand extends Command
         {--solape=2 : Días hacia atrás sobre la marca de progreso, para correos con retraso}
         {--limite= : Correos por PÁGINA (por defecto, el configurado; el día se agota paginando)}
         {--reiniciar-uid-validity : Suelta los cursores tras una reconstrucción del buzón}
+        {--buzon=todos : principal, adicional (DOCUMENTOS_RECIBIDOS_MAIL2_*) o todos (el adicional solo si está configurado)}
         {--aplicar : Escribe de verdad (por defecto solo informa lo que haría)}';
 
     protected $description = 'Sincroniza compras desde el buzón IMAP por días completos y páginas de UID (incremental o recuperación de un período)';
 
     /** Nombre del bloqueo. Una sola sincronización de compras a la vez, venga de donde venga. */
     public const LOCK = 'compras:sincronizar';
+
+    /** Buzones que se pueden pedir con `--buzon`. */
+    private const BUZONES = ['todos', 'principal', 'adicional'];
 
     /** Cuánto puede durar el bloqueo antes de soltarse solo, si el proceso muere de golpe. */
     private const LOCK_SEGUNDOS = 1800;
@@ -81,6 +90,64 @@ class ComprasSincronizarCommand extends Command
         BitacoraSincronizacionCompras $bitacora,
         ConfiguracionDocumentosRecibidos $configuracion,
     ): int {
+        $buzon = (string) $this->option('buzon');
+        if (! in_array($buzon, self::BUZONES, true)) {
+            $this->error('--buzon tiene que ser uno de: '.implode(', ', self::BUZONES).'.');
+
+            return self::FAILURE;
+        }
+
+        $codigo = self::SUCCESS;
+
+        if ($buzon !== 'adicional') {
+            $codigo = $this->correrBuzon($sync, $progreso, $bitacora, $configuracion);
+        }
+
+        if ($buzon === 'principal') {
+            return $codigo;
+        }
+
+        $adicional = app(ConfiguracionBuzonAdicional::class);
+        if (! $adicional->lecturaActivada()) {
+            if ($buzon === 'adicional') {
+                $this->error('El buzón adicional no está configurado (DOCUMENTOS_RECIBIDOS_MAIL2_* en .env).');
+
+                return self::FAILURE;
+            }
+
+            return $codigo;
+        }
+
+        // El progreso se lleva por carpeta: dos buzones con la misma carpeta mezclarían
+        // sus cursores y uno saltearía correos del otro. Se frena en vez de arriesgarlo.
+        if ($adicional->carpeta() === $configuracion->carpeta()) {
+            $this->error('El buzón adicional usa la misma carpeta que el principal ('.$adicional->carpeta()
+                .'). Su progreso se mezclaría: poné otra carpeta en DOCUMENTOS_RECIBIDOS_MAIL2_FOLDER.');
+
+            return self::FAILURE;
+        }
+
+        $this->newLine();
+        $this->info('— Buzón adicional —');
+
+        $syncAdicional = app()->make(SincronizadorDocumentosRecibidos::class, [
+            'buzon' => app(ConfiguracionBuzonAdicional::LECTOR),
+            'configuracion' => $adicional,
+        ]);
+
+        // Sin bitácora: la pantalla muestra la del buzón principal, y el adicional es
+        // temporal. Su resultado queda en la salida (y en el log de la tarea programada).
+        $codigoAdicional = $this->correrBuzon($syncAdicional, $progreso, null, $adicional);
+
+        return $codigo === self::SUCCESS ? $codigoAdicional : $codigo;
+    }
+
+    private function correrBuzon(
+        SincronizadorDocumentosRecibidos $sync,
+        ProgresoSincronizacionCompras $progreso,
+        ?BitacoraSincronizacionCompras $bitacora,
+        ConfiguracionDocumentosRecibidos $configuracion,
+    ): int {
         $aplicar = (bool) $this->option('aplicar');
         $carpeta = $configuracion->carpeta();
 
@@ -106,7 +173,7 @@ class ComprasSincronizarCommand extends Command
         $this->info("Ventana: {$desde->toDateString()} → {$hasta->toDateString()} ({$dias} día/s, carpeta {$carpeta}).");
 
         if ($aplicar) {
-            $bitacora->iniciar();
+            $bitacora?->iniciar();
         }
 
         // El tamaño de página ya no puede hacer perder correos: si el día no entra,
@@ -124,14 +191,14 @@ class ComprasSincronizarCommand extends Command
         }
 
         if ($r->fallo()) {
-            $bitacora->fallo($r->mensaje(), $r->aArreglo());
+            $bitacora?->fallo($r->mensaje(), $r->aArreglo());
 
             return self::FAILURE;
         }
 
         // "Incompleta" no es un fallo del buzón: quedaron días por cerrar y la corrida
         // siguiente los toma. Se registra como éxito con días pendientes a la vista.
-        $bitacora->exito($r->aArreglo());
+        $bitacora?->exito($r->aArreglo());
 
         return self::SUCCESS;
     }

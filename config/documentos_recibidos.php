@@ -28,6 +28,24 @@ return [
     ],
 
     /*
+    | SEGUNDO BUZÓN (opcional, temporal) para los cambios de correo.
+    |
+    | Mientras los proveedores mandan a dos direcciones, `compras:sincronizar` lee el
+    | buzón principal y además este. Sin servidor configurado está apagado. Se lee igual
+    | que el principal (solo lectura) y su progreso se lleva aparte, por carpeta: por eso
+    | su carpeta NO puede llamarse igual que la del principal. Un mismo DTE llegado a los
+    | dos buzones se registra una sola vez (identidad del correo y código de generación).
+    */
+    'buzon_adicional' => [
+        'host' => env('DOCUMENTOS_RECIBIDOS_MAIL2_HOST', ''),
+        'port' => (int) env('DOCUMENTOS_RECIBIDOS_MAIL2_PORT', 993),
+        'encryption' => env('DOCUMENTOS_RECIBIDOS_MAIL2_ENCRYPTION', 'ssl'),
+        'username' => env('DOCUMENTOS_RECIBIDOS_MAIL2_USERNAME', ''),
+        'password' => env('DOCUMENTOS_RECIBIDOS_MAIL2_PASSWORD', ''),
+        'folder' => env('DOCUMENTOS_RECIBIDOS_MAIL2_FOLDER', 'INBOX'),
+    ],
+
+    /*
     | INTERRUPTOR de la sincronización automática.
     |
     | APAGADO por defecto, a propósito. La tarea programada existe en routes/console.php

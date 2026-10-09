@@ -257,6 +257,29 @@ php artisan compras:backfill-identidad --aplicar  # escribe `legado:<uid>`
 esas filas por `gmail_message_id` mientras su `identidad` esté en `NULL`. Correrlo solo
 cierra ese camino de compatibilidad y deja la tabla uniforme. No toca ningún otro campo.
 
+### 6b. Dos buzones durante un cambio de correo
+
+Cuando los proveedores pasan a otra dirección, por un tiempo llegan DTE a las dos. El
+buzón principal sigue siendo el de Configuración; el otro se declara SOLO en `.env` con
+`DOCUMENTOS_RECIBIDOS_MAIL2_*` (servidor, usuario, contraseña y carpeta). Con eso,
+`compras:sincronizar` —y la tarea programada, sin cambiarla— lee el principal y después
+el adicional, bajo el mismo bloqueo.
+
+- **Progreso aparte, por carpeta.** Por eso la carpeta del adicional tiene que ser
+  distinta de la del principal; si coinciden, el comando se frena en vez de mezclar
+  cursores. En Gmail, una etiqueta es una carpeta IMAP (`DTE-Compras`, por ejemplo).
+- **Sin duplicados.** El mismo DTE llegado a los dos buzones queda una sola vez:
+  identidad del correo y, si son envíos distintos, código de generación.
+- **Sin bitácora.** La franja de la pantalla muestra la del principal; el resultado del
+  adicional queda en la salida del comando y en `compras-sincronizacion.log`.
+- `--buzon=principal|adicional|todos` (por defecto `todos`) elige qué leer. Recuperar
+  un período del adicional: `--buzon=adicional --desde=…`.
+- Las filas viejas sin `identidad` (§6) solo se reconocen por UID en el principal, que
+  es de donde salieron. Antes de pasar otro buzón a principal, correr el backfill.
+
+Al dejar el buzón viejo: poner el nuevo como principal en Configuración y vaciar las
+`MAIL2_*`. Si el nuevo era el adicional, su progreso sigue: se lleva por carpeta.
+
 ---
 
 ## 7. Cobertura y el paquete mensual
