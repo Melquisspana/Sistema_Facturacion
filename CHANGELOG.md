@@ -8,6 +8,20 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.09] - 2026-10-09
+
+Incluye #79, #94 y #97. No trae migraciones.
+
+### Agregado
+
+- Compras: se puede leer un segundo buzón mientras dure un cambio de correo (`DOCUMENTOS_RECIBIDOS_MAIL2_*` en `.env`, `compras:sincronizar --buzon=principal|adicional|todos`). Cada buzón lleva su propio progreso, y un mismo DTE llegado a los dos queda una sola vez. #97
+- Invalidación: el formulario pide quién solicita la anulación (nombre, tipo y número de documento) y valida los documentos de responsable y solicitante según CAT-022. #79
+
+### Corregido
+
+- Compras: un UID de IMAP repetido (otro buzón o una carpeta reconstruida) ya no hace rechazar el correo por la columna única `gmail_message_id`. #97
+- Paquete de contabilidad: cuando falla la subida a Drive, queda registrado el motivo técnico saneado. #94
+
 ## [2026.10.07] - 2026-10-07
 
 Incluye #73, #74, #76, #77 y #78. No trae migraciones.
