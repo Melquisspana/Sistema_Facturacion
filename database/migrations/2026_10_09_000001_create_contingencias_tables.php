@@ -16,6 +16,7 @@ return new class extends Migration
             $table->dateTime('inicio');
             $table->dateTime('cese')->nullable();
             $table->string('estado', 20)->index();
+            $table->unsignedTinyInteger('activa_unica')->nullable()->unique();
             $table->foreignId('activada_por')->nullable()->constrained('users')->restrictOnDelete();
             $table->foreignId('cerrada_por')->nullable()->constrained('users')->restrictOnDelete();
             $table->timestamps();

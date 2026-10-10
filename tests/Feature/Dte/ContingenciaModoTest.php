@@ -29,9 +29,11 @@ use App\Services\Dte\DteTransmisionResiliente;
 use App\Services\Dte\DteTransmisionService;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\ArchivoEntregaDte;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -104,6 +106,70 @@ class ContingenciaModoTest extends TestCase
         $this->activar();
         $this->post(route('facturacion.contingencia.activar'), ['tipo' => 1])->assertSessionHasErrors('contingencia');
         $this->assertDatabaseCount('contingencias', 1);
+    }
+
+    private function datosContingenciaActiva(): array
+    {
+        return ['tipo' => 3, 'motivo' => 'Interrupción inventada', 'origen' => 'manual',
+            'inicio' => now(), 'estado' => 'activa', 'activa_unica' => 1];
+    }
+
+    public function test_activa_insertada_directamente_se_rechaza_en_la_consulta_previa(): void
+    {
+        DB::table('contingencias')->insert($this->datosContingenciaActiva());
+        $dispatcher = Contingencia::getEventDispatcher();
+        Contingencia::setEventDispatcher(clone $dispatcher);
+        $intentoCreacion = false;
+        try {
+            Contingencia::creating(function () use (&$intentoCreacion) {
+                $intentoCreacion = true;
+            });
+            try {
+                $this->activar();
+                $this->fail('Se permitió activar otra contingencia.');
+            } catch (ValidationException $e) {
+                $this->assertSame(['contingencia' => ['Ya hay una contingencia activa. Terminá la anterior antes de activar otra.']], $e->errors());
+            }
+        } finally {
+            Contingencia::setEventDispatcher($dispatcher);
+        }
+        $this->assertFalse($intentoCreacion);
+        $this->assertDatabaseCount('contingencias', 1);
+        $this->assertDatabaseMissing('activity_log', ['log_name' => 'dte_contingencia']);
+    }
+
+    public function test_indice_unico_impide_un_segundo_insert_activo(): void
+    {
+        DB::table('contingencias')->insert($this->datosContingenciaActiva());
+        $this->expectException(UniqueConstraintViolationException::class);
+        DB::table('contingencias')->insert($this->datosContingenciaActiva());
+    }
+
+    public function test_carrera_despues_de_la_consulta_previa_se_traduce_a_validacion(): void
+    {
+        // El INSERT directo evita recursión y ocurre después del SELECT previo.
+        // Aislar el dispatcher conserva los listeners originales al terminar.
+        $dispatcher = Contingencia::getEventDispatcher();
+        Contingencia::setEventDispatcher(clone $dispatcher);
+        $insertada = false;
+        try {
+            Contingencia::creating(function () use (&$insertada) {
+                DB::table('contingencias')->insert($this->datosContingenciaActiva());
+                $insertada = true;
+            });
+            try {
+                $this->activar();
+                $this->fail('Se permitió activar otra contingencia en la carrera.');
+            } catch (ValidationException $e) {
+                $this->assertTrue($insertada);
+                $this->assertSame(['contingencia' => ['Ya hay una contingencia activa. Terminá la anterior antes de activar otra.']], $e->errors());
+            }
+        } finally {
+            Contingencia::setEventDispatcher($dispatcher);
+        }
+        // La inserción simulada comparte la transacción y también se revierte.
+        $this->assertDatabaseCount('contingencias', 0);
+        $this->assertDatabaseMissing('activity_log', ['log_name' => 'dte_contingencia']);
     }
 
     public function test_validacion_de_tipo_y_motivo(): void
@@ -321,9 +387,15 @@ class ContingenciaModoTest extends TestCase
             }
         }
         app(ContingenciaService::class)->terminar($this->admin);
+        $this->assertNull($contingencia->refresh()->activa_unica);
         $nueva = $this->activar();
+        $this->assertSame(1, $nueva->activa_unica);
         $this->assertNotSame($contingencia->id, $nueva->id);
         $this->assertSame('cerrada', $contingencia->refresh()->estado);
+        app(ContingenciaService::class)->terminar($this->admin);
+        $this->assertNull($nueva->refresh()->activa_unica);
+        $this->assertSame(1, $this->activar()->activa_unica);
+        $this->assertSame(2, Contingencia::whereNull('activa_unica')->count());
     }
 
     public function test_interruptor_apagado_no_modifica_generacion_ni_muestra_aviso(): void

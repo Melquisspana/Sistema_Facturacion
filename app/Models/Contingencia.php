@@ -10,7 +10,7 @@ class Contingencia extends Model
 {
     protected $table = 'contingencias';
 
-    protected $fillable = ['tipo', 'motivo', 'origen', 'inicio', 'cese', 'estado', 'activada_por', 'cerrada_por'];
+    protected $fillable = ['tipo', 'motivo', 'origen', 'inicio', 'cese', 'estado', 'activa_unica', 'activada_por', 'cerrada_por'];
 
     protected function casts(): array
     {

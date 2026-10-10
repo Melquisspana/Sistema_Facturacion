@@ -6,6 +6,7 @@ use App\Models\Contingencia;
 use App\Models\User;
 use App\Support\HoraNegocio;
 use Carbon\CarbonInterface;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
@@ -32,14 +33,18 @@ class ContingenciaService
         ])->validate();
 
         return DB::transaction(function () use ($tipo, $motivo, $origen, $usuario) {
-            $this->bloquear();
-            if (Contingencia::where('estado', 'activa')->lockForUpdate()->first()) {
+            if (Contingencia::where('estado', 'activa')->first()) {
                 throw ValidationException::withMessages(['contingencia' => 'Ya hay una contingencia activa. Terminá la anterior antes de activar otra.']);
             }
-            $contingencia = Contingencia::create([
-                'tipo' => $tipo, 'motivo' => $motivo, 'origen' => $origen,
-                'inicio' => HoraNegocio::ahora(), 'estado' => 'activa', 'activada_por' => $usuario?->id,
-            ]);
+            try {
+                $contingencia = Contingencia::create([
+                    'tipo' => $tipo, 'motivo' => $motivo, 'origen' => $origen,
+                    'inicio' => HoraNegocio::ahora(), 'estado' => 'activa', 'activa_unica' => 1,
+                    'activada_por' => $usuario?->id,
+                ]);
+            } catch (UniqueConstraintViolationException $e) {
+                throw ValidationException::withMessages(['contingencia' => 'Ya hay una contingencia activa. Terminá la anterior antes de activar otra.']);
+            }
             activity('dte_contingencia')->performedOn($contingencia)->causedBy($usuario)
                 ->withProperties($contingencia->only(['tipo', 'motivo', 'origen', 'inicio']))->log('Contingencia activada');
 
@@ -52,7 +57,6 @@ class ContingenciaService
         $this->verificarDisponible();
 
         return DB::transaction(function () use ($usuario, $cese) {
-            $this->bloquear();
             $contingencia = Contingencia::where('estado', 'activa')->lockForUpdate()->first();
             if (! $contingencia) {
                 throw ValidationException::withMessages(['contingencia' => 'No hay una contingencia activa.']);
@@ -61,7 +65,7 @@ class ContingenciaService
             if ($fecha->lt($contingencia->inicio) || $fecha->gt(HoraNegocio::ahora())) {
                 throw ValidationException::withMessages(['cese' => 'El cese debe estar entre el inicio de la contingencia y la hora actual.']);
             }
-            $contingencia->update(['cese' => $fecha, 'estado' => 'cerrada', 'cerrada_por' => $usuario?->id]);
+            $contingencia->update(['cese' => $fecha, 'estado' => 'cerrada', 'activa_unica' => null, 'cerrada_por' => $usuario?->id]);
             activity('dte_contingencia')->performedOn($contingencia)->causedBy($usuario)
                 ->withProperties(['cese' => $fecha])->log('Contingencia terminada');
 
@@ -72,12 +76,5 @@ class ContingenciaService
     private function verificarDisponible(): void
     {
         abort_unless(config('dte.contingencia.enabled', false) && Schema::hasTable('contingencias'), 404);
-    }
-
-    private function bloquear(): void
-    {
-        // Fila existente y común incluso antes de la primera contingencia. Bloquear
-        // solamente un SELECT de activas vacío no serializa inserciones en MySQL.
-        User::select('id')->orderBy('id')->lockForUpdate()->firstOrFail();
     }
 }
