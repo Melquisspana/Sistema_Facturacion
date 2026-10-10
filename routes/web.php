@@ -29,6 +29,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController;
 use App\Http\Controllers\Exportaciones\ExportacionProductoBaseController;
 use App\Http\Controllers\Exportaciones\ExportacionProductoController;
+use App\Http\Controllers\Facturacion\ContingenciaController;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Facturacion\ListaEmpaqueController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
@@ -42,6 +43,7 @@ use App\Http\Controllers\Productos\ProductoController;
 use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Usuarios\UserController;
+use App\Http\Middleware\ContingenciaHabilitada;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionProducto;
@@ -193,6 +195,10 @@ Route::middleware('auth')->group(function () {
     | La autorización fina (gestión vs lectura, solo-borrador) la decide DtePolicy.
     */
     Route::prefix('facturacion')->name('facturacion.')->scopeBindings()->group(function () {
+        Route::post('contingencia/activar', [ContingenciaController::class, 'activar'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.activar');
+        Route::post('contingencia/terminar', [ContingenciaController::class, 'terminar'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.terminar');
         Route::get('/', [DteController::class, 'index'])->name('index');
         // Invalidaciones: lista de documentos aceptados que se pueden invalidar (antes de {dte}).
         Route::get('invalidaciones', [DteController::class, 'invalidaciones'])->name('invalidaciones');

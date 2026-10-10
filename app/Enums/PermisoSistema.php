@@ -47,6 +47,7 @@ enum PermisoSistema: string
     case DteEmitir = 'dte.emitir';
     case DteEnviarCorreo = 'dte.enviar-correo';
     case DteInvalidar = 'dte.invalidar';
+    case DteContingencia = 'dte.contingencia';
 
     // Comercial.
     case ClientesVer = 'clientes.ver';

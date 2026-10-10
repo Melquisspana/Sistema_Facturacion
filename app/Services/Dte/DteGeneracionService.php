@@ -45,10 +45,23 @@ class DteGeneracionService
         $this->validar($dte);
 
         return DB::transaction(function () use ($dte, $usuario) {
+            if ($contingencia = app(ContingenciaService::class)->activa()) {
+                $contingencia = $contingencia->newQuery()->whereKey($contingencia->id)->lockForUpdate()->first();
+                if ($contingencia?->estado === 'activa') {
+                    $dte->tipo_modelo = 2;
+                    $dte->tipo_operacion = 2;
+                    $dte->tipo_contingencia = $contingencia->tipo;
+                    $dte->motivo_contingencia = $contingencia->motivo;
+                    $dte->contingencia_id = $contingencia->id;
+                }
+            }
             if ($dte->tipo_dte === TipoDte::NotaCredito && $dte->dte_relacionado_id !== null) {
                 // Dos NC concurrentes se serializan por el CCF. SQLite no bloquea;
                 // lockForUpdate lo ejerce el job MySQL de la CI.
                 $ccf = Dte::whereKey($dte->dte_relacionado_id)->lockForUpdate()->first();
+                if ($ccf?->esTransitorio()) {
+                    throw new GeneracionException('El CCF es transitorio: no se puede emitir una NC hasta que obtenga sello de recepción.');
+                }
                 $saldo = app(SaldoMontoCcf::class);
                 if ($problema = $saldo->exceso($dte)) {
                     throw new GeneracionException($problema);

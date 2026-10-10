@@ -702,6 +702,9 @@ class DteTransmisionService
      */
     private function verificarPrecondiciones(Dte $dte): void
     {
+        if (config('dte.contingencia.enabled', false) && $dte->contingencia_id !== null) {
+            throw new DteTransmisionException('Documento de contingencia: la recepción normal está bloqueada. Debe regularizarse por evento y lote.');
+        }
         if ($problema = $this->problemaDelCcf($dte)) {
             throw new DteTransmisionException($problema);
         }
@@ -743,6 +746,9 @@ class DteTransmisionService
             return null;
         }
         $ccf = $dte->dteRelacionado()->first();
+        if ($ccf?->esTransitorio()) {
+            return 'El CCF es transitorio: no se puede emitir una NC hasta que obtenga sello de recepción.';
+        }
         if ($ccf === null || $ccf->estado !== EstadoDte::Aceptado || $ccf->tieneEventoInvalidacion()) {
             return 'El CCF de esta nota fue invalidado (o ya no está aceptado): esta nota no se puede enviar. Revisá el comprobante relacionado antes de continuar.';
         }

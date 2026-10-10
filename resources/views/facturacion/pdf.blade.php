@@ -280,6 +280,10 @@
         <div class="st-testing">AMBIENTE DE PRUEBAS<span class="sub">Documento sin validez fiscal en producción</span></div>
     @endif
 
+    @if ($dte->esTransitorio())
+        <div class="st st-info">Documento emitido en contingencia, pendiente de sello de recepción</div>
+    @endif
+
     {{-- CINTA DE ESTADO --}}
     @if ($dte->estado === EstadoDte::Invalidado)
         <div class="st st-void"><b>DOCUMENTO ANULADO / INVALIDADO INTERNAMENTE</b>@if ($dte->motivo_anulacion) · {{ $dte->motivo_anulacion->label() }}@endif</div>

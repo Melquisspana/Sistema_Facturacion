@@ -142,7 +142,7 @@ class EnviarDteCorreo implements ShouldQueue
         $incidencias = [];
 
         $entrega = app(ArchivoEntregaDteService::class)->construir($dte);
-        if ($entrega->completo()) {
+        if ($entrega->entregable()) {
             $extra[] = ['contenido' => $entrega->contenido, 'nombre' => $entrega->nombre, 'mime' => 'application/json'];
             $nombres[] = 'JSON';
         } else {

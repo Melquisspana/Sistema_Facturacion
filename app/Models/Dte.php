@@ -33,6 +33,7 @@ class Dte extends Model
     protected $table = 'dtes';
 
     protected $fillable = [
+        'contingencia_id', 'contingencia_evento_id',
         'tipo_dte', 'estado', 'ambiente', 'archivado', 'archivado_en',
         'tipo_modelo', 'tipo_operacion', 'tipo_contingencia', 'motivo_contingencia',
         'establecimiento_id', 'punto_venta_id', 'correlativo_id',
@@ -96,6 +97,24 @@ class Dte extends Model
             'flete' => 'decimal:2',
             'seguro' => 'decimal:2',
         ];
+    }
+
+    public function contingencia(): BelongsTo
+    {
+        return $this->belongsTo(Contingencia::class);
+    }
+
+    public function contingenciaEvento(): BelongsTo
+    {
+        return $this->belongsTo(ContingenciaEvento::class);
+    }
+
+    public function esTransitorio(): bool
+    {
+        return (bool) config('dte.contingencia.enabled', false)
+            && $this->estado === EstadoDte::Firmado
+            && $this->contingencia_id !== null
+            && blank($this->sello_recepcion);
     }
 
     /**

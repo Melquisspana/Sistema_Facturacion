@@ -63,6 +63,9 @@ class ValidadorReglasInvalidacion
      */
     public function problemas(Dte $dte, EventoInvalidacionData $evento): array
     {
+        if ($dte->esTransitorio()) {
+            return ['No se puede invalidar un documento transitorio: está pendiente de sello de recepción.'];
+        }
         $requisitos = $this->requisitos($dte, $evento);
 
         // Tipo sin regla conocida: se corta aquí. Seguir evaluando con la matriz de otro
