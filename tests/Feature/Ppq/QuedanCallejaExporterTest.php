@@ -277,6 +277,40 @@ class QuedanCallejaExporterTest extends TestCase
         $this->assertSame('AC02', $hoja->getCell('E4')->getValue());
     }
 
+    public function test_nc_de_un_lote_anterior_borrado_se_incluye_en_el_nuevo_quedan(): void
+    {
+        $anterior = $this->lote();
+        $nc = $this->ncConAlbaran($anterior, 'DTE-05-M001P002-000000000090008', 'AC02/0207/00/3854');
+        $anterior->delete();
+
+        $this->assertSoftDeleted($anterior);
+        $this->assertTrue($anterior->items()->whereKey($nc->id)->exists());
+
+        $lote = $this->lote();
+        $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
+        $lote->items()->create([
+            'dte_id' => $nc->dte_id,
+            'origen' => 'local',
+            'tipo_dte' => '05',
+            'numero_control' => $nc->numero_control,
+            'monto_dte' => 5.00,
+            'sin_albaran' => true,
+        ]);
+
+        $ruta = $this->exportador()->generar($lote->fresh());
+        $libro = IOFactory::load($ruta);
+        $hoja = $libro->getActiveSheet();
+        @unlink($ruta);
+
+        $this->assertSame(3, $hoja->getHighestDataRow(), 'Encabezado + 1 CCF + la NC del lote borrado.');
+        $this->assertSame('AC01', $hoja->getCell('E2')->getValue());
+        $this->assertSame(['0207', '3854', 26, 8, 'AC02'], [
+            $hoja->getCell('A3')->getValue(), $hoja->getCell('B3')->getValue(),
+            $hoja->getCell('C3')->getValue(), $hoja->getCell('D3')->getValue(), $hoja->getCell('E3')->getValue(),
+        ]);
+        $libro->disconnectWorksheets();
+    }
+
     /** Casos reales del portal (25/09/2026): 3854 repetida, 4684 de otra sala, 4534 vs 4354. */
     public function test_nc_usa_el_albaran_del_ppq_la_sala_confirmada_y_no_repite_lo_ya_presentado(): void
     {

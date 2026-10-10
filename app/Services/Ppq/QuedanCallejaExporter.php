@@ -136,6 +136,7 @@ class QuedanCallejaExporter
 
         $notas = $lote->itemsOrdenados()->filter(fn (PpqItem $i) => $i->esNc());
         $yaPresentadas = PpqItem::query()
+            ->whereHas('lote')
             ->where('ppq_lote_id', '<', $lote->id)
             ->whereIn('dte_id', $notas->pluck('dte_id')->filter()->all())
             ->pluck('dte_id')->flip();
