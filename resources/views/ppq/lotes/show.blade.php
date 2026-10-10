@@ -14,18 +14,10 @@
                     <a href="{{ route('ppq.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Buscar CCF</a>
                 @endif
                 @if ($resumen['cantidad'] > 0)
-                    {{-- Paso 1 en el portal: el archivo de NC. Paso 2: el de quedan. --}}
-                    @can('ppq.gestionar')
-                        <form method="POST" action="{{ route('ppq.lotes.archivo-nc', $lote) }}" class="inline">
-                            @csrf
-                            <button type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-                                1 · Archivo de NC
-                            </button>
-                        </form>
-                    @endcan
+                    {{-- El archivo de NC se genera días antes desde Documentos fiscales; acá solo el quedan (AC01 + AC02/AC04). --}}
                     <a href="{{ route('ppq.lotes.quedan', $lote) }}" class="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
                         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
-                        2 · Archivo de quedan
+                        Generar formato quedan
                     </a>
                 @endif
                 @if ($lote->esEditable())
@@ -93,7 +85,7 @@
 
             @if ($resumen['cantidad'] > 0)
                 <p class="text-xs text-gray-500">
-                    En el portal: primero el archivo de NC, después el de quedan (CCF y sus NC). Luego cargá aquí el reporte del caso.
+                    El formato de quedan trae los CCF (AC01) y sus NC (AC02/AC04). Las NC se suben antes al portal, desde Documentos fiscales. Luego cargá aquí el reporte del caso.
                     El TXT de pago se carga en <a href="{{ route('cobros.index') }}" class="text-indigo-600 hover:underline">Cobros Calleja</a> y actualiza este PPQ solo.
                 </p>
             @endif
