@@ -91,6 +91,13 @@ class DteSchemaRepository
         return $this->paraTipo($tipo) === null;
     }
 
+    public function paraContingencia(): ?array
+    {
+        $ruta = $this->base.DIRECTORY_SEPARATOR.'contingencia'.DIRECTORY_SEPARATOR.'contingencia-schema-v4.json';
+
+        return is_file($ruta) ? ['ruta' => $ruta, 'version' => 4, 'archivo' => basename($ruta)] : null;
+    }
+
     /**
      * Schemas presentes, indexados por código de tipo.
      *

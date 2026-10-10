@@ -22,6 +22,12 @@
 @endif
 @if (! $contingencia && config('dte.contingencia.enabled', false) && \Illuminate\Support\Facades\Schema::hasTable('contingencias'))
     @can('dte.contingencia')
+        @foreach (\App\Models\Contingencia::where('estado', 'cerrada')->orderByDesc('id')->get() as $pendiente)
+            <p class="border-b border-amber-400 bg-amber-100 px-6 py-3 text-amber-950">
+                Contingencia terminada el {{ $pendiente->cese?->format('d/m/Y H:i') }}.
+                <a class="underline" href="{{ route('facturacion.contingencia.show', $pendiente) }}">Revisar plazo y enviar aviso de contingencia</a>
+            </p>
+        @endforeach
         <details class="border-b border-gray-300 bg-white px-6 py-2 text-gray-900">
             <summary class="cursor-pointer">Activar modo contingencia</summary>
             <form method="POST" action="{{ route('facturacion.contingencia.activar') }}" class="mt-3 space-y-2">

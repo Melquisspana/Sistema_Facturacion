@@ -3,15 +3,37 @@
 namespace App\Http\Controllers\Facturacion;
 
 use App\Http\Controllers\Controller;
+use App\Models\Contingencia;
 use App\Models\Dte;
+use App\Services\Dte\ContingenciaEventoService;
 use App\Services\Dte\ContingenciaService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class ContingenciaController extends Controller
 {
     use AuthorizesRequests;
+
+    public function show(Contingencia $contingencia, ContingenciaEventoService $service): View
+    {
+        $this->authorize('contingencia', Dte::class);
+
+        return view('facturacion.contingencia', [
+            'contingencia' => $contingencia, 'partes' => $service->partesVigentes($contingencia),
+            'eventos' => $contingencia->eventos()->orderBy('id')->get(), 'service' => $service,
+        ]);
+    }
+
+    public function enviar(Contingencia $contingencia, ContingenciaEventoService $service): RedirectResponse
+    {
+        $this->authorize('contingencia', Dte::class);
+        $resultados = $service->enviar($contingencia);
+
+        return to_route('facturacion.contingencia.show', $contingencia)
+            ->with('status', collect($resultados)->map(fn ($r) => $r['resultado'].': '.($r['mensaje'] ?? ''))->implode(' | '));
+    }
 
     public function activar(Request $request, ContingenciaService $service): RedirectResponse
     {
