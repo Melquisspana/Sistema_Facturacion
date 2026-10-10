@@ -37,8 +37,9 @@ use Throwable;
  *
  * ═══════════════ CCF y después sus NC ═══════════════
  *
- * Primero una fila por CCF con su albarán de entrega (AC01); después una por NC con su
- * albarán de crédito (AC02/AC04) tal como se registró al emitirla. Regla del usuario.
+ * Una fila por albarán: primero AC01, después AC02, AC04 y AC06. Dentro de cada tipo,
+ * por año y mes ascendentes, luego por sala y número (entero cuando es numérico).
+ * Regla del usuario (10/10/2026).
  *
  * ═══════════════ Todo o nada ═══════════════
  *
@@ -109,14 +110,30 @@ class QuedanCallejaExporter
             throw new ArchivoQuedanIncompletoException($motivos);
         }
 
+        // usort conserva el orden original de los empates desde PHP 8.
+        $ordenTipos = ['AC01' => 0, 'AC02' => 1, 'AC04' => 2, 'AC06' => 3];
+        usort($filas, static function (array $a, array $b) use ($ordenTipos): int {
+            $orden = [$ordenTipos[$a['tipo']] ?? 9, $a['anio'], $a['mes'], $a['sala']]
+                <=> [$ordenTipos[$b['tipo']] ?? 9, $b['anio'], $b['mes'], $b['sala']];
+
+            if ($orden !== 0) {
+                return $orden;
+            }
+
+            return ctype_digit($a['numero']) && ctype_digit($b['numero'])
+                ? (int) $a['numero'] <=> (int) $b['numero']
+                : strcmp($a['numero'], $b['numero']);
+        });
+
         return $this->escribir($filas);
     }
 
     /**
      * Filas de las NC del lote, después de los CCF: una por NC con su albarán de crédito.
      *
-     *  · Número, sala y fecha salen del albarán que tiene el item PPQ (el que se cotejó con
-     *    Calleja); si no hay, del registrado al emitir la NC. El TIPO (AC02/AC04) sale de
+     *  · Número y sala salen del albarán que tiene el item PPQ (el que se cotejó con
+     *    Calleja); si no hay, del registrado al emitir la NC. La fecha sale del albarán
+     *    registrado en la NC y, si no hay fecha, del PPQ. El TIPO (AC02/AC04) sale de
      *    la NC, porque la copia PPQ no lo guarda. La sala confirmada a mano manda.
      *  · No van las NC invalidadas ni las que ya viajaron en un lote anterior (el portal
      *    responde «ya se encuentra asociado a un registro de quedan»).
@@ -156,7 +173,7 @@ class QuedanCallejaExporter
             $tipo = strtoupper((string) ($ppq?->tipo_codigo ?: $partesPpq?->tipo ?: $partesPropio?->tipo));
             $numero = $ppq !== null ? ($partesPpq?->numero ?? trim((string) $ppq->numero_albaran)) : $partesPropio?->numero;
             $sala = $this->salaConfirmada($item) ?? ($ppq?->sala_codigo ?: $partesPpq?->sala ?: $partesPropio?->sala);
-            $fecha = $ppq?->fecha_albaran ?? ($propio?->fecha !== null ? Carbon::parse($propio->fecha) : null);
+            $fecha = $propio?->fecha !== null ? Carbon::parse($propio->fecha) : $ppq?->fecha_albaran;
 
             if (! in_array($tipo, ['AC02', 'AC04', 'AC06'], true) || blank($numero) || blank($sala) || $fecha === null) {
                 $motivos[] = "{$control}: la NC no tiene completo su albarán de crédito (AC02/AC04 con sala, número y fecha).";
@@ -179,7 +196,8 @@ class QuedanCallejaExporter
     }
 
     /**
-     * Los CCF del lote, en el mismo orden del Excel de Calleja (ver PpqLote::itemsOrdenados()).
+     * Los CCF del lote en orden de procesamiento (ver PpqLote::itemsOrdenados()).
+     * generar() ordena las filas finales por tipo de albarán, año, mes, sala y número.
      *
      * @return Collection<int, PpqItem>
      */
