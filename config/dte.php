@@ -38,6 +38,8 @@ foreach (EstadoDte::cases() as $estado) {
 
 return [
 
+    'contingencia' => ['enabled' => env('DTE_CONTINGENCIA_ENABLED', false)],
+
     /*
     | Ambiente activo: '00' = pruebas, '01' = producción (CAT-001).
     | Se controla por .env para no mezclar pruebas con producción.

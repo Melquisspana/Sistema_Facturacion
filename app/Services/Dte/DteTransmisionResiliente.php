@@ -113,6 +113,11 @@ class DteTransmisionResiliente
     /**
      * Transmite aplicando la política de reintentos.
      *
+     *
+     * @param  bool  $estadoIncierto  CASO 2 del manual. `true` cuando el documento llega
+     *                                YA firmado de un intento anterior cuyo desenlace no
+     *                                se conoce: entonces se CONSULTA antes del primer
+     *                                envío, no solo tras un timeout.
      * @return array{
      *     resultado: string, http_status: int|null, mensaje: string, sello: string|null,
      *     envios: int, consultas: int, contingencia_requerida: bool,
@@ -131,15 +136,16 @@ class DteTransmisionResiliente
      *                                  crudo de la consulta en `consulta_resultado`
      *                                  (null si la consulta no se pudo ni formular).
      *
-     * @param  bool  $estadoIncierto  CASO 2 del manual. `true` cuando el documento llega
-     *                                YA firmado de un intento anterior cuyo desenlace no
-     *                                se conoce: entonces se CONSULTA antes del primer
-     *                                envío, no solo tras un timeout.
-     *
      * @throws DteTransmisionDeshabilitadaException si los candados bloquean el envío
      */
     public function transmitir(Dte $dte, bool $estadoIncierto = false): array
     {
+        // Un transitorio nunca tuvo recepción normal: tampoco corresponde la
+        // consulta previa de un reintento, que podría contactar al MH sin internet.
+        if (config('dte.contingencia.enabled', false) && $dte->contingencia_id !== null) {
+            throw new DteTransmisionException('Documento de contingencia: debe regularizarse por evento y lote.');
+        }
+
         // Política apagada: comportamiento idéntico al anterior, un solo envío.
         if (! (bool) config('dte.transmision.reintentos.enabled', true)) {
             return $this->conMetadatos($this->transmision->transmitir($dte), 1, 0, [], false);

@@ -251,6 +251,9 @@ class DteBorradorService
      */
     public function crearNotaCredito(?Dte $original, array $datos = [], ?User $usuario = null): Dte
     {
+        if ($original?->esTransitorio()) {
+            throw ValidationException::withMessages(['dte_relacionado_id' => 'El CCF es transitorio: esperá el sello de recepción antes de crear una NC.']);
+        }
         // Modalidad interna (por productos vs. por monto/concepto).
         $tipoRaw = $datos['tipo'] ?? TipoNotaCredito::DevolucionProducto->value;
         $tipo = $tipoRaw instanceof TipoNotaCredito ? $tipoRaw : TipoNotaCredito::from((string) $tipoRaw);
@@ -522,6 +525,9 @@ class DteBorradorService
      */
     private function validarCcfRelacionable(Dte $ccf, ?int $clienteId): void
     {
+        if ($ccf->esTransitorio()) {
+            throw ValidationException::withMessages(['dte_relacionado_id' => 'El CCF es transitorio: esperá el sello de recepción antes de relacionar una NC.']);
+        }
         if ($ccf->tipo_dte !== TipoDte::CreditoFiscal) {
             throw ValidationException::withMessages([
                 'dte_relacionado_id' => 'El documento relacionado de una nota de crédito debe ser un Comprobante de Crédito Fiscal (CCF).',

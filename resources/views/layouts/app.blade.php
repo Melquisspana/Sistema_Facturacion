@@ -39,6 +39,7 @@
 
             {{-- Contenido corrido: 4rem bajo la topbar fija y 16rem a la derecha de la sidebar en desktop. --}}
             <div class="pt-16 lg:pl-64">
+                <x-aviso-contingencia />
                 <!-- Page Heading -->
                 @isset($header)
                     <header class="bg-white shadow dark:bg-ink-900 dark:shadow-none dark:border-b dark:border-ink-600">

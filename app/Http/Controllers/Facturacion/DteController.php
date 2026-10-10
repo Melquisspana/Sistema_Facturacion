@@ -945,7 +945,7 @@ class DteController extends Controller
         $this->authorize($dte->estado === EstadoDte::Aceptado ? 'verEstadoTecnico' : 'verJson', $dte);
 
         $entrega = app(ArchivoEntregaDteService::class)->construir($dte);
-        if ($entrega->completo()) {
+        if ($entrega->entregable()) {
             return response()->streamDownload(fn () => print $entrega->contenido, $entrega->nombre, [
                 'Content-Type' => 'application/json; charset=utf-8',
             ]);
@@ -1095,6 +1095,11 @@ class DteController extends Controller
         //    Se resuelve del contenedor en vez de inyectarlo en las cuatro acciones que
         //    llegan hasta acá: la política no es una opción de cada botón, es la única
         //    forma de transmitir.
+        if ($dte->esTransitorio()) {
+            return ['resultado' => ['resultado' => 'transitorio', 'http_status' => null,
+                'mensaje' => 'Documento emitido en contingencia, pendiente de sello de recepción.', 'sello' => null]];
+        }
+
         try {
             $r = app(DteTransmisionResiliente::class)->transmitir($dte, $estadoIncierto);
         } catch (DteTransmisionDeshabilitadaException $e) {
@@ -1228,6 +1233,9 @@ class DteController extends Controller
      */
     private function respuestaFirmarTransmitir(RedirectResponse $volver, array $r): RedirectResponse
     {
+        if ($r['resultado'] === 'transitorio') {
+            return $volver->with('status', $r['mensaje']);
+        }
         $mock = (bool) config('dte.transmision.mock');
         $sufijoMock = $mock ? ' [MODO PRUEBA / MOCK — NO VÁLIDO ANTE HACIENDA]' : '';
 

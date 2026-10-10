@@ -11,6 +11,8 @@ readonly class ArchivoEntregaDte
 
     public const NO_FISCAL = 'no_fiscal';
 
+    public const TRANSITORIO = 'transitorio';
+
     public function __construct(
         public string $estado,
         public ?string $contenido,
@@ -28,9 +30,15 @@ readonly class ArchivoEntregaDte
     public function explicacion(): string
     {
         return match ($this->estado) {
+            self::TRANSITORIO => 'Documento emitido en contingencia, pendiente de sello de recepción.',
             self::COMPLETO => 'Archivo DTE con firma y sello disponible.',
             self::NO_FISCAL => 'JSON fiscal no adjuntado: documento '.$this->motivo.'.',
             default => 'Entrega fiscal incompleta: falta '.implode('; ', $this->faltantes).'.',
         };
+    }
+
+    public function entregable(): bool
+    {
+        return in_array($this->estado, [self::COMPLETO, self::TRANSITORIO], true);
     }
 }

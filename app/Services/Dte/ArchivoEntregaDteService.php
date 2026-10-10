@@ -14,7 +14,8 @@ class ArchivoEntregaDteService
     public function construir(Dte $dte): ArchivoEntregaDte
     {
         $nombre = preg_replace('/[^A-Za-z0-9_.-]+/', '_', strtoupper((string) $dte->codigo_generacion).'.json');
-        if ($dte->estado !== EstadoDte::Aceptado) {
+        $transitorio = $dte->esTransitorio();
+        if ($dte->estado !== EstadoDte::Aceptado && ! $transitorio) {
             $motivo = $dte->estado === EstadoDte::Rechazado
                 ? 'rechazado por Hacienda'
                 : 'sin aceptación vigente de Hacienda (estado '.$dte->estado->value.')';
@@ -57,7 +58,7 @@ class ArchivoEntregaDteService
             $recuperacion[] = $restaurar;
         }
 
-        if (blank($dte->sello_recepcion)) {
+        if (! $transitorio && blank($dte->sello_recepcion)) {
             $faltantes[] = 'sello de recepción';
             $recuperacion[] = 'consultar el estado en Hacienda para recuperar el sello';
         }
@@ -99,12 +100,12 @@ class ArchivoEntregaDteService
             return new ArchivoEntregaDte(ArchivoEntregaDte::INCOMPLETO, null, $nombre, $faltantes, array_values(array_unique($recuperacion)));
         }
 
-        $contenido = $this->anexar((string) $json->contenido, $jws, (string) $dte->sello_recepcion);
+        $contenido = $this->anexar((string) $json->contenido, $jws, $transitorio ? null : (string) $dte->sello_recepcion);
         if ($contenido === null) {
             return new ArchivoEntregaDte(ArchivoEntregaDte::INCOMPLETO, null, $nombre, ['armado del archivo de entrega'], [$revisar]);
         }
 
-        return new ArchivoEntregaDte(ArchivoEntregaDte::COMPLETO, $contenido, $nombre);
+        return new ArchivoEntregaDte($transitorio ? ArchivoEntregaDte::TRANSITORIO : ArchivoEntregaDte::COMPLETO, $contenido, $nombre);
     }
 
     /**
@@ -112,7 +113,7 @@ class ArchivoEntregaDteService
      * recodificar el documento: los bytes de la estructura entregada son exactamente
      * los guardados. Recodificar cambiaría `{}` por `[]` o el formato de un número.
      */
-    private function anexar(string $original, string $jws, string $sello): ?string
+    private function anexar(string $original, string $jws, ?string $sello): ?string
     {
         $cuerpo = rtrim($original);
         if (! str_ends_with($cuerpo, '}')) {
@@ -122,12 +123,12 @@ class ArchivoEntregaDteService
         $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
         $contenido = $interior.(str_ends_with($interior, '{') ? '' : ',')
             ."\n    \"firmaElectronica\": ".json_encode($jws, $flags)
-            .",\n    \"selloRecibido\": ".json_encode($sello, $flags)
+            .($sello === null ? '' : ",\n    \"selloRecibido\": ".json_encode($sello, $flags))
             ."\n}";
 
         // Comprobación final: el resultado es un objeto con las mismas claves de antes.
         $resultado = $this->objeto($contenido);
-        if ($resultado === null || $resultado->firmaElectronica !== $jws || $resultado->selloRecibido !== $sello) {
+        if ($resultado === null || $resultado->firmaElectronica !== $jws || ($resultado->selloRecibido ?? null) !== $sello) {
             return null;
         }
         unset($resultado->firmaElectronica, $resultado->selloRecibido);

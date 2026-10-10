@@ -84,6 +84,7 @@
         <env name="DTE_FIRMADOR_URL" value="http://localhost:8080/firmardocumento" force="true"/>
         <env name="DTE_PDF_QR_URL" value="https://admin.factura.gob.sv/consultaPublica" force="true"/>
         <env name="DTE_FIRMA_ENABLED" value="false"/>
+        <env name="DTE_CONTINGENCIA_ENABLED" value="false" force="true"/>
         <env name="DTE_FIRMADOR_MOCK" value="false"/>
         <env name="MH_MOCK" value="false"/>
         <env name="DTE_TRANSMISION_ENABLED" value="false"/>

@@ -2,11 +2,20 @@
 
 namespace App\Policies;
 
+use App\Enums\AmbienteHacienda;
+use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
 use App\Models\Dte;
 use App\Models\User;
+use App\Services\Dte\DteInvalidacionService;
 
 class DtePolicy
 {
+    public function contingencia(User $user): bool
+    {
+        return (bool) config('dte.contingencia.enabled', false) && $user->can('dte.contingencia');
+    }
+
     public function viewAny(User $user): bool
     {
         return $user->can('dte.ver');
@@ -32,8 +41,8 @@ class DtePolicy
     public function revertirConNotaCredito(User $user, Dte $dte): bool
     {
         return $user->can('dte.gestionar')
-            && $dte->tipo_dte === \App\Enums\TipoDte::CreditoFiscal
-            && $dte->estado === \App\Enums\EstadoDte::Aceptado
+            && $dte->tipo_dte === TipoDte::CreditoFiscal
+            && $dte->estado === EstadoDte::Aceptado
             && $dte->aceptadoRealmentePorMh();
     }
 
@@ -68,7 +77,7 @@ class DtePolicy
     /** Anulación interna: solo con permiso de gestión y solo un documento GENERADO. */
     public function anular(User $user, Dte $dte): bool
     {
-        return $user->can('dte.gestionar') && $dte->estado === \App\Enums\EstadoDte::Generado;
+        return $user->can('dte.gestionar') && $dte->estado === EstadoDte::Generado;
     }
 
     /**
@@ -109,7 +118,7 @@ class DtePolicy
     public function generarJson(User $user, Dte $dte): bool
     {
         return $user->can('dte.emitir')
-            && $dte->estado === \App\Enums\EstadoDte::Generado
+            && $dte->estado === EstadoDte::Generado
             && blank($dte->json_generado_path);
     }
 
@@ -135,7 +144,7 @@ class DtePolicy
     public function firmarTransmitir(User $user, Dte $dte): bool
     {
         return $user->can('dte.emitir')
-            && in_array($dte->estado, [\App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
+            && in_array($dte->estado, [EstadoDte::Generado, EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
             && ! $dte->esAnulado()
             && ! $dte->estaArchivado(); // defensa en profundidad (el estado ya lo excluye)
@@ -143,9 +152,9 @@ class DtePolicy
 
     /** Tipos habilitados para la acción REAL "Generar y transmitir producción". */
     private const TIPOS_EMISION_PRODUCCION = [
-        \App\Enums\TipoDte::CreditoFiscal,
-        \App\Enums\TipoDte::Factura,
-        \App\Enums\TipoDte::FacturaExportacion,
+        TipoDte::CreditoFiscal,
+        TipoDte::Factura,
+        TipoDte::FacturaExportacion,
     ];
 
     /**
@@ -162,11 +171,11 @@ class DtePolicy
     {
         return $user->can('dte.emitir')
             && in_array($dte->tipo_dte, self::TIPOS_EMISION_PRODUCCION, true)
-            && in_array($dte->estado, [\App\Enums\EstadoDte::Borrador, \App\Enums\EstadoDte::Generado, \App\Enums\EstadoDte::Firmado], true)
+            && in_array($dte->estado, [EstadoDte::Borrador, EstadoDte::Generado, EstadoDte::Firmado], true)
             && blank($dte->sello_recepcion)
             && ! $dte->esAnulado()
             && ! $dte->estaArchivado()
-            && $dte->ambiente === \App\Enums\AmbienteHacienda::Produccion;
+            && $dte->ambiente === AmbienteHacienda::Produccion;
     }
 
     /**
@@ -181,7 +190,7 @@ class DtePolicy
     public function verInvalidacion(User $user, Dte $dte): bool
     {
         return $user->can('dte.invalidar')
-            && ($dte->estado === \App\Enums\EstadoDte::Aceptado || $dte->tieneEventoInvalidacion());
+            && ($dte->estado === EstadoDte::Aceptado || $dte->tieneEventoInvalidacion());
     }
 
     /**
@@ -204,7 +213,7 @@ class DtePolicy
      * realmente por el MH, sin evento previo y no protegido como evidencia. Los candados
      * DUROS de la transmisión real (flags de entorno, firma real, endpoint/ambiente, frase
      * exacta, NC relacionada, doble invalidación) los RE-valida en cada intento el servicio
-     * {@see \App\Services\Dte\DteInvalidacionService::evaluarCandados()} y la frase la valida
+     * {@see DteInvalidacionService::evaluarCandados()} y la frase la valida
      * el Form Request en servidor: esta ability solo decide si el bloque es aplicable.
      */
     public function transmitirInvalidacion(User $user, Dte $dte): bool
