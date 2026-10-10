@@ -175,7 +175,7 @@ class QuedanCallejaExporterTest extends TestCase
         $lote = $this->lote();
         $albA = $this->albaran('AC01/0230/00/200', self::OC_A);
         $albB = $this->albaran('AC01/0231/00/50', self::OC_B);
-        // Correlativo 200 y 50: en el orden de Calleja el 50 va primero (ascendente).
+        // A igual año y mes, la sala 0230 va antes de la 0231.
         $this->ccf($lote, 'DTE-03-M001P002-000000000000200', self::OC_A, $albA);
         $this->ccf($lote, 'DTE-03-M001P002-000000000000050', self::OC_B, $albB);
 
@@ -194,15 +194,15 @@ class QuedanCallejaExporterTest extends TestCase
             (string) $hoja->getCell('E1')->getValue(),
         ]);
 
-        // Fila 2: correlativo 50 (va primero); fila 3: correlativo 200.
-        $this->assertSame('0231', $hoja->getCell('A2')->getValue());
-        $this->assertSame('50', $hoja->getCell('B2')->getValue());
+        // Fila 2: sala 0230; fila 3: sala 0231.
+        $this->assertSame('0230', $hoja->getCell('A2')->getValue());
+        $this->assertSame('200', $hoja->getCell('B2')->getValue());
         $this->assertSame(26, $hoja->getCell('C2')->getValue());
         $this->assertSame(5, $hoja->getCell('D2')->getValue());
         $this->assertSame('AC01', $hoja->getCell('E2')->getValue());
 
-        $this->assertSame('0230', $hoja->getCell('A3')->getValue());
-        $this->assertSame('200', $hoja->getCell('B3')->getValue());
+        $this->assertSame('0231', $hoja->getCell('A3')->getValue());
+        $this->assertSame('50', $hoja->getCell('B3')->getValue());
 
         // Tipos de celda: A, B, E texto; C, D numéricos.
         foreach (['A2', 'B2', 'E2', 'A3', 'B3', 'E3'] as $celda) {
@@ -269,12 +269,44 @@ class QuedanCallejaExporterTest extends TestCase
 
         $this->assertSame(4, $hoja->getHighestDataRow(), 'Encabezado + 1 CCF + 2 NC; la invalidada no va.');
         $this->assertSame('AC01', $hoja->getCell('E2')->getValue());
-        $this->assertSame(['0207', '3874', 26, 8, 'AC04'], [
+        $this->assertSame(['0219', '4534', 26, 8, 'AC02'], [
             $hoja->getCell('A3')->getValue(), $hoja->getCell('B3')->getValue(),
             $hoja->getCell('C3')->getValue(), $hoja->getCell('D3')->getValue(), $hoja->getCell('E3')->getValue(),
         ]);
-        $this->assertSame('4534', $hoja->getCell('B4')->getValue());
-        $this->assertSame('AC02', $hoja->getCell('E4')->getValue());
+        $this->assertSame('3874', $hoja->getCell('B4')->getValue());
+        $this->assertSame('AC04', $hoja->getCell('E4')->getValue());
+    }
+
+    public function test_ordena_por_tipo_fecha_sala_y_numero_de_albaran(): void
+    {
+        $lote = $this->lote();
+        foreach ([
+            ['AC01/0230/00/100', self::OC_A, '2026-10-05'],
+            ['AC01/0231/00/1', self::OC_B, '2026-05-15'],
+            ['AC01/0230/00/10', self::OC_A, '2026-05-15'],
+            ['AC01/0230/00/2', self::OC_A, '2026-05-15'],
+        ] as $indice => [$numero, $oc, $fecha]) {
+            $control = 'DTE-03-M001P002-'.str_pad((string) ($indice + 1), 15, '0', STR_PAD_LEFT);
+            $this->ccf($lote, $control, $oc, $this->albaran($numero, $oc, fecha: $fecha));
+        }
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000001', 'AC06/0207/00/6');
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000002', 'AC04/0207/00/4');
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000003', 'AC02/0207/00/3');
+
+        $ruta = $this->exportador()->generar($lote->fresh());
+        $libro = IOFactory::load($ruta);
+        @unlink($ruta);
+
+        $this->assertSame([
+            ['0230', '2', 26, 5, 'AC01'],
+            ['0230', '10', 26, 5, 'AC01'],
+            ['0231', '1', 26, 5, 'AC01'],
+            ['0230', '100', 26, 10, 'AC01'],
+            ['0207', '3', 26, 8, 'AC02'],
+            ['0207', '4', 26, 8, 'AC04'],
+            ['0207', '6', 26, 8, 'AC06'],
+        ], array_slice($libro->getActiveSheet()->toArray(formatData: false), 1));
+        $libro->disconnectWorksheets();
     }
 
     public function test_nc_de_un_lote_anterior_borrado_se_incluye_en_el_nuevo_quedan(): void

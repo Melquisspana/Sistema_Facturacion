@@ -37,8 +37,9 @@ use Throwable;
  *
  * ═══════════════ CCF y después sus NC ═══════════════
  *
- * Primero una fila por CCF con su albarán de entrega (AC01); después una por NC con su
- * albarán de crédito (AC02/AC04) tal como se registró al emitirla. Regla del usuario.
+ * Una fila por albarán: primero AC01, después AC02, AC04 y AC06. Dentro de cada tipo,
+ * por año y mes ascendentes, luego por sala y número (entero cuando es numérico).
+ * Regla del usuario (10/10/2026).
  *
  * ═══════════════ Todo o nada ═══════════════
  *
@@ -108,6 +109,21 @@ class QuedanCallejaExporter
         if ($motivos !== []) {
             throw new ArchivoQuedanIncompletoException($motivos);
         }
+
+        // usort conserva el orden original de los empates desde PHP 8.
+        $ordenTipos = ['AC01' => 0, 'AC02' => 1, 'AC04' => 2, 'AC06' => 3];
+        usort($filas, static function (array $a, array $b) use ($ordenTipos): int {
+            $orden = [$ordenTipos[$a['tipo']] ?? 9, $a['anio'], $a['mes'], $a['sala']]
+                <=> [$ordenTipos[$b['tipo']] ?? 9, $b['anio'], $b['mes'], $b['sala']];
+
+            if ($orden !== 0) {
+                return $orden;
+            }
+
+            return ctype_digit($a['numero']) && ctype_digit($b['numero'])
+                ? (int) $a['numero'] <=> (int) $b['numero']
+                : strcmp($a['numero'], $b['numero']);
+        });
 
         return $this->escribir($filas);
     }
@@ -180,7 +196,8 @@ class QuedanCallejaExporter
     }
 
     /**
-     * Los CCF del lote, en el mismo orden del Excel de Calleja (ver PpqLote::itemsOrdenados()).
+     * Los CCF del lote en orden de procesamiento (ver PpqLote::itemsOrdenados()).
+     * generar() ordena las filas finales por tipo de albarán, año, mes, sala y número.
      *
      * @return Collection<int, PpqItem>
      */
