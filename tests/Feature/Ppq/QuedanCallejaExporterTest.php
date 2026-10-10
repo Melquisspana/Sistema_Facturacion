@@ -344,6 +344,27 @@ class QuedanCallejaExporterTest extends TestCase
         $this->assertNotContains('0207/3854/AC02', $numeros);
     }
 
+    public function test_nc_prioriza_la_fecha_registrada_en_la_nc_sobre_la_del_ppq(): void
+    {
+        $lote = $this->lote();
+        $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
+        $nc = $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000036', 'AC02/0219/00/4534');
+        $ppq = $this->albaran('AC02/0207/00/4354', '26050207001794', fecha: '2026-10-05', tipo: 'AC02');
+        $nc->update(['ppq_albaran_id' => $ppq->id, 'sin_albaran' => false]);
+
+        $ruta = $this->exportador()->generar($lote->fresh());
+        $libro = IOFactory::load($ruta);
+        $hoja = $libro->getActiveSheet();
+        @unlink($ruta);
+
+        $this->assertSame(3, $hoja->getHighestDataRow());
+        $this->assertSame(['0207', '4354', 26, 8, 'AC02'], [
+            $hoja->getCell('A3')->getValue(), $hoja->getCell('B3')->getValue(),
+            $hoja->getCell('C3')->getValue(), $hoja->getCell('D3')->getValue(), $hoja->getCell('E3')->getValue(),
+        ]);
+        $libro->disconnectWorksheets();
+    }
+
     public function test_nc_sin_albaran_de_credito_bloquea_el_archivo(): void
     {
         $lote = $this->lote();

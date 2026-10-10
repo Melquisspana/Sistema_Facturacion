@@ -115,8 +115,9 @@ class QuedanCallejaExporter
     /**
      * Filas de las NC del lote, después de los CCF: una por NC con su albarán de crédito.
      *
-     *  · Número, sala y fecha salen del albarán que tiene el item PPQ (el que se cotejó con
-     *    Calleja); si no hay, del registrado al emitir la NC. El TIPO (AC02/AC04) sale de
+     *  · Número y sala salen del albarán que tiene el item PPQ (el que se cotejó con
+     *    Calleja); si no hay, del registrado al emitir la NC. La fecha sale del albarán
+     *    registrado en la NC y, si no hay fecha, del PPQ. El TIPO (AC02/AC04) sale de
      *    la NC, porque la copia PPQ no lo guarda. La sala confirmada a mano manda.
      *  · No van las NC invalidadas ni las que ya viajaron en un lote anterior (el portal
      *    responde «ya se encuentra asociado a un registro de quedan»).
@@ -156,7 +157,7 @@ class QuedanCallejaExporter
             $tipo = strtoupper((string) ($ppq?->tipo_codigo ?: $partesPpq?->tipo ?: $partesPropio?->tipo));
             $numero = $ppq !== null ? ($partesPpq?->numero ?? trim((string) $ppq->numero_albaran)) : $partesPropio?->numero;
             $sala = $this->salaConfirmada($item) ?? ($ppq?->sala_codigo ?: $partesPpq?->sala ?: $partesPropio?->sala);
-            $fecha = $ppq?->fecha_albaran ?? ($propio?->fecha !== null ? Carbon::parse($propio->fecha) : null);
+            $fecha = $propio?->fecha !== null ? Carbon::parse($propio->fecha) : $ppq?->fecha_albaran;
 
             if (! in_array($tipo, ['AC02', 'AC04', 'AC06'], true) || blank($numero) || blank($sala) || $fecha === null) {
                 $motivos[] = "{$control}: la NC no tiene completo su albarán de crédito (AC02/AC04 con sala, número y fecha).";
