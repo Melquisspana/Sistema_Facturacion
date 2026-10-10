@@ -3,6 +3,7 @@
 namespace App\Support\Dte;
 
 use App\Enums\AmbienteHacienda;
+use App\Services\Dte\DteInvalidacionService;
 
 /**
  * FUENTE ÚNICA de las direcciones de los servicios del Ministerio de Hacienda.
@@ -30,7 +31,7 @@ use App\Enums\AmbienteHacienda;
  * LOS MÉTODOS `*Oficial()` IGNORAN TODA LA CONFIGURACIÓN a propósito. No son un
  * atajo: son la referencia contra la que se comparan las URLs resueltas antes de
  * tocar producción. Si un override apuntara a otro sitio, esa comparación es lo
- * único que lo detecta ({@see \App\Services\Dte\DteInvalidacionService}).
+ * único que lo detecta ({@see DteInvalidacionService}).
  *
  * ESTA CLASE NO HACE HTTP. Solo arma cadenas de texto.
  *
@@ -60,11 +61,22 @@ final class EndpointsHacienda
     /** Ruta del evento de invalidación/anulación. */
     public const PATH_ANULACION = '/fesv/anulardte';
 
+    public const PATH_CONTINGENCIA = '/fesv/contingencia';
+
+    public static function contingenciaOficial(AmbienteHacienda $ambiente): string
+    {
+        return self::hostOficial($ambiente).self::PATH_CONTINGENCIA;
+    }
+
+    public static function contingencia(AmbienteHacienda $ambiente): string
+    {
+        return self::resolver($ambiente, 'contingencia_url', 'endpoint_contingencia', self::PATH_CONTINGENCIA);
+    }
+
     /*
     | PENDIENTES DE LA FASE DE CONTINGENCIA — NO implementados a propósito.
     | Se dejan anotados aquí, y no como constantes, para que nadie los use por
     | descuido creyendo que hay algo detrás:
-    |   POST /fesv/contingencia                            — evento de contingencia
     |   POST /fesv/recepcionlote                           — transmisión posterior por lote
     |   GET  /fesv/recepcion/consultadtelote/{codigoLote}  — estado del lote
     | Ver docs/TRANSMISION_DTE.md §2.
@@ -162,7 +174,7 @@ final class EndpointsHacienda
      *
      * @param  string  $claveAmbiente  clave dentro de `dte.ambientes.{00|01}` con la URL completa
      * @param  string  $claveEndpoint  clave dentro de `dte.transmision` con la ruta
-     * @param  string  $pathPorDefecto ruta incorporada si la configuración no trae ninguna
+     * @param  string  $pathPorDefecto  ruta incorporada si la configuración no trae ninguna
      */
     private static function resolver(
         AmbienteHacienda $ambiente,

@@ -91,11 +91,22 @@ class DteSchemaValidator
     }
 
     /**
-     * Núcleo de validación: valida un array PHP contra un schema JSON crudo.
+     * Valida el evento de contingencia contra el esquema oficial v4.
      *
      * @param  array<string, mixed>  $datos
      * @return array{estado: string, valido: bool, disponible: bool, errores: array<int, string>, mensaje: string}
      */
+    public function validarContingencia(array $datos): array
+    {
+        $info = $this->repo->paraContingencia();
+        if ($info === null || ! $this->disponible()) {
+            return $this->resultado('pendiente', false, $this->disponible(), [], 'Falta el esquema o la biblioteca de validacion de contingencia.');
+        }
+
+        return $this->validarContraSchema($datos, (string) file_get_contents($info['ruta']));
+    }
+
+    /** Nucleo compartido de validacion contra un esquema JSON crudo. */
     private function validarContraSchema(array $datos, string $schemaJson): array
     {
         // Convierte arrays asociativos a stdClass y conserva tipos (number/integer).
