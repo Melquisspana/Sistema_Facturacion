@@ -423,7 +423,11 @@ class ContingenciaModoTest extends TestCase
         $this->actingAs(User::factory()->create()->assignRole('facturacion'));
         $this->assertStringNotContainsString('Terminar contingencia', view('components.aviso-contingencia')->render());
         $contingencia->delete();
-        Schema::drop('contingencias');
+        // Se simula que la tabla no existe: borrarla de verdad en MySQL hace un commit
+        // implícito y la deja borrada para el resto de la corrida.
+        $real = Schema::getFacadeRoot();
+        Schema::partialMock()->shouldReceive('hasTable')
+            ->andReturnUsing(fn (string $tabla) => $tabla !== 'contingencias' && $real->hasTable($tabla));
         $this->assertNull(app(ContingenciaService::class)->activa());
         $this->assertSame('', trim(view('components.aviso-contingencia')->render()));
         $this->withoutVite();
