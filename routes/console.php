@@ -4,6 +4,12 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
+// Contingencia: no trabaja con el interruptor apagado.
+Schedule::command('dte:contingencia-lotes')
+    ->everyFiveMinutes()
+    ->when(fn () => (bool) config('dte.contingencia.enabled', false))
+    ->withoutOverlapping();
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

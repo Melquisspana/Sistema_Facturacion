@@ -38,7 +38,12 @@ foreach (EstadoDte::cases() as $estado) {
 
 return [
 
-    'contingencia' => ['enabled' => env('DTE_CONTINGENCIA_ENABLED', false)],
+    'contingencia' => [
+        'enabled' => env('DTE_CONTINGENCIA_ENABLED', false),
+        'lote_max' => 100,
+        // Confirmar version en el ambiente de pruebas del MH: MT p.21 no es claro.
+        'lote_version' => 1,
+    ],
 
     /*
     | Ambiente activo: '00' = pruebas, '01' = producción (CAT-001).

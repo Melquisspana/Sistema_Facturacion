@@ -26,4 +26,9 @@ class ContingenciaEvento extends Model
     {
         return $this->hasMany(Dte::class);
     }
+
+    public function lotes(): HasMany
+    {
+        return $this->hasMany(LoteDte::class);
+    }
 }
