@@ -8,9 +8,13 @@ use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
+use App\Services\Contabilidad\EstadoPaquete;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
+use App\Services\Contabilidad\PeriodoPaquete;
 use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use App\Services\Dte\ArchivoEntregaDteService;
+use App\Services\Reportes\ReporteContadoraExcel;
+use App\Services\Reportes\ReporteContadoraQuery;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -18,6 +22,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -111,6 +116,147 @@ class PaqueteContabilidadTest extends TestCase
             'iva' => round($total * 0.13, 2),
             'total_pagar' => $total,
         ]);
+    }
+
+    private function invalidada(array $extra = []): Dte
+    {
+        $dte = $this->venta('2026-07-10', 900);
+        $dte->forceFill($extra + [
+            'estado' => 'invalidado',
+            'sello_invalidacion' => 'SELLO-EVENTO-REAL',
+            'fecha_invalidacion' => Carbon::parse('2026-08-02 12:30:00'),
+            'codigo_generacion_invalidacion' => 'EVENTO-001',
+            'json_invalidacion_path' => 'invalidaciones/'.$dte->codigo_generacion.'.json',
+            'respuesta_mh_invalidacion' => ['estado' => 'PROCESADO', 'selloRecibido' => 'SELLO-EVENTO-REAL'],
+        ])->saveQuietly();
+
+        return $dte;
+    }
+
+    public function test_paquete_incluye_solo_invalidaciones_reales_y_no_altera_filtro_del_reporte(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $aceptada = $this->venta('2026-07-05', 200);
+        $real = $this->invalidada();
+        foreach ([['sello_invalidacion' => 'mock-inval-001'], ['sello_recepcion' => null, 'fecha_procesamiento_mh' => null], ['ambiente' => '00'], ['sello_invalidacion' => ''], ['sello_recepcion' => 'MOCK-001']] as $extra) {
+            $otra = $this->invalidada($extra);
+            $this->assertSame($extra === ['ambiente' => '00'], ReporteContadoraQuery::esInvalidadoRealMh($otra));
+        }
+        $periodo = app(PeriodoPaquete::class);
+        $ventas = $periodo->ventas(['desde' => '2026-07-01', 'hasta' => '2026-07-31']);
+        $this->assertSame([$aceptada->id, $real->id], $ventas->pluck('id')->all());
+        $this->assertSame(['ventas_cantidad' => 1, 'ventas_invalidadas' => 1, 'ventas_total' => 200.0], $periodo->resumenVentas($ventas));
+        $f = ReporteContadoraQuery::filtros(['fecha_desde' => '2026-07-01', 'fecha_hasta' => '2026-07-31', 'estado' => 'fiscal']);
+        $this->assertSame('aceptado', $f['estado']);
+        $this->assertSame([$aceptada->id], ReporteContadoraQuery::query($f)->pluck('id')->all());
+
+        $resumen = $this->actingAs($this->usuario('contabilidad'))->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+            ->assertOk()->assertSee('1 invalidadas (no suman)')->viewData('resumen');
+        $this->assertSame(200.0, $resumen['ventas_total']);
+        $this->assertSame(1, $resumen['ventas_cantidad']);
+        $this->assertSame(1, $resumen['ventas_invalidadas']);
+        $this->assertSame(1, $resumen['ventas_sin_json']);
+    }
+
+    public function test_excel_invalidada_informa_evento_y_anula_montos_sumables(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $aceptada = $this->venta('2026-07-05', 200);
+        $invalidada = $this->invalidada();
+        $excel = app(ReporteContadoraExcel::class);
+        $ruta = $excel->generar(collect([$aceptada, $invalidada]));
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
+        @unlink($ruta);
+        $this->assertSame('INVALIDADO', $hoja->getCell('I3')->getValue());
+        foreach (['J', 'K', 'L', 'M'] as $col) {
+            $this->assertEquals(0, $hoja->getCell($col.'3')->getValue());
+        }
+        $this->assertSame('02/08/2026 12:30', $hoja->getCell('P3')->getValue());
+        $this->assertSame('EVENTO-001', $hoja->getCell('Q3')->getValue());
+        $this->assertEquals(900, $hoja->getCell('R3')->getValue());
+        $this->assertTrue($hoja->getStyle('I3')->getFont()->getBold());
+        $this->assertSame('FEE2E2', $hoja->getStyle('A3')->getFill()->getStartColor()->getRGB());
+        // Total separado por una fila vacía; solo suma la aceptada. Encabezado fijo.
+        $this->assertSame([[null, null, null, null, null]], $hoja->rangeToArray('I4:M4'));
+        $this->assertSame('TOTAL aceptados (sin invalidados)', $hoja->getCell('I5')->getValue());
+        $this->assertEquals(200, $hoja->getCell('M5')->getValue());
+        $this->assertSame('A2', $hoja->getFreezePane());
+        $ruta = $excel->generar(collect([$aceptada]));
+        $solo = IOFactory::load($ruta)->getActiveSheet();
+        @unlink($ruta);
+        $this->assertSame($solo->rangeToArray('A2:O2'), $hoja->rangeToArray('A2:O2'));
+        $this->assertEquals(200, $hoja->getCell('M2')->getValue());
+        $this->assertSame([[null, null, null]], $hoja->rangeToArray('P2:R2'));
+    }
+
+    public function test_zip_invalidada_adjunta_evidencia_y_avisa_evento_faltante(): void
+    {
+        Storage::fake('local');
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $dte = $this->invalidada();
+        Storage::disk('local')->put($dte->json_invalidacion_path, '{"evento":"inventado"}');
+        foreach ([true, false] as $presente) {
+            if (! $presente) {
+                Storage::disk('local')->delete($dte->json_invalidacion_path);
+            }
+            $r = app(PaqueteContabilidadZip::class)->generar('2026-07', collect(), collect([$dte]), false, true);
+            $zip = new ZipArchive;
+            $this->assertTrue($zip->open($r['ruta']));
+            $prefijo = 'ventas/invalidaciones/'.$dte->id.'_EVENTO-001';
+            $this->assertSame($presente ? '{"evento":"inventado"}' : false, $zip->getFromName($prefijo.'_evento.json'));
+            $this->assertSame($dte->respuesta_mh_invalidacion, json_decode($zip->getFromName($prefijo.'_respuesta_mh.json'), true));
+            $leeme = $zip->getFromName('LEEME.txt');
+            $this->assertStringContainsString('DOCUMENTOS INVALIDADOS (1) — NO suman en los totales:', $leeme);
+            $this->assertStringContainsString('EVENTO-001', $leeme);
+            $this->assertStringContainsString('02/08/2026 12:30', $leeme);
+            $this->assertSame(0, $r['ventas_json']);
+            $this->assertSame(1, $r['ventas_invalidadas']);
+            $this->assertSame($presente ? 2 : 1, $r['invalidaciones_archivos']);
+            $this->assertCount($presente ? 0 : 1, $r['incidencias']);
+            if (! $presente) {
+                $this->assertStringContainsString('Venta #'.$dte->id.' ('.$dte->numero_control.'): invalidación evento:', $leeme);
+            }
+            $zip->close();
+            @unlink($r['ruta']);
+        }
+    }
+
+    public function test_zip_invalidacion_lee_respuesta_guardada_y_sanea_codigo_del_evento(): void
+    {
+        Storage::fake('local');
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $dte = $this->invalidada([
+            'codigo_generacion_invalidacion' => 'evento / inventado',
+            'respuesta_mh_invalidacion_path' => 'invalidaciones/respuesta.json',
+        ]);
+        Storage::disk('local')->put($dte->json_invalidacion_path, '{"evento":1}');
+        Storage::disk('local')->put($dte->respuesta_mh_invalidacion_path, '{"respuesta":"guardada"}');
+        $r = app(PaqueteContabilidadZip::class)->generar('2026-07', collect(), collect([$dte]), false, true);
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($r['ruta']));
+        $prefijo = 'ventas/invalidaciones/'.$dte->id.'_EVENTO_INVENTADO';
+        $this->assertSame('{"evento":1}', $zip->getFromName($prefijo.'_evento.json'));
+        $this->assertSame('{"respuesta":"guardada"}', $zip->getFromName($prefijo.'_respuesta_mh.json'));
+        $this->assertSame(2, $r['invalidaciones_archivos']);
+        $this->assertSame([], $r['incidencias']);
+        $zip->close();
+        @unlink($r['ruta']);
+    }
+
+    public function test_job_cuenta_vigentes_y_boton_permite_solo_invalidadas(): void
+    {
+        Storage::fake('local');
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->invalidada();
+        Configuracion::set('contabilidad.correo', 'contadora@ejemplo.com');
+        $usuario = $this->usuario('contabilidad');
+        $parametros = ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 0, 'incluir_ventas' => 1];
+        $this->assertTrue($this->actingAs($usuario)->get(route('contabilidad.paquete', $parametros))->assertOk()->viewData('puedeEnviar'));
+        $this->venta('2026-07-05', 200);
+        $this->post(route('contabilidad.paquete.generar'), $parametros)->assertRedirect()->assertSessionHas('status');
+        $estado = EstadoPaquete::para($usuario->id, 'zip', ['etiqueta' => '2026-07'], false, true)->leer();
+        $this->assertSame(1, $estado['ventas']);
+        $this->assertSame(1, $estado['ventas_invalidadas']);
     }
 
     public function test_pantalla_paquete_carga_con_resumen(): void

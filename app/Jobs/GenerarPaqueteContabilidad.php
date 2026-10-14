@@ -57,6 +57,7 @@ class GenerarPaqueteContabilidad implements ShouldQueue
 
         $r = $zip->generar($this->rango['etiqueta'], $compras, $ventas, $this->incluirCompras, $this->incluirVentas, $cob);
 
+        $resumenVentas = $periodo->resumenVentas($ventas);
         $estado = $this->estado();
         self::guardarZip($r['ruta'], $estado->rutaZip());
 
@@ -64,7 +65,8 @@ class GenerarPaqueteContabilidad implements ShouldQueue
             'nombre_descarga' => $zip->nombreArchivo($this->rango['etiqueta'], $r['incompleto']),
             'incompleto' => $r['incompleto'],
             'compras' => $compras->count(),
-            'ventas' => $ventas->count(),
+            'ventas' => $resumenVentas['ventas_cantidad'],
+            'ventas_invalidadas' => $resumenVentas['ventas_invalidadas'],
             'incidencias' => count($r['incidencias']),
         ]);
     }

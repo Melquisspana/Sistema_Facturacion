@@ -9,6 +9,9 @@ En Google Drive está el paquete de documentos para contabilidad correspondiente
 @endif
 @if ($resumen['incluir_ventas'])
 - **Ventas (emitidos):** {{ number_format($resumen['ventas_cantidad']) }} documentos — total ${{ number_format($resumen['ventas_total'], 2) }}
+@if (($resumen['ventas_invalidadas'] ?? 0) > 0)
+- **Invalidadas:** {{ number_format($resumen['ventas_invalidadas']) }} documentos (no suman en el total)
+@endif
 @endif
 
 El detalle completo está en el ZIP de Drive (Excel de compras y ventas, y los PDF/JSON de cada documento).

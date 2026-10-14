@@ -3,6 +3,7 @@
 namespace App\Services\Contabilidad;
 
 use App\Models\DocumentoRecibido;
+use App\Models\Dte;
 use App\Services\Reportes\ReporteContadoraQuery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -53,8 +54,21 @@ class PeriodoPaquete
         $f = ReporteContadoraQuery::filtros([
             'fecha_desde' => $rango['desde'], 'fecha_hasta' => $rango['hasta'],
         ]);
+        $f['estado'] = 'fiscal';
 
         return ReporteContadoraQuery::query($f)->get();
+    }
+
+    /** @return array{ventas_cantidad: int, ventas_invalidadas: int, ventas_total: float} */
+    public function resumenVentas(Collection $ventas): array
+    {
+        $vigentes = $ventas->reject(fn (Dte $dte) => ReporteContadoraQuery::esInvalidadoRealMh($dte));
+
+        return [
+            'ventas_cantidad' => $vigentes->count(),
+            'ventas_invalidadas' => $ventas->count() - $vigentes->count(),
+            'ventas_total' => round((float) $vigentes->sum('total_pagar'), 2),
+        ];
     }
 
     /**
