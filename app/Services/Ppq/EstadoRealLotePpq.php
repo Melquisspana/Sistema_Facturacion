@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Cobros\CobroEvento;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Collection;
 
@@ -44,7 +45,13 @@ class EstadoRealLotePpq
         $porDte = $documentos->filter(fn ($d) => $d->dte_id !== null)->groupBy('dte_id');
         $porControl = $documentos->groupBy('numero_control_norm');
 
-        return $lotes->mapWithKeys(function ($lote) use ($porDte, $porControl) {
+        $fuera = CobroEvento::where('tipo', 'nota')->where('referencia_linea', 'like', 'caso-%-fuera')
+            ->whereHas('documento', fn ($q) => $q->where('tipo_dte', '03'))->get()
+            ->filter(fn ($evento) => $lotes->contains('id', (int) ($evento->datos['ppq_lote_id'] ?? 0)))
+            ->groupBy(fn ($evento) => (int) $evento->datos['ppq_lote_id']);
+
+        return $lotes->mapWithKeys(function ($lote) use ($porDte, $porControl, $fuera) {
+            $devueltos = ($fuera->get($lote->id, collect()))->pluck('cobro_documento_id')->flip();
             $r = array_fill_keys(['ccf_total', 'pagados', 'con_diferencia', 'presentados', 'preparados', 'devueltos', 'sin_seguimiento'], 0);
             $r += ['total_neto' => 0, 'cobrado' => 0, 'fecha' => null, 'cliente_derivado' => null];
             $clientes = collect();
@@ -82,10 +89,13 @@ class EstadoRealLotePpq
                         }
                     }
                 }
-                $r['devueltos'] += (int) $doc->eventos->contains(fn ($e) => $e->tipo === TipoEventoCobro::Nota
+                if ($doc->eventos->contains(fn ($e) => $e->tipo === TipoEventoCobro::Nota
                     && preg_match('/^caso-.+-fuera$/', $e->referencia_linea ?? '')
-                    && $e->created_at >= $item->created_at);
+                    && $e->created_at >= $item->created_at)) {
+                    $devueltos->put($doc->id, true);
+                }
             }
+            $r['devueltos'] = $devueltos->count();
             // El cliente sale de sus CCF en el Seguimiento, solo si todos son del mismo.
             $r['cliente_derivado'] = $lote->cliente_id === null && $clientes->count() === 1 ? $clientes->first() : null;
             $r['cliente_motivo'] = $clientes->count() > 1 ? 'documentos de varios clientes' : 'sin documentos en el seguimiento';

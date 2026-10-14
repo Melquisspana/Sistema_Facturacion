@@ -133,7 +133,7 @@
                 <div><dt class="text-xs text-gray-500">Cliente</dt><dd class="mt-0.5 text-gray-700">{{ $lote->cliente?->nombre ?? $estadoReal['cliente_derivado']?->nombre ?? '—' }}</dd></div>
                 <div><dt class="text-xs text-gray-500">Creado</dt><dd class="mt-0.5 text-gray-700">{{ $lote->created_at?->format('d/m/Y') ?? '—' }}</dd></div>
                 @if ($lote->observaciones)
-                    <div class="col-span-2 sm:col-span-4"><dt class="text-xs text-gray-500">Observaciones</dt><dd class="mt-0.5 text-gray-700">{{ $lote->observaciones }}</dd></div>
+                    <div class="col-span-2 sm:col-span-4"><dt class="text-xs text-gray-500">Observaciones</dt><dd class="mt-0.5 text-gray-700 whitespace-pre-line">{{ $lote->observaciones }}</dd></div>
                 @endif
             </div>
 
@@ -159,7 +159,7 @@
             @if ($resumen['cantidad'] > 0 && auth()->user()->can('ppq.gestionar'))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
                     <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de Calleja</h3>
-                    <p class="mt-1 text-xs text-gray-500">Después de reportar el caso en el portal, subí el Excel que devuelve. Lo que Calleja registró queda presentado; lo que no tomó vuelve a «por presentar» para el siguiente PPQ.</p>
+                    <p class="mt-1 text-xs text-gray-500">Después de reportar el caso en el portal, subí el Excel que devuelve. Lo que Calleja registró queda presentado; los CCF que no tomó salen del lote con sus NC y vuelven a «por presentar» para el siguiente PPQ. Las NC de los CCF que quedan se mantienen.</p>
                     <form method="POST" action="{{ route('ppq.lotes.reporte-caso', $lote) }}" enctype="multipart/form-data" class="mt-3 flex flex-wrap items-end gap-3">
                         @csrf
                         <input type="file" name="reporte" accept=".xls,.xlsx" required
