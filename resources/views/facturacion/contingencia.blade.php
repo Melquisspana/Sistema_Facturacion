@@ -3,6 +3,21 @@
     <div class="mx-auto max-w-5xl space-y-4 px-6 py-8 text-gray-900 dark:text-gray-100">
         <a class="underline" href="{{ route('facturacion.contingencia.pendientes') }}">Pendientes de envío</a>
         @if (session('status'))<p role="status">{{ session('status') }}</p>@endif
+        @if ($errors->any())<p role="alert">{{ $errors->first() }}</p>@endif
+        @if (!app(\App\Services\Dte\ContingenciaService::class)->eventoEnviado($contingencia))
+            <form method="POST" action="{{ route('facturacion.contingencia.actualizar', $contingencia) }}" class="space-y-2">
+                @csrf @method('PATCH')
+                @if ($contingencia->cese)
+                    <label class="block">Ajustar cese (hora de El Salvador)
+                        <input class="text-gray-900" type="datetime-local" step="1" name="cese" value="{{ $contingencia->cese->format('Y-m-d\TH:i:s') }}" min="{{ $contingencia->inicio->format('Y-m-d\TH:i:s') }}" max="{{ \App\Support\HoraNegocio::ahora()->format('Y-m-d\TH:i:s') }}">
+                    </label>
+                @endif
+                <label class="block">Tipo <select name="tipo" class="text-gray-900">@foreach ([1 => 'MH no disponible', 2 => 'Sistema del emisor', 3 => 'Internet', 4 => 'Energía', 5 => 'Otro'] as $tipo => $nombre)<option value="{{ $tipo }}" @selected($contingencia->tipo === $tipo)>{{ $tipo }} · {{ $nombre }}</option>@endforeach</select></label>
+                <label class="block">Motivo <textarea class="text-gray-900" name="motivo" maxlength="500">{{ $contingencia->motivo }}</textarea></label>
+                <p>El tipo y motivo solo se pueden corregir mientras no haya documentos firmados.</p>
+                <button type="submit" class="underline">Guardar corrección</button>
+            </form>
+        @endif
         <p>Estado: {{ $contingencia->estado }}. Tipo {{ $contingencia->tipo }}: {{ $contingencia->motivo }}</p>
         <p>Inicio: {{ $contingencia->inicio->format('d/m/Y H:i:s') }}.
             Cese: {{ $contingencia->cese?->format('d/m/Y H:i:s') ?? 'Todavía no registrado' }}.</p>

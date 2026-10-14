@@ -307,7 +307,7 @@ class DteTransmisionResiliente
                 .' El documento sigue sin transmitir; NO se activó ningún evento de contingencia '
                 .'(fase pendiente).',
             'sello' => null,
-        ], $envios, $consultas, $traza, true);
+        ], $envios, $consultas, $traza, true, false, self::NO_RECIBIDO);
     }
 
     // ---------------------------------------------------------------- interno

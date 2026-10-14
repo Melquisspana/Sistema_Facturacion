@@ -40,6 +40,9 @@ return [
 
     'contingencia' => [
         'enabled' => env('DTE_CONTINGENCIA_ENABLED', false),
+        'sonda_internet_url' => env('DTE_CONTINGENCIA_SONDA_URL', 'https://www.gstatic.com/generate_204'),
+        'reconexion_minutos' => 15,
+        'envio_automatico_horas' => 12,
         'lote_max' => 100,
         // Confirmar version en el ambiente de pruebas del MH: MT p.21 no es claro.
         'lote_version' => 1,

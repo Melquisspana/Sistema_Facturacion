@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\Dte\DteFirmaException;
 use App\Exceptions\Dte\DteTransmisionDeshabilitadaException;
 use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
+use App\Services\Dte\ContingenciaAutomaticaService;
 use App\Services\Dte\DteTransmisionResiliente;
 use Illuminate\Console\Command;
 
@@ -37,6 +39,15 @@ class DteTransmitirCommand extends Command
         // dos maneras distintas de enviar un DTE.
         try {
             $r = $resiliente->transmitir($dte, (bool) $this->option('estado-incierto'));
+            if (app(ContingenciaAutomaticaService::class)->convertirTrasReintentos($dte, $r)) {
+                $this->info('Documento emitido en contingencia, pendiente de sello de recepción.');
+
+                return self::SUCCESS;
+            }
+        } catch (DteFirmaException $e) {
+            $this->error('Se activó la contingencia, pero no se pudo re-firmar: '.$e->getMessage());
+
+            return self::FAILURE;
         } catch (DteTransmisionDeshabilitadaException $e) {
             // Razón(es) específica(s) del/los candado(s) que bloquean la transmisión real.
             $this->warn('Transmisión real bloqueada por candados de seguridad:');

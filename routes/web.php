@@ -209,6 +209,8 @@ Route::middleware('auth')->group(function () {
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.corregir');
         Route::get('contingencia/{contingencia}', [ContingenciaController::class, 'show'])
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.show');
+        Route::patch('contingencia/{contingencia}', [ContingenciaController::class, 'actualizar'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.actualizar');
         Route::post('contingencia/{contingencia}/enviar', [ContingenciaController::class, 'enviar'])
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.enviar');
         Route::get('/', [DteController::class, 'index'])->name('index');

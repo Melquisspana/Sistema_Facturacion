@@ -12,6 +12,9 @@
         Tipo {{ $contingencia->tipo }}: {{ [1 => 'MH no disponible', 2 => 'Sistema del emisor no disponible', 3 => 'Falla de internet del emisor', 4 => 'Falla de energía del emisor', 5 => 'Otro'][$contingencia->tipo] ?? '' }}.
         {{ $contingencia->motivo }}
         <p>Los documentos se generan y firman, pero todavía no se envían a Hacienda.</p>
+        @if (\Illuminate\Support\Facades\Schema::hasTable('contingencia_eventos'))
+            <x-plazos-contingencia :contingencia="$contingencia" />
+        @endif
         @can('dte.contingencia')
             <form method="POST" action="{{ route('facturacion.contingencia.terminar') }}" class="mt-2">
                 @csrf
@@ -19,6 +22,14 @@
             </form>
         @endcan
     </div>
+@endif
+@if (config('dte.contingencia.enabled', false) && \Illuminate\Support\Facades\Schema::hasTable('contingencias') && \Illuminate\Support\Facades\Schema::hasTable('contingencia_eventos'))
+    @foreach (\App\Models\Contingencia::whereIn('estado', ['cerrada', 'informada', 'vencida'])->orderByDesc('id')->get() as $pendientePlazo)
+        <div role="status" class="border-b border-amber-400 bg-amber-100 px-6 py-3 text-amber-950">
+            <x-plazos-contingencia :contingencia="$pendientePlazo" />
+            @can('dte.contingencia')<a class="underline" href="{{ route('facturacion.contingencia.show', $pendientePlazo) }}">Revisar contingencia</a>@endcan
+        </div>
+    @endforeach
 @endif
 @if (! $contingencia && config('dte.contingencia.enabled', false) && \Illuminate\Support\Facades\Schema::hasTable('contingencias'))
     @can('dte.contingencia')
