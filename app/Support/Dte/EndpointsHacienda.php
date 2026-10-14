@@ -63,6 +63,30 @@ final class EndpointsHacienda
 
     public const PATH_CONTINGENCIA = '/fesv/contingencia';
 
+    public const PATH_LOTE = '/fesv/recepcionlote';
+
+    public const PATH_CONSULTA_LOTE = '/fesv/recepcion/consultadtelote';
+
+    public static function lote(AmbienteHacienda $ambiente): string
+    {
+        return self::resolver($ambiente, 'lote_url', 'endpoint_lote', self::PATH_LOTE);
+    }
+
+    public static function loteOficial(AmbienteHacienda $ambiente): string
+    {
+        return self::hostOficial($ambiente).self::PATH_LOTE;
+    }
+
+    public static function consultaLote(AmbienteHacienda $ambiente, string $codigo): string
+    {
+        return self::resolver($ambiente, 'consulta_lote_url', 'endpoint_consulta_lote', self::PATH_CONSULTA_LOTE).'/'.rawurlencode($codigo);
+    }
+
+    public static function consultaLoteOficial(AmbienteHacienda $ambiente, string $codigo): string
+    {
+        return self::hostOficial($ambiente).self::PATH_CONSULTA_LOTE.'/'.rawurlencode($codigo);
+    }
+
     public static function contingenciaOficial(AmbienteHacienda $ambiente): string
     {
         return self::hostOficial($ambiente).self::PATH_CONTINGENCIA;
@@ -72,15 +96,6 @@ final class EndpointsHacienda
     {
         return self::resolver($ambiente, 'contingencia_url', 'endpoint_contingencia', self::PATH_CONTINGENCIA);
     }
-
-    /*
-    | PENDIENTES DE LA FASE DE CONTINGENCIA — NO implementados a propósito.
-    | Se dejan anotados aquí, y no como constantes, para que nadie los use por
-    | descuido creyendo que hay algo detrás:
-    |   POST /fesv/recepcionlote                           — transmisión posterior por lote
-    |   GET  /fesv/recepcion/consultadtelote/{codigoLote}  — estado del lote
-    | Ver docs/TRANSMISION_DTE.md §2.
-    */
 
     /**
      * Rótulos que `dte.transmision.ambiente` acepta como producción. Es un ajuste

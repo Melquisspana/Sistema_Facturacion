@@ -22,6 +22,9 @@
 @endif
 @if (! $contingencia && config('dte.contingencia.enabled', false) && \Illuminate\Support\Facades\Schema::hasTable('contingencias'))
     @can('dte.contingencia')
+        <p class="border-b border-amber-400 bg-amber-100 px-6 py-3 text-amber-950">
+            <a class="underline" href="{{ route('facturacion.contingencia.pendientes') }}">Pendientes de envío: revisar documentos y resultados de contingencia</a>
+        </p>
         @foreach (\App\Models\Contingencia::where('estado', 'cerrada')->orderByDesc('id')->get() as $pendiente)
             <p class="border-b border-amber-400 bg-amber-100 px-6 py-3 text-amber-950">
                 Contingencia terminada el {{ $pendiente->cese?->format('d/m/Y H:i') }}.

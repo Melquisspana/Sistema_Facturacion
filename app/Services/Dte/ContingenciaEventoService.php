@@ -184,16 +184,7 @@ class ContingenciaEventoService
                 $this->verificar($actual, $evento);
                 $json = json_decode(Storage::disk(config('dte.storage.disk', 'local'))->get($evento->json_path), true, 512, JSON_THROW_ON_ERROR);
                 $ambiente = AmbienteHacienda::from($json['identificacion']['ambiente']);
-                if ($ambiente !== EndpointsHacienda::ambienteTransmision() || ! config('dte.transmision.enabled') && ! (! $ambiente->esProduccion() && config('dte.transmision.test_enabled'))) {
-                    $this->error('La transmision esta deshabilitada o el ambiente no coincide.');
-                }
-                if ($ambiente->esProduccion() && ! config('dte.transmision.allow_production', false)) {
-                    $this->error('La transmision a produccion esta deshabilitada.');
-                }
-                if (config('dte.transmision.dry_run', true) || ! config('dte.transmision.real_confirmation', false) || config('dte.firma.mock', false)) {
-                    $this->error('Se requiere habilitar la transmision real y la firma sin mock.');
-                }
-                CandadoEndpointOficial::verificar($ambiente, 'contingencia', EndpointsHacienda::contingenciaOficial($ambiente), EndpointsHacienda::contingencia($ambiente));
+                app(ContingenciaTransporte::class)->verificar($ambiente, 'contingencia', EndpointsHacienda::contingenciaOficial($ambiente), EndpointsHacienda::contingencia($ambiente));
                 $validacion = $this->validador->validarContingencia($json);
                 if (! $validacion['valido']) {
                     $this->error($validacion['mensaje'].' '.implode(' | ', $validacion['errores']));
@@ -250,9 +241,7 @@ class ContingenciaEventoService
 
     private function guardar(string $ruta, string $contenido): void
     {
-        if (! Storage::disk(config('dte.storage.disk', 'local'))->put($ruta, $contenido)) {
-            $this->error('No se pudo guardar la evidencia del evento.');
-        }
+        app(ContingenciaTransporte::class)->guardar($ruta, $contenido);
     }
 
     private function fechaMh(?string $fecha): ?Carbon

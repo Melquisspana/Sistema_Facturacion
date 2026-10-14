@@ -199,6 +199,14 @@ Route::middleware('auth')->group(function () {
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.activar');
         Route::post('contingencia/terminar', [ContingenciaController::class, 'terminar'])
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.terminar');
+        Route::get('contingencia/pendientes', [ContingenciaController::class, 'pendientes'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.pendientes');
+        Route::post('contingencia/eventos/{evento}/lotes', [ContingenciaController::class, 'enviarLotes'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.lotes.enviar');
+        Route::post('contingencia/lotes/{lote}/consultar', [ContingenciaController::class, 'consultarLote'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.lotes.consultar');
+        Route::post('contingencia/documentos/{dte}/corregir', [ContingenciaController::class, 'emitirCorregido'])
+            ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.corregir');
         Route::get('contingencia/{contingencia}', [ContingenciaController::class, 'show'])
             ->middleware([ContingenciaHabilitada::class, 'permission:dte.contingencia'])->name('contingencia.show');
         Route::post('contingencia/{contingencia}/enviar', [ContingenciaController::class, 'enviar'])

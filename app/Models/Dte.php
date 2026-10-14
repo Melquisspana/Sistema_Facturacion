@@ -109,6 +109,11 @@ class Dte extends Model
         return $this->belongsTo(ContingenciaEvento::class);
     }
 
+    public function loteDte(): BelongsTo
+    {
+        return $this->belongsTo(LoteDte::class);
+    }
+
     public function esTransitorio(): bool
     {
         return (bool) config('dte.contingencia.enabled', false)

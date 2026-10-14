@@ -239,6 +239,7 @@ class DteTransmisionService
             'mensaje' => (string) ($resultado['mensaje'] ?? ''),
             'sello' => $resultado['sello'] ?? null,
             'cuerpo' => $resultado['cuerpo'] ?? null,
+            'observaciones' => $resultado['observaciones'] ?? $resultado['cuerpo']['observaciones'] ?? [],
         ]);
     }
 

@@ -1,6 +1,7 @@
 <x-app-layout>
     <x-slot name="header"><h2 class="text-xl font-semibold">Aviso de contingencia a Hacienda</h2></x-slot>
     <div class="mx-auto max-w-5xl space-y-4 px-6 py-8 text-gray-900 dark:text-gray-100">
+        <a class="underline" href="{{ route('facturacion.contingencia.pendientes') }}">Pendientes de envío</a>
         @if (session('status'))<p role="status">{{ session('status') }}</p>@endif
         <p>Estado: {{ $contingencia->estado }}. Tipo {{ $contingencia->tipo }}: {{ $contingencia->motivo }}</p>
         <p>Inicio: {{ $contingencia->inicio->format('d/m/Y H:i:s') }}.
