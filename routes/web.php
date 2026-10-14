@@ -42,6 +42,7 @@ use App\Http\Controllers\Ppq\PpqLoteController;
 use App\Http\Controllers\Productos\ProductoController;
 use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SinInternetController;
 use App\Http\Controllers\Usuarios\UserController;
 use App\Http\Middleware\ContingenciaHabilitada;
 use App\Models\Exportacion;
@@ -58,6 +59,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return redirect()->route(auth()->check() ? 'dashboard' : 'login');
 });
+
+Route::get('/sin-internet', SinInternetController::class)
+    ->middleware(['auth', ContingenciaHabilitada::class])->name('sin-internet');
 
 // Cierre de sesión COMPLETO (Laravel + Cloudflare Access): cierra la sesión local
 // igual que el logout normal y redirige al endpoint de logout de Access del MISMO

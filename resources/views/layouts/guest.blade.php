@@ -36,5 +36,6 @@
                 {{ $slot }}
             </div>
         </div>
+        @include('layouts.partials.sw-contingencia')
     </body>
 </html>
