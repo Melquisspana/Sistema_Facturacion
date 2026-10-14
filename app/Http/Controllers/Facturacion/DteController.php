@@ -52,6 +52,7 @@ use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\BusquedaDocumentoReemplazo;
+use App\Services\Dte\ContingenciaAutomaticaService;
 use App\Services\Dte\DteAnulacionService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteFirmaService;
@@ -1102,6 +1103,12 @@ class DteController extends Controller
 
         try {
             $r = app(DteTransmisionResiliente::class)->transmitir($dte, $estadoIncierto);
+            if (app(ContingenciaAutomaticaService::class)->convertirTrasReintentos($dte, $r, request()->user())) {
+                $r['resultado'] = 'transitorio';
+                $r['mensaje'] = 'Documento emitido en contingencia, pendiente de sello de recepción.';
+            }
+        } catch (DteFirmaException $e) {
+            return ['error' => 'Se activó la contingencia, pero no se pudo re-firmar el documento: '.$e->getMessage()];
         } catch (DteTransmisionDeshabilitadaException $e) {
             Log::warning('DTE transmisión bloqueada', ['dte_id' => $dte->id, 'error' => $e->getMessage()]);
 

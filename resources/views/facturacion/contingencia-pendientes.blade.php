@@ -45,12 +45,20 @@
                             @foreach (($dte->respuesta_mh['observaciones'] ?? []) as $observacion)<p>{{ is_string($observacion) ? $observacion : json_encode($observacion) }}</p>@endforeach
                         </td>
                         <td class="p-3">{{ $recibido ? '72 h (lote)' : '24 h (evento)' }}
+                            @if ($eventos->requiereInformeTecnico($dte->contingencia))
+                                <p role="alert">Informe Técnico de Contingencia: alcanzó tres días. Presentalo al MH si duró más de tres días.</p>
+                            @endif
                             @if ($plazo && !$final)
                                 <br>{{ $plazo->format('d/m/Y H:i:s') }}
                                 <br>{{ $vencido ? 'Vencido' : 'Restan '.sprintf('%02d:%02d:%02d', intdiv($segundos, 3600), intdiv($segundos % 3600, 60), $segundos % 60).' (hh:mm:ss)' }}
                             @endif
                         </td>
                         <td class="space-y-2 p-3">
+                            @if ($dte->estado === \App\Enums\EstadoDte::Aceptado && filled($dte->sello_recepcion))
+                                @can('enviarCorreo', $dte)
+                                    <form method="POST" action="{{ route('facturacion.correo.cliente', $dte) }}">@csrf<button class="underline" type="submit">Reenviar al cliente</button></form>
+                                @endcan
+                            @endif
                             @if (!$final && (!$dte->lote_dte_id || $dte->loteDte?->estado === 'pendiente') && !$vencido)
                                 <form method="POST" action="{{ $recibido ? route('facturacion.contingencia.lotes.enviar', $evento) : route('facturacion.contingencia.enviar', $dte->contingencia) }}">@csrf<button class="underline" type="submit">Enviar a Hacienda</button></form>
                             @endif

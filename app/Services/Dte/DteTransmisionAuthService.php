@@ -47,9 +47,20 @@ class DteTransmisionAuthService
      * Devuelve el token de autorización ("Bearer ...") para transmitir.
      *
      * @throws DteTransmisionDeshabilitadaException si la transmisión está deshabilitada
-     * @throws DteTransmisionException              si faltan credenciales o la auth falla
+     * @throws DteTransmisionException si faltan credenciales o la auth falla
      */
     public function obtenerToken(): string
+    {
+        return $this->resolverToken(false);
+    }
+
+    /** La reconexión exige una respuesta HTTP nueva, sin token manual ni caché. */
+    public function comprobarConexion(): void
+    {
+        $this->resolverToken(true);
+    }
+
+    private function resolverToken(bool $forzarAutenticacion): string
     {
         if (! (bool) config('dte.transmision.enabled', false) && ! $this->pruebasHabilitadas()) {
             throw new DteTransmisionDeshabilitadaException(
@@ -59,13 +70,13 @@ class DteTransmisionAuthService
 
         // Token provisto manualmente (override por .env): se usa tal cual, normalizado.
         $override = trim((string) config('dte.transmision.token', ''));
-        if ($override !== '') {
+        if (! $forzarAutenticacion && $override !== '') {
             return $this->normalizarBearer($override);
         }
 
         // Token cacheado vigente.
         $cached = Cache::get($this->cacheKey());
-        if (is_string($cached) && $cached !== '') {
+        if (! $forzarAutenticacion && is_string($cached) && $cached !== '') {
             return $cached;
         }
 

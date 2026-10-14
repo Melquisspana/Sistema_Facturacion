@@ -5,6 +5,11 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 // Contingencia: no trabaja con el interruptor apagado.
+Schedule::command('dte:contingencia-reconexion')
+    ->cron('*/'.max(1, min(15, (int) config('dte.contingencia.reconexion_minutos', 15))).' * * * *')
+    ->when(fn () => (bool) config('dte.contingencia.enabled', false))
+    ->withoutOverlapping();
+
 Schedule::command('dte:contingencia-lotes')
     ->everyFiveMinutes()
     ->when(fn () => (bool) config('dte.contingencia.enabled', false))

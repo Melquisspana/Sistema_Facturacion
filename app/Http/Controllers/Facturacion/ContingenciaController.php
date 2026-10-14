@@ -83,6 +83,14 @@ class ContingenciaController extends Controller
             ->with('status', collect($resultados)->map(fn ($r) => $r['resultado'].': '.($r['mensaje'] ?? ''))->implode(' | '));
     }
 
+    public function actualizar(Request $request, Contingencia $contingencia, ContingenciaService $service): RedirectResponse
+    {
+        $this->authorize('contingencia', Dte::class);
+        $service->corregir($contingencia, $request->only(['tipo', 'motivo', 'cese']), $request->user());
+
+        return back()->with('status', 'Datos de contingencia corregidos.');
+    }
+
     public function activar(Request $request, ContingenciaService $service): RedirectResponse
     {
         abort_unless(config('dte.contingencia.enabled', false), 404);

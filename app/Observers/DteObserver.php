@@ -112,6 +112,9 @@ class DteObserver
                 }
             });
         }
+        if (config('dte.contingencia.enabled', false) && $dte->contingencia_id !== null) {
+            return; // El archivo regularizado se reenvía solo por decisión del usuario.
+        }
         if (! Ajustes::bool('correo.auto_envio', false)) {
             return;
         }
