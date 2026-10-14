@@ -40,6 +40,7 @@ return [
 
     'contingencia' => [
         'enabled' => env('DTE_CONTINGENCIA_ENABLED', false),
+        'url_local' => env('CONTINGENCIA_URL_LOCAL', ''),
         'sonda_internet_url' => env('DTE_CONTINGENCIA_SONDA_URL', 'https://www.gstatic.com/generate_204'),
         'reconexion_minutos' => 15,
         'envio_automatico_horas' => 12,

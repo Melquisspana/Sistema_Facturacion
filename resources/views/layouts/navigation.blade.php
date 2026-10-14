@@ -172,7 +172,7 @@
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <x-dropdown-link :href="route('logout')"
-                                    onclick="event.preventDefault(); this.closest('form').submit();">
+                                    onclick="event.preventDefault(); this.closest('form').requestSubmit();">
                                 {{ __('Log Out') }}
                             </x-dropdown-link>
                         </form>
@@ -182,7 +182,7 @@
                             <form method="POST" action="{{ route('logout.completo') }}">
                                 @csrf
                                 <x-dropdown-link :href="route('logout.completo')"
-                                        onclick="event.preventDefault(); this.closest('form').submit();">
+                                        onclick="event.preventDefault(); this.closest('form').requestSubmit();">
                                     Cerrar sesión (también Cloudflare)
                                 </x-dropdown-link>
                             </form>
