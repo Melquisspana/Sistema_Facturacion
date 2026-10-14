@@ -67,8 +67,7 @@ class EnviarPaqueteContabilidad implements ShouldQueue
         $resumen = [
             'compras_cantidad' => $compras->count(),
             'compras_total' => round((float) $compras->sum('total'), 2),
-            'ventas_cantidad' => $ventas->count(),
-            'ventas_total' => round((float) $ventas->sum('total_pagar'), 2),
+            ...$periodo->resumenVentas($ventas),
             'desde' => $this->rango['desde'],
             'hasta' => $this->rango['hasta'],
             'incluir_compras' => $this->incluirCompras,

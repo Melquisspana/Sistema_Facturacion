@@ -10,6 +10,7 @@ use App\Services\Contabilidad\CoberturaPaquete;
 use App\Services\Contabilidad\EstadoPaquete;
 use App\Services\Contabilidad\PaqueteContabilidadZip;
 use App\Services\Contabilidad\PeriodoPaquete;
+use App\Services\Reportes\ReporteContadoraQuery;
 use App\Support\Contabilidad\CorreoContabilidad;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -56,13 +57,12 @@ class PaqueteContabilidadController extends Controller
         $resumen = [
             'compras_cantidad' => $compras->count(),
             'compras_total' => round((float) $compras->sum('total'), 2),
-            'ventas_cantidad' => $ventas->count(),
-            'ventas_total' => round((float) $ventas->sum('total_pagar'), 2),
+            ...$this->periodo->resumenVentas($ventas),
             // Faltantes de adjuntos (solo lectura de datos ya guardados): compras sin PDF /
             // sin JSON (tiene_pdf/tiene_json) y ventas sin el JSON oficial (json_generado_path).
             'compras_sin_pdf' => $compras->filter(fn ($d) => ! $d->tiene_pdf)->count(),
             'compras_sin_json' => $compras->filter(fn ($d) => ! $d->tiene_json)->count(),
-            'ventas_sin_json' => $ventas->filter(fn ($d) => blank($d->json_generado_path))->count(),
+            'ventas_sin_json' => $ventas->filter(fn ($d) => ! ReporteContadoraQuery::esInvalidadoRealMh($d) && blank($d->json_generado_path))->count(),
         ];
 
         $correo = $this->correoContabilidad();
@@ -72,7 +72,7 @@ class PaqueteContabilidadController extends Controller
         // refuerza con permission:contabilidad.enviar en la ruta.
         $puedeEnviarPermiso = (bool) $request->user()?->can('contabilidad.enviar');
         $hayCompras = $incluirCompras && $resumen['compras_cantidad'] > 0;
-        $hayVentas = $incluirVentas && $resumen['ventas_cantidad'] > 0;
+        $hayVentas = $incluirVentas && ($resumen['ventas_cantidad'] + $resumen['ventas_invalidadas']) > 0;
 
         // Un período sin cubrir bloquea el ENVÍO, no la descarga. Ver el porqué en
         // {@see self::enviar()}. La pantalla lo refleja para que el botón no prometa
@@ -247,7 +247,7 @@ class PaqueteContabilidadController extends Controller
         if ($cob !== null && $cob['bloquea_envio']) {
             $auditoria->registrar($request->user(), 'bloqueado', $correo, $rango, [
                 'compras_cantidad' => $compras->count(), 'compras_total' => round((float) $compras->sum('total'), 2),
-                'ventas_cantidad' => $ventas->count(), 'ventas_total' => round((float) $ventas->sum('total_pagar'), 2),
+                ...$this->periodo->resumenVentas($ventas),
             ], $zip->nombreArchivo($rango['etiqueta'], true), $cob['motivo'], null, $cob);
 
             return back()->with('error', 'No se envió nada: el período de compras no está completo. '

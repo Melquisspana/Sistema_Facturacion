@@ -10,6 +10,7 @@ use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
+use App\Services\Contabilidad\CoberturaPaquete;
 use App\Services\Contabilidad\SubidaDrivePaquete;
 use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
@@ -236,6 +237,59 @@ class EnviarPaqueteContabilidadTest extends TestCase
                 && $mail->enlaceDrive === 'https://drive.google.com/file/d/drive-paquete-1/view'
                 && $mail->attachments() === [];
         });
+    }
+
+    public function test_resumen_correo_y_auditoria_excluyen_invalidada(): void
+    {
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->conCorreo();
+        $this->venta('2026-07-05', 200);
+        $invalidada = $this->venta('2026-07-10', 900);
+        $invalidada->forceFill([
+            'estado' => 'invalidado', 'sello_invalidacion' => 'SELLO-EVENTO-REAL',
+            'codigo_generacion_invalidacion' => 'EVENTO-INVENTADO',
+            'fecha_invalidacion' => Carbon::parse('2026-08-02 12:30:00'),
+            'respuesta_mh_invalidacion' => ['estado' => 'PROCESADO'],
+        ])->save();
+        $this->actingAs($this->usuario('contabilidad'))
+            ->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_compras' => 0]))
+            ->assertSessionHas('status');
+        Mail::assertSent(PaqueteContabilidadCorreo::class, function ($mail) {
+            $this->assertSame(1, $mail->resumen['ventas_cantidad']);
+            $this->assertSame(1, $mail->resumen['ventas_invalidadas']);
+            $this->assertSame(200.0, $mail->resumen['ventas_total']);
+            $this->assertStringContainsString('no suman en el total', $mail->render());
+
+            return true;
+        });
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail();
+        $this->assertSame(1, $log->getExtraProperty('ventas_cantidad'));
+        $this->assertSame(1, $log->getExtraProperty('ventas_invalidadas'));
+        $this->assertEquals(200, $log->getExtraProperty('ventas_total'));
+    }
+
+    public function test_auditoria_bloqueada_excluye_monto_invalidado(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->conCorreo();
+        $this->venta('2026-07-05', 200);
+        $dte = $this->venta('2026-07-10', 900);
+        $dte->forceFill(['estado' => 'invalidado', 'sello_invalidacion' => 'SELLO-REAL'])->save();
+        $this->mock(CoberturaPaquete::class, function ($mock) {
+            $mock->shouldReceive('para')->once()->andReturn([
+                'bloquea_envio' => true, 'cubierto' => false,
+                'motivo' => 'Período ficticio incompleto', 'dias_pendientes' => [],
+            ]);
+        });
+        $this->actingAs($this->usuario('contabilidad'))->post(route('contabilidad.paquete.enviar'), $this->payload())
+            ->assertSessionHas('error');
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail();
+        $this->assertSame('bloqueado', $log->getExtraProperty('estado'));
+        $this->assertSame(1, $log->getExtraProperty('ventas_cantidad'));
+        $this->assertSame(1, $log->getExtraProperty('ventas_invalidadas'));
+        $this->assertEquals(200, $log->getExtraProperty('ventas_total'));
     }
 
     public function test_registra_auditoria_del_envio(): void

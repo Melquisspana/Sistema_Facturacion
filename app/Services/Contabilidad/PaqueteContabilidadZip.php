@@ -8,6 +8,7 @@ use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
 use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Dte\DtePdfService;
 use App\Services\Reportes\ReporteContadoraExcel;
+use App\Services\Reportes\ReporteContadoraQuery;
 use App\Support\Archivos\ArchivoAlmacenado;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -49,7 +50,7 @@ class PaqueteContabilidadZip
      * @param  Collection<int, DocumentoRecibido>  $compras
      * @param  Collection<int, Dte>  $ventas
      * @param  array<string, mixed>|null  $cobertura  resultado de {@see CoberturaPaquete::para()}
-     * @return array{ruta: string, compras_pdf: int, compras_json: int, ventas_pdf: int, ventas_json: int, incompleto: bool, incidencias: array<int, string>}
+     * @return array{ruta: string, compras_pdf: int, compras_json: int, ventas_pdf: int, ventas_json: int, ventas_invalidadas: int, invalidaciones_archivos: int, incompleto: bool, incidencias: array<int, string>}
      */
     public function generar(
         string $etiqueta,
@@ -75,6 +76,8 @@ class PaqueteContabilidadZip
         $json = 0;
         $ventasPdf = 0;
         $ventasJson = 0;
+        $invalidadas = new Collection;
+        $invalidacionesArchivos = 0;
         /** @var array<int, string> $incidencias */
         $incidencias = [];
 
@@ -114,6 +117,13 @@ class PaqueteContabilidadZip
                 $zip->addFromString('ventas/pdf/'.$dte->id.'_'.$this->ventasPdf->nombre($dte), $this->ventasPdf->bytes($dte));
                 $ventasPdf++;
 
+                if (ReporteContadoraQuery::esInvalidadoRealMh($dte)) {
+                    $invalidadas->push($dte);
+                    $invalidacionesArchivos += $this->invalidacion($zip, $dte, $incidencias);
+
+                    continue;
+                }
+
                 // El mismo archivo que recibe el cliente (documento + firma + sello), del
                 // servicio único de entrega; si no está completo, el LEEME dice por qué.
                 $entrega = $this->entregas->construir($dte);
@@ -131,7 +141,7 @@ class PaqueteContabilidadZip
         $incompleto = $cobertura !== null && ! ($cobertura['cubierto'] ?? true);
 
         $zip->addFromString('LEEME.txt', $this->leeme(
-            $etiqueta, $incluirCompras, $incluirVentas, $pdf, $json, $ventasPdf, $ventasJson, $cobertura, $incidencias,
+            $etiqueta, $incluirCompras, $incluirVentas, $pdf, $json, $ventasPdf, $ventasJson, $cobertura, $incidencias, $invalidadas, $invalidacionesArchivos,
         ));
 
         if (! $zip->close()) {
@@ -144,9 +154,39 @@ class PaqueteContabilidadZip
             'compras_json' => $json,
             'ventas_pdf' => $ventasPdf,
             'ventas_json' => $ventasJson,
+            'ventas_invalidadas' => $invalidadas->count(),
+            'invalidaciones_archivos' => $invalidacionesArchivos,
             'incompleto' => $incompleto,
             'incidencias' => $incidencias,
         ];
+    }
+
+    /** Adjunta la evidencia del evento, sin pedir el archivo de entrega del cliente. */
+    private function invalidacion(ZipArchive $zip, Dte $dte, array &$incidencias): int
+    {
+        $codigo = preg_replace('/[^A-Za-z0-9_.-]+/', '_', strtoupper((string) $dte->codigo_generacion_invalidacion));
+        $prefijo = 'ventas/invalidaciones/'.$dte->id.'_'.$codigo;
+        $cantidad = 0;
+        foreach (['evento' => $dte->json_invalidacion_path, 'respuesta_mh' => $dte->respuesta_mh_invalidacion_path] as $tipo => $ruta) {
+            if ($tipo === 'respuesta_mh' && blank($ruta) && ! empty($dte->respuesta_mh_invalidacion)) {
+                $contenido = json_encode($dte->respuesta_mh_invalidacion, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $motivo = 'No se pudo codificar la respuesta de Hacienda: '.json_last_error_msg();
+            } else {
+                $archivo = ArchivoAlmacenado::leer(config('dte.storage.disk', 'local'), $ruta);
+                $contenido = $archivo->presente() ? $archivo->contenido : false;
+                $motivo = $archivo->explicacion();
+            }
+
+            if ($contenido === false) {
+                $incidencias[] = 'Venta #'.$dte->id.' ('.($dte->numero_control ?: 'sin número').'): invalidación '.$tipo.': '.$motivo;
+
+                continue;
+            }
+            $zip->addFromString($prefijo.'_'.$tipo.'.json', (string) $contenido);
+            $cantidad++;
+        }
+
+        return $cantidad;
     }
 
     /**
@@ -175,7 +215,7 @@ class PaqueteContabilidadZip
     private function leeme(
         string $etiqueta, bool $compras, bool $ventas,
         int $pdf, int $json, int $ventasPdf, int $ventasJson,
-        ?array $cobertura, array $incidencias,
+        ?array $cobertura, array $incidencias, Collection $invalidadas, int $invalidacionesArchivos,
     ): string {
         $lineas = [];
 
@@ -209,6 +249,18 @@ class PaqueteContabilidadZip
 
         $lineas[] = '';
         $lineas[] = 'El período se arma por la FECHA DE EMISIÓN del documento (la fiscal), no por la fecha del correo.';
+
+        if ($invalidadas->isNotEmpty()) {
+            $lineas[] = "ventas/invalidaciones/ — {$invalidacionesArchivos} archivo(s) de eventos de invalidación (JSON del evento y respuesta de Hacienda).";
+            $lineas[] = '';
+            $lineas[] = 'DOCUMENTOS INVALIDADOS ('.$invalidadas->count().') — NO suman en los totales:';
+            foreach ($invalidadas as $dte) {
+                $lineas[] = '  - '.$dte->tipo_dte?->label().' | '.$dte->numero_control
+                    .' | Emisión: '.$dte->fecha_emision?->format('d/m/Y')
+                    .' | Invalidación: '.$dte->fecha_invalidacion?->format('d/m/Y H:i')
+                    .' | Evento: '.$dte->codigo_generacion_invalidacion;
+            }
+        }
 
         if ($cobertura !== null) {
             $lineas[] = 'Cobertura: '.($cobertura['dias_completos'] ?? 0).' de '.($cobertura['dias_totales'] ?? 0).' día(s) revisados por completo.';

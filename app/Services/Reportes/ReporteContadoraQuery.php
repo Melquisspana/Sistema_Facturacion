@@ -3,6 +3,7 @@
 namespace App\Services\Reportes;
 
 use App\Enums\AmbienteHacienda;
+use App\Enums\EstadoDte;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use Illuminate\Contracts\Database\Eloquent\Builder;
@@ -146,6 +147,10 @@ class ReporteContadoraQuery
         // Estado: "aceptado" (default) = aceptados REALMENTE por el MH (excluye mock).
         if ($f['estado'] === 'aceptado') {
             $q->aceptadoRealMh();
+        } elseif ($f['estado'] === 'fiscal') {
+            // Uso interno del paquete; filtros() no admite este estado desde la pantalla.
+            $q->where(fn ($q) => $q->aceptadoRealMh()
+                ->orWhere(fn ($q) => self::invalidadoRealMh($q)));
         }
 
         if ($f['tipo'] !== 'todos') {
@@ -159,6 +164,35 @@ class ReporteContadoraQuery
         }
 
         return $q->orderBy('fecha_emision')->orderBy('id');
+    }
+
+    /**
+     * Invalidados REALMENTE ante el MH: el documento fue aceptado con sello real y el
+     * evento de invalidación también tiene sello real. Quedan fuera el mock y la
+     * anulación interna (Generado → Invalidado), que nunca fue venta fiscal.
+     *
+     * Vive acá y no como scope de Dte para que el paquete no dependa de cambios en el
+     * modelo (mismos criterios que {@see Dte::scopeAceptadoRealMh()}).
+     */
+    public static function invalidadoRealMh(Builder $q): Builder
+    {
+        return $q->where('estado', EstadoDte::Invalidado->value)
+            ->whereNotNull('sello_recepcion')->where('sello_recepcion', '!=', '')
+            ->whereRaw('UPPER(sello_recepcion) NOT LIKE ?', ['MOCK%'])
+            ->whereNotNull('fecha_procesamiento_mh')
+            ->whereNotNull('sello_invalidacion')->where('sello_invalidacion', '!=', '')
+            ->whereRaw('UPPER(sello_invalidacion) NOT LIKE ?', ['MOCK%']);
+    }
+
+    /** La misma regla que {@see self::invalidadoRealMh()}, sobre un DTE ya cargado. */
+    public static function esInvalidadoRealMh(Dte $dte): bool
+    {
+        $real = fn (?string $sello) => filled($sello) && ! str_starts_with(strtoupper($sello), 'MOCK');
+
+        return $dte->estado === EstadoDte::Invalidado
+            && $real($dte->sello_recepcion)
+            && $dte->fecha_procesamiento_mh !== null
+            && $real($dte->sello_invalidacion);
     }
 
     private static function fecha(mixed $v): ?string
