@@ -352,9 +352,13 @@ class PpqLoteController extends Controller
         $r = $reportes->aplicar($cliente, $reporte, $request->user(), $lote);
 
         $mensaje = "Caso {$r['caso']}: {$r['recibidos']} documento(s) registrados por Calleja. El PPQ quedó presentado.";
-        if ($r['devueltos'] !== []) {
-            $mensaje .= ' No tomó y vuelven a por presentar: '
-                .collect($r['devueltos'])->map(fn ($d) => $d->correlativoCorto())->implode(', ').'.';
+        $salieron = collect($r['devueltos'])->filter(fn ($doc) => $r['items_quitados']->contains(fn ($item) => $reportes->mismoDocumento($item, $doc)));
+        if ($salieron->isNotEmpty()) {
+            $mensaje .= ' Los devueltos salieron del PPQ y vuelven a por presentar: '
+                .$salieron->map(fn ($d) => ($d->tipo_dte === '05' ? 'NC ' : '').$d->correlativoCorto())->implode(', ').'.';
+        }
+        if ($r['conservados']->isNotEmpty()) {
+            $mensaje .= ' Se conservaron '.$r['conservados']->count().' item(s) con historial de conciliación.';
         }
 
         return redirect()->route('ppq.lotes.show', $lote)->with('status', $mensaje);

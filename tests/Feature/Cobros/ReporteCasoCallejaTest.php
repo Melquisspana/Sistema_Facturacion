@@ -98,6 +98,9 @@ class ReporteCasoCallejaTest extends TestCase
         $this->assertStringContainsString('caso 12027', (string) $rechazado->eventos()->latest('id')->value('detalle'));
         $this->assertSame(EstadoPpq::Enviado, $lote->refresh()->estado, 'El PPQ queda presentado.');
         $this->assertStringContainsString('Caso 12027', (string) $lote->observaciones);
+        $this->assertStringContainsString('Devueltos del caso 12027', (string) $lote->observaciones);
+        $this->assertSame([$this->control('03', 197), $this->control('05', 18)], $lote->items()->orderBy('id')->pluck('numero_control')->all(),
+            'El CCF que Calleja no tomó sale del lote.');
 
         // El número del correo manda sobre el del archivo.
         $this->actingAs($usuario)

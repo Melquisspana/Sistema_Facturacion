@@ -20,6 +20,8 @@ use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Ppq\EstadoRealLotePpq;
+use App\Support\IdentidadPpq;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -373,5 +375,140 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $this->assertSame(2, $respuesta->viewData('etapas')['']);
         $this->assertSame(0, $respuesta->viewData('etapas')['presentados']);
         $this->assertSame(2, $respuesta->viewData('contadores')['total']);
+    }
+
+    public function test_devueltos_salen_con_sus_nc_y_pueden_armarse_de_nuevo(): void
+    {
+        $tomado = $this->ccf();
+        $devuelto = $this->ccf();
+        $ncTomado = $this->dte('05', ['dte_relacionado_id' => $tomado->dte_id, 'total_pagar' => 10]);
+        $ncDevuelto = $this->dte('05', ['dte_relacionado_id' => $devuelto->dte_id, 'total_pagar' => 15]);
+        $docNcTomado = CobroDocumento::create(['cliente_id' => $this->cliente->id, 'origen' => 'dte', 'dte_id' => $ncTomado->id,
+            'tipo_dte' => '05', 'numero_control' => $ncTomado->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => 10]);
+        $docNcTomado->forceFill(['presentacion_estado' => 'presentada'])->save();
+        $docNc = CobroDocumento::create(['cliente_id' => $this->cliente->id, 'origen' => 'dte', 'dte_id' => $ncDevuelto->id,
+            'tipo_dte' => '05', 'numero_control' => $ncDevuelto->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => 15]);
+        $lote = $this->crear([$tomado, $devuelto]);
+        // El vínculo también se resuelve en snapshots de correo.
+        $lote->items()->where('dte_id', $ncDevuelto->id)->update(['dte_id' => null]);
+        $reporte = ['caso' => '555', 'documentos' => [IdentidadPpq::normalizar($tomado->numero_control) => 'REGISTRADO',
+            IdentidadPpq::normalizar($ncDevuelto->numero_control) => 'REGISTRADO']];
+        $servicio = app(ReporteCasoCalleja::class);
+        $r = $servicio->aplicar($this->cliente, $reporte, lote: $lote);
+        $this->assertCount(2, $r['items_quitados']);
+        $this->assertSame(2, $lote->items()->count());
+        $this->assertEquals(90, $lote->refresh()->totalMontoDte());
+        $this->assertTrue($lote->items()->where('dte_id', $ncTomado->id)->exists());
+        $this->assertSame(EstadoPresentacionCobro::Presentada, $docNcTomado->refresh()->presentacion_estado);
+        $this->assertStringContainsString('CCF '.$devuelto->correlativoCorto().' · $100.00 · 10/09/2026', $lote->observaciones);
+        $this->assertStringContainsString('NC '.$docNc->correlativoCorto().' · -$15.00', $lote->observaciones);
+        $antes = $lote->observaciones;
+        $this->assertCount(0, $servicio->aplicar($this->cliente, $reporte, lote: $lote)['items_quitados']);
+        $this->assertSame($antes, $lote->refresh()->observaciones);
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $docNc->refresh()->presentacion_estado);
+        $this->assertSame(1, DB::table('activity_log')->where('description', 'ppq.devueltos_caso')->count());
+        $this->assertSame(1, $devuelto->eventos()->where('referencia_linea', 'caso-555-fuera')->count());
+        $this->assertSame(1, $docNc->eventos()->where('referencia_linea', 'caso-555-fuera')->count());
+        $this->assertSame(1, app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id]['devueltos']);
+        $elegibilidad = app(ElegibilidadPpqSeguimiento::class);
+        $this->assertNull($elegibilidad->motivo($devuelto->refresh(), $elegibilidad->claves()));
+        $nuevo = $this->crear([$devuelto]);
+        $this->assertTrue($nuevo->items()->where('dte_id', $ncDevuelto->id)->exists());
+        $servicio->aplicar($this->cliente, $reporte, lote: $lote);
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $devuelto->refresh()->presentacion_estado);
+    }
+
+    public function test_nc_del_ccf_que_permanece_se_queda_y_si_vino_registrada_queda_recibida(): void
+    {
+        $doc = $this->ccf();
+        $nc = $this->dte('05', ['dte_relacionado_id' => $doc->dte_id, 'total_pagar' => 10]);
+        $docNc = CobroDocumento::create(['cliente_id' => $this->cliente->id, 'origen' => 'dte', 'dte_id' => $nc->id,
+            'tipo_dte' => '05', 'numero_control' => $nc->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => 10]);
+        $sinReporte = $this->ccf();
+        $ncSinReporte = $this->dte('05', ['dte_relacionado_id' => $sinReporte->dte_id, 'total_pagar' => 5]);
+        $docNcSinReporte = CobroDocumento::create(['cliente_id' => $this->cliente->id, 'origen' => 'dte', 'dte_id' => $ncSinReporte->id,
+            'tipo_dte' => '05', 'numero_control' => $ncSinReporte->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => 5]);
+        $lote = $this->crear([$doc, $sinReporte]);
+        $r = app(ReporteCasoCalleja::class)->aplicar($this->cliente, ['caso' => '556', 'documentos' => [
+            IdentidadPpq::normalizar($doc->numero_control) => 'REGISTRADO', IdentidadPpq::normalizar($nc->numero_control) => 'REGISTRADO',
+            IdentidadPpq::normalizar($sinReporte->numero_control) => 'REGISTRADO',
+        ]], lote: $lote);
+        $this->assertSame(3, $r['recibidos']);
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $docNc->refresh()->presentacion_estado);
+        // La NC que el portal no listó sigue a su CCF, que quedó registrado: no sale ni cambia.
+        $this->assertSame(EstadoPresentacionCobro::SinPresentar, $docNcSinReporte->refresh()->presentacion_estado);
+        $this->assertSame(0, $docNcSinReporte->eventos()->count());
+        $this->assertSame(4, $lote->items()->count());
+        $this->assertCount(0, $r['items_quitados']);
+    }
+
+    /** Lote #20 de producción: el reporte se cargó con el código anterior y los devueltos quedaron dentro. */
+    public function test_volver_a_subir_el_reporte_corrige_un_lote_cargado_antes(): void
+    {
+        $tomado = $this->ccf();
+        $devuelto = $this->ccf();
+        $nc = $this->dte('05', ['dte_relacionado_id' => $devuelto->dte_id, 'total_pagar' => 10]);
+        $lote = $this->crear([$tomado, $devuelto]);
+        $this->assertSame(3, $lote->items()->count());
+        $reporte = ['caso' => '777', 'documentos' => [IdentidadPpq::normalizar($tomado->numero_control) => 'REGISTRADO']];
+        // Estado que dejó el código anterior: devuelto por presentar, con su evento, pero todavía en el lote.
+        $this->travel(1)->seconds();
+        $lote->update(['estado' => 'enviado', 'observaciones' => 'Caso 777 de Calleja.']);
+        $tomado->refresh()->forceFill(['presentacion_estado' => 'recibida'])->save();
+        $devuelto->refresh()->forceFill(['presentacion_estado' => 'sin_presentar'])->save();
+        CobroEvento::create(['cobro_documento_id' => $devuelto->id, 'tipo' => 'nota', 'origen' => 'manual',
+            'referencia_linea' => 'caso-777-fuera', 'fecha' => today(), 'datos' => ['caso' => '777', 'ppq_lote_id' => $lote->id]]);
+
+        $r = app(ReporteCasoCalleja::class)->aplicar($this->cliente, $reporte, lote: $lote);
+
+        $this->assertCount(2, $r['items_quitados'], 'Sale el CCF devuelto con su NC.');
+        $this->assertSame([$tomado->dte_id], $lote->items()->pluck('dte_id')->all());
+        $this->assertEquals(100, $lote->refresh()->totalMontoDte(), 'El lote queda igual al caso.');
+        $this->assertStringContainsString('Devueltos del caso 777', (string) $lote->observaciones);
+        $this->assertSame(1, $devuelto->eventos()->where('referencia_linea', 'caso-777-fuera')->count());
+        $this->assertSame(1, app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id]['devueltos']);
+        $this->assertTrue($this->crear([$devuelto->refresh()])->items()->where('dte_id', $nc->id)->exists(), 'Vuelve a armarse con su NC.');
+    }
+
+    public function test_reaplicar_con_item_viejo_y_otro_lote_no_cambia_el_estado(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $lote->update(['observaciones' => 'Caso 888 de Calleja.']);
+        $this->travel(1)->seconds();
+        $doc->refresh()->forceFill(['presentacion_estado' => 'sin_presentar'])->save();
+        CobroEvento::create(['cobro_documento_id' => $doc->id, 'tipo' => 'nota', 'origen' => 'manual',
+            'referencia_linea' => 'caso-888-fuera', 'fecha' => today(), 'datos' => ['caso' => '888', 'ppq_lote_id' => $lote->id]]);
+        $this->travel(1)->seconds();
+        $nuevo = $this->crear([$doc]);
+        $r = app(ReporteCasoCalleja::class)->aplicar($this->cliente, ['caso' => '888', 'documentos' => []], lote: $lote);
+        $this->assertCount(1, $r['items_quitados']);
+        $this->assertSame(EstadoPresentacionCobro::Preparada, $doc->refresh()->presentacion_estado);
+        $this->assertSame(1, $nuevo->items()->count());
+        $this->assertSame(1, $doc->eventos()->where('referencia_linea', 'caso-888-fuera')->count());
+    }
+
+    public function test_retiro_conserva_items_conciliados(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $lote->items()->update(['conciliacion_estado' => 'pagado']);
+        $r = app(ReporteCasoCalleja::class)->sacarDelLote($lote, '999', collect([$doc]));
+        $this->assertCount(0, $r['items_quitados']);
+        $this->assertCount(1, $r['conservados']);
+        $this->assertSame(1, $lote->items()->count());
+    }
+
+    public function test_retiro_conserva_movimientos_aunque_el_item_ya_no_este_conciliado(): void
+    {
+        $doc = $this->ccf();
+        $lote = $this->crear([$doc]);
+        $item = $lote->items()->sole();
+        $conciliacion = DB::table('ppq_conciliaciones')->insertGetId(['ppq_lote_id' => $lote->id]);
+        DB::table('ppq_conciliacion_movimientos')->insert(['ppq_conciliacion_id' => $conciliacion, 'ppq_item_id' => $item->id]);
+        $r = app(ReporteCasoCalleja::class)->sacarDelLote($lote, '999', collect([$doc]));
+        $this->assertCount(0, $r['items_quitados']);
+        $this->assertCount(1, $r['conservados']);
+        $this->assertDatabaseHas('ppq_conciliacion_movimientos', ['ppq_item_id' => $item->id]);
     }
 }
