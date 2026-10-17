@@ -8,6 +8,38 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.10.14] - 2026-10-14
+
+Incluye #107 y #108. No trae migraciones.
+
+### Agregado
+
+- Paquete de contabilidad: incluye las ventas invalidadas ante Hacienda (CCF, factura, NC y FEX). En el Excel de ventas salen con estado «INVALIDADO», la fila en rojo claro y los montos en 0, más la fecha, el código del evento y el monto original. El ZIP trae su PDF y la evidencia del evento. Los totales cuentan solo los vigentes y las invalidadas se informan aparte. #108
+
+### Corregido
+
+- PPQ: al cargar el reporte del caso de Calleja, los CCF devueltos salen del lote junto con sus NC, y el lote queda con el mismo total que el caso. Las observaciones del lote y la bitácora registran cada devuelto. Volver a subir el mismo reporte no cambia nada. #107
+
+## [2026.10.10.2] - 2026-10-10
+
+Segundo despliegue del día. Incluye #103. No trae migraciones.
+
+### Corregido
+
+- Archivo de quedan: el mes y el año de las filas de NC (AC02/AC04) salen de la fecha del albarán que se registró en la NC, que es la que usa Calleja, y las filas se ordenan AC01, AC02 y AC04 por fecha del albarán. #103
+
+## [2026.10.10] - 2026-10-10
+
+Incluye #100. No trae migraciones.
+
+### Cambiado
+
+- Lote PPQ: queda un solo botón, «Generar formato quedan». El archivo de NC se genera antes desde Documentos fiscales. #100
+
+### Corregido
+
+- Archivo de quedan: las NC que estuvieron en un lote PPQ borrado vuelven a salir en el quedan del lote nuevo. #100
+
 ## [2026.10.09] - 2026-10-09
 
 Incluye #79, #94 y #97. No trae migraciones.
