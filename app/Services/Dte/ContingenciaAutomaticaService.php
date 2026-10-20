@@ -9,7 +9,9 @@ use App\Models\Contingencia;
 use App\Models\Dte;
 use App\Models\User;
 use App\Support\Dte\CodigoGeneracion;
+use App\Support\HoraNegocio;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -74,6 +76,16 @@ class ContingenciaAutomaticaService
             if (($json['identificacion']['codigoGeneracion'] ?? null) !== $actual->codigo_generacion
                 || ($json['identificacion']['numeroControl'] ?? null) !== $actual->numero_control) {
                 throw new DteTransmisionException('El JSON no corresponde a la numeración del documento.');
+            }
+            // El MH rechaza un documento de contingencia emitido ANTES del inicio informado
+            // («fecEmi/horEmi VALOR NO ES PERMITIDO», ensayo en apitest del 19/10/2026). El
+            // documento que dispara la entrada se emitió segundos antes de activarla: el
+            // inicio retrocede hasta su emisión. Es seguro mientras la contingencia siga
+            // activa, porque su evento todavía no se envió.
+            $emision = Carbon::createFromFormat('Y-m-d H:i:s',
+                $json['identificacion']['fecEmi'].' '.$json['identificacion']['horEmi'], HoraNegocio::zona());
+            if ($emision->lt(HoraNegocio::aLocal($contingencia->inicio))) {
+                $contingencia->update(['inicio' => $emision]);
             }
             $json['identificacion'] = array_replace($json['identificacion'], [
                 'tipoModelo' => 2, 'tipoOperacion' => 2,
