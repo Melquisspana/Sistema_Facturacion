@@ -24,6 +24,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -198,6 +199,40 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame('2026-10-13 10:00:00', $activa->refresh()->inicio->format('Y-m-d H:i:s'));
     }
 
+    public function test_documento_emitido_hace_mas_del_tope_no_activa_ni_convierte(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00; tope por defecto, 10 minutos
+        $firma = $dte->json_firmado_path;
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:30:00', 'America/El_Salvador'));
+        $this->artisan('dte:transmitir', ['dte' => $dte->id]);
+
+        $this->assertDatabaseCount('contingencias', 0);
+        $this->assertNull($dte->refresh()->contingencia_id);
+        $this->assertSame($firma, $dte->json_firmado_path);
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'generate_204'));
+    }
+
+    public function test_documento_viejo_no_se_suma_a_una_contingencia_activa(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:30:00', 'America/El_Salvador'));
+        $activa = app(ContingenciaService::class)->activar(1, 'Corte inventado', 'manual', null);
+        $this->artisan('dte:transmitir', ['dte' => $dte->id]);
+
+        $this->assertNull($dte->refresh()->contingencia_id);
+        $this->assertSame('2026-10-13 10:30:00', $activa->refresh()->inicio->format('Y-m-d H:i:s'));
+    }
+
+    public function test_dentro_del_tope_se_convierte_y_el_inicio_retrocede(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:09:59', 'America/El_Salvador'));
+        $this->artisan('dte:transmitir', ['dte' => $dte->id])->assertSuccessful();
+
+        $this->assertTrue($dte->refresh()->esTransitorio());
+        $this->assertSame('2026-10-13 10:00:00', $dte->contingencia->inicio->format('Y-m-d H:i:s'));
+    }
+
     public function test_conversion_rechaza_resultado_sin_confirmacion(): void
     {
         $dte = $this->documento();
@@ -302,6 +337,63 @@ class ContingenciaAutomaticaTest extends TestCase
     {
         Schema::partialMock()->shouldReceive('hasTable')->with('contingencias')->andReturn(false);
         $this->assertStringNotContainsString('Modo contingencia desde', (string) $this->view('components.aviso-contingencia'));
+    }
+
+    public function test_revision_manual_filtra_emision_estado_sello_contingencia_y_ambiente(): void
+    {
+        config(['dte.contingencia.retroceso_max_minutos' => 10]);
+        $crear = fn (array $datos = []) => Dte::create(array_replace([
+            'tipo_dte' => '01', 'ambiente' => '00', 'estado' => 'firmado',
+            'fecha_emision' => '2026-10-13', 'hora_emision' => '09:30:00',
+            'establecimiento_id' => $this->emisor['estab']->id,
+            'punto_venta_id' => $this->emisor['pv']->id,
+            'numero_control' => 'REVISION-'.fake()->unique()->numerify('########'),
+            'total_pagar' => 12.50,
+        ], $datos));
+        $viejo = $crear();
+        $excluidos = collect([
+            $crear(['hora_emision' => '09:55:00']),
+            $crear(['hora_emision' => '09:50:00']), // En el tope aún puede convertirse.
+            $crear(['estado' => 'aceptado', 'sello_recepcion' => 'SELLO-INVENTADO']),
+            $crear(['sello_recepcion' => 'SELLO-INVENTADO']),
+            $crear(['ambiente' => '01']),
+            $crear(['contingencia_id' => app(ContingenciaService::class)->activar(3, null, 'manual', null)->id]),
+        ]);
+        $this->assertSame([$viejo->id], app(ContingenciaService::class)->documentosParaRevision()->pluck('id')->all());
+        $this->actingAs(User::factory()->create()->assignRole('administrador'));
+        $respuesta = $this->get(route('facturacion.contingencia.pendientes'))->assertOk()
+            ->assertSee('Para revisión manual')->assertSee($viejo->numero_control)
+            ->assertSee('13/10/2026 09:30:00')->assertSee('30 minutos')
+            ->assertSee(route('facturacion.show', $viejo), false)
+            ->assertSee('consultá con la contadora');
+        $this->assertSame([$viejo->id], $respuesta->viewData('paraRevision')->pluck('id')->all());
+        foreach ($excluidos->whereNull('contingencia_id') as $excluido) {
+            $respuesta->assertDontSee($excluido->numero_control);
+        }
+        $consultas = [];
+        DB::listen(function ($consulta) use (&$consultas) {
+            if (str_contains(strtolower($consulta->sql), 'count(') && str_contains($consulta->sql, 'dtes')) {
+                $consultas[] = $consulta->sql;
+            }
+        });
+        $this->view('components.aviso-contingencia')
+            ->assertSee('Hay 1 documentos firmados sin enviar a Hacienda: revisalos');
+        $this->assertCount(1, $consultas);
+    }
+
+    public function test_revision_manual_aviso_requiere_permiso_interruptor_y_tabla(): void
+    {
+        $this->documento();
+        Carbon::setTestNow(now()->addMinutes(30));
+        $this->assertSame(1, app(ContingenciaService::class)->documentosParaRevision()->count());
+        $this->view('components.aviso-contingencia')->assertDontSee('firmados sin enviar a Hacienda');
+        $this->actingAs(User::factory()->create()->assignRole('administrador'));
+        $this->view('components.aviso-contingencia')->assertSee('Hay 1 documentos firmados sin enviar a Hacienda: revisalos');
+        config(['dte.contingencia.enabled' => false]);
+        $this->assertSame('', trim((string) $this->view('components.aviso-contingencia')));
+        config(['dte.contingencia.enabled' => true]);
+        Schema::partialMock()->shouldReceive('hasTable')->with('contingencias')->andReturn(false);
+        $this->view('components.aviso-contingencia')->assertDontSee('firmados sin enviar a Hacienda');
     }
 
     public function test_cabecera_corregida_actualiza_json_generado_sin_firma(): void

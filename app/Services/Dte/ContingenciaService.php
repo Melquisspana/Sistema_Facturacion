@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\Dte\CodigoGeneracion;
 use App\Support\HoraNegocio;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,24 @@ use Illuminate\Validation\ValidationException;
 
 class ContingenciaService
 {
+    /**
+     * Emisión en hora de El Salvador (fecha_emision/hora_emision, origen de
+     * fecEmi/horEmi del JSON), no updated_at ni la hora del último reintento.
+     * El límite es estricto, igual que el tope de conversión automática.
+     */
+    public function documentosParaRevision(): Builder
+    {
+        $limite = HoraNegocio::ahora()->subMinutes(max(1, (int) config('dte.contingencia.retroceso_max_minutos', 10)));
+
+        return Dte::ambienteOperativoActual()
+            ->where('estado', EstadoDte::Firmado->value)
+            ->where(fn (Builder $q) => $q->whereNull('sello_recepcion')->orWhere('sello_recepcion', ''))
+            ->whereNull('contingencia_id')
+            ->where(fn (Builder $q) => $q->whereDate('fecha_emision', '<', $limite->toDateString())
+                ->orWhere(fn (Builder $q) => $q->whereDate('fecha_emision', $limite->toDateString())
+                    ->where('hora_emision', '<', $limite->toTimeString())));
+    }
+
     public function activa(): ?Contingencia
     {
         if (! config('dte.contingencia.enabled', false) || ! Schema::hasTable('contingencias')) {

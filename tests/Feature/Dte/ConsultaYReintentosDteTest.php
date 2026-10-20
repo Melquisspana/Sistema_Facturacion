@@ -24,6 +24,7 @@ use App\Support\Dte\EndpointsHacienda;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\PreparaEmisorDte;
@@ -263,6 +264,8 @@ class ConsultaYReintentosDteTest extends TestCase
             ['descripcionMsg' => 'Error de validación del documento'],
             ['codigoGeneracion' => 'A6215A10-3A4F-4C91-82DF-D49C5D1F5DB7'],
         ] as $cambio) {
+            // Factory nueva en cada vuelta: Http::fake() acumula y ganaría la primera respuesta.
+            Http::swap(new Factory);
             Http::fake(['*' => Http::response(array_replace($this->cuerpoNoEncontradoMh(), $cambio), 400)]);
 
             $r = $this->consulta()->consultar($dte);
