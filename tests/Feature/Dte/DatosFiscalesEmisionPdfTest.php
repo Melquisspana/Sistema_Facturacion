@@ -256,4 +256,29 @@ class DatosFiscalesEmisionPdfTest extends TestCase
         $this->assertSame('original@cliente.example.com', $evento['documento']['correo']);
         $this->assertTrue(app(DteSchemaValidator::class)->validarInvalidacion($evento)['valido']);
     }
+
+    /**
+     * Una FE emitida antes de normalizar el documento del receptor transmitió el NIT con
+     * guiones. La invalidación lo sigue mandando solo con dígitos, como antes.
+     */
+    public function test_invalidacion_de_fe_vieja_con_nit_con_guiones_manda_solo_digitos(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create(['num_documento' => '0614-010101-001-1', 'correo' => 'fe@cliente.example.com']);
+        $fe = $this->aceptarCcf($this->emitido(TipoDte::Factura, $cliente));
+
+        // El JSON guardado de esa época trae el NIT tal como estaba en el cliente.
+        $json = json_decode((string) Storage::disk('local')->get($fe->json_generado_path), true);
+        $json['receptor']['numDocumento'] = '0614-010101-001-1';
+        Storage::disk('local')->put($fe->json_generado_path, json_encode($json));
+
+        $evento = app(SerializadorInvalidacionMh::class)->serializar($this->fresco($fe), new EventoInvalidacionData(
+            tipoAnulacion: TipoAnulacionMh::RescindirOperacion,
+            nombreResponsable: 'Responsable de Prueba', tipoDocResponsable: '13', numDocResponsable: '040000000',
+            nombreSolicita: 'Solicitante de Prueba', tipoDocSolicita: '36', numDocSolicita: '06145555551015',
+        ));
+
+        $this->assertSame('36', $evento['documento']['tipoDocumento']);
+        $this->assertSame('06140101010011', $evento['documento']['numDocumento']);
+        $this->assertTrue(app(DteSchemaValidator::class)->validarInvalidacion($evento)['valido']);
+    }
 }

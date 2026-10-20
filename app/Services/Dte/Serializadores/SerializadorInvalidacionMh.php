@@ -196,7 +196,10 @@ class SerializadorInvalidacionMh
             'codigoGeneracionR' => $codigoGeneracionR,
             // Receptor del DTE invalidado (tal como se identificó fiscalmente).
             'tipoDocumento' => $fiscales !== null ? ($emitido['tipoDocumento'] ?? null) : ($r?->tipo_documento?->value),
-            'numDocumento' => $fiscales !== null ? ($emitido['numDocumento'] ?? null) : ($r !== null ? $this->soloDigitos($r->num_documento) : null),
+            // Solo dígitos, como siempre: una FE vieja pudo transmitir el NIT con guiones.
+            'numDocumento' => $fiscales !== null
+                ? (isset($emitido['numDocumento']) ? $this->soloDigitos($emitido['numDocumento']) : null)
+                : ($r !== null ? $this->soloDigitos($r->num_documento) : null),
             'nombre' => $fiscales !== null ? ($emitido['nombre'] ?? null) : ($r?->nombre),
             'telefono' => $fiscales !== null ? ($emitido['telefono'] ?? null) : ($r?->telefono),
             'correo' => $fiscales !== null ? ($emitido['correo'] ?? null) : ($r?->correo),
