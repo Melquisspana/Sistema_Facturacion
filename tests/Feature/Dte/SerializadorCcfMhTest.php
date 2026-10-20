@@ -159,7 +159,9 @@ class SerializadorCcfMhTest extends TestCase
     {
         // fe-ccf-v4: pagos es ["array","null"] con minItems:1 y el MH rechaza null en
         // el CCF → debe ser un arreglo con (al menos) un pago, nunca null ni [].
-        $a = app(SerializadorCcfMh::class)->serializar($this->salida());
+        // Al contado el código de forma de pago es obligatorio y el monto es el total
+        // (Normativa 2.0, Anexo IV, campos 160-161). A crédito: PagosResumenHacienda20Test.
+        $a = app(SerializadorCcfMh::class)->serializar($this->salida(condicion: 1));
 
         $this->assertIsArray($a['resumen']['pagos']);
         $this->assertCount(1, $a['resumen']['pagos']);
@@ -189,7 +191,7 @@ class SerializadorCcfMhTest extends TestCase
 
     public function test_pagos_usa_la_forma_de_pago_del_documento(): void
     {
-        $a = app(SerializadorCcfMh::class)->serializar($this->salida(formaPago: '05'));
+        $a = app(SerializadorCcfMh::class)->serializar($this->salida(formaPago: '05', condicion: 1));
 
         $this->assertSame('05', $a['resumen']['pagos'][0]['codigo']);
     }

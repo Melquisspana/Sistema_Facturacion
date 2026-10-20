@@ -215,7 +215,66 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
+    /**
+     * Normativa 2.0, Anexo IV, campo 39: en FE el NIT va sin guiones y el DUI son 9
+     * dígitos sin guiones. El cliente admite guardarlos con guiones.
+     */
+    public function test_factura_manda_nit_y_dui_del_receptor_sin_guiones(): void
+    {
+        foreach (['36' => ['0614-010101-001-1', '06140101010011'], '13' => ['01234567-8', '012345678']] as $tipo => [$guardado, $esperado]) {
+            $receptor = new ReceptorDteData(
+                tipoDocumento: (string) $tipo, numDocumento: $guardado, nrc: null, nombre: 'Cliente Identificado',
+                actividadEconomica: '10730', departamento: '06', municipio: '17', distrito: '0617',
+                direccion: 'Colonia Escalón', telefono: '22001111', correo: 'cliente@ejemplo.sv',
+            );
+            $salida = new DteSalidaData(
+                identificacion: $this->ident('01', 2), emisor: $this->emisor(), resumen: $this->resumenCcf(),
+                lineas: [$this->lineaGravada()], receptor: $receptor, apendice: [],
+            );
+
+            $oficial = app(SerializadorFacturaMh::class)->serializar($salida);
+
+            $this->assertSame($esperado, $oficial['receptor']['numDocumento'], "Tipo {$tipo}");
+        }
+    }
+
+    public function test_factura_no_altera_documentos_que_no_son_nit_ni_dui(): void
+    {
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '03', numDocumento: 'A-123456', nrc: null, nombre: 'Cliente con pasaporte',
+            actividadEconomica: '10730', departamento: '06', municipio: '17', distrito: '0617',
+            direccion: 'Colonia Escalón', telefono: '22001111', correo: 'cliente@ejemplo.sv',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('01', 2), emisor: $this->emisor(), resumen: $this->resumenCcf(),
+            lineas: [$this->lineaGravada()], receptor: $receptor, apendice: [],
+        );
+
+        $this->assertSame('A-123456', app(SerializadorFacturaMh::class)->serializar($salida)['receptor']['numDocumento']);
+    }
+
     // --- Exportación 11 ---
+
+    public function test_exportacion_manda_dui_del_receptor_sin_guiones(): void
+    {
+        $receptor = new ReceptorDteData(
+            tipoDocumento: '13', numDocumento: '01234567-8', nombre: 'Persona Natural',
+            actividadEconomica: '10730', pais: 'GT', direccion: 'Ciudad de Guatemala', tipoPersona: '1',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '0.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '100.00',
+            descuentoGravado: '0.00', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '0.00',
+            iva: '0.00', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '100.00',
+            montoTotalOperacion: '100.00', totalPagar: '100.00', totalLetras: 'CIEN 00/100',
+            flete: '0.00', seguro: '0.00', condicionOperacion: 1, porcentajeDescuento: '0.00',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('11', 3), emisor: $this->emisor(), resumen: $resumen,
+            lineas: [$this->lineaExportacion()], receptor: $receptor, apendice: [],
+        );
+
+        $this->assertSame('012345678', app(SerializadorExportacionMh::class)->serializar($salida)['receptor']['numDocumento']);
+    }
 
     public function test_exportacion_serializa_y_valida_con_pais(): void
     {
