@@ -8,6 +8,16 @@ El usuario invirtió los roles: **Claude coordina y hace lo importante** (análi
 - Si el usuario trabaja desde la app de Codex, Codex implementa directamente y consulta a Claude por `Invoke-ClaudeCollaborator.ps1` para diseño o revisión de lo importante.
 - Siguen vigentes todas las restricciones de abajo: sin commit, push, despliegue, migraciones nuevas ni producción sin instrucción expresa; no tocar `C:\rclone` ni `firmware/asistencia/asistencia.ino`.
 
+## Regla para los encargos: no hacer de más
+
+Aplica a todo encargo de código, de Claude a Codex o al revés. Idea tomada de Ponytail (DietrichGebert/ponytail, MIT); no se instala.
+
+- Hacer el cambio más chico que resuelva **todo** el pedido. Nada de opciones, configuraciones, abstracciones ni código «para después» que nadie pidió; si se omite algo, nombrarlo en una línea al entregar.
+- Antes de escribir, buscar si ya existe en el proyecto (servicio, componente, patrón) y usarlo como lo usa el código vecino. No agregar dependencias para unas pocas líneas.
+- Ser corto en la solución, nunca en el alcance: llegar a todos los llamadores, pruebas, vistas y configuración que el cambio afecta, y corregir la causa una sola vez en el código compartido.
+- **Nunca se recortan:** validaciones en el servidor, autorización (políticas, permisos y roles), manejo de errores que evita perder datos, seguridad, accesibilidad ni pruebas. La lógica nueva no trivial (dinero, impuestos, DTE, permisos, importaciones) lleva su prueba. El código que se mueve conserva sus validaciones.
+- Al entregar, una o dos líneas: qué se dejó afuera o no se comprobó, y qué riesgo queda.
+
 ## Reparto anterior (24/09/2026, sustituido en roles)
 
 Preferencia expresa del usuario, aclarada el 24/09/2026: **Claude es el desarrollador principal; Codex asiste al usuario, coordina y revisa, y también puede programar cuando sea útil o necesario.** Ambos colaboran en la misma tarea, sin consumir Claude para análisis, documentación, verificaciones o arreglos acotados que Codex puede resolver con seguridad.
