@@ -3,6 +3,33 @@
     <div class="mx-auto max-w-7xl space-y-4 px-6 py-8 text-gray-900 dark:text-gray-100">
         @if (session('status'))<p role="status">{{ session('status') }}</p>@endif
         @if ($errors->any())<p role="alert">{{ $errors->first() }}</p>@endif
+        @if ($paraRevision->isNotEmpty())
+            <section class="space-y-3 rounded border border-amber-500 p-4" aria-labelledby="revision-manual">
+                <h3 id="revision-manual" class="font-semibold">Para revisión manual</h3>
+                <p>Abrí el documento e intentá «Firmar y transmitir» de nuevo. Si Hacienda sigue sin responder, consultá con la contadora antes de emitir otro.</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <caption class="sr-only">Documentos firmados sin enviar a Hacienda que requieren revisión manual</caption>
+                        <thead><tr><th scope="col">Número / cliente</th><th scope="col">Total</th><th scope="col">Fecha/hora de emisión</th><th scope="col">Antigüedad</th><th scope="col">Acciones</th></tr></thead>
+                        <tbody>
+                            @foreach ($paraRevision as $revision)
+                                @php
+                                    $emisionRevision = \Illuminate\Support\Carbon::parse($revision->fecha_emision->format('Y-m-d').' '.$revision->hora_emision, \App\Support\HoraNegocio::zona());
+                                @endphp
+                                <tr class="border-t border-gray-300 dark:border-gray-600">
+                                    <td class="p-3">{{ $revision->numero_control }}<br>{{ $revision->cliente?->nombre ?? $revision->cliente?->razon_social ?? 'Sin cliente' }}</td>
+                                    <td class="p-3">${{ number_format((float) $revision->total_pagar, 2) }}</td>
+                                    <td class="p-3">{{ $emisionRevision->format('d/m/Y H:i:s') }}</td>
+                                    <td class="p-3">{{ (int) $emisionRevision->diffInMinutes(\App\Support\HoraNegocio::ahora()) }} minutos</td>
+                                    <td class="p-3"><a class="underline" href="{{ route('facturacion.show', $revision) }}">Abrir documento</a></td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                {{ $paraRevision->withQueryString()->links() }}
+            </section>
+        @endif
         <p>Plazos en hora de El Salvador. Vencida la contingencia, gestioná una prórroga ante el MH.</p>
         @if ($lotesConError->isNotEmpty())
             <section class="space-y-3 rounded border border-amber-500 p-4" aria-labelledby="lotes-rechazados">
