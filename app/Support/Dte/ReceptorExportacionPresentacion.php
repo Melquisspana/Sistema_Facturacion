@@ -17,8 +17,10 @@ use App\Models\Dte;
 final class ReceptorExportacionPresentacion
 {
     /**
+     * Devuelve null si el documento no es FEX o no tiene cliente. En un documento emitido,
+     * los datos fiscales salen del JSON transmitido ({@see DatosFiscalesEmision}).
+     *
      * @return array{nombre: string, destino: ?string, documento: ?string, actividad: ?string, correo: ?string, direccion: ?string, telefono: ?string}|null
-     *               null si el documento no es FEX o no tiene cliente.
      */
     public static function resolver(Dte $dte): ?array
     {
@@ -39,7 +41,7 @@ final class ReceptorExportacionPresentacion
             $direccion .= ' — '.$cliente->complemento_direccion;
         }
 
-        return [
+        $datos = [
             'nombre' => $cliente->nombre,
             'destino' => $cliente->pais?->nombre,
             'documento' => $cliente->num_documento,
@@ -48,5 +50,21 @@ final class ReceptorExportacionPresentacion
             'direccion' => $direccion !== '' ? $direccion : null,
             'telefono' => $cliente->telefono,
         ];
+        $fiscales = DatosFiscalesEmision::desde($dte);
+        if ($fiscales !== null) {
+            $r = $fiscales['receptor'] ?? [];
+            foreach (['nombre' => 'nombre', 'documento' => 'numDocumento', 'correo' => 'correo', 'telefono' => 'telefono'] as $campo => $clave) {
+                $datos[$campo] = DatosFiscalesEmision::valor($datos[$campo], $r[$clave] ?? null, $campo === 'documento' && in_array($r['tipoDocumento'] ?? null, ['36', '13'], true));
+            }
+            $datos['actividad'] = DatosFiscalesEmision::actividad($cliente, $r, $datos['actividad']);
+            if ((string) $cliente->pais?->codigo !== (string) ($r['codPais'] ?? null)) {
+                $datos['destino'] = $r['nombrePais'] ?? $r['codPais'] ?? null;
+            }
+            if ((string) $ubicacion->direccion !== (string) ($r['complemento'] ?? null)) {
+                $datos['direccion'] = $r['complemento'] ?? null;
+            }
+        }
+
+        return $datos;
     }
 }

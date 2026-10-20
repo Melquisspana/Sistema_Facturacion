@@ -5,6 +5,7 @@ namespace App\Services\Dte;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Support\Dte\DatosExportacionPresentacion;
+use App\Support\Dte\DatosFiscalesEmision;
 use App\Support\Dte\ReceptorExportacionPresentacion;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Endroid\QrCode\Builder\Builder;
@@ -67,6 +68,7 @@ class DtePdfService
         return [
             'dte' => $dte,
             'emisor' => $emisor,
+            'datosFiscalesEmision' => DatosFiscalesEmision::desde($dte),
             'logoSrc' => $this->logoSrc(),
             'qrDataUri' => $this->qrOficial($dte), // solo si hay sello (datos oficiales)
             'datosExportacion' => DatosExportacionPresentacion::resolver($dte),

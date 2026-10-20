@@ -7,6 +7,7 @@ use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\Dte;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Support\Dte\CodigoGeneracion;
+use App\Support\Dte\DatosFiscalesEmision;
 use App\Support\Dte\DocumentoIdentidadMh;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\HoraNegocio;
@@ -176,6 +177,8 @@ class SerializadorInvalidacionMh
     private function documento(Dte $dte, EventoInvalidacionData $evento): array
     {
         $r = $dte->cliente;
+        $fiscales = DatosFiscalesEmision::desde($dte);
+        $emitido = $fiscales['receptor'] ?? [];
 
         // El sustituto viaja SOLO en las celdas de la matriz que lo exigen; en el resto
         // va null, aunque alguien haya intentado mandarlo (los candados ya lo rechazaron
@@ -192,11 +195,11 @@ class SerializadorInvalidacionMh
             'fecEmi' => $dte->fecha_emision?->format('Y-m-d') ?? '',
             'codigoGeneracionR' => $codigoGeneracionR,
             // Receptor del DTE invalidado (tal como se identificó fiscalmente).
-            'tipoDocumento' => $r?->tipo_documento?->value,
-            'numDocumento' => $r !== null ? $this->soloDigitos($r->num_documento) : null,
-            'nombre' => $r?->nombre,
-            'telefono' => $r?->telefono,
-            'correo' => $r?->correo,
+            'tipoDocumento' => $fiscales !== null ? ($emitido['tipoDocumento'] ?? null) : ($r?->tipo_documento?->value),
+            'numDocumento' => $fiscales !== null ? ($emitido['numDocumento'] ?? null) : ($r !== null ? $this->soloDigitos($r->num_documento) : null),
+            'nombre' => $fiscales !== null ? ($emitido['nombre'] ?? null) : ($r?->nombre),
+            'telefono' => $fiscales !== null ? ($emitido['telefono'] ?? null) : ($r?->telefono),
+            'correo' => $fiscales !== null ? ($emitido['correo'] ?? null) : ($r?->correo),
         ];
     }
 
