@@ -19,6 +19,7 @@ use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Cobros\VinculadorAlbaranes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Activitylog\Models\Activity;
@@ -39,6 +40,9 @@ class CobrosCcfInvalidadoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Los documentos llevan fecha fija (2026-09-18): con «hoy» real, el alta los marcaría como
+        // históricos (más de 30 días) y el caso dejaría de probar lo que dice.
+        $this->travelTo(Carbon::parse('2026-09-25 10:00:00'));
         $this->seedCatalogosDte();
         config(['ppq.gmail.enabled' => false]);
         $this->cliente = Cliente::factory()->contribuyente()->create(['nombre' => 'Calleja, S.A. de C.V.']);

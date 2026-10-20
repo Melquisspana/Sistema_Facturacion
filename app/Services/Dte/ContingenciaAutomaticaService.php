@@ -14,6 +14,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -36,6 +37,22 @@ class ContingenciaAutomaticaService
             || ($resultado['contingencia_requerida'] ?? false) !== true
             || ($resultado['consulta_resultado'] ?? null) !== 'no_encontrado'
             || ! empty($resultado['consulta_no_disponible'])) {
+            return false;
+        }
+
+        // El inicio de la contingencia retrocede hasta la emisión del documento (ver abajo),
+        // pero no sin límite: un documento firmado hace horas (por ejemplo, con el worker
+        // caído) no puede declarar contingencia por horas en que Hacienda sí respondía. Más
+        // allá del tope no se convierte ni se activa nada: queda para revisión manual.
+        $emision = $this->emision($dte);
+        $tope = max(1, (int) config('dte.contingencia.retroceso_max_minutos', 10));
+        if ($emision === null || $emision->lt(HoraNegocio::ahora()->subMinutes($tope))) {
+            Log::warning('Contingencia: documento fuera de la ventana para la entrada automática', [
+                'dte_id' => $dte->id, 'emision' => $emision?->toDateTimeString(), 'tope_minutos' => $tope]);
+            activity('dte_contingencia')->performedOn($dte)
+                ->withProperties(['emision' => $emision?->toDateTimeString(), 'tope_minutos' => $tope])
+                ->log('Reintentos agotados con un documento emitido hace más del tope: revisión manual, sin contingencia automática');
+
             return false;
         }
 
@@ -81,10 +98,11 @@ class ContingenciaAutomaticaService
             // («fecEmi/horEmi VALOR NO ES PERMITIDO», ensayo en apitest del 19/10/2026). El
             // documento que dispara la entrada se emitió segundos antes de activarla: el
             // inicio retrocede hasta su emisión. Es seguro mientras la contingencia siga
-            // activa, porque su evento todavía no se envió.
-            $emision = Carbon::createFromFormat('Y-m-d H:i:s',
-                $json['identificacion']['fecEmi'].' '.$json['identificacion']['horEmi'], HoraNegocio::zona());
-            if ($emision->lt(HoraNegocio::aLocal($contingencia->inicio))) {
+            // activa, porque su evento todavía no se envió. El tope ya se comprobó arriba.
+            // Se escribe en la zona del negocio, igual que ContingenciaService::activar()
+            // escribe el inicio con HoraNegocio::ahora().
+            $emision = $this->emisionDesdeJson($json);
+            if ($emision !== null && $emision->lt(HoraNegocio::aLocal($contingencia->inicio))) {
                 $contingencia->update(['inicio' => $emision]);
             }
             $json['identificacion'] = array_replace($json['identificacion'], [
@@ -119,5 +137,29 @@ class ContingenciaAutomaticaService
 
             return true;
         });
+    }
+
+    /** Emisión del documento según su JSON generado (lo que el MH compara), en hora local. */
+    private function emision(Dte $dte): ?Carbon
+    {
+        $ruta = $dte->json_generado_path;
+        $disco = Storage::disk(config('dte.storage.disk', 'local'));
+        if (blank($ruta) || ! $disco->exists($ruta)) {
+            return null;
+        }
+
+        return $this->emisionDesdeJson(json_decode($disco->get($ruta), true) ?: []);
+    }
+
+    /** @param  array<string, mixed>  $json */
+    private function emisionDesdeJson(array $json): ?Carbon
+    {
+        $fecha = $json['identificacion']['fecEmi'] ?? null;
+        $hora = $json['identificacion']['horEmi'] ?? null;
+        if (! is_string($fecha) || ! is_string($hora)) {
+            return null;
+        }
+
+        return rescue(fn () => Carbon::createFromFormat('Y-m-d H:i:s', $fecha.' '.$hora, HoraNegocio::zona()), null, false);
     }
 }

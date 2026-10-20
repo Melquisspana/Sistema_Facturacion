@@ -44,6 +44,10 @@ return [
         'sonda_internet_url' => env('DTE_CONTINGENCIA_SONDA_URL', 'https://www.gstatic.com/generate_204'),
         'reconexion_minutos' => 15,
         'envio_automatico_horas' => 12,
+        // Cuánto puede retroceder el inicio hasta la emisión del documento que dispara la
+        // entrada automática. Más allá, revisión manual (no se declara contingencia por
+        // horas en que Hacienda respondía).
+        'retroceso_max_minutos' => 10,
         'lote_max' => 100,
         // Confirmar version en el ambiente de pruebas del MH: MT p.21 no es claro.
         'lote_version' => 1,

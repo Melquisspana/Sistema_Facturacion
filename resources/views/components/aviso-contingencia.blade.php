@@ -1,4 +1,16 @@
 @php($contingencia = app(\App\Services\Dte\ContingenciaService::class)->activa())
+@if (config('dte.contingencia.enabled', false) && \Illuminate\Support\Facades\Schema::hasTable('contingencias'))
+    @can('dte.contingencia')
+        @if (\Illuminate\Support\Facades\Schema::hasTable('dtes'))
+            @php($cantidadRevision = app(\App\Services\Dte\ContingenciaService::class)->documentosParaRevision()->count())
+            @if ($cantidadRevision > 0)
+                <p role="status" class="border-b border-amber-400 bg-amber-100 px-6 py-3 text-amber-950">
+                    <a class="underline" href="{{ route('facturacion.contingencia.pendientes') }}">Hay {{ $cantidadRevision }} documentos firmados sin enviar a Hacienda: revisalos</a>
+                </p>
+            @endif
+        @endif
+    @endcan
+@endif
 @if (config('dte.contingencia.enabled', false) && isset($errors))
     @foreach (['tipo', 'motivo', 'contingencia', 'cese'] as $campoContingencia)
         @error($campoContingencia)
