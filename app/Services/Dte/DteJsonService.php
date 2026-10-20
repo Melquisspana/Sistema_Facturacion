@@ -55,6 +55,9 @@ class DteJsonService
             // 4. Numeración oficial asignada UNA SOLA VEZ (congelada).
             if (blank($dte->numero_control)) {
                 $dte->numero_control = $this->numeroControl($dte);
+                // La unicidad del número de control es por ejercicio (#42): un documento
+                // viejo que recién recibe número también lo necesita.
+                $dte->ejercicio ??= $dte->fecha_emision?->year;
             }
             if (blank($dte->codigo_generacion)) {
                 $dte->codigo_generacion = CodigoGeneracion::generar();

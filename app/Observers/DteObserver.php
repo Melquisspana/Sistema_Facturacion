@@ -31,6 +31,7 @@ class DteObserver
     private const CAMPOS_PERMITIDOS_FUERA_DE_BORRADOR = [
         'estado',
         'numero_control',
+        'ejercicio', // se fija junto con numero_control (#42)
         'codigo_generacion',
         'sello_recepcion',
         'respuesta_mh',
