@@ -240,6 +240,47 @@ class ConsultaYReintentosDteTest extends TestCase
         $this->assertFalse($r['recibido']);
     }
 
+    /** Respuesta real de apitest (19/10/2026) para un documento que el MH no tiene. */
+    public function test_la_consulta_interpreta_el_400_codigo_999_del_mh_como_no_encontrado(): void
+    {
+        $this->habilitarTransmision();
+        $dte = $this->ccfFirmado();
+        Http::fake(['*' => Http::response($this->cuerpoNoEncontradoMh(), 400)]);
+
+        $r = $this->consulta()->consultar($dte);
+
+        $this->assertSame('no_encontrado', $r['resultado']);
+        $this->assertFalse($r['recibido']);
+    }
+
+    /** Un 400 que no es el «no encontrado» del MH sigue siendo un error: no autoriza a reenviar. */
+    public function test_otro_400_del_mh_no_se_lee_como_no_encontrado(): void
+    {
+        $this->habilitarTransmision();
+        $dte = $this->ccfFirmado();
+        foreach ([
+            ['codigoMsg' => '998'],
+            ['descripcionMsg' => 'Error de validación del documento'],
+            ['codigoGeneracion' => 'A6215A10-3A4F-4C91-82DF-D49C5D1F5DB7'],
+        ] as $cambio) {
+            Http::fake(['*' => Http::response(array_replace($this->cuerpoNoEncontradoMh(), $cambio), 400)]);
+
+            $r = $this->consulta()->consultar($dte);
+
+            $this->assertSame('error_http', $r['resultado'], json_encode($cambio));
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function cuerpoNoEncontradoMh(): array
+    {
+        return [
+            'version' => 2, 'ambiente' => '00', 'versionApp' => 2, 'estado' => null, 'codigoGeneracion' => null,
+            'selloRecibido' => null, 'fhProcesamiento' => '19/10/2026 23:51:51', 'clasificaMsg' => null,
+            'codigoMsg' => '999', 'descripcionMsg' => 'No se encontro ningun registro que coincida', 'observaciones' => [],
+        ];
+    }
+
     /** Si no se pudo preguntar, la respuesta NO es "no recibido": es "no se sabe". */
     public function test_si_la_consulta_no_responde_no_afirma_que_no_fue_recibido(): void
     {
