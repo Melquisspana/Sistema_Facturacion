@@ -8,7 +8,9 @@ use App\Exceptions\Dte\DteTransmisionException;
 use App\Models\Dte;
 use App\Support\Dte\CandadoEndpointOficial;
 use App\Support\Dte\EndpointsHacienda;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -62,7 +64,7 @@ class DteConsultaService
      *
      * @throws DteTransmisionDeshabilitadaException si la integración está apagada, o si
      *                                              en producción el endpoint no es el oficial exacto
-     * @throws DteTransmisionException              si faltan datos para consultar
+     * @throws DteTransmisionException si faltan datos para consultar
      */
     public function consultar(Dte $dte): array
     {
@@ -203,7 +205,7 @@ class DteConsultaService
     /**
      * @return array{resultado: string, http_status: int|null, mensaje: string, recibido: bool, sello: string|null, estado_mh: string|null, cuerpo: array<string, mixed>|null}
      */
-    private function interpretar(\Illuminate\Http\Client\Response $resp): array
+    private function interpretar(Response $resp): array
     {
         $status = $resp->status();
         $cuerpo = $resp->json();
@@ -235,6 +237,17 @@ class DteConsultaService
 
         // Estado vacío con HTTP OK: el MH respondió que no lo tiene.
         if ($estado === '' && $status >= 200 && $status < 300) {
+            return $this->resultado('no_encontrado', $status, $mensaje, false, null, null, $cuerpo);
+        }
+
+        // Así contesta el MH real (comprobado en apitest el 19/10/2026) cuando no tiene el
+        // documento: HTTP 400, sin estado ni código de generación, codigoMsg 999 y
+        // «No se encontro ningun registro que coincida». Se exigen las CUATRO señales: un
+        // 400 por cualquier otro motivo sigue siendo error_http, porque leerlo como «no lo
+        // tiene» habilitaría un reenvío que podría duplicar el documento.
+        if ($status === 400 && $estado === '' && blank($cuerpo['codigoGeneracion'] ?? null)
+            && (string) ($cuerpo['codigoMsg'] ?? '') === '999'
+            && str_contains(Str::lower(Str::ascii($mensaje)), 'no se encontro ningun registro')) {
             return $this->resultado('no_encontrado', $status, $mensaje, false, null, null, $cuerpo);
         }
 
