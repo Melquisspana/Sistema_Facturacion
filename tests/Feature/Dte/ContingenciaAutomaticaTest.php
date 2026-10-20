@@ -198,6 +198,40 @@ class ContingenciaAutomaticaTest extends TestCase
         $this->assertSame('2026-10-13 10:00:00', $activa->refresh()->inicio->format('Y-m-d H:i:s'));
     }
 
+    public function test_documento_emitido_hace_mas_del_tope_no_activa_ni_convierte(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00; tope por defecto, 10 minutos
+        $firma = $dte->json_firmado_path;
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:30:00', 'America/El_Salvador'));
+        $this->artisan('dte:transmitir', ['dte' => $dte->id]);
+
+        $this->assertDatabaseCount('contingencias', 0);
+        $this->assertNull($dte->refresh()->contingencia_id);
+        $this->assertSame($firma, $dte->json_firmado_path);
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'generate_204'));
+    }
+
+    public function test_documento_viejo_no_se_suma_a_una_contingencia_activa(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:30:00', 'America/El_Salvador'));
+        $activa = app(ContingenciaService::class)->activar(1, 'Corte inventado', 'manual', null);
+        $this->artisan('dte:transmitir', ['dte' => $dte->id]);
+
+        $this->assertNull($dte->refresh()->contingencia_id);
+        $this->assertSame('2026-10-13 10:30:00', $activa->refresh()->inicio->format('Y-m-d H:i:s'));
+    }
+
+    public function test_dentro_del_tope_se_convierte_y_el_inicio_retrocede(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:09:59', 'America/El_Salvador'));
+        $this->artisan('dte:transmitir', ['dte' => $dte->id])->assertSuccessful();
+
+        $this->assertTrue($dte->refresh()->esTransitorio());
+        $this->assertSame('2026-10-13 10:00:00', $dte->contingencia->inicio->format('Y-m-d H:i:s'));
+    }
+
     public function test_conversion_rechaza_resultado_sin_confirmacion(): void
     {
         $dte = $this->documento();
