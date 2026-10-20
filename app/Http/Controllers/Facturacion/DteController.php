@@ -78,6 +78,7 @@ use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
 use App\Support\Dte\OpcionesInvalidacion;
 use App\Support\Dte\OrdenProductosOc;
+use App\Support\Dte\PlazoNotaCredito;
 use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\ReceptorExportacionPresentacion;
 use App\Support\Dte\ReglaOrdenCompra;
@@ -1184,6 +1185,10 @@ class DteController extends Controller
             'dte_id' => $dte->id, 'estado' => $dte->estado->value,
         ]);
 
+        if ($dte->estado === EstadoDte::Borrador && ($plazo = PlazoNotaCredito::fueraDePlazo($dte))) {
+            return back()->withErrors(['generar' => PlazoNotaCredito::aviso($plazo)]);
+        }
+
         // 4. Generar SOLO si todavía es borrador (asigna correlativo + numeración + JSON).
         if ($dte->estado === EstadoDte::Borrador) {
             try {
@@ -1932,6 +1937,14 @@ class DteController extends Controller
         // un formulario que ya tiene la mitad escrita.
         // Una NC que acredita más que el saldo de su CCF la rechaza Hacienda: se frena
         // acá, antes de consumir correlativo.
+        $motivoPlazo = null;
+        if ($plazo = PlazoNotaCredito::fueraDePlazo($dte)) {
+            if (! $request->boolean('confirmar_plazo_nc')) {
+                return back()->withErrors(['generar' => PlazoNotaCredito::aviso($plazo)])->withInput();
+            }
+            $request->merge(['motivo_plazo_nc' => is_string($request->input('motivo_plazo_nc')) ? trim($request->input('motivo_plazo_nc')) : $request->input('motivo_plazo_nc')]);
+            $motivoPlazo = $request->validate(['motivo_plazo_nc' => ['required', 'string', 'min:10', 'max:500']])['motivo_plazo_nc'];
+        }
         $excesoCcf = app(SaldoMontoCcf::class)->exceso($dte);
         if ($excesoCcf !== null) {
             return back()->withErrors(['generar' => $excesoCcf]);
@@ -1957,7 +1970,7 @@ class DteController extends Controller
         }
 
         try {
-            $generacion->generar($dte, request()->user());
+            $generacion->generar($dte, request()->user(), $motivoPlazo);
         } catch (GeneracionException $e) {
             return back()->withErrors(['generar' => $e->getMessage()]);
         } catch (UniqueConstraintViolationException $e) {

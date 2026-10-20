@@ -114,7 +114,9 @@ class DteNotaCreditoRetencionTest extends TestCase
      */
     private function darSaldoHolgado(Dte $ccf): void
     {
-        $ccf->forceFill(['monto_total_operacion' => '10000.00', 'total_gravado' => '10000.00'])->saveQuietly();
+        // También el IVA retenido: la suma de lo retenido por sus NC no puede superar el del CCF
+        // (Normativa 2.0, Anexo IV, campo 101.2; #42, H9).
+        $ccf->forceFill(['monto_total_operacion' => '10000.00', 'total_gravado' => '10000.00', 'iva_retenido' => '100.00'])->saveQuietly();
     }
 
     // ---------- El CCF de referencia ----------

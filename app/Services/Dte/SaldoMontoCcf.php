@@ -160,7 +160,17 @@ class SaldoMontoCcf
             return self::mensaje($ccf, $saldo, $total);
         }
 
-        // Hacienda rechaza por gravado (016); el total también cubre lo exento/no sujeto.
+        foreach (['total_exento' => 'exento', 'total_no_sujeto' => 'no sujeto', 'iva_retenido' => 'IVA retenido'] as $campo => $etiqueta) {
+            $usado = $this->sumaDeNotas([$ccf->id], self::ESTADOS_VIGENTES, $campo, $nc->id);
+            $disponible = Dinero::redondear(Dinero::restar($ccf->{$campo} ?? '0', (string) ($usado[$ccf->id] ?? '0')));
+            $importe = Dinero::redondear($nc->{$campo} ?? '0');
+            if (Dinero::comparar($importe, $disponible) > 0) {
+                return sprintf('El CCF %s tiene un saldo de %s de $%s, menor que el de la nota ($%s). Hacienda la rechazaría: elegí otro CCF o bajá el monto.',
+                    $ccf->numero_interno ?? $ccf->numero_control ?? ('#'.$ccf->id), $etiqueta, number_format((float) $disponible, 2), number_format((float) $importe, 2));
+            }
+        }
+
+        // Hacienda rechaza por gravado (016).
         $usado = $this->sumaDeNotas([$ccf->id], self::ESTADOS_VIGENTES, 'total_gravado', $nc->id);
         $saldoGravado = Dinero::redondear(Dinero::restar($ccf->total_gravado ?? '0', (string) ($usado[$ccf->id] ?? '0')));
         $gravado = Dinero::redondear($nc->total_gravado ?? '0');

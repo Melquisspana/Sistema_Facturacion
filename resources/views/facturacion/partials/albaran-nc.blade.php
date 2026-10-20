@@ -44,6 +44,7 @@
                       onsubmit="return confirm(@js($confirmGenerar ?? '¿Generar la nota de crédito? Ya no podrá editarse.'));"
                       class="mt-3 flex flex-wrap items-center gap-3">
                     @csrf
+                    @include('facturacion.partials.plazo-nc', ['dte' => $nc, 'prefijoPlazo' => 'albaran-nc-'])
                     <label class="flex items-center gap-2 text-sm text-amber-800">
                         <input type="checkbox" name="confirmar_avisos_nc" value="1" class="rounded border-amber-400 text-amber-600">
                         Reviso y confirmo
