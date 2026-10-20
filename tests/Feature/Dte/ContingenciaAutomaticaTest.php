@@ -174,6 +174,30 @@ class ContingenciaAutomaticaTest extends TestCase
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'generate_204'));
     }
 
+    /** El MH rechaza un documento emitido antes del inicio de la contingencia (apitest, 19/10/2026). */
+    public function test_el_inicio_retrocede_hasta_la_emision_del_documento_que_la_dispara(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:00:45', 'America/El_Salvador'));
+        $this->artisan('dte:transmitir', ['dte' => $dte->id])->assertSuccessful();
+
+        $json = json_decode(Storage::get($dte->refresh()->json_generado_path), true);
+        $emision = Carbon::parse($json['identificacion']['fecEmi'].' '.$json['identificacion']['horEmi'], 'America/El_Salvador');
+        $this->assertSame('2026-10-13 10:00:00', $dte->contingencia->inicio->format('Y-m-d H:i:s'));
+        $this->assertTrue($emision->gte($dte->contingencia->inicio));
+    }
+
+    public function test_al_sumarse_a_una_activa_posterior_el_inicio_tambien_retrocede(): void
+    {
+        $dte = $this->documento(); // emitido a las 10:00:00
+        Carbon::setTestNow(Carbon::parse('2026-10-13 10:05:00', 'America/El_Salvador'));
+        $activa = app(ContingenciaService::class)->activar(1, 'Corte inventado', 'manual', null);
+        $this->artisan('dte:transmitir', ['dte' => $dte->id])->assertSuccessful();
+
+        $this->assertSame($activa->id, $dte->refresh()->contingencia_id);
+        $this->assertSame('2026-10-13 10:00:00', $activa->refresh()->inicio->format('Y-m-d H:i:s'));
+    }
+
     public function test_conversion_rechaza_resultado_sin_confirmacion(): void
     {
         $dte = $this->documento();
