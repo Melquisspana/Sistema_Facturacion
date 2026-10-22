@@ -146,7 +146,7 @@ jobs:
     # otros jobs. Se activó junto con el arreglo de los textos largos de Cobros.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     # NO BLOQUEANTE al principio: puede haber más deuda de MySQL que SQLite no muestra.
     # No se ignoran los fallos: cuando quede verde, quitar esta línea para que el job
     # pase a ser obligatorio.
