@@ -102,14 +102,35 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
             'cliente_id' => Cliente::factory()->contribuyente()->create()->id,
             'numero_control' => "DTE-03-{$serie}-{$secuencia}",
             'numero_interno' => "INT-03-00-2026-{$serie}-{$secuencia}",
-            'codigo_generacion' => strtoupper((string) Str::uuid()),
+            'codigo_generacion' => $this->codigoGeneracion($correlativo, $punto),
             // Aceptación REAL del MH: sello no-mock + huella de procesamiento.
-            'sello_recepcion' => '2026'.strtoupper(Str::random(36)),
+            'sello_recepcion' => '2026'.$this->soloLetras($correlativo, $punto, 36),
             'fecha_procesamiento_mh' => '2026-07-20 22:55:01',
             'fecha_emision' => '2026-07-20',
             'hora_emision' => '10:00:00',
             'total_pagar' => 203.07,
         ], $extra));
+    }
+
+    /**
+     * Cadena de `$largo` letras A–F, distinta por correlativo y punto de venta, sin un solo
+     * dígito. La búsqueda numérica del buscador también mira el código de generación y el
+     * sello como subcadena: con un UUID o un sello al azar, buscar «986» podía acertar por
+     * casualidad dentro de uno de ellos y la prueba fallaba una de cada tantas corridas.
+     */
+    private function soloLetras(int $correlativo, PuntoVenta $punto, int $largo): string
+    {
+        $base6 = base_convert((string) ($correlativo * 100 + $punto->id), 10, 6);
+
+        return str_pad(strtr($base6, '012345', 'ABCDEF'), $largo, 'A', STR_PAD_LEFT);
+    }
+
+    /** UUID en mayúsculas con forma válida (8-4-4-4-12) y sin dígitos; ver {@see soloLetras()}. */
+    private function codigoGeneracion(int $correlativo, PuntoVenta $punto): string
+    {
+        $c = $this->soloLetras($correlativo, $punto, 32);
+
+        return substr($c, 0, 8).'-'.substr($c, 8, 4).'-'.substr($c, 12, 4).'-'.substr($c, 16, 4).'-'.substr($c, 20, 12);
     }
 
     /** @return array<int, int> ids devueltos por el endpoint, en orden */

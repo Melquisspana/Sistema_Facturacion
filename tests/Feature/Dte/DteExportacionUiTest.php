@@ -6,6 +6,7 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
@@ -19,12 +20,13 @@ use Database\Seeders\CatalogosMhTablaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 class DteExportacionUiTest extends TestCase
 {
+    use PreparaEmisorDte;
     use RefreshDatabase;
-    use \Tests\Concerns\PreparaEmisorDte;
 
     protected function setUp(): void
     {
@@ -277,7 +279,7 @@ class DteExportacionUiTest extends TestCase
     {
         ['estab' => $estab, 'pv' => $pv] = $this->emisor();
         $cliente = Cliente::factory()->exportacion()->create(['descuento_global_default' => 5]);
-        $sucursal = \App\Models\ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'descuento_global_default' => 10]);
+        $sucursal = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'descuento_global_default' => 10]);
 
         $this->actingAs($this->usuario('facturacion'))
             ->post(route('facturacion.store-exportacion'), $this->datosFex($cliente, $estab, $pv, ['cliente_sucursal_id' => $sucursal->id]))
@@ -408,10 +410,10 @@ class DteExportacionUiTest extends TestCase
         $cliente = Cliente::factory()->exportacion()->create();
 
         // Códigos REALES alternativos del catálogo oficial, distintos de los predeterminados:
-        // CAT-011 tipo 2 (Servicios), CAT-027 '02' (Marítima de Acajutla),
+        // CAT-011 tipo 1 (Bienes; servicios no está soportada, #42 H10), CAT-027 '02' (Marítima de Acajutla),
         // CAT-033 'EX-2' (Exportación Temporal), CAT-028 '1040.000', CAT-031 '01' (EXW-En fábrica).
         $datos = $this->datosFex($cliente, $estab, $pv, [
-            'tipo_item_expor' => 2,
+            'tipo_item_expor' => 1,
             'recinto_fiscal' => '02',
             'tipo_regimen' => 'EX-2',
             'regimen' => '1040.000',
@@ -424,7 +426,7 @@ class DteExportacionUiTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $dte = Dte::where('tipo_dte', '11')->firstOrFail();
-        $this->assertSame(2, $dte->tipo_item_expor);
+        $this->assertSame(1, $dte->tipo_item_expor);
         $this->assertSame('02', $dte->recinto_fiscal);
         $this->assertSame('EX-2', $dte->tipo_regimen);
         $this->assertSame('1040.000', $dte->regimen);

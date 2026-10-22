@@ -164,11 +164,19 @@ class ValidacionPreJsonService
                         $problemas[] = "Falta {$etiqueta} del receptor.";
                     }
                 }
+                $sala = $dte->clienteSucursal;
+                $correo = filled($sala?->correo) ? $sala->correo : $cliente->correo;
+                if (! filled($correo)) {
+                    $problemas[] = 'Falta el correo del receptor: Hacienda no lo admite vacío en el crédito fiscal ni en la nota de crédito.';
+                }
                 // Ubicación: la que realmente va a viajar en el JSON.
                 $this->validarUbicacionReceptor($dte, $problemas);
                 break;
 
             case TipoDte::FacturaExportacion:
+                if ((int) $dte->tipo_item_expor === 2) {
+                    $problemas[] = 'La exportación de servicios no está soportada. Solo se exportan bienes.';
+                }
                 if (! $cliente) {
                     $problemas[] = 'La factura de exportación requiere un receptor.';
                     break;

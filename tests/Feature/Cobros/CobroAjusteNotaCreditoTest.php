@@ -59,8 +59,9 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $ccf->update(['aplica_retencion_iva' => true]);
         $this->ccf = $this->aceptarCcf($ccf);
         // Saldo holgado: estas pruebas miden el importe, no el tope del CCF (ver las de
-        // saldo más abajo).
-        DB::table('dtes')->where('id', $this->ccf->id)->update(['monto_total_operacion' => '1000.00', 'total_gravado' => '884.96']);
+        // saldo más abajo). Incluye el IVA retenido del CCF (1 % de 884.96): las NC no pueden
+        // retener más que él (Normativa 2.0, Anexo IV, campo 101.2; #42, H9).
+        DB::table('dtes')->where('id', $this->ccf->id)->update(['monto_total_operacion' => '1000.00', 'total_gravado' => '884.96', 'iva_retenido' => '8.85']);
         $this->ccf->refresh();
     }
 

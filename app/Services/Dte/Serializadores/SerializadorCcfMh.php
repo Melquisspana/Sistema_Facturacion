@@ -4,9 +4,9 @@ namespace App\Services\Dte\Serializadores;
 
 use App\DataTransferObjects\Dte\Salida\DteSalidaData;
 use App\DataTransferObjects\Dte\Salida\LineaDteData;
-use App\DataTransferObjects\Dte\Salida\ResumenDteData;
 use App\Exceptions\Dte\DteNoSerializableException;
 use App\Models\CatalogoMh;
+use App\Services\Dte\Serializadores\Concerns\MapeaCatalogosMh;
 
 /**
  * Serializa un CCF (DteSalidaData) al ARRAY oficial del MH (schema fe-ccf-v4).
@@ -22,6 +22,8 @@ use App\Models\CatalogoMh;
  */
 class SerializadorCcfMh implements SerializadorMh
 {
+    use MapeaCatalogosMh;
+
     /**
      * @return array<string, mixed>
      *
@@ -205,34 +207,6 @@ class SerializadorCcfMh implements SerializadorMh
             'numPagoElectronico' => null,
             'observaciones' => null,
         ];
-    }
-
-    /**
-     * Formas de pago (resumen.pagos). El esquema fe-ccf-v4 define `pagos` como
-     * ["array","null"] con `minItems: 1`: un arreglo vacío `[]` es INVÁLIDO y el
-     * servicio de recepción del MH RECHAZA `null` en el CCF. Por eso se emite SIEMPRE
-     * un arreglo con al menos un pago: `montoPago` = total a pagar y `codigo` = forma
-     * de pago (CAT-017) del documento o el default configurable.
-     *
-     * `plazo`/`periodo` dependen de la CONDICIÓN DE OPERACIÓN (CAT-016): el MH los
-     * exige para operaciones A CRÉDITO (condicionOperacion=2) y NO los admite (van
-     * null) en contado/otro. plazo = código CAT-018 (01=Días, 02=Meses, 03=Años);
-     * periodo = cantidad (>0). Los valores de crédito salen de config (defaults
-     * configurables, no inventados): dte.json.plazo_credito_default / periodo_credito_default.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function pagos(ResumenDteData $r): array
-    {
-        $esCredito = (int) ($r->condicionOperacion ?? 1) === 2;
-
-        return [[
-            'codigo' => $r->formaPago ?: (string) config('dte.json.forma_pago_default', '01'),
-            'montoPago' => (float) $r->totalPagar,
-            'referencia' => null,
-            'plazo' => $esCredito ? (string) config('dte.json.plazo_credito_default', '01') : null,
-            'periodo' => $esCredito ? (int) config('dte.json.periodo_credito_default', 30) : null,
-        ]];
     }
 
     /** Devuelve solo los dígitos de un valor (NIT del MH va sin guiones). */

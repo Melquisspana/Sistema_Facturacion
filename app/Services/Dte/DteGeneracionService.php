@@ -15,6 +15,7 @@ use App\Models\DteLinea;
 use App\Models\User;
 use App\Support\Dinero;
 use App\Support\Dte\OrdenProductosOc;
+use App\Support\Dte\PlazoNotaCredito;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\HoraNegocio;
 use Illuminate\Support\Facades\DB;
@@ -41,11 +42,11 @@ class DteGeneracionService
     /**
      * @throws GeneracionException
      */
-    public function generar(Dte $dte, ?User $usuario = null): Dte
+    public function generar(Dte $dte, ?User $usuario = null, ?string $motivoExcepcionPlazo = null): Dte
     {
         $this->validar($dte);
 
-        return DB::transaction(function () use ($dte, $usuario) {
+        return DB::transaction(function () use ($dte, $usuario, $motivoExcepcionPlazo) {
             if ($contingencia = app(ContingenciaService::class)->activa()) {
                 $contingencia = $contingencia->newQuery()->whereKey($contingencia->id)->lockForUpdate()->first();
                 if ($contingencia?->estado === 'activa') {
@@ -62,6 +63,18 @@ class DteGeneracionService
                 $ccf = Dte::whereKey($dte->dte_relacionado_id)->lockForUpdate()->first();
                 if ($ccf?->esTransitorio()) {
                     throw new GeneracionException('El CCF es transitorio: no se puede emitir una NC hasta que obtenga sello de recepción.');
+                }
+                if ($plazo = PlazoNotaCredito::fueraDePlazo($dte)) {
+                    $motivoExcepcionPlazo = trim($motivoExcepcionPlazo ?? '');
+                    if ($motivoExcepcionPlazo === '') {
+                        throw new GeneracionException(PlazoNotaCredito::aviso($plazo));
+                    }
+                    if (mb_strlen($motivoExcepcionPlazo) > 500) {
+                        throw new GeneracionException('El motivo de la excepción de plazo admite hasta 500 caracteres.');
+                    }
+                    activity()->performedOn($dte)->causedBy($usuario)
+                        ->withProperties($plazo + ['motivo_excepcion_plazo' => $motivoExcepcionPlazo])
+                        ->log('Excepción legal al plazo de 3 meses de la nota de crédito');
                 }
                 $saldo = app(SaldoMontoCcf::class);
                 if ($problema = $saldo->exceso($dte)) {

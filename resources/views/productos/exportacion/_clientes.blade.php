@@ -27,6 +27,8 @@
                 $id = "{$prefijo}_{$cliente->id}";
             @endphp
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" x-data="{ marcado: @js($marcado) }">
+                {{-- El navegador no envía una casilla desmarcada: sin este 0 el servidor no se entera de que se quitó. --}}
+                <input type="hidden" name="clientes[{{ $cliente->id }}][activo]" value="0">
                 <input id="{{ $id }}" type="checkbox" name="clientes[{{ $cliente->id }}][activo]" value="1" x-model="marcado"
                        class="rounded border-gray-300" @checked($marcado)>
                 <label for="{{ $id }}" class="min-w-0 flex-1 text-sm text-gray-700">{{ $cliente->nombreLegal() }}</label>
