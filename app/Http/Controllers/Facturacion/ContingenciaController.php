@@ -28,6 +28,8 @@ class ContingenciaController extends Controller
         $this->authorize('contingencia', Dte::class);
 
         return view('facturacion.contingencia-pendientes', [
+            'paraRevision' => app(ContingenciaService::class)->documentosParaRevision()
+                ->with('cliente')->orderBy('fecha_emision')->orderBy('hora_emision')->paginate(50, ['*'], 'revision'),
             'documentos' => Schema::hasTable('lotes_dte')
                 ? Dte::whereNotNull('contingencia_id')->with(['cliente', 'contingencia', 'contingenciaEvento', 'loteDte'])->orderByDesc('id')->paginate(50)
                 : collect(),
