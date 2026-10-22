@@ -89,7 +89,7 @@ class DteGenerarJsonUiTest extends TestCase
         // incompatible con el distrito de la factory, que ahora se rechaza al generar.
         $cliente = Cliente::factory()->contribuyente()->create([
             'actividad_economica_id' => $actividad->id,
-            'nrc' => '1234', 'direccion' => 'Av Cliente 123', 'telefono' => null, 'correo' => null,
+            'nrc' => '1234', 'direccion' => 'Av Cliente 123', 'telefono' => null, 'correo' => 'cliente@ejemplo.sv',
         ]);
         $unidad = UnidadMedida::whereNotNull('codigo')->first();
         $producto = Producto::factory()->create(['unidad_medida_id' => $unidad->id, 'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);

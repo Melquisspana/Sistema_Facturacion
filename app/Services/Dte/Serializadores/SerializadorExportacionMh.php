@@ -95,7 +95,9 @@ class SerializadorExportacionMh implements SerializadorMh
         return [
             'nombre' => (string) ($r?->nombre ?? ''),
             'tipoDocumento' => (string) ($r?->tipoDocumento ?? ''),
-            'numDocumento' => (string) ($r?->numDocumento ?? ''),
+            'numDocumento' => in_array($r?->tipoDocumento, ['36', '13'], true)
+                ? preg_replace('/\D+/', '', (string) $r?->numDocumento)
+                : (string) ($r?->numDocumento ?? ''),
             'descActividad' => $r?->actividadEconomica ? $this->descActividad($r->actividadEconomica) : '',
             'nombreComercial' => $r?->nombreComercial,
             'codPais' => (string) ($codPais ?? ''),
@@ -169,7 +171,7 @@ class SerializadorExportacionMh implements SerializadorMh
             'totalLetras' => $r->totalLetras,
             'saldoFavor' => 0.0,
             'condicionOperacion' => (int) ($r->condicionOperacion ?? 1),
-            'pagos' => null,
+            'pagos' => $this->pagos($r),
             'codIncoterms' => $r->codIncoterms,   // CAT-031
             'descIncoterms' => $r->descIncoterms,
             'numPagoElectronico' => null,

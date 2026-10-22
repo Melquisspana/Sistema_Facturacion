@@ -76,7 +76,9 @@ class SerializadorFacturaMh implements SerializadorMh
 
         return [
             'tipoDocumento' => $r->tipoDocumento,
-            'numDocumento' => $r->numDocumento,
+            'numDocumento' => in_array($r->tipoDocumento, ['36', '13'], true)
+                ? preg_replace('/\D+/', '', (string) $r->numDocumento)
+                : $r->numDocumento,
             'nrc' => $r->nrc,
             'nombre' => $r->nombre,
             'codActividad' => $r->actividadEconomica,
@@ -158,7 +160,7 @@ class SerializadorFacturaMh implements SerializadorMh
             'totalIva' => (float) $r->iva,
             'saldoFavor' => 0.0,
             'condicionOperacion' => (int) ($r->condicionOperacion ?? 1),
-            'pagos' => null,
+            'pagos' => $this->pagos($r),
             'numPagoElectronico' => null,
             'observaciones' => null,
         ];
