@@ -213,7 +213,8 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
                                 <option value="">— Seleccione —</option>
                                 @foreach ($tiposItemExpor as $tipo)
-                                    {{-- Predeterminado: Bienes (1), el caso más común; el usuario puede cambiarlo. --}}
+                                    @continue($tipo->value !== 1)
+                                    {{-- Solo se admite exportación de bienes. --}}
                                     <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor', config('dte.exportacion.tipo_item_expor_default')) == $tipo->value)>
                                         {{ $tipo->label() }}
                                     </option>

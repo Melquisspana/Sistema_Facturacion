@@ -71,7 +71,7 @@ class DteJsonServiceTest extends TestCase
         // 2024 → distrito); fijar solo departamento/municipio dejaba un par incompatible.
         $cliente = Cliente::factory()->contribuyente()->create([
             'actividad_economica_id' => $actividad->id,
-            'nrc' => '1234', 'direccion' => 'Av Cliente 123', 'telefono' => null, 'correo' => null,
+            'nrc' => '1234', 'direccion' => 'Av Cliente 123', 'telefono' => null, 'correo' => 'cliente@ejemplo.sv',
         ]);
         $unidad = UnidadMedida::whereNotNull('codigo')->first();
         $producto = Producto::factory()->create(['unidad_medida_id' => $unidad->id, 'precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);

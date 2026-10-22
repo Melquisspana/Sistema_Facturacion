@@ -39,18 +39,36 @@ class ImportadorCatalogosMh
         return CatalogoOficialMh::rutaVerificada();
     }
 
+    public function importar(?string $ruta = null): array
+    {
+        $resultado = $this->leer($ruta);
+        $lote = $resultado['filas'];
+
+        // Recarga completa (idempotente por reemplazo): limpia y reinserta todo.
+        DB::transaction(function () use ($lote) {
+            CatalogoMh::query()->delete();
+            foreach (array_chunk($lote, 500) as $chunk) {
+                CatalogoMh::insert($chunk);
+            }
+        });
+
+        unset($resultado['filas']);
+
+        return $resultado;
+    }
+
     /**
-     * Importa todos los catálogos del Excel.
+     * Lee todos los catálogos del Excel.
      *
      * Sin `$ruta` usa el catálogo ACTIVO del registro, verificado por hash. Con `$ruta`
-     * explícita (opción `--archivo`) se importa ese archivo tal cual, sin verificar: es la
+     * explícita (opción `--archivo`) se lee ese archivo tal cual, sin verificar: es la
      * vía para inspeccionar una revisión nueva ANTES de registrarla.
      *
-     * @return array{cats: array<string, int>, nombres: array<string, string>, secciones: int, total: int, version: string, archivo: string}
+     * @return array{filas: array<int, array<string, mixed>>, cats: array<string, int>, nombres: array<string, string>, secciones: int, total: int, version: string, archivo: string}
      *
      * @throws RuntimeException
      */
-    public function importar(?string $ruta = null): array
+    public function leer(?string $ruta = null): array
     {
         $version = $ruta === null ? CatalogoOficialMh::version() : 'ad-hoc';
         $ruta ??= $this->archivoPorDefecto();
@@ -105,15 +123,8 @@ class ImportadorCatalogosMh
             $conteo[$catActual]++;
         }
 
-        // Recarga completa (idempotente por reemplazo): limpia y reinserta todo.
-        DB::transaction(function () use ($lote) {
-            CatalogoMh::query()->delete();
-            foreach (array_chunk($lote, 500) as $chunk) {
-                CatalogoMh::insert($chunk);
-            }
-        });
-
         return [
+            'filas' => $lote,
             'cats' => $conteo,
             'nombres' => $nombres,
             'secciones' => count($conteo),

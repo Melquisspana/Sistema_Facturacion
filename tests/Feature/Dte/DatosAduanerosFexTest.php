@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
-use App\Models\Cliente;
+use App\Enums\TipoImpuesto;
 use App\Models\CatalogoMh;
+use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Exportacion;
@@ -67,7 +69,7 @@ class DatosAduanerosFexTest extends TestCase
         // Recinto/incoterm DISTINTOS a los iniciales del borrador, para probar
         // que el usuario puede cambiar el valor (no solo re-guardar el mismo).
         return [
-            'tipo_item_expor' => 2, // Servicios
+            'tipo_item_expor' => 1, // Bienes: la FEX de servicios no está soportada (#42, H10)
             'recinto_fiscal' => '08', // Terrestre Anguiatú
             'tipo_regimen' => 'EX-1',
             'regimen' => '1000.000',
@@ -100,7 +102,7 @@ class DatosAduanerosFexTest extends TestCase
             ->assertRedirect(route('facturacion.edit', $dte));
 
         $dte->refresh();
-        $this->assertSame(2, $dte->tipo_item_expor);
+        $this->assertSame(1, $dte->tipo_item_expor);
         $this->assertSame('08', $dte->recinto_fiscal);
         $this->assertSame('10', $dte->cod_incoterms);
         // Item 17: desc_incoterms se resuelve SERVER-SIDE desde CAT-031 (no viene del form).
@@ -108,7 +110,7 @@ class DatosAduanerosFexTest extends TestCase
             CatalogoMh::where('cat', '031')->where('codigo', '10')->value('valor'),
             $dte->desc_incoterms
         );
-        $this->assertSame(\App\Enums\EstadoDte::Borrador, $dte->estado);
+        $this->assertSame(EstadoDte::Borrador, $dte->estado);
         $this->assertNull($dte->json_generado_path);
         $correlativo->refresh();
         $this->assertSame(0, $correlativo->ultimo_numero, 'Guardar datos aduaneros no debe consumir correlativo.');
@@ -143,6 +145,20 @@ class DatosAduanerosFexTest extends TestCase
         $this->assertSame('01', $dte->fresh()->recinto_fiscal, 'El borrador no debe cambiar si el código es inválido.');
     }
 
+    /** La FEX de servicios no está soportada (Normativa 2.0, Anexo IV, campos 35-37; #42, H10). */
+    public function test_tipo_de_item_servicios_se_rechaza(): void
+    {
+        $dte = $this->fexBorrador();
+
+        $this->actingAs($this->usuario())
+            ->from(route('facturacion.edit', $dte))
+            ->patch(route('facturacion.datos-aduaneros.update', $dte), array_merge($this->datosValidos(), ['tipo_item_expor' => 2]))
+            ->assertRedirect(route('facturacion.edit', $dte))
+            ->assertSessionHasErrors('tipo_item_expor');
+
+        $this->assertSame(1, $dte->fresh()->tipo_item_expor);
+    }
+
     // --- Item 16: régimen e incoterm inválidos se rechazan ---
 
     public function test_regimen_invalido_se_rechaza(): void
@@ -174,7 +190,7 @@ class DatosAduanerosFexTest extends TestCase
     public function test_fex_generada_no_permite_editar_datos_aduaneros(): void
     {
         $dte = $this->fexBorrador();
-        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => \App\Enums\TipoImpuesto::Gravado->value]);
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
         app(DteBorradorService::class)->agregarLineaDesdeProducto($dte, $producto, cantidad: 1);
         app(DteGeneracionService::class)->generar($dte);
         $dte->refresh();

@@ -131,6 +131,7 @@
             <form method="POST" action="{{ route('facturacion.generar', $dte) }}"
                   onsubmit="return confirm(@js($confirmGenerar ?? '¿Generar la nota de crédito? Ya no podrá editarse.'))">
                 @csrf
+                @include('facturacion.partials.plazo-nc', ['dte' => $dte, 'prefijoPlazo' => 'resumen-nc-'])
                 <button data-generar-btn @disabled($bloqueado)
                         @if ($faltaCcf) title="Falta relacionar un CCF aceptado para poder emitir."
                         @elseif ($sinLineasPanel) title="Agregá al menos una línea para generar."

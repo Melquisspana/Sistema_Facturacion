@@ -8,6 +8,7 @@ use App\Enums\TipoDte;
 use App\Enums\TipoItemExportacion;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -121,6 +122,9 @@ class CrearBorradorRequest extends FormRequest
                     $validator->errors()->add('cliente_id', 'El Crédito Fiscal requiere un cliente contribuyente.');
                 }
             } elseif ($tipo === TipoDte::FacturaExportacion) {
+                if (filled($datos['tipo_item_expor'] ?? null) && (string) $datos['tipo_item_expor'] !== '1') {
+                    $validator->errors()->add('tipo_item_expor', 'La exportación de servicios no está soportada. Solo se exportan bienes.');
+                }
                 if (! $cliente) {
                     $validator->errors()->add('cliente_id', 'La factura de exportación requiere un cliente.');
                 } elseif (! $cliente->tipo_cliente?->esExportacion()) {
@@ -156,7 +160,7 @@ class CrearBorradorRequest extends FormRequest
         // (la exige el cliente o la sucursal seleccionada).
         $validator->after(function (Validator $validator) use ($cliente, $sucursal) {
             $tipo = TipoDte::tryFrom((string) $this->input('tipo_dte'));
-            $requiere = \App\Support\Dte\ReglaOrdenCompra::requerida($cliente, $sucursal);
+            $requiere = ReglaOrdenCompra::requerida($cliente, $sucursal);
 
             if ($tipo === TipoDte::CreditoFiscal && $requiere && blank($this->input('numero_orden_compra'))) {
                 $validator->errors()->add(

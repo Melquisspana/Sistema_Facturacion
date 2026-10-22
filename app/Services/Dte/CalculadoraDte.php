@@ -194,7 +194,7 @@ class CalculadoraDte
     /**
      * Factura consumidor final (01): el precio gravado YA INCLUYE IVA.
      * - El descuento (línea y global) reduce el importe CON IVA.
-     * - La base y el IVA se separan DESPUÉS del descuento: base = importe/1.13.
+     * - El IVA suma los IVA por línea menos el IVA del descuento global gravado.
      * - El IVA no se suma aparte; total_pagar es el neto con IVA dentro.
      * Los buckets se reportan NETOS de descuento global (base sin IVA en gravado).
      */
@@ -206,6 +206,7 @@ class CalculadoraDte
 
         $lineasCalculadas = [];
         $gravadoConIva = '0';
+        $ivaTotal = '0';
         $exentoTotal = '0';
         $noSujetoTotal = '0';
 
@@ -225,6 +226,7 @@ class CalculadoraDte
                     $ventaGravada = Dinero::redondear(Dinero::dividir($importe, $this->divisorIva), 2);
                     $ivaLinea = Dinero::redondear(Dinero::restar($importe, $ventaGravada), 2);
                     $gravadoConIva = Dinero::sumar($gravadoConIva, $importe);
+                    $ivaTotal = Dinero::sumar($ivaTotal, $ivaLinea);
                     break;
                 case TipoImpuesto::Exento:
                     $ventaExenta = $importe;
@@ -266,10 +268,14 @@ class CalculadoraDte
             2
         );
 
-        // Sobre el gravado NETO (ya con el descuento), separar base e IVA.
+        // FE, campo 157: suma de ivaItem menos el IVA del descuento global gravado.
+        $ivaDescuento = Dinero::redondear(
+            Dinero::multiplicar(Dinero::dividir($descGravado, $this->divisorIva), $this->tasaIva),
+            2
+        );
+        $ivaTotal = Dinero::redondear(Dinero::restar($ivaTotal, $ivaDescuento), 2);
         $gravadoNetoConIva = Dinero::restar($gravadoConIva, $descGravado);
-        $totalGravado = Dinero::redondear(Dinero::dividir($gravadoNetoConIva, $this->divisorIva), 2);
-        $ivaTotal = Dinero::redondear(Dinero::restar($gravadoNetoConIva, $totalGravado), 2);
+        $totalGravado = Dinero::redondear(Dinero::restar($gravadoNetoConIva, $ivaTotal), 2);
 
         $totalExento = Dinero::redondear(Dinero::restar($exentoTotal, $descExento), 2);
         $totalNoSujeto = Dinero::redondear(Dinero::restar($noSujetoTotal, $descNoSujeto), 2);
@@ -417,7 +423,7 @@ class CalculadoraDte
      * CCF y Factura.
      *
      * @param  array<string, string>  $bases  ['gravado'=>.., 'exento'=>.., 'no_sujeto'=>..]
-     * @return array{0: string, 1: string, 2: string}  [descGravado, descExento, descNoSujeto]
+     * @return array{0: string, 1: string, 2: string} [descGravado, descExento, descNoSujeto]
      *
      * @throws DescuentoInvalidoException
      */
@@ -436,7 +442,7 @@ class CalculadoraDte
      * en las claves de los buckets (gravado/exportación/exento/no_sujeto).
      *
      * @param  array<string, string>  $bases  claves arbitrarias => base
-     * @return array<string, string>  mismas claves => descuento prorrateado
+     * @return array<string, string> mismas claves => descuento prorrateado
      *
      * @throws DescuentoInvalidoException
      */

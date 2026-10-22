@@ -496,4 +496,76 @@ class ValidacionPreJsonTest extends TestCase
         // No debe aparecer el problema de "aceptado realmente" (el CCF es real).
         $this->assertFalse($this->noRealMh($this->validacion->validar($nc->refresh())));
     }
+
+    // --- Correo del receptor (Normativa 2.0, Anexo IV, campo 57: null solo en FE y FEX) ---
+
+    private function faltaCorreo(array $problemas): bool
+    {
+        return (bool) collect($problemas)->first(fn ($p) => str_contains($p, 'correo del receptor'));
+    }
+
+    public function test_ccf_sin_correo_del_receptor_falla(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['correo' => null]);
+
+        $this->assertTrue($this->faltaCorreo($this->validacion->validar($this->ccfBorradorCompleto($emisor, $cliente))));
+    }
+
+    public function test_ccf_con_correo_en_blanco_falla(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['correo' => '   ']);
+
+        $this->assertTrue($this->faltaCorreo($this->validacion->validar($this->ccfBorradorCompleto($emisor, $cliente))));
+    }
+
+    public function test_ccf_sin_correo_del_cliente_pasa_si_la_sala_tiene_correo(): void
+    {
+        // El JSON usa el correo de la sala cuando lo tiene (MapeadorDteSalida::receptor()).
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['correo' => null]);
+        $sala = $this->salaCompleta($cliente, $emisor, ['correo' => 'sala@ejemplo.sv']);
+
+        $ccf = $this->ccfBorradorCompleto($emisor, $cliente, ['cliente_sucursal_id' => $sala->id]);
+
+        $this->assertFalse($this->faltaCorreo($this->validacion->validar($ccf)));
+    }
+
+    public function test_ccf_con_correo_del_cliente_pasa(): void
+    {
+        $emisor = $this->emisor();
+        $ccf = $this->ccfBorradorCompleto($emisor, $this->clienteContribuyente($emisor, ['correo' => 'cliente@ejemplo.sv']));
+
+        $this->assertFalse($this->faltaCorreo($this->validacion->validar($ccf)));
+    }
+
+    public function test_nota_credito_sin_correo_del_receptor_falla(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteContribuyente($emisor, ['correo' => 'cliente@ejemplo.sv']);
+        $ccf = $this->aceptarCcf($this->ccfBorradorCompleto($emisor, $cliente));
+        $nc = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'pronto_pago']);
+
+        // El cliente se quedó sin correo después de emitir el CCF.
+        $cliente->update(['correo' => null]);
+
+        $this->assertTrue($this->faltaCorreo($this->validacion->validar($nc->refresh())));
+    }
+
+    public function test_factura_con_receptor_sin_correo_no_lo_exige(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = Cliente::factory()->create(['correo' => null]);
+
+        $this->assertFalse($this->faltaCorreo($this->validacion->validar($this->facturaBorrador($emisor, $cliente, '10.00'))));
+    }
+
+    public function test_fex_sin_correo_del_receptor_no_lo_exige(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteExportacion(['correo' => null]);
+
+        $this->assertFalse($this->faltaCorreo($this->validacion->validar($this->fexBorrador($emisor, $cliente))));
+    }
 }

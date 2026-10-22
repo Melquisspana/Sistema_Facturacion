@@ -250,6 +250,33 @@ class CatalogoExportacionTest extends TestCase
         $this->assertSame('120.96', $diam->precio_caja);
     }
 
+    public function test_desmarcar_un_cliente_asignado_desde_el_catalogo_lo_apaga(): void
+    {
+        $diamond = $this->clienteExportacion('IMPORTADOR ESTE INC.');
+        $presentacion = $this->base()->presentaciones()->sole();
+        ExportacionClienteProducto::create([
+            'exportacion_cliente_id' => $diamond->id, 'exportacion_producto_id' => $presentacion->id,
+            'precio_caja' => 120.96, 'precio_fijado_en' => '2026-09-08', 'activo' => true,
+        ]);
+        $usuario = $this->usuario();
+
+        // El navegador no envía una casilla desmarcada (ni su precio, que queda
+        // deshabilitado): sin este campo oculto el cliente no llega al servidor.
+        $this->actingAs($usuario)->get(route('productos.exportacion.index'))->assertOk()
+            ->assertSee('<input type="hidden" name="clientes['.$diamond->id.'][activo]" value="0">', false);
+
+        $this->actingAs($usuario)
+            ->put(route('productos.exportacion.clientes', $presentacion), ['clientes' => [
+                $diamond->id => ['activo' => '0'],
+            ]])
+            ->assertRedirect()
+            ->assertSessionHas('status', fn (string $m) => str_starts_with($m, 'Clientes actualizados'));
+
+        $diam = ExportacionClienteProducto::where('exportacion_cliente_id', $diamond->id)->sole();
+        $this->assertFalse($diam->activo);
+        $this->assertSame('120.96', $diam->precio_caja);
+    }
+
     public function test_la_ficha_del_cliente_ya_no_asigna_productos(): void
     {
         $perfil = $this->clienteExportacion('IMPORTADOR NORTE LLC');

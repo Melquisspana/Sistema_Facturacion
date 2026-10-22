@@ -154,12 +154,13 @@ class DteBorradorService
         }
 
         $validado = Validator::make($datos, [
-            'tipo_item_expor' => ['required', Rule::in(array_map(fn (TipoItemExportacion $t) => $t->value, TipoItemExportacion::cases()))],
+            'tipo_item_expor' => ['required', Rule::in([TipoItemExportacion::Bienes->value])],
             'recinto_fiscal' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '027')],
             'tipo_regimen' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '033')],
             'regimen' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '028')],
             'cod_incoterms' => ['required', 'string', Rule::exists('catalogos_mh', 'codigo')->where('cat', '031')],
         ], [
+            'tipo_item_expor.in' => 'La exportación de servicios no está soportada. Solo se exportan bienes.',
             'recinto_fiscal.exists' => 'El recinto fiscal seleccionado no es válido (CAT-027).',
             'tipo_regimen.exists' => 'El tipo de régimen seleccionado no es válido (CAT-033).',
             'regimen.exists' => 'El régimen seleccionado no es válido (CAT-028).',
