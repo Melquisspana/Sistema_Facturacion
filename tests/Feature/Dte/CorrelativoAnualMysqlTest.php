@@ -12,8 +12,8 @@ use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use App\Support\HoraNegocio;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\PreparaEmisorDte;
@@ -24,8 +24,10 @@ use Tests\TestCase;
  * número 1 (issue #42, D1). Lo garantiza el lockForUpdate del correlativo, que SQLite
  * ignora: esta prueba solo corre en el job «PHPUnit (MySQL estricto)».
  *
- * Usa dos conexiones reales a la misma base, con datos confirmados (DatabaseTruncation,
- * no RefreshDatabase, porque otra conexión no ve una transacción sin confirmar):
+ * Usa dos conexiones reales a la misma base, con datos CONFIRMADOS: no usa RefreshDatabase,
+ * porque otra conexión no ve una transacción sin confirmar. Por eso deja la base recién
+ * migrada al empezar y al terminar (migrate:fresh): lo que confirma no puede quedar para
+ * las pruebas siguientes, que corren dentro de la transacción de RefreshDatabase.
  *  1. la conexión B empieza a generar el documento A y deja su transacción ABIERTA;
  *  2. la conexión principal intenta generar el documento B: debe quedar esperando el
  *     candado del correlativo (se corta con innodb_lock_wait_timeout = 1);
@@ -33,7 +35,6 @@ use Tests\TestCase;
  */
 class CorrelativoAnualMysqlTest extends TestCase
 {
-    use DatabaseTruncation;
     use PreparaEmisorDte;
 
     protected function setUp(): void
@@ -42,6 +43,7 @@ class CorrelativoAnualMysqlTest extends TestCase
         if (DB::connection()->getDriverName() !== 'mysql') {
             $this->markTestSkipped('El bloqueo de fila solo se puede probar en MySQL (job «PHPUnit (MySQL estricto)»).');
         }
+        Artisan::call('migrate:fresh');
         Storage::fake('local');
         $this->seedCatalogosDte();
     }
@@ -49,7 +51,11 @@ class CorrelativoAnualMysqlTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
-        DB::purge('mysql_concurrente');
+        if ($this->app && DB::connection()->getDriverName() === 'mysql') {
+            DB::purge('mysql_concurrente');
+            // Deja la base como la encontraría RefreshDatabase: recién migrada, sin datos de prueba.
+            Artisan::call('migrate:fresh');
+        }
         parent::tearDown();
     }
 
