@@ -10,6 +10,7 @@ use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
 use App\Models\PpqLote;
 use App\Models\User;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +38,7 @@ class LiberarCcfDeLoteBorrado
     public function liberar(PpqLote $lote, ?User $usuario = null, bool $aplicar = true): array
     {
         return DB::transaction(function () use ($lote, $usuario, $aplicar) {
-            $items = $lote->items()->where('tipo_dte', '03')->get(['dte_id', 'numero_control']);
+            $items = $lote->items()->where('tipo_dte', '03')->get(['dte_id', 'numero_control', 'ejercicio_control']);
             $claves = $items->pluck('numero_control')->map(fn ($n) => IdentidadPpq::normalizar($n))->filter()->values();
 
             $documentos = CobroDocumento::where('tipo_dte', '03')
@@ -46,7 +47,8 @@ class LiberarCcfDeLoteBorrado
                     ->orWhereIn('numero_control_norm', $claves))
                 ->orderBy('id')
                 ->when($aplicar, fn ($q) => $q->lockForUpdate())
-                ->get();
+                ->get()->filter(fn ($d) => $items->contains(fn ($i) => ($i->dte_id !== null && $i->dte_id === $d->dte_id)
+                    || EjercicioControl::llave($i->numero_control, $i->ejercicio_control) === EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
             $documentos->load([
                 'solicitud:id,referencia',
                 'eventos' => fn ($q) => $q->where('tipo', TipoEventoCobro::Recibido->value),
@@ -93,7 +95,7 @@ class LiberarCcfDeLoteBorrado
         if ($doc->cobro_solicitud_id !== null) {
             return 'va en la solicitud '.($doc->solicitud?->referencia ?? '#'.$doc->cobro_solicitud_id);
         }
-        if (($otro = $ocupadas->get($doc->numero_control_norm)
+        if (($otro = $ocupadas->get(EjercicioControl::llave($doc->numero_control_norm, $doc->ejercicio_control))
             ?? ($doc->dte_id !== null ? $ocupadas->get('dte:'.$doc->dte_id) : null)) !== null) {
             return "sigue en el PPQ #{$otro}, que no está borrado";
         }

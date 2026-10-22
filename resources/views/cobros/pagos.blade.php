@@ -196,7 +196,7 @@
             @endif
 
             {{-- ---------- Lo que el archivo no resolvió ---------- --}}
-            @if ($informe['no_identificados'] !== [] || $informe['invalidas'] !== [] || $informe['otros_tipos'] !== [] || $informe['repetidas'] !== [])
+            @if (! empty($informe['ambiguos']) || $informe['no_identificados'] !== [] || $informe['invalidas'] !== [] || $informe['otros_tipos'] !== [] || $informe['repetidas'] !== [])
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                     <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-1">Filas que hay que mirar</h3>
                     <p class="text-sm text-gray-500 dark:text-paper-300 mb-4">
@@ -205,6 +205,17 @@
                     </p>
 
                     <div class="space-y-4 text-sm">
+                        @if (! empty($informe['ambiguos']))
+                            <div class="text-amber-800 dark:text-amber-200">
+                                <h4 class="font-medium">Números que existen en más de un año</h4>
+                                <p class="text-xs">el archivo no trae la fecha del documento: existe en más de un año, revisar a mano</p>
+                                <ul class="mt-1 text-xs space-y-1">
+                                    @foreach ($informe['ambiguos'] as $ambiguo)
+                                        <li>línea {{ $ambiguo['fila']['linea'] }} · {{ $ambiguo['fila']['tipo'] }} · {{ $ambiguo['fila']['numero'] }} · {{ $money($ambiguo['fila']['valor']) }} · {{ $ambiguo['candidatos']->pluck('ejercicio_control')->unique()->sort()->implode(' · ') }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
                         @if ($informe['no_identificados'] !== [])
                             <div>
                                 <h4 class="font-medium text-amber-800">

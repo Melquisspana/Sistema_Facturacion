@@ -8,6 +8,7 @@ use App\Models\Cobros\CobroCorreo;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
 use App\Models\Cobros\CobroSolicitud;
+use App\Support\EjercicioControl;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -205,7 +206,7 @@ class LectorCorreosCobro
      */
     private function asociarObservaciones(Cliente $cliente, CobroCorreo $correo, array $leido): void
     {
-        $resultado = $this->documentosMencionados($cliente, $leido);
+        $resultado = $this->documentosMencionados($cliente, $leido, $correo->fecha_mensaje);
         $documentos = $resultado['documentos'];
 
         if ($documentos->isEmpty()) {
@@ -259,13 +260,14 @@ class LectorCorreosCobro
      * @param  array<string, mixed>  $leido
      * @return array{documentos: Collection<int, CobroDocumento>, pendientes: array, detalles: array}
      */
-    private function documentosMencionados(Cliente $cliente, array $leido): array
+    private function documentosMencionados(Cliente $cliente, array $leido, ?Carbon $fechaMensaje = null): array
     {
         $documentos = collect();
         $pendientes = [];
         $detalles = [];
         foreach ($leido['documentos'] as $identidad) {
             $coincidencias = CobroDocumento::deCliente($cliente->id)
+                ->when($identidad['codigo_generacion'] === null && $fechaMensaje !== null, fn ($q) => $q->where('ejercicio_control', '<=', EjercicioControl::de($fechaMensaje)))
                 ->when($identidad['codigo_generacion'] !== null, fn ($q) => $q->where('codigo_generacion', $identidad['codigo_generacion']))
                 ->when($identidad['numero_control'] !== null, fn ($q) => $q->where('numero_control_norm', $identidad['numero_control']))
                 ->get();

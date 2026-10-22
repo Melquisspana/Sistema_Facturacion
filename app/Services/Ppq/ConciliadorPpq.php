@@ -13,7 +13,9 @@ use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\EvidenciaEntreCircuitos;
 use App\Support\Dinero;
+use App\Support\EjercicioControl;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  *
  * Regla central, que no cambia: un CCF NO está pagado por estar en el PPQ. Solo se marca
  * PAGADO cuando aparece en el TXT como tipo CF, y una NC como APLICADA cuando aparece
- * como NC. El cruce es por número de documento NORMALIZADO y por tipo.
+ * como NC. El cruce es por número NORMALIZADO, ejercicio y tipo. Sin fecha se exige un único candidato en el lote.
  *
  * ═══════════════════ Toda fila es del proveedor esperado, o nada se aplica ═══════════════════
  *
@@ -101,13 +103,14 @@ class ConciliadorPpq
      * @param  array<int, array<string, mixed>>  $filas  salida de ConciliacionTxtParser::parse()
      * @param  ArchivoConciliacion|null  $archivo  la evidencia. Null solo en pruebas de la
      *                                             lógica de cruce que no verifican bitácora.
+     * @param  Collection<int, PpqItem>|null  $candidatos  selección entre lotes; sin ella se usa solo este lote
      * @return array<string, mixed>
      *
      * @throws ConciliacionYaProcesadaException si ese mismo archivo ya se aplicó al lote
      * @throws ArchivoConciliacionInconsistenteException si el archivo se contradice
      * @throws ArchivoProveedorInvalidoException si alguna fila trae un código de proveedor distinto del esperado
      */
-    public function conciliar(PpqLote $lote, array $filas, ?User $usuario = null, ?ArchivoConciliacion $archivo = null): array
+    public function conciliar(PpqLote $lote, array $filas, ?User $usuario = null, ?ArchivoConciliacion $archivo = null, ?Collection $candidatos = null): array
     {
         $lote->loadMissing('items');
 
@@ -127,6 +130,7 @@ class ConciliadorPpq
         // que se contradice no llega siquiera a tocar un renglón.
         [$cf, $nc, $qd, $repetidas] = $this->indexar($filas);
 
+        $porNumero = ($candidatos ?? $lote->items)->groupBy(fn ($i) => $i->numeroNormalizado());
         $usadosCf = [];
         $usadosNc = [];
         $ccfPagados = [];
@@ -139,14 +143,20 @@ class ConciliadorPpq
 
         try {
             $corrida = DB::transaction(function () use (
-                $lote, $cf, $nc, $qd, $filas, $usuario, $archivo, $repetidas,
+                $lote, $cf, $nc, $qd, $filas, $usuario, $archivo, $repetidas, $porNumero,
                 &$usadosCf, &$usadosNc, &$ccfPagados, &$ccfPendientes,
                 &$ncAplicadas, &$ncPendientes, &$conservados, &$movimientos, &$sinCambio,
             ) {
                 foreach ($lote->itemsOrdenados() as $item) {
-                    $clave = $item->numeroNormalizado();
+                    $numero = $item->numeroNormalizado();
+                    $clave = EjercicioControl::llave($numero, $item->ejercicio_control);
                     $esNc = $item->esNc();
-                    $fila = $clave !== null ? (($esNc ? $nc : $cf)[$clave] ?? null) : null;
+                    $indice = $esNc ? $nc : $cf;
+                    $fila = $clave !== null ? ($indice[$clave] ?? null) : null;
+                    if ($fila === null && $numero !== null && $porNumero->get($numero, collect())->count() === 1) {
+                        $clave = 'sin-fecha|'.$numero;
+                        $fila = $indice[$clave] ?? null;
+                    }
 
                     // ─── El archivo no habla de este renglón: NO SE TOCA. ───
                     if ($fila === null) {
@@ -218,7 +228,7 @@ class ConciliadorPpq
     }
 
     /**
-     * Índices del TXT por número normalizado, separados por tipo, rechazando el archivo si
+     * Índices del TXT por número normalizado y ejercicio, separados por tipo, rechazando el archivo si
      * se contradice.
      *
      * ─────────────────────── Por qué el duplicado importa tanto ───────────────────────
@@ -261,7 +271,9 @@ class ConciliadorPpq
                 continue; // fila de documento sin número: no identifica nada
             }
 
-            $porNumero[$f['numeroNorm']][] = $f;
+            $ejercicio = EjercicioControl::de($f['fecha'] ?? null);
+            $clave = $ejercicio === null ? 'sin-fecha|'.$f['numeroNorm'] : EjercicioControl::llave($f['numeroNorm'], $ejercicio);
+            $porNumero[$clave][] = $f;
         }
 
         $cf = [];

@@ -34,11 +34,14 @@ class SalidaEntregaController extends Controller
 
     public function store(Request $request, SalidaRuta $salida): RedirectResponse
     {
-        $datos = $request->validate(['numero_control' => ['required', 'string', 'max:60']], [
+        $datos = $request->validate([
+            'numero_control' => ['required', 'string', 'max:60'],
+            'ejercicio' => ['nullable', 'integer', 'min:2026', 'max:2100'],
+        ], [
             'numero_control.required' => 'Escribí el número de control del CCF.',
         ]);
 
-        $entrega = $this->entregas->agregar($salida, $datos['numero_control'], $request->user());
+        $entrega = $this->entregas->agregar($salida, $datos['numero_control'], $request->user(), isset($datos['ejercicio']) ? (int) $datos['ejercicio'] : null);
 
         return back()->with('status', 'CCF '.$entrega->dte->numero_control.' agregado a la salida.');
     }

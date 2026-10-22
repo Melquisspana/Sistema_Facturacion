@@ -3,6 +3,9 @@
 namespace App\Services\Ppq;
 
 use App\Models\Dte;
+use App\Support\IdentidadPpq;
+use App\Support\OrdenCompra;
+use App\Support\Sala;
 
 /**
  * Resuelve el NOMBRE COMERCIAL de la sala de un CCF/NC de Calleja = el `nombre` de la
@@ -19,9 +22,9 @@ class SalaResolver
     /** @var array<string, ?string> */
     private array $cache = [];
 
-    public function nombre(?string $oc, ?string $codigoGeneracion = null, ?string $numeroControl = null): ?string
+    public function nombre(?string $oc, ?string $codigoGeneracion = null, ?string $numeroControl = null, ?int $ejercicio = null): ?string
     {
-        $clave = implode('|', [$oc, $codigoGeneracion, $numeroControl]);
+        $clave = implode('|', [$oc, $codigoGeneracion, $numeroControl, $ejercicio]);
         if (array_key_exists($clave, $this->cache)) {
             return $this->cache[$clave];
         }
@@ -33,13 +36,17 @@ class SalaResolver
             if (blank($valor)) {
                 continue;
             }
-            $nombre = Dte::query()
-                ->whereNotNull('cliente_sucursal_id')
-                ->where($columna, $valor)
-                ->latest('id')
-                ->with('clienteSucursal:id,nombre')
-                ->first(['id', 'cliente_sucursal_id'])
-                ?->clienteSucursal?->nombre;
+            // El número solo identifica una sala si se resuelve el documento sin
+            // ambigüedad de ejercicio. Código y OC conservan sus propios criterios.
+            $nombre = $columna === 'numero_control'
+                ? IdentidadPpq::dteLocal((string) $valor, null, $ejercicio)?->clienteSucursal?->nombre
+                : Dte::query()
+                    ->whereNotNull('cliente_sucursal_id')
+                    ->where($columna, $valor)
+                    ->latest('id')
+                    ->with('clienteSucursal:id,nombre')
+                    ->first(['id', 'cliente_sucursal_id'])
+                    ?->clienteSucursal?->nombre;
 
             if (filled($nombre)) {
                 return $this->cache[$clave] = $nombre;
@@ -48,7 +55,7 @@ class SalaResolver
 
         // Sin DTE local (documento de otro sistema): último recurso, el mapa auxiliar de
         // PPQ por código de sala (derivado de la OC). Nombres ya vistos en JSON/altas.
-        $mapa = \App\Support\Sala::nombre(\App\Support\OrdenCompra::salaDesde($oc));
+        $mapa = Sala::nombre(OrdenCompra::salaDesde($oc));
         if (filled($mapa)) {
             return $this->cache[$clave] = $mapa;
         }

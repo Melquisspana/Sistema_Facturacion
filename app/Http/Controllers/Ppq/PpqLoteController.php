@@ -32,6 +32,7 @@ use App\Services\Ppq\NcExportacionService;
 use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\Ppq\QuedanCallejaExporter;
 use App\Services\Ppq\ReversionConciliacion;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -243,7 +244,9 @@ class PpqLoteController extends Controller
                     ->orWhereIn('numero_control_norm', $claves))
                 ->whereIn('presentacion_estado', [EstadoPresentacionCobro::Preparada->value, EstadoPresentacionCobro::SinPresentar->value])
                 ->where('pago_estado', EstadoPagoCobro::Pendiente->value)
-                ->orderBy('id')->lockForUpdate()->get();
+                ->orderBy('id')->lockForUpdate()->get()
+                ->filter(fn ($d) => $items->contains(fn ($i) => ($i->dte_id !== null && $i->dte_id === $d->dte_id)
+                    || EjercicioControl::llave($i->numero_control, $i->ejercicio_control) === EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
             foreach ($documentos as $doc) {
                 $doc->update(['presentacion_estado' => EstadoPresentacionCobro::Presentada->value]);
                 CobroEvento::firstOrCreate([

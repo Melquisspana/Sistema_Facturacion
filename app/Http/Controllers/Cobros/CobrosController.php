@@ -39,7 +39,7 @@ use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
 use App\Support\Dinero;
-use App\Support\IdentidadPpq;
+use App\Support\EjercicioControl;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -918,7 +918,7 @@ class CobrosController extends Controller
             ->get()
             ->map(function (CobroDocumento $doc) use ($claves, $elegibilidad) {
                 $motivo = $elegibilidad->motivo($doc, $claves) ?? 'no cumple las condiciones';
-                $lote = $claves->get(IdentidadPpq::normalizar($doc->numero_control))
+                $lote = $claves->get(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control))
                     ?? ($doc->dte_id !== null ? $claves->get('dte:'.$doc->dte_id) : null);
                 if ($motivo === 'ya está en un PPQ' && $lote !== null) {
                     $motivo = "sigue en el PPQ #{$lote}";

@@ -21,6 +21,7 @@ use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\EstadoRealLotePpq;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -149,10 +150,10 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
             'referencia_linea' => 'caso-999-fuera', 'fecha' => today(),
             'datos' => ['caso' => '999'],
         ]);
-        $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->claves()->has($doc->numero_control_norm));
+        $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->claves()->has(EjercicioControl::llave($doc->numero_control_norm, $doc->ejercicio_control)));
         $this->travel(1)->seconds();
         $this->crear([$doc]);
-        $this->assertTrue(app(ElegibilidadPpqSeguimiento::class)->claves()->has($doc->numero_control_norm));
+        $this->assertTrue(app(ElegibilidadPpqSeguimiento::class)->claves()->has(EjercicioControl::llave($doc->numero_control_norm, $doc->ejercicio_control)));
         try {
             $this->crear([$doc]);
             $this->fail('Debió rechazar el tercer intento.');
@@ -197,7 +198,7 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $this->assertSame('ya está en un PPQ', $elegibilidad->motivo($doc->fresh(), $elegibilidad->claves()));
         $this->assertCount(0, $elegibilidad->listos(CobroDocumento::deCliente($this->cliente->id)));
         $evento->update(['datos' => ['caso' => '12', 'ppq_lote_id' => $anterior->id]]);
-        $this->assertTrue($elegibilidad->claves()->has($doc->numero_control_norm), 'El id del lote prevalece sobre las observaciones.');
+        $this->assertTrue($elegibilidad->claves()->has(EjercicioControl::llave($doc->numero_control_norm, $doc->ejercicio_control)), 'El id del lote prevalece sobre las observaciones.');
         $this->actingAs($this->usuario())->post(route('cobros.ppq.crear', $this->cliente), ['documentos' => [$doc->id]])
             ->assertSessionHasErrors('documentos');
         $this->assertSame(2, PpqLote::count());
@@ -235,7 +236,7 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
             ['caso' => '999', 'documentos' => [$registrado->numero_control_norm => 'REGISTRADO']], null, $lote);
         $evento = CobroEvento::where('referencia_linea', 'caso-999-fuera')->sole();
         $this->assertSame($lote->id, $evento->datos['ppq_lote_id']);
-        $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->claves()->has($doc->numero_control_norm));
+        $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->claves()->has(EjercicioControl::llave($doc->numero_control_norm, $doc->ejercicio_control)));
         $this->assertSame(1, $this->crear([$doc->fresh()])->items()->count());
     }
 

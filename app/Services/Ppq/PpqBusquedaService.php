@@ -5,6 +5,7 @@ namespace App\Services\Ppq;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\OrdenCompra;
 use App\Support\PpqElegibilidad;
@@ -105,7 +106,8 @@ class PpqBusquedaService
     }
 
     /**
-     * EL BUSCADOR PRINCIPAL: un número, un documento. Devuelve `null` si no existe.
+     * EL BUSCADOR PRINCIPAL: un número, un documento. Devuelve `null` si no existe
+     * o abarca varios ejercicios: la pantalla ofrece entonces la lista para elegir por fecha.
      *
      * Acepta las dos formas en que la gente escribe un número de CCF:
      *
@@ -136,6 +138,30 @@ class PpqBusquedaService
      * ya tenía la búsqueda y no cambia.
      */
     public function buscarExacto(string $numero, ?string $tipo = null): ?Dte
+    {
+        $q = $this->consultaExacta($numero, $tipo);
+
+        return $q === null || $this->abarcaVariosEjercicios($q) ? null : $q->first();
+    }
+
+    /**
+     * ¿El número existe en más de un ejercicio? Es el caso en que {@see buscarExacto()} no
+     * elige y la pantalla tiene que ofrecer la lista para elegir por fecha (#121).
+     */
+    public function exactoAmbiguo(string $numero, ?string $tipo = null): bool
+    {
+        $q = $this->consultaExacta($numero, $tipo);
+
+        return $q !== null && $this->abarcaVariosEjercicios($q);
+    }
+
+    private function abarcaVariosEjercicios(Builder $q): bool
+    {
+        return (clone $q)->pluck('fecha_emision')->map(fn ($f) => EjercicioControl::de($f))->unique()->count() > 1;
+    }
+
+    /** La consulta del buscador principal, o `null` si el texto no puede ser un número. */
+    private function consultaExacta(string $numero, ?string $tipo): ?Builder
     {
         $numero = trim($numero);
 
@@ -169,7 +195,7 @@ class PpqBusquedaService
         if ($soloDigitos !== '' && $soloDigitos === $numero) {
             $this->exactoPorCorrelativo($q, $soloDigitos);
 
-            return $q->first();
+            return $q;
         }
 
         // Cualquier otra cosa se trata como número de control completo, normalizado de
@@ -180,7 +206,7 @@ class PpqBusquedaService
             return null;
         }
 
-        return $q->where(IdentidadPpq::columnaNormalizada(), $clave)->first();
+        return $q->where(IdentidadPpq::columnaNormalizada(), $clave);
     }
 
     /**
@@ -362,7 +388,7 @@ class PpqBusquedaService
      * Qué documentos de la búsqueda YA están en algún lote PPQ, para avisar duplicados.
      *
      * Cruza por las dos llaves de {@see IdentidadPpq}: el vínculo explícito `dte_id` y
-     * el número de control NORMALIZADO. La segunda es la que hace el trabajo: los 158
+     * el número de control NORMALIZADO junto con el ejercicio. La segunda es la que hace el trabajo: los 158
      * items que existen hoy vienen del barrido de Gmail y TODOS tienen `dte_id` en
      * NULL, así que cruzar solo por el vínculo no encontraba ninguno y un CCF ya
      * cobrado aparecía como si nunca hubiera entrado a un PPQ.
@@ -381,7 +407,7 @@ class PpqBusquedaService
         foreach ($dtes as $dte) {
             $ids[] = (int) $dte->id;
 
-            $clave = IdentidadPpq::normalizar($dte->numero_control);
+            $clave = EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision));
             if ($clave !== null) {
                 $dtePorControl[$clave] = (int) $dte->id;
             }
@@ -391,7 +417,7 @@ class PpqBusquedaService
             return [];
         }
 
-        $claves = array_keys($dtePorControl);
+        $claves = array_map(fn ($k) => explode('|', $k, 2)[1], array_keys($dtePorControl));
 
         $items = PpqItem::query()
             ->where(function (Builder $q) use ($ids, $claves) {
@@ -405,7 +431,7 @@ class PpqBusquedaService
             // del primero, que es lo que este aviso siempre significó («ya está en el
             // lote #N», no «está en estos N lotes»).
             ->orderBy('id')
-            ->get(['id', 'ppq_lote_id', 'dte_id', 'numero_control']);
+            ->get(['id', 'ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control']);
 
         $mapa = [];
         $conocidos = array_flip($ids);
@@ -417,7 +443,7 @@ class PpqBusquedaService
             }
 
             // Llave 2: número de control normalizado (los snapshots de Gmail).
-            $clave = IdentidadPpq::normalizar($item->numero_control);
+            $clave = EjercicioControl::llave($item->numero_control, $item->ejercicio_control);
             if ($clave !== null && isset($dtePorControl[$clave])) {
                 $mapa[$dtePorControl[$clave]] ??= (int) $item->ppq_lote_id;
             }

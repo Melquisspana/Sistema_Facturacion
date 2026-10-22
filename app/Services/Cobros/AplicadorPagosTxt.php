@@ -3,6 +3,7 @@
 namespace App\Services\Cobros;
 
 use App\Enums\Cobros\EstadoEventoCobro;
+use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
@@ -16,6 +17,7 @@ use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
 use App\Services\Ppq\ValidadorCodigoProveedorTxt;
 use App\Support\Dinero;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -112,6 +114,8 @@ class AplicadorPagosTxt
             // evidencia. No suman hasta que una persona diga qué son.
             'en_revision' => [],
             'no_identificados' => [],
+            'ambiguos' => [],
+            'tocados' => [],
             'invalidas' => $invalidas,
             'repetidas' => $repetidas,
             'otros_tipos' => $otrosTipos,
@@ -126,9 +130,15 @@ class AplicadorPagosTxt
         DB::transaction(function () use ($cliente, $documentos, $ajustes, $archivo, $usuario, $fechaPago, &$informe) {
             foreach ($documentos as $clave => $fila) {
                 $documento = CobroDocumento::deCliente($cliente->id)
-                    ->where('numero_control_norm', $clave)
-                    ->lockForUpdate()
-                    ->first();
+                    ->where('numero_control_norm', $fila['numeroNorm'])
+                    ->when(EjercicioControl::de($fila['fecha']) !== null, fn ($q) => $q->where('ejercicio_control', EjercicioControl::de($fila['fecha'])))
+                    ->lockForUpdate()->get();
+                if ($documento->count() > 1) {
+                    $informe['ambiguos'][] = ['fila' => $fila, 'candidatos' => $documento];
+
+                    continue;
+                }
+                $documento = $documento->first();
 
                 if ($documento === null) {
                     // No se crea nada a partir del archivo: un número que no está en el
@@ -139,6 +149,7 @@ class AplicadorPagosTxt
                     continue;
                 }
 
+                $informe['tocados'][] = $documento->id;
                 $antes = (string) $documento->monto_pagado;
                 $evento = $this->registrarPago($documento, $fila, $archivo, $usuario, $fechaPago);
                 $documento->recalcularPago();
@@ -173,7 +184,7 @@ class AplicadorPagosTxt
         // prueba visible de que la carga no los borró.
         $informe['conservados'] = CobroDocumento::deCliente($cliente->id)
             ->where('monto_pagado', '>', 0)
-            ->whereNotIn('numero_control_norm', array_keys($documentos))
+            ->whereNotIn('id', $informe['tocados'])
             ->porAntiguedad()
             ->get();
 
@@ -224,7 +235,9 @@ class AplicadorPagosTxt
                 continue;
             }
 
-            $porNumero[$fila['numeroNorm']][] = $fila;
+            $ejercicio = EjercicioControl::de($fila['fecha']);
+            $clave = $ejercicio === null ? 'sin-fecha|'.$fila['numeroNorm'] : EjercicioControl::llave($fila['numeroNorm'], $ejercicio);
+            $porNumero[$clave][] = $fila;
         }
 
         $documentos = [];
@@ -315,9 +328,12 @@ class AplicadorPagosTxt
                 // La del PAGO solo si alguien la aporta: el archivo no la trae.
                 'fecha' => $fechaPago?->toDateString(),
                 'evidencia_nombre' => $archivo->nombre,
-                'detalle' => 'Informado como '.$fila['tipo'].' en el archivo de pagos, línea '.$fila['linea'].'.',
+                // Sin fecha del documento el ejercicio no consta: queda anotado para auditarlo.
+                'detalle' => 'Informado como '.$fila['tipo'].' en el archivo de pagos, línea '.$fila['linea']
+                    .(empty($fila['fecha']) ? ' (identificado sin fecha, candidato único).' : '.'),
                 'datos' => [
                     'tipo_txt' => $fila['tipo'],
+                    'identificacion' => empty($fila['fecha']) ? 'sin_fecha_candidato_unico' : 'numero_y_ejercicio',
                     // La fecha que trae el archivo es la del DOCUMENTO. Se guarda con su
                     // nombre para que nadie la confunda con la del pago.
                     'fecha_documento_txt' => $fila['fecha'],
@@ -343,6 +359,10 @@ class AplicadorPagosTxt
      */
     private function estadoDelPago(CobroDocumento $documento, array $fila, ArchivoConciliacion $archivo): array
     {
+        if (empty($fila['fecha']) && ($documento->pago_estado !== EstadoPagoCobro::Pendiente || $documento->estaInvalidado())) {
+            return [EstadoEventoCobro::EnRevision, 'El archivo no trae la fecha del documento (sin fecha) y '.($documento->estaInvalidado() ? 'está anulado.' : 'ya está cobrado o tiene pago registrado.')];
+        }
+
         $previo = CobroEvento::query()
             ->where('cobro_documento_id', $documento->id)
             ->where('tipo', TipoEventoCobro::Pago->value)
@@ -497,6 +517,7 @@ class AplicadorPagosTxt
             'cantidad_sin_cambio' => count($informe['sin_cambio']),
             'cantidad_en_revision' => count($informe['en_revision']),
             'cantidad_no_identificados' => count($informe['no_identificados']),
+            'cantidad_ambiguos' => count($informe['ambiguos']),
             'cantidad_invalidas' => count($informe['invalidas']),
             'cantidad_repetidas' => count($informe['repetidas']),
             'total_cf' => $cf,

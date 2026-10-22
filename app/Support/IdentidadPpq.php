@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\DB;
  *
  *   1. `dte_id` — vínculo explícito, el más fuerte. Hoy casi no existe en los datos,
  *      pero cuando existe manda.
- *   2. `numero_control` NORMALIZADO — la llave que hace el trabajo real. Funciona igual
+ *   2. `numero_control` NORMALIZADO + ejercicio — la llave que hace el trabajo real. Funciona igual
  *      para los P001 históricos y para los P002 actuales, que es justo lo que hace
  *      falta: el número de control es lo único que ambos caminos comparten.
  *
@@ -106,12 +106,12 @@ final class IdentidadPpq
 
     /**
      * El DTE LOCAL que corresponde a un número de control, resuelto SIN ambigüedad de
-     * ambiente. `null` si no existe ninguno.
+     * ambiente y ejercicio. Sin ejercicio, devuelve null si hay más de uno; con ejercicio filtra por fecha de emisión.
      *
      * ─────────────────────────── Cómo desempata ───────────────────────────
      *
-     * Con `$ambiente` dado, no hay nada que desempatar: se busca exactamente ese par, que
-     * es el único de la tabla.
+     * Con `$ambiente` dado se restringen los candidatos a ese ambiente. El ejercicio
+     * sigue siendo necesario si el número se repite entre años.
      *
      * Sin ambiente —el caso de quien teclea o pega un número y no sabe ni tiene por qué
      * saber en qué ambiente vive— se ordena por dos criterios, en este orden:
@@ -129,7 +129,7 @@ final class IdentidadPpq
      * número viene como lo escribe el sistema (`DTE-03-…-1090`) como si alguien lo pegó
      * sin separadores (`DTE03…1090`).
      */
-    public static function dteLocal(?string $numeroControl, ?string $ambiente = null): ?Dte
+    public static function dteLocal(?string $numeroControl, ?string $ambiente = null, ?int $ejercicio = null): ?Dte
     {
         $clave = self::normalizar($numeroControl);
 
@@ -137,7 +137,12 @@ final class IdentidadPpq
             return null;
         }
 
+        if ($ejercicio === null && count(self::ejerciciosDe($numeroControl, $ambiente)) > 1) {
+            return null;
+        }
+
         return Dte::query()
+            ->when($ejercicio !== null, fn ($q) => EjercicioControl::filtrarFecha($q, 'fecha_emision', $ejercicio))
             ->where(self::columnaNormalizada(), $clave)
             ->when($ambiente !== null, fn ($q) => $q->where('ambiente', $ambiente))
             ->when($ambiente === null, fn ($q) => $q
@@ -145,6 +150,20 @@ final class IdentidadPpq
                 ->orderByRaw('CASE WHEN ambiente = ? THEN 0 ELSE 1 END', [(string) config('dte.ambiente')]))
             ->orderByDesc('id')
             ->first();
+    }
+
+    /** Ejercicios distintos para explicar una identidad local ambigua. */
+    public static function ejerciciosDe(?string $numero, ?string $ambiente = null): array
+    {
+        $clave = self::normalizar($numero);
+        if ($clave === null) {
+            return [];
+        }
+
+        return Dte::query()->where(self::columnaNormalizada(), $clave)
+            ->when($ambiente !== null, fn ($q) => $q->where('ambiente', $ambiente))
+            ->pluck('fecha_emision')->map(fn ($f) => EjercicioControl::de($f))
+            ->filter()->unique()->sort()->values()->all();
     }
 
     /**

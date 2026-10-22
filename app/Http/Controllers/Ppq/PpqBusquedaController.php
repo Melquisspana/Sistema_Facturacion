@@ -14,6 +14,7 @@ use App\Services\Ppq\PpqGmailService;
 use App\Services\Ppq\SalaResolver;
 use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\ResolucionAlbaran;
+use App\Support\EjercicioControl;
 use App\Support\NumeroAlbaran;
 use App\Support\PpqElegibilidad;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -69,6 +70,12 @@ class PpqBusquedaController extends Controller
         // mezclan en la misma lista: si hay número exacto manda el número, y si no lo hay
         // el usuario está usando la avanzada a propósito.
         $resultados = $hayAvanzados ? $busqueda->buscar($filtros) : null;
+        // #121: si el número existe en más de un ejercicio, el exacto no elige; se ofrece
+        // la lista para elegir por fecha.
+        if ($q !== '' && $exacto === null && ! $hayAvanzados && $busqueda->exactoAmbiguo($q, $tipo)) {
+            $resultados = $busqueda->buscar(['numero_control' => $q, 'tipo' => $tipo]);
+            $request->session()->now('error', 'Ese número de control existe en más de un año: elegí el documento por su fecha en los resultados.');
+        }
 
         // Un documento local de PRODUCCIÓN, ACEPTADO REALMENTE por Hacienda y no
         // archivado resuelve la ficha entera: cierra la búsqueda y Gmail no se consulta.
@@ -273,7 +280,7 @@ class PpqBusquedaController extends Controller
         $yaLocales = $this->clavesLocales($resultados);
         if ($yaLocales !== []) {
             $fichas = array_values(array_filter($fichas, function (array $f) use ($yaLocales) {
-                foreach ([$f['ccf']['codigoGeneracion'] ?? null, $f['ccf']['numeroControl'] ?? null] as $clave) {
+                foreach ([$f['ccf']['codigoGeneracion'] ?? null, EjercicioControl::llave($f['ccf']['numeroControl'] ?? null, EjercicioControl::de($f['ccf']['fecha'] ?? null))] as $clave) {
                     if (filled($clave) && isset($yaLocales[strtoupper(trim((string) $clave))])) {
                         return false;
                     }
@@ -304,6 +311,7 @@ class PpqBusquedaController extends Controller
                     $f['ccf']['ordenCompra'] ?? null,
                     $f['ccf']['codigoGeneracion'] ?? null,
                     $f['ccf']['numeroControl'] ?? null,
+                    EjercicioControl::de($f['ccf']['fecha'] ?? null),
                 );
             }
 
@@ -314,7 +322,7 @@ class PpqBusquedaController extends Controller
                 continue;
             }
 
-            foreach ([$f['ccf']['codigoGeneracion'] ?? null, $f['ccf']['numeroControl'] ?? null] as $clave) {
+            foreach ([$f['ccf']['codigoGeneracion'] ?? null, EjercicioControl::llave($f['ccf']['numeroControl'] ?? null, EjercicioControl::de($f['ccf']['fecha'] ?? null))] as $clave) {
                 $clave = strtoupper(trim((string) $clave));
                 if ($clave === '' || ! isset($sellos[$clave])) {
                     continue;
@@ -352,7 +360,7 @@ class PpqBusquedaController extends Controller
                 continue;
             }
 
-            foreach ([$dte->codigo_generacion, $dte->numero_control] as $clave) {
+            foreach ([$dte->codigo_generacion, EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision))] as $clave) {
                 if (filled($clave)) {
                     $claves[strtoupper(trim((string) $clave))] = true;
                 }
@@ -383,7 +391,7 @@ class PpqBusquedaController extends Controller
 
         $deGmail = [];
         foreach ($fichas as $f) {
-            foreach ([$f['ccf']['codigoGeneracion'] ?? null, $f['ccf']['numeroControl'] ?? null] as $clave) {
+            foreach ([$f['ccf']['codigoGeneracion'] ?? null, EjercicioControl::llave($f['ccf']['numeroControl'] ?? null, EjercicioControl::de($f['ccf']['fecha'] ?? null))] as $clave) {
                 if (filled($clave)) {
                     $deGmail[strtoupper(trim((string) $clave))] = true;
                 }
@@ -392,7 +400,7 @@ class PpqBusquedaController extends Controller
 
         $ocultos = [];
         foreach ($resultados as $dte) {
-            foreach ([$dte->codigo_generacion, $dte->numero_control] as $clave) {
+            foreach ([$dte->codigo_generacion, EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision))] as $clave) {
                 if (filled($clave) && isset($deGmail[strtoupper(trim((string) $clave))])) {
                     $ocultos[] = (int) $dte->id;
                     break;
@@ -445,11 +453,11 @@ class PpqBusquedaController extends Controller
                 }
             })
             ->orderBy('id') // el de id más alto gana: se escribe de último
-            ->get(['id', 'codigo_generacion', 'numero_control', 'sello_recepcion']);
+            ->get(['id', 'codigo_generacion', 'numero_control', 'sello_recepcion', 'fecha_emision']);
 
         $mapa = [];
         foreach ($dtes as $dte) {
-            foreach ([$dte->codigo_generacion, $dte->numero_control] as $clave) {
+            foreach ([$dte->codigo_generacion, EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision))] as $clave) {
                 if (filled($clave)) {
                     $mapa[strtoupper(trim((string) $clave))] = [
                         'id' => (int) $dte->id,
@@ -464,7 +472,8 @@ class PpqBusquedaController extends Controller
 
     /**
      * Número de control del CCF (tipo 03) que comparte la orden de compra de cada NC,
-     * para mostrar la relación sugerida. UNA consulta para todas las fichas.
+     * para mostrar la relación sugerida. Si la OC abarca varias identidades de documento,
+     * no se elige ninguna. UNA consulta para todas las fichas.
      *
      * @param  array<int, array<string, mixed>>  $fichas
      * @return array<string, string> orden de compra => número de control del CCF
@@ -488,10 +497,11 @@ class PpqBusquedaController extends Controller
 
         return Dte::where('tipo_dte', '03')
             ->whereIn('numero_orden_compra', array_values(array_unique($ocs)))
-            ->orderBy('id') // el de id más alto gana: pisa a los anteriores
-            ->pluck('numero_control', 'numero_orden_compra')
-            ->filter()
-            ->all();
+            ->orderBy('id')
+            ->get(['numero_orden_compra', 'numero_control', 'fecha_emision'])
+            ->groupBy('numero_orden_compra')
+            ->filter(fn ($grupo) => $grupo->map(fn ($d) => EjercicioControl::llave($d->numero_control, EjercicioControl::de($d->fecha_emision)))->unique()->count() === 1)
+            ->map(fn ($grupo) => $grupo->last()->numero_control)->filter()->all();
     }
 
     /**
@@ -515,6 +525,7 @@ class PpqBusquedaController extends Controller
             $doc['numero_orden_compra'] ?? null,
             $doc['codigo_generacion'] ?? null,
             $doc['numero_control'] ?? null,
+            EjercicioControl::de($doc['fecha_documento'] ?? null),
         );
 
         $gmailDisponible = $gmail->disponible();

@@ -10,7 +10,7 @@ use App\Models\NcExportacionItem;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
-use App\Support\IdentidadPpq;
+use App\Support\EjercicioControl;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -78,12 +78,12 @@ class NcPosterioresLotePpq
         if ($notas->isEmpty()) {
             return $notas;
         }
-        $ocupados = PpqItem::whereHas('lote')->get(['dte_id', 'numero_control']);
+        $ocupados = PpqItem::whereHas('lote')->get(['dte_id', 'numero_control', 'ejercicio_control']);
         $dtes = $ocupados->pluck('dte_id')->filter()->flip();
-        $controles = $ocupados->map(fn ($item) => IdentidadPpq::normalizar($item->numero_control))->filter()->flip();
+        $controles = $ocupados->map(fn ($item) => EjercicioControl::llave($item->numero_control, $item->ejercicio_control))->filter()->flip();
 
         return $notas
-            ->reject(fn ($nc) => $dtes->has($nc->id) || $controles->has(IdentidadPpq::normalizar($nc->numero_control)))->values();
+            ->reject(fn ($nc) => $dtes->has($nc->id) || $controles->has(EjercicioControl::llave($nc->numero_control, EjercicioControl::de($nc->fecha_emision))))->values();
     }
 
     /** Permite incorporar NC solamente antes de la presentación o el cobro del lote. */

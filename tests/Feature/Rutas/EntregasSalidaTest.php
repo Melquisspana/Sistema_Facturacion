@@ -21,6 +21,7 @@ use App\Services\Rutas\AlbaranLocalizador;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -561,6 +562,41 @@ class EntregasSalidaTest extends TestCase
             ->assertSee('Última visita')
             ->assertSee('(hoy)')
             ->assertDontSee('Sin visitas registradas');
+    }
+
+    /**
+     * #121 · Desde 2027 el número de control se repite entre años (#42). Con dos CCF del
+     * mismo número, el alta manual no elige uno a ciegas: pide el año.
+     */
+    public function test_agregar_un_numero_repetido_entre_anios_pide_el_anio(): void
+    {
+        if (! Schema::hasColumn('dtes', 'ejercicio')) {
+            $this->markTestSkipped('Necesita #125: hasta entonces `dtes` no admite el mismo número en dos ejercicios.');
+        }
+        $this->travelTo('2027-01-20 09:00:00');
+        $numero = 'DTE-03-M001P002-000000000000015';
+        $de2026 = $this->ccf(['numero_control' => $numero, 'fecha_emision' => '2026-12-20', 'ejercicio' => 2026]);
+        $de2027 = $this->ccf(['numero_control' => $numero, 'fecha_emision' => '2027-01-15', 'ejercicio' => 2027]);
+        $salida = $this->salida();
+
+        $this->actingAs($this->admin())->post(route('rutas.salidas.entregas.store', $salida), ['numero_control' => $numero])
+            ->assertSessionHasErrors(['numero_control' => 'Ese número de control existe en 2026 y 2027: indicá el año.']);
+        $this->assertSame(0, $salida->entregas()->count());
+
+        $this->actingAs($this->admin())->post(route('rutas.salidas.entregas.store', $salida), ['numero_control' => $numero, 'ejercicio' => 2027])
+            ->assertSessionHasNoErrors();
+        $this->assertSame([$de2027->id], $salida->entregas()->pluck('dte_id')->all());
+        $this->assertNotSame($de2026->id, $de2027->id);
+    }
+
+    public function test_agregar_con_un_anio_que_no_corresponde_no_toma_otro(): void
+    {
+        $dte = $this->ccf();
+        $salida = $this->salida();
+
+        $this->actingAs($this->admin())->post(route('rutas.salidas.entregas.store', $salida), ['numero_control' => $dte->numero_control, 'ejercicio' => 2027])
+            ->assertSessionHasErrors(['numero_control' => 'No hay ningún documento con ese número de control.']);
+        $this->assertSame(0, $salida->entregas()->count());
     }
 
     public function test_el_listado_de_salidas_muestra_entregados_sobre_total(): void

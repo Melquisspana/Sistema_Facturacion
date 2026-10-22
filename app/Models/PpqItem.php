@@ -2,6 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\Ppq\ConciliacionTxtParser;
+use App\Support\Albaran;
+use App\Support\EjercicioControl;
+use App\Support\OrdenCompra;
+use App\Support\PpqConciliacion;
+use App\Support\Sala;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +27,7 @@ class PpqItem extends Model
         'dte_id',
         'origen',
         'numero_control',
+        'ejercicio_control',
         'codigo_generacion',
         'sello_recepcion',
         'tipo_dte',
@@ -44,6 +51,7 @@ class PpqItem extends Model
     {
         return [
             'fecha_documento' => 'date',
+            'ejercicio_control' => 'integer',
             'sin_albaran' => 'boolean',
             'fecha_pago' => 'date',
             'conciliado_en' => 'datetime',
@@ -58,6 +66,10 @@ class PpqItem extends Model
     protected static function booted(): void
     {
         static::saving(function (PpqItem $item) {
+            $item->ejercicio_control = EjercicioControl::de($item->fecha_documento)
+                ?? ($item->dte_id ? EjercicioControl::de($item->dte()->value('fecha_emision')) : null)
+                ?? $item->ejercicio_control
+                ?? EjercicioControl::hoy();
             $item->diferencia = $item->monto_albaran === null
                 ? null
                 : round((float) $item->monto_dte - (float) $item->monto_albaran, 2);
@@ -67,7 +79,7 @@ class PpqItem extends Model
     /** Código de sala (4 dígitos) derivado de la orden de compra. */
     public function salaCodigo(): ?string
     {
-        return \App\Support\OrdenCompra::salaDesde($this->numero_orden_compra);
+        return OrdenCompra::salaDesde($this->numero_orden_compra);
     }
 
     /**
@@ -80,13 +92,13 @@ class PpqItem extends Model
             return $this->sala_nombre;
         }
 
-        return \App\Support\Sala::nombrePreferido($this->salaCodigo(), $this->dte?->clienteSucursal?->nombre);
+        return Sala::nombrePreferido($this->salaCodigo(), $this->dte?->clienteSucursal?->nombre);
     }
 
     /** Texto siempre presente para pantalla ("…sin nombre registrado" si no hay nombre). */
     public function salaDescripcion(): string
     {
-        return \App\Support\Sala::descripcion($this->salaCodigo(), $this->salaNombre());
+        return Sala::descripcion($this->salaCodigo(), $this->salaNombre());
     }
 
     /** ¿Hay un albarán vinculado a este item (no marcado "sin albarán")? */
@@ -98,7 +110,7 @@ class PpqItem extends Model
     /** Código de sala (4 dígitos) embebido en el número del albarán vinculado (2º segmento). */
     public function salaAlbaranCodigo(): ?string
     {
-        return \App\Support\Albaran::salaDesdeNumero($this->albaran?->numero_albaran);
+        return Albaran::salaDesdeNumero($this->albaran?->numero_albaran);
     }
 
     /**
@@ -113,13 +125,13 @@ class PpqItem extends Model
             return null;
         }
 
-        return \App\Support\PpqConciliacion::salaMismatch($this->salaCodigo(), $this->salaAlbaranCodigo());
+        return PpqConciliacion::salaMismatch($this->salaCodigo(), $this->salaAlbaranCodigo());
     }
 
     /** Estado de conciliación (monto) de este item, distinguiendo "albarán sin monto". */
     public function conciliacionEstado(): array
     {
-        return \App\Support\PpqConciliacion::estado($this->monto_dte, $this->monto_albaran, $this->tieneAlbaran());
+        return PpqConciliacion::estado($this->monto_dte, $this->monto_albaran, $this->tieneAlbaran());
     }
 
     /** ¿El documento es una Nota de Crédito (tipo 05)? Resta en el cobro. */
@@ -131,7 +143,7 @@ class PpqItem extends Model
     /** Número de control normalizado (solo alfanumérico, mayúsculas) para cruzar con el TXT. */
     public function numeroNormalizado(): ?string
     {
-        return \App\Services\Ppq\ConciliacionTxtParser::normalizarNumero(
+        return ConciliacionTxtParser::normalizarNumero(
             $this->numero_control ?? $this->dte?->numero_control,
         );
     }

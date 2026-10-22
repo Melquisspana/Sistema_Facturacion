@@ -137,11 +137,16 @@ class EntregasCcf
      *
      * @throws ValidationException
      */
-    public function agregar(SalidaRuta $salida, string $numeroControl, ?User $usuario = null): SalidaRutaEntrega
+    public function agregar(SalidaRuta $salida, string $numeroControl, ?User $usuario = null, ?int $ejercicio = null): SalidaRutaEntrega
     {
         $this->exigirAbierta($salida);
 
-        $dte = IdentidadPpq::dteLocal($numeroControl);
+        $anios = $ejercicio === null ? IdentidadPpq::ejerciciosDe($numeroControl) : [];
+        if (count($anios) > 1) {
+            $ultimo = array_pop($anios);
+            throw ValidationException::withMessages(['numero_control' => 'Ese número de control existe en '.implode(', ', $anios).' y '.$ultimo.': indicá el año.']);
+        }
+        $dte = IdentidadPpq::dteLocal($numeroControl, null, $ejercicio);
 
         $motivo = match (true) {
             $dte === null => 'No hay ningún documento con ese número de control.',
