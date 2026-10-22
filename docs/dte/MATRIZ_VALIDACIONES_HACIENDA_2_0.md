@@ -38,6 +38,24 @@ Orden de prioridad: P1 son rechazos o incumplimientos posibles antes del 01/12/2
 | H10 | P2 | 35-37, 166-167 | Si la FEX es de servicios (`tipoItemExpor` 2), recinto, régimen, tipo de régimen e incoterms deben ir `null`. El sistema los exige siempre. | `CrearBorradorRequest`, `ValidacionPreJsonService`, `SerializadorExportacionMh` |
 | H11 | P2 | Criterio del issue | El Excel de catálogos activo es el oficial (ver «Catálogos»), pero no hay forma de comprobar que lo **importado en la base** coincida con él. | `ImportarCatalogosMhCommand` |
 
+### Estado de los huecos
+
+Cada arreglo tiene su prueba, que se escribió antes y falló antes del cambio. «Pendiente en MH» marca lo que hay que confirmar en apitest antes de desplegar (ver «Validación en el ambiente de pruebas del MH»).
+
+| Id | Arreglo | Decisión y notas |
+|---|---|---|
+| H1 | #40, #58 | Va con la sesión de Hacienda; pendiente en MH. |
+| H2 | #119 | Cambia el JSON fiscal de lo ya emitido: los CCF a crédito salían con código y monto, y el MH los aceptaba. Pendiente en MH: CCF a crédito, FE y FEX al contado, NC. |
+| H3 | #120 | El PDF y el evento de invalidación leen el JSON emitido. Si el dato actual coincide, el PDF sale igual que antes. El correo se sigue enviando a la dirección actual. Pendiente en MH: invalidar una FE vieja con NIT con guiones. |
+| H4 | #125 | Migración aditiva `dtes.ejercicio` y reinicio con el correlativo bloqueado. **No se despliega sin #121** (Cobros, Rutas y PPQ por número de control + ejercicio). Va al servidor antes del 31/12. |
+| H5 | #119 | — |
+| H6 | #119 | — |
+| H7 | #123 | Decisión de Melqui: no bloquear. Se avisa y se pide un motivo obligatorio, que queda en la auditoría. |
+| H8 | #124 | La prueba mostró el hueco: 2.32 contra 2.40 con 20 líneas de $1.01. En las FE nuevas la base gravada puede variar unos centavos. Pendiente en MH: FE de muchas líneas con descuento global. |
+| H9 | #123 | — |
+| H10 | #123 | Decisión: bloquear la FEX de servicios (se exportan bienes). |
+| H11 | #124 | `php artisan dte:catalogos --verificar`, de solo lectura. En producción lo corre la sesión de Hacienda dentro del paquete final. |
+
 Fuera de este issue: la ventana de la fecha de emisión respecto de la transmisión (campo 10.2-10.4, hasta 5 días después sin cambiar de período) y la holgura de 30 minutos del último día del mes (11.2) caen en la contingencia (#43).
 
 ## Matriz por sección
@@ -188,7 +206,7 @@ El sistema no emite estas operaciones. Sus campos van siempre en `null` o en 0.0
 - Ítems tipo 4 con tributos especiales (A8, 57, 90, A6) y `codTributo`.
 - Cargos y abonos que no afectan la base imponible (`noGravado`), saldo a favor, precio sugerido (`psv`) y percepción de IVA.
 - NC sobre más de un documento, sobre documentos físicos o sobre un Comprobante de Retención (07).
-- FEX de servicios, mientras esté abierto H10.
+- FEX de servicios: bloqueada en la creación, los datos aduaneros y la validación previa (H10, #123).
 - Tipos de documento ND, NR, CR, CL, DCL, FSE y CD; eventos de retorno y de operaciones especiales (ver la auditoría, punto 5).
 
 ## Validación en el ambiente de pruebas del MH
