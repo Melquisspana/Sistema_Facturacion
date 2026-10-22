@@ -199,11 +199,10 @@ class PdfUnificadoTest extends TestCase
     /** Sin correo en ninguno de los dos, el PDF lo DICE en vez de dejar el hueco. */
     public function test_sin_correo_configurado_se_imprime_la_leyenda(): void
     {
-        $cliente = Cliente::factory()->contribuyente()->create();
-        $ccf = $this->generar($this->borradorConLinea(TipoDte::CreditoFiscal, $cliente));
-        // Un documento histórico puede perder el correo del cliente después de emitido.
-        $cliente->update(['correo' => null]);
-        $ccf->unsetRelation('cliente');
+        // En un BORRADOR: el CCF ya no se genera sin correo (Normativa 2.0, campo 57) y el PDF
+        // de un emitido muestra el correo de su JSON, no el del cliente actual (#42, H3).
+        $cliente = Cliente::factory()->contribuyente()->create(['correo' => null]);
+        $ccf = $this->borradorConLinea(TipoDte::CreditoFiscal, $cliente);
 
         $this->assertStringContainsString(CorreoReceptorDte::SIN_CORREO, $this->htmlDelPdf($ccf));
         $this->assertSame('Sin correo configurado', CorreoReceptorDte::SIN_CORREO);

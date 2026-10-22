@@ -30,8 +30,7 @@
     $esFactura = $dte->tipo_dte === TipoDte::Factura;
     $baseLabel = $esFex ? 'Exportación' : 'Gravado';
 
-    // Correo EFECTIVO del receptor: sala primero, cliente después. Es el mismo criterio
-    // con el que se decide a quién se le envía el documento, resuelto en un solo lugar.
+    // Sin JSON se muestra el contacto actual; para emitidos se prefiere el transmitido.
     $correoReceptor = \App\Support\Dte\CorreoReceptorDte::paraMostrar($dte);
 
     // CCF (03) y NC (05) comparten tratamiento de columnas: el IVA NO se desglosa por
@@ -105,6 +104,53 @@
     $cliComercial = ($cli?->nombre_comercial && trim($cli->nombre_comercial) !== trim((string) $cli->nombre))
         ? $cli->nombre_comercial : null;
 
+    $cliNombre = $cli?->nombre;
+    $cliDocumento = $cli?->num_documento;
+    $cliNrc = $cli?->nrc;
+    $cliActividad = $cli?->actividadEconomica?->nombre;
+    $cliDireccion = $cli?->direccion;
+    $cliComplemento = $cli?->complemento_direccion;
+    $salaNombre = $suc?->nombre;
+    $salaDireccion = $suc?->direccion;
+    if (($datosFiscalesEmision ?? null) !== null) {
+        $f = \App\Support\Dte\DatosFiscalesEmision::class;
+        $e = $datosFiscalesEmision['emisor'];
+        foreach (['emRazon' => 'nombre', 'emComercial' => 'nombreComercial', 'emNit' => 'nit', 'emNrc' => 'nrc', 'emTel' => 'telefono', 'emCorreo' => 'correo'] as $variable => $clave) {
+            $$variable = $f::valor($$variable, $e[$clave] ?? null, in_array($clave, ['nit', 'nrc']));
+        }
+        $emDir = $f::valor($emDir, $e['direccion']['complemento'] ?? null);
+        $emActividad = $f::actividad($emisor, $e, $emActividad);
+        $emUbic = implode(', ', array_filter($f::ubicacion($emisor, $e['direccion'] ?? [], [$emisor?->departamento?->nombre, $emisor?->municipio?->nombre, $emisor?->distrito?->nombre]))) ?: null;
+        $emMarca = $emComercial ?: $emRazon;
+        $emLegal = ($emComercial && $emRazon && trim($emComercial) !== trim((string) $emRazon)) ? $emRazon : null;
+        $r = $datosFiscalesEmision['receptor'] ?? [];
+        $cliNombre = $f::valor($cliNombre, $r['nombre'] ?? null);
+        $cliDocumento = $f::valor($cliDocumento, $r['numDocumento'] ?? null, in_array($r['tipoDocumento'] ?? null, ['36', '13'], true));
+        $cliNrc = $f::valor($cliNrc, $r['nrc'] ?? null, true);
+        $cliActividad = $f::actividad($cli, $r, $cliActividad);
+        $correoReceptor = filled($r['correo'] ?? null) ? $r['correo'] : \App\Support\Dte\CorreoReceptorDte::SIN_CORREO;
+        if ($suc) {
+            $salaNombre = $f::valor($salaNombre, $r['nombreComercial'] ?? null);
+            $salaDireccion = $f::valor($salaDireccion, $r['direccion']['complemento'] ?? null);
+        } else {
+            $comercial = $f::valor($cli?->nombre_comercial, $r['nombreComercial'] ?? null);
+            $cliComercial = $comercial && trim($comercial) !== trim((string) $cliNombre) ? $comercial : null;
+            $direccionEmitida = $r['direccion']['complemento'] ?? $r['complemento'] ?? null;
+            $cliDireccion = $f::valor($cliDireccion, $direccionEmitida);
+            if ((string) $cli?->direccion !== (string) $direccionEmitida) {
+                $cliComplemento = null;
+            }
+        }
+        if (isset($r['direccion'])) {
+            [$depto, $muni, $dist] = $f::ubicacion($suc ?? $cli, $r['direccion'], $suc ? [$salaDepto, $salaMuni, $salaDist] : [$cli?->departamento?->nombre, $cli?->municipio?->nombre, $cli?->distrito?->nombre]);
+            $recUbic = implode(', ', array_filter([$depto, $muni, $dist])) ?: null;
+            if ($suc) {
+                $salaUbic = implode('  |  ', array_filter([$depto ? 'Departamento: '.$depto : null, $muni ? 'Municipio: '.$muni : null, $dist ? 'Distrito: '.$dist : null]));
+            }
+        } elseif (! $r) {
+            $recUbic = null;
+        }
+    }
     $esBorrador = $dte->estado === EstadoDte::Borrador;
     $tieneSello = filled($dte->sello_recepcion);
     $firmadoLocal = filled($dte->json_firmado_path);
@@ -361,13 +407,13 @@
     <div class="sec rec nobreak">
         <div class="sec-h">Receptor</div>
         <div class="sec-b">
-            <span class="rec-name">{{ $cli?->nombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif @if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
+            <span class="rec-name">{{ $cliNombre ?? 'Consumidor final' }}</span>@if ($cliComercial) <span class="rec-com">· {{ $cliComercial }}</span>@endif @if (! $cli) <span class="tiny muted">— Consumidor final sin identificar.</span>@endif
             <table style="margin-top:3px;">
                 <tr>
                     <td style="width: 50%; padding-right: 10px;">
                         @if ($esFex && ($datosReceptor['destino'] ?? null))<div class="f"><span class="k">Destino:</span> {{ $datosReceptor['destino'] }}</div>@endif
-                        @if ($cli?->num_documento)<div class="f"><span class="k">Documento:</span> <span class="mono">{{ $cli->num_documento }}</span>@if($cli?->nrc) · <span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span>@endif</div>@elseif($cli?->nrc)<div class="f"><span class="k">NRC:</span> <span class="mono">{{ $cli->nrc }}</span></div>@endif
-                        @if ($cli?->actividadEconomica?->nombre)<div class="f"><span class="k">Actividad:</span> {{ $cli->actividadEconomica->nombre }}</div>@endif
+                        @if ($cliDocumento)<div class="f"><span class="k">Documento:</span> <span class="mono">{{ $cliDocumento }}</span>@if($cliNrc) · <span class="k">NRC:</span> <span class="mono">{{ $cliNrc }}</span>@endif</div>@elseif($cliNrc)<div class="f"><span class="k">NRC:</span> <span class="mono">{{ $cliNrc }}</span></div>@endif
+                        @if ($cliActividad)<div class="f"><span class="k">Actividad:</span> {{ $cliActividad }}</div>@endif
                     </td>
                     <td style="width: 50%;">
                         {{-- Correo del receptor en los CUATRO tipos, no solo en la FEX. Es el
@@ -375,16 +421,16 @@
                              verlo: por eso se imprime la leyenda en vez de dejar el hueco. --}}
                         <div class="f"><span class="k">Correo:</span> @if ($correoReceptor === \App\Support\Dte\CorreoReceptorDte::SIN_CORREO)<span class="muted">{{ $correoReceptor }}</span>@else{{ $correoReceptor }}@endif</div>
                         @if ($recUbic)<div class="f"><span class="k">Ubicación:</span> {{ $recUbic }}</div>@endif
-                        @if ($cli?->direccion)<div class="f"><span class="k">Dirección:</span> {{ $cli->direccion }}@if($cli->complemento_direccion) — {{ $cli->complemento_direccion }}@endif</div>@endif
+                        @if ($cliDireccion)<div class="f"><span class="k">Dirección:</span> {{ $cliDireccion }}@if($cliComplemento) — {{ $cliComplemento }}@endif</div>@endif
                         @if ($esFex && ($datosReceptor['telefono'] ?? null))<div class="f"><span class="k">Teléfono:</span> {{ $datosReceptor['telefono'] }}</div>@endif
                     </td>
                 </tr>
             </table>
             @if ($suc)
                 <div class="sala">
-                    <span class="k">Establecimiento / Sala de entrega:</span> <span class="nm">{{ $suc->nombre }}</span>
+                    <span class="k">Establecimiento / Sala de entrega:</span> <span class="nm">{{ $salaNombre }}</span>
                     @if ($salaUbic)<div style="margin-top:1px;">{{ $salaUbic }}</div>@endif
-                    @if ($suc->direccion)<div><span class="k">Dirección:</span> {{ $suc->direccion }}</div>@endif
+                    @if ($salaDireccion)<div><span class="k">Dirección:</span> {{ $salaDireccion }}</div>@endif
                 </div>
             @endif
         </div>
