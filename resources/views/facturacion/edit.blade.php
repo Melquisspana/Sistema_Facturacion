@@ -130,6 +130,7 @@
                                 <select id="ad-tipo-item" name="tipo_item_expor" required
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
                                     @foreach ($catalogosAduaneros['tiposItemExpor'] as $tipo)
+                                        @continue($tipo->value !== 1)
                                         <option value="{{ $tipo->value }}" @selected(old('tipo_item_expor', $dte->tipo_item_expor) == $tipo->value)>{{ $tipo->label() }}</option>
                                     @endforeach
                                 </select>

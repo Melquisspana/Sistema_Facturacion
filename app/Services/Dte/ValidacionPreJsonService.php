@@ -174,6 +174,9 @@ class ValidacionPreJsonService
                 break;
 
             case TipoDte::FacturaExportacion:
+                if ((int) $dte->tipo_item_expor === 2) {
+                    $problemas[] = 'La exportación de servicios no está soportada. Solo se exportan bienes.';
+                }
                 if (! $cliente) {
                     $problemas[] = 'La factura de exportación requiere un receptor.';
                     break;
