@@ -101,7 +101,7 @@ class DteBusquedaCcfNotaCreditoTest extends TestCase
             'punto_venta_id' => $punto->id,
             'cliente_id' => Cliente::factory()->contribuyente()->create()->id,
             'numero_control' => "DTE-03-{$serie}-{$secuencia}",
-            'numero_interno' => "INT-03-00-{$serie}-{$secuencia}",
+            'numero_interno' => "INT-03-00-2026-{$serie}-{$secuencia}",
             'codigo_generacion' => $this->codigoGeneracion($correlativo, $punto),
             // Aceptación REAL del MH: sello no-mock + huella de procesamiento.
             'sello_recepcion' => '2026'.$this->soloLetras($correlativo, $punto, 36),

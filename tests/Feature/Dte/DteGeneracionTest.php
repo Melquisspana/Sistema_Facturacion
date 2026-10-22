@@ -10,7 +10,6 @@ use App\Exceptions\Dte\GeneracionException;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
-use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -100,7 +99,7 @@ class DteGeneracionTest extends TestCase
 
         $dte->refresh();
         $this->assertSame(EstadoDte::Generado, $dte->estado);
-        $this->assertSame('INT-03-00-M001P001-000000000000001', $dte->numero_interno);
+        $this->assertSame('INT-03-00-'.$dte->fecha_emision->year.'-M001P001-000000000000001', $dte->numero_interno);
     }
 
     public function test_generar_factura_borrador_valido(): void

@@ -14,7 +14,8 @@ use Tests\TestCase;
 /**
  * Confirma el comportamiento de la migración
  * 2026_07_17_150000_alcance_numero_control_unico_por_ambiente: `numero_control`
- * deja de ser único a nivel GLOBAL y pasa a serlo por (ambiente, numero_control).
+ * deja de ser único a nivel GLOBAL. Desde el reinicio anual (#42), la clave es
+ * (ambiente, ejercicio, numero_control): se fija el mismo ejercicio en los datos.
  * Prueba el ÍNDICE de la base de datos directamente (sin pasar por generar()),
  * para aislar la garantía de la migración de la lógica de generación.
  */
@@ -49,10 +50,11 @@ class NumeroControlUnicoPorAmbienteTest extends TestCase
         $dteProduccion = $this->borrador('01');
 
         $numeroControl = 'DTE-01-M001P001-000000000000001';
-        $dtePrueba->update(['numero_control' => $numeroControl]);
+        $dtePrueba->update(['numero_control' => $numeroControl, 'ejercicio' => 2026]);
 
         // Mismo numero_control, ambiente DISTINTO: no debe lanzar UniqueConstraintViolationException.
         $dteProduccion->numero_control = $numeroControl;
+        $dteProduccion->ejercicio = 2026;
         $dteProduccion->save();
 
         $this->assertSame($numeroControl, $dtePrueba->fresh()->numero_control);
@@ -65,9 +67,9 @@ class NumeroControlUnicoPorAmbienteTest extends TestCase
         $dteDos = $this->borrador('00');
 
         $numeroControl = 'DTE-01-M001P001-000000000000002';
-        $dteUno->update(['numero_control' => $numeroControl]);
+        $dteUno->update(['numero_control' => $numeroControl, 'ejercicio' => 2026]);
 
         $this->expectException(UniqueConstraintViolationException::class);
-        $dteDos->update(['numero_control' => $numeroControl]);
+        $dteDos->update(['numero_control' => $numeroControl, 'ejercicio' => 2026]);
     }
 }
