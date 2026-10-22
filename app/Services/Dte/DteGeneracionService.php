@@ -17,6 +17,7 @@ use App\Support\Dinero;
 use App\Support\Dte\OrdenProductosOc;
 use App\Support\Dte\PlazoNotaCredito;
 use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\HoraNegocio;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -97,12 +98,34 @@ class DteGeneracionService
                 ->lockForUpdate()
                 ->first();
 
+            $ejercicio = $dte->fecha_emision?->year ?? HoraNegocio::ahora()->year;
+            $ultimo = Dte::withTrashed()
+                ->where('correlativo_id', $correlativo->id)
+                ->whereNotNull('ejercicio')
+                ->max('ejercicio');
+
+            if ($ultimo !== null && $ejercicio < $ultimo) {
+                throw new GeneracionException('La fecha de emisión del borrador ('.$dte->fecha_emision?->format('d/m/Y').') es del ejercicio '.$ejercicio.', pero la numeración de este tipo de documento ya pasó al ejercicio '.$ultimo.'. Actualizá la fecha de emisión antes de generar.');
+            }
+
+            if ($ultimo !== null && $ejercicio > $ultimo) {
+                activity()->performedOn($correlativo)
+                    ->withProperties([
+                        'ejercicio_anterior' => (int) $ultimo,
+                        'ejercicio' => $ejercicio,
+                        'ultimo_numero_anterior' => $correlativo->ultimo_numero,
+                    ])
+                    ->log('reinició el correlativo por cambio de ejercicio de '.$ultimo.' a '.$ejercicio);
+                $correlativo->ultimo_numero = 0;
+            }
+
             $numero = $correlativo->ultimo_numero + 1;
             $correlativo->ultimo_numero = $numero;
             $correlativo->save();
 
             // Aún en borrador: el observer permite estos cambios de cabecera.
             $dte->correlativo_id = $correlativo->id;
+            $dte->ejercicio = $ejercicio;
             $dte->numero_interno = $this->formatearNumeroInterno($dte, $numero);
 
             // Numeración GLOBAL VISIBLE del sistema: este es su punto irreversible, el
@@ -305,18 +328,11 @@ class DteGeneracionService
     }
 
     /**
-     * Número INTERNO/provisional: INT-{tipo}-{serie}-{correlativo a 15 dígitos}.
-     * Ej.: INT-03-M001P001-000000000000001. No es el número de control del MH.
-     */
-    /**
-     * El correlativo de cada AMBIENTE (00 pruebas / 01 producción) cuenta desde
-     * cero de forma independiente (son filas distintas de `correlativos`), pero
-     * `dtes.numero_interno` es único a nivel GLOBAL (no por ambiente). Sin el
-     * ambiente en el formato, el primer documento real de un tipo puede terminar
-     * con el MISMO numero_interno que un documento de prueba ya generado en esa
-     * misma posición, disparando UniqueConstraintViolationException (visto en
-     * producción con la FEX #131). Se incluye el ambiente para que ambas series
-     * nunca puedan coincidir.
+     * Número INTERNO/provisional:
+     * INT-{tipo}-{ambiente}-{ejercicio}-{serie}-{correlativo a 15 dígitos}.
+     * Ej.: INT-03-00-2026-M001P001-000000000000001.
+     * Ambiente y ejercicio evitan colisiones entre series que reinician desde uno.
+     * No es el número de control del MH.
      */
     private function formatearNumeroInterno(Dte $dte, int $numero): string
     {
@@ -325,6 +341,6 @@ class DteGeneracionService
         $ambiente = $dte->ambiente?->value ?? (string) $dte->ambiente;
         $correlativo = str_pad((string) $numero, 15, '0', STR_PAD_LEFT);
 
-        return 'INT-'.$dte->tipo_dte->value.'-'.$ambiente.'-'.$serie.'-'.$correlativo;
+        return 'INT-'.$dte->tipo_dte->value.'-'.$ambiente.'-'.$dte->ejercicio.'-'.$serie.'-'.$correlativo;
     }
 }
