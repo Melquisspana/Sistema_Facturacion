@@ -35,11 +35,29 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
+    /**
+     * Índices únicos: [tabla, columnas viejas, columnas nuevas, nombre del nuevo].
+     *
+     * Los viejos se buscan por sus COLUMNAS, no por su nombre: producción no se armó con
+     * git y el nombre real puede no ser el de la convención. Borrar por un nombre que no
+     * existe haría fallar `up()` a la mitad, y en MySQL el DDL ya hecho no se revierte.
+     */
+    private const UNICOS = [
+        ['cobro_documentos', ['numero_control_norm'], ['numero_control_norm', 'ejercicio_control'], 'cobro_doc_control_ejercicio_unico'],
+        ['ppq_items', ['ppq_lote_id', 'numero_control'], ['ppq_lote_id', 'numero_control', 'ejercicio_control'], 'ppq_item_lote_control_ejercicio_unico'],
+    ];
+
+    /**
+     * Cada paso comprueba antes de actuar: si una corrida se corta a la mitad, la siguiente
+     * retoma donde quedó en vez de chocar con lo que ya se hizo.
+     */
     public function up(): void
     {
         foreach (['cobro_documentos' => 'fecha_emision', 'ppq_items' => 'fecha_documento'] as $tabla => $fecha) {
-            Schema::table($tabla, fn (Blueprint $t) => $t->unsignedSmallInteger('ejercicio_control')->nullable());
-            DB::table($tabla)->orderBy('id')->chunkById(200, function ($filas) use ($tabla, $fecha) {
+            if (! Schema::hasColumn($tabla, 'ejercicio_control')) {
+                Schema::table($tabla, fn (Blueprint $t) => $t->unsignedSmallInteger('ejercicio_control')->nullable());
+            }
+            DB::table($tabla)->whereNull('ejercicio_control')->orderBy('id')->chunkById(200, function ($filas) use ($tabla, $fecha) {
                 $fechas = DB::table('dtes')->whereIn('id', $filas->pluck('dte_id')->filter())->pluck('fecha_emision', 'id');
                 foreach ($filas as $fila) {
                     $valor = $fila->{$fecha} ?: ($fechas[$fila->dte_id] ?? null);
@@ -49,14 +67,29 @@ return new class extends Migration
             });
             Schema::table($tabla, fn (Blueprint $t) => $t->unsignedSmallInteger('ejercicio_control')->nullable(false)->change());
         }
-        Schema::table('cobro_documentos', function (Blueprint $t) {
-            $t->unique(['numero_control_norm', 'ejercicio_control'], 'cobro_doc_control_ejercicio_unico');
-        });
-        Schema::table('cobro_documentos', fn (Blueprint $t) => $t->dropUnique('cobro_documentos_numero_control_norm_unique'));
-        Schema::table('ppq_items', function (Blueprint $t) {
-            $t->unique(['ppq_lote_id', 'numero_control', 'ejercicio_control'], 'ppq_item_lote_control_ejercicio_unico');
-        });
-        Schema::table('ppq_items', fn (Blueprint $t) => $t->dropUnique('ppq_item_lote_control_unico'));
+
+        foreach (self::UNICOS as [$tabla, $viejas, $nuevas, $nombre]) {
+            if ($this->unicosPorColumnas($tabla, $nuevas) === []) {
+                Schema::table($tabla, fn (Blueprint $t) => $t->unique($nuevas, $nombre));
+            }
+            foreach ($this->unicosPorColumnas($tabla, $viejas) as $viejo) {
+                Schema::table($tabla, fn (Blueprint $t) => $t->dropUnique($viejo));
+            }
+        }
+    }
+
+    /**
+     * Nombres de los índices ÚNICOS de la tabla que cubren exactamente esas columnas, en ese
+     * orden. La clave primaria no cuenta.
+     *
+     * @param  array<int, string>  $columnas
+     * @return array<int, string>
+     */
+    private function unicosPorColumnas(string $tabla, array $columnas): array
+    {
+        return collect(Schema::getIndexes($tabla))
+            ->filter(fn (array $i) => $i['unique'] && ! $i['primary'] && $i['columns'] === $columnas)
+            ->pluck('name')->values()->all();
     }
 
     public function down(): void
@@ -71,15 +104,17 @@ return new class extends Migration
         if ($cobros || $items) {
             throw new RuntimeException('No se puede revertir: hay números repetidos entre ejercicios.');
         }
-        Schema::table('cobro_documentos', fn (Blueprint $t) => $t->unique('numero_control_norm'));
-        Schema::table('ppq_items', fn (Blueprint $t) => $t->unique(['ppq_lote_id', 'numero_control'], 'ppq_item_lote_control_unico'));
-        Schema::table('cobro_documentos', function (Blueprint $t) {
-            $t->dropUnique('cobro_doc_control_ejercicio_unico');
-            $t->dropColumn('ejercicio_control');
-        });
-        Schema::table('ppq_items', function (Blueprint $t) {
-            $t->dropUnique('ppq_item_lote_control_ejercicio_unico');
-            $t->dropColumn('ejercicio_control');
-        });
+        $nombresViejos = ['cobro_documentos' => 'cobro_documentos_numero_control_norm_unique', 'ppq_items' => 'ppq_item_lote_control_unico'];
+        foreach (self::UNICOS as [$tabla, $viejas, $nuevas]) {
+            if ($this->unicosPorColumnas($tabla, $viejas) === []) {
+                Schema::table($tabla, fn (Blueprint $t) => $t->unique($viejas, $nombresViejos[$tabla]));
+            }
+            foreach ($this->unicosPorColumnas($tabla, $nuevas) as $nuevo) {
+                Schema::table($tabla, fn (Blueprint $t) => $t->dropUnique($nuevo));
+            }
+            if (Schema::hasColumn($tabla, 'ejercicio_control')) {
+                Schema::table($tabla, fn (Blueprint $t) => $t->dropColumn('ejercicio_control'));
+            }
+        }
     }
 };

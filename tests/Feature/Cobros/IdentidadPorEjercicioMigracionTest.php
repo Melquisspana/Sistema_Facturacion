@@ -137,6 +137,53 @@ class IdentidadPorEjercicioMigracionTest extends TestCase
         $de2027->delete();
     }
 
+    /** @return array<int, array<int, string>> columnas de cada índice único (sin la primaria) */
+    private function unicos(string $tabla): array
+    {
+        return collect(Schema::getIndexes($tabla))->filter(fn ($i) => $i['unique'] && ! $i['primary'])
+            ->map(fn ($i) => $i['columns'])->values()->all();
+    }
+
+    /**
+     * Producción no se armó con git: el único viejo puede tener otro nombre. `up()` lo busca
+     * por sus columnas; si lo buscara por el nombre de la convención fallaría a la mitad.
+     */
+    public function test_borra_el_unico_viejo_aunque_en_la_base_tenga_otro_nombre(): void
+    {
+        $this->migracion()->down();
+        Schema::table('cobro_documentos', function ($t) {
+            $t->dropUnique('cobro_documentos_numero_control_norm_unique');
+            $t->unique('numero_control_norm', 'nombre_puesto_a_mano_en_produccion');
+        });
+        Schema::table('ppq_items', function ($t) {
+            $t->dropUnique('ppq_item_lote_control_unico');
+            $t->unique(['ppq_lote_id', 'numero_control'], 'otro_nombre_en_produccion');
+        });
+
+        $this->migracion()->up();
+
+        $this->assertNotContains(['numero_control_norm'], $this->unicos('cobro_documentos'));
+        $this->assertContains(['numero_control_norm', 'ejercicio_control'], $this->unicos('cobro_documentos'));
+        $this->assertNotContains(['ppq_lote_id', 'numero_control'], $this->unicos('ppq_items'));
+        $this->assertContains(['ppq_lote_id', 'numero_control', 'ejercicio_control'], $this->unicos('ppq_items'));
+    }
+
+    /** En MySQL el DDL no se revierte: una corrida cortada a la mitad se retoma sin chocar. */
+    public function test_una_corrida_cortada_a_la_mitad_se_retoma(): void
+    {
+        $this->migracion()->down();
+        $cliente = Cliente::factory()->create();
+        $id = $this->documentoViejo($cliente->id, 15, '2025-11-03');
+        // Como quedó tras cortarse: columna agregada, sin rellenar, sin índices nuevos.
+        Schema::table('cobro_documentos', fn ($t) => $t->unsignedSmallInteger('ejercicio_control')->nullable());
+
+        $this->migracion()->up();
+
+        $this->assertSame(2026, (int) DB::table('cobro_documentos')->where('id', $id)->value('ejercicio_control'));
+        $this->assertContains(['numero_control_norm', 'ejercicio_control'], $this->unicos('cobro_documentos'));
+        $this->assertTrue(Schema::hasColumn('ppq_items', 'ejercicio_control'));
+    }
+
     public function test_la_reversa_se_niega_si_ya_hay_numeros_repetidos_entre_anios(): void
     {
         $cliente = Cliente::factory()->create();
