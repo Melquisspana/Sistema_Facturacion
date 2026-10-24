@@ -41,7 +41,7 @@ class SerializadorFacturaMh implements SerializadorMh
             'otrosDocumentos' => null,
             'ventaTercero' => null,
             'cuerpoDocumento' => $cuerpo,
-            'resumen' => $this->resumen($d),
+            'resumen' => $this->resumen($d, $cuerpo),
             'apendice' => $this->apendiceComun($d->apendice),
         ];
     }
@@ -129,12 +129,19 @@ class SerializadorFacturaMh implements SerializadorMh
         return $items;
     }
 
-    /** @return array<string, mixed> */
-    private function resumen(DteSalidaData $d): array
+    /**
+     * @param  array<int, array<string, mixed>>  $cuerpo
+     * @return array<string, mixed>
+     */
+    private function resumen(DteSalidaData $d, array $cuerpo): array
     {
         $r = $d->resumen;
-        // Bruto (con IVA incluido) esperado por MH; ver nota de clase.
-        $totalGravada = (float) Dinero::redondear(Dinero::sumar($r->totalGravado, $r->iva), 2);
+        // MH exige totalGravada = Σ ventaGravada de los ítems (bruto, con IVA incluido; ver nota
+        // de clase). No sale de totalGravado + iva del resumen: con descuento global esos ya
+        // vienen netos del descuento, que va aparte en descuGravada, y el MH rechazaba la FE
+        // («resumen.totalGravada: El valor difiere de sumatoria de items», apitest 24/10/2026).
+        $totalGravada = (float) Dinero::redondear(
+            array_reduce($cuerpo, fn (string $suma, array $item) => Dinero::sumar($suma, (string) $item['ventaGravada']), '0'), 2);
         $totalExenta = (float) $r->totalExento;
         $totalNoSuj = (float) $r->totalNoSujeto;
         $subTotalVentas = round($totalGravada + $totalExenta + $totalNoSuj, 2);
