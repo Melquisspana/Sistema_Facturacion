@@ -20,9 +20,12 @@ trait MapeaCatalogosMh
      * El esquema fe-ccf-v4 define `pagos` como ["array","null"] con `minItems: 1`:
      * un arreglo vacío `[]` es INVÁLIDO y el servicio de recepción del MH RECHAZA
      * `null` en el CCF. Por eso se emite SIEMPRE un arreglo con al menos un pago.
-     * Según el Anexo IV, campos 160-164, contado/otro informa `montoPago` = total
-     * a pagar y `codigo` = forma de pago (CAT-017) del documento o el default
-     * configurable. A crédito, `codigo` va null y `montoPago` es 0.0.
+     * `codigo` = forma de pago (CAT-017) del documento o el default configurable, y
+     * `montoPago` = total a pagar, en contado Y en crédito. La lectura del Anexo IV
+     * (campos 160-164) sugería `codigo` null y `montoPago` 0.00 a crédito, pero el MH
+     * lo recibe con observación 002 «Forma de pago difiere del Total a Pagar»
+     * (apitest, 24/10/2026); con código y total, como emitió producción durante
+     * meses, el CCF a crédito sale limpio. Ver docs/dte/MATRIZ_VALIDACIONES_HACIENDA_2_0.md.
      *
      * `plazo`/`periodo` dependen de la CONDICIÓN DE OPERACIÓN (CAT-016): el MH los
      * exige para operaciones A CRÉDITO (condicionOperacion=2) y NO los admite (van
@@ -37,8 +40,8 @@ trait MapeaCatalogosMh
         $esCredito = (int) ($r->condicionOperacion ?? 1) === 2;
 
         return [[
-            'codigo' => $esCredito ? null : ($r->formaPago ?: (string) config('dte.json.forma_pago_default', '01')),
-            'montoPago' => $esCredito ? 0.0 : (float) $r->totalPagar,
+            'codigo' => $r->formaPago ?: (string) config('dte.json.forma_pago_default', '01'),
+            'montoPago' => (float) $r->totalPagar,
             'referencia' => null,
             'plazo' => $esCredito ? (string) config('dte.json.plazo_credito_default', '01') : null,
             'periodo' => $esCredito ? (int) config('dte.json.periodo_credito_default', 30) : null,
