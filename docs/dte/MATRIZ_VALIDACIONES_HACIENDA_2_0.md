@@ -45,7 +45,7 @@ Cada arreglo tiene su prueba, que se escribió antes y falló antes del cambio. 
 | Id | Arreglo | Decisión y notas |
 |---|---|---|
 | H1 | #40, #58 | Va con la sesión de Hacienda; pendiente en MH. |
-| H2 | #119 | Cambia el JSON fiscal de lo ya emitido: los CCF a crédito salían con código y monto, y el MH los aceptaba. Pendiente en MH: CCF a crédito, FE y FEX al contado, NC. |
+| H2 | #119, #129 | FE y FEX al contado ya mandan pagos (aceptado en apitest). En el CCF a crédito se vuelve al formato anterior, con código y montoPago = total, más plazo y período: con `codigo` null y monto 0.00 el MH lo recibía con observación 002 «Forma de pago difiere del Total a Pagar» (apitest, 24/10/2026). |
 | H3 | #120 | El PDF y el evento de invalidación leen el JSON emitido. Si el dato actual coincide, el PDF sale igual que antes. El correo se sigue enviando a la dirección actual. Pendiente en MH: invalidar una FE vieja con NIT con guiones. |
 | H4 | #125 | Migración aditiva `dtes.ejercicio` y reinicio con el correlativo bloqueado. **No se despliega sin #121** (Cobros, Rutas y PPQ por número de control + ejercicio). Va al servidor antes del 31/12. |
 | H5 | #119 | — |
@@ -171,7 +171,7 @@ Fuera de este issue: la ventana de la fecha de emisión respecto de la transmisi
 | 157 | totalIva | Suma de `ivaItem` − IVA del descuento global | FE | **Falta comprobar (H8)**. |
 | 158 | saldoFavor | 0.00 si no se usa | FE, CCF, FEX | Cubierta: fijo 0.00. |
 | 159 | condicionOperacion | CAT-016 | todos | Cubierta: `MapeadorDteSalida`. |
-| 160-164 | pagos | Obligatorio con condición 1 o 3; con condición 2, `codigo` `null`, monto 0.00, plazo (CAT-018) y período obligatorios | FE, CCF, FEX | **Falta (H2)**. |
+| 160-164 | pagos | Obligatorio con condición 1 o 3; con condición 2, plazo (CAT-018) y período obligatorios. La lectura literal pide `codigo` `null` y monto 0.00 a crédito, pero el MH lo observa (002); se mantiene código y total | FE, CCF, FEX | Cubierta (#119, #129). |
 | 165, 168 | numPagoElectronico, observaciones | `null` si no se usan | todos | Cubierta: `null`. |
 | 166-167 | codIncoterms, descIncoterms | CAT-031 si bienes; `null` si servicios | FEX | Bienes: cubierta (`DatosAduanerosFexTest`). Servicios: **Falta (H10)**. |
 
@@ -211,4 +211,14 @@ El sistema no emite estas operaciones. Sus campos van siempre en `null` o en 0.0
 
 ## Validación en el ambiente de pruebas del MH
 
-Pendiente. Se hace al final, en la copia aislada que arma la sesión de Hacienda (#43), con evidencia por tipo y versión: FE, CCF al contado y a crédito, FEX de bienes y NC v4.
+Hecha el 24/10/2026 en una copia aislada (ambiente 00), con receptor real cargado por el usuario y borrada al terminar:
+
+| Caso | Resultado del MH |
+|---|---|
+| NC v4: parcial, total, varias líneas, descuento, pronto pago, devolución, avería, retención | RECIBIDO, con sello, en los 8 casos |
+| CCF al contado; CCF con descuento global 10 % | RECIBIDO |
+| CCF a crédito con `codigo` null y monto 0.00 | RECIBIDO CON OBSERVACIONES (002, «Forma de pago difiere del Total a Pagar»): se vuelve a código y total (#129) |
+| FE al contado; FE con NIT con guiones (sale con 14 dígitos) | RECIBIDO |
+| FE con muchas líneas y descuento global | Rechazo 003 «totalGravada difiere de sumatoria de items» → corregido en #128 y vuelto a probar: RECIBIDO; totalIva cuadra |
+| FEX de bienes al contado | RECIBIDO |
+| Invalidación de una FE con NIT con guiones en el JSON emitido | Sello de invalidación; documento con tipo 36 y solo dígitos |

@@ -23,8 +23,9 @@ use Tests\TestCase;
  *
  * - Condición 1 (contado) o 3 (otro): el código de forma de pago (CAT-017) es OBLIGATORIO
  *   y la suma de montoPago es el total a pagar. Antes FE y FEX mandaban `pagos: null`.
- * - Condición 2 (crédito): codigo y referencia van null, montoPago 0.00, y plazo
- *   (CAT-018) y período son obligatorios. Antes el CCF a crédito mandaba el código y el total.
+ * - Condición 2 (crédito): plazo (CAT-018) y período son obligatorios, y se mantienen el
+ *   código y montoPago = total. La lectura de los campos 160-164 pedía codigo null y monto
+ *   0.00, pero el MH lo recibe con observación 002 (apitest, 24/10/2026).
  *
  * Cada caso valida el JSON completo contra el esquema oficial del tipo. El cambio toca
  * el JSON fiscal de lo que ya se emite: se confirma en apitest antes de desplegar (#42).
@@ -92,16 +93,17 @@ class PagosResumenHacienda20Test extends TestCase
     }
 
     #[DataProvider('tipos')]
-    public function test_credito_sin_codigo_monto_cero_y_con_plazo(TipoDte $tipo): void
+    public function test_credito_lleva_forma_de_pago_total_y_plazo(TipoDte $tipo): void
     {
         config(['dte.json.plazo_credito_default' => '01', 'dte.json.periodo_credito_default' => 30]);
 
-        // Aunque el documento traiga una forma de pago, a crédito no se informa (campo 160.5).
+        // Con codigo null y montoPago 0.00 el MH lo recibía con observación 002 «Forma de
+        // pago difiere del Total a Pagar» (apitest, 24/10/2026): va código y total, más plazo.
         $oficial = $this->serializarValido($tipo, condicion: 2, formaPago: '05');
 
         $this->assertSame([[
-            'codigo' => null,
-            'montoPago' => 0.0,
+            'codigo' => '05',
+            'montoPago' => 113.0,
             'referencia' => null,
             'plazo' => '01',
             'periodo' => 30,
