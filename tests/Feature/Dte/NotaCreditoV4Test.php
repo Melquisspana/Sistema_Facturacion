@@ -140,6 +140,15 @@ class NotaCreditoV4Test extends TestCase
         app(SerializadorMhFactory::class)->para(TipoDte::NotaCredito, 5)->serializar($this->salida(version: 5));
     }
 
+    public function test_descuento_global_que_dejaria_una_venta_negativa_frena_la_generacion(): void
+    {
+        $lineas = [new LineaDteData(1, 'Producto', '1', '1.000000', '1.00', tipoItem: 1, unidadMedida: '59', ventaGravada: '1.00', iva: '0.00')];
+
+        $this->expectException(DteNoSerializableException::class);
+        $this->expectExceptionMessage('la línea 1 quedaría con venta negativa');
+        app(SerializadorNotaCreditoV4Mh::class)->serializar($this->salida($lineas, global: '1.50'));
+    }
+
     public function test_descuento_de_linea_exenta_no_sujeta_y_residuo_retencion(): void
     {
         $lineas = [
