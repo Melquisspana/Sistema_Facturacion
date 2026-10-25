@@ -17,14 +17,11 @@ rem ==========================================================================
 cd /d "%~dp0..\.."
 set "PROJECT_DIR=%CD%"
 
-if defined PHP_BIN_DTE (
-    set "PHP=%PHP_BIN_DTE%"
-) else (
-    set "PHP="
-    for /d %%D in ("C:\laragon\bin\php\php-*") do set "PHP=%%D\php.exe"
-    if not defined PHP set "PHP=php"
-    if not exist "%PHP%" if /i not "%PHP%"=="php" set "PHP=php"
-)
+rem Sin bloques ( ): dentro de un bloque %PHP% se expande antes de que el for la asigne.
+set "PHP=%PHP_BIN_DTE%"
+if not defined PHP_BIN_DTE for /d %%D in ("C:\laragon\bin\php\php-*") do set "PHP=%%D\php.exe"
+if not defined PHP set "PHP=php"
+if not defined PHP_BIN_DTE if not exist "%PHP%" if /i not "%PHP%"=="php" set "PHP=php"
 
 echo [%date% %time%] Iniciando backup:mysql-diario ...
 "%PHP%" "%PROJECT_DIR%\artisan" backup:mysql-diario --origen=automatico
