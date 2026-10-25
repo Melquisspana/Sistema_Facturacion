@@ -83,6 +83,7 @@ use App\Support\Dte\PoliticaInvalidacion;
 use App\Support\Dte\ReceptorExportacionPresentacion;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
+use App\Support\NumeroAlbaran;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -194,6 +195,21 @@ class DteController extends Controller
                         ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', "%{$t}%")->orWhere('nombre_comercial', 'like', "%{$t}%"))
                         ->orWhereHas('clienteSucursal', fn ($s) => $s->where('nombre', 'like', "%{$t}%"))
                         ->orWhereHas('dteRelacionado', fn ($r) => $r->where('numero_interno', 'like', "%{$t}%")->orWhere('numero_control', 'like', "%{$t}%"));
+
+                    // El albarán de crédito se busca exacto para que 3209 no traiga 13209.
+                    $albaran = NumeroAlbaran::desde($t);
+                    if ($albaran !== null || preg_match('/^\d{1,10}$/', $t)) {
+                        $w->orWhere(fn ($nc) => $nc
+                            ->where('tipo_dte', TipoDte::NotaCredito->value)
+                            ->whereHas('albaran', function ($a) use ($albaran, $t) {
+                                if ($albaran !== null) {
+                                    $a->where('numero_canonico', $albaran->canonico);
+                                } else {
+                                    $numero = ltrim($t, '0');
+                                    $a->where('numero', $numero === '' ? '0' : $numero);
+                                }
+                            }));
+                    }
                 });
             })
             ->orderByDesc('fecha_emision')
