@@ -84,7 +84,7 @@ class CrearPpqDesdeSeguimiento
                     continue;
                 }
                 // Sus NC vigentes que todavía no viajaron en otro PPQ.
-                $notas = Dte::where('dte_relacionado_id', $doc->dte_id)->where('tipo_dte', '05')
+                $notas = Dte::sinNcProntoPago()->where('dte_relacionado_id', $doc->dte_id)->where('tipo_dte', '05')
                     ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')->get();
                 foreach ($notas as $nc) {
                     if ($enLotes->has(EjercicioControl::llave($nc->numero_control, EjercicioControl::de($nc->fecha_emision))) || $enLotes->has('dte:'.$nc->id)) {

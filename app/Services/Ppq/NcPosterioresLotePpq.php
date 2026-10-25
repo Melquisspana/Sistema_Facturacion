@@ -22,7 +22,7 @@ class NcPosterioresLotePpq
     {
         $ids = $lote->items()->where('tipo_dte', '03')->whereNotNull('dte_id')->pluck('dte_id');
 
-        return $this->sinLoteVigente(Dte::whereIn('dte_relacionado_id', $ids)->where('tipo_dte', '05')
+        return $this->sinLoteVigente(Dte::sinNcProntoPago()->whereIn('dte_relacionado_id', $ids)->where('tipo_dte', '05')
             ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')->orderBy('id')->get());
     }
 
@@ -37,7 +37,7 @@ class NcPosterioresLotePpq
      */
     public function sueltasDelCliente(Cliente $cliente): Collection
     {
-        $notas = $this->sinLoteVigente(Dte::where('cliente_id', $cliente->id)->where('tipo_dte', '05')
+        $notas = $this->sinLoteVigente(Dte::sinNcProntoPago()->where('cliente_id', $cliente->id)->where('tipo_dte', '05')
             ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')
             ->whereNotNull('dte_relacionado_id')
             ->whereNotIn('id', NcExportacionItem::query()->select('dte_id'))

@@ -76,6 +76,7 @@ class NotasDelQuedan
             ->all();
 
         $notasPorCcf = $ccfLocales === [] ? collect() : Dte::query()
+            ->sinNcProntoPago()
             ->whereIn('dte_relacionado_id', $ccfLocales)
             ->where('tipo_dte', TipoDte::NotaCredito->value)
             ->with(['albaran', 'exportacionItem.exportacion'])
