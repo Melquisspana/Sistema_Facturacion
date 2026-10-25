@@ -68,6 +68,13 @@ class ImportesNcV4AjusteCcf implements CalculoImportesNcV4
                 $descuentos[$indice] = Dinero::sumar($descuentos[$indice], $parte);
                 $repartido = Dinero::sumar($repartido, $parte);
             }
+            // El último ítem absorbe los centavos: si es muy chico (o el descuento supera
+            // la base) su venta quedaría negativa, y el MH no la acepta. Se frena acá.
+            foreach ($indices as $indice) {
+                if (Dinero::comparar($ventas[$indice][$venta], '0') < 0) {
+                    throw new DteNoSerializableException(['El descuento global no se puede repartir: la línea '.array_values($d->lineas)[$indice]->numeroLinea.' quedaría con venta negativa. Revisá el descuento o las cantidades de la nota.']);
+                }
+            }
         }
         $base = '0.00';
         $ultima = null;
