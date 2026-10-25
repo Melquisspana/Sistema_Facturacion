@@ -12,6 +12,7 @@ El historial anterior a este archivo está en el registro de git.
 
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
 - Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. Se despliega junto con #125. #127
+- Facturación: el buscador del listado encuentra las notas de crédito por el número de su albarán (completo, solo el número o el nombre del PDF), con coincidencia exacta.
 
 ### Corregido
 
