@@ -138,7 +138,8 @@ class QuedanCallejaExporter
      *    registrado en la NC y, si no hay fecha, del PPQ. El TIPO (AC02/AC04) sale de
      *    la NC, porque la copia PPQ no lo guarda. La sala confirmada a mano manda.
      *  · No van las NC invalidadas ni las que ya viajaron en un lote anterior (el portal
-     *    responde «ya se encuentra asociado a un registro de quedan»).
+     *    responde «ya se encuentra asociado a un registro de quedan»). Salvo la que el TXT
+     *    devolvió por no descontada: vuelve a ir (regla del usuario, 25/10/2026).
      *
      * Regla del usuario (25/09/2026): en la solicitud de quedan también van las NC.
      *
@@ -158,10 +159,14 @@ class QuedanCallejaExporter
         $excluidas = Dte::whereIn('id', $notas->pluck('dte_id')->filter())
             ->whereNotIn('id', Dte::sinNcProntoPago()->select('id'))->pluck('id')->flip();
         $notas = $notas->reject(fn (PpqItem $i) => $excluidas->has($i->dte_id));
+        // Un lote del que el TXT devolvió la NC (no descontada) ya no cuenta como presentada.
+        $devueltaDe = NcPosterioresLotePpq::devueltasPorTxt($lote->cliente_id);
         $yaPresentadas = PpqItem::query()
             ->whereHas('lote')
             ->where('ppq_lote_id', '<', $lote->id)
             ->whereIn('dte_id', $notas->pluck('dte_id')->filter()->all())
+            ->get(['dte_id', 'ppq_lote_id'])
+            ->reject(fn (PpqItem $previo) => in_array((int) $previo->ppq_lote_id, $devueltaDe[$previo->dte_id] ?? [], true))
             ->pluck('dte_id')->flip();
 
         $filas = [];

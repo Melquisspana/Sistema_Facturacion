@@ -20,10 +20,13 @@ use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Ppq\QuedanCallejaExporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -232,9 +235,44 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertEqualsCanonicalizing([$e['c']->dte_id, $e['b']->dte_id, $nuevoDoc->dte_id, $e['n1']->id],
             $nuevo->items()->pluck('dte_id')->all());
 
+        // Y vuelve a ir en el quedan del lote nuevo (regla del usuario, 25/10/2026).
+        $this->assertContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
+
         // La NC no se repite en un tercer PPQ.
         $tercero = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);
         $this->assertSame(0, $tercero->items()->where('dte_id', $e['n1']->id)->count());
+    }
+
+    public function test_la_nc_devuelta_que_queda_en_el_lote_viejo_por_su_historia_igual_va_en_el_proximo_ppq_y_su_quedan(): void
+    {
+        $e = $this->escenario();
+        $usuario = $this->usuario();
+        $hash = $this->subir($e['txt'], $usuario)->viewData('informe')['hash'];
+        // Conciliación revertida: ya no está aplicada, pero su historia impide quitarla del lote.
+        $itemNc = $this->item($e['lote'], $e['n1']->id);
+        $corrida = DB::table('ppq_conciliaciones')->insertGetId(['ppq_lote_id' => $e['lote']->id, 'created_at' => now()]);
+        DB::table('ppq_conciliacion_movimientos')->insert(['ppq_conciliacion_id' => $corrida, 'ppq_item_id' => $itemNc->id,
+            'estado_anterior' => 'aplicada', 'estado_nuevo' => null, 'created_at' => now()]);
+
+        $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), ['hash' => $hash, 'items' => [$itemNc->id]])
+            ->assertSessionHas('status');
+
+        $this->assertSame(1, $e['lote']->items()->where('dte_id', $e['n1']->id)->count());
+        $nuevo = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);
+        $this->assertSame(1, $nuevo->items()->where('dte_id', $e['n1']->id)->count());
+        $this->assertContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
+    }
+
+    /** Sala, número y tipo de cada fila del archivo de quedan del lote. */
+    private function filasQuedan(PpqLote $lote): array
+    {
+        $ruta = app(QuedanCallejaExporter::class)->generar($lote->fresh());
+        try {
+            return array_map(fn ($fila) => [$fila[0], $fila[1], $fila[4]],
+                array_slice(IOFactory::load($ruta)->getActiveSheet()->toArray(), 1));
+        } finally {
+            @unlink($ruta);
+        }
     }
 
     public function test_lo_pagado_de_menos_no_marcado_sigue_sin_poder_entrar_en_un_ppq(): void
