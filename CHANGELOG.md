@@ -8,6 +8,56 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Agregado
+
+- El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
+- Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. Se despliega junto con #125. #127
+
+### Corregido
+
+- Productos → Exportación: desmarcar un cliente en «Clientes» lo quita de la presentación. #115
+
+## [2026.10.24] - 2026-10-24
+
+Paquete de Hacienda 2.0. Incluye #58 (sin activar), #113, #116, #119, #120, #123, #124, #128 y #129. No trae migraciones. Quedan afuera #125 y #127.
+
+### Agregado
+
+- Nota de crédito versión 4 de Hacienda 2.0, con la versión fijada por documento. Llega apagada (`DTE_NC_VERSION=3`) hasta que admita el descuento global. #58
+- Contingencia: los documentos emitidos fuera de la ventana de entrada automática quedan para revisión manual, visibles para el administrador. #113 #116
+- NC fuera del plazo de 3 meses desde su CCF: el sistema avisa y pide confirmar la excepción con un motivo, que queda en la auditoría. #123
+- Comando de solo lectura `dte:catalogos --verificar`, que compara los catálogos cargados con el Excel oficial. #124
+
+### Cambiado
+
+- El PDF y el evento de invalidación usan los datos fiscales del JSON emitido, no los actuales del cliente o del emisor. #120
+- `resumen.pagos` según la Normativa 2.0: FE y FEX al contado informan la forma de pago, y el CCF a crédito lleva plazo y período. #119 #129
+- NC: topes de exento, no sujeto e IVA retenido contra el saldo del CCF. La FEX de servicios queda bloqueada, porque solo se exportan bienes. #123
+- FE: `totalIva` es la suma de los IVA por ítem menos el IVA del descuento global. La base gravada de las FE nuevas puede variar unos centavos; el total no cambia. #124
+
+### Corregido
+
+- CCF y NC sin correo del receptor se frenan antes de generar el JSON. En la FE, el NIT o DUI del receptor se envía sin guiones. #119
+- FE con descuento global: `totalGravada` es la suma de las ventas gravadas de los ítems. Hacienda la rechazaba. #128
+- Contingencia: el inicio retrocede como máximo 10 minutos hasta la emisión del documento que la dispara. #113
+
+## [2026.10.20] - 2026-10-20
+
+Incluye #111 y #112. No trae migraciones.
+
+### Corregido
+
+- Consulta al MH: el HTTP 400 con código 999 («no se encontró ningún registro») se interpreta como documento no encontrado. Así funcionan la entrada automática a contingencia y el reenvío tras un corte. #111
+- Contingencia: el inicio retrocede hasta la emisión del documento que la dispara, porque Hacienda lo rechazaba por quedar antes del inicio. #112
+
+## [2026.10.17] - 2026-10-17
+
+Contingencia de Hacienda 2.0 instalada y apagada (`DTE_CONTINGENCIA_ENABLED=false`). Incluye #99, #101, #104, #105 y #106. Trae dos migraciones: `contingencias`, `contingencia_eventos` y `lotes_dte`, más sus columnas en `dtes`.
+
+### Agregado
+
+- Modo contingencia: documentos transitorios firmados sin transmitir, evento de contingencia, envío por lotes y consulta de lotes, entrada automática tras agotar los reintentos, reconexión y cierre, y aviso «Sin internet» con service worker que lleva a la dirección del local. #99 #101 #104 #105 #106
+
 ## [2026.10.14] - 2026-10-14
 
 Incluye #107 y #108. No trae migraciones.
