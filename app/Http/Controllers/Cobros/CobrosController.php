@@ -26,9 +26,12 @@ use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
+use App\Services\Cobros\EstadoCobroDesdeInicio;
+use App\Services\Cobros\Exportadores\EstadoCobroExporter;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
 use App\Services\Cobros\PendientesDelTxt;
+use App\Services\Cobros\PuestaAlDiaPagos;
 use App\Services\Cobros\ReenviarPendientesTxt;
 use App\Services\Cobros\RevisionHistoricaService;
 use App\Services\Cobros\SolicitudCobroService;
@@ -759,6 +762,28 @@ class CobrosController extends Controller
             'lotesPpq' => $lotes,
             'pendientes' => app(PendientesDelTxt::class)->analizar($cliente, collect($lotes)->pluck('lote')),
         ]);
+    }
+
+    public function aplicarPagosVarios(Request $request, Cliente $cliente, PuestaAlDiaPagos $servicio): View
+    {
+        $this->verificarClienteDeCobros($cliente);
+        $request->validate([
+            'archivos' => ['required', 'array', 'min:1', 'max:100'],
+            'archivos.*' => ['required', 'file', 'max:5120'],
+            'solo_revisar' => ['sometimes', 'boolean'],
+        ]);
+        $soloRevisar = $request->boolean('solo_revisar');
+        $resultado = $servicio->procesar($cliente, $request->file('archivos'), $request->user(), $soloRevisar);
+
+        return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar'));
+    }
+
+    public function estadoCobro(Cliente $cliente, EstadoCobroDesdeInicio $servicio, EstadoCobroExporter $exportador): BinaryFileResponse
+    {
+        $this->verificarClienteDeCobros($cliente);
+        $ruta = $exportador->escribir($servicio->generar($cliente));
+
+        return response()->download($ruta, 'estado-cobro.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])->deleteFileAfterSend(true);
     }
 
     public function reenviarPendientes(Request $request, Cliente $cliente, ReenviarPendientesTxt $servicio): RedirectResponse

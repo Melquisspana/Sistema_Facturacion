@@ -567,6 +567,7 @@ Route::middleware('auth')->group(function () {
     | No emite, no firma, no transmite y no manda un solo correo.
     */
     Route::prefix('cobros')->name('cobros.')->middleware('permission:ppq.ver')->group(function () {
+        Route::get('clientes/{cliente}/estado-cobro', [CobrosController::class, 'estadoCobro'])->name('estado-cobro');
         Route::get('/', [CobrosController::class, 'index'])->name('index');
         Route::get('documentos/{documento}', [CobrosController::class, 'show'])->name('documentos.show');
         // Ficha de solo lectura de una solicitud: abrirla no registra ni cambia nada.
@@ -580,6 +581,7 @@ Route::middleware('auth')->group(function () {
             ->name('vinculacion');
 
         Route::middleware('permission:ppq.gestionar')->group(function () {
+            Route::post('clientes/{cliente}/pagos/varios', [CobrosController::class, 'aplicarPagosVarios'])->name('pagos.varios');
             // Ajuste QD del TXT ↔ su nota de crédito de pronto pago.
             Route::get('ajustes/{ajuste}/notas-credito', [AjusteNotaCreditoController::class, 'index'])->name('ajustes.notas-credito');
             Route::post('ajustes/{ajuste}/vincular-nc', [AjusteNotaCreditoController::class, 'store'])->name('ajustes.vincular-nc');
