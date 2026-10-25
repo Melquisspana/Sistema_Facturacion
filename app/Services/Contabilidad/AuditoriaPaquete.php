@@ -29,6 +29,7 @@ class AuditoriaPaquete
                 'compras_total' => $resumen['compras_total'],
                 'ventas_cantidad' => $resumen['ventas_cantidad'],
                 'ventas_invalidadas' => $resumen['ventas_invalidadas'] ?? 0,
+                'ventas_pendientes_sello' => $resumen['ventas_pendientes_sello'] ?? 0,
                 'ventas_total' => $resumen['ventas_total'],
                 'compras_marcadas_enviadas' => $comprasMarcadas,
                 'cobertura_incompleta' => $cobertura === null ? null : ! $cobertura['cubierto'],

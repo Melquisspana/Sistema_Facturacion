@@ -57,7 +57,7 @@
                     <div>
                         <label class="block text-xs font-medium text-gray-600">Estado</label>
                         <select name="estado" class="mt-1 w-full rounded-md border-gray-300 text-sm">
-                            <option value="aceptado" @selected($filtros['estado'] === 'aceptado')>Aceptado (real)</option>
+                            <option value="aceptado" @selected($filtros['estado'] === 'aceptado')>Aceptado (real) y pendientes de sello</option>
                             <option value="todos" @selected($filtros['estado'] === 'todos')>Todos</option>
                         </select>
                     </div>
@@ -154,7 +154,14 @@
                                     <td class="py-3 px-4 font-mono text-xs text-gray-500">
                                         <div class="max-w-[8rem] truncate" title="{{ $dte->sello_recepcion ?? '' }}">{{ $dte->sello_recepcion ?: '—' }}</div>
                                     </td>
-                                    <td class="py-3 px-4 whitespace-nowrap text-gray-600">{{ $dte->estado?->label() }}</td>
+                                    <td class="py-3 px-4 whitespace-nowrap text-gray-600">
+                                        {{ $dte->estado?->label() }}
+                                        @if (\App\Services\Reportes\ReporteContadoraQuery::esPendienteDeSello($dte))
+                                            <div><span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">Pendiente de sello</span></div>
+                                        @elseif ($dte->contingencia_id !== null)
+                                            <div><span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">En contingencia</span></div>
+                                        @endif
+                                    </td>
                                     <td class="py-3 px-4 text-right whitespace-nowrap text-gray-600">{{ number_format((float) $dte->total_gravado, 2) }}</td>
                                     <td class="py-3 px-4 text-right whitespace-nowrap text-gray-600">{{ number_format((float) $dte->iva, 2) }}</td>
                                     <td class="py-3 px-4 text-right whitespace-nowrap text-gray-600">{{ number_format((float) $dte->iva_retenido, 2) }}</td>
@@ -199,13 +206,13 @@
                                                     <a href="{{ route('facturacion.pdf', $dte) }}" target="_blank" rel="noopener"
                                                        title="Ver la representación gráfica en PDF"
                                                        class="text-xs font-medium text-gray-600 underline hover:text-gray-900">Ver PDF</a>
-                                                    @if ($tieneJson)
+                                                    @if ($aceptadoReal && $tieneJson)
                                                         <a href="{{ route('facturacion.reporte-contadora.json', $dte) }}"
                                                            title="Descargar el JSON oficial del documento"
                                                            class="text-xs font-medium text-gray-600 underline hover:text-gray-900">Descargar JSON</a>
                                                     @else
                                                         <span class="cursor-not-allowed text-xs text-gray-300"
-                                                              title="Este documento no tiene JSON oficial generado.">Descargar JSON</span>
+                                                              title="{{ $aceptadoReal ? 'Este documento no tiene JSON oficial generado.' : 'Disponible cuando Hacienda acepte el documento.' }}">Descargar JSON</span>
                                                     @endif
                                                 </div>
                                             </details>
