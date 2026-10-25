@@ -12,13 +12,25 @@ El historial anterior a este archivo está en el registro de git.
 
 - Cobros: al cargar el TXT de pagos se ven los CCF del PPQ que no vinieron pagados, los pagados de menos (con aviso de posible devolución AC04) y las NC no descontadas, y con un botón quedan listos para el próximo PPQ. #140
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
-- Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. Se despliega junto con #125. #127
-- Facturación: el buscador del listado encuentra las notas de crédito por el número de su albarán (completo, solo el número o el nombre del PDF), con coincidencia exacta.
+- Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. Se despliega antes que #125, por separado. #127
+
+### Corregido
+
+- Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ armados que todavía no se presentaron, salvo las conciliadas. #139
+
+## [2026.10.25.2] - 2026-10-25
+
+Segundo despliegue del día. Incluye #115, #135, #136 y #137. No trae migraciones.
+
+### Agregado
+
+- Facturación: el buscador del listado encuentra las notas de crédito por el número de su albarán (completo, solo el número o el nombre del PDF), con coincidencia exacta. Si varias salas tienen ese número, aparecen todas. #137
+- Reporte de la contadora y paquete de contabilidad: las ventas emitidas en contingencia se marcan en la columna S. Las que todavía no tienen sello no suman, salen en amarillo, con su monto en la columna T, y se listan aparte en el LEEME. #136
 
 ### Corregido
 
 - Productos → Exportación: desmarcar un cliente en «Clientes» lo quita de la presentación. #115
-- Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ armados que todavía no se presentaron, salvo las conciliadas. #139
+- Scripts de Windows del worker y del respaldo diario: usan la carpeta de PHP más nueva, o `PHP_BIN_DTE` si está definida, en vez de caer siempre al `php` del PATH. #135
 
 ## [2026.10.25] - 2026-10-25
 
