@@ -6,13 +6,17 @@
                             @csrf
                             <input type="hidden" name="hash" value="{{ $informe['hash'] }}">
                     @endcan
-                    @foreach (['no_pagados' => 'No vinieron pagados', 'nc_no_descontadas' => 'NC no descontadas', 'pagados_de_menos' => 'Pagados de menos'] as $grupo => $titulo)
+                    @foreach (['no_pagados' => 'No vinieron pagados', 'nc_no_descontadas' => 'NC no descontadas', 'pagados_de_menos' => 'Pagados de menos', 'no_aplican' => 'No aplican'] as $grupo => $titulo)
                         @if (! empty($pendientes[$grupo]))
                             <div>
                                 <h4 class="font-medium">{{ $titulo }}</h4>
                                 <ul class="mt-1 space-y-1">
                                     @foreach ($pendientes[$grupo] as $entrada)
                                         <li>
+                                            @if ($grupo === 'no_aplican')
+                                                {{ $entrada['item']->numero_control }} · {{ $entrada['lote']->referencia }}
+                                                <p class="mt-1">{{ $entrada['motivo'] }}</p>
+                                            @else
                                             @can('ppq.gestionar')
                                                 <label>
                                                     <input type="checkbox" name="items[]" value="{{ $entrada['item']->id }}" @checked($grupo !== 'pagados_de_menos')>
@@ -21,6 +25,7 @@
                                             @else
                                                 {{ $entrada['item']->numero_control }} · {{ $entrada['lote']->referencia }}
                                             @endcan
+                                            @endif
                                             @if ($grupo === 'pagados_de_menos')
                                                 <p class="mt-1">Esperado {{ $money($entrada['esperado']) }} · Pagado {{ $money($entrada['pagado']) }} · Diferencia {{ $money($entrada['diferencia']) }}</p>
                                                 <p>Posible devolución AC04: buscala en el correo.</p>

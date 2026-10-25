@@ -25,11 +25,12 @@ class PendientesDelTxt
 {
     /**
      * @param  Collection<int, PpqLote>  $lotes
-     * @return array{no_pagados: array<int, array<string, mixed>>, pagados_de_menos: array<int, array<string, mixed>>, nc_no_descontadas: array<int, array<string, mixed>>}
+     * @return array{no_pagados: array<int, array<string, mixed>>, pagados_de_menos: array<int, array<string, mixed>>, nc_no_descontadas: array<int, array<string, mixed>>, no_aplican: array<int, array<string, mixed>>}
      */
     public function analizar(Cliente $cliente, Collection $lotes): array
     {
-        $resultado = ['no_pagados' => [], 'pagados_de_menos' => [], 'nc_no_descontadas' => []];
+        $resultado = ['no_pagados' => [], 'pagados_de_menos' => [], 'nc_no_descontadas' => [], 'no_aplican' => []];
+        $motivos = app(NoAplicaCobro::class)->motivosPorDte($cliente);
         $lotes = $lotes->unique('id')->filter(fn ($lote) => (int) $lote->cliente_id === (int) $cliente->id);
         $itemsPorLote = $lotes->mapWithKeys(fn ($lote) => [$lote->id => $lote->items()->with('dte')->orderBy('id')->get()]);
         $items = $itemsPorLote->flatten(1);
@@ -45,6 +46,18 @@ class PendientesDelTxt
                     $clave = IdentidadPpq::normalizar($item->numero_control);
                     $coinciden = $clave === null ? collect() : $documentos->where('numero_control_norm', $clave);
                     $doc = $coinciden->count() === 1 ? $coinciden->first() : null;
+                }
+                $dteId = $item->dte_id ?? $doc?->dte_id;
+                if (! $dteId && $item->tipo_dte === '05') {
+                    $clave = IdentidadPpq::normalizar($item->numero_control);
+                    $notas = Dte::where('cliente_id', $cliente->id)->where('tipo_dte', '05')->get()
+                        ->filter(fn ($nota) => $clave !== null && IdentidadPpq::normalizar($nota->numero_control) === $clave);
+                    $dteId = $notas->count() === 1 ? $notas->first()->id : null;
+                }
+                if (isset($motivos[$dteId])) {
+                    $resultado['no_aplican'][] = ['item' => $item, 'lote' => $lote, 'documento' => $doc, 'motivo' => $motivos[$dteId]];
+
+                    continue;
                 }
                 if ($doc?->tienePagosEnRevision()) {
                     continue;

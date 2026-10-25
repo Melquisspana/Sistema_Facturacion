@@ -9,7 +9,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use RuntimeException;
 use Throwable;
 
-/** Excel del estado de cobro ({@see EstadoCobroDesdeInicio}): hojas CCF y NC. */
+/** Excel del estado de cobro ({@see EstadoCobroDesdeInicio}): CCF, NC y No aplican. */
 class EstadoCobroExporter
 {
     public function escribir(array $reporte): string
@@ -42,6 +42,24 @@ class EstadoCobroExporter
                 foreach (range('A', $grupo === 'ccf' ? 'H' : 'G') as $columna) {
                     $hoja->getColumnDimension($columna)->setAutoSize(true);
                 }
+            }
+            $hoja = $libro->createSheet();
+            $hoja->setTitle('No aplican');
+            $hoja->fromArray(['Tipo', 'Documento', 'Fecha', 'Monto', 'Motivo']);
+            foreach ($reporte['no_aplican'] as $indice => $fila) {
+                $datos = [$fila['tipo'], $fila['numero'], $fila['fecha']?->format('d/m/Y'), $fila['monto'], $fila['motivo']];
+                foreach ($datos as $columna => $valor) {
+                    $esMonto = $columna === 3;
+                    $hoja->setCellValueExplicit([$columna + 1, $indice + 2], $esMonto ? (float) $valor : (string) $valor, $esMonto ? DataType::TYPE_NUMERIC : DataType::TYPE_STRING);
+                    if ($esMonto) {
+                        $hoja->getStyle([$columna + 1, $indice + 2])->getNumberFormat()->setFormatCode('#,##0.00');
+                    }
+                }
+            }
+            $hoja->getStyle('1:1')->getFont()->setBold(true);
+            $hoja->freezePane('A2');
+            foreach (range('A', 'E') as $columna) {
+                $hoja->getColumnDimension($columna)->setAutoSize(true);
             }
             $libro->setActiveSheetIndex(0);
             $ruta = tempnam(sys_get_temp_dir(), 'cobros_estado_');
