@@ -39,7 +39,7 @@ class ElegibilidadPpqSeguimiento
             ->get(['ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control', 'created_at']);
 
         $devoluciones = CobroEvento::where('tipo', TipoEventoCobro::Nota->value)
-            ->where('referencia_linea', 'like', 'caso-%-fuera')
+            ->where(fn ($q) => $q->where('referencia_linea', 'like', 'caso-%-fuera')->orWhere('referencia_linea', 'like', 'txt-%-fuera'))
             ->with('documento:id,dte_id,numero_control_norm,ejercicio_control')->get();
         $porControl = $devoluciones->groupBy(fn ($evento) => EjercicioControl::llave($evento->documento?->numero_control_norm, $evento->documento?->ejercicio_control));
         $porDte = $devoluciones->filter(fn ($evento) => $evento->documento?->dte_id !== null)
@@ -85,7 +85,9 @@ class ElegibilidadPpqSeguimiento
     public function consulta(Builder $q): Builder
     {
         return $q->where('tipo_dte', '03')
-            ->where('pago_estado', EstadoPagoCobro::Pendiente->value)
+            ->where(fn ($p) => $p->where('pago_estado', EstadoPagoCobro::Pendiente->value)
+                ->orWhere(fn ($p) => $p->whereIn('pago_estado', [EstadoPagoCobro::Parcial->value, EstadoPagoCobro::Diferencia->value])
+                    ->whereHas('eventos', fn ($e) => $e->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-fuera'))))
             ->where('presentacion_estado', EstadoPresentacionCobro::SinPresentar->value)
             ->whereNotNull('ppq_albaran_id')
             ->where('revisar_historico', false)
@@ -163,7 +165,8 @@ class ElegibilidadPpqSeguimiento
         return match (true) {
             $doc->estaInvalidado() => 'fue invalidado en Hacienda',
             $doc->ppq_albaran_id === null => 'no tiene albarán (no entregado)',
-            $doc->pago_estado !== EstadoPagoCobro::Pendiente => 'ya tiene pago',
+            $doc->pago_estado !== EstadoPagoCobro::Pendiente && ! (in_array($doc->pago_estado, [EstadoPagoCobro::Parcial, EstadoPagoCobro::Diferencia], true)
+                && $doc->eventos()->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-fuera')->exists()) => 'ya tiene pago',
             $enRevision => 'tiene pagos en revisión',
             $doc->revisar_historico => 'falta la revisión histórica',
             in_array($doc->presentacion_estado, [EstadoPresentacionCobro::Presentada, EstadoPresentacionCobro::Recibida], true) => 'ya se presentó',

@@ -213,33 +213,8 @@ Caso {$caso} de Calleja."),
     /** Retira items sin perder conciliaciones; no modifica el Seguimiento. Acepta documentos o items. */
     public function sacarDelLote(PpqLote $lote, string $caso, Collection $documentos, ?User $usuario = null): array
     {
-        return DB::transaction(function () use ($lote, $caso, $documentos, $usuario) {
-            $lote = PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
-            $items = $lote->items()->lockForUpdate()->get()->filter(fn ($item) => $documentos->contains(
-                fn ($doc) => $doc instanceof PpqItem ? $doc->id === $item->id : $this->mismoDocumento($item, $doc)
-            ));
-            $conHistoria = DB::table('ppq_conciliacion_movimientos')->whereIn('ppq_item_id', $items->pluck('id'))->pluck('ppq_item_id')->flip();
-            $conservados = $items->filter(fn ($item) => $item->estaConciliado() || $conHistoria->has($item->id))->values();
-            $quitados = $items->reject(fn ($item) => $conservados->contains('id', $item->id))->values();
-            if ($quitados->isNotEmpty()) {
-                $lineas = $quitados->map(function ($item) {
-                    $monto = $item->montoDteConSigno();
-
-                    return '· '.($item->esNc() ? 'NC ' : 'CCF ').$item->correlativoNumero().' · '.($monto < 0 ? '-' : '').'$'.number_format(abs($monto), 2).' · '.($item->fecha_documento?->format('d/m/Y') ?? '—');
-                });
-                $lote->update(['observaciones' => trim((string) $lote->observaciones)."\nDevueltos del caso {$caso} (salieron del PPQ, van en el siguiente):\n".$lineas->implode("\n")]);
-                $actividad = activity()->performedOn($lote)->withProperties(['caso' => $caso, 'items' => $quitados->map->getAttributes()->all()]);
-                if ($usuario) {
-                    $actividad->causedBy($usuario);
-                }
-                $actividad->log('ppq.devueltos_caso');
-                foreach ($quitados as $item) {
-                    $item->delete();
-                }
-            }
-
-            return ['items_quitados' => $quitados, 'conservados' => $conservados];
-        });
+        return app(RetirarItemsPpq::class)->retirar($lote, $documentos,
+            "Devueltos del caso {$caso} (salieron del PPQ, van en el siguiente):", 'ppq.devueltos_caso', ['caso' => $caso], $usuario);
     }
 
     /** Id del lote PPQ que contiene más documentos del reporte, o null. */

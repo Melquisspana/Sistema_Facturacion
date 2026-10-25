@@ -2,9 +2,11 @@
 
 namespace App\Services\Ppq;
 
+use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
+use App\Models\Cobros\CobroEvento;
 use App\Models\Dte;
 use App\Models\NcExportacionItem;
 use App\Models\PpqItem;
@@ -37,13 +39,18 @@ class NcPosterioresLotePpq
      */
     public function sueltasDelCliente(Cliente $cliente): Collection
     {
+        $idsDevueltas = CobroEvento::whereHas('documento', fn ($q) => $q->where('cliente_id', $cliente->id))
+            ->where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-nc-%')
+            ->get()->pluck('datos.nc_dte_id')->filter()->unique();
+        $devueltas = $this->sinLoteVigente(Dte::sinNcProntoPago()->where('cliente_id', $cliente->id)->where('tipo_dte', '05')
+            ->whereKey($idsDevueltas)->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')->get());
         $notas = $this->sinLoteVigente(Dte::sinNcProntoPago()->where('cliente_id', $cliente->id)->where('tipo_dte', '05')
             ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')
             ->whereNotNull('dte_relacionado_id')
             ->whereNotIn('id', NcExportacionItem::query()->select('dte_id'))
             ->orderBy('id')->get());
         if ($notas->isEmpty()) {
-            return $notas;
+            return $devueltas->sortBy('id')->values();
         }
         $ids = $notas->pluck('dte_relacionado_id')->unique();
         $lotes = PpqLote::whereHas('items', fn ($q) => $q->where('tipo_dte', '03')->whereIn('dte_id', $ids))
@@ -69,7 +76,7 @@ class NcPosterioresLotePpq
             $aceptadaEn = $nc->fecha_procesamiento_mh ?? $nc->created_at;
 
             return $armadoEn === null || ($aceptadaEn !== null && $aceptadaEn->gt($armadoEn));
-        })->values();
+        })->merge($devueltas)->unique('id')->sortBy('id')->values();
     }
 
     /** Excluye ocupación por id o número normalizado, incluso en items sin DTE vinculado. */
