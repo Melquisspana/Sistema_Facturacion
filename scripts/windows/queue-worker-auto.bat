@@ -23,14 +23,11 @@ cd /d "%~dp0..\.."
 set "PROJECT_DIR=%CD%"
 
 rem --- PHP: variable opcional PHP_BIN_DTE, si no, ultima version de Laragon, si no, PATH. ---
-if defined PHP_BIN_DTE (
-    set "PHP=%PHP_BIN_DTE%"
-) else (
-    set "PHP="
-    for /d %%D in ("C:\laragon\bin\php\php-*") do set "PHP=%%D\php.exe"
-    if not defined PHP set "PHP=php"
-    if not exist "%PHP%" if /i not "%PHP%"=="php" set "PHP=php"
-)
+rem Sin bloques ( ): dentro de un bloque %PHP% se expande antes de que el for la asigne.
+set "PHP=%PHP_BIN_DTE%"
+if not defined PHP_BIN_DTE for /d %%D in ("C:\laragon\bin\php\php-*") do set "PHP=%%D\php.exe"
+if not defined PHP set "PHP=php"
+if not defined PHP_BIN_DTE if not exist "%PHP%" if /i not "%PHP%"=="php" set "PHP=php"
 
 set "ARTISAN=%PROJECT_DIR%\artisan"
 if not exist "%PROJECT_DIR%\storage\logs" mkdir "%PROJECT_DIR%\storage\logs" >nul 2>nul
