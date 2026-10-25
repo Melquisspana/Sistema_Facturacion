@@ -190,6 +190,41 @@ class SerializadoresMhMultiTipoTest extends TestCase
         $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
     }
 
+    /** Rechazo real en apitest (24/10/2026): con descuento global, totalGravada no cuadraba con los ítems. */
+    public function test_factura_con_descuento_global_total_gravada_es_la_suma_de_items(): void
+    {
+        // 2 × 11.30 (IVA incluido) = 22.60 bruto; descuento global 10 % = 2.26; neto 20.34 = base 18.00 + IVA 2.34.
+        $linea = fn (int $n) => new LineaDteData(
+            numeroLinea: $n, descripcion: 'Producto', cantidad: '1', precioUnitario: '11.30',
+            totalLinea: '11.30', tipoItem: 1, codigo: 'P-'.$n, unidadMedida: '59',
+            descuento: '0.00', ventaGravada: '10.00', iva: '1.30',
+        );
+        $resumen = new ResumenDteData(
+            totalGravado: '18.00', totalExento: '0.00', totalNoSujeto: '0.00', totalExportacion: '0.00',
+            descuentoGravado: '2.26', descuentoExento: '0.00', descuentoNoSujeto: '0.00', descuentoTotal: '2.26',
+            iva: '2.34', ivaRetenido: '0.00', retencionRenta: '0.00', totalAntesRetencion: '20.34',
+            montoTotalOperacion: '20.34', totalPagar: '20.34', totalLetras: 'VEINTE 34/100 DÓLARES',
+            condicionOperacion: 1, porcentajeDescuento: '10.00',
+        );
+        $salida = new DteSalidaData(
+            identificacion: $this->ident('01', 2), emisor: $this->emisor(), resumen: $resumen,
+            lineas: [$linea(1), $linea(2)], receptor: null, apendice: [],
+        );
+
+        $oficial = app(SerializadorFacturaMh::class)->serializar($salida);
+        $r = $oficial['resumen'];
+
+        $this->assertSame(22.6, array_sum(array_column($oficial['cuerpoDocumento'], 'ventaGravada')));
+        $this->assertSame(22.6, $r['totalGravada']);   // Σ ítems, no el neto del descuento
+        $this->assertSame(22.6, $r['subTotalVentas']);
+        $this->assertSame(2.26, $r['descuGravada']);
+        $this->assertSame(20.34, $r['subTotal']);      // 22.60 − 2.26
+        $this->assertSame(20.34, $r['montoTotalOperacion']);
+        $this->assertSame(20.34, $r['totalPagar']);
+        $res = app(DteSchemaValidator::class)->validar($oficial, TipoDte::Factura);
+        $this->assertTrue($res['valido'], 'Errores: '.implode(' | ', $res['errores']));
+    }
+
     public function test_factura_serializa_y_valida_con_receptor_identificado(): void
     {
         $receptor = new ReceptorDteData(
