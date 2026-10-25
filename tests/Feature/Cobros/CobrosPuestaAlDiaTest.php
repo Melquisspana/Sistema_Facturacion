@@ -129,8 +129,8 @@ class CobrosPuestaAlDiaTest extends TestCase
         app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$a->id, $b->id]);
         app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$c->id, $d->id]);
 
-        // A se cobra neto de su NC aceptada de 1.50.
-        $txt1 = $this->txt([$this->linea('CF', $a->numero_control, '98.50'), $this->linea('CF', $b->numero_control, '100.00')]);
+        // A se cobra por su total: su NC de pronto pago (1.50) es el QD, no se resta del CCF.
+        $txt1 = $this->txt([$this->linea('CF', $a->numero_control, '100.00'), $this->linea('CF', $b->numero_control, '100.00')]);
         $txt2 = $this->txt([$this->linea('CF', $c->numero_control, '100.00')]);
 
         return compact('a', 'b', 'c', 'd', 'e', 'n1', 'pronto', 'txt1', 'txt2');
