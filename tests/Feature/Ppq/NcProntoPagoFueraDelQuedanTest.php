@@ -218,6 +218,9 @@ class NcProntoPagoFueraDelQuedanTest extends TestCase
         $corrida = DB::table('ppq_conciliaciones')->insertGetId(['ppq_lote_id' => $lote->id, 'created_at' => now()]);
         DB::table('ppq_conciliacion_movimientos')->insert(['ppq_conciliacion_id' => $corrida, 'ppq_item_id' => $itemHistoria->id,
             'estado_anterior' => 'aplicada', 'estado_nuevo' => null, 'created_at' => now()]);
+        // Ya presentado: no se reescribe lo que se le entregó a Calleja.
+        $presentado = PpqLote::create(['referencia' => 'Presentado', 'fecha' => today(), 'estado' => 'enviado']);
+        $presentado->items()->create(NcPosterioresLotePpq::datosItemNc($pronto));
         $borrado = PpqLote::create(['referencia' => 'Borrado', 'fecha' => today(), 'estado' => 'borrador']);
         $borrado->items()->create(NcPosterioresLotePpq::datosItemNc($pronto));
         $borrado->delete();
@@ -234,6 +237,8 @@ class NcProntoPagoFueraDelQuedanTest extends TestCase
         $this->assertSame(1, $lote->items()->where('dte_id', $devolucion->id)->count());
         $this->assertSame(1, $lote->items()->where('dte_id', $doc->dte_id)->count());
         $this->assertSame(1, $borrado->items()->where('dte_id', $pronto->id)->count());
+        $this->assertSame(1, $presentado->items()->where('dte_id', $pronto->id)->count());
+        $this->assertNull($presentado->refresh()->observaciones);
         $observaciones = $lote->refresh()->observaciones;
         $this->assertStringContainsString('Conservar.', $observaciones);
         $this->assertStringContainsString($pronto->numero_control, $observaciones);

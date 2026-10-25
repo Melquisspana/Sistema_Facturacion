@@ -4,10 +4,14 @@ namespace App\Console\Commands;
 
 use App\Models\Dte;
 use App\Models\PpqLote;
+use App\Services\Ppq\NcPosterioresLotePpq;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-/** Quita las NC de pronto pago de PPQ vigentes, conservando las conciliadas. */
+/**
+ * Quita las NC de pronto pago de los PPQ armados que todavía no se presentaron,
+ * conservando las conciliadas. Los totales del lote se calculan al vuelo desde sus items.
+ */
 class PpqQuitarNcProntoPagoCommand extends Command
 {
     protected $signature = 'ppq:quitar-nc-pronto-pago
@@ -30,10 +34,18 @@ class PpqQuitarNcProntoPagoCommand extends Command
                     return;
                 }
                 $items = $actual->items()->where($candidatos)->orderBy('id')->lockForUpdate()->get();
+                // Solo los PPQ armados que todavía no se presentaron: borrar un item presentado
+                // reescribe lo que se le entregó a Calleja (el quedan ya las omite).
+                $armado = app(NcPosterioresLotePpq::class)->admite($actual);
                 // Mismo resguardo que ReporteCasoCalleja::sacarDelLote(): lo conciliado o con
                 // historia de conciliación no se quita.
                 $conHistoria = DB::table('ppq_conciliacion_movimientos')->whereIn('ppq_item_id', $items->pluck('id'))->pluck('ppq_item_id')->flip();
                 foreach ($items as $item) {
+                    if (! $armado) {
+                        $conservadas[] = [$actual->id, $item->numero_control, 'Lote ya presentado'];
+
+                        continue;
+                    }
                     if ($item->estaConciliado() || $conHistoria->has($item->id)) {
                         $conservadas[] = [$actual->id, $item->numero_control, $item->estaConciliado()
                             ? 'Conciliada: '.$item->estadoPagoLabel() : 'Tiene historia de conciliación'];
