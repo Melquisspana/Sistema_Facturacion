@@ -79,6 +79,18 @@
                             </div>
                             <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Cargar pagos</button>
                         </form>
+                        <form method="POST" action="{{ route('cobros.pagos.varios', $cliente) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
+                            @csrf
+                            <div>
+                                <label for="archivos-varios" class="block text-xs font-medium text-gray-600 dark:text-paper-300">Puesta al día (varios TXT)</label>
+                                <input id="archivos-varios" name="archivos[]" type="file" accept=".txt,text/plain" multiple required class="mt-1 text-sm">
+                            </div>
+                            <label for="solo-revisar" class="text-sm">
+                                <input id="solo-revisar" type="checkbox" name="solo_revisar" value="1" checked>
+                                Solo revisar (no guarda nada)
+                            </label>
+                            <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Procesar TXT</button>
+                        </form>
                     @endcan
                 @endif
 
