@@ -21,13 +21,16 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\MapeadorDteSalida;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Dte\Serializadores\SerializadorMhFactory;
 use App\Services\Ppq\NcExportacionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -211,6 +214,26 @@ class NcExportacionLoteTest extends TestCase
         return $celdas;
     }
 
+    private function comprobarExportacionConAmbosJson(array $notas, $lote, array $esperado): void
+    {
+        foreach ([3, 4] as $version) {
+            config(['dte.json.versiones.05' => $version]);
+            foreach ($notas as $nc) {
+                // Solo la copia en memoria pasa por el mapeador previo a generar JSON.
+                $paraMapear = clone $nc;
+                $paraMapear->estado = EstadoDte::Generado;
+                $salida = app(MapeadorDteSalida::class)->mapear($paraMapear);
+                $json = app(SerializadorMhFactory::class)->para(TipoDte::NotaCredito, $version)->serializar($salida);
+                Storage::disk((string) config('dte.storage.disk', 'local'))->put($nc->json_generado_path, json_encode($json, JSON_THROW_ON_ERROR));
+            }
+            $this->assertSame($esperado, $this->leer(app(NcExportacionService::class)->archivo($lote->refresh())));
+        }
+    }
+
+    public static function versionesNc(): array
+    {
+        return ['v3' => [3], 'v4' => [4]];
+    }
     // ------------------------------------------------------------------ doradas
 
     /**
@@ -256,8 +279,10 @@ class NcExportacionLoteTest extends TestCase
     }
 
     /** DORADA · diez notas: diez filas, ceros iniciales intactos y sin repetidos. */
-    public function test_dorada_lote_de_diez_notas_produce_diez_filas_sin_perder_ceros(): void
+    #[DataProvider('versionesNc')]
+    public function test_dorada_lote_de_diez_notas_produce_diez_filas_sin_perder_ceros(int $version): void
     {
+        config(['dte.json.versiones.05' => $version]);
         $cliente = $this->cliente();
         $notas = $this->notasAceptadas($cliente, 10);
 
@@ -271,6 +296,7 @@ class NcExportacionLoteTest extends TestCase
 
         $celdas = $this->leer(app(NcExportacionService::class)->archivo($lote));
 
+        $this->comprobarExportacionConAmbosJson($notas, $lote, $celdas);
         $this->assertSame('INFORMACION DE NOTA DE CREDITO', $celdas[1]['A']);
         $this->assertSame('INFORMACION DEL ALBARAN', $celdas[1]['F']);
         $this->assertSame('VALORES DE NOTA DE CREDITO', $celdas[1]['K']);
@@ -414,8 +440,10 @@ class NcExportacionLoteTest extends TestCase
      * y TOTAL lleva el total real de la nota como VALOR, no la fórmula `=I` del archivo
      * de muestra. Se comprueba con una avería, que sí lleva descuento.
      */
-    public function test_gravado_va_neto_y_total_va_como_valor_no_como_formula(): void
+    #[DataProvider('versionesNc')]
+    public function test_gravado_va_neto_y_total_va_como_valor_no_como_formula(int $version): void
     {
+        config(['dte.json.versiones.05' => $version]);
         $cliente = $this->cliente();
         ClientePerfilTipoNc::create([
             'cliente_perfil_documento_id' => $cliente->perfilDocumento->id,
@@ -463,6 +491,7 @@ class NcExportacionLoteTest extends TestCase
         $lote = $servicio->crear($cliente, [$nc->id], $this->usuario());
         $celdas = $this->leer($servicio->archivo($lote));
 
+        $this->comprobarExportacionConAmbosJson([$nc], $lote, $celdas);
         $this->assertSame('000123', $celdas[3]['A']);
         $this->assertSame('ac02', $celdas[3]['G']);       // el formato del cliente lo lleva en minúsculas
         $this->assertSame('0045', $celdas[3]['F']);

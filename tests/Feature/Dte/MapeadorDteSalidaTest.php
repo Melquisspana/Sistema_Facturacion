@@ -352,6 +352,7 @@ class MapeadorDteSalidaTest extends TestCase
 
     public function test_nota_credito_averia_con_productos_manuales_genera_json_v3_valido(): void
     {
+        config(['dte.json.versiones.05' => 3]);
         // El serializador valida la unidad contra CAT-014 (no contra la tabla UnidadMedida).
         CatalogoMh::firstOrCreate(['cat' => '014', 'codigo' => '59'], ['valor' => 'Unidad']);
         $emisor = $this->emisor();

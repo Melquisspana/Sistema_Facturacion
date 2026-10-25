@@ -55,12 +55,6 @@ class SerializadorNotaCreditoV4Mh implements SerializadorMh
         if (blank($e->distrito) || blank($r?->distrito)) {
             $problemas[] = 'La NC versión 4 requiere distrito del emisor y del receptor (CAT-008).';
         }
-        foreach ([$d->resumen->descuentoGravado, $d->resumen->descuentoExento, $d->resumen->descuentoNoSujeto] as $global) {
-            if (Dinero::comparar($global, '0') > 0) {
-                $problemas[] = 'La NC versión 4 todavía no admite descuento global: el resumen v4 no tiene descuGravada y falta confirmar con Hacienda cómo se prorratea. Emítala sin descuento global o en versión 3.';
-                break;
-            }
-        }
         $cuerpo = [];
         foreach ($d->lineas as $l) {
             $uni = $this->uniMedida($l, $problemas);

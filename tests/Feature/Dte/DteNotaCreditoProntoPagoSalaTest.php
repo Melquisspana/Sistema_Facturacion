@@ -413,7 +413,7 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
 
         // Identidad FISCAL: del cliente Calleja (no de la sala).
         // El MH exige el NIT solo en dígitos: "0614-555555-101-5" → "06145555551015".
-        $this->assertSame('06145555551015', $receptor['nit']);
+        $this->assertSame('06145555551015', $receptor[$json['identificacion']['version'] === 4 ? 'numDocumento' : 'nit']);
         $this->assertSame('9137', $receptor['nrc']);
         $this->assertSame('Calleja, S.A. de C.V.', $receptor['nombre']);
 
@@ -426,8 +426,12 @@ class DteNotaCreditoProntoPagoSalaTest extends TestCase
         $this->assertSame($ccf->codigo_generacion, $json['documentoRelacionado'][0]['numeroDocumento']);
         $this->assertSame('03', $json['documentoRelacionado'][0]['tipoDocumento']);
 
-        // La NC v3 NO admite `distrito` en la dirección del receptor: no debe aparecer.
-        $this->assertArrayNotHasKey('distrito', $receptor['direccion']);
+        // La dirección del receptor incluye distrito únicamente en v4.
+        if ($json['identificacion']['version'] === 4) {
+            $this->assertNotEmpty($receptor['direccion']['distrito']);
+        } else {
+            $this->assertArrayNotHasKey('distrito', $receptor['direccion']);
+        }
     }
 
     // --- 10. "Revertir CCF completo con NC" conserva la sala original ---
