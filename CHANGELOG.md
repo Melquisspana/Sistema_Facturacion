@@ -17,6 +17,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Cobros: la NC de pronto pago (el QD de un PPQ, atada a un solo CCF) ya no se resta de lo que se cobra de ese CCF, que por eso quedaba «Pagado con diferencia». El saldo fiscal para emitir NC no cambia. Después de desplegar, `cobros:recalcular-pagos`. #143
 - Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ armados que todavía no se presentaron, salvo las conciliadas. #139
 
 ## [2026.10.25.2] - 2026-10-25
