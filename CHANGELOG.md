@@ -16,6 +16,7 @@ El historial anterior a este archivo está en el registro de git.
 ### Corregido
 
 - Productos → Exportación: desmarcar un cliente en «Clientes» lo quita de la presentación. #115
+- Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ ya armados, salvo las conciliadas. #139
 
 ## [2026.10.25] - 2026-10-25
 
