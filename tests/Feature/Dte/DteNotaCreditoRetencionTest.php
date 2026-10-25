@@ -527,6 +527,8 @@ class DteNotaCreditoRetencionTest extends TestCase
 
     public function test_el_json_lleva_iva_rete1_con_la_retencion_y_valida_contra_el_schema(): void
     {
+        // Esta prueba ejercita explícitamente el contrato del serializador v3.
+        config(['dte.json.versiones.05' => 3]);
         $ccf = $this->ccfAceptado();
         $nc = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
         app(DteGeneracionService::class)->generar($nc); // numeración local; NO firma ni transmite
@@ -552,6 +554,8 @@ class DteNotaCreditoRetencionTest extends TestCase
 
     public function test_el_json_deja_iva_rete1_en_cero_cuando_el_ccf_no_retuvo(): void
     {
+        // Esta prueba ejercita explícitamente el contrato del serializador v3.
+        config(['dte.json.versiones.05' => 3]);
         $ccf = $this->ccfAceptado(agenteRetencion: false);
         $nc = $this->borradores->revertirCcfCompleto($ccf, $this->usuario());
         app(DteGeneracionService::class)->generar($nc);

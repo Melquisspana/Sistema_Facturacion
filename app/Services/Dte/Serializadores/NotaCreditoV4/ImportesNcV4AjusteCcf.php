@@ -13,7 +13,8 @@ use App\Support\Dinero;
  *   para CCF (03) va en cero. Retención por base gravada neta; sin percepción
  *   en este sistema. Se prorratea la retención interna con residuo exacto.
  * - p.118, campos 129 y 135: suma de ventas netas por ítem; totalDescu suma
- *   los descuentos por ítem y no se resta otra vez. No admite descuento global.
+ *   los descuentos por ítem y no se resta otra vez. El global se prorratea por
+ *   categoría sobre ventas netas de línea; la última absorbe los centavos.
  * - pp.118-119, campos 136-138: IVA del documento en el tributo 20 consolidado,
  *   obligatorio cuando hay ventas gravadas, no en totalIva.
  * - p.119, campos 143-146: percepción, retención y totalIva suman los ítems;
@@ -38,33 +39,63 @@ class ImportesNcV4AjusteCcf implements CalculoImportesNcV4
                 throw new DteNoSerializableException(['la NC v4 de este sistema solo ajusta CCF (documento relacionado tipo 03).']);
             }
         }
+        $ventas = [];
+        $descuentos = [];
+        foreach (array_values($d->lineas) as $indice => $l) {
+            $ventas[$indice] = ['ventaGravada' => $l->ventaGravada, 'ventaExenta' => $l->ventaExenta, 'ventaNoSujeta' => $l->ventaNoSujeta];
+            $descuentos[$indice] = $l->descuento;
+        }
+        foreach (['ventaGravada' => 'descuentoGravado', 'ventaExenta' => 'descuentoExento', 'ventaNoSujeta' => 'descuentoNoSujeto'] as $venta => $campo) {
+            $global = $d->resumen->{$campo};
+            if (Dinero::comparar($global, '0') <= 0) {
+                continue;
+            }
+            $baseCategoria = '0.00';
+            $indices = [];
+            foreach ($ventas as $indice => $importes) {
+                if (Dinero::comparar($importes[$venta], '0') > 0) {
+                    $baseCategoria = Dinero::sumar($baseCategoria, $importes[$venta]);
+                    $indices[] = $indice;
+                }
+            }
+            $ultimaCategoria = array_key_last($indices);
+            $repartido = '0.00';
+            foreach ($indices as $posicion => $indice) {
+                $parte = $posicion === $ultimaCategoria
+                    ? Dinero::restar($global, $repartido)
+                    : Dinero::redondear(Dinero::dividir(Dinero::multiplicar($global, $ventas[$indice][$venta]), $baseCategoria));
+                $ventas[$indice][$venta] = Dinero::restar($ventas[$indice][$venta], $parte);
+                $descuentos[$indice] = Dinero::sumar($descuentos[$indice], $parte);
+                $repartido = Dinero::sumar($repartido, $parte);
+            }
+        }
         $base = '0.00';
         $ultima = null;
         foreach (array_values($d->lineas) as $indice => $l) {
-            if (Dinero::comparar($l->ventaGravada, '0') > 0) {
-                $base = Dinero::sumar($base, $l->ventaGravada);
+            if (Dinero::comparar($ventas[$indice]['ventaGravada'], '0') > 0) {
+                $base = Dinero::sumar($base, $ventas[$indice]['ventaGravada']);
                 $ultima = $indice;
             }
         }
         $retenido = '0.00';
         $items = [];
         foreach (array_values($d->lineas) as $indice => $l) {
-            $gravada = Dinero::comparar($l->ventaGravada, '0') > 0;
+            $gravada = Dinero::comparar($ventas[$indice]['ventaGravada'], '0') > 0;
             $retencion = '0.00';
             if ($gravada) {
-                // Bases ya netas del descuento de línea; el residuo queda en
+                // Bases ya netas del descuento de línea y global; el residuo queda en
                 // la última gravada, aunque después haya líneas exentas.
                 $retencion = $indice === $ultima
                     ? Dinero::restar($d->resumen->ivaRetenido, $retenido)
-                    : Dinero::redondear(Dinero::dividir(Dinero::multiplicar($d->resumen->ivaRetenido, $l->ventaGravada), $base));
+                    : Dinero::redondear(Dinero::dividir(Dinero::multiplicar($d->resumen->ivaRetenido, $ventas[$indice]['ventaGravada']), $base));
                 $retenido = Dinero::sumar($retenido, $retencion);
             }
             $items[] = [
                 'precioUni' => (float) $l->precioUnitario,
-                'montoDescu' => (float) $l->descuento,
-                'ventaNoSuj' => (float) $l->ventaNoSujeta,
-                'ventaExenta' => (float) $l->ventaExenta,
-                'ventaGravada' => (float) $l->ventaGravada,
+                'montoDescu' => (float) $descuentos[$indice],
+                'ventaNoSuj' => (float) $ventas[$indice]['ventaNoSujeta'],
+                'ventaExenta' => (float) $ventas[$indice]['ventaExenta'],
+                'ventaGravada' => (float) $ventas[$indice]['ventaGravada'],
                 'tributos' => $gravada ? ['20'] : null,
                 'totalIva' => 0.0,
                 'ivaRete' => (float) Dinero::redondear($retencion),

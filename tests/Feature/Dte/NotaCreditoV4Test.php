@@ -34,6 +34,7 @@ use App\Services\Dte\Serializadores\SerializadorMhFactory;
 use App\Services\Dte\Serializadores\SerializadorNotaCreditoMh;
 use App\Services\Dte\Serializadores\SerializadorNotaCreditoV4Mh;
 use App\Services\Ppq\DteCorreoParser;
+use App\Support\Dinero;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -175,13 +176,70 @@ class NotaCreditoV4Test extends TestCase
         $this->assertSame(0.11333333, $json['cuerpoDocumento'][0]['precioUni']);
     }
 
-    public function test_descuento_global_se_rechaza_solo_en_v4(): void
+    public static function descuentosGlobales(): array
     {
-        $v3 = $this->salida(version: 3, global: '5.00');
-        $this->assertSame(app(SerializadorNotaCreditoMh::class)->serializar($v3), app(SerializadorMhFactory::class)->para(TipoDte::NotaCredito, 3)->serializar($v3));
-        $this->expectException(DteNoSerializableException::class);
-        $this->expectExceptionMessage('La NC versión 4 todavía no admite descuento global: el resumen v4 no tiene descuGravada y falta confirmar con Hacienda cómo se prorratea. Emítala sin descuento global o en versión 3.');
-        app(SerializadorNotaCreditoV4Mh::class)->serializar($this->salida(global: '5.00'));
+        return [
+            '5% una' => [5, 1, false],
+            '10% una con descuento de línea' => [10, 1, true],
+            '5% tres con residuo' => [5, 3, false],
+            '10% tres con residuo y descuento de línea' => [10, 3, true],
+        ];
+    }
+
+    #[DataProvider('descuentosGlobales')]
+    public function test_descuento_global_cuadra_con_v3(int $porcentaje, int $cantidad, bool $descuentoLinea): void
+    {
+        $lineas = [];
+        foreach (array_slice(['33.33', '33.33', '33.37'], 0, $cantidad) as $i => $precio) {
+            $descuento = $descuentoLinea && $i === 0 ? '1.01' : '0.00';
+            $venta = Dinero::restar($precio, $descuento);
+            $lineas[] = new LineaDteData($i + 1, 'Producto', '1', $precio, $venta, tipoItem: 1, unidadMedida: '59', descuento: $descuento, ventaGravada: $venta);
+        }
+        $base = array_sum(array_map(fn ($l) => (float) $l->ventaGravada, $lineas));
+        $global = number_format(round($base * $porcentaje / 100, 2), 2, '.', '');
+        $neto = round($base - (float) $global, 2);
+        $iva = number_format(round($neto * .13, 2), 2, '.', '');
+        $retencion = number_format(round($neto * .01, 2), 2, '.', '');
+        // El IVA interno ya llega calculado sobre la base neta global.
+        $primera = $lineas[0];
+        $lineas[0] = new LineaDteData(1, 'Producto', '1', $primera->precioUnitario, $primera->totalLinea, tipoItem: 1, unidadMedida: '59', descuento: $primera->descuento, ventaGravada: $primera->ventaGravada, iva: $iva);
+        $salida = $this->salida($lineas, retencion: $retencion, global: $global);
+        $json = app(SerializadorNotaCreditoV4Mh::class)->serializar($salida);
+        $v3 = app(SerializadorNotaCreditoMh::class)->serializar($this->salida($lineas, version: 3, retencion: $retencion, global: $global));
+        $this->comprobar($json, $salida);
+        $this->assertSame($neto, (float) $json['resumen']['totalGravada']);
+        $this->assertSame((float) $salida->resumen->montoTotalOperacion, (float) $json['resumen']['montoTotalOperacion']);
+        $this->assertSame($v3['resumen']['tributos'], $json['resumen']['tributos']);
+        $this->assertSame($v3['resumen']['ivaRete1'], $json['resumen']['ivaRete']);
+        foreach ($json['cuerpoDocumento'] as $linea) {
+            $this->assertSame(
+                Dinero::redondear(Dinero::restar(Dinero::multiplicar($linea['cantidad'], $linea['precioUni']), $linea['montoDescu'])),
+                Dinero::redondear($linea['ventaGravada']),
+            );
+        }
+        if ($cantidad === 3 && ! $descuentoLinea) {
+            $this->assertSame([1.67, 1.67, 1.66], array_column($json['cuerpoDocumento'], 'montoDescu'));
+        }
+    }
+
+    public function test_global_exento_y_no_sujeto_se_reparten_por_categoria(): void
+    {
+        $lineas = [
+            new LineaDteData(1, 'Exento', '1', '10.01', '10.01', tipoItem: 1, unidadMedida: '59', ventaExenta: '10.01'),
+            new LineaDteData(2, 'No sujeto', '1', '5.01', '5.01', tipoItem: 1, unidadMedida: '59', ventaNoSujeta: '5.01'),
+            new LineaDteData(3, 'Exento final', '1', '10.02', '10.02', tipoItem: 1, unidadMedida: '59', ventaExenta: '10.02'),
+        ];
+        $original = $this->salida($lineas);
+        $salida = new DteSalidaData(
+            identificacion: $original->identificacion, emisor: $original->emisor, receptor: $original->receptor,
+            lineas: $lineas, documentoRelacionado: $original->documentoRelacionado,
+            resumen: new ResumenDteData('0.00', '20.03', '5.01', '0.00', '0.00', '1.00', '0.25', '1.25', '0.00', '0.00', '0.00', '23.79', '23.79', '23.79', 'TOTAL EN LETRAS', condicionOperacion: 1),
+        );
+        $json = app(SerializadorNotaCreditoV4Mh::class)->serializar($salida);
+        $this->comprobar($json, $salida);
+        $this->assertSame([0.50, 0.25, 0.50], array_column($json['cuerpoDocumento'], 'montoDescu'));
+        $this->assertSame(19.03, $json['resumen']['totalExenta']);
+        $this->assertSame(4.76, $json['resumen']['totalNoSuj']);
     }
 
     public static function faltantes(): array
