@@ -15,6 +15,7 @@ use App\Services\Ppq\DteCorreoParser;
 use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\JsonAdjuntoDecoder;
 use App\Support\Dinero;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroControl;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -344,7 +345,7 @@ class ImportadorEnviadosService
         }
 
         $existentes = CobroDocumento::query()
-            ->where('numero_control_norm', $clave)
+            ->where(fn ($q) => $q->where('numero_control_norm', $clave)->where('ejercicio_control', EjercicioControl::de($doc->fechaEmision)))
             ->orWhereRaw('UPPER(codigo_generacion) = ?', [$codigo])
             ->get();
 
@@ -391,7 +392,7 @@ class ImportadorEnviadosService
             return;
         }
 
-        $antecedente = $this->alta->antecedente($doc->numeroControl);
+        $antecedente = $this->alta->antecedente($doc->numeroControl, $doc->fechaEmision);
         $viejo = ! $antecedente['revisar'] && $this->esViejo($doc->fechaEmision);
         if ($antecedente['revisar'] || $viejo) {
             $r->revisionHistorica++;
@@ -448,7 +449,7 @@ class ImportadorEnviadosService
         $locales = Dte::query()
             ->where(fn ($q) => $q
                 ->whereRaw('UPPER(codigo_generacion) = ?', [$codigo])
-                ->orWhere(IdentidadPpq::columnaNormalizada(), $clave))
+                ->orWhere(fn ($n) => EjercicioControl::filtrarFecha($n->where(IdentidadPpq::columnaNormalizada(), $clave), 'fecha_emision', EjercicioControl::de($doc->fechaEmision) ?? EjercicioControl::hoy())))
             ->get(['id', 'cliente_id', 'numero_control', 'codigo_generacion', 'ambiente']);
 
         if ($locales->isEmpty()) {

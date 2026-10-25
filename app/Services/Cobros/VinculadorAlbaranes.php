@@ -13,6 +13,7 @@ use App\Models\PpqItem;
 use App\Models\User;
 use App\Support\Albaran;
 use App\Support\Dinero;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\OrdenCompra;
 use Illuminate\Support\Carbon;
@@ -231,11 +232,11 @@ class VinculadorAlbaranes
         $clave = IdentidadPpq::normalizar($dte->numero_control);
 
         // Seguimiento y DTE tienen que ser el mismo documento; si no, no hay identidad.
-        if ($oc === '' || $clave === null || IdentidadPpq::normalizar($documento->numero_control) !== $clave) {
+        if ($oc === '' || $clave === null || (IdentidadPpq::normalizar($documento->numero_control) !== $clave || $documento->ejercicio_control !== EjercicioControl::de($dte->fecha_emision))) {
             return null;
         }
 
-        $items = PpqItem::query()
+        $items = PpqItem::query()->where('ejercicio_control', $documento->ejercicio_control)
             ->where(fn ($q) => $q->where('dte_id', $dte->id)
                 ->orWhere(IdentidadPpq::columnaNormalizada(), $clave))
             ->with('lote:id,referencia')

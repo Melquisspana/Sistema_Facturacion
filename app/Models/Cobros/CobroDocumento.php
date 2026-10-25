@@ -16,6 +16,7 @@ use App\Models\PpqAlbaran;
 use App\Models\User;
 use App\Services\Dte\SaldoMontoCcf;
 use App\Support\Dinero;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -56,6 +57,7 @@ class CobroDocumento extends Model
         'dte_id',
         'tipo_dte',
         'numero_control',
+        'ejercicio_control',
         'numero_control_norm',
         'codigo_generacion',
         'sello_recepcion',
@@ -96,6 +98,7 @@ class CobroDocumento extends Model
         return [
             'origen' => OrigenCobroDocumento::class,
             'fecha_emision' => 'date',
+            'ejercicio_control' => 'integer',
             'monto' => 'decimal:2',
             'vinculacion_estado' => EstadoVinculacionAlbaran::class,
             'vinculacion_candidatos' => 'array',
@@ -116,6 +119,10 @@ class CobroDocumento extends Model
     protected static function booted(): void
     {
         static::saving(function (CobroDocumento $doc) {
+            $doc->ejercicio_control = EjercicioControl::de($doc->fecha_emision)
+                ?? ($doc->dte_id ? EjercicioControl::de($doc->dte()->value('fecha_emision')) : null)
+                ?? $doc->ejercicio_control
+                ?? EjercicioControl::hoy();
             $doc->numero_control_norm = IdentidadPpq::normalizar($doc->numero_control);
         });
     }

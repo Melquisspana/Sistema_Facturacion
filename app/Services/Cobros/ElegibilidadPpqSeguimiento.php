@@ -10,7 +10,7 @@ use App\Enums\EstadoDte;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
 use App\Models\PpqItem;
-use App\Support\IdentidadPpq;
+use App\Support\EjercicioControl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -36,18 +36,18 @@ class ElegibilidadPpqSeguimiento
         $items = PpqItem::whereHas('lote')
             ->when($sinLote !== null, fn ($q) => $q->where('ppq_lote_id', '!=', $sinLote))
             ->with('lote:id,observaciones')
-            ->get(['ppq_lote_id', 'dte_id', 'numero_control', 'created_at']);
+            ->get(['ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control', 'created_at']);
 
         $devoluciones = CobroEvento::where('tipo', TipoEventoCobro::Nota->value)
             ->where('referencia_linea', 'like', 'caso-%-fuera')
-            ->with('documento:id,dte_id,numero_control_norm')->get();
-        $porControl = $devoluciones->groupBy(fn ($evento) => $evento->documento?->numero_control_norm);
+            ->with('documento:id,dte_id,numero_control_norm,ejercicio_control')->get();
+        $porControl = $devoluciones->groupBy(fn ($evento) => EjercicioControl::llave($evento->documento?->numero_control_norm, $evento->documento?->ejercicio_control));
         $porDte = $devoluciones->filter(fn ($evento) => $evento->documento?->dte_id !== null)
             ->groupBy(fn ($evento) => $evento->documento->dte_id);
 
         $claves = collect();
         foreach ($items as $item) {
-            $clave = IdentidadPpq::normalizar($item->numero_control);
+            $clave = EjercicioControl::llave($item->numero_control, $item->ejercicio_control);
             $eventos = ($clave !== null ? $porControl->get($clave, collect()) : collect())
                 ->merge($item->dte_id !== null ? $porDte->get($item->dte_id, collect()) : collect())->unique('id');
             $liberado = $eventos->contains(function ($evento) use ($item) {
@@ -104,8 +104,8 @@ class ElegibilidadPpqSeguimiento
     {
         $claves ??= $this->claves();
 
-        return $this->consulta($q)->get(['id', 'dte_id', 'numero_control', 'monto'])
-            ->reject(fn ($doc) => $claves->has(IdentidadPpq::normalizar($doc->numero_control))
+        return $this->consulta($q)->get(['id', 'dte_id', 'numero_control', 'ejercicio_control', 'monto'])
+            ->reject(fn ($doc) => $claves->has(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control))
                 || ($doc->dte_id !== null && $claves->has('dte:'.$doc->dte_id)))
             ->mapWithKeys(fn ($doc) => [$doc->id => (string) $doc->monto]);
     }
@@ -129,7 +129,7 @@ class ElegibilidadPpqSeguimiento
         $avisos = [];
         foreach ($docs as $doc) {
             $item = ($items->get($doc->ppq_albaran_id) ?? collect())->first(fn ($item) => $item->dte_id !== $doc->dte_id
-                && IdentidadPpq::normalizar($item->numero_control) !== IdentidadPpq::normalizar($doc->numero_control));
+                && EjercicioControl::llave($item->numero_control, $item->ejercicio_control) !== EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control));
             $otro = ($otros->get($doc->ppq_albaran_id) ?? collect())->first(fn ($otro) => $otro->id !== $doc->id);
             $duplicado = null;
             if ($item !== null) {
@@ -168,7 +168,7 @@ class ElegibilidadPpqSeguimiento
             $doc->revisar_historico => 'falta la revisión histórica',
             in_array($doc->presentacion_estado, [EstadoPresentacionCobro::Presentada, EstadoPresentacionCobro::Recibida], true) => 'ya se presentó',
             $doc->presentacion_estado === EstadoPresentacionCobro::Preparada,
-            $claves->has(IdentidadPpq::normalizar($doc->numero_control)),
+            $claves->has(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control)),
             $doc->dte_id !== null && $claves->has('dte:'.$doc->dte_id) => 'ya está en un PPQ',
             default => null,
         };

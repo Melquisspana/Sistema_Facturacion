@@ -155,6 +155,12 @@
                 @csrf
                 <input name="numero_control" value="{{ old('numero_control') }}" placeholder="Número de control del CCF" aria-label="Número de control del CCF"
                        class="min-w-0 flex-1 rounded-lg border-gray-300 font-mono text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                <div class="w-28">
+                    <label for="ejercicio-entrega" class="sr-only">Año</label>
+                    <input id="ejercicio-entrega" type="number" name="ejercicio" value="{{ old('ejercicio') }}" placeholder="Año" aria-label="Año" aria-describedby="ejercicio-entrega-ayuda" min="2026" max="2100"
+                           class="w-full rounded-lg border-gray-300 font-mono text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                    <p id="ejercicio-entrega-ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-400">Solo si el número existe en más de un año</p>
+                </div>
                 <button class="rounded-lg bg-gray-800 px-4 text-sm font-medium text-white dark:bg-paper-100 dark:text-ink-900">Agregar</button>
             </form>
         </div>

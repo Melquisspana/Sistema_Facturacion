@@ -9,6 +9,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroAlbaran;
 use Illuminate\Support\Carbon;
@@ -362,11 +363,11 @@ class QuedanCallejaExporter
                 ->orWhereIn('numero_control_norm', IdentidadPpq::claves($items->map(fn (PpqItem $i) => $i->numero_control ?? $i->dte?->numero_control))))
             ->get();
         $porDte = $documentos->keyBy('dte_id');
-        $porControl = $documentos->keyBy('numero_control_norm');
+        $porControl = $documentos->keyBy(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control));
 
         foreach ($items as $item) {
             $documento = ($item->dte_id !== null ? $porDte->get($item->dte_id) : null)
-                ?? $porControl->get(IdentidadPpq::normalizar($item->numero_control ?? $item->dte?->numero_control));
+                ?? $porControl->get(EjercicioControl::llave($item->numero_control ?? $item->dte?->numero_control, $item->ejercicio_control));
             $item->setRelation('documentoSalaConfirmada', $documento);
         }
     }

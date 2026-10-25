@@ -11,7 +11,7 @@ use App\Models\Dte;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Ppq\NcPosterioresLotePpq;
-use App\Support\IdentidadPpq;
+use App\Support\EjercicioControl;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -71,6 +71,7 @@ class CrearPpqDesdeSeguimiento
                     'sello_recepcion' => $dte?->sello_recepcion,
                     'tipo_dte' => '03',
                     'fecha_documento' => $doc->fecha_emision,
+                    'ejercicio_control' => $doc->ejercicio_control,
                     'ppq_albaran_id' => $doc->ppq_albaran_id,
                     'sin_albaran' => false,
                     'numero_orden_compra' => $dte?->numero_orden_compra ?? $doc->albaran?->numero_orden_compra,
@@ -86,7 +87,7 @@ class CrearPpqDesdeSeguimiento
                 $notas = Dte::where('dte_relacionado_id', $doc->dte_id)->where('tipo_dte', '05')
                     ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')->get();
                 foreach ($notas as $nc) {
-                    if ($enLotes->has(IdentidadPpq::normalizar($nc->numero_control)) || $enLotes->has('dte:'.$nc->id)) {
+                    if ($enLotes->has(EjercicioControl::llave($nc->numero_control, EjercicioControl::de($nc->fecha_emision))) || $enLotes->has('dte:'.$nc->id)) {
                         continue;
                     }
                     $lote->items()->create(NcPosterioresLotePpq::datosItemNc($nc));

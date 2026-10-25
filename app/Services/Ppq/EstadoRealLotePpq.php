@@ -7,6 +7,7 @@ use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Collection;
 
@@ -43,7 +44,7 @@ class EstadoRealLotePpq
             $q->whereIn('dte_id', $ids)->orWhereIn('numero_control_norm', $controles);
         })->with(['cliente', 'eventos' => fn ($q) => $q->whereIn('tipo', ['recibido', 'presentacion', 'nota'])])->get();
         $porDte = $documentos->filter(fn ($d) => $d->dte_id !== null)->groupBy('dte_id');
-        $porControl = $documentos->groupBy('numero_control_norm');
+        $porControl = $documentos->groupBy(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control));
 
         $fuera = CobroEvento::where('tipo', 'nota')->where('referencia_linea', 'like', 'caso-%-fuera')
             ->whereHas('documento', fn ($q) => $q->where('tipo_dte', '03'))->get()
@@ -58,7 +59,7 @@ class EstadoRealLotePpq
             foreach ($lote->items as $item) {
                 $r['total_neto'] += $item->montoDteConSigno();
                 $candidatos = ($porDte->get($item->dte_id, collect()))
-                    ->merge($porControl->get(IdentidadPpq::normalizar($item->numero_control), collect()))->unique('id')
+                    ->merge($porControl->get(EjercicioControl::llave($item->numero_control, $item->ejercicio_control), collect()))->unique('id')
                     ->filter(fn ($d) => $d->tipo_dte === $item->tipo_dte && ($lote->cliente_id === null || $d->cliente_id === $lote->cliente_id));
                 // Una identidad ambigua no acredita ni cliente ni seguimiento.
                 $doc = $candidatos->count() === 1 ? $candidatos->first() : null;

@@ -9,8 +9,10 @@ use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\PpqItem;
 use App\Models\User;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroControl;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +33,7 @@ use Illuminate\Validation\ValidationException;
  * ────────────────────── El duplicado entre las dos fuentes ──────────────────────
  *
  * Un documento incorporado a mano y el mismo documento emitido por nosotros son el MISMO
- * cobro. La llave que lo impide es `numero_control_norm` —única global— y la normalización
+ * cobro. La llave que lo impide es `numero_control_norm` junto con `ejercicio_control` y la normalización
  * es la que ya usa PPQ ({@see IdentidadPpq}). Cuando el alta automática se encuentra con
  * un documento que ya existe como externo, NO crea otro: lo ADOPTA, rellenando el
  * `dte_id` y los datos fiscales que el externo no podía tener (el sello, el importe real).
@@ -69,12 +71,12 @@ class AltaCobrosService
         $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0];
 
         $existentes = CobroDocumento::deCliente($cliente->id)
-            ->get(['id', 'dte_id', 'numero_control_norm'])
-            ->keyBy('numero_control_norm');
+            ->get(['id', 'dte_id', 'numero_control_norm', 'ejercicio_control'])
+            ->keyBy(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control));
 
         $this->elegibles($cliente)->chunkById(200, function ($documentos) use (&$resumen, $existentes, $cliente) {
             foreach ($documentos as $dte) {
-                $clave = IdentidadPpq::normalizar($dte->numero_control);
+                $clave = EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision));
 
                 if ($clave === null) {
                     // Sin número de control no hay identidad posible y no se inventa una.
@@ -118,12 +120,12 @@ class AltaCobrosService
         $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0];
 
         $existentes = CobroDocumento::deCliente($cliente->id)
-            ->get(['id', 'dte_id', 'numero_control_norm'])
-            ->keyBy('numero_control_norm');
+            ->get(['id', 'dte_id', 'numero_control_norm', 'ejercicio_control'])
+            ->keyBy(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control));
 
         $this->elegibles($cliente)->chunkById(200, function ($documentos) use (&$resumen, $existentes) {
             foreach ($documentos as $dte) {
-                $clave = IdentidadPpq::normalizar($dte->numero_control);
+                $clave = EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision));
 
                 if ($clave === null) {
                     continue;
@@ -139,7 +141,7 @@ class AltaCobrosService
 
                 $resumen['creados']++;
 
-                if ($this->antecedente($dte->numero_control)['revisar']) {
+                if ($this->antecedente($dte->numero_control, $dte->fecha_emision)['revisar']) {
                     $resumen['revision_historica']++;
                 }
             }
@@ -172,7 +174,7 @@ class AltaCobrosService
     /** Crea el seguimiento de un DTE aceptado, con sus antecedentes si los hay. */
     private function crearDesdeDte(Cliente $cliente, Dte $dte): CobroDocumento
     {
-        $antecedente = $this->antecedente($dte->numero_control);
+        $antecedente = $this->antecedente($dte->numero_control, $dte->fecha_emision);
 
         return DB::transaction(function () use ($cliente, $dte, $antecedente) {
             $documento = CobroDocumento::create([
@@ -235,7 +237,7 @@ class AltaCobrosService
      *
      * @return array{revisar: bool, motivo: ?string}
      */
-    public function antecedente(?string $numeroControl): array
+    public function antecedente(?string $numeroControl, CarbonInterface|\DateTimeInterface|string|int|null $fecha = null): array
     {
         $clave = IdentidadPpq::normalizar($numeroControl);
 
@@ -245,6 +247,7 @@ class AltaCobrosService
 
         $item = PpqItem::query()
             ->where(IdentidadPpq::columnaNormalizada('numero_control'), $clave)
+            ->where('ejercicio_control', EjercicioControl::de($fecha) ?? EjercicioControl::hoy())
             ->with('lote:id,referencia')
             ->orderByDesc('id')
             ->first();
@@ -315,7 +318,12 @@ class AltaCobrosService
             ]);
         }
 
-        $existente = CobroDocumento::where('numero_control_norm', $clave)->first();
+        $consulta = CobroDocumento::where('numero_control_norm', $clave);
+        if (empty($datos['fecha_emision']) && (clone $consulta)->exists()) {
+            $anios = (clone $consulta)->orderBy('ejercicio_control')->pluck('ejercicio_control')->unique()->implode(' · ');
+            throw ValidationException::withMessages(['fecha_emision' => "Ese número de control ya existe en {$anios}: indicá la fecha de emisión para saber de qué año es."]);
+        }
+        $existente = $consulta->where('ejercicio_control', EjercicioControl::de($datos['fecha_emision'] ?? null) ?? EjercicioControl::hoy())->first();
 
         if ($existente !== null) {
             throw ValidationException::withMessages([

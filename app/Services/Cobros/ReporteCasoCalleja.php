@@ -12,6 +12,7 @@ use App\Models\Cobros\CobroEvento;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -78,28 +79,49 @@ class ReporteCasoCalleja
         $registrados = array_keys(array_filter($reporte['documentos'], fn ($estado) => $estado === '' || str_contains($estado, 'REGISTRADO')));
 
         $porClave = CobroDocumento::deCliente($cliente->id)->get()
-            ->keyBy(fn (CobroDocumento $d) => IdentidadPpq::normalizar($d->numero_control));
+            ->keyBy(fn (CobroDocumento $d) => EjercicioControl::llave($d->numero_control, $d->ejercicio_control));
 
         $resultado = ['caso' => $caso, 'recibidos' => 0, 'no_en_seguimiento' => [], 'devueltos' => [], 'items_quitados' => collect(), 'conservados' => collect()];
 
         DB::transaction(function () use ($registrados, $porClave, $caso, $usuario, $lote, &$resultado) {
-            $lote ??= ($id = $this->loteDelCaso($registrados)) !== null ? PpqLote::find($id) : null;
+            $lote ??= ($id = $this->loteDelCaso($registrados, $porClave->values())) !== null ? PpqLote::find($id) : null;
             $lote = $lote ? PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail() : null;
             $items = $lote ? $lote->items()->with('dte')->get() : collect();
+            // El reporte solo trae números; el lote aporta el ejercicio. Sin lote,
+            // únicamente una coincidencia en el seguimiento permite resolverlo.
+            $resueltos = [];
+            $ambiguos = [];
+            foreach ($registrados as $numero) {
+                $candidatos = $lote
+                    ? $items->filter(fn ($i) => IdentidadPpq::normalizar($i->numero_control ?? $i->dte?->numero_control) === $numero)
+                        ->map(fn ($i) => $this->documentoDelItem($i, $porClave->values()))->filter()->unique('id')
+                    : $porClave->filter(fn ($d) => IdentidadPpq::normalizar($d->numero_control) === $numero);
+                if ($candidatos->count() !== 1) {
+                    if ($candidatos->count() > 1) {
+                        $ambiguos[] = $numero;
+                    }
+                    $resultado['no_en_seguimiento'][] = $numero.($candidatos->count() > 1 ? ': identidad ambigua entre ejercicios' : '');
+
+                    continue;
+                }
+                $doc = $candidatos->first();
+                $resueltos[] = EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control);
+            }
+            $registrados = $resueltos;
             $anteriores = $lote ? PpqItem::whereHas('lote')->where('ppq_lote_id', '<', $lote->id)->get() : collect();
             $otros = app(ElegibilidadPpqSeguimiento::class)->claves($lote?->id);
-            $devueltos = $items->where('tipo_dte', '03')->filter(function ($item) use ($porClave, $registrados, $anteriores) {
+            $devueltos = $items->where('tipo_dte', '03')->filter(function ($item) use ($porClave, $registrados, $anteriores, $ambiguos) {
                 $doc = $this->documentoDelItem($item, $porClave->values());
 
-                return $doc && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $registrados, true)
+                return $doc && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $ambiguos, true) && ! in_array(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control), $registrados, true)
                     && ! $anteriores->contains(fn ($anterior) => $this->mismoDocumento($anterior, $doc))
                     && $doc->pago_estado === EstadoPagoCobro::Pendiente;
             });
             foreach ($items->where('tipo_dte', '05') as $item) {
                 $ccf = $this->ccfDeNota($item, $items);
                 $doc = $this->documentoDelItem($item, $porClave->values());
-                if (($ccf && $devueltos->contains('id', $ccf->id)) || (! $ccf && $doc
-                    && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $registrados, true)
+                if (($ccf && $devueltos->contains('id', $ccf->id)) || (! $ccf && $doc && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $ambiguos, true)
+                    && ! in_array(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control), $registrados, true)
                     && ! $anteriores->contains(fn ($anterior) => $this->mismoDocumento($anterior, $doc))
                     && $doc->pago_estado === EstadoPagoCobro::Pendiente)) {
                     $devueltos->push($item);
@@ -141,7 +163,7 @@ class ReporteCasoCalleja
 Caso {$caso} de Calleja."),
             ]);
             foreach ($docsDevueltos as $doc) {
-                if ($otros->has(IdentidadPpq::normalizar($doc->numero_control)) || ($doc->dte_id && $otros->has('dte:'.$doc->dte_id))) {
+                if ($otros->has(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control)) || ($doc->dte_id && $otros->has('dte:'.$doc->dte_id))) {
                     continue;
                 }
                 $doc->forceFill(['presentacion_estado' => EstadoPresentacionCobro::SinPresentar->value])->save();
@@ -164,8 +186,8 @@ Caso {$caso} de Calleja."),
     public function mismoDocumento(PpqItem $item, CobroDocumento $doc): bool
     {
         return ($doc->dte_id !== null && $item->dte_id === $doc->dte_id)
-            || (IdentidadPpq::normalizar($doc->numero_control) !== null
-                && IdentidadPpq::normalizar($item->numero_control) === IdentidadPpq::normalizar($doc->numero_control));
+            || (EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control) !== null
+                && EjercicioControl::llave($item->numero_control, $item->ejercicio_control) === EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control));
     }
 
     private function documentoDelItem(PpqItem $item, Collection $documentos): ?CobroDocumento
@@ -176,13 +198,13 @@ Caso {$caso} de Calleja."),
     /** Resuelve también las NC y CCF guardados como snapshots sin dte_id. */
     private function ccfDeNota(PpqItem $nota, Collection $items): ?PpqItem
     {
-        $dte = $nota->dte_id ? $nota->dte : IdentidadPpq::dteLocal($nota->numero_control);
+        $dte = $nota->dte_id ? $nota->dte : IdentidadPpq::dteLocal($nota->numero_control, null, $nota->ejercicio_control);
         if (! $dte?->dte_relacionado_id) {
             return null;
         }
 
         return $items->where('tipo_dte', '03')->first(function ($item) use ($dte) {
-            $ccf = $item->dte_id ? $item->dte : IdentidadPpq::dteLocal($item->numero_control);
+            $ccf = $item->dte_id ? $item->dte : IdentidadPpq::dteLocal($item->numero_control, null, $item->ejercicio_control);
 
             return $ccf?->id === $dte->dte_relacionado_id;
         });
@@ -221,10 +243,14 @@ Caso {$caso} de Calleja."),
     }
 
     /** Id del lote PPQ que contiene más documentos del reporte, o null. */
-    private function loteDelCaso(array $claves): ?int
+    private function loteDelCaso(array $claves, Collection $documentos): ?int
     {
         $conteo = [];
-        foreach (PpqItem::whereHas('lote')->whereNotNull('numero_control')->get(['ppq_lote_id', 'numero_control']) as $item) {
+        $candidatos = PpqItem::whereHas('lote')->whereNotNull('numero_control')->get(['ppq_lote_id', 'numero_control', 'ejercicio_control']);
+        // Un número que existe en más de un ejercicio no vota: no se sabe de qué lote es.
+        $claves = array_values(array_filter($claves, fn ($numero) => $documentos->filter(fn ($d) => IdentidadPpq::normalizar($d->numero_control) === $numero)->count() <= 1
+            && $candidatos->filter(fn ($i) => IdentidadPpq::normalizar($i->numero_control) === $numero)->pluck('ejercicio_control')->unique()->count() <= 1));
+        foreach ($candidatos as $item) {
             if (in_array(IdentidadPpq::normalizar($item->numero_control), $claves, true)) {
                 $conteo[$item->ppq_lote_id] = ($conteo[$item->ppq_lote_id] ?? 0) + 1;
             }

@@ -12,7 +12,7 @@ use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
-use App\Support\IdentidadPpq;
+use App\Support\EjercicioControl;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -80,13 +80,12 @@ class CobrosCompletarHistorialCommand extends Command
         }
 
         // 2. Lo que viajó en un lote PPQ ya se presentó.
-        $enLotes = PpqItem::query()->pluck('numero_control')
-            ->map(fn ($n) => IdentidadPpq::normalizar($n))->filter()->flip();
+        $enLotes = PpqItem::query()->get()->map(fn ($i) => EjercicioControl::llave($i->numero_control, $i->ejercicio_control))->filter()->flip();
 
         $pendientes = CobroDocumento::deCliente($cliente->id)
             ->whereIn('presentacion_estado', [EstadoPresentacionCobro::SinPresentar->value, EstadoPresentacionCobro::Preparada->value])
             ->get()
-            ->filter(fn (CobroDocumento $d) => $enLotes->has(IdentidadPpq::normalizar($d->numero_control)));
+            ->filter(fn (CobroDocumento $d) => $enLotes->has(EjercicioControl::llave($d->numero_control, $d->ejercicio_control)));
 
         if ($aplicar) {
             foreach ($pendientes as $doc) {

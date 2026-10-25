@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Ppq;
 
 use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Http\Controllers\Controller;
+use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
@@ -13,6 +14,7 @@ use App\Services\Ppq\AlbaranPersistidor;
 use App\Services\Ppq\AlbaranPropioNc;
 use App\Services\Ppq\SalaResolver;
 use App\Support\Albaran;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\OrdenCompra;
 use App\Support\PpqElegibilidad;
@@ -22,6 +24,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Agrega/quita CCF o NC de un lote PPQ, con control de duplicados:
@@ -82,12 +85,13 @@ class PpqItemController extends Controller
         // entraron los 158 items que existen hoy, todos con `dte_id` en NULL—, cruzar
         // solo por el vínculo lo dejaría pasar y el mismo CCF quedaría dos veces en el
         // mismo lote, cobrado por duplicado.
-        if ($this->itemsEquivalentes($dte->id, $dte->numero_control)->where('ppq_lote_id', $lote->id)->exists()) {
+        $ejercicio = EjercicioControl::de($dte->fecha_emision);
+        if ($this->itemsEquivalentes($dte->id, $dte->numero_control, $ejercicio)->where('ppq_lote_id', $lote->id)->exists()) {
             return back()->with('error', 'Ese CCF/NC ya está en este lote.');
         }
 
         // Aviso: ya usado en otro lote (no bloquea, informa). Misma regla de identidad.
-        $otroLote = $this->itemsEquivalentes($dte->id, $dte->numero_control)
+        $otroLote = $this->itemsEquivalentes($dte->id, $dte->numero_control, $ejercicio)
             ->where('ppq_lote_id', '!=', $lote->id)
             ->orderBy('id')
             ->value('ppq_lote_id');
@@ -225,7 +229,7 @@ class PpqItemController extends Controller
     /**
      * Consulta de los items que representan ESTE MISMO documento, según la regla única
      * de {@see IdentidadPpq}: el vínculo explícito `dte_id` o el número de control
-     * NORMALIZADO. La usan por igual la vía local y la de Gmail, que es lo que impide
+     * NORMALIZADO y el ejercicio. Sin ejercicio solo se admite el vínculo explícito. La usan por igual la vía local y la de Gmail, que es lo que impide
      * que una copia local y una copia de Gmail pasen por documentos distintos.
      *
      * Nunca casa por correlativo suelto, orden de compra, monto ni sala: una OC ampara
@@ -235,22 +239,22 @@ class PpqItemController extends Controller
      * Devuelve una consulta SIN ejecutar para que el llamador la acote al lote que le
      * interesa (dentro del mismo lote, o en cualquier otro).
      */
-    private function itemsEquivalentes(?int $dteId, ?string $numeroControl): Builder
+    private function itemsEquivalentes(?int $dteId, ?string $numeroControl, ?int $ejercicio): Builder
     {
         $clave = IdentidadPpq::normalizar($numeroControl);
 
-        return PpqItem::query()->where(function (Builder $q) use ($dteId, $clave) {
+        return PpqItem::query()->where(function (Builder $q) use ($dteId, $clave, $ejercicio) {
             if ($dteId !== null) {
                 $q->where('dte_id', $dteId);
             }
 
-            if ($clave !== null) {
-                $q->orWhere(IdentidadPpq::columnaNormalizada(), $clave);
+            if ($clave !== null && $ejercicio !== null) {
+                $q->orWhere(fn ($n) => $n->where(IdentidadPpq::columnaNormalizada(), $clave)->where('ejercicio_control', $ejercicio));
             }
 
             // Sin ninguna de las dos llaves no hay identidad posible: no se puede
             // afirmar que algo sea el mismo documento, así que no coincide con nada.
-            if ($dteId === null && $clave === null) {
+            if ($dteId === null && ($clave === null || $ejercicio === null)) {
                 $q->whereRaw('1 = 0');
             }
         });
@@ -279,10 +283,21 @@ class PpqItemController extends Controller
         // acertaba cuando ambos lados estaban escritos igual; normalizado, un item
         // cargado como `DTE03…0986` y este correo con `DTE-03-…-0986` son el mismo
         // documento, y un item LOCAL del mismo documento también se detecta.
-        if ($this->itemsEquivalentes(null, $d['numero_control'])->where('ppq_lote_id', $lote->id)->exists()) {
+        $ejercicio = EjercicioControl::de($d['fecha_documento'] ?? null);
+        if ($ejercicio === null) {
+            $clave = IdentidadPpq::normalizar($d['numero_control']);
+            $anios = PpqItem::where(IdentidadPpq::columnaNormalizada(), $clave)->pluck('ejercicio_control')
+                ->merge(CobroDocumento::where('numero_control_norm', $clave)->pluck('ejercicio_control'))
+                ->merge(IdentidadPpq::ejerciciosDe($d['numero_control']))->unique()->sort()->values();
+            if ($anios->count() > 1 || $anios->contains(fn ($anio) => (int) $anio !== EjercicioControl::hoy())) {
+                throw ValidationException::withMessages(['fecha_documento' => 'Ese número de control ya existe en '.$anios->implode(' · ').': indicá la fecha del documento para saber de qué año es.']);
+            }
+            $ejercicio = EjercicioControl::hoy();
+        }
+        if ($this->itemsEquivalentes(null, $d['numero_control'], $ejercicio)->where('ppq_lote_id', $lote->id)->exists()) {
             return back()->with('error', 'Ese CCF/NC ya está en este lote.');
         }
-        $otroLote = $this->itemsEquivalentes(null, $d['numero_control'])
+        $otroLote = $this->itemsEquivalentes(null, $d['numero_control'], $ejercicio)
             ->where('ppq_lote_id', '!=', $lote->id)
             ->orderBy('id')
             ->value('ppq_lote_id');
@@ -312,6 +327,7 @@ class PpqItemController extends Controller
                 $d['numero_orden_compra'] ?? null,
                 $d['codigo_generacion'] ?? null,
                 $d['numero_control'],
+                $ejercicio,
             );
         }
         // Enriquecer el mapa auxiliar de PPQ (no fiscal). Si el nombre vino del formulario

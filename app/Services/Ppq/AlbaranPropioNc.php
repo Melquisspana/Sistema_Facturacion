@@ -6,6 +6,7 @@ use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Support\Albaran;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroAlbaran;
 use Illuminate\Support\Carbon;
@@ -187,11 +188,11 @@ class AlbaranPropioNc
         // Otro documento ya usa este albarán en algún lote: sería acreditarlo dos veces.
         // Misma regla de identidad que los duplicados ({@see IdentidadPpq}): el vínculo
         // `dte_id` o, en los snapshots de Gmail, el número de control normalizado.
-        $propio = IdentidadPpq::normalizar($nc->numero_control);
-        $ajeno = $existente->items()->get(['dte_id', 'numero_control'])->contains(
+        $propio = EjercicioControl::llave($nc->numero_control, EjercicioControl::de($nc->fecha_emision));
+        $ajeno = $existente->items()->get(['dte_id', 'numero_control', 'ejercicio_control'])->contains(
             fn ($item) => $item->dte_id !== null
                 ? (int) $item->dte_id !== (int) $nc->id
-                : IdentidadPpq::normalizar($item->numero_control) !== $propio
+                : EjercicioControl::llave($item->numero_control, $item->ejercicio_control) !== $propio
         );
         if ($ajeno) {
             return 'el albarán '.$efectivo['numero'].' ya está vinculado en PPQ a otro documento.';
