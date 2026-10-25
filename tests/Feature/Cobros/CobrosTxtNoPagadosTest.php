@@ -235,15 +235,16 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertEqualsCanonicalizing([$e['c']->dte_id, $e['b']->dte_id, $nuevoDoc->dte_id, $e['n1']->id],
             $nuevo->items()->pluck('dte_id')->all());
 
-        // Y vuelve a ir en el quedan del lote nuevo (regla del usuario, 25/10/2026).
-        $this->assertContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
+        // Va en el PPQ, pero no se repite en su quedan: el portal la rechaza por estar ya
+        // asociada a un quedan (confirmado por el usuario, 25/10/2026).
+        $this->assertNotContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
 
         // La NC no se repite en un tercer PPQ.
         $tercero = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);
         $this->assertSame(0, $tercero->items()->where('dte_id', $e['n1']->id)->count());
     }
 
-    public function test_la_nc_devuelta_que_queda_en_el_lote_viejo_por_su_historia_igual_va_en_el_proximo_ppq_y_su_quedan(): void
+    public function test_la_nc_devuelta_que_queda_en_el_lote_viejo_por_su_historia_igual_va_en_el_proximo_ppq_sin_repetirse_en_el_quedan(): void
     {
         $e = $this->escenario();
         $usuario = $this->usuario();
@@ -260,7 +261,7 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertSame(1, $e['lote']->items()->where('dte_id', $e['n1']->id)->count());
         $nuevo = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);
         $this->assertSame(1, $nuevo->items()->where('dte_id', $e['n1']->id)->count());
-        $this->assertContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
+        $this->assertNotContains(['0017', '3874', 'AC04'], $this->filasQuedan($nuevo));
     }
 
     /** Sala, número y tipo de cada fila del archivo de quedan del lote. */
