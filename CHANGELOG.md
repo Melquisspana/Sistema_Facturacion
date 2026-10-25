@@ -13,6 +13,10 @@ El historial anterior a este archivo está en el registro de git.
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
 - Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. Se despliega antes que #125, por separado. #127
 
+### Corregido
+
+- Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ armados que todavía no se presentaron, salvo las conciliadas. #139
+
 ## [2026.10.25.2] - 2026-10-25
 
 Segundo despliegue del día. Incluye #115, #135, #136 y #137. No trae migraciones.

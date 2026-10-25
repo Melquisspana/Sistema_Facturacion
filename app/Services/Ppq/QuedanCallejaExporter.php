@@ -5,6 +5,7 @@ namespace App\Services\Ppq;
 use App\Enums\EstadoDte;
 use App\Exceptions\Ppq\ArchivoQuedanIncompletoException;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
@@ -153,6 +154,10 @@ class QuedanCallejaExporter
         }
 
         $notas = $lote->itemsOrdenados()->filter(fn (PpqItem $i) => $i->esNc());
+        // También omite las de pronto pago que quedaron en lotes anteriores a la regla.
+        $excluidas = Dte::whereIn('id', $notas->pluck('dte_id')->filter())
+            ->whereNotIn('id', Dte::sinNcProntoPago()->select('id'))->pluck('id')->flip();
+        $notas = $notas->reject(fn (PpqItem $i) => $excluidas->has($i->dte_id));
         $yaPresentadas = PpqItem::query()
             ->whereHas('lote')
             ->where('ppq_lote_id', '<', $lote->id)

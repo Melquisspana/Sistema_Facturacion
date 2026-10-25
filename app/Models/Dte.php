@@ -306,6 +306,15 @@ class Dte extends Model
         return (bool) $this->archivado;
     }
 
+    /** Las NC de pronto pago ya fueron descontadas: no van en el PPQ ni en el quedan. */
+    public function scopeSinNcProntoPago(Builder $q): Builder
+    {
+        return $q->where(fn (Builder $sub) => $sub
+            ->where('tipo_dte', '!=', TipoDte::NotaCredito->value)
+            ->orWhereNull('tipo_nota_credito')
+            ->orWhere('tipo_nota_credito', '!=', TipoNotaCredito::ProntoPago->value));
+    }
+
     /** Scope: documentos NO archivados (lo que se ve en la operación diaria). */
     public function scopeNoArchivados(Builder $q): Builder
     {
