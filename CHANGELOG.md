@@ -17,6 +17,14 @@ El historial anterior a este archivo está en el registro de git.
 
 - Productos → Exportación: desmarcar un cliente en «Clientes» lo quita de la presentación. #115
 
+## [2026.10.25] - 2026-10-25
+
+Incluye #133. No trae migraciones.
+
+### Corregido
+
+- NC v4: si el prorrateo del descuento global deja alguna línea con venta negativa, la generación se frena con un mensaje que indica la línea, en vez de mandar a Hacienda un documento que rechazaría. #133
+
 ## [2026.10.24.2] - 2026-10-24
 
 Segundo despliegue del día. Incluye #132. No trae migraciones.
