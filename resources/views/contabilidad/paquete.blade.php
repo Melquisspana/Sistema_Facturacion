@@ -185,6 +185,9 @@
                         @if ($resumen['ventas_invalidadas'] > 0)
                             <p class="mt-1 text-sm font-semibold text-rose-700 dark:text-rose-400">{{ number_format($resumen['ventas_invalidadas']) }} invalidadas (no suman)</p>
                         @endif
+                        @if (($resumen['ventas_pendientes_sello'] ?? 0) > 0)
+                            <p class="mt-1 text-sm font-semibold text-amber-700 dark:text-amber-400">{{ number_format($resumen['ventas_pendientes_sello']) }} pendientes de sello (no suman)</p>
+                        @endif
                         <p class="mt-1 text-xs text-green-700/80">
                             Sin JSON generado: <span class="font-semibold {{ $resumen['ventas_sin_json'] > 0 ? 'text-amber-700' : '' }}">{{ number_format($resumen['ventas_sin_json']) }}</span>
                         </p>
@@ -362,6 +365,9 @@
                                 <div class="flex justify-between py-1.5"><dt class="text-gray-500">Ventas</dt><dd class="font-medium text-gray-900">{{ number_format($resumen['ventas_cantidad']) }} incluidas — ${{ number_format($resumen['ventas_total'], 2) }}
                                     @if ($resumen['ventas_invalidadas'] > 0)
                                         <p class="text-sm font-semibold text-rose-700 dark:text-rose-400">{{ number_format($resumen['ventas_invalidadas']) }} invalidadas (no suman)</p>
+                                    @endif
+                                    @if (($resumen['ventas_pendientes_sello'] ?? 0) > 0)
+                                        <p class="text-sm font-semibold text-amber-700 dark:text-amber-400">{{ number_format($resumen['ventas_pendientes_sello']) }} pendientes de sello (no suman)</p>
                                     @endif
                                 </dd></div>
                                 <div class="flex justify-between py-1.5"><dt class="text-gray-500">Archivo ZIP</dt><dd class="font-medium text-gray-900">documentos_contabilidad_{{ $rango['etiqueta'] }}.zip</dd></div>

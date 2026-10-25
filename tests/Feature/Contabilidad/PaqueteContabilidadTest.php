@@ -145,7 +145,7 @@ class PaqueteContabilidadTest extends TestCase
         $periodo = app(PeriodoPaquete::class);
         $ventas = $periodo->ventas(['desde' => '2026-07-01', 'hasta' => '2026-07-31']);
         $this->assertSame([$aceptada->id, $real->id], $ventas->pluck('id')->all());
-        $this->assertSame(['ventas_cantidad' => 1, 'ventas_invalidadas' => 1, 'ventas_total' => 200.0], $periodo->resumenVentas($ventas));
+        $this->assertSame(['ventas_cantidad' => 1, 'ventas_invalidadas' => 1, 'ventas_pendientes_sello' => 0, 'ventas_total' => 200.0], $periodo->resumenVentas($ventas));
         $f = ReporteContadoraQuery::filtros(['fecha_desde' => '2026-07-01', 'fecha_hasta' => '2026-07-31', 'estado' => 'fiscal']);
         $this->assertSame('aceptado', $f['estado']);
         $this->assertSame([$aceptada->id], ReporteContadoraQuery::query($f)->pluck('id')->all());

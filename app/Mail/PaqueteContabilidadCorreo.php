@@ -17,7 +17,7 @@ use Illuminate\Queue\SerializesModels;
  * NO tiene nada que ver con DTE emitidos, correlativos, firmador ni transmisión a
  * Hacienda; no es el correo al cliente. Solo empaqueta lo ya generado localmente.
  *
- * @param  array{compras_cantidad:int, compras_total:float, ventas_cantidad:int, ventas_invalidadas:int, ventas_total:float, desde:string, hasta:string, incluir_compras:bool, incluir_ventas:bool}  $resumen
+ * @param  array{compras_cantidad:int, compras_total:float, ventas_cantidad:int, ventas_invalidadas:int, ventas_pendientes_sello:int, ventas_total:float, desde:string, hasta:string, incluir_compras:bool, incluir_ventas:bool}  $resumen
  */
 class PaqueteContabilidadCorreo extends Mailable
 {

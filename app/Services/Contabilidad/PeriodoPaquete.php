@@ -59,14 +59,15 @@ class PeriodoPaquete
         return ReporteContadoraQuery::query($f)->get();
     }
 
-    /** @return array{ventas_cantidad: int, ventas_invalidadas: int, ventas_total: float} */
+    /** @return array{ventas_cantidad: int, ventas_invalidadas: int, ventas_pendientes_sello: int, ventas_total: float} */
     public function resumenVentas(Collection $ventas): array
     {
-        $vigentes = $ventas->reject(fn (Dte $dte) => ReporteContadoraQuery::esInvalidadoRealMh($dte));
+        $vigentes = $ventas->reject(fn (Dte $dte) => ReporteContadoraQuery::esInvalidadoRealMh($dte) || ReporteContadoraQuery::esPendienteDeSello($dte));
 
         return [
             'ventas_cantidad' => $vigentes->count(),
-            'ventas_invalidadas' => $ventas->count() - $vigentes->count(),
+            'ventas_invalidadas' => $ventas->filter(fn (Dte $dte) => ReporteContadoraQuery::esInvalidadoRealMh($dte))->count(),
+            'ventas_pendientes_sello' => $ventas->filter(fn (Dte $dte) => ReporteContadoraQuery::esPendienteDeSello($dte))->count(),
             'ventas_total' => round((float) $vigentes->sum('total_pagar'), 2),
         ];
     }

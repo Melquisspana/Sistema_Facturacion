@@ -50,7 +50,7 @@ class PaqueteContabilidadZip
      * @param  Collection<int, DocumentoRecibido>  $compras
      * @param  Collection<int, Dte>  $ventas
      * @param  array<string, mixed>|null  $cobertura  resultado de {@see CoberturaPaquete::para()}
-     * @return array{ruta: string, compras_pdf: int, compras_json: int, ventas_pdf: int, ventas_json: int, ventas_invalidadas: int, invalidaciones_archivos: int, incompleto: bool, incidencias: array<int, string>}
+     * @return array{ruta: string, compras_pdf: int, compras_json: int, ventas_pdf: int, ventas_json: int, ventas_invalidadas: int, ventas_pendientes_sello: int, invalidaciones_archivos: int, incompleto: bool, incidencias: array<int, string>}
      */
     public function generar(
         string $etiqueta,
@@ -77,6 +77,7 @@ class PaqueteContabilidadZip
         $ventasPdf = 0;
         $ventasJson = 0;
         $invalidadas = new Collection;
+        $pendientes = new Collection;
         $invalidacionesArchivos = 0;
         /** @var array<int, string> $incidencias */
         $incidencias = [];
@@ -124,6 +125,12 @@ class PaqueteContabilidadZip
                     continue;
                 }
 
+                if (ReporteContadoraQuery::esPendienteDeSello($dte)) {
+                    $pendientes->push($dte);
+
+                    continue;
+                }
+
                 // El mismo archivo que recibe el cliente (documento + firma + sello), del
                 // servicio único de entrega; si no está completo, el LEEME dice por qué.
                 $entrega = $this->entregas->construir($dte);
@@ -141,7 +148,7 @@ class PaqueteContabilidadZip
         $incompleto = $cobertura !== null && ! ($cobertura['cubierto'] ?? true);
 
         $zip->addFromString('LEEME.txt', $this->leeme(
-            $etiqueta, $incluirCompras, $incluirVentas, $pdf, $json, $ventasPdf, $ventasJson, $cobertura, $incidencias, $invalidadas, $invalidacionesArchivos,
+            $etiqueta, $incluirCompras, $incluirVentas, $pdf, $json, $ventasPdf, $ventasJson, $cobertura, $incidencias, $invalidadas, $invalidacionesArchivos, $pendientes,
         ));
 
         if (! $zip->close()) {
@@ -155,6 +162,7 @@ class PaqueteContabilidadZip
             'ventas_pdf' => $ventasPdf,
             'ventas_json' => $ventasJson,
             'ventas_invalidadas' => $invalidadas->count(),
+            'ventas_pendientes_sello' => $pendientes->count(),
             'invalidaciones_archivos' => $invalidacionesArchivos,
             'incompleto' => $incompleto,
             'incidencias' => $incidencias,
@@ -215,7 +223,7 @@ class PaqueteContabilidadZip
     private function leeme(
         string $etiqueta, bool $compras, bool $ventas,
         int $pdf, int $json, int $ventasPdf, int $ventasJson,
-        ?array $cobertura, array $incidencias, Collection $invalidadas, int $invalidacionesArchivos,
+        ?array $cobertura, array $incidencias, Collection $invalidadas, int $invalidacionesArchivos, Collection $pendientes,
     ): string {
         $lineas = [];
 
@@ -224,9 +232,9 @@ class PaqueteContabilidadZip
         if ($cobertura !== null && ! ($cobertura['cubierto'] ?? true)) {
             $lineas[] = '*** PERIODO INCOMPLETO — ESTE PAQUETE NO ESTA CERRADO ***';
             $lineas[] = (string) ($cobertura['motivo'] ?? 'Faltan días por revisar en el buzón de compras.');
-            $pendientes = collect($cobertura['dias_pendientes'] ?? [])->pluck('dia');
-            if ($pendientes->isNotEmpty()) {
-                $lineas[] = 'Días sin revisar ('.$pendientes->count().'): '.$pendientes->implode(', ');
+            $diasPendientes = collect($cobertura['dias_pendientes'] ?? [])->pluck('dia');
+            if ($diasPendientes->isNotEmpty()) {
+                $lineas[] = 'Días sin revisar ('.$diasPendientes->count().'): '.$diasPendientes->implode(', ');
             }
             $lineas[] = 'Pueden faltar compras. Volvé a generarlo después de recuperar el período.';
             $lineas[] = '';
@@ -259,6 +267,17 @@ class PaqueteContabilidadZip
                     .' | Emisión: '.$dte->fecha_emision?->format('d/m/Y')
                     .' | Invalidación: '.$dte->fecha_invalidacion?->format('d/m/Y H:i')
                     .' | Evento: '.$dte->codigo_generacion_invalidacion;
+            }
+        }
+
+        if ($pendientes->isNotEmpty()) {
+            $lineas[] = '';
+            $lineas[] = 'PENDIENTES DE SELLO ('.$pendientes->count().') — NO suman en los totales:';
+            foreach ($pendientes as $dte) {
+                $lineas[] = '  - '.$dte->tipo_dte?->label().' | '.$dte->numero_control
+                    .' | Emisión: '.$dte->fecha_emision?->format('d/m/Y')
+                    .' | Monto: $'.number_format($dte->total_pagar, 2)
+                    .' | Emitido en contingencia: todavía sin sello de Hacienda';
             }
         }
 

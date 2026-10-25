@@ -13,7 +13,8 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
  * los DTE de ESTE sistema (no toca emisión, transmisión ni correlativos).
  *
  * Por defecto excluye pruebas/mock: ambiente Producción (01) + aceptados REALMENTE
- * por Hacienda (sello real + fecha de procesamiento del MH, nunca sellos MOCK).
+ * por Hacienda (sello real + fecha de procesamiento del MH, nunca sellos MOCK), más
+ * los emitidos en contingencia que esperan sello, que se informan aparte y no suman.
  */
 class ReporteContadoraQuery
 {
@@ -144,13 +145,15 @@ class ReporteContadoraQuery
             $q->where('ambiente', $f['ambiente']);
         }
 
-        // Estado: "aceptado" (default) = aceptados REALMENTE por el MH (excluye mock).
+        // Estado: "aceptado" (default) = aceptados REALMENTE por el MH y pendientes de sello.
         if ($f['estado'] === 'aceptado') {
-            $q->aceptadoRealMh();
+            $q->where(fn ($q) => $q->aceptadoRealMh()
+                ->orWhere(fn ($q) => self::pendienteDeSello($q)));
         } elseif ($f['estado'] === 'fiscal') {
             // Uso interno del paquete; filtros() no admite este estado desde la pantalla.
             $q->where(fn ($q) => $q->aceptadoRealMh()
-                ->orWhere(fn ($q) => self::invalidadoRealMh($q)));
+                ->orWhere(fn ($q) => self::invalidadoRealMh($q))
+                ->orWhere(fn ($q) => self::pendienteDeSello($q)));
         }
 
         if ($f['tipo'] !== 'todos') {
@@ -193,6 +196,25 @@ class ReporteContadoraQuery
             && $real($dte->sello_recepcion)
             && $dte->fecha_procesamiento_mh !== null
             && $real($dte->sello_invalidacion);
+    }
+
+    /**
+     * No depende del interruptor de contingencia: los documentos sin sello siguen
+     * visibles para contabilidad aunque se deshabilite la contingencia.
+     */
+    public static function pendienteDeSello(Builder $q): Builder
+    {
+        return $q->where('estado', EstadoDte::Firmado->value)
+            ->whereNotNull('contingencia_id')
+            ->where(fn ($q) => $q->whereNull('sello_recepcion')->orWhere('sello_recepcion', ''));
+    }
+
+    /** La misma regla que {@see self::pendienteDeSello()}, sobre un DTE ya cargado. */
+    public static function esPendienteDeSello(Dte $dte): bool
+    {
+        return $dte->estado === EstadoDte::Firmado
+            && $dte->contingencia_id !== null
+            && ($dte->sello_recepcion === null || $dte->sello_recepcion === '');
     }
 
     private static function fecha(mixed $v): ?string

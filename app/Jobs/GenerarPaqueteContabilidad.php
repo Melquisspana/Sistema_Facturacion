@@ -67,6 +67,7 @@ class GenerarPaqueteContabilidad implements ShouldQueue
             'compras' => $compras->count(),
             'ventas' => $resumenVentas['ventas_cantidad'],
             'ventas_invalidadas' => $resumenVentas['ventas_invalidadas'],
+            'ventas_pendientes_sello' => $resumenVentas['ventas_pendientes_sello'],
             'incidencias' => count($r['incidencias']),
         ]);
     }

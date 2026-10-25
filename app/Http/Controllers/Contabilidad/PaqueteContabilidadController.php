@@ -62,7 +62,7 @@ class PaqueteContabilidadController extends Controller
             // sin JSON (tiene_pdf/tiene_json) y ventas sin el JSON oficial (json_generado_path).
             'compras_sin_pdf' => $compras->filter(fn ($d) => ! $d->tiene_pdf)->count(),
             'compras_sin_json' => $compras->filter(fn ($d) => ! $d->tiene_json)->count(),
-            'ventas_sin_json' => $ventas->filter(fn ($d) => ! ReporteContadoraQuery::esInvalidadoRealMh($d) && blank($d->json_generado_path))->count(),
+            'ventas_sin_json' => $ventas->filter(fn ($d) => ! ReporteContadoraQuery::esInvalidadoRealMh($d) && ! ReporteContadoraQuery::esPendienteDeSello($d) && blank($d->json_generado_path))->count(),
         ];
 
         $correo = $this->correoContabilidad();
@@ -72,7 +72,7 @@ class PaqueteContabilidadController extends Controller
         // refuerza con permission:contabilidad.enviar en la ruta.
         $puedeEnviarPermiso = (bool) $request->user()?->can('contabilidad.enviar');
         $hayCompras = $incluirCompras && $resumen['compras_cantidad'] > 0;
-        $hayVentas = $incluirVentas && ($resumen['ventas_cantidad'] + $resumen['ventas_invalidadas']) > 0;
+        $hayVentas = $incluirVentas && ($resumen['ventas_cantidad'] + $resumen['ventas_invalidadas'] + $resumen['ventas_pendientes_sello']) > 0;
 
         // Un período sin cubrir bloquea el ENVÍO, no la descarga. Ver el porqué en
         // {@see self::enviar()}. La pantalla lo refleja para que el botón no prometa
