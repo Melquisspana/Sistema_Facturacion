@@ -2,9 +2,11 @@
 
 namespace App\Services\Ppq;
 
+use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Cliente;
+use App\Models\Cobros\CobroEvento;
 use App\Models\Dte;
 use App\Models\NcExportacionItem;
 use App\Models\PpqItem;
@@ -37,13 +39,17 @@ class NcPosterioresLotePpq
      */
     public function sueltasDelCliente(Cliente $cliente): Collection
     {
+        // Las que el TXT devolvió (PendientesDelTxt): el lote del que salieron ya no las retiene.
+        $devueltaDe = self::devueltasPorTxt($cliente->id);
+        $devueltas = $this->sinLoteVigente(Dte::sinNcProntoPago()->where('cliente_id', $cliente->id)->where('tipo_dte', '05')
+            ->whereKey(array_keys($devueltaDe))->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')->get(), $devueltaDe);
         $notas = $this->sinLoteVigente(Dte::sinNcProntoPago()->where('cliente_id', $cliente->id)->where('tipo_dte', '05')
             ->where('estado', EstadoDte::Aceptado->value)->whereNotNull('sello_recepcion')
             ->whereNotNull('dte_relacionado_id')
             ->whereNotIn('id', NcExportacionItem::query()->select('dte_id'))
             ->orderBy('id')->get());
         if ($notas->isEmpty()) {
-            return $notas;
+            return $devueltas->sortBy('id')->values();
         }
         $ids = $notas->pluck('dte_relacionado_id')->unique();
         $lotes = PpqLote::whereHas('items', fn ($q) => $q->where('tipo_dte', '03')->whereIn('dte_id', $ids))
@@ -69,21 +75,52 @@ class NcPosterioresLotePpq
             $aceptadaEn = $nc->fecha_procesamiento_mh ?? $nc->created_at;
 
             return $armadoEn === null || ($aceptadaEn !== null && $aceptadaEn->gt($armadoEn));
-        })->values();
+        })->merge($devueltas)->unique('id')->sortBy('id')->values();
     }
 
-    /** Excluye ocupación por id o número normalizado, incluso en items sin DTE vinculado. */
-    private function sinLoteVigente(Collection $notas): Collection
+    /**
+     * NC que un TXT devolvió para el próximo PPQ (eventos `txt-…-nc-{id}` en su CCF), con los
+     * lotes de los que salieron. Lo usan este servicio y el exportador del quedan.
+     *
+     * @return array<int, array<int, int>> id de la NC => ids de los lotes de los que se devolvió
+     */
+    public static function devueltasPorTxt(?int $clienteId = null): array
+    {
+        $devueltas = [];
+        CobroEvento::where('tipo', TipoEventoCobro::Nota->value)->where('referencia_linea', 'like', 'txt-%-nc-%')
+            ->when($clienteId !== null, fn ($q) => $q->whereHas('documento', fn ($d) => $d->where('cliente_id', $clienteId)))
+            ->get(['datos'])
+            ->each(function (CobroEvento $evento) use (&$devueltas) {
+                $nc = (int) ($evento->datos['nc_dte_id'] ?? 0);
+                if ($nc > 0) {
+                    $devueltas[$nc][] = (int) ($evento->datos['ppq_lote_id'] ?? 0);
+                }
+            });
+
+        return $devueltas;
+    }
+
+    /**
+     * Excluye ocupación por id o número normalizado, incluso en items sin DTE vinculado.
+     *
+     * @param  array<int, array<int, int>>  $devueltaDe  lotes que ya no retienen cada NC ({@see devueltasPorTxt()})
+     */
+    private function sinLoteVigente(Collection $notas, array $devueltaDe = []): Collection
     {
         if ($notas->isEmpty()) {
             return $notas;
         }
-        $ocupados = PpqItem::whereHas('lote')->get(['dte_id', 'numero_control', 'ejercicio_control']);
-        $dtes = $ocupados->pluck('dte_id')->filter()->flip();
-        $controles = $ocupados->map(fn ($item) => EjercicioControl::llave($item->numero_control, $item->ejercicio_control))->filter()->flip();
+        $ocupados = PpqItem::whereHas('lote')->get(['ppq_lote_id', 'dte_id', 'numero_control', 'ejercicio_control']);
+        $porDte = $ocupados->whereNotNull('dte_id')->groupBy('dte_id')->map(fn ($items) => $items->pluck('ppq_lote_id')->map(fn ($id) => (int) $id));
+        $porControl = $ocupados->groupBy(fn ($item) => EjercicioControl::llave($item->numero_control, $item->ejercicio_control) ?? '')
+            ->map(fn ($items) => $items->pluck('ppq_lote_id')->map(fn ($id) => (int) $id));
 
-        return $notas
-            ->reject(fn ($nc) => $dtes->has($nc->id) || $controles->has(EjercicioControl::llave($nc->numero_control, EjercicioControl::de($nc->fecha_emision))))->values();
+        return $notas->reject(function ($nc) use ($porDte, $porControl, $devueltaDe) {
+            $llave = EjercicioControl::llave($nc->numero_control, EjercicioControl::de($nc->fecha_emision));
+            $lotes = $porDte->get($nc->id, collect())->merge($llave !== null ? $porControl->get($llave, collect()) : collect());
+
+            return $lotes->diff($devueltaDe[$nc->id] ?? [])->isNotEmpty();
+        })->values();
     }
 
     /** Permite incorporar NC solamente antes de la presentación o el cobro del lote. */

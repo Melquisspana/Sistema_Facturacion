@@ -28,6 +28,8 @@ use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
+use App\Services\Cobros\PendientesDelTxt;
+use App\Services\Cobros\ReenviarPendientesTxt;
 use App\Services\Cobros\RevisionHistoricaService;
 use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Cobros\SugerenciasAlbaran;
@@ -755,7 +757,21 @@ class CobrosController extends Controller
             'cliente' => $cliente,
             'informe' => $informe,
             'lotesPpq' => $lotes,
+            'pendientes' => app(PendientesDelTxt::class)->analizar($cliente, collect($lotes)->pluck('lote')),
         ]);
+    }
+
+    public function reenviarPendientes(Request $request, Cliente $cliente, ReenviarPendientesTxt $servicio): RedirectResponse
+    {
+        $this->verificarClienteDeCobros($cliente);
+        $datos = $request->validate([
+            'hash' => ['required', 'string', 'size:64'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*' => ['integer', 'distinct'],
+        ]);
+        $resultado = $servicio->reenviar($cliente, $datos['hash'], $datos['items'], $request->user());
+
+        return $this->volver($cliente)->with('status', "Quedaron listos para el próximo PPQ: {$resultado['ccf']} CCF y {$resultado['nc']} NC. Marcá los CCF en el Seguimiento y creá el PPQ.");
     }
 
     /** Crea un PPQ con los CCF marcados (y sus NC) y abre su ficha. */

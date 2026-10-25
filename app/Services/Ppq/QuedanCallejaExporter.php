@@ -138,7 +138,9 @@ class QuedanCallejaExporter
      *    registrado en la NC y, si no hay fecha, del PPQ. El TIPO (AC02/AC04) sale de
      *    la NC, porque la copia PPQ no lo guarda. La sala confirmada a mano manda.
      *  · No van las NC invalidadas ni las que ya viajaron en un lote anterior (el portal
-     *    responde «ya se encuentra asociado a un registro de quedan»).
+     *    responde «ya se encuentra asociado a un registro de quedan»). Tampoco la que el TXT
+     *    devolvió por no descontada: va en el PPQ nuevo, no en su quedan (confirmado por
+     *    el usuario, 25/10/2026).
      *
      * Regla del usuario (25/09/2026): en la solicitud de quedan también van las NC.
      *
@@ -162,7 +164,11 @@ class QuedanCallejaExporter
             ->whereHas('lote')
             ->where('ppq_lote_id', '<', $lote->id)
             ->whereIn('dte_id', $notas->pluck('dte_id')->filter()->all())
-            ->pluck('dte_id')->flip();
+            ->pluck('dte_id')
+            // La que el TXT devolvió salió de su lote, pero ya viajó en aquel quedan.
+            ->merge(collect(NcPosterioresLotePpq::devueltasPorTxt($lote->cliente_id))
+                ->filter(fn (array $lotes) => collect($lotes)->contains(fn (int $id) => $id > 0 && $id < $lote->id))->keys())
+            ->flip();
 
         $filas = [];
         $motivos = [];

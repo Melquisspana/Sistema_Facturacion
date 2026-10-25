@@ -616,6 +616,7 @@ Route::middleware('auth')->group(function () {
                 ->name('solicitudes.recibido');
 
             Route::post('clientes/{cliente}/pagos', [CobrosController::class, 'aplicarPagos'])->name('pagos');
+            Route::post('clientes/{cliente}/pagos/reenviar', [CobrosController::class, 'reenviarPendientes'])->name('pagos.reenviar');
             // PPQ armado desde el Seguimiento con los CCF marcados.
             Route::post('clientes/{cliente}/ppq', [CobrosController::class, 'crearPpq'])->name('ppq.crear');
         });
