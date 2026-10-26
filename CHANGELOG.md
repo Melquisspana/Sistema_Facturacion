@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Cobros: «Buscar TXT en el correo» trae del buzón de Compras (solo lectura) los TXT de pago de Calleja, los muestra en «Solo revisar» y se aplican con un clic, verificando la huella de cada copia. Se activa con `COBROS_TXT_REMITENTE` en el `.env`; vacía, queda apagada. #145
 - Cobros: en el estado de cobro y en los pendientes del TXT, lo que ya no se cobra (CCF invalidado sin cobro, anulado con nota, del ambiente de pruebas, y sus NC) va aparte en «No aplican», con el motivo, y no se ofrece para volver a presentar. #144
 - Cobros: al cargar el TXT de pagos se ven los CCF del PPQ que no vinieron pagados, los pagados de menos (con aviso de posible devolución AC04) y las NC no descontadas, y con un botón quedan listos para el próximo PPQ. #140
 - Cobros: puesta al día con varios TXT de pago a la vez, con modo «Solo revisar» que no guarda nada, y estado de cobro de cada CCF y NC desde el inicio del seguimiento, en pantalla y en Excel. #141
