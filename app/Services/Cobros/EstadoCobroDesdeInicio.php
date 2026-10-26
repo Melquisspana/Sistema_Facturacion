@@ -21,12 +21,12 @@ use Illuminate\Support\Carbon;
  */
 class EstadoCobroDesdeInicio
 {
-    /** @return array{inicio: ?Carbon, ccf: array<int, array<string, mixed>>, nc: array<int, array<string, mixed>>, totales: array<string, array<string, int>>} */
+    /** @return array{inicio: ?Carbon, ccf: array<int, array<string, mixed>>, nc: array<int, array<string, mixed>>, no_aplican: array<int, array<string, mixed>>, totales: array<string, mixed>} */
     public function generar(Cliente $cliente): array
     {
         $inicio = config('cobros.inicio_seguimiento') ? Carbon::parse(config('cobros.inicio_seguimiento'))->startOfDay() : null;
         $documentos = CobroDocumento::deCliente($cliente->id)->with('eventos')->get();
-        $ccfs = CobroDocumento::deCliente($cliente->id)->sinInvalidadosRetirables()->where('tipo_dte', '03')
+        $ccfs = CobroDocumento::deCliente($cliente->id)->where('tipo_dte', '03')
             ->when($inicio, fn ($q) => $q->whereDate('fecha_emision', '>=', $inicio))->with('eventos')->porAntiguedad()->get();
         $notas = Dte::where('cliente_id', $cliente->id)->where('tipo_dte', '05')->where('estado', 'aceptado')
             ->where(fn ($q) => $q->whereNull('sello_invalidacion')->orWhere('sello_invalidacion', '')->orWhereRaw('UPPER(sello_invalidacion) LIKE ?', ['MOCK%']))
@@ -38,8 +38,15 @@ class EstadoCobroDesdeInicio
             ->merge($porNumero->get(EjercicioControl::llave($modelo->numero_control, EjercicioControl::de($modelo->fecha_emision)), collect()))->unique('id');
         $txtDe = fn ($doc) => $doc ? $doc->eventos->filter(fn ($e) => $e->tipo === TipoEventoCobro::Pago && $e->estado === EstadoEventoCobro::Aplicado)
             ->pluck('evidencia_nombre')->filter()->unique()->values()->all() : [];
+        $motivos = app(NoAplicaCobro::class)->motivosPorDte($cliente);
+        $no_aplican = [];
         $ccf = [];
         foreach ($ccfs as $doc) {
+            if (isset($motivos[$doc->dte_id])) {
+                $no_aplican[] = ['tipo' => 'CCF', 'numero' => $doc->numero_control, 'fecha' => $doc->fecha_emision, 'monto' => $doc->monto, 'motivo' => $motivos[$doc->dte_id]];
+
+                continue;
+            }
             // La misma regla que la ficha y el estado de pago: el CCF menos sus NC aceptadas.
             $efectivo = $doc->facturadoEfectivo();
             $estado = $doc->eventos->contains(fn ($e) => $e->estado === EstadoEventoCobro::EnRevision) ? 'en_revision' : match ($doc->pago_estado) {
@@ -52,6 +59,11 @@ class EstadoCobroDesdeInicio
         }
         $nc = [];
         foreach ($notas as $nota) {
+            if (isset($motivos[$nota->id])) {
+                $no_aplican[] = ['tipo' => 'NC', 'numero' => $nota->numero_control, 'fecha' => $nota->fecha_emision, 'monto' => $nota->total_pagar, 'motivo' => $motivos[$nota->id]];
+
+                continue;
+            }
             $doc = $documentos->firstWhere('dte_id', $nota->id);
             $deNota = $itemsDe($nota);
             $estado = $nota->tipo_nota_credito === TipoNotaCredito::ProntoPago ? 'pronto_pago'
@@ -61,6 +73,8 @@ class EstadoCobroDesdeInicio
         $totales = ['ccf' => array_replace(array_fill_keys(['pagado', 'diferencia', 'no_pagado', 'en_revision'], 0), collect($ccf)->countBy('estado')->all()),
             'nc' => array_replace(array_fill_keys(['pronto_pago', 'descontada', 'no_descontada'], 0), collect($nc)->countBy('estado')->all())];
 
-        return compact('inicio', 'ccf', 'nc', 'totales');
+        $totales['no_aplican'] = count($no_aplican);
+
+        return compact('inicio', 'ccf', 'nc', 'no_aplican', 'totales');
     }
 }

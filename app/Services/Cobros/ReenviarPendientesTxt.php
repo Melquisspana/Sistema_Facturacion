@@ -33,7 +33,8 @@ class ReenviarPendientesTxt
                 ->lockForUpdate()->get();
             $listas = app(PendientesDelTxt::class)->analizar($cliente, $lotes);
             $validos = collect();
-            foreach ($listas as $grupo => $entradas) {
+            foreach (['no_pagados', 'pagados_de_menos', 'nc_no_descontadas'] as $grupo) {
+                $entradas = $listas[$grupo];
                 foreach ($entradas as $entrada) {
                     $validos->put($entrada['item']->id, $entrada + ['grupo' => $grupo]);
                 }

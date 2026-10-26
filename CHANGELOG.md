@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Cobros: en el estado de cobro y en los pendientes del TXT, lo que ya no se cobra (CCF invalidado sin cobro, anulado con nota, del ambiente de pruebas, y sus NC) va aparte en «No aplican», con el motivo, y no se ofrece para volver a presentar. #144
 - Cobros: al cargar el TXT de pagos se ven los CCF del PPQ que no vinieron pagados, los pagados de menos (con aviso de posible devolución AC04) y las NC no descontadas, y con un botón quedan listos para el próximo PPQ. #140
 - Cobros: puesta al día con varios TXT de pago a la vez, con modo «Solo revisar» que no guarda nada, y estado de cobro de cada CCF y NC desde el inicio del seguimiento, en pantalla y en Excel. #141
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125

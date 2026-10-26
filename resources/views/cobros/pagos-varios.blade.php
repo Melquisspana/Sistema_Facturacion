@@ -48,6 +48,7 @@
                         @endforeach
                     </ul>
                 @endforeach
+                <p>No aplican: {{ $reporte['totales']['no_aplican'] }}</p>
                 @if (! $soloRevisar)
                     <a href="{{ route('cobros.estado-cobro', $cliente) }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Descargar estado de cobro en Excel</a>
                 @endif
@@ -81,6 +82,30 @@
                     </table>
                 </div>
             @endforeach
+            <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6 overflow-x-auto">
+                <h3 class="font-medium">No aplican</h3>
+                <table class="min-w-full text-sm">
+                    <caption class="sr-only">No aplican</caption>
+                    <thead><tr>
+                        @foreach (['Número', 'Tipo', 'Fecha', 'Monto', 'Motivo'] as $columna)
+                            <th scope="col" class="p-2 text-left font-medium">{{ $columna }}</th>
+                        @endforeach
+                    </tr></thead>
+                    <tbody>
+                        @forelse ($reporte['no_aplican'] as $fila)
+                            <tr>
+                                <td class="p-2 font-mono">{{ $fila['numero'] }}</td>
+                                <td class="p-2">{{ $fila['tipo'] }}</td>
+                                <td class="p-2">{{ $fila['fecha']?->format('d/m/Y') }}</td>
+                                <td class="p-2">{{ $money($fila['monto']) }}</td>
+                                <td class="p-2">{{ $fila['motivo'] }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="5" class="p-2">Ninguno.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
             @if (! $soloRevisar)
                 @foreach ($archivos as $archivo)
                     @if ($archivo['estado'] === 'aplicado' && collect($archivo['pendientes'])->flatten(1)->isNotEmpty())
