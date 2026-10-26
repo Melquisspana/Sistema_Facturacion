@@ -107,12 +107,21 @@ class SaldoMontoCcf
      * Cuánto descuenta el cliente del cobro de cada CCF por sus notas de crédito: total a
      * pagar de las NC ACEPTADAS por Hacienda y sin invalidar. CCF sin notas → '0'.
      *
+     * Sin las de PRONTO PAGO: son el descuento global del QD de un PPQ, atado a un solo CCF
+     * solo para tener relacionado fiscal. Calleja paga ese CCF por su total y descuenta el QD
+     * en su propia línea; restarla dejaba el CCF «con diferencia». El saldo fiscal
+     * ({@see saldos()}) sí la cuenta.
+     *
      * @param  array<int, int>  $ccfIds
      * @return array<int, string> [ccf_id => descuento]
      */
     public function descontadoEnCobro(array $ccfIds): array
     {
-        $suma = $ccfIds === [] ? collect() : $this->sumaDeNotas($ccfIds, [EstadoDte::Aceptado], 'total_pagar');
+        $suma = $ccfIds === [] ? collect() : $this->notasQuePesan(Dte::query()->sinNcProntoPago(), $ccfIds)
+            ->where('estado', EstadoDte::Aceptado->value)
+            ->groupBy('dte_relacionado_id')
+            ->selectRaw('dte_relacionado_id, SUM(total_pagar) AS usado')
+            ->pluck('usado', 'dte_relacionado_id');
 
         return collect($ccfIds)->mapWithKeys(fn (int $id) => [
             $id => Dinero::redondear((string) ($suma[$id] ?? '0')),
