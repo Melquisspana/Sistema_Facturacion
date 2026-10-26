@@ -339,7 +339,8 @@ class CobroDocumento extends Model
      */
     private function notasCobradasAparte(): string
     {
-        $suma = Dte::query()
+        // Las de pronto pago no se restaron ({@see SaldoMontoCcf::descontadoEnCobro()}): no se devuelven.
+        $suma = Dte::query()->sinNcProntoPago()
             ->where('dte_relacionado_id', $this->dte_id)
             ->where('tipo_dte', '05')
             ->where('estado', EstadoDte::Aceptado->value)

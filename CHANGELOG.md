@@ -11,6 +11,11 @@ El historial anterior a este archivo está en el registro de git.
 ### Agregado
 
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
+- Cobros: en el estado de cobro y en los pendientes del TXT, lo que ya no se cobra (CCF invalidado sin cobro, anulado con nota, del ambiente de pruebas, y sus NC) va aparte en «No aplican», con el motivo, y no se ofrece para volver a presentar. #144
+
+### Corregido
+
+- Cobros: la NC de pronto pago (el QD de un PPQ, atada a un solo CCF) ya no se resta de lo que se cobra de ese CCF, que por eso quedaba «Pagado con diferencia». El saldo fiscal para emitir NC no cambia. Después de desplegar, `cobros:recalcular-pagos`. #143
 
 ## [2026.10.25.3] - 2026-10-25
 
