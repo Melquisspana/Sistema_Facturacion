@@ -18,6 +18,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- La migración del correlativo anual (#125) busca el índice único viejo de `dtes` por sus columnas y no por su nombre, y se puede volver a correr si se corta a la mitad; la reversa se niega antes de tocar el esquema si ya hay números repetidos entre ejercicios. #146
 - Cobros: la NC de pronto pago (el QD de un PPQ, atada a un solo CCF) ya no se resta de lo que se cobra de ese CCF, que por eso quedaba «Pagado con diferencia». El saldo fiscal para emitir NC no cambia. Después de desplegar, `cobros:recalcular-pagos`. #143
 - Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ armados que todavía no se presentaron, salvo las conciliadas. #139
 
