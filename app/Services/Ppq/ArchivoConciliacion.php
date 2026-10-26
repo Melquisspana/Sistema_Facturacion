@@ -72,17 +72,44 @@ final class ArchivoConciliacion
     public static function desdeSubida(UploadedFile $archivo): self
     {
         $contenido = (string) file_get_contents($archivo->getRealPath());
+
+        return self::guardarContenido($contenido, $archivo->getClientOriginalName());
+    }
+
+    /** Lo mismo con un contenido que no llegó como subida (un TXT recibido por correo). */
+    public static function guardarContenido(string $contenido, string $nombre): self
+    {
         $hash = hash('sha256', $contenido);
         $ruta = self::directorio().'/'.$hash.'.txt';
 
-        Storage::disk(self::disco())->put($ruta, $contenido);
+        if (! Storage::disk(self::disco())->put($ruta, $contenido)) {
+            throw new \RuntimeException('No se pudo guardar la copia del TXT.');
+        }
 
         return new self(
             contenido: $contenido,
-            nombre: $archivo->getClientOriginalName(),
+            nombre: $nombre,
             hash: $hash,
             ruta: $ruta,
         );
+    }
+
+    /**
+     * Recarga una copia ya guardada por su huella. Null si no existe o si su contenido ya no
+     * da esa huella: lo que se aplica tiene que ser exactamente lo que se revisó.
+     */
+    public static function desdeCopia(string $hash, string $nombre): ?self
+    {
+        if (! preg_match('/^[a-f0-9]{64}$/', $hash)) {
+            return null;
+        }
+        $ruta = self::directorio().'/'.$hash.'.txt';
+        $disco = Storage::disk(self::disco());
+        $contenido = $disco->exists($ruta) ? $disco->get($ruta) : null;
+
+        return $contenido !== null && hash('sha256', $contenido) === $hash
+            ? self::desdeContenido($contenido, $nombre, $ruta)
+            : null;
     }
 
     /**

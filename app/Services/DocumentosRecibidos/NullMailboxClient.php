@@ -41,4 +41,9 @@ class NullMailboxClient implements MailboxClient
     {
         throw new BuzonInaccesibleException(self::MOTIVO);
     }
+
+    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones): array
+    {
+        throw new BuzonInaccesibleException(self::MOTIVO);
+    }
 }

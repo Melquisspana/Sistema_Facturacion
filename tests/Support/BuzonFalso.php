@@ -87,6 +87,24 @@ class BuzonFalso implements MailboxClient
         return $this;
     }
 
+    /** Agrega un correo con un adjunto de texto (el TXT de pagos del cliente, por ejemplo). */
+    public function conTxt(int $uid, string $fechaCorreo, string $remitente, string $nombre, string $contenido, array $extra = []): self
+    {
+        $fecha = Carbon::parse($fechaCorreo);
+
+        $this->mensajes[] = $extra + [
+            'uid' => $uid,
+            'message_id' => '<txt-'.$uid.'@cliente.example>',
+            'asunto' => 'Pago '.$nombre,
+            'remitente' => $remitente,
+            'fecha' => $fecha->toRfc2822String(),
+            'fecha_obj' => $fecha,
+            'adjuntos' => [['filename' => $nombre, 'mime' => 'text/plain', 'data' => $contenido]],
+        ];
+
+        return $this;
+    }
+
     /** El buzón falla siempre, desde la primera lectura. */
     public function queFalla(BuzonException $e): self
     {
@@ -194,5 +212,34 @@ class BuzonFalso implements MailboxClient
             $truncada,
             $ultimoUid,
         );
+    }
+
+    /**
+     * Igual que IMAP: `FROM` busca por SUBCADENA del remitente (sin distinguir mayúsculas) y
+     * `SINCE` desde el día, sin hora. Solo vuelven los adjuntos con esas extensiones.
+     */
+    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones): array
+    {
+        $this->llamadas++;
+
+        if ($this->falla !== null) {
+            throw $this->falla;
+        }
+
+        $inicio = $desde->copy()->startOfDay();
+        $resultado = [];
+        foreach ($this->mensajes as $m) {
+            if ($m['fecha_obj']->lt($inicio) || ! str_contains(mb_strtolower((string) $m['remitente']), mb_strtolower($remitente))) {
+                continue;
+            }
+            $m['adjuntos'] = array_values(array_filter($m['adjuntos'],
+                fn ($a) => in_array(strtolower(pathinfo((string) $a['filename'], PATHINFO_EXTENSION)), $extensiones, true)));
+            if ($m['adjuntos'] !== []) {
+                $resultado[] = array_diff_key($m, ['fecha_obj' => null]);
+            }
+        }
+        usort($resultado, fn ($a, $b) => $a['uid'] <=> $b['uid']);
+
+        return $resultado;
     }
 }

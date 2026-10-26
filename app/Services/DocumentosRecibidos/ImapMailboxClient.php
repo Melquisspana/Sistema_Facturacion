@@ -73,6 +73,47 @@ class ImapMailboxClient implements MailboxClient
             : 'Correo Yahoo/IMAP sin configurar';
     }
 
+    /**
+     * Misma conexión OP_READONLY y lectura con FT_PEEK que Compras: no marca nada como leído.
+     * Sin cursor ni progreso: la ventana la acota el servidor con `FROM` y `SINCE`.
+     */
+    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones): array
+    {
+        // El remitente va entre comillas en el criterio IMAP: una comilla o un salto de línea
+        // permitiría cambiar la búsqueda.
+        if (strpbrk($remitente, "\"\\\r\n") !== false) {
+            throw new BuzonInaccesibleException('El remitente configurado no es válido para buscar en el buzón.');
+        }
+        $conn = $this->abrir();
+        try {
+            $ids = @imap_search($conn, 'FROM "'.$remitente.'" SINCE "'.$desde->format('d-M-Y').'"', SE_UID);
+            if ($ids === false) {
+                $this->abortarSiHuboError('No se pudo buscar en el buzón');
+
+                return [];
+            }
+            sort($ids, SORT_NUMERIC);
+            $mensajes = [];
+            foreach ($ids as $uid) {
+                $mensaje = $this->leerMensaje($conn, (int) $uid, $extensiones);
+                if ($mensaje !== null && $mensaje['adjuntos'] !== []) {
+                    $mensajes[] = $mensaje;
+                }
+            }
+
+            return $mensajes;
+        } catch (BuzonException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new BuzonInaccesibleException(
+                'La lectura del buzón se cortó: '.BuzonException::sanear($e->getMessage(), $this->password()),
+                previous: $e,
+            );
+        } finally {
+            $this->cerrar($conn);
+        }
+    }
+
     public function estado(): EstadoBuzon
     {
         $conn = $this->abrir();
@@ -260,7 +301,7 @@ class ImapMailboxClient implements MailboxClient
      *
      * @return array<string, mixed>|null
      */
-    private function leerMensaje($conn, int $uid): ?array
+    private function leerMensaje($conn, int $uid, array $extensiones = ['pdf', 'json', 'xml']): ?array
     {
         $overview = @imap_fetch_overview($conn, (string) $uid, FT_UID);
         $info = $overview[0] ?? null;
@@ -270,13 +311,13 @@ class ImapMailboxClient implements MailboxClient
         }
 
         $adjuntos = [];
-        $this->recorrerPartes($estructura, function ($parte, string $seccion) use (&$adjuntos, $conn, $uid) {
+        $this->recorrerPartes($estructura, function ($parte, string $seccion) use (&$adjuntos, $conn, $uid, $extensiones) {
             $nombre = $this->nombreAdjunto($parte);
             if ($nombre === null) {
                 return;
             }
             $ext = strtolower((string) pathinfo($nombre, PATHINFO_EXTENSION));
-            if (! in_array($ext, ['pdf', 'json', 'xml'], true)) {
+            if (! in_array($ext, $extensiones, true)) {
                 return;
             }
             // FT_PEEK: leer SIN marcar el correo como leído.
