@@ -10,15 +10,32 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
-- Cobros: en el estado de cobro y en los pendientes del TXT, lo que ya no se cobra (CCF invalidado sin cobro, anulado con nota, del ambiente de pruebas, y sus NC) va aparte en «No aplican», con el motivo, y no se ofrece para volver a presentar. #144
-- Cobros: al cargar el TXT de pagos se ven los CCF del PPQ que no vinieron pagados, los pagados de menos (con aviso de posible devolución AC04) y las NC no descontadas, y con un botón quedan listos para el próximo PPQ. #140
-- Cobros: puesta al día con varios TXT de pago a la vez, con modo «Solo revisar» que no guarda nada, y estado de cobro de cada CCF y NC desde el inicio del seguimiento, en pantalla y en Excel. #141
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
-- Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. Se despliega antes que #125, por separado. #127
+
+## [2026.10.25.4] - 2026-10-25
+
+Cuarto despliegue del día. Incluye #143 y #144. No trae migraciones. Después se corrió `cobros:recalcular-pagos` para Calleja: dos CCF pasaron de «Diferencia» a «Pagada».
+
+### Agregado
+
+- Cobros: en el estado de cobro y en los pendientes del TXT, lo que ya no se cobra (CCF invalidado sin cobro, anulado con nota, del ambiente de pruebas, y sus NC) va aparte en «No aplican», con el motivo, y no se ofrece para volver a presentar. #144
 
 ### Corregido
 
-- Cobros: la NC de pronto pago (el QD de un PPQ, atada a un solo CCF) ya no se resta de lo que se cobra de ese CCF, que por eso quedaba «Pagado con diferencia». El saldo fiscal para emitir NC no cambia. Después de desplegar, `cobros:recalcular-pagos`. #143
+- Cobros: la NC de pronto pago (el QD de un PPQ, atada a un solo CCF) ya no se resta de lo que se cobra de ese CCF, que por eso quedaba «Pagado con diferencia». El saldo fiscal para emitir NC no cambia. #143
+
+## [2026.10.25.3] - 2026-10-25
+
+Tercer despliegue del día. Incluye #127 (con su migración `2026_10_21_120000`), #139, #140 y #141. Queda afuera #125, que se despliega antes del 31/12 junto con el Rutas nuevo.
+
+### Agregado
+
+- Cobros: al cargar el TXT de pagos se ven los CCF del PPQ que no vinieron pagados, los pagados de menos (con aviso de posible devolución AC04) y las NC no descontadas, y con un botón quedan listos para el próximo PPQ. #140
+- Cobros: puesta al día con varios TXT de pago a la vez, con modo «Solo revisar» que no guarda nada, y estado de cobro de cada CCF y NC desde el inicio del seguimiento, en pantalla y en Excel. #141
+- Cobros y PPQ identifican cada documento por número de control y ejercicio. Los TXT, Excel y correos de Calleja que traen solo el número se resuelven por fecha, y lo ambiguo queda para revisión. Trae migración. #127
+
+### Corregido
+
 - Las NC de pronto pago ya no se recomiendan ni entran en el PPQ, y no bloquean ni salen en el archivo de quedan. El comando `ppq:quitar-nc-pronto-pago` las saca de los PPQ armados que todavía no se presentaron, salvo las conciliadas. #139
 
 ## [2026.10.25.2] - 2026-10-25
