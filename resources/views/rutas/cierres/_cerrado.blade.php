@@ -6,6 +6,7 @@
             <div><dt class="text-sm text-gray-600 dark:text-paper-300">{{ $label }}</dt><dd class="text-2xl font-bold tabular-nums dark:text-paper-100">${{ number_format((float) $cierre->{$campo.'_cobrado'}, 2) }}</dd></div>
         @endforeach
     </dl>
-    <p class="mt-5 text-2xl font-bold text-green-900 dark:text-green-300">Efectivo a entregar ${{ number_format((float) $cierre->a_entregar, 2) }}</p>
+    <p class="mt-4 dark:text-paper-300">Gastos −${{ number_format((float) $cierre->gastos_total, 2) }}</p>
+    <p class="mt-2 text-2xl font-bold text-green-900 dark:text-green-300">{{ $cierre->a_entregar < 0 ? 'A reintegrar al vendedor' : 'Efectivo a entregar' }} ${{ number_format(abs((float) $cierre->a_entregar), 2) }}</p>
     <a href="{{ route($prefijo.'liquidacion', [$salida, $fecha]) }}" class="mt-4 inline-flex min-h-11 items-center rounded-xl bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Descargar liquidación</a>
 </section>

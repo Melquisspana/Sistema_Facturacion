@@ -6,6 +6,7 @@
 @endif
 @if ($cierre?->estaCerrado())
     @include('rutas.cierres._cerrado')
+    @include('rutas.salidas._gastos', ['fechaGastos' => $fecha, 'soloListaGastos' => true])
     @if (! $modoVendedor)
         <form method="POST" action="{{ route('rutas.salidas.reabrir', [$salida, $fecha]) }}" class="mt-6 space-y-3">
             @csrf
@@ -26,6 +27,15 @@
             </div>
         @endforeach
     </dl>
+    @php
+        $gastosCierre = app(\App\Services\Rutas\CierreDia::class)->gastos($salida, $fecha);
+        $gastosCentavos = $gastosCierre->sum(fn ($gasto) => \App\Services\Rutas\CierreDia::centavos($gasto->monto));
+        $efectivoCentavos = $entregas->filter(fn ($e) => $e->forma_cobro === \App\Enums\FormaCobroEntrega::Efectivo)->sum(fn ($e) => \App\Services\Rutas\CierreDia::centavos($e->monto_cobrado ?? 0));
+        $netoCentavos = $efectivoCentavos - $gastosCentavos;
+    @endphp
+    <p class="mt-4 dark:text-paper-300">Gastos −${{ number_format($gastosCentavos / 100, 2) }}</p>
+    <p class="mt-2 text-xl font-bold dark:text-paper-100" data-neto-gastos="{{ $gastosCentavos }}">{{ $netoCentavos < 0 ? 'A reintegrar al vendedor' : 'Efectivo a entregar' }} ${{ number_format(abs($netoCentavos) / 100, 2) }}</p>
+    @include('rutas.salidas._gastos', ['fechaGastos' => $fecha])
     @if ($pendientes)
         <p class="mt-4 text-sm text-amber-800 dark:text-amber-300">{{ $pendientes }} sin marcar siguen en la salida.</p>
     @endif
@@ -55,7 +65,7 @@
         @empty
             <p class="dark:text-paper-300">No hay entregas registradas en este día.</p>
         @endforelse
-        @if ($entregas->isNotEmpty() || $cierre)
+        @if ($entregas->isNotEmpty() || $gastosCierre->isNotEmpty() || $cierre)
             <div><label for="entrega-dinero" class="block font-semibold dark:text-paper-100">¿Quién entrega el dinero?</label>
                 <select id="entrega-dinero" name="entrega_dinero_personal_id" class="mt-2 min-h-11 w-full rounded-xl border-gray-300 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                     <option value="">Elegí una persona</option>
@@ -80,6 +90,11 @@
                     cifra.textContent = '$' + (totales[cifra.dataset.totalForma] / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 });
                 document.getElementById('entrega-dinero')?.toggleAttribute('required', Object.values(totales).some(monto => monto > 0));
+                const neto = document.querySelector('[data-neto-gastos]');
+                if (neto) {
+                    const centavos = totales.efectivo - Number(neto.dataset.netoGastos);
+                    neto.textContent = (centavos < 0 ? 'A reintegrar al vendedor $' : 'Efectivo a entregar $') + (Math.abs(centavos) / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }
             };
             form.addEventListener('input', actualizar);
             form.addEventListener('change', actualizar);

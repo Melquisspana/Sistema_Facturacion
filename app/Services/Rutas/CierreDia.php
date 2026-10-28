@@ -16,6 +16,11 @@ use Illuminate\Validation\ValidationException;
 
 class CierreDia
 {
+    public function gastos(SalidaRuta $salida, string $fecha): Collection
+    {
+        return $salida->gastos()->whereDate('fecha', $fecha)->orderBy('id')->get();
+    }
+
     public function entregas(SalidaRuta $salida, string $fecha): Collection
     {
         return $salida->entregas()->entregadas()->whereDate('fecha_resultado', $fecha)
@@ -27,12 +32,14 @@ class CierreDia
     {
         $partes = explode('.', (string) $monto);
 
-        return ((int) $partes[0] * 100) + (int) str_pad(substr($partes[1] ?? '', 0, 2), 2, '0');
+        $signo = str_starts_with((string) $monto, '-') ? -1 : 1;
+
+        return $signo * ((abs((int) $partes[0]) * 100) + (int) str_pad(substr($partes[1] ?? '', 0, 2), 2, '0'));
     }
 
     public static function decimal(int $centavos): string
     {
-        return intdiv($centavos, 100).'.'.str_pad((string) ($centavos % 100), 2, '0', STR_PAD_LEFT);
+        return ($centavos < 0 ? '-' : '').intdiv(abs($centavos), 100).'.'.str_pad((string) (abs($centavos) % 100), 2, '0', STR_PAD_LEFT);
     }
 
     public function cerrar(SalidaRuta $salida, string $fecha, array $datos, User $usuario): SalidaRutaCierre
@@ -47,8 +54,9 @@ class CierreDia
                 throw ValidationException::withMessages(['cierre' => 'El día ya está cerrado. Reabrilo antes de corregirlo.']);
             }
             $entregas = $salida->entregas()->entregadas()->whereDate('fecha_resultado', $fecha)->lockForUpdate()->get();
-            if ($entregas->isEmpty() && $cierre === null) {
-                throw ValidationException::withMessages(['cierre' => 'No hay entregas registradas en esa fecha.']);
+            $gastos = $this->gastos($salida, $fecha)->sum(fn ($gasto) => self::centavos($gasto->monto));
+            if ($entregas->isEmpty() && $gastos === 0 && $cierre === null) {
+                throw ValidationException::withMessages(['cierre' => 'No hay entregas ni gastos registrados en esa fecha.']);
             }
             $conCobro = $entregas->whereNotNull('monto_esperado');
             $reglas = [
@@ -81,12 +89,11 @@ class CierreDia
             if ($hayCobro && empty($validados['entrega_dinero_personal_id'])) {
                 throw ValidationException::withMessages(['entrega_dinero_personal_id' => 'Elegí quién entrega el dinero entre los participantes activos de la salida.']);
             }
-            foreach ($totales as $total) {
+            foreach ([...$totales, $gastos] as $total) {
                 if ($total > 999999999999) {
                     throw ValidationException::withMessages(['cierre' => 'El total supera el monto admitido para una liquidación.']);
                 }
             }
-            $gastos = 0; // PR 3 sumará aquí los gastos con foto de este día.
             $ahora = now()->startOfSecond();
             // La BD guarda segundos: un recierre inmediato debe quedar después de la reapertura.
             if ($cierre?->reabierto_en && $ahora->lte($cierre->reabierto_en)) {
