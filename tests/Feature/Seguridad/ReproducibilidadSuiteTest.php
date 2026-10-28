@@ -144,6 +144,6 @@ class ReproducibilidadSuiteTest extends TestCase
     {
         $limite = (string) ini_get('memory_limit');
 
-        $this->assertSame('1G', $limite, 'la suite tiene que fijar su propia memoria, no heredar la del php.ini de la máquina');
+        $this->assertSame('1536M', $limite, 'la suite tiene que fijar su propia memoria, no heredar la del php.ini de la máquina');
     }
 }

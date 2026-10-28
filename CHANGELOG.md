@@ -21,6 +21,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 - La migración del correlativo anual (#125) busca el índice único viejo de `dtes` por sus columnas y no por su nombre, y se puede volver a correr si se corta a la mitad; la reversa se niega antes de tocar el esquema si ya hay números repetidos entre ejercicios. También vuelve a 1 una serie con números tomados pero sin DTE propio en el sistema: esos números cuentan como de 2026. #146
 - Ubicaciones: toda agrupación municipal 2024 sin fila en `municipios` (San Salvador Norte, Santa Ana Este, Chalatenango Norte, San Vicente Norte y Morazán Norte) recibe la suya, así sus distritos se pueden elegir en el formulario. Lo hacen los seeders, `distritos:vincular-municipio` y una migración re-ejecutable; `ubicaciones:auditar` avisa si queda alguna. Era un arreglo que solo estaba en el servidor y ahora queda en el repositorio.
 - Cobros: «Buscar TXT en el correo» abre su propia carpeta del buzón (`COBROS_TXT_CARPETA`, INBOX por defecto) en vez de la de Compras, donde no llegan los TXT. Compras sigue con la suya. #147

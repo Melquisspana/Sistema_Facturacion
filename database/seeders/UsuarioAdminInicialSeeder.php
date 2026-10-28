@@ -4,8 +4,8 @@ namespace Database\Seeders;
 
 use App\Enums\RolSistema;
 use App\Models\User;
+use App\Support\PasswordRules;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -38,7 +38,7 @@ class UsuarioAdminInicialSeeder extends Seeder
         $password = null;
 
         if (! $admin || blank($admin->password)) {
-            $password = Str::password(max(24, (int) config('security.password.min_length', 12)));
+            $password = PasswordRules::generar(24);
         }
 
         if (! $admin) {
