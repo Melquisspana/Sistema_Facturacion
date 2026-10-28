@@ -38,7 +38,13 @@ class TxtPagosDelCorreo
             throw new BuzonInaccesibleException('El buzón de compras no está disponible. Revisá Configuración > Integraciones > Documentos recibidos.');
         }
 
-        $mensajes = $this->buzon->adjuntosDeRemitente($remitente, today()->subDays((int) config('cobros.txt_correo.dias', 60)), ['txt']);
+        $mensajes = $this->buzon->adjuntosDeRemitente(
+            $remitente,
+            today()->subDays((int) config('cobros.txt_correo.dias', 60)),
+            ['txt'],
+            // Los TXT llegan a otra carpeta que los DTE de Compras: se abre la suya, no la de Compras.
+            trim((string) config('cobros.txt_correo.carpeta', 'INBOX')) ?: 'INBOX',
+        );
         // Por UID ascendente: si el mismo TXT llegó dos veces, queda el correo más viejo.
         usort($mensajes, fn ($a, $b) => (int) $a['uid'] <=> (int) $b['uid']);
 

@@ -17,6 +17,7 @@ use App\Support\Dinero;
 use App\Support\Dte\OrdenProductosOc;
 use App\Support\Dte\PlazoNotaCredito;
 use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\EjercicioControl;
 use App\Support\HoraNegocio;
 use Illuminate\Support\Facades\DB;
 
@@ -103,6 +104,11 @@ class DteGeneracionService
                 ->where('correlativo_id', $correlativo->id)
                 ->whereNotNull('ejercicio')
                 ->max('ejercicio');
+
+            if ($ultimo === null && $correlativo->ultimo_numero > 0) {
+                // Antes de 2027 no hubo reinicios: los números sin DTE pertenecen a 2026.
+                $ultimo = EjercicioControl::ANTERIOR_AL_REINICIO;
+            }
 
             if ($ultimo !== null && $ejercicio < $ultimo) {
                 throw new GeneracionException('La fecha de emisión del borrador ('.$dte->fecha_emision?->format('d/m/Y').') es del ejercicio '.$ejercicio.', pero la numeración de este tipo de documento ya pasó al ejercicio '.$ultimo.'. Actualizá la fecha de emisión antes de generar.');
