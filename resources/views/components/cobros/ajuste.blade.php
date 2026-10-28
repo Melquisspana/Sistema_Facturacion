@@ -1,7 +1,7 @@
-@props(['ajuste'])
+@props(['ajuste', 'soloRevisar' => false])
 @php
     $estado = $ajuste->estadoEfectivo();
-    // Los mismos dos estilos de botón del resto de Cobros: primario como «Cargar pagos»,
+    // Los mismos dos estilos de botón del resto de Cobros: primario como «Revisar TXT»,
     // secundario como «Historial de PPQ».
     $primario = 'inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700';
     $secundario = 'inline-flex items-center rounded-md border border-gray-300 dark:border-ink-600 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-paper-100 hover:bg-gray-50 dark:hover:bg-ink-700';
@@ -16,14 +16,16 @@
                 Ver NC {{ $ajuste->notaCredito->numero_control ?: '#'.$ajuste->nc_dte_id }}
             </a>
         @endcan
-        @can('ppq.gestionar')
-            <form method="POST" action="{{ route('cobros.ajustes.desvincular-nc', $ajuste) }}">
-                @csrf
-                <button class="{{ $secundario }}">Desvincular NC</button>
-            </form>
-        @endcan
+        @if (! $soloRevisar)
+            @can('ppq.gestionar')
+                <form method="POST" action="{{ route('cobros.ajustes.desvincular-nc', $ajuste) }}">
+                    @csrf
+                    <button class="{{ $secundario }}">Desvincular NC</button>
+                </form>
+            @endcan
+        @endif
     @endif
-    @if ($estado === 'pendiente_nc')
+    @if (! $soloRevisar && $estado === 'pendiente_nc')
         @can('create', \App\Models\Dte::class)
             <a href="{{ route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id]) }}" class="{{ $primario }}">Crear nota de crédito</a>
         @endcan

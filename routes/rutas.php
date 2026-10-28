@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Rutas\AsignacionSalasController;
+use App\Http\Controllers\Rutas\MiSalidaController;
 use App\Http\Controllers\Rutas\PersonalRutaController;
 use App\Http\Controllers\Rutas\RutaCoberturaController;
 use App\Http\Controllers\Rutas\RutaController;
@@ -39,6 +40,16 @@ use Illuminate\Support\Facades\Route;
 // llegando al mismo lugar.
 Route::get('rutas-cobros/{resto?}', fn (?string $resto = null) => redirect('/rutas/'.($resto ?? ''), 301))
     ->where('resto', '.*');
+
+Route::middleware(['auth', 'permission:rutas.entregas.registrar'])
+    ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
+    ->group(function () {
+        Route::get('/', [MiSalidaController::class, 'index'])->name('index');
+        Route::get('{salida}', [MiSalidaController::class, 'show'])->name('show');
+        Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
+        Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
+        Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
+    });
 
 Route::middleware(['auth', 'permission:rutas.ver'])
     ->prefix('rutas')

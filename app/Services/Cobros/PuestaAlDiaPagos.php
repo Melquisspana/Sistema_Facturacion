@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,14 +17,12 @@ use Illuminate\Support\Facades\DB;
  * que el TXT normal (idempotente por huella y línea), y arma el estado de cobro desde el
  * inicio del seguimiento. Un archivo que falla no frena a los demás.
  *
- * «Solo revisar» corre todo dentro de una transacción que siempre se deshace y no guarda la
- * copia de las subidas: no queda nada en la base. Las copias recibidas por correo ya están
- * guardadas antes de revisar. La cadena no despacha jobs ni
- * manda correos.
+ * La revisión corre en una transacción que siempre se deshace. Las copias privadas
+ * se guardan antes de revisar. La cadena no despacha jobs ni manda correos.
  */
 class PuestaAlDiaPagos
 {
-    public function procesar(Cliente $cliente, array $subidas, ?User $usuario, bool $soloRevisar): array
+    public function procesar(Cliente $cliente, array $subidas, ?User $usuario, bool $soloRevisar, ?Carbon $fechaPago = null): array
     {
         $preparados = [];
         foreach ($subidas as $orden => $subida) {
@@ -51,11 +50,11 @@ class PuestaAlDiaPagos
                     $resultado['mensaje'] = 'El archivo está vacío o no se pudo leer como TXT de pagos.';
                 } else {
                     try {
-                        $resultado = DB::transaction(function () use ($cliente, $usuario, $soloRevisar, $preparado, $subida, $resultado) {
+                        $resultado = DB::transaction(function () use ($cliente, $usuario, $soloRevisar, $preparado, $subida, $resultado, $fechaPago) {
                             $archivo = $subida instanceof ArchivoConciliacion ? $subida : ($soloRevisar
                                 ? ArchivoConciliacion::desdeContenido($preparado['contenido'], $resultado['nombre'])
                                 : ArchivoConciliacion::desdeSubida($subida));
-                            $informe = app(AplicadorPagosTxt::class)->aplicar($cliente, $preparado['filas'], $archivo, $usuario);
+                            $informe = app(AplicadorPagosTxt::class)->aplicar($cliente, $preparado['filas'], $archivo, $usuario, $fechaPago);
                             $lotes = app(ActualizarPpqConTxt::class)->aplicar($preparado['filas'], $archivo, $usuario);
 
                             return array_replace($resultado, ['estado' => 'aplicado', 'informe' => $informe, 'lotes' => $lotes]);
