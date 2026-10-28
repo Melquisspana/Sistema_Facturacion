@@ -58,7 +58,7 @@ class MiSalidaController extends Controller
             'motivos' => MotivoNoEntrega::opciones(),
             'modoVendedor' => true,
             'puedeGestionar' => false,
-            'registrable' => true,
+            'registrable' => ! $salida->diaCerrado(),
             'abierta' => true,
         ]);
     }

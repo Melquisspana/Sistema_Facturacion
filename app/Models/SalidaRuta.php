@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\RolEnSalida;
+use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -117,6 +118,22 @@ class SalidaRuta extends Model
     public function entregas(): HasMany
     {
         return $this->hasMany(SalidaRutaEntrega::class, 'salida_ruta_id');
+    }
+
+    // ----------------------------------------------------------------- cierres
+    public function cierres(): HasMany
+    {
+        return $this->hasMany(SalidaRutaCierre::class, 'salida_ruta_id');
+    }
+
+    public function cierreDelDia(?string $fecha = null): ?SalidaRutaCierre
+    {
+        return $this->cierres()->whereDate('fecha', $fecha ?? HoraNegocio::fechaHoy())->first();
+    }
+
+    public function diaCerrado(?string $fecha = null): bool
+    {
+        return $this->cierreDelDia($fecha)?->estaCerrado() ?? false;
     }
 
     // ------------------------------------------------------------ transiciones

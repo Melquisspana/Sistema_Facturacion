@@ -18,14 +18,22 @@ class SalidaRutaPolicy
 {
     public function view(User $usuario, SalidaRuta $salida): bool
     {
-        return $this->registrar($usuario, $salida);
+        return $this->participa($usuario, $salida) && $salida->estado === EstadoSalidaRuta::EnCurso;
     }
 
     public function registrar(User $usuario, SalidaRuta $salida): bool
     {
-        // PR 2 sumará aquí que el día no esté cerrado.
+        return $this->view($usuario, $salida) && ! $salida->diaCerrado();
+    }
+
+    public function liquidacion(User $usuario, SalidaRuta $salida): bool
+    {
+        return $this->participa($usuario, $salida);
+    }
+
+    private function participa(User $usuario, SalidaRuta $salida): bool
+    {
         return $usuario->can(PermisoSistema::RutasEntregasRegistrar->value)
-            && $salida->estado === EstadoSalidaRuta::EnCurso
             && $salida->personal()->whereIn('rutas_personal.id', PersonalRuta::query()
                 ->where('user_id', $usuario->id)->where('activo', true)->select('id'))->exists();
     }
@@ -33,6 +41,7 @@ class SalidaRutaPolicy
     public function deshacer(User $usuario, SalidaRuta $salida, SalidaRutaEntrega $entrega): bool
     {
         return $this->registrar($usuario, $salida)
+            && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString()))
             && (int) $entrega->salida_ruta_id === (int) $salida->id
             && (int) $entrega->registrado_por === (int) $usuario->id;
     }
