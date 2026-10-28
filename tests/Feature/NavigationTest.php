@@ -425,7 +425,7 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El área Rutas presenta sus tres pantallas —Rutas, Salidas anteriores y Configurar
+     * El área Rutas presenta sus pantallas —Rutas, Ventas, Salidas anteriores y Configurar
      * rutas— y, visualmente, Cobros Calleja con los mismos enlaces que en Facturación.
      */
     public function test_el_area_rutas_presenta_sus_enlaces_mas_cobros_calleja(): void
@@ -439,7 +439,8 @@ class NavigationTest extends TestCase
                 // teléfono. No es una pantalla nueva para este rol.
                 'dashboard',
                 // Tres puertas (27/09/2026): asignación y vendedores viven en Configurar rutas.
-                'rutas.dashboard', 'rutas.salidas.index', 'rutas.rutas.index',
+                // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`.
+                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index',
                 'cobros.index', 'ppq.lotes.index',
             ]),
             $this->enlacesDelSidebar($html),

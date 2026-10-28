@@ -73,6 +73,7 @@ class DistritoSeeder extends Seeder
         if (VinculaMunicipioDistrito::hayCatalogo()) {
             try {
                 VinculaMunicipioDistrito::ejecutar();
+                VinculaMunicipioDistrito::asegurarAgrupaciones();
                 Municipio::olvidarNombresFiscales();
             } catch (\RuntimeException $e) {
                 $this->command?->warn('No se pudo vincular distrito → municipio CAT-013: '.$e->getMessage());

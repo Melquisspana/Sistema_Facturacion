@@ -31,6 +31,9 @@ class BuzonFalso implements MailboxClient
 
     private int $llamadas = 0;
 
+    /** La carpeta que pidió la última búsqueda por remitente (null = la del buzón). */
+    public ?string $carpetaPedida = null;
+
     /** El día NUNCA se agota: cada página dice que quedan más. */
     private bool $truncadoPermanente = false;
 
@@ -217,10 +220,14 @@ class BuzonFalso implements MailboxClient
     /**
      * Igual que IMAP: `FROM` busca por SUBCADENA del remitente (sin distinguir mayúsculas) y
      * `SINCE` desde el día, sin hora. Solo vuelven los adjuntos con esas extensiones.
+     *
+     * Cada correo vive en la carpeta de su clave `carpeta` (sin ella, la del buzón) y solo
+     * vuelve si se pide esa carpeta; sin `$carpeta`, se busca en la del buzón, como IMAP.
      */
-    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones): array
+    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones, ?string $carpeta = null): array
     {
         $this->llamadas++;
+        $this->carpetaPedida = $carpeta;
 
         if ($this->falla !== null) {
             throw $this->falla;
@@ -229,7 +236,7 @@ class BuzonFalso implements MailboxClient
         $inicio = $desde->copy()->startOfDay();
         $resultado = [];
         foreach ($this->mensajes as $m) {
-            if ($m['fecha_obj']->lt($inicio) || ! str_contains(mb_strtolower((string) $m['remitente']), mb_strtolower($remitente))) {
+            if (($m['carpeta'] ?? $this->carpeta) !== ($carpeta ?? $this->carpeta) || $m['fecha_obj']->lt($inicio) || ! str_contains(mb_strtolower((string) $m['remitente']), mb_strtolower($remitente))) {
                 continue;
             }
             $m['adjuntos'] = array_values(array_filter($m['adjuntos'],
