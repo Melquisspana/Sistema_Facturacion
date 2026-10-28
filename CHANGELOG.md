@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Rutas › Ventas: comparación con el mismo período del año anterior, tendencia de 12 meses, pestaña «Devoluciones» (NC por producto y sala con su % sobre lo vendido; las de pronto pago no cuentan), ficha de la sala con última compra, frecuencia, compra promedio y oportunidades de su ruta, y PDF del resumen mensual. #155
 - Rutas: «Ventas nacionales» por producto, sala y ruta (CCF − NC, sin IVA, solo documentos reales; la NC resta en el período del CCF que corrige), comparadas con el período anterior, con los productos que más se venden, lo que sube y baja, las salas que compraron 30 % menos o nada, y Excel. Permiso nuevo `rutas.ventas.ver` para Administrador, Jefatura y Facturación. #149
 - Rutas: rol Vendedor aislado con «Mi salida» en el celular: marca Entregado / No entregado solo en sus salidas en curso, «Todo entregado» por sala y deshacer lo propio; quién entregó lo pone el servidor. El número de control se ve por su final («…0907») en el celular. Permiso nuevo `rutas.entregas.registrar`. #150
 - Cobros: «Buscar TXT en el correo» trae del buzón de Compras (solo lectura) los TXT de pago de Calleja, los muestra en «Solo revisar» y se aplican con un clic, verificando la huella de cada copia. Se activa con `COBROS_TXT_REMITENTE` en el `.env`; vacía, queda apagada. #145
