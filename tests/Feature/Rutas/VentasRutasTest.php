@@ -14,6 +14,7 @@ use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\VentasRutas;
 use App\Services\Rutas\VentasRutasExcel;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -60,6 +61,174 @@ class VentasRutasTest extends TestCase
     private function ventas(array $filtros = []): array
     {
         return app(VentasRutas::class)->consultar($filtros);
+    }
+
+    public function test_anio_anterior_tendencia_y_excel(): void
+    {
+        $this->documento(80, ['fecha_emision' => '2025-10-05']);
+        $original = $this->documento(120);
+        $this->documento(20, ['tipo_dte' => '05', 'fecha_emision' => '2026-11-02'], ['dte_linea_original_id' => $original->id]);
+        $this->documento(50, ['fecha_emision' => '2026-08-05']);
+        $v = $this->ventas();
+        $this->assertSame(80.0, $v['totales']['anio_anterior']);
+        $this->assertEquals(25, $v['totales']['porcentaje_anio']);
+        $this->assertCount(12, $v['tendencia']);
+        $this->assertSame('2025-11', $v['tendencia'][0]['mes']);
+        $this->assertSame(0.0, $v['tendencia'][0]['monto']);
+        $this->assertSame('2026-10', $v['tendencia'][11]['mes']);
+        $this->assertSame(100.0, $v['tendencia'][11]['monto']);
+        $otro = Producto::factory()->create();
+        $this->assertSame(0.0, $this->ventas(['producto' => $otro->id])['tendencia'][11]['monto']);
+        $path = app(VentasRutasExcel::class)->generar($v);
+        try {
+            $libro = IOFactory::load($path);
+            $this->assertSame('Mismo período año anterior', $libro->getActiveSheet()->getCell('G3')->getValue());
+            $this->assertSame(80.0, $libro->getActiveSheet()->getCell('G4')->getValue());
+            $libro->disconnectWorksheets();
+        } finally {
+            unlink($path);
+        }
+        $this->actingAs(User::factory()->create()->assignRole('administrador'))->get(route('rutas.ventas.index'))
+            ->assertOk()->assertSee('vs octubre 2025')->assertSee('polyline', false);
+    }
+
+    public function test_sin_anio_anterior_no_muestra_pastilla(): void
+    {
+        $this->documento();
+        $this->assertNull($this->ventas()['totales']['porcentaje_anio']);
+        $this->actingAs(User::factory()->create()->assignRole('administrador'))->get(route('rutas.ventas.index'))
+            ->assertOk()->assertDontSee('vs octubre 2025');
+    }
+
+    public function test_devoluciones_excluyen_pronto_pago_y_ordenan_por_porcentaje(): void
+    {
+        $original = $this->documento(200);
+        $this->documento(20, ['tipo_dte' => '05', 'tipo_nota_credito' => 'averia'], ['dte_linea_original_id' => $original->id]);
+        $this->documento(30, ['tipo_dte' => '05', 'tipo_nota_credito' => 'pronto_pago'], ['dte_linea_original_id' => $original->id]);
+        $otro = Producto::factory()->create(['nombre' => 'Otro']);
+        $segundo = $this->documento(50, [], ['producto_id' => $otro->id]);
+        $this->documento(10, ['tipo_dte' => '05'], ['dte_linea_original_id' => $segundo->id]);
+        $v = $this->ventas(['vista' => 'devoluciones'])['devoluciones'];
+        $this->assertSame(30.0, $v['total']);
+        $this->assertSame(12.0, $v['porcentaje']);
+        $this->assertSame([$otro->id, $this->producto->id], array_column($v['productos'], 'id'));
+        $this->assertSame(10.0, $v['productos'][1]['porcentaje']);
+        $this->assertSame(200.0, $v['productos'][1]['vendido']);
+        $this->assertSame(20.0, $v['productos'][1]['devuelto']);
+        $this->assertSame(30.0, $v['salas'][0]['devuelto']);
+        $this->actingAs(User::factory()->create()->assignRole('jefatura'))->get(route('rutas.ventas.index', ['vista' => 'devoluciones']))
+            ->assertOk()->assertSee('Devuelto $30.00');
+    }
+
+    public function test_ficha_sala_frecuencia_promedio_y_oportunidades(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Centro']);
+        $this->sala->update(['ruta_id' => $ruta->id]);
+        foreach (['2026-09-15', '2026-09-25', '2026-10-05'] as $fecha) {
+            $this->documento(100, ['fecha_emision' => $fecha]);
+        }
+        $this->documento(30, ['tipo_dte' => '05']);
+        $oportunidad = Producto::factory()->create(['nombre' => 'Oportunidad']);
+        for ($i = 0; $i < 2; $i++) {
+            $sala = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Vecina '.$i, 'codigo' => '00'.$i, 'ruta_id' => $ruta->id, 'activo' => true]);
+            $this->documento(40, ['cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id], ['producto_id' => $oportunidad->id]);
+        }
+        $ficha = $this->ventas(['sala' => $this->sala->id])['ficha_sala'];
+        $this->assertSame('2026-10-05', $ficha['ultima_compra']);
+        $this->assertSame(10, $ficha['dias']);
+        $this->assertSame(10.0, $ficha['frecuencia']);
+        $this->assertSame(90.0, $ficha['promedio']);
+        $this->assertSame($oportunidad->id, $ficha['oportunidades'][0]['id']);
+        $this->assertSame(2, $ficha['oportunidades'][0]['salas']);
+        $this->assertSame(3, $ficha['oportunidades'][0]['total']);
+        $this->actingAs(User::factory()->create()->assignRole('jefatura'))->get(route('rutas.ventas.index', ['sala' => $this->sala->id]))
+            ->assertOk()->assertSee('hace 10 días')->assertSee('Lo compran 2 de 3 salas de la ruta');
+        $this->documento(40, [], ['producto_id' => $oportunidad->id]);
+        $this->assertSame([], $this->ventas(['sala' => $this->sala->id])['ficha_sala']['oportunidades']);
+    }
+
+    public function test_ficha_sin_frecuencia_y_sin_ruta(): void
+    {
+        $this->documento();
+        $ficha = $this->ventas(['sala' => $this->sala->id])['ficha_sala'];
+        $this->assertNull($ficha['frecuencia']);
+        $this->assertSame([], $ficha['oportunidades']);
+        $this->actingAs(User::factory()->create()->assignRole('jefatura'))->get(route('rutas.ventas.index', ['sala' => $this->sala->id]))
+            ->assertOk()->assertSee('Sin datos suficientes')->assertDontSee('Oportunidades');
+    }
+
+    public function test_pdf_permisos_e_invitado(): void
+    {
+        $this->get(route('rutas.ventas.pdf'))->assertRedirect(route('login'));
+        foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', 'vendedor'] as $rol) {
+            $respuesta = $this->actingAs(User::factory()->create()->assignRole($rol))->get(route('rutas.ventas.pdf'));
+            if (in_array($rol, ['administrador', 'jefatura', 'facturacion'])) {
+                $respuesta->assertOk()->assertHeader('content-type', 'application/pdf');
+                $this->assertStringStartsWith('%PDF', $respuesta->getContent());
+            } else {
+                $respuesta->assertForbidden();
+            }
+        }
+    }
+
+    public function test_tendencia_filtra_sala_ruta_cliente_y_completa_meses(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Centro']);
+        $this->sala->update(['ruta_id' => $ruta->id]);
+        $original = $this->documento(100, ['fecha_emision' => '2026-08-10']);
+        $this->documento(20, ['tipo_dte' => '05', 'fecha_emision' => '2026-10-01'], ['dte_linea_original_id' => $original->id]);
+        $otra = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Otra', 'codigo' => '002']);
+        $this->documento(500, ['cliente_id' => $otra->cliente_id, 'cliente_sucursal_id' => $otra->id, 'fecha_emision' => '2026-08-11']);
+        foreach ([['sala' => $this->sala->id], ['ruta' => $ruta->id], ['cliente' => $this->sala->cliente_id]] as $filtro) {
+            $serie = $this->ventas($filtro)['tendencia'];
+            $this->assertSame(80.0, $serie[9]['monto']);
+            $this->assertSame(0.0, $serie[10]['monto']);
+            $this->assertSame(0.0, $serie[11]['monto']);
+        }
+    }
+
+    public function test_oportunidades_exigen_treinta_por_ciento_y_salas_activas_de_la_ruta(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Centro']);
+        $this->sala->update(['ruta_id' => $ruta->id, 'activo' => true]);
+        $this->documento();
+        $producto = Producto::factory()->create();
+        for ($i = 0; $i < 7; $i++) {
+            $sala = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Vecina '.$i, 'codigo' => (string) $i, 'ruta_id' => $ruta->id, 'activo' => true]);
+            $this->documento(40, ['cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id], ['producto_id' => $i < 2 ? $producto->id : $this->producto->id]);
+        }
+        $this->assertSame([], $this->ventas(['sala' => $this->sala->id])['ficha_sala']['oportunidades'], '2 de 8 no alcanza el 30 %.');
+        $inactiva = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Inactiva', 'codigo' => '99', 'ruta_id' => $ruta->id, 'activo' => false]);
+        $this->documento(40, ['cliente_id' => $inactiva->cliente_id, 'cliente_sucursal_id' => $inactiva->id], ['producto_id' => $producto->id]);
+        $this->documento(40, ['fecha_emision' => '2026-01-01'], ['producto_id' => $producto->id]);
+        $this->assertSame([], $this->ventas(['sala' => $this->sala->id])['ficha_sala']['oportunidades']);
+    }
+
+    public function test_pdf_resumen_a4_de_una_pagina_y_validacion_de_filtros(): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $producto = Producto::factory()->create(['nombre' => str_repeat('Producto largo ', 6).$i]);
+            $this->documento(100, ['fecha_emision' => '2026-09-05'], ['producto_id' => $producto->id]);
+            $this->documento($i % 2 ? 50 : 150, [], ['producto_id' => $producto->id]);
+        }
+        for ($i = 0; $i < 20; $i++) {
+            $ruta = Ruta::create(['nombre' => 'Ruta '.$i]);
+            $sala = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala '.$i, 'codigo' => (string) $i, 'ruta_id' => $ruta->id]);
+            $this->documento(100, ['fecha_emision' => '2026-09-05', 'cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id]);
+            $this->documento(50, ['cliente_id' => $sala->cliente_id, 'cliente_sucursal_id' => $sala->id]);
+        }
+        $datos = $this->ventas();
+        $html = view('rutas.ventas.pdf', $datos + ['empresa' => Empresa::first()])->render();
+        $this->assertStringContainsString('Ventas nacionales · Octubre 2026', $html);
+        $this->assertStringContainsString('Totales por ruta', $html);
+        $this->assertStringNotContainsString('<svg', $html);
+        $pdf = Pdf::loadHTML($html)->setPaper('a4', 'portrait');
+        $pdf->output();
+        $this->assertSame(1, $pdf->getDomPDF()->getCanvas()->get_page_count());
+        $this->actingAs(User::factory()->create()->assignRole('administrador'))
+            ->getJson(route('rutas.ventas.pdf', ['producto' => -1]))->assertUnprocessable();
+        $this->get(route('rutas.ventas.pdf', ['producto' => $producto->id]))->assertOk()
+            ->assertDownload('ventas-nacionales-2026-10.pdf');
     }
 
     public function test_permisos_en_ambos_endpoints(): void

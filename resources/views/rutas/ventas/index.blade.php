@@ -2,14 +2,17 @@
     <x-slot name="header">
         <div class="flex items-center justify-between gap-3">
             <h2 class="text-xl font-semibold text-gray-800 dark:text-paper-100">Ventas nacionales</h2>
-            <a href="{{ route('rutas.ventas.excel', $filtros) }}" class="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-indigo-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:text-indigo-400">Descargar Excel</a>
+            <div class="flex flex-wrap justify-end">
+                <a href="{{ route('rutas.ventas.excel', $filtros) }}" class="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-indigo-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:text-indigo-400">Descargar Excel</a>
+                <a href="{{ route('rutas.ventas.pdf', $filtros) }}" class="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-indigo-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 dark:text-indigo-400">Descargar PDF</a>
+            </div>
         </div>
     </x-slot>
     @php
         $url = fn ($cambios = []) => route('rutas.ventas.index', array_filter(array_replace($filtros, $cambios), fn ($v) => $v !== null && $v !== ''));
         $dinero = fn ($n) => ($n < 0 ? '−' : '').'$'.number_format(abs($n), 2);
         $vista = $filtros['vista'] ?? (isset($filtros['producto']) || isset($filtros['ruta']) ? 'salas' : 'productos');
-        $filas = ${$vista};
+        $filas = $vista === 'devoluciones' ? [] : ${$vista};
         $maximo = max([1, ...array_column($filas, 'actual'), ...array_column($filas, 'anterior')]);
         $pastilla = 'inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500';
     @endphp
@@ -52,9 +55,31 @@
                     @else
                         <p class="text-sm text-gray-500 dark:text-paper-300">Sin datos del período anterior</p>
                     @endif
+                    @if ($totales['porcentaje_anio'] !== null)
+                        <span class="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-sm text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">vs {{ $periodo['desde']->copy()->subYearNoOverflow()->translatedFormat('F Y') }} {{ $totales['porcentaje_anio'] >= 0 ? '▲' : '▼' }} {{ number_format(abs($totales['porcentaje_anio']), 0) }} %</span>
+                    @endif
                 </div>
+                <x-rutas.tendencia :serie="$tendencia" />
                 <p class="text-sm text-gray-500 dark:text-paper-300">{{ $contadores['ccf'] }} CCF · {{ $contadores['salas'] }} salas · {{ $dinero($contadores['nc']) }} en notas de crédito</p>
             </section>
+
+            @if ($ficha_sala)
+                <section aria-label="Ficha de la sala" class="rounded-2xl bg-white p-4 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 sm:p-5">
+                    <div class="grid grid-cols-3 gap-3">
+                        <div><h3 class="text-xs text-gray-500 dark:text-paper-300">Última compra</h3><p class="mt-2 font-semibold">{{ $ficha_sala['ultima_compra'] ? \Illuminate\Support\Carbon::parse($ficha_sala['ultima_compra'])->format('d/m/Y') : 'Sin compras' }}</p>@if ($ficha_sala['dias'] !== null)<p class="mt-1 text-xs text-gray-500 dark:text-paper-300">{{ match ($ficha_sala['dias']) { 0 => 'hoy', 1 => 'ayer', default => 'hace '.$ficha_sala['dias'].' días' } }}</p>@endif</div>
+                        <div><h3 class="text-xs text-gray-500 dark:text-paper-300">Cada cuánto compra</h3><p class="mt-2 font-semibold">{{ $ficha_sala['frecuencia'] !== null ? number_format($ficha_sala['frecuencia'], 0).' días' : 'Sin datos suficientes' }}</p></div>
+                        <div><h3 class="text-xs text-gray-500 dark:text-paper-300">Compra promedio</h3><p class="mt-2 text-lg font-semibold">{{ $ficha_sala['promedio'] !== null ? $dinero($ficha_sala['promedio']) : 'Sin compras' }}</p><p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Últimos 12 meses</p></div>
+                    </div>
+                    @if (count($ficha_sala['oportunidades']))
+                        <h3 class="mt-5 text-sm font-semibold">Oportunidades</h3>
+                        <div class="mt-2 divide-y divide-gray-100 dark:divide-ink-700">
+                            @foreach ($ficha_sala['oportunidades'] as $oportunidad)
+                                <a href="{{ $url(['sala' => null, 'producto' => $oportunidad['id'], 'vista' => 'salas']) }}" class="block rounded-lg py-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"><span class="font-medium text-indigo-600 dark:text-indigo-300">{{ $oportunidad['nombre'] }}</span><span class="mt-1 block text-xs text-gray-500 dark:text-paper-300">Lo compran {{ $oportunidad['salas'] }} de {{ $oportunidad['total'] }} salas de la ruta</span></a>
+                            @endforeach
+                        </div>
+                    @endif
+                </section>
+            @endif
 
             @if (count($resumen['monto']))
                 @php
@@ -118,11 +143,29 @@
             @endif
 
             <section aria-label="Detalle de ventas" class="space-y-4">
-                <nav aria-label="Agrupar ventas" class="grid grid-cols-3 gap-1 rounded-2xl bg-gray-100 p-1 dark:bg-ink-800">
-                    @foreach (['productos' => 'Productos', 'salas' => 'Salas', 'rutas' => 'Rutas'] as $clave => $nombre)
+                <nav aria-label="Agrupar ventas" class="grid grid-cols-2 gap-1 rounded-2xl bg-gray-100 p-1 dark:bg-ink-800 sm:grid-cols-4">
+                    @foreach (['productos' => 'Productos', 'salas' => 'Salas', 'rutas' => 'Rutas', 'devoluciones' => 'Devoluciones'] as $clave => $nombre)
                         <a href="{{ $url(['vista' => $clave]) }}" @if ($vista === $clave) aria-current="page" @endif class="{{ $pastilla }} {{ $vista === $clave ? 'bg-white text-indigo-700 shadow-sm dark:bg-ink-600 dark:text-indigo-300' : 'text-gray-600 hover:bg-white dark:text-paper-300 dark:hover:bg-ink-700' }}">{{ $nombre }}</a>
                     @endforeach
                 </nav>
+                @if ($vista === 'devoluciones')
+                    <p class="text-sm font-medium">Devuelto {{ $dinero($devoluciones['total']) }} · {{ $devoluciones['porcentaje'] !== null ? number_format($devoluciones['porcentaje'], 1).' % de lo vendido' : 'Sin venta de referencia' }}</p>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        @foreach (['productos' => 'Productos', 'salas' => 'Salas'] as $grupo => $titulo)
+                            <section class="overflow-hidden rounded-2xl bg-white p-4 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
+                                <h3 class="font-semibold">{{ $titulo }}</h3>
+                                @forelse ($devoluciones[$grupo] as $fila)
+                                    <a href="{{ $url($grupo === 'productos' ? ['producto' => $fila['id'], 'vista' => 'salas'] : ['sala' => $fila['id'] ?: null, 'vista' => 'productos']) }}" class="mt-2 block rounded-lg py-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">
+                                        <span class="flex justify-between gap-3"><span class="font-medium">{{ $fila['nombre'] }}</span><span class="shrink-0 font-semibold text-indigo-600 dark:text-indigo-300">{{ $fila['porcentaje'] !== null ? number_format($fila['porcentaje'], 1).' %' : 'Sin base' }}</span></span>
+                                        <span class="mt-1 block text-xs text-gray-500 dark:text-paper-300">Vendido {{ $dinero($fila['vendido']) }} · Devuelto {{ $dinero($fila['devuelto']) }}</span>
+                                    </a>
+                                @empty
+                                    <p class="mt-3 text-sm text-gray-500 dark:text-paper-300">Sin devoluciones en este período.</p>
+                                @endforelse
+                            </section>
+                        @endforeach
+                    </div>
+                @endif
                 @if ($contadores['ccf'] === 0 && $contadores['nc'] == 0)
                     <div class="rounded-2xl bg-white p-6 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
                         <p>No hubo ventas en este período</p>
