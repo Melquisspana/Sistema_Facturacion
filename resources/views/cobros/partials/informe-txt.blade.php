@@ -1,22 +1,7 @@
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">
-                Archivo de pagos aplicado
-            </h2>
-            <a href="{{ route('cobros.index', ['cliente_id' => $cliente->id]) }}"
-               class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Cobros Calleja</a>
-        </div>
-    </x-slot>
-
-    @php
-        $money = fn ($v) => ((float) $v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
-        $t = $informe['totales'];
-    @endphp
-
-    <div class="py-8">
-        <div class="max-w-full xl:max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-
+@php
+    $money = fn ($v) => ((float) $v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
+    $t = $informe['totales'];
+@endphp
             {{-- Qué dice este archivo, y qué NO dice. --}}
             <div class="rounded-md bg-blue-50 border border-blue-200 p-4 text-sm text-blue-700">
                 <p>
@@ -76,7 +61,6 @@
                 </div>
             @endif
 
-            @include('cobros.partials.pendientes-txt')
 
             {{-- ---------- Totales del archivo ---------- --}}
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -182,8 +166,12 @@
                                 @foreach ($informe['en_revision'] as $fila)
                                     <tr>
                                         <td class="p-2 font-mono whitespace-nowrap">
-                                            <a href="{{ route('cobros.documentos.show', $fila['documento']) }}"
-                                               class="text-indigo-600 hover:underline">{{ $fila['documento']->numero_control }}</a>
+                                            @if ($soloRevisar)
+                                                {{ $fila['documento']->numero_control }}
+                                            @else
+                                                <a href="{{ route('cobros.documentos.show', $fila['documento']) }}"
+                                                   class="text-indigo-600 hover:underline">{{ $fila['documento']->numero_control }}</a>
+                                            @endif
                                         </td>
                                         <td class="p-2 font-mono text-xs">{{ $fila['fila']['linea'] }} · {{ $fila['fila']['tipo'] }}</td>
                                         <td class="p-2 text-right font-mono text-amber-700">{{ $money($fila['monto_archivo']) }}</td>
@@ -282,7 +270,7 @@
                     </p>
                     <ul class="text-sm space-y-2">
                         @foreach ($informe['ajustes'] as $entrada)
-                            <li><x-cobros.ajuste :ajuste="$entrada['ajuste']" /></li>
+                            <li><x-cobros.ajuste :ajuste="$entrada['ajuste']" :solo-revisar="$soloRevisar" /></li>
                         @endforeach
                     </ul>
                 </div>
@@ -308,6 +296,3 @@
                     </ul>
                 </div>
             @endif
-        </div>
-    </div>
-</x-app-layout>

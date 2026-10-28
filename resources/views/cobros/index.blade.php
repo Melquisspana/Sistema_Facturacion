@@ -67,29 +67,18 @@
 
                 @if ($cliente)
                     @can('ppq.gestionar')
-                        <form method="POST" action="{{ route('cobros.pagos', $cliente) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
+                        <form method="POST" action="{{ route('cobros.pagos.revisar', $cliente) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
                             @csrf
                             <div>
-                                <label for="archivo" class="block text-xs font-medium text-gray-600 dark:text-paper-300">TXT de pago de Calleja</label>
-                                <input id="archivo" name="archivo" type="file" accept=".txt,text/plain" required class="mt-1 text-sm">
+                                <label for="archivos" class="block text-xs font-medium text-gray-600 dark:text-paper-300">TXT de pago de Calleja</label>
+                                <input id="archivos" name="archivos[]" type="file" multiple accept=".txt,text/plain" required class="mt-1 text-sm">
                             </div>
                             <div>
                                 <label for="fecha_pago" class="block text-xs font-medium text-gray-600 dark:text-paper-300">Fecha del pago</label>
-                                <input id="fecha_pago" name="fecha_pago" type="date" class="mt-1 rounded-md border-gray-300 text-sm">
+                                <input id="fecha_pago" name="fecha_pago" type="date" aria-describedby="fecha-pago-ayuda" class="mt-1 rounded-md border-gray-300 text-sm">
+                                <p id="fecha-pago-ayuda" class="text-xs text-gray-500 dark:text-paper-300">solo si subís un archivo</p>
                             </div>
-                            <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Cargar pagos</button>
-                        </form>
-                        <form method="POST" action="{{ route('cobros.pagos.varios', $cliente) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
-                            @csrf
-                            <div>
-                                <label for="archivos-varios" class="block text-xs font-medium text-gray-600 dark:text-paper-300">Puesta al día (varios TXT)</label>
-                                <input id="archivos-varios" name="archivos[]" type="file" accept=".txt,text/plain" multiple required class="mt-1 text-sm">
-                            </div>
-                            <label for="solo-revisar" class="text-sm">
-                                <input id="solo-revisar" type="checkbox" name="solo_revisar" value="1" checked>
-                                Solo revisar (no guarda nada)
-                            </label>
-                            <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Procesar TXT</button>
+                            <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Revisar TXT</button>
                         </form>
                         @if (filled(config('cobros.txt_correo.remitente')))
                             <form method="POST" action="{{ route('cobros.pagos.correo', $cliente) }}">

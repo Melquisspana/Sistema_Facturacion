@@ -11,8 +11,6 @@ use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Exceptions\CopiaArchivadaInservibleException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
-use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
-use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroAjuste;
@@ -24,14 +22,12 @@ use App\Models\Cobros\CobroSolicitudItem;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Services\Cobros\AltaCobrosService;
-use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\EstadoCobroDesdeInicio;
 use App\Services\Cobros\Exportadores\EstadoCobroExporter;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
-use App\Services\Cobros\PendientesDelTxt;
 use App\Services\Cobros\PuestaAlDiaPagos;
 use App\Services\Cobros\ReenviarPendientesTxt;
 use App\Services\Cobros\RevisionHistoricaService;
@@ -39,9 +35,7 @@ use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Cobros\SugerenciasAlbaran;
 use App\Services\Cobros\TxtPagosDelCorreo;
 use App\Services\Cobros\VinculadorAlbaranes;
-use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
-use App\Services\Ppq\ConciliacionTxtParser;
 use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
@@ -718,66 +712,37 @@ class CobrosController extends Controller
 
     // ──────────────────────────────────── pagos ────────────────────────────────────
 
-    /**
-     * Aplica el archivo de pagos del cliente al seguimiento.
-     *
-     * La fecha del pago se pide aparte: el archivo NO la trae —lo que trae es la fecha del
-     * documento— y deducirla de ahí sería fechar mal todos los cobros.
-     */
-    public function aplicarPagos(
-        Request $request,
-        Cliente $cliente,
-        ConciliacionTxtParser $parser,
-        AplicadorPagosTxt $aplicador,
-    ): View|RedirectResponse {
-        $request->validate([
-            'archivo' => ['required', 'file', 'max:5120'],
-            'fecha_pago' => ['nullable', 'date'],
-        ], [], ['archivo' => 'archivo de pagos']);
-
-        // La copia se guarda ANTES de procesar: la evidencia no depende de que el
-        // procesamiento salga bien.
-        $archivo = ArchivoConciliacion::desdeSubida($request->file('archivo'));
-
-        try {
-            $informe = $aplicador->aplicar(
-                $cliente,
-                $parser->parse($archivo->contenido),
-                $archivo,
-                $request->user(),
-                $request->filled('fecha_pago') ? Carbon::parse($request->date('fecha_pago')) : null,
-            );
-        } catch (ArchivoConciliacionInconsistenteException $e) {
-            return $this->volver($cliente)->with('error', $e->getMessage());
-        } catch (ArchivoProveedorInvalidoException $e) {
-            return $this->volver($cliente)->with('error', $e->getMessage());
-        }
-
-        // El mismo archivo concilia los PPQ que llevan esos documentos: un solo lugar para el TXT.
-        $lotes = app(ActualizarPpqConTxt::class)->aplicar($parser->parse($archivo->contenido), $archivo, $request->user());
-
-        (new \Illuminate\Database\Eloquent\Collection(collect($informe['ajustes'])->pluck('ajuste')->all()))->load('notaCredito');
-
-        return view('cobros.pagos', [
-            'cliente' => $cliente,
-            'informe' => $informe,
-            'lotesPpq' => $lotes,
-            'pendientes' => app(PendientesDelTxt::class)->analizar($cliente, collect($lotes)->pluck('lote')),
-        ]);
-    }
-
-    public function aplicarPagosVarios(Request $request, Cliente $cliente, PuestaAlDiaPagos $servicio): View
+    public function revisarPagos(Request $request, Cliente $cliente, PuestaAlDiaPagos $servicio): View
     {
         $this->verificarClienteDeCobros($cliente);
-        $request->validate([
+        $datos = $request->validate([
             'archivos' => ['required', 'array', 'min:1', 'max:100'],
             'archivos.*' => ['required', 'file', 'max:5120'],
-            'solo_revisar' => ['sometimes', 'boolean'],
+            'fecha_pago' => ['nullable', 'date'],
         ]);
-        $soloRevisar = $request->boolean('solo_revisar');
-        $resultado = $servicio->procesar($cliente, $request->file('archivos'), $request->user(), $soloRevisar);
+        if ($request->filled('fecha_pago') && count($datos['archivos']) > 1) {
+            throw ValidationException::withMessages([
+                'fecha_pago' => 'La fecha del pago se puede indicar solo con un archivo: con varios, cada pago tiene su fecha.',
+            ]);
+        }
+        $fechaPago = $request->filled('fecha_pago') ? Carbon::parse($datos['fecha_pago']) : null;
+        $copias = array_map(fn ($subida) => ArchivoConciliacion::desdeSubida($subida), $request->file('archivos'));
+        $soloRevisar = true;
+        $resultado = $servicio->procesar($cliente, $copias, $request->user(), $soloRevisar, $fechaPago);
+        $this->guardarTxtRevisados($request, $cliente, $resultado, $fechaPago);
 
         return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar'));
+    }
+
+    private function guardarTxtRevisados(Request $request, Cliente $cliente, array $resultado, ?Carbon $fechaPago = null): void
+    {
+        $mapa = [];
+        foreach ($resultado['archivos'] as $archivo) {
+            if ($archivo['estado'] === 'aplicado') {
+                $mapa[$archivo['hash']] = ['nombre' => $archivo['nombre'], 'fecha_pago' => $fechaPago?->format('Y-m-d')];
+            }
+        }
+        $request->session()->put('cobros.txt_revisados.'.$cliente->id, $mapa);
     }
 
     public function buscarPagosCorreo(Request $request, Cliente $cliente, TxtPagosDelCorreo $correoTxt, PuestaAlDiaPagos $servicio): View|RedirectResponse
@@ -791,30 +756,49 @@ class CobrosController extends Controller
         $soloRevisar = true;
         $nuevos = collect($correo)->where('estado', 'nuevo')->pluck('archivo')->all();
         $resultado = $servicio->procesar($cliente, $nuevos, $request->user(), $soloRevisar);
+        $this->guardarTxtRevisados($request, $cliente, $resultado);
 
         return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar', 'correo'));
     }
 
-    public function aplicarPagosCorreo(Request $request, Cliente $cliente, PuestaAlDiaPagos $servicio): View
+    public function aplicarPagosRevisados(Request $request, Cliente $cliente, PuestaAlDiaPagos $servicio): View
     {
         $this->verificarClienteDeCobros($cliente);
         $datos = $request->validate([
-            'archivos' => ['required', 'array', 'min:1', 'max:100'],
-            'archivos.*.hash' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/', 'distinct'],
-            'archivos.*.nombre' => ['required', 'string', 'regex:/^\d{6}_\d{14}\.txt$/i'],
+            'hashes' => ['required', 'array', 'min:1', 'max:100'],
+            'hashes.*' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/', 'distinct'],
         ]);
+        $clave = 'cobros.txt_revisados.'.$cliente->id;
+        $revisados = $request->session()->get($clave, []);
         $copias = [];
         $errores = [];
-        foreach ($datos['archivos'] as $dato) {
-            $copia = ArchivoConciliacion::desdeCopia($dato['hash'], $dato['nombre']);
+        $fechaPago = null;
+        foreach ($datos['hashes'] as $hash) {
+            $dato = $revisados[$hash] ?? null;
+            unset($revisados[$hash]);
+            if ($dato === null) {
+                $errores[] = ['nombre' => $hash, 'estado' => 'error', 'mensaje' => 'Este TXT no se revisó en esta sesión: revisalo de nuevo antes de aplicarlo.'];
+
+                continue;
+            }
+            $copia = ArchivoConciliacion::desdeCopia($hash, $dato['nombre']);
             if ($copia === null) {
                 $errores[] = ['nombre' => $dato['nombre'], 'estado' => 'error', 'mensaje' => 'La copia del TXT no existe o no coincide con su huella: no se aplicó.'];
             } else {
                 $copias[] = $copia;
+                if (count($datos['hashes']) === 1 && $dato['fecha_pago'] !== null) {
+                    $fechaPago = Carbon::parse($dato['fecha_pago']);
+                }
             }
         }
         $soloRevisar = false;
-        $resultado = $servicio->procesar($cliente, $copias, $request->user(), $soloRevisar);
+        $resultado = $servicio->procesar($cliente, $copias, $request->user(), $soloRevisar, $fechaPago);
+        $request->session()->put($clave, $revisados);
+        foreach ($resultado['archivos'] as $archivo) {
+            if ($archivo['estado'] === 'aplicado') {
+                (new \Illuminate\Database\Eloquent\Collection(collect($archivo['informe']['ajustes'])->pluck('ajuste')->all()))->load('notaCredito');
+            }
+        }
         $resultado['archivos'] = array_merge($resultado['archivos'], $errores);
 
         return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar'));

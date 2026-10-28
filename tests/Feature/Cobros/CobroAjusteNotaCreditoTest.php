@@ -22,12 +22,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RevisaYAplicaTxt;
 use Tests\TestCase;
 
 class CobroAjusteNotaCreditoTest extends TestCase
 {
     use PreparaEmisorDte;
     use RefreshDatabase;
+    use RevisaYAplicaTxt;
 
     private Cliente $cliente;
 
@@ -250,7 +252,7 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $this->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk()->assertSee('Crear nota de crédito')->assertSee('Vincular NC existente');
         $ajuste->update(['nc_dte_id' => $this->nc()->id]);
         $this->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk()->assertSee('NC en proceso')->assertSee('Desvincular NC');
-        $this->post(route('cobros.pagos', $this->cliente), [
+        $this->revisarYAplicarTxt($this->cliente, [
             'archivo' => UploadedFile::fake()->createWithContent('pagos.txt', "000123;Proveedor;QD;PPQ/33762;;-153.01\n"),
         ])->assertOk()->assertSee('NC en proceso')->assertSee('Desvincular NC');
     }
