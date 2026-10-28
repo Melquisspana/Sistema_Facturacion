@@ -219,8 +219,10 @@ class EntregasCcf
                 'registrado_por' => $usuario?->id,
             ];
 
+            $this->exigirDiaAbierto($salida, $comun['fecha_resultado']->toDateString());
+
             if ($resultado === ResultadoEntrega::Entregado) {
-                Dte::whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
+                $dte = Dte::with('cliente')->whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
                 if ($this->existeBloqueando(SalidaRutaEntrega::where('dte_id', $entrega->dte_id)->where('id', '!=', $entrega->id)->entregadas())) {
                     throw ValidationException::withMessages(['entrega' => 'Ese CCF ya consta como entregado en otra salida.']);
                 }
@@ -233,6 +235,9 @@ class EntregasCcf
                 }
 
                 $entrega->update($comun + [
+                    'forma_cobro' => $dte->cliente?->cobro_en_entrega,
+                    'monto_esperado' => $dte->cliente?->cobro_en_entrega ? $dte->total_pagar : null,
+                    'monto_cobrado' => $dte->cliente?->cobro_en_entrega ? $dte->total_pagar : null,
                     'entregado_por_id' => $personaId,
                     'trae_nota_averia' => filter_var($datos['trae_nota_averia'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'motivo_no_entrega' => null,
@@ -298,6 +303,9 @@ class EntregasCcf
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
             $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
             Dte::whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
+            if ($entrega->fecha_resultado) {
+                $this->exigirDiaAbierto($salida, $entrega->fecha_resultado->toDateString());
+            }
             if ($salida->estado === EstadoSalidaRuta::Cancelada) {
                 throw ValidationException::withMessages(['entrega' => 'La salida está cancelada: no se corrige nada en ella.']);
             }
@@ -314,6 +322,9 @@ class EntregasCcf
                 'fecha_resultado' => null,
                 'origen_registro' => null,
                 'registrado_por' => null,
+                'forma_cobro' => null,
+                'monto_esperado' => null,
+                'monto_cobrado' => null,
             ]);
             $original->setRawAttributes($entrega->getAttributes(), true);
         });
@@ -500,5 +511,12 @@ class EntregasCcf
                         : 'La salida está cancelada: no se registran entregas en ella.'),
             ]);
         }
+    }
+
+    private function exigirDiaAbierto(SalidaRuta $salida, string $fecha): void
+    {
+        // Lectura bloqueante: registrarSala pudo abrir antes una foto de REPEATABLE READ.
+        $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->first();
+        abort_if($cierre?->estaCerrado(), 403, 'El día está cerrado. La oficina debe reabrirlo antes de modificar entregas.');
     }
 }

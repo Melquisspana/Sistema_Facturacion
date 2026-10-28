@@ -23,6 +23,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RevisaYAplicaTxt;
 use Tests\TestCase;
 
 /**
@@ -36,6 +37,7 @@ class CobrosProntoPagoNoRestaDelCcfTest extends TestCase
 {
     use PreparaEmisorDte;
     use RefreshDatabase;
+    use RevisaYAplicaTxt;
 
     private Cliente $cliente;
 
@@ -104,7 +106,7 @@ class CobrosProntoPagoNoRestaDelCcfTest extends TestCase
     {
         $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n".$lineas;
         $this->actingAs(User::factory()->create()->assignRole(RolSistema::Administrador->value))
-            ->post(route('cobros.pagos', $this->cliente), ['archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt)])
+            ->revisarYAplicarTxt($this->cliente, ['archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt)])
             ->assertOk();
     }
 

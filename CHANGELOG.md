@@ -10,14 +10,22 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Rutas: gastos del día (parqueo, gasolina, viáticos u otro) con foto del recibo tomada con el celular, guardada en privado; se restan del efectivo a entregar en el cierre y salen en la liquidación. Un gasto sin foto queda marcado «Sin comprobante». Trae migración. #153
+- Rutas: cierre del día. El cliente dice si «cobra en la entrega» (efectivo, cheque o transferencia); al cerrar el día se corrige solo lo que salió distinto, se elige quién entrega el dinero y sale el PDF de liquidación con efectivo, cheques y transferencias por separado y el efectivo a entregar. Un día cerrado ya no se modifica sin que la oficina lo reabra con motivo. Trae 3 migraciones. #152
 - Rutas › Ventas: comparación con el mismo período del año anterior, tendencia de 12 meses, pestaña «Devoluciones» (NC por producto y sala con su % sobre lo vendido; las de pronto pago no cuentan), ficha de la sala con última compra, frecuencia, compra promedio y oportunidades de su ruta, y PDF del resumen mensual. #155
 - Rutas: «Ventas nacionales» por producto, sala y ruta (CCF − NC, sin IVA, solo documentos reales; la NC resta en el período del CCF que corrige), comparadas con el período anterior, con los productos que más se venden, lo que sube y baja, las salas que compraron 30 % menos o nada, y Excel. Permiso nuevo `rutas.ventas.ver` para Administrador, Jefatura y Facturación. #149
 - Rutas: rol Vendedor aislado con «Mi salida» en el celular: marca Entregado / No entregado solo en sus salidas en curso, «Todo entregado» por sala y deshacer lo propio; quién entregó lo pone el servidor. El número de control se ve por su final («…0907») en el celular. Permiso nuevo `rutas.entregas.registrar`. #150
+- Rutas: «Ventas nacionales» por producto, sala y ruta (CCF − NC, sin IVA, solo documentos reales; la NC resta en el período del CCF que corrige), comparadas con el período anterior, con los productos que más se venden, lo que sube y baja, las salas que compraron 30 % menos o nada, y Excel. Permiso nuevo `rutas.ventas.ver` para Administrador, Jefatura y Facturación. #149
 - Cobros: «Buscar TXT en el correo» trae del buzón de Compras (solo lectura) los TXT de pago de Calleja, los muestra en «Solo revisar» y se aplican con un clic, verificando la huella de cada copia. Se activa con `COBROS_TXT_REMITENTE` en el `.env`; vacía, queda apagada. #145
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
 
+### Cambiado
+
+- Cobros: un solo formulario para subir uno o varios TXT de pago. Primero muestra la revisión, sin aplicar nada, con el detalle de cada archivo, y después «Aplicar los N». Solo se aplican los TXT revisados por el mismo usuario y para el mismo cliente, una sola vez. La fecha del pago se puede indicar solo con un archivo. Se retiran «Cargar pagos», la casilla «Solo revisar» y sus rutas; el botón del correo usa el mismo paso de aplicar. #151
+
 ### Corregido
 
+- La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 - La migración del correlativo anual (#125) busca el índice único viejo de `dtes` por sus columnas y no por su nombre, y se puede volver a correr si se corta a la mitad; la reversa se niega antes de tocar el esquema si ya hay números repetidos entre ejercicios. También vuelve a 1 una serie con números tomados pero sin DTE propio en el sistema: esos números cuentan como de 2026. #146
 - Ubicaciones: toda agrupación municipal 2024 sin fila en `municipios` (San Salvador Norte, Santa Ana Este, Chalatenango Norte, San Vicente Norte y Morazán Norte) recibe la suya, así sus distritos se pueden elegir en el formulario. Lo hacen los seeders, `distritos:vincular-municipio` y una migración re-ejecutable; `ubicaciones:auditar` avisa si queda alguna. Era un arreglo que solo estaba en el servidor y ahora queda en el repositorio.
 - Cobros: «Buscar TXT en el correo» abre su propia carpeta del buzón (`COBROS_TXT_CARPETA`, INBOX por defecto) en vez de la de Compras, donde no llegan los TXT. Compras sigue con la suya. #147

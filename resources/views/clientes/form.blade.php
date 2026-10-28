@@ -204,6 +204,17 @@
                             </div>
 
                             <div>
+                                <x-input-label for="cobro_en_entrega" value="Cobra en la entrega" />
+                                <select id="cobro_en_entrega" name="cobro_en_entrega" class="mt-1 block min-h-11 w-full rounded-md border-gray-300 shadow-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                    <option value="">No</option>
+                                    @foreach (\App\Enums\FormaCobroEntrega::opciones() as $valor => $label)
+                                        <option value="{{ $valor }}" @selected(old('cobro_en_entrega', $cliente->cobro_en_entrega?->value) === $valor)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('cobro_en_entrega')" class="mt-1" />
+                            </div>
+
+                            <div>
                                 <x-input-label for="descuento_global_default" value="Descuento global (%)" />
                                 <x-text-input id="descuento_global_default" name="descuento_global_default" type="number"
                                     min="0" max="100" step="0.01" placeholder="0.00" class="mt-1 block w-full"

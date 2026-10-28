@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\FormaCobroEntrega;
 use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
@@ -56,6 +57,7 @@ class Cliente extends Model
         'observaciones_facturacion',
         'descuento_global_default',
         'condicion_operacion_default',
+        'cobro_en_entrega',
         'activo',
     ];
 
@@ -70,6 +72,7 @@ class Cliente extends Model
             'tamanio_contribuyente' => TamanioContribuyente::class,
             'descuento_global_default' => 'decimal:2',
             'condicion_operacion_default' => 'integer',
+            'cobro_en_entrega' => FormaCobroEntrega::class,
             'activo' => 'boolean',
         ];
     }

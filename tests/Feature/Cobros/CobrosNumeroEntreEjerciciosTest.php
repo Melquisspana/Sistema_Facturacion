@@ -35,6 +35,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\CreaDteVerificableCobros;
+use Tests\Concerns\RevisaYAplicaTxt;
 use Tests\TestCase;
 
 /**
@@ -47,6 +48,7 @@ class CobrosNumeroEntreEjerciciosTest extends TestCase
 {
     use CreaDteVerificableCobros;
     use RefreshDatabase;
+    use RevisaYAplicaTxt;
 
     private const NUMERO = 'DTE-03-M001P002-000000000000015';
 
@@ -300,7 +302,7 @@ class CobrosNumeroEntreEjerciciosTest extends TestCase
             .'000123;TITULAR DE EJEMPLO;CF;'.self::NUMERO_TXT.";;100.00\n";
 
         $this->actingAs(User::factory()->create()->assignRole(RolSistema::Administrador->value))
-            ->post(route('cobros.pagos', $cliente), ['archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt)])
+            ->revisarYAplicarTxt($cliente, ['archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt)])
             ->assertOk()
             ->assertSee('existe en más de un año')
             ->assertSee('2026')

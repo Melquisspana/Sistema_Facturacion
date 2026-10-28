@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\ResultadoEntrega;
@@ -33,11 +34,17 @@ class SalidaRutaEntrega extends Model
         'fecha_resultado',
         'origen_registro',
         'registrado_por',
+        'forma_cobro',
+        'monto_esperado',
+        'monto_cobrado',
     ];
 
     protected function casts(): array
     {
         return [
+            'forma_cobro' => FormaCobroEntrega::class,
+            'monto_esperado' => 'decimal:2',
+            'monto_cobrado' => 'decimal:2',
             'resultado' => ResultadoEntrega::class,
             'motivo_no_entrega' => MotivoNoEntrega::class,
             'origen_registro' => OrigenRegistroEntrega::class,
