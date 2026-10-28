@@ -425,10 +425,11 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El área Rutas presenta sus pantallas —Rutas, Ventas, Salidas anteriores y Configurar
-     * rutas— y, visualmente, Cobros Calleja con los mismos enlaces que en Facturación.
+     * El área Rutas presenta solo sus pantallas —Rutas, Ventas, Salidas anteriores y
+     * Configurar rutas—. Cobros Calleja salió de esta barra (28/10/2026): sigue en la de
+     * Facturación.
      */
-    public function test_el_area_rutas_presenta_sus_enlaces_mas_cobros_calleja(): void
+    public function test_el_area_rutas_presenta_solo_sus_enlaces(): void
     {
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.dashboard'))->assertOk()->getContent();
 
@@ -441,7 +442,6 @@ class NavigationTest extends TestCase
                 // Tres puertas (27/09/2026): asignación y vendedores viven en Configurar rutas.
                 // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`.
                 'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index',
-                'cobros.index', 'ppq.lotes.index',
             ]),
             $this->enlacesDelSidebar($html),
         );
@@ -449,7 +449,7 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe($html);
         $this->assertStringContainsString('Salidas anteriores', $sidebar);
         $this->assertStringContainsString('Configurar rutas', $sidebar);
-        $this->assertStringContainsString('Cobros Calleja', $sidebar);
+        $this->assertStringNotContainsString('Cobros Calleja', $sidebar);
         // La custodia del papel se retiró (26/09/2026).
         $this->assertStringNotContainsString('Recepción de CCF', $sidebar);
         $this->assertStringNotContainsString('Excepciones', $sidebar);
@@ -662,17 +662,19 @@ class NavigationTest extends TestCase
 
     /**
      * El ÁREA se llama «Rutas» desde el 26/09/2026 (antes «Cobros», cuando cargaba la
-     * custodia del CCF físico), y el módulo de cobro se llama «Cobros Calleja» igual que
-     * en la barra de Facturación: un nombre distinto para el mismo módulo según por dónde
-     * se entre obliga a deducir que hablan de lo mismo.
+     * custodia del CCF físico). Cobros Calleja ya no aparece en su barra, pero sigue
+     * entero en la de Facturación con el mismo rótulo.
      */
-    public function test_el_area_se_llama_rutas_y_usa_el_mismo_rotulo_del_modulo_de_cobro(): void
+    public function test_el_area_se_llama_rutas_y_cobros_calleja_queda_en_facturacion(): void
     {
         $html = $this->actingAs($this->usuario('administrador'))->get(route('rutas.dashboard'))->assertOk()->getContent();
         $sidebar = $this->sidebarDe($html);
 
         $this->assertSame('Rutas', AreaSistema::Rutas->label());
-        $this->assertStringContainsString('Cobros Calleja', $sidebar);
+        $this->assertStringNotContainsString('Cobros Calleja', $sidebar);
+        $facturacion = $this->sidebarDe($this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent());
+        $this->assertStringContainsString('Cobros Calleja', $facturacion);
+        $this->get(route('cobros.index'))->assertOk();
         $this->assertStringNotContainsString('Prontos Pagos', $sidebar);
     }
 
