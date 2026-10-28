@@ -9,6 +9,7 @@ use App\Http\Controllers\Rutas\RutaSalaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
 use App\Http\Controllers\Rutas\SalidaEntregaController;
 use App\Http\Controllers\Rutas\SalidaRutaController;
+use App\Http\Controllers\Rutas\VentasController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -55,6 +56,10 @@ Route::middleware(['auth', 'permission:rutas.ver'])
     ->name('rutas.')
     ->group(function () {
         Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+        Route::get('ventas', [VentasController::class, 'index'])
+            ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
+        Route::get('ventas/excel', [VentasController::class, 'excel'])
+            ->middleware('permission:rutas.ventas.ver')->name('ventas.excel');
 
         /*
         | Catálogo de rutas. Sin `destroy`: una ruta no se elimina, se desactiva

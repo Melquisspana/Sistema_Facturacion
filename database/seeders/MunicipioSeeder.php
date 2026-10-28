@@ -4,12 +4,22 @@ namespace Database\Seeders;
 
 use App\Models\Departamento;
 use App\Models\Municipio;
+use App\Support\Ubicacion\VinculaMunicipioDistrito;
 use Illuminate\Database\Seeder;
 
 /**
  * Subconjunto útil de municipios por departamento para empezar a operar.
  * Incluye Olocuilta (La Paz). El código MH (CAT-013) se completará al importar
  * el catálogo oficial; aquí se siembran nombres y la relación al departamento.
+ *
+ * OJO: es un SUBCONJUNTO deliberado de municipios PRE-2024, no el catálogo completo, y
+ * el select de municipio del formulario se arma con estas filas. Una AGRUPACIÓN fiscal
+ * 2024 cuyos municipios anteriores no figuren acá se volvería inelegible y arrastraría
+ * consigo a todos sus distritos —fue el caso de San Salvador Norte (CAT-013 20) y su
+ * distrito Guazapa—. Ya no hace falta completar esta lista a mano para evitarlo:
+ * {@see VinculaMunicipioDistrito::asegurarAgrupaciones()} corre después
+ * (DistritoSeeder y CatalogosMhTablaSeeder) y crea la fila representante de cualquier
+ * agrupación que quede sin una.
  */
 class MunicipioSeeder extends Seeder
 {

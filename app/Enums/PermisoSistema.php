@@ -131,6 +131,8 @@ enum PermisoSistema: string
     // cobertura, asignar salas, crear salidas y moverles el estado.
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
+    // Ventas netas y su Excel: consulta comercial de solo lectura.
+    case RutasVentasVer = 'rutas.ventas.ver';
     // Vendedor: registrar sus entregas, sin acceso a la gestión de oficina.
     case RutasEntregasRegistrar = 'rutas.entregas.registrar';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
@@ -240,6 +242,7 @@ enum PermisoSistema: string
                 // Y da de alta a los vendedores: sin ellos no se puede salir (27/09/2026).
                 self::RutasPersonalVer,
                 self::RutasPersonalGestionar,
+                self::RutasVentasVer,
             ]),
 
             // Facturación: operación diaria. Emite y gestiona DTE, PPQ y
@@ -270,6 +273,8 @@ enum PermisoSistema: string
                 self::RutasGestionar,
                 self::RutasPersonalVer,
                 self::RutasPersonalGestionar,
+                // Y consulta las ventas por producto y sala (decisión del usuario, 28/10/2026).
+                self::RutasVentasVer,
             ]),
 
             // Contabilidad: solo lectura contable + envío del paquete a la

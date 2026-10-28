@@ -153,10 +153,13 @@ return [
     |
     | `remitente` es la dirección exacta que manda los TXT. Vacío = función apagada (el
     | botón no aparece). Va solo en .env: el repositorio es público.
+    | `carpeta`: dónde llegan los TXT en ese buzón. Es aparte de la de Compras
+    | (DOCUMENTOS_RECIBIDOS_MAIL_FOLDER), que no cambia.
     | `dias`: cuánto hacia atrás se busca en cada consulta.
     */
     'txt_correo' => [
         'remitente' => env('COBROS_TXT_REMITENTE', ''),
+        'carpeta' => env('COBROS_TXT_CARPETA', 'INBOX'),
         'dias' => 60,
     ],
 ];

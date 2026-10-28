@@ -39,6 +39,10 @@ class CatalogosMhTablaSeeder extends Seeder
             // Y con los distritos ya vinculados, completar el CAT-013 de los municipios
             // que estén en NULL (el seeder liviano no lo trae). Solo rellena vacíos.
             VinculaMunicipioDistrito::completarCodigosMunicipio();
+            // Y toda agrupación 2024 que haya quedado SIN fila representante en
+            // `municipios` recibe la suya: sin representante no aparece en el select de
+            // municipio y sus distritos quedan inalcanzables (caso San Salvador Norte).
+            VinculaMunicipioDistrito::asegurarAgrupaciones();
             Municipio::olvidarNombresFiscales();
         } catch (RuntimeException $e) {
             $this->command?->warn('No se pudo vincular distrito → municipio CAT-013: '.$e->getMessage());

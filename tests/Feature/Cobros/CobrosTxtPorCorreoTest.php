@@ -194,6 +194,28 @@ class CobrosTxtPorCorreoTest extends TestCase
         $this->assertSame(1, $e['a']->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count());
     }
 
+    public function test_busca_en_la_carpeta_de_los_txt_y_no_en_la_de_compras(): void
+    {
+        $e = $this->escenario();
+        // Compras lee «CCF»; los TXT llegan a INBOX.
+        $this->buzon = new BuzonFalso(carpeta: 'CCF');
+        $this->app->instance(MailboxClient::class, $this->buzon);
+        $this->buzon
+            ->conTxt(10, '2026-10-20 09:00', self::REMITENTE, '000123_20261020090000.txt', $e['txt1'], ['carpeta' => 'INBOX'])
+            ->conTxt(11, '2026-10-22 09:00', self::REMITENTE, '000123_20261022090000.txt', $e['txt2']);
+
+        $respuesta = $this->buscar()->assertOk();
+
+        $this->assertSame('INBOX', $this->buzon->carpetaPedida, 'Sin COBROS_TXT_CARPETA se busca en INBOX.');
+        $this->assertSame(['000123_20261020090000.txt'], collect($respuesta->viewData('correo'))->pluck('nombre')->all());
+
+        config(['cobros.txt_correo.carpeta' => 'Pagos Calleja']);
+        $respuesta = $this->buscar()->assertOk();
+
+        $this->assertSame('Pagos Calleja', $this->buzon->carpetaPedida);
+        $this->assertCount(0, $respuesta->viewData('correo'));
+    }
+
     public function test_un_txt_ya_aplicado_sale_como_ya_aplicado_y_no_se_vuelve_a_ofrecer(): void
     {
         $e = $this->escenario();
