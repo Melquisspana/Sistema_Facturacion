@@ -68,6 +68,8 @@ Route::middleware(['auth', 'permission:rutas.ver'])
             ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
         Route::get('ventas/excel', [VentasController::class, 'excel'])
             ->middleware('permission:rutas.ventas.ver')->name('ventas.excel');
+        Route::get('ventas/pdf', [VentasController::class, 'pdf'])
+            ->middleware('permission:rutas.ventas.ver')->name('ventas.pdf');
 
         /*
         | Catálogo de rutas. Sin `destroy`: una ruta no se elimina, se desactiva
