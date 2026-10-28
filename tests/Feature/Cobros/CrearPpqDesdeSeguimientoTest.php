@@ -26,6 +26,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RevisaYAplicaTxt;
 use Tests\TestCase;
 
 /** Del Seguimiento sale el PPQ; el TXT (un solo lugar) lo deja pagado solo. */
@@ -33,6 +34,7 @@ class CrearPpqDesdeSeguimientoTest extends TestCase
 {
     use PreparaEmisorDte;
     use RefreshDatabase;
+    use RevisaYAplicaTxt;
 
     private Cliente $cliente;
 
@@ -130,7 +132,7 @@ class CrearPpqDesdeSeguimientoTest extends TestCase
         $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n"
             .'000123;TITULAR DE EJEMPLO;CF;'.str_replace('-', '', $doc->numero_control).";10-SEP-26;100.00\n"
             .'000123;TITULAR DE EJEMPLO;NC;'.str_replace('-', '', $nc->numero_control).";10-SEP-26;-1.11\n";
-        $this->actingAs($usuario)->post(route('cobros.pagos', $this->cliente), [
+        $this->actingAs($usuario)->revisarYAplicarTxt($this->cliente, [
             'archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt),
         ])->assertOk()->assertSeeText('También se actualizaron los PPQ');
 
