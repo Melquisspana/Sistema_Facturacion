@@ -15,6 +15,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- La migración del correlativo anual (#125) busca el índice único viejo de `dtes` por sus columnas y no por su nombre, y se puede volver a correr si se corta a la mitad; la reversa se niega antes de tocar el esquema si ya hay números repetidos entre ejercicios. También vuelve a 1 una serie con números tomados pero sin DTE propio en el sistema: esos números cuentan como de 2026. #146
 - Ubicaciones: toda agrupación municipal 2024 sin fila en `municipios` (San Salvador Norte, Santa Ana Este, Chalatenango Norte, San Vicente Norte y Morazán Norte) recibe la suya, así sus distritos se pueden elegir en el formulario. Lo hacen los seeders, `distritos:vincular-municipio` y una migración re-ejecutable; `ubicaciones:auditar` avisa si queda alguna. Era un arreglo que solo estaba en el servidor y ahora queda en el repositorio.
 
 ## [2026.10.25.4] - 2026-10-25
