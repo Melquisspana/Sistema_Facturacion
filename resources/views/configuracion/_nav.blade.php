@@ -51,6 +51,9 @@
             'items' => [
                 ['ruta' => 'configuracion.integraciones.gmail', 'patron' => 'configuracion.integraciones.gmail*', 'titulo' => 'Gmail / Pronto pago'],
                 ['ruta' => 'configuracion.integraciones.documentos-recibidos', 'patron' => 'configuracion.integraciones.documentos-recibidos*', 'titulo' => 'Buzón de compras'],
+                ...((config('asistencia.enabled') && auth()->user()->can('asistencia.dispositivos.gestionar'))
+                    ? [['ruta' => 'configuracion.lectores.index', 'patron' => 'configuracion.lectores.*', 'titulo' => 'Lectores de huella']]
+                    : []),
             ],
         ],
         [

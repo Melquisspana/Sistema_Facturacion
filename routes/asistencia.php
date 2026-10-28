@@ -1,66 +1,40 @@
 <?php
 
 use App\Http\Controllers\Asistencia\AsistenciaDashboardController;
-use App\Http\Controllers\Asistencia\DispositivoController;
 use App\Http\Controllers\Asistencia\EmpleadoController;
 use App\Http\Controllers\Asistencia\EnrolamientoController;
 use App\Http\Controllers\Asistencia\HuellaController;
 use App\Http\Controllers\Asistencia\JornadaController;
 use App\Http\Controllers\Asistencia\MarcacionController;
+use App\Http\Controllers\Asistencia\ReporteController;
 use Illuminate\Support\Facades\Route;
 
 /*
-| Control de Asistencia — pantallas WEB de administración.
+| Control de Asistencia — pantallas WEB: Hoy, Personal y Reporte. El historial de
+| marcaciones y las jornadas conservan sus rutas como «detalle».
 |
-| Qué contiene HOY: personas que marcan, sus asignaciones de ranura del sensor, y
-| los lectores dados de alta.
-|
-| Desde la Fase 3, el historial de marcaciones con filtros. Desde la Fase 4, el
-| reporte de jornadas (qué ocurrió cada día, con el tiempo de presencia sumado).
-|
-| Qué NO contiene, y no por descuido: tardanzas, horas extra, ausencias, feriados
-| y enrolamiento remoto del ESP32. Los cuatro primeros necesitan horarios, que no
-| existen; el último tiene su propia fase.
-|
-| NO se toca DTE, facturación, PPQ, exportaciones, Rutas/Cobros ni Planta.
-|
-| ─────────────────────────── Los endpoints del lector ───────────────────────────
-|
-| Viven aparte, en routes/api.php (`api.asistencia.*`), y no se tocan acá. El
-| ESP32 no tiene sesión ni CSRF; estas pantallas exigen las dos. Son dos clientes
-| distintos con dos candados distintos sobre el mismo módulo.
+| Los lectores se administran en Configuración (routes/lectores-asistencia.php).
+| Los endpoints del ESP32 viven en routes/api.php (`api.asistencia.*`) y no se
+| tocan: el firmware de producción apunta a esas URL, y AsistenciaSimpleTest las fija.
 |
 | ────────────────────────────── Candados, en orden ──────────────────────────────
 |
 |   1. auth                     -> invitado va al login.
-|   2. modulo.asistencia        -> 404 si ASISTENCIA_ENABLED=false. En un servidor
-|                                  sin lector, estas pantallas NO EXISTEN: ni la
-|                                  URL escrita a mano, ni el enlace del selector
-|                                  de áreas (App\Enums\AreaSistema::habilitada()).
+|   2. modulo.asistencia        -> 404 si ASISTENCIA_ENABLED=false.
 |   3. permission:asistencia.ver-> 403 para quien no tenga el permiso de entrada.
+|   4. permission:asistencia.gestionar (inline)
+|        crear y editar personas, activarlas, guardar y QUITAR huellas. Asignar
+|        decide de quién van a ser las marcaciones que vengan después.
 |
-| Y dos candados INLINE, porque son riesgos distintos:
+| Los botones de las vistas son PRESENTACIÓN y nunca autorizan.
 |
-|   4. permission:asistencia.gestionar
-|        crear y editar personas, activarlas, y ASIGNAR o LIBERAR ranuras.
-|        Asignar decide de quién van a ser las marcaciones que vengan después.
-|   5. permission:asistencia.dispositivos.gestionar
-|        dar de alta lectores, editarlos, activarlos y ROTARLES el token.
-|        Va aparte porque produce un secreto y porque quien administra personal no
-|        tiene por qué poder dejar el lector de la puerta sin autenticar.
-|
-| El selector de áreas y los botones de las vistas son PRESENTACIÓN y nunca
-| autorizan: ocultar un botón no impide escribir su URL.
-|
-| Las rutas literales van ANTES que las paramétricas (regla del repo), por eso
-| `empleados/crear` se declara antes que `empleados/{empleado}`.
+| Las rutas literales van ANTES que las paramétricas (regla del repo).
 */
 Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
     ->prefix('asistencia')
     ->name('asistencia.')
     ->group(function () {
         $gestionar = 'permission:asistencia.gestionar';
-        $lectores = 'permission:asistencia.dispositivos.gestionar';
 
         Route::get('/', [AsistenciaDashboardController::class, 'index'])->name('dashboard');
 
@@ -122,20 +96,10 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         */
         Route::get('jornadas', [JornadaController::class, 'index'])->name('jornadas.index');
 
-        /*
-        | LECTORES. El token se genera al dar de alta y se renueva rotándolo; nunca
-        | se escribe a mano y nunca se puede volver a leer.
-        |
-        | La rotación es GET (pantalla de confirmación) + POST (el acto). No es un
-        | botón con `confirm()`: rotar deja al lector de la puerta sin autenticar
-        | hasta que alguien reprograme el firmware, y mientras tanto nadie marca.
-        */
-        Route::get('dispositivos', [DispositivoController::class, 'index'])->name('dispositivos.index');
-        Route::get('dispositivos/crear', [DispositivoController::class, 'create'])->middleware($lectores)->name('dispositivos.create');
-        Route::post('dispositivos', [DispositivoController::class, 'store'])->middleware($lectores)->name('dispositivos.store');
-        Route::get('dispositivos/{dispositivo}/editar', [DispositivoController::class, 'edit'])->middleware($lectores)->name('dispositivos.edit');
-        Route::put('dispositivos/{dispositivo}', [DispositivoController::class, 'update'])->middleware($lectores)->name('dispositivos.update');
-        Route::patch('dispositivos/{dispositivo}/estado', [DispositivoController::class, 'toggleActivo'])->middleware($lectores)->name('dispositivos.toggle-activo');
-        Route::get('dispositivos/{dispositivo}/rotar-token', [DispositivoController::class, 'confirmarRotacion'])->middleware($lectores)->name('dispositivos.rotar-token');
-        Route::post('dispositivos/{dispositivo}/rotar-token', [DispositivoController::class, 'rotarToken'])->middleware($lectores)->name('dispositivos.rotar-token.ejecutar');
+        Route::get('reporte', [ReporteController::class, 'index'])->name('reporte');
+        Route::get('reporte/excel', [ReporteController::class, 'excel'])->name('reporte.excel');
+
+        // Compatibilidad para los enlaces web guardados; las escrituras ya no existen aquí.
+        Route::get('dispositivos', fn () => redirect()->route('configuracion.lectores.index', [], 301));
+        Route::get('dispositivos/{dispositivo}/editar', fn (string $dispositivo) => redirect()->route('configuracion.lectores.edit', $dispositivo, 301));
     });

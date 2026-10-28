@@ -8,19 +8,19 @@
      La última conexión es TELEMETRÍA de solo lectura: dice si el aparato sigue
      vivo. No se audita, porque una entrada por cada dedo que toca el sensor
      dejaría el registro de auditoría inservible para lo que existe. --}}
-<x-app-layout>
-    <x-slot name="header">
+<x-configuracion-layout titulo="Lectores de huella">
+    <div class="mb-5">
         <div class="flex items-center justify-between">
             <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Lectores de huella</h2>
             @can('asistencia.dispositivos.gestionar')
-                <a href="{{ route('asistencia.dispositivos.create') }}"
+                <a href="{{ route('configuracion.lectores.create') }}"
                    class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo lector</a>
             @endcan
         </div>
-    </x-slot>
+    </div>
 
-    <div class="py-8">
-        <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+    <div>
+        <div class="min-w-0">
 
             <x-asistencia.avisos />
 
@@ -59,14 +59,14 @@
                                     </td>
                                     <td class="px-4 py-3 text-center">
                                         <x-asistencia.estado :activo="$dispositivo->activo"
-                                                             :accion="route('asistencia.dispositivos.toggle-activo', $dispositivo)"
+                                                             :accion="route('configuracion.lectores.toggle-activo', $dispositivo)"
                                                              permiso="asistencia.dispositivos.gestionar" />
                                     </td>
                                     <td class="px-4 py-3 text-right">
                                         @can('asistencia.dispositivos.gestionar')
-                                            <a href="{{ route('asistencia.dispositivos.edit', $dispositivo) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Editar</a>
+                                            <a href="{{ route('configuracion.lectores.edit', $dispositivo) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Editar</a>
                                             <span class="px-1 text-gray-300 dark:text-ink-600">|</span>
-                                            <a href="{{ route('asistencia.dispositivos.rotar-token', $dispositivo) }}" class="text-amber-700 hover:underline dark:text-amber-400">Rotar token</a>
+                                            <a href="{{ route('configuracion.lectores.rotar-token', $dispositivo) }}" class="text-amber-700 hover:underline dark:text-amber-400">Rotar token</a>
                                         @else
                                             <span class="text-xs text-gray-400 dark:text-paper-500">&mdash;</span>
                                         @endcan
@@ -77,7 +77,7 @@
                                     <td colspan="6" class="py-10 text-center text-gray-400 dark:text-paper-500">
                                         Todavía no hay lectores dados de alta.
                                         @can('asistencia.dispositivos.gestionar')
-                                            <a href="{{ route('asistencia.dispositivos.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Dá de alta el primero</a>.
+                                            <a href="{{ route('configuracion.lectores.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Dá de alta el primero</a>.
                                         @endcan
                                     </td>
                                 </tr>
@@ -93,4 +93,4 @@
             </p>
         </div>
     </div>
-</x-app-layout>
+</x-configuracion-layout>

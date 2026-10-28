@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Asistencia;
 
-use App\Enums\Asistencia\EstadoOrdenEnrolamiento;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Asistencia\EmpleadoRequest;
 use App\Models\Asistencia\AsistenciaDispositivo;
@@ -71,16 +70,12 @@ class EmpleadoController extends Controller
     }
 
     /**
-     * Ficha de la persona: sus datos y TODAS sus asignaciones de ranura, vigentes
-     * e históricas. Es la pantalla desde la que se asigna y se libera, porque «qué
-     * ranura es de quién» solo se entiende mirando a la persona completa.
+     * Ficha de la persona: datos, huellas vigentes y últimas marcaciones.
      */
     public function show(AsistenciaEmpleado $empleado, ConsultaAsistencia $consulta, HoraOficial $horaOficial): View
     {
         $empleado->load([
-            'huellas' => fn ($q) => $q->with('dispositivo')
-                // Vigentes primero; dentro de cada grupo, la más reciente arriba.
-                ->orderByDesc('activo')
+            'huellas' => fn ($q) => $q->where('activo', true)->with('dispositivo')
                 ->orderByDesc('id'),
         ]);
 
@@ -97,16 +92,10 @@ class EmpleadoController extends Controller
             'ultimas' => $consulta->ultimasDe($empleado->id),
             'zona' => $horaOficial->zona(),
 
-            // Registro de huella con el lector. La orden VIVA de esta persona —si
-            // la hay— para poder seguirla y cancelarla, y las últimas terminadas
-            // para poder ver por qué falló la anterior.
+            // La orden viva permite seguir la captura y cancelarla desde la ficha.
             'ordenViva' => AsistenciaOrdenEnrolamiento::query()
                 ->where('asistencia_empleado_id', $empleado->id)
                 ->vivas()->with('dispositivo')->latest('id')->first(),
-            'ordenesRecientes' => AsistenciaOrdenEnrolamiento::query()
-                ->where('asistencia_empleado_id', $empleado->id)
-                ->whereNotIn('estado', EstadoOrdenEnrolamiento::vivos())
-                ->with('dispositivo')->latest('id')->limit(3)->get(),
         ]);
     }
 
@@ -121,7 +110,7 @@ class EmpleadoController extends Controller
 
         return redirect()
             ->route('asistencia.empleados.show', $empleado)
-            ->with('status', "«{$empleado->nombreCompleto()}» dado de alta. Asignale una ranura del lector para que pueda marcar.");
+            ->with('status', "«{$empleado->nombreCompleto()}» dado de alta. Guardá su huella para que pueda marcar.");
     }
 
     public function edit(AsistenciaEmpleado $empleado): View
@@ -158,7 +147,7 @@ class EmpleadoController extends Controller
             : "«{$empleado->nombreCompleto()}» ya no puede marcar. Su historial se conserva.";
 
         if (! $empleado->activo && $activas > 0) {
-            $mensaje .= ' Conserva '.$activas.' ranura(s) asignada(s): liberalas si querés reutilizarlas para otra persona.';
+            $mensaje .= ' Conserva '.$activas.' huella(s) vigente(s): quitalas si ya no las necesita.';
         }
 
         return back()->with('status', $mensaje);

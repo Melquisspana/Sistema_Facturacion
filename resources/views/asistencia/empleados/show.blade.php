@@ -1,13 +1,3 @@
-{{-- Ficha de una persona: sus datos y TODAS sus asignaciones de ranura.
-
-     Se muestran juntas las VIGENTES y las HISTÓRICAS, y esa es la razón de que
-     esta pantalla exista. Una ranura liberada no desaparece: se queda como
-     registro de que ese número fue de esta persona durante ese período, y las
-     marcaciones de entonces siguen colgando de ella. Esconder el historial haría
-     parecer que se borró algo.
-
-     Asignar y liberar viven acá y no en un listado propio de huellas, porque «qué
-     ranura es de quién» solo se entiende mirando a la persona completa. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -28,14 +18,21 @@
 
     @php
         $vigentes = $empleado->huellas->where('activo', true);
-        $historicas = $empleado->huellas->where('activo', false);
         $tarjeta = 'rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
+        // Los mensajes que hablan de ranuras salen de Avanzado: se muestran ahí, con el
+        // bloque ya abierto, para que nadie se quede sin ver un error.
+        $avisoTecnico = str_contains(mb_strtolower((string) session('status').' '.session('error')), 'ranura')
+            || $errors->hasAny(['fingerprint_id', 'ranura']);
     @endphp
 
     <div class="py-8">
         <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
 
-            <x-asistencia.avisos />
+            @if ($avisoTecnico)
+                <p role="alert" class="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">Hay un aviso más abajo, en «Avanzado».</p>
+            @else
+                <x-asistencia.avisos />
+            @endif
 
             {{-- ─────────────────────────────── Datos ─────────────────────────────── --}}
             <div class="{{ $tarjeta }}">
@@ -73,16 +70,76 @@
                 'empleado' => $empleado,
                 'lectores' => $lectores,
                 'ordenViva' => $ordenViva,
-                'ordenesRecientes' => $ordenesRecientes,
             ])
+
+            {{-- ────────────────────── Asignaciones vigentes ────────────────────── --}}
+            <div class="{{ $tarjeta }}">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Huellas vigentes</h3>
+
+                @if ($vigentes->isEmpty())
+                    <p class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                        Sin huellas guardadas: esta persona <strong>no puede marcar todavía</strong>.
+                    </p>
+                @else
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
+                                    <th class="py-2 pr-4">Lector</th>
+                                    <th class="py-2 pr-4">Huella</th>
+                                    <th class="py-2 pr-4">Asignada</th>
+                                    <th class="py-2 text-right">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
+                                @foreach ($vigentes as $huella)
+                                    <tr>
+                                        <td class="py-3 pr-4 text-gray-800 dark:text-paper-200">
+                                            {{ $huella->dispositivo?->nombre ?? '—' }}
+                                            <span class="text-xs text-gray-400 dark:text-paper-500">({{ $huella->dispositivo?->codigo }})</span>
+                                        </td>
+                                        <td class="py-3 pr-4 font-medium tabular-nums text-gray-800 dark:text-paper-100">Huella {{ $loop->iteration }}</td>
+                                        <td class="py-3 pr-4 text-gray-600 dark:text-paper-300">{{ $huella->created_at?->format('d/m/Y') ?? '—' }}</td>
+                                        <td class="py-3 text-right">
+                                            @can('asistencia.gestionar')
+                                                <form method="POST" action="{{ route('asistencia.huellas.liberar', $huella) }}" class="inline"
+                                                      onsubmit="return confirm('Quitar esta huella. La asignación queda en el historial y las marcaciones ya registradas no se tocan. Acordate de borrar la plantilla en el sensor antes de asignarla a otra persona. ¿Continuar?');">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <button type="submit" class="text-sm text-red-600 hover:underline dark:text-red-400">Quitar</button>
+                                                </form>
+                                            @else
+                                                <span class="text-xs text-gray-400 dark:text-paper-500">—</span>
+                                            @endcan
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
 
             {{-- ──────────────────────── Asignar una ranura ──────────────────────── --}}
             @can('asistencia.gestionar')
-                <div class="{{ $tarjeta }}">
+                <details class="{{ $tarjeta }}" @if ($avisoTecnico) open @endif>
+                    <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-paper-200">Avanzado</summary>
+                    @if ($avisoTecnico)
+                        <div class="mt-4"><x-asistencia.avisos /></div>
+                    @endif
+                    @if (! $ordenViva && $empleado->activo && $lectores->isNotEmpty())
+                        <div class="mt-4">
+                            <label for="enrolamiento_ranura" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Ranura manual para guardar huella</label>
+                            <input form="guardar-huella" id="enrolamiento_ranura" name="ranura" type="number" min="0" max="65535" value="{{ old('ranura') }}" placeholder="automática"
+                                   class="mt-1 w-40 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-400">Solo para recuperación: normalmente el sistema elige la ranura libre. Se comprueba contra las asignaciones, reservas e índice del sensor.</p>
+                            @error('ranura') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
+                        </div>
+                    @endif
                     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Anotar una ranura ya grabada</h3>
                     <p class="mt-2 text-sm text-gray-600 dark:text-paper-300">
                         Para huellas que <strong>ya están en el sensor</strong> y solo falta decir de quién son.
-                        Si querés grabar una huella nueva, usá «Registrar huella con el lector» de arriba: hace
+                        Si querés grabar una huella nueva, usá «Guardar huella» de arriba: hace
                         las dos cosas.
                     </p>
 
@@ -124,91 +181,8 @@
                             una asignación vigente, el sistema lo dice y no cambia nada.
                         </p>
                     @endif
-                </div>
+                </details>
             @endcan
-
-            {{-- ────────────────────── Asignaciones vigentes ────────────────────── --}}
-            <div class="{{ $tarjeta }}">
-                <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Ranuras vigentes</h3>
-
-                @if ($vigentes->isEmpty())
-                    <p class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-                        Sin ranuras asignadas: esta persona <strong>no puede marcar todavía</strong>.
-                    </p>
-                @else
-                    <div class="mt-3 overflow-x-auto">
-                        <table class="min-w-full text-sm">
-                            <thead>
-                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
-                                    <th class="py-2 pr-4">Lector</th>
-                                    <th class="py-2 pr-4">Ranura</th>
-                                    <th class="py-2 pr-4">Asignada</th>
-                                    <th class="py-2 text-right">Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
-                                @foreach ($vigentes as $huella)
-                                    <tr>
-                                        <td class="py-3 pr-4 text-gray-800 dark:text-paper-200">
-                                            {{ $huella->dispositivo?->nombre ?? '—' }}
-                                            <span class="text-xs text-gray-400 dark:text-paper-500">({{ $huella->dispositivo?->codigo }})</span>
-                                        </td>
-                                        <td class="py-3 pr-4 font-medium tabular-nums text-gray-800 dark:text-paper-100">{{ $huella->fingerprint_id }}</td>
-                                        <td class="py-3 pr-4 text-gray-600 dark:text-paper-300">{{ $huella->created_at?->format('d/m/Y') ?? '—' }}</td>
-                                        <td class="py-3 text-right">
-                                            @can('asistencia.gestionar')
-                                                <form method="POST" action="{{ route('asistencia.huellas.liberar', $huella) }}" class="inline"
-                                                      onsubmit="return confirm('Liberar la ranura {{ $huella->fingerprint_id }}. La asignación queda en el historial y las marcaciones ya registradas no se tocan. Acordate de borrar la plantilla en el sensor antes de asignarla a otra persona. ¿Continuar?');">
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <button type="submit" class="text-sm text-red-600 hover:underline dark:text-red-400">Liberar</button>
-                                                </form>
-                                            @else
-                                                <span class="text-xs text-gray-400 dark:text-paper-500">—</span>
-                                            @endcan
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-            </div>
-
-            {{-- ────────────────────── Asignaciones históricas ────────────────────── --}}
-            @if ($historicas->isNotEmpty())
-                <div class="{{ $tarjeta }}">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Ranuras que tuvo antes</h3>
-                    <p class="mt-2 text-sm text-gray-600 dark:text-paper-300">
-                        Estas asignaciones ya no están vigentes y su número puede ser de otra persona hoy.
-                        <strong>No se borran ni se reasignan</strong>: las marcaciones de aquel período siguen
-                        apuntando acá.
-                    </p>
-
-                    <div class="mt-3 overflow-x-auto">
-                        <table class="min-w-full text-sm">
-                            <thead>
-                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
-                                    <th class="py-2 pr-4">Lector</th>
-                                    <th class="py-2 pr-4">Ranura</th>
-                                    <th class="py-2 pr-4">Asignada</th>
-                                    <th class="py-2 pr-4">Liberada</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100 text-gray-500 dark:divide-ink-700 dark:text-paper-400">
-                                @foreach ($historicas as $huella)
-                                    <tr>
-                                        <td class="py-3 pr-4">{{ $huella->dispositivo?->nombre ?? '—' }}</td>
-                                        <td class="py-3 pr-4 tabular-nums">{{ $huella->fingerprint_id }}</td>
-                                        <td class="py-3 pr-4">{{ $huella->created_at?->format('d/m/Y') ?? '—' }}</td>
-                                        <td class="py-3 pr-4">{{ $huella->liberada_at?->format('d/m/Y H:i') ?? '—' }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            @endif
 
             {{-- ────────────────────── Últimas marcaciones ────────────────────── --}}
             <div class="{{ $tarjeta }}">

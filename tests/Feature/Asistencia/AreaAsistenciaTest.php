@@ -147,8 +147,8 @@ class AreaAsistenciaTest extends TestCase
         $respuesta = $this->actingAs($this->admin())->get(route('asistencia.dashboard'))->assertOk();
 
         $respuesta->assertSee(route('asistencia.empleados.index'));
-        $respuesta->assertSee(route('asistencia.dispositivos.index'));
-        $respuesta->assertSee(route('asistencia.marcaciones.index'));
+        $respuesta->assertDontSee(route('configuracion.lectores.index'));
+        $respuesta->assertSee(route('asistencia.reporte'));
 
         // Y NO promete pantallas que no existen todavía. Se busca el CIERRE DE UN
         // ENLACE y no la palabra suelta: la pantalla sí menciona en prosa lo que
@@ -169,7 +169,7 @@ class AreaAsistenciaTest extends TestCase
         $this->actingAs($this->soloVer())
             ->get(route('asistencia.dashboard'))
             ->assertOk()
-            ->assertDontSee(route('asistencia.dispositivos.index'));
+            ->assertDontSee(route('configuracion.lectores.index'));
     }
 
     // ───────────────────────────── Dashboard ─────────────────────────────
@@ -179,7 +179,7 @@ class AreaAsistenciaTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.dashboard'))
             ->assertOk()
-            ->assertSee('Todavía no hay nada configurado');
+            ->assertSee('Todavía no hay personal activo');
     }
 
     public function test_el_dashboard_cuenta_lo_que_existe(): void
@@ -191,10 +191,10 @@ class AreaAsistenciaTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.dashboard'))
             ->assertOk()
-            ->assertDontSee('Todavía no hay nada configurado')
+            ->assertDontSee('Todavía no hay personal activo')
             ->assertSee('Personas activas')
             // 3 activas de 4 dadas de alta, y las 3 sin ranura.
-            ->assertSee('3 persona(s) activa(s) sin ranura: no pueden marcar.');
+            ->assertSee('3 persona(s) activa(s) sin huella vigente.');
     }
 
     /**
@@ -231,10 +231,10 @@ class AreaAsistenciaTest extends TestCase
             route('asistencia.empleados.create'),
             route('asistencia.empleados.show', $empleado),
             route('asistencia.empleados.edit', $empleado),
-            route('asistencia.dispositivos.index'),
-            route('asistencia.dispositivos.create'),
-            route('asistencia.dispositivos.edit', $lector),
-            route('asistencia.dispositivos.rotar-token', $lector),
+            route('configuracion.lectores.index'),
+            route('configuracion.lectores.create'),
+            route('configuracion.lectores.edit', $lector),
+            route('configuracion.lectores.rotar-token', $lector),
         ];
 
         foreach ($pantallas as $url) {
@@ -264,7 +264,7 @@ class AreaAsistenciaTest extends TestCase
         return [
             'resumen' => ['asistencia.dashboard'],
             'empleados' => ['asistencia.empleados.index'],
-            'lectores' => ['asistencia.dispositivos.index'],
+            'lectores' => ['configuracion.lectores.index'],
         ];
     }
 }
