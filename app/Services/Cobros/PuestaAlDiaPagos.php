@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\DB;
  * inicio del seguimiento. Un archivo que falla no frena a los demás.
  *
  * «Solo revisar» corre todo dentro de una transacción que siempre se deshace y no guarda la
- * copia del archivo: no queda nada en la base ni en disco. La cadena no despacha jobs ni
+ * copia de las subidas: no queda nada en la base. Las copias recibidas por correo ya están
+ * guardadas antes de revisar. La cadena no despacha jobs ni
  * manda correos.
  */
 class PuestaAlDiaPagos
@@ -26,7 +27,9 @@ class PuestaAlDiaPagos
     {
         $preparados = [];
         foreach ($subidas as $orden => $subida) {
-            $contenido = $subida->isValid() && is_readable($subida->getPathname()) ? file_get_contents($subida->getPathname()) : false;
+            $contenido = $subida instanceof ArchivoConciliacion
+                ? $subida->contenido
+                : ($subida->isValid() && is_readable($subida->getPathname()) ? file_get_contents($subida->getPathname()) : false);
             $filas = $contenido === false ? [] : app(ConciliacionTxtParser::class)->parse($contenido);
             $preparados[] = compact('subida', 'contenido', 'filas', 'orden') + ['fecha' => collect($filas)->pluck('fecha')->filter()->max() ?? ''];
         }
@@ -40,15 +43,18 @@ class PuestaAlDiaPagos
         try {
             foreach ($preparados as $preparado) {
                 $subida = $preparado['subida'];
-                $resultado = ['nombre' => $subida->getClientOriginalName(), 'estado' => 'error', 'mensaje' => '', 'informe' => null, 'lotes' => []];
+                $resultado = ['nombre' => $subida instanceof ArchivoConciliacion ? $subida->nombre : $subida->getClientOriginalName(), 'estado' => 'error', 'mensaje' => '', 'informe' => null, 'lotes' => []];
+                if ($subida instanceof ArchivoConciliacion) {
+                    $resultado['hash'] = $subida->hash;
+                }
                 if ($preparado['filas'] === []) {
                     $resultado['mensaje'] = 'El archivo está vacío o no se pudo leer como TXT de pagos.';
                 } else {
                     try {
                         $resultado = DB::transaction(function () use ($cliente, $usuario, $soloRevisar, $preparado, $subida, $resultado) {
-                            $archivo = $soloRevisar
+                            $archivo = $subida instanceof ArchivoConciliacion ? $subida : ($soloRevisar
                                 ? ArchivoConciliacion::desdeContenido($preparado['contenido'], $resultado['nombre'])
-                                : ArchivoConciliacion::desdeSubida($subida);
+                                : ArchivoConciliacion::desdeSubida($subida));
                             $informe = app(AplicadorPagosTxt::class)->aplicar($cliente, $preparado['filas'], $archivo, $usuario);
                             $lotes = app(ActualizarPpqConTxt::class)->aplicar($preparado['filas'], $archivo, $usuario);
 

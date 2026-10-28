@@ -10,6 +10,7 @@ use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
 use App\Exceptions\CopiaArchivadaInservibleException;
+use App\Exceptions\DocumentosRecibidos\BuzonException;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Http\Controllers\Controller;
@@ -36,6 +37,7 @@ use App\Services\Cobros\ReenviarPendientesTxt;
 use App\Services\Cobros\RevisionHistoricaService;
 use App\Services\Cobros\SolicitudCobroService;
 use App\Services\Cobros\SugerenciasAlbaran;
+use App\Services\Cobros\TxtPagosDelCorreo;
 use App\Services\Cobros\VinculadorAlbaranes;
 use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
@@ -774,6 +776,46 @@ class CobrosController extends Controller
         ]);
         $soloRevisar = $request->boolean('solo_revisar');
         $resultado = $servicio->procesar($cliente, $request->file('archivos'), $request->user(), $soloRevisar);
+
+        return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar'));
+    }
+
+    public function buscarPagosCorreo(Request $request, Cliente $cliente, TxtPagosDelCorreo $correoTxt, PuestaAlDiaPagos $servicio): View|RedirectResponse
+    {
+        $this->verificarClienteDeCobros($cliente);
+        try {
+            $correo = $correoTxt->buscar();
+        } catch (BuzonException $e) {
+            return $this->volver($cliente)->with('error', $e->getMessage());
+        }
+        $soloRevisar = true;
+        $nuevos = collect($correo)->where('estado', 'nuevo')->pluck('archivo')->all();
+        $resultado = $servicio->procesar($cliente, $nuevos, $request->user(), $soloRevisar);
+
+        return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar', 'correo'));
+    }
+
+    public function aplicarPagosCorreo(Request $request, Cliente $cliente, PuestaAlDiaPagos $servicio): View
+    {
+        $this->verificarClienteDeCobros($cliente);
+        $datos = $request->validate([
+            'archivos' => ['required', 'array', 'min:1', 'max:100'],
+            'archivos.*.hash' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/', 'distinct'],
+            'archivos.*.nombre' => ['required', 'string', 'regex:/^\d{6}_\d{14}\.txt$/i'],
+        ]);
+        $copias = [];
+        $errores = [];
+        foreach ($datos['archivos'] as $dato) {
+            $copia = ArchivoConciliacion::desdeCopia($dato['hash'], $dato['nombre']);
+            if ($copia === null) {
+                $errores[] = ['nombre' => $dato['nombre'], 'estado' => 'error', 'mensaje' => 'La copia del TXT no existe o no coincide con su huella: no se aplicó.'];
+            } else {
+                $copias[] = $copia;
+            }
+        }
+        $soloRevisar = false;
+        $resultado = $servicio->procesar($cliente, $copias, $request->user(), $soloRevisar);
+        $resultado['archivos'] = array_merge($resultado['archivos'], $errores);
 
         return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar'));
     }

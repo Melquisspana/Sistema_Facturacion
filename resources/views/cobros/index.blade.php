@@ -91,6 +91,12 @@
                             </label>
                             <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Procesar TXT</button>
                         </form>
+                        @if (filled(config('cobros.txt_correo.remitente')))
+                            <form method="POST" action="{{ route('cobros.pagos.correo', $cliente) }}">
+                                @csrf
+                                <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar TXT en el correo</button>
+                            </form>
+                        @endif
                     @endcan
                 @endif
 

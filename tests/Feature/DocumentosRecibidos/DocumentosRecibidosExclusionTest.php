@@ -206,9 +206,9 @@ class DocumentosRecibidosExclusionTest extends TestCase
             (new ReflectionClass(MailboxClient::class))->getMethods()
         );
 
-        // Solo lectura: disponible / fuente / estado / mensajesDelDia.
+        // Solo lectura: disponibilidad, estado y búsqueda de mensajes o adjuntos.
         sort($metodos);
-        $this->assertSame(['disponible', 'estado', 'fuente', 'mensajesdeldia'], $metodos);
+        $this->assertSame(['adjuntosderemitente', 'disponible', 'estado', 'fuente', 'mensajesdeldia'], $metodos);
 
         foreach (['eliminar', 'borrar', 'mover', 'marcar', 'delete', 'move', 'expunge', 'flag', 'seen'] as $mutador) {
             $this->assertNotContains($mutador, $metodos, "El buzón no debe exponer un método de escritura: {$mutador}");

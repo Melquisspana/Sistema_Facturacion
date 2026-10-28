@@ -58,4 +58,19 @@ interface MailboxClient
      * @throws BuzonInaccesibleException red, servidor o carpeta
      */
     public function mensajesDelDia(CarbonInterface $dia, int $limite, ?int $desdeUid = null): PaginaMensajes;
+
+    /**
+     * Los mensajes de un remitente desde un día, en UID ascendente, con SOLO los adjuntos de
+     * esas extensiones; los que no traen ninguno se omiten. Es lo que usa Cobros para los TXT
+     * de pago del cliente: no toca el progreso por día de Compras.
+     *
+     * IMAP compara `FROM` por subcadena: quien llama verifica la dirección exacta.
+     *
+     * @param  array<int, string>  $extensiones  en minúsculas, sin punto
+     * @return array<int, array<string, mixed>>
+     *
+     * @throws AutenticacionBuzonException credenciales rechazadas
+     * @throws BuzonInaccesibleException red, servidor o carpeta
+     */
+    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones): array;
 }

@@ -582,6 +582,8 @@ Route::middleware('auth')->group(function () {
 
         Route::middleware('permission:ppq.gestionar')->group(function () {
             Route::post('clientes/{cliente}/pagos/varios', [CobrosController::class, 'aplicarPagosVarios'])->name('pagos.varios');
+            Route::post('clientes/{cliente}/pagos/correo', [CobrosController::class, 'buscarPagosCorreo'])->name('pagos.correo');
+            Route::post('clientes/{cliente}/pagos/correo/aplicar', [CobrosController::class, 'aplicarPagosCorreo'])->name('pagos.correo.aplicar');
             // Ajuste QD del TXT ↔ su nota de crédito de pronto pago.
             Route::get('ajustes/{ajuste}/notas-credito', [AjusteNotaCreditoController::class, 'index'])->name('ajustes.notas-credito');
             Route::post('ajustes/{ajuste}/vincular-nc', [AjusteNotaCreditoController::class, 'store'])->name('ajustes.vincular-nc');
