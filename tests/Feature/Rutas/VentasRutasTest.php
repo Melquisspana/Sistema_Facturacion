@@ -37,6 +37,8 @@ class VentasRutasTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Los meses se muestran en español, como en el servidor; la CI corre con el locale por defecto.
+        app()->setLocale('es');
         $this->travelTo('2026-10-15 12:00:00');
         UnidadMedida::create(['codigo' => '59', 'nombre' => 'Unidad', 'abreviatura' => 'un']);
         $this->sala = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala Centro', 'codigo' => '001']);

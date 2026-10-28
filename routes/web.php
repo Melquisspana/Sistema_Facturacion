@@ -581,9 +581,9 @@ Route::middleware('auth')->group(function () {
             ->name('vinculacion');
 
         Route::middleware('permission:ppq.gestionar')->group(function () {
-            Route::post('clientes/{cliente}/pagos/varios', [CobrosController::class, 'aplicarPagosVarios'])->name('pagos.varios');
+            Route::post('clientes/{cliente}/pagos/revisar', [CobrosController::class, 'revisarPagos'])->name('pagos.revisar');
             Route::post('clientes/{cliente}/pagos/correo', [CobrosController::class, 'buscarPagosCorreo'])->name('pagos.correo');
-            Route::post('clientes/{cliente}/pagos/correo/aplicar', [CobrosController::class, 'aplicarPagosCorreo'])->name('pagos.correo.aplicar');
+            Route::post('clientes/{cliente}/pagos/aplicar', [CobrosController::class, 'aplicarPagosRevisados'])->name('pagos.aplicar');
             // Ajuste QD del TXT ↔ su nota de crédito de pronto pago.
             Route::get('ajustes/{ajuste}/notas-credito', [AjusteNotaCreditoController::class, 'index'])->name('ajustes.notas-credito');
             Route::post('ajustes/{ajuste}/vincular-nc', [AjusteNotaCreditoController::class, 'store'])->name('ajustes.vincular-nc');
@@ -619,7 +619,6 @@ Route::middleware('auth')->group(function () {
             Route::post('solicitudes/{solicitud}/recibido', [CobrosController::class, 'recibidoSolicitud'])
                 ->name('solicitudes.recibido');
 
-            Route::post('clientes/{cliente}/pagos', [CobrosController::class, 'aplicarPagos'])->name('pagos');
             Route::post('clientes/{cliente}/pagos/reenviar', [CobrosController::class, 'reenviarPendientes'])->name('pagos.reenviar');
             // PPQ armado desde el Seguimiento con los CCF marcados.
             Route::post('clientes/{cliente}/ppq', [CobrosController::class, 'crearPpq'])->name('ppq.crear');

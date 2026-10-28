@@ -32,6 +32,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RevisaYAplicaTxt;
 use Tests\TestCase;
 
 /**
@@ -44,6 +45,7 @@ class CobrosTxtNoPagadosTest extends TestCase
 {
     use PreparaEmisorDte;
     use RefreshDatabase;
+    use RevisaYAplicaTxt;
 
     private Cliente $cliente;
 
@@ -147,7 +149,7 @@ class CobrosTxtNoPagadosTest extends TestCase
 
     private function subir(string $txt, ?User $usuario = null)
     {
-        return $this->actingAs($usuario ?? $this->usuario())->post(route('cobros.pagos', $this->cliente), [
+        return $this->actingAs($usuario ?? $this->usuario())->revisarYAplicarTxt($this->cliente, [
             'archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt),
         ]);
     }
@@ -163,7 +165,7 @@ class CobrosTxtNoPagadosTest extends TestCase
 
         $respuesta = $this->subir($e['txt'])->assertOk();
 
-        $pendientes = $respuesta->viewData('pendientes');
+        $pendientes = $respuesta->viewData('archivos')[0]['pendientes'];
         $this->assertSame([$this->item($e['lote'], $e['c']->dte_id)->id], collect($pendientes['no_pagados'])->pluck('item.id')->all());
         $this->assertSame([$this->item($e['lote'], $e['n1']->id)->id], collect($pendientes['nc_no_descontadas'])->pluck('item.id')->all());
         $this->assertSame([$this->item($e['lote'], $e['b']->dte_id)->id], collect($pendientes['pagados_de_menos'])->pluck('item.id')->all());
@@ -192,7 +194,7 @@ class CobrosTxtNoPagadosTest extends TestCase
         $e = $this->escenario();
         $this->subir($e['txt'])->assertOk();
 
-        $pendientes = $this->subir($e['txt'])->assertOk()->viewData('pendientes');
+        $pendientes = $this->subir($e['txt'])->assertOk()->viewData('archivos')[0]['pendientes'];
 
         $this->assertCount(1, $pendientes['no_pagados']);
         $this->assertCount(1, $pendientes['nc_no_descontadas']);
@@ -204,7 +206,7 @@ class CobrosTxtNoPagadosTest extends TestCase
     {
         $e = $this->escenario();
         $usuario = $this->usuario();
-        $hash = $this->subir($e['txt'], $usuario)->viewData('informe')['hash'];
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
         $items = [$this->item($e['lote'], $e['c']->dte_id)->id, $this->item($e['lote'], $e['n1']->id)->id,
             $this->item($e['lote'], $e['b']->dte_id)->id];
 
@@ -248,7 +250,7 @@ class CobrosTxtNoPagadosTest extends TestCase
     {
         $e = $this->escenario();
         $usuario = $this->usuario();
-        $hash = $this->subir($e['txt'], $usuario)->viewData('informe')['hash'];
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
         // Conciliación revertida: ya no está aplicada, pero su historia impide quitarla del lote.
         $itemNc = $this->item($e['lote'], $e['n1']->id);
         $corrida = DB::table('ppq_conciliaciones')->insertGetId(['ppq_lote_id' => $e['lote']->id, 'created_at' => now()]);
@@ -280,7 +282,7 @@ class CobrosTxtNoPagadosTest extends TestCase
     {
         $e = $this->escenario();
         $usuario = $this->usuario();
-        $hash = $this->subir($e['txt'], $usuario)->viewData('informe')['hash'];
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
 
         $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente),
             ['hash' => $hash, 'items' => [$this->item($e['lote'], $e['c']->dte_id)->id]])->assertSessionHas('status');
@@ -294,7 +296,7 @@ class CobrosTxtNoPagadosTest extends TestCase
     {
         $e = $this->escenario();
         $usuario = $this->usuario();
-        $hash = $this->subir($e['txt'], $usuario)->viewData('informe')['hash'];
+        $hash = $this->subir($e['txt'], $usuario)->viewData('archivos')[0]['informe']['hash'];
         $c = $this->item($e['lote'], $e['c']->dte_id)->id;
         $otroLote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$this->ccf()->id]);
         $ajeno = $otroLote->items()->sole()->id;
@@ -319,7 +321,7 @@ class CobrosTxtNoPagadosTest extends TestCase
     public function test_reenviar_exige_permiso_de_gestion(): void
     {
         $e = $this->escenario();
-        $hash = $this->subir($e['txt'])->viewData('informe')['hash'];
+        $hash = $this->subir($e['txt'])->viewData('archivos')[0]['informe']['hash'];
         $lector = User::factory()->create();
         $lector->givePermissionTo('ppq.ver');
 

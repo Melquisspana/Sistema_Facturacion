@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">Puesta al día de Cobros</h2>
+        <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">TXT de pago</h2>
     </x-slot>
     @php
         $money = fn ($v) => ((float) $v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
@@ -9,7 +9,7 @@
     <div class="py-8">
         <div class="max-w-full xl:max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 space-y-6 text-sm text-gray-700 dark:text-paper-100">
             @if ($soloRevisar)
-                <p class="rounded-md bg-blue-50 border border-blue-200 p-4 text-sm text-blue-700" role="status">Solo revisión: no se guardó nada.</p>
+                <p class="rounded-md bg-blue-50 border border-blue-200 p-4 text-sm text-blue-700" role="status">Revisión: todavía no se aplicó nada.</p>
             @endif
             <a href="{{ route('cobros.index', ['cliente_id' => $cliente->id]) }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Volver a Cobros</a>
             @if (isset($correo))
@@ -35,22 +35,26 @@
                     @if (collect($correo)->where('estado', 'nuevo')->isEmpty())
                         <p role="status">No se encontraron TXT de pago nuevos en el correo.</p>
                     @endif
-                    @php
-                        $revisados = collect($archivos)->where('estado', 'aplicado')->pluck('hash');
-                        $paraAplicar = collect($correo)->where('estado', 'nuevo')->filter(fn ($fila) => $revisados->contains($fila['hash']))->values();
-                    @endphp
-                    @if ($soloRevisar && $paraAplicar->isNotEmpty())
-                        <form method="POST" action="{{ route('cobros.pagos.correo.aplicar', $cliente) }}">
-                            @csrf
-                            @foreach ($paraAplicar as $i => $fila)
-                                <input type="hidden" name="archivos[{{ $i }}][hash]" value="{{ $fila['hash'] }}">
-                                <input type="hidden" name="archivos[{{ $i }}][nombre]" value="{{ $fila['nombre'] }}">
-                            @endforeach
-                            <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Aplicar los {{ $paraAplicar->count() }} nuevos</button>
-                        </form>
-                    @endif
                 </div>
             @endif
+            @php($paraAplicar = collect($archivos)->where('estado', 'aplicado')->unique('hash'))
+            @if ($soloRevisar && $paraAplicar->isNotEmpty())
+                <form method="POST" action="{{ route('cobros.pagos.aplicar', $cliente) }}">
+                    @csrf
+                    @foreach ($paraAplicar as $archivo)
+                        <input type="hidden" name="hashes[]" value="{{ $archivo['hash'] }}">
+                    @endforeach
+                    <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Aplicar los {{ $paraAplicar->count() }}</button>
+                </form>
+            @endif
+            @foreach ($archivos as $archivo)
+                @if ($archivo['estado'] === 'aplicado')
+                    <details @if (count($archivos) === 1) open @endif class="space-y-4">
+                        <summary>Detalle de {{ $archivo['nombre'] }}</summary>
+                        @include('cobros.partials.informe-txt', ['informe' => $archivo['informe'], 'lotesPpq' => $archivo['lotes'], 'soloRevisar' => $soloRevisar])
+                    </details>
+                @endif
+            @endforeach
             <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6 overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <caption class="text-left font-medium">Archivos procesados</caption>

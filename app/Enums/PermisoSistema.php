@@ -131,10 +131,10 @@ enum PermisoSistema: string
     // cobertura, asignar salas, crear salidas y moverles el estado.
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
-    // Ventas netas y su Excel: consulta comercial de solo lectura.
-    case RutasVentasVer = 'rutas.ventas.ver';
     // Vendedor: registrar sus entregas, sin acceso a la gestión de oficina.
     case RutasEntregasRegistrar = 'rutas.entregas.registrar';
+    // Ventas netas y su Excel: consulta comercial de solo lectura.
+    case RutasVentasVer = 'rutas.ventas.ver';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
     // `gestionar` da de alta y desactiva. Va aparte de `rutas.gestionar` porque el
     // catálogo de personas es un marco de trabajo, no la operación del día.

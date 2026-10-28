@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Clientes;
 
 use App\Enums\CondicionPago;
+use App\Enums\FormaCobroEntrega;
 use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
@@ -58,6 +59,7 @@ class ClienteRequest extends FormRequest
         $documento = $this->input('tipo_documento');
 
         $reglas = [
+            'cobro_en_entrega' => ['nullable', Rule::enum(FormaCobroEntrega::class)],
             'codigo' => [
                 'nullable', 'string', 'max:50',
                 Rule::unique('clientes', 'codigo')->whereNull('deleted_at')->ignore($clienteId),

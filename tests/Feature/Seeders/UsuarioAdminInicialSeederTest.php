@@ -20,6 +20,24 @@ class UsuarioAdminInicialSeederTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * Antes salía de `Str::password()` sin validar: ≈1 de cada 1000 venía sin mayúsculas o
+     * sin minúsculas y la prueba de abajo fallaba al azar. Se repite para que una regresión
+     * se vea siempre y no una vez cada tanto.
+     */
+    public function test_la_contrasena_generada_siempre_cumple_las_reglas(): void
+    {
+        for ($i = 0; $i < 3000; $i++) {
+            $password = PasswordRules::generar(24);
+
+            $this->assertSame(24, strlen($password));
+            $this->assertTrue(
+                Validator::make(['password' => $password], ['password' => [PasswordRules::reglas()]])->passes(),
+                'No cumple las reglas: '.$password,
+            );
+        }
+    }
+
     public function test_crea_password_aleatoria_la_anuncia_una_vez_y_no_la_cambia(): void
     {
         $mostrada = null;

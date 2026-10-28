@@ -68,7 +68,7 @@ class EvidenciaEntreCircuitosTest extends TestCase
         $this->assertSame(1, CobroEvento::count());
 
         $html = $this->actingAs(User::factory()->create())
-            ->view('cobros.pagos', ['cliente' => $cliente, 'informe' => $informe]);
+            ->view('cobros.partials.informe-txt', ['cliente' => $cliente, 'informe' => $informe, 'soloRevisar' => false]);
         $html->assertSee('Este mismo archivo ya se concilió en PPQ.');
         $html->assertSee('PPQ de prueba');
         $html->assertDontSee('El archivo trae códigos de proveedor ajenos:');
@@ -164,7 +164,7 @@ class EvidenciaEntreCircuitosTest extends TestCase
         $this->assertCount(1, $informe['en_ppq']);
         $this->assertFalse($informe['en_ppq'][0]['lote_disponible']);
         $this->actingAs(User::factory()->create())
-            ->view('cobros.pagos', ['cliente' => $cliente, 'informe' => $informe])
+            ->view('cobros.partials.informe-txt', ['cliente' => $cliente, 'informe' => $informe, 'soloRevisar' => false])
             ->assertSee('ya no disponible');
     }
 }

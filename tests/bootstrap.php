@@ -23,9 +23,10 @@
 | `php artisan test` y para cualquier IDE que use la configuración del proyecto, sin
 | depender de que quien lo ejecute recuerde una bandera.
 |
-| 1 GB y no `-1`: un límite ilimitado convierte una fuga de memoria en una máquina que
-| se arrastra en vez de en una prueba que falla. Sobre los 754 MB medidos deja un ~35%
-| de margen: suficiente hoy y verificado, pero NO holgado. Si la suite sigue creciendo,
+| 1,5 GB y no `-1`: un límite ilimitado convierte una fuga de memoria en una máquina que
+| se arrastra en vez de en una prueba que falla. Era 1 GB sobre los 754 MB de entonces;
+| el 28/10/2026 la suite (6.575 pruebas) marcó 1,02 GB de pico y moría en ese tope. Sobre
+| esa medición, 1,5 GB deja ~45% de margen. Si la suite sigue creciendo,
 | este número hay que revisarlo con una medición nueva —el `Memory:` que imprime PHPUnit
 | al final— y no a ojo.
 |
@@ -33,7 +34,7 @@
 | `phpunit.xml` y en `Tests\TestCase`.
 */
 
-ini_set('memory_limit', '1G');
+ini_set('memory_limit', '1536M');
 
 require __DIR__.'/../vendor/autoload.php';
 
