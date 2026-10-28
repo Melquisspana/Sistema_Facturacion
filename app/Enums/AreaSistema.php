@@ -97,6 +97,7 @@ enum AreaSistema: string
             ],
             self::Rutas => [
                 ['permiso' => PermisoSistema::RutasVer->value, 'habilitada' => true, 'ruta' => 'rutas.dashboard'],
+                ['permiso' => PermisoSistema::RutasEntregasRegistrar->value, 'habilitada' => true, 'ruta' => 'rutas.mi-salida.index'],
             ],
             self::Asistencia => [
                 ['permiso' => PermisoSistema::AsistenciaVer->value,

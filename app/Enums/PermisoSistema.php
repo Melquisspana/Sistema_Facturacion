@@ -131,6 +131,8 @@ enum PermisoSistema: string
     // cobertura, asignar salas, crear salidas y moverles el estado.
     case RutasVer = 'rutas.ver';
     case RutasGestionar = 'rutas.gestionar';
+    // Vendedor: registrar sus entregas, sin acceso a la gestión de oficina.
+    case RutasEntregasRegistrar = 'rutas.entregas.registrar';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
     // `gestionar` da de alta y desactiva. Va aparte de `rutas.gestionar` porque el
     // catálogo de personas es un marco de trabajo, no la operación del día.
@@ -217,6 +219,7 @@ enum PermisoSistema: string
     {
         return match ($rol) {
             RolSistema::Administrador => self::todos(),
+            RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar]),
 
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
             // no sincroniza, no administra.

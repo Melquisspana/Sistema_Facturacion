@@ -13,6 +13,7 @@ enum RolSistema: string
     case Jefatura = 'jefatura';
     case Facturacion = 'facturacion';
     case Contabilidad = 'contabilidad';
+    case Vendedor = 'vendedor';
     /*
      * Producción (área «planta»). El ROL conserva el nombre del negocio
      * ('produccion') porque es la cadena que se elige en el formulario de
@@ -29,6 +30,7 @@ enum RolSistema: string
             self::Jefatura => 'Jefatura',
             self::Facturacion => 'Facturación',
             self::Contabilidad => 'Contabilidad',
+            self::Vendedor => 'Vendedor',
             self::Produccion => 'Producción',
         };
     }
