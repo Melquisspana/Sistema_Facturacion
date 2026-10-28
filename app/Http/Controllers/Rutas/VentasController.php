@@ -33,7 +33,7 @@ class VentasController extends Controller
     {
         $datos = $ventas->consultar($request->query());
 
-        return response()->download($excel->generar($datos), 'ventas_'.$datos['periodo']['desde']->toDateString().'_'.$datos['periodo']['hasta']->toDateString().'.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])->deleteFileAfterSend(true);
+        return response()->download($excel->generar($datos), 'ventas-'.($datos['canal'] === 'exportacion' ? 'exportacion' : 'nacionales').'-'.$datos['periodo']['hasta']->format('Y-m').'.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])->deleteFileAfterSend(true);
     }
 
     public function pdf(Request $request, VentasRutas $ventas)
@@ -42,6 +42,6 @@ class VentasController extends Controller
 
         return Pdf::loadView('rutas.ventas.pdf', $datos + ['empresa' => Empresa::where('activo', true)->first()])
             ->setPaper('a4', 'portrait')->setOption('enable_font_subsetting', true)
-            ->download('ventas-nacionales-'.$datos['periodo']['hasta']->format('Y-m').'.pdf');
+            ->download('ventas-'.($datos['canal'] === 'exportacion' ? 'exportacion' : 'nacionales').'-'.$datos['periodo']['hasta']->format('Y-m').'.pdf');
     }
 }

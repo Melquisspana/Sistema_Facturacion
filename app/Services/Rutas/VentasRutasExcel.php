@@ -11,11 +11,11 @@ class VentasRutasExcel
     public function generar(array $datos): string
     {
         $libro = new Spreadsheet;
-        foreach (['productos' => 'Productos', 'salas' => 'Salas', 'rutas' => 'Rutas'] as $clave => $titulo) {
+        foreach (($datos['canal'] === 'exportacion' ? ['productos' => 'Presentaciones', 'clientes' => 'Clientes'] : ['productos' => 'Productos', 'salas' => 'Salas', 'rutas' => 'Rutas']) as $clave => $titulo) {
             $hoja = $clave === 'productos' ? $libro->getActiveSheet() : $libro->createSheet();
             $hoja->setTitle($titulo);
-            // Solo nacional: la exportación (FEX) nunca se suma acá.
-            $hoja->setCellValue('A1', 'Ventas nacionales (CCF − NC, sin IVA) · '.$datos['periodo']['etiqueta'].' comparado con '.$datos['periodo']['etiqueta_anterior']);
+            // Cada libro contiene exclusivamente el canal seleccionado.
+            $hoja->setCellValue('A1', $datos['titulo'].' (USD, sin IVA) · '.$datos['periodo']['etiqueta'].' comparado con '.$datos['periodo']['etiqueta_anterior']);
             $hoja->mergeCells('A1:G1');
             $hoja->fromArray(['Nombre', 'Cantidad', 'Venta actual', 'Venta anterior', 'Diferencia', '%', 'Mismo período año anterior'], null, 'A3');
             $fila = 4;

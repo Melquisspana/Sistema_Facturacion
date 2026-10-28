@@ -58,6 +58,128 @@ class VentasRutasTest extends TestCase
         });
     }
 
+    public function test_canales_separados_y_nc_resta_en_el_canal_original(): void
+    {
+        $ccf = $this->documento(100);
+        $fex = $this->documento(500, ['tipo_dte' => '11'], ['producto_id' => null, 'codigo' => 'CAJA', 'descripcion' => 'Caja exportada', 'venta_gravada' => 0, 'venta_exportacion' => 500]);
+        $this->assertSame(100.0, $this->ventas()['totales']['actual']);
+        $this->assertSame(500.0, $this->ventas(['canal' => 'exportacion'])['totales']['actual']);
+        $this->documento(20, ['tipo_dte' => '05', 'fecha_emision' => '2026-11-05'], ['dte_linea_original_id' => $ccf->id]);
+        $this->assertSame(500.0, $this->ventas(['canal' => 'exportacion'])['totales']['actual']);
+        $this->documento(50, ['tipo_dte' => '05', 'fecha_emision' => '2026-11-05'], ['dte_linea_original_id' => $fex->id]);
+        $v = $this->ventas(['canal' => 'exportacion']);
+        $this->assertSame(450.0, $v['totales']['actual']);
+        $this->assertSame(80.0, $this->ventas()['totales']['actual']);
+        $this->assertSame('Caja exportada', $v['productos'][0]['nombre']);
+        $this->assertSame($this->sala->cliente_id, $v['clientes'][0]['id']);
+        $this->assertSame([], $v['salas']);
+        $this->assertSame([], $v['rutas']);
+    }
+
+    public function test_exportacion_descuento_comparaciones_y_alerta_cliente(): void
+    {
+        foreach ([['2025-10-05', 80], ['2026-09-05', 100], ['2026-10-05', 70]] as [$fecha, $monto]) {
+            $this->documento($monto, ['tipo_dte' => '11', 'fecha_emision' => $fecha, 'total_descuento' => $fecha === '2026-10-05' ? 7 : 0], ['producto_id' => null, 'descripcion' => 'Caja estable', 'venta_gravada' => 0, 'venta_exportacion' => $monto, 'cantidad' => 2]);
+        }
+        $v = $this->ventas(['canal' => 'exportacion']);
+        $this->assertSame(63.0, $v['totales']['actual']);
+        $this->assertSame(100.0, $v['productos'][0]['anterior']);
+        $this->assertSame(80.0, $v['productos'][0]['anio_anterior']);
+        $this->assertSame(80.0, $v['clientes'][0]['anio_anterior']);
+        $this->assertCount(1, $v['alertas']);
+        $this->assertSame(2.0, $v['productos'][0]['cantidad']);
+        $this->assertSame(63.0, $v['tendencia'][11]['monto']);
+    }
+
+    public function test_fe_neta_con_sala_y_consumidor_final_con_exento_y_descuento(): void
+    {
+        $this->documento(113, ['tipo_dte' => '01', 'iva' => 13]);
+        $uno = $this->documento(113, ['tipo_dte' => '01', 'subtotal' => 163, 'total_descuento' => 16.30, 'iva' => 11.70, 'cliente_sucursal_id' => null]);
+        DteLinea::withoutEvents(fn () => DteLinea::create(['dte_id' => $uno->dte_id, 'numero_linea' => 2, 'descripcion' => 'Exento', 'cantidad' => 1, 'precio_unitario' => 50, 'tipo_impuesto' => 'exento', 'venta_exenta' => 50, 'total_linea' => 50]));
+        $v = $this->ventas();
+        $this->assertSame(235.0, $v['totales']['actual']);
+        $this->assertSame(2, $v['contadores']['fe']);
+        $salas = collect($v['salas'])->keyBy('nombre');
+        $this->assertSame(100.0, $salas['Sala Centro']['actual']);
+        $this->assertSame(135.0, $salas['Consumidor final']['actual']);
+        $this->assertSame(235.0, array_sum(array_column($v['productos'], 'actual')));
+    }
+
+    public function test_canales_validacion_documentos_no_reales_y_permisos(): void
+    {
+        foreach (['01', '11'] as $tipo) {
+            foreach ([['ambiente' => '00'], ['sello_recepcion' => 'MOCK-123'], ['estado' => 'invalidado'], ['archivado' => true]] as $datos) {
+                $this->documento(100, $datos + ['tipo_dte' => $tipo], ['venta_exportacion' => 100]);
+            }
+        }
+        foreach (['nacional', 'exportacion'] as $canal) {
+            $this->assertSame(0.0, $this->ventas(['canal' => $canal])['totales']['actual']);
+            foreach (['administrador', 'jefatura', 'facturacion', 'contabilidad', 'produccion', 'vendedor'] as $rol) {
+                $this->actingAs(User::factory()->create()->assignRole($rol));
+                foreach (['index', 'excel', 'pdf'] as $accion) {
+                    $this->get(route('rutas.ventas.'.$accion, ['canal' => $canal]))->assertStatus(in_array($rol, ['administrador', 'jefatura', 'facturacion']) ? 200 : 403);
+                }
+            }
+        }
+        $this->actingAs(User::factory()->create()->assignRole('administrador'));
+        foreach (['index', 'excel', 'pdf'] as $accion) {
+            $this->getJson(route('rutas.ventas.'.$accion, ['canal' => 'todo']))->assertUnprocessable()->assertJsonValidationErrors('canal');
+        }
+    }
+
+    public function test_prorrateo_multilinea_cierra_al_centavo_en_fe_y_fex(): void
+    {
+        foreach (['01', '11'] as $tipo) {
+            $primera = $this->documento(1, ['tipo_dte' => $tipo, 'subtotal' => 3, 'total_descuento' => 0.01, 'iva' => $tipo === '01' ? 0.34 : 0], ['producto_id' => null, 'descripcion' => 'Caja A', 'venta_gravada' => $tipo === '01' ? 1 : 0, 'venta_exportacion' => $tipo === '11' ? 1 : 0]);
+            foreach ([2, 3] as $numero) {
+                DteLinea::withoutEvents(fn () => DteLinea::create(['dte_id' => $primera->dte_id, 'numero_linea' => $numero, 'descripcion' => 'Caja '.$numero, 'cantidad' => 1, 'precio_unitario' => 1, 'tipo_impuesto' => 'gravado', 'venta_gravada' => $tipo === '01' ? 1 : 0, 'venta_exportacion' => $tipo === '11' ? 1 : 0, 'total_linea' => 1]));
+            }
+            $v = $this->ventas(['canal' => $tipo === '11' ? 'exportacion' : 'nacional']);
+            $this->assertSame($tipo === '11' ? 2.99 : 2.65, $v['totales']['actual']);
+            $this->assertEqualsWithDelta($v['totales']['actual'], array_sum(array_column($v['productos'], 'actual')), 0.000001);
+        }
+    }
+
+    public function test_selector_conserva_periodo_y_descarta_filtros_y_titulos_de_descargas(): void
+    {
+        $this->actingAs(User::factory()->create()->assignRole('administrador'));
+        $this->get(route('rutas.ventas.index', ['periodo' => 'mes_pasado', 'sala' => $this->sala->id]))
+            ->assertOk()->assertSee(route('rutas.ventas.index', ['periodo' => 'mes_pasado', 'canal' => 'exportacion']));
+        $this->get(route('rutas.ventas.index', ['canal' => 'exportacion', 'vista' => 'clientes', 'sala' => $this->sala->id]))
+            ->assertOk()->assertSee('Ventas de exportación')->assertSee('USD, sin IVA')->assertSee('Presentaciones')->assertDontSee('Ficha de la sala')->assertDontSee('Agrupar ventas por ruta');
+        foreach (['nacional' => 'nacionales', 'exportacion' => 'exportacion'] as $canal => $nombre) {
+            foreach (['excel' => 'xlsx', 'pdf' => 'pdf'] as $accion => $extension) {
+                $this->get(route('rutas.ventas.'.$accion, ['canal' => $canal]))->assertOk()->assertDownload('ventas-'.$nombre.'-2026-10.'.$extension);
+            }
+        }
+    }
+
+    public function test_excel_y_pdf_no_mezclan_canales(): void
+    {
+        $this->documento(100, [], ['descripcion' => 'Nacional exclusivo']);
+        $this->documento(500, ['tipo_dte' => '11'], ['producto_id' => null, 'descripcion' => 'Exportacion exclusiva', 'venta_gravada' => 0, 'venta_exportacion' => 500]);
+        foreach (['nacional', 'exportacion'] as $canal) {
+            $v = $this->ventas(['canal' => $canal]);
+            $path = app(VentasRutasExcel::class)->generar($v);
+            try {
+                $libro = IOFactory::load($path);
+                $this->assertSame($canal === 'exportacion' ? ['Presentaciones', 'Clientes'] : ['Productos', 'Salas', 'Rutas'], $libro->getSheetNames());
+                $this->assertEquals($canal === 'exportacion' ? 500 : 100, $libro->getActiveSheet()->getCell('C4')->getValue());
+                $libro->disconnectWorksheets();
+            } finally {
+                unlink($path);
+            }
+            $html = view('rutas.ventas.pdf', $v + ['empresa' => Empresa::first()])->render();
+            if ($canal === 'exportacion') {
+                $this->assertStringContainsString('Exportacion exclusiva', $html);
+                $this->assertStringNotContainsString('Dulce', $html);
+                $this->assertStringNotContainsString('Totales por ruta', $html);
+            } else {
+                $this->assertStringNotContainsString('Exportacion exclusiva', $html);
+            }
+        }
+    }
+
     private function ventas(array $filtros = []): array
     {
         return app(VentasRutas::class)->consultar($filtros);
@@ -300,9 +422,9 @@ class VentasRutasTest extends TestCase
         $this->assertSame(0.0, $this->ventas()['totales']['actual']);
     }
 
-    public function test_excluye_documentos_no_reales_y_facturas(): void
+    public function test_excluye_documentos_no_reales(): void
     {
-        foreach ([['ambiente' => '00'], ['sello_recepcion' => 'MOCK-123'], ['estado' => 'invalidado'], ['estado' => 'borrador'], ['estado' => 'rechazado'], ['archivado' => true], ['tipo_dte' => '01']] as $datos) {
+        foreach ([['ambiente' => '00'], ['sello_recepcion' => 'MOCK-123'], ['estado' => 'invalidado'], ['estado' => 'borrador'], ['estado' => 'rechazado'], ['archivado' => true]] as $datos) {
             $this->documento(100, $datos);
         }
         $this->assertSame(0.0, $this->ventas()['totales']['actual']);
@@ -319,7 +441,7 @@ class VentasRutasTest extends TestCase
         $this->assertSame(70.0, $v['totales']['actual']);
         $this->assertSame(0.0, $v['totales']['anterior']);
         $this->assertSame(0.0, $v['totales']['cantidad']);
-        $this->assertSame(['ccf' => 1, 'salas' => 1, 'nc' => -30.0], $v['contadores']);
+        $this->assertSame(['ccf' => 1, 'fe' => 0, 'fex' => 0, 'salas' => 1, 'nc' => -30.0], $v['contadores']);
     }
 
     public function test_exenta_no_sujeta_y_redondeo_al_final_del_agregado(): void

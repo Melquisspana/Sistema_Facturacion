@@ -15,8 +15,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Ventas NACIONALES por producto, sala y ruta: CCF − NC, sin IVA, solo documentos reales.
- * Una NC resta en el período del CCF que corrige. La exportación (FEX) nunca se suma acá.
+ * Ventas por canal, sin IVA, solo documentos reales.
+ * Una NC resta en el período y canal del documento que corrige.
  */
 class VentasRutas
 {
@@ -24,6 +24,11 @@ class VentasRutas
 
     public function consultar(array $entrada = []): array
     {
+        $canal = Validator::make($entrada, ['canal' => ['sometimes', Rule::in(['nacional', 'exportacion'])]])->validate()['canal'] ?? 'nacional';
+        $exportacion = $canal === 'exportacion';
+        if ($exportacion) {
+            unset($entrada['ruta'], $entrada['sala'], $entrada['producto']);
+        }
         $filtros = Validator::make($entrada, [
             'periodo' => ['sometimes', Rule::in(['mes', 'mes_pasado', 'tres_meses', 'rango'])],
             'desde' => ['required_if:periodo,rango', 'nullable', 'date_format:Y-m-d'],
@@ -40,9 +45,10 @@ class VentasRutas
                     $fallar('El producto no existe.');
                 }
             }],
-            'vista' => ['sometimes', Rule::in(['productos', 'salas', 'rutas', 'devoluciones'])],
+            'vista' => ['sometimes', Rule::in($exportacion ? ['productos', 'clientes'] : ['productos', 'salas', 'rutas', 'devoluciones'])],
             'top' => ['sometimes', Rule::in(['monto', 'cantidad'])],
         ])->validate();
+        $filtros['canal'] = $canal;
         $periodo = $this->periodo($filtros);
 
         $anioDesde = $periodo['desde']->copy()->subYearNoOverflow();
@@ -51,8 +57,8 @@ class VentasRutas
         $cargaDesde = min($periodo['anterior_desde'], $anioDesde, $tendenciaDesde);
         $lineas = $this->lineas($cargaDesde, $periodo['hasta']->copy()->endOfMonth(), $filtros);
         $totales = $this->vacio();
-        $grupos = ['productos' => [], 'salas' => [], 'rutas' => []];
-        $ccf = $salasCompra = [];
+        $grupos = ['productos' => [], 'salas' => [], 'rutas' => [], 'clientes' => []];
+        $ccf = $fe = $fex = $salasCompra = [];
         $notas = 0;
         foreach ($lineas as $linea) {
             if ($linea->fecha < $periodo['anterior_desde']->toDateString() || $linea->fecha > $periodo['hasta']->toDateString()) {
@@ -69,13 +75,19 @@ class VentasRutas
                 if ($nc) {
                     $notas += $monto;
                 } else {
-                    $ccf[$linea->documento_id] = true;
+                    if ($linea->tipo === '01') {
+                        $fe[$linea->documento_id] = true;
+                    } elseif ($linea->tipo === '11') {
+                        $fex[$linea->documento_id] = true;
+                    } else {
+                        $ccf[$linea->documento_id] = true;
+                    }
                     if ($linea->sala_id && $monto > 0) {
                         $salasCompra[$linea->sala_id] = true;
                     }
                 }
             }
-            foreach (['productos' => ['producto', 'Ajustes sin producto'], 'salas' => ['sala', 'Sin sala'], 'rutas' => ['ruta', 'Sin ruta']] as $grupo => [$prefijo, $sinNombre]) {
+            foreach (($exportacion ? ['productos' => ['producto', 'Presentación sin descripción'], 'clientes' => ['cliente', 'Sin cliente']] : ['productos' => ['producto', 'Ajustes sin producto'], 'salas' => ['sala', 'Sin sala'], 'rutas' => ['ruta', 'Sin ruta']]) as $grupo => [$prefijo, $sinNombre]) {
                 $id = $linea->{$prefijo.'_id'} ?? 0;
                 $grupos[$grupo][$id] ??= $this->vacio() + ['id' => $id, 'nombre' => $linea->{$prefijo.'_nombre'} ?? $sinNombre, 'cliente' => $grupo === 'salas' ? $linea->cliente_nombre : null];
                 $grupos[$grupo][$id][$campo] += $monto;
@@ -103,7 +115,7 @@ class VentasRutas
         ];
 
         $alertas = [];
-        foreach ($grupos['salas'] as $sala) {
+        foreach ($grupos[$exportacion ? 'clientes' : 'salas'] as $sala) {
             if ($sala['anterior'] > 0 && $sala['actual'] <= $sala['anterior'] * (1 - self::BAJA_ALERTA) + 0.00000001) {
                 $sala['alerta'] = $sala['actual'] == 0 ? 'No compró' : '▼ '.number_format(abs($sala['porcentaje']), 0).' %';
                 $alertas[] = $sala;
@@ -114,7 +126,7 @@ class VentasRutas
         $totales = $this->comparar($totales);
         $totales['anio_anterior'] = round($anio->sum('monto'), 2);
         $totales['porcentaje_anio'] = $totales['anio_anterior'] != 0 ? ($totales['actual'] - $totales['anio_anterior']) / $totales['anio_anterior'] * 100 : null;
-        foreach (['productos' => 'producto_id', 'salas' => 'sala_id', 'rutas' => 'ruta_id'] as $grupo => $campo) {
+        foreach (['productos' => 'producto_id', 'salas' => 'sala_id', 'rutas' => 'ruta_id', 'clientes' => 'cliente_id'] as $grupo => $campo) {
             $porId = $anio->groupBy(fn ($l) => $l->$campo ?? 0)->map(fn ($ls) => round($ls->sum('monto'), 2));
             foreach ($grupos[$grupo] as &$fila) {
                 $fila['anio_anterior'] = $porId[$fila['id']] ?? 0.0;
@@ -128,9 +140,9 @@ class VentasRutas
         }
         $actuales = $lineas->filter(fn ($l) => $l->fecha >= $periodo['desde']->toDateString() && $l->fecha <= $periodo['hasta']->toDateString());
         $devoluciones = $this->devoluciones($actuales);
-        $ficha = isset($filtros['sala']) ? $this->fichaSala((int) $filtros['sala']) : null;
+        $ficha = ! $exportacion && isset($filtros['sala']) ? $this->fichaSala((int) $filtros['sala']) : null;
 
-        return $grupos + ['totales' => $totales, 'tendencia' => $tendencia, 'devoluciones' => $devoluciones, 'ficha_sala' => $ficha, 'periodo' => $periodo, 'filtros' => $filtros, 'alertas' => $alertas, 'resumen' => $resumen, 'contadores' => ['ccf' => count($ccf), 'salas' => count($salasCompra), 'nc' => round($notas, 2)]];
+        return $grupos + ['canal' => $canal, 'titulo' => $exportacion ? 'Ventas de exportación' : 'Ventas nacionales', 'totales' => $totales, 'tendencia' => $tendencia, 'devoluciones' => $devoluciones, 'ficha_sala' => $ficha, 'periodo' => $periodo, 'filtros' => $filtros, 'alertas' => $alertas, 'resumen' => $resumen, 'contadores' => ['ccf' => count($ccf), 'fe' => count($fe), 'fex' => count($fex), 'salas' => count($salasCompra), 'nc' => round($notas, 2)]];
     }
 
     private function devoluciones(Collection $lineas): array
@@ -141,8 +153,8 @@ class VentasRutas
             if ($l->tipo === '05' && $l->tipo_nota_credito === 'pronto_pago') {
                 continue;
             }
-            $campo = $l->tipo === '03' ? 'vendido' : 'devuelto';
-            $monto = $l->tipo === '03' ? $l->monto : -$l->monto;
+            $campo = $l->tipo !== '05' ? 'vendido' : 'devuelto';
+            $monto = $l->tipo !== '05' ? $l->monto : -$l->monto;
             if ($campo === 'vendido') {
                 $vendido += $monto;
             } else {
@@ -174,8 +186,8 @@ class VentasRutas
         $hoy = HoraNegocio::hoy();
         $desde = $hoy->copy()->subYearNoOverflow();
         $lineas = $this->lineas($desde, $hoy, ['sala' => $id]);
-        // Último CCF real, incluso si no tiene líneas o queda fuera de los 12 meses.
-        $documentos = Dte::query()->produccion()->aceptadoRealMh()->noArchivados()->where('tipo_dte', '03')
+        // Último CCF o FE real, incluso si no tiene líneas o queda fuera de los 12 meses.
+        $documentos = Dte::query()->produccion()->aceptadoRealMh()->noArchivados()->whereIn('tipo_dte', ['03', '01'])
             ->where('cliente_sucursal_id', $id)->whereDate('fecha_emision', '<=', $hoy->toDateString())
             ->orderByDesc('fecha_emision')->pluck('fecha_emision')->map(fn ($fecha) => Carbon::parse($fecha)->toDateString());
         $ultima = $documentos->first();
@@ -187,7 +199,7 @@ class VentasRutas
         $oportunidades = [];
         if ($sala->ruta_id) {
             $salas = ClienteSucursal::where('ruta_id', $sala->ruta_id)->where('activo', true)->pluck('id');
-            $recientes = $this->lineas($hoy->copy()->subDays(90), $hoy, ['ruta' => $sala->ruta_id])->where('tipo', '03')->filter(fn ($l) => $l->monto > 0);
+            $recientes = $this->lineas($hoy->copy()->subDays(90), $hoy, ['ruta' => $sala->ruta_id])->whereIn('tipo', ['03', '01'])->filter(fn ($l) => $l->monto > 0);
             $activas = $recientes->whereIn('sala_id', $salas)->pluck('sala_id')->unique()->count();
             $propios = $recientes->where('sala_id', $id)->pluck('producto_id')->all();
             foreach ($recientes->whereIn('sala_id', $salas)->filter(fn ($l) => $l->producto_id && ! in_array($l->producto_id, $propios))->groupBy('producto_id') as $productoId => $filas) {
@@ -202,15 +214,15 @@ class VentasRutas
         return ['ultima_compra' => $ultima ? substr($ultima, 0, 10) : null, 'dias' => $ultima ? (int) Carbon::parse($ultima, HoraNegocio::zona())->startOfDay()->diffInDays($hoy) : null, 'frecuencia' => $frecuencia, 'promedio' => $numero ? round($lineas->sum('monto') / $numero, 2) : null, 'oportunidades' => array_slice($oportunidades, 0, 5)];
     }
 
-    /** Filas con fecha y dimensiones del CCF de referencia, sin redondear antes de sumar. */
+    /** Filas con fecha y dimensiones del documento de referencia. */
     private function lineas(Carbon $desde, Carbon $hasta, array $filtros): Collection
     {
-        // La fecha efectiva de una NC viene del CCF, incluso si la NC se emitió después.
+        // La fecha efectiva de una NC viene del documento corregido, incluso si la NC se emitió después.
         // Los joins evitan N+1 y permiten limitar en SQL el rango efectivo completo.
         $referencia = "CASE WHEN dtes.tipo_dte = '05' THEN COALESCE(original.dte_id, dtes.dte_relacionado_id, dtes.id) ELSE dtes.id END";
         $reales = Dte::query()->produccion()->aceptadoRealMh()->noArchivados()->select('id');
         $query = Dte::query()->whereIn('dtes.id', $reales)
-            ->whereIn('dtes.tipo_dte', ['03', '05'])
+            ->whereIn('dtes.tipo_dte', ['01', '03', '05', '11'])
             ->join('dte_lineas as linea', 'linea.dte_id', '=', 'dtes.id')
             ->leftJoin('dte_lineas as original', 'original.id', '=', 'linea.dte_linea_original_id')
             ->join('dtes as referencia', fn ($join) => $join->on('referencia.id', '=', DB::raw($referencia)))
@@ -220,8 +232,15 @@ class VentasRutas
             ->leftJoin('productos as producto', function ($join) {
                 $join->on('producto.id', '=', DB::raw("CASE WHEN dtes.tipo_dte = '05' THEN COALESCE(original.producto_id, linea.producto_id) ELSE linea.producto_id END"));
             })
+            ->where(function ($q) use ($filtros) {
+                if (($filtros['canal'] ?? 'nacional') === 'exportacion') {
+                    $q->where('referencia.tipo_dte', '11');
+                } else {
+                    $q->whereIn('referencia.tipo_dte', ['01', '03', '05']);
+                }
+            })
             ->whereBetween('referencia.fecha_emision', [$desde->toDateString(), $hasta->toDateString()])
-            ->selectRaw('dtes.tipo_nota_credito, dtes.id as documento_id, dtes.tipo_dte as tipo, dtes.subtotal as base, dtes.total_descuento as descuento, linea.cantidad, linea.venta_gravada, linea.venta_exenta, linea.venta_no_sujeta, referencia.fecha_emision as fecha, sala.id as sala_id, sala.nombre as sala_nombre, cliente.nombre as cliente_nombre, ruta.id as ruta_id, ruta.nombre as ruta_nombre, producto.id as producto_id, producto.nombre as producto_nombre');
+            ->selectRaw('linea.id as linea_id, linea.numero_linea, linea.codigo, linea.descripcion, original.codigo as original_codigo, original.descripcion as original_descripcion, dtes.iva, referencia.tipo_dte as tipo_referencia, referencia.cliente_id, linea.venta_exportacion, dtes.tipo_nota_credito, dtes.id as documento_id, dtes.tipo_dte as tipo, dtes.subtotal as base, dtes.total_descuento as descuento, linea.cantidad, linea.venta_gravada, linea.venta_exenta, linea.venta_no_sujeta, referencia.fecha_emision as fecha, sala.id as sala_id, sala.nombre as sala_nombre, cliente.nombre as cliente_nombre, ruta.id as ruta_id, ruta.nombre as ruta_nombre, producto.id as producto_id, producto.nombre as producto_nombre');
 
         foreach (['ruta' => 'sala.ruta_id', 'sala' => 'referencia.cliente_sucursal_id', 'cliente' => 'referencia.cliente_id'] as $filtro => $columna) {
             if (isset($filtros[$filtro])) {
@@ -232,24 +251,45 @@ class VentasRutas
                 }
             }
         }
-        if (isset($filtros['producto'])) {
-            if ((int) $filtros['producto'] === 0) {
-                $query->whereNull('producto.id');
-            } else {
-                $query->where('producto.id', $filtros['producto']);
-            }
-        }
+        $bases = DB::table('dte_lineas')->selectRaw('dte_id, SUM(venta_gravada + venta_exenta + venta_no_sujeta) as suma')->groupBy('dte_id');
+        $query->joinSub($bases, 'bases', fn ($join) => $join->on('bases.dte_id', '=', 'dtes.id'))->addSelect('bases.suma as suma_lineas');
 
-        return $query->toBase()->get()->map(function ($linea) {
+        $acumulados = [];
+
+        return $query->orderBy('dtes.id')->orderBy('linea.numero_linea')->toBase()->get()->map(function ($linea) use (&$acumulados) {
             $nc = $linea->tipo === '05';
             $factor = ! $nc && (float) $linea->base != 0 ? 1 - (float) $linea->descuento / (float) $linea->base : 1;
+            // Las FEX de listas de empaque no tienen producto_id ni código: la descripción
+            // congelada identifica la presentación entre meses. El cliente DTE es el vinculado de exportación.
+            if ($linea->tipo_referencia === '11') {
+                $codigo = $nc ? ($linea->original_codigo ?? $linea->codigo) : $linea->codigo;
+                $descripcion = $nc ? ($linea->original_descripcion ?? $linea->descripcion) : $linea->descripcion;
+                $linea->producto_id = $linea->producto_id ?? 'fex:'.hash('sha256', $codigo ?: $descripcion);
+                $linea->producto_nombre = $linea->producto_nombre ?? $descripcion;
+            }
+            if ($linea->tipo === '01' && ! $linea->sala_id) {
+                $linea->sala_nombre = 'Consumidor final';
+            }
             $linea->monto = ((float) $linea->venta_gravada + (float) $linea->venta_exenta + (float) $linea->venta_no_sujeta) * $factor * ($nc ? -1 : 1);
+            if ($linea->tipo === '05' && $linea->tipo_referencia === '11' && (float) $linea->venta_exportacion != 0) {
+                $linea->monto = -(float) $linea->venta_exportacion;
+            } elseif ($linea->tipo === '11') {
+                $linea->monto = (float) $linea->venta_exportacion * $factor;
+            } elseif ($linea->tipo === '01') {
+                $neta = (float) $linea->base - (float) $linea->descuento - (float) $linea->iva;
+                $linea->monto = (float) $linea->suma_lineas != 0 ? $neta * ((float) $linea->venta_gravada + (float) $linea->venta_exenta + (float) $linea->venta_no_sujeta) / (float) $linea->suma_lineas : 0;
+            }
+            if (in_array($linea->tipo, ['01', '11'], true)) {
+                $previo = $acumulados[$linea->documento_id] ?? 0.0;
+                $acumulados[$linea->documento_id] = $previo + $linea->monto;
+                $linea->monto = round(round($acumulados[$linea->documento_id], 2) - round($previo, 2), 2);
+            }
             $linea->cantidad = (float) $linea->cantidad * ($nc ? -1 : 1);
             $linea->fecha = substr($linea->fecha, 0, 10);
             $linea->cliente = $linea->cliente_nombre;
 
             return $linea;
-        });
+        })->filter(fn ($linea) => ! isset($filtros['producto']) || ($linea->producto_id ?? 0) == $filtros['producto'])->values();
     }
 
     private function vacio(): array
