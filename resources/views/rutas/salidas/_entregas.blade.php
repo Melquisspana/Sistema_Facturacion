@@ -6,6 +6,12 @@
      .js-quien). Sin JavaScript igual funciona: el valor inicial es el preseleccionado. --}}
 @php
     $modoVendedor = $modoVendedor ?? false;
+    $fechaHoy = \App\Support\HoraNegocio::fechaHoy();
+    $cierreHoy = $salida->cierreDelDia($fechaHoy);
+    $diaCerrado = $cierreHoy?->estaCerrado() ?? false;
+    $registrable = $registrable && ! $diaCerrado;
+    $prefijoCierre = $modoVendedor ? 'rutas.mi-salida.' : 'rutas.salidas.';
+    $saldosAnteriores = app(\App\Services\Rutas\CierreDia::class)->saldosAnteriores($salida, $porSala->keys()->all());
     $prefijoEntregas = $modoVendedor ? 'rutas.mi-salida.' : 'rutas.salidas.entregas.';
     $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
     $quien = $modoVendedor ? $persona->id : ($preseleccion ?? $participantes->first()?->rutas_personal_id);
@@ -39,6 +45,9 @@
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-ink-700">
             <div class="min-w-0">
                 <p class="truncate text-base font-semibold text-gray-800 dark:text-paper-100">{{ $sala?->nombre ?? 'Sala sin identificar' }}</p>
+                @foreach ($saldosAnteriores->get($sala?->id, collect()) as $saldo)
+                    <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">Saldo de visitas anteriores: ${{ number_format((float) $saldo->monto_esperado - (float) $saldo->monto_cobrado, 2) }} (…{{ \App\Support\OrdenCompra::ultimosDigitos($saldo->dte->numero_control) }})</p>
+                @endforeach
                 <p class="text-xs text-gray-400 dark:text-paper-500">{{ $entregas->count() }} CCF{{ $pendientesSala ? ' · '.$pendientesSala.' por marcar' : '' }}</p>
             </div>
             @if ($puedeMarcar && ($pendientesSala > 1 || ($modoVendedor && $pendientesSala > 0)) && $sala)
@@ -73,6 +82,9 @@
                         {{-- Resultado ya registrado --}}
                         <div class="min-w-0 max-w-full break-words text-right">
                             @if ($entrega->resultado === \App\Enums\ResultadoEntrega::Entregado)
+                                @if ($entrega->monto_esperado !== null && $entrega->monto_cobrado < $entrega->monto_esperado)
+                                    <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">Saldo pendiente ${{ number_format((float) $entrega->monto_esperado - (float) $entrega->monto_cobrado, 2) }}</p>
+                                @endif
                                 <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                                 <p class="text-xs text-gray-500 dark:text-paper-300">
                                     {{ $entrega->entregadoPor?->nombre }} · {{ $entrega->fecha_resultado?->translatedFormat($modoVendedor ? 'H:i' : 'd M') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
@@ -84,7 +96,7 @@
                                 <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                                 <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}</p>
                             @endif
-                            @if (($modoVendedor ? auth()->user()->can('deshacer', [$salida, $entrega]) : $puedeGestionar) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
+                            @if (($modoVendedor ? auth()->user()->can('deshacer', [$salida, $entrega]) : ($puedeGestionar && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString())))) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
                                 <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}" class="mt-1">
                                     @csrf @method('PATCH')
                                     <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 text-xs text-gray-400 hover:underline dark:text-paper-500">Deshacer</button>
@@ -147,6 +159,19 @@
         <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">No había CCF pendientes para esta ruta cuando se creó.</p>
     </div>
 @endforelse
+
+@if ($modoVendedor || $puedeGestionar)
+    @if ($diaCerrado)
+        @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])
+    @elseif ($registrable && $salida->entregas()->entregadas()->whereDate('fecha_resultado', $fechaHoy)->exists())
+        <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Cerrar el día</a>
+    @endif
+    @if (! $modoVendedor)
+        @foreach ($salida->cierres()->whereDate('fecha', '!=', $fechaHoy)->orderByDesc('fecha')->get() as $cierreAnterior)
+            <a href="{{ route($prefijoCierre.'cierre', ['salida' => $salida, 'fecha' => $cierreAnterior->fecha->toDateString()]) }}" class="mt-3 flex min-h-11 items-center text-sm underline">Liquidación {{ $cierreAnterior->fecha->format('d/m/Y') }}{{ $cierreAnterior->estaCerrado() ? '' : ' · Reabierta' }}</a>
+        @endforeach
+    @endif
+@endif
 
 {{-- ¿Falta algo? Lo poco frecuente va plegado. --}}
 @if ($puedeGestionar && $abierta)
