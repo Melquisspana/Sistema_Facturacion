@@ -10,6 +10,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Municipio;
 use App\Support\Ubicacion\CoherenciaUbicacion;
+use App\Support\Ubicacion\VinculaMunicipioDistrito;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -126,7 +127,25 @@ class AuditarUbicaciones extends Command
             return;
         }
 
-        $this->line("Catálogo: {$total} distritos, todos vinculados a su municipio 2024. ✔");
+        // Un distrito vinculado todavía puede ser INALCANZABLE en el formulario: si
+        // ninguna fila de `municipios` representa a su agrupación, esa opción no existe en
+        // el segundo select y el tercero nunca llega a ofrecerlo.
+        $inalcanzables = VinculaMunicipioDistrito::agrupacionesInalcanzables();
+
+        if ($inalcanzables !== []) {
+            $this->warn('Catálogo: '.count($inalcanzables).' agrupación(es) 2024 NO se pueden elegir en el formulario');
+            $this->line('  (existen en `distritos` pero ninguna fila de `municipios` las representa,');
+            $this->line('   así que TODOS sus distritos quedan inalcanzables):');
+            foreach ($inalcanzables as $nombre) {
+                $this->line('  - '.$nombre);
+            }
+            $this->line('  Corregir con: php artisan distritos:vincular-municipio');
+            $this->newLine();
+
+            return;
+        }
+
+        $this->line("Catálogo: {$total} distritos, todos vinculados y elegibles. ✔");
         $this->newLine();
     }
 
