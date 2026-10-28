@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Rutas › Ventas: selector «Nacional | Exportación», que nunca se suman. Exportación (FEX) por cliente de exportación y presentación, con sus comparaciones, Excel y PDF; las facturas (FE) entran en nacional con la venta sin IVA y, sin sala, como «Consumidor final». La barra lateral de Rutas ya no muestra Cobros Calleja, que sigue en la de Facturación. #156
 - Rutas: gastos del día (parqueo, gasolina, viáticos u otro) con foto del recibo tomada con el celular, guardada en privado; se restan del efectivo a entregar en el cierre y salen en la liquidación. Un gasto sin foto queda marcado «Sin comprobante». Trae migración. #153
 - Rutas: cierre del día. El cliente dice si «cobra en la entrega» (efectivo, cheque o transferencia); al cerrar el día se corrige solo lo que salió distinto, se elige quién entrega el dinero y sale el PDF de liquidación con efectivo, cheques y transferencias por separado y el efectivo a entregar. Un día cerrado ya no se modifica sin que la oficina lo reabra con motivo. Trae 3 migraciones. #152
 - Rutas › Ventas: comparación con el mismo período del año anterior, tendencia de 12 meses, pestaña «Devoluciones» (NC por producto y sala con su % sobre lo vendido; las de pronto pago no cuentan), ficha de la sala con última compra, frecuencia, compra promedio y oportunidades de su ruta, y PDF del resumen mensual. #155
