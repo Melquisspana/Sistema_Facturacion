@@ -22,11 +22,19 @@ class AsistenciaSimpleTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Guardado en UTC y día de negocio en El Salvador, sin depender del .env. La zona de
+        // guardado se cambia ENTERA (config y la de PHP): con solo la config, Eloquent escribe
+        // en una zona y lee en otra, y las horas salen corridas según la máquina.
+        $this->zonaPhp = date_default_timezone_get();
         config(['asistencia.enabled' => true, 'asistencia.zona_horaria' => 'America/El_Salvador', 'app.timezone' => 'UTC']);
+        date_default_timezone_set('UTC');
     }
+
+    private string $zonaPhp;
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->zonaPhp);
         Carbon::setTestNow();
         parent::tearDown();
     }
