@@ -26,6 +26,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
+use Tests\Concerns\RevisaYAplicaTxt;
 use Tests\TestCase;
 
 /**
@@ -42,6 +43,7 @@ class CobrosNoAplicanTest extends TestCase
 {
     use PreparaEmisorDte;
     use RefreshDatabase;
+    use RevisaYAplicaTxt;
 
     private Cliente $cliente;
 
@@ -174,8 +176,8 @@ class CobrosNoAplicanTest extends TestCase
         $e = $this->escenario();
         $usuario = $this->usuario();
 
-        $respuesta = $this->actingAs($usuario)->post(route('cobros.pagos.varios', $this->cliente), [
-            'archivos' => [UploadedFile::fake()->createWithContent('pagos.txt', $e['txt'])], 'solo_revisar' => '1',
+        $respuesta = $this->actingAs($usuario)->post(route('cobros.pagos.revisar', $this->cliente), [
+            'archivos' => [UploadedFile::fake()->createWithContent('pagos.txt', $e['txt'])],
         ])->assertOk();
         $respuesta->assertSeeText('No aplican')->assertSee($e['x']->numero_control)->assertSeeText('Invalidado');
 
@@ -196,11 +198,11 @@ class CobrosNoAplicanTest extends TestCase
         $e = $this->escenario();
         $usuario = $this->usuario();
 
-        $respuesta = $this->actingAs($usuario)->post(route('cobros.pagos', $this->cliente), [
+        $respuesta = $this->actingAs($usuario)->revisarYAplicarTxt($this->cliente, [
             'archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $e['txt']),
         ])->assertOk();
 
-        $pendientes = $respuesta->viewData('pendientes');
+        $pendientes = $respuesta->viewData('archivos')[0]['pendientes'];
         $item = fn (int $dteId) => $e['lote']->items()->where('dte_id', $dteId)->sole()->id;
         $this->assertSame([$item($e['w']->dte_id)], collect($pendientes['no_pagados'])->pluck('item.id')->all());
         $this->assertSame([], $pendientes['nc_no_descontadas']);
@@ -211,7 +213,7 @@ class CobrosNoAplicanTest extends TestCase
         // Sin casilla: no se pueden marcar.
         $this->assertDoesNotMatchRegularExpression('/name="items\[\]" value="'.$item($e['x']->dte_id).'"/', $respuesta->getContent());
 
-        $hash = $respuesta->viewData('informe')['hash'];
+        $hash = $respuesta->viewData('archivos')[0]['informe']['hash'];
         $this->actingAs($usuario)->post(route('cobros.pagos.reenviar', $this->cliente), ['hash' => $hash, 'items' => [$item($e['x']->dte_id)]])
             ->assertSessionHasErrors('items');
         $this->assertSame(1, PpqLote::sole()->items()->where('dte_id', $e['x']->dte_id)->count());

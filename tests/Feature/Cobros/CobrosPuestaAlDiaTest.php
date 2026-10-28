@@ -11,6 +11,7 @@ use App\Enums\RolSistema;
 use App\Enums\TipoNotaCredito;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
+use App\Models\Cobros\CobroAjuste;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
 use App\Models\Dte;
@@ -35,7 +36,7 @@ use Tests\TestCase;
 /**
  * Puesta al día, una sola vez: se suben juntos todos los TXT de pago desde que empezó el
  * seguimiento y sale el estado de cobro de cada CCF y NC. Idempotente: un TXT ya aplicado
- * no duplica pagos. «Solo revisar» no deja rastro: ni base, ni archivos, ni colas, ni correos.
+ * no duplica pagos. Revisar conserva la copia privada, sin escribir pagos ni despachar colas o correos.
  */
 class CobrosPuestaAlDiaTest extends TestCase
 {
@@ -143,8 +144,14 @@ class CobrosPuestaAlDiaTest extends TestCase
             $subidas[] = UploadedFile::fake()->createWithContent($nombre, $contenido);
         }
 
-        return $this->actingAs($usuario ?? $this->usuario())->post(route('cobros.pagos.varios', $this->cliente),
-            ['archivos' => $subidas] + ($soloRevisar ? ['solo_revisar' => '1'] : []));
+        $revision = $this->actingAs($usuario ?? $this->usuario())->post(route('cobros.pagos.revisar', $this->cliente), ['archivos' => $subidas]);
+        if ($soloRevisar || $revision->status() !== 200) {
+            return $revision;
+        }
+        $hashes = collect($revision->viewData('archivos'))->where('estado', 'aplicado')->pluck('hash')->unique()->values()->all();
+        $respuesta = $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => $hashes]);
+
+        return $respuesta;
     }
 
     public function test_solo_revisar_muestra_el_resultado_y_no_deja_rastro(): void
@@ -157,7 +164,7 @@ class CobrosPuestaAlDiaTest extends TestCase
 
         $respuesta = $this->subirVarios(['pagos-1.txt' => $e['txt1'], 'pagos-2.txt' => $e['txt2']], soloRevisar: true)->assertOk();
 
-        $respuesta->assertSeeText('Solo revisión: no se guardó nada');
+        $respuesta->assertSeeText('Revisión: todavía no se aplicó nada');
         $this->assertCount(2, $respuesta->viewData('archivos'));
         $estados = collect($respuesta->viewData('reporte')['ccf'])->mapWithKeys(fn ($f) => [$f['documento']->id => $f['estado']]);
         $this->assertSame('pagado', $estados[$e['a']->id]);
@@ -166,7 +173,8 @@ class CobrosPuestaAlDiaTest extends TestCase
         $this->assertSame(0, CobroEvento::where('tipo', TipoEventoCobro::Pago->value)->count());
         $this->assertSame(0, PpqConciliacion::count());
         $this->assertSame(EstadoPagoCobro::Pendiente, $e['a']->refresh()->pago_estado);
-        $this->assertSame($antes, $disco->allFiles());
+        $this->assertCount(count($antes) + 2, $disco->allFiles());
+        $disco->assertExists('ppq/conciliaciones/'.hash('sha256', $e['txt1']).'.txt');
         Queue::assertNothingPushed();
         Mail::assertNothingSent();
     }
@@ -195,7 +203,7 @@ class CobrosPuestaAlDiaTest extends TestCase
         $this->assertSame('no_descontada', $nc[$e['n1']->id]);
         $this->assertSame('pronto_pago', $nc[$e['pronto']->id]);
 
-        $respuesta->assertSeeText('pagos-1.txt')->assertSeeText('copia.txt')
+        $respuesta->assertSeeText('copia.txt')
             ->assertSeeText('No pagados')->assertSee($e['d']->numero_control)
             ->assertSee(route('cobros.estado-cobro', $this->cliente), false);
     }
@@ -205,12 +213,13 @@ class CobrosPuestaAlDiaTest extends TestCase
         $e = $this->escenario();
         $ajeno = str_replace('000123;', '999999;', $e['txt2']);
 
-        $respuesta = $this->subirVarios(['pagos-1.txt' => $e['txt1'], 'ajeno.txt' => $ajeno], soloRevisar: false)->assertOk();
+        $respuesta = $this->subirVarios(['pagos-1.txt' => $e['txt1'], 'ajeno.txt' => $ajeno], soloRevisar: true)->assertOk();
 
         $archivos = collect($respuesta->viewData('archivos'))->keyBy('nombre');
         $this->assertSame('aplicado', $archivos['pagos-1.txt']['estado']);
         $this->assertSame('error', $archivos['ajeno.txt']['estado']);
         $this->assertNotEmpty($archivos['ajeno.txt']['mensaje']);
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [hash('sha256', $e['txt1'])]])->assertOk();
         $this->assertSame(EstadoPagoCobro::Pagado, $e['a']->refresh()->pago_estado);
         $this->assertSame(EstadoPagoCobro::Pendiente, $e['c']->refresh()->pago_estado);
     }
@@ -243,8 +252,97 @@ class CobrosPuestaAlDiaTest extends TestCase
 
         $this->subirVarios(['pagos-1.txt' => $e['txt1']], soloRevisar: false, usuario: $lector)->assertForbidden();
         $this->actingAs($lector)->get(route('cobros.estado-cobro', $this->cliente))->assertOk();
-        $this->actingAs($this->usuario())->post(route('cobros.pagos.varios', $this->cliente), ['archivos' => []])
+        $this->actingAs($this->usuario())->post(route('cobros.pagos.revisar', $this->cliente), ['archivos' => []])
             ->assertSessionHasErrors('archivos');
         $this->assertSame(0, CobroEvento::count());
+    }
+
+    public function test_fecha_de_pago_se_conserva_en_sesion_y_solo_se_aplica_al_confirmar(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00')]);
+        $hash = hash('sha256', $txt);
+        $revision = $this->actingAs($this->usuario())->post(route('cobros.pagos.revisar', $this->cliente), [
+            'archivos' => [UploadedFile::fake()->createWithContent('pago.txt', $txt)], 'fecha_pago' => '2026-10-20',
+        ])->assertOk()->assertSessionHas('cobros.txt_revisados.'.$this->cliente->id.'.'.$hash.'.fecha_pago', '2026-10-20');
+        $this->assertSame('2026-10-20', $revision->viewData('archivos')[0]['informe']['fecha_pago']->toDateString());
+        $this->assertSame(0, CobroEvento::count());
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash], 'fecha_pago' => '2000-01-01'])->assertOk();
+        $this->assertSame('2026-10-20', $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->sole()->fecha->toDateString());
+        $this->assertSame('2026-10-20', $doc->refresh()->fecha_pago->toDateString());
+    }
+
+    public function test_fecha_con_varios_archivos_se_rechaza_antes_de_guardar_copias(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00')]);
+        $this->actingAs($this->usuario())->post(route('cobros.pagos.revisar', $this->cliente), [
+            'archivos' => [UploadedFile::fake()->createWithContent('a.txt', $txt), UploadedFile::fake()->createWithContent('b.txt', $txt)],
+            'fecha_pago' => '2026-10-20',
+        ])->assertSessionHasErrors('fecha_pago');
+        $this->assertSame([], Storage::disk((string) config('dte.storage.disk', 'local'))->allFiles());
+        $this->assertSame(0, CobroEvento::count());
+    }
+
+    public function test_huella_exige_revision_del_mismo_cliente_y_se_consume_una_sola_vez(): void
+    {
+        $doc = $this->ccf();
+        app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$doc->id]);
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00')]);
+        $hash = hash('sha256', $txt);
+        $this->actingAs($this->usuario())->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash]])
+            ->assertOk()->assertSeeText('Este TXT no se revisó en esta sesión');
+        $this->assertSame(0, CobroEvento::count());
+        $this->subirVarios(['a.txt' => $txt], soloRevisar: true)->assertOk();
+        $otro = Cliente::factory()->contribuyente()->create();
+        ClientePerfilDocumento::create(['cliente_id' => $otro->id, 'activo' => true, 'codigo_proveedor' => '000123',
+            'formato_export' => 'carga_masiva_nc_v1', 'exige_albaran_en_nc' => false, 'tolerancia_albaran' => 0]);
+        app(PerfilDocumentoResolver::class)->olvidar();
+        $this->post(route('cobros.pagos.aplicar', $otro), ['hashes' => [$hash]])->assertOk()->assertSeeText('Este TXT no se revisó en esta sesión');
+        $this->assertSame(0, CobroEvento::count());
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash]])->assertOk();
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash]])->assertOk()->assertSeeText('Este TXT no se revisó en esta sesión');
+        $this->assertSame(1, $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count());
+        $this->assertSame(1, PpqConciliacion::count());
+    }
+
+    public function test_revision_nueva_reemplaza_las_huellas_y_los_errores_no_se_autorizan(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00')]);
+        $this->subirVarios(['a.txt' => $txt], soloRevisar: true)->assertOk();
+        $ajeno = str_replace('000123;', '999999;', $txt);
+        $this->subirVarios(['ajeno.txt' => $ajeno], soloRevisar: true)->assertOk()
+            ->assertSessionHas('cobros.txt_revisados.'.$this->cliente->id, []);
+        foreach ([$txt, $ajeno] as $contenido) {
+            $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [hash('sha256', $contenido)]])
+                ->assertOk()->assertSeeText('Este TXT no se revisó en esta sesión');
+        }
+        $this->assertSame(0, CobroEvento::count());
+    }
+
+    public function test_cliente_sin_perfil_activo_no_revisa_ni_aplica(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        $this->actingAs($this->usuario())->post(route('cobros.pagos.revisar', $cliente), [
+            'archivos' => [UploadedFile::fake()->createWithContent('a.txt', 'contenido')],
+        ])->assertSessionHasErrors('documentos');
+        $this->post(route('cobros.pagos.aplicar', $cliente), ['hashes' => [str_repeat('a', 64)]])->assertSessionHasErrors('documentos');
+        $this->assertSame(0, CobroEvento::count());
+    }
+
+    public function test_detalle_en_revision_muestra_datos_sin_acciones_de_ajustes(): void
+    {
+        $doc = $this->ccf();
+        $primero = $this->txt([$this->linea('CF', $doc->numero_control, '50.00')]);
+        $this->subirVarios(['primero.txt' => $primero], soloRevisar: false)->assertOk();
+        $segundo = $this->txt([$this->linea('CF', $doc->numero_control, '40.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
+        $revision = $this->subirVarios(['segundo.txt' => $segundo], soloRevisar: true)->assertOk();
+        $revision->assertSeeText('Detalle de segundo.txt')->assertSeeText('EN REVISIÓN')->assertSeeText('PPQ/33762')
+            ->assertDontSeeText('Vincular NC existente')->assertDontSeeText('Crear nota de crédito');
+        $this->assertSame(0, CobroAjuste::count());
+        $this->assertSame(1, $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count());
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [hash('sha256', $segundo)]])
+            ->assertOk()->assertSeeText('EN REVISIÓN')->assertSeeText('Vincular NC existente')->assertSeeText('Crear nota de crédito');
     }
 }

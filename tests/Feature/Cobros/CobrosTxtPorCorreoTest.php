@@ -133,8 +133,8 @@ class CobrosTxtPorCorreoTest extends TestCase
 
     private function aplicar(array $archivos, ?User $usuario = null)
     {
-        return $this->actingAs($usuario ?? $this->usuario())->post(route('cobros.pagos.correo.aplicar', $this->cliente), [
-            'archivos' => array_map(fn ($nombre, $hash) => ['hash' => $hash, 'nombre' => $nombre], array_keys($archivos), $archivos),
+        return $this->actingAs($usuario ?? $this->usuario())->post(route('cobros.pagos.aplicar', $this->cliente), [
+            'hashes' => array_values($archivos),
         ]);
     }
 
@@ -152,7 +152,7 @@ class CobrosTxtPorCorreoTest extends TestCase
 
         $respuesta = $this->buscar()->assertOk();
 
-        $respuesta->assertSeeText('Solo revisión: no se guardó nada')
+        $respuesta->assertSeeText('Revisión: todavía no se aplicó nada')
             ->assertSeeText('000123_20261020090000.txt')->assertSeeText('000123_20261022090000.txt');
         $encontrados = $this->encontrados($respuesta);
         $this->assertCount(2, $encontrados);
@@ -166,7 +166,7 @@ class CobrosTxtPorCorreoTest extends TestCase
         // …pero sí guarda la copia (evidencia), y el formulario lleva solo las huellas.
         $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
         $this->assertTrue($disco->exists('ppq/conciliaciones/'.hash('sha256', $e['txt1']).'.txt'));
-        $respuesta->assertSee(route('cobros.pagos.correo.aplicar', $this->cliente), false)
+        $respuesta->assertSee(route('cobros.pagos.aplicar', $this->cliente), false)
             ->assertSee(hash('sha256', $e['txt2']), false)
             ->assertDontSee('TITULAR DE EJEMPLO;CF', false);
     }
@@ -186,11 +186,12 @@ class CobrosTxtPorCorreoTest extends TestCase
         $this->assertSame(EstadoPagoCobro::Pagado, $e['b']->refresh()->pago_estado);
         $this->assertSame(EstadoPagoCobro::Pendiente, $e['c']->refresh()->pago_estado, 'El TXT que no se eligió no se aplica.');
         $this->assertSame(1, PpqConciliacion::count());
-        $respuesta->assertDontSeeText('Solo revisión: no se guardó nada')->assertSeeText('000123_20261020090000.txt');
+        $respuesta->assertDontSeeText('Revisión: todavía no se aplicó nada')->assertSeeText('000123_20261020090000.txt');
         $this->assertSame('aplicado', collect($respuesta->viewData('archivos'))->first()['estado']);
 
         // Aplicar dos veces la misma huella no duplica pagos.
-        $this->aplicar(['000123_20261020090000.txt' => hash('sha256', $e['txt1'])], $usuario)->assertOk();
+        $this->aplicar(['000123_20261020090000.txt' => hash('sha256', $e['txt1'])], $usuario)->assertOk()->assertSeeText('Este TXT no se revisó en esta sesión');
+        $this->assertSame(1, PpqConciliacion::count());
         $this->assertSame(1, $e['a']->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count());
     }
 
@@ -290,12 +291,17 @@ class CobrosTxtPorCorreoTest extends TestCase
         $e = $this->escenario();
         $hash = hash('sha256', $e['txt1']);
         $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
+        $this->buzon->conTxt(10, '2026-10-20 09:00', self::REMITENTE, '000123_20261020090000.txt', $e['txt1'])
+            ->conTxt(11, '2026-10-22 09:00', self::REMITENTE, '000123_20261022090000.txt', $e['txt2']);
+        $usuario = $this->usuario();
+        $this->buscar($usuario)->assertOk();
         $disco->put('ppq/conciliaciones/'.$hash.'.txt', $e['txt2']);
+        $disco->delete('ppq/conciliaciones/'.hash('sha256', $e['txt2']).'.txt');
 
         $respuesta = $this->aplicar([
             '000123_20261020090000.txt' => $hash,
-            '000123_20261022090000.txt' => str_repeat('a', 64),
-        ])->assertOk();
+            '000123_20261022090000.txt' => hash('sha256', $e['txt2']),
+        ], $usuario)->assertOk();
 
         $archivos = collect($respuesta->viewData('archivos'))->keyBy('nombre');
         $this->assertSame('error', $archivos['000123_20261020090000.txt']['estado']);
@@ -304,14 +310,14 @@ class CobrosTxtPorCorreoTest extends TestCase
         $this->assertSame(EstadoPagoCobro::Pendiente, $e['c']->refresh()->pago_estado);
     }
 
-    public function test_aplicar_valida_las_huellas_y_los_nombres(): void
+    public function test_aplicar_valida_las_huellas(): void
     {
         $this->escenario();
         $usuario = $this->usuario();
 
-        $this->aplicar([], $usuario)->assertSessionHasErrors('archivos');
-        $this->aplicar(['000123_20261020090000.txt' => '../../.env'], $usuario)->assertSessionHasErrors('archivos.0.hash');
-        $this->aplicar(['../otro.txt' => str_repeat('a', 64)], $usuario)->assertSessionHasErrors('archivos.0.nombre');
+        $this->aplicar([], $usuario)->assertSessionHasErrors('hashes');
+        $this->aplicar(['000123_20261020090000.txt' => '../../.env'], $usuario)->assertSessionHasErrors('hashes.0');
+        $this->aplicar(['uno.txt' => str_repeat('a', 64), 'dos.txt' => str_repeat('a', 64)], $usuario)->assertSessionHasErrors('hashes.0');
         $this->assertSame(0, CobroEvento::count());
     }
 
@@ -334,7 +340,11 @@ class CobrosTxtPorCorreoTest extends TestCase
 
         $this->actingAs($this->usuario())->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk()
             ->assertSee(route('cobros.pagos.correo', $this->cliente), false)
-            ->assertSeeText('Buscar TXT en el correo');
+            ->assertSeeText('Buscar TXT en el correo')
+            ->assertSeeText('Revisar TXT')->assertDontSeeText('Solo revisar')->assertDontSeeText('Cargar pagos')
+            ->assertSee('name="archivos[]"', false)->assertSee('multiple', false);
+        $html = $this->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->getContent();
+        $this->assertSame(1, substr_count($html, 'enctype="multipart/form-data"'));
     }
 
     public function test_si_el_buzon_falla_se_informa_el_error_y_no_un_correo_vacio(): void
