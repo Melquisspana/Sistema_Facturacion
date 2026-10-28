@@ -61,7 +61,7 @@ class AdministracionDispositivosTest extends TestCase
     public function test_dar_de_alta_un_lector_genera_su_token_y_lo_muestra_una_vez(): void
     {
         $respuesta = $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.store'), [
+            ->post(route('configuracion.lectores.store'), [
                 'codigo' => 'lector-entrada', 'nombre' => 'Entrada principal',
             ]);
 
@@ -84,18 +84,18 @@ class AdministracionDispositivosTest extends TestCase
     public function test_el_token_desaparece_en_la_peticion_siguiente(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.store'), ['codigo' => 'l1', 'nombre' => 'L1'])
-            ->assertRedirect(route('asistencia.dispositivos.index'));
+            ->post(route('configuracion.lectores.store'), ['codigo' => 'l1', 'nombre' => 'L1'])
+            ->assertRedirect(route('configuracion.lectores.index'));
 
         // Primera visita: se ve.
         $this->actingAs($this->admin())
-            ->get(route('asistencia.dispositivos.index'))
+            ->get(route('configuracion.lectores.index'))
             ->assertOk()
             ->assertSee('copialo ahora', escape: false);
 
         // Recarga: ya no está.
         $this->actingAs($this->admin())
-            ->get(route('asistencia.dispositivos.index'))
+            ->get(route('configuracion.lectores.index'))
             ->assertOk()
             ->assertDontSee('copialo ahora', escape: false);
     }
@@ -105,7 +105,7 @@ class AdministracionDispositivosTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create();
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.dispositivos.index'))
+            ->get(route('configuracion.lectores.index'))
             ->assertOk()
             ->assertDontSee($lector->token_hash)
             ->assertDontSee(AsistenciaDispositivoFactory::TOKEN_DE_PRUEBA);
@@ -114,7 +114,7 @@ class AdministracionDispositivosTest extends TestCase
     public function test_el_codigo_debe_ser_un_identificador_de_maquina(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.store'), ['codigo' => 'Lector Entrada', 'nombre' => 'X'])
+            ->post(route('configuracion.lectores.store'), ['codigo' => 'Lector Entrada', 'nombre' => 'X'])
             ->assertSessionHasErrors('codigo');
 
         $this->assertSame(0, AsistenciaDispositivo::count());
@@ -125,7 +125,7 @@ class AdministracionDispositivosTest extends TestCase
         AsistenciaDispositivo::factory()->create(['codigo' => 'lector-entrada']);
 
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.store'), ['codigo' => 'lector-entrada', 'nombre' => 'Otro'])
+            ->post(route('configuracion.lectores.store'), ['codigo' => 'lector-entrada', 'nombre' => 'Otro'])
             ->assertSessionHasErrors('codigo');
 
         $this->assertSame(1, AsistenciaDispositivo::count());
@@ -135,7 +135,7 @@ class AdministracionDispositivosTest extends TestCase
     public function test_el_formulario_no_puede_fijar_el_token(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.store'), [
+            ->post(route('configuracion.lectores.store'), [
                 'codigo' => 'l1', 'nombre' => 'L1',
                 'token_hash' => AsistenciaDispositivo::hashDeToken('token-elegido'),
             ]);
@@ -151,7 +151,7 @@ class AdministracionDispositivosTest extends TestCase
         $hashAntes = $lector->token_hash;
 
         $this->actingAs($this->admin())
-            ->put(route('asistencia.dispositivos.update', $lector), ['codigo' => 'l1', 'nombre' => 'Nuevo'])
+            ->put(route('configuracion.lectores.update', $lector), ['codigo' => 'l1', 'nombre' => 'Nuevo'])
             ->assertSessionHasNoErrors();
 
         $this->assertSame('Nuevo', $lector->fresh()->nombre);
@@ -165,7 +165,7 @@ class AdministracionDispositivosTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create(['codigo' => 'viejo', 'nombre' => 'L1']);
 
         $this->actingAs($this->admin())
-            ->put(route('asistencia.dispositivos.update', $lector), ['codigo' => 'nuevo', 'nombre' => 'L1']);
+            ->put(route('configuracion.lectores.update', $lector), ['codigo' => 'nuevo', 'nombre' => 'L1']);
 
         $this->assertStringContainsString('firmware', session('status'));
     }
@@ -175,7 +175,7 @@ class AdministracionDispositivosTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create();
 
         $this->actingAs($this->admin())
-            ->patch(route('asistencia.dispositivos.toggle-activo', $lector))
+            ->patch(route('configuracion.lectores.toggle-activo', $lector))
             ->assertSessionHas('status');
 
         $this->assertFalse($lector->fresh()->activo);
@@ -191,7 +191,7 @@ class AdministracionDispositivosTest extends TestCase
 
         // Confirmación equivocada: no rota nada.
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.rotar-token.ejecutar', $lector), ['confirmacion' => 'lector-bodega'])
+            ->post(route('configuracion.lectores.rotar-token.ejecutar', $lector), ['confirmacion' => 'lector-bodega'])
             ->assertSessionHasErrors('confirmacion');
 
         $this->assertSame($hashAntes, $lector->fresh()->token_hash);
@@ -204,7 +204,7 @@ class AdministracionDispositivosTest extends TestCase
         $hashAntes = $lector->token_hash;
 
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.rotar-token.ejecutar', $lector), [])
+            ->post(route('configuracion.lectores.rotar-token.ejecutar', $lector), [])
             ->assertSessionHasErrors('confirmacion');
 
         $this->assertSame($hashAntes, $lector->fresh()->token_hash);
@@ -215,7 +215,7 @@ class AdministracionDispositivosTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create(['codigo' => 'lector-entrada']);
 
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.rotar-token.ejecutar', $lector), ['confirmacion' => 'lector-entrada'])
+            ->post(route('configuracion.lectores.rotar-token.ejecutar', $lector), ['confirmacion' => 'lector-entrada'])
             ->assertSessionHas('token_generado');
 
         $nuevo = session('token_generado');
@@ -234,7 +234,7 @@ class AdministracionDispositivosTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create(['codigo' => 'lector-entrada']);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.dispositivos.rotar-token', $lector))
+            ->get(route('configuracion.lectores.rotar-token', $lector))
             ->assertOk()
             ->assertSee('nadie podrá marcar', escape: false)
             ->assertSee('no se puede recuperar', escape: false)
@@ -252,7 +252,7 @@ class AdministracionDispositivosTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create(['codigo' => 'lector-entrada']);
 
         $this->actingAs($this->admin())
-            ->post(route('asistencia.dispositivos.rotar-token.ejecutar', $lector), ['confirmacion' => 'lector-entrada']);
+            ->post(route('configuracion.lectores.rotar-token.ejecutar', $lector), ['confirmacion' => 'lector-entrada']);
 
         $nuevo = session('token_generado');
 
@@ -307,30 +307,27 @@ class AdministracionDispositivosTest extends TestCase
         $this->assertTrue($lector->activo);
     }
 
-    /** Pero SÍ puede ver el listado: `asistencia.ver` alcanza para consultar. */
-    public function test_gestionar_personal_alcanza_para_consultar_los_lectores(): void
+    /** El listado también exige ambos permisos de administración de lectores. */
+    public function test_gestionar_personal_no_alcanza_para_consultar_los_lectores(): void
     {
         AsistenciaDispositivo::factory()->create(['nombre' => 'Entrada principal']);
 
         $this->actingAs($this->gestorDePersonal())
-            ->get(route('asistencia.dispositivos.index'))
-            ->assertOk()
-            ->assertSee('Entrada principal')
-            // Sin los botones que no puede usar.
-            ->assertDontSee('Rotar token');
+            ->get(route('configuracion.lectores.index'))
+            ->assertForbidden();
     }
 
     /** @return array<string, array{0: string, 1: string, 2: array<string, mixed>}> */
     public static function accionesDeLectores(): array
     {
         return [
-            'formulario de alta' => ['get', 'asistencia.dispositivos.create', []],
-            'crear' => ['post', 'asistencia.dispositivos.store', ['codigo' => 'x', 'nombre' => 'X']],
-            'formulario de edición' => ['get', 'asistencia.dispositivos.edit{d}', []],
-            'editar' => ['put', 'asistencia.dispositivos.update{d}', ['codigo' => 'x', 'nombre' => 'X']],
-            'activar o desactivar' => ['patch', 'asistencia.dispositivos.toggle-activo{d}', []],
-            'pantalla de rotación' => ['get', 'asistencia.dispositivos.rotar-token{d}', []],
-            'rotar el token' => ['post', 'asistencia.dispositivos.rotar-token.ejecutar{d}', ['confirmacion' => 'lector-entrada']],
+            'formulario de alta' => ['get', 'configuracion.lectores.create', []],
+            'crear' => ['post', 'configuracion.lectores.store', ['codigo' => 'x', 'nombre' => 'X']],
+            'formulario de edición' => ['get', 'configuracion.lectores.edit{d}', []],
+            'editar' => ['put', 'configuracion.lectores.update{d}', ['codigo' => 'x', 'nombre' => 'X']],
+            'activar o desactivar' => ['patch', 'configuracion.lectores.toggle-activo{d}', []],
+            'pantalla de rotación' => ['get', 'configuracion.lectores.rotar-token{d}', []],
+            'rotar el token' => ['post', 'configuracion.lectores.rotar-token.ejecutar{d}', ['confirmacion' => 'lector-entrada']],
         ];
     }
 }

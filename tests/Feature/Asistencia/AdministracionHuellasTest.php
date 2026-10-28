@@ -201,7 +201,7 @@ class AdministracionHuellasTest extends TestCase
 
     // ─────────────────────────────── Ficha ───────────────────────────────
 
-    public function test_la_ficha_muestra_las_vigentes_y_las_historicas_por_separado(): void
+    public function test_la_ficha_muestra_solo_las_huellas_vigentes(): void
     {
         $empleado = $this->empleado();
         $this->asignar($empleado, 7);
@@ -211,9 +211,9 @@ class AdministracionHuellasTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.empleados.show', $empleado))
             ->assertOk()
-            ->assertSee('Ranuras vigentes')
-            ->assertSee('Ranuras que tuvo antes')
-            ->assertSee('No se borran ni se reasignan', escape: false);
+            ->assertSee('Huellas vigentes')
+            ->assertDontSee('Ranuras que tuvo antes')
+            ->assertSee('Huella 1');
     }
 
     public function test_la_ficha_avisa_cuando_la_persona_no_puede_marcar(): void

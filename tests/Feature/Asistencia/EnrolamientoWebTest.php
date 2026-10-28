@@ -325,7 +325,7 @@ class EnrolamientoWebTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.empleados.show', $this->ana))
             ->assertOk()
-            ->assertSee('Registrar huella con el lector')
+            ->assertSee('Guardar huella')
             ->assertViewHas('ordenViva', fn ($v) => $v?->id === $orden->id);
     }
 
@@ -350,7 +350,7 @@ class EnrolamientoWebTest extends TestCase
     }
 
     /** Los intentos anteriores se ven: es cómo se entiende por qué falló. */
-    public function test_la_ficha_muestra_los_intentos_recientes(): void
+    public function test_la_ficha_no_muestra_los_intentos_recientes(): void
     {
         AsistenciaOrdenEnrolamiento::factory()
             ->for($this->lector, 'dispositivo')->for($this->ana, 'empleado')
@@ -360,8 +360,8 @@ class EnrolamientoWebTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.empleados.show', $this->ana))
             ->assertOk()
-            ->assertViewHas('ordenesRecientes', fn ($c) => $c->count() === 1)
-            ->assertSee(MotivoFalloEnrolamiento::DedosNoCoinciden->explicacion());
+            ->assertViewMissing('ordenesRecientes')
+            ->assertDontSee('Intentos recientes');
     }
 
     /** LO CENTRAL DE LA WEB: el token del lector no aparece en la pantalla. */

@@ -42,7 +42,7 @@ class EnrolamientoController extends Controller
         $lector = AsistenciaDispositivo::findOrFail($request->integer('asistencia_dispositivo_id'));
 
         try {
-            $orden = $crear($empleado, $lector, $request->ranuraManual());
+            $crear($empleado, $lector, $request->ranuraManual());
         } catch (EnrolamientoImposibleException $e) {
             // El mensaje del dominio ya dice qué pasó y qué hacer. Reescribirlo acá
             // lo dejaría distinto del que vería cualquier otra vía.
@@ -51,14 +51,13 @@ class EnrolamientoController extends Controller
 
         return back()->with('status',
             "Listo. Pedile a {$empleado->nombreCorto()} que coloque el dedo en «{$lector->nombre}» "
-            ."cuando la pantalla lo indique. Ranura {$orden->ranura_reservada}."
+            .'cuando la pantalla lo indique.'
         );
     }
 
     /**
-     * Cancela la orden viva. Es seguro en cualquier momento: si el lector ya grabó
-     * y todavía no reportó, su resultado llegará sobre una orden final y se tratará
-     * como reintento —sin crear nada— gracias a la idempotencia del resolutor.
+     * Cancela la orden viva. No detiene la captura física: si el sensor ya grabó,
+     * puede quedar una plantilla sin dueño aunque el servidor cierre la orden.
      */
     public function destroy(
         AsistenciaEmpleado $empleado,
@@ -75,6 +74,6 @@ class EnrolamientoController extends Controller
 
         $resolver->cancelar($orden);
 
-        return back()->with('status', 'Registro de huella cancelado. No se grabó nada en el sensor.');
+        return back()->with('status', 'Registro de huella cancelado. Si el lector ya estaba capturando, puede haber quedado una huella guardada sin dueño.');
     }
 }

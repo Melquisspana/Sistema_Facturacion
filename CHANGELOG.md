@@ -32,6 +32,7 @@ Despliegue en dos pasos con punto de control entre ellos. Paso 1: numeración an
 
 ### Cambiado
 
+- Asistencia simple: el menú queda en «Hoy» (quién marcó, su entrada y salida, y quién todavía no marcó, con el día de El Salvador), «Personal» (ficha con «Guardar huella», «Huella 1 / Huella 2» con «Quitar», aviso de no cancelar mientras el lector pide el dedo y lo técnico dentro de «Avanzado») y «Reporte» (días y horas por persona en un rango de fechas, con Excel). Los lectores de huella pasan a Configuración › Integraciones, solo para el administrador; las direcciones viejas del listado y de editar redirigen a las nuevas. Las rutas del lector ES3C28P no cambian y una prueba las fija. Sin migraciones. #87
 - Cobros: un solo formulario para subir uno o varios TXT de pago. Primero muestra la revisión, sin aplicar nada, con el detalle de cada archivo, y después «Aplicar los N». Solo se aplican los TXT revisados por el mismo usuario y para el mismo cliente, una sola vez. La fecha del pago se puede indicar solo con un archivo. Se retiran «Cargar pagos», la casilla «Solo revisar» y sus rutas; el botón del correo usa el mismo paso de aplicar. #151
 
 ### Corregido

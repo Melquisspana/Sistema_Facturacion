@@ -71,7 +71,6 @@ class HuellaController extends Controller
     {
         $huella->loadMissing(['empleado', 'dispositivo']);
 
-        $ranura = $huella->fingerprint_id;
         $lector = $huella->dispositivo?->nombre ?? 'lector desconocido';
 
         if (! $liberar($huella)) {
@@ -79,7 +78,7 @@ class HuellaController extends Controller
         }
 
         return back()->with('status',
-            "Ranura {$ranura} del lector «{$lector}» liberada. Queda en el historial de "
+            "Huella del lector «{$lector}» quitada. Queda en el historial de "
             .($huella->empleado?->nombreCompleto() ?? 'la persona').'. '
             .'Borrá la plantilla en el sensor ANTES de asignarla a otra persona.'
         );

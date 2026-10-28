@@ -72,7 +72,7 @@ class AdministracionEmpleadosTest extends TestCase
     /**
      * La columna de ranuras cuenta las VIGENTES. Alguien con una asignación
      * histórica y ninguna activa no puede marcar, y la pantalla tiene que decir
-     * «Sin ranura», no «1».
+     * «Sin huella», no «1».
      */
     public function test_el_listado_solo_cuenta_las_ranuras_vigentes(): void
     {
@@ -88,7 +88,7 @@ class AdministracionEmpleadosTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('asistencia.empleados.index'))
             ->assertOk()
-            ->assertSee('Sin ranura');
+            ->assertSee('Sin huella');
     }
 
     public function test_el_listado_filtra_por_texto_y_por_estado(): void

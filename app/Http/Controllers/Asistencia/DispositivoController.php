@@ -64,7 +64,7 @@ class DispositivoController extends Controller
         ]);
 
         return redirect()
-            ->route('asistencia.dispositivos.index')
+            ->route('configuracion.lectores.index')
             ->with('status', "Lector «{$dispositivo->nombre}» dado de alta.")
             // El único momento en que el valor en claro sale del servidor.
             ->with('token_generado', $token)
@@ -94,7 +94,7 @@ class DispositivoController extends Controller
                 .'hay que actualizarlo en el firmware o el lector dejará de autenticar.';
         }
 
-        return redirect()->route('asistencia.dispositivos.index')->with('status', $mensaje);
+        return redirect()->route('configuracion.lectores.index')->with('status', $mensaje);
     }
 
     public function toggleActivo(AsistenciaDispositivo $dispositivo): RedirectResponse
@@ -134,7 +134,7 @@ class DispositivoController extends Controller
         $token = $rotar($dispositivo);
 
         return redirect()
-            ->route('asistencia.dispositivos.index')
+            ->route('configuracion.lectores.index')
             ->with('status', "Token del lector «{$dispositivo->nombre}» rotado. El firmware anterior ya no autentica.")
             ->with('token_generado', $token)
             ->with('token_generado_codigo', $dispositivo->codigo);

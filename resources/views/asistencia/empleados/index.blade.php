@@ -1,8 +1,8 @@
 {{-- Listado de personas que marcan asistencia.
 
-     La columna «Ranuras» cuenta solo las VIGENTES. Alguien con tres asignaciones
+     La columna «Huellas» cuenta solo las VIGENTES. Alguien con tres asignaciones
      históricas y ninguna activa no puede marcar, y la pantalla tiene que decir
-     eso —«sin ranura»— y no «3».
+     eso —«sin huella»— y no «3».
 
      No hay botón de eliminar, y no falta: borrar a alguien borra su historial
      laboral. Quien se va se desactiva. --}}
@@ -50,7 +50,7 @@
                                 <th class="px-4 py-3">Nombre</th>
                                 <th class="px-4 py-3">Código</th>
                                 <th class="px-4 py-3">Ingreso</th>
-                                <th class="px-4 py-3">Ranuras</th>
+                                <th class="px-4 py-3">Huellas</th>
                                 <th class="px-4 py-3 text-center">Estado</th>
                                 <th class="px-4 py-3 text-right">Acciones</th>
                             </tr>
@@ -69,7 +69,7 @@
                                         @if ($empleado->huellas_activas_count > 0)
                                             <span class="text-gray-700 dark:text-paper-200">{{ $empleado->huellas_activas_count }} asignada(s)</span>
                                         @else
-                                            <span class="text-amber-700 dark:text-amber-300">Sin ranura</span>
+                                            <span class="text-amber-700 dark:text-amber-300">Sin huella</span>
                                         @endif
                                     </td>
                                     <td class="px-4 py-3 text-center">
