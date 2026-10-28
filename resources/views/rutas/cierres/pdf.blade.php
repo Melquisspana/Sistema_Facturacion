@@ -34,6 +34,16 @@
         @endforeach
         </tbody></table>
     @endforeach
+    @php($gastosPdf = app(\App\Services\Rutas\CierreDia::class)->gastos($salida, $fecha))
+    <h2>Gastos del día</h2>
+    <table><thead><tr><th>Concepto</th><th>Detalle</th><th class="dinero">Monto</th><th>Comprobante</th></tr></thead><tbody>
+    @forelse ($gastosPdf as $gasto)
+        <tr><td>{{ $gasto->concepto->label() }}</td><td>{{ $gasto->detalle }}</td><td class="dinero">${{ number_format((float) $gasto->monto, 2) }}</td><td>{{ $gasto->archivo_ruta ? 'Con foto' : 'Sin comprobante' }}</td></tr>
+    @empty
+        <tr><td colspan="4">Sin gastos</td></tr>
+    @endforelse
+        <tr><td colspan="2">Total gastos</td><td class="dinero">${{ number_format((float) $cierre->gastos_total, 2) }}</td><td></td></tr>
+    </tbody></table>
     <h2>Totales por forma de cobro</h2>
     <table><thead><tr><th>Forma</th><th class="dinero">Esperado</th><th class="dinero">Cobrado</th></tr></thead><tbody>
     @foreach (['efectivo' => 'Efectivo', 'cheques' => 'Cheques', 'transferencias' => 'Transferencias'] as $campo => $label)
@@ -41,7 +51,7 @@
     @endforeach
     <tr><td>Gastos</td><td></td><td class="dinero">${{ number_format((float) $cierre->gastos_total, 2) }}</td></tr>
     </tbody></table>
-    <div class="entregar"><p>Efectivo cobrado ${{ number_format((float) $cierre->efectivo_cobrado, 2) }} − gastos ${{ number_format((float) $cierre->gastos_total, 2) }}</p><strong>Efectivo a entregar ${{ number_format((float) $cierre->a_entregar, 2) }}</strong></div>
+    <div class="entregar"><p>Efectivo cobrado ${{ number_format((float) $cierre->efectivo_cobrado, 2) }} − gastos ${{ number_format((float) $cierre->gastos_total, 2) }} = efectivo a entregar ${{ number_format((float) $cierre->a_entregar, 2) }}</p><strong>{{ $cierre->a_entregar < 0 ? 'A reintegrar al vendedor' : 'Efectivo a entregar' }} ${{ number_format(abs((float) $cierre->a_entregar), 2) }}</strong></div>
     @if ($cierre->reabierto_en)<p class="nota">Este día se reabrió el {{ $cierre->reabierto_en->format('d/m/Y H:i') }}: {{ $cierre->reabierto_motivo }}. {{ $cierre->estaCerrado() ? 'Liquidación recalculada al volver a cerrar.' : 'Día reabierto: los importes del cierre están pendientes de recalcular.' }}</p>@endif
     <table class="firmas"><tr><td>____________________________<br>Entrega: {{ $cierre->entregaDinero?->nombre }}</td><td>____________________________<br>Recibe</td></tr></table>
 </body></html>

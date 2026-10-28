@@ -161,9 +161,10 @@
 @endforelse
 
 @if ($modoVendedor || $puedeGestionar)
+    @include('rutas.salidas._gastos')
     @if ($diaCerrado)
         @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])
-    @elseif ($registrable && $salida->entregas()->entregadas()->whereDate('fecha_resultado', $fechaHoy)->exists())
+    @elseif (($registrable || (! $modoVendedor && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada)) && ($salida->entregas()->entregadas()->whereDate('fecha_resultado', $fechaHoy)->exists() || $salida->gastos()->whereDate('fecha', $fechaHoy)->exists()))
         <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Cerrar el día</a>
     @endif
     @if (! $modoVendedor)

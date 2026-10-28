@@ -9,6 +9,7 @@ use App\Http\Controllers\Rutas\RutaSalaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
 use App\Http\Controllers\Rutas\SalidaCierreController;
 use App\Http\Controllers\Rutas\SalidaEntregaController;
+use App\Http\Controllers\Rutas\SalidaGastoController;
 use App\Http\Controllers\Rutas\SalidaRutaController;
 use App\Http\Controllers\Rutas\VentasController;
 use Illuminate\Support\Facades\Route;
@@ -46,6 +47,9 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar'])
     ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
     ->group(function () {
         Route::get('/', [MiSalidaController::class, 'index'])->name('index');
+        Route::post('{salida}/gastos', [SalidaGastoController::class, 'store'])->name('gastos.store');
+        Route::delete('{salida}/gastos/{gasto}', [SalidaGastoController::class, 'destroy'])->name('gastos.destroy');
+        Route::get('{salida}/gastos/{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('gastos.foto');
         Route::get('{salida}/cierre', [SalidaCierreController::class, 'cierre'])->name('cierre');
         Route::post('{salida}/cierre', [SalidaCierreController::class, 'cerrar'])->name('cerrar');
         Route::get('{salida}/cierre/{fecha}/pdf', [SalidaCierreController::class, 'liquidacion'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('liquidacion');
@@ -118,6 +122,11 @@ Route::middleware(['auth', 'permission:rutas.ver'])
         | (iniciar / finalizar / cancelar), no un campo editable del formulario.
         */
         Route::get('salidas', [SalidaRutaController::class, 'index'])->name('salidas.index');
+        Route::prefix('salidas/{salida}/gastos')->name('salidas.gastos.')->scopeBindings()->group(function () {
+            Route::post('/', [SalidaGastoController::class, 'store'])->middleware('permission:rutas.gestionar')->name('store');
+            Route::delete('{gasto}', [SalidaGastoController::class, 'destroy'])->middleware('permission:rutas.gestionar')->name('destroy');
+            Route::get('{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('foto');
+        });
         Route::prefix('salidas/{salida}/cierre')->name('salidas.')->middleware('permission:rutas.gestionar')->group(function () {
             Route::get('/', [SalidaCierreController::class, 'cierre'])->name('cierre');
             Route::post('/', [SalidaCierreController::class, 'cerrar'])->name('cerrar');

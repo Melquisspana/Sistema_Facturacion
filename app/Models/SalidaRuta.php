@@ -126,6 +126,11 @@ class SalidaRuta extends Model
         return $this->hasMany(SalidaRutaCierre::class, 'salida_ruta_id');
     }
 
+    public function gastos(): HasMany
+    {
+        return $this->hasMany(SalidaRutaGasto::class, 'salida_ruta_id');
+    }
+
     public function cierreDelDia(?string $fecha = null): ?SalidaRutaCierre
     {
         return $this->cierres()->whereDate('fecha', $fecha ?? HoraNegocio::fechaHoy())->first();

@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Rutas: gastos del día (parqueo, gasolina, viáticos u otro) con foto del recibo tomada con el celular, guardada en privado; se restan del efectivo a entregar en el cierre y salen en la liquidación. Un gasto sin foto queda marcado «Sin comprobante». Trae migración. #153
 - Rutas: cierre del día. El cliente dice si «cobra en la entrega» (efectivo, cheque o transferencia); al cerrar el día se corrige solo lo que salió distinto, se elige quién entrega el dinero y sale el PDF de liquidación con efectivo, cheques y transferencias por separado y el efectivo a entregar. Un día cerrado ya no se modifica sin que la oficina lo reabra con motivo. Trae 3 migraciones. #152
 - Rutas: rol Vendedor aislado con «Mi salida» en el celular: marca Entregado / No entregado solo en sus salidas en curso, «Todo entregado» por sala y deshacer lo propio; quién entregó lo pone el servidor. El número de control se ve por su final («…0907») en el celular. Permiso nuevo `rutas.entregas.registrar`. #150
 - Rutas: «Ventas nacionales» por producto, sala y ruta (CCF − NC, sin IVA, solo documentos reales; la NC resta en el período del CCF que corrige), comparadas con el período anterior, con los productos que más se venden, lo que sube y baja, las salas que compraron 30 % menos o nada, y Excel. Permiso nuevo `rutas.ventas.ver` para Administrador, Jefatura y Facturación. #149
