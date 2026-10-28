@@ -76,15 +76,21 @@ class ImapMailboxClient implements MailboxClient
     /**
      * Misma conexión OP_READONLY y lectura con FT_PEEK que Compras: no marca nada como leído.
      * Sin cursor ni progreso: la ventana la acota el servidor con `FROM` y `SINCE`.
+     * `$carpeta` abre otra carpeta del mismo buzón solo para esta búsqueda; sin ella, la de
+     * Compras. La configuración del lector no cambia.
      */
-    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones): array
+    public function adjuntosDeRemitente(string $remitente, CarbonInterface $desde, array $extensiones, ?string $carpeta = null): array
     {
         // El remitente va entre comillas en el criterio IMAP: una comilla o un salto de línea
         // permitiría cambiar la búsqueda.
         if (strpbrk($remitente, "\"\\\r\n") !== false) {
             throw new BuzonInaccesibleException('El remitente configurado no es válido para buscar en el buzón.');
         }
-        $conn = $this->abrir();
+        // La carpeta va pegada a la cadena del buzón: una llave o un salto de línea la romperían.
+        if ($carpeta !== null && (trim($carpeta) === '' || strpbrk($carpeta, "{}\r\n") !== false)) {
+            throw new BuzonInaccesibleException('La carpeta configurada no es válida para buscar en el buzón.');
+        }
+        $conn = $this->abrir($carpeta);
         try {
             $ids = @imap_search($conn, 'FROM "'.$remitente.'" SINCE "'.$desde->format('d-M-Y').'"', SE_UID);
             if ($ids === false) {
@@ -198,7 +204,7 @@ class ImapMailboxClient implements MailboxClient
      *
      * @throws AutenticacionBuzonException|BuzonInaccesibleException
      */
-    private function abrir()
+    private function abrir(?string $carpeta = null)
     {
         if (! function_exists('imap_open')) {
             throw new BuzonInaccesibleException('Este servidor no tiene la extensión IMAP de PHP.');
@@ -217,7 +223,7 @@ class ImapMailboxClient implements MailboxClient
 
         try {
             // OP_READONLY: no marca leído; no permite escritura destructiva.
-            $conn = @imap_open($this->buzon(), (string) $this->cfg['username'], (string) $this->cfg['password'], OP_READONLY, 1);
+            $conn = @imap_open($this->buzon($carpeta), (string) $this->cfg['username'], (string) $this->cfg['password'], OP_READONLY, 1);
         } catch (Throwable $e) {
             throw new BuzonInaccesibleException(
                 'No se pudo abrir el buzón: '.BuzonException::sanear($e->getMessage(), $this->password()),
@@ -274,15 +280,15 @@ class ImapMailboxClient implements MailboxClient
         @imap_errors();
     }
 
-    /** Cadena de buzón: `{host:puerto/imap/ssl/readonly}CARPETA`. */
-    private function buzon(): string
+    /** Cadena de buzón: `{host:puerto/imap/ssl/readonly}CARPETA`; sin carpeta, la de Compras. */
+    private function buzon(?string $carpeta = null): string
     {
         $host = (string) $this->cfg['host'];
         $port = (int) ($this->cfg['port'] ?? 993);
         $enc = strtolower((string) ($this->cfg['encryption'] ?? 'ssl'));
         $flags = '/imap'.($enc === 'ssl' ? '/ssl' : ($enc === 'tls' ? '/tls' : '')).'/readonly';
 
-        return '{'.$host.':'.$port.$flags.'}'.$this->carpeta();
+        return '{'.$host.':'.$port.$flags.'}'.($carpeta ?? $this->carpeta());
     }
 
     private function carpeta(): string

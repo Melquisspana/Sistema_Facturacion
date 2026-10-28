@@ -13,6 +13,10 @@ El historial anterior a este archivo está en el registro de git.
 - Cobros: «Buscar TXT en el correo» trae del buzón de Compras (solo lectura) los TXT de pago de Calleja, los muestra en «Solo revisar» y se aplican con un clic, verificando la huella de cada copia. Se activa con `COBROS_TXT_REMITENTE` en el `.env`; vacía, queda apagada. #145
 - El correlativo del número de control vuelve a 1 con el primer DTE de cada ejercicio (Normativa 2.0, regla 7.1), con la columna `ejercicio` en `dtes` y bloqueo para que dos documentos del 01/01 no repitan número. Trae migración. #125
 
+### Corregido
+
+- Cobros: «Buscar TXT en el correo» abre su propia carpeta del buzón (`COBROS_TXT_CARPETA`, INBOX por defecto) en vez de la de Compras, donde no llegan los TXT. Compras sigue con la suya.
+
 ## [2026.10.25.4] - 2026-10-25
 
 Cuarto despliegue del día. Incluye #143 y #144. No trae migraciones. Después se corrió `cobros:recalcular-pagos` para Calleja: dos CCF pasaron de «Diferencia» a «Pagada».
