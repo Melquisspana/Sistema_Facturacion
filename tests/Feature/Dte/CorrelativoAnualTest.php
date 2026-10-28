@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Exceptions\Dte\GeneracionException;
@@ -11,6 +12,7 @@ use App\Models\Dte;
 use App\Models\Producto;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\DteStateMachine;
 use App\Support\HoraNegocio;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -126,6 +128,63 @@ class CorrelativoAnualTest extends TestCase
         $ultimo = $this->generar($this->borradorCcf());
 
         $this->assertSame('000000000000002', $this->correlativoDe($ultimo));
+    }
+
+    public function test_serie_sin_dtes_con_numeros_previos_se_reinicia_en_2027_y_se_audita(): void
+    {
+        $this->correlativo->update(['ultimo_numero' => 22]);
+        $this->en('2027-01-01 08:00:00');
+
+        $dte = $this->generar($this->borradorCcf());
+
+        $this->assertSame('000000000000001', $this->correlativoDe($dte));
+        $this->assertSame(1, $this->correlativo->refresh()->ultimo_numero);
+        $registro = Activity::query()
+            ->where('subject_type', $this->correlativo->getMorphClass())
+            ->where('subject_id', $this->correlativo->id)
+            ->where('description', 'reinició el correlativo por cambio de ejercicio de 2026 a 2027')
+            ->sole();
+        $this->assertSame(2026, $registro->properties->get('ejercicio_anterior'));
+        $this->assertSame(2027, $registro->properties->get('ejercicio'));
+        $this->assertSame(22, $registro->properties->get('ultimo_numero_anterior'));
+    }
+
+    public function test_serie_sin_dtes_con_numeros_previos_continua_en_2026(): void
+    {
+        $this->correlativo->update(['ultimo_numero' => 22]);
+        $this->en('2026-12-31 08:00:00');
+
+        $dte = $this->generar($this->borradorCcf());
+
+        $this->assertSame('000000000000023', $this->correlativoDe($dte));
+        $this->assertSame(23, $this->correlativo->refresh()->ultimo_numero);
+        $this->assertFalse(Activity::query()
+            ->where('subject_type', $this->correlativo->getMorphClass())
+            ->where('subject_id', $this->correlativo->id)
+            ->where('description', 'like', '%ejercicio%')
+            ->exists());
+    }
+
+    public function test_los_dtes_eliminados_y_rechazados_de_2027_conservan_la_numeracion(): void
+    {
+        $this->en('2027-01-01 08:00:00');
+        $eliminado = $this->generar($this->borradorCcf());
+        // Simula un histórico eliminado: el observer no permite borrar DTE generados.
+        DB::table('dtes')->where('id', $eliminado->id)->update(['deleted_at' => now()]);
+
+        $rechazado = $this->generar($this->borradorCcf());
+        $this->assertSame('000000000000002', $this->correlativoDe($rechazado));
+        app(DteStateMachine::class)->transicionar($rechazado, EstadoDte::Rechazado);
+
+        $siguiente = $this->generar($this->borradorCcf());
+
+        $this->assertSame('000000000000003', $this->correlativoDe($siguiente));
+        $this->assertSame(3, $this->correlativo->refresh()->ultimo_numero);
+        $this->assertFalse(Activity::query()
+            ->where('subject_type', $this->correlativo->getMorphClass())
+            ->where('subject_id', $this->correlativo->id)
+            ->where('description', 'like', '%ejercicio%')
+            ->exists());
     }
 
     public function test_el_reinicio_queda_en_la_auditoria(): void
