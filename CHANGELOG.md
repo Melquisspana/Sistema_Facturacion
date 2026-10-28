@@ -15,6 +15,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- La migración del correlativo anual (#125) busca el índice único viejo de `dtes` por sus columnas y no por su nombre, y se puede volver a correr si se corta a la mitad; la reversa se niega antes de tocar el esquema si ya hay números repetidos entre ejercicios. También vuelve a 1 una serie con números tomados pero sin DTE propio en el sistema: esos números cuentan como de 2026. #146
 - Cobros: «Buscar TXT en el correo» abre su propia carpeta del buzón (`COBROS_TXT_CARPETA`, INBOX por defecto) en vez de la de Compras, donde no llegan los TXT. Compras sigue con la suya. #147
 
 ## [2026.10.25.4] - 2026-10-25
