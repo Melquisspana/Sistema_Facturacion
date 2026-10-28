@@ -15,7 +15,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
-- Cobros: «Buscar TXT en el correo» abre su propia carpeta del buzón (`COBROS_TXT_CARPETA`, INBOX por defecto) en vez de la de Compras, donde no llegan los TXT. Compras sigue con la suya.
+- Cobros: «Buscar TXT en el correo» abre su propia carpeta del buzón (`COBROS_TXT_CARPETA`, INBOX por defecto) en vez de la de Compras, donde no llegan los TXT. Compras sigue con la suya. #147
 
 ## [2026.10.25.4] - 2026-10-25
 
