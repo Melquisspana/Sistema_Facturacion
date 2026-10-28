@@ -43,12 +43,28 @@ class VincularMunicipioDistrito extends Command
             return self::FAILURE;
         }
 
+        // El vínculo por sí solo no basta para poder ELEGIR el municipio: además tiene
+        // que existir una fila en `municipios` que represente a la agrupación.
+        $agrupaciones = VinculaMunicipioDistrito::asegurarAgrupaciones($dry);
+
         Municipio::olvidarNombresFiscales();
 
         $this->table(
             ['Municipios 2024 mapeados', 'Distritos vinculados', 'Ya correctos', 'Total distritos'],
             [[count($r['mapa']), $r['vinculados'], $r['sin_cambios'], $r['total']]]
         );
+
+        if ($agrupaciones['agrupaciones'] !== []) {
+            $this->newLine();
+            $this->info(($dry ? '[dry-run] ' : '').'Agrupaciones 2024 que no se podían elegir y ahora sí:');
+            foreach ($agrupaciones['agrupaciones'] as $nombre) {
+                $this->line('  + '.$nombre);
+            }
+        }
+
+        foreach ($agrupaciones['conflictos'] as $conflicto) {
+            $this->warn('  ! '.$conflicto.' — se dejó como estaba, revisalo a mano.');
+        }
 
         $this->info(($dry ? '[dry-run] ' : '')."Vínculo distrito → municipio CAT-013 al día ({$r['total']} distritos).");
 
