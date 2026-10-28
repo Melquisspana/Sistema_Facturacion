@@ -16,7 +16,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Cambiado
 
-- Cobros: un solo formulario para subir uno o varios TXT de pago. Primero muestra la revisión, sin aplicar nada, con el detalle de cada archivo, y después «Aplicar los N». Solo se aplican los TXT revisados por el mismo usuario y para el mismo cliente, una sola vez. La fecha del pago se puede indicar solo con un archivo. Se retiran «Cargar pagos», la casilla «Solo revisar» y sus rutas; el botón del correo usa el mismo paso de aplicar.
+- Cobros: un solo formulario para subir uno o varios TXT de pago. Primero muestra la revisión, sin aplicar nada, con el detalle de cada archivo, y después «Aplicar los N». Solo se aplican los TXT revisados por el mismo usuario y para el mismo cliente, una sola vez. La fecha del pago se puede indicar solo con un archivo. Se retiran «Cargar pagos», la casilla «Solo revisar» y sus rutas; el botón del correo usa el mismo paso de aplicar. #151
 
 ### Corregido
 
