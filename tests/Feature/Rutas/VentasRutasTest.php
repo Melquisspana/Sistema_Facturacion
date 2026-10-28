@@ -30,6 +30,9 @@ class VentasRutasTest extends TestCase
 
     private Establecimiento $establecimiento;
 
+    /** Correlativo de las fixtures: número de control con el formato y largo reales (31). */
+    private int $correlativo = 0;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -43,8 +46,12 @@ class VentasRutasTest extends TestCase
 
     private function documento(float $monto = 100, array $datos = [], array $linea = []): DteLinea
     {
-        return Dte::withoutEvents(function () use ($monto, $datos, $linea) {
-            $dte = Dte::create($datos + ['establecimiento_id' => $this->establecimiento->id, 'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01', 'sello_recepcion' => Str::uuid()->toString(), 'fecha_procesamiento_mh' => now(), 'cliente_id' => $this->sala->cliente_id, 'cliente_sucursal_id' => $this->sala->id, 'numero_control' => Str::uuid()->toString(), 'fecha_emision' => '2026-10-05', 'hora_emision' => '10:00:00', 'subtotal' => $monto, 'total_descuento' => 0, 'total_pagar' => $monto]);
+        $this->correlativo++;
+        $tipo = $datos['tipo_dte'] ?? '03';
+        $numero = 'DTE-'.$tipo.'-M001P001-'.str_pad((string) $this->correlativo, 15, '0', STR_PAD_LEFT);
+
+        return Dte::withoutEvents(function () use ($monto, $datos, $linea, $numero) {
+            $dte = Dte::create($datos + ['establecimiento_id' => $this->establecimiento->id, 'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01', 'sello_recepcion' => Str::uuid()->toString(), 'fecha_procesamiento_mh' => now(), 'cliente_id' => $this->sala->cliente_id, 'cliente_sucursal_id' => $this->sala->id, 'numero_control' => $numero, 'fecha_emision' => '2026-10-05', 'hora_emision' => '10:00:00', 'subtotal' => $monto, 'total_descuento' => 0, 'total_pagar' => $monto]);
 
             return DteLinea::withoutEvents(fn () => DteLinea::create($linea + ['dte_id' => $dte->id, 'numero_linea' => 1, 'tipo_impuesto' => 'gravado', 'producto_id' => $this->producto->id, 'descripcion' => 'Dulce', 'cantidad' => 1, 'precio_unitario' => $monto, 'venta_gravada' => $monto, 'total_linea' => $monto]));
         });
