@@ -11,13 +11,17 @@ use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
+use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
+use App\Services\Cobros\VinculadorAlbaranes;
 use App\Services\Dte\PerfilDocumentoResolver;
+use App\Services\Ppq\AlbaranParser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
@@ -72,17 +76,17 @@ class PpqAvisosAlbaranTest extends TestCase
         ]);
     }
 
-    private function ccf(bool $entregado = true): CobroDocumento
+    private function ccf(bool $entregado = true, array $datosDte = []): CobroDocumento
     {
         // La OC trae la sala (0017) aunque el albarán todavía no haya llegado.
-        $dte = $this->dte('03', ['numero_orden_compra' => '2609001700'.str_pad((string) ($this->n + 1), 4, '0', STR_PAD_LEFT)]);
+        $dte = $this->dte('03', $datosDte + ['numero_orden_compra' => '2609001700'.str_pad((string) ($this->n + 1), 4, '0', STR_PAD_LEFT)]);
         $doc = CobroDocumento::create([
             'cliente_id' => $this->cliente->id, 'origen' => OrigenCobroDocumento::Dte->value, 'dte_id' => $dte->id,
-            'tipo_dte' => '03', 'numero_control' => $dte->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => '100.00',
+            'tipo_dte' => '03', 'numero_control' => $dte->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => $dte->total_pagar,
         ]);
         if ($entregado) {
             $albaran = PpqAlbaran::create(['numero_albaran' => 'AC01/0017/00/'.(5000 + $doc->id), 'tipo_codigo' => 'AC01',
-                'fecha_albaran' => '2026-09-05', 'monto_albaran' => '98.95', 'sala_codigo' => '0017',
+                'fecha_albaran' => today()->toDateString(), 'monto_albaran' => '98.95', 'sala_codigo' => '0017',
                 'numero_orden_compra' => '2609001700'.str_pad((string) $doc->id, 4, '0', STR_PAD_LEFT)]);
             $doc->forceFill(['ppq_albaran_id' => $albaran->id, 'vinculacion_estado' => EstadoVinculacionAlbaran::Vinculado->value])->save();
         }
@@ -104,6 +108,7 @@ class PpqAvisosAlbaranTest extends TestCase
     {
         $this->travelTo(now()->startOfSecond());
         $doc = $this->ccf();
+        $doc->albaran->update(['fecha_albaran' => today()]);
         $this->actingAs($this->usuario());
         $url = route('cobros.index', ['cliente_id' => $this->cliente->id]);
         $this->get($url)->assertOk()->assertSeeText('Albarán reciente');
@@ -113,6 +118,172 @@ class PpqAvisosAlbaranTest extends TestCase
         $this->get($url)->assertOk()->assertSeeText('Albarán reciente');
         config()->set('cobros.dias_albaran_reciente', 5);
         $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->avisos(collect([$doc->id]))[$doc->id]['reciente']);
+    }
+
+    private function devolucion(CobroDocumento $doc, string $monto = '13.95', array $extra = []): PpqAlbaran
+    {
+        return PpqAlbaran::create($extra + [
+            'numero_albaran' => 'AC04/0017/00/'.(7000 + $doc->id),
+            'numero_orden_compra' => $doc->albaran->numero_orden_compra,
+            'sala_codigo' => '0017', 'monto_albaran' => $monto,
+            'fecha_albaran' => '2026-09-11', 'origen' => 'gmail',
+        ]);
+    }
+
+    public function test_devolucion_explica_toda_la_diferencia_y_se_vincula_automaticamente(): void
+    {
+        $doc = $this->ccf();
+        $doc->albaran->update(['monto_albaran' => '113.95']);
+        $nota = $this->devolucion($doc, '10.00');
+        $segunda = $this->devolucion($doc, '3.95', ['numero_albaran' => 'AC04/0017/00/7201']);
+        $vinculador = app(VinculadorAlbaranes::class);
+        $this->assertSame(EstadoVinculacionAlbaran::Vinculado, $vinculador->aplicar($doc));
+        $this->assertSame($doc->dte_id, $nota->refresh()->dte_id);
+        $this->assertSame($doc->dte_id, $segunda->refresh()->dte_id);
+        $this->assertSame(EstadoVinculacionAlbaran::Vinculado, $vinculador->auditar($doc->fresh())['estado']);
+    }
+
+    public function test_devolucion_parcial_muestra_la_diferencia_restante(): void
+    {
+        $doc = $this->ccf();
+        $doc->albaran->update(['monto_albaran' => '126.00']);
+        $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id]);
+        $veredicto = app(VinculadorAlbaranes::class)->auditar($doc);
+        $this->assertSame(EstadoVinculacionAlbaran::Revisar, $veredicto['estado']);
+        $this->assertStringContainsString('12.05', $veredicto['motivo']);
+    }
+
+    public function test_devolucion_de_otra_sala_o_cliente_no_se_vincula_y_se_explica(): void
+    {
+        $doc = $this->ccf();
+        $otraSala = $this->devolucion($doc, '12.00', ['numero_albaran' => 'AC04/0033/00/7501', 'sala_codigo' => '0033']);
+        $otro = Cliente::factory()->create(['nombre' => 'Distribuidora El Roble']);
+        $sucursal = $otro->sucursales()->create(['nombre' => 'Sucursal Centro', 'codigo' => '0017']);
+        $otroCliente = $this->devolucion($doc, '8.50', ['numero_albaran' => 'AC04/0017/00/7502', 'cliente_sucursal_id' => $sucursal->id]);
+        $doc->albaran->update(['monto_albaran' => '100.00']);
+        $this->assertSame(EstadoVinculacionAlbaran::Vinculado, app(VinculadorAlbaranes::class)->aplicar($doc));
+        $this->assertNull($otraSala->refresh()->dte_id);
+        $this->assertNull($otroCliente->refresh()->dte_id);
+        app(VinculadorAlbaranes::class)->vincularAMano($doc, $doc->albaran, $this->usuario(), 'Entrega confirmada por la sala');
+        $this->assertNull($otraSala->refresh()->dte_id);
+        $this->assertNull($otroCliente->refresh()->dte_id);
+        $this->actingAs($this->usuario())->get(route('cobros.documentos.show', $doc))->assertOk()
+            ->assertSeeText('otra sala')->assertSeeText('otro cliente');
+    }
+
+    public function test_vincular_a_mano_incluye_ac04_de_la_oc_elegida_aunque_el_ccf_tenga_oc_erronea(): void
+    {
+        $doc = $this->ccf(datosDte: ['numero_orden_compra' => '26090620003463']);
+        $nota = $this->devolucion($doc);
+        app(VinculadorAlbaranes::class)->vincularAMano($doc, $doc->albaran, $this->usuario(), 'OC digitada con error, entrega confirmada');
+        $this->assertSame($doc->dte_id, $nota->refresh()->dte_id);
+    }
+
+    public function test_ficha_muestra_devolucion_sin_nc_y_despues_su_nc_emitida(): void
+    {
+        $doc = $this->ccf();
+        $nota = $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id, 'numero_albaran' => 'AC04/0017/00/007001']);
+        $this->actingAs($this->usuario());
+        $url = route('cobros.documentos.show', $doc);
+        $this->get($url)->assertOk()->assertSeeText($nota->numero_albaran)->assertSeeText('13.95')->assertSeeText('falta emitir la NC');
+        $nc = $this->dte('05', ['estado' => 'borrador']);
+        DteAlbaran::create(['dte_id' => $nc->id, 'numero_canonico' => 'AC04/0017/00/7001', 'tipo_codigo' => 'AC04',
+            'numero' => '7001', 'fecha' => '2026-09-11', 'total' => '13.95', 'sala_codigo' => '0017']);
+        $this->get($url)->assertOk()->assertSeeText('falta emitir la NC');
+        $nc->update(['estado' => 'aceptado']);
+        $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('falta emitir la NC');
+    }
+
+    public function test_devolucion_total_compensa_la_entrega(): void
+    {
+        $doc = $this->ccf(datosDte: ['total_pagar' => '0.00']);
+        $doc->albaran->update(['monto_albaran' => '113.00']);
+        $this->devolucion($doc, '113.00');
+        $this->assertSame(EstadoVinculacionAlbaran::Vinculado, app(VinculadorAlbaranes::class)->aplicar($doc));
+    }
+
+    public function test_ac04_que_llega_despues_se_agrega_sin_cambiar_la_entrega_elegida(): void
+    {
+        $doc = $this->ccf();
+        $entregaId = $doc->ppq_albaran_id;
+        $nota = $this->devolucion($doc);
+        $vinculador = app(VinculadorAlbaranes::class);
+        $vinculador->actualizarDevoluciones($doc);
+        $vinculador->actualizarDevoluciones($doc);
+        $this->assertSame($doc->dte_id, $nota->refresh()->dte_id);
+        $this->assertSame($entregaId, $doc->refresh()->ppq_albaran_id);
+    }
+
+    public function test_ac04_sin_ccf_aparece_en_seguimiento(): void
+    {
+        $doc = $this->ccf();
+        $nota = $this->devolucion($doc);
+        $this->actingAs($this->usuario())->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))
+            ->assertOk()->assertSeeText('Notas de devolución sin vincular')->assertSeeText($nota->numero_albaran);
+    }
+
+    public function test_seguimiento_explica_una_referencia_a_ccf_de_otro_cliente(): void
+    {
+        $doc = $this->ccf();
+        $otro = Cliente::factory()->create(['nombre' => 'Distribuidora El Bosque']);
+        $this->dte('03', ['cliente_id' => $otro->id, 'numero_control' => 'DTE-03-M001P002-000000000004826',
+            'numero_orden_compra' => '26110148008765']);
+        config(['ppq.cliente_default_id' => $this->cliente->id, 'dte.ambiente' => '01']);
+        $nota = $this->devolucion($doc, '31.87', ['numero_albaran' => 'AC04/0148/00/8427',
+            'numero_orden_compra' => null, 'sala_codigo' => '0148', 'archivo_path' => 'ppq/albaranes/ac04-ficticia.pdf']);
+        Storage::disk((string) config('dte.storage.disk', 'local'))->put($nota->archivo_path,
+            file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt')));
+        $this->app->instance(AlbaranParser::class, new class extends AlbaranParser
+        {
+            public function desdePdf(string $pdfBytes): array
+            {
+                return $this->desdeTexto($pdfBytes);
+            }
+        });
+        $this->actingAs($this->usuario())->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))
+            ->assertOk()->assertSeeText($nota->numero_albaran)->assertSeeText('el CCF pertenece a otro cliente');
+        $this->assertNull($nota->refresh()->dte_id);
+    }
+
+    public function test_tres_dias_corren_desde_la_llegada_de_la_ultima_ac04(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-20 10:00:00'));
+        $doc = $this->ccf();
+        $doc->albaran->update(['fecha_albaran' => '2026-10-20']);
+        $this->travel(1)->days();
+        $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id]);
+        $this->travel(2)->days();
+        $avisos = app(ElegibilidadPpqSeguimiento::class);
+        $this->assertTrue($avisos->avisos(collect([$doc->id]))[$doc->id]['reciente']);
+        $this->travel(2)->days();
+        $this->assertFalse($avisos->avisos(collect([$doc->id]))[$doc->id]['reciente']);
+    }
+
+    public function test_pedir_nota_desde_el_dia_siguiente_solo_con_diferencia_y_sin_ac04(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-20 10:00:00'));
+        $doc = $this->ccf();
+        $doc->albaran->update(['fecha_albaran' => '2026-10-20']);
+        $this->actingAs($this->usuario());
+        $url = route('cobros.documentos.show', $doc);
+        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Calleja');
+        $this->travel(1)->days();
+        $this->get($url)->assertOk()->assertSeeText('Pedir la nota de devolución a Calleja')
+            ->assertSeeText($doc->numero_control)->assertSeeText($doc->albaran->numero_orden_compra)->assertSeeText('0017');
+        $doc->albaran->update(['monto_albaran' => '100.00']);
+        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Calleja');
+        $doc->albaran->update(['monto_albaran' => '98.95']);
+        $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id]);
+        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Calleja');
+    }
+
+    public function test_no_pide_una_ac04_que_ya_llego_aunque_aun_este_sin_vincular(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-20 10:00:00'));
+        $doc = $this->ccf();
+        $this->travel(1)->days();
+        $this->devolucion($doc);
+        $this->assertFalse(app(ElegibilidadPpqSeguimiento::class)->avisos(collect([$doc->id]))[$doc->id]['pedir_nota']);
     }
 
     private function duplicadoEnLote(CobroDocumento $doc): PpqLote

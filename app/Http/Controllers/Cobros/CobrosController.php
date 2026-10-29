@@ -20,9 +20,11 @@ use App\Models\Cobros\CobroEvento;
 use App\Models\Cobros\CobroSolicitud;
 use App\Models\Cobros\CobroSolicitudItem;
 use App\Models\Dte;
+use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\EstadoCobroDesdeInicio;
 use App\Services\Cobros\Exportadores\EstadoCobroExporter;
@@ -41,6 +43,7 @@ use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use App\Support\EjercicioControl;
+use App\Support\NumeroAlbaran;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -184,8 +187,17 @@ class CobrosController extends Controller
             $totalListosEnFiltro = Dinero::sumar($totalListosEnFiltro, $monto);
         }
 
+        $devolucionesSinVincular = PpqAlbaran::where('tipo_codigo', 'AC04')->whereNull('dte_id')
+            ->where(fn ($q) => $q->whereNull('cliente_sucursal_id')
+                ->orWhereHas('clienteSucursal', fn ($s) => $s->where('cliente_id', $cliente->id)))
+            ->with('clienteSucursal')->orderByDesc('id')->paginate(10, ['*'], 'devoluciones_page')->withQueryString();
+        foreach ($devolucionesSinVincular as $nota) {
+            $nota->setAttribute('motivo_sin_vincular', app(DevolucionesAlbaran::class)->auditarRecibida($nota)['motivo'] ?? 'pendiente de vincular');
+        }
+
         return view('cobros.index', [
             'avisosPpq' => $avisosPpq,
+            'devolucionesSinVincular' => $devolucionesSinVincular,
             'duplicadosEnFiltro' => $duplicadosEnFiltro,
             'noSeleccionables' => $noSeleccionables,
             'listosPpq' => $listosPpq,
@@ -227,10 +239,34 @@ class CobrosController extends Controller
         $corregible = $documento->tipo_dte === '03' && ! $documento->estaInvalidado()
             && $request->user()?->can('ppq.gestionar');
         $movible = $documento->ppq_albaran_id === null || $this->vinculador->albaranMovible($documento);
+        $veredicto = $this->vinculador->auditar($documento);
+        $entregaFicha = $documento->albaran;
+        if ($entregaFicha === null && count($veredicto['candidatos']) === 1) {
+            $entregaFicha = PpqAlbaran::deEntrega()->find($veredicto['candidatos'][0]['id']);
+        }
+        $devoluciones = app(DevolucionesAlbaran::class);
+        $detalleDevoluciones = $entregaFicha === null
+            ? ['notas' => collect(), 'rechazadas' => []]
+            : $devoluciones->analizar($documento, $entregaFicha);
+        $notasDevolucion = $detalleDevoluciones['notas']->where('dte_id', $documento->dte_id);
+        $canonicos = $notasDevolucion->mapWithKeys(fn ($nota) => [$nota->numero_albaran => NumeroAlbaran::desde($nota->numero_albaran)?->canonico]);
+        $ncCanonicas = DteAlbaran::where('tipo_codigo', 'AC04')
+            ->whereIn('numero_canonico', $canonicos->filter()->values())
+            ->whereHas('dte', fn ($q) => $q->where('tipo_dte', '05')->where('estado', EstadoDte::Aceptado->value)
+                ->where('cliente_id', $documento->cliente_id))
+            ->with('dte:id,numero_control')->get()->keyBy('numero_canonico');
+        $ncPorAlbaran = $canonicos->map(fn ($canonico) => $ncCanonicas->get($canonico))->filter();
 
         return view('cobros.show', [
+            'notasDevolucion' => $notasDevolucion,
+            'devolucionesRechazadas' => $detalleDevoluciones['rechazadas'],
+            'ncPorAlbaran' => $ncPorAlbaran,
+            'entregaFicha' => $entregaFicha,
+            'avisosAlbaran' => $devoluciones->avisos($documento, $entregaFicha),
+            'diferenciaAlbaran' => $entregaFicha === null ? null
+                : $devoluciones->diferencia($documento, $entregaFicha, $notasDevolucion),
             'documento' => $documento,
-            'veredicto' => $this->vinculador->auditar($documento),
+            'veredicto' => $veredicto,
             'notas' => $this->notasDelCcf($documento),
             'corregible' => $corregible,
             'movible' => $movible,

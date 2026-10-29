@@ -46,6 +46,17 @@
                 </div>
             @endif
 
+            @if (isset($devolucionesSinVincular) && $devolucionesSinVincular->total() > 0)
+                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4 text-sm">
+                    <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Notas de devolución sin vincular ({{ $devolucionesSinVincular->total() }})</h3>
+                    @foreach ($devolucionesSinVincular as $devolucion)
+                        <p class="mt-1 font-mono">{{ $devolucion->numero_albaran }} · OC {{ $devolucion->numero_orden_compra ?? '—' }} · sala {{ $devolucion->sala_codigo ?? '—' }} · {{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }} · {{ $devolucion->monto_albaran === null ? 'sin importe' : '$'.number_format((float) $devolucion->monto_albaran, 2) }}</p>
+                        <p class="text-amber-700 dark:text-amber-300">{{ $devolucion->motivo_sin_vincular }}</p>
+                    @endforeach
+                    {{ $devolucionesSinVincular->links() }}
+                </div>
+            @endif
+
             {{-- ---------- Cliente (solo si hay más de uno) y TXT de pago ---------- --}}
             <div class="bg-white dark:bg-ink-800 shadow-sm ring-1 ring-gray-200 dark:ring-ink-600 rounded-xl p-4 flex flex-wrap items-end justify-between gap-4">
                 @if ($clientes->count() > 1 || $cliente === null)

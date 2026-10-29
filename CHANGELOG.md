@@ -8,8 +8,13 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Agregado
+
+- Cobros: lectura del PDF AC04 (número, fecha, sala, referencia al CCF y total con IVA), vinculación por referencia u OC y sala, conciliación neta, estado de su NC, notas sin vincular y avisos de pedir nota y de albarán reciente durante 3 días desde la entrega o la última devolución. No emite NC ni inventa una OC ausente. #57
+
 ### Corregido
 
+- PPQ: se procesan todos los PDF de cada correo y se deduplica por mensaje y número de albarán, para no perder el AC01 que llega después de un AC04. #57
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
 ## [2026.10.29] - 2026-10-29

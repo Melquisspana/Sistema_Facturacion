@@ -85,6 +85,39 @@
                 </div>
             </div>
 
+            @if ($avisosAlbaran['reciente'] || $avisosAlbaran['pedir_nota'])
+                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4 text-sm" role="status">
+                    @if ($avisosAlbaran['reciente'])
+                        <p class="text-amber-700 dark:text-amber-300">Albarán reciente: puede no estar en el portal de Calleja todavía.</p>
+                    @endif
+                    @if ($avisosAlbaran['pedir_nota'])
+                        <p class="text-amber-700 dark:text-amber-300">Pedir la nota de devolución a Calleja · CCF {{ $documento->numero_control }} · OC {{ $entregaFicha->numero_orden_compra }} · sala {{ $entregaFicha->sala_codigo }}.</p>
+                    @endif
+                </div>
+            @endif
+
+            @if ($notasDevolucion->isNotEmpty() || $devolucionesRechazadas !== [])
+                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6 text-sm">
+                    <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Notas de devolución</h3>
+                    @foreach ($notasDevolucion as $devolucion)
+                        <p class="mt-1">
+                            <span class="font-mono">{{ $devolucion->numero_albaran }}</span> · {{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }} · ${{ number_format((float) $devolucion->monto_albaran, 2) }} ·
+                            @if ($ncPorAlbaran->has($devolucion->numero_albaran))
+                                NC {{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->numero_control }}
+                            @else
+                                <span class="text-amber-700 dark:text-amber-300">falta emitir la NC</span>
+                            @endif
+                        </p>
+                    @endforeach
+                    @if ($diferenciaAlbaran !== null)
+                        <p class="mt-2 font-mono">Diferencia restante CCF − (AC01 − AC04): ${{ $diferenciaAlbaran }}</p>
+                    @endif
+                    @foreach ($devolucionesRechazadas as $rechazo)
+                        <p class="mt-2 text-amber-700 dark:text-amber-300">{{ $rechazo }}</p>
+                    @endforeach
+                </div>
+            @endif
+
             {{-- ---------- Corregir vínculo: elegir el albarán entre sugeridos ---------- --}}
             @if ($corregible && $movible)
                 @php

@@ -99,7 +99,8 @@ class VinculadorAlbaranes
         // 1 · Vínculo EXPLÍCITO: el albarán ya dice a qué DTE pertenece.
         $explicitos = $documento->dte_id === null
             ? collect()
-            : PpqAlbaran::where('dte_id', $documento->dte_id)->get();
+            : PpqAlbaran::where('dte_id', $documento->dte_id)
+                ->where(fn ($q) => $q->whereNull('tipo_codigo')->orWhere('tipo_codigo', '!=', 'AC04'))->get();
 
         if ($explicitos->count() === 1) {
             // El vínculo explícito manda, pero no tapa en silencio un item PPQ histórico
@@ -414,10 +415,13 @@ class VinculadorAlbaranes
         if ($albaran->dte_id !== null && $albaran->dte_id !== $documento->dte_id) {
             $problemas[] = 'el albarán apunta explícitamente a otro DTE';
         }
-        if ($documento->monto === null || $albaran->monto_albaran === null) {
+        $devoluciones = app(DevolucionesAlbaran::class);
+        $notas = $devoluciones->analizar($documento, $albaran)['notas'];
+        $diferencia = $devoluciones->diferencia($documento, $albaran, $notas);
+        if ($diferencia === null) {
             $problemas[] = 'falta un importe para comprobar el documento y el albarán';
-        } elseif (Dinero::comparar(Dinero::redondear($documento->monto), Dinero::redondear($albaran->monto_albaran)) !== 0) {
-            $problemas[] = 'el importe del CCF ('.$documento->monto.') difiere del albarán ('.$albaran->monto_albaran.'); revisar la evidencia, no deducir una NC de la resta';
+        } elseif (Dinero::comparar($diferencia, '0') !== 0) {
+            $problemas[] = 'el importe del CCF ('.$documento->monto.') difiere del albarán ('.$albaran->monto_albaran.') menos sus devoluciones; diferencia restante: '.$diferencia.'; revisar la evidencia, no deducir una NC de la resta';
         }
 
         // SALA: la de la OC del documento contra la de la OC del albarán y la del número.
@@ -525,6 +529,7 @@ class VinculadorAlbaranes
                 if ($ocupado !== null) {
                     $veredicto = $this->revisar('El albarán ya fue vinculado a '.$ocupado->numero_control.'.', collect([$albaran]));
                 } else {
+                    app(DevolucionesAlbaran::class)->analizar($documento, $albaran, bloquear: true);
                     $bajoBloqueo = $this->veredictoUnico($documento, $albaran, 'identidad comprobada bajo bloqueo del albarán');
                     // Si la comprobación bajo bloqueo confirma EXACTAMENTE el mismo vínculo,
                     // se guarda el porqué de la auditoría (vínculo explícito, OC o lote PPQ),
@@ -533,6 +538,10 @@ class VinculadorAlbaranes
                         && $bajoBloqueo['albaran_id'] === $veredicto['albaran_id'];
                     $veredicto = $confirma ? $veredicto : $bajoBloqueo;
                 }
+            }
+
+            if ($veredicto['estado'] === EstadoVinculacionAlbaran::Vinculado) {
+                app(DevolucionesAlbaran::class)->vincular($documento, $albaran);
             }
 
             // La columna es VARCHAR(255) y el motivo puede listar muchos CCF de la misma OC.
@@ -595,6 +604,7 @@ class VinculadorAlbaranes
                 throw ValidationException::withMessages(['ppq_albaran_id' => 'El albarán está ocupado, pertenece a otro documento/cliente o no es de entrega. Revise su origen antes de vincular.']);
             }
             $contradicciones = $this->contradicciones($documento, $albaran);
+            app(DevolucionesAlbaran::class)->vincular($documento, $albaran);
 
             $motivo = 'Vinculado a mano por '.$usuario->name
                 .($contradicciones === [] ? '.' : ', pese a: '.implode('; ', $contradicciones).'.')
@@ -654,6 +664,22 @@ class VinculadorAlbaranes
         return $documento->presentacion_estado === EstadoPresentacionCobro::SinPresentar
             && $documento->pago_estado === EstadoPagoCobro::Pendiente
             && ! $documento->tienePagosEnRevision();
+    }
+
+    /** La entrega ya elegida se conserva cuando una AC04 llega en otra corrida. */
+    public function actualizarDevoluciones(CobroDocumento $documento): void
+    {
+        DB::transaction(function () use ($documento) {
+            $documento = CobroDocumento::lockForUpdate()->findOrFail($documento->id);
+            if ($documento->tipo_dte !== '03' || $documento->estaInvalidado() || $documento->ppq_albaran_id === null) {
+                return;
+            }
+            $entrega = PpqAlbaran::lockForUpdate()->find($documento->ppq_albaran_id);
+            if ($entrega !== null && $entrega->esDeEntrega()
+                && ($entrega->dte_id === null || $entrega->dte_id === $documento->dte_id)) {
+                app(DevolucionesAlbaran::class)->vincular($documento, $entrega);
+            }
+        }, 3);
     }
 
     /**

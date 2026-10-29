@@ -2,6 +2,9 @@
 
 namespace App\Services\Ppq;
 
+use App\Support\Albaran;
+use App\Support\Dinero;
+use App\Support\NumeroAlbaran;
 use Smalot\PdfParser\Parser;
 
 /**
@@ -16,7 +19,7 @@ class AlbaranParser
     private const KEYWORDS_MONTO = 'total|monto|valor|neto|importe|a\s*pagar|gran\s*total';
 
     /**
-     * @return array{numero: ?string, fecha: ?string, oc: ?string, monto: ?float, nombre_sala: ?string, debug: array<string, mixed>}
+     * @return array{numero: ?string, fecha: ?string, oc: ?string, sala: ?string, numero_control_referenciado: ?string, monto: ?float, nombre_sala: ?string, debug: array<string, mixed>}
      */
     public function desdePdf(string $pdfBytes): array
     {
@@ -33,7 +36,7 @@ class AlbaranParser
     }
 
     /**
-     * @return array{numero: ?string, fecha: ?string, oc: ?string, monto: ?float, nombre_sala: ?string, debug: array<string, mixed>}
+     * @return array{numero: ?string, fecha: ?string, oc: ?string, sala: ?string, numero_control_referenciado: ?string, monto: ?float, nombre_sala: ?string, debug: array<string, mixed>}
      */
     public function desdeTexto(string $texto, ?string $error = null): array
     {
@@ -50,6 +53,9 @@ class AlbaranParser
         // Formato actual de Calleja: «Pedido de Compras 00/5235/26 de Fecha 23/09/2026 Ref.
         // 26090011005235». La OC es la referencia de 14 dígitos que sigue a «Ref.».
         $oc ??= $this->buscar($texto, '/Pedido\s+de\s+Compras[^\n]*?Ref\.?\s*(\d{14})\b/i', $debug, 'oc_pedido');
+        if (preg_match('/\bAC04\s*-\s*Albar[aá]n\s+Devoluci[oó]n\b/iu', $texto)) {
+            return $this->devolucion($texto, $oc, $debug);
+        }
         // Código canónico del albarán (AC01/0236/00/6359), no la palabra "Total":
         // prefijo + 3 grupos numéricos, tolerando espacios y descartando el "/año".
         $numero = $this->buscar($texto, '/([A-Za-z]{1,4}\s*\d+(?:\s*\/\s*\d+){2,3})/', $debug, 'numero');
@@ -60,7 +66,42 @@ class AlbaranParser
         // en muchos albaranes va en el logo/imagen y NO se puede extraer -> null.
         $nombreSala = $this->nombreSala($texto, $debug);
 
-        return ['numero' => $numero, 'fecha' => $fecha, 'oc' => $oc, 'monto' => $monto, 'nombre_sala' => $nombreSala, 'debug' => $debug];
+        return ['numero' => $numero, 'fecha' => $fecha, 'oc' => $oc, 'monto' => $monto, 'nombre_sala' => $nombreSala,
+            'sala' => Albaran::salaDesdeNumero($numero), 'numero_control_referenciado' => null, 'debug' => $debug];
+    }
+
+    /** La AC04 imprime las etiquetas y después los valores de cada columna. */
+    private function devolucion(string $texto, ?string $oc, array $debug): array
+    {
+        $sala = $this->buscar($texto, '/^\h*(\d{1,4})\h*\/\h+(?=\p{L})/mu', $debug, 'sala_devolucion');
+        $nota = $this->buscar($texto, '/AC04\s*-\s*Albar[aá]n\s+Devoluci[oó]n\s+(\d{1,10})\b/iu', $debug, 'nota_devolucion');
+        $fecha = $this->buscar($texto, '/AC04\s*-\s*Albar[aá]n\s+Devoluci[oó]n\s+\d{1,10}\s+(\d{2}\/\d{2}\/\d{4})\b/iu', $debug, 'fecha_devolucion');
+        $numero = $sala !== null && $nota !== null ? NumeroAlbaran::desde('AC04/'.$sala.'/00/'.$nota) : null;
+        $referencia = null;
+        if (preg_match_all('/\bDTE[\s-]*03[\s-]*([A-Z]\d{3}P\d{3})[\s-]*(\d{15})\b/i', $texto, $referencias, PREG_SET_ORDER)) {
+            $controles = array_unique(array_map(fn ($m) => 'DTE-03-'.strtoupper($m[1]).'-'.$m[2], $referencias));
+            $referencia = count($controles) === 1 ? reset($controles) : null;
+        }
+        if ($referencia === null && preg_match('/\bDTE[\s-]*03/i', $texto)) {
+            $debug['error'] = 'La referencia al CCF es ilegible o ambigua.';
+        }
+        $dinero = '(\d+(?:[.,]\d{3})*[.,]\d{2})';
+        $monto = null;
+        $tabla = '/Gravado\s+Exento\s+I\.?\s*V\.?\s*A\.?\s+TOTAL\s+'.$dinero.'\s+'.$dinero.'\s+'.$dinero.'\s+'.$dinero.'\b/iu';
+        if (preg_match($tabla, $texto, $totales)) {
+            $valores = array_map(fn ($v) => $this->normalizarMonto($v), array_slice($totales, 1));
+            if (! in_array(null, $valores, true)) {
+                $suma = Dinero::sumar(Dinero::sumar($valores[0], $valores[1]), $valores[2]);
+                if (Dinero::comparar(Dinero::redondear($suma), Dinero::redondear($valores[3])) === 0) {
+                    $monto = $valores[3];
+                }
+            }
+        }
+        $debug['regex']['total_devolucion'] = ['patron' => $tabla, 'match' => $monto];
+
+        return ['numero' => $numero?->canonico, 'fecha' => $fecha ?? $this->fecha($texto, $debug), 'oc' => $oc,
+            'sala' => $numero?->sala, 'numero_control_referenciado' => $referencia,
+            'monto' => $monto, 'nombre_sala' => $this->nombreSala($texto, $debug), 'debug' => $debug];
     }
 
     /**

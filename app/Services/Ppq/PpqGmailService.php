@@ -367,16 +367,17 @@ class PpqGmailService
         foreach ($this->variantesOc($oc) as $variante) {
             $correos = $this->gmail->buscarAlbaranes($variante, 5);
             foreach ($correos as $correo) {
-                $candidato = $this->datosAlbaranDeCorreo($correo);
-                $tipo = NumeroAlbaran::desde($candidato['numero_albaran'] ?? null)?->tipo;
+                foreach ($this->datosAlbaranDeCorreo($correo) as $candidato) {
+                    $tipo = NumeroAlbaran::desde($candidato['numero_albaran'] ?? null)?->tipo;
 
-                // Una misma OC puede aparecer en correos AC01, AC02 y AC04. PPQ necesita
-                // la constancia de ENTREGA, no simplemente el primer resultado de Gmail.
-                if ($tipo === $tipoEntrega) {
-                    return $candidato + [
-                        'fuente' => self::ALBARAN_GMAIL,
-                        'debug' => ['busqueda' => 'oc', 'variante' => $variante],
-                    ];
+                    // Una misma OC puede aparecer en correos AC01, AC02 y AC04. PPQ necesita
+                    // la constancia de ENTREGA, no simplemente el primer resultado de Gmail.
+                    if ($tipo === $tipoEntrega) {
+                        return $candidato + [
+                            'fuente' => self::ALBARAN_GMAIL,
+                            'debug' => ['busqueda' => 'oc', 'variante' => $variante],
+                        ];
+                    }
                 }
             }
         }
@@ -416,6 +417,7 @@ class PpqGmailService
 
         $salaOc = OrdenCompra::salaDesde($oc);
         $candidatos = collect($this->albaranesDeFecha($fechaValida))
+            ->filter(fn (array $c) => NumeroAlbaran::desde($c['numero_albaran'] ?? null)?->tipo === PpqAlbaran::tipoDeEntrega())
             // Solo candidatos de la MISMA sala (por el nº de albarán o por su OC).
             ->filter(function (array $c) use ($salaOc) {
                 $salaCand = Albaran::salaDesdeNumero($c['numero_albaran'] ?? null) ?: ($c['sala'] ?? null);
@@ -468,9 +470,10 @@ class PpqGmailService
 
         return collect($correos)
             // El label puede traer otros documentos (p. ej. QUEDAN); solo albaranes.
-            ->filter(fn (array $c) => str_contains(mb_strtolower($c['asunto'] ?? ''), 'albar'))
-            ->map(fn (array $c) => $this->datosAlbaranDeCorreo($c))
-            ->unique('gmail_message_id')
+            ->filter(fn (array $c) => preg_match('/albar|devoluci[oó]n|\bnota\b/iu', $c['asunto'] ?? '') === 1
+                && preg_match('/\bQUEDAN\b/iu', $c['asunto'] ?? '') !== 1)
+            ->flatMap(fn (array $c) => $this->datosAlbaranDeCorreo($c))
+            ->unique(fn (array $c) => $c['gmail_message_id'].'|'.$c['numero_albaran'])
             ->values()
             ->all();
     }
@@ -480,11 +483,11 @@ class PpqGmailService
      * candidato para mostrar/seleccionar.
      *
      * @param  array<string, mixed>  $correo
-     * @return array<string, mixed>
+     * @return array<int, array<string, mixed>>
      */
     private function datosAlbaranDeCorreo(array $correo): array
     {
-        $datosPdf = null;
+        $candidatos = [];
         // El PDF se lleva junto con los datos parseados: es la EVIDENCIA de la entrega y
         // hasta ahora se descartaba después de sacarle el número y el monto con
         // expresiones regulares. Quien lo guarda es {@see AlbaranPersistidor}, no esta
@@ -493,27 +496,44 @@ class PpqGmailService
         $archivoNombre = null;
         $archivoContenido = null;
 
-        foreach ($this->gmail->adjuntos($correo['id']) as $a) {
-            $esPdf = str_contains(strtolower($a['mime']), 'pdf') || str_ends_with(strtolower($a['filename']), '.pdf');
-            if ($esPdf) {
-                $archivoNombre = $a['filename'];
-                $archivoContenido = $a['data'];
-                $datosPdf = $this->albaranParser->desdePdf($a['data']);
-                break;
-            }
+        $pdfs = array_values(array_filter(
+            $this->gmail->adjuntos($correo['id']),
+            fn (array $a) => str_contains(strtolower($a['mime']), 'pdf') || str_ends_with(strtolower($a['filename']), '.pdf'),
+        ));
+
+        foreach ($pdfs as $a) {
+            $archivoNombre = $a['filename'];
+            $archivoContenido = $a['data'];
+            $datosPdf = $this->albaranParser->desdePdf($a['data']);
+            // Con un solo PDF el número sale del ASUNTO primero, como siempre: así una
+            // resincronización da el mismo número que ya está guardado y no duplica.
+            // Con varios, el asunto describe a uno solo y manda cada PDF.
+            $candidatos[] = $this->candidatoDeAdjunto($correo, $datosPdf, $archivoNombre, $archivoContenido, asuntoPrimero: count($pdfs) === 1);
         }
-        if ($datosPdf === null) {
+        if ($candidatos === []) {
+            $datosPdf = [];
             $json = $this->jsonDteDeAdjuntos($correo['id']);
             if ($json !== null) {
                 $p = $this->parser->desdeJson($json);
                 $datosPdf = ['numero' => null, 'fecha' => $p['fecha'], 'oc' => $p['ordenCompra'], 'monto' => $p['monto']];
             }
+            $candidatos[] = $this->candidatoDeAdjunto($correo, $datosPdf, null, null, asuntoPrimero: true);
         }
 
+        return $candidatos;
+    }
+
+    /** @return array<string, mixed> */
+    private function candidatoDeAdjunto(array $correo, array $datosPdf, ?string $archivoNombre, ?string $archivoContenido, bool $asuntoPrimero): array
+    {
         $oc = $datosPdf['oc'] ?? null;
-        $numero = Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null);
-        // Sala desde la OC si se pudo parsear; si no, del 2º segmento del número de albarán.
-        $sala = OrdenCompra::salaDesde($oc) ?: Albaran::salaDesdeNumero($numero);
+        $numero = $asuntoPrimero
+            ? Albaran::numeroLimpio($correo['asunto'] ?? null, $datosPdf['numero'] ?? null, $correo['snippet'] ?? null, NumeroAlbaran::desde($archivoNombre)?->canonico)
+            : Albaran::numeroLimpio($datosPdf['numero'] ?? null, NumeroAlbaran::desde($archivoNombre)?->canonico, $correo['asunto'] ?? null, $correo['snippet'] ?? null);
+        // En AC04 manda la sala impresa; en AC01 se conserva la derivación por OC.
+        $sala = NumeroAlbaran::desde($numero)?->tipo === 'AC04'
+            ? (($datosPdf['sala'] ?? null) ?: Albaran::salaDesdeNumero($numero))
+            : (OrdenCompra::salaDesde($oc) ?: Albaran::salaDesdeNumero($numero));
 
         return [
             'gmail_message_id' => $correo['id'],
@@ -525,6 +545,7 @@ class PpqGmailService
             'monto' => $datosPdf['monto'] ?? null,
             'fecha' => ($datosPdf['fecha'] ?? null) ?: ($correo['fecha'] ?? null),
             'asunto' => $correo['asunto'] ?? null,
+            'numero_control_referenciado' => $datosPdf['numero_control_referenciado'] ?? null,
             // Solo los BYTES DEL ADJUNTO. Nunca tokens, credenciales ni la traza de la
             // consulta a Gmail, que puede llevar dentro los parámetros de la búsqueda.
             'archivo_nombre' => $archivoNombre,

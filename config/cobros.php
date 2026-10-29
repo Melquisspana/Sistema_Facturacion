@@ -29,8 +29,8 @@ return [
     */
     'dias_revision_historica' => (int) env('COBROS_DIAS_REVISION_HISTORICA', 30),
 
-    // Días desde el registro del albarán para avisar que puede faltar en el portal de Calleja.
-    'dias_albaran_reciente' => (int) env('COBROS_DIAS_ALBARAN_RECIENTE', 5),
+    // Días desde la entrega o la llegada de su última devolución, lo que sea más tarde.
+    'dias_albaran_reciente' => (int) env('COBROS_DIAS_ALBARAN_RECIENTE', 3),
 
     // Fecha (AAAA-MM-DD) desde la que el seguimiento lleva la historia. Lo emitido antes y
     // sin antecedente queda en revisión histórica; lo posterior nunca. Vacía = regla de
