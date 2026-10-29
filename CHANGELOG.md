@@ -8,6 +8,14 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Corregido
+
+- La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
+
+## [2026.10.28.2] - 2026-10-28
+
+Segundo despliegue del día, en dos pasos. Paso A (17:20): Rutas nuevo (#44 y la parte de Rutas de #127), rol Vendedor con «Mi salida» (#150), cierre del día con PDF (#152), gastos con foto (#153) y Ventas (#149, #155 y #156). Trae 6 migraciones (`2026_09_26_100000`, que borra las tablas de custodia, vacías; `2026_09_27_100000`; `2026_10_28_180001` a `180003` y `2026_10_28_190001`), permisos y el rol `vendedor` con un script propio (sin `RolesSeeder`), y `RUTAS_ENTREGAS_DESDE` en el `.env`. Paso B (21:54): Asistencia simple (#158), sin migraciones; las rutas del lector no cambiaron.
+
 ### Agregado
 
 - Rutas › Ventas: selector «Nacional | Exportación», que nunca se suman. Exportación (FEX) por cliente de exportación y presentación, con sus comparaciones, Excel y PDF; las facturas (FE) entran en nacional con la venta sin IVA y, sin sala, como «Consumidor final». La barra lateral de Rutas ya no muestra Cobros Calleja, que sigue en la de Facturación. #156
@@ -17,9 +25,9 @@ El historial anterior a este archivo está en el registro de git.
 - Rutas: «Ventas nacionales» por producto, sala y ruta (CCF − NC, sin IVA, solo documentos reales; la NC resta en el período del CCF que corrige), comparadas con el período anterior, con los productos que más se venden, lo que sube y baja, las salas que compraron 30 % menos o nada, y Excel. Permiso nuevo `rutas.ventas.ver` para Administrador, Jefatura y Facturación. #149
 - Rutas: rol Vendedor aislado con «Mi salida» en el celular: marca Entregado / No entregado solo en sus salidas en curso, «Todo entregado» por sala y deshacer lo propio; quién entregó lo pone el servidor. El número de control se ve por su final («…0907») en el celular. Permiso nuevo `rutas.entregas.registrar`. #150
 
-### Corregido
+### Cambiado
 
-- La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
+- Asistencia simple: el menú queda en «Hoy» (quién marcó, su entrada y salida, y quién todavía no marcó, con el día de El Salvador), «Personal» (ficha con «Guardar huella», «Huella 1 / Huella 2» con «Quitar», aviso de no cancelar mientras el lector pide el dedo y lo técnico dentro de «Avanzado») y «Reporte» (días y horas por persona en un rango de fechas, con Excel). Los lectores de huella pasan a Configuración › Integraciones, solo para el administrador; las direcciones viejas del listado y de editar redirigen a las nuevas. Las rutas del lector ES3C28P no cambian y una prueba las fija. Sin migraciones. #87
 
 ## [2026.10.28] - 2026-10-28
 
@@ -32,7 +40,6 @@ Despliegue en dos pasos con punto de control entre ellos. Paso 1: numeración an
 
 ### Cambiado
 
-- Asistencia simple: el menú queda en «Hoy» (quién marcó, su entrada y salida, y quién todavía no marcó, con el día de El Salvador), «Personal» (ficha con «Guardar huella», «Huella 1 / Huella 2» con «Quitar», aviso de no cancelar mientras el lector pide el dedo y lo técnico dentro de «Avanzado») y «Reporte» (días y horas por persona en un rango de fechas, con Excel). Los lectores de huella pasan a Configuración › Integraciones, solo para el administrador; las direcciones viejas del listado y de editar redirigen a las nuevas. Las rutas del lector ES3C28P no cambian y una prueba las fija. Sin migraciones. #87
 - Cobros: un solo formulario para subir uno o varios TXT de pago. Primero muestra la revisión, sin aplicar nada, con el detalle de cada archivo, y después «Aplicar los N». Solo se aplican los TXT revisados por el mismo usuario y para el mismo cliente, una sola vez. La fecha del pago se puede indicar solo con un archivo. Se retiran «Cargar pagos», la casilla «Solo revisar» y sus rutas; el botón del correo usa el mismo paso de aplicar. #151
 
 ### Corregido
