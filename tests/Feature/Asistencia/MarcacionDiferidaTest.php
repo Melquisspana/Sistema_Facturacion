@@ -137,4 +137,37 @@ class MarcacionDiferidaTest extends TestCase
         $this->get(route('asistencia.marcaciones.index', ['desde' => '2026-10-28', 'hasta' => '2026-10-29', 'origen' => 'diferida']))
             ->assertOk()->assertSessionHasNoErrors()->assertViewHas('filtro', fn ($f) => $f->origen === 'diferida');
     }
+
+    /**
+     * Producción guarda en hora de El Salvador (APP_TIMEZONE, issue #59), no en UTC. Una
+     * marca en vivo y su reenvío diferido con el epoch del mismo segundo tienen que caer
+     * en el MISMO marcado_at: si no, la idempotencia no se daría nunca allá.
+     */
+    public function test_con_la_zona_de_produccion_vivo_y_diferida_coinciden_al_segundo(): void
+    {
+        config(['app.timezone' => 'America/El_Salvador']);
+        date_default_timezone_set('America/El_Salvador');
+        $local = fn (string $hora) => Carbon::parse('2026-10-29 '.$hora, 'America/El_Salvador');
+        Carbon::setTestNow($local('07:58:00'));
+
+        $vivo = $this->marcar()->assertOk()->assertJsonPath('diferida', false)->assertJsonPath('marcacion.tipo', 'entrada');
+        $this->assertDatabaseHas('asistencia_marcaciones', ['marcado_at' => '2026-10-29 07:58:00', 'origen' => 'dispositivo']);
+
+        // La respuesta del vivo se perdió y el lector la reenvía desde la cola.
+        Carbon::setTestNow($local('08:10:00'));
+        $this->marcar(['marcado_en' => $local('07:58:00')->getTimestamp()])->assertOk()
+            ->assertJsonPath('repetida', true)->assertJsonPath('marcacion.id', $vivo->json('marcacion.id'));
+        $this->assertDatabaseCount('asistencia_marcaciones', 1);
+
+        // Treinta segundos después: dentro del cooldown respecto del vivo.
+        $this->marcar(['marcado_en' => $local('07:58:30')->getTimestamp()])->assertStatus(409);
+        $this->assertDatabaseCount('asistencia_marcaciones', 1);
+
+        // A mediodía, diferida: salida del mismo día local, guardada en hora local.
+        Carbon::setTestNow($local('12:30:00'));
+        $this->marcar(['marcado_en' => $local('12:01:00')->getTimestamp()])->assertOk()
+            ->assertJsonPath('repetida', false)->assertJsonPath('marcacion.tipo', 'salida');
+        $this->assertDatabaseHas('asistencia_marcaciones', ['marcado_at' => '2026-10-29 12:01:00', 'origen' => 'diferida', 'tipo' => 'salida']);
+        $this->assertSame(['2026-10-29'], AsistenciaMarcacion::query()->get()->map(fn ($m) => $m->fecha_local->toDateString())->unique()->values()->all());
+    }
 }
