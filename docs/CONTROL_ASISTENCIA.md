@@ -19,6 +19,22 @@ nadie ha declarado; el último tiene su propia fase.
 
 ## Reglas del módulo
 
+### Marcas diferidas del lector (issue #160)
+
+`POST /api/asistencia/marcar` conserva URI, método, autenticación y campos actuales.
+Acepta `marcado_en` opcional: epoch UTC entero en segundos. Sin ese campo usa la
+hora del servidor y origen `dispositivo`. Con él guarda el instante en la zona
+de guardado, calcula su día en la zona de asistencia y usa origen `diferida`.
+Rechaza con HTTP 422, `estado: "hora_invalida"` y el formato habitual de errores
+un valor no entero, más de 300 segundos futuro o anterior a
+`asistencia.diferidas_max_dias` (env `ASISTENCIA_DIFERIDAS_MAX_DIAS`, defecto 31).
+
+Las respuestas de marcación incorporan `repetida` y `diferida` booleanos. Un
+reenvío con el mismo segundo, persona y lector devuelve la marca existente con
+HTTP 200 y `repetida: true`, sin crear otra fila. El tipo alterna respecto de la
+marca anterior del mismo día local; el cooldown revisa ambos vecinos temporales
+de la persona. Insertar una marca antigua no recalcula tipos ya guardados.
+
 1. **La hora oficial la pone el servidor.** El ESP32 no tiene reloj con batería:
    se reinicia y se desfasa. Lo que mande en el cuerpo se ignora.
 2. **El ESP32 no sabe de quién es la huella.** Manda el número de ranura del

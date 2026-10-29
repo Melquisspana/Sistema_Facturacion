@@ -16,9 +16,13 @@
      correctamente el día que exista, no reinterpretarlo entonces. --}}
 @php
     $esManual = $marcacion->origen === 'manual';
-    $esDispositivo = $marcacion->origen === 'dispositivo';
+    $esDispositivo = in_array($marcacion->origen, ['dispositivo', 'diferida'], true);
     $lector = $marcacion->dispositivo;
 @endphp
+
+@if ($marcacion->origen === 'diferida')
+    <span class="block text-xs text-gray-500 dark:text-paper-400">Lector (sin red)</span>
+@endif
 
 @if ($esManual)
     <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-500/15 dark:text-blue-300"

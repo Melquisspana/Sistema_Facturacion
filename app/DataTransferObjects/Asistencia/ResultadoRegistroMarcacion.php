@@ -28,15 +28,17 @@ class ResultadoRegistroMarcacion
         public readonly ?AsistenciaMarcacion $marcacionPrevia = null,
         /** Segundos que faltan para que la próxima marcación cuente. */
         public readonly ?int $esperaSegundos = null,
+        public readonly bool $repetida = false,
     ) {}
 
-    public static function registrada(AsistenciaEmpleado $empleado, AsistenciaMarcacion $marcacion, int $fingerprintId): self
+    public static function registrada(AsistenciaEmpleado $empleado, AsistenciaMarcacion $marcacion, int $fingerprintId, bool $repetida = false): self
     {
         return new self(
             estado: ResultadoMarcacion::Registrada,
             fingerprintId: $fingerprintId,
             empleado: $empleado,
             marcacion: $marcacion,
+            repetida: $repetida,
         );
     }
 

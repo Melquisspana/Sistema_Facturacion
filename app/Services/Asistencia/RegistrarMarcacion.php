@@ -8,13 +8,14 @@ use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Asistencia\AsistenciaHuella;
 use App\Models\Asistencia\AsistenciaMarcacion;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
  * LA REGLA de la marcación, y el único sitio donde se escribe una.
  *
- * El dispositivo manda un número de ranura. Todo lo demás —quién es, qué hora es,
- * si es entrada o salida, si cuenta o no— se decide acá, con datos del servidor.
+ * El dispositivo manda una ranura y, para marcas sin red, un instante validado.
+ * Quién es, si es entrada o salida y si cuenta se decide acá.
  *
  * ───────────────────────────── Entrada o salida ─────────────────────────────
  *
@@ -52,7 +53,7 @@ class RegistrarMarcacion
 {
     public function __construct(private readonly HoraOficial $horaOficial) {}
 
-    public function __invoke(AsistenciaDispositivo $dispositivo, int $fingerprintId, ?string $ip = null): ResultadoRegistroMarcacion
+    public function __invoke(AsistenciaDispositivo $dispositivo, int $fingerprintId, ?string $ip = null, ?Carbon $instante = null): ResultadoRegistroMarcacion
     {
         $huella = AsistenciaHuella::query()
             ->where('asistencia_dispositivo_id', $dispositivo->id)
@@ -71,7 +72,7 @@ class RegistrarMarcacion
             return ResultadoRegistroMarcacion::empleadoInactivo($huella->empleado, $fingerprintId);
         }
 
-        return DB::transaction(function () use ($huella, $dispositivo, $fingerprintId, $ip) {
+        return DB::transaction(function () use ($huella, $dispositivo, $fingerprintId, $ip, $instante) {
             // Serializa las marcaciones DE ESTA PERSONA: dos peticiones a la vez
             // se ponen en fila y la segunda ve lo que escribió la primera.
             $empleado = AsistenciaEmpleado::query()
@@ -79,26 +80,56 @@ class RegistrarMarcacion
                 ->lockForUpdate()
                 ->first();
 
-            $instante = $this->horaOficial->instante();
+            $diferida = $instante !== null;
+            $instante = $instante?->copy()->setTimezone((string) config('app.timezone'))->startOfSecond()
+                ?? $this->horaOficial->instante();
             $fechaLocal = $this->horaOficial->fechaLocal($instante);
+
+            if ($diferida) {
+                // El bloqueo del empleado serializa también los reenvíos del lector.
+                $existente = AsistenciaMarcacion::query()
+                    ->where('asistencia_empleado_id', $empleado->id)
+                    ->where('asistencia_dispositivo_id', $dispositivo->id)
+                    ->where('marcado_at', $instante)
+                    ->first();
+
+                if ($existente !== null) {
+                    return ResultadoRegistroMarcacion::registrada($empleado, $existente, $fingerprintId, repetida: true);
+                }
+            }
 
             $ultima = AsistenciaMarcacion::query()
                 ->where('asistencia_empleado_id', $empleado->id)
+                ->when($diferida, fn ($query) => $query->where('marcado_at', '<=', $instante))
                 ->orderByDesc('marcado_at')
                 ->orderByDesc('id')
                 ->first();
 
             $cooldown = max(0, (int) config('asistencia.cooldown_segundos'));
 
-            if ($ultima !== null && $cooldown > 0) {
+            $vecinos = [$ultima];
+            if ($diferida) {
+                $vecinos[] = AsistenciaMarcacion::query()
+                    ->where('asistencia_empleado_id', $empleado->id)
+                    ->where('marcado_at', '>', $instante)
+                    ->orderBy('marcado_at')->orderBy('id')->first();
+            }
+
+            foreach ($vecinos as $vecina) {
+                if ($vecina === null || $cooldown === 0) {
+                    continue;
+                }
                 // Resta de timestamps absolutos: no depende de la zona con la que
                 // Eloquent hidrató la fecha ni de la versión de Carbon.
-                $transcurridos = $instante->getTimestamp() - $ultima->marcado_at->getTimestamp();
+                $transcurridos = $instante->getTimestamp() - $vecina->marcado_at->getTimestamp();
+                if ($diferida) {
+                    $transcurridos = abs($transcurridos);
+                }
 
                 if ($transcurridos >= 0 && $transcurridos < $cooldown) {
                     return ResultadoRegistroMarcacion::cooldown(
                         empleado: $empleado,
-                        previa: $ultima,
+                        previa: $vecina,
                         esperaSegundos: $cooldown - $transcurridos,
                         fingerprintId: $fingerprintId,
                     );
@@ -110,6 +141,14 @@ class RegistrarMarcacion
                 ? $ultima
                 : null;
 
+            if ($diferida) {
+                $ultimaDeHoy = AsistenciaMarcacion::query()
+                    ->where('asistencia_empleado_id', $empleado->id)
+                    ->whereDate('fecha_local', $fechaLocal)
+                    ->where('marcado_at', '<', $instante)
+                    ->orderByDesc('marcado_at')->orderByDesc('id')->first();
+            }
+
             // `created_at` lo pone Eloquent con el mismo reloj (no hay `updated_at`:
             // ver el modelo). Pasarlo a mano acá solo agregaría una forma de que
             // los dos instantes se separen.
@@ -120,7 +159,7 @@ class RegistrarMarcacion
                 'tipo' => TipoMarcacion::siguienteTras($ultimaDeHoy?->tipo),
                 'marcado_at' => $instante,
                 'fecha_local' => $fechaLocal,
-                'origen' => 'dispositivo',
+                'origen' => $diferida ? 'diferida' : 'dispositivo',
                 'ip' => $ip,
             ]);
 

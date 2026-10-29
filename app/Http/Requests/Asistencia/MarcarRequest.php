@@ -3,15 +3,15 @@
 namespace App\Http\Requests\Asistencia;
 
 use App\Enums\Asistencia\ResultadoMarcacion;
+use App\Services\Asistencia\HoraOficial;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Support\Carbon;
 
 /**
- * Lo ÚNICO que el dispositivo tiene derecho a decidir: qué ranura del sensor
- * reconoció. Ni el empleado, ni la hora, ni el tipo de marcación: si vinieran en
- * el cuerpo, alguien en la red podría inventarlos, y por eso no se leen aunque
- * lleguen.
+ * El dispositivo identifica la ranura del sensor y puede enviar el instante de
+ * una marca sin red. El servidor valida ese instante y decide empleado y tipo.
  *
  * El rango 0..65535 cubre cualquier AS608 (capacidad real ~162 plantillas) sin
  * tener que saber de antemano el modelo; el cero se acepta porque las librerías
@@ -30,12 +30,27 @@ class MarcarRequest extends FormRequest
     {
         return [
             'fingerprint_id' => ['required', 'integer', 'min:0', 'max:65535'],
+            'marcado_en' => ['sometimes', 'required', 'integer', function ($attribute, $value, $fail) {
+                $ahora = app(HoraOficial::class)->instante()->getTimestamp();
+                $maxDias = max(0, (int) config('asistencia.diferidas_max_dias', 31));
+                if (is_bool($value) || ! is_scalar($value) || ! is_numeric($value)
+                    || $value > $ahora + 300 || $value < $ahora - $maxDias * 86400) {
+                    $fail('La hora de la marcación está fuera del rango permitido.');
+                }
+            }],
         ];
     }
 
     public function fingerprintId(): int
     {
         return (int) $this->validated('fingerprint_id');
+    }
+
+    public function instante(): ?Carbon
+    {
+        $epoch = $this->validated('marcado_en');
+
+        return $epoch === null ? null : Carbon::createFromTimestamp((int) $epoch, (string) config('app.timezone'));
     }
 
     /**
@@ -45,13 +60,17 @@ class MarcarRequest extends FormRequest
      */
     protected function failedValidation(Validator $validator): void
     {
-        $estado = ResultadoMarcacion::PayloadInvalido;
+        $estado = $validator->errors()->has('marcado_en')
+            ? ResultadoMarcacion::HoraInvalida
+            : ResultadoMarcacion::PayloadInvalido;
 
         throw new HttpResponseException(response()->json([
             'ok' => false,
             'estado' => $estado->value,
             'mensaje' => 'Datos inválidos',
             'errores' => $validator->errors()->toArray(),
+            'repetida' => false,
+            'diferida' => $this->exists('marcado_en'),
         ], $estado->httpStatus()));
     }
 }
