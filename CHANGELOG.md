@@ -12,7 +12,9 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
-## [Sin publicar]
+## [2026.10.29] - 2026-10-29
+
+Despliegue del servidor de las marcas sin red del lector (#161), sin migraciones ni cambios en el `.env`. Las rutas del lector no cambiaron. El firmware nuevo del lector se carga aparte.
 
 ### Agregado
 
