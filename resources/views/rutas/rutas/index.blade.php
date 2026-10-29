@@ -7,7 +7,8 @@
     </x-slot>
 
     {{-- Todo lo que se toca de vez en cuando, en una sola página: cada ruta con cada cuánto
-         se va, qué lugares cubre y qué salas le sugiere la cobertura; y los vendedores. --}}
+         se va, qué lugares cubre y qué salas le sugiere la cobertura. El personal tiene su
+         propia pantalla («Personal» en la barra). --}}
     @php
         $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
         $campo = 'rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
@@ -160,42 +161,6 @@
                     </div>
                 </div>
             @endif
-
-            {{-- ===================== Vendedores ===================== --}}
-            <div id="vendedores" class="{{ $caja }} p-5">
-                <p class="text-base font-semibold text-gray-800 dark:text-paper-100">Vendedores</p>
-                <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">Quienes salen a las rutas. Al salir se marca quiénes van.</p>
-
-                <div class="mt-3 divide-y divide-gray-100 dark:divide-ink-700">
-                    @forelse ($vendedores as $vendedor)
-                        <div class="flex items-center justify-between gap-3 py-2 {{ $vendedor->activo ? '' : 'opacity-50' }}">
-                            <span class="text-sm text-gray-800 dark:text-paper-100">
-                                {{ $vendedor->nombre }}
-                                @if ($vendedor->telefono)<span class="text-gray-400 dark:text-paper-500"> · {{ $vendedor->telefono }}</span>@endif
-                            </span>
-                            @can('rutas.personal.gestionar')
-                                <form method="POST" action="{{ route('rutas.personal.toggle-activo', $vendedor) }}">
-                                    @csrf @method('PATCH')
-                                    <button class="text-xs text-gray-400 hover:underline dark:text-paper-500">{{ $vendedor->activo ? 'Ya no sale' : 'Vuelve a salir' }}</button>
-                                </form>
-                            @endcan
-                        </div>
-                    @empty
-                        <p class="py-3 text-sm text-gray-500 dark:text-paper-400">Todavía no hay vendedores.</p>
-                    @endforelse
-                </div>
-
-                @can('rutas.personal.gestionar')
-                    <form method="POST" action="{{ route('rutas.personal.store') }}" class="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-100 pt-3 dark:border-ink-700">
-                        @csrf
-                        <input type="hidden" name="en_linea" value="1">
-                        <input type="hidden" name="funciones[]" value="vendedor">
-                        <input name="nombre" required maxlength="120" placeholder="Nombre" aria-label="Nombre del vendedor" class="min-w-0 flex-1 {{ $campo }}">
-                        <input name="telefono" maxlength="30" placeholder="Teléfono (opcional)" aria-label="Teléfono" class="w-44 {{ $campo }}">
-                        <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
-                    </form>
-                @endcan
-            </div>
 
         </div>
     </div>

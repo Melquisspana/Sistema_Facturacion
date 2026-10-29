@@ -73,11 +73,6 @@ class PersonalRutaController extends Controller
             return $persona;
         });
 
-        // Desde «Configurar rutas» el alta es en línea: se vuelve a la misma página.
-        if ($request->boolean('en_linea')) {
-            return back()->with('status', $personal->nombre.' quedó agregado como vendedor.');
-        }
-
         return redirect()
             ->route('rutas.personal.show', $personal)
             ->with('status', $personal->nombre.' quedó dado de alta.');

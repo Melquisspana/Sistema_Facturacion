@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\RutaRequest;
 use App\Models\Departamento;
 use App\Models\Distrito;
-use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PropuestaRutas;
@@ -25,7 +24,8 @@ class RutaController extends Controller
     /**
      * «Configurar rutas»: todo lo que se toca de vez en cuando, en una sola página. Cada
      * ruta con su frecuencia, los lugares que cubre y las salas que la cobertura le
-     * sugiere; y los vendedores. El usuario pidió menos pantallas (27/09/2026).
+     * sugiere. El usuario pidió menos pantallas (27/09/2026); el personal quedó en su propia
+     * pantalla, con puerta en la barra (29/10/2026).
      */
     public function index(PropuestaRutas $propuestas): View
     {
@@ -47,7 +47,6 @@ class RutaController extends Controller
             'distritos' => Distrito::with('departamento:id,nombre')->orderBy('nombre')->get(['id', 'nombre', 'departamento_id'])
                 ->groupBy(fn ($d) => $d->departamento?->nombre ?? '—')
                 ->sortKeys(),
-            'vendedores' => PersonalRuta::orderByDesc('activo')->orderBy('nombre')->get(['id', 'nombre', 'telefono', 'activo']),
         ]);
     }
 

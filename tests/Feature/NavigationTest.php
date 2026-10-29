@@ -439,9 +439,10 @@ class NavigationTest extends TestCase
                 // selector de áreas del panel, que es lo que permite volver desde un
                 // teléfono. No es una pantalla nueva para este rol.
                 'dashboard',
-                // Tres puertas (27/09/2026): asignación y vendedores viven en Configurar rutas.
-                // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`.
-                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index',
+                // Pocas puertas (27/09/2026): la asignación vive en Configurar rutas.
+                // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
+                // (29/10/2026), con `rutas.personal.ver`.
+                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'rutas.personal.index',
             ]),
             $this->enlacesDelSidebar($html),
         );
