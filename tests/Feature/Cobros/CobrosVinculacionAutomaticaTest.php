@@ -98,6 +98,21 @@ class CobrosVinculacionAutomaticaTest extends TestCase
 
     // ------------------------------------------------------------------ dorada
 
+    public function test_corrida_agrega_ac04_tardia_a_la_entrega_ya_vinculada(): void
+    {
+        $ccf = $this->documento($this->dte('DTE-03-M001P002-000000000000021'));
+        $entrega = $this->albaranEntrega('AC01/0017/00/5021');
+        $ccf->update(['ppq_albaran_id' => $entrega->id, 'vinculacion_estado' => EstadoVinculacionAlbaran::Vinculado]);
+        $nota = PpqAlbaran::create(['numero_albaran' => 'AC04/0017/00/7021', 'numero_orden_compra' => self::OC,
+            'monto_albaran' => '12.43', 'fecha_albaran' => '2026-09-19', 'origen' => 'gmail']);
+        config(['cobros.alta.automatica' => true, 'cobros.vinculacion.automatica' => true]);
+        for ($vez = 0; $vez < 2; $vez++) {
+            $this->artisan('cobros:sincronizar', ['--cliente' => $this->cliente->id, '--aplicar' => true, '--vincular' => true])->assertSuccessful();
+            $this->assertSame($ccf->dte_id, $nota->refresh()->dte_id);
+            $this->assertSame($entrega->id, $ccf->refresh()->ppq_albaran_id);
+        }
+    }
+
     /**
      * DORADA · con las dos llaves encendidas, la corrida vincula el candidato único y deja
      * el que no tiene albarán con su motivo a la vista, SIN que nadie haya pulsado

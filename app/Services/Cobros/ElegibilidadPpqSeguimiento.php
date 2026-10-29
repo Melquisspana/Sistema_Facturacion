@@ -119,7 +119,7 @@ class ElegibilidadPpqSeguimiento
             return [];
         }
         $listos = $this->listos(CobroDocumento::whereKey($ids->all()));
-        $docs = CobroDocumento::whereKey($listos->keys()->all())->with('albaran')->get();
+        $docs = CobroDocumento::whereKey($listos->keys()->all())->with(['albaran', 'dte.clienteSucursal'])->get();
         $albaranes = $docs->pluck('ppq_albaran_id')->unique();
         $items = PpqItem::whereHas('lote')->whereIn('ppq_albaran_id', $albaranes)
             ->orderBy('id')->get()->groupBy('ppq_albaran_id');
@@ -127,7 +127,6 @@ class ElegibilidadPpqSeguimiento
             ->where(fn ($q) => $q->where('pago_estado', EstadoPagoCobro::Pagado->value)
                 ->orWhereIn('presentacion_estado', [EstadoPresentacionCobro::Presentada->value, EstadoPresentacionCobro::Recibida->value]))
             ->orderBy('id')->get()->groupBy('ppq_albaran_id');
-        $limite = now()->subDays(max(0, (int) config('cobros.dias_albaran_reciente', 5)));
         $avisos = [];
         foreach ($docs as $doc) {
             $item = ($items->get($doc->ppq_albaran_id) ?? collect())->first(fn ($item) => $item->dte_id !== $doc->dte_id
@@ -142,8 +141,7 @@ class ElegibilidadPpqSeguimiento
                 $estado = $otro->pago_estado === EstadoPagoCobro::Pagado ? 'pagado' : 'presentado';
                 $duplicado = "El albarán ya va con {$otro->correlativoCorto()}, {$estado}";
             }
-            $avisos[$doc->id] = [
-                'reciente' => $doc->albaran?->created_at !== null && $doc->albaran->created_at->betweenIncluded($limite, now()),
+            $avisos[$doc->id] = app(DevolucionesAlbaran::class)->avisos($doc) + [
                 'duplicado' => $duplicado,
             ];
         }

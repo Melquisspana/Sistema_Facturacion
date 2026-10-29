@@ -10,6 +10,7 @@ use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqAlbaran;
 use App\Services\Cobros\AltaCobrosService;
+use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Cobros\VinculadorAlbaranes;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -183,6 +184,23 @@ class CobrosSincronizarCommand extends Command
         $this->info(sprintf('  Albaranes liberados de CCF invalidados: %d.', $liberados));
 
         $conteo = ['vinculado' => 0, 'revisar' => 0, 'sin_albaran' => 0];
+
+        // La referencia sigue en el PDF aunque el correo ya quede fuera del solape.
+        PpqAlbaran::where('tipo_codigo', 'AC04')->whereNull('dte_id')
+            ->where(fn ($q) => $q->whereNull('cliente_sucursal_id')
+                ->orWhereHas('clienteSucursal', fn ($s) => $s->where('cliente_id', $cliente->id)))
+            ->chunkById(200, function (Collection $notas) {
+                foreach ($notas as $nota) {
+                    app(DevolucionesAlbaran::class)->vincularRecibida($nota);
+                }
+            });
+
+        CobroDocumento::deCliente($cliente->id)->where('tipo_dte', '03')->whereNotNull('ppq_albaran_id')
+            ->chunkById(200, function (Collection $documentos) use ($vinculador) {
+                foreach ($documentos as $documento) {
+                    $vinculador->actualizarDevoluciones($documento);
+                }
+            });
 
         $this->documentosPendientesDeAlbaran($cliente)
             ->chunkById(200, function (Collection $documentos) use ($vinculador, &$conteo) {

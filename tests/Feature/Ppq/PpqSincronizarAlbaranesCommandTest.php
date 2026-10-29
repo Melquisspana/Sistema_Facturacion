@@ -20,6 +20,7 @@ use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -374,6 +375,131 @@ class PpqSincronizarAlbaranesCommandTest extends TestCase
     }
 
     // -------------------------------------------------- end-to-end con GmailClient
+
+    public function test_dos_pdf_del_mismo_correo_guardan_ac04_y_ac01_sin_duplicar(): void
+    {
+        Storage::fake('local');
+        $this->sala('0236', 'Súper Selectos Santa Elena');
+        $this->app->instance(GmailClient::class, new class extends GmailClient
+        {
+            public function __construct() {}
+
+            public function disponible(): bool
+            {
+                return true;
+            }
+
+            protected function listar(string $q, int $limite): array
+            {
+                return [['id' => 'msg-dos-pdf', 'asunto' => 'Albaranes Santa Elena', 'fecha' => '2026-10-28']];
+            }
+
+            public function adjuntos(string $messageId): array
+            {
+                return array_map(fn ($tipo) => ['filename' => $tipo.'.pdf', 'mime' => 'application/pdf', 'data' => $tipo], ['AC04', 'AC01']);
+            }
+        });
+        $this->app->instance(AlbaranParser::class, new class extends AlbaranParser
+        {
+            public function desdePdf(string $bytes): array
+            {
+                return ['numero' => $bytes.'/0236/00/7152', 'oc' => '26060236004586', 'fecha' => '2026-10-28', 'monto' => $bytes === 'AC04' ? 22.60 : 226.00];
+            }
+        });
+        $this->app->forgetInstance(PpqGmailService::class);
+
+        for ($vez = 0; $vez < 2; $vez++) {
+            $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-10-28', '--hasta' => '2026-10-28', '--aplicar' => true])->assertSuccessful();
+            $this->assertSame(2, PpqAlbaran::where('gmail_message_id', 'msg-dos-pdf')->count());
+            $this->assertDatabaseHas('ppq_albaranes', ['numero_albaran' => 'AC01/0236/00/7152']);
+        }
+    }
+
+    /**
+     * Con UN solo PDF el número sigue saliendo del asunto, como antes de leer varios PDF:
+     * si cambiara la prioridad, una resincronización podría guardar el mismo albarán con
+     * otro número (el índice único es número + OC) y duplicarlo.
+     */
+    public function test_con_un_solo_pdf_el_numero_sale_del_asunto_como_antes(): void
+    {
+        Storage::fake('local');
+        $this->sala('0236', 'Súper Selectos Santa Elena');
+        $this->app->instance(GmailClient::class, new class extends GmailClient
+        {
+            public function __construct() {}
+
+            public function disponible(): bool
+            {
+                return true;
+            }
+
+            protected function listar(string $q, int $limite): array
+            {
+                return [['id' => 'msg-un-pdf', 'asunto' => 'Albarán AC01/0236/00/7153', 'fecha' => '2026-10-28']];
+            }
+
+            public function adjuntos(string $messageId): array
+            {
+                return [['filename' => 'albaran.pdf', 'mime' => 'application/pdf', 'data' => 'x']];
+            }
+        });
+        $this->app->instance(AlbaranParser::class, new class extends AlbaranParser
+        {
+            public function desdePdf(string $bytes): array
+            {
+                // El PDF trae una lectura distinta: no debe ganarle al asunto.
+                return ['numero' => 'AC01/0236/00/9999', 'oc' => '26060236004587', 'fecha' => '2026-10-28', 'monto' => 100.00];
+            }
+        });
+        $this->app->forgetInstance(PpqGmailService::class);
+
+        $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-10-28', '--hasta' => '2026-10-28', '--aplicar' => true])->assertSuccessful();
+
+        $this->assertSame(['AC01/0236/00/7153'], PpqAlbaran::where('gmail_message_id', 'msg-un-pdf')->pluck('numero_albaran')->all());
+    }
+
+    public function test_correo_ya_visto_por_ac04_no_impide_recuperar_su_ac01(): void
+    {
+        $this->sala('0236', 'Súper Selectos Santa Elena');
+        PpqAlbaran::create(['numero_albaran' => 'AC04/0236/00/7152', 'numero_orden_compra' => '26060236004586', 'gmail_message_id' => 'msg-mixto']);
+        $this->fakeServicio(['2026-10-28' => [
+            $this->candidato('msg-mixto', 'AC04/0236/00/7152', '26060236004586', 22.60, '2026-10-28'),
+            $this->candidato('msg-mixto', 'AC01/0236/00/7153', '26060236004586', 226.00, '2026-10-28'),
+        ]]);
+        for ($vez = 0; $vez < 2; $vez++) {
+            $this->artisan('ppq:sincronizar-albaranes', ['--desde' => '2026-10-28', '--hasta' => '2026-10-28', '--aplicar' => true])->assertSuccessful();
+            $this->assertSame(2, PpqAlbaran::count());
+        }
+    }
+
+    public function test_filtro_admite_devolucion_y_nota_pero_no_quedan(): void
+    {
+        $this->app->instance(GmailClient::class, new class extends GmailClient
+        {
+            public function __construct() {}
+
+            protected function listar(string $q, int $limite): array
+            {
+                return [
+                    ['id' => 'devolucion', 'asunto' => 'Devolución AC04/0236/00/7152'],
+                    ['id' => 'nota', 'asunto' => 'Nota AC04/0236/00/7153'],
+                    ['id' => 'quedan', 'asunto' => 'QUEDAN con nota de julio'],
+                ];
+            }
+
+            public function adjuntos(string $messageId): array
+            {
+                if ($messageId === 'quedan') {
+                    throw new \LogicException('No debe leer los adjuntos de QUEDAN');
+                }
+
+                return [];
+            }
+        });
+        $this->app->forgetInstance(PpqGmailService::class);
+        $candidatos = app(PpqGmailService::class)->albaranesDeFecha('2026-10-28');
+        $this->assertSame(['devolucion', 'nota'], array_column($candidatos, 'gmail_message_id'));
+    }
 
     public function test_end_to_end_reusa_gmail_client_y_el_servicio_real(): void
     {

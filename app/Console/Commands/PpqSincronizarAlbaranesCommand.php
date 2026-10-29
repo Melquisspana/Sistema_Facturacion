@@ -7,6 +7,7 @@ use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Exceptions\Ppq\GmailNoDisponibleException;
 use App\Models\Configuracion;
 use App\Models\PpqAlbaran;
+use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Ppq\AlbaranPersistidor;
 use App\Services\Ppq\PpqGmailService;
 use App\Services\Ppq\SalaSucursalResolver;
@@ -34,7 +35,7 @@ use Illuminate\Support\Carbon;
  * lo ya cubierto — así una corrida acotada a mano no puede saltarse el backlog.
  * `fecha_albaran` queda solo como respaldo para la primera corrida, antes de que exista marca.
  *
- * IDEMPOTENTE en dos niveles: se saltan los correos cuyo `gmail_message_id` ya está
+ * IDEMPOTENTE en dos niveles: se saltan los pares mensaje + número que ya están
  * guardado, y la escritura pasa por AlbaranPersistidor, que identifica el albarán por
  * número + OC (índice único). Correrlo N veces deja exactamente el mismo resultado.
  *
@@ -92,13 +93,16 @@ class PpqSincronizarAlbaranesCommand extends Command
 
         $this->info('Ventana: '.$desde->toDateString().' → '.$hasta->toDateString().' ('.count($this->dias($desde, $hasta)).' día/s).');
 
-        // Idempotencia rápida: los correos ya procesados no se vuelven a bajar/parsear.
+        // Un correo puede traer varios albaranes: la identidad incluye su número.
         // Incluye los borrados (withTrashed) a propósito: si alguien dio de baja un albarán,
         // la sincronización NO debe resucitarlo en la próxima corrida.
         $yaVistos = PpqAlbaran::withTrashed()
             ->whereNotNull('gmail_message_id')
-            ->pluck('gmail_message_id')
-            ->flip();
+            // Una AC04 sin CCF se reintenta: el CCF puede incorporarse después.
+            ->where(fn ($q) => $q->whereNull('tipo_codigo')->orWhere('tipo_codigo', '!=', 'AC04')
+                ->orWhereNotNull('dte_id')->orWhereNotNull('deleted_at'))
+            ->get(['gmail_message_id', 'numero_albaran'])
+            ->mapWithKeys(fn (PpqAlbaran $a) => [$a->gmail_message_id.'|'.Albaran::numeroLimpio($a->numero_albaran) => true]);
 
         $filas = [];
         $conteo = ['leidos' => 0, 'omitidos' => 0, 'nuevos' => 0, 'existentes' => 0, 'excepciones' => 0, 'sin_numero' => 0, 'dados_de_baja' => 0];
@@ -119,7 +123,8 @@ class PpqSincronizarAlbaranesCommand extends Command
                     $conteo['leidos']++;
 
                     $messageId = $candidato['gmail_message_id'] ?? null;
-                    if (filled($messageId) && $yaVistos->has($messageId)) {
+                    $clave = $messageId.'|'.Albaran::numeroLimpio($candidato['numero_albaran'] ?? null);
+                    if (filled($messageId) && $yaVistos->has($clave)) {
                         $conteo['omitidos']++;
 
                         continue;
@@ -129,7 +134,7 @@ class PpqSincronizarAlbaranesCommand extends Command
 
                     // Dentro de la misma corrida, un reenvío del mismo correo tampoco se repite.
                     if (filled($messageId)) {
-                        $yaVistos->put($messageId, true);
+                        $yaVistos->put($clave, true);
                     }
                 }
             }
@@ -216,7 +221,11 @@ class PpqSincronizarAlbaranesCommand extends Command
 
         $albaran->wasRecentlyCreated ? $conteo['nuevos']++ : $conteo['existentes']++;
 
-        return $this->fila($datos, $sala, ($albaran->wasRecentlyCreated ? 'creado #' : 'reusado #').$albaran->id);
+        $vinculo = $albaran->tipo_codigo === 'AC04'
+            ? ' · '.app(DevolucionesAlbaran::class)->vincularRecibida($albaran, $candidato['numero_control_referenciado'] ?? null)
+            : '';
+
+        return $this->fila($datos, $sala, ($albaran->wasRecentlyCreated ? 'creado #' : 'reusado #').$albaran->id.$vinculo);
     }
 
     /**
