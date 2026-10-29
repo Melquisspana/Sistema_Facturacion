@@ -66,7 +66,7 @@
         @empty
             <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-400">
                 No hay personal de campo activo.
-                <a href="{{ route('rutas.rutas.index') }}#vendedores" class="underline">Agregá vendedores en Configurar rutas</a>.
+                <a href="{{ route('rutas.personal.index') }}" class="underline">Agregá vendedores en Personal</a>.
             </p>
         @endforelse
     </div>

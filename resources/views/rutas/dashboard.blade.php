@@ -122,7 +122,7 @@
                                         <a href="{{ route('rutas.salidas.show', $fila['enCurso']) }}"
                                            class="block rounded-lg bg-sky-600 px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-sky-700">Abrir hoja de la salida</a>
                                     @elseif ($vendedores->isEmpty())
-                                        <a href="{{ route('rutas.rutas.index') }}#vendedores"
+                                        <a href="{{ route('rutas.personal.index') }}"
                                            class="block rounded-lg bg-gray-100 px-4 py-2.5 text-center text-sm text-gray-600 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-300">Agregá un vendedor para salir</a>
                                     @else
                                         <details class="group">
