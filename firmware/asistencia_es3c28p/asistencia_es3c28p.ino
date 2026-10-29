@@ -375,6 +375,59 @@ String resultadoPendienteCuerpo =
 unsigned long proximoReintentoPendiente =
   0;
 
+// ------------------------------------- marcas sin red (#160)
+// Sin Wi-Fi o sin servidor la marca NO se pierde: va a una cola en NVS y se
+// manda sola cuando vuelve la conexion, con `marcado_en` (la hora en que la
+// persona marco). El servidor la acepta una sola vez: un reenvio con el mismo
+// segundo devuelve la misma marca ("repetida").
+//
+// Mientras haya cola, las marcas nuevas tambien entran a ella: asi llegan en
+// el mismo orden en que se hicieron.
+//
+// La hora sale del reloj que pone el ping. Si el lector arranco sin red no hay
+// hora: la marca se guarda con millis() y se fecha cuando el ping ponga el
+// reloj (epoch = ahora - lo transcurrido). Si se reinicia ANTES de eso, esas
+// marcas ya no se pueden fechar y se descartan (con aviso en serie y en
+// pantalla). Es el unico caso que pierde una marca.
+#define COLA_MAX                300
+#define COLA_SIN_HORA           0x01
+#define COLA_ESPERA_MIN_MS      5000UL
+#define COLA_ESPERA_MAX_MS      60000UL
+// Igual que el cooldown del servidor: el mismo dedo dos veces seguidas sin red
+// no se encola dos veces.
+#define COLA_COOLDOWN_LOCAL_MS  90000UL
+
+struct MarcaPendiente {
+  uint32_t epoch;        // UTC. 0 mientras no tenga hora.
+  uint32_t millisMarca;  // Solo sirve en el arranque en que se marco.
+  uint16_t ranura;
+  uint8_t banderas;
+  uint8_t reservado;
+};
+
+MarcaPendiente cola[COLA_MAX];
+
+uint16_t colaCuenta =
+  0;
+
+// Marcas que el servidor rechazo para siempre (huella desconocida, persona
+// inactiva, hora invalida) o que se perdieron sin hora. Se cuentan en pantalla
+// hasta el proximo reinicio para que no se pierdan en silencio.
+uint16_t colaNoEnviadas =
+  0;
+
+unsigned long proximoEnvioCola =
+  0;
+
+unsigned long esperaCola =
+  COLA_ESPERA_MIN_MS;
+
+// Ultimos dedos encolados en este arranque, para el cooldown local.
+uint16_t recientesRanura[8];
+unsigned long recientesMillis[8];
+uint8_t recientesSiguiente =
+  0;
+
 
 // =====================================================
 // PROTOTIPOS
@@ -426,8 +479,22 @@ void esperarRetiroConMensaje(
   unsigned long maximoMs
 );
 
+// marcadoEn = 0: marca en vivo, la hora la pone el servidor (como siempre).
+// marcadoEn > 0: marca de la cola, con la hora en que se hizo (epoch UTC).
 RespuestaAPI enviarMarcacion(
+  uint16_t fingerprintID,
+  uint32_t marcadoEn = 0
+);
+
+void colaCargar();
+void colaFecharSinHora();
+void atenderCola();
+void guardarEnCola(
   uint16_t fingerprintID
+);
+void mostrarGuardada();
+bool avisoCola(
+  int y
 );
 
 String obtenerValorJson(
@@ -1370,6 +1437,9 @@ void ponerRelojDesdePing(
 
   Serial.print("Reloj en hora desde el servidor: ");
   Serial.println(epoch);
+
+  // Las marcas que se hicieron sin hora en este arranque ya se pueden fechar.
+  colaFecharSinHora();
 }
 
 
@@ -1691,7 +1761,13 @@ void dibujarRelojListo() {
     snprintf(hhmm, sizeof(hhmm), "%02d:%02d", t.tm_hour, t.tm_min);
 
     tc(hhmm, y, F_ENORME, COLOR_BLANCO);
-    tc(fechaLarga(), y + 44, F_CHICA, COLOR_GRIS_CLARO);
+
+    // Con marcas en la cola, el aviso ocupa el lugar de la fecha: importa mas.
+    if (
+      !avisoCola(y + 44)
+    ) {
+      tc(fechaLarga(), y + 44, F_CHICA, COLOR_GRIS_CLARO);
+    }
 
     minutoPintado =
       t.tm_min;
@@ -1700,9 +1776,35 @@ void dibujarRelojListo() {
 
     tc("Bienvenido", y + 12, F_GRANDE, COLOR_BLANCO);
 
+    avisoCola(y + 44);
+
     minutoPintado =
       -1;
   }
+}
+
+
+// «Pendientes: N» mientras haya cola; si no, «N sin enviar» hasta reiniciar.
+// Devuelve si dibujo algo.
+bool avisoCola(
+  int y
+) {
+
+  if (
+    colaCuenta > 0
+  ) {
+    tc("Pendientes: " + String(colaCuenta), y, F_NEGRITA, COLOR_NARANJA);
+    return true;
+  }
+
+  if (
+    colaNoEnviadas > 0
+  ) {
+    tc(String(colaNoEnviadas) + " no se pudieron enviar", y, F_CHICA, COLOR_ROJO);
+    return true;
+  }
+
+  return false;
 }
 
 
@@ -3155,7 +3257,8 @@ String extraerObjetoJson(
 // =====================================================
 
 RespuestaAPI enviarMarcacion(
-  uint16_t fingerprintID
+  uint16_t fingerprintID,
+  uint32_t marcadoEn
 ) {
 
   RespuestaAPI r;
@@ -3201,9 +3304,15 @@ RespuestaAPI enviarMarcacion(
     return r;
   }
 
+  // `marcado_en` es opcional: un servidor anterior al #160 lo ignora.
   String body =
     "{\"fingerprint_id\":" +
     String(fingerprintID) +
+    (
+      marcadoEn > 0
+        ? ",\"marcado_en\":" + String(marcadoEn)
+        : String("")
+    ) +
     "}";
 
   WiFiClient client;
@@ -5956,6 +6065,9 @@ void setup() {
     );
   }
 
+  // MARCAS PENDIENTES de antes del reinicio
+  colaCargar();
+
   // WIFI
   mostrarArranque(
     "Conectando WiFi"
@@ -6002,6 +6114,366 @@ void setup() {
 
 
 // =====================================================
+// COLA DE MARCAS SIN RED (#160)
+//
+// Ver el bloque de estado de arriba. La cola vive en NVS (espacio "cola") como
+// un arreglo compacto: la primera es la mas vieja y es la unica que se envia.
+// =====================================================
+
+void colaGuardar() {
+
+  Preferences p;
+
+  p.begin("cola", false);
+
+  p.putUShort("n", colaCuenta);
+
+  if (
+    colaCuenta > 0
+  ) {
+    p.putBytes("datos", cola, colaCuenta * sizeof(MarcaPendiente));
+  } else {
+    p.remove("datos");
+  }
+
+  p.end();
+}
+
+
+void colaCargar() {
+
+  Preferences p;
+
+  p.begin("cola", true);
+
+  uint16_t n =
+    p.getUShort("n", 0);
+
+  if (
+    n > COLA_MAX
+  ) {
+    n = 0;
+  }
+
+  size_t leidos =
+    n > 0
+      ? p.getBytes("datos", cola, n * sizeof(MarcaPendiente))
+      : 0;
+
+  p.end();
+
+  colaCuenta =
+    leidos / sizeof(MarcaPendiente);
+
+  // Una marca sin hora de un arranque anterior ya no se puede fechar: su
+  // millis() era de otro encendido.
+  uint16_t quedan =
+    0;
+
+  for (uint16_t i = 0; i < colaCuenta; i++) {
+
+    if (
+      cola[i].banderas & COLA_SIN_HORA
+    ) {
+      Serial.print("COLA: descartada sin hora, ranura ");
+      Serial.println(cola[i].ranura);
+
+      colaNoEnviadas++;
+
+      continue;
+    }
+
+    cola[quedan++] = cola[i];
+  }
+
+  if (
+    quedan != colaCuenta
+  ) {
+    colaCuenta = quedan;
+    colaGuardar();
+  }
+
+  Serial.print("COLA: pendientes al arrancar: ");
+  Serial.println(colaCuenta);
+}
+
+
+void colaRepintar() {
+
+  if (
+    pantallaActual ==
+    PANTALLA_LISTO
+  ) {
+    dibujarRelojListo();
+  }
+}
+
+
+void colaFecharSinHora() {
+
+  time_t ahora =
+    time(nullptr);
+
+  unsigned long ms =
+    millis();
+
+  bool cambio =
+    false;
+
+  for (uint16_t i = 0; i < colaCuenta; i++) {
+
+    if (
+      cola[i].banderas & COLA_SIN_HORA
+    ) {
+      cola[i].epoch =
+        (uint32_t) (ahora - (time_t) ((ms - cola[i].millisMarca) / 1000UL));
+
+      cola[i].banderas &= ~COLA_SIN_HORA;
+
+      cambio = true;
+    }
+  }
+
+  if (
+    cambio
+  ) {
+    colaGuardar();
+  }
+}
+
+
+void colaQuitarPrimera() {
+
+  if (
+    colaCuenta == 0
+  ) {
+    return;
+  }
+
+  memmove(cola, cola + 1, (colaCuenta - 1) * sizeof(MarcaPendiente));
+
+  colaCuenta--;
+
+  colaGuardar();
+
+  colaRepintar();
+}
+
+
+// El mismo dedo dos veces seguidas sin red: la segunda no se encola.
+bool marcadaHaceRato(
+  uint16_t ranura
+) {
+
+  for (uint8_t i = 0; i < 8; i++) {
+
+    if (
+      recientesMillis[i] != 0 &&
+      recientesRanura[i] == ranura &&
+      millis() - recientesMillis[i] < COLA_COOLDOWN_LOCAL_MS
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+void mostrarGuardada() {
+
+  pantallaActual =
+    PANTALLA_EXITO;
+
+  led(0, 60, 0);
+
+  int y =
+    pantallaBase(COLOR_VERDE_OSC, COLOR_VERDE);
+
+  iconoOk(ANCHO_TFT / 2, y + 34, COLOR_VERDE, COLOR_VERDE_OSC);
+  tc("GUARDADA", y + 72, F_GRANDE, COLOR_BLANCO);
+  tc("Se enviara", y + 114, F_MEDIA, COLOR_BLANCO);
+  tc("cuando vuelva la red", y + 148, F_CHICA, COLOR_GRIS_CLARO);
+}
+
+
+void guardarEnCola(
+  uint16_t fingerprintID
+) {
+
+  if (
+    marcadaHaceRato(fingerprintID)
+  ) {
+
+    mostrarCooldown(0);
+
+    avisarYaMarcaste();
+
+    esperarRetiroConMensaje(1200, 2600);
+
+    mostrarListo();
+
+    return;
+  }
+
+  // Llena: no se borra ninguna vieja para hacer lugar.
+  if (
+    colaCuenta >= COLA_MAX
+  ) {
+
+    Serial.println("COLA LLENA: marca NO guardada");
+
+    mostrarError("MEMORIA LLENA", "Avise a la oficina");
+
+    beepAdvertencia();
+
+    esperarRetiroConMensaje(1500, 3000);
+
+    mostrarListo();
+
+    return;
+  }
+
+  MarcaPendiente m;
+
+  m.ranura = fingerprintID;
+  m.millisMarca = millis();
+  m.reservado = 0;
+
+  if (
+    relojEnHora
+  ) {
+    m.epoch = (uint32_t) time(nullptr);
+    m.banderas = 0;
+  } else {
+    m.epoch = 0;
+    m.banderas = COLA_SIN_HORA;
+  }
+
+  cola[colaCuenta++] = m;
+
+  colaGuardar();
+
+  recientesRanura[recientesSiguiente] = fingerprintID;
+  recientesMillis[recientesSiguiente] = millis();
+  recientesSiguiente = (recientesSiguiente + 1) % 8;
+
+  Serial.print("COLA: guardada ranura ");
+  Serial.print(fingerprintID);
+  Serial.print(" epoch ");
+  Serial.print(m.epoch);
+  Serial.print(" pendientes ");
+  Serial.println(colaCuenta);
+
+  mostrarGuardada();
+
+  beepExito();
+
+  esperarRetiroConMensaje(1200, 2600);
+
+  mostrarListo();
+}
+
+
+// Una sola marca por llamada, desde el loop con el sensor libre.
+void atenderCola() {
+
+  if (
+    colaCuenta == 0 ||
+    enrolando ||
+    WiFi.status() != WL_CONNECTED ||
+    (long) (millis() - proximoEnvioCola) < 0
+  ) {
+    return;
+  }
+
+  // Sin hora no se puede mandar la primera: el ping la pone (y fecha las que
+  // se hicieron sin hora). El ping solo corre al arrancar, por eso se pide aca.
+  if (
+    cola[0].banderas & COLA_SIN_HORA
+  ) {
+
+    if (
+      !relojEnHora
+    ) {
+      probarServidor();
+    }
+
+    if (
+      cola[0].banderas & COLA_SIN_HORA
+    ) {
+      proximoEnvioCola = millis() + esperaCola;
+      esperaCola = min(esperaCola * 2, COLA_ESPERA_MAX_MS);
+      return;
+    }
+  }
+
+  MarcaPendiente m =
+    cola[0];
+
+  RespuestaAPI r =
+    enviarMarcacion(m.ranura, m.epoch);
+
+  int c =
+    r.httpCode;
+
+  // Llego (nueva o "repetida") o el servidor ya tenia una marca a esa hora.
+  if (
+    c == 200 ||
+    c == 409
+  ) {
+
+    dispositivoAutorizado = true;
+    servidorDisponible = true;
+
+    esperaCola = COLA_ESPERA_MIN_MS;
+    proximoEnvioCola = millis() + 300;
+
+    colaQuitarPrimera();
+
+    return;
+  }
+
+  // Rechazo definitivo: reintentar no la arregla. Queda en el log y se cuenta
+  // en pantalla antes de sacarla. Un 404 que no sea "huella_desconocida" (por
+  // ejemplo, el modulo apagado) NO entra aca: se reintenta.
+  if (
+    (c == 404 && r.estado == "huella_desconocida") ||
+    c == 403 ||
+    c == 422
+  ) {
+
+    Serial.print("COLA: rechazada HTTP ");
+    Serial.print(c);
+    Serial.print(" ");
+    Serial.print(r.estado);
+    Serial.print(" ranura ");
+    Serial.print(m.ranura);
+    Serial.print(" epoch ");
+    Serial.println(m.epoch);
+
+    colaNoEnviadas++;
+
+    proximoEnvioCola = millis() + 300;
+
+    colaQuitarPrimera();
+
+    return;
+  }
+
+  // Sin conexion, 5xx, 401 (token), 429 (limite) u otro: se queda y se
+  // reintenta, cada vez mas espaciado.
+  Serial.print("COLA: reintento en ");
+  Serial.print(esperaCola / 1000);
+  Serial.print(" s, HTTP ");
+  Serial.println(c);
+
+  proximoEnvioCola = millis() + esperaCola;
+  esperaCola = min(esperaCola * 2, COLA_ESPERA_MAX_MS);
+}
+
+
+// =====================================================
 // LOOP
 // =====================================================
 
@@ -6025,6 +6497,10 @@ void loop() {
     // ponerlo despues le quitaria a identificarHuella() la imagen que ya
     // capturo este mismo getImage().
     atenderEnrolamiento();
+
+    // Tambien solo con el sensor libre: un envio de la cola nunca le roba la
+    // ventana a una persona que esta marcando.
+    atenderCola();
 
     delay(
       POLLING_MS
@@ -6113,6 +6589,21 @@ void loop() {
     Serial.println(
       confianza
     );
+
+    // Sin Wi-Fi, o con marcas esperando turno: a la cola, para que lleguen en
+    // el orden en que se hicieron.
+    if (
+      colaCuenta > 0 ||
+      WiFi.status() !=
+      WL_CONNECTED
+    ) {
+
+      guardarEnCola(
+        id
+      );
+
+      return;
+    }
 
     mostrarRegistrando();
 
@@ -6271,27 +6762,23 @@ void loop() {
     }
 
     // -----------------------------------------
-    // SIN SERVIDOR
+    // SIN SERVIDOR: la marca se guarda y se manda despues
     // -----------------------------------------
+    //
+    // Si la peticion llego y lo que se perdio fue la respuesta, el reenvio cae
+    // dentro del cooldown del servidor (409) y no duplica nada. Un 5xx (servidor
+    // caido o en mantenimiento) tampoco es culpa de la marca: va a la cola.
 
     if (
       respuesta.httpCode <=
-      0
+      0 ||
+      respuesta.httpCode >=
+      500
     ) {
 
-      mostrarError(
-        "SIN SERVIDOR",
-        respuesta.mensaje
+      guardarEnCola(
+        id
       );
-
-      beepAdvertencia();
-
-      esperarRetiroConMensaje(
-        1500,
-        3000
-      );
-
-      mostrarListo();
 
       return;
     }
