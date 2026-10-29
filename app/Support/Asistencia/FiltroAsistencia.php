@@ -210,11 +210,11 @@ final class FiltroAsistencia
         }
     }
 
-    /** Los dos únicos orígenes que la tabla puede contener hoy. */
+    /** Orígenes reconocidos de una marcación. */
     private static function origen(mixed $valor): ?string
     {
         $origen = is_string($valor) ? trim($valor) : '';
 
-        return in_array($origen, ['dispositivo', 'manual'], true) ? $origen : null;
+        return in_array($origen, ['dispositivo', 'manual', 'diferida'], true) ? $origen : null;
     }
 }

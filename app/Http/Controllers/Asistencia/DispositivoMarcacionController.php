@@ -39,10 +39,14 @@ class DispositivoMarcacionController extends Controller
         /** @var AsistenciaDispositivo $dispositivo */
         $dispositivo = $request->attributes->get(AutenticaDispositivoAsistencia::ATRIBUTO);
 
-        $resultado = $registrar($dispositivo, $request->fingerprintId(), $request->ip());
+        $instante = $request->instante();
+        $resultado = $registrar($dispositivo, $request->fingerprintId(), $request->ip(), $instante);
 
         return response()->json(
-            $this->cuerpo($resultado, $horaOficial),
+            $this->cuerpo($resultado, $horaOficial) + [
+                'repetida' => $resultado->repetida,
+                'diferida' => $instante !== null,
+            ],
             $resultado->estado->httpStatus(),
         );
     }
@@ -90,6 +94,7 @@ class DispositivoMarcacionController extends Controller
             // legítima. El `match` queda exhaustivo sobre el enum entero, así que
             // agregar un estado nuevo obliga a decidir qué se contesta.
             ResultadoMarcacion::PayloadInvalido,
+            ResultadoMarcacion::HoraInvalida,
             ResultadoMarcacion::DispositivoNoAutorizado => throw new LogicException(
                 'El estado «'.$resultado->estado->value.'» lo resuelve el middleware o el FormRequest, '
                 .'nunca RegistrarMarcacion. Que haya llegado al controlador significa que algo lo construyó a mano.'

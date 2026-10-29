@@ -12,6 +12,12 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [Sin publicar]
+
+### Agregado
+
+- Asistencia: el lector puede mandar marcas hechas sin red. `api/asistencia/marcar` acepta el campo opcional `marcado_en` (epoch UTC) con la hora real de la marca: se guarda con origen «diferida» («Lector (sin red)» en el historial), el reenvío del mismo segundo no duplica (`repetida: true`) y una hora más de 5 min en el futuro o de más de `ASISTENCIA_DIFERIDAS_MAX_DIAS` (31) días atrás se rechaza con `hora_invalida`. Sin el campo, todo sigue igual: es compatible con el firmware actual. Sin migraciones. #160
+
 ## [2026.10.28.2] - 2026-10-28
 
 Segundo despliegue del día, en dos pasos. Paso A (17:20): Rutas nuevo (#44 y la parte de Rutas de #127), rol Vendedor con «Mi salida» (#150), cierre del día con PDF (#152), gastos con foto (#153) y Ventas (#149, #155 y #156). Trae 6 migraciones (`2026_09_26_100000`, que borra las tablas de custodia, vacías; `2026_09_27_100000`; `2026_10_28_180001` a `180003` y `2026_10_28_190001`), permisos y el rol `vendedor` con un script propio (sin `RolesSeeder`), y `RUTAS_ENTREGAS_DESDE` en el `.env`. Paso B (21:54): Asistencia simple (#158), sin migraciones; las rutas del lector no cambiaron.

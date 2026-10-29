@@ -65,6 +65,8 @@ return [
     */
     'cooldown_segundos' => (int) env('ASISTENCIA_COOLDOWN_SEGUNDOS', 90),
 
+    'diferidas_max_dias' => (int) env('ASISTENCIA_DIFERIDAS_MAX_DIAS', 31),
+
     /*
     | Token de PROVISIÓN de un lector. Lo lee EXCLUSIVAMENTE el comando
     | `php artisan asistencia:dispositivo`, para poder fijar desde el .env el token

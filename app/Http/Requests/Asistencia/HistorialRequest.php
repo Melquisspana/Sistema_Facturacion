@@ -33,7 +33,7 @@ class HistorialRequest extends FormRequest
             // Inclusivo y en este orden: «del 5 al 5» es un día válido.
             'hasta' => ['nullable', 'date', 'after_or_equal:desde'],
             'tipo' => ['nullable', 'in:entrada,salida'],
-            'origen' => ['nullable', 'in:dispositivo,manual'],
+            'origen' => ['nullable', 'in:dispositivo,manual,diferida'],
         ];
     }
 

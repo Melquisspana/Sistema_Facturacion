@@ -105,7 +105,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
      * existen» solo se podía averiguar leyendo tres archivos, y nada impedía que
      * uno escribiera `dispositivo_no_autorizado` y otro `no_autorizado`.
      */
-    public function test_el_enum_declara_los_seis_estados_del_contrato(): void
+    public function test_el_enum_declara_los_siete_estados_del_contrato(): void
     {
         $estados = array_map(fn (ResultadoMarcacion $r) => $r->value, ResultadoMarcacion::cases());
         sort($estados);
@@ -114,6 +114,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
             'cooldown',
             'dispositivo_no_autorizado',
             'empleado_inactivo',
+            'hora_invalida',
             'huella_desconocida',
             'payload_invalido',
             'registrada',
@@ -127,6 +128,7 @@ class AuditoriaYContratoAsistenciaTest extends TestCase
         $this->assertSame(403, ResultadoMarcacion::EmpleadoInactivo->httpStatus());
         $this->assertSame(409, ResultadoMarcacion::Cooldown->httpStatus());
         $this->assertSame(422, ResultadoMarcacion::PayloadInvalido->httpStatus());
+        $this->assertSame(422, ResultadoMarcacion::HoraInvalida->httpStatus());
         $this->assertSame(401, ResultadoMarcacion::DispositivoNoAutorizado->httpStatus());
     }
 

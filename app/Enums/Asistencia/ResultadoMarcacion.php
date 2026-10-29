@@ -42,6 +42,8 @@ enum ResultadoMarcacion: string
     /** El cuerpo no traía un `fingerprint_id` utilizable. */
     case PayloadInvalido = 'payload_invalido';
 
+    case HoraInvalida = 'hora_invalida';
+
     /** Sin credencial válida de lector. Lo decide el middleware. */
     case DispositivoNoAutorizado = 'dispositivo_no_autorizado';
 
@@ -55,7 +57,7 @@ enum ResultadoMarcacion: string
             // el firmware tiene que poder distinguir «marcaste hace un momento»
             // de «estás saturando el servidor».
             self::Cooldown => Response::HTTP_CONFLICT,
-            self::PayloadInvalido => Response::HTTP_UNPROCESSABLE_ENTITY,
+            self::PayloadInvalido, self::HoraInvalida => Response::HTTP_UNPROCESSABLE_ENTITY,
             self::DispositivoNoAutorizado => Response::HTTP_UNAUTHORIZED,
         };
     }
@@ -76,7 +78,7 @@ enum ResultadoMarcacion: string
     {
         return match ($this) {
             self::Registrada, self::HuellaDesconocida, self::EmpleadoInactivo, self::Cooldown => true,
-            self::PayloadInvalido, self::DispositivoNoAutorizado => false,
+            self::PayloadInvalido, self::HoraInvalida, self::DispositivoNoAutorizado => false,
         };
     }
 }
