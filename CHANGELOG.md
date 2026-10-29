@@ -8,6 +8,11 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Cambiado
+
+- Rutas: el personal tiene puerta propia, «Personal», en la barra de Rutas, para llegar rápido a cada ficha y enlazarle su usuario. «Configurar rutas» ya no lleva la lista de vendedores ni el alta en línea; los avisos «Agregá un vendedor» llevan a Personal.
+- Rutas: crear un usuario con rol Vendedor le arma su ficha de Personal, ya enlazada y con la función Vendedor; si había una ficha sin usuario con su nombre (o solo su primer nombre, y una sola), se usa esa. Desactivar al usuario o cambiarle el rol desactiva la ficha, sin borrarla.
+
 ### Corregido
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.

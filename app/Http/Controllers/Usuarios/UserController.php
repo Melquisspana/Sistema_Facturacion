@@ -8,6 +8,7 @@ use App\Http\Requests\Usuarios\CambiarPasswordRequest;
 use App\Http\Requests\Usuarios\StoreUserRequest;
 use App\Http\Requests\Usuarios\UpdateUserRequest;
 use App\Models\User;
+use App\Services\Rutas\FichaVendedor;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -43,7 +44,7 @@ class UserController extends Controller
         return view('usuarios.form', ['usuario' => new User(['activo' => true]), 'roles' => RolSistema::opciones(), 'rolActual' => null]);
     }
 
-    public function store(StoreUserRequest $request): RedirectResponse
+    public function store(StoreUserRequest $request, FichaVendedor $fichas): RedirectResponse
     {
         $this->authorize('create', User::class);
 
@@ -58,6 +59,7 @@ class UserController extends Controller
 
         $usuario->syncRoles([$datos['rol']]);
         activity('usuario')->performedOn($usuario)->log('asignó el rol '.$datos['rol']);
+        $fichas->sincronizar($usuario);
 
         return redirect()->route('usuarios.show', $usuario)->with('status', 'Usuario creado correctamente.');
     }
@@ -82,7 +84,7 @@ class UserController extends Controller
         ]);
     }
 
-    public function update(UpdateUserRequest $request, User $usuario): RedirectResponse
+    public function update(UpdateUserRequest $request, User $usuario, FichaVendedor $fichas): RedirectResponse
     {
         $this->authorize('update', $usuario);
 
@@ -108,11 +110,12 @@ class UserController extends Controller
             $usuario->syncRoles([$rolNuevo]);
             activity('usuario')->performedOn($usuario)->log('cambió el rol de '.($rolAnterior ?? '—').' a '.$rolNuevo);
         }
+        $fichas->sincronizar($usuario);
 
         return redirect()->route('usuarios.show', $usuario)->with('status', 'Usuario actualizado correctamente.');
     }
 
-    public function toggleActivo(User $usuario): RedirectResponse
+    public function toggleActivo(User $usuario, FichaVendedor $fichas): RedirectResponse
     {
         $this->authorize('update', $usuario);
 
@@ -122,6 +125,7 @@ class UserController extends Controller
         }
 
         $usuario->update(['activo' => ! $usuario->activo]);
+        $fichas->sincronizar($usuario);
 
         return back()->with('status', $usuario->activo ? 'Usuario activado.' : 'Usuario inactivado.');
     }

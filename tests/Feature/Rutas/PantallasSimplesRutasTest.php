@@ -99,7 +99,7 @@ class PantallasSimplesRutasTest extends TestCase
 
     // ══════════════════════════════ configurar rutas
 
-    public function test_configurar_rutas_reune_rutas_sugerencias_y_vendedores(): void
+    public function test_configurar_rutas_reune_rutas_y_sugerencias(): void
     {
         $departamento = Departamento::create(['codigo' => '05', 'nombre' => 'La Libertad']);
         $distrito = Distrito::create(['departamento_id' => $departamento->id, 'municipio' => 'La Libertad Costa', 'nombre' => 'La Libertad']);
@@ -108,18 +108,14 @@ class PantallasSimplesRutasTest extends TestCase
         Cliente::factory()->create()->sucursales()->create([
             'nombre' => 'Súper Selectos Puerto', 'departamento_id' => $departamento->id, 'distrito_id' => $distrito->id,
         ]);
-        PersonalRuta::create(['nombre' => 'Carlos', 'telefono' => '7777-0000']);
-
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('rutas.rutas.index'))
             ->assertOk()
             ->assertSee('Puerto')
-            ->assertSee('Asignar 1 sala sugerida')
-            ->assertSee('Vendedores')
-            ->assertSee('Carlos');
+            ->assertSee('Asignar 1 sala sugerida');
     }
 
-    public function test_desde_configurar_rutas_se_crea_ruta_y_vendedor_sin_salir_de_la_pagina(): void
+    public function test_desde_configurar_rutas_se_crea_una_ruta_sin_salir_de_la_pagina(): void
     {
         $usuario = $this->usuario('facturacion');
 
@@ -128,12 +124,26 @@ class PantallasSimplesRutasTest extends TestCase
             ->post(route('rutas.rutas.store'), ['nombre' => 'San Marcos', 'frecuencia_objetivo_dias' => 12, 'en_linea' => 1])
             ->assertRedirect(route('rutas.rutas.index'));
 
-        $this->actingAs($usuario)
-            ->from(route('rutas.rutas.index'))
-            ->post(route('rutas.personal.store'), ['nombre' => 'José', 'funciones' => ['vendedor'], 'en_linea' => 1])
-            ->assertRedirect(route('rutas.rutas.index'));
-
         $this->assertSame(12, Ruta::where('nombre', 'San Marcos')->sole()->frecuencia_objetivo_dias);
-        $this->assertTrue(PersonalRuta::where('nombre', 'José')->sole()->activo);
+    }
+
+    public function test_el_personal_tiene_puerta_propia_y_ya_no_vive_en_configurar_rutas(): void
+    {
+        PersonalRuta::create(['nombre' => 'José', 'activo' => true]);
+        $usuario = $this->usuario('facturacion');
+
+        $this->actingAs($usuario)->get(route('rutas.rutas.index'))
+            ->assertOk()
+            ->assertSee(route('rutas.personal.index'), false)
+            ->assertDontSee('Todavía no hay vendedores')
+            ->assertDontSee('Nombre del vendedor');
+
+        $this->actingAs($usuario)->get(route('rutas.personal.index'))
+            ->assertOk()
+            ->assertSee('José');
+
+        // Sin rutas.personal.ver la puerta no se dibuja.
+        $this->actingAs($this->usuario('contabilidad'))->get(route('dashboard'))
+            ->assertDontSee(route('rutas.personal.index'), false);
     }
 }
