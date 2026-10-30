@@ -4,6 +4,7 @@ namespace App\Services\Dte;
 
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
+use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
@@ -62,9 +63,9 @@ class AlbaranNotaCreditoService
 
         $piezas = $this->desglosar($nc, $validado);
 
-        $this->verificarNoReutilizado($nc, $piezas['numero_canonico']);
-
         return DB::transaction(function () use ($nc, $piezas, $validado) {
+            Cliente::whereKey($nc->cliente_id)->lockForUpdate()->firstOrFail();
+            $this->verificarNoReutilizado($nc, $piezas['numero_canonico']);
             $albaran = DteAlbaran::updateOrCreate(
                 ['dte_id' => $nc->id],
                 $piezas + [

@@ -20,7 +20,6 @@ use App\Models\Cobros\CobroEvento;
 use App\Models\Cobros\CobroSolicitud;
 use App\Models\Cobros\CobroSolicitudItem;
 use App\Models\Dte;
-use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
@@ -43,7 +42,6 @@ use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use App\Support\EjercicioControl;
-use App\Support\NumeroAlbaran;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -75,10 +73,12 @@ use Throwable;
  */
 class CobrosController extends Controller
 {
+    private array $devolucionesPendientes = [];
+
     public const MAX_PPQ = 500;
 
     /** Claves de filtro aceptadas. Todas OPCIONALES: acotan lo que se ve, no lo que existe. */
-    private const FILTROS = ['presentacion', 'pago', 'vinculacion', 'desde', 'hasta', 'sala', 'tipo', 'q', 'revisar', 'pago_revision', 'mes', 'etapa'];
+    private const FILTROS = ['presentacion', 'pago', 'vinculacion', 'desde', 'hasta', 'sala', 'tipo', 'q', 'revisar', 'pago_revision', 'mes', 'etapa', 'devolucion_sin_nc'];
 
     /** Etapas de la bandeja (pestañas): qué le falta a cada CCF. */
     public const ETAPAS = [
@@ -125,6 +125,7 @@ class CobrosController extends Controller
     /** La bandeja. */
     public function index(Request $request): View
     {
+        $this->devolucionesPendientes = [];
         $clientes = $this->clientes();
         $cliente = $this->clienteElegido($request, $clientes);
         $filtros = $this->filtros($request);
@@ -196,6 +197,7 @@ class CobrosController extends Controller
         }
 
         return view('cobros.index', [
+            'devolucionesPendientes' => $this->devolucionesPendientes($cliente),
             'avisosPpq' => $avisosPpq,
             'devolucionesSinVincular' => $devolucionesSinVincular,
             'duplicadosEnFiltro' => $duplicadosEnFiltro,
@@ -246,16 +248,10 @@ class CobrosController extends Controller
         }
         $devoluciones = app(DevolucionesAlbaran::class);
         $detalleDevoluciones = $entregaFicha === null
-            ? ['notas' => collect(), 'rechazadas' => []]
+            ? ['notas' => $devoluciones->vinculadas($documento), 'rechazadas' => []]
             : $devoluciones->analizar($documento, $entregaFicha);
         $notasDevolucion = $detalleDevoluciones['notas']->where('dte_id', $documento->dte_id);
-        $canonicos = $notasDevolucion->mapWithKeys(fn ($nota) => [$nota->numero_albaran => NumeroAlbaran::desde($nota->numero_albaran)?->canonico]);
-        $ncCanonicas = DteAlbaran::where('tipo_codigo', 'AC04')
-            ->whereIn('numero_canonico', $canonicos->filter()->values())
-            ->whereHas('dte', fn ($q) => $q->where('tipo_dte', '05')->where('estado', EstadoDte::Aceptado->value)
-                ->where('cliente_id', $documento->cliente_id))
-            ->with('dte:id,numero_control')->get()->keyBy('numero_canonico');
-        $ncPorAlbaran = $canonicos->map(fn ($canonico) => $ncCanonicas->get($canonico))->filter();
+        $ncPorAlbaran = $devoluciones->ncPorAlbaran($notasDevolucion);
 
         return view('cobros.show', [
             'notasDevolucion' => $notasDevolucion,
@@ -968,6 +964,12 @@ class CobrosController extends Controller
         return $pedidos;
     }
 
+    private function devolucionesPendientes(Cliente $cliente): Collection
+    {
+        return $this->devolucionesPendientes[$cliente->id] ??= app(DevolucionesAlbaran::class)
+            ->pendientesPorCcf(Dte::where('cliente_id', $cliente->id)->where('tipo_dte', '03')->pluck('id')->all());
+    }
+
     /** @return Builder<CobroDocumento> */
     private function consulta(Cliente $cliente, array $filtros): Builder
     {
@@ -1045,6 +1047,7 @@ class CobrosController extends Controller
             ->when(filled($filtros['pago']), fn ($q) => $q->where('pago_estado', $filtros['pago']))
             ->when(filled($filtros['vinculacion']), fn ($q) => $q->where('vinculacion_estado', $filtros['vinculacion']))
             ->when(filled($filtros['revisar']), fn ($q) => $q->where('revisar_historico', true))
+            ->when(filled($filtros['devolucion_sin_nc'] ?? ''), fn ($q) => $q->whereIn('dte_id', $this->devolucionesPendientes($cliente)->keys()))
             ->when(filled($filtros['pago_revision']), fn ($q) => $q->conPagosEnRevision())
             ->when(filled($filtros['desde']), fn ($q) => $q->whereDate('fecha_emision', '>=', $filtros['desde']))
             ->when(filled($filtros['hasta']), fn ($q) => $q->whereDate('fecha_emision', '<=', $filtros['hasta']))

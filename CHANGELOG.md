@@ -14,6 +14,7 @@ El historial anterior a este archivo está en el registro de git.
 - Rutas: crear un usuario con rol Vendedor le arma su ficha de Personal, ya enlazada y con la función Vendedor; si había una ficha sin usuario con su nombre (o solo su primer nombre, y una sola), se usa esa. Desactivar al usuario o cambiarle el rol desactiva la ficha, sin borrarla.
 ### Agregado
 
+- Cobros: indicador y filtro de AC04 sin su NC, con precarga de devolución desde el PDF en el formulario normal y protección contra duplicados, incluso sin AC01. #170
 - Cobros: lectura del PDF AC04 (número, fecha, sala, referencia al CCF y total con IVA), vinculación por referencia u OC y sala, conciliación neta, estado de su NC, notas sin vincular y avisos de pedir nota y de albarán reciente durante 3 días desde la entrega o la última devolución. No emite NC ni inventa una OC ausente. #57
 
 ### Corregido

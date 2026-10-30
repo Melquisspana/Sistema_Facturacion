@@ -45,8 +45,10 @@ use App\Models\DteLinea;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Exportacion;
+use App\Models\PpqAlbaran;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Cobros\NotaCreditoAjuste;
 use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\ArchivoEntregaDteService;
@@ -437,6 +439,16 @@ class DteController extends Controller
     {
         $this->authorize('create', Dte::class);
 
+        $precargaAc04 = null;
+        $notaAc04 = null;
+        if ($request->filled('ac04')) {
+            $request->validate(['ac04' => ['integer', 'exists:ppq_albaranes,id']]);
+            $notaAc04 = PpqAlbaran::findOrFail($request->integer('ac04'));
+            if (! $request->filled('ccf')) {
+                $request->merge(['ccf' => $notaAc04->dte_id]);
+            }
+        }
+
         $cobroAjuste = null;
         $salaAjuste = null;
         if ($request->filled('cobro_ajuste')) {
@@ -468,6 +480,11 @@ class DteController extends Controller
             : null);
 
         $formulario = $this->datosFormularioNotaCredito($ccfElegido, $preCcf);
+        if ($notaAc04 !== null && $preCcf !== null) {
+            $precargaAc04 = app(DevolucionesAlbaran::class)->precargar($preCcf, $notaAc04);
+            $formulario['datosNc']['modalidad'] = (string) old('modalidad', 'devolucion_faltante');
+            $formulario['datosNc']['tipo'] = (string) old('tipo', 'devolucion_producto');
+        }
         if ($cobroAjuste) {
             foreach ([
                 'clienteId' => ['cliente_id', $cobroAjuste->cliente_id],
@@ -488,7 +505,7 @@ class DteController extends Controller
             ))->keyBy('id')->all();
         }
 
-        return view('facturacion.create-nota-credito', array_merge($formulario, compact('preCcf', 'ccfPedidoNoDisponible', 'cobroAjuste')));
+        return view('facturacion.create-nota-credito', array_merge($formulario, compact('preCcf', 'ccfPedidoNoDisponible', 'cobroAjuste', 'precargaAc04')));
     }
 
     /**
@@ -581,6 +598,7 @@ class DteController extends Controller
             // —la tarjeta del CCF y las pruebas existentes—; resolverTipoNotaCredito()
             // decide cuál manda.
             'cobro_ajuste_id' => ['nullable', 'integer', 'exists:cobro_ajustes,id'],
+            'ac04_id' => ['nullable', 'integer', 'exists:ppq_albaranes,id'],
             'modalidad' => ['nullable', Rule::enum(ModalidadNotaCredito::class)],
             'tipo' => ['nullable', Rule::in(array_map(fn ($t) => $t->value, TipoNotaCredito::cases()))],
             'cliente_id' => ['nullable', 'integer', 'exists:clientes,id'],
@@ -614,12 +632,43 @@ class DteController extends Controller
 
         // crearNotaCredito valida coherencia (CCF emitido, cliente del original,
         // y exige relacionado en NC por productos) y lanza ValidationException.
-        $nc = ! empty($datos['cobro_ajuste_id'])
+        $avisosAc04 = [];
+        $nc = DB::transaction(function () use ($datos, $original, $request, &$avisosAc04) {
+            $precarga = null;
+            if (! empty($datos['ac04_id'])) {
+                if ($original === null || $datos['tipo'] !== 'devolucion_producto' || ! empty($datos['cobro_ajuste_id'])) {
+                    throw ValidationException::withMessages(['ac04_id' => 'La AC04 requiere una devolución de producto de su CCF.']);
+                }
+                // El mismo bloqueo que registrar(): serializa incluso dos borradores a la vez.
+                Cliente::whereKey($original->cliente_id)->lockForUpdate()->firstOrFail();
+                $nota = PpqAlbaran::lockForUpdate()->findOrFail($datos['ac04_id']);
+                $precarga = app(DevolucionesAlbaran::class)->precargar($original, $nota);
+                $avisosAc04 = $precarga['avisos'];
+            }
+            $nc = ! empty($datos['cobro_ajuste_id'])
             ? app(NotaCreditoAjuste::class)->crear(
                 CobroAjuste::findOrFail($datos['cobro_ajuste_id']),
                 $original, $datos, $request->user(),
             )
             : $this->borradores->crearNotaCredito($original, $datos, $request->user());
+
+            if ($precarga !== null) {
+                $nota = $precarga['nota'];
+                $albaran = app(AlbaranNotaCreditoService::class)->registrar($nc, [
+                    'numero' => $nota->numero_albaran, 'fecha' => $nota->fecha_albaran?->toDateString(), 'total' => $nota->monto_albaran,
+                ]);
+                $albaran->update(['ppq_albaran_id' => $nota->id]);
+                foreach ($precarga['lineas'] as $fila) {
+                    try {
+                        $this->borradores->acreditarLinea($nc, $original->lineas()->findOrFail($fila['linea_id']), $fila['cantidad']);
+                    } catch (SaldoAcreditableExcedidoException $e) {
+                        throw ValidationException::withMessages(['cantidad' => $e->getMessage()]);
+                    }
+                }
+            }
+
+            return $nc;
+        });
 
         // Desde el ajuste del TXT el concepto ya viene agregado: pedir que se agregue
         // confundiría.
@@ -627,7 +676,7 @@ class DteController extends Controller
             ? 'Nota de crédito creada con el importe del TXT. Revisá el concepto y generala.'
             : $this->mensajeNotaCredito($nc);
 
-        return redirect()->route('facturacion.edit', $nc)->with('status', $mensaje);
+        return redirect()->route('facturacion.edit', $nc)->with('status', trim($mensaje.' '.implode(' ', $avisosAc04)));
     }
 
     public function show(

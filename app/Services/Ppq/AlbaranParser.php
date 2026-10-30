@@ -87,6 +87,7 @@ class AlbaranParser
         }
         $dinero = '(\d+(?:[.,]\d{3})*[.,]\d{2})';
         $monto = null;
+        $subtotal = null;
         $tabla = '/Gravado\s+Exento\s+I\.?\s*V\.?\s*A\.?\s+TOTAL\s+'.$dinero.'\s+'.$dinero.'\s+'.$dinero.'\s+'.$dinero.'\b/iu';
         if (preg_match($tabla, $texto, $totales)) {
             $valores = array_map(fn ($v) => $this->normalizarMonto($v), array_slice($totales, 1));
@@ -94,14 +95,40 @@ class AlbaranParser
                 $suma = Dinero::sumar(Dinero::sumar($valores[0], $valores[1]), $valores[2]);
                 if (Dinero::comparar(Dinero::redondear($suma), Dinero::redondear($valores[3])) === 0) {
                     $monto = $valores[3];
+                    $subtotal = Dinero::sumar($valores[0], $valores[1]);
                 }
             }
         }
         $debug['regex']['total_devolucion'] = ['patron' => $tabla, 'match' => $monto];
 
+        $lineas = $this->lineasDevolucion($texto);
+        $importeLineas = array_reduce($lineas, fn ($suma, $fila) => Dinero::sumar($suma, $fila['importe']), '0');
+        if ($subtotal === null || Dinero::comparar(Dinero::redondear($importeLineas), Dinero::redondear($subtotal)) !== 0) {
+            $lineas = [];
+        }
+
         return ['numero' => $numero?->canonico, 'fecha' => $fecha ?? $this->fecha($texto, $debug), 'oc' => $oc,
             'sala' => $numero?->sala, 'numero_control_referenciado' => $referencia,
-            'monto' => $monto, 'nombre_sala' => $this->nombreSala($texto, $debug), 'debug' => $debug];
+            'monto' => $monto, 'nombre_sala' => $this->nombreSala($texto, $debug),
+            'lineas' => $lineas, 'debug' => $debug];
+    }
+
+    private function lineasDevolucion(string $texto): array
+    {
+        $decimal = '\d+(?:[.,]\d+)?';
+        $patron = '/^\h*(\d+)\h+(\d{8,14})\h+(.+?)\h+('.$decimal.')\h+('.$decimal.')\h+('.$decimal.')\h+('.$decimal.')\h*$/mu';
+        preg_match_all($patron, $texto, $filas, PREG_SET_ORDER);
+        // Una fila de producto truncada impide ofrecer una devolución parcial por error.
+        preg_match_all('/^\h*\d+\h+\d{8,14}\h+/mu', $texto, $candidatas);
+        if (count($candidatas[0]) !== count($filas)) {
+            return [];
+        }
+
+        return array_map(fn ($fila) => [
+            'codigo' => $fila[1], 'codigo_barra' => $fila[2], 'descripcion' => trim($fila[3]),
+            'cantidad' => str_replace(',', '.', $fila[4]), 'costo' => str_replace(',', '.', $fila[6]),
+            'importe' => str_replace(',', '.', $fila[7]),
+        ], $filas);
     }
 
     /**
