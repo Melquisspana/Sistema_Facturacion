@@ -161,6 +161,10 @@
                                 <input type="hidden" name="{{ $k }}" value="{{ $v }}">
                             @endforeach
                             <label for="f-q" class="sr-only">Buscar CCF o albarán</label>
+                            <label class="text-sm">
+                                <input type="checkbox" name="devolucion_sin_nc" value="1" @checked(filled($filtros['devolucion_sin_nc'] ?? '')) onchange="this.form.submit()">
+                                Devolución sin NC
+                            </label>
                             <input id="f-q" name="q" type="search" value="{{ $filtros['q'] }}" placeholder="Buscar CCF o albarán"
                                    class="w-52 rounded-md border-gray-300 text-sm">
                         </form>
@@ -350,6 +354,9 @@
                                                     </span>
                                                     @if ($avisosPpq[$doc->id]['reciente'] ?? false)
                                                         <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title="Llegó hace pocos días: puede no estar en el portal de Calleja todavía">Albarán reciente</span>
+                                                    @endif
+                                                    @if (($devolucionesPendientes[$doc->dte_id] ?? 0) > 0)
+                                                        <span class="text-amber-700 dark:text-amber-300">Devolución sin NC ({{ $devolucionesPendientes[$doc->dte_id] }})</span>
                                                     @endif
                                                     @if ($avisosPpq[$doc->id]['duplicado'] ?? null)
                                                         <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-rose-100 text-rose-700" title="{{ $avisosPpq[$doc->id]['duplicado'] }}">Posible duplicado</span>

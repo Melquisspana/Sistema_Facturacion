@@ -78,6 +78,28 @@
                       x-data="ncFormulario(@js($datosNc))"
                       class="divide-y divide-gray-100">
                     @csrf
+                    @if ($precargaAc04 ?? null)
+                        <input type="hidden" name="ac04_id" value="{{ $precargaAc04['nota']->id }}">
+                        <div class="mb-4 text-sm" role="status">
+                            <label class="font-medium" for="ac04-numero">Albarán de devolución</label>
+                            <input id="ac04-numero" value="{{ $precargaAc04['nota']->numero_albaran }}" readonly class="mt-1 rounded-md border-gray-300 text-sm">
+                            <p>Revise las líneas antes de continuar. La nota se guardará en borrador; generar y transmitir requieren su confirmación.</p>
+                            @foreach ($precargaAc04['avisos'] as $aviso)
+                                <p class="text-amber-700 dark:text-amber-300">{{ $aviso }}</p>
+                            @endforeach
+                            @if ($precargaAc04['lineas'] !== [])
+                                <table class="mt-3 w-full text-sm">
+                                    <caption class="text-left">Líneas leídas de la AC04; puede ajustar las cantidades en el editor.</caption>
+                                    <thead><tr><th scope="col">Producto</th><th scope="col">Cantidad</th><th scope="col">Costo del PDF</th></tr></thead>
+                                    <tbody>
+                                        @foreach ($precargaAc04['lineas'] as $fila)
+                                            <tr><td>{{ $fila['codigo'] }} · {{ $fila['descripcion'] }}</td><td>{{ $fila['cantidad'] }}</td><td>{{ $fila['costo'] }}</td></tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            @endif
+                        </div>
+                    @endif
                     @if ($cobroAjuste ?? null)
                         <input type="hidden" name="cobro_ajuste_id" value="{{ $cobroAjuste->id }}">
                         <div class="mb-4 rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-ink-600 dark:bg-indigo-500/15 dark:text-indigo-300">

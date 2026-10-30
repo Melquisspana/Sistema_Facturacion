@@ -6,20 +6,98 @@ use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
+use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
 use App\Services\Ppq\AlbaranParser;
 use App\Support\Albaran;
 use App\Support\Dinero;
 use App\Support\IdentidadPpq;
+use App\Support\NumeroAlbaran;
 use App\Support\OrdenCompra;
 use App\Support\Sala;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 /** La referencia al CCF o la OC identifican; sala y cliente validan la devolución. */
 class DevolucionesAlbaran
 {
+    /** Solo lectura: la creación y el cálculo siguen en el flujo normal de NC. */
+    public function precargar(Dte $ccf, PpqAlbaran $nota): array
+    {
+        if ($nota->tipo_codigo !== 'AC04' || $nota->dte_id !== $ccf->id) {
+            throw ValidationException::withMessages(['ac04_id' => 'La AC04 no pertenece al CCF seleccionado.']);
+        }
+        if ($this->ncPorAlbaran(collect([$nota]))->isNotEmpty()) {
+            throw ValidationException::withMessages(['numero' => 'Esta AC04 ya tiene una nota de crédito vigente o en curso.']);
+        }
+        $resultado = ['nota' => $nota, 'lineas' => [], 'avisos' => []];
+        try {
+            $disk = Storage::disk((string) config('dte.storage.disk', 'local'));
+            $datos = $nota->archivo_path ? app(AlbaranParser::class)->desdePdf($disk->get($nota->archivo_path)) : [];
+        } catch (\Throwable) {
+            $datos = [];
+        }
+        if (filled($datos['debug']['error'] ?? null) || empty($datos['lineas'])) {
+            $resultado['avisos'][] = 'No se pudieron leer las líneas de la AC04. Revise el PDF y capture las líneas en el editor.';
+
+            return $resultado;
+        }
+        $originales = $ccf->lineas()->get();
+        foreach ($datos['lineas'] as $fila) {
+            $coinciden = $originales->filter(fn ($linea) => (string) $linea->codigo === $fila['codigo']
+                || (filled($linea->codigo_barra) && (string) $linea->codigo_barra === $fila['codigo_barra']));
+            if ($coinciden->count() !== 1) {
+                $resultado['avisos'][] = 'El producto '.$fila['codigo'].' no pertenece inequívocamente al CCF; se dejó fuera.';
+
+                continue;
+            }
+            $linea = $coinciden->first();
+            $resultado['lineas'][] = $fila + ['linea_id' => $linea->id];
+            if (Dinero::comparar($fila['costo'], $linea->precio_unitario) !== 0) {
+                $resultado['avisos'][] = 'El costo del producto '.$fila['codigo'].' difiere del CCF. El editor conserva el precio y el prorrateo fiscal del CCF.';
+            }
+        }
+
+        return $resultado;
+    }
+
+    /** Las AC04 con vínculo propio no dependen de que haya llegado la AC01. */
+    public function vinculadas(CobroDocumento $doc): Collection
+    {
+        return $doc->dte_id === null || $doc->tipo_dte !== '03' || $doc->estaInvalidado()
+            ? collect()
+            : PpqAlbaran::where('tipo_codigo', 'AC04')->where('dte_id', $doc->dte_id)->orderBy('id')->get();
+    }
+
+    public function ncPorAlbaran(Collection $notas): Collection
+    {
+        $canonicos = $notas->mapWithKeys(fn ($nota) => [$nota->numero_albaran => NumeroAlbaran::desde($nota->numero_albaran)?->canonico]);
+        $ncs = DteAlbaran::where('tipo_codigo', 'AC04')->deNotasVigentes()
+            ->whereIn('numero_canonico', $canonicos->filter()->values())
+            ->whereHas('dte', fn ($q) => $q->where('tipo_dte', '05')->where('tipo_nota_credito', 'devolucion_producto')
+                ->whereIn('dte_relacionado_id', $notas->pluck('dte_id')->filter()))
+            ->with('dte')->get();
+
+        return $notas->mapWithKeys(function ($nota) use ($ncs, $canonicos) {
+            $nc = $ncs->first(fn ($nc) => $nc->numero_canonico === $canonicos->get($nota->numero_albaran)
+                && $nc->dte->dte_relacionado_id === $nota->dte_id);
+
+            return $nc === null ? [] : [$nota->numero_albaran => $nc];
+        });
+    }
+
+    /** Una consulta por conjunto de CCF, no por fila del seguimiento. */
+    public function pendientesPorCcf(array $ids): Collection
+    {
+        $notas = PpqAlbaran::where('tipo_codigo', 'AC04')->whereIn('dte_id', $ids)->get();
+        $ocupadas = $this->ncPorAlbaran($notas);
+
+        return $notas->reject(fn ($nota) => $ocupadas->has($nota->numero_albaran))
+            ->groupBy('dte_id')->map->count();
+    }
+
     /** La referencia se conserva en la evidencia PDF, sin agregar campos a la tabla. */
     public function auditarRecibida(PpqAlbaran $nota, ?string $referencia = null): array
     {

@@ -186,10 +186,11 @@ class PpqAvisosAlbaranTest extends TestCase
         $this->actingAs($this->usuario());
         $url = route('cobros.documentos.show', $doc);
         $this->get($url)->assertOk()->assertSeeText($nota->numero_albaran)->assertSeeText('13.95')->assertSeeText('falta emitir la NC');
-        $nc = $this->dte('05', ['estado' => 'borrador']);
+        $nc = $this->dte('05', ['estado' => 'borrador', 'dte_relacionado_id' => $doc->dte_id,
+            'tipo_nota_credito' => 'devolucion_producto']);
         DteAlbaran::create(['dte_id' => $nc->id, 'numero_canonico' => 'AC04/0017/00/7001', 'tipo_codigo' => 'AC04',
             'numero' => '7001', 'fecha' => '2026-09-11', 'total' => '13.95', 'sala_codigo' => '0017']);
-        $this->get($url)->assertOk()->assertSeeText('falta emitir la NC');
+        $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('falta emitir la NC')->assertDontSeeText('Hacer NC');
         $nc->update(['estado' => 'aceptado']);
         $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('falta emitir la NC');
     }

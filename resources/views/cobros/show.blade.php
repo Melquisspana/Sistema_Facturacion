@@ -104,8 +104,12 @@
                             <span class="font-mono">{{ $devolucion->numero_albaran }}</span> · {{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }} · ${{ number_format((float) $devolucion->monto_albaran, 2) }} ·
                             @if ($ncPorAlbaran->has($devolucion->numero_albaran))
                                 NC {{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->numero_control }}
+                                ({{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->estado->label() }})
                             @else
                                 <span class="text-amber-700 dark:text-amber-300">falta emitir la NC</span>
+                                @can('create', \App\Models\Dte::class)
+                                    <a href="{{ route('facturacion.create-nota-credito', ['ccf' => $documento->dte_id, 'ac04' => $devolucion->id]) }}" class="text-indigo-600 hover:underline">Hacer NC</a>
+                                @endcan
                             @endif
                         </p>
                     @endforeach
