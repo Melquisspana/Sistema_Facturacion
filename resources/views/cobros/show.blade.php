@@ -100,21 +100,29 @@
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6 text-sm">
                     <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Notas de devolución</h3>
                     @foreach ($notasDevolucion as $devolucion)
-                        <p class="mt-1">
-                            <span class="font-mono">{{ $devolucion->numero_albaran }}</span> · {{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }} · ${{ number_format((float) $devolucion->monto_albaran, 2) }} ·
-                            @if ($ncPorAlbaran->has($devolucion->numero_albaran))
-                                NC {{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->numero_control }}
-                                ({{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->estado->label() }})
-                            @else
-                                <span class="text-amber-700 dark:text-amber-300">falta emitir la NC</span>
-                                @can('create', \App\Models\Dte::class)
-                                    <a href="{{ route('facturacion.create-nota-credito', ['ccf' => $documento->dte_id, 'ac04' => $devolucion->id]) }}" class="text-indigo-600 hover:underline">Hacer NC</a>
-                                @endcan
-                            @endif
-                        </p>
+                        <div class="flex flex-wrap items-center justify-between gap-2 mt-2">
+                            <div class="min-w-0">
+                                <p class="font-medium text-gray-700 dark:text-paper-100 break-all">{{ $devolucion->numero_albaran }}</p>
+                                <p class="text-xs text-gray-500 dark:text-paper-300">{{ $devolucion->fecha_albaran?->format('d/m/Y') ?? '—' }}</p>
+                            </div>
+                            <div class="flex flex-wrap items-center justify-end gap-2 ml-auto">
+                                <span class="text-right font-medium text-gray-700 dark:text-paper-100">${{ number_format((float) $devolucion->monto_albaran, 2) }}</span>
+                                @if ($ncPorAlbaran->has($devolucion->numero_albaran))
+                                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 break-all">
+                                        NC {{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->numero_control }}
+                                        ({{ $ncPorAlbaran[$devolucion->numero_albaran]->dte->estado->label() }})
+                                    </span>
+                                @else
+                                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Falta NC</span>
+                                    @can('create', \App\Models\Dte::class)
+                                        <a href="{{ route('facturacion.create-nota-credito', ['ccf' => $documento->dte_id, 'ac04' => $devolucion->id]) }}" class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">Hacer NC</a>
+                                    @endcan
+                                @endif
+                            </div>
+                        </div>
                     @endforeach
                     @if ($diferenciaAlbaran !== null)
-                        <p class="mt-2 font-mono">Diferencia restante CCF − (AC01 − AC04): ${{ $diferenciaAlbaran }}</p>
+                        <p class="mt-2 text-gray-500 dark:text-paper-300">Diferencia contra lo esperado: ${{ $diferenciaAlbaran }}</p>
                     @endif
                     @foreach ($devolucionesRechazadas as $rechazo)
                         <p class="mt-2 text-amber-700 dark:text-amber-300">{{ $rechazo }}</p>
@@ -233,7 +241,7 @@
             @endif
 
             {{-- ---------- Vinculación pendiente ---------- --}}
-            @if ($veredicto['estado'] === \App\Enums\Cobros\EstadoVinculacionAlbaran::Revisar && $veredicto['candidatos'] !== [])
+            @if (! $documento->albaran && $veredicto['estado'] === \App\Enums\Cobros\EstadoVinculacionAlbaran::Revisar && $veredicto['candidatos'] !== [])
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                     <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-1">Revisar vinculación</h3>
                     <p class="text-sm text-amber-800 mb-4">{{ $veredicto['motivo'] }}</p>

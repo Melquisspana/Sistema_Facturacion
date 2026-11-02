@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\Dte;
 
+use App\Enums\OrigenDescuentoNc;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
+use App\Models\ClientePerfilDocumento;
+use App\Models\ClientePerfilTipoNc;
 use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Establecimiento;
@@ -14,6 +17,7 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
+use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\AlbaranParser;
 use App\Support\Dinero;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -79,9 +83,10 @@ class DteNotaCreditoAc04Test extends TestCase
     public function test_parser_extrae_las_lineas_de_ac04(): void
     {
         $datos = app(AlbaranParser::class)->desdeTexto(file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt')));
-        $this->assertSame('45678', $datos['lineas'][0]['codigo']);
-        $this->assertSame('12.000', $datos['lineas'][0]['cantidad']);
-        $this->assertSame('2.3500', $datos['lineas'][0]['costo']);
+        $this->assertSame('56789', $datos['lineas'][0]['codigo']);
+        $this->assertSame(0, Dinero::comparar('2', $datos['lineas'][0]['cantidad']));
+        $this->assertSame('1.0500', $datos['lineas'][0]['costo']);
+        $this->assertSame('2.10', $datos['lineas'][0]['importe']);
     }
 
     private function ac04(Dte $ccf, string $cantidad = '3.000', bool $legible = true, bool $ajeno = false): PpqAlbaran
@@ -89,8 +94,15 @@ class DteNotaCreditoAc04Test extends TestCase
         Storage::fake('local');
         $linea = $ccf->lineas()->firstOrFail();
         $texto = file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt'));
-        $texto = str_replace('45678 9876543210123', ($ajeno ? '999999' : $linea->codigo).' '.($ajeno ? '9999999999999' : ($linea->codigo_barra ?: '9876543210123')), $texto);
-        $texto = str_replace('12.000 0.000 2.3500', $cantidad.' 0.000 10.0000', $texto);
+        $texto = str_replace('56789 9876543210123', ($ajeno ? '999999' : $linea->codigo).' '.($ajeno ? '9999999999999' : ($linea->codigo_barra ?: '9876543210123')), $texto);
+        $importe = Dinero::redondear(Dinero::multiplicar($cantidad, '10'));
+        $iva = Dinero::redondear(Dinero::multiplicar($importe, '0.13'));
+        $total = Dinero::redondear(Dinero::sumar($importe, $iva));
+        $texto = strtr($texto, [
+            '8.000 0.000 1.0500' => '0.000 0.000 10.0000',
+            '0.000 10.000' => '0.000 '.$cantidad,
+            '2.10' => $importe, '0.27' => $iva, '2.37' => $total,
+        ]);
         $datos = app(AlbaranParser::class)->desdeTexto($texto);
         $this->mock(AlbaranParser::class, function ($mock) use ($datos, $legible) {
             $mock->shouldReceive('desdePdf')->andReturn($legible ? $datos : ['lineas' => [], 'debug' => ['error' => 'PDF ilegible']]);
@@ -100,8 +112,63 @@ class DteNotaCreditoAc04Test extends TestCase
         return PpqAlbaran::create([
             'tipo_codigo' => 'AC04', 'numero_albaran' => 'AC04/0148/00/8427',
             'dte_id' => $ccf->id, 'archivo_path' => 'ac04.pdf', 'sala_codigo' => '0148',
-            'monto_albaran' => '31.87', 'fecha_albaran' => today(),
+            'monto_albaran' => $importe, 'fecha_albaran' => today(),
         ]);
+    }
+
+    public function test_hacer_nc_calcula_como_devolucion_manual_y_averia_conserva_descuento(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create(['descuento_global_default' => 5]);
+        $perfil = ClientePerfilDocumento::create([
+            'cliente_id' => $cliente->id, 'activo' => true, 'codigo_proveedor' => '000123',
+            'formato_export' => 'albaran_nc_v1', 'exige_albaran_en_nc' => false, 'tolerancia_albaran' => 0,
+        ]);
+        foreach (['devolucion_producto' => OrigenDescuentoNc::Ninguno, 'averia' => OrigenDescuentoNc::Ccf] as $tipo => $origen) {
+            ClientePerfilTipoNc::create([
+                'cliente_perfil_documento_id' => $perfil->id, 'tipo_nota_credito' => $tipo,
+                'codigo_externo' => $tipo === 'averia' ? 'AC02' : 'AC04',
+                'etiqueta_externa' => $tipo, 'descuento_origen' => $origen->value,
+            ]);
+        }
+        app(PerfilDocumentoResolver::class)->olvidar();
+        $ccf = $this->ccfGenerado($this->emisor(), $cliente);
+        $this->assertSame('5.00', $ccf->descuento_porcentaje_aplicado);
+        $nota = $this->ac04($ccf, '2.000');
+        $respuesta = $this->actingAs($this->usuario('facturacion'))->get(route('facturacion.create-nota-credito', ['ccf' => $ccf->id, 'ac04' => $nota->id]))->assertOk();
+        $this->assertSame('devolucion_faltante', $respuesta->viewData('datosNc')['modalidad']);
+        $this->post(route('facturacion.store-nota-credito'), [
+            'modalidad' => 'devolucion_faltante', 'tipo' => 'devolucion_producto',
+            'dte_relacionado_id' => $ccf->id, 'ac04_id' => $nota->id,
+        ])->assertSessionHasNoErrors()->assertRedirect();
+        $automatica = Dte::where('tipo_dte', '05')->sole();
+        $manual = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'devolucion_producto']);
+        $this->borradores->acreditarLinea($manual, $ccf->lineas()->sole(), '2');
+        $manual->refresh();
+        foreach (['total_gravado', 'iva', 'total_descuento', 'total_pagar'] as $campo) {
+            $this->assertSame($manual->$campo, $automatica->$campo, $campo);
+        }
+        $this->assertSame('0.00', $automatica->total_descuento);
+        $this->assertSame('20.00', $automatica->total_gravado);
+        $this->assertSame('2.60', $automatica->iva);
+        $this->assertSame('22.60', $automatica->total_pagar);
+        $this->assertSame('22.60', $automatica->albaran->total);
+        $this->assertStringNotContainsString('difiere del gravado', session('status'));
+        $this->assertStringNotContainsString('El costo del producto', session('status'));
+        $averia = $this->borradores->crearNotaCredito($ccf, ['tipo' => 'averia']);
+        $this->borradores->agregarProductoNotaCreditoAveria($averia, $ccf->lineas()->sole()->producto, '2');
+        $this->assertSame('5.00', $averia->refresh()->descuento_porcentaje_aplicado);
+        $this->assertSame('1.00', $averia->total_descuento);
+    }
+
+    public function test_gravados_distintos_avisan_ambos_montos_sin_bloquear(): void
+    {
+        $ccf = $this->ccfGenerado($this->emisor(), Cliente::factory()->contribuyente()->create(['descuento_global_default' => 5]));
+        $nota = $this->ac04($ccf, '2.000');
+        $respuesta = $this->actingAs($this->usuario('facturacion'))->post(route('facturacion.store-nota-credito'), [
+            'tipo' => 'devolucion_producto', 'dte_relacionado_id' => $ccf->id, 'ac04_id' => $nota->id,
+        ])->assertSessionHasNoErrors()->assertRedirect();
+        $respuesta->assertSessionHas('status', fn ($mensaje) => str_contains($mensaje, 'borrador ($19.00)') && str_contains($mensaje, 'AC04 ($20.00)'));
+        $this->get($respuesta->headers->get('Location'))->assertOk()->assertSee('borrador ($19.00)')->assertSee('AC04 ($20.00)');
     }
 
     #[DataProvider('cantidades')]
@@ -119,6 +186,7 @@ class DteNotaCreditoAc04Test extends TestCase
         $this->assertSame(0, Dinero::comparar($cantidad, $nc->lineas()->sole()->cantidad));
         $this->assertSame($nota->numero_albaran, $nc->albaran->numero_canonico);
         $this->assertSame($nota->id, $nc->albaran->ppq_albaran_id);
+        $this->assertSame(Dinero::redondear(Dinero::multiplicar($cantidad, '11.30')), $nc->albaran->total);
         $this->post(route('facturacion.store-nota-credito'), ['tipo' => 'devolucion_producto', 'dte_relacionado_id' => $ccf->id, 'ac04_id' => $nota->id])->assertSessionHasErrors('numero');
         $this->assertSame(1, Dte::where('tipo_dte', '05')->count());
     }
@@ -144,6 +212,8 @@ class DteNotaCreditoAc04Test extends TestCase
         $nota = $this->ac04($ccf, legible: false);
         $respuesta = $this->actingAs($this->usuario('facturacion'))->get(route('facturacion.create-nota-credito', ['ccf' => $ccf->id, 'ac04' => $nota->id]))->assertOk()->assertSee('No se pudieron leer');
         $this->assertSame([], $respuesta->viewData('precargaAc04')['lineas']);
+        $this->post(route('facturacion.store-nota-credito'), ['tipo' => 'devolucion_producto', 'dte_relacionado_id' => $ccf->id, 'ac04_id' => $nota->id])->assertSessionHasNoErrors();
+        $this->assertNull(Dte::where('tipo_dte', '05')->sole()->albaran->total);
     }
 
     public function test_producto_ajeno_se_excluye_y_avisa(): void
