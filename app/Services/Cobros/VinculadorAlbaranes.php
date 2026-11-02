@@ -420,8 +420,11 @@ class VinculadorAlbaranes
         $diferencia = $devoluciones->diferencia($documento, $albaran, $notas);
         if ($diferencia === null) {
             $problemas[] = 'falta un importe para comprobar el documento y el albarán';
-        } elseif (Dinero::comparar($diferencia, '0') !== 0) {
-            $problemas[] = 'el importe del CCF ('.$documento->monto.') difiere del albarán ('.$albaran->monto_albaran.') menos sus devoluciones; diferencia restante: '.$diferencia.'; revisar la evidencia, no deducir una NC de la resta';
+        } elseif ($notas->isEmpty() ? Dinero::comparar($diferencia, '0') !== 0
+            : (Dinero::comparar($diferencia, '-0.01') < 0 || Dinero::comparar($diferencia, '0.01') > 0)) {
+            $problemas[] = $notas->isEmpty()
+                ? 'el importe del CCF ('.$documento->monto.') difiere del albarán ('.$albaran->monto_albaran.') menos sus devoluciones; diferencia restante: '.$diferencia.'; revisar la evidencia, no deducir una NC de la resta'
+                : 'el importe del albarán ('.$albaran->monto_albaran.') difiere de lo esperado tras las devoluciones; diferencia contra lo esperado: '.$diferencia.'; revisar la evidencia';
         }
 
         // SALA: la de la OC del documento contra la de la OC del albarán y la del número.

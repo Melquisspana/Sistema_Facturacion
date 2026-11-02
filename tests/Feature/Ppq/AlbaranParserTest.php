@@ -12,6 +12,65 @@ class AlbaranParserTest extends TestCase
         return new AlbaranParser;
     }
 
+    public function test_ac04_asocia_facturadas_en_orden_para_dos_productos(): void
+    {
+        $r = $this->parser()->desdeTexto(file_get_contents(base_path('tests/Fixtures/Ppq/ac04-dos-productos.txt')));
+        $this->assertSame(['56789', '67890'], array_column($r['lineas'], 'codigo'));
+        $this->assertSame(['2.00000000', '3.00000000'], array_column($r['lineas'], 'cantidad'));
+        $this->assertSame(['2.10', '6.00'], array_column($r['lineas'], 'importe'));
+        $this->assertSame(8.10, $r['monto']);
+        $this->assertSame(9.15, $r['total']);
+    }
+
+    public function test_ac04_por_columnas_incluye_una_devolucion_total(): void
+    {
+        $r = $this->parser()->desdeTexto(file_get_contents(base_path('tests/Fixtures/Ppq/ac04-por-columnas.txt')));
+        $this->assertSame(['56789', '67890'], array_column($r['lineas'], 'codigo'));
+        $this->assertSame(['2.00000000', '3.00000000'], array_column($r['lineas'], 'cantidad'));
+        $this->assertSame(['2.10', '6.00'], array_column($r['lineas'], 'importe'));
+        $this->assertSame(8.10, $r['monto']);
+        $this->assertSame(9.15, $r['total']);
+    }
+
+    public function test_ac04_rechaza_columnas_truncadas_cociente_inexacto_y_suma_distinta(): void
+    {
+        $texto = file_get_contents(base_path('tests/Fixtures/Ppq/ac04-por-columnas.txt'));
+        foreach ([
+            str_replace("67890\n", '', $texto),
+            str_replace('2.0000', '7.0000', $texto),
+            str_replace("3.000\n(-)", "4.000\n(-)", $texto),
+            str_replace('8.10', '8.11', str_replace('9.15', '9.16', $texto)),
+        ] as $invalido) {
+            $this->assertSame([], $this->parser()->desdeTexto($invalido)['lineas']);
+        }
+    }
+
+    public function test_cantidad_se_deriva_del_importe_y_costo_a_tres_decimales_sin_cantidades_impresas(): void
+    {
+        $texto = file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt'));
+        $texto = substr($texto, 0, strpos($texto, 'Recibido Por'));
+        $r = $this->parser()->desdeTexto($texto);
+        $this->assertSame('2.00000000', $r['lineas'][0]['cantidad']);
+        $texto = str_replace('1.0500', '7.0000', $texto);
+        $this->assertSame('0.30000000', $this->parser()->desdeTexto($texto)['lineas'][0]['cantidad']);
+        $this->assertSame([], $this->parser()->desdeTexto(str_replace('7.0000', '3.0001', $texto))['lineas']);
+    }
+
+    public function test_ac04_rechaza_cuenta_inconsistente_y_pares_ausentes_extra_o_ilegibles(): void
+    {
+        $texto = file_get_contents(base_path('tests/Fixtures/Ppq/ac04-dos-productos.txt'));
+        foreach ([
+            file_get_contents(base_path('tests/Fixtures/Ppq/ac04-cuenta-inconsistente.txt')),
+            str_replace('0.000 7.000', '', $texto),
+            str_replace('0.000 7.000', "0.000 7.000\n0.000 9.000", $texto),
+            str_replace('0.000 7.000', '0.000 ilegible', $texto),
+            str_replace('0.000 7.000', "0.000 7.000\n0.000 ilegible", $texto),
+            str_replace('0.000 7.000', '0.000 3.000', $texto),
+        ] as $invalido) {
+            $this->assertSame([], $this->parser()->desdeTexto($invalido)['lineas']);
+        }
+    }
+
     public function test_ac04_de_columnas_extrae_total_con_iva_y_referencia_sin_inventar_oc(): void
     {
         $r = $this->parser()->desdeTexto(file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt')));
@@ -19,14 +78,15 @@ class AlbaranParserTest extends TestCase
         $this->assertSame('18/11/2026', $r['fecha']);
         $this->assertSame('0148', $r['sala']);
         $this->assertSame('DTE-03-M001P002-000000000004826', $r['numero_control_referenciado']);
-        $this->assertSame(31.87, $r['monto']);
+        $this->assertSame(2.10, $r['monto']);
+        $this->assertSame(2.37, $r['total']);
         $this->assertNull($r['oc']);
     }
 
     public function test_ac04_sin_total_legible_no_usa_el_precio_ni_la_base(): void
     {
         $texto = file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt'));
-        $r = $this->parser()->desdeTexto(str_replace('31.87', 'ilegible', $texto));
+        $r = $this->parser()->desdeTexto(str_replace('2.37', 'ilegible', $texto));
         $this->assertNull($r['monto']);
     }
 
@@ -34,7 +94,7 @@ class AlbaranParserTest extends TestCase
     {
         $texto = file_get_contents(base_path('tests/Fixtures/Ppq/ac04-ficticia.txt'));
         foreach (['1,234.567.89', '32.00'] as $total) {
-            $this->assertNull($this->parser()->desdeTexto(str_replace('31.87', $total, $texto))['monto']);
+            $this->assertNull($this->parser()->desdeTexto(str_replace('2.37', $total, $texto))['monto']);
         }
     }
 

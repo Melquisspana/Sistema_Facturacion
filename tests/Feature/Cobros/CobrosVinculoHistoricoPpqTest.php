@@ -357,11 +357,11 @@ class CobrosVinculoHistoricoPpqTest extends TestCase
         $veredicto = $this->auditar($documento);
 
         if ($tipo === 'AC04') {
-            // La devolución no prueba entrega, pero ahora sí resta de su AC01.
-            // Ambos albaranes valen 123.74: el neto es cero y este CCF sigue en 123.74.
+            // La devolución no prueba entrega, pero sí cuenta en lo esperado del AC01. Esta AC04
+            // vale tanto como la entrega, así que la cuenta no cierra y se pide revisar.
             $this->assertSame(EstadoVinculacionAlbaran::Revisar, $veredicto['estado']);
             $this->assertNull($veredicto['albaran_id']);
-            $this->assertStringContainsString('diferencia restante: 123.74', $veredicto['motivo']);
+            $this->assertStringContainsString('diferencia contra lo esperado', $veredicto['motivo']);
 
             return;
         }

@@ -50,7 +50,7 @@ class AlbaranAc04CorreoTest extends TestCase
         return Dte::create(['establecimiento_id' => $estab->id, 'cliente_id' => ($cliente ?? $this->cliente)->id,
             'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01', 'sello_recepcion' => 'SELLO-FICTICIO',
             'numero_control' => $control, 'numero_orden_compra' => '26110148008765',
-            'fecha_emision' => '2026-11-17', 'hora_emision' => '09:00:00', 'total_pagar' => '245.60']);
+            'fecha_emision' => '2026-11-17', 'hora_emision' => '09:00:00', 'total_pagar' => '245.60', 'total_gravado' => '220.00', 'descuento_porcentaje_aplicado' => '0.00', 'iva_retenido' => '0.00']);
     }
 
     private function sincronizar(?string $motivo = null): void
@@ -89,7 +89,7 @@ class AlbaranAc04CorreoTest extends TestCase
         $nota = PpqAlbaran::sole();
         $this->assertSame('AC04/0148/00/8427', $nota->numero_albaran);
         $this->assertSame('2026-11-18', $nota->fecha_albaran->toDateString());
-        $this->assertSame('31.87', $nota->monto_albaran);
+        $this->assertSame('2.10', $nota->monto_albaran);
         $this->assertSame('0148', $nota->sala_codigo);
         $this->assertNull($nota->numero_orden_compra);
         $this->assertSame($ccf->id, $nota->dte_id);
@@ -145,7 +145,7 @@ class AlbaranAc04CorreoTest extends TestCase
         $doc = CobroDocumento::create(['dte_id' => $ccf->id, 'cliente_id' => $this->cliente->id,
             'tipo_dte' => '03', 'numero_control' => $ccf->numero_control, 'monto' => '245.60', 'fecha_emision' => '2026-11-17']);
         PpqAlbaran::create(['numero_albaran' => 'AC01/0148/00/9427', 'numero_orden_compra' => '26110148008765',
-            'fecha_albaran' => '2026-11-17', 'monto_albaran' => '277.47']);
+            'fecha_albaran' => '2026-11-17', 'monto_albaran' => '246.23']);
         $this->assertSame(EstadoVinculacionAlbaran::Vinculado,
             app(VinculadorAlbaranes::class)->aplicar($doc));
     }
