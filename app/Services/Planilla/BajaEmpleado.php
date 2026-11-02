@@ -16,6 +16,11 @@ class BajaEmpleado
     {
         $this->autorizar($actor, $e);
         Validator::make(['fecha' => $fecha], ['fecha' => ['required', 'date_format:Y-m-d']])->validate();
+
+        if ($e->alta_el !== null && $fecha < $e->alta_el->toDateString()) {
+            throw ValidationException::withMessages(['fecha' => 'La baja no puede ser anterior a la fecha de ingreso ('.$e->alta_el->format('d/m/Y').').']);
+        }
+
         $this->cambiar($actor, $e, false, $fecha);
     }
 

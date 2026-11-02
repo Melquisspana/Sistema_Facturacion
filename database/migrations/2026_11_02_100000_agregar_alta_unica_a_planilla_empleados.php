@@ -11,7 +11,6 @@ return new class extends Migration
         Schema::table('planilla_empleados', function (Blueprint $table) {
             $table->string('documento_tipo', 20)->default('dui');
             $table->boolean('con_descuentos_ley')->default(false);
-            $table->decimal('sueldo_mensual', 14, 2)->nullable();
             $table->char('sexo', 1)->nullable();
             $table->date('fecha_nacimiento')->nullable();
             $table->string('estado_civil', 30)->nullable();
@@ -30,14 +29,27 @@ return new class extends Migration
         Schema::table('planilla_detalles', function (Blueprint $table) {
             $table->string('documento_tipo_snapshot', 20)->nullable()->after('dui_snapshot');
         });
+        // El sueldo mensual vive en la línea de tiempo, junto al importe por pago: si se
+        // guardara en la ficha habría dos verdades después del primer aumento.
+        Schema::table('planilla_sueldos', function (Blueprint $table) {
+            $table->decimal('importe_mensual', 14, 2)->nullable()->after('importe');
+        });
+        // `ley` dice cuál descuento de ley es; `importe_calculado`, lo que propuso el
+        // sistema. Si difiere del importe, alguien lo corrigió a mano.
+        Schema::table('planilla_conceptos', function (Blueprint $table) {
+            $table->string('ley', 10)->nullable()->after('tipo');
+            $table->decimal('importe_calculado', 14, 2)->nullable()->after('importe');
+        });
     }
 
     public function down(): void
     {
+        Schema::table('planilla_conceptos', fn (Blueprint $table) => $table->dropColumn(['ley', 'importe_calculado']));
+        Schema::table('planilla_sueldos', fn (Blueprint $table) => $table->dropColumn('importe_mensual'));
         Schema::table('planilla_detalles', fn (Blueprint $table) => $table->dropColumn('documento_tipo_snapshot'));
         Schema::table('planilla_empleados', function (Blueprint $table) {
             $table->dropUnique(['documento_tipo', 'dui']);
-            $table->dropColumn(['documento_tipo', 'con_descuentos_ley', 'sueldo_mensual', 'sexo', 'fecha_nacimiento', 'estado_civil', 'profesion', 'domicilio', 'residencia', 'nacionalidad', 'dui_expedido_en', 'dui_expedido_el', 'funciones', 'lugar_trabajo', 'herramientas', 'dependientes']);
+            $table->dropColumn(['documento_tipo', 'con_descuentos_ley', 'sexo', 'fecha_nacimiento', 'estado_civil', 'profesion', 'domicilio', 'residencia', 'nacionalidad', 'dui_expedido_en', 'dui_expedido_el', 'funciones', 'lugar_trabajo', 'herramientas', 'dependientes']);
         });
     }
 };

@@ -59,6 +59,12 @@
                     <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700"><p>Revisá estas coincidencias y enlazá las fichas correspondientes:</p><ul class="list-inside list-disc">@foreach ($coincidencias as $coincidencia)<li>{{ $coincidencia['nombre'] }} · {{ str_replace('_', ' ', $coincidencia['tipo']) }}</li>@endforeach</ul></div>
                 @endif
                 <div><input id="es_otra_persona" name="es_otra_persona" type="checkbox" value="1" @checked(old('es_otra_persona'))><label for="es_otra_persona" class="text-sm font-medium text-gray-700">Confirmo que es otra persona distinta de las coincidencias.</label></div>
+                @error('alta_el')
+                    <div><input id="confirmar_alta_futura" name="confirmar_alta_futura" type="checkbox" value="1"><label for="confirmar_alta_futura" class="text-sm font-medium text-gray-700">Confirmo la fecha de ingreso futura.</label></div>
+                @enderror
+                @error('sueldo_mensual')
+                    <div><input id="confirmar_bajo_minimo" name="confirmar_bajo_minimo" type="checkbox" value="1"><label for="confirmar_bajo_minimo" class="text-sm font-medium text-gray-700">Va sin descuentos: confirmo el sueldo por debajo del mínimo.</label></div>
+                @enderror
                 <div><label for="notas" class="block text-sm font-medium text-gray-700">Notas</label><textarea id="notas" name="notas" maxlength="2000" class="{{ $c }}">{{ old('notas') }}</textarea></div>
                 <button class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Dar de alta</button>
             </form>

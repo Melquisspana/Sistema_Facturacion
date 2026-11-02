@@ -14,11 +14,13 @@ use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
+use App\Services\Planilla\SalarioMinimo;
 use App\Services\Planilla\SueldoHabitual;
 use App\Services\Planilla\TotalesPlanilla;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Planilla de control y recibos.
@@ -99,6 +101,7 @@ class PlanillaController extends Controller
             'totales' => $totales,
             'resumen' => $totales->dePlanilla($planilla),
             'reparos' => $preparar->reparosParaConfirmar($planilla),
+            'avisos' => $preparar->avisosParaConfirmar($planilla, true),
             'periodos' => $periodos,
             // Quien todavía no está en esta planilla, para poder agregarlo.
             'disponibles' => $disponibles,
@@ -163,14 +166,29 @@ class PlanillaController extends Controller
 
     // ── Registro de personas ──────────────────────────────────────────────
 
-    public function empleados(Request $request, SueldoHabitual $sueldos)
+    public function empleados(Request $request, SueldoHabitual $sueldos, SalarioMinimo $salarioMinimo)
     {
         $empleados = PlanillaEmpleado::orderBy('nombre')->get();
         $verImportes = $request->user()->can('planilla.salarios');
+        $hoy = now()->toDateString();
+        $mensuales = $verImportes ? $sueldos->mensualesEn($empleados, $hoy) : [];
+        $minimo = null;
+
+        if ($verImportes) {
+            // Sin mínimo vigente la pantalla lo dice: no es motivo para no abrirla.
+            try {
+                $minimo = $salarioMinimo->vigenteEn($hoy);
+            } catch (ValidationException) {
+            }
+        }
+
+        $bajoMinimo = $minimo === null ? [] : $empleados->where('activo', true)
+            ->filter(fn (PlanillaEmpleado $e) => isset($mensuales[$e->id]) && $mensuales[$e->id] < $minimo)
+            ->pluck('id')->all();
 
         return view('planilla.empleados', [
-            'empleados' => $empleados, 'verImportes' => $verImportes,
-            'habituales' => $verImportes ? $sueldos->vigentesEn($empleados, now()->toDateString()) : [],
+            'empleados' => $empleados, 'verImportes' => $verImportes, 'mensuales' => $mensuales,
+            'minimo' => $minimo, 'bajoMinimo' => $bajoMinimo,
         ]);
     }
 
@@ -189,7 +207,24 @@ class PlanillaController extends Controller
     {
         $empleado = $alta->registrar($request->user(), $request->all());
 
-        return redirect()->route('planilla.empleados')->with('planilla.aviso', $empleado->nombre.' quedó en planilla.');
+        // Con descuentos lleva contrato: sus datos se piden una sola vez, en esa pantalla.
+        // Quien no ve importes no puede abrirla: el contrato lleva el sueldo.
+        $sigueConContrato = $empleado->con_descuentos_ley && $request->user()->can('planilla.salarios');
+
+        return redirect()
+            ->route($sigueConContrato ? 'planilla.empleados.contrato' : 'planilla.empleados', $sigueConContrato ? $empleado : [])
+            ->with('planilla.aviso', $empleado->nombre.' quedó en planilla.');
+    }
+
+    /** El sueldo nunca cambia solo: lo cambia una persona, con fecha. */
+    public function cambiarSueldo(Request $request, PlanillaEmpleado $empleado, SueldoHabitual $sueldos)
+    {
+        $sueldos->registrarMensual($request->user(), $empleado, $request->only(['sueldo_mensual', 'vigente_desde', 'motivo', 'confirmar_bajo_minimo']));
+
+        // Sin el importe: la bitácora la ve quien no tiene `planilla.salarios`.
+        activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('cambió el sueldo');
+
+        return back()->with('planilla.aviso', 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
     }
 
     public function bajaEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)

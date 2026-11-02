@@ -52,6 +52,7 @@ class PlanillaFlujoController extends Controller
             'estado' => $estado,
             'avance' => $estado->dePlanilla($planilla),
             'reparos' => $planilla->borrador() ? $preparar->reparosParaConfirmar($planilla) : [],
+            'avisos' => $planilla->borrador() ? $preparar->avisosParaConfirmar($planilla, $request->user()->can('planilla.salarios')) : [],
             'terceros' => PlanillaObligacionTercero::where('planilla_id', $planilla->id)->with('gasto.cuotas')->get(),
             'documentos' => PlanillaDocumento::where('planilla_id', $planilla->id)->orderByDesc('id')->get(),
 
@@ -138,7 +139,9 @@ class PlanillaFlujoController extends Controller
                 'periodo_propio' => $propio,
                 'ingresos' => $detalle->conceptos->where('tipo', 'ingreso')
                     ->map(fn ($c) => ['concepto' => $c->concepto, 'importe' => (string) $c->importe])->values()->all(),
+                // Una renta en cero no le dice nada a quien firma el recibo.
                 'descuentos' => $detalle->conceptos->where('tipo', 'descuento')
+                    ->reject(fn ($c) => $c->ley !== null && Dinero::centavos((string) $c->importe) === 0)
                     ->map(fn ($c) => ['concepto' => $c->concepto, 'importe' => (string) $c->importe,
                         'destino' => $c->destino, 'tercero' => $c->tercero, 'referencia' => $c->referencia])->values()->all(),
                 't' => $t + [

@@ -2,14 +2,16 @@
 
 namespace App\Models\Planilla;
 
+use App\Services\Planilla\DescuentosLey;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Un ingreso o un descuento de una línea, con concepto e importe ESCRITOS A MANO.
+ * Un ingreso o un descuento de una línea.
  *
- * Nada de esto se calcula: ni porcentajes legales, ni proporcionales, ni horas extra.
- * Quien prepara la planilla escribe «Bono de venta 25.00» o «Anticipo 50.00».
+ * Casi todos se escriben a mano: «Bono de venta 25.00» o «Anticipo 50.00». La excepción
+ * son ISSS, AFP y renta, que llevan `ley` y los propone {@see DescuentosLey}: su
+ * `importe_calculado` guarda la propuesta, y si difiere de `importe`, alguien la corrigió.
  *
  * `destino` es lo que evita contar el dinero dos veces, y solo aplica a los
  * descuentos. Queda NULL mientras no se elija: no hay valor por defecto porque
@@ -53,7 +55,14 @@ class PlanillaConcepto extends Model
 
     protected function casts(): array
     {
-        return ['importe' => 'decimal:2'];
+        return ['importe' => 'decimal:2', 'importe_calculado' => 'decimal:2'];
+    }
+
+    /** ¿Alguien corrigió a mano lo que propuso el cálculo? */
+    public function corregidoAMano(): bool
+    {
+        return $this->ley !== null && $this->importe_calculado !== null
+            && (string) $this->importe !== (string) $this->importe_calculado;
     }
 
     public function detalle(): BelongsTo

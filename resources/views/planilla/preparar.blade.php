@@ -19,6 +19,7 @@
         'observaciones' => $d->observaciones,
         'conceptos' => $d->conceptos->map(fn ($x) => [
             'tipo' => $x->tipo, 'concepto' => $x->concepto, 'importe' => (string) $x->importe,
+            'ley' => $x->ley ?? '', 'calculado' => (string) ($x->importe_calculado ?? ''),
             'destino' => $x->destino ?? '', 'tercero' => $x->tercero ?? '', 'referencia' => $x->referencia ?? '',
             'planilla_anticipo_id' => $x->planilla_anticipo_id ?? '',
         ])->values(),
@@ -212,6 +213,13 @@
                     </p>
                 </section>
 
+                @if ($avisos !== [])
+                    <div class="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
+                        <p class="font-medium">Para revisar antes de confirmar:</p>
+                        <ul class="mt-1 list-inside list-disc">@foreach ($avisos as $a)<li>{{ $a }}</li>@endforeach</ul>
+                    </div>
+                @endif
+
                 @if ($reparos !== [])
                     <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
                         <p class="font-medium">Antes de confirmar hay que resolver:</p>
@@ -376,8 +384,9 @@
                                         Extras y descuentos de esta quincena
                                     </p>
                                     <p class="mt-1 text-xs text-gray-500">
-                                        Empiezan vacíos cada vez, a propósito: un extra que se copiara solo
-                                        terminaría pagándose dos veces.
+                                        Los extras empiezan vacíos cada vez, a propósito: uno que se copiara solo
+                                        terminaría pagándose dos veces. ISSS, AFP y renta los propone el sistema:
+                                        al cambiar el salario, se actualizan al guardar.
                                     </p>
 
                                     <template x-for="(x, j) in l.conceptos" :key="j">
@@ -387,13 +396,14 @@
                                                :class="x.tipo === 'ingreso' ? 'text-emerald-800' : 'text-rose-800'"
                                                x-text="x.tipo === 'ingreso' ? 'Extra' : 'Descuento'"></p>
                                             <input type="hidden" :name="'lineas['+i+'][conceptos]['+j+'][tipo]'" :value="x.tipo">
+                                            <input type="hidden" :name="'lineas['+i+'][conceptos]['+j+'][ley]'" :value="x.ley || ''">
 
                                             <div class="mt-1 grid grid-cols-3 gap-2">
                                                 <div class="col-span-2">
                                                     <label :for="'con-'+i+'-'+j" class="block text-xs text-gray-500">Concepto</label>
                                                     <input :id="'con-'+i+'-'+j" type="text" maxlength="150"
                                                            :name="'lineas['+i+'][conceptos]['+j+'][concepto]'" x-model="x.concepto"
-                                                           list="conceptos-sugeridos" class="{{ $campo }}">
+                                                           :readonly="!!x.ley" list="conceptos-sugeridos" class="{{ $campo }}">
                                                 </div>
                                                 <div>
                                                     <label :for="'imp-'+i+'-'+j" class="block text-xs text-gray-500">Importe</label>
@@ -403,7 +413,10 @@
                                                 </div>
                                             </div>
 
-                                            <template x-if="x.tipo === 'descuento'">
+                                            <p x-show="x.ley" x-cloak class="mt-1 text-xs text-gray-500"
+                                               x-text="fmt(x.importe) === fmt(x.calculado) ? 'Propuesta del sistema. Va a ' + x.tercero + '.' : 'Corregido a mano (propuesta: ' + fmt(x.calculado) + '). Va a ' + x.tercero + '.'"></p>
+
+                                            <template x-if="x.tipo === 'descuento' && !x.ley">
                                                 <div class="mt-2">
                                                     <label :for="'des-'+i+'-'+j" class="block text-xs text-gray-500">¿Qué es este descuento?</label>
                                                     <select :id="'des-'+i+'-'+j" :name="'lineas['+i+'][conceptos]['+j+'][destino]'" x-model="x.destino"
@@ -476,7 +489,7 @@
                                                 </div>
                                             </template>
 
-                                            <div class="mt-2 flex justify-end">
+                                            <div x-show="!x.ley" class="mt-2 flex justify-end">
                                                 <button type="button" @click="delConcepto(i, j)" class="{{ $boton }} border-transparent text-red-700 hover:bg-red-50"
                                                         :aria-label="'Quitar ' + (x.concepto || (x.tipo === 'ingreso' ? 'este extra' : 'este descuento'))">
                                                     Quitar
@@ -545,8 +558,8 @@
 
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-gray-500">
-                        Los importes se escriben a mano. El sistema <strong>no calcula</strong> ISSS, AFP, renta,
-                        vacaciones, aguinaldo, indemnización ni horas extra.
+                        ISSS, AFP y renta son una propuesta que se puede corregir. El sistema <strong>no calcula</strong>
+                        aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
                     </p>
                     <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto">
                         Guardar borrador

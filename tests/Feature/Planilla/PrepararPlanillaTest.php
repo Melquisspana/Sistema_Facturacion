@@ -434,12 +434,12 @@ class PrepararPlanillaTest extends TestCase
         $recibo->assertSee('se entrega a', false);
     }
 
-    public function test_la_planilla_no_promete_calculo_legal_en_ninguna_pantalla(): void
+    public function test_la_planilla_dice_que_calcula_y_que_no_en_cada_pantalla(): void
     {
         $u = $this->gestor();
 
-        $this->actingAs($u)->get(route('planilla.index'))->assertOk()->assertSee('No es nómina legal', false);
-        $this->actingAs($u)->get(route('planilla.formatos'))->assertOk()->assertSee('no incluye cálculos de', false);
+        $this->actingAs($u)->get(route('planilla.index'))->assertOk()->assertSee('una propuesta que se', false)->assertSee('aporte patronal', false);
+        $this->actingAs($u)->get(route('planilla.formatos'))->assertOk()->assertSee('no sustituye la Planilla', false);
     }
 
     // ─────────────────── Lo que se corrigió del formulario ───────────────────

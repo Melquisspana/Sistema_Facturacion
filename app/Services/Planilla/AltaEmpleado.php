@@ -8,7 +8,6 @@ use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
-use App\Services\Gastos\Dinero;
 use App\Services\Usuarios\CrearUsuario;
 use App\Support\Dui;
 use Illuminate\Database\Eloquent\Model;
@@ -76,6 +75,8 @@ class AltaEmpleado
             'con_descuentos_ley' => ['required', 'boolean'], 'notas' => ['nullable', 'string', 'max:2000'],
             'usa_sistema' => ['sometimes', 'boolean'], 'marca' => ['sometimes', 'boolean'],
             'sale_rutas' => ['sometimes', 'boolean'], 'es_otra_persona' => ['sometimes', 'boolean'],
+            'sueldo_desde' => ['nullable', 'date_format:Y-m-d'], 'confirmar_bajo_minimo' => ['sometimes', 'boolean'],
+            'confirmar_alta_futura' => ['sometimes', 'boolean'],
         ];
         foreach (['user_id' => 'users', 'asistencia_empleado_id' => 'asistencia_empleados', 'personal_ruta_id' => 'rutas_personal'] as $columna => $tabla) {
             $reglas[$columna] = ['nullable', 'integer', 'exists:'.$tabla.',id', Rule::unique('planilla_empleados', $columna)];
@@ -103,6 +104,10 @@ class AltaEmpleado
         }
         $datos = Validator::make($datos, $reglas, ['dui.unique' => 'Ya existe una persona en planilla con ese tipo y número de documento.'])->validate();
 
+        if (filled($datos['alta_el'] ?? null) && $datos['alta_el'] > now()->toDateString() && empty($datos['confirmar_alta_futura'])) {
+            throw ValidationException::withMessages(['alta_el' => 'La fecha de ingreso es futura. Si es correcta, confirmala.']);
+        }
+
         return DB::transaction(function () use ($actor, $datos) {
             if (empty($datos['es_otra_persona'])) {
                 foreach ($this->coincidencias($datos['nombres'], $datos['apellidos']) as $coincidencia) {
@@ -124,14 +129,15 @@ class AltaEmpleado
                 'documento_tipo' => $datos['documento_tipo'], 'dui' => $datos['dui'],
                 'con_descuentos_ley' => $datos['con_descuentos_ley'], 'cargo' => $datos['cargo'] ?? null,
                 'alta_el' => $datos['alta_el'] ?? null, 'notas' => $datos['notas'] ?? null,
-                'sueldo_mensual' => filled($datos['sueldo_mensual'] ?? null) ? Dinero::decimal(Dinero::centavos($datos['sueldo_mensual'])) : null,
                 'activo' => true, 'registrado_por' => $actor->id,
             ]);
-            if ($empleado->sueldo_mensual !== null) {
-                $pagos = (int) config('planilla.pagos_por_mes');
-                app(SueldoHabitual::class)->registrar($actor, $empleado, [
-                    'importe' => Dinero::decimal((int) round(Dinero::centavos($empleado->sueldo_mensual) / $pagos, 0, PHP_ROUND_HALF_UP)),
-                    'vigente_desde' => $datos['alta_el'] ?? now()->toDateString(),
+            if (filled($datos['sueldo_mensual'] ?? null)) {
+                // La línea de tiempo valida el mínimo. Si no pasa, la transacción deshace
+                // todo y no queda una persona a medias.
+                app(SueldoHabitual::class)->registrarMensual($actor, $empleado, [
+                    'sueldo_mensual' => $datos['sueldo_mensual'],
+                    'vigente_desde' => $datos['sueldo_desde'] ?? $datos['alta_el'] ?? now()->toDateString(),
+                    'confirmar_bajo_minimo' => $datos['confirmar_bajo_minimo'] ?? false,
                 ]);
             }
             if (! $asistencia && ! empty($datos['marca'])) {

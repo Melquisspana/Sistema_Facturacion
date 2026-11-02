@@ -292,9 +292,9 @@ class AltaEmpleadoTest extends TestCase
     {
         $actor = $this->actor();
         $this->actingAs($actor)->post(route('planilla.empleados.store'), $this->datos(['sueldo_mensual' => '876.54']))->assertSessionHasNoErrors()->assertRedirect(route('planilla.empleados'));
-        $this->get(route('planilla.empleados'))->assertOk()->assertSee('Nuevo empleado')->assertSee('438.27');
+        $this->get(route('planilla.empleados'))->assertOk()->assertSee('Nuevo empleado')->assertSee('876.54');
         $lector = $this->actor('planilla.salarios');
-        $this->actingAs($lector)->get(route('planilla.empleados'))->assertOk()->assertDontSee('438.27')->assertDontSee('876.54')->assertDontSee('Sueldo vigente');
+        $this->actingAs($lector)->get(route('planilla.empleados'))->assertOk()->assertDontSee('876.54')->assertDontSee('Sueldo mensual');
     }
 
     public function test_migracion_aditiva_se_revierte_en_sqlite(): void
@@ -313,7 +313,6 @@ class AltaEmpleadoTest extends TestCase
     {
         $actor = $this->actor();
         $e = app(AltaEmpleado::class)->registrar($actor, $this->datos(['sueldo_mensual' => '500.01', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-8']));
-        $this->assertSame('500.01', $e->sueldo_mensual);
         $this->assertDatabaseHas('planilla_sueldos', ['planilla_empleado_id' => $e->id, 'importe' => '250.01']);
         $planilla = app(PrepararPlanilla::class)->abrir($actor, ['tipo_periodo' => 'quincenal', 'fecha' => '2026-11-02', 'clase' => 'regular', 'moneda' => 'USD']);
         $detalle = $planilla->detalles->sole();

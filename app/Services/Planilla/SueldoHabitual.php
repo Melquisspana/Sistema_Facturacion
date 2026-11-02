@@ -36,6 +36,8 @@ use Illuminate\Validation\ValidationException;
  */
 final class SueldoHabitual
 {
+    public function __construct(private SalarioMinimo $salarioMinimo) {}
+
     /**
      * Registra un importe habitual vigente desde una fecha.
      *
@@ -81,6 +83,8 @@ final class SueldoHabitual
 
             $valores = [
                 'importe' => Dinero::decimal($centavos),
+                // Corregir el importe por pago deja sin efecto el mensual de esa fila.
+                'importe_mensual' => null,
                 'motivo' => $datos['motivo'] ?? null,
                 'registrado_por' => $usuario->id,
             ];
@@ -96,6 +100,88 @@ final class SueldoHabitual
                 'vigente_desde' => $datos['vigente_desde'],
             ]);
         });
+    }
+
+    /**
+     * Registra el sueldo MENSUAL: guarda el mensual y su importe por pago en la misma
+     * fila, y comprueba que el sueldo sea legal.
+     *
+     * Por debajo del mínimo: con descuentos de ley no pasa; sin descuentos hay que
+     * confirmarlo. Se compara con el mínimo de hoy si la fecha ya pasó, porque lo que se
+     * está pagando es el sueldo de ahora, y alguien que entró en 2019 no cobra el mínimo
+     * de 2019.
+     *
+     * @param  array{sueldo_mensual: mixed, vigente_desde: string, motivo?: ?string, confirmar_bajo_minimo?: mixed}  $datos
+     */
+    public function registrarMensual(User $usuario, PlanillaEmpleado $empleado, array $datos): PlanillaSueldo
+    {
+        abort_unless($usuario->activo && $usuario->can('planilla.gestionar'), 403);
+        abort_unless($usuario->can('planilla.salarios'), 403);
+
+        Validator::make($datos, [
+            'sueldo_mensual' => ['required', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D'],
+            'vigente_desde' => ['required', 'date_format:Y-m-d'],
+            'motivo' => ['nullable', 'string', 'max:500'],
+        ], ['sueldo_mensual.required' => 'Escribí el sueldo mensual.'])->validate();
+
+        $mensual = Dinero::centavos((string) $datos['sueldo_mensual']);
+
+        if ($mensual <= 0) {
+            throw ValidationException::withMessages(['sueldo_mensual' => 'El sueldo tiene que ser mayor a cero.']);
+        }
+
+        $fecha = max($datos['vigente_desde'], now()->toDateString());
+        $minimo = $this->salarioMinimo->vigenteEn($fecha);
+
+        if ($mensual < $minimo && ($empleado->con_descuentos_ley || ! filter_var($datos['confirmar_bajo_minimo'] ?? false, FILTER_VALIDATE_BOOLEAN))) {
+            throw ValidationException::withMessages([
+                'sueldo_mensual' => 'El sueldo queda por debajo del salario mínimo vigente ('.Dinero::mostrar($minimo).')'
+                    .($empleado->con_descuentos_ley ? '.' : '. Para continuar, confirmalo.'),
+            ]);
+        }
+
+        $pagos = (int) config('planilla.pagos_por_mes');
+        // Al centavo, la mitad hacia arriba, sin pasar por decimales.
+        $importe = intdiv(2 * $mensual + $pagos, 2 * $pagos);
+
+        $fila = $this->registrar($usuario, $empleado, [
+            'importe' => Dinero::decimal($importe),
+            'vigente_desde' => $datos['vigente_desde'],
+            'motivo' => $datos['motivo'] ?? null,
+        ]);
+        $fila->update(['importe_mensual' => Dinero::decimal($mensual)]);
+
+        return $fila->fresh();
+    }
+
+    /**
+     * Sueldo mensual vigente en una fecha, por persona. Si la fila no trae mensual
+     * (viene del importe por pago), se reconstruye con `pagos_por_mes`.
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, int> empleado_id => centavos
+     */
+    public function mensualesEn(Collection $empleados, string $fecha): array
+    {
+        if ($empleados->isEmpty()) {
+            return [];
+        }
+
+        return PlanillaSueldo::whereIn('planilla_empleado_id', $empleados->pluck('id'))
+            ->whereDate('vigente_desde', '<=', $fecha)
+            ->orderBy('planilla_empleado_id')
+            ->orderByDesc('vigente_desde')
+            ->orderByDesc('id')
+            ->get(['planilla_empleado_id', 'importe', 'importe_mensual'])
+            ->groupBy('planilla_empleado_id')
+            ->map(function ($filas) {
+                $fila = $filas->first();
+
+                return $fila->importe_mensual !== null
+                    ? Dinero::centavos((string) $fila->importe_mensual)
+                    : Dinero::centavos((string) $fila->importe) * (int) config('planilla.pagos_por_mes');
+            })
+            ->all();
     }
 
     /**

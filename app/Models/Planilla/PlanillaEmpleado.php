@@ -29,7 +29,10 @@ class PlanillaEmpleado extends Model
 
     protected function casts(): array
     {
-        return ['activo' => 'boolean', 'salario_referencia' => 'decimal:2', 'sueldo_mensual' => 'decimal:2', 'con_descuentos_ley' => 'boolean', 'dependientes' => 'array'];
+        return [
+            'activo' => 'boolean', 'salario_referencia' => 'decimal:2', 'con_descuentos_ley' => 'boolean',
+            'alta_el' => 'date', 'fecha_nacimiento' => 'date', 'dui_expedido_el' => 'date', 'dependientes' => 'array',
+        ];
     }
 
     public function asistencia(): BelongsTo
