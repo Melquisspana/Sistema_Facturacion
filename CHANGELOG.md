@@ -8,6 +8,16 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Agregado
+
+- Personal: Asistencia y Planilla quedan en una sola área, con un menú único y una lista de empleados en la que cada persona aparece una vez. Su ficha junta datos, huellas, quincenas, sueldo y contrato, y cada bloque sigue con su permiso y su interruptor. Las direcciones viejas de la lista y la ficha redirigen. Las rutas del lector no cambian. Sin migraciones.
+- Planilla: aguinaldo y Quincena 25 como planillas propias, que se confirman, pagan e imprimen como las demás. Calculan el monto de cada persona según su antigüedad y sueldo, con parámetros y fuentes en `config/planilla_prestaciones.php`, con y sin descuentos de ley y sin ISSS ni AFP. Solo abren dentro del plazo de ley. Sin fecha de ingreso frenan esa línea.
+- Planilla: alta única de empleado (#165). Una sola pantalla registra a la persona una vez y, según lo que se marque, crea y enlaza su usuario, su ficha de Asistencia y su ficha de Rutas. Siempre queda en planilla, con o sin descuentos de ley. Valida documento y coincidencias por nombre y apellido para no duplicar a nadie. La baja apaga todos los módulos en un solo lugar, sin borrar nada, y protege al último administrador. Trae migración.
+- Planilla: ISSS, AFP y renta se calculan solos para quien va con descuentos, en la quincena regular, con parámetros y fuentes en `config/planilla_descuentos.php`. Son una propuesta: se pueden corregir a mano y queda constancia. Avisa lo que no calcula: la deducción de $1,600 del Tramo II, el recálculo de junio y diciembre y la renta de pagos extraordinarios.
+- Planilla: salario mínimo por sector con vigencia. El sueldo no puede quedar por debajo si va con descuentos; sin descuentos hay que confirmarlo. La lista de personas muestra quién queda por debajo cuando cambia el mínimo, y el sueldo se cambia desde ahí con fecha.
+- Planilla: contrato de trabajo en PDF para quien va con descuentos, con la fecha del día y el sueldo vigente ese día. Los datos del patrono van en el `.env`, y sin ellos no se genera.
+- Planilla: `personal:cargar` carga personal desde un CSV privado. Por defecto solo muestra lo que haría, sin nombres ni montos, y con `--aplicar` carga todo o nada.
+
 ### Corregido
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.

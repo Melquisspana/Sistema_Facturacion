@@ -26,8 +26,9 @@
             @endif
 
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-                Control de remuneraciones con importes revisados a mano. <strong>No es nómina legal</strong>:
-                no calcula ISSS, AFP, renta, vacaciones, aguinaldo, indemnización ni horas extra.
+                Control de remuneraciones con importes revisados. ISSS, AFP y renta son una propuesta que se
+                puede corregir. <strong>No calcula</strong> aporte patronal, vacaciones, aguinaldo, indemnización
+                ni horas extra.
             </p>
 
             @unless ($verImportes)

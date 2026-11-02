@@ -41,9 +41,9 @@
     $gastosFase2 = $veGastos && $gastosInstalacion->fase2Instalada();
     $gastosAvisosSinLeer = $gastosFase2 ? $gastosInstalacion->avisosSinLeer($usuario) : 0;
 
-    // Planilla vive DENTRO del área «Gastos y pagos», pero con su propia llave. Tener
-    // `gastos.ver` no muestra ni el título del grupo: los sueldos son confidenciales y
-    // hasta la existencia del menú dice algo.
+    // Planilla vive DENTRO del área «Personal», pero con su propia llave. Tener
+    // `asistencia.ver` no muestra sus enlaces: los sueldos son confidenciales y hasta la
+    // existencia del menú dice algo.
     //
     // Nótese que NO se pregunta nada a la base. La comprobación de si las tablas de
     // Planilla están migradas la hace el middleware `modulo.planilla` cuando alguien

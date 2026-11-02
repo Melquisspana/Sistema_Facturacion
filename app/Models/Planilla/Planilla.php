@@ -31,6 +31,8 @@ class Planilla extends Model
     public const CLASES = [
         'regular' => 'Normal',
         'extraordinaria' => 'Fuera de calendario',
+        'aguinaldo' => 'Aguinaldo',
+        'quincena25' => 'Quincena 25',
     ];
 
     public const ESTADOS = [

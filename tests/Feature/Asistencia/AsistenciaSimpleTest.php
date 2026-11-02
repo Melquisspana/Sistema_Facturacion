@@ -137,7 +137,7 @@ class AsistenciaSimpleTest extends TestCase
         $ana = AsistenciaEmpleado::factory()->create();
         AsistenciaHuella::factory()->count(2)->create(['asistencia_empleado_id' => $ana->id]);
         $html = $this->actingAs($this->usuario(['asistencia.ver', 'asistencia.gestionar']))
-            ->get(route('asistencia.empleados.show', $ana))->assertOk()->assertSee('Huella 1')->assertSee('Huella 2')
+            ->get(route('personal.empleados.show', 'a'.$ana->id))->assertOk()->assertSee('Huella 1')->assertSee('Huella 2')
             ->assertSee('Guardar huella')->assertSee('Quitar')->assertSee('Avanzado')->getContent();
         $this->assertStringNotContainsString('ranura', mb_strtolower(preg_replace('/<details\b[^>]*>.*?<\/details>/si', '', $html)));
         $this->assertDoesNotMatchRegularExpression('/<details\b[^>]*\bopen\b/i', $html);
@@ -149,7 +149,7 @@ class AsistenciaSimpleTest extends TestCase
         $lector = AsistenciaDispositivo::factory()->create(['capacidad_sensor' => 300, 'ranuras_ocupadas' => [], 'indice_sincronizado_at' => now()]);
         $this->actingAs($this->usuario(['asistencia.ver', 'asistencia.gestionar']))
             ->post(route('asistencia.empleados.enrolamiento.store', $ana), ['asistencia_dispositivo_id' => $lector->id])->assertSessionHasNoErrors();
-        $html = $this->get(route('asistencia.empleados.show', $ana))->assertOk()
+        $html = $this->get(route('personal.empleados.show', 'a'.$ana->id))->assertOk()
             ->assertSee('No canceles mientras el lector pide el dedo')->assertSee('sin dueño')->assertSee('Cancelar')->getContent();
         $this->assertStringNotContainsString('ranura', mb_strtolower(preg_replace('/<details\b[^>]*>.*?<\/details>/si', '', $html)));
     }
@@ -159,7 +159,7 @@ class AsistenciaSimpleTest extends TestCase
         $ana = AsistenciaEmpleado::factory()->create();
         $html = $this->actingAs($this->usuario(['asistencia.ver', 'asistencia.gestionar']))
             ->withSession(['error' => 'La ranura está ocupada.'])
-            ->get(route('asistencia.empleados.show', $ana))->assertOk()->assertSee('La ranura está ocupada.')->getContent();
+            ->get(route('personal.empleados.show', 'a'.$ana->id))->assertOk()->assertSee('La ranura está ocupada.')->getContent();
         $this->assertStringNotContainsString('ranura', mb_strtolower(preg_replace('/<details\b[^>]*>.*?<\/details>/si', '', $html)));
         // El error no queda escondido: Avanzado se abre solo.
         $this->assertMatchesRegularExpression('/<details\b[^>]*\bopen\b/i', $html);
@@ -198,7 +198,7 @@ class AsistenciaSimpleTest extends TestCase
     public function test_las_pantallas_de_consulta_exigen_ver_y_se_apagan_con_el_modulo(): void
     {
         $ana = AsistenciaEmpleado::factory()->create();
-        $urls = [route('asistencia.dashboard'), route('asistencia.empleados.index'), route('asistencia.empleados.show', $ana), route('asistencia.reporte'), route('asistencia.reporte.excel')];
+        $urls = [route('asistencia.dashboard'), route('personal.empleados'), route('personal.empleados.show', 'a'.$ana->id), route('asistencia.reporte'), route('asistencia.reporte.excel')];
         $this->actingAs($this->usuario([]));
         foreach ($urls as $url) {
             $this->get($url)->assertForbidden();

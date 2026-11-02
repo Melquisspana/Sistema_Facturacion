@@ -31,7 +31,7 @@
         <div class="hi-persona">
             <div class="nombre">{{ $l['nombre'] }}</div>
             @if ($l['dui'])
-                <div class="dui mono">DUI {{ $l['dui'] }}</div>
+                <div class="dui mono">{{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}</div>
             @endif
         </div>
 
@@ -54,10 +54,13 @@
         </div>
 
         <table class="hi-desglose">
-            <tr>
-                <td>Importe del período</td>
-                <td class="imp mono">{{ $l['salario'] }}</td>
-            </tr>
+            {{-- Aguinaldo y Quincena 25 no pagan tiempo: su monto sale como ingreso. --}}
+            @if ($l['salario'] !== '0.00')
+                <tr>
+                    <td>Importe del período</td>
+                    <td class="imp mono">{{ $l['salario'] }}</td>
+                </tr>
+            @endif
 
             @foreach ($l['ingresos'] as $ingreso)
                 <tr>
@@ -106,7 +109,7 @@
                              «conforme@if» no se compilaría y su cierre sí. --}}
                         Recibí conforme{{ $l['parcial'] ? " los {$moneda} {$l['pagado_txt']} detallados arriba" : '' }}
                     </div>
-                    <div class="quien mono">{{ $l['nombre'] }}@if ($l['dui']) · DUI {{ $l['dui'] }}@endif</div>
+                    <div class="quien mono">{{ $l['nombre'] }}@if ($l['dui']) · {{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}@endif</div>
                 </div>
                 <div class="bloque">
                     <div class="linea"></div>
@@ -120,9 +123,9 @@
         @endunless
 
         <p class="hi-legal">
-            Control interno de remuneraciones con importes revisados a mano. No es una planilla de
-            nómina legal: no incluye cálculos de ISSS, AFP, renta, vacaciones, aguinaldo,
-            indemnización ni horas extra.
+            Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
+            propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
+            Única. No incluye aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
             @if ($esBorrador)
                 La planilla no está confirmada y no se ha pagado nada: este documento
                 <strong>no lleva espacio para firmar</strong> ni declara recibido.

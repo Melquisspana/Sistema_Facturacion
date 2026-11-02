@@ -75,7 +75,7 @@
                     @if ($empleados->isEmpty())
                         <p class="mt-2 text-sm text-gray-600">
                             Primero hay que tener personas en planilla.
-                            <a href="{{ route('planilla.empleados') }}" class="underline">Registrar o vincular una persona</a>.
+                            <a href="{{ route('personal.empleados') }}" class="underline">Registrar o vincular una persona</a>.
                         </p>
                     @else
                         <div x-data="{

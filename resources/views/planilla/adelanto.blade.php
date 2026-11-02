@@ -33,7 +33,7 @@
                         <div>
                             <div class="nombre">{{ $anticipo->empleado->nombre }}</div>
                             @if ($anticipo->empleado->dui)
-                                <div class="dui mono">DUI {{ $anticipo->empleado->dui }}</div>
+                                <div class="dui mono">{{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$anticipo->empleado->documento_tipo ?? 'dui'] }} {{ $anticipo->empleado->dui }}</div>
                             @endif
                         </div>
                         <div style="text-align:right">
@@ -77,7 +77,7 @@
                             <div class="linea"></div>
                             <div class="txt">Recibí conforme</div>
                             <div class="quien mono">
-                                {{ $anticipo->empleado->nombre }}@if ($anticipo->empleado->dui) · DUI {{ $anticipo->empleado->dui }}@endif
+                                {{ $anticipo->empleado->nombre }}@if ($anticipo->empleado->dui) · {{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$anticipo->empleado->documento_tipo ?? 'dui'] }} {{ $anticipo->empleado->dui }}@endif
                             </div>
                         </div>
                         <div class="bloque">

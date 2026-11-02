@@ -14,20 +14,25 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * Tabla propia con TRES punteros opcionales de identidad —Asistencia, Personal de
  * Rutas y usuario del sistema— para no volver a escribir a nadie y para que se sepa
- * que el Rene de acá es el de allá. Ninguno es una dependencia: la planilla funciona
+ * que el Hugo de acá es el de allá. Ninguno es una dependencia: la planilla funciona
  * con los tres en NULL, nunca lee marcaciones ni huellas, y **no exige biometría**.
  *
  * Ver la migración para el porqué de no colgarse de `asistencia_empleados`.
  */
 class PlanillaEmpleado extends Model
 {
+    public const DOCUMENTO_TIPOS = ['dui' => 'DUI', 'pasaporte' => 'Pasaporte', 'carne_residente' => 'Carné de residente'];
+
     protected $table = 'planilla_empleados';
 
     protected $guarded = ['id'];
 
     protected function casts(): array
     {
-        return ['activo' => 'boolean', 'salario_referencia' => 'decimal:2'];
+        return [
+            'activo' => 'boolean', 'salario_referencia' => 'decimal:2', 'con_descuentos_ley' => 'boolean',
+            'alta_el' => 'date', 'fecha_nacimiento' => 'date', 'dui_expedido_el' => 'date', 'dependientes' => 'array',
+        ];
     }
 
     public function asistencia(): BelongsTo

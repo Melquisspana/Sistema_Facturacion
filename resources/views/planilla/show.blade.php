@@ -174,6 +174,13 @@
                             partir de ahí la planilla deja de editarse.
                         </p>
 
+                        @if ($avisos !== [])
+                            <div class="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
+                                <p class="font-medium">Para revisar antes de confirmar:</p>
+                                <ul class="mt-1 list-inside list-disc">@foreach ($avisos as $a)<li>{{ $a }}</li>@endforeach</ul>
+                            </div>
+                        @endif
+
                         @if ($reparos !== [])
                             <div class="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                                 <p class="font-medium">Antes hay que resolver:</p>
@@ -208,7 +215,7 @@
                                 @if ($e['pendiente'] > 0 && ! $planilla->borrador())
                                     <span class="whitespace-nowrap text-xs text-amber-700">queda {{ Dinero::mostrar($e['pendiente']) }}</span>
                                 @endif
-                                @if ($detalle->gasto)
+                                @if ($detalle->gasto && config('gastos.enabled'))
                                     <a href="{{ route('gastos.show', $detalle->gasto) }}" class="text-xs text-indigo-600 underline">Ver obligación</a>
                                 @endif
                             </div>
@@ -231,7 +238,7 @@
                                 <div class="flex flex-wrap items-center gap-3 text-sm">
                                     <span class="whitespace-nowrap tabular-nums">{{ $planilla->moneda }} {{ Dinero::mostrar($t->importe) }}</span>
                                     <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $insignia[$e['estado']] }}">{{ EstadoPlanilla::ETIQUETAS[$e['estado']] }}</span>
-                                    @if ($t->gasto)
+                                    @if ($t->gasto && config('gastos.enabled'))
                                         <a href="{{ route('gastos.show', $t->gasto) }}" class="text-xs text-indigo-600 underline">Ver obligación</a>
                                     @endif
                                 </div>

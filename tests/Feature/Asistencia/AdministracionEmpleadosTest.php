@@ -64,7 +64,7 @@ class AdministracionEmpleadosTest extends TestCase
         AsistenciaEmpleado::factory()->create(['nombres' => 'Ana María', 'apellidos' => 'Pérez Rivas']);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.index'))
+            ->get(route('personal.empleados'))
             ->assertOk()
             ->assertSee('Ana María Pérez Rivas');
     }
@@ -86,7 +86,7 @@ class AdministracionEmpleadosTest extends TestCase
         ]);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.index'))
+            ->get(route('personal.empleados'))
             ->assertOk()
             ->assertSee('Sin huella');
     }
@@ -97,13 +97,13 @@ class AdministracionEmpleadosTest extends TestCase
         AsistenciaEmpleado::factory()->inactivo()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.index', ['q' => 'Beto']))
+            ->get(route('personal.empleados', ['q' => 'Beto']))
             ->assertOk()
             ->assertSee('Beto Ramos')
             ->assertDontSee('Ana Pérez');
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.index', ['activo' => '1']))
+            ->get(route('personal.empleados', ['activo' => '1']))
             ->assertOk()
             ->assertSee('Ana Pérez')
             ->assertDontSee('Beto Ramos');
@@ -112,7 +112,7 @@ class AdministracionEmpleadosTest extends TestCase
     public function test_el_listado_vacio_lo_explica(): void
     {
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.index'))
+            ->get(route('personal.empleados'))
             ->assertOk()
             ->assertSee('Todavía no hay personas dadas de alta.');
     }
@@ -278,8 +278,8 @@ class AdministracionEmpleadosTest extends TestCase
         $empleado = AsistenciaEmpleado::factory()->create();
         $usuario = $this->soloVer();
 
-        $this->actingAs($usuario)->get(route('asistencia.empleados.index'))->assertOk();
-        $this->actingAs($usuario)->get(route('asistencia.empleados.show', $empleado))->assertOk();
+        $this->actingAs($usuario)->get(route('personal.empleados'))->assertOk();
+        $this->actingAs($usuario)->get(route('personal.empleados.show', 'a'.$empleado->id))->assertOk();
     }
 
     /** @param  array{0: string, 1: string, 2: array<string, mixed>}  $accion */

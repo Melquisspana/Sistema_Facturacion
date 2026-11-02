@@ -94,7 +94,7 @@ class PrepararPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $asistencia = AsistenciaEmpleado::create([
-            'nombres' => 'Rene', 'apellidos' => 'Barillas', 'activo' => true,
+            'nombres' => 'Hugo', 'apellidos' => 'Ficticio', 'activo' => true,
         ]);
 
         $empleado = app(RegistrarEmpleado::class)->registrar($u, [
@@ -102,7 +102,7 @@ class PrepararPlanillaTest extends TestCase
             'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id,
         ]);
 
-        $this->assertSame('Rene Barillas', $empleado->nombre);
+        $this->assertSame('Hugo Ficticio', $empleado->nombre);
         $this->assertSame($asistencia->id, $empleado->asistencia_empleado_id);
         $this->assertSame('Asistencia', $empleado->origenIdentidad());
         // No se creó ninguna persona nueva en Asistencia.
@@ -112,10 +112,10 @@ class PrepararPlanillaTest extends TestCase
     public function test_la_misma_identidad_no_entra_dos_veces_al_registro(): void
     {
         $u = $this->gestor();
-        $asistencia = AsistenciaEmpleado::create(['nombres' => 'Rene', 'apellidos' => 'Barillas', 'activo' => true]);
+        $asistencia = AsistenciaEmpleado::create(['nombres' => 'Hugo', 'apellidos' => 'Ficticio', 'activo' => true]);
 
-        $primera = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Rene Barillas', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
-        $segunda = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Rene Barillas', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        $primera = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Hugo Ficticio', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        $segunda = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Hugo Ficticio', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
 
         $this->assertSame($primera->id, $segunda->id);
         $this->assertSame(1, PlanillaEmpleado::count());
@@ -129,7 +129,7 @@ class PrepararPlanillaTest extends TestCase
         $antes = collect(app(RegistrarEmpleado::class)->candidatos())->where('tipo', 'asistencia')->pluck('id');
         $this->assertTrue($antes->contains($asistencia->id));
 
-        app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Lucia Del Carmen', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Flor Del Campo', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
 
         $despues = collect(app(RegistrarEmpleado::class)->candidatos())->where('tipo', 'asistencia')->pluck('id');
         $this->assertFalse($despues->contains($asistencia->id));
@@ -148,7 +148,7 @@ class PrepararPlanillaTest extends TestCase
 
         $this->assertNotNull($empleado->id);
         // Y las pantallas de planilla abren igual con el módulo de Asistencia apagado.
-        $this->actingAs($u)->get(route('planilla.empleados'))->assertOk()->assertSee('Sofia Martinez');
+        $this->actingAs($u)->get(route('personal.empleados'))->assertOk()->assertSee('Sofia Martinez');
         $this->actingAs($u)->get(route('planilla.index'))->assertOk();
     }
 
@@ -434,12 +434,12 @@ class PrepararPlanillaTest extends TestCase
         $recibo->assertSee('se entrega a', false);
     }
 
-    public function test_la_planilla_no_promete_calculo_legal_en_ninguna_pantalla(): void
+    public function test_la_planilla_dice_que_calcula_y_que_no_en_cada_pantalla(): void
     {
         $u = $this->gestor();
 
-        $this->actingAs($u)->get(route('planilla.index'))->assertOk()->assertSee('No es nómina legal', false);
-        $this->actingAs($u)->get(route('planilla.formatos'))->assertOk()->assertSee('no incluye cálculos de', false);
+        $this->actingAs($u)->get(route('planilla.index'))->assertOk()->assertSee('una propuesta que se', false)->assertSee('aporte patronal', false);
+        $this->actingAs($u)->get(route('planilla.formatos'))->assertOk()->assertSee('no sustituye la Planilla', false);
     }
 
     // ─────────────────── Lo que se corrigió del formulario ───────────────────

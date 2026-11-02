@@ -82,15 +82,16 @@ class PpqAvisosAlbaranTest extends TestCase
     private function ccf(bool $entregado = true, array $datosDte = []): CobroDocumento
     {
         // La OC trae la sala (0017) aunque el albarán todavía no haya llegado.
-        $dte = $this->dte('03', $datosDte + ['numero_orden_compra' => '2609001700'.str_pad((string) ($this->n + 1), 4, '0', STR_PAD_LEFT)]);
+        $oc = '2609001700'.str_pad((string) ($this->n + 1), 4, '0', STR_PAD_LEFT);
+        $dte = $this->dte('03', $datosDte + ['numero_orden_compra' => $oc]);
         $doc = CobroDocumento::create([
             'cliente_id' => $this->cliente->id, 'origen' => OrigenCobroDocumento::Dte->value, 'dte_id' => $dte->id,
             'tipo_dte' => '03', 'numero_control' => $dte->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => $dte->total_pagar,
         ]);
         if ($entregado) {
-            $albaran = PpqAlbaran::create(['numero_albaran' => 'AC01/0017/00/'.(5000 + $doc->id), 'tipo_codigo' => 'AC01',
+            $albaran = PpqAlbaran::create(['numero_albaran' => 'AC01/0017/00/'.(5000 + $this->n), 'tipo_codigo' => 'AC01',
                 'fecha_albaran' => today()->toDateString(), 'monto_albaran' => '98.95', 'sala_codigo' => '0017',
-                'numero_orden_compra' => '2609001700'.str_pad((string) $doc->id, 4, '0', STR_PAD_LEFT)]);
+                'numero_orden_compra' => $oc]);
             $doc->forceFill(['ppq_albaran_id' => $albaran->id, 'vinculacion_estado' => EstadoVinculacionAlbaran::Vinculado->value])->save();
         }
 
@@ -186,7 +187,7 @@ class PpqAvisosAlbaranTest extends TestCase
     private function devolucion(CobroDocumento $doc, string $monto = '13.95', array $extra = []): PpqAlbaran
     {
         return PpqAlbaran::create($extra + [
-            'numero_albaran' => 'AC04/0017/00/'.(7000 + $doc->id),
+            'numero_albaran' => 'AC04/0017/00/'.(7000 + $this->n),
             'numero_orden_compra' => $doc->albaran->numero_orden_compra,
             'sala_codigo' => '0017', 'monto_albaran' => $monto,
             'fecha_albaran' => '2026-09-11', 'origen' => 'gmail',

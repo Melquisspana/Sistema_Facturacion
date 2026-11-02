@@ -8,6 +8,7 @@ use App\Enums\TamanioContribuyente;
 use App\Enums\TipoCliente;
 use App\Enums\TipoDocumentoCliente;
 use App\Enums\TipoPersona;
+use App\Support\Dui;
 use App\Support\Ubicacion\CoherenciaUbicacion;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -135,7 +136,7 @@ class ClienteRequest extends FormRequest
         }
         if ($documento === TipoDocumentoCliente::Dui->value) {
             $reglas['num_documento'][] = function ($attr, $value, $fail) {
-                if (! $this->duiEsValido((string) $value)) {
+                if (! Dui::esValido((string) $value)) {
                     $fail('El DUI no es válido (formato o dígito verificador).');
                 }
             };
@@ -261,32 +262,5 @@ class ClienteRequest extends FormRequest
         $limpio['es_agente_retencion'] = ($tamanio === TamanioContribuyente::Grande->value);
 
         $this->merge($limpio);
-    }
-
-    /**
-     * Valida el DUI salvadoreño: 8 dígitos + dígito verificador.
-     */
-    private function duiEsValido(string $dui): bool
-    {
-        $dui = preg_replace('/[^0-9]/', '', $dui);
-
-        if (strlen($dui) !== 9) {
-            return false;
-        }
-
-        $digitos = str_split($dui);
-        $verificador = (int) array_pop($digitos);
-
-        $suma = 0;
-        foreach ($digitos as $i => $digito) {
-            $suma += ((int) $digito) * (9 - $i);
-        }
-
-        $calculado = 10 - ($suma % 10);
-        if ($calculado === 10) {
-            $calculado = 0;
-        }
-
-        return $calculado === $verificador;
     }
 }

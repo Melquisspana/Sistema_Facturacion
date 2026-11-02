@@ -1021,3 +1021,33 @@ Tres detalles que la implementación tuvo que respetar:
 
 `sidebar-planilla.blade.php` y el case `AreaSistema::Planilla`. No hay dos menús que
 mantener sincronizados ni dos sitios donde agregar una fila.
+
+## Alta única, descuentos de ley y contrato (#165)
+
+**El centro es la persona en `planilla_empleados`**, sin tabla nueva. Quien entra por «Nuevo empleado» siempre queda en planilla y, según las casillas, se le crea y enlaza usuario, ficha de Asistencia y ficha de Rutas. Un usuario externo sin planilla, como la contadora, sigue saliendo por Usuarios. `rutas_personal.user_id` se llena solo con rol Vendedor: `FichaVendedor` apaga la ficha de cualquier otro rol.
+
+**El sueldo vive en `planilla_sueldos`.** Cada fila guarda el mensual y el importe por pago. El mensual es el que se compara con el mínimo y el que imprime el contrato; el importe por pago es el que propone la quincena.
+
+**Los parámetros de ley están en `config/planilla_descuentos.php`**, con vigencia y fuente. Cuando la ley cambia se agrega una versión, sin tocar la anterior. Sin versión vigente el sistema lo dice: nunca calcula con cero.
+
+**ISSS, AFP y renta son una propuesta.** `DescuentosLey` calcula en centavos enteros y `PrepararPlanilla::guardarLineas` los pone en el servidor. Para saber si alguien corrigió un importe se compara con el último `importe_calculado` guardado, no con una marca del navegador.
+
+**Lo que no se calcula, y se avisa:** la deducción de US$1,600 del Tramo II, el recálculo de junio y diciembre, y la renta de pagos extraordinarios. Tampoco se calcula el aporte patronal.
+
+**Gastos puede estar apagado.** Planilla necesita sus tablas, no su pantalla: con `GASTOS_ENABLED=false` confirma, paga y revierte igual, y oculta los enlaces a `/gastos`.
+
+**El contrato no se guarda.** Se arma con los datos del día en que se genera. El texto legal está en la vista; los datos del patrono salen de `empresas` y del `.env`, sin valores por defecto.
+
+**Carga inicial:** `personal:cargar` lee un CSV que vive fuera del repositorio. Por defecto no escribe nada y su salida no muestra datos personales.
+
+## Aguinaldo y Quincena 25
+
+Son clases de planilla (`aguinaldo`, `quincena25`), no un módulo aparte: usan el mismo preparar, confirmar, pagar y recibos. Cada persona lleva una línea con salario en cero y el monto como ingreso, que se puede corregir a mano. No llevan ISSS, AFP ni renta, y entran quienes van con y sin descuentos.
+
+`PrestacionAnual` calcula con `config/planilla_prestaciones.php`. El aguinaldo tiene una versión por año, porque su exención de renta es transitoria: si falta el año, no se abre. Sin fecha de ingreso o sin sueldo, esa línea queda vacía y frena la confirmación. No cubre el proporcional de quien se va antes del pago (Código de Trabajo Art. 202 y Ley Quincena 25 Art. 3): eso va en la liquidación.
+
+## Área Personal: Asistencia y Planilla juntas
+
+Planilla sale de «Gastos y pagos» y entra al área que antes se llamaba Asistencia, que ahora se muestra como **Personal**. `AreaSistema::Asistencia` conserva su value, así que sus URL y su barra no cambian. Tiene dos puertas, una por módulo: se apaga cada una por su lado y quien tenga un solo permiso entra por la suya.
+
+`/personal/empleados` es la lista única: una fila por `planilla_empleados`, más quien solo está en Asistencia. La ficha (`p12` o `a7`) arma sus bloques según lo que el usuario alcance, y no escribe nada: las acciones siguen en cada módulo. Las direcciones viejas de lista y ficha responden 301. El lector de huellas no pasa por acá.
