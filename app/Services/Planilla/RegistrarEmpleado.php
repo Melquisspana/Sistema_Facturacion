@@ -20,7 +20,7 @@ use Illuminate\Validation\ValidationException;
  * El sistema ya tiene personas en tres sitios —`users`, `asistencia_empleados` y
  * `rutas_personal`— y hoy las mismas se repiten sin enlazar. Esta pantalla no agrega
  * una cuarta lista suelta: ofrece a quien YA está y lo engancha con un puntero, de
- * modo que el Rene de planilla sea demostrablemente el Rene de asistencia.
+ * modo que el Hugo de planilla sea demostrablemente el Hugo de asistencia.
  *
  * TRES COSAS QUE NO HACE, y son las que pidió el encargo:
  *

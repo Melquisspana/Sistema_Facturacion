@@ -55,9 +55,9 @@ class FichaVendedorTest extends TestCase
 
     public function test_engancha_la_ficha_cargada_solo_con_el_primer_nombre(): void
     {
-        $existente = PersonalRuta::create(['nombre' => 'Marcelo']);
+        $existente = PersonalRuta::create(['nombre' => 'Hernán']);
 
-        $usuario = $this->crear('Marcelo Rene Villacorta');
+        $usuario = $this->crear('Hernán Ernesto Prueba');
 
         $this->assertSame($usuario->id, $existente->fresh()->user_id);
         $this->assertSame(1, PersonalRuta::count());

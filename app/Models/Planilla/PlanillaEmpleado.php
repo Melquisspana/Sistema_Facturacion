@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  * Tabla propia con TRES punteros opcionales de identidad —Asistencia, Personal de
  * Rutas y usuario del sistema— para no volver a escribir a nadie y para que se sepa
- * que el Rene de acá es el de allá. Ninguno es una dependencia: la planilla funciona
+ * que el Hugo de acá es el de allá. Ninguno es una dependencia: la planilla funciona
  * con los tres en NULL, nunca lee marcaciones ni huellas, y **no exige biometría**.
  *
  * Ver la migración para el porqué de no colgarse de `asistencia_empleados`.

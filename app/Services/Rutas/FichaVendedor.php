@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
  *
  *  - Si ya hay una ficha enlazada a ese usuario, se usa.
  *  - Si no, se engancha una ficha SIN usuario cuyo nombre coincida: el nombre completo, o el
- *    primer nombre cuando la ficha se cargó solo con él («Marcelo»), siempre que sea UNA sola.
+ *    primer nombre cuando la ficha se cargó solo con él («Hernán»), siempre que sea UNA sola.
  *    Con dos candidatas no se adivina: se crea una ficha nueva.
  *  - Si no hay ninguna, se crea con el nombre del usuario.
  *

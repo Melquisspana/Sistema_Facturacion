@@ -35,12 +35,12 @@ use Illuminate\Support\Facades\Schema;
  *
  * ─────────────────────── Y sin embargo, no se duplica la identidad ───────────────────────
  *
- * Hoy las mismas personas YA están dos veces —«Rene Barillas» está en `users` y en
+ * Hoy las mismas personas YA están dos veces —«Hugo Ficticio» está en `users` y en
  * `asistencia_empleados`, sin enlazar— y una tercera lista suelta empeoraría eso. Por eso hay
  * DOS punteros opcionales y únicos: `user_id` y `asistencia_empleado_id`. Son REFERENCIAS DE
  * IDENTIDAD, no dependencias: Rutas nunca lee marcaciones, nunca exige el módulo encendido y
  * funciona perfectamente con los dos en NULL. Lo que compran es que nadie tenga que adivinar
- * si el Rene de acá es el de allá, y que unificar todo algún día sea una migración de datos y
+ * si el Hugo de acá es el de allá, y que unificar todo algún día sea una migración de datos y
  * no una investigación.
  *
  * `nullOnDelete` en los dos: dar de baja un usuario o un empleado no puede borrar a la

@@ -94,7 +94,7 @@ class PrepararPlanillaTest extends TestCase
     {
         $u = $this->gestor();
         $asistencia = AsistenciaEmpleado::create([
-            'nombres' => 'Rene', 'apellidos' => 'Barillas', 'activo' => true,
+            'nombres' => 'Hugo', 'apellidos' => 'Ficticio', 'activo' => true,
         ]);
 
         $empleado = app(RegistrarEmpleado::class)->registrar($u, [
@@ -102,7 +102,7 @@ class PrepararPlanillaTest extends TestCase
             'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id,
         ]);
 
-        $this->assertSame('Rene Barillas', $empleado->nombre);
+        $this->assertSame('Hugo Ficticio', $empleado->nombre);
         $this->assertSame($asistencia->id, $empleado->asistencia_empleado_id);
         $this->assertSame('Asistencia', $empleado->origenIdentidad());
         // No se creó ninguna persona nueva en Asistencia.
@@ -112,10 +112,10 @@ class PrepararPlanillaTest extends TestCase
     public function test_la_misma_identidad_no_entra_dos_veces_al_registro(): void
     {
         $u = $this->gestor();
-        $asistencia = AsistenciaEmpleado::create(['nombres' => 'Rene', 'apellidos' => 'Barillas', 'activo' => true]);
+        $asistencia = AsistenciaEmpleado::create(['nombres' => 'Hugo', 'apellidos' => 'Ficticio', 'activo' => true]);
 
-        $primera = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Rene Barillas', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
-        $segunda = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Rene Barillas', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        $primera = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Hugo Ficticio', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        $segunda = app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Hugo Ficticio', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
 
         $this->assertSame($primera->id, $segunda->id);
         $this->assertSame(1, PlanillaEmpleado::count());
@@ -129,7 +129,7 @@ class PrepararPlanillaTest extends TestCase
         $antes = collect(app(RegistrarEmpleado::class)->candidatos())->where('tipo', 'asistencia')->pluck('id');
         $this->assertTrue($antes->contains($asistencia->id));
 
-        app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Lucia Del Carmen', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
+        app(RegistrarEmpleado::class)->registrar($u, ['nombre' => 'Flor Del Campo', 'origen_tipo' => 'asistencia', 'origen_id' => $asistencia->id]);
 
         $despues = collect(app(RegistrarEmpleado::class)->candidatos())->where('tipo', 'asistencia')->pluck('id');
         $this->assertFalse($despues->contains($asistencia->id));
