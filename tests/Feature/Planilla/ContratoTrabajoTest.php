@@ -90,6 +90,18 @@ class ContratoTrabajoTest extends TestCase
         $this->assertStringContainsString('Edad: 36', $html);
     }
 
+    public function test_el_horario_suma_44_horas_y_no_cuenta_el_almuerzo(): void
+    {
+        $html = view('planilla.contrato-pdf', app(ContratoTrabajo::class)->datos($this->empleado()) + ['logo' => null])->render();
+        $html = preg_replace('/\s+/', ' ', $html);
+
+        $this->assertStringContainsString('Del día lunes al día viernes, de 8:00 a 17:00.', $html);
+        $this->assertStringContainsString('El día sábado de 8:00 a 12:00.', $html);
+        $this->assertStringContainsString('Esa hora no se cuenta como jornada.', $html);
+        $this->assertStringContainsString('8 horas diarias de lunes a viernes y de 4 horas el sábado, para una semana laboral de 44 horas.', $html);
+        $this->assertStringNotContainsString('semana Laboral 8 horas', $html);
+    }
+
     public function test_el_contrato_sale_con_el_sueldo_vigente_el_dia_que_se_genera(): void
     {
         $this->travelTo('2026-11-02');
