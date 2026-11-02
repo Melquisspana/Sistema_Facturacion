@@ -71,6 +71,11 @@
                     </div>
                 </div>
 
+                <p class="text-xs text-gray-500">
+                    Aguinaldo y Quincena 25 usan la <strong>fecha de pago</strong> en vez del período de arriba, y
+                    calculan solos el monto de cada persona, con y sin descuentos de ley.
+                </p>
+
                 <div>
                     <label for="observaciones" class="block text-sm font-medium text-gray-700">Observaciones</label>
                     <textarea id="observaciones" name="observaciones" rows="2" maxlength="2000" class="block w-full rounded-md border-gray-300 text-sm shadow-sm">{{ old('observaciones') }}</textarea>

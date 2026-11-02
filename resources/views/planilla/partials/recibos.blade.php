@@ -54,10 +54,13 @@
         </div>
 
         <table class="hi-desglose">
-            <tr>
-                <td>Importe del período</td>
-                <td class="imp mono">{{ $l['salario'] }}</td>
-            </tr>
+            {{-- Aguinaldo y Quincena 25 no pagan tiempo: su monto sale como ingreso. --}}
+            @if ($l['salario'] !== '0.00')
+                <tr>
+                    <td>Importe del período</td>
+                    <td class="imp mono">{{ $l['salario'] }}</td>
+                </tr>
+            @endif
 
             @foreach ($l['ingresos'] as $ingreso)
                 <tr>
