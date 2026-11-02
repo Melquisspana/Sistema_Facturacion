@@ -23,7 +23,9 @@ class PlanillaContratoController extends Controller
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
         return view('planilla.contrato', [
-            'empleado' => $empleado,
+            // Sin guardar: el formulario abre con el puesto ya puesto, y se guarda al enviarlo.
+            'empleado' => $contrato->conModelo($empleado),
+            'modelo' => $contrato->modeloDe($empleado),
             'faltantes' => $empleado->con_descuentos_ley ? $contrato->faltantes($empleado) : [],
             'avisos' => $contrato->avisos($empleado),
         ]);

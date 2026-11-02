@@ -2,6 +2,8 @@
 
 namespace App\Services\Planilla;
 
+use App\Enums\FuncionPersonalRuta;
+use App\Enums\RolSistema;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
@@ -95,12 +97,43 @@ final class ContratoTrabajo
     }
 
     /**
+     * Qué modelo le toca: Ventas si tiene rol Vendedor o ficha de vendedor en Rutas, aunque
+     * no tenga usuario; si no, Producción. El selector del formulario lo puede cambiar.
+     */
+    public function modeloDe(PlanillaEmpleado $empleado): string
+    {
+        $tieneRol = $empleado->usuario?->hasRole(RolSistema::Vendedor->value) ?? false;
+        $tieneFicha = $empleado->personalRuta?->funciones()->where('funcion', FuncionPersonalRuta::Vendedor->value)->exists() ?? false;
+
+        return $tieneRol || $tieneFicha ? 'ventas' : 'produccion';
+    }
+
+    /**
+     * La ficha con lo que le falte del puesto tomado de su modelo, sin guardarlo. Lo escrito
+     * manda: esto solo llena lo que está vacío, para que el contrato salga sin elegir nada.
+     */
+    public function conModelo(PlanillaEmpleado $empleado): PlanillaEmpleado
+    {
+        $copia = clone $empleado;
+        $modelo = config('planilla.contrato.modelos.'.$this->modeloDe($empleado));
+
+        foreach (['cargo', 'funciones', 'lugar_trabajo', 'herramientas'] as $campo) {
+            if (blank($copia->$campo)) {
+                $copia->$campo = $modelo[$campo];
+            }
+        }
+
+        return $copia;
+    }
+
+    /**
      * Qué falta para poder imprimir, en palabras. Vacío = se puede.
      *
      * @return array<int, string>
      */
     public function faltantes(PlanillaEmpleado $empleado): array
     {
+        $empleado = $this->conModelo($empleado);
         $faltan = [];
 
         foreach (self::CAMPOS as $campo => $nombre) {
@@ -146,6 +179,7 @@ final class ContratoTrabajo
     public function datos(PlanillaEmpleado $empleado): array
     {
         $this->exigirConDescuentos($empleado);
+        $empleado = $this->conModelo($empleado);
 
         if (($faltan = $this->faltantes($empleado)) !== []) {
             throw ValidationException::withMessages(['contrato' => 'Faltan datos para el contrato: '.implode(', ', $faltan).'.']);

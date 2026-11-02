@@ -57,12 +57,11 @@
                     <div>
                         <label for="modelo" class="{{ $etiqueta }}">Modelo de contrato</label>
                         <select id="modelo" @change="aplicar($event.target.value)" class="{{ $c }}">
-                            <option value="">Elegí un modelo para precargar</option>
-                            @foreach (config('planilla.contrato.modelos') as $clave => $modelo)
-                                <option value="{{ $clave }}">{{ $modelo['etiqueta'] }}</option>
+                            @foreach (config('planilla.contrato.modelos') as $clave => $opcion)
+                                <option value="{{ $clave }}" @selected($clave === $modelo)>{{ $opcion['etiqueta'] }}</option>
                             @endforeach
                         </select>
-                        <p class="mt-1 text-sm text-gray-600">Llena cargo, funciones, lugar de trabajo y herramientas. Después podés cambiarlos.</p>
+                        <p class="mt-1 text-sm text-gray-600">Sale de su rol: Ventas si es vendedor o sale a rutas, Producción si no. Cambialo solo si este caso es distinto: reemplaza cargo, funciones, lugar de trabajo y herramientas.</p>
                     </div>
 
                     <div class="grid gap-3 sm:grid-cols-2">
