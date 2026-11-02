@@ -3,7 +3,9 @@
 namespace Tests\Feature\Planilla;
 
 use App\Enums\PermisoSistema;
+use App\Enums\RolSistema;
 use App\Models\Empresa;
+use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Planilla\AltaEmpleado;
@@ -12,6 +14,7 @@ use App\Services\Planilla\SueldoHabitual;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -190,6 +193,149 @@ class ContratoTrabajoTest extends TestCase
 
         $this->assertStringContainsString('menor de 18', app(ContratoTrabajo::class)->avisos($e->fresh())[0]);
         $this->assertSame([], app(ContratoTrabajo::class)->faltantes($e->fresh()));
+    }
+
+    public function test_el_formulario_ofrece_los_dos_modelos_para_precargar(): void
+    {
+        config(['planilla.contrato.modelos.produccion.lugar_trabajo' => 'Planta de ejemplo']);
+
+        $this->actingAs($this->actor)->get(route('planilla.empleados.contrato', $this->empleado()))->assertOk()
+            ->assertSee('Modelo de contrato')
+            ->assertSee('Producción')
+            ->assertSee('Ventas')
+            ->assertSee('Trabajador en producci')
+            ->assertSee('Planta de ejemplo');
+    }
+
+    public function test_los_modelos_traen_los_mismos_datos_y_ninguna_direccion_real(): void
+    {
+        foreach (config('planilla.contrato.modelos') as $modelo) {
+            $this->assertSame(['etiqueta', 'cargo', 'funciones', 'lugar_trabajo', 'herramientas'], array_keys($modelo));
+            $this->assertNotSame('', $modelo['funciones']);
+        }
+
+        $config = file_get_contents(config_path('planilla.php'));
+
+        foreach (['Olocuilta', 'kilometro', 'aeropuerto'] as $real) {
+            $this->assertStringNotContainsString($real, $config);
+        }
+    }
+
+    public function test_lo_precargado_se_guarda_editado_y_sale_en_el_contrato(): void
+    {
+        $e = $this->empleado();
+        $modelo = config('planilla.contrato.modelos.ventas');
+
+        $this->actingAs($this->actor)->put(route('planilla.empleados.contrato.update', $e), [
+            'cargo' => $modelo['cargo'], 'funciones' => $modelo['funciones'].' Texto agregado.',
+            'lugar_trabajo' => 'Ruta de ejemplo', 'herramientas' => $modelo['herramientas'],
+        ])->assertSessionHasNoErrors();
+
+        $html = view('planilla.contrato-pdf', app(ContratoTrabajo::class)->datos($e->fresh()) + ['logo' => null])->render();
+
+        $this->assertStringContainsString('como: Vendedor', $html);
+        $this->assertStringContainsString('Texto agregado.', $html);
+        $this->assertStringContainsString('Ruta de ejemplo', $html);
+    }
+
+    /** Persona recién dada de alta: sin datos del puesto escritos. */
+    private function alta(array $cambios = []): PlanillaEmpleado
+    {
+        return app(AltaEmpleado::class)->registrar($this->actor, array_replace([
+            'nombres' => 'Bea', 'apellidos' => 'Ejemplo', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-7',
+            'con_descuentos_ley' => true, 'alta_el' => '2026-01-15', 'sueldo_mensual' => '408.80',
+        ], $cambios));
+    }
+
+    /** @return array<string, mixed> */
+    private function usuarioNuevo(string $rol): array
+    {
+        Role::findOrCreate($rol, 'web');
+
+        return [
+            'usa_sistema' => true, 'rol' => $rol, 'email' => 'bea@example.test',
+            'password' => 'Prueba#Segura2026', 'password_confirmation' => 'Prueba#Segura2026',
+        ];
+    }
+
+    public function test_con_rol_vendedor_sale_ventas(): void
+    {
+        $e = $this->alta($this->usuarioNuevo(RolSistema::Vendedor->value));
+
+        $this->assertSame('ventas', app(ContratoTrabajo::class)->modeloDe($e));
+    }
+
+    public function test_quien_sale_a_rutas_sin_usuario_sale_ventas(): void
+    {
+        $e = $this->alta(['sale_rutas' => true]);
+
+        $this->assertNull($e->user_id);
+        $this->assertSame('ventas', app(ContratoTrabajo::class)->modeloDe($e));
+    }
+
+    public function test_quien_solo_marca_sale_produccion(): void
+    {
+        $this->assertSame('produccion', app(ContratoTrabajo::class)->modeloDe($this->alta(['marca' => true])));
+    }
+
+    public function test_otro_rol_del_sistema_sale_produccion(): void
+    {
+        $e = $this->alta($this->usuarioNuevo(RolSistema::Facturacion->value));
+
+        $this->assertSame('produccion', app(ContratoTrabajo::class)->modeloDe($e));
+    }
+
+    public function test_una_ficha_de_rutas_sin_funcion_de_vendedor_sale_produccion(): void
+    {
+        $ficha = PersonalRuta::create(['nombre' => 'Bea Ejemplo', 'activo' => true]);
+        $ficha->funciones()->create(['funcion' => 'repartidor']);
+
+        $this->assertSame('produccion', app(ContratoTrabajo::class)->modeloDe($this->alta(['personal_ruta_id' => $ficha->id])));
+    }
+
+    public function test_el_formulario_abre_con_el_modelo_marcado_y_el_puesto_lleno(): void
+    {
+        $e = $this->alta(['sale_rutas' => true]);
+
+        $html = $this->actingAs($this->actor)->get(route('planilla.empleados.contrato', $e))->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('/<option value="ventas"\s+selected/', $html);
+        $this->assertStringContainsString('value="Vendedor"', $html);
+        $this->assertStringContainsString('Motocicleta', $html);
+        $this->assertNull($e->fresh()->funciones, 'Abrir el formulario no guarda nada.');
+    }
+
+    public function test_el_contrato_sale_sin_elegir_ni_guardar_el_puesto(): void
+    {
+        $e = $this->alta(['sale_rutas' => true]);
+        $e->update([
+            'sexo' => 'F', 'fecha_nacimiento' => '1990-05-10', 'estado_civil' => 'Soltera', 'profesion' => 'Vendedora',
+            'domicilio' => 'San Ficticio', 'residencia' => 'Pasaje Ejemplo 2', 'nacionalidad' => 'salvadoreña',
+        ]);
+
+        $this->assertSame([], app(ContratoTrabajo::class)->faltantes($e->fresh()));
+
+        $html = view('planilla.contrato-pdf', app(ContratoTrabajo::class)->datos($e->fresh()) + ['logo' => null])->render();
+        $this->assertStringContainsString('como: Vendedor', $html);
+        $this->assertStringContainsString('puntos de venta', $html);
+    }
+
+    public function test_lo_escrito_a_mano_manda_sobre_el_modelo(): void
+    {
+        $e = $this->alta(['sale_rutas' => true, 'cargo' => 'Supervisor de zona']);
+
+        $this->assertSame('Supervisor de zona', app(ContratoTrabajo::class)->conModelo($e)->cargo);
+    }
+
+    public function test_produccion_sin_direccion_en_el_env_pide_el_lugar(): void
+    {
+        config(['planilla.contrato.modelos.produccion.lugar_trabajo' => '']);
+
+        $this->assertContains('lugar de trabajo', app(ContratoTrabajo::class)->faltantes($this->alta()));
+
+        config(['planilla.contrato.modelos.produccion.lugar_trabajo' => 'Planta de ejemplo']);
+
+        $this->assertNotContains('lugar de trabajo', app(ContratoTrabajo::class)->faltantes($this->alta(['dui' => 'FICTICIO-8', 'nombres' => 'Cruz'])));
     }
 
     public function test_el_contrato_exige_ver_importes(): void

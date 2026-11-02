@@ -8,7 +8,7 @@
     $insignia = [
         'pendiente' => 'bg-amber-50 text-amber-800', 'parcial' => 'bg-sky-50 text-sky-800',
         'pagado' => 'bg-emerald-50 text-emerald-800', 'sin_obligacion' => 'bg-gray-100 text-gray-500',
-        'preparado' => 'bg-gray-100 text-gray-700',
+        'preparado' => 'bg-gray-100 text-gray-700', 'anulada' => 'bg-red-50 text-red-800',
     ];
 @endphp
 

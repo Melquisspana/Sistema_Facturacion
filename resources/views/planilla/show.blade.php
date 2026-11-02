@@ -6,11 +6,12 @@
 
     $boton = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
     $insignia = [
-        'preparado' => 'bg-gray-100 text-gray-700',
-        'pendiente' => 'bg-amber-50 text-amber-800',
-        'parcial' => 'bg-sky-50 text-sky-800',
-        'pagado' => 'bg-emerald-50 text-emerald-800',
-        'sin_obligacion' => 'bg-gray-100 text-gray-500',
+        'preparado' => 'bg-gray-100 text-gray-700 dark:bg-ink-700 dark:text-paper-300',
+        'pendiente' => 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300',
+        'parcial' => 'bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300',
+        'pagado' => 'bg-emerald-50 text-emerald-800 dark:bg-green-500/15 dark:text-green-300',
+        'sin_obligacion' => 'bg-gray-100 text-gray-500 dark:bg-ink-700 dark:text-paper-300',
+        'anulada' => 'bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-300',
     ];
     $d = $totales->enDecimal($resumen);
 @endphp
@@ -53,7 +54,7 @@
             @endif
 
             @if ($planilla->estado === 'anulada')
-                <div class="rounded-md border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-800">
+                <div class="rounded-md border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                     <strong>Anulada</strong> el {{ $planilla->anulada_at?->format('d/m/Y H:i') }}: {{ $planilla->motivo_anulacion }}
                     <span class="block text-xs">Las obligaciones se extinguieron con un ajuste interno; nada se borró y no se emitió ningún documento fiscal.</span>
                 </div>
@@ -79,14 +80,18 @@
                         <p class="mt-2 text-sm text-gray-600">
                             Todavía no hay nada que pagar: un borrador no crea obligaciones.
                         </p>
+                    @elseif ($planilla->estado === 'anulada')
+                        <p class="mt-2 text-sm text-gray-600">
+                            Nada que pagar: la planilla se anuló y sus obligaciones se extinguieron sin que saliera dinero.
+                        </p>
                     @else
                         <dl class="mt-2 space-y-1 text-sm">
                             <div class="flex justify-between gap-4"><dt class="text-gray-700">A empleados</dt><dd class="whitespace-nowrap tabular-nums">{{ Dinero::mostrar($avance['empleados_a_pagar']) }}</dd></div>
-                            <div class="flex justify-between gap-4 pl-4 text-xs text-emerald-700"><dt>pagado</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['empleados_pagado']) }}</dd></div>
-                            <div class="flex justify-between gap-4 pl-4 text-xs text-amber-700"><dt>pendiente</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['empleados_pendiente']) }}</dd></div>
+                            <div class="flex justify-between gap-4 pl-4 text-xs text-green-700 dark:text-green-300"><dt>pagado</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['empleados_pagado']) }}</dd></div>
+                            <div class="flex justify-between gap-4 pl-4 text-xs text-amber-700 dark:text-amber-300"><dt>pendiente</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['empleados_pendiente']) }}</dd></div>
                             <div class="flex justify-between gap-4 border-t border-gray-100 pt-1"><dt class="text-gray-700">A terceros</dt><dd class="whitespace-nowrap tabular-nums">{{ Dinero::mostrar($avance['terceros_a_pagar']) }}</dd></div>
-                            <div class="flex justify-between gap-4 pl-4 text-xs text-emerald-700"><dt>pagado</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['terceros_pagado']) }}</dd></div>
-                            <div class="flex justify-between gap-4 pl-4 text-xs text-amber-700"><dt>pendiente</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['terceros_pendiente']) }}</dd></div>
+                            <div class="flex justify-between gap-4 pl-4 text-xs text-green-700 dark:text-green-300"><dt>pagado</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['terceros_pagado']) }}</dd></div>
+                            <div class="flex justify-between gap-4 pl-4 text-xs text-amber-700 dark:text-amber-300"><dt>pendiente</dt><dd class="tabular-nums">{{ Dinero::mostrar($avance['terceros_pendiente']) }}</dd></div>
                         </dl>
                         <p class="mt-2 text-xs text-gray-500">
                             {{ $avance['personas_pagadas'] }} de {{ $avance['personas'] }} personas cobradas.

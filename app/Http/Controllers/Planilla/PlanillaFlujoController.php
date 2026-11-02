@@ -59,8 +59,10 @@ class PlanillaFlujoController extends Controller
             // Las dos preguntas separadas: qué se debe y qué salió. Van aparte del
             // «avance del pago» porque el desembolso incluye los anticipos, cuyo dinero
             // salió antes y por su propio gasto.
-            'desembolsos' => $planilla->borrador() ? null : $informe->desembolsos($planilla),
-            'cuadre' => $planilla->borrador() ? null : $informe->cuadre($planilla),
+            // Solo con la planilla confirmada: anulada no salió dinero, y el cuadre daría
+            // una diferencia que no existe.
+            'desembolsos' => $planilla->confirmada() ? $informe->desembolsos($planilla) : null,
+            'cuadre' => $planilla->confirmada() ? $informe->cuadre($planilla) : null,
         ]);
     }
 
