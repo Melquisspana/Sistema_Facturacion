@@ -31,14 +31,13 @@ return [
 
             // ISSS, trabajador 3 % y máximo cotizable de US$1,000 al mes. Fuente: ISSS,
             // «Modificación del salario máximo de cotización para empleadores», vigente
-            // desde el 01/08/2015. Por confirmar: que el tope siga igual, porque el
-            // documento es de 2015.
+            // desde el 01/08/2015. Tope confirmado por la contadora, 02/11/2026.
             'isss' => ['concepto' => 'ISSS', 'tercero' => 'ISSS', 'tasa' => '3.00', 'tope_mensual' => '1000.00'],
 
             // AFP, trabajador 7.25 %. Fuente: Ley Integral del Sistema de Pensiones
-            // (Decreto 614), tasa de cotización. Sin tope: el Art. 14 no fija máximo. Por
-            // confirmar: la SSF todavía publica «IBC máximo 2022 US$7,045.02», anterior a
-            // esa ley. Si aplicara, se escribe acá y el cálculo lo respeta.
+            // (Decreto 614), tasa de cotización. Sin tope: el Art. 14 no fija máximo. Tasa y
+            // ausencia de tope confirmadas por la contadora, 02/11/2026. Si la ley fijara un
+            // tope, se escribe acá y el cálculo lo respeta.
             'afp' => ['concepto' => 'AFP', 'tercero' => 'AFP', 'tasa' => '7.25', 'tope_mensual' => null],
 
             // Renta, tabla QUINCENAL. Fuente: Decreto Ejecutivo No. 10 del 30/04/2025, Art. 1
