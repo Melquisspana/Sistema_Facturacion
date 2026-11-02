@@ -192,6 +192,49 @@ class ContratoTrabajoTest extends TestCase
         $this->assertSame([], app(ContratoTrabajo::class)->faltantes($e->fresh()));
     }
 
+    public function test_el_formulario_ofrece_los_dos_modelos_para_precargar(): void
+    {
+        config(['planilla.contrato.modelos.produccion.lugar_trabajo' => 'Planta de ejemplo']);
+
+        $this->actingAs($this->actor)->get(route('planilla.empleados.contrato', $this->empleado()))->assertOk()
+            ->assertSee('Modelo de contrato')
+            ->assertSee('Producción')
+            ->assertSee('Ventas')
+            ->assertSee('Trabajador en producci')
+            ->assertSee('Planta de ejemplo');
+    }
+
+    public function test_los_modelos_traen_los_mismos_datos_y_ninguna_direccion_real(): void
+    {
+        foreach (config('planilla.contrato.modelos') as $modelo) {
+            $this->assertSame(['etiqueta', 'cargo', 'funciones', 'lugar_trabajo', 'herramientas'], array_keys($modelo));
+            $this->assertNotSame('', $modelo['funciones']);
+        }
+
+        $config = file_get_contents(config_path('planilla.php'));
+
+        foreach (['Olocuilta', 'kilometro', 'aeropuerto'] as $real) {
+            $this->assertStringNotContainsString($real, $config);
+        }
+    }
+
+    public function test_lo_precargado_se_guarda_editado_y_sale_en_el_contrato(): void
+    {
+        $e = $this->empleado();
+        $modelo = config('planilla.contrato.modelos.ventas');
+
+        $this->actingAs($this->actor)->put(route('planilla.empleados.contrato.update', $e), [
+            'cargo' => $modelo['cargo'], 'funciones' => $modelo['funciones'].' Texto agregado.',
+            'lugar_trabajo' => 'Ruta de ejemplo', 'herramientas' => $modelo['herramientas'],
+        ])->assertSessionHasNoErrors();
+
+        $html = view('planilla.contrato-pdf', app(ContratoTrabajo::class)->datos($e->fresh()) + ['logo' => null])->render();
+
+        $this->assertStringContainsString('como: Vendedor', $html);
+        $this->assertStringContainsString('Texto agregado.', $html);
+        $this->assertStringContainsString('Ruta de ejemplo', $html);
+    }
+
     public function test_el_contrato_exige_ver_importes(): void
     {
         $e = $this->empleado();

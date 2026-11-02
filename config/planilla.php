@@ -69,6 +69,27 @@ return [
             'ciudad' => env('PLANILLA_CONTRATO_CIUDAD', ''),
             'direccion_pago' => env('PLANILLA_CONTRATO_DIRECCION_PAGO', ''),
         ],
+
+        // Los dos modelos de contrato. El texto legal, el horario y el salario son iguales:
+        // solo cambian estos cuatro datos, y el formulario los precarga para editarlos.
+        // Se guardan en la ficha de cada persona, así que cambiar esto no toca a nadie.
+        // El lugar de producción va por `.env` porque es una dirección real.
+        'modelos' => [
+            'produccion' => [
+                'etiqueta' => 'Producción',
+                'cargo' => 'Trabajador en producción',
+                'funciones' => 'Preparar y elaborar dulces típicos salvadoreños. Además, garantizar la calidad de los productos, realizar el empaque correspondiente y mantener la limpieza y orden del área de trabajo.',
+                'lugar_trabajo' => env('PLANILLA_CONTRATO_LUGAR_PRODUCCION', ''),
+                'herramientas' => 'Guantes, lentes de protección, gorros, uniformes, paletas, utensilios de cocina, y demás herramientas necesarias para la elaboración de dulces típicos.',
+            ],
+            'ventas' => [
+                'etiqueta' => 'Ventas',
+                'cargo' => 'Vendedor',
+                'funciones' => 'Promover, distribuir y vender productos en todos los Super Selectos del país, así como en gasolineras, farmacias y tiendas. Realizar visitas a los puntos de venta, mantener una relación cordial con los clientes, garantizar el correcto abastecimiento de productos y reportar el estado de inventarios y ventas según lo requerido por el patrono.',
+                'lugar_trabajo' => 'En diversos puntos de venta, incluyendo Super Selectos, gasolineras, farmacias y tiendas ubicadas en todo el país, según la planificación.',
+                'herramientas' => 'Motocicleta o automóvil (según la necesidad), casco, capa para lluvia, viáticos para traslados, y demás recursos necesarios para la realización de las actividades de venta y distribución de productos.',
+            ],
+        ],
     ],
 
     /*

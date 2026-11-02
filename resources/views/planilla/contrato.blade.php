@@ -26,11 +26,11 @@
                 </p>
             @else
                 @foreach ($avisos as $aviso)
-                    <p role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">{{ $aviso }}</p>
+                    <p role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">{{ $aviso }}</p>
                 @endforeach
 
                 @if ($faltantes !== [])
-                    <div role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+                    <div role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                         Para imprimir el contrato falta: {{ implode(', ', $faltantes) }}.
                     </div>
                 @else
@@ -38,9 +38,32 @@
                     <p class="text-sm text-gray-600">Sale con la fecha de hoy y el sueldo vigente hoy. No se guarda copia: si cambia un dato, se vuelve a generar.</p>
                 @endif
 
-                <form method="POST" action="{{ route('planilla.empleados.contrato.update', $empleado) }}" class="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+                <form method="POST" action="{{ route('planilla.empleados.contrato.update', $empleado) }}" class="space-y-3 rounded-lg border border-gray-200 bg-white p-4"
+                      x-data="{
+                          modelos: @js(config('planilla.contrato.modelos')),
+                          // Solo precarga: el dato se puede editar y lo que se guarda es lo que quede escrito.
+                          aplicar(clave) {
+                              const modelo = this.modelos[clave];
+                              if (!modelo) return;
+                              ['cargo', 'funciones', 'lugar_trabajo', 'herramientas'].forEach((campo) => {
+                                  // Vacío también: no puede quedar el dato del otro modelo.
+                                  this.$root.querySelector('#' + campo).value = modelo[campo] || '';
+                              });
+                          }
+                      }">
                     @csrf
                     @method('PUT')
+
+                    <div>
+                        <label for="modelo" class="{{ $etiqueta }}">Modelo de contrato</label>
+                        <select id="modelo" @change="aplicar($event.target.value)" class="{{ $c }}">
+                            <option value="">Elegí un modelo para precargar</option>
+                            @foreach (config('planilla.contrato.modelos') as $clave => $modelo)
+                                <option value="{{ $clave }}">{{ $modelo['etiqueta'] }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-sm text-gray-600">Llena cargo, funciones, lugar de trabajo y herramientas. Después podés cambiarlos.</p>
+                    </div>
 
                     <div class="grid gap-3 sm:grid-cols-2">
                         <div>
