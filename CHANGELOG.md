@@ -8,10 +8,6 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
-### Cambiado
-
-- Rutas: el personal tiene puerta propia, «Personal», en la barra de Rutas, para llegar rápido a cada ficha y enlazarle su usuario. «Configurar rutas» ya no lleva la lista de vendedores ni el alta en línea; los avisos «Agregá un vendedor» llevan a Personal.
-- Rutas: crear un usuario con rol Vendedor le arma su ficha de Personal, ya enlazada y con la función Vendedor; si había una ficha sin usuario con su nombre (o solo su primer nombre, y una sola), se usa esa. Desactivar al usuario o cambiarle el rol desactiva la ficha, sin borrarla.
 ### Agregado
 
 - Personal: Asistencia y Planilla quedan en una sola área, con un menú único y una lista de empleados en la que cada persona aparece una vez. Su ficha junta datos, huellas, quincenas, sueldo y contrato, y cada bloque sigue con su permiso y su interruptor. Las direcciones viejas de la lista y la ficha redirigen. Las rutas del lector no cambian. Sin migraciones.
@@ -21,14 +17,47 @@ El historial anterior a este archivo está en el registro de git.
 - Planilla: salario mínimo por sector con vigencia. El sueldo no puede quedar por debajo si va con descuentos; sin descuentos hay que confirmarlo. La lista de personas muestra quién queda por debajo cuando cambia el mínimo, y el sueldo se cambia desde ahí con fecha.
 - Planilla: contrato de trabajo en PDF para quien va con descuentos, con la fecha del día y el sueldo vigente ese día. Los datos del patrono van en el `.env`, y sin ellos no se genera.
 - Planilla: `personal:cargar` carga personal desde un CSV privado. Por defecto solo muestra lo que haría, sin nombres ni montos, y con `--aplicar` carga todo o nada.
-- Cobros: indicador y filtro de AC04 sin su NC, con precarga de devolución desde el PDF en el formulario normal y protección contra duplicados, incluso sin AC01. #170
-- Cobros: lectura del PDF AC04 (número, fecha, sala, referencia al CCF y total con IVA), vinculación por referencia u OC y sala, conciliación neta, estado de su NC, notas sin vincular y avisos de pedir nota y de albarán reciente durante 3 días desde la entrega o la última devolución. No emite NC ni inventa una OC ausente. #57
+
+### Corregido
+
+- La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
+
+## [2026.11.02] - 2026-11-02
+
+Arreglo de «Hacer NC» y de la conciliación de las notas de devolución (#174), sin migraciones. Después se corrió `ppq:corregir-monto-ac04`: una AC04 corregida.
 
 ### Corregido
 
 - Cobros: conciliación AC04 desde la base del CCF con descuento, IVA y retención; gravado sin IVA separado del total de la NC, lectura por filas y columnas y aviso único de gravados distintos; tarjetas e insignias coherentes. Al desplegar, revisar `php artisan ppq:corregir-monto-ac04` y ejecutar con `--aplicar` para corregir montos antiguos desde sus PDF. #172
+
+## [2026.10.29.4] - 2026-10-29
+
+De la nota de devolución a la NC con un clic (#171), sin migraciones.
+
+### Agregado
+
+- Cobros: indicador y filtro de AC04 sin su NC, con precarga de devolución desde el PDF en el formulario normal y protección contra duplicados, incluso sin AC01. #170
+
+## [2026.10.29.3] - 2026-10-29
+
+Notas de devolución AC04 de Calleja (#168), sin migraciones. Después se recuperaron los albaranes desde el 01/09.
+
+### Agregado
+
+- Cobros: lectura del PDF AC04 (número, fecha, sala, referencia al CCF y total con IVA), vinculación por referencia u OC y sala, conciliación neta, estado de su NC, notas sin vincular y avisos de pedir nota y de albarán reciente durante 3 días desde la entrega o la última devolución. No emite NC ni inventa una OC ausente. #57
+
+### Corregido
+
 - PPQ: se procesan todos los PDF de cada correo y se deduplica por mensaje y número de albarán, para no perder el AC01 que llega después de un AC04. #57
-- La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
+
+## [2026.10.29.2] - 2026-10-29
+
+Personal en el menú de Rutas y ficha del vendedor enlazada a su usuario (#166), sin migraciones.
+
+### Cambiado
+
+- Rutas: el personal tiene puerta propia, «Personal», en la barra de Rutas, para llegar rápido a cada ficha y enlazarle su usuario. «Configurar rutas» ya no lleva la lista de vendedores ni el alta en línea; los avisos «Agregá un vendedor» llevan a Personal.
+- Rutas: crear un usuario con rol Vendedor le arma su ficha de Personal, ya enlazada y con la función Vendedor; si había una ficha sin usuario con su nombre (o solo su primer nombre, y una sola), se usa esa. Desactivar al usuario o cambiarle el rol desactiva la ficha, sin borrarla.
 
 ## [2026.10.29] - 2026-10-29
 
