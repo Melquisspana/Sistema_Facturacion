@@ -165,7 +165,7 @@ class SueldoYValidacionesTest extends TestCase
         $tabla[] = ['vigente_desde' => '2026-06-01', 'sectores' => ['industria' => '500.00']];
         config(['planilla_descuentos.salario_minimo' => $tabla]);
 
-        $this->actingAs($this->actor)->get(route('planilla.empleados'))
+        $this->actingAs($this->actor)->get(route('personal.empleados'))
             ->assertOk()->assertSee('Una persona queda')->assertSee('Bajo el mínimo');
 
         $this->assertSame([$bajo->id => 40880], app(SueldoHabitual::class)->mensualesEn(collect([$bajo]), now()->toDateString()));
@@ -178,7 +178,7 @@ class SueldoYValidacionesTest extends TestCase
         $lector = User::factory()->create(['activo' => true]);
         $lector->syncPermissions(['planilla.ver']);
 
-        $this->actingAs($lector)->get(route('planilla.empleados'))
+        $this->actingAs($lector)->get(route('personal.empleados'))
             ->assertOk()->assertDontSee('Bajo el mínimo')->assertDontSee('300.00');
     }
 
@@ -187,7 +187,7 @@ class SueldoYValidacionesTest extends TestCase
         $this->alta();
         config(['planilla_descuentos.salario_minimo' => []]);
 
-        $this->actingAs($this->actor)->get(route('planilla.empleados'))
+        $this->actingAs($this->actor)->get(route('personal.empleados'))
             ->assertOk()->assertSee('No hay salario mínimo vigente');
     }
 

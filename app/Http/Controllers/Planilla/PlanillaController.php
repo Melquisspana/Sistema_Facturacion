@@ -14,13 +14,11 @@ use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
-use App\Services\Planilla\SalarioMinimo;
 use App\Services\Planilla\SueldoHabitual;
 use App\Services\Planilla\TotalesPlanilla;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Planilla de control y recibos.
@@ -166,32 +164,6 @@ class PlanillaController extends Controller
 
     // ── Registro de personas ──────────────────────────────────────────────
 
-    public function empleados(Request $request, SueldoHabitual $sueldos, SalarioMinimo $salarioMinimo)
-    {
-        $empleados = PlanillaEmpleado::orderBy('nombre')->get();
-        $verImportes = $request->user()->can('planilla.salarios');
-        $hoy = now()->toDateString();
-        $mensuales = $verImportes ? $sueldos->mensualesEn($empleados, $hoy) : [];
-        $minimo = null;
-
-        if ($verImportes) {
-            // Sin mínimo vigente la pantalla lo dice: no es motivo para no abrirla.
-            try {
-                $minimo = $salarioMinimo->vigenteEn($hoy);
-            } catch (ValidationException) {
-            }
-        }
-
-        $bajoMinimo = $minimo === null ? [] : $empleados->where('activo', true)
-            ->filter(fn (PlanillaEmpleado $e) => isset($mensuales[$e->id]) && $mensuales[$e->id] < $minimo)
-            ->pluck('id')->all();
-
-        return view('planilla.empleados', [
-            'empleados' => $empleados, 'verImportes' => $verImportes, 'mensuales' => $mensuales,
-            'minimo' => $minimo, 'bajoMinimo' => $bajoMinimo,
-        ]);
-    }
-
     public function nuevoEmpleado(Request $request, RegistrarEmpleado $registrar, AltaEmpleado $alta)
     {
         abort_unless($request->user()->activo && $request->user()->can('planilla.gestionar'), 403);
@@ -212,7 +184,7 @@ class PlanillaController extends Controller
         $sigueConContrato = $empleado->con_descuentos_ley && $request->user()->can('planilla.salarios');
 
         return redirect()
-            ->route($sigueConContrato ? 'planilla.empleados.contrato' : 'planilla.empleados', $sigueConContrato ? $empleado : [])
+            ->route($sigueConContrato ? 'planilla.empleados.contrato' : 'personal.empleados.show', $sigueConContrato ? $empleado : 'p'.$empleado->id)
             ->with('planilla.aviso', $empleado->nombre.' quedó en planilla.');
     }
 

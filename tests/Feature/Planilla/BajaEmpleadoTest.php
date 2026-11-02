@@ -46,8 +46,8 @@ class BajaEmpleadoTest extends TestCase
         $e = $this->empleado($actor);
         $marcacion = AsistenciaMarcacion::factory()->create(['asistencia_empleado_id' => $e->asistencia_empleado_id]);
         $huella = AsistenciaHuella::factory()->create(['asistencia_empleado_id' => $e->asistencia_empleado_id, 'activo' => true]);
-        $this->actingAs($actor)->from(route('planilla.empleados'))->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02'])
-            ->assertSessionHasNoErrors()->assertRedirect(route('planilla.empleados'))->assertSessionHas('planilla.aviso', fn ($aviso) => str_contains($aviso, 'huella(s) vigente(s)'));
+        $this->actingAs($actor)->from(route('personal.empleados'))->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('personal.empleados'))->assertSessionHas('planilla.aviso', fn ($aviso) => str_contains($aviso, 'huella(s) vigente(s)'));
         $this->assertFalse($e->fresh()->activo);
         $this->assertSame('2026-11-02', $e->fresh()->baja_el);
         $this->assertFalse($e->asistencia->fresh()->activo);

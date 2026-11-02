@@ -291,10 +291,10 @@ class AltaEmpleadoTest extends TestCase
     public function test_http_alta_listado_y_confidencialidad_del_sueldo(): void
     {
         $actor = $this->actor();
-        $this->actingAs($actor)->post(route('planilla.empleados.store'), $this->datos(['sueldo_mensual' => '876.54']))->assertSessionHasNoErrors()->assertRedirect(route('planilla.empleados'));
-        $this->get(route('planilla.empleados'))->assertOk()->assertSee('Nuevo empleado')->assertSee('876.54');
+        $this->actingAs($actor)->post(route('planilla.empleados.store'), $this->datos(['sueldo_mensual' => '876.54']))->assertSessionHasNoErrors()->assertRedirect(route('personal.empleados.show', 'p'.PlanillaEmpleado::sole()->id));
+        $this->get(route('personal.empleados'))->assertOk()->assertSee('Nuevo empleado')->assertSee('876.54');
         $lector = $this->actor('planilla.salarios');
-        $this->actingAs($lector)->get(route('planilla.empleados'))->assertOk()->assertDontSee('876.54')->assertDontSee('Sueldo mensual');
+        $this->actingAs($lector)->get(route('personal.empleados'))->assertOk()->assertDontSee('876.54')->assertDontSee('Sueldo mensual');
     }
 
     /** Corre en SQLite y en MySQL estricto: el rollback que importa es el de producción. */

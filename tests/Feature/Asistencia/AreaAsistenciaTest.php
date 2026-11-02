@@ -146,7 +146,7 @@ class AreaAsistenciaTest extends TestCase
     {
         $respuesta = $this->actingAs($this->admin())->get(route('asistencia.dashboard'))->assertOk();
 
-        $respuesta->assertSee(route('asistencia.empleados.index'));
+        $respuesta->assertSee(route('personal.empleados'));
         $respuesta->assertDontSee(route('configuracion.lectores.index'));
         $respuesta->assertSee(route('asistencia.reporte'));
 
@@ -227,9 +227,9 @@ class AreaAsistenciaTest extends TestCase
 
         $pantallas = [
             route('asistencia.dashboard'),
-            route('asistencia.empleados.index'),
+            route('personal.empleados'),
             route('asistencia.empleados.create'),
-            route('asistencia.empleados.show', $empleado),
+            route('personal.empleados.show', 'a'.$empleado->id),
             route('asistencia.empleados.edit', $empleado),
             route('configuracion.lectores.index'),
             route('configuracion.lectores.create'),
@@ -263,7 +263,7 @@ class AreaAsistenciaTest extends TestCase
     {
         return [
             'resumen' => ['asistencia.dashboard'],
-            'empleados' => ['asistencia.empleados.index'],
+            'empleados' => ['personal.empleados'],
             'lectores' => ['configuracion.lectores.index'],
         ];
     }

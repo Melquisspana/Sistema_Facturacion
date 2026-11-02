@@ -323,7 +323,7 @@ class EnrolamientoWebTest extends TestCase
         $orden = app(CrearOrdenEnrolamiento::class)($this->ana, $this->lector);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertSee('Guardar huella')
             ->assertViewHas('ordenViva', fn ($v) => $v?->id === $orden->id);
@@ -332,7 +332,7 @@ class EnrolamientoWebTest extends TestCase
     public function test_la_ficha_no_muestra_ninguna_orden_cuando_no_hay(): void
     {
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertViewHas('ordenViva', null);
     }
@@ -344,7 +344,7 @@ class EnrolamientoWebTest extends TestCase
         $orden->forceFill(['expira_at' => Carbon::now()->subMinute()])->save();
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertViewHas('ordenViva', null);
     }
@@ -358,7 +358,7 @@ class EnrolamientoWebTest extends TestCase
             ->create();
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertViewMissing('ordenesRecientes')
             ->assertDontSee('Intentos recientes');
@@ -371,7 +371,7 @@ class EnrolamientoWebTest extends TestCase
         $orden = AsistenciaOrdenEnrolamiento::sole();
         $orden->emitirToken();
 
-        $respuesta = $this->actingAs($this->admin())->get(route('asistencia.empleados.show', $this->ana))->assertOk();
+        $respuesta = $this->actingAs($this->admin())->get(route('personal.empleados.show', 'a'.$this->ana->id))->assertOk();
 
         $respuesta->assertDontSee($this->lector->token_hash);
         $respuesta->assertDontSee($orden->refresh()->token_hash);

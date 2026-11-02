@@ -1,21 +1,4 @@
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">
-                {{ $empleado->nombreCompleto() }}
-            </h2>
-            <div class="flex items-center gap-3">
-                <x-asistencia.estado :activo="$empleado->activo"
-                                     :accion="route('asistencia.empleados.toggle-activo', $empleado)"
-                                     etiquetaActivo="Marca" etiquetaInactivo="No marca" />
-                @can('asistencia.gestionar')
-                    <a href="{{ route('asistencia.empleados.edit', $empleado) }}"
-                       class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:text-paper-200 dark:hover:bg-ink-700">Editar datos</a>
-                @endcan
-            </div>
-        </div>
-    </x-slot>
-
+{{-- Bloque de Asistencia de la ficha de la persona: huellas y marcaciones. --}}
     @php
         $vigentes = $empleado->huellas->where('activo', true);
         $tarjeta = 'rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
@@ -25,9 +8,7 @@
             || $errors->hasAny(['fingerprint_id', 'ranura']);
     @endphp
 
-    <div class="py-8">
-        <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
-
+    <div class="space-y-6">
             @if ($avisoTecnico)
                 <p role="alert" class="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">Hay un aviso más abajo, en «Avanzado».</p>
             @else
@@ -236,8 +217,4 @@
                     </p>
                 @endif
             </div>
-
-            <a href="{{ route('asistencia.empleados.index') }}" class="inline-block text-sm text-gray-500 hover:underline dark:text-paper-400">← Volver a empleados</a>
-        </div>
     </div>
-</x-app-layout>

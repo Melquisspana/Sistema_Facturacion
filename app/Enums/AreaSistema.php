@@ -43,18 +43,18 @@ enum AreaSistema: string
      * `Rutas` se llamó «Cobros» mientras cargaba la custodia del CCF físico. Desde el
      * 26/09/2026 es el módulo de rutas (salidas, salas, vendedores) y el cobro vive en
      * Cobros Calleja, dentro de Facturación.
+     *
+     * `Asistencia` se muestra como «Personal»: junta Asistencia y Planilla, que son la
+     * misma gente. Conserva su value, y por eso sus URL y su barra lateral.
      */
     public function label(): string
     {
         return match ($this) {
             self::Facturacion => 'Facturación',
-            // «Gastos y pagos» agrupa DOS módulos —Gastos y Planilla— bajo un solo
-            // nombre. Planilla dejó de ser área propia porque el selector ya tenía
-            // demasiadas puertas y ninguna decía a quién le tocaba cuál.
             self::Gastos => 'Gastos y pagos',
             self::Planta => 'Producción',
             self::Rutas => 'Rutas',
-            self::Asistencia => 'Asistencia',
+            self::Asistencia => 'Personal',
         };
     }
 
@@ -62,16 +62,14 @@ enum AreaSistema: string
      * Las PUERTAS del área: cada una es un módulo con su interruptor, su permiso de
      * entrada y su pantalla de aterrizaje.
      *
-     * Casi todas las áreas tienen UNA. «Gastos y pagos» tiene DOS, porque agrupa dos
-     * módulos, y eso obliga a razonar por puerta y no por área:
+     * Casi todas las áreas tienen UNA. «Personal» tiene DOS, porque agrupa dos módulos, y
+     * eso obliga a razonar por puerta y no por área:
      *
-     *  - Quien solo tiene `gastos.ver` entra y aterriza en «Por pagar». No ve una sola
-     *    fila de Planilla.
-     *  - Quien solo tiene `planilla.ver` —sin `gastos.ver`— **también entra**, y
-     *    aterriza en Planillas. Si el área exigiera `gastos.ver`, juntar la navegación
-     *    le habría quitado el acceso que ya tenía, que es lo contrario de simplificar.
-     *  - Y si un módulo está apagado, su puerta no existe: el área sigue en pie por la
-     *    otra.
+     *  - Quien solo tiene `asistencia.ver` entra y aterriza en Hoy. No ve una sola fila de
+     *    Planilla.
+     *  - Quien solo tiene `planilla.ver` —sin `asistencia.ver`— **también entra**, y aterriza
+     *    en Planillas.
+     *  - Y si un módulo está apagado, su puerta no existe: el área sigue en pie por la otra.
      *
      * @return array<int, array{permiso: string, habilitada: bool, ruta: string}>
      */
@@ -82,14 +80,11 @@ enum AreaSistema: string
                 ['permiso' => PermisoSistema::DteVer->value, 'habilitada' => true, 'ruta' => 'dashboard'],
             ],
             self::Gastos => [
-                // Gastos primero: es la puerta ancha y donde aterriza casi todo el mundo.
-                // Y esa puerta es el PANEL: qué se debe, qué viene, qué falta completar y
-                // qué se pagó, de una vez. El listado con búsqueda y filtros sigue estando
+                // La puerta es el PANEL: qué se debe, qué viene, qué falta completar y qué se
+                // pagó, de una vez. El listado con búsqueda y filtros sigue estando
                 // (`gastos.index`, en /gastos/listado), pero no es por donde se entra.
                 ['permiso' => PermisoSistema::GastosVer->value,
                     'habilitada' => (bool) config('gastos.enabled'), 'ruta' => 'gastos.panel'],
-                ['permiso' => PermisoSistema::PlanillaVer->value,
-                    'habilitada' => (bool) config('planilla.enabled'), 'ruta' => 'planilla.index'],
             ],
             self::Planta => [
                 ['permiso' => PermisoSistema::PlantaVer->value,
@@ -102,6 +97,8 @@ enum AreaSistema: string
             self::Asistencia => [
                 ['permiso' => PermisoSistema::AsistenciaVer->value,
                     'habilitada' => (bool) config('asistencia.enabled'), 'ruta' => 'asistencia.dashboard'],
+                ['permiso' => PermisoSistema::PlanillaVer->value,
+                    'habilitada' => (bool) config('planilla.enabled'), 'ruta' => 'planilla.index'],
             ],
         };
     }
@@ -122,8 +119,8 @@ enum AreaSistema: string
      *
      * Para Gastos y pagos es «Por pagar», porque lo primero que se pregunta al entrar
      * es qué falta pagar, no cómo registrar algo nuevo. Cuando hay un usuario a la
-     * vista, lo correcto es {@see rutaInicioPara()}: mandar a /gastos a alguien que solo
-     * tiene permisos de planilla sería mandarlo a un 403.
+     * vista, lo correcto es {@see rutaInicioPara()}: mandar a /asistencia a alguien que
+     * solo tiene permisos de planilla sería mandarlo a un 403.
      */
     public function rutaInicio(): string
     {
@@ -175,8 +172,8 @@ enum AreaSistema: string
      */
     public function habilitada(): bool
     {
-        // Con varias puertas basta una abierta: «Gastos y pagos» sigue en pie si
-        // Gastos está apagado pero Planilla encendido, y al revés.
+        // Con varias puertas basta una abierta: «Personal» sigue en pie si Asistencia
+        // está apagada pero Planilla encendida, y al revés.
         foreach ($this->puertas() as $puerta) {
             if ($puerta['habilitada']) {
                 return true;
@@ -245,14 +242,14 @@ enum AreaSistema: string
     public static function activaDesdeRequest(): self
     {
         return match (true) {
-            // `planilla.*` pinta la barra de «Gastos y pagos»: es la misma área.
-            request()->routeIs('gastos.*'), request()->routeIs('planilla.*') => self::Gastos,
+            request()->routeIs('gastos.*') => self::Gastos,
             request()->routeIs('planta.*') => self::Planta,
             request()->routeIs('rutas.*') => self::Rutas,
             // `asistencia.*` son las pantallas web. Los endpoints del lector se
             // llaman `api.asistencia.*` y no entran acá: no tienen sesión, no
             // dibujan barra lateral y nunca llegan a esta función.
-            request()->routeIs('asistencia.*') => self::Asistencia,
+            // `planilla.*` y `personal.*` pintan la misma barra: es la misma área.
+            request()->routeIs('asistencia.*', 'planilla.*', 'personal.*') => self::Asistencia,
             default => self::Facturacion,
         };
     }

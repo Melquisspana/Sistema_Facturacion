@@ -551,7 +551,7 @@
                     <template x-if="disponibles.length === 0">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <p class="text-sm text-gray-600">Ya están en la planilla todas las personas registradas.</p>
-                            <a href="{{ route('planilla.empleados') }}" class="{{ $boton }}">Registrar o vincular una persona</a>
+                            <a href="{{ route('personal.empleados') }}" class="{{ $boton }}">Registrar o vincular una persona</a>
                         </div>
                     </template>
                 </div>

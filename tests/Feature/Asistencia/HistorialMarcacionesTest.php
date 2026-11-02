@@ -351,7 +351,7 @@ class HistorialMarcacionesTest extends TestCase
         $this->marcar($this->beto, '2026-03-05 08:00:00', lector: $this->entrada);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertSee('Últimas marcaciones')
             ->assertSee('07:02:10')
@@ -362,7 +362,7 @@ class HistorialMarcacionesTest extends TestCase
     public function test_la_ficha_enlaza_al_historial_ya_filtrado_por_esa_persona(): void
     {
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertSee(route('asistencia.marcaciones.index', ['empleado_id' => $this->ana->id]));
     }
@@ -370,7 +370,7 @@ class HistorialMarcacionesTest extends TestCase
     public function test_la_ficha_de_quien_nunca_marco_lo_dice(): void
     {
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->ana))
+            ->get(route('personal.empleados.show', 'a'.$this->ana->id))
             ->assertOk()
             ->assertSee('todavía no ha marcado ninguna vez', escape: false);
     }

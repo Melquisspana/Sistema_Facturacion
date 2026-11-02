@@ -909,5 +909,6 @@ require __DIR__.'/rutas.php';
 require __DIR__.'/asistencia.php';
 require __DIR__.'/gastos.php';
 require __DIR__.'/planilla.php';
+require __DIR__.'/personal.php';
 
 require __DIR__.'/lectores-asistencia.php';

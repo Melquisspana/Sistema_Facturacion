@@ -1,34 +1,15 @@
 {{-- Sidebar del área «Gastos y pagos» (App\Enums\AreaSistema::Gastos).
 
-     DOS grupos y ocho filas en total. Antes eran dos ÁREAS distintas en el selector
-     superior, y el selector se había llenado de puertas sin que ninguna dijera a quién
-     le tocaba cuál. Juntarlas en una sola área con dos grupos deja el selector corto y
-     la barra legible: se ve el grupo en el que estás y el título del otro.
-
      ── Lo que NO es una fila del menú, y por qué ──
 
-     «Registrar gasto», «Registrar pago» y «Preparar planilla» son ACCIONES, y viven
+     «Registrar gasto» y «Registrar pago» son ACCIONES, y viven
      como botones dentro de la pantalla donde se hacen. Un menú que mezcla «dónde
      estoy» con «qué hago» hay que leerlo entero cada vez.
 
      «Avisos» tampoco. Un aviso no es un lugar al que ir: tiene que verse donde ya se
      está mirando el trabajo, o sea arriba de «Por pagar». Acá solo aparece su número.
 
-     ── El candado de los salarios ──
-
-     Juntar la navegación NO junta los permisos. El grupo de Planilla se dibuja solo si
-     $vePlanilla, que exige el módulo encendido Y `planilla.ver`. Quien entra con
-     `gastos.ver` a secas no ve ni el título del grupo: los sueldos son confidenciales y
-     hasta la existencia del menú dice algo.
-
-     Y esto es PRESENTACIÓN. Quien intente entrar por la URL se topa con el middleware
-     de cada ruta (`permission:planilla.ver`, `modulo.planilla`) y con
-     AccesoGastos::ver(), que además esconde las obligaciones de planilla dentro de
-     Gastos. Tres candados distintos, ninguno apoyado en este archivo.
-
-     ── Sin consultas ──
-
-     Las variables ($gastosFase2, $gastosAvisosSinLeer, $vePlanilla) las calcula
+     Las variables ($gastosFase2, $gastosAvisosSinLeer) las calcula
      layouts/navigation.blade.php. Ninguna vista compartida consulta la base: una tabla
      que faltaba en el menú ya tumbó el sistema entero una vez. --}}
 <nav class="space-y-6 px-3 py-5">
@@ -74,29 +55,4 @@
             Informes
         </x-sidebar-link>
     </x-sidebar-group>
-
-    {{-- ══ Planilla ══
-         Las mismas cuatro pantallas aprobadas, sin renombrar nada. Lo único que cambió
-         es que ahora viven dentro de esta barra en vez de en un área aparte. --}}
-    @if ($vePlanilla)
-        <x-sidebar-group titulo="Planilla" icono="planilla" clave="planilla"
-                         :activo="request()->routeIs('planilla.*')">
-            <x-sidebar-link :href="route('planilla.index')"
-                            :active="request()->routeIs('planilla.index') || request()->routeIs('planilla.show') || request()->routeIs('planilla.preparar') || request()->routeIs('planilla.create') || request()->routeIs('planilla.pagos') || request()->routeIs('planilla.impresos')">
-                Planillas
-            </x-sidebar-link>
-
-            <x-sidebar-link :href="route('planilla.empleados')" :active="request()->routeIs('planilla.empleados*')">
-                Personas
-            </x-sidebar-link>
-
-            <x-sidebar-link :href="route('planilla.anticipos')" :active="request()->routeIs('planilla.anticipos*')">
-                Anticipos
-            </x-sidebar-link>
-
-            <x-sidebar-link :href="route('planilla.formatos')" :active="request()->routeIs('planilla.formatos')">
-                Formatos
-            </x-sidebar-link>
-        </x-sidebar-group>
-    @endif
 </nav>

@@ -16,7 +16,7 @@
             @if ($hoy['empleados_sin_huella'])
                 <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                     {{ $hoy['empleados_sin_huella'] }} persona(s) activa(s) sin huella vigente.
-                    <a href="{{ route('asistencia.empleados.index') }}" class="font-medium underline">Ir a Personal</a>
+                    <a href="{{ route('personal.empleados') }}" class="font-medium underline">Ir a Personal</a>
                 </p>
             @endif
             <div class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
