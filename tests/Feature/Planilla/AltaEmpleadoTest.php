@@ -297,16 +297,25 @@ class AltaEmpleadoTest extends TestCase
         $this->actingAs($lector)->get(route('personal.empleados'))->assertOk()->assertDontSee('876.54')->assertDontSee('Sueldo mensual');
     }
 
-    public function test_migracion_aditiva_se_revierte_en_sqlite(): void
+    /** Corre en SQLite y en MySQL estricto: el rollback que importa es el de producción. */
+    public function test_la_migracion_se_revierte_y_se_vuelve_a_aplicar(): void
     {
-        $this->assertSame('sqlite', DB::connection()->getDriverName());
         $migracion = require database_path('migrations/2026_11_02_100000_agregar_alta_unica_a_planilla_empleados.php');
+        $columnas = [
+            'planilla_empleados' => 'documento_tipo', 'planilla_detalles' => 'documento_tipo_snapshot',
+            'planilla_sueldos' => 'importe_mensual', 'planilla_conceptos' => 'importe_calculado',
+        ];
+
         $migracion->down();
-        $this->assertFalse(Schema::hasColumn('planilla_empleados', 'documento_tipo'));
-        $this->assertFalse(Schema::hasColumn('planilla_detalles', 'documento_tipo_snapshot'));
+        foreach ($columnas as $tabla => $columna) {
+            $this->assertFalse(Schema::hasColumn($tabla, $columna), $columna);
+        }
+
         $migracion->up();
-        $this->assertTrue(Schema::hasColumn('planilla_empleados', 'dependientes'));
-        $this->assertTrue(Schema::hasColumn('planilla_detalles', 'documento_tipo_snapshot'));
+        foreach ($columnas as $tabla => $columna) {
+            $this->assertTrue(Schema::hasColumn($tabla, $columna), $columna);
+        }
+        $this->assertTrue(Schema::hasIndex('planilla_empleados', ['documento_tipo', 'dui'], 'unique'));
     }
 
     public function test_sueldo_mensual_propone_importe_y_snapshot_al_abrir(): void
