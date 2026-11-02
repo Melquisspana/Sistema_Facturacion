@@ -1,5 +1,8 @@
 @php
-    $c = 'block min-h-11 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500';
+    use App\Services\Gastos\Dinero;
+
+    $campo = 'block min-h-11 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500';
+    $secundario = 'inline-flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50';
 @endphp
 
 <x-app-layout>
@@ -10,108 +13,118 @@
     <div class="px-4 py-5 sm:px-6">
         <div class="mx-auto max-w-5xl space-y-3">
             @if (session('planilla.aviso'))
-                <div class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800" role="status">{{ session('planilla.aviso') }}</div>
+                <div role="status" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{{ session('planilla.aviso') }}</div>
             @endif
             @if ($errors->any())
-                <div class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700" role="alert">
-                    <ul class="list-inside list-disc">@foreach ($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul>
+                <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+                    <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
                 </div>
             @endif
 
-            <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-                Estas personas ya existen en el sistema. Se <strong>reutilizan</strong>, no se vuelven a escribir:
-                cada una queda enganchada a su ficha de Asistencia, de Personal de Rutas o de usuario.
-                <strong>No hace falta huella</strong> ni que el módulo de Asistencia esté encendido.
-            </p>
-
-            @if ($empleados->isNotEmpty())
-                <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                    <table class="min-w-full text-sm">
-                        <caption class="sr-only">Registro de personas en planilla</caption>
-                        <thead>
-                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                                <th scope="col" class="px-4 py-2 font-medium">Nombre</th>
-                                <th scope="col" class="px-4 py-2 font-medium">Cargo</th>
-                                <th scope="col" class="px-4 py-2 font-medium">Identidad</th>
-                                @if ($verImportes)
-                                    <th scope="col" class="px-4 py-2 text-right font-medium">Salario de referencia</th>
-                                @endif
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            @foreach ($empleados as $e)
-                                <tr class="{{ $e->activo ? '' : 'opacity-60' }}">
-                                    <td class="px-4 py-2.5 font-medium text-gray-900">
-                                        {{ $e->nombre }}
-                                        @unless ($e->activo)<span class="ml-1 text-xs text-gray-500">(inactiva)</span>@endunless
-                                    </td>
-                                    <td class="px-4 py-2.5 text-gray-600">{{ $e->cargo ?: '—' }}</td>
-                                    <td class="px-4 py-2.5 text-xs text-gray-600">{{ $e->origenIdentidad() }}</td>
-                                    @if ($verImportes)
-                                        <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">{{ $e->salario_referencia ?: '—' }}</td>
-                                    @endif
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+            @if ($verImportes && $minimo === null)
+                <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+                    No hay salario mínimo vigente cargado en la configuración.
+                </div>
+            @elseif ($verImportes && $bajoMinimo !== [])
+                <div role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+                    {{ count($bajoMinimo) === 1 ? 'Una persona queda' : count($bajoMinimo).' personas quedan' }} por debajo del
+                    salario mínimo vigente ({{ Dinero::mostrar($minimo) }}). El sueldo no cambia solo: actualizalo abajo y volvé a
+                    generar el contrato.
                 </div>
             @endif
 
             @can('planilla.gestionar')
-                <div class="rounded-lg border border-gray-200 bg-white p-4">
-                    <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Agregar a alguien</h2>
-
-                    @if ($candidatos !== [])
-                        <p class="mt-2 text-sm text-gray-600">Personas que ya están en el sistema:</p>
-                        <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                            @foreach ($candidatos as $cand)
-                                <form method="POST" action="{{ route('planilla.empleados.store') }}"
-                                      class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2">
-                                    @csrf
-                                    <input type="hidden" name="origen_tipo" value="{{ $cand['tipo'] }}">
-                                    <input type="hidden" name="origen_id" value="{{ $cand['id'] }}">
-                                    <span class="min-w-0">
-                                        <span class="block truncate text-sm font-medium text-gray-900">{{ $cand['nombre'] }}</span>
-                                        <span class="block text-xs text-gray-500">{{ $cand['origen'] }} · {{ $cand['detalle'] }}</span>
-                                    </span>
-                                    <button type="submit" class="inline-flex min-h-9 flex-none items-center rounded-md border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50">Agregar</button>
-                                </form>
-                            @endforeach
-                        </div>
-                    @else
-                        <p class="mt-2 text-sm text-gray-600">Ya están todas las personas del sistema.</p>
-                    @endif
-
-                    {{-- El único caso en que se escribe a alguien nuevo: personal que no
-                         está en ningún otro módulo. --}}
-                    <details class="mt-4">
-                        <summary class="min-h-11 cursor-pointer py-2 text-sm font-medium text-indigo-700">Alguien que no está en ningún módulo</summary>
-                        <form method="POST" action="{{ route('planilla.empleados.store') }}" class="mt-2 grid gap-3 sm:grid-cols-2">
-                            @csrf
-                            <div>
-                                <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre</label>
-                                <input id="nombre" name="nombre" type="text" maxlength="180" required value="{{ old('nombre') }}" class="{{ $c }}">
-                            </div>
-                            <div>
-                                <label for="cargo" class="block text-sm font-medium text-gray-700">Cargo</label>
-                                <input id="cargo" name="cargo" type="text" maxlength="120" value="{{ old('cargo') }}" class="{{ $c }}">
-                            </div>
-                            <div>
-                                <label for="codigo" class="block text-sm font-medium text-gray-700">Código (opcional)</label>
-                                <input id="codigo" name="codigo" type="text" maxlength="40" value="{{ old('codigo') }}" class="{{ $c }}">
-                            </div>
-                            <div>
-                                <label for="salario_referencia" class="block text-sm font-medium text-gray-700">Salario de referencia</label>
-                                <input id="salario_referencia" name="salario_referencia" type="text" inputmode="decimal" value="{{ old('salario_referencia') }}" class="{{ $c }}">
-                                <p class="mt-1 text-xs text-gray-500">Solo para prellenar. En cada planilla se puede cambiar.</p>
-                            </div>
-                            <div class="sm:col-span-2">
-                                <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Agregar</button>
-                            </div>
-                        </form>
-                    </details>
-                </div>
+                <a href="{{ route('planilla.empleados.create') }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Nuevo empleado</a>
             @endcan
+
+            <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                <table class="min-w-full text-sm">
+                    <caption class="sr-only">Registro de personas en planilla</caption>
+                    <thead>
+                        <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                            @foreach (['Nombre', 'Cargo', 'Descuentos', 'Sistema', 'Asistencia', 'Rutas'] as $columna)
+                                <th scope="col" class="px-4 py-2 font-medium">{{ $columna }}</th>
+                            @endforeach
+                            @if ($verImportes)
+                                <th scope="col" class="px-4 py-2 text-right font-medium">Sueldo mensual</th>
+                            @endif
+                            @can('planilla.gestionar')
+                                <th scope="col" class="px-4 py-2 font-medium">Acciones</th>
+                            @endcan
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach ($empleados as $e)
+                            <tr class="{{ $e->activo ? '' : 'opacity-60' }}">
+                                <td class="px-4 py-2.5 font-medium text-gray-900">
+                                    {{ $e->nombre }}
+                                    @unless ($e->activo)<span class="text-xs text-gray-500">(inactivo)</span>@endunless
+                                </td>
+                                <td class="px-4 py-2.5 text-gray-600">{{ $e->cargo ?: '—' }}</td>
+                                <td class="px-4 py-2.5 text-gray-600">{{ $e->con_descuentos_ley ? 'Con' : 'Sin' }}</td>
+                                @foreach (['user_id', 'asistencia_empleado_id', 'personal_ruta_id'] as $puntero)
+                                    <td class="px-4 py-2.5 text-gray-600">{{ $e->$puntero ? 'Sí' : '—' }}</td>
+                                @endforeach
+                                @if ($verImportes)
+                                    <td class="px-4 py-2.5 text-right tabular-nums text-gray-700">
+                                        @if (isset($mensuales[$e->id]))
+                                            {{ Dinero::mostrar($mensuales[$e->id]) }}
+                                            @if (in_array($e->id, $bajoMinimo, true))
+                                                <span class="block text-xs font-medium text-amber-700">Bajo el mínimo</span>
+                                            @endif
+                                        @else
+                                            <span class="text-xs text-amber-700">Sin sueldo</span>
+                                        @endif
+                                    </td>
+                                @endif
+                                @can('planilla.gestionar')
+                                    <td class="space-y-2 px-4 py-2.5">
+                                        @if ($e->activo && $verImportes)
+                                            <details>
+                                                <summary class="cursor-pointer text-xs font-medium text-indigo-700">Cambiar sueldo</summary>
+                                                <form method="POST" action="{{ route('planilla.empleados.sueldo', $e) }}" class="mt-2 space-y-2">
+                                                    @csrf
+                                                    <div>
+                                                        <label for="sueldo-{{ $e->id }}" class="block text-sm font-medium text-gray-700">Sueldo mensual</label>
+                                                        <input id="sueldo-{{ $e->id }}" name="sueldo_mensual" inputmode="decimal" required class="{{ $campo }}">
+                                                    </div>
+                                                    <div>
+                                                        <label for="vigente-{{ $e->id }}" class="block text-sm font-medium text-gray-700">Vigente desde</label>
+                                                        <input id="vigente-{{ $e->id }}" name="vigente_desde" type="date" value="{{ now()->toDateString() }}" required class="{{ $campo }}">
+                                                    </div>
+                                                    <div>
+                                                        <label for="motivo-{{ $e->id }}" class="block text-sm font-medium text-gray-700">Motivo</label>
+                                                        <input id="motivo-{{ $e->id }}" name="motivo" maxlength="500" class="{{ $campo }}">
+                                                    </div>
+                                                    @unless ($e->con_descuentos_ley)
+                                                        <div>
+                                                            <input id="bajo-{{ $e->id }}" name="confirmar_bajo_minimo" type="checkbox" value="1">
+                                                            <label for="bajo-{{ $e->id }}" class="text-sm text-gray-700">Confirmo si queda por debajo del mínimo.</label>
+                                                        </div>
+                                                    @endunless
+                                                    <button class="{{ $secundario }}">Guardar sueldo</button>
+                                                </form>
+                                            </details>
+                                        @endif
+                                        @if ($e->activo && $e->con_descuentos_ley && $verImportes)
+                                            <a href="{{ route('planilla.empleados.contrato', $e) }}" class="block text-xs font-medium text-indigo-700 underline">Contrato</a>
+                                        @endif
+                                        <form method="POST" action="{{ route($e->activo ? 'planilla.empleados.baja' : 'planilla.empleados.reactivar', $e) }}"
+                                              onsubmit="return confirm('¿Confirmás el cambio de estado de esta persona y sus módulos enlazados?')">
+                                            @csrf
+                                            @if ($e->activo)
+                                                <label for="fecha-{{ $e->id }}" class="block text-sm font-medium text-gray-700">Fecha de baja</label>
+                                                <input id="fecha-{{ $e->id }}" name="fecha" type="date" value="{{ now()->toDateString() }}" required class="{{ $campo }}">
+                                            @endif
+                                            <button class="mt-1 {{ $secundario }}">{{ $e->activo ? 'Dar de baja' : 'Reactivar' }}</button>
+                                        </form>
+                                    </td>
+                                @endcan
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </x-app-layout>

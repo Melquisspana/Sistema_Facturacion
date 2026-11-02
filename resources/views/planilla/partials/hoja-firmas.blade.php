@@ -50,7 +50,7 @@
                     <td>
                         <div class="nomg">{{ $l['nombre'] }}</div>
                         @if ($l['dui'])
-                            <div class="duig mono">DUI {{ $l['dui'] }}</div>
+                            <div class="duig mono">{{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}</div>
                         @endif
                     </td>
                     <td class="perg mono">{{ $l['periodo'] }}</td>
@@ -114,9 +114,9 @@
     @endunless
 
     <p class="hi-legal">
-        Control interno de remuneraciones con importes revisados a mano. No es una planilla de
-        nómina legal: no incluye cálculos de ISSS, AFP, renta, vacaciones, aguinaldo,
-        indemnización ni horas extra.
+        Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
+        propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
+        Única. No incluye aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
         @unless ($esBorrador)
             Cada trabajador firma únicamente por el total recibido de su renglón; las diferencias
             entre importe y total recibido están señaladas donde corresponde.

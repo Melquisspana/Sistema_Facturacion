@@ -21,12 +21,12 @@ class PlanillaSueldo extends Model
     protected $table = 'planilla_sueldos';
 
     protected $fillable = [
-        'planilla_empleado_id', 'importe', 'vigente_desde', 'motivo', 'registrado_por',
+        'planilla_empleado_id', 'importe', 'importe_mensual', 'vigente_desde', 'motivo', 'registrado_por',
     ];
 
     protected function casts(): array
     {
-        return ['importe' => 'decimal:2', 'vigente_desde' => 'date'];
+        return ['importe' => 'decimal:2', 'importe_mensual' => 'decimal:2', 'vigente_desde' => 'date'];
     }
 
     public function empleado(): BelongsTo

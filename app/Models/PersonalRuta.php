@@ -148,7 +148,7 @@ class PersonalRuta extends Model
             : trim($partes->first().' '.$partes->get(1));
     }
 
-    /** Etiqueta para listas: «Rene Barillas (inactivo)». */
+    /** Etiqueta para listas: «Hugo Ficticio (inactivo)». */
     public function etiqueta(): string
     {
         return $this->nombre.($this->activo ? '' : ' (inactivo)');

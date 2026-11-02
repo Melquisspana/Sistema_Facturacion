@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\Schema;
  * Tres punteros OPCIONALES y únicos: `asistencia_empleado_id`, `personal_ruta_id` y
  * `user_id`. Son REFERENCIAS DE IDENTIDAD, no dependencias: la planilla nunca lee
  * marcaciones ni huellas, nunca exige el módulo encendido, y funciona con los tres en
- * NULL. Lo que compran es que nadie tenga que adivinar si el Rene de acá es el de
+ * NULL. Lo que compran es que nadie tenga que adivinar si el Hugo de acá es el de
  * allá. El alta ofrece las personas que YA existen para engancharlas de un clic en
  * vez de volver a escribirlas.
  *

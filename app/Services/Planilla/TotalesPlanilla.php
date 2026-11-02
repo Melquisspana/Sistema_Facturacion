@@ -34,8 +34,8 @@ use App\Services\Gastos\Dinero;
  * —eso era justamente lo ambiguo— y bloquean la confirmación hasta que alguien lo
  * diga.
  *
- * NADA ACÁ ES UN CÁLCULO LEGAL. No hay ISSS, AFP, renta, vacaciones, aguinaldo,
- * indemnización ni horas extra: solo sumas y restas de importes escritos y revisados.
+ * NADA ACÁ ES UN CÁLCULO LEGAL: solo sumas y restas de importes ya revisados. ISSS, AFP
+ * y renta los propone {@see DescuentosLey} y llegan acá como cualquier otro descuento.
  */
 final class TotalesPlanilla
 {

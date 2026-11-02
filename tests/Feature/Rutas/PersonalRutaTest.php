@@ -30,7 +30,7 @@ class PersonalRutaTest extends TestCase
     {
         $this->actingAs($this->admin())
             ->post(route('rutas.personal.store'), [
-                'nombre' => 'Rene Barillas',
+                'nombre' => 'Hugo Ficticio',
                 'telefono' => '7777-0000',
                 'funciones' => [FuncionPersonalRuta::Vendedor->value, FuncionPersonalRuta::Cobrador->value],
             ])
@@ -38,7 +38,7 @@ class PersonalRutaTest extends TestCase
 
         $persona = PersonalRuta::sole();
 
-        $this->assertSame('Rene Barillas', $persona->nombre);
+        $this->assertSame('Hugo Ficticio', $persona->nombre);
         $this->assertTrue($persona->activo);
         // Las funciones son combinables y van normalizadas: se pueden consultar.
         $this->assertCount(2, $persona->funcionesEnum());
@@ -50,7 +50,7 @@ class PersonalRutaTest extends TestCase
 
     public function test_una_persona_no_queda_atada_a_ninguna_ruta_ni_cliente(): void
     {
-        $persona = PersonalRuta::create(['nombre' => 'Rene Barillas']);
+        $persona = PersonalRuta::create(['nombre' => 'Hugo Ficticio']);
 
         // El catálogo no tiene columna de ruta, cliente ni zona: cualquiera puede ir a
         // cualquier lado, y una columna así se volvería una regla que nadie cumple.
@@ -70,7 +70,7 @@ class PersonalRutaTest extends TestCase
 
     public function test_una_persona_no_se_borra_se_desactiva(): void
     {
-        $persona = PersonalRuta::create(['nombre' => 'Rene Barillas']);
+        $persona = PersonalRuta::create(['nombre' => 'Hugo Ficticio']);
 
         // No existe ruta de borrado: alguien que ya fue en salidas no puede desaparecer.
         $this->assertFalse(Route::has('rutas.personal.destroy'));
@@ -93,7 +93,7 @@ class PersonalRutaTest extends TestCase
         $ruta = Ruta::create(['nombre' => 'San Miguel']);
         $salida = SalidaRuta::create(['ruta_id' => $ruta->id, 'fecha_inicio' => now()->toDateString(), 'estado' => EstadoSalidaRuta::EnCurso]);
 
-        $persona = PersonalRuta::create(['nombre' => 'Rene Barillas']);
+        $persona = PersonalRuta::create(['nombre' => 'Hugo Ficticio']);
         $persona->funciones()->create(['funcion' => FuncionPersonalRuta::Vendedor->value]);
         $persona->funciones()->create(['funcion' => FuncionPersonalRuta::ResponsableSalida->value]);
 
@@ -102,7 +102,7 @@ class PersonalRutaTest extends TestCase
         $this->actingAs($this->admin())
             ->get(route('rutas.personal.show', $persona))
             ->assertOk()
-            ->assertSee('Rene Barillas')
+            ->assertSee('Hugo Ficticio')
             ->assertSee(FuncionPersonalRuta::Vendedor->label())
             ->assertSee(FuncionPersonalRuta::ResponsableSalida->label())
             ->assertSee('San Miguel')
@@ -111,13 +111,13 @@ class PersonalRutaTest extends TestCase
 
     public function test_la_pantalla_de_editar_trae_marcadas_las_funciones_que_ya_tiene(): void
     {
-        $persona = PersonalRuta::create(['nombre' => 'Rene Barillas', 'telefono' => '7777-0000']);
+        $persona = PersonalRuta::create(['nombre' => 'Hugo Ficticio', 'telefono' => '7777-0000']);
         $persona->funciones()->create(['funcion' => FuncionPersonalRuta::Cobrador->value]);
 
         $this->actingAs($this->admin())
             ->get(route('rutas.personal.edit', $persona))
             ->assertOk()
-            ->assertSee('Rene Barillas')
+            ->assertSee('Hugo Ficticio')
             ->assertSee('7777-0000')
             // Todas las funciones se ofrecen; ninguna es un cargo excluyente.
             ->assertSee(FuncionPersonalRuta::Cobrador->label())
@@ -127,10 +127,10 @@ class PersonalRutaTest extends TestCase
     public function test_un_usuario_no_puede_enlazarse_a_dos_personas(): void
     {
         $usuario = User::factory()->create(['activo' => true]);
-        PersonalRuta::create(['nombre' => 'Rene Barillas', 'user_id' => $usuario->id]);
+        PersonalRuta::create(['nombre' => 'Hugo Ficticio', 'user_id' => $usuario->id]);
 
         $this->actingAs($this->admin())
-            ->post(route('rutas.personal.store'), ['nombre' => 'Otro Rene', 'user_id' => $usuario->id])
+            ->post(route('rutas.personal.store'), ['nombre' => 'Otro Hugo', 'user_id' => $usuario->id])
             ->assertSessionHasErrors('user_id');
 
         $this->assertSame(1, PersonalRuta::count());

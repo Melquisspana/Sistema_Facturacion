@@ -16,6 +16,11 @@ class StoreUserRequest extends FormRequest
 
     public function rules(): array
     {
+        return self::reglasUsuario();
+    }
+
+    public static function reglasUsuario(): array
+    {
         return [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],

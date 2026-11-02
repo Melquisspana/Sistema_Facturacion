@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Planilla\PlanillaContratoController;
 use App\Http\Controllers\Planilla\PlanillaController;
 use App\Http\Controllers\Planilla\PlanillaFlujoController;
 use App\Http\Controllers\Planilla\PlanillaPagoController;
@@ -27,8 +28,8 @@ use Illuminate\Support\Facades\Route;
 |    con permisos menores.
 |  - `planilla.gestionar` : preparar y confirmar. Confirmar crea obligaciones.
 |
-| ESTE MÓDULO NO CALCULA NADA LEGAL: ni ISSS, ni AFP, ni renta, ni vacaciones, ni
-| aguinaldo, ni indemnización, ni horas extra. Control con importes revisados a mano.
+| ISSS, AFP y renta se proponen solos para quien va con descuentos, y una persona los
+| revisa. No calcula aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
 */
 
 Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
@@ -51,6 +52,14 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
 
         // Registro de personas. Reutiliza identidades; no exige biometría.
         Route::get('empleados', [PlanillaController::class, 'empleados'])->name('empleados');
+        Route::get('empleados/nuevo', [PlanillaController::class, 'nuevoEmpleado'])->middleware($gestionar)->name('empleados.create');
+        // El contrato lleva el sueldo: el controlador exige además `planilla.salarios`.
+        Route::get('empleados/{empleado}/contrato', [PlanillaContratoController::class, 'edit'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato');
+        Route::put('empleados/{empleado}/contrato', [PlanillaContratoController::class, 'update'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato.update');
+        Route::get('empleados/{empleado}/contrato/pdf', [PlanillaContratoController::class, 'pdf'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato.pdf');
+        Route::post('empleados/{empleado}/sueldo', [PlanillaController::class, 'cambiarSueldo'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.sueldo');
+        Route::post('empleados/{empleado}/baja', [PlanillaController::class, 'bajaEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.baja');
+        Route::post('empleados/{empleado}/reactivar', [PlanillaController::class, 'reactivarEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.reactivar');
         Route::post('empleados', [PlanillaController::class, 'guardarEmpleado'])
             ->middleware($gestionar)->name('empleados.store');
 

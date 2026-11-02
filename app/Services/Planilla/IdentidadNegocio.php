@@ -34,7 +34,7 @@ final class IdentidadNegocio
     /** @var array<string, string>|null */
     private ?array $memo = null;
 
-    /** @return array{negocio: string, empleadora: ?string} */
+    /** @return array{negocio: string, empleadora: ?string, nit: ?string} */
     public function datos(): array
     {
         if ($this->memo !== null) {
@@ -50,7 +50,7 @@ final class IdentidadNegocio
                 ->whereNull('deleted_at')
                 ->where('activo', true)
                 ->orderBy('id')
-                ->first(['razon_social', 'nombre_comercial']);
+                ->first(['razon_social', 'nombre_comercial', 'nit']);
         }
 
         $negocio = $fila?->nombre_comercial
@@ -68,6 +68,7 @@ final class IdentidadNegocio
         return $this->memo = [
             'negocio' => (string) $negocio,
             'empleadora' => filled($empleadora) ? trim($empleadora) : null,
+            'nit' => filled($fila?->nit) ? trim($fila->nit) : null,
         ];
     }
 
@@ -79,5 +80,10 @@ final class IdentidadNegocio
     public function empleadora(): ?string
     {
         return $this->datos()['empleadora'];
+    }
+
+    public function nit(): ?string
+    {
+        return $this->datos()['nit'];
     }
 }
