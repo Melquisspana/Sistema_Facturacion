@@ -1207,22 +1207,27 @@ class PanelTest extends TestCase
             ->assertDontSee('>Abonar<', false);
     }
 
-    public function test_planilla_sigue_integrada_y_con_su_propia_llave(): void
+    public function test_planilla_vive_en_personal_con_su_propia_llave(): void
     {
         config()->set('planilla.enabled', true);
 
-        // Con `gastos.ver` a secas no se ve ni el título del grupo de Planilla.
+        // Con `gastos.ver` a secas no se ve ni el área ni el enlace.
         $soloGastos = $this->usuario([PermisoSistema::GastosVer]);
         $this->actingAs($soloGastos)->get(route('gastos.panel'))
             ->assertOk()
-            ->assertDontSee('Planilla');
+            ->assertDontSee('Planilla')
+            ->assertDontSee('Personal');
+        $this->get(route('planilla.index'))->assertForbidden();
 
-        // Con la llave de Planilla, el grupo aparece dentro de la misma área.
+        // Con la llave de Planilla, el enlace está en la barra de Personal, no en la de Gastos.
         $conPlanilla = $this->usuario([PermisoSistema::GastosVer, PermisoSistema::PlanillaVer]);
         $this->actingAs($conPlanilla)->get(route('gastos.panel'))
             ->assertOk()
-            ->assertSee('Planilla')
-            ->assertSee(route('planilla.index'), false);
+            ->assertSee('Personal')
+            ->assertDontSee(route('planilla.anticipos'), false);
+        $this->get(route('planilla.index'))
+            ->assertOk()
+            ->assertSee(route('planilla.anticipos'), false);
     }
 
     /**
