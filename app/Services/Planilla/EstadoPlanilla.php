@@ -9,8 +9,8 @@ use App\Services\Gastos\Dinero;
 use App\Services\Gastos\SaldosGastos;
 
 /**
- * En qué punto está cada línea de una planilla. Tres estados, y se distinguen a
- * propósito porque significan cosas distintas para quien mira:
+ * En qué punto está cada línea de una planilla. Se distinguen a propósito porque
+ * significan cosas distintas para quien mira:
  *
  *   PREPARADO  la planilla es borrador. No hay obligación, no hay nada que pagar y
  *              cambiar un importe no tiene consecuencias.
@@ -18,6 +18,8 @@ use App\Services\Gastos\SaldosGastos;
  *   PARCIAL    se pagó una parte. Es el estado que más se confunde con «pagado», así
  *              que lleva nombre propio y muestra cuánto falta.
  *   PAGADO     no queda saldo.
+ *   ANULADA    la planilla se anuló. Tampoco queda saldo, pero porque el ajuste interno
+ *              extinguió la deuda, no porque alguien haya cobrado.
  *
  * Los importes no se guardan acá: se leen del saldo REAL de Gastos, que es el único
  * sitio donde vive el dinero. Si se guardaran, habría dos verdades sobre lo mismo.
@@ -30,6 +32,7 @@ final class EstadoPlanilla
         'parcial' => 'Pagado en parte',
         'pagado' => 'Pagado',
         'sin_obligacion' => 'Sin nada que pagar',
+        'anulada' => 'Anulada',
     ];
 
     public function __construct(private SaldosGastos $saldos) {}
@@ -45,6 +48,10 @@ final class EstadoPlanilla
             return ['estado' => 'preparado', 'a_pagar' => $aPagar, 'pagado' => 0, 'pendiente' => $aPagar];
         }
 
+        if ($detalle->planilla->estado === 'anulada') {
+            return $this->anulada($aPagar);
+        }
+
         if ($detalle->gasto_id === null) {
             // Confirmada pero sin obligación: todo se fue en descuentos.
             return ['estado' => 'sin_obligacion', 'a_pagar' => $aPagar, 'pagado' => 0, 'pendiente' => 0];
@@ -56,7 +63,24 @@ final class EstadoPlanilla
     /** @return array{estado: string, a_pagar: int, pagado: int, pendiente: int} */
     public function deTercero(PlanillaObligacionTercero $obligacion): array
     {
-        return $this->deGasto($obligacion->gasto, Dinero::centavos((string) $obligacion->importe));
+        $importe = Dinero::centavos((string) $obligacion->importe);
+
+        if ($obligacion->planilla->estado === 'anulada') {
+            return $this->anulada($importe);
+        }
+
+        return $this->deGasto($obligacion->gasto, $importe);
+    }
+
+    /**
+     * Sin consultar el saldo: en Gastos da cero, y eso se leería como «pagado». Anular
+     * exige que no haya pagos, así que acá no salió dinero.
+     *
+     * @return array{estado: string, a_pagar: int, pagado: int, pendiente: int}
+     */
+    private function anulada(int $aPagar): array
+    {
+        return ['estado' => 'anulada', 'a_pagar' => $aPagar, 'pagado' => 0, 'pendiente' => 0];
     }
 
     /**

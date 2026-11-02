@@ -20,6 +20,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Planilla: una quincena anulada ya no muestra «Pagado» en cada persona ni «No cuadra»: dice «Anulada», sin avance de pago ni desembolso. Además, sus estados se leen bien en modo oscuro.
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
 ## [2026.11.02] - 2026-11-02
