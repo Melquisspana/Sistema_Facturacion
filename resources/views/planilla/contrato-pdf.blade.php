@@ -91,11 +91,13 @@
     <p>Dado que la empresa (sí) o (no) le proporciona alojamiento</p>
 
     <h2>d) HORARIO DE TRABAJO:</h2>
-    <p>Del día lunes al día viernes, de 8am, a 12m.</p>
-    <p>Y de 1pm, a 5pm.</p>
-    <p>El día sábado de 8am a 12m.</p>
-    <p>De las 12m a las 1pm, para la toma de alimentos.</p>
-    <p>Cumpliendo con la semana Laboral 8 horas.</p>
+    <p>Del día lunes al día viernes, de 8:00 a 17:00.</p>
+    <p>El día sábado de 8:00 a 12:00.</p>
+    <p>De lunes a viernes, de las 12:00 a las 13:00, para la toma de alimentos. Esa hora no se cuenta como jornada.</p>
+    <p>
+        Cumpliendo con una jornada ordinaria de 8 horas diarias de lunes a viernes y de 4 horas el sábado, para una semana
+        laboral de 44 horas.
+    </p>
 
     <h2>e) SALARIO: FORMA, PERÍODO Y LUGAR DEL PAGO:</h2>
     <p>El salario que recibirá el trabajador, por sus servicios, será la suma de {{ $sueldo_letras }} (${{ $sueldo }})</p>

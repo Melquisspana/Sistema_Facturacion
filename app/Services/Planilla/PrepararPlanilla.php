@@ -39,6 +39,7 @@ final class PrepararPlanilla
         private TotalesPlanilla $totales,
         private SueldoHabitual $sueldos,
         private DescuentosLey $descuentos,
+        private PrestacionAnual $prestaciones,
     ) {}
 
     /**
@@ -59,6 +60,13 @@ final class PrepararPlanilla
             'fecha_pago' => ['nullable', 'date_format:Y-m-d'],
             'observaciones' => ['nullable', 'string', 'max:2000'],
         ])->validate();
+
+        // Aguinaldo y Quincena 25 no pagan tiempo de un período: su fecha es la de pago.
+        if ($this->prestaciones->es($datos['clase'])) {
+            $this->prestaciones->exigirFechaDePago($datos['clase'], $datos['fecha_pago'] ?? null);
+            $datos['tipo_periodo'] = 'mensual';
+            $datos['fecha'] = $datos['fecha_pago'];
+        }
 
         $periodo = $this->periodos->para($datos['tipo_periodo'], CarbonImmutable::parse($datos['fecha']));
 
@@ -146,6 +154,12 @@ final class PrepararPlanilla
             return;
         }
 
+        if ($this->prestaciones->es($planilla->clase)) {
+            $this->guardarLineas($usuario, $planilla, $this->lineasDePrestacion($planilla, $empleados));
+
+            return;
+        }
+
         $habituales = $this->sueldos->vigentesEn($empleados, $planilla->desde->toDateString());
 
         $lineas = $empleados->map(fn (PlanillaEmpleado $e) => [
@@ -158,6 +172,46 @@ final class PrepararPlanilla
         ])->all();
 
         $this->guardarLineas($usuario, $planilla, $lineas);
+    }
+
+    /**
+     * Una línea por persona, con el monto como ingreso: así se corrige a mano y sale en el
+     * recibo como cualquier otro. El salario va en cero porque esto no paga tiempo. A quien
+     * le falta un dato se le deja la línea vacía, y {@see reparosParaConfirmar()} lo frena.
+     *
+     * @param  Collection<int, PlanillaEmpleado>  $empleados
+     * @return array<int, array<string, mixed>>
+     */
+    private function lineasDePrestacion(Planilla $planilla, Collection $empleados): array
+    {
+        $pago = $this->fechaDePago($planilla);
+        $mensuales = $this->sueldos->mensualesEn($empleados, $pago->toDateString());
+        $lineas = [];
+
+        foreach ($empleados as $empleado) {
+            $calculo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago);
+
+            if ($calculo['fuera'] !== null) {
+                continue;
+            }
+
+            $lineas[] = [
+                'planilla_empleado_id' => $empleado->id,
+                'salario' => '0.00',
+                'conceptos' => $calculo['falta'] !== null ? [] : [[
+                    'tipo' => 'ingreso',
+                    'concepto' => $this->prestaciones->concepto($planilla->clase, $pago),
+                    'importe' => Dinero::decimal($calculo['centavos']),
+                ]],
+            ];
+        }
+
+        return $lineas;
+    }
+
+    private function fechaDePago(Planilla $planilla): CarbonImmutable
+    {
+        return CarbonImmutable::parse(($planilla->fecha_pago ?? $planilla->hasta)->toDateString());
     }
 
     /**
@@ -347,11 +401,17 @@ final class PrepararPlanilla
      */
     private function cruces(Planilla $planilla): Collection
     {
+        // El aguinaldo no paga tiempo: que caiga en el mes de una quincena no es un cruce.
+        if ($this->prestaciones->es($planilla->clase)) {
+            return collect();
+        }
+
         return DB::table('planilla_detalles as d')
             ->join('planillas as p', 'p.id', '=', 'd.planilla_id')
             ->whereIn('d.planilla_empleado_id', $planilla->detalles->pluck('planilla_empleado_id'))
             ->where('p.id', '!=', $planilla->id)
             ->where('p.estado', '!=', 'anulada')
+            ->whereNotIn('p.clase', PrestacionAnual::CLASES)
             ->whereDate('p.desde', '<=', $planilla->hasta->toDateString())
             ->whereDate('p.hasta', '>=', $planilla->desde->toDateString())
             ->get(['d.nombre_snapshot', 'p.periodo', 'p.clase']);
@@ -373,6 +433,10 @@ final class PrepararPlanilla
             }
         }
 
+        if ($this->prestaciones->es($planilla->clase)) {
+            return $this->avisosDePrestacion($planilla, $verImportes);
+        }
+
         if (! $this->descuentos->aplicaA($planilla)) {
             return $avisos;
         }
@@ -392,6 +456,35 @@ final class PrepararPlanilla
 
             foreach (array_merge($base['avisos'], $calculo['avisos'] ?? []) as $aviso) {
                 $avisos[] = $detalle->nombre_snapshot.': '.$aviso;
+            }
+        }
+
+        return $avisos;
+    }
+
+    /** @return array<int, string> */
+    private function avisosDePrestacion(Planilla $planilla, bool $verImportes): array
+    {
+        $avisos = [];
+        $pago = $this->fechaDePago($planilla);
+        $activos = PlanillaEmpleado::where('activo', true)->orderBy('nombre')->get();
+        $mensuales = $this->sueldos->mensualesEn($activos, $pago->toDateString());
+
+        foreach ($planilla->detalles as $detalle) {
+            $ingresos = $detalle->conceptos->where('tipo', 'ingreso')->sum(fn ($c) => Dinero::centavos((string) $c->importe));
+            $renta = $this->prestaciones->avisoDeRenta($planilla->clase, $ingresos, $pago);
+
+            if ($renta !== null) {
+                $avisos[] = $detalle->nombre_snapshot.': '.$renta;
+            }
+        }
+
+        foreach ($activos->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id')) as $empleado) {
+            $motivo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago)['fuera'];
+
+            if ($motivo !== null) {
+                // El motivo puede decir cuánto gana: solo lo ve quien ve importes.
+                $avisos[] = $empleado->nombre.' queda fuera'.($verImportes ? ': '.$motivo : '').'.';
             }
         }
 
@@ -425,6 +518,19 @@ final class PrepararPlanilla
 
         if ($calculaLey && ! $hayTasas && $planilla->detalles->contains(fn ($d) => $d->empleado?->con_descuentos_ley)) {
             $reparos[] = 'No hay tasas de ISSS, AFP y renta vigentes al '.$planilla->desde->format('d/m/Y').'. Hay que cargarlas en la configuración antes de confirmar.';
+        }
+
+        if ($this->prestaciones->es($planilla->clase)) {
+            $pago = $this->fechaDePago($planilla);
+            $mensuales = $this->sueldos->mensualesEn($planilla->detalles->pluck('empleado')->filter(), $pago->toDateString());
+
+            foreach ($planilla->detalles as $detalle) {
+                $falta = $this->prestaciones->calcular($planilla->clase, $detalle->empleado, $mensuales[$detalle->planilla_empleado_id] ?? null, $pago)['falta'];
+
+                if ($falta !== null) {
+                    $reparos[] = $detalle->nombre_snapshot.': falta '.$falta.' para calcularlo.';
+                }
+            }
         }
 
         foreach ($planilla->detalles as $detalle) {

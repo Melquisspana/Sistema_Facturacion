@@ -1039,3 +1039,9 @@ mantener sincronizados ni dos sitios donde agregar una fila.
 **El contrato no se guarda.** Se arma con los datos del día en que se genera. El texto legal está en la vista; los datos del patrono salen de `empresas` y del `.env`, sin valores por defecto.
 
 **Carga inicial:** `personal:cargar` lee un CSV que vive fuera del repositorio. Por defecto no escribe nada y su salida no muestra datos personales.
+
+## Aguinaldo y Quincena 25
+
+Son clases de planilla (`aguinaldo`, `quincena25`), no un módulo aparte: usan el mismo preparar, confirmar, pagar y recibos. Cada persona lleva una línea con salario en cero y el monto como ingreso, que se puede corregir a mano. No llevan ISSS, AFP ni renta, y entran quienes van con y sin descuentos.
+
+`PrestacionAnual` calcula con `config/planilla_prestaciones.php`. El aguinaldo tiene una versión por año, porque su exención de renta es transitoria: si falta el año, no se abre. Sin fecha de ingreso o sin sueldo, esa línea queda vacía y frena la confirmación. No cubre el proporcional de quien se va antes del pago (Código de Trabajo Art. 202 y Ley Quincena 25 Art. 3): eso va en la liquidación.
