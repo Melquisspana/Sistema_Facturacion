@@ -21,13 +21,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class PlanillaEmpleado extends Model
 {
+    public const DOCUMENTO_TIPOS = ['dui' => 'DUI', 'pasaporte' => 'Pasaporte', 'carne_residente' => 'Carné de residente'];
+
     protected $table = 'planilla_empleados';
 
     protected $guarded = ['id'];
 
     protected function casts(): array
     {
-        return ['activo' => 'boolean', 'salario_referencia' => 'decimal:2'];
+        return ['activo' => 'boolean', 'salario_referencia' => 'decimal:2', 'sueldo_mensual' => 'decimal:2', 'con_descuentos_ley' => 'boolean', 'dependientes' => 'array'];
     }
 
     public function asistencia(): BelongsTo

@@ -129,6 +129,7 @@ class PlanillaFlujoController extends Controller
                 'detalle_id' => $detalle->id,
                 'nombre' => $detalle->nombre_snapshot,
                 'dui' => $detalle->dui_snapshot,
+                'documento_tipo' => $detalle->documento_tipo_snapshot,
                 'cargo' => $detalle->cargo_snapshot,
                 'salario' => (string) $detalle->salario,
                 'folio' => $planilla->periodo.'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),

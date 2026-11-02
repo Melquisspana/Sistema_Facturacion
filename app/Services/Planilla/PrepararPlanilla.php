@@ -196,6 +196,7 @@ final class PrepararPlanilla
                     // El DUI también es foto: un documento firmado no puede cambiar
                     // porque alguien corrija la ficha tres meses después.
                     'dui_snapshot' => $empleado->dui,
+                    'documento_tipo_snapshot' => $empleado->documento_tipo,
                     'cargo_snapshot' => $empleado->cargo,
                     'salario' => Dinero::decimal(Dinero::centavos($linea['salario'])),
                     // Período particular de quien entró o salió a mitad. Solo se guarda

@@ -9,6 +9,8 @@ use App\Http\Requests\Usuarios\StoreUserRequest;
 use App\Http\Requests\Usuarios\UpdateUserRequest;
 use App\Models\User;
 use App\Services\Rutas\FichaVendedor;
+use App\Services\Usuarios\CrearUsuario;
+use App\Services\Usuarios\UltimoAdministrador;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -44,22 +46,11 @@ class UserController extends Controller
         return view('usuarios.form', ['usuario' => new User(['activo' => true]), 'roles' => RolSistema::opciones(), 'rolActual' => null]);
     }
 
-    public function store(StoreUserRequest $request, FichaVendedor $fichas): RedirectResponse
+    public function store(StoreUserRequest $request, CrearUsuario $crear): RedirectResponse
     {
         $this->authorize('create', User::class);
 
-        $datos = $request->validated();
-        $usuario = User::create([
-            'name' => $datos['name'],
-            'email' => $datos['email'],
-            'password' => Hash::make($datos['password']),
-            'activo' => $datos['activo'],
-            'email_verified_at' => now(),
-        ]);
-
-        $usuario->syncRoles([$datos['rol']]);
-        activity('usuario')->performedOn($usuario)->log('asignó el rol '.$datos['rol']);
-        $fichas->sincronizar($usuario);
+        $usuario = $crear->crear($request->validated());
 
         return redirect()->route('usuarios.show', $usuario)->with('status', 'Usuario creado correctamente.');
     }
@@ -94,7 +85,7 @@ class UserController extends Controller
 
         // No dejar el sistema sin un administrador activo.
         $quitaAdmin = $rolNuevo !== 'administrador' || ! $activoNuevo;
-        if ($quitaAdmin && $this->esUltimoAdminActivo($usuario)) {
+        if ($quitaAdmin && UltimoAdministrador::es($usuario)) {
             return back()->withInput()->with('error', 'No se puede quitar el rol de administrador ni inactivar al último administrador activo.');
         }
 
@@ -120,7 +111,7 @@ class UserController extends Controller
         $this->authorize('update', $usuario);
 
         // Inactivar al último administrador activo dejaría el sistema sin admin.
-        if ($usuario->activo && $this->esUltimoAdminActivo($usuario)) {
+        if ($usuario->activo && UltimoAdministrador::es($usuario)) {
             return back()->with('error', 'No se puede inactivar al último administrador activo.');
         }
 
@@ -151,25 +142,12 @@ class UserController extends Controller
     {
         $this->authorize('delete', $usuario); // bloquea auto-eliminación
 
-        if ($this->esUltimoAdminActivo($usuario)) {
+        if (UltimoAdministrador::es($usuario)) {
             return back()->with('error', 'No se puede eliminar al último administrador activo.');
         }
 
         $usuario->delete();
 
         return redirect()->route('usuarios.index')->with('status', 'Usuario eliminado.');
-    }
-
-    /** ¿Es este el único administrador activo del sistema? */
-    private function esUltimoAdminActivo(User $usuario): bool
-    {
-        if (! $usuario->activo || ! $usuario->hasRole('administrador')) {
-            return false;
-        }
-
-        return ! User::role('administrador')
-            ->where('activo', true)
-            ->where('id', '!=', $usuario->id)
-            ->exists();
     }
 }

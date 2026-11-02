@@ -50,7 +50,7 @@
                     <td>
                         <div class="nomg">{{ $l['nombre'] }}</div>
                         @if ($l['dui'])
-                            <div class="duig mono">DUI {{ $l['dui'] }}</div>
+                            <div class="duig mono">{{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}</div>
                         @endif
                     </td>
                     <td class="perg mono">{{ $l['periodo'] }}</td>

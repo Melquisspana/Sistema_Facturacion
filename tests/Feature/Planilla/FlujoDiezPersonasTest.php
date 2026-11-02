@@ -39,16 +39,16 @@ class FlujoDiezPersonasTest extends TestCase
 
     /** @var array<int, array{0: string, 1: string, 2: string}> nombre, DUI, habitual */
     private const PERSONAL = [
-        ['Ana Mendoza Ramírez', '0123 4567-8', '225.00'],
-        ['Carlos Rivas Menjívar', '0234 5678-9', '200.00'],
-        ['Rosa Alvarenga Mejía', '0567 8901-2', '180.00'],
-        ['Luis Portillo Aguilar', '0456 7890-1', '180.00'],
-        ['Marta Interiano Cruz', '0678 9012-3', '195.00'],
-        ['José Ernesto Chicas', '0789 0123-4', '185.00'],
-        ['Blanca Estela Pineda', '0890 1234-5', '175.00'],
-        ['Óscar Amaya Rodríguez', '0901 2345-6', '190.00'],
-        ['Nubia Guadalupe Flores', '1012 3456-7', '165.00'],
-        ['Rafael Antonio Sosa', '1123 4567-8', '210.00'],
+        ['Ana Mendoza Ramírez', '01234567-8', '225.00'],
+        ['Carlos Rivas Menjívar', '02345678-3', '200.00'],
+        ['Rosa Alvarenga Mejía', '05678901-8', '180.00'],
+        ['Luis Portillo Aguilar', '04567890-3', '180.00'],
+        ['Marta Interiano Cruz', '06789012-3', '195.00'],
+        ['José Ernesto Chicas', '07890123-8', '185.00'],
+        ['Blanca Estela Pineda', '08901234-3', '175.00'],
+        ['Óscar Amaya Rodríguez', '09012345-8', '190.00'],
+        ['Nubia Guadalupe Flores', '10123456-4', '165.00'],
+        ['Rafael Antonio Sosa', '11234567-9', '210.00'],
     ];
 
     protected function setUp(): void

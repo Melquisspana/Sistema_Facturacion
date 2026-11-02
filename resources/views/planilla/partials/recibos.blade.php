@@ -31,7 +31,7 @@
         <div class="hi-persona">
             <div class="nombre">{{ $l['nombre'] }}</div>
             @if ($l['dui'])
-                <div class="dui mono">DUI {{ $l['dui'] }}</div>
+                <div class="dui mono">{{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}</div>
             @endif
         </div>
 
@@ -106,7 +106,7 @@
                              «conforme@if» no se compilaría y su cierre sí. --}}
                         Recibí conforme{{ $l['parcial'] ? " los {$moneda} {$l['pagado_txt']} detallados arriba" : '' }}
                     </div>
-                    <div class="quien mono">{{ $l['nombre'] }}@if ($l['dui']) · DUI {{ $l['dui'] }}@endif</div>
+                    <div class="quien mono">{{ $l['nombre'] }}@if ($l['dui']) · {{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}@endif</div>
                 </div>
                 <div class="bloque">
                     <div class="linea"></div>

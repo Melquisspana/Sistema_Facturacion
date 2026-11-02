@@ -7,10 +7,12 @@ use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
+use App\Support\Dui;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Dar de alta a alguien en planilla REUTILIZANDO las identidades que ya existen.
@@ -105,7 +107,11 @@ final class RegistrarEmpleado
             // El DUI es TEXTO. Validado como cadena y guardado como cadena: el cero de
             // la izquierda de «0123 4567-8» es parte del documento, y como número se
             // perdería sin que nadie lo note hasta ver un recibo mal impreso.
-            'dui' => ['nullable', 'string', 'max:20'],
+            'dui' => ['bail', 'nullable', 'string', 'max:20', function ($atributo, $valor, $fallar) {
+                if (! Dui::esValido($valor)) {
+                    $fallar('El DUI no es válido (formato o dígito verificador).');
+                }
+            }],
             'cargo' => ['nullable', 'string', 'max:120'],
             'alta_el' => ['nullable', 'date_format:Y-m-d'],
             'salario_referencia' => ['nullable', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D'],
@@ -116,6 +122,19 @@ final class RegistrarEmpleado
             'nombre.required' => 'Escribí el nombre, o elegí a alguien de la lista.',
         ])->validate();
 
+        if (filled($datos['dui'] ?? null)) {
+            $datos['dui'] = Dui::normalizar($datos['dui']);
+            $consulta = PlanillaEmpleado::where('documento_tipo', 'dui')->where('dui', $datos['dui']);
+            if (filled($datos['origen_id'] ?? null)) {
+                $columna = match ($datos['origen_tipo'] ?? '') {
+                    'asistencia' => 'asistencia_empleado_id', 'ruta' => 'personal_ruta_id', default => 'user_id',
+                };
+                $consulta->where(fn ($q) => $q->whereNull($columna)->orWhere($columna, '!=', $datos['origen_id']));
+            }
+            if ($consulta->exists()) {
+                throw ValidationException::withMessages(['dui' => 'Ya existe una persona con ese DUI.']);
+            }
+        }
         $punteros = ['asistencia_empleado_id' => null, 'personal_ruta_id' => null, 'user_id' => null];
 
         if (filled($datos['origen_tipo'] ?? null) && filled($datos['origen_id'] ?? null)) {

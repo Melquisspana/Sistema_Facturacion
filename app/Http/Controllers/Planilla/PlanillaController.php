@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Planilla;
 
+use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
+use App\Services\Planilla\AltaEmpleado;
+use App\Services\Planilla\BajaEmpleado;
 use App\Services\Planilla\IdentidadNegocio;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
@@ -160,32 +163,53 @@ class PlanillaController extends Controller
 
     // ── Registro de personas ──────────────────────────────────────────────
 
-    public function empleados(Request $request, RegistrarEmpleado $registrar)
+    public function empleados(Request $request, SueldoHabitual $sueldos)
     {
+        $empleados = PlanillaEmpleado::orderBy('nombre')->get();
+        $verImportes = $request->user()->can('planilla.salarios');
+
         return view('planilla.empleados', [
-            'empleados' => PlanillaEmpleado::orderBy('nombre')->get(),
-            'candidatos' => $request->user()->can('planilla.gestionar') ? $registrar->candidatos() : [],
-            'verImportes' => $request->user()->can('planilla.salarios'),
+            'empleados' => $empleados, 'verImportes' => $verImportes,
+            'habituales' => $verImportes ? $sueldos->vigentesEn($empleados, now()->toDateString()) : [],
         ]);
     }
 
-    public function guardarEmpleado(Request $request, RegistrarEmpleado $registrar)
+    public function nuevoEmpleado(Request $request, RegistrarEmpleado $registrar, AltaEmpleado $alta)
     {
-        $datos = $request->all();
+        abort_unless($request->user()->activo && $request->user()->can('planilla.gestionar'), 403);
 
-        // Si vino de la lista de personas que ya existen, el nombre no se vuelve a
-        // escribir: se toma del módulo de origen.
-        if (filled($datos['origen_tipo'] ?? null) && blank($datos['nombre'] ?? null)) {
-            $datos['nombre'] = $registrar->nombreDe($datos['origen_tipo'], (int) $datos['origen_id']);
-        }
-
-        $empleado = $registrar->registrar($request->user(), $datos);
-
-        return redirect()
-            ->route('planilla.empleados')
-            ->with('planilla.aviso', $empleado->nombre.' quedó en el registro de planilla ('.$empleado->origenIdentidad().').');
+        return view('planilla.empleados-nuevo', [
+            'candidatos' => $registrar->candidatos(),
+            'coincidencias' => $alta->coincidencias((string) old('nombres', ''), (string) old('apellidos', '')),
+            'roles' => RolSistema::opciones(),
+        ]);
     }
 
+    public function guardarEmpleado(Request $request, AltaEmpleado $alta)
+    {
+        $empleado = $alta->registrar($request->user(), $request->all());
+
+        return redirect()->route('planilla.empleados')->with('planilla.aviso', $empleado->nombre.' quedó en planilla.');
+    }
+
+    public function bajaEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
+    {
+        $bajas->dar($request->user(), $empleado, (string) $request->input('fecha'));
+        $mensaje = 'Empleado dado de baja. Su historial se conserva.';
+        $huellas = $empleado->asistencia?->huellas()->where('activo', true)->count() ?? 0;
+        if ($huellas > 0) {
+            $mensaje .= ' Conserva '.$huellas.' huella(s) vigente(s): quitalas si ya no las necesita.';
+        }
+
+        return back()->with('planilla.aviso', $mensaje);
+    }
+
+    public function reactivarEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
+    {
+        $bajas->reactivar($request->user(), $empleado);
+
+        return back()->with('planilla.aviso', 'Empleado reactivado. Las huellas vigentes se conservan.');
+    }
     // ── Formatos ──────────────────────────────────────────────────────────
 
     /**

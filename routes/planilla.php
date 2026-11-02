@@ -51,6 +51,9 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
 
         // Registro de personas. Reutiliza identidades; no exige biometría.
         Route::get('empleados', [PlanillaController::class, 'empleados'])->name('empleados');
+        Route::get('empleados/nuevo', [PlanillaController::class, 'nuevoEmpleado'])->middleware($gestionar)->name('empleados.create');
+        Route::post('empleados/{empleado}/baja', [PlanillaController::class, 'bajaEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.baja');
+        Route::post('empleados/{empleado}/reactivar', [PlanillaController::class, 'reactivarEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.reactivar');
         Route::post('empleados', [PlanillaController::class, 'guardarEmpleado'])
             ->middleware($gestionar)->name('empleados.store');
 
