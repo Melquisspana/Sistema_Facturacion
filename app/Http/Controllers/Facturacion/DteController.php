@@ -655,7 +655,7 @@ class DteController extends Controller
             if ($precarga !== null) {
                 $nota = $precarga['nota'];
                 $albaran = app(AlbaranNotaCreditoService::class)->registrar($nc, [
-                    'numero' => $nota->numero_albaran, 'fecha' => $nota->fecha_albaran?->toDateString(), 'total' => $nota->monto_albaran,
+                    'numero' => $nota->numero_albaran, 'fecha' => $nota->fecha_albaran?->toDateString(), 'total' => $precarga['total'],
                 ]);
                 $albaran->update(['ppq_albaran_id' => $nota->id]);
                 foreach ($precarga['lineas'] as $fila) {
@@ -663,6 +663,14 @@ class DteController extends Controller
                         $this->borradores->acreditarLinea($nc, $original->lineas()->findOrFail($fila['linea_id']), $fila['cantidad']);
                     } catch (SaldoAcreditableExcedidoException $e) {
                         throw ValidationException::withMessages(['cantidad' => $e->getMessage()]);
+                    }
+                }
+                if ($precarga['gravado'] !== null) {
+                    $gravadoAc04 = $precarga['gravado'];
+                    $nc->refresh();
+                    $gravadoNc = Dinero::restar($nc->total_gravado, $nc->descuento_gravado);
+                    if (Dinero::comparar(Dinero::redondear($gravadoNc), Dinero::redondear($gravadoAc04)) !== 0) {
+                        $avisosAc04[] = 'El gravado del borrador ($'.Dinero::redondear($gravadoNc).') difiere del gravado de la AC04 ($'.Dinero::redondear($gravadoAc04).'). Revise los importes antes de generar.';
                     }
                 }
             }

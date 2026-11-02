@@ -19,6 +19,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Cobros: conciliación AC04 desde la base del CCF con descuento, IVA y retención; gravado sin IVA separado del total de la NC, lectura por filas y columnas y aviso único de gravados distintos; tarjetas e insignias coherentes. Al desplegar, revisar `php artisan ppq:corregir-monto-ac04` y ejecutar con `--aplicar` para corregir montos antiguos desde sus PDF. #172
 - PPQ: se procesan todos los PDF de cada correo y se deduplica por mensaje y número de albarán, para no perder el AC01 que llega después de un AC04. #57
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 

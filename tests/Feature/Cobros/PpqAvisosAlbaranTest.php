@@ -16,6 +16,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
 use App\Services\Cobros\VinculadorAlbaranes;
 use App\Services\Dte\PerfilDocumentoResolver;
@@ -24,6 +25,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -73,6 +75,7 @@ class PpqAvisosAlbaranTest extends TestCase
             'codigo_generacion' => strtoupper(Str::uuid()->toString()),
             'sello_recepcion' => '2026SELLOREAL'.Str::random(8), 'fecha_procesamiento_mh' => now(),
             'fecha_emision' => '2026-09-10', 'hora_emision' => '08:00:00', 'total_pagar' => '100.00',
+            'total_gravado' => '100.00', 'descuento_porcentaje_aplicado' => '0.00', 'iva_retenido' => '0.00',
         ]);
     }
 
@@ -104,6 +107,66 @@ class PpqAvisosAlbaranTest extends TestCase
         return app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, array_map(fn ($doc) => $doc->id, $docs));
     }
 
+    public static function conciliacionesAc04(): array
+    {
+        return [
+            'retencion y descuento 1' => ['400.00', '5.00', '3.80', ['20.00'], '404.32'],
+            'retencion y descuento 2' => ['600.12', '5.00', '5.70', ['12.34'], '625.40'],
+            'retencion y descuento 3' => ['250.75', '5.00', '2.38', ['8.25'], '258.03'],
+            'sin retencion' => ['400.00', '5.00', '0.00', ['20.00'], '407.93'],
+            'sin descuento' => ['400.00', '0.00', '4.00', ['20.00'], '425.60'],
+            'dos devoluciones' => ['400.00', '5.00', '3.80', ['20.00', '10.00'], '393.68'],
+        ];
+    }
+
+    #[DataProvider('conciliacionesAc04')]
+    public function test_concilia_base_menos_ac04_con_descuento_iva_y_retencion(string $base, string $descuento, string $retenido, array $montos, string $esperado): void
+    {
+        $doc = $this->ccf(datosDte: ['total_gravado' => $base, 'descuento_porcentaje_aplicado' => $descuento, 'iva_retenido' => $retenido]);
+        $doc->albaran->update(['monto_albaran' => $esperado]);
+        $notas = collect();
+        foreach ($montos as $i => $monto) {
+            $notas->push($this->devolucion($doc, $monto, ['numero_albaran' => 'AC04/0017/00/'.(8200 + $i), 'dte_id' => $doc->dte_id]));
+        }
+        $this->assertSame('0.00', app(DevolucionesAlbaran::class)->diferencia($doc, $doc->albaran, $notas));
+        $this->assertSame(EstadoVinculacionAlbaran::Vinculado, app(VinculadorAlbaranes::class)->auditar($doc)['estado']);
+    }
+
+    public function test_tolerancia_de_un_centavo_solo_con_ac04_y_pedir_nota_se_conserva(): void
+    {
+        $doc = $this->ccf(datosDte: ['total_gravado' => '400.00', 'descuento_porcentaje_aplicado' => '5.00', 'iva_retenido' => '3.80']);
+        $nota = $this->devolucion($doc, '20.00', ['dte_id' => $doc->dte_id]);
+        foreach (['404.31', '404.33'] as $monto) {
+            $doc->albaran->update(['monto_albaran' => $monto]);
+            $this->assertSame(EstadoVinculacionAlbaran::Vinculado, app(VinculadorAlbaranes::class)->auditar($doc)['estado']);
+        }
+        $doc->albaran->update(['monto_albaran' => '404.34']);
+        $this->assertSame(EstadoVinculacionAlbaran::Revisar, app(VinculadorAlbaranes::class)->auditar($doc)['estado']);
+        $nota->delete();
+        $doc->albaran->update(['monto_albaran' => '100.01', 'fecha_albaran' => today()->subDays(5)]);
+        $this->assertSame('-0.01', app(DevolucionesAlbaran::class)->diferencia($doc, $doc->albaran, collect()));
+        $this->assertSame(EstadoVinculacionAlbaran::Revisar, app(VinculadorAlbaranes::class)->auditar($doc)['estado']);
+        $this->assertTrue(app(DevolucionesAlbaran::class)->avisos($doc)['pedir_nota']);
+    }
+
+    public function test_con_ac04_sin_datos_del_dte_o_de_la_nota_no_inventa_una_diferencia(): void
+    {
+        $doc = $this->ccf();
+        $nota = $this->devolucion($doc, '20.00');
+        $servicio = app(DevolucionesAlbaran::class);
+        foreach (['total_gravado', 'descuento_porcentaje_aplicado', 'iva_retenido'] as $campo) {
+            $dte = $doc->dte;
+            $valor = $dte->$campo;
+            $dte->$campo = null;
+            $this->assertNull($servicio->diferencia($doc, $doc->albaran, collect([$nota])));
+            $dte->$campo = $valor;
+        }
+        $nota->monto_albaran = null;
+        $this->assertNull($servicio->diferencia($doc, $doc->albaran, collect([$nota])));
+        $doc->setRelation('dte', null);
+        $this->assertNull($servicio->diferencia($doc, $doc->albaran, collect([$nota])));
+    }
+
     public function test_reciente_caduca_y_respeta_config(): void
     {
         $this->travelTo(now()->startOfSecond());
@@ -133,7 +196,7 @@ class PpqAvisosAlbaranTest extends TestCase
     public function test_devolucion_explica_toda_la_diferencia_y_se_vincula_automaticamente(): void
     {
         $doc = $this->ccf();
-        $doc->albaran->update(['monto_albaran' => '113.95']);
+        $doc->albaran->update(['monto_albaran' => '97.24']);
         $nota = $this->devolucion($doc, '10.00');
         $segunda = $this->devolucion($doc, '3.95', ['numero_albaran' => 'AC04/0017/00/7201']);
         $vinculador = app(VinculadorAlbaranes::class);
@@ -150,7 +213,23 @@ class PpqAvisosAlbaranTest extends TestCase
         $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id]);
         $veredicto = app(VinculadorAlbaranes::class)->auditar($doc);
         $this->assertSame(EstadoVinculacionAlbaran::Revisar, $veredicto['estado']);
-        $this->assertStringContainsString('12.05', $veredicto['motivo']);
+        $this->assertStringContainsString('28.76', $veredicto['motivo']);
+        $this->actingAs($this->usuario())->get(route('cobros.documentos.show', $doc))
+            ->assertOk()->assertSeeText('Diferencia contra lo esperado: $28.76');
+    }
+
+    public function test_ficha_vinculada_automaticamente_o_a_mano_no_pide_vincular_otra_vez(): void
+    {
+        $doc = $this->ccf();
+        $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id]);
+        $this->actingAs($this->usuario());
+        $url = route('cobros.documentos.show', $doc);
+        $this->get($url)->assertOk()->assertDontSeeText('Revisar vinculación')
+            ->assertSeeText('Diferencia contra lo esperado')->assertSeeText('Falta NC')->assertSeeText('Hacer NC');
+        app(VinculadorAlbaranes::class)->vincularAMano($doc, $doc->albaran, $this->usuario(), 'Entrega confirmada');
+        $this->get($url)->assertOk()->assertDontSeeText('Revisar vinculación')->assertSeeText('Diferencia contra lo esperado');
+        $this->get(route('cobros.index', ['cliente_id' => $this->cliente->id]))->assertOk()
+            ->assertSeeText('Devolución sin NC (1)');
     }
 
     public function test_devolucion_de_otra_sala_o_cliente_no_se_vincula_y_se_explica(): void
@@ -185,20 +264,20 @@ class PpqAvisosAlbaranTest extends TestCase
         $nota = $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id, 'numero_albaran' => 'AC04/0017/00/007001']);
         $this->actingAs($this->usuario());
         $url = route('cobros.documentos.show', $doc);
-        $this->get($url)->assertOk()->assertSeeText($nota->numero_albaran)->assertSeeText('13.95')->assertSeeText('falta emitir la NC');
+        $this->get($url)->assertOk()->assertSeeText($nota->numero_albaran)->assertSeeText('13.95')->assertSeeText('Falta NC');
         $nc = $this->dte('05', ['estado' => 'borrador', 'dte_relacionado_id' => $doc->dte_id,
             'tipo_nota_credito' => 'devolucion_producto']);
         DteAlbaran::create(['dte_id' => $nc->id, 'numero_canonico' => 'AC04/0017/00/7001', 'tipo_codigo' => 'AC04',
             'numero' => '7001', 'fecha' => '2026-09-11', 'total' => '13.95', 'sala_codigo' => '0017']);
-        $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('falta emitir la NC')->assertDontSeeText('Hacer NC');
+        $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('Falta NC')->assertDontSeeText('Hacer NC');
         $nc->update(['estado' => 'aceptado']);
-        $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('falta emitir la NC');
+        $this->get($url)->assertOk()->assertSeeText($nc->numero_control)->assertDontSeeText('Falta NC');
     }
 
     public function test_devolucion_total_compensa_la_entrega(): void
     {
-        $doc = $this->ccf(datosDte: ['total_pagar' => '0.00']);
-        $doc->albaran->update(['monto_albaran' => '113.00']);
+        $doc = $this->ccf(datosDte: ['total_gravado' => '113.00']);
+        $doc->albaran->update(['monto_albaran' => '0.00']);
         $this->devolucion($doc, '113.00');
         $this->assertSame(EstadoVinculacionAlbaran::Vinculado, app(VinculadorAlbaranes::class)->aplicar($doc));
     }

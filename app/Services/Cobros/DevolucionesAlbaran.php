@@ -32,13 +32,15 @@ class DevolucionesAlbaran
         if ($this->ncPorAlbaran(collect([$nota]))->isNotEmpty()) {
             throw ValidationException::withMessages(['numero' => 'Esta AC04 ya tiene una nota de crédito vigente o en curso.']);
         }
-        $resultado = ['nota' => $nota, 'lineas' => [], 'avisos' => []];
+        $resultado = ['nota' => $nota, 'lineas' => [], 'avisos' => [], 'gravado' => null, 'total' => null];
         try {
             $disk = Storage::disk((string) config('dte.storage.disk', 'local'));
             $datos = $nota->archivo_path ? app(AlbaranParser::class)->desdePdf($disk->get($nota->archivo_path)) : [];
         } catch (\Throwable) {
             $datos = [];
         }
+        $resultado['total'] = $datos['total'] ?? null;
+        $resultado['gravado'] = $datos['monto'] ?? null;
         if (filled($datos['debug']['error'] ?? null) || empty($datos['lineas'])) {
             $resultado['avisos'][] = 'No se pudieron leer las líneas de la AC04. Revise el PDF y capture las líneas en el editor.';
 
@@ -55,9 +57,6 @@ class DevolucionesAlbaran
             }
             $linea = $coinciden->first();
             $resultado['lineas'][] = $fila + ['linea_id' => $linea->id];
-            if (Dinero::comparar($fila['costo'], $linea->precio_unitario) !== 0) {
-                $resultado['avisos'][] = 'El costo del producto '.$fila['codigo'].' difiere del CCF. El editor conserva el precio y el prorrateo fiscal del CCF.';
-            }
         }
 
         return $resultado;
@@ -218,18 +217,37 @@ class DevolucionesAlbaran
         return $resultado;
     }
 
-    /** CCF − (entrega − devoluciones), con la misma comparación a centavos de Cobros. */
+    /** Con AC04 se reconstruye el importe esperado de la entrega desde la base del CCF. */
     public function diferencia(CobroDocumento $doc, PpqAlbaran $entrega, Collection $notas): ?string
     {
         if ($doc->monto === null || $entrega->monto_albaran === null) {
             return null;
         }
-        $neto = $entrega->monto_albaran;
-        foreach ($notas as $nota) {
-            $neto = Dinero::restar($neto, $nota->monto_albaran);
+        if ($notas->isEmpty()) {
+            return Dinero::redondear(Dinero::restar(Dinero::redondear($doc->monto), Dinero::redondear($entrega->monto_albaran)));
         }
+        $dte = $doc->dte;
+        $ivaTasa = config('dte.iva_tasa');
+        $retencionTasa = config('dte.retencion_iva_tasa');
+        if ($dte === null || $dte->total_gravado === null || $dte->descuento_porcentaje_aplicado === null
+            || $dte->iva_retenido === null || $ivaTasa === null || $retencionTasa === null) {
+            return null;
+        }
+        $base = $dte->total_gravado;
+        foreach ($notas as $nota) {
+            if ($nota->monto_albaran === null) {
+                return null;
+            }
+            $base = Dinero::restar($base, $nota->monto_albaran);
+        }
+        $factor = Dinero::restar('1', Dinero::dividir($dte->descuento_porcentaje_aplicado, '100'));
+        $neto = Dinero::redondear(Dinero::multiplicar($base, $factor));
+        $iva = Dinero::redondear(Dinero::multiplicar($neto, $ivaTasa));
+        $retencion = Dinero::comparar($dte->iva_retenido, '0') > 0
+            ? Dinero::redondear(Dinero::multiplicar($neto, $retencionTasa)) : '0';
+        $esperado = Dinero::restar(Dinero::sumar($neto, $iva), $retencion);
 
-        return Dinero::redondear(Dinero::restar(Dinero::redondear($doc->monto), Dinero::redondear($neto)));
+        return Dinero::redondear(Dinero::restar($entrega->monto_albaran, $esperado));
     }
 
     /** Solo avisos; no interviene en la elegibilidad del PPQ. */

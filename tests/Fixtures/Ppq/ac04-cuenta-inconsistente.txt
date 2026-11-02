@@ -1,0 +1,48 @@
+PAGINA: 1 /CLIENTE DE EJEMPLO
+NOTA DE DEVOLUCIÓN
+FECHA:
+HORA:
+18/11/2026
+09:15:00
+Proveedor
+Reg. Fiscal
+Movimiento
+Nota No.
+Fecha
+P4 - 009876 - DISTRIBUIDORA DULCE HORIZONTE
+765432-1
+AC04-Albarán Devolución
+8427
+18/11/2026
+Descuentos Generales
+Monetario
+Porcentaje
+Sucursal
+Referencia
+Moneda
+Cond. Pago
+0.00
+0
+0148 / SUPER SELECTOS JARDINES DE EJEMPLO
+DTE03M001P002000000000004826
+DOLARES USA
+CREDITO A 30 DIAS
+Producto
+Cantidad
+Recibida Facturada
+Costo
+Proveedor Real
+Importe
+Exento Gravado
+56789 9876543210123 GALLETAS DE EJEMPLO 8.000 0.000 1.0500 2.10
+Gravado
+Exento
+I.V.A
+TOTAL
+2.10
+0.00
+0.27
+2.37
+Recibido Por
+0.000 11.000
+(-)Iva Retenido 0.00

@@ -356,7 +356,7 @@
                                                         <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title="Llegó hace pocos días: puede no estar en el portal de Calleja todavía">Albarán reciente</span>
                                                     @endif
                                                     @if (($devolucionesPendientes[$doc->dte_id] ?? 0) > 0)
-                                                        <span class="text-amber-700 dark:text-amber-300">Devolución sin NC ({{ $devolucionesPendientes[$doc->dte_id] }})</span>
+                                                        <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Devolución sin NC ({{ $devolucionesPendientes[$doc->dte_id] }})</span>
                                                     @endif
                                                     @if ($avisosPpq[$doc->id]['duplicado'] ?? null)
                                                         <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 font-medium bg-rose-100 text-rose-700" title="{{ $avisosPpq[$doc->id]['duplicado'] }}">Posible duplicado</span>

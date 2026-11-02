@@ -87,48 +87,116 @@ class AlbaranParser
         }
         $dinero = '(\d+(?:[.,]\d{3})*[.,]\d{2})';
         $monto = null;
-        $subtotal = null;
+        $total = null;
         $tabla = '/Gravado\s+Exento\s+I\.?\s*V\.?\s*A\.?\s+TOTAL\s+'.$dinero.'\s+'.$dinero.'\s+'.$dinero.'\s+'.$dinero.'\b/iu';
         if (preg_match($tabla, $texto, $totales)) {
             $valores = array_map(fn ($v) => $this->normalizarMonto($v), array_slice($totales, 1));
             if (! in_array(null, $valores, true)) {
                 $suma = Dinero::sumar(Dinero::sumar($valores[0], $valores[1]), $valores[2]);
                 if (Dinero::comparar(Dinero::redondear($suma), Dinero::redondear($valores[3])) === 0) {
-                    $monto = $valores[3];
-                    $subtotal = Dinero::sumar($valores[0], $valores[1]);
+                    $monto = $valores[0];
+                    $total = $valores[3];
                 }
             }
         }
-        $debug['regex']['total_devolucion'] = ['patron' => $tabla, 'match' => $monto];
+        $debug['regex']['total_devolucion'] = ['patron' => $tabla, 'match' => $total];
 
         $lineas = $this->lineasDevolucion($texto);
         $importeLineas = array_reduce($lineas, fn ($suma, $fila) => Dinero::sumar($suma, $fila['importe']), '0');
-        if ($subtotal === null || Dinero::comparar(Dinero::redondear($importeLineas), Dinero::redondear($subtotal)) !== 0) {
+        if ($monto === null || Dinero::comparar(Dinero::redondear($importeLineas), Dinero::redondear($monto)) !== 0) {
             $lineas = [];
         }
 
         return ['numero' => $numero?->canonico, 'fecha' => $fecha ?? $this->fecha($texto, $debug), 'oc' => $oc,
             'sala' => $numero?->sala, 'numero_control_referenciado' => $referencia,
-            'monto' => $monto, 'nombre_sala' => $this->nombreSala($texto, $debug),
+            'monto' => $monto, 'total' => $total, 'nombre_sala' => $this->nombreSala($texto, $debug),
             'lineas' => $lineas, 'debug' => $debug];
     }
 
     private function lineasDevolucion(string $texto): array
     {
         $decimal = '\d+(?:[.,]\d+)?';
+        if (! preg_match('/Exento\h*Gravado\h*\R(.+?)\R\h*Gravado\s+Exento\s+I\.?\s*V\.?\s*A\.?\s+TOTAL/su', $texto, $tabla)) {
+            return [];
+        }
+        $renglones = array_values(array_filter(array_map('trim', preg_split('/\R/u', trim($tabla[1]))), fn ($v) => $v !== ''));
         $patron = '/^\h*(\d+)\h+(\d{8,14})\h+(.+?)\h+('.$decimal.')\h+('.$decimal.')\h+('.$decimal.')\h+('.$decimal.')\h*$/mu';
-        preg_match_all($patron, $texto, $filas, PREG_SET_ORDER);
-        // Una fila de producto truncada impide ofrecer una devolución parcial por error.
+        preg_match_all($patron, implode("\n", $renglones), $filas, PREG_SET_ORDER);
+        $columnas = $filas === [];
+        if ($columnas) {
+            // Siete columnas completas, cada una con una entrada por producto.
+            if (count($renglones) === 0 || count($renglones) % 7 !== 0) {
+                return [];
+            }
+            $n = intdiv(count($renglones), 7);
+            for ($i = 0; $i < $n; $i++) {
+                $fila = [''];
+                for ($columna = 0; $columna < 7; $columna++) {
+                    $fila[] = $renglones[$columna * $n + $i];
+                }
+                if (! preg_match('/^\d+$/', $fila[1]) || ! preg_match('/^\d{8,14}$/', $fila[2])
+                    || ! preg_match('/\p{L}/u', $fila[3])) {
+                    return [];
+                }
+                foreach (array_slice($fila, 4) as $valor) {
+                    if (! preg_match('/^'.$decimal.'$/', $valor)) {
+                        return [];
+                    }
+                }
+                $filas[] = $fila;
+            }
+        } elseif (count($filas) !== count($renglones)) {
+            return [];
+        }
         preg_match_all('/^\h*\d+\h+\d{8,14}\h+/mu', $texto, $candidatas);
-        if (count($candidatas[0]) !== count($filas)) {
+        if (! $columnas && count($candidatas[0]) !== count($filas)) {
             return [];
         }
 
-        return array_map(fn ($fila) => [
-            'codigo' => $fila[1], 'codigo_barra' => $fila[2], 'descripcion' => trim($fila[3]),
-            'cantidad' => str_replace(',', '.', $fila[4]), 'costo' => str_replace(',', '.', $fila[6]),
-            'importe' => str_replace(',', '.', $fila[7]),
-        ], $filas);
+        // Las cantidades impresas corroboran el cociente, si están disponibles.
+        $partes = preg_split('/Recibido\h+Por/iu', $texto);
+        if (count($partes) > 2) {
+            return [];
+        }
+        $facturadas = null;
+        if (count($partes) === 2) {
+            $bloque = trim(preg_split('/\(-\)\h*Iva\h+Retenido/iu', $partes[1])[0]);
+            $valores = preg_split('/\s+/u', $bloque);
+            if (count($valores) !== 2 * count($filas)) {
+                return [];
+            }
+            $facturadas = [];
+            foreach ($filas as $i => $fila) {
+                $cero = $valores[$columnas ? $i : $i * 2];
+                $facturada = $valores[$columnas ? count($filas) + $i : $i * 2 + 1];
+                if (! preg_match('/^0[.,]000$/', $cero) || ! preg_match('/^'.$decimal.'$/', $facturada)) {
+                    return [];
+                }
+                $facturadas[] = str_replace(',', '.', $facturada);
+            }
+        }
+
+        $lineas = [];
+        foreach ($filas as $i => $fila) {
+            $costo = str_replace(',', '.', $fila[6]);
+            $importe = str_replace(',', '.', $fila[7]);
+            if (Dinero::comparar($costo, '0') <= 0 || Dinero::comparar($importe, '0') <= 0
+                || Dinero::comparar(str_replace(',', '.', $fila[5]), '0') !== 0) {
+                return [];
+            }
+            $cantidad = Dinero::dividir($importe, $costo);
+            if (Dinero::comparar($cantidad, Dinero::redondear($cantidad, 3)) !== 0
+                || Dinero::comparar(Dinero::multiplicar($cantidad, $costo), $importe) !== 0
+                || ($facturadas !== null && Dinero::comparar(Dinero::restar($facturadas[$i], str_replace(',', '.', $fila[4])), $cantidad) !== 0)) {
+                return [];
+            }
+            $lineas[] = [
+                'codigo' => $fila[1], 'codigo_barra' => $fila[2], 'descripcion' => trim($fila[3]),
+                'cantidad' => $cantidad, 'costo' => $costo, 'importe' => $importe,
+            ];
+        }
+
+        return $lineas;
     }
 
     /**
