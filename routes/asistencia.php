@@ -7,6 +7,8 @@ use App\Http\Controllers\Asistencia\HuellaController;
 use App\Http\Controllers\Asistencia\JornadaController;
 use App\Http\Controllers\Asistencia\MarcacionController;
 use App\Http\Controllers\Asistencia\ReporteController;
+use App\Models\Asistencia\AsistenciaEmpleado;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -43,10 +45,12 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         | forma más sólida de impedirlo es que no exista el endpoint. Quien se va se
         | DESACTIVA.
         */
-        Route::get('empleados', [EmpleadoController::class, 'index'])->name('empleados.index');
+        // La lista y la ficha viven en Personal. Estas dos direcciones se quedan para que
+        // no se rompa ningún enlace guardado.
+        Route::get('empleados', fn (Request $request) => redirect()->route('personal.empleados', $request->query(), 301))->name('empleados.index');
         Route::get('empleados/crear', [EmpleadoController::class, 'create'])->middleware($gestionar)->name('empleados.create');
         Route::post('empleados', [EmpleadoController::class, 'store'])->middleware($gestionar)->name('empleados.store');
-        Route::get('empleados/{empleado}', [EmpleadoController::class, 'show'])->name('empleados.show');
+        Route::get('empleados/{empleado}', fn (AsistenciaEmpleado $empleado) => redirect()->route('personal.empleados.show', 'a'.$empleado->id, 301))->name('empleados.show');
         Route::get('empleados/{empleado}/editar', [EmpleadoController::class, 'edit'])->middleware($gestionar)->name('empleados.edit');
         Route::put('empleados/{empleado}', [EmpleadoController::class, 'update'])->middleware($gestionar)->name('empleados.update');
         Route::patch('empleados/{empleado}/estado', [EmpleadoController::class, 'toggleActivo'])->middleware($gestionar)->name('empleados.toggle-activo');

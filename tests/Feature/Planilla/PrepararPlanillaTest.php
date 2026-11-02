@@ -148,7 +148,7 @@ class PrepararPlanillaTest extends TestCase
 
         $this->assertNotNull($empleado->id);
         // Y las pantallas de planilla abren igual con el módulo de Asistencia apagado.
-        $this->actingAs($u)->get(route('planilla.empleados'))->assertOk()->assertSee('Sofia Martinez');
+        $this->actingAs($u)->get(route('personal.empleados'))->assertOk()->assertSee('Sofia Martinez');
         $this->actingAs($u)->get(route('planilla.index'))->assertOk();
     }
 

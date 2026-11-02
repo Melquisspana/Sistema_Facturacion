@@ -1045,3 +1045,9 @@ mantener sincronizados ni dos sitios donde agregar una fila.
 Son clases de planilla (`aguinaldo`, `quincena25`), no un módulo aparte: usan el mismo preparar, confirmar, pagar y recibos. Cada persona lleva una línea con salario en cero y el monto como ingreso, que se puede corregir a mano. No llevan ISSS, AFP ni renta, y entran quienes van con y sin descuentos.
 
 `PrestacionAnual` calcula con `config/planilla_prestaciones.php`. El aguinaldo tiene una versión por año, porque su exención de renta es transitoria: si falta el año, no se abre. Sin fecha de ingreso o sin sueldo, esa línea queda vacía y frena la confirmación. No cubre el proporcional de quien se va antes del pago (Código de Trabajo Art. 202 y Ley Quincena 25 Art. 3): eso va en la liquidación.
+
+## Área Personal: Asistencia y Planilla juntas
+
+Planilla sale de «Gastos y pagos» y entra al área que antes se llamaba Asistencia, que ahora se muestra como **Personal**. `AreaSistema::Asistencia` conserva su value, así que sus URL y su barra no cambian. Tiene dos puertas, una por módulo: se apaga cada una por su lado y quien tenga un solo permiso entra por la suya.
+
+`/personal/empleados` es la lista única: una fila por `planilla_empleados`, más quien solo está en Asistencia. La ficha (`p12` o `a7`) arma sus bloques según lo que el usuario alcance, y no escribe nada: las acciones siguen en cada módulo. Las direcciones viejas de lista y ficha responden 301. El lector de huellas no pasa por acá.

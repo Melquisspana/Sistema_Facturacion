@@ -51,7 +51,8 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
         Route::get('formatos', [PlanillaController::class, 'formatos'])->name('formatos');
 
         // Registro de personas. Reutiliza identidades; no exige biometría.
-        Route::get('empleados', [PlanillaController::class, 'empleados'])->name('empleados');
+        // La lista vive en Personal. La dirección se queda para no romper enlaces guardados.
+        Route::get('empleados', fn () => redirect()->route('personal.empleados', [], 301))->name('empleados');
         Route::get('empleados/nuevo', [PlanillaController::class, 'nuevoEmpleado'])->middleware($gestionar)->name('empleados.create');
         // El contrato lleva el sueldo: el controlador exige además `planilla.salarios`.
         Route::get('empleados/{empleado}/contrato', [PlanillaContratoController::class, 'edit'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato');

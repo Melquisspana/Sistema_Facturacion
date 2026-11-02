@@ -209,7 +209,7 @@ class AdministracionHuellasTest extends TestCase
         $this->asignar($empleado, 9);
 
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $empleado))
+            ->get(route('personal.empleados.show', 'a'.$empleado->id))
             ->assertOk()
             ->assertSee('Huellas vigentes')
             ->assertDontSee('Ranuras que tuvo antes')
@@ -219,7 +219,7 @@ class AdministracionHuellasTest extends TestCase
     public function test_la_ficha_avisa_cuando_la_persona_no_puede_marcar(): void
     {
         $this->actingAs($this->admin())
-            ->get(route('asistencia.empleados.show', $this->empleado()))
+            ->get(route('personal.empleados.show', 'a'.$this->empleado()->id))
             ->assertOk()
             ->assertSee('no puede marcar todavía', escape: false);
     }
@@ -275,7 +275,7 @@ class AdministracionHuellasTest extends TestCase
         $empleado = $this->empleado();
 
         $this->actingAs($this->soloVer())
-            ->get(route('asistencia.empleados.show', $empleado))
+            ->get(route('personal.empleados.show', 'a'.$empleado->id))
             ->assertOk()
             ->assertDontSee('Asignar una ranura del sensor');
     }

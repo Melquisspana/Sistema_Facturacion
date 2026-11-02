@@ -4,13 +4,9 @@ namespace App\Http\Controllers\Asistencia;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Asistencia\EmpleadoRequest;
-use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
-use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
-use App\Services\Asistencia\HoraOficial;
 use App\Support\Asistencia\ConsultaAsistencia;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
@@ -47,58 +43,6 @@ use Illuminate\View\View;
  */
 class EmpleadoController extends Controller
 {
-    public function index(Request $request): View
-    {
-        $empleados = AsistenciaEmpleado::query()
-            ->when($request->filled('q'), function ($query) use ($request) {
-                $buscar = '%'.$request->string('q').'%';
-                $query->where(fn ($w) => $w->where('nombres', 'like', $buscar)
-                    ->orWhere('apellidos', 'like', $buscar)
-                    ->orWhere('codigo', 'like', $buscar));
-            })
-            ->when($request->filled('activo'), fn ($q) => $q->where('activo', $request->boolean('activo')))
-            // Se cuentan las huellas VIGENTES, no todas: alguien con tres
-            // asignaciones históricas y ninguna activa no puede marcar, y la
-            // pantalla tiene que decir eso y no «3».
-            ->withCount(['huellas as huellas_activas_count' => fn ($q) => $q->where('activo', true)])
-            ->orderBy('apellidos')
-            ->orderBy('nombres')
-            ->paginate(25)
-            ->withQueryString();
-
-        return view('asistencia.empleados.index', ['empleados' => $empleados]);
-    }
-
-    /**
-     * Ficha de la persona: datos, huellas vigentes y últimas marcaciones.
-     */
-    public function show(AsistenciaEmpleado $empleado, ConsultaAsistencia $consulta, HoraOficial $horaOficial): View
-    {
-        $empleado->load([
-            'huellas' => fn ($q) => $q->where('activo', true)->with('dispositivo')
-                ->orderByDesc('id'),
-        ]);
-
-        return view('asistencia.empleados.show', [
-            'empleado' => $empleado,
-            // Solo lectores ACTIVOS: asignar una ranura de un lector desactivado
-            // crearía una asignación que no puede marcar nada.
-            'lectores' => AsistenciaDispositivo::query()->where('activo', true)->orderBy('nombre')->get(),
-
-            // Las últimas marcaciones, por la MISMA capa de consulta que usa el
-            // historial completo. La ficha no construye su propia consulta: si lo
-            // hiciera, el día que cambie el orden o el criterio, las dos pantallas
-            // dirían cosas distintas de la misma persona.
-            'ultimas' => $consulta->ultimasDe($empleado->id),
-            'zona' => $horaOficial->zona(),
-
-            // La orden viva permite seguir la captura y cancelarla desde la ficha.
-            'ordenViva' => AsistenciaOrdenEnrolamiento::query()
-                ->where('asistencia_empleado_id', $empleado->id)
-                ->vivas()->with('dispositivo')->latest('id')->first(),
-        ]);
-    }
-
     public function create(): View
     {
         return view('asistencia.empleados.create', ['empleado' => new AsistenciaEmpleado]);
@@ -109,7 +53,7 @@ class EmpleadoController extends Controller
         $empleado = AsistenciaEmpleado::create($request->validated() + ['activo' => true]);
 
         return redirect()
-            ->route('asistencia.empleados.show', $empleado)
+            ->route('personal.empleados.show', 'a'.$empleado->id)
             ->with('status', "«{$empleado->nombreCompleto()}» dado de alta. Guardá su huella para que pueda marcar.");
     }
 
@@ -123,7 +67,7 @@ class EmpleadoController extends Controller
         $empleado->update($request->validated());
 
         return redirect()
-            ->route('asistencia.empleados.show', $empleado)
+            ->route('personal.empleados.show', 'a'.$empleado->id)
             ->with('status', 'Datos actualizados.');
     }
 
