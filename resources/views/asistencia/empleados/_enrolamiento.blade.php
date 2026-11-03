@@ -34,7 +34,7 @@
                 <form id="guardar-huella" method="POST" action="{{ route('asistencia.empleados.enrolamiento.store', $empleado) }}" class="mt-4 flex flex-wrap items-end gap-3">
                     @csrf
                     <div>
-                        <label for="enrolamiento_lector" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Lector</label>
+                        <label for="enrolamiento_lector" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Lector</label>
                         <select id="enrolamiento_lector" name="asistencia_dispositivo_id" required class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                             @foreach ($lectores as $lector)
                                 <option value="{{ $lector->id }}" @selected(old('asistencia_dispositivo_id') == $lector->id)>{{ $lector->nombre }} @unless ($lector->tieneIndiceSincronizado()) — sin sincronizar @endunless</option>
@@ -45,7 +45,7 @@
                     <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar huella</button>
                 </form>
                 @if ($sinSincronizar->isNotEmpty())
-                    <p class="mt-3 text-xs text-gray-500 dark:text-paper-400">{{ $sinSincronizar->count() }} lector(es) sin sincronizar: encendelos y esperá a que se comuniquen antes de guardar la huella.</p>
+                    <p class="mt-3 text-xs text-gray-500 dark:text-paper-300">{{ $sinSincronizar->count() }} lector(es) sin sincronizar: encendelos y esperá a que se comuniquen antes de guardar la huella.</p>
                 @endif
             @endcan
         @endif

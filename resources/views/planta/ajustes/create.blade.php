@@ -23,12 +23,12 @@
 
                 <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100 dark:border-ink-700">
                     <a href="{{ route('planta.ajustes.index') }}"
-                       class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">Cancelar</a>
+                       class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Cancelar</a>
                     <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar borrador</button>
                 </div>
             </form>
 
-            <p class="mt-3 text-xs text-gray-500 dark:text-paper-400">
+            <p class="mt-3 text-xs text-gray-500 dark:text-paper-300">
                 Guardar crea un BORRADOR: todavía no cambia el saldo. El inventario cambia al confirmar.
             </p>
         </div>

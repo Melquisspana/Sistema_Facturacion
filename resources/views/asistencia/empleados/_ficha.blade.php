@@ -20,21 +20,21 @@
                 <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Datos</h3>
                 <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                     <div class="flex gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Código de planilla:</dt>
-                        <dd class="text-gray-800 dark:text-paper-200">{{ $empleado->codigo ?? '—' }}</dd>
+                        <dt class="text-gray-500 dark:text-paper-300">Código de planilla:</dt>
+                        <dd class="text-gray-800 dark:text-paper-100">{{ $empleado->codigo ?? '—' }}</dd>
                     </div>
                     <div class="flex gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Fecha de ingreso:</dt>
-                        <dd class="text-gray-800 dark:text-paper-200">{{ $empleado->fecha_ingreso?->format('d/m/Y') ?? '—' }}</dd>
+                        <dt class="text-gray-500 dark:text-paper-300">Fecha de ingreso:</dt>
+                        <dd class="text-gray-800 dark:text-paper-100">{{ $empleado->fecha_ingreso?->format('d/m/Y') ?? '—' }}</dd>
                     </div>
                     <div class="flex gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Nombre en el lector:</dt>
+                        <dt class="text-gray-500 dark:text-paper-300">Nombre en el lector:</dt>
                         {{-- La pantalla del ESP32 mide 128x128: no cabe un nombre completo. --}}
-                        <dd class="text-gray-800 dark:text-paper-200">{{ $empleado->nombreCorto() }}</dd>
+                        <dd class="text-gray-800 dark:text-paper-100">{{ $empleado->nombreCorto() }}</dd>
                     </div>
                     <div class="flex gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Cuenta del sistema:</dt>
-                        <dd class="text-gray-800 dark:text-paper-200">{{ $empleado->user?->name ?? 'sin cuenta' }}</dd>
+                        <dt class="text-gray-500 dark:text-paper-300">Cuenta del sistema:</dt>
+                        <dd class="text-gray-800 dark:text-paper-100">{{ $empleado->user?->name ?? 'sin cuenta' }}</dd>
                     </div>
                 </dl>
 
@@ -65,7 +65,7 @@
                     <div class="mt-3 overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead>
-                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
+                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-300">
                                     <th class="py-2 pr-4">Lector</th>
                                     <th class="py-2 pr-4">Huella</th>
                                     <th class="py-2 pr-4">Asignada</th>
@@ -75,7 +75,7 @@
                             <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
                                 @foreach ($vigentes as $huella)
                                     <tr>
-                                        <td class="py-3 pr-4 text-gray-800 dark:text-paper-200">
+                                        <td class="py-3 pr-4 text-gray-800 dark:text-paper-100">
                                             {{ $huella->dispositivo?->nombre ?? '—' }}
                                             <span class="text-xs text-gray-400 dark:text-paper-500">({{ $huella->dispositivo?->codigo }})</span>
                                         </td>
@@ -104,16 +104,16 @@
             {{-- ──────────────────────── Asignar una ranura ──────────────────────── --}}
             @can('asistencia.gestionar')
                 <details class="{{ $tarjeta }}" @if ($avisoTecnico) open @endif>
-                    <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-paper-200">Avanzado</summary>
+                    <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-paper-100">Avanzado</summary>
                     @if ($avisoTecnico)
                         <div class="mt-4"><x-asistencia.avisos /></div>
                     @endif
                     @if (! $ordenViva && $empleado->activo && $lectores->isNotEmpty())
                         <div class="mt-4">
-                            <label for="enrolamiento_ranura" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Ranura manual para guardar huella</label>
+                            <label for="enrolamiento_ranura" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Ranura manual para guardar huella</label>
                             <input form="guardar-huella" id="enrolamiento_ranura" name="ranura" type="number" min="0" max="65535" value="{{ old('ranura') }}" placeholder="automática"
                                    class="mt-1 w-40 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-400">Solo para recuperación: normalmente el sistema elige la ranura libre. Se comprueba contra las asignaciones, reservas e índice del sensor.</p>
+                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">Solo para recuperación: normalmente el sistema elige la ranura libre. Se comprueba contra las asignaciones, reservas e índice del sensor.</p>
                             @error('ranura') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                         </div>
                     @endif
@@ -134,7 +134,7 @@
                             @csrf
 
                             <div>
-                                <label for="asistencia_dispositivo_id" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Lector</label>
+                                <label for="asistencia_dispositivo_id" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Lector</label>
                                 <select id="asistencia_dispositivo_id" name="asistencia_dispositivo_id" required
                                         class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                                     @foreach ($lectores as $lector)
@@ -147,7 +147,7 @@
                             </div>
 
                             <div>
-                                <label for="fingerprint_id" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Número de ranura</label>
+                                <label for="fingerprint_id" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Número de ranura</label>
                                 <input id="fingerprint_id" name="fingerprint_id" type="number" min="0" max="65535" required
                                        value="{{ old('fingerprint_id') }}"
                                        class="mt-1 w-40 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
@@ -174,7 +174,7 @@
                 </div>
 
                 @if ($ultimas->isEmpty())
-                    <p class="mt-3 text-sm text-gray-500 dark:text-paper-400">
+                    <p class="mt-3 text-sm text-gray-500 dark:text-paper-300">
                         Esta persona todavía no ha marcado ninguna vez.
                     </p>
                 @else
@@ -184,7 +184,7 @@
                     <div class="mt-3 overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead>
-                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
+                                <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-300">
                                     <th class="py-2 pr-4">Fecha</th>
                                     <th class="py-2 pr-4">Hora</th>
                                     <th class="py-2 pr-4">Tipo</th>
@@ -194,7 +194,7 @@
                             <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
                                 @foreach ($ultimas as $marcacion)
                                     <tr>
-                                        <td class="py-2.5 pr-4 tabular-nums text-gray-800 dark:text-paper-200">{{ $marcacion->fecha_local->format('d/m/Y') }}</td>
+                                        <td class="py-2.5 pr-4 tabular-nums text-gray-800 dark:text-paper-100">{{ $marcacion->fecha_local->format('d/m/Y') }}</td>
                                         <td class="py-2.5 pr-4 tabular-nums font-medium text-gray-800 dark:text-paper-100">
                                             {{ $marcacion->marcado_at->copy()->setTimezone($zona)->format('H:i:s') }}
                                         </td>

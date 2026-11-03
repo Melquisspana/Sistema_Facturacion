@@ -6,11 +6,11 @@
     use App\Services\Gastos\Dinero;
 
     $tarjeta = 'rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
-    $dt = 'text-gray-500 dark:text-paper-400';
-    $dd = 'text-gray-800 dark:text-paper-200';
+    $dt = 'text-gray-500 dark:text-paper-300';
+    $dd = 'text-gray-800 dark:text-paper-100';
     $campo = 'block min-h-11 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
-    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-200';
-    $secundario = 'inline-flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-200';
+    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
+    $secundario = 'inline-flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
     $gestiona = $ficha !== null && auth()->user()->can('planilla.gestionar');
 @endphp
 
@@ -26,7 +26,7 @@
                     {{-- Quien está en planilla se edita una sola vez, abajo, en «Editar datos». --}}
                     @if (! $ficha && auth()->user()->can('asistencia.gestionar'))
                         <a href="{{ route('asistencia.empleados.edit', $asistencia) }}"
-                           class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:text-paper-200 dark:hover:bg-ink-700">Editar</a>
+                           class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:text-paper-100 dark:hover:bg-ink-700">Editar</a>
                     @endif
                 </div>
             @endif
@@ -96,7 +96,7 @@
                                             <input id="cargo" name="cargo" value="{{ old('cargo', $ficha->cargo) }}" maxlength="120" class="{{ $campo }}"></div>
                                         <div><label for="alta_el" class="{{ $etiqueta }}">Fecha de ingreso</label>
                                             <input id="alta_el" name="alta_el" type="date" value="{{ old('alta_el', $ficha->alta_el?->toDateString()) }}" class="{{ $campo }}"></div>
-                                        <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-400">Se guarda también en Asistencia y Rutas. Las quincenas confirmadas no cambian.</p>
+                                        <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">Se guarda también en Asistencia y Rutas. Las quincenas confirmadas no cambian.</p>
                                         <div class="sm:col-span-2"><button type="submit" class="{{ $secundario }}">Guardar datos</button></div>
                                     </form>
                                 </details>
@@ -117,7 +117,7 @@
                                     <form method="POST" action="{{ route('planilla.empleados.modulos', $ficha) }}" class="mt-2 w-full max-w-xl space-y-2">
                                         @csrf
                                         @foreach ($opciones as $clave => $texto)
-                                            <label class="flex min-h-11 items-center gap-2 text-sm text-gray-700 dark:text-paper-200">
+                                            <label class="flex min-h-11 items-center gap-2 text-sm text-gray-700 dark:text-paper-100">
                                                 <input type="hidden" name="{{ $clave }}" value="0">
                                                 <input type="checkbox" name="{{ $clave }}" value="1" @checked(old($clave))
                                                        @if ($clave === 'marca') x-model="marca" @elseif ($clave === 'usa_sistema') x-model="usa" @endif
@@ -135,7 +135,7 @@
                                         @endisset
                                         @isset($opciones['usa_sistema'])
                                             <div x-show="usa" class="grid gap-2 sm:grid-cols-2">
-                                                <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-400">El rol dice qué puede hacer. Vendedor también sale a rutas.</p>
+                                                <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">El rol dice qué puede hacer. Vendedor también sale a rutas.</p>
                                                 <div><label for="rol" class="{{ $etiqueta }}">Rol</label>
                                                     <select id="rol" name="rol" class="{{ $campo }}">
                                                         @foreach (\App\Enums\RolSistema::opciones() as $valor => $texto)
@@ -179,7 +179,7 @@
                                         @unless ($ficha->con_descuentos_ley)
                                             <div>
                                                 <input id="confirmar_bajo_minimo" name="confirmar_bajo_minimo" type="checkbox" value="1">
-                                                <label for="confirmar_bajo_minimo" class="text-sm text-gray-700 dark:text-paper-200">Confirmo si queda por debajo del mínimo.</label>
+                                                <label for="confirmar_bajo_minimo" class="text-sm text-gray-700 dark:text-paper-100">Confirmo si queda por debajo del mínimo.</label>
                                             </div>
                                         @endunless
                                         <button class="{{ $secundario }}">Guardar sueldo</button>
@@ -208,13 +208,13 @@
                 <div class="{{ $tarjeta }}">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimas quincenas</h3>
                     @if ($quincenas->isEmpty())
-                        <p class="mt-3 text-sm text-gray-500 dark:text-paper-400">Todavía no está en ninguna planilla.</p>
+                        <p class="mt-3 text-sm text-gray-500 dark:text-paper-300">Todavía no está en ninguna planilla.</p>
                     @else
                         <div class="mt-3 overflow-x-auto">
                             <table class="min-w-full text-sm">
                                 <caption class="sr-only">Últimas planillas de la persona</caption>
                                 <thead>
-                                    <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-400">
+                                    <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-300">
                                         <th scope="col" class="py-2 pr-4">Período</th>
                                         <th scope="col" class="py-2 pr-4">Tipo</th>
                                         <th scope="col" class="py-2 pr-4">Estado</th>
@@ -230,7 +230,7 @@
                                             <td class="py-2.5 pr-4 text-gray-600 dark:text-paper-300">{{ Planilla::CLASES[$q->planilla->clase] }}</td>
                                             <td class="py-2.5 pr-4 text-gray-600 dark:text-paper-300">{{ Planilla::ESTADOS[$q->planilla->estado] }}</td>
                                             @if ($verImportes)
-                                                <td class="py-2.5 text-right tabular-nums text-gray-800 dark:text-paper-200">{{ Dinero::mostrar($q->a_pagar) }}</td>
+                                                <td class="py-2.5 text-right tabular-nums text-gray-800 dark:text-paper-100">{{ Dinero::mostrar($q->a_pagar) }}</td>
                                             @endif
                                         </tr>
                                     @endforeach
@@ -245,7 +245,7 @@
                 @include('asistencia.empleados._ficha')
             @endif
 
-            <a href="{{ route('personal.empleados') }}" class="inline-block text-sm text-gray-500 hover:underline dark:text-paper-400">← Volver a empleados</a>
+            <a href="{{ route('personal.empleados') }}" class="inline-block text-sm text-gray-500 hover:underline dark:text-paper-300">← Volver a empleados</a>
         </div>
     </div>
 </x-app-layout>

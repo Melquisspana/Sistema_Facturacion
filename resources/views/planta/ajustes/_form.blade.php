@@ -48,7 +48,7 @@
             'texto' => $l->codigo_interno.($l->fecha_vencimiento ? ' · vence '.$l->fecha_vencimiento->toDateString() : ''),
         ])->values());
 
-    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-200';
+    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
     $campo = 'mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
     $celda = 'w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100';
 @endphp
@@ -87,7 +87,7 @@
                     <option value="{{ $t->value }}">{{ $t->label() }}</option>
                 @endforeach
             </select>
-            <p class="mt-1 text-xs text-gray-500 dark:text-paper-400" x-show="tipo === 'carga_inicial'">
+            <p class="mt-1 text-xs text-gray-500 dark:text-paper-300" x-show="tipo === 'carga_inicial'">
                 Solo para buckets que nunca han tenido movimientos.
             </p>
             @error('tipo')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
@@ -126,7 +126,7 @@
             <textarea name="motivo" id="motivo" rows="2" required minlength="10" maxlength="2000"
                       placeholder="Por qué cambia el saldo"
                       class="{{ $campo }}">{{ old('motivo', $ajuste?->motivo) }}</textarea>
-            <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+            <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
                 Obligatorio: un ajuste es el único documento que cambia el saldo sin respaldo externo.
             </p>
             @error('motivo')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
@@ -143,7 +143,7 @@
         <div class="flex items-center justify-between mb-3">
             <h3 class="text-sm font-semibold text-gray-800 dark:text-paper-100">Líneas del ajuste</h3>
             <button type="button" @click="agregar()"
-                    class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">
+                    class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">
                 + Añadir línea
             </button>
         </div>
@@ -157,7 +157,7 @@
                     {{-- Tipos que restan o corrigen: se elige un saldo existente --}}
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" x-show="eligeBucket">
                         <div class="lg:col-span-2">
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Saldo existente</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Saldo existente</label>
                             <select :name="eligeBucket ? `detalles[${i}][bucket]` : ''" x-model="linea.bucket" class="{{ $celda }}">
                                 <option value="">Selecciona…</option>
                                 @foreach ($buckets as $b)
@@ -171,16 +171,16 @@
                         </div>
 
                         <div>
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Saldo actual</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Saldo actual</label>
                             <p class="mt-1.5 text-sm font-semibold text-gray-800 dark:text-paper-100">
                                 <span x-text="info(linea) ? info(linea).saldo : '—'"></span>
-                                <span class="text-xs font-normal text-gray-500 dark:text-paper-400"
+                                <span class="text-xs font-normal text-gray-500 dark:text-paper-300"
                                       x-text="info(linea) ? info(linea).unidad : ''"></span>
                             </p>
                         </div>
 
                         <div x-show="esConteo">
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Cantidad contada</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Cantidad contada</label>
                             <input type="number" step="0.0001" min="0"
                                    :name="esConteo ? `detalles[${i}][cantidad_conteo]` : ''"
                                    x-model="linea.cantidad_conteo" class="{{ $celda }}">
@@ -188,7 +188,7 @@
                         </div>
 
                         <div x-show="resta">
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Cantidad a restar</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Cantidad a restar</label>
                             <input type="number" step="0.0001" min="0.0001"
                                    :name="resta ? `detalles[${i}][cantidad]` : ''"
                                    x-model="linea.cantidad"
@@ -199,7 +199,7 @@
                     {{-- Tipos que suman: se construye el bucket --}}
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5" x-show="! eligeBucket">
                         <div>
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Insumo</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Insumo</label>
                             <select :name="! eligeBucket ? `detalles[${i}][planta_insumo_id]` : ''"
                                     x-model="linea.planta_insumo_id" class="{{ $celda }}">
                                 <option value="">Selecciona…</option>
@@ -210,7 +210,7 @@
                         </div>
 
                         <div>
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Lote</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Lote</label>
                             <select :name="! eligeBucket ? `detalles[${i}][planta_lote_id]` : ''"
                                     x-model="linea.planta_lote_id" class="{{ $celda }}"
                                     :disabled="! controlaLotes(linea)">
@@ -227,7 +227,7 @@
                         </div>
 
                         <div>
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Ubicación</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Ubicación</label>
                             <select :name="! eligeBucket ? `detalles[${i}][planta_ubicacion_id]` : ''"
                                     x-model="linea.planta_ubicacion_id" class="{{ $celda }}">
                                 <option value="">Selecciona…</option>
@@ -238,7 +238,7 @@
                         </div>
 
                         <div>
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Disponibilidad</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Disponibilidad</label>
                             <select :name="! eligeBucket ? `detalles[${i}][estado_disponibilidad]` : ''"
                                     x-model="linea.estado_disponibilidad" class="{{ $celda }}">
                                 @foreach ($disponibilidades as $d)
@@ -248,7 +248,7 @@
                         </div>
 
                         <div>
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Cantidad</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Cantidad</label>
                             <input type="number" step="0.0001" min="0.0001"
                                    :name="! eligeBucket ? `detalles[${i}][cantidad]` : ''"
                                    x-model="linea.cantidad" class="{{ $celda }}">
@@ -257,7 +257,7 @@
 
                     <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-4">
                         <div class="lg:col-span-3">
-                            <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Observaciones de la línea</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Observaciones de la línea</label>
                             <input type="text" maxlength="500" :name="`detalles[${i}][observaciones]`"
                                    x-model="linea.observaciones" class="{{ $celda }}">
                         </div>
@@ -272,7 +272,7 @@
             </template>
         </div>
 
-        <p class="mt-3 text-xs text-gray-500 dark:text-paper-400">
+        <p class="mt-3 text-xs text-gray-500 dark:text-paper-300">
             El signo lo decide el tipo, no el formulario. En una corrección de conteo, la cantidad del
             sistema se lee bloqueada al confirmar: lo que se vea aquí es orientativo.
         </p>

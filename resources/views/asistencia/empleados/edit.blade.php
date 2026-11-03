@@ -23,7 +23,7 @@
 
                 <div class="mt-6 flex items-center gap-3">
                     <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar</button>
-                    <a href="{{ route('asistencia.empleados.show', $empleado) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Cancelar</a>
+                    <a href="{{ route('asistencia.empleados.show', $empleado) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cancelar</a>
                 </div>
             </form>
         </div>

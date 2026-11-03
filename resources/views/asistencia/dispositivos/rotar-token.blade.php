@@ -34,29 +34,29 @@
 
                 <dl class="mt-5 space-y-1 text-sm">
                     <div class="flex flex-wrap gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Lector:</dt>
+                        <dt class="text-gray-500 dark:text-paper-300">Lector:</dt>
                         <dd class="font-medium text-gray-800 dark:text-paper-100">{{ $dispositivo->nombre }}</dd>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Código:</dt>
+                        <dt class="text-gray-500 dark:text-paper-300">Código:</dt>
                         <dd><code class="text-gray-800 dark:text-paper-100">{{ $dispositivo->codigo }}</code></dd>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Última conexión:</dt>
-                        <dd class="text-gray-800 dark:text-paper-200">
+                        <dt class="text-gray-500 dark:text-paper-300">Última conexión:</dt>
+                        <dd class="text-gray-800 dark:text-paper-100">
                             {{ $dispositivo->ultima_conexion_at?->format('d/m/Y H:i') ?? 'nunca se ha comunicado' }}
                         </dd>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <dt class="text-gray-500 dark:text-paper-400">Ranuras asignadas:</dt>
-                        <dd class="text-gray-800 dark:text-paper-200">{{ $dispositivo->huellas()->where('activo', true)->count() }}</dd>
+                        <dt class="text-gray-500 dark:text-paper-300">Ranuras asignadas:</dt>
+                        <dd class="text-gray-800 dark:text-paper-100">{{ $dispositivo->huellas()->where('activo', true)->count() }}</dd>
                     </div>
                 </dl>
 
                 <form method="POST" action="{{ route('configuracion.lectores.rotar-token.ejecutar', $dispositivo) }}" class="mt-6">
                     @csrf
 
-                    <label for="confirmacion" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+                    <label for="confirmacion" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
                         Para confirmar, escribí el código del lector: <code class="text-gray-900 dark:text-paper-100">{{ $dispositivo->codigo }}</code>
                     </label>
                     <input id="confirmacion" name="confirmacion" type="text" required autocomplete="off" autofocus
@@ -70,7 +70,7 @@
                         <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
                             Rotar el token
                         </button>
-                        <a href="{{ route('configuracion.lectores.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Cancelar</a>
+                        <a href="{{ route('configuracion.lectores.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cancelar</a>
                     </div>
                 </form>
             </div>

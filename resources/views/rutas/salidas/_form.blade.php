@@ -9,7 +9,7 @@
 @endphp
 
 <div>
-    <label for="ruta_id" class="block text-sm font-medium text-gray-700 dark:text-paper-200">Ruta</label>
+    <label for="ruta_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Ruta</label>
     <select name="ruta_id" id="ruta_id" required
             class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
         <option value="">Elegí una ruta…</option>
@@ -27,7 +27,7 @@
 
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
     <div>
-        <label for="fecha_inicio" class="block text-sm font-medium text-gray-700 dark:text-paper-200">Fecha de inicio</label>
+        <label for="fecha_inicio" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Fecha de inicio</label>
         <input type="date" name="fecha_inicio" id="fecha_inicio"
                value="{{ old('fecha_inicio', $salida?->fecha_inicio?->toDateString() ?? now()->toDateString()) }}"
                class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
@@ -35,7 +35,7 @@
     </div>
 
     <div>
-        <label for="fecha_fin_estimada" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+        <label for="fecha_fin_estimada" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
             Regreso estimado <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
         </label>
         <input type="date" name="fecha_fin_estimada" id="fecha_fin_estimada"
@@ -47,7 +47,7 @@
 </div>
 
 <div>
-    <span class="block text-sm font-medium text-gray-700 dark:text-paper-200">Participantes</span>
+    <span class="block text-sm font-medium text-gray-700 dark:text-paper-100">Participantes</span>
     <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
         Quiénes van en esta salida. Puede ir más de una persona, y nadie tiene ruta fija.
     </p>
@@ -58,13 +58,13 @@
                 <input type="checkbox" name="personal[]" value="{{ $persona->id }}"
                        @checked(in_array($persona->id, $elegidos))
                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
-                <span class="text-sm text-gray-700 dark:text-paper-200">{{ $persona->nombre }}</span>
+                <span class="text-sm text-gray-700 dark:text-paper-100">{{ $persona->nombre }}</span>
                 @foreach ($persona->funcionesEnum() as $funcion)
                     <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {{ $funcion->clase() }}">{{ $funcion->label() }}</span>
                 @endforeach
             </label>
         @empty
-            <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-400">
+            <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-300">
                 No hay personal de campo activo.
                 <a href="{{ route('rutas.personal.index') }}" class="underline">Agregá vendedores en Personal</a>.
             </p>
@@ -74,7 +74,7 @@
 </div>
 
 <div>
-    <label for="observaciones" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+    <label for="observaciones" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
         Observaciones <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
     </label>
     <textarea name="observaciones" id="observaciones" rows="3" maxlength="1000"

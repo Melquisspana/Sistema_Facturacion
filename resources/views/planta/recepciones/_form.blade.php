@@ -35,7 +35,7 @@
         'factor_sugerido' => $i->factor_conversion_sugerido ? (string) $i->factor_conversion_sugerido : null,
     ]]);
 
-    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-200';
+    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
     $campo = 'mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
     $celda = 'w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100';
 @endphp
@@ -47,7 +47,7 @@
         <input type="date" name="fecha" id="fecha" required
                value="{{ old('fecha', $recepcion?->fecha?->toDateString() ?? now()->toDateString()) }}"
                class="{{ $campo }}">
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">Cuándo llegó la mercancía, no cuándo se captura.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Cuándo llegó la mercancía, no cuándo se captura.</p>
         @error('fecha')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
     </div>
 
@@ -153,7 +153,7 @@
     <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-gray-800 dark:text-paper-100">Líneas recibidas</h3>
         <button type="button" @click="agregar()"
-                class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">
+                class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">
             + Añadir línea
         </button>
     </div>
@@ -167,7 +167,7 @@
                     <input type="hidden" :name="`detalles[${i}][id]`" :value="linea.id ?? ''">
 
                     <div class="lg:col-span-2">
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Insumo</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Insumo</label>
                         <select :name="`detalles[${i}][planta_insumo_id]`" x-model="linea.planta_insumo_id"
                                 @change="alElegirInsumo(linea)" required class="{{ $celda }}">
                             <option value="">Selecciona…</option>
@@ -178,44 +178,44 @@
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Cantidad recibida</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Cantidad recibida</label>
                         <input type="number" step="0.0001" min="0.0001" required
                                :name="`detalles[${i}][cantidad_recibida]`" x-model="linea.cantidad_recibida"
                                class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Unidad de compra</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Unidad de compra</label>
                         <input type="text" maxlength="30" required placeholder="saco, caja, kg…"
                                :name="`detalles[${i}][unidad_recibida]`" x-model="linea.unidad_recibida"
                                class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Contenido por unidad</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Contenido por unidad</label>
                         <input type="number" step="0.0001" min="0.0001" required
                                :name="`detalles[${i}][contenido_por_unidad]`" x-model="linea.contenido_por_unidad"
                                class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Factor de conversión</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Factor de conversión</label>
                         <input type="number" step="0.00000001" min="0.00000001" required
                                :name="`detalles[${i}][factor_conversion]`" x-model="linea.factor_conversion"
                                class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Entra al inventario</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Entra al inventario</label>
                         <p class="mt-1.5 text-sm font-semibold text-gray-800 dark:text-paper-100">
                             <span x-text="base(linea)"></span>
-                            <span class="text-xs font-normal text-gray-500 dark:text-paper-400" x-text="unidad(linea)"></span>
+                            <span class="text-xs font-normal text-gray-500 dark:text-paper-300" x-text="unidad(linea)"></span>
                         </p>
                         <p class="text-[11px] text-gray-400">Cálculo de referencia; el servidor lo recalcula.</p>
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Destino</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Destino</label>
                         <select :name="`detalles[${i}][estado_destino]`" x-model="linea.estado_destino" class="{{ $celda }}">
                             <option value="disponible">Disponible</option>
                             @can('planta.calidad.gestionar')
@@ -225,25 +225,25 @@
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Lote del proveedor</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Lote del proveedor</label>
                         <input type="text" maxlength="60" :name="`detalles[${i}][lote_codigo_proveedor]`"
                                x-model="linea.lote_codigo_proveedor" class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Elaboración</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Elaboración</label>
                         <input type="date" :name="`detalles[${i}][fecha_elaboracion]`"
                                x-model="linea.fecha_elaboracion" class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Vencimiento</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Vencimiento</label>
                         <input type="date" :name="`detalles[${i}][fecha_vencimiento]`"
                                x-model="linea.fecha_vencimiento" class="{{ $celda }}">
                     </div>
 
                     <div class="lg:col-span-3">
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Observaciones de la línea</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Observaciones de la línea</label>
                         <input type="text" maxlength="500" :name="`detalles[${i}][observaciones]`"
                                x-model="linea.observaciones" class="{{ $celda }}">
                     </div>
@@ -259,7 +259,7 @@
         </template>
     </div>
 
-    <p class="mt-3 text-xs text-gray-500 dark:text-paper-400">
+    <p class="mt-3 text-xs text-gray-500 dark:text-paper-300">
         El lote se resuelve al confirmar: los insumos con control de lotes reciben un lote interno nuevo,
         y los que no lo controlan usan su lote genérico.
     </p>

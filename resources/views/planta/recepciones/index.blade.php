@@ -24,7 +24,7 @@
 
             @php
                 $filtro = 'mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
-                $etiquetaFiltro = 'block text-xs font-medium text-gray-500 dark:text-paper-400';
+                $etiquetaFiltro = 'block text-xs font-medium text-gray-500 dark:text-paper-300';
             @endphp
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
@@ -86,13 +86,13 @@
                     </select>
                 </div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-ink-600 dark:hover:bg-ink-500">Filtrar</button>
-                <a href="{{ route('planta.recepciones.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                <a href="{{ route('planta.recepciones.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
             </form>
 
             <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                     <thead class="bg-gray-50 dark:bg-ink-900">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Número</th>
                             <th class="px-4 py-3">Fecha</th>
                             <th class="px-4 py-3">Proveedor</th>
@@ -106,7 +106,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 text-sm dark:divide-ink-700">
                         @forelse ($recepciones as $recepcion)
-                            <tr class="text-gray-700 dark:text-paper-200">
+                            <tr class="text-gray-700 dark:text-paper-100">
                                 <td class="px-4 py-3 font-medium">
                                     #{{ $recepcion->numero }}
                                     @if ($recepcion->esReversion())
@@ -135,7 +135,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-400">
+                                <td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-300">
                                     No hay recepciones con esos filtros.
                                 </td>
                             </tr>

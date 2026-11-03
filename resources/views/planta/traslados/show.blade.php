@@ -6,7 +6,7 @@
                 <x-planta.badge :color="$traslado->estado->color()" class="ms-2">{{ $traslado->estado->label() }}</x-planta.badge>
             </h2>
             <a href="{{ route('planta.traslados.index') }}"
-               class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver al listado</a>
+               class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver al listado</a>
         </div>
     </x-slot>
 
@@ -51,14 +51,14 @@
                 <div class="flex flex-wrap items-center gap-3 text-lg">
                     <span class="font-semibold text-gray-800 dark:text-paper-100">{{ $traslado->origen?->codigo }}</span>
                     <span class="text-gray-400">&rarr;</span>
-                    <span class="text-sm text-gray-500 dark:text-paper-400">tránsito</span>
+                    <span class="text-sm text-gray-500 dark:text-paper-300">tránsito</span>
                     <span class="text-gray-400">&rarr;</span>
                     <span class="font-semibold text-gray-800 dark:text-paper-100">{{ $traslado->destino?->codigo }}</span>
                 </div>
 
                 <dl class="mt-5 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                     @php
-                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400';
+                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300';
                         $dd = 'mt-0.5 text-gray-800 dark:text-paper-100';
                     @endphp
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $traslado->fecha->format('d/m/Y') }}</dd></div>
@@ -80,7 +80,7 @@
             <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                     <thead class="bg-gray-50 dark:bg-ink-900">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Insumo</th>
                             <th class="px-4 py-3">Lote</th>
                             <th class="px-4 py-3 text-right">Cantidad</th>
@@ -89,12 +89,12 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 text-sm dark:divide-ink-700">
                         @foreach ($traslado->detalles as $detalle)
-                            <tr class="text-gray-700 dark:text-paper-200">
+                            <tr class="text-gray-700 dark:text-paper-100">
                                 <td class="px-4 py-3">{{ $detalle->insumo?->codigo }} — {{ $detalle->insumo?->nombre }}</td>
                                 <td class="px-4 py-3">{{ $detalle->lote?->codigo_interno ?? '—' }}</td>
                                 <td class="px-4 py-3 text-right font-semibold">
                                     {{ $detalle->cantidad }}
-                                    <span class="text-xs font-normal text-gray-500 dark:text-paper-400">{{ $detalle->unidad_base?->abreviatura() }}</span>
+                                    <span class="text-xs font-normal text-gray-500 dark:text-paper-300">{{ $detalle->unidad_base?->abreviatura() }}</span>
                                 </td>
                                 <td class="px-4 py-3">{{ $detalle->observaciones ?? '—' }}</td>
                             </tr>
@@ -109,7 +109,7 @@
                 @if ($traslado->esEditable())
                     @can('planta.traslados.crear')
                         <a href="{{ route('planta.traslados.edit', $traslado) }}"
-                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">Editar</a>
+                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Editar</a>
 
                         <form method="POST" action="{{ route('planta.traslados.cancelar', $traslado) }}"
                               onsubmit="return confirm('Cancelar el borrador #{{ $traslado->numero }}? No se podrá reabrir.')">
@@ -144,7 +144,7 @@
                               onsubmit="return confirm('Reversar el traslado #{{ $traslado->numero }}? El saldo volverá al origen.')">
                             @csrf @method('PATCH')
                             <div>
-                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Motivo de la reversión</label>
+                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Motivo de la reversión</label>
                                 <input type="text" name="motivo" id="motivo" required minlength="10" maxlength="500"
                                        placeholder="Por qué se deshace este traslado"
                                        class="mt-1 w-80 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">

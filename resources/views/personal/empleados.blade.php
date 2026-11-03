@@ -46,12 +46,12 @@
 
             <form method="GET" class="flex flex-wrap items-end gap-3">
                 <div>
-                    <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Buscar</label>
+                    <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Buscar</label>
                     <input id="q" type="text" name="q" value="{{ request('q') }}" placeholder="Nombre, apellido o código…"
                            class="mt-1 w-72 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 </div>
                 <div>
-                    <label for="activo" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Estado</label>
+                    <label for="activo" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
                     <select id="activo" name="activo" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         <option value="1" @selected(request('activo') === '1')>Activos</option>
@@ -60,7 +60,7 @@
                 </div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
                 @if (request()->hasAny(['q', 'activo']))
-                    <a href="{{ route('personal.empleados') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                    <a href="{{ route('personal.empleados') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
 
@@ -69,7 +69,7 @@
                     <table class="min-w-full text-sm">
                         <caption class="sr-only">Empleados</caption>
                         <thead>
-                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:bg-ink-700 dark:text-paper-400">
+                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:bg-ink-700 dark:text-paper-300">
                                 <th scope="col" class="px-4 py-3">Nombre</th>
                                 <th scope="col" class="px-4 py-3">Código</th>
                                 <th scope="col" class="px-4 py-3">Ingreso</th>
@@ -90,16 +90,16 @@
                                 <tr class="hover:bg-gray-50 dark:hover:bg-ink-700 {{ $e['activo'] ? '' : 'opacity-60' }}">
                                     <td class="px-4 py-3 font-medium text-gray-800 dark:text-paper-100">
                                         <a href="{{ route('personal.empleados.show', $e['clave']) }}" class="hover:underline">{{ $e['nombre'] }}</a>
-                                        @unless ($e['activo'])<span class="text-xs text-gray-500 dark:text-paper-400">(inactivo)</span>@endunless
+                                        @unless ($e['activo'])<span class="text-xs text-gray-500 dark:text-paper-300">(inactivo)</span>@endunless
                                     </td>
                                     <td class="px-4 py-3 text-gray-600 dark:text-paper-300">{{ $e['codigo'] ?? '—' }}</td>
                                     <td class="px-4 py-3 text-gray-600 dark:text-paper-300">{{ $e['ingreso']?->format('d/m/Y') ?? '—' }}</td>
                                     @if ($veAsistencia)
                                         <td class="px-4 py-3">
                                             @if (! $e['marca'])
-                                                <span class="text-gray-500 dark:text-paper-400">No marca</span>
+                                                <span class="text-gray-500 dark:text-paper-300">No marca</span>
                                             @elseif ($e['huellas'] > 0)
-                                                <span class="text-gray-700 dark:text-paper-200">{{ $e['huellas'] }} asignada(s)</span>
+                                                <span class="text-gray-700 dark:text-paper-100">{{ $e['huellas'] }} asignada(s)</span>
                                             @else
                                                 <span class="text-amber-700 dark:text-amber-300">Sin huella</span>
                                             @endif
@@ -111,7 +111,7 @@
                                         </td>
                                     @endif
                                     @if ($verImportes)
-                                        <td class="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-paper-200">
+                                        <td class="px-4 py-3 text-right tabular-nums text-gray-700 dark:text-paper-100">
                                             @if ($e['mensual'] !== null)
                                                 {{ Dinero::mostrar($e['mensual']) }}
                                                 @if ($minimo !== null && $e['activo'] && $e['mensual'] < $minimo)

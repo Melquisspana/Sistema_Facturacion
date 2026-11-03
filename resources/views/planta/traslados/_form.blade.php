@@ -27,7 +27,7 @@
         ],
     ]);
 
-    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-200';
+    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
     $campo = 'mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
     $celda = 'w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100';
 @endphp
@@ -54,7 +54,7 @@
                 </option>
             @endforeach
         </select>
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">Al cambiarlo se recargan los lotes con saldo.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Al cambiarlo se recargan los lotes con saldo.</p>
         @error('planta_ubicacion_origen_id')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
     </div>
 
@@ -112,7 +112,7 @@
     <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-gray-800 dark:text-paper-100">Líneas a trasladar</h3>
         <button type="button" @click="agregar()"
-                class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">
+                class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">
             + Añadir línea
         </button>
     </div>
@@ -135,7 +135,7 @@
             <div class="rounded-lg border border-gray-200 p-4 dark:border-ink-600">
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div class="lg:col-span-2">
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Insumo y lote</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Insumo y lote</label>
                         <select :name="`detalles[${i}][bucket]`" x-model="linea.bucket" required class="{{ $celda }}">
                             <option value="">Selecciona…</option>
                             @foreach ($disponibles as $b)
@@ -149,23 +149,23 @@
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Cantidad</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Cantidad</label>
                         <input type="number" step="0.0001" min="0.0001" required
                                :name="`detalles[${i}][cantidad]`" x-model="linea.cantidad"
                                :max="info(linea) ? info(linea).saldo : null" class="{{ $celda }}">
                     </div>
 
                     <div>
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Disponible</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Disponible</label>
                         <p class="mt-1.5 text-sm font-semibold text-gray-800 dark:text-paper-100">
                             <span x-text="info(linea) ? info(linea).saldo : '—'"></span>
-                            <span class="text-xs font-normal text-gray-500 dark:text-paper-400"
+                            <span class="text-xs font-normal text-gray-500 dark:text-paper-300"
                                   x-text="info(linea) ? info(linea).unidad : ''"></span>
                         </p>
                     </div>
 
                     <div class="lg:col-span-3">
-                        <label class="text-xs font-medium text-gray-500 dark:text-paper-400">Observaciones de la línea</label>
+                        <label class="text-xs font-medium text-gray-500 dark:text-paper-300">Observaciones de la línea</label>
                         <input type="text" maxlength="500" :name="`detalles[${i}][observaciones]`"
                                x-model="linea.observaciones" class="{{ $celda }}">
                     </div>
@@ -181,7 +181,7 @@
         </template>
     </div>
 
-    <p class="mt-3 text-xs text-gray-500 dark:text-paper-400">
+    <p class="mt-3 text-xs text-gray-500 dark:text-paper-300">
         Dos líneas del mismo lote se suman en una sola. Se recibirá exactamente lo enviado:
         no hay recepción parcial.
     </p>
