@@ -256,7 +256,7 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         $this->assertSame('Ana María Ficticia', $cuenta->fresh()->name);
 
         // En Usuarios no se cambia: se corrige en la ficha.
-        $this->actingAs($this->admin)->get(route('usuarios.edit', $cuenta))->assertOk()->assertSee('Se corrige en su ficha de Personal.');
+        $this->actingAs($this->admin)->get(route('usuarios.edit', $cuenta))->assertOk()->assertSee('Se corrige en su')->assertSee('readonly', false);
         $this->actingAs($this->admin)->put(route('usuarios.update', $cuenta), [
             'name' => 'Otro Nombre', 'email' => 'anita@icloud.com', 'rol' => 'contabilidad', 'activo' => '1',
         ])->assertRedirect(route('usuarios.show', $cuenta));
