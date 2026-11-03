@@ -189,8 +189,9 @@ class VendedorMiSalidaTest extends TestCase
             $middleware = $ruta->gatherMiddleware();
             // Públicas/invitados y archivos firmados de Laravel/Livewire; perfil y logout son excepciones de sesión.
             // Verificación y contraseña son la seguridad del propio perfil, sin datos de otras áreas.
+            // `salud` es pública a propósito: la pide el vigilante de afuera sin sesión y no trae datos (#163).
             if (in_array('guest', $middleware, true)
-                || Str::is(['rutas.mi-salida.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file'], $nombre)) {
+                || Str::is(['rutas.mi-salida.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud'], $nombre)) {
                 continue;
             }
             // Dashboard es la puerta de redirección y se verifica por separado.
