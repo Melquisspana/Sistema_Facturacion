@@ -3,7 +3,7 @@
         <div class="flex items-center justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Rutas</h2>
             <div class="flex items-center gap-4 text-sm">
-                <a href="{{ route('rutas.salidas.index') }}" class="text-gray-500 hover:underline dark:text-paper-400">Salidas anteriores</a>
+                <a href="{{ route('rutas.salidas.index') }}" class="text-gray-500 hover:underline dark:text-paper-300">Salidas anteriores</a>
                 <a href="{{ route('rutas.rutas.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Configurar rutas</a>
             </div>
         </div>
@@ -59,7 +59,7 @@
             @if ($filas->isEmpty())
                 <div class="{{ $caja }} px-6 py-12 text-center">
                     <p class="text-base font-medium text-gray-800 dark:text-paper-100">Creá tu primera ruta</p>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-paper-400">Nombre, cada cuántos días se va y qué lugares cubre.</p>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Nombre, cada cuántos días se va y qué lugares cubre.</p>
                     @can('rutas.gestionar')
                         <a href="{{ route('rutas.rutas.index') }}" class="mt-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Configurar rutas</a>
                     @endcan
@@ -95,7 +95,7 @@
                                     Faltan {{ $faltan }} {{ $faltan === 1 ? 'día' : 'días' }}
                                 @endif
                             </p>
-                            <p class="text-sm text-gray-500 dark:text-paper-400">
+                            <p class="text-sm text-gray-500 dark:text-paper-300">
                                 Última: {{ $fila['ultima']?->fecha_fin_real?->translatedFormat('d M') ?? $fila['ultima']?->fecha_inicio?->translatedFormat('d M') ?? '—' }}
                                 @if ($ruta->frecuencia_objetivo_dias) · cada {{ $ruta->frecuencia_objetivo_dias }} días @endif
                             </p>
@@ -133,12 +133,12 @@
                                                   class="space-y-3 rounded-b-lg border border-t-0 border-indigo-200 p-3 dark:border-indigo-500/30">
                                                 @csrf
                                                 <input type="hidden" name="ruta_id" value="{{ $ruta->id }}">
-                                                <p class="text-xs font-medium text-gray-500 dark:text-paper-400">¿Quiénes van?</p>
+                                                <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quiénes van?</p>
                                                 <div class="flex flex-wrap gap-2">
                                                     @foreach ($vendedores as $v)
                                                         <label class="cursor-pointer">
                                                             <input type="checkbox" name="personal[]" value="{{ $v->id }}" class="peer sr-only" @checked($vendedores->count() === 1)>
-                                                            <span class="inline-block rounded-full px-3 py-1.5 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 dark:ring-ink-500 dark:text-paper-200">{{ $v->nombre }}</span>
+                                                            <span class="inline-block rounded-full px-3 py-1.5 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 dark:ring-ink-500 dark:text-paper-100">{{ $v->nombre }}</span>
                                                         </label>
                                                     @endforeach
                                                 </div>

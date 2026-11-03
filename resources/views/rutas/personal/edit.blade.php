@@ -3,7 +3,7 @@
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $personal->nombre }}</h2>
             <a href="{{ route('rutas.personal.show', $personal) }}"
-               class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">
+               class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">
                 ← Volver a la ficha
             </a>
         </div>

@@ -6,7 +6,7 @@
                 <x-planta.badge :color="$recepcion->estado->color()" class="ms-2">{{ $recepcion->estado->label() }}</x-planta.badge>
             </h2>
             <a href="{{ route('planta.recepciones.index') }}"
-               class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver al listado</a>
+               class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver al listado</a>
         </div>
     </x-slot>
 
@@ -41,7 +41,7 @@
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 dark:bg-ink-800 dark:ring-ink-600">
                 <dl class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                     @php
-                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400';
+                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300';
                         $dd = 'mt-0.5 text-gray-800 dark:text-paper-100';
                     @endphp
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $recepcion->fecha->format('d/m/Y') }}</dd></div>
@@ -65,7 +65,7 @@
             <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                     <thead class="bg-gray-50 dark:bg-ink-900">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Insumo</th>
                             <th class="px-4 py-3 text-right">Recibido</th>
                             <th class="px-4 py-3">Unidad</th>
@@ -78,7 +78,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 text-sm dark:divide-ink-700">
                         @foreach ($recepcion->detalles as $detalle)
-                            <tr class="text-gray-700 dark:text-paper-200">
+                            <tr class="text-gray-700 dark:text-paper-100">
                                 <td class="px-4 py-3">{{ $detalle->insumo?->codigo }} — {{ $detalle->insumo?->nombre }}</td>
                                 <td class="px-4 py-3 text-right">{{ $detalle->cantidad_recibida }}</td>
                                 <td class="px-4 py-3">{{ $detalle->unidad_recibida }}</td>
@@ -86,12 +86,12 @@
                                 <td class="px-4 py-3 text-right">{{ $detalle->factor_conversion }}</td>
                                 <td class="px-4 py-3 text-right font-semibold">
                                     {{ $detalle->cantidad_base }}
-                                    <span class="text-xs font-normal text-gray-500 dark:text-paper-400">{{ $detalle->unidad_base?->abreviatura() }}</span>
+                                    <span class="text-xs font-normal text-gray-500 dark:text-paper-300">{{ $detalle->unidad_base?->abreviatura() }}</span>
                                 </td>
                                 <td class="px-4 py-3">
                                     {{ $detalle->lote?->codigo_interno ?? '—' }}
                                     @if ($detalle->lote_codigo_proveedor)
-                                        <span class="block text-[11px] text-gray-500 dark:text-paper-400">prov.: {{ $detalle->lote_codigo_proveedor }}</span>
+                                        <span class="block text-[11px] text-gray-500 dark:text-paper-300">prov.: {{ $detalle->lote_codigo_proveedor }}</span>
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">
@@ -109,7 +109,7 @@
                 @if ($recepcion->esEditable())
                     @can('planta.recepciones.crear')
                         <a href="{{ route('planta.recepciones.edit', $recepcion) }}"
-                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">Editar</a>
+                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Editar</a>
 
                         <form method="POST" action="{{ route('planta.recepciones.anular', $recepcion) }}"
                               onsubmit="return confirm('Anular el borrador #{{ $recepcion->numero }}? No se podrá reabrir.')">
@@ -134,7 +134,7 @@
                               onsubmit="return confirm('Reversar la recepción #{{ $recepcion->numero }}? Se crearán movimientos negativos espejo.')">
                             @csrf @method('PATCH')
                             <div>
-                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Motivo de la reversión</label>
+                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Motivo de la reversión</label>
                                 <input type="text" name="motivo" id="motivo" required minlength="10" maxlength="500"
                                        placeholder="Por qué se deshace esta entrada"
                                        class="mt-1 w-80 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">

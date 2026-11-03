@@ -16,12 +16,12 @@
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Buscar</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Buscar</label>
                     <input type="text" name="q" value="{{ request('q') }}" placeholder="Código o nombre…"
                            class="mt-1 w-56 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Producto</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Producto</label>
                     <select name="producto_base" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         @foreach ($productosBase as $base)
@@ -30,7 +30,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Unidad</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Unidad</label>
                     <select name="unidad" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todas</option>
                         @foreach ($unidades as $unidad)
@@ -39,7 +39,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Estado</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
                     <select name="activo" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         <option value="1" @selected(request('activo') === '1')>Activos</option>
@@ -48,7 +48,7 @@
                 </div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
                 @if (request()->hasAny(['q', 'producto_base', 'unidad', 'activo']))
-                    <a href="{{ route('planta.presentaciones.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                    <a href="{{ route('planta.presentaciones.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
 
@@ -56,7 +56,7 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-400 dark:border-ink-600">
+                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-300 dark:border-ink-600">
                                 <th class="py-3 px-4">Código</th>
                                 <th class="py-3 px-4">Producto</th>
                                 <th class="py-3 px-4">Nombre</th>

@@ -16,19 +16,19 @@
 
             <x-rutas.avisos />
 
-            <p class="mb-4 max-w-3xl text-sm text-gray-500 dark:text-paper-400">
+            <p class="mb-4 max-w-3xl text-sm text-gray-500 dark:text-paper-300">
                 Quiénes salen a vender, repartir o cobrar. Nadie tiene ruta fija: cualquiera puede ir a
                 cualquier cliente, y quién queda a cargo se decide en cada salida.
             </p>
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
                 <div>
-                    <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Buscar</label>
+                    <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Buscar</label>
                     <input type="text" name="q" id="q" value="{{ $filtros['q'] ?? '' }}" placeholder="Nombre…"
                            class="mt-1 w-64 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 </div>
                 <div>
-                    <label for="estado" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Estado</label>
+                    <label for="estado" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
                     <select name="estado" id="estado" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         <option value="activos" @selected(($filtros['estado'] ?? '') === 'activos')>Activos</option>
@@ -36,7 +36,7 @@
                     </select>
                 </div>
                 <div>
-                    <label for="funcion" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Función</label>
+                    <label for="funcion" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Función</label>
                     <select name="funcion" id="funcion" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Cualquiera</option>
                         @foreach ($funciones as $funcion)
@@ -48,7 +48,7 @@
                     Filtrar
                 </button>
                 @if (array_filter($filtros))
-                    <a href="{{ route('rutas.personal.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                    <a href="{{ route('rutas.personal.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
 
@@ -56,7 +56,7 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-400 dark:border-ink-600">
+                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-300 dark:border-ink-600">
                                 <th class="py-3 px-4">Persona</th>
                                 <th class="py-3 px-4">Funciones</th>
                                 <th class="py-3 px-4">Enlaces</th>
@@ -85,7 +85,7 @@
                                             @endforelse
                                         </div>
                                     </td>
-                                    <td class="py-3 px-4 text-xs text-gray-500 dark:text-paper-400">
+                                    <td class="py-3 px-4 text-xs text-gray-500 dark:text-paper-300">
                                         {{-- Los enlaces son punteros de identidad, no requisitos: casi nadie de
                                              campo tiene login, y eso es normal. --}}
                                         @if ($persona->user)
@@ -100,7 +100,7 @@
                                     </td>
                                     <td class="py-3 px-4 text-center tabular-nums text-gray-600 dark:text-paper-300">{{ $persona->participaciones_count }}</td>
                                     <td class="py-3 px-4 text-center">
-                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $persona->activo ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-400' }}">
+                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $persona->activo ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300' }}">
                                             {{ $persona->activo ? 'Activo' : 'Inactivo' }}
                                         </span>
                                     </td>

@@ -15,6 +15,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Modo oscuro: los textos de Personal, Asistencia y otras 80 vistas usaban `paper-200` y `paper-400`, tonos que no existen en la paleta, y se veían con el color base. Pasan a `paper-100` y `paper-300`, como las vistas vecinas, y una prueba falla si vuelve a aparecer un tono de `paper` o `ink` que no esté en `tailwind.config.js` (#194).
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
 ## [2026.11.03] - 2026-11-03

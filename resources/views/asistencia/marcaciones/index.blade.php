@@ -20,7 +20,7 @@
     @php
         $tarjeta = 'rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
         $campo = 'mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
-        $etiqueta = 'block text-xs font-medium text-gray-500 dark:text-paper-400';
+        $etiqueta = 'block text-xs font-medium text-gray-500 dark:text-paper-300';
     @endphp
 
     <div class="py-8">
@@ -82,7 +82,7 @@
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                     <button class="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
                     @if ($filtro->tieneFiltros())
-                        <a href="{{ route('asistencia.marcaciones.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                        <a href="{{ route('asistencia.marcaciones.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                     @endif
                     <span class="ml-auto text-xs text-gray-400 dark:text-paper-500">
                         Las fechas son días completos en {{ $zona }}, ambos extremos incluidos.
@@ -99,13 +99,13 @@
                     'Personas' => $resumen['personas'],
                 ] as $rotulo => $valor)
                     <div class="{{ $tarjeta }}">
-                        <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400">{{ $rotulo }}</p>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-300">{{ $rotulo }}</p>
                         <p class="mt-1 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">{{ $valor }}</p>
                     </div>
                 @endforeach
             </div>
 
-            <p class="text-sm text-gray-500 dark:text-paper-400">
+            <p class="text-sm text-gray-500 dark:text-paper-300">
                 {{ $filtro->descripcion([
                     'empleado' => $empleados->firstWhere('id', $filtro->empleadoId)?->nombreCompleto(),
                     'dispositivo' => $lectores->firstWhere('id', $filtro->dispositivoId)?->nombre,
@@ -120,7 +120,7 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:bg-ink-700 dark:text-paper-400">
+                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:bg-ink-700 dark:text-paper-300">
                                 <th class="px-4 py-3">Fecha</th>
                                 <th class="px-4 py-3">Hora</th>
                                 <th class="px-4 py-3">Empleado</th>
@@ -133,7 +133,7 @@
                             @forelse ($marcaciones as $marcacion)
                                 @php $tiempo = $marcacion->marcado_at->copy()->setTimezone($zona); @endphp
                                 <tr class="hover:bg-gray-50 dark:hover:bg-ink-700">
-                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-200">{{ $marcacion->fecha_local->format('d/m/Y') }}</td>
+                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-100">{{ $marcacion->fecha_local->format('d/m/Y') }}</td>
                                     <td class="px-4 py-3 tabular-nums font-medium text-gray-800 dark:text-paper-100"
                                         title="{{ $marcacion->marcado_at->format('Y-m-d H:i:s') }} UTC">
                                         {{ $tiempo->format('H:i:s') }}
@@ -141,7 +141,7 @@
                                     <td class="px-4 py-3">
                                         @if ($marcacion->empleado)
                                             <a href="{{ route('asistencia.empleados.show', $marcacion->empleado) }}"
-                                               class="text-gray-800 hover:underline dark:text-paper-200">{{ $marcacion->empleado->nombreCompleto() }}</a>
+                                               class="text-gray-800 hover:underline dark:text-paper-100">{{ $marcacion->empleado->nombreCompleto() }}</a>
                                             @unless ($marcacion->empleado->activo)
                                                 <span class="ml-1 text-xs text-gray-400 dark:text-paper-500">(inactivo)</span>
                                             @endunless

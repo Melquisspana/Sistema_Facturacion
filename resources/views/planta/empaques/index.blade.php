@@ -24,7 +24,7 @@
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Producto</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Producto</label>
                     <select name="producto_base" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         @foreach ($productosBase as $base)
@@ -33,7 +33,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Presentación</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Presentación</label>
                     <select name="presentacion" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todas</option>
                         @foreach ($presentaciones as $pres)
@@ -42,7 +42,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Mercado</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Mercado</label>
                     <select name="mercado" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         @foreach ($mercados as $mercado)
@@ -51,12 +51,12 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Marca</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Marca</label>
                     <input type="text" name="marca" value="{{ request('marca') }}"
                            class="mt-1 w-40 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Predeterminada</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Predeterminada</label>
                     <select name="predeterminada" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todas</option>
                         <option value="1" @selected(request('predeterminada') === '1')>Sí</option>
@@ -64,7 +64,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Estado</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
                     <select name="activo" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         <option value="1" @selected(request('activo') === '1')>Activas</option>
@@ -73,7 +73,7 @@
                 </div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
                 @if (request()->hasAny(['producto_base', 'presentacion', 'mercado', 'marca', 'predeterminada', 'activo']))
-                    <a href="{{ route('planta.empaques.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                    <a href="{{ route('planta.empaques.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
 
@@ -81,7 +81,7 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-400 dark:border-ink-600">
+                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-300 dark:border-ink-600">
                                 <th class="py-3 px-4">Presentación</th>
                                 <th class="py-3 px-4">Mercado</th>
                                 <th class="py-3 px-4">Marca</th>
@@ -98,7 +98,7 @@
                                 <tr class="hover:bg-gray-50 dark:hover:bg-ink-700 {{ $config->activo ? '' : 'opacity-60' }}">
                                     <td class="py-3 px-4">
                                         <div class="font-medium text-gray-800 dark:text-paper-100">{{ $config->presentacion?->nombre ?? '—' }}</div>
-                                        <div class="text-xs text-gray-500 dark:text-paper-400">{{ $config->presentacion?->productoBase?->nombre }}</div>
+                                        <div class="text-xs text-gray-500 dark:text-paper-300">{{ $config->presentacion?->productoBase?->nombre }}</div>
                                     </td>
                                     <td class="py-3 px-4">
                                         <x-planta.badge :color="$config->mercado->color()">{{ $config->mercado->label() }}</x-planta.badge>
@@ -119,7 +119,7 @@
                                             <span class="text-xs text-gray-400 dark:text-paper-500">—</span>
                                         @endif
                                     </td>
-                                    <td class="py-3 px-4 text-xs text-gray-500 dark:text-paper-400">{{ $config->vigenciaLegible() }}</td>
+                                    <td class="py-3 px-4 text-xs text-gray-500 dark:text-paper-300">{{ $config->vigenciaLegible() }}</td>
                                     <td class="py-3 px-4 text-center">
                                         <x-planta.toggle-activo :activo="$config->activo"
                                                                 :accion="route('planta.empaques.toggle-activo', $config)" />

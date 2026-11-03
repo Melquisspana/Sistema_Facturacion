@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Asignar salas</h2>
-            <a href="{{ route('rutas.rutas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Rutas</a>
+            <a href="{{ route('rutas.rutas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Rutas</a>
         </div>
     </x-slot>
 
@@ -38,7 +38,7 @@
                 <div class="lg:col-span-2">
                     <form method="GET" class="mb-3 flex flex-wrap items-end gap-3">
                         <div>
-                            <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Ruta propuesta</label>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Ruta propuesta</label>
                             <select name="ruta_id" onchange="this.form.submit()"
                                     class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                                 <option value="">Todas</option>
@@ -59,13 +59,13 @@
                             @csrf
                             <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-ink-700">
                                 <div>
-                                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-200">{{ $bloque['titulo'] }} ({{ $bloque['filas']->count() }})</h3>
+                                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-100">{{ $bloque['titulo'] }} ({{ $bloque['filas']->count() }})</h3>
                                     <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">{{ $bloque['detalle'] }}</p>
                                 </div>
                             </div>
 
                             @if ($bloque['filas']->isEmpty())
-                                <p class="px-5 py-8 text-center text-sm text-gray-500 dark:text-paper-400">Nada por acá.</p>
+                                <p class="px-5 py-8 text-center text-sm text-gray-500 dark:text-paper-300">Nada por acá.</p>
                             @else
                                 <div class="max-h-[28rem] overflow-y-auto divide-y divide-gray-100 dark:divide-ink-700">
                                     @foreach ($bloque['filas'] as ['sala' => $sala, 'ruta' => $propuesta])
@@ -107,7 +107,7 @@
                 <div>
                     <div class="{{ $caja }} overflow-hidden">
                         <div class="border-b border-gray-100 px-5 py-4 dark:border-ink-700">
-                            <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-200">Sin cobertura ({{ $sinCoberturaTotal }})</h3>
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-100">Sin cobertura ({{ $sinCoberturaTotal }})</h3>
                             <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
                                 Salas sin ruta que ninguna ruta cubre. Agregá su departamento o distrito a una ruta, o asignalas a mano desde la ficha de la ruta.
                             </p>
@@ -115,11 +115,11 @@
                         <div class="divide-y divide-gray-100 dark:divide-ink-700">
                             @forelse ($sinCobertura as $grupo)
                                 <div class="flex items-center justify-between px-5 py-2.5 text-sm">
-                                    <span class="text-gray-700 dark:text-paper-200">{{ $grupo['departamento'] }}</span>
-                                    <span class="tabular-nums text-gray-500 dark:text-paper-400">{{ $grupo['salas'] }}</span>
+                                    <span class="text-gray-700 dark:text-paper-100">{{ $grupo['departamento'] }}</span>
+                                    <span class="tabular-nums text-gray-500 dark:text-paper-300">{{ $grupo['salas'] }}</span>
                                 </div>
                             @empty
-                                <p class="px-5 py-8 text-center text-sm text-gray-500 dark:text-paper-400">Todas las salas tienen ruta o propuesta.</p>
+                                <p class="px-5 py-8 text-center text-sm text-gray-500 dark:text-paper-300">Todas las salas tienen ruta o propuesta.</p>
                             @endforelse
                         </div>
                     </div>

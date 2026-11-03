@@ -20,7 +20,7 @@
     @php
         $tarjeta = 'rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
         $campo = 'mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
-        $etiqueta = 'block text-xs font-medium text-gray-500 dark:text-paper-400';
+        $etiqueta = 'block text-xs font-medium text-gray-500 dark:text-paper-300';
     @endphp
 
     <div class="py-8">
@@ -79,7 +79,7 @@
 
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                     <button class="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
-                    <a href="{{ route('asistencia.jornadas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Mes en curso</a>
+                    <a href="{{ route('asistencia.jornadas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Mes en curso</a>
                     <span class="ml-auto text-xs text-gray-400 dark:text-paper-500">
                         Días completos en {{ $zona }}, ambos extremos incluidos. Sin rango se muestra el mes en curso.
                     </span>
@@ -89,22 +89,22 @@
             {{-- ─────────────────────────────── Resumen ─────────────────────────────── --}}
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div class="{{ $tarjeta }}">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400">Jornadas</p>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-300">Jornadas</p>
                     <p class="mt-1 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">{{ $resumen['jornadas'] }}</p>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
                         {{ $resumen['personas'] }} persona(s) &middot; {{ $resumen['dias'] }} día(s)
                     </p>
                 </div>
 
                 <div class="{{ $tarjeta }}">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400">Tiempo de presencia</p>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-300">Tiempo de presencia</p>
                     <p class="mt-1 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">
                         {{ number_format($resumen['trabajado_horas'], 2) }} h
                     </p>
                     {{-- La advertencia que hace honesto el total: con jornadas abiertas,
                          lo que se muestra es un mínimo. Un total sin esta marca invita
                          a tomarlo por definitivo. --}}
-                    <p class="mt-1 text-xs {{ $resumen['tiempo_exacto'] ? 'text-gray-500 dark:text-paper-400' : 'text-amber-700 dark:text-amber-300' }}">
+                    <p class="mt-1 text-xs {{ $resumen['tiempo_exacto'] ? 'text-gray-500 dark:text-paper-300' : 'text-amber-700 dark:text-amber-300' }}">
                         @if ($resumen['tiempo_exacto'])
                             suma exacta de los tramos cerrados
                         @else
@@ -114,23 +114,23 @@
                 </div>
 
                 <div class="{{ $tarjeta }}">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400">Completas</p>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-300">Completas</p>
                     <p class="mt-1 text-2xl font-semibold tabular-nums text-green-700 dark:text-green-300">{{ $resumen['completas'] }}</p>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">cada entrada con su salida</p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">cada entrada con su salida</p>
                 </div>
 
                 <div class="{{ $tarjeta }}">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400">Requieren revisión</p>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-300">Requieren revisión</p>
                     <p class="mt-1 text-2xl font-semibold tabular-nums text-amber-700 dark:text-amber-300">
                         {{ $resumen['abiertas'] + $resumen['irregulares'] }}
                     </p>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
                         {{ $resumen['abiertas'] }} abierta(s) &middot; {{ $resumen['irregulares'] }} irregular(es)
                     </p>
                 </div>
             </div>
 
-            <p class="text-sm text-gray-500 dark:text-paper-400">
+            <p class="text-sm text-gray-500 dark:text-paper-300">
                 {{ $filtro->descripcion([
                     'empleado' => $empleados->firstWhere('id', $filtro->empleadoId)?->nombreCompleto(),
                     'dispositivo' => $lectores->firstWhere('id', $filtro->dispositivoId)?->nombre,
@@ -145,7 +145,7 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:bg-ink-700 dark:text-paper-400">
+                            <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:bg-ink-700 dark:text-paper-300">
                                 <th class="px-4 py-3">Fecha</th>
                                 <th class="px-4 py-3">Empleado</th>
                                 <th class="px-4 py-3">Primera entrada</th>
@@ -159,12 +159,12 @@
                         <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
                             @forelse ($jornadas as $jornada)
                                 <tr class="hover:bg-gray-50 dark:hover:bg-ink-700">
-                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-200">{{ $jornada->fecha->format('d/m/Y') }}</td>
+                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-100">{{ $jornada->fecha->format('d/m/Y') }}</td>
 
                                     <td class="px-4 py-3">
                                         @if ($jornada->empleado)
                                             <a href="{{ route('asistencia.empleados.show', $jornada->empleado) }}"
-                                               class="text-gray-800 hover:underline dark:text-paper-200">{{ $jornada->empleado->nombreCompleto() }}</a>
+                                               class="text-gray-800 hover:underline dark:text-paper-100">{{ $jornada->empleado->nombreCompleto() }}</a>
                                             @unless ($jornada->empleado->activo)
                                                 <span class="ml-1 text-xs text-gray-400 dark:text-paper-500">(inactivo)</span>
                                             @endunless
@@ -173,11 +173,11 @@
                                         @endif
                                     </td>
 
-                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-200">
+                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-100">
                                         {{ $jornada->primeraEntrada()?->marcado_at?->copy()?->setTimezone($zona)?->format('H:i') ?? '—' }}
                                     </td>
 
-                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-200">
+                                    <td class="px-4 py-3 tabular-nums text-gray-800 dark:text-paper-100">
                                         {{ $jornada->ultimaSalida()?->marcado_at?->copy()?->setTimezone($zona)?->format('H:i') ?? '—' }}
                                     </td>
 

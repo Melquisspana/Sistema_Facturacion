@@ -32,9 +32,9 @@
             'amber' => 'text-amber-700 dark:text-amber-300',
             'red' => 'text-red-700 dark:text-red-300',
         ];
-        $rotulo = 'text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-400';
+        $rotulo = 'text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-paper-300';
         $cifra = 'mt-2 text-3xl font-semibold tabular-nums';
-        $nota = 'mt-1 text-sm text-gray-500 dark:text-paper-400';
+        $nota = 'mt-1 text-sm text-gray-500 dark:text-paper-300';
         $enlace = 'mt-3 inline-block text-sm text-indigo-600 hover:underline dark:text-indigo-300';
         $tarjeta = 'rounded-xl bg-white p-5 shadow-sm ring-1 dark:bg-ink-800';
 
@@ -210,13 +210,13 @@
                                         <p class="text-3xl font-semibold tabular-nums {{ $lotes['vencidos'] > 0 ? $tinta['red'] : $tinta['gray'] }}">
                                             {{ $lotes['vencidos'] }}
                                         </p>
-                                        <p class="text-xs text-gray-500 dark:text-paper-400">vencidos</p>
+                                        <p class="text-xs text-gray-500 dark:text-paper-300">vencidos</p>
                                     </div>
                                     <div>
                                         <p class="text-3xl font-semibold tabular-nums {{ $lotes['porVencer'] > 0 ? $tinta['amber'] : $tinta['gray'] }}">
                                             {{ $lotes['porVencer'] }}
                                         </p>
-                                        <p class="text-xs text-gray-500 dark:text-paper-400">por vencer ({{ $diasVentana }} días)</p>
+                                        <p class="text-xs text-gray-500 dark:text-paper-300">por vencer ({{ $diasVentana }} días)</p>
                                     </div>
                                 </div>
                                 <p class="{{ $nota }}">Solo lotes activos que todavía tienen saldo.</p>

@@ -19,7 +19,7 @@
 
             @php
                 $filtro = 'mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
-                $etiquetaFiltro = 'block text-xs font-medium text-gray-500 dark:text-paper-400';
+                $etiquetaFiltro = 'block text-xs font-medium text-gray-500 dark:text-paper-300';
             @endphp
 
             {{-- Resumen del conjunto FILTRADO entero, no de la página visible.
@@ -44,7 +44,7 @@
                     @php $unidad = $filas->first()['unidad']; @endphp
                     <div>
                         @if ($variasUnidades)
-                            <p class="mb-2 text-xs font-medium text-gray-500 dark:text-paper-400">
+                            <p class="mb-2 text-xs font-medium text-gray-500 dark:text-paper-300">
                                 {{ $unidad->label() }} ({{ $unidad->abreviatura() }})
                             </p>
                         @endif
@@ -64,13 +64,13 @@
                         </div>
                     </div>
                 @empty
-                    <div class="rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-400 dark:ring-ink-600">
+                    <div class="rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-300 dark:ring-ink-600">
                         No hay saldo que totalizar con estos filtros.
                     </div>
                 @endforelse
             </div>
 
-            <p class="mb-4 text-xs text-gray-500 dark:text-paper-400">
+            <p class="mb-4 text-xs text-gray-500 dark:text-paper-300">
                 Cada estado se totaliza por separado y las cantidades también se separan por unidad base:
                 solo el saldo <strong>disponible</strong> puede trasladarse o utilizarse, y las libras y las
                 unidades no se suman entre sí.
@@ -138,13 +138,13 @@
                     </select>
                 </div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-ink-600 dark:hover:bg-ink-500">Filtrar</button>
-                <a href="{{ route('planta.existencias.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                <a href="{{ route('planta.existencias.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
             </form>
 
             <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                     <thead class="bg-gray-50 dark:bg-ink-900">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Insumo</th>
                             <th class="px-4 py-3">Tipo</th>
                             <th class="px-4 py-3">Lote</th>
@@ -157,7 +157,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 text-sm dark:divide-ink-700">
                         @forelse ($existencias as $existencia)
-                            <tr class="text-gray-700 dark:text-paper-200">
+                            <tr class="text-gray-700 dark:text-paper-100">
                                 <td class="px-4 py-3">
                                     <span class="font-medium">{{ $existencia->insumo?->nombre ?? '—' }}</span>
                                     <span class="ms-1 text-xs text-gray-400 dark:text-paper-500">{{ $existencia->insumo?->codigo }}</span>
@@ -203,7 +203,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-400">
+                                <td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-300">
                                     No hay existencias con esos filtros.
                                 </td>
                             </tr>
