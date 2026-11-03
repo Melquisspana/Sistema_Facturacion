@@ -6,6 +6,7 @@ use App\Enums\FuncionPersonalRuta;
 use App\Http\Controllers\Controller;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
+use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -94,16 +95,22 @@ class PersonalRutaController extends Controller
     {
         $personal->load('funciones');
 
-        return view('rutas.personal.edit', $this->datosFormulario($personal) + ['personal' => $personal]);
+        return view('rutas.personal.edit', $this->datosFormulario($personal) + [
+            'personal' => $personal,
+            'enPersonal' => $this->fichaDePersonal($personal),
+        ]);
     }
 
     public function update(Request $request, PersonalRuta $personal): RedirectResponse
     {
         $datos = $this->validar($request, $personal);
+        // Quien está en Personal tiene un solo nombre, que se edita en su ficha y llega
+        // solo acá: desde Rutas no se cambia, para que no vuelva a haber dos.
+        $nombre = $this->fichaDePersonal($personal) !== null ? $personal->nombre : $datos['nombre'];
 
-        DB::transaction(function () use ($personal, $datos) {
+        DB::transaction(function () use ($personal, $datos, $nombre) {
             $personal->update([
-                'nombre' => $datos['nombre'],
+                'nombre' => $nombre,
                 'user_id' => $datos['user_id'] ?? null,
                 'asistencia_empleado_id' => $datos['asistencia_empleado_id'] ?? null,
                 'telefono' => $datos['telefono'] ?? null,
@@ -135,8 +142,10 @@ class PersonalRutaController extends Controller
     /** @return array<string, mixed> */
     private function validar(Request $request, ?PersonalRuta $personal = null): array
     {
+        $enPersonal = $personal !== null && $this->fichaDePersonal($personal) !== null;
+
         return $request->validate([
-            'nombre' => ['required', 'string', 'max:120'],
+            'nombre' => $enPersonal ? ['nullable'] : ['required', 'string', 'max:120'],
             'telefono' => ['nullable', 'string', 'max:30'],
             'notas' => ['nullable', 'string', 'max:300'],
 
@@ -183,6 +192,12 @@ class PersonalRutaController extends Controller
      *
      * @return array<string, mixed>
      */
+    /** La ficha de Personal enlazada a esta persona de campo, si la tiene. */
+    private function fichaDePersonal(PersonalRuta $personal): ?PlanillaEmpleado
+    {
+        return PlanillaEmpleado::where('personal_ruta_id', $personal->id)->first();
+    }
+
     private function datosFormulario(?PersonalRuta $personal = null): array
     {
         $usuariosTomados = PersonalRuta::whereNotNull('user_id')

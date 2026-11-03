@@ -9,10 +9,18 @@
 
 <div>
     <label for="nombre" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Nombre</label>
-    <input type="text" name="nombre" id="nombre" required maxlength="120" autofocus
-           value="{{ old('nombre', $personal->nombre ?? '') }}"
-           class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-    <x-input-error :messages="$errors->get('nombre')" class="mt-1" />
+    @if ($enPersonal ?? null)
+        {{-- Un solo nombre por persona: se edita en su ficha de Personal y llega solo acá. --}}
+        <p id="nombre" class="mt-1 text-sm text-gray-800 dark:text-paper-100">{{ $personal->nombre }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
+            Se edita en <a href="{{ route('personal.empleados.show', 'p'.$enPersonal->id) }}" class="text-indigo-600 underline">su ficha de Personal</a>.
+        </p>
+    @else
+        <input type="text" name="nombre" id="nombre" required maxlength="120" autofocus
+               value="{{ old('nombre', $personal->nombre ?? '') }}"
+               class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+        <x-input-error :messages="$errors->get('nombre')" class="mt-1" />
+    @endif
 </div>
 
 <div>

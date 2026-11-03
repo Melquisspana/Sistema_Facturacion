@@ -1,0 +1,177 @@
+<?php
+
+namespace Tests\Feature\Dte;
+
+use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
+use App\Enums\TipoImpuesto;
+use App\Models\Cliente;
+use App\Models\ClienteSucursal;
+use App\Models\Correlativo;
+use App\Models\Dte;
+use App\Models\Establecimiento;
+use App\Models\Producto;
+use App\Models\PuntoVenta;
+use App\Models\User;
+use App\Services\Dte\DteBorradorService;
+use App\Support\HoraNegocio;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\PreparaEmisorDte;
+use Tests\TestCase;
+
+/**
+ * Al generar un CCF de un cliente que exige orden de compra, la orden con otra forma
+ * o la sala sin código AVISAN y piden confirmar; confirmado, se genera igual y queda
+ * en la bitácora (#169). La auditoría lista los CCF cuya orden no cuadra. Órdenes
+ * ficticias.
+ */
+class OrdenCompraFormaAvisoTest extends TestCase
+{
+    use PreparaEmisorDte;
+    use RefreshDatabase;
+
+    /** @var array{estab: Establecimiento, pv: PuntoVenta}|null */
+    private ?array $emisor = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        foreach (['administrador', 'facturacion', 'jefatura', 'contabilidad'] as $rol) {
+            Role::findOrCreate($rol, 'web');
+        }
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->seedCatalogosDte();
+    }
+
+    private function usuario(string $rol): User
+    {
+        return User::factory()->create()->assignRole($rol);
+    }
+
+    /** Orden con la forma correcta para el mes de hoy. */
+    private function ordenValida(): string
+    {
+        return HoraNegocio::hoy()->format('ym').'0123456789';
+    }
+
+    private function borrador(string $orden, ?string $codigoSala = 'S-101'): Dte
+    {
+        if ($this->emisor === null) {
+            $this->emisor = $this->crearEmisorDte();
+            Correlativo::create([
+                'tipo_dte' => '03', 'establecimiento_id' => $this->emisor['estab']->id, 'punto_venta_id' => $this->emisor['pv']->id,
+                'ambiente' => '00', 'ultimo_numero' => 0, 'activo' => true,
+            ]);
+        }
+        ['estab' => $estab, 'pv' => $pv] = $this->emisor;
+        $cliente = Cliente::factory()->contribuyente()->create(['requiere_orden_compra' => true]);
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'codigo' => $codigoSala]);
+
+        $borradores = app(DteBorradorService::class);
+        $dte = $borradores->crearBorrador([
+            'tipo_dte' => TipoDte::CreditoFiscal,
+            'cliente_id' => $cliente->id,
+            'cliente_sucursal_id' => $sala->id,
+            'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id,
+            'numero_orden_compra' => $orden,
+        ]);
+        $producto = Producto::factory()->create(['precio_unitario' => 10, 'tipo_impuesto' => TipoImpuesto::Gravado->value]);
+        $borradores->agregarLineaDesdeProducto($dte, $producto, cantidad: 2);
+
+        return $dte->refresh();
+    }
+
+    public function test_orden_valida_genera_sin_pedir_confirmacion(): void
+    {
+        $dte = $this->borrador($this->ordenValida());
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.generar', $dte))
+            ->assertRedirect(route('facturacion.show', $dte));
+
+        $this->assertSame(EstadoDte::Generado, $dte->refresh()->estado);
+    }
+
+    public function test_orden_con_otra_forma_avisa_y_no_genera_sin_confirmar(): void
+    {
+        $dte = $this->borrador('2611012345678901');
+        $usuario = $this->usuario('facturacion');
+
+        $this->actingAs($usuario)->get(route('facturacion.edit', $dte))
+            ->assertOk()
+            ->assertSee('tiene 16 dígitos y deben ser 14')
+            ->assertSee('Revisé la orden: generar igual');
+
+        $this->actingAs($usuario)
+            ->from(route('facturacion.edit', $dte))
+            ->post(route('facturacion.generar', $dte))
+            ->assertRedirect(route('facturacion.edit', $dte))
+            ->assertSessionHasErrors('generar');
+
+        $this->assertSame(EstadoDte::Borrador, $dte->refresh()->estado);
+    }
+
+    public function test_confirmar_deja_generar_y_queda_en_la_bitacora(): void
+    {
+        $dte = $this->borrador('2611512345678A');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.generar', $dte), ['confirmar_avisos_oc' => 1])
+            ->assertRedirect(route('facturacion.show', $dte));
+
+        $this->assertSame(EstadoDte::Generado, $dte->refresh()->estado);
+        $registro = Activity::query()
+            ->where('subject_type', $dte->getMorphClass())->where('subject_id', $dte->id)
+            ->where('description', 'Generó el CCF confirmando los avisos de la orden de compra')
+            ->sole();
+        $this->assertSame('2611512345678A', $registro->properties['orden_compra']);
+        $this->assertStringContainsString('caracteres que no son números', $registro->properties['avisos'][0]);
+    }
+
+    public function test_sala_sin_codigo_tambien_avisa(): void
+    {
+        $dte = $this->borrador($this->ordenValida(), codigoSala: null);
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.generar', $dte))
+            ->assertSessionHasErrors('generar');
+        $this->assertSame(EstadoDte::Borrador, $dte->refresh()->estado);
+        $this->assertStringContainsString('no tiene cargado su código de sala', session('errors')->first('generar'));
+    }
+
+    public function test_cliente_que_no_exige_orden_no_avisa(): void
+    {
+        $dte = $this->borrador('ABC');
+        $dte->cliente->update(['requiere_orden_compra' => false]);
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.generar', $dte))
+            ->assertRedirect(route('facturacion.show', $dte));
+    }
+
+    public function test_auditoria_lista_solo_los_ccf_cuya_orden_no_cuadra(): void
+    {
+        $malo = $this->borrador('261101234567890');
+        $bueno = $this->borrador($this->ordenValida());
+        $this->borrador('99'); // borrador: todavía no se emitió
+        $malo->forceFill(['estado' => EstadoDte::Generado->value, 'numero_interno' => 'INT-MALO'])->saveQuietly();
+        $bueno->forceFill(['estado' => EstadoDte::Generado->value, 'numero_interno' => 'INT-BUENO'])->saveQuietly();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('auditoria.ordenes_compra'))
+            ->assertOk()
+            ->assertSee('INT-MALO')
+            ->assertSee('tiene 15 dígitos y deben ser 14')
+            ->assertDontSee('INT-BUENO')
+            ->assertDontSee('«99»', false);
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->get(route('auditoria.ordenes_compra'))
+            ->assertForbidden();
+    }
+}
