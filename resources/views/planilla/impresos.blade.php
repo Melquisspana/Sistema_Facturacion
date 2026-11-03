@@ -21,6 +21,10 @@
     <div class="px-4 py-5 sm:px-6">
         <div class="mx-auto max-w-5xl space-y-3">
 
+            @if (session('planilla.aviso'))
+                <div class="no-imprimir rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800" role="status">{{ session('planilla.aviso') }}</div>
+            @endif
+
             @if ($planilla->borrador())
                 {{-- Un borrador se puede imprimir para revisarlo, pero no es un documento
                      de pago: nadie debe nada todavía. Se dice para que no se firme algo

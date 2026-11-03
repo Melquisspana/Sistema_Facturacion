@@ -9,6 +9,7 @@ use App\Models\Planilla\PlanillaDocumento;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AnularPlanilla;
+use App\Services\Planilla\BorrarPlanilla;
 use App\Services\Planilla\ComprobanteAdelanto;
 use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\EstadoPlanilla;
@@ -40,6 +41,7 @@ class PlanillaFlujoController extends Controller
         EstadoPlanilla $estado,
         PrepararPlanilla $preparar,
         InformePlanilla $informe,
+        BorrarPlanilla $borrar,
     ) {
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
@@ -52,7 +54,6 @@ class PlanillaFlujoController extends Controller
             'estado' => $estado,
             'avance' => $estado->dePlanilla($planilla),
             'reparos' => $planilla->borrador() ? $preparar->reparosParaConfirmar($planilla) : [],
-            'avisos' => $planilla->borrador() ? $preparar->avisosParaConfirmar($planilla, $request->user()->can('planilla.salarios')) : [],
             'terceros' => PlanillaObligacionTercero::where('planilla_id', $planilla->id)->with('gasto.cuotas')->get(),
             'documentos' => PlanillaDocumento::where('planilla_id', $planilla->id)->orderByDesc('id')->get(),
 
@@ -63,7 +64,19 @@ class PlanillaFlujoController extends Controller
             // una diferencia que no existe.
             'desembolsos' => $planilla->confirmada() ? $informe->desembolsos($planilla) : null,
             'cuadre' => $planilla->confirmada() ? $informe->cuadre($planilla) : null,
+
+            // Con otra planilla después, el botón de borrar ni aparece; si no, se dice qué lo impide.
+            'posterior' => $planilla->borrador() ? null : $borrar->posterior($planilla),
+            'impedimentos' => $borrar->impedimentos($planilla),
         ]);
+    }
+
+    public function borrar(Request $request, Planilla $planilla, BorrarPlanilla $borrar)
+    {
+        $borrar->borrar($request->user(), $planilla);
+
+        return redirect()->route('planilla.index')->with('planilla.aviso', 'Planilla '.$planilla->periodo
+            .' borrada con todo lo que había creado. Los anticipos que descontaba volvieron a tener su saldo.');
     }
 
     public function confirmar(Request $request, Planilla $planilla, ConfirmarPlanilla $confirmar)

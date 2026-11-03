@@ -9,7 +9,9 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
+use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\DatosEmpleado;
+use App\Services\Planilla\GenerarPlanilla;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
@@ -29,6 +31,9 @@ use Illuminate\Support\Collection;
  */
 class PlanillaController extends Controller
 {
+    /** Lo que define qué planilla se genera. Viaja de la revisión a «Generar» tal cual. */
+    private const DATOS_DEL_PERIODO = ['tipo_periodo', 'fecha', 'clase', 'moneda', 'fecha_pago', 'observaciones'];
+
     public function index(Request $request, TotalesPlanilla $totales)
     {
         $verImportes = $request->user()->can('planilla.salarios');
@@ -46,7 +51,7 @@ class PlanillaController extends Controller
         ]);
     }
 
-    /** Elegir el período. Es el paso previo a preparar. */
+    /** Elegir el período. Después se revisa y se genera. */
     public function create(Request $request, PeriodoPlanilla $periodos)
     {
         abort_unless($request->user()->can('planilla.gestionar'), 403);
@@ -62,11 +67,28 @@ class PlanillaController extends Controller
         ]);
     }
 
-    public function store(Request $request, PrepararPlanilla $preparar)
+    /** La única confirmación antes de generar: qué se crea, para cuántas personas y por cuánto. */
+    public function revisar(Request $request, GenerarPlanilla $generar, TotalesPlanilla $totales)
     {
-        $planilla = $preparar->abrir($request->user(), $request->all());
+        abort_unless($request->user()->can('planilla.gestionar'), 403);
 
-        return redirect()->route('planilla.preparar', $planilla);
+        $datos = $request->only(self::DATOS_DEL_PERIODO);
+        $revision = $generar->revisar($request->user(), $datos);
+
+        if ($revision['existente'] !== null) {
+            return redirect()->route('planilla.show', $revision['existente'])
+                ->with('planilla.aviso', $generar->yaExiste($revision['existente']));
+        }
+
+        return view('planilla.generar', $revision + ['datos' => $datos, 'totales' => $totales]);
+    }
+
+    public function store(Request $request, GenerarPlanilla $generar)
+    {
+        $planilla = $generar->generar($request->user(), $request->only(self::DATOS_DEL_PERIODO));
+
+        return redirect()->route('planilla.impresos', $planilla)
+            ->with('planilla.aviso', 'Planilla '.$planilla->periodo.' generada. Imprimí la hoja y hacela firmar.');
     }
 
     /**
@@ -151,15 +173,19 @@ class PlanillaController extends Controller
         return $salida;
     }
 
-    public function guardar(Request $request, Planilla $planilla, PrepararPlanilla $preparar)
+    /**
+     * Termina un borrador que quedó de antes: guarda lo escrito y lo genera. Lo escrito
+     * queda guardado aunque algo frene la confirmación, para no perderlo al corregir.
+     */
+    public function guardar(Request $request, Planilla $planilla, PrepararPlanilla $preparar, ConfirmarPlanilla $confirmar)
     {
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
-        $preparar->guardarLineas($request->user(), $planilla, $request->input('lineas', []));
+        $planilla = $preparar->guardarLineas($request->user(), $planilla, $request->input('lineas', []));
+        $confirmar->confirmar($request->user(), $planilla);
 
-        return redirect()
-            ->route('planilla.preparar', $planilla)
-            ->with('planilla.aviso', 'Borrador guardado. Todavía no debe nada: las obligaciones se crean al confirmar.');
+        return redirect()->route('planilla.impresos', $planilla)
+            ->with('planilla.aviso', 'Planilla '.$planilla->periodo.' generada. Imprimí la hoja y hacela firmar.');
     }
 
     // ── Registro de personas ──────────────────────────────────────────────

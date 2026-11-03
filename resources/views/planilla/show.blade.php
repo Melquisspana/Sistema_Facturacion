@@ -26,11 +26,6 @@
                 <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }} · {{ Planilla::ESTADOS[$planilla->estado] }}</p>
             </div>
             <div class="flex flex-wrap gap-2">
-                @if ($planilla->borrador())
-                    @can('planilla.gestionar')
-                        <a href="{{ route('planilla.preparar', $planilla) }}" class="{{ $boton }}">Editar</a>
-                    @endcan
-                @endif
                 <a href="{{ route('planilla.impresos', $planilla) }}" class="{{ $boton }}">Impresos</a>
                 @if ($planilla->confirmada() && config('planilla.pagos_enabled'))
                     @can('planilla.pagar')
@@ -161,36 +156,27 @@
                 </section>
             @endif
 
-            {{-- ══ Confirmar ══ --}}
+            {{-- ══ Un borrador de antes ══
+                 Ya no se crean borradores: se genera de una vez. Los que quedaron se
+                 terminan en su formulario o se borran. --}}
             @if ($planilla->borrador())
                 @can('planilla.gestionar')
                     <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-                        <h2 class="text-sm font-semibold text-indigo-900">Confirmar la planilla</h2>
+                        <h2 class="text-sm font-semibold text-indigo-900">Esta planilla quedó como borrador</h2>
                         <p class="mt-1 text-sm text-indigo-900">
-                            Al confirmar queda lo que se le debe a cada persona y ya no se puede editar.
-                            Revisá los montos antes.
+                            Todavía no debe nada. Terminala para generarla, o borrala abajo.
                         </p>
-
-                        @if ($avisos !== [])
-                            <div class="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
-                                <p class="font-medium">Para revisar antes de confirmar:</p>
-                                @include('planilla.partials.avisos-por-persona', ['lista' => $avisos])
-                            </div>
-                        @endif
 
                         @if ($reparos !== [])
                             <div class="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                                <p class="font-medium">Antes hay que resolver:</p>
+                                <p class="font-medium">Antes de generarla hay que resolver:</p>
                                 @include('planilla.partials.avisos-por-persona', ['lista' => $reparos])
                             </div>
-                        @else
-                            <form method="POST" action="{{ route('planilla.confirmar', $planilla) }}" class="mt-3">
-                                @csrf
-                                <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">
-                                    Confirmar y crear las obligaciones
-                                </button>
-                            </form>
                         @endif
+
+                        <a href="{{ route('planilla.preparar', $planilla) }}" class="mt-3 inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">
+                            Terminar y generar
+                        </a>
                     </section>
                 @endcan
             @endif
@@ -313,6 +299,35 @@
                             </div>
                             <button type="submit" class="inline-flex min-h-11 items-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50">Anular</button>
                         </form>
+                    </section>
+                @endcan
+            @endif
+
+            {{-- ══ Borrar ══
+                 Solo la última. Si hay otra después, ni se ofrece: la que se borra es esa. --}}
+            @if ($posterior === null)
+                @can('planilla.gestionar')
+                    <section class="rounded-lg border border-red-200 bg-white p-4">
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Borrar la planilla</h2>
+                        @if ($impedimentos !== [])
+                            <p class="mt-1 text-sm text-gray-700">No se puede borrar:</p>
+                            <ul class="mt-1 list-inside list-disc text-sm text-gray-700">
+                                @foreach ($impedimentos as $motivo)
+                                    <li>{{ $motivo }}</li>
+                                @endforeach
+                            </ul>
+                        @else
+                            <p class="mt-1 text-xs text-gray-600">
+                                Deshace todo lo que creó: lo que se le debía a cada persona y a los terceros. Los
+                                anticipos que descontaba vuelven a tener su saldo. Después se puede generar de nuevo.
+                            </p>
+                            <form method="POST" action="{{ route('planilla.destroy', $planilla) }}" class="mt-2"
+                                  onsubmit="return confirm(@js('¿Borrar la planilla '.$planilla->periodo.'? Se borra con todo lo que creó y no se puede deshacer.'))">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Borrar la planilla</button>
+                            </form>
+                        @endif
                     </section>
                 @endcan
             @endif

@@ -45,8 +45,7 @@
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('planilla.show', $planilla) }}" class="{{ $boton }}">Ver e imprimir</a>
-                <a href="{{ route('planilla.index') }}" class="{{ $boton }}">Volver</a>
+                <a href="{{ route('planilla.show', $planilla) }}" class="{{ $boton }}">Volver a la planilla</a>
             </div>
         </div>
     </x-slot>
@@ -64,11 +63,14 @@
             @endif
 
             <p class="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-                <strong>Esto es un borrador y no debe nada.</strong> Las obligaciones se crean al
-                <strong>confirmar</strong>, y una sola vez.
+                <strong>Esto es un borrador y no debe nada.</strong> Quedó de antes: revisalo y generalo.
+                Al generar queda lo que se le debe a cada persona, y sale la hoja para firmar.
             </p>
 
+            {{-- Generar es la única salida: guarda lo escrito y confirma. La pregunta lleva
+                 las personas y el total que se ven en la pantalla en ese momento. --}}
             <form method="POST" action="{{ route('planilla.guardar', $planilla) }}"
+                  x-on:submit="if (! confirm('¿Generar la planilla ' + @js($planilla->periodo) + '? Son ' + lineas.length + ' personas y ' + @js($planilla->moneda) + ' ' + m(suma('aPagar')) + ' a pagar. Después ya no se edita.')) $event.preventDefault()"
                   x-data="{
                       lineas: @js($lineasIniciales),
                       disponibles: @js($disponiblesJs),
@@ -562,10 +564,10 @@
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-gray-500">
                         ISSS, AFP y renta son una propuesta que se puede corregir; no calcula aporte patronal
-                        ni horas extra. Para confirmar e imprimir, guardá y entrá en «Ver e imprimir».
+                        ni horas extra.
                     </p>
                     <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto">
-                        Guardar borrador
+                        Generar la planilla
                     </button>
                 </div>
             </form>

@@ -63,6 +63,8 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
             ->middleware($gestionar)->name('empleados.store');
 
         Route::get('abrir', [PlanillaController::class, 'create'])->middleware($gestionar)->name('create');
+        // Revisar no guarda nada: muestra cuántas personas y cuánto antes de generar.
+        Route::get('abrir/revisar', [PlanillaController::class, 'revisar'])->middleware($gestionar)->name('revisar');
         Route::post('abrir', [PlanillaController::class, 'store'])->middleware($gestionar)->name('store');
 
         // Anticipos y documentos ANTES de {planilla}: si no, entrarían por el binding
@@ -112,6 +114,9 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
             ->whereNumber('planilla')->middleware($gestionar)->name('confirmar');
         Route::post('{planilla}/anular', [PlanillaFlujoController::class, 'anular'])
             ->whereNumber('planilla')->middleware($gestionar)->name('anular');
+        // Borrar deshace todo lo que creó, y solo vale para la última.
+        Route::delete('{planilla}', [PlanillaFlujoController::class, 'borrar'])
+            ->whereNumber('planilla')->middleware($gestionar)->name('destroy');
         Route::post('{planilla}/lote', [PlanillaPagoController::class, 'pagarLote'])
             ->whereNumber('planilla')->middleware($pagar)->name('pagar.lote');
         Route::post('{planilla}/documentos', [PlanillaFlujoController::class, 'subirDocumento'])
