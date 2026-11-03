@@ -123,11 +123,16 @@
         /* Solo el papel: fuera menú, cabecera de la app y avisos de pantalla. */
         body * { visibility: hidden; }
         .hoja-impresa, .hoja-impresa * { visibility: visible; }
+        /* Lo oculto seguía ocupando lugar arriba de la hoja: con la hoja de firmas larga, el
+           navegador la mandaba entera a la página siguiente y salía una hoja en blanco. */
+        body *:not(:has(.hoja-impresa)):not(.hoja-impresa):not(.hoja-impresa *) { display: none !important; }
         .hoja-impresa {
             position: static; width: auto; max-width: none;
             margin: 0; padding: 0; border: none; border-radius: 0;
             break-inside: avoid; page-break-inside: avoid;
         }
+        /* La hoja de firmas sí se reparte: cada página lleva los renglones que caben. */
+        .hoja-impresa:has(table.hi-grupal) { break-inside: auto; page-break-inside: auto; }
         .hoja-impresa + .hoja-impresa { break-before: page; page-break-before: always; }
         .no-imprimir { display: none !important; }
         /* Ocultos no basta: el menú, la cabecera y el margen de la app seguirían ocupando
@@ -135,9 +140,10 @@
         nav, aside, header { display: none !important; }
         .pt-16 { padding-top: 0 !important; }
         main > div { padding: 0 !important; }
-        /* Con más de diez personas: cabecera repetida y ninguna fila partida. */
+        /* Con más de diez personas: cabecera repetida y ninguna fila partida. El total va
+           una sola vez, al final: repetido en cada página quitaba un renglón por hoja. */
         table.hi-grupal thead { display: table-header-group; }
-        table.hi-grupal tfoot { display: table-footer-group; }
+        table.hi-grupal tfoot { display: table-row-group; }
         table.hi-grupal tr { break-inside: avoid; page-break-inside: avoid; }
         .hi-firmas, .hi-pie { break-inside: avoid; page-break-inside: avoid; }
     }
