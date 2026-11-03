@@ -3,7 +3,8 @@
      que el estado permite.
 
      «¿Quién entrega?» se elige UNA vez arriba y viaja en cada formulario (campo
-     .js-quien). Sin JavaScript igual funciona: el valor inicial es el preseleccionado. --}}
+     .js-quien). Sin JavaScript igual funciona: el valor inicial es el preseleccionado
+     (en «Mi salida», el propio vendedor). --}}
 @php
     $modoVendedor = $modoVendedor ?? false;
     $fechaHoy = \App\Support\HoraNegocio::fechaHoy();
@@ -18,7 +19,7 @@
     $puedeMarcar = ($modoVendedor || $puedeGestionar) && $registrable && $participantes->isNotEmpty();
 @endphp
 
-@if (! $modoVendedor && $puedeMarcar && $participantes->count() > 1)
+@if ($puedeMarcar && $participantes->count() > 1)
     <div class="sticky top-0 z-10 mt-4 rounded-2xl bg-white/95 px-4 py-3 shadow-sm ring-1 ring-gray-200 backdrop-blur dark:bg-ink-800/95 dark:ring-ink-600">
         <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quién entrega?</p>
         <div class="mt-2 flex flex-wrap gap-2">
@@ -199,7 +200,7 @@
     </details>
 @endif
 
-@if (! $modoVendedor && $puedeMarcar && $participantes->count() > 1)
+@if ($puedeMarcar && $participantes->count() > 1)
     <script>
         document.querySelectorAll('.js-elige-quien').forEach((radio) => radio.addEventListener('change', () => {
             document.querySelectorAll('.js-quien').forEach((campo) => { campo.value = radio.value; });
