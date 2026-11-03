@@ -94,8 +94,8 @@ return [
     | cuenta bancarios, órdenes de compra, PDF-only sin DTE). Se evalúa DESPUÉS de
     | clasificar y ANTES de guardar adjuntos o crear el registro.
     |
-    | GARANTÍA: un correo con JSON DTE válido (tipoDte reconocible) NUNCA se descarta,
-    | venga de quien venga; solo actúa sobre la clasificación `no_es_dte`. Por eso
+    | GARANTÍA: un CCF o una nota con JSON DTE válido NUNCA se descarta, venga de quien
+    | venga. Fuera de `tipos_compra`, solo actúa sobre la clasificación `no_es_dte`. Por eso
     | `dte_valido`, `tipo_no_soportado`, `json_invalido` y `falta_adjunto` se conservan.
     | Las reglas específicas se comparan por ASUNTO / NOMBRE DE ADJUNTO normalizados
     | (minúsculas, sin acentos, sin espacios), NUNCA solo por remitente.
@@ -104,6 +104,11 @@ return [
     */
     'exclusiones' => [
         'activo' => true,
+
+        // Tipos de DTE que son compras: CCF (03), nota de crédito (05) y de débito (06) de
+        // proveedores. Un DTE válido de otro tipo (factura común, retención…) no se guarda.
+        // Si el tipo no se pudo leer (JSON inválido, solo PDF), se conserva para revisarlo.
+        'tipos_compra' => ['03', '05', '06'],
 
         // Reglas específicas por asunto / nombre de adjunto (solo aplican a no-DTE).
         'reglas' => [

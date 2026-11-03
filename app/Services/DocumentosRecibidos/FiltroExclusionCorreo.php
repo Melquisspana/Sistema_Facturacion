@@ -3,9 +3,13 @@
 namespace App\Services\DocumentosRecibidos;
 
 /**
- * Decide si un correo debe DESCARTARSE (no crear un DocumentoRecibido) por NO ser un DTE.
+ * Decide si un correo debe DESCARTARSE (no crear un DocumentoRecibido) por NO ser un DTE
+ * o por ser un DTE que no es una compra.
  *
  * Reglas (solo lectura de metadatos; no toca el buzón):
+ *  - Compras guarda solo los tipos de `tipos_compra` (CCF y las notas de crédito y débito
+ *    de proveedores; decisión del usuario, 03/11/2026). Un DTE válido de otro tipo
+ *    (factura común, retención, etc.) se descarta. Si no se sabe el tipo, se conserva.
  *  - NUNCA descarta un correo con JSON DTE válido: actúa SOLO sobre la clasificación
  *    `no_es_dte` (sin JSON DTE válido y que no parece DTE). Así `dte_valido`,
  *    `tipo_no_soportado`, `json_invalido` y `falta_adjunto` SIEMPRE se conservan.
@@ -18,9 +22,9 @@ class FiltroExclusionCorreo
 {
     /**
      * @param  array<int, string>  $nombresAdjuntos
-     * @return array{regla: string, motivo: string}|null  null = no descartar (se importa)
+     * @return array{regla: string, motivo: string}|null null = no descartar (se importa)
      */
-    public function evaluar(string $clasificacion, string $asunto, array $nombresAdjuntos): ?array
+    public function evaluar(string $clasificacion, string $asunto, array $nombresAdjuntos, ?string $tipoDocumento = null): ?array
     {
         $cfg = (array) config('documentos_recibidos.exclusiones', []);
 
@@ -28,8 +32,17 @@ class FiltroExclusionCorreo
             return null;
         }
 
-        // Guardia central: solo se descarta lo que NO es DTE. Cualquier documento con
-        // JSON DTE válido (dte_valido / tipo_no_soportado), un JSON que falló al decodificar
+        $tiposCompra = (array) ($cfg['tipos_compra'] ?? []);
+        if ($tipoDocumento !== null && $tiposCompra !== [] && in_array($clasificacion, ['dte_valido', 'tipo_no_soportado'], true)
+            && ! in_array($tipoDocumento, $tiposCompra, true)) {
+            return [
+                'regla' => 'tipo_no_compra',
+                'motivo' => 'DTE tipo '.$tipoDocumento.': Compras guarda solo '.implode(', ', $tiposCompra).'.',
+            ];
+        }
+
+        // Guardia central: fuera del tipo, solo se descarta lo que NO es DTE. Un CCF o una
+        // nota con JSON DTE válido (dte_valido / tipo_no_soportado), un JSON que falló al decodificar
         // (json_invalido) o un PDF que parece DTE (falta_adjunto) se conserva.
         if ($clasificacion !== 'no_es_dte') {
             return null;
