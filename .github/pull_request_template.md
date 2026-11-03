@@ -23,5 +23,5 @@ Cierra #
 - [ ] Pint sobre los archivos tocados.
 - [ ] Revisión de código hecha.
 - [ ] Sin datos reales (clientes, empleados, NIT/NRC, correos, servidor) ni credenciales.
-- [ ] Documentación y CHANGELOG al día.
+- [ ] Documentación al día. El PR no toca `CHANGELOG.md`: lo escribe la coordinación al desplegar, para que los PR no choquen entre sí.
 - [ ] Sin migraciones ni cambios de producción no autorizados.
