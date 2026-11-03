@@ -18,7 +18,7 @@ Números contados en las 337 vistas de `resources/views`.
 
 | Tema | Qué pasa hoy | Dónde |
 |---|---|---|
-| **Idioma** | `APP_LOCALE=en` y no existe `lang/es`. La paginación dice «Showing 1 to 15 of 80 results» y «Next». Los errores de validación sin mensaje propio salen en inglés. Los meses salen en inglés: el contrato de Planilla en PDF dice «del mes November» y el inicio, «Tuesday 03 de November». | Todo el sistema. Cobros y Gastos ya lo esquivan cada uno por su lado (`->locale('es')` y un calendario propio). |
+| **Idioma** | `APP_LOCALE=en` y no existe `lang/es`. La paginación dice «Showing 1 to 15 of 80 results» y «Next». Los errores de validación sin mensaje propio salen en inglés. Los meses salen en inglés: el inicio dice «Tuesday 03 de November de 2026» y Rutas, «03 Nov 2026». | Todo el sistema. Cobros, Planilla y Gastos ya lo esquivan cada uno por su lado (`->locale('es')` y un calendario propio). |
 | **Botón principal** | 60 combinaciones distintas de clases para el mismo botón índigo. `x-primary-button` existe, pero es gris oscuro y en MAYÚSCULAS (viene de Breeze), y solo lo usan 33 vistas. | Todos |
 | **Colores de botón** | El color no dice nada: «Agregar» es ámbar en una pantalla y gris en otra; «Terminar ruta» es verde y gris; «Buscar» es rosa y gris; «Imprimir» y «Descargar Excel» son verdes. | Facturación, PPQ, Rutas, Exportaciones |
 | **Guardar y Cancelar** | Dos órdenes: Planta pone Cancelar a la izquierda y Guardar a la derecha; Facturación, Clientes, Productos, Ajustes, Usuarios y Asistencia ponen Guardar primero y Cancelar como enlace de texto. Gastos mezcla los dos. | Todos |
@@ -178,7 +178,7 @@ Ordenado por cuánto ayuda en el uso diario. Cada PR es chico, se puede revisar 
 
 | # | PR | Qué cambia | Por qué en este lugar |
 |---|---|---|---|
-| 1 | **Castellano en todo el sistema** | `lang/es` (paginación, validación, contraseñas), idioma `es` por defecto. Quitar los arreglos sueltos de Cobros y Gastos. | Arregla de una vez inglés que se ve en todas las pantallas y en el contrato de Planilla. Al desplegar hay que cambiar `APP_LOCALE=es` en el `.env` del servidor. Revisar pruebas que esperen textos en inglés. |
+| 1 | **Castellano en todo el sistema** | `lang/es` (paginación, validación, contraseñas), idioma `es` por defecto. Los `->locale('es')` que ya existen se dejan: no estorban y protegen documentos como el contrato. | Arregla de una vez el inglés que se ve en todas las pantallas. Al desplegar hay que cambiar `APP_LOCALE=es` en el `.env` del servidor. Revisar pruebas que esperen textos en inglés. |
 | 2 | **Modo oscuro: tonos que faltan** | Solo `app.css`: los tonos de la sección 1 que hoy no se leen. | Texto ilegible hoy, arreglo de un solo archivo. |
 | 3 | **Piezas comunes** | `x-avisos`, botones con el aspecto nuevo (y `href` en el secundario), `x-campo`, `x-insignia`, `x-estado-activo`. Solo se cambian los lugares que ya usan esos componentes. | Todo lo que sigue depende de esto. |
 | 4 | **Facturación** | Avisos, botones (orden y color), encabezados, fichas con «Volver» arriba, paginación de Contingencia con `withQueryString()`. | Es lo que más usa la oficina todos los días. |
