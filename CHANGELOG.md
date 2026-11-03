@@ -8,6 +8,11 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Agregado
+
+- Planilla: botón «Imprimir» en la hoja para firmas y los recibos. Al imprimir sale solo la hoja, sin el menú ni la cabecera de la app.
+- Planilla: interruptor `PLANILLA_PAGOS_ENABLED` para apagar el seguimiento de pagos (pagos, desembolsos y estado de cobro) mientras Gastos no se use. Con el interruptor apagado, el impreso sale con el total a pagar de cada persona.
+
 ### Corregido
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
