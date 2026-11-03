@@ -51,6 +51,32 @@
                 </div>
             @endif
 
+            {{-- Aviso de la orden de compra (ReglaOrdenCompra::avisos): forma distinta o sala
+                 sin código. No frena: «Generar igual» lo confirma y queda en la bitácora. --}}
+            @if (($avisosOc ?? []) !== [])
+                <div role="alert" class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
+                    <strong>⚠ Revisá la orden de compra antes de generar:</strong>
+                    <ul class="mt-1 list-disc list-inside">
+                        @foreach ($avisosOc as $aviso)
+                            <li>{{ $aviso }}</li>
+                        @endforeach
+                    </ul>
+                    <p class="mt-1">Las órdenes de este cliente tienen 14 números: año y mes (AAMM), un 0 y 9 números más.
+                        Si está mal escrita, no generes: este borrador no deja cambiarla y hay que crearlo de nuevo.</p>
+                    @can('update', $dte)
+                        <form method="POST" action="{{ route('facturacion.generar', $dte) }}" class="mt-2"
+                              onsubmit="return confirm(@js($confirmGenerar));">
+                            @csrf
+                            <input type="hidden" name="confirmar_avisos_oc" value="1">
+                            <button @disabled($sinLineas)
+                                    class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md border border-amber-400 {{ $sinLineas ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-amber-800 hover:bg-amber-100' }}">
+                                Revisé la orden: generar igual
+                            </button>
+                        </form>
+                    @endcan
+                </div>
+            @endif
+
             {{-- Encabezado compacto: solo información clave del documento + Generar. --}}
             <div class="bg-white shadow sm:rounded-lg p-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
