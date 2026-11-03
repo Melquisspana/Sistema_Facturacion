@@ -9,6 +9,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
+use App\Services\Planilla\NombreUnico;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
@@ -196,6 +197,15 @@ class PlanillaController extends Controller
         activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('cambió el sueldo');
 
         return back()->with('planilla.aviso', 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
+    }
+
+    public function cambiarNombre(Request $request, PlanillaEmpleado $empleado, NombreUnico $nombres)
+    {
+        $nombres->cambiar($request->user(), $empleado, $request->only('nombre'));
+
+        activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('corrigió el nombre');
+
+        return back()->with('planilla.aviso', 'Nombre corregido en Planilla y Rutas.');
     }
 
     public function bajaEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
