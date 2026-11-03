@@ -223,6 +223,20 @@ enum PermisoSistema: string
             RolSistema::Administrador => self::todos(),
             RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar]),
 
+            // Jefe de vendedores: ve el tablero, las rutas, las salas y las salidas de todo
+            // el país, y a los vendedores en su ficha de campo. Cuando sale a ruta, registra
+            // en SUS salidas como cualquier vendedor (la policy pide que vaya en la salida).
+            //
+            // Sin `rutas.gestionar` (reabrir días, gastos ajenos, configurar rutas), sin
+            // `rutas.personal.gestionar` y sin nada de Planilla: no ve sueldos ni la ficha
+            // de Personal (decisión de Melqui, 03/11/2026). Armar y terminar salidas llegan
+            // en la etapa 2 con permisos propios.
+            RolSistema::JefeVendedores => self::valores([
+                self::RutasVer,
+                self::RutasPersonalVer,
+                self::RutasEntregasRegistrar,
+            ]),
+
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
             // no sincroniza, no administra.
             //

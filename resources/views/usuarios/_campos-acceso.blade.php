@@ -10,7 +10,7 @@
     $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
 @endphp
 
-<p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">El rol dice qué puede hacer. Vendedor también sale a rutas.</p>
+<p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">El rol dice qué puede hacer. Vendedor y Jefe de vendedores también salen a rutas.</p>
 <div>
     <label for="rol" class="{{ $etiqueta }}">Rol</label>
     <select id="rol" name="rol" class="{{ $campo }}" @if ($obligatorio) required @endif>

@@ -9,6 +9,7 @@ use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\RitmoRutas;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
@@ -18,8 +19,16 @@ use Illuminate\View\View;
  */
 class RutasDashboardController extends Controller
 {
-    public function index(RitmoRutas $ritmo, EntregasCcf $entregas): View
+    public function index(Request $request, RitmoRutas $ritmo, EntregasCcf $entregas): View
     {
+        // El jefe de vendedores aterriza acá y no en «Mi salida»: si va en una salida en
+        // curso, se le ofrece el enlace.
+        $usuario = $request->user();
+        $vaEnUnaSalida = $usuario->can('rutas.entregas.registrar')
+            && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)
+                ->whereHas('personal', fn ($q) => $q->where('rutas_personal.user_id', $usuario->id)->where('rutas_personal.activo', true))
+                ->exists();
+
         $enCamino = SalidaRuta::query()
             ->whereIn('estado', [EstadoSalidaRuta::EnCurso->value, EstadoSalidaRuta::Planificada->value])
             ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra'])
@@ -37,6 +46,7 @@ class RutasDashboardController extends Controller
             'enCamino' => $enCamino,
             'vendedores' => PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre']),
             'salasSinRuta' => ClienteSucursal::whereNull('ruta_id')->where('activo', true)->count(),
+            'vaEnUnaSalida' => $vaEnUnaSalida,
         ]);
     }
 }
