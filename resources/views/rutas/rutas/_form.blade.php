@@ -12,7 +12,7 @@
 
 <div>
     <label for="frecuencia_objetivo_dias" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
-        Frecuencia objetivo <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
+        Días aproximados, solo mientras la ruta no tenga ritmo <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
     </label>
     <div class="mt-1 flex items-center gap-2">
         <span class="text-sm text-gray-500 dark:text-paper-300">cada</span>
@@ -22,7 +22,7 @@
         <span class="text-sm text-gray-500 dark:text-paper-300">días</span>
     </div>
     <p class="mt-1 text-xs text-gray-400 dark:text-paper-500">
-        Cada cuánto se pretende visitar esta ruta. Es una referencia: el sistema no agenda ni bloquea nada con este dato.
+        El sistema calcula solo cada cuánto se va, con los CCF de las salas. Este dato se usa únicamente mientras la ruta todavía no tiene ritmo. No agenda ni bloquea nada.
     </p>
     <x-input-error :messages="$errors->get('frecuencia_objetivo_dias')" class="mt-1" />
 </div>
