@@ -118,14 +118,19 @@
                                     <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
                                     Trae nota de avería
                                 </label>
-                                {{-- Cómo pagó la sala esta vez. Arranca en la habitual del cliente; cambiarla no toca su ficha. --}}
-                                <label for="forma-{{ $entrega->id }}" class="mt-1.5 block text-xs text-gray-600 dark:text-paper-300">Pago</label>
-                                <select id="forma-{{ $entrega->id }}" name="forma_cobro" class="mt-0.5 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                                    <option value="{{ \App\Services\Rutas\EntregasCcf::SIN_COBRO }}" @selected($entrega->dte?->cliente?->cobro_en_entrega === null)>Sin cobro (quedan)</option>
-                                    @foreach (\App\Enums\FormaCobroEntrega::opciones() as $valor => $label)
-                                        <option value="{{ $valor }}" @selected($entrega->dte?->cliente?->cobro_en_entrega?->value === $valor)>{{ $label }}</option>
-                                    @endforeach
-                                </select>
+                                {{-- Cómo pagó la sala esta vez. Vale la habitual del cliente y no se pregunta:
+                                     solo si esta vez fue distinto se abre y se cambia. No toca su ficha. --}}
+                                @php($habitual = $entrega->dte?->cliente?->cobro_en_entrega)
+                                <details class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">
+                                    <summary class="min-h-11 cursor-pointer py-2">Pago: {{ $habitual?->label() ?? 'Sin cobro (quedan)' }} · <span class="underline">cambiar</span></summary>
+                                    <label for="forma-{{ $entrega->id }}" class="sr-only">Forma de pago esta vez</label>
+                                    <select id="forma-{{ $entrega->id }}" name="forma_cobro" class="min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                        <option value="{{ \App\Services\Rutas\EntregasCcf::SIN_COBRO }}" @selected($habitual === null)>Sin cobro (quedan)</option>
+                                        @foreach (\App\Enums\FormaCobroEntrega::opciones() as $valor => $label)
+                                            <option value="{{ $valor }}" @selected($habitual?->value === $valor)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </details>
                             </form>
 
                             <details class="group">

@@ -85,7 +85,7 @@ class CierreDiaTest extends TestCase
         // Una sala de quedan que esta vez paga en efectivo.
         $quedan = $this->entrega(null, false);
         $url = route('rutas.mi-salida.update', [$this->salida, $quedan]);
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Sin cobro (quedan)');
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pago: Sin cobro (quedan)')->assertSee('cambiar');
         $this->patch($url, ['resultado' => 'entregado', 'forma_cobro' => 'tarjeta'])->assertSessionHasErrors('forma_cobro');
         $this->assertTrue($quedan->refresh()->estaPendiente());
         $this->patch($url, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
