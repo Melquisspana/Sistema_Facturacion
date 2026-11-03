@@ -14,7 +14,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * El tablero «¿a dónde toca ir?»: días desde la última salida contra los días objetivo.
+ * El tablero «¿a dónde toca ir?»: días desde la última salida contra el ritmo de la ruta.
+ * Estas rutas no tienen pedidos, así que mandan los días cargados a mano (respaldo); el
+ * ritmo calculado se prueba en RitmoPedidosTest.
  */
 class RitmoRutasTest extends TestCase
 {
@@ -42,24 +44,26 @@ class RitmoRutasTest extends TestCase
     /** @return array<string, array> fila por nombre de ruta */
     private function filas(): array
     {
-        return (new RitmoRutas)->porRuta($this->hoy)->keyBy(fn ($f) => $f['ruta']->nombre)->all();
+        return app(RitmoRutas::class)->porRuta($this->hoy)->keyBy(fn ($f) => $f['ruta']->nombre)->all();
     }
 
-    public function test_el_semaforo_compara_los_dias_con_el_objetivo(): void
+    /** Sin ritmo calculado, los días cargados a mano con la misma regla: margen del 20 %, mínimo 2. */
+    public function test_sin_ritmo_el_semaforo_usa_los_dias_cargados_a_mano(): void
     {
         $atrasada = Ruta::create(['nombre' => 'San Miguel', 'frecuencia_objetivo_dias' => 15]);
         $pronto = Ruta::create(['nombre' => 'Sonsonate', 'frecuencia_objetivo_dias' => 15]);
         $alDia = Ruta::create(['nombre' => 'Santa Ana', 'frecuencia_objetivo_dias' => 15]);
 
-        $this->salida($atrasada, '2026-09-08', EstadoSalidaRuta::Finalizada, '2026-09-09'); // 17 días
-        $this->salida($pronto, '2026-09-13', EstadoSalidaRuta::Finalizada, '2026-09-14');   // 12 días
+        $this->salida($atrasada, '2026-09-06', EstadoSalidaRuta::Finalizada, '2026-09-07'); // 19 días: 4 tarde, margen 3
+        $this->salida($pronto, '2026-09-12', EstadoSalidaRuta::Finalizada, '2026-09-13');   // 13 días: faltan 2
         $this->salida($alDia, '2026-09-20', EstadoSalidaRuta::Finalizada, '2026-09-21');    // 5 días
 
         $filas = $this->filas();
 
-        $this->assertSame([RitmoRutas::ATRASADA, 17], [$filas['San Miguel']['estado'], $filas['San Miguel']['dias']]);
-        $this->assertSame([RitmoRutas::PRONTO, 12], [$filas['Sonsonate']['estado'], $filas['Sonsonate']['dias']]);
+        $this->assertSame([RitmoRutas::ATRASADA, 19], [$filas['San Miguel']['estado'], $filas['San Miguel']['dias']]);
+        $this->assertSame([RitmoRutas::PRONTO, 13], [$filas['Sonsonate']['estado'], $filas['Sonsonate']['dias']]);
         $this->assertSame([RitmoRutas::AL_DIA, 5], [$filas['Santa Ana']['estado'], $filas['Santa Ana']['dias']]);
+        $this->assertSame([15, RitmoRutas::MANUAL], [$filas['Santa Ana']['ritmo'], $filas['Santa Ana']['origenRitmo']]);
     }
 
     /** Se cuenta desde el regreso: una salida de tres días no «envejece» mientras dura. */
@@ -75,8 +79,8 @@ class RitmoRutasTest extends TestCase
 
         $this->assertSame(3, $filas['San Miguel']['dias']);
         $this->assertSame(6, $filas['Usulután']['dias']);
-        // Sin objetivo: se informan los días, sin semáforo.
-        $this->assertSame(RitmoRutas::SIN_OBJETIVO, $filas['San Miguel']['estado']);
+        // Sin ritmo ni días cargados: se informan los días, sin semáforo.
+        $this->assertSame(RitmoRutas::SIN_RITMO, $filas['San Miguel']['estado']);
     }
 
     public function test_en_ruta_sin_salidas_y_canceladas(): void
@@ -107,7 +111,7 @@ class RitmoRutasTest extends TestCase
         $this->salida($alDia, '2026-09-20', EstadoSalidaRuta::Finalizada, '2026-09-20');
         $this->salida($atrasada, '2026-09-01', EstadoSalidaRuta::Finalizada, '2026-09-01');
 
-        $nombres = (new RitmoRutas)->porRuta($this->hoy)->map(fn ($f) => $f['ruta']->nombre)->all();
+        $nombres = app(RitmoRutas::class)->porRuta($this->hoy)->map(fn ($f) => $f['ruta']->nombre)->all();
 
         $this->assertSame(['Z atrasada', 'A al día'], $nombres);
     }
@@ -124,7 +128,7 @@ class RitmoRutasTest extends TestCase
             ->assertSee('San Miguel')
             ->assertSee('Toca ir')
             ->assertSee('5 días tarde')
-            ->assertSee('cada 15 días')
+            ->assertSee('cada 15 días (cargado a mano)')
             // Sin vendedores no se puede salir: se dice qué falta.
             ->assertSee('Agregá un vendedor para salir')
             ->assertSee('1 sala sin ruta.');

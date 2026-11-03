@@ -448,8 +448,13 @@ class EntregasCcf
 
     // ================================================================ apoyo
 
-    /** @return Builder<Dte> */
-    private function baseCcf(): Builder
+    /**
+     * Los CCF que cuentan: aceptados de verdad por Hacienda, sin archivar, del ambiente
+     * operativo. También es el filtro del ritmo de compra ({@see FuentePedidosCcf}).
+     *
+     * @return Builder<Dte>
+     */
+    public function baseCcf(): Builder
     {
         return Dte::query()
             ->where('tipo_dte', '03')

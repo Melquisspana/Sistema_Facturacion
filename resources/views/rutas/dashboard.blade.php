@@ -25,7 +25,7 @@
                     $R::PRONTO => ['Ya casi', 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300', 'ring-amber-300 dark:ring-amber-500/40', 'bg-amber-500'],
                     $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300', '', 'bg-green-500'],
                     $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300', 'ring-sky-300 dark:ring-sky-500/40', 'bg-sky-500'],
-                    $R::SIN_OBJETIVO => ['Sin frecuencia', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300', '', 'bg-gray-400'],
+                    $R::SIN_RITMO => ['Sin ritmo', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300', '', 'bg-gray-400'],
                     $R::SIN_SALIDAS => ['Sin salidas', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300', '', 'bg-gray-400'],
                 ];
             @endphp
@@ -97,7 +97,7 @@
                             </p>
                             <p class="text-sm text-gray-500 dark:text-paper-300">
                                 Última: {{ $fila['ultima']?->fecha_fin_real?->translatedFormat('d M') ?? $fila['ultima']?->fecha_inicio?->translatedFormat('d M') ?? '—' }}
-                                @if ($ruta->frecuencia_objetivo_dias) · cada {{ $ruta->frecuencia_objetivo_dias }} días @endif
+                                @if ($fila['ritmo']) · suele ir cada {{ $fila['ritmo'] }} días{{ match ($fila['origenRitmo']) { $R::MANUAL => ' (cargado a mano)', \App\Services\Rutas\Ritmo::APROXIMADO => ' (aprox.)', default => '' } }} @endif
                             </p>
 
                             @if ($fila['avance'] !== null && ! $fila['enCurso'])
