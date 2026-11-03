@@ -81,6 +81,8 @@ class PlantaInventarioMigracionesRollbackTest extends TestCase
 
     public function test_el_rollback_se_lleva_los_triggers_del_check(): void
     {
+        $this->soloEnSqlite('los triggers del CHECK existen solo en SQLite');
+
         foreach (array_reverse($this->migraciones()) as $migracion) {
             $migracion->down();
         }

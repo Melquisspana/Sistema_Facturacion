@@ -23,6 +23,8 @@ class PlantaMigracionesRollbackTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const MOTIVO_SOLO_SQLITE = 'en MySQL las claves foráneas de los pasos posteriores impiden deshacer solo el paso 2';
+
     /** Las seis migraciones del paso 2, en orden de dependencias. */
     private const MIGRACIONES = [
         '2026_07_28_100000_create_planta_ubicaciones_table' => 'planta_ubicaciones',
@@ -51,6 +53,8 @@ class PlantaMigracionesRollbackTest extends TestCase
 
     public function test_el_rollback_en_orden_inverso_elimina_las_seis_tablas(): void
     {
+        $this->soloEnSqlite(self::MOTIVO_SOLO_SQLITE);
+
         foreach (self::MIGRACIONES as $tabla) {
             $this->assertTrue(Schema::hasTable($tabla));
         }
@@ -66,6 +70,8 @@ class PlantaMigracionesRollbackTest extends TestCase
 
     public function test_volver_a_migrar_despues_del_rollback_funciona(): void
     {
+        $this->soloEnSqlite(self::MOTIVO_SOLO_SQLITE);
+
         foreach (array_reverse($this->migraciones()) as $migracion) {
             $migracion->down();
         }
@@ -86,6 +92,8 @@ class PlantaMigracionesRollbackTest extends TestCase
 
     public function test_el_rollback_no_toca_tablas_ajenas_a_planta(): void
     {
+        $this->soloEnSqlite(self::MOTIVO_SOLO_SQLITE);
+
         foreach (array_reverse($this->migraciones()) as $migracion) {
             $migracion->down();
         }

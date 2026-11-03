@@ -130,6 +130,8 @@ class PlantaInventarioEsquemaTest extends TestCase
     {
         // Deja constancia de CÓMO está implementada aquí, para que nadie lea la
         // prueba anterior como «hay un CHECK nativo en SQLite»: no lo hay.
+        $this->soloEnSqlite('en MySQL la restricción es un CHECK nativo, sin triggers');
+
         $this->assertSame('sqlite', DB::connection()->getDriverName());
 
         $triggers = DB::table('sqlite_master')

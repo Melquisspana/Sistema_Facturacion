@@ -121,6 +121,7 @@ class EnsayoDespliegueTest extends TestCase
     {
         Schema::drop('verificaciones_configuracion');
         Schema::drop('ajustes_sistema');
+        $this->realinearTransaccionTrasDdl();
         app(RepositorioAjustes::class)->invalidar();
     }
 

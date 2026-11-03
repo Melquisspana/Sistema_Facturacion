@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Ppq\PpqBusquedaService;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -86,7 +87,7 @@ class PpqBusquedaCorrelativoTest extends TestCase
      */
     public function test_encuentra_por_codigo_de_generacion_en_la_avanzada(): void
     {
-        $dte = $this->dte('DTE-03-M001P001-0000000000000986', [
+        $dte = $this->dte('DTE-03-M001P001-000000000000986', [
             'codigo_generacion' => 'A1B2C3D4-1111-2222-3333-444455556666',
         ]);
 
@@ -103,7 +104,7 @@ class PpqBusquedaCorrelativoTest extends TestCase
      */
     public function test_el_sello_ya_no_es_un_criterio_de_busqueda(): void
     {
-        $this->dte('DTE-03-M001P001-0000000000000986', ['sello_recepcion' => 'SELLO2026XYZ99']);
+        $this->dte('DTE-03-M001P001-000000000000986', ['sello_recepcion' => 'SELLO2026XYZ99']);
 
         $this->assertSame([], $this->idsDe(['q' => 'SELLO2026XYZ99']));
     }
@@ -112,7 +113,7 @@ class PpqBusquedaCorrelativoTest extends TestCase
 
     public function test_encuentra_por_los_ultimos_cuatro_digitos(): void
     {
-        $dte = $this->dte('DTE-03-M001P001-0000000000000986');
+        $dte = $this->dte('DTE-03-M001P001-000000000000986');
 
         $this->assertSame([$dte->id], $this->idsDe(['q' => '0986']));
     }
@@ -122,15 +123,24 @@ class PpqBusquedaCorrelativoTest extends TestCase
         // El ancho de la secuencia no es uniforme en los documentos históricos;
         // dar por sentado uno de los dos fue parte del defecto.
         $quince = $this->dte('DTE-03-M001P001-000000000000986');
-        $dieciseis = $this->dte('DTE-03-M001P001-0000000000000987');
 
         $this->assertSame([$quince->id], $this->idsDe(['q' => '0986']));
+
+        // `numero_control` es VARCHAR(31): un MySQL estricto rechaza los 32
+        // caracteres de una secuencia de 16. Solo SQLite, que no aplica el largo,
+        // deja ensayar ese ancho.
+        if (DB::connection()->getDriverName() !== 'sqlite') {
+            return;
+        }
+
+        $dieciseis = $this->dte('DTE-03-M001P001-0000000000000987');
+
         $this->assertSame([$dieciseis->id], $this->idsDe(['q' => '0987']));
     }
 
     public function test_el_correlativo_se_encuentra_con_o_sin_ceros_a_la_izquierda(): void
     {
-        $dte = $this->dte('DTE-03-M001P001-0000000000000986');
+        $dte = $this->dte('DTE-03-M001P001-000000000000986');
 
         $this->assertSame([$dte->id], $this->idsDe(['q' => '986']));
         $this->assertSame([$dte->id], $this->idsDe(['q' => '0986']));
@@ -180,16 +190,16 @@ class PpqBusquedaCorrelativoTest extends TestCase
 
     public function test_por_defecto_el_servicio_no_mezcla_tipos_cuando_se_pide_ccf(): void
     {
-        $ccf = $this->dte('DTE-03-M001P001-0000000000000340');
-        $this->dte('DTE-05-M001P001-0000000000000340', ['tipo_dte' => '05']);
+        $ccf = $this->dte('DTE-03-M001P001-000000000000340');
+        $this->dte('DTE-05-M001P001-000000000000340', ['tipo_dte' => '05']);
 
         $this->assertSame([$ccf->id], $this->idsDe(['q' => '0340', 'tipo' => '03']));
     }
 
     public function test_la_nc_aparece_solo_con_el_filtro_explicito(): void
     {
-        $this->dte('DTE-03-M001P001-0000000000000340');
-        $nc = $this->dte('DTE-05-M001P001-0000000000000340', ['tipo_dte' => '05']);
+        $this->dte('DTE-03-M001P001-000000000000340');
+        $nc = $this->dte('DTE-05-M001P001-000000000000340', ['tipo_dte' => '05']);
 
         $this->assertSame([$nc->id], $this->idsDe(['q' => '0340', 'tipo' => '05']));
     }
@@ -198,8 +208,8 @@ class PpqBusquedaCorrelativoTest extends TestCase
     {
         // El valor por defecto lo pone el controlador, no el servicio: se
         // comprueba por la ruta para que la regla completa quede cubierta.
-        $this->dte('DTE-03-M001P001-0000000000000340');
-        $this->dte('DTE-05-M001P001-0000000000000340', ['tipo_dte' => '05']);
+        $this->dte('DTE-03-M001P001-000000000000340');
+        $this->dte('DTE-05-M001P001-000000000000340', ['tipo_dte' => '05']);
 
         $usuario = User::factory()->create();
         Role::findOrCreate('facturacion', 'web');
@@ -207,15 +217,15 @@ class PpqBusquedaCorrelativoTest extends TestCase
 
         $this->actingAs($usuario)->get(route('ppq.index', ['q' => '0340']))
             ->assertOk()
-            ->assertSee('DTE-03-M001P001-0000000000000340', false)
-            ->assertDontSee('DTE-05-M001P001-0000000000000340', false);
+            ->assertSee('DTE-03-M001P001-000000000000340', false)
+            ->assertDontSee('DTE-05-M001P001-000000000000340', false);
     }
 
     // --- 8 y 9. Archivado ----------------------------------------------------
 
     public function test_el_dte_aparece_antes_de_archivarse_y_desaparece_despues(): void
     {
-        $dte = $this->dte('DTE-03-M001P001-0000000000000986', ['estado' => 'rechazado']);
+        $dte = $this->dte('DTE-03-M001P001-000000000000986', ['estado' => 'rechazado']);
 
         $this->assertSame([$dte->id], $this->idsDe(['q' => '0986']), 'Antes de archivar debe encontrarse.');
 
@@ -239,7 +249,7 @@ class PpqBusquedaCorrelativoTest extends TestCase
 
     public function test_un_termino_sin_coincidencias_no_devuelve_nada(): void
     {
-        $this->dte('DTE-03-M001P001-0000000000000986');
+        $this->dte('DTE-03-M001P001-000000000000986');
 
         $this->assertSame([], $this->idsDe(['q' => '4321']));
         $this->assertSame([], $this->idsDe(['q' => 'NO-EXISTE-XYZ']));
@@ -249,8 +259,8 @@ class PpqBusquedaCorrelativoTest extends TestCase
     {
         // `0003401` CONTIENE 0340 pero su correlativo es otro: con subcadena
         // aparecería, y ese arrastre es justo lo que la búsqueda exacta corrige.
-        $exacto = $this->dte('DTE-03-M001P001-0000000000000340');
-        $this->dte('DTE-03-M001P001-0000000000003401');
+        $exacto = $this->dte('DTE-03-M001P001-000000000000340');
+        $this->dte('DTE-03-M001P001-000000000003401');
 
         $this->assertSame([$exacto->id], $this->idsDe(['q' => '0340']));
     }
@@ -258,8 +268,8 @@ class PpqBusquedaCorrelativoTest extends TestCase
     public function test_el_correlativo_no_casa_con_un_numero_mayor_que_lo_contiene(): void
     {
         // `100986` termina en `0986`, pero no es el correlativo 986.
-        $exacto = $this->dte('DTE-03-M001P001-0000000000000986');
-        $this->dte('DTE-03-M001P001-0000000000100986');
+        $exacto = $this->dte('DTE-03-M001P001-000000000000986');
+        $this->dte('DTE-03-M001P001-000000000100986');
 
         $this->assertSame([$exacto->id], $this->idsDe(['q' => '0986']));
     }
@@ -271,8 +281,8 @@ class PpqBusquedaCorrelativoTest extends TestCase
      */
     public function test_la_orden_de_compra_se_busca_por_su_propio_campo(): void
     {
-        $dte = $this->dte('DTE-03-M001P001-0000000000000986', ['numero_orden_compra' => '260600232009999']);
-        $hermano = $this->dte('DTE-03-M001P001-0000000000000987', ['numero_orden_compra' => '260600232009999']);
+        $dte = $this->dte('DTE-03-M001P001-000000000000986', ['numero_orden_compra' => '260600232009999']);
+        $hermano = $this->dte('DTE-03-M001P001-000000000000987', ['numero_orden_compra' => '260600232009999']);
 
         // Por su campo: aparecen los dos, que es lo que se pidió.
         $this->assertSame(

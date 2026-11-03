@@ -236,17 +236,17 @@ class PpqModuloTest extends TestCase
 
     public function test_busqueda_por_ultimos_4_encuentra_el_ccf(): void
     {
-        $this->crearCcf('DTE-03-M001P001-0000000000000986');
+        $this->crearCcf('DTE-03-M001P001-000000000000986');
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('ppq.index', ['q' => '0986']))
             ->assertOk()
-            ->assertSee('0000000000000986', false);
+            ->assertSee('000000000000986', false);
     }
 
     public function test_busqueda_con_lote_activo_apunta_directo_a_ese_lote(): void
     {
-        $this->crearCcf('DTE-03-M001P001-0000000000000986');
+        $this->crearCcf('DTE-03-M001P001-000000000000986');
         $lote = PpqLote::create(['referencia' => 'PPQ activo', 'fecha' => now(), 'estado' => 'borrador']);
 
         $this->actingAs($this->usuario('facturacion'))
@@ -258,7 +258,7 @@ class PpqModuloTest extends TestCase
 
     public function test_lote_no_editable_no_queda_como_activo(): void
     {
-        $this->crearCcf('DTE-03-M001P001-0000000000000986');
+        $this->crearCcf('DTE-03-M001P001-000000000000986');
         $lote = PpqLote::create(['referencia' => 'Cerrado', 'fecha' => now(), 'estado' => 'pagado']);
 
         $this->actingAs($this->usuario('facturacion'))
@@ -269,10 +269,10 @@ class PpqModuloTest extends TestCase
 
     public function test_busqueda_por_defecto_solo_ccf_y_filtra_nc(): void
     {
-        $this->crearCcf('DTE-03-M001P001-0000000000000340');
+        $this->crearCcf('DTE-03-M001P001-000000000000340');
         Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id, 'tipo_dte' => '05', 'estado' => 'aceptado',
-            'cliente_id' => $this->calleja()->id, 'numero_control' => 'DTE-05-M001P001-0000000000000340',
+            'cliente_id' => $this->calleja()->id, 'numero_control' => 'DTE-05-M001P001-000000000000340',
             'numero_orden_compra' => '260600232002345', 'fecha_emision' => now(),
             'hora_emision' => now()->format('H:i:s'), 'total_pagar' => 20.0,
         ]);
@@ -281,14 +281,14 @@ class PpqModuloTest extends TestCase
         // Por defecto = CCF: aparece el CCF, NO la NC (aunque compartan los 4 dígitos).
         $this->actingAs($user)->get(route('ppq.index', ['q' => '0340']))
             ->assertOk()
-            ->assertSee('DTE-03-M001P001-0000000000000340', false)
-            ->assertDontSee('DTE-05-M001P001-0000000000000340', false);
+            ->assertSee('DTE-03-M001P001-000000000000340', false)
+            ->assertDontSee('DTE-05-M001P001-000000000000340', false);
 
         // Modo NC: aparece la NC, NO el CCF.
         $this->actingAs($user)->get(route('ppq.index', ['q' => '0340', 'tipo' => '05']))
             ->assertOk()
-            ->assertSee('DTE-05-M001P001-0000000000000340', false)
-            ->assertDontSee('DTE-03-M001P001-0000000000000340', false);
+            ->assertSee('DTE-05-M001P001-000000000000340', false)
+            ->assertDontSee('DTE-03-M001P001-000000000000340', false);
     }
 
     public function test_items_ordenados_ccf_primero_luego_nc_por_correlativo(): void
@@ -317,7 +317,7 @@ class PpqModuloTest extends TestCase
     public function test_agrega_ccf_al_lote_con_snapshots_y_bloquea_duplicado(): void
     {
         $admin = $this->usuario('administrador');
-        $ccf = $this->crearCcf('DTE-03-M001P001-0000000000000986');
+        $ccf = $this->crearCcf('DTE-03-M001P001-000000000000986');
         $lote = PpqLote::create(['referencia' => 'L1', 'fecha' => now(), 'estado' => 'borrador']);
 
         $this->actingAs($admin)
@@ -347,7 +347,7 @@ class PpqModuloTest extends TestCase
     public function test_genera_excel_calleja_con_items(): void
     {
         $admin = $this->usuario('administrador');
-        $ccf = $this->crearCcf('DTE-03-M001P001-0000000000000986');
+        $ccf = $this->crearCcf('DTE-03-M001P001-000000000000986');
         $lote = PpqLote::create(['referencia' => 'Excel', 'fecha' => now(), 'estado' => 'borrador']);
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), ['dte_id' => $ccf->id]);
 
@@ -849,7 +849,7 @@ class PpqModuloTest extends TestCase
     public function test_no_admite_cambios_si_el_lote_no_es_editable(): void
     {
         $admin = $this->usuario('administrador');
-        $ccf = $this->crearCcf('DTE-03-M001P001-0000000000000987');
+        $ccf = $this->crearCcf('DTE-03-M001P001-000000000000987');
         $lote = PpqLote::create(['referencia' => 'L2', 'fecha' => now(), 'estado' => 'pagado']);
 
         $this->actingAs($admin)
@@ -867,7 +867,7 @@ class PpqModuloTest extends TestCase
         $ccf = Dte::create([
             'establecimiento_id' => Establecimiento::firstOrFail()->id, 'tipo_dte' => '03', 'estado' => 'aceptado',
             'cliente_id' => $this->calleja()->id, 'cliente_sucursal_id' => $sucursal->id,
-            'numero_control' => 'DTE-03-M001P001-0000000000000986', 'numero_orden_compra' => '260600232002345',
+            'numero_control' => 'DTE-03-M001P001-000000000000986', 'numero_orden_compra' => '260600232002345',
             'fecha_emision' => now(), 'hora_emision' => now()->format('H:i:s'), 'total_pagar' => 113.58,
         ]);
 
@@ -876,7 +876,7 @@ class PpqModuloTest extends TestCase
         // Se agrega desde el flujo Gmail SIN sala_nombre: el controller debe resolverlo por la
         // relación del DTE local (match por número de control) y snapshotearlo en el item.
         $this->actingAs($admin)->post(route('ppq.lotes.items.store', $lote), [
-            'origen' => 'gmail', 'numero_control' => 'DTE-03-M001P001-0000000000000986',
+            'origen' => 'gmail', 'numero_control' => 'DTE-03-M001P001-000000000000986',
             'codigo_generacion' => $ccf->codigo_generacion, 'tipo_dte' => '03', 'monto_dte' => 113.58,
         ])->assertRedirect();
 

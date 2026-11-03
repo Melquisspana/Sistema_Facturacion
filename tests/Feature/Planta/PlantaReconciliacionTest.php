@@ -452,9 +452,17 @@ class PlantaReconciliacionTest extends TestCase
         $this->aplicar($bucket, '10.0000');
         $this->corromperExistencia($bucket, '99.0000');
 
-        $this->artisan('planta:reconciliar-existencias --apply')
-            ->expectsOutputToContain('testing')
-            ->expectsOutputToContain(':memory:')
+        $comando = $this->artisan('planta:reconciliar-existencias --apply')
+            ->expectsOutputToContain('testing');
+
+        // En la MySQL de la CI la base también se llama `testing`, y dos expectativas
+        // con el mismo texto no se distinguen: la primera se queda con las dos líneas.
+        $base = DB::connection()->getDatabaseName();
+        if ($base !== 'testing') {
+            $comando->expectsOutputToContain($base);
+        }
+
+        $comando
             ->expectsOutputToContain('Diferencias detectadas')
             ->expectsOutputToContain('BLOQUEADAS')
             ->assertExitCode(0);

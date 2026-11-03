@@ -505,6 +505,32 @@ class VinculadorAlbaranes
     }
 
     /**
+     * Mismos candidatos aunque las claves vengan en otro orden.
+     *
+     * Una columna JSON de MySQL guarda las claves reordenadas (por largo y luego
+     * alfabéticamente), así que lo leído de `vinculacion_candidatos` nunca es `===` al
+     * arreglo recién calculado aunque diga exactamente lo mismo. SQLite guarda el texto
+     * tal cual y por eso no se notaba en la suite.
+     */
+    private function mismosCandidatos(?array $guardados, ?array $nuevos): bool
+    {
+        $normalizar = function (mixed $valor) use (&$normalizar): mixed {
+            if (! is_array($valor)) {
+                return $valor;
+            }
+
+            $valor = array_map($normalizar, $valor);
+            if (! array_is_list($valor)) {
+                ksort($valor);
+            }
+
+            return $valor;
+        };
+
+        return $normalizar($guardados) === $normalizar($nuevos);
+    }
+
+    /**
      * Aplica el veredicto al documento y deja constancia. Devuelve el estado resultante.
      *
      * Escribir el motivo y los candidatos SIEMPRE —también cuando el vínculo sale limpio—
@@ -558,7 +584,7 @@ class VinculadorAlbaranes
                 && $documento->vinculacion_estado === $veredicto['estado']
                 && $documento->ppq_albaran_id === $veredicto['albaran_id']
                 && $documento->vinculacion_motivo === $motivoGuardado
-                && $documento->vinculacion_candidatos === ($veredicto['candidatos'] ?: null)) {
+                && $this->mismosCandidatos($documento->vinculacion_candidatos, $veredicto['candidatos'] ?: null)) {
                 return $veredicto['estado'];
             }
 

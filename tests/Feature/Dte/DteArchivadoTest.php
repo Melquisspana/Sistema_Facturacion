@@ -4,6 +4,7 @@ namespace Tests\Feature\Dte;
 
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
+use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
 use App\Models\Correlativo;
 use App\Models\Dte;
@@ -58,7 +59,7 @@ class DteArchivadoTest extends TestCase
         static $n = 0;
         $n++; // numero_control único por ambiente (índice único en `dtes`)
 
-        ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte('M001', 'P00'.$n);
+        ['estab' => $estab, 'pv' => $pv] = $this->crearEmisorDte('M001', 'P'.str_pad((string) $n, 3, '0', STR_PAD_LEFT));
         Correlativo::create(['tipo_dte' => '05', 'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id,
             'ambiente' => '00', 'ultimo_numero' => 7, 'activo' => true]);
 
@@ -87,7 +88,7 @@ class DteArchivadoTest extends TestCase
         DteLinea::create([
             'dte_id' => $dte->id, 'numero_linea' => 1, 'descripcion' => 'Producto revertido',
             'cantidad' => 1, 'precio_unitario' => 121.73, 'venta_gravada' => 121.73,
-            'tipo_impuesto' => \App\Enums\TipoImpuesto::Gravado->value,
+            'tipo_impuesto' => TipoImpuesto::Gravado->value,
         ]);
 
         $ruta = 'dte/json/dte-05-'.$dte->id.'.json';

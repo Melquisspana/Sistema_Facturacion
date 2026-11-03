@@ -222,6 +222,12 @@ class DteInvalidacionRealTest extends TestCase
         $resultado = $this->servicio()->transmitir($dte, $this->evento(), true, true);
         $fila = (array) DB::table('dtes')->where('id', $dte->id)->first();
         foreach ($aceptado as $campo => $valor) {
+            // La columna JSON de MySQL reescribe el texto (espacios, orden): se compara el contenido.
+            if ($campo === 'respuesta_mh_invalidacion') {
+                $this->assertEquals(json_decode($valor, true), json_decode($fila[$campo], true), $campo);
+
+                continue;
+            }
             $this->assertSame($valor, $fila[$campo], $campo);
         }
         $this->assertTrue($resultado['invalidado']);

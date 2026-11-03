@@ -175,13 +175,13 @@ class PlantaAjusteRegresionTest extends TestCase
     {
         $e = $this->escenarioConSaldo();
 
-        $recepcionAntes = DB::table('secuencias')->where('clave', 'planta_recepcion')->value('ultimo');
+        $recepcionAntes = DB::table('secuencias')->where('clave', 'planta_recepcion')->value('ultimo_numero');
 
         $this->ajusteConfirmado($e, TipoAjuste::Positivo, '10');
 
         $this->assertSame(
             $recepcionAntes,
-            DB::table('secuencias')->where('clave', 'planta_recepcion')->value('ultimo')
+            DB::table('secuencias')->where('clave', 'planta_recepcion')->value('ultimo_numero')
         );
     }
 

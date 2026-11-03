@@ -7,6 +7,7 @@ use App\Models\Planta\PlantaLote;
 use App\Models\Planta\PlantaProveedor;
 use App\Models\Planta\PlantaUbicacion;
 use App\Support\Planta\LoteQuery;
+use App\Support\Planta\SumaInventario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -79,7 +80,7 @@ class PlantaLotesConsultaTest extends TestCase
         $existencias = DB::table('planta_existencias')
             ->selectRaw(
                 'COUNT(*) as filas, '
-                .'COALESCE(SUM(CAST(ROUND(cantidad * 10000) AS INTEGER)), 0) as suma, '
+                .'COALESCE('.SumaInventario::expresion().', 0) as suma, '
                 .'COALESCE(MAX(id), 0) as max_id'
             )
             ->first();
@@ -88,7 +89,7 @@ class PlantaLotesConsultaTest extends TestCase
             'mayor' => $this->huellaMayor(),
             'existencias' => [
                 'filas' => (int) $existencias->filas,
-                'suma' => bcdiv((string) (int) $existencias->suma, '10000', 4),
+                'suma' => SumaInventario::desdeSuma($existencias->suma),
                 'max_id' => (int) $existencias->max_id,
             ],
         ];
