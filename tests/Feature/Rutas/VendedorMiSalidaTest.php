@@ -75,7 +75,7 @@ class VendedorMiSalidaTest extends TestCase
         $this->assertSame('Vendedor', RolSistema::Vendedor->label());
         $this->assertSame(['rutas.entregas.registrar'], RolSistema::Vendedor->permisos());
         foreach (RolSistema::cases() as $rol) {
-            $this->assertSame(in_array($rol, [RolSistema::Administrador, RolSistema::Vendedor], true), in_array(PermisoSistema::RutasEntregasRegistrar->value, $rol->permisos(), true));
+            $this->assertSame(in_array($rol, [RolSistema::Administrador, RolSistema::Vendedor, RolSistema::JefeVendedores], true), in_array(PermisoSistema::RutasEntregasRegistrar->value, $rol->permisos(), true));
         }
         $this->assertSame([AreaSistema::Rutas], AreaSistema::visiblesPara($this->usuario));
         $this->assertSame('rutas.mi-salida.index', AreaSistema::Rutas->rutaInicioPara($this->usuario));
