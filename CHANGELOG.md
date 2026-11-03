@@ -12,6 +12,25 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.03.4] - 2026-11-03
+
+Rutas con una tarjeta por CCF y quién lo entregó, Planilla en un solo paso con borrado de la última, y Rutas › Personal en la ficha (#213 al #216), sin migraciones.
+
+### Agregado
+
+- Plan del tablero de Rutas para el jefe de vendedores en `docs/PLAN_TABLERO_RUTAS.md`, sin código (#216).
+- Planilla: la última planilla se puede borrar con todo lo que creó, y los anticipos recuperan su saldo. No se borra una anterior ni una con pago, documento firmado o ajuste hecho a mano en Gastos (#214).
+
+### Cambiado
+
+- Rutas: cada CCF de la salida tiene su tarjeta con «¿Quién lo entregó?» y filtros «Faltan · Entregados · Todos». Ya no hay caja por sala ni «Todo entregado» (#213).
+- Planilla: se genera en un solo paso, con una confirmación que muestra cuánto recibe cada persona y lleva directo a la hoja para imprimir. Los borradores de antes se terminan o se borran (#214).
+- Rutas › Personal: quien entra a Personal edita el teléfono, las notas y las funciones de rutas en la ficha de Personal. Jefatura y Facturación conservan la pantalla de Rutas, sin «Nueva persona» (#215).
+
+### Corregido
+
+- Rutas: el CCF con albarán de Calleja cuenta como entregado en la lista de salidas, el detalle, Mi salida y el tablero, y solo pide quién lo entregó. Antes la lista mostraba «0 / 26» (#213).
+
 ## [2026.11.03.3] - 2026-11-03
 
 Personal, Usuarios, Asistencia y Rutas como una sola cosa, todo el sistema en castellano, PPQ con NC rechazadas y Compras solo con CCF y notas (#203 al #211), sin migraciones.
