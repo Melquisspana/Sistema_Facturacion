@@ -58,6 +58,7 @@ class RitmoRutas
      *     ritmo: ?int,
      *     origenRitmo: ?string,
      *     ritmoSalas: array<int, Ritmo>,
+     *     salas: Collection<int, ClienteSucursal>,
      * }>
      */
     public function porRuta(?CarbonImmutable $hoy = null): Collection
@@ -80,7 +81,8 @@ class RitmoRutas
         $salas = ClienteSucursal::query()
             ->where('activo', true)
             ->whereIn('ruta_id', $rutas->pluck('id'))
-            ->get(['id', 'ruta_id'])
+            ->orderBy('nombre')
+            ->get(['id', 'ruta_id', 'nombre', 'codigo'])
             ->groupBy('ruta_id');
         $ritmoSalas = $this->pedidos->porSala($salas->flatten()->pluck('id')->all(), $hoy);
 
@@ -92,7 +94,7 @@ class RitmoRutas
                 $salidas->get($ruta->id, collect()),
                 array_intersect_key($ritmoSalas, array_flip($salas->get($ruta->id, collect())->pluck('id')->all())),
                 $hoy,
-            ))
+            ) + ['salas' => $salas->get($ruta->id, collect())])
             ->sortBy([
                 fn ($a, $b) => $orden[$a['estado']] <=> $orden[$b['estado']],
                 fn ($a, $b) => ($b['dias'] ?? -1) <=> ($a['dias'] ?? -1),

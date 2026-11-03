@@ -8,6 +8,7 @@ use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\ResultadoEntrega;
+use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\Ruta;
@@ -61,9 +62,18 @@ class EntregasCcf
     /** @return Collection<int, Dte> */
     public function pendientesDeRuta(Ruta $ruta): Collection
     {
-        $salas = $ruta->sucursales()->where('activo', true)->pluck('id');
+        return $this->pendientesDeSalas($ruta->sucursales()->where('activo', true)->pluck('id')->all());
+    }
 
-        if ($salas->isEmpty()) {
+    /**
+     * Pendientes de estas salas, en una consulta para todas.
+     *
+     * @param  array<int, int>  $salas
+     * @return Collection<int, Dte>
+     */
+    private function pendientesDeSalas(array $salas): Collection
+    {
+        if ($salas === []) {
             return collect();
         }
 
@@ -88,17 +98,23 @@ class EntregasCcf
     }
 
     /**
-     * Cuántos CCF pendientes y por cuánto, por ruta activa. Para el tablero.
+     * Cuántos CCF pendientes y por cuánto, por ruta activa. Para el tablero. Las mismas
+     * consultas con 2 rutas que con 20: se buscan todos juntos y se reparten por ruta.
      *
      * @return array<int, array{cantidad: int, monto: float}>
      */
     public function pendientesPorRuta(): array
     {
+        $rutas = Ruta::activas()->pluck('id');
+        $rutaDeSala = ClienteSucursal::where('activo', true)->whereIn('ruta_id', $rutas)->pluck('ruta_id', 'id');
+        $porRuta = $this->pendientesDeSalas($rutaDeSala->keys()->all())
+            ->groupBy(fn (Dte $dte) => $rutaDeSala[$dte->cliente_sucursal_id]);
+
         $resumen = [];
 
-        foreach (Ruta::activas()->get() as $ruta) {
-            $pendientes = $this->pendientesDeRuta($ruta);
-            $resumen[$ruta->id] = [
+        foreach ($rutas as $id) {
+            $pendientes = $porRuta->get($id, collect());
+            $resumen[$id] = [
                 'cantidad' => $pendientes->count(),
                 'monto' => round((float) $pendientes->sum('total_pagar'), 2),
             ];

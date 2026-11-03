@@ -93,7 +93,8 @@ class PantallasSimplesRutasTest extends TestCase
 
         $this->actingAs($this->usuario())
             ->get(route('rutas.dashboard'))
-            ->assertSee('En camino: Puerto')
+            ->assertSee('Puerto · Carlos')
+            ->assertSee('En camino desde hoy')
             ->assertSee('Abrir hoja');
     }
 
