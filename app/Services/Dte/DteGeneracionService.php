@@ -41,13 +41,21 @@ class DteGeneracionService
     ) {}
 
     /**
+     * @param  list<string>  $avisosOcConfirmados  avisos de {@see ReglaOrdenCompra::avisos()} que
+     *                                             el usuario confirmó: quedan en la bitácora.
+     *
      * @throws GeneracionException
      */
-    public function generar(Dte $dte, ?User $usuario = null, ?string $motivoExcepcionPlazo = null): Dte
+    public function generar(Dte $dte, ?User $usuario = null, ?string $motivoExcepcionPlazo = null, array $avisosOcConfirmados = []): Dte
     {
         $this->validar($dte);
 
-        return DB::transaction(function () use ($dte, $usuario, $motivoExcepcionPlazo) {
+        return DB::transaction(function () use ($dte, $usuario, $motivoExcepcionPlazo, $avisosOcConfirmados) {
+            if ($avisosOcConfirmados !== []) {
+                activity()->performedOn($dte)->causedBy($usuario)
+                    ->withProperties(['orden_compra' => $dte->numero_orden_compra, 'avisos' => array_values($avisosOcConfirmados)])
+                    ->log('Generó el CCF confirmando los avisos de la orden de compra');
+            }
             if ($contingencia = app(ContingenciaService::class)->activa()) {
                 $contingencia = $contingencia->newQuery()->whereKey($contingencia->id)->lockForUpdate()->first();
                 if ($contingencia?->estado === 'activa') {

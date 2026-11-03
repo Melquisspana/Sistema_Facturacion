@@ -192,6 +192,8 @@ Route::middleware('auth')->group(function () {
         // Listado ESCONDIDO de documentos de prueba/simulación (ambiente 00). No aparece en el
         // listado principal de facturación; se accede solo desde el panel de Auditoría.
         Route::get('auditoria/documentos-prueba', [AuditoriaController::class, 'documentosPrueba'])->name('auditoria.documentos_prueba');
+        // CCF cuya orden de compra no tiene la forma del cliente (ReglaOrdenCompra). Solo lectura.
+        Route::get('auditoria/ordenes-compra', [AuditoriaController::class, 'ordenesCompra'])->name('auditoria.ordenes_compra');
     });
 
     /*
