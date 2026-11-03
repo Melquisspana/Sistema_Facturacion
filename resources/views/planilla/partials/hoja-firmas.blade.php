@@ -12,8 +12,7 @@
      Los totales NO se cuadran a la fuerza. Si «total recibido» no coincide con
      importe menos descuentos es porque alguien cobró a cuenta, y esconder esa
      diferencia sería esconder justo lo que hay que revisar. --}}
-{{-- Se recibe de quien incluye la parte. La vista previa de formatos no tiene
-     una planilla de verdad, y la parte no puede exigirle una. --}}
+{{-- Se recibe de quien incluye la parte; si no lo dice, lo dice la planilla. --}}
 @php($esBorrador = $esBorrador ?? (isset($planilla) && $planilla->borrador()))
 
 <div class="hoja-impresa">
