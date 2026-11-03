@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Cambiado
 
+- Personal: un solo nombre por persona. Corregirlo en Asistencia, o en Planilla para quien no marca, lo cambia también en Planilla y Rutas; las quincenas confirmadas conservan el nombre con que se pagaron. Abrir quincena viene con pago quincenal y los otros tipos quedan a un clic.
 - Personal: se quita la pantalla «Formatos», una muestra con datos inventados. La hoja de firmas y el recibo reales siguen saliendo desde cada quincena.
 
 ### Corregido

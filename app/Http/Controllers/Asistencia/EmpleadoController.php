@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Asistencia;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Asistencia\EmpleadoRequest;
 use App\Models\Asistencia\AsistenciaEmpleado;
+use App\Services\Planilla\NombreUnico;
 use App\Support\Asistencia\ConsultaAsistencia;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -62,9 +64,13 @@ class EmpleadoController extends Controller
         return view('asistencia.empleados.edit', ['empleado' => $empleado]);
     }
 
-    public function update(EmpleadoRequest $request, AsistenciaEmpleado $empleado): RedirectResponse
+    public function update(EmpleadoRequest $request, AsistenciaEmpleado $empleado, NombreUnico $nombres): RedirectResponse
     {
-        $empleado->update($request->validated());
+        DB::transaction(function () use ($request, $empleado, $nombres) {
+            $empleado->update($request->validated());
+            // Un solo nombre: lo corregido acá llega a Planilla y Rutas.
+            $nombres->desdeAsistencia($empleado);
+        });
 
         return redirect()
             ->route('personal.empleados.show', 'a'.$empleado->id)

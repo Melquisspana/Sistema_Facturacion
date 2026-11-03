@@ -18,13 +18,17 @@
             @endif
 
             {{-- Elegir el tipo recarga la pantalla para ofrecer los períodos que
-                 corresponden: una semana y una quincena no son la misma lista. --}}
-            <nav class="flex flex-wrap gap-1 rounded-md border border-gray-200 bg-white p-1" aria-label="Tipo de período">
-                @foreach (Planilla::TIPOS_PERIODO as $clave => $texto)
-                    <a href="{{ route('planilla.create', ['tipo' => $clave]) }}"
-                       @class(['min-h-11 rounded px-3 py-2 text-sm font-medium', 'bg-indigo-50 text-indigo-700' => $tipo === $clave, 'text-gray-600 hover:bg-gray-50' => $tipo !== $clave])>{{ $texto }}</a>
-                @endforeach
-            </nav>
+                 corresponden: una semana y una quincena no son la misma lista. Se paga por
+                 quincena, así que viene marcada y los otros tipos quedan cerrados. --}}
+            <details class="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm" @if ($tipo !== 'quincenal') open @endif>
+                <summary class="cursor-pointer text-gray-700">Pago {{ mb_strtolower(Planilla::TIPOS_PERIODO[$tipo]) }} · <span class="text-indigo-600">cambiar</span></summary>
+                <nav class="mt-2 flex flex-wrap gap-1" aria-label="Tipo de período">
+                    @foreach (Planilla::TIPOS_PERIODO as $clave => $texto)
+                        <a href="{{ route('planilla.create', ['tipo' => $clave]) }}"
+                           @class(['min-h-11 rounded px-3 py-2 text-sm font-medium', 'bg-indigo-50 text-indigo-700' => $tipo === $clave, 'text-gray-600 hover:bg-gray-50' => $tipo !== $clave])>{{ $texto }}</a>
+                    @endforeach
+                </nav>
+            </details>
 
             <form method="POST" action="{{ route('planilla.store') }}" class="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
                 @csrf
