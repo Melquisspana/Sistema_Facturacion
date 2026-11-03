@@ -126,6 +126,14 @@ class ContratoTrabajoTest extends TestCase
         $this->actingAs($this->actor)->get(route('planilla.empleados.contrato', $e))->assertOk()->assertSee('no lleva contrato');
     }
 
+    public function test_el_contrato_vuelve_a_la_ficha_de_la_persona(): void
+    {
+        $e = $this->empleado();
+
+        $this->actingAs($this->actor)->get(route('planilla.empleados.contrato', $e))->assertOk()
+            ->assertSee('href="'.route('personal.empleados.show', 'p'.$e->id).'"', false);
+    }
+
     public function test_sin_datos_dice_cuales_faltan(): void
     {
         $e = $this->empleado();

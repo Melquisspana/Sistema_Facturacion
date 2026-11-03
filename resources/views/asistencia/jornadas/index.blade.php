@@ -236,21 +236,15 @@
                 @endif
             </div>
 
-            <div class="rounded-xl bg-white p-5 text-sm text-gray-600 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:text-paper-300">
-                <h2 class="text-base font-semibold text-gray-800 dark:text-paper-100">Cómo leer este reporte</h2>
+            {{-- Cerrado: se abre solo si alguien lo necesita. --}}
+            <details class="rounded-xl bg-white p-5 text-sm text-gray-600 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:text-paper-300">
+                <summary class="cursor-pointer font-medium text-gray-800 dark:text-paper-100">¿Cómo se cuenta el tiempo?</summary>
                 <ul class="mt-2 space-y-1.5">
-                    <li><strong>Tiempo</strong> es la suma de los tramos <em>entrada → salida</em>, no la resta entre
-                        la primera entrada y la última salida. Quien entra a las 07:00, sale a las 12:00, vuelve a
-                        las 13:00 y se va a las 16:00 tiene <strong>8 h</strong>, no 9.</li>
-                    <li><strong>Abierta</strong> significa que quedó una entrada sin salida. El tiempo mostrado es un
-                        mínimo. Es lo que ocurre con un olvido &mdash; y también con un turno que cruza la medianoche,
-                        que el sistema todavía no sabe cerrar.</li>
-                    <li><strong>Irregular</strong> significa que la secuencia no alterna (una salida sin entrada, o dos
-                        entradas seguidas). Por el lector no puede pasar; solo llega de correcciones manuales.</li>
-                    <li>No hay tardanzas, horas extra ni ausencias: harían falta un horario oficial y un calendario
-                        laboral, y ninguno está definido en el sistema.</li>
+                    <li><strong>Tiempo:</strong> suma cada entrada con su salida, así que el almuerzo no cuenta.</li>
+                    <li><strong>Abierta:</strong> falta una salida; el tiempo es un mínimo.</li>
+                    <li><strong>Irregular:</strong> dos entradas o dos salidas seguidas; revisala.</li>
                 </ul>
-            </div>
+            </details>
         </div>
     </div>
 </x-app-layout>
