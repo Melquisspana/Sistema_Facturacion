@@ -1,6 +1,6 @@
 # Plan: el nuevo inicio de Rutas (tablero del jefe de vendedores)
 
-**Estado:** propuesta para que Melqui la revise. Todavía no hay código. Escrito el 03/11/2026 sobre `master` en `14a60bf`.
+**Estado:** propuesta revisada con las decisiones de Melqui del 03/11/2026 (sección 6). Todavía no hay código. Escrito el 03/11/2026 sobre `master` en `14a60bf`.
 
 **En una frase:** el inicio de Rutas pasa a ser un tablero para 1 o 2 jefes de vendedores que ven todas las rutas del país y les avisa **cuándo toca ir a cada sala y a cada ruta a sacar pedido**. El ritmo se calcula solo, con las facturas (CCF) que ya hay.
 
@@ -22,7 +22,7 @@ Una sola pantalla, de arriba hacia abajo, en este orden:
 2. **En camino.** Las salidas que andan en la calle ahora, con su avance (ya existe; se conserva).
 3. **Rutas.** Una tarjeta por ruta, las más urgentes primero: hace cuánto se fue, cada cuánto se suele ir y cuántas salas suyas están atrasadas.
 4. **Salas que tocan.** La lista de salas, las atrasadas primero, con el último pedido, la última entrega y el ritmo. Se puede buscar por nombre y filtrar por ruta.
-5. **Vendedores.** Una tarjeta por vendedor: teléfono, salida actual o la última, sus rutas y un enlace a su ficha de Personal.
+5. **Vendedores.** Una tarjeta por vendedor: teléfono, salida actual o la última, sus rutas y un enlace a su ficha.
 
 ### Maqueta en el celular
 
@@ -100,7 +100,7 @@ En la computadora, lo mismo en dos o tres columnas.
 - **Fechas:** «hace N días» en la lista y `d/m/Y` cuando se muestra la fecha.
 - **Teléfono:** se toca y llama (enlace `tel:`). Si no tiene teléfono cargado, dice «Sin teléfono» y lleva a su ficha.
 - **Sus rutas:** no hay rutas fijas por vendedor (el sistema lo decidió así a propósito). Se muestran las rutas a las que fue en los últimos 90 días, la más frecuente primero.
-- **Ver ficha:** lleva a su ficha de Personal si está enlazada y el jefe puede verla; si no, a su ficha de campo en Rutas, que tiene el teléfono y las salidas.
+- **Ver ficha:** al jefe lo lleva a la ficha de campo del vendedor en Rutas (teléfono, funciones y salidas). El jefe no tiene permiso de Planilla, así que nunca ve sueldos ni la ficha de Personal. A quien sí puede abrir la ficha de Personal (por ejemplo, el administrador), el enlace lo lleva ahí.
 - **Salir a esta ruta:** el botón que ya existe hoy. Solo lo ve quien puede armar salidas.
 - **Salas sin ruta:** el aviso de hoy se conserva al pie («N salas activas sin ruta»).
 - Los CCF por entregar quedan como una línea chica dentro de cada tarjeta de ruta, no como lo principal.
@@ -157,9 +157,17 @@ Si una sala pasa **más de 3 veces su ritmo** sin pedido, la tarjeta dice ademá
 
 Hoy cada ruta puede tener «días objetivo» cargados a mano (`frecuencia_objetivo_dias`). Con el plan:
 
-- Manda el **ritmo calculado**.
-- Los días objetivo quedan solo de **respaldo**, para una ruta nueva que todavía no tiene ritmo.
+- Manda el **ritmo calculado** (decidido por Melqui).
+- El campo **queda como respaldo**: se usa solo para una ruta que todavía no tiene ritmo (menos de 3 vueltas).
+- **Se deja de mostrar en el tablero.** La tarjeta de la ruta dice «Suele ir cada N días» con el ritmo calculado; si se está usando el respaldo, dice «cada N días (cargado a mano)».
+- En el formulario de la ruta se conserva, con el rótulo «Días aproximados, solo mientras la ruta no tenga ritmo (opcional)».
 - No se pide cargar nada a mano para empezar.
+
+### Cuando el CCF sale después de la visita
+
+A veces el vendedor lleva el producto en la ruta, saca la orden de compra en la sala y Melqui factura después. En esos casos el CCF sale **después** de la visita, no antes.
+
+**Aceptado (decidido por Melqui):** se sigue usando la fecha del CCF. Esa diferencia de unos días entra en el margen del 20 % (mínimo 2 días), y la mediana no se mueve por un pedido suelto que salió corrido. Se corrige del todo cuando existan los pedidos reales (etapa 3).
 
 ### La fuente del cálculo se puede cambiar
 
@@ -181,18 +189,28 @@ Hoy hay seis roles: Administrador, Jefatura, Facturación, Contabilidad, Vendedo
 |---|---|---|
 | `rutas.ver` | Sí | Entrar a Rutas y ver el tablero, las rutas, las salas y las salidas de todo el país. |
 | `rutas.personal.ver` | Sí | Ver a los vendedores y su ficha de campo (teléfono, funciones, salidas). |
+| `rutas.entregas.registrar` | Sí | Ir en una salida como cualquier vendedor y usar «Mi salida» desde el celular. |
 | `rutas.salidas.armar` | **No: nuevo, en la etapa 2** | Armar una salida: a qué ruta, qué día y quiénes van. Nada más. |
+
+### Cuando el jefe sale a ruta
+
+El jefe no siempre sale, pero a veces sí (decidido por Melqui). Por eso:
+
+- Tiene su **ficha de campo** en Rutas, creada sola al darle el rol, igual que hoy pasa con el rol Vendedor (`FichaVendedor`). Aparece en la sección Vendedores y se lo puede elegir al armar una salida.
+- En **sus** salidas hace lo mismo que cualquier vendedor desde «Mi salida»: registra entregas, anota sus gastos del día y cierra su día. En las salidas ajenas no hace nada de eso.
+- Al entrar al sistema va al **tablero**, no directo a «Mi salida» como el vendedor. Desde el tablero tiene un enlace «Mi salida» cuando va en una salida en curso.
 
 ### Qué no puede
 
-- Nada de Facturación, Cobros, PPQ, Exportaciones, Planta ni Planilla.
-- No cierra días, no liquida salidas, no anota ni borra gastos, no toca dinero.
+- Nada de Facturación, Cobros, PPQ, Exportaciones ni Planta.
+- **Nada de Planilla: no ve sueldos ni la ficha de Personal** (decidido por Melqui). Lo que necesita de cada vendedor lo ve en la sección Vendedores de Rutas.
+- Desde la oficina no cierra días, no liquida salidas, no anota ni borra gastos y no toca dinero de nadie (solo lo de sus propias salidas, como cualquier vendedor).
 - No cambia rutas, coberturas ni asignación de salas (eso sigue siendo `rutas.gestionar`).
 - No da de alta personas (eso sigue siendo `rutas.personal.gestionar`).
 
 **Por qué un permiso nuevo para armar salidas:** `rutas.gestionar`, el que hoy permite crear salidas, también abre cierres, liquidaciones, gastos y la asignación de salas. Un permiso aparte deja al jefe armar la salida sin darle el resto.
 
-El rol se crea con `php artisan db:seed --class=RolesSeeder`, que ya existe y se puede correr varias veces. No es una migración. Las pruebas comprueban que ve el tablero y que recibe «no autorizado» (403) en Facturación, Cobros, Planilla, cierres y gastos.
+El rol se crea con `php artisan db:seed --class=RolesSeeder`, que ya existe y se puede correr varias veces. No es una migración. Las pruebas comprueban que ve el tablero, que usa «Mi salida» solo en las salidas donde va y que recibe «no autorizado» (403) en Facturación, Cobros, Planilla, Personal, cierres y gastos de la oficina.
 
 ---
 
@@ -209,12 +227,13 @@ El rol se crea con `php artisan db:seed --class=RolesSeeder`, que ya existe y se
 | Quién va en cada salida | `salida_ruta_participantes` | Salida actual y «sus rutas» de cada vendedor. |
 | Entregas registradas y albaranes | `salida_ruta_entregas` y `ppq_albaranes` | Hace cuánto no se entrega a una sala. |
 | Teléfono y funciones del vendedor | `rutas_personal` y `rutas_personal_funciones` | Sección Vendedores. |
-| Enlace a la ficha de Personal | `planilla_empleados.personal_ruta_id` y `rutas_personal.user_id` | Botón «Ver ficha». |
-| Días objetivo de la ruta | `rutas.frecuencia_objetivo_dias` | Respaldo para rutas sin ritmo. |
+| Ficha de campo y enlace a Personal | `rutas_personal` (con `user_id`) y `planilla_empleados.personal_ruta_id` | Botón «Ver ficha»: la de campo para el jefe; la de Personal solo para quien puede abrirla. |
+| Días objetivo de la ruta | `rutas.frecuencia_objetivo_dias` | Solo respaldo para rutas sin ritmo; no se muestra en el tablero. |
 
 ### Límites de los datos de hoy
 
 - **Las entregas se registran desde el 28/09/2026.** Antes de esa fecha solo las salas con albarán tienen «última entrega»; las demás dicen «sin registro» hasta su próxima entrega.
+- **El CCF puede salir después de la visita** cuando la orden de compra se saca en la sala. Se acepta: entra en el margen (sección 2).
 - **Solo cuentan los CCF.** Una sala que solo recibe facturas de consumidor final queda «sin ritmo». Si existen, se agregan esas facturas a la fuente en un PR chico.
 - Una sala **sin ruta asignada** no entra en el ritmo de ninguna ruta; sigue apareciendo en el aviso «salas sin ruta».
 
@@ -240,10 +259,10 @@ Cada PR: rama propia, pruebas, revisión en claro, en oscuro y con ancho de celu
 
 | PR | Qué hace | Pruebas |
 |---|---|---|
-| 1. Ritmo por sala y por ruta | Servicio nuevo que calcula el ritmo con la fuente CCF (sección 2). `RitmoRutas` usa el ritmo calculado y deja los días objetivo de respaldo. Así también se actualiza solo el aviso de rutas del panel principal (`AvisoRutas`). Sin pantalla. | Mediana, CCF del mismo día como un solo pedido, confiable/aprox./sin ritmo, margen mínimo de 2 días, vueltas de ruta, CCF invalidados que no cuentan, «¿dejó de comprar?». |
-| 2. Rol Jefe de vendedores | Rol nuevo con `rutas.ver` y `rutas.personal.ver`. Aparece en el formulario de Usuarios. | Entra al tablero; 403 en Facturación, Cobros, Planilla, cierres y gastos; no ve el botón «Salir a esta ruta». |
+| 1. Ritmo por sala y por ruta | Servicio nuevo que calcula el ritmo con la fuente CCF (sección 2). `RitmoRutas` usa el ritmo calculado y deja los días objetivo solo de respaldo. Así también se actualiza solo el aviso de rutas del panel principal (`AvisoRutas`). Sin pantalla. | Mediana, CCF del mismo día como un solo pedido, confiable/aprox./sin ritmo, margen mínimo de 2 días, vueltas de ruta, CCF invalidados que no cuentan, «¿dejó de comprar?». |
+| 2. Rol Jefe de vendedores | Rol nuevo con `rutas.ver`, `rutas.personal.ver` y `rutas.entregas.registrar`. Aparece en el formulario de Usuarios. `FichaVendedor` le crea su ficha de campo igual que al Vendedor. Al entrar va al tablero. | Entra al tablero; usa «Mi salida» solo en sus salidas; 403 en Facturación, Cobros, Planilla, Personal, cierres y gastos de la oficina; no ve el botón «Salir a esta ruta» hasta la etapa 2. |
 | 3. Tablero nuevo: resumen, rutas y salas | Se rehace la vista del inicio con la maqueta de la sección 1: resumen, en camino, rutas, salas que tocan con búsqueda y filtro por ruta. Sigue la guía: un `h1`, botones de 44 px, tarjetas en el celular, fechas `d/m/Y`. | La pantalla abre con y sin datos; los filtros; el orden por urgencia; sin consultas por cada sala (todo en pocas consultas). |
-| 4. Sección Vendedores | Tarjeta por vendedor activo: teléfono, salida actual o última, sus rutas de los últimos 90 días y «Ver ficha». | El enlace va a Personal solo si el jefe puede abrirla; si no, a la ficha de campo. Vendedor sin teléfono ni salidas. |
+| 4. Sección Vendedores | Tarjeta por vendedor activo (el jefe incluido): teléfono, salida actual o última, sus rutas de los últimos 90 días y «Ver ficha». | El jefe va a la ficha de campo y nunca ve datos de Planilla; el administrador va a la de Personal. Vendedor sin teléfono ni salidas. |
 
 ### Etapa 2: armar la salida y que el vendedor vea su ruta
 
@@ -275,10 +294,10 @@ Antes de programarla, una sesión propia de diseño con Melqui, que parte de la 
 
 ---
 
-## 6. Riesgos y dudas para Melqui
+## 6. Decisiones de Melqui (03/11/2026)
 
-1. ¿El jefe de vendedores también sale a ruta? Si sí, su rol tiene que incluir «Mi salida» y registrar entregas.
-2. ¿El jefe arma salidas con un permiso propio (propuesto) o le damos todo `rutas.gestionar`, que incluye cierres, gastos y dinero?
-3. La ficha de Personal pide el permiso de Planilla (sin sueldos): ¿se lo damos al jefe o le alcanza con la ficha de campo de Rutas?
-4. El ritmo calculado reemplaza los «días objetivo» cargados a mano en cada ruta, que quedan solo de respaldo: ¿de acuerdo?
-5. Riesgo: en las salas con orden de compra, el CCF se emite cuando llega la OC; si llega tarde, el ritmo de esa sala sale unos días más largo hasta que existan los pedidos reales (etapa 3).
+1. **El jefe también sale a ruta**, no siempre pero sí. Va en una salida como cualquier vendedor y usa «Mi salida» (sección 3).
+2. **El jefe arma las salidas**, con su permiso propio `rutas.salidas.armar`, sin cierres ni dinero (etapa 2).
+3. **El jefe no ve sueldos ni nada de Planilla.** No se le da permiso de Planilla; lo que necesita de cada vendedor lo ve en la sección Vendedores de Rutas.
+4. **El ritmo calculado reemplaza los días objetivo** cargados a mano. El campo queda solo de respaldo para rutas sin ritmo y deja de mostrarse en el tablero (sección 2).
+5. **El CCF puede salir después de la visita**, cuando se lleva el producto y la orden se saca en la sala. Se acepta: se sigue usando la fecha del CCF y el margen del ritmo absorbe la diferencia (sección 2).
