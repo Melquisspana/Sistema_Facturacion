@@ -17,10 +17,10 @@
     .generales td { width: 50%; vertical-align: top; padding: 0 8px 0 0; }
     .generales th { text-align: left; padding: 0 0 3px; }
     .dependientes th, .dependientes td { border: 1px solid #555; padding: 2px 4px; text-align: left; }
-    .firmas { margin-top: 34px; }
+    .firmas { margin-top: 90px; }
     .firmas td { width: 50%; text-align: center; padding: 0 12px; }
     .linea { border-top: 1px solid #111; padding-top: 2px; }
-    .huella { margin-top: 18px; }
+    .huella { margin-top: 26px; }
 </style>
 </head>
 <body>
@@ -160,7 +160,7 @@
     <div class="huella">
         <p>Huellas digitales del trabajador</p>
         <p>Si no puede firmar</p>
-        <p style="margin-top: 22px">(f)____________________________________</p>
+        <p style="margin-top: 60px">(f)____________________________________</p>
         <p>A ruego del Trabajador</p>
     </div>
 </body>
