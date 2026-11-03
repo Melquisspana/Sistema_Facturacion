@@ -374,6 +374,49 @@ class NcPerfilDescuentoAlbaranTest extends TestCase
         $this->assertNull($nc->refresh()->albaran);
     }
 
+    /** Un albarán con fecha futura es un dato mal escrito: el portal no lo encuentra. */
+    public function test_albaran_con_fecha_futura_se_rechaza(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteConDescuento();
+        $this->perfilConAmbasModalidades($cliente);
+        $ccf = $this->ccfAceptado($emisor, $cliente, [[$this->producto(1.04), 20]]);
+        $nc = $this->crearNc($ccf, TipoNotaCredito::DevolucionProducto->value);
+
+        $this->actingAs($this->usuario())
+            ->post(route('facturacion.albaran.store', $nc), [
+                'numero' => 'AC04/0033/00/3209', 'fecha' => today()->addDay()->toDateString(), 'total' => 7.05,
+            ])->assertSessionHasErrors('fecha');
+        $this->assertNull($nc->refresh()->albaran);
+
+        $this->post(route('facturacion.albaran.store', $nc), [
+            'numero' => 'AC04/0033/00/3209', 'fecha' => today()->toDateString(), 'total' => 7.05,
+        ])->assertSessionHasNoErrors();
+        $this->assertNotNull($nc->refresh()->albaran);
+    }
+
+    /** La fecha futura guardada antes del freno también impide generar. */
+    public function test_albaran_con_fecha_futura_ya_guardada_impide_generar(): void
+    {
+        $emisor = $this->emisor();
+        $cliente = $this->clienteConDescuento();
+        $this->perfilConAmbasModalidades($cliente)->update(['exige_albaran_en_nc' => true]);
+        app(PerfilDocumentoResolver::class)->olvidar();
+
+        $ccf = $this->ccfAceptado($emisor, $cliente, [[$this->producto(1.04), 20]]);
+        $nc = $this->crearNc($ccf, TipoNotaCredito::DevolucionProducto->value);
+        $this->actingAs($this->usuario())
+            ->post(route('facturacion.acreditar', [$nc, $ccf->lineas()->firstOrFail()]), ['cantidad' => 6])
+            ->assertRedirect();
+        $this->post(route('facturacion.albaran.store', $nc), [
+            'numero' => 'AC04/0033/00/3209', 'fecha' => '2026-08-14', 'total' => 7.05,
+        ])->assertSessionHasNoErrors();
+        $nc->albaran->update(['fecha' => today()->addDays(9)]);
+
+        $this->post(route('facturacion.generar', $nc))->assertSessionHasErrors('generar');
+        $this->assertSame('borrador', $nc->refresh()->estado->value);
+    }
+
     /** El mismo albarán no puede acreditarse dos veces mientras la primera NC siga viva. */
     public function test_un_albaran_no_puede_originar_dos_notas_de_credito(): void
     {
