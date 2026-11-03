@@ -190,7 +190,17 @@ Hoy hay seis roles: Administrador, Jefatura, Facturación, Contabilidad, Vendedo
 | `rutas.ver` | Sí | Entrar a Rutas y ver el tablero, las rutas, las salas y las salidas de todo el país. |
 | `rutas.personal.ver` | Sí | Ver a los vendedores y su ficha de campo (teléfono, funciones, salidas). |
 | `rutas.entregas.registrar` | Sí | Ir en una salida como cualquier vendedor y usar «Mi salida» desde el celular. |
-| `rutas.salidas.armar` | **No: nuevo, en la etapa 2** | Armar una salida: a qué ruta, qué día y quiénes van. Nada más. |
+| `rutas.salidas.armar` | **No: nuevo, en la etapa 2** | Armar una salida: a qué ruta, qué día y quiénes van. |
+| `rutas.salidas.terminar` | **No: nuevo, en la etapa 2** | «Terminar día» y «Terminar ruta» de cualquier salida, aunque él no haya ido. |
+
+### El jefe termina la ruta, pero no recibe el dinero
+
+Decidido por Melqui: el jefe **puede terminar la ruta**, pero el dinero no pasa por él.
+
+- El dinero de los clientes lo cobran en la ruta los que van en la salida, y se le entrega a **la oficina**.
+- Al terminar el día o la ruta, el jefe elige **quién de la salida entrega el dinero**, como se hace hoy (`entrega_dinero_personal_id`). Si el jefe fue en esa salida y cobró, puede ser él quien entrega.
+- **Quien recibe es siempre la oficina.** En la hoja impresa la firma de «Recibe» queda para la oficina, con la palabra «Oficina» debajo. El sistema anota al jefe como quien **terminó** la ruta, nunca como quien recibió el dinero.
+- Los montos no cambian: salen de lo cobrado y de los gastos, igual que hoy.
 
 ### Cuando el jefe sale a ruta
 
@@ -204,11 +214,12 @@ El jefe no siempre sale, pero a veces sí (decidido por Melqui). Por eso:
 
 - Nada de Facturación, Cobros, PPQ, Exportaciones ni Planta.
 - **Nada de Planilla: no ve sueldos ni la ficha de Personal** (decidido por Melqui). Lo que necesita de cada vendedor lo ve en la sección Vendedores de Rutas.
-- Desde la oficina no cierra días, no liquida salidas, no anota ni borra gastos y no toca dinero de nadie (solo lo de sus propias salidas, como cualquier vendedor).
+- **No recibe dinero.** Termina días y rutas, pero el dinero lo recibe la oficina.
+- No reabre días ya terminados y no anota ni borra gastos de salidas donde no va (eso sigue siendo `rutas.gestionar`, de la oficina).
 - No cambia rutas, coberturas ni asignación de salas (eso sigue siendo `rutas.gestionar`).
 - No da de alta personas (eso sigue siendo `rutas.personal.gestionar`).
 
-**Por qué un permiso nuevo para armar salidas:** `rutas.gestionar`, el que hoy permite crear salidas, también abre cierres, liquidaciones, gastos y la asignación de salas. Un permiso aparte deja al jefe armar la salida sin darle el resto.
+**Por qué dos permisos nuevos:** `rutas.gestionar`, el que hoy permite crear y terminar salidas, también permite reabrir días, tocar los gastos de cualquier salida, asignar salas y configurar las rutas. Con dos permisos aparte el jefe arma y termina las salidas sin recibir el resto.
 
 El rol se crea con `php artisan db:seed --class=RolesSeeder`, que ya existe y se puede correr varias veces. No es una migración. Las pruebas comprueban que ve el tablero, que usa «Mi salida» solo en las salidas donde va y que recibe «no autorizado» (403) en Facturación, Cobros, Planilla, Personal, cierres y gastos de la oficina.
 
@@ -225,7 +236,7 @@ El rol se crea con `php artisan db:seed --class=RolesSeeder`, que ya existe y se
 | Qué ruta atiende cada sala | `cliente_sucursales.ruta_id` | Agrupar salas por ruta. |
 | Salidas, fechas y estado | `salidas_ruta` | Hace cuánto no se va a la ruta. Ya tiene el estado «planificada» para la etapa 2. |
 | Quién va en cada salida | `salida_ruta_participantes` | Salida actual y «sus rutas» de cada vendedor. |
-| Entregas registradas y albaranes | `salida_ruta_entregas` y `ppq_albaranes` | Hace cuánto no se entrega a una sala. |
+| Entregas registradas y albaranes | `salida_ruta_entregas` y `ppq_albaranes` | Hace cuánto no se entrega a una sala. El origen del registro (`origen_registro`, texto de 20) admite un valor nuevo `facturado_despues` sin migración. |
 | Teléfono y funciones del vendedor | `rutas_personal` y `rutas_personal_funciones` | Sección Vendedores. |
 | Ficha de campo y enlace a Personal | `rutas_personal` (con `user_id`) y `planilla_empleados.personal_ruta_id` | Botón «Ver ficha»: la de campo para el jefe; la de Personal solo para quien puede abrirla. |
 | Días objetivo de la ruta | `rutas.frecuencia_objetivo_dias` | Solo respaldo para rutas sin ritmo; no se muestra en el tablero. |
@@ -253,25 +264,62 @@ La etapa 4 (pedido estimado) se calcula en el momento y no necesita tabla.
 
 ## 5. Etapas, en PR chicos y ordenados
 
-Cada PR: rama propia, pruebas, revisión en claro, en oscuro y con ancho de celular, sin tocar `CHANGELOG.md`. Las etapas 1 y 2 no tienen migraciones.
+Cada PR: rama propia, pruebas, revisión en claro, en oscuro y con ancho de celular, sin tocar `CHANGELOG.md`. Las etapas 1 y 2 no tienen migraciones. Son 15 PR.
 
 ### Etapa 1: el tablero (ritmo, días, resumen y Vendedores)
 
 | PR | Qué hace | Pruebas |
 |---|---|---|
 | 1. Ritmo por sala y por ruta | Servicio nuevo que calcula el ritmo con la fuente CCF (sección 2). `RitmoRutas` usa el ritmo calculado y deja los días objetivo solo de respaldo. Así también se actualiza solo el aviso de rutas del panel principal (`AvisoRutas`). Sin pantalla. | Mediana, CCF del mismo día como un solo pedido, confiable/aprox./sin ritmo, margen mínimo de 2 días, vueltas de ruta, CCF invalidados que no cuentan, «¿dejó de comprar?». |
-| 2. Rol Jefe de vendedores | Rol nuevo con `rutas.ver`, `rutas.personal.ver` y `rutas.entregas.registrar`. Aparece en el formulario de Usuarios. `FichaVendedor` le crea su ficha de campo igual que al Vendedor. Al entrar va al tablero. | Entra al tablero; usa «Mi salida» solo en sus salidas; 403 en Facturación, Cobros, Planilla, Personal, cierres y gastos de la oficina; no ve el botón «Salir a esta ruta» hasta la etapa 2. |
+| 2. Rol Jefe de vendedores | Rol nuevo con `rutas.ver`, `rutas.personal.ver` y `rutas.entregas.registrar`. Aparece en el formulario de Usuarios. `FichaVendedor` le crea su ficha de campo igual que al Vendedor. Al entrar va al tablero. | Entra al tablero; usa «Mi salida» solo en sus salidas; 403 en Facturación, Cobros, Planilla, Personal, cierres y gastos de la oficina; no ve «Salir a esta ruta» ni «Terminar ruta» hasta la etapa 2. |
 | 3. Tablero nuevo: resumen, rutas y salas | Se rehace la vista del inicio con la maqueta de la sección 1: resumen, en camino, rutas, salas que tocan con búsqueda y filtro por ruta. Sigue la guía: un `h1`, botones de 44 px, tarjetas en el celular, fechas `d/m/Y`. | La pantalla abre con y sin datos; los filtros; el orden por urgencia; sin consultas por cada sala (todo en pocas consultas). |
 | 4. Sección Vendedores | Tarjeta por vendedor activo (el jefe incluido): teléfono, salida actual o última, sus rutas de los últimos 90 días y «Ver ficha». | El jefe va a la ficha de campo y nunca ve datos de Planilla; el administrador va a la de Personal. Vendedor sin teléfono ni salidas. |
 
-### Etapa 2: armar la salida y que el vendedor vea su ruta
+### Etapa 2: la salida (CCF facturado después, armarla, terminarla y que el vendedor la vea)
 
 | PR | Qué hace | Pruebas |
 |---|---|---|
-| 5. Armar salida con fecha | «Armar salida»: ruta, día (hoy o un día que viene) y quiénes van. Si es para hoy, sale en camino como ahora; si es para otro día, queda **planificada**. Permiso nuevo `rutas.salidas.armar` para el jefe; `rutas.gestionar` también puede. | Quién puede armar y quién no; no se arma con una persona inactiva; los CCF se cargan igual que hoy. |
-| 6. Mi salida: «Tu próxima salida» | En el celular del vendedor aparece la salida apenas se arma: ruta, día, compañeros y **las salas que tocan sacar pedido**, las atrasadas primero, junto con los CCF por entregar. Solo lectura hasta que empieza. El vendedor la empieza con «Empezar ruta». | El vendedor ve solo sus salidas; no registra nada en una planificada; la empieza solo si va en ella. |
+| 5. CCF facturado después de la entrega | Meter en una salida un CCF que se facturó después de entregar el producto (detalle abajo). No depende del tablero: **se puede adelantar**, porque ya hay una sala que va a mandar su orden de compra para facturar algo que se le entregó. | Ver abajo. |
+| 6. Armar salida con fecha | «Armar salida»: ruta, día (hoy o un día que viene) y quiénes van. Si es para hoy, sale en camino como ahora; si es para otro día, queda **planificada**. Permiso nuevo `rutas.salidas.armar` para el jefe; `rutas.gestionar` también puede. | Quién puede armar y quién no; no se arma con una persona inactiva; los CCF se cargan igual que hoy. |
+| 7. El jefe termina días y rutas | Permiso nuevo `rutas.salidas.terminar`: el jefe usa «Terminar día» y «Terminar ruta» de la oficina. Elige quién de la salida entrega el dinero; la hoja impresa dice «Recibe: Oficina». Reabrir un día sigue siendo solo de `rutas.gestionar`. | El jefe termina una salida donde no fue; no reabre días; no anota gastos ajenos; quien entrega tiene que ser de la salida; los montos son los mismos que si termina la oficina; la hoja nunca lo muestra como quien recibe. |
+| 8. Mi salida: «Tu próxima salida» | En el celular del vendedor (y del jefe, si va) aparece la salida apenas se arma: ruta, día, compañeros y **las salas que tocan sacar pedido**, las atrasadas primero, junto con los CCF por entregar. Solo lectura hasta que empieza. El vendedor la empieza con «Empezar ruta». | El vendedor ve solo sus salidas; no registra nada en una planificada; la empieza solo si va en ella. |
 
 No se mandan mensajes de WhatsApp ni avisos al teléfono: el vendedor la ve al abrir el sistema.
+
+#### PR 5 en detalle: el CCF que se factura después de entregar
+
+**El caso.** A veces el producto se lleva en la ruta y se entrega **sin CCF**. La orden de compra llega días después y recién entonces Melqui factura. Ese CCF tiene que quedar como entregado en la salida donde se entregó, con quién lo entregó.
+
+**Qué existe hoy.**
+
+- `EntregasCcf::agregar` mete en una salida un CCF por su número de control, de cualquier sala, pero **solo si la salida sigue abierta** (planificada o en curso). Rechaza el CCF que no está aceptado por Hacienda, el que ya consta entregado, el que va en otra salida abierta y el que ya tiene albarán de entrega.
+- `EntregasCcf::registrar` lo marca entregado **solo si la salida está en curso y el día de la entrega no está terminado**. Quien lo entregó tiene que ir en la salida. El cobro toma la forma habitual del cliente y entra en el cierre de ese día.
+- Una salida terminada o liquidada no acepta nada.
+
+**La propuesta.** En la hoja de la salida, un botón «Entregado antes de facturar» para la oficina (`rutas.gestionar`, que es quien factura). Pide tres datos: el número de control, **quién lo entregó** (de los que fueron) y **qué día** se entregó (entre la salida y el regreso).
+
+| Cómo está la salida | Qué pasa |
+|---|---|
+| En curso, con ese día abierto | El CCF entra a la salida y queda entregado ese día, por esa persona. |
+| En curso, con ese día ya terminado | Queda anotado «entregado en esta salida, el día D, por P». **No se reabre el día.** |
+| Terminada o liquidada | Queda anotado igual: «entregado en la salida X, el día D, por P». **La liquidación no se toca.** |
+
+**Qué pasa con el cobro.** Un CCF facturado después **nunca suma dinero a la salida**, en ninguno de los tres casos:
+
+- Se anota sin cobro, y el cobro sigue el camino normal de cualquier CCF de esa sala: crédito, quedan o la próxima visita.
+- Los totales del día y de la ruta, y sus hojas impresas, quedan **exactamente iguales**. Estos CCF salen aparte, en un bloque «Facturados después de entregar (sin dinero)».
+- Si alguna vez la sala pagó en el momento, sin factura, ese dinero ya se entregó a la oficina por fuera. Se escribe en la nota del registro y no se suma de nuevo.
+
+**Controles que se mantienen.**
+
+- Las mismas reglas de `agregar`: aceptado por Hacienda, no entregado ya, no en otra salida abierta, sin albarán de entrega.
+- Quien lo entregó tiene que haber ido en la salida, y el día tiene que estar dentro de las fechas de la salida.
+- Queda quién lo anotó y cuándo. Se puede deshacer, solo desde la oficina; como no movió dinero, deshacerlo tampoco lo mueve.
+- Sin migración: el registro lleva `origen_registro = facturado_despues`. La regla nueva vive en `EntregasCcf`, como el resto.
+
+**En el tablero.** La «última entrega» de la sala toma el día real de la entrega. El ritmo sigue usando la fecha del CCF (decisión 5).
+
+**Pruebas:** los tres casos de la tabla; los totales del cierre y de la liquidación son iguales antes y después; se rechaza a una persona que no fue, un día fuera de la salida y un CCF ya entregado o con albarán; sin `rutas.gestionar` da 403; deshacer no toca dinero.
 
 ### Etapa 3: sacar pedido y mandarlo a producción
 
@@ -279,25 +327,27 @@ Antes de programarla, una sesión propia de diseño con Melqui, que parte de la 
 
 | PR | Qué hace |
 |---|---|
-| 7. Tablas y permisos de pedidos | Las migraciones de la sección 4 y los permisos: el vendedor registra pedidos, producción los ve y los marca. |
-| 8. Sacar pedido en el celular | Desde «Mi salida», en cada sala que toca: productos y cantidades, número de OC si la sala la usa (con el aviso de forma incorrecta del issue #169) y foto de la hoja firmada. |
-| 9. Pantalla de producción | Producción ve los pedidos que llegan, marca qué manda y escribe por qué no manda lo demás. |
-| 10. Facturar desde el pedido | Facturación arma el CCF a partir del pedido; lo que no se factura queda marcado «regresa». |
-| 11. El ritmo pasa a los pedidos | La fuente del ritmo cambia a los pedidos reales, completando con CCF donde todavía haya pocos. El tablero no cambia. |
+| 9. Tablas y permisos de pedidos | Las migraciones de la sección 4 y los permisos: el vendedor registra pedidos, producción los ve y los marca. |
+| 10. Sacar pedido en el celular | Desde «Mi salida», en cada sala que toca: productos y cantidades, número de OC si la sala la usa (con el aviso de forma incorrecta del issue #169) y foto de la hoja firmada. |
+| 11. Pantalla de producción | Producción ve los pedidos que llegan, marca qué manda y escribe por qué no manda lo demás. |
+| 12. Facturar desde el pedido | Facturación arma el CCF a partir del pedido; lo que no se factura queda marcado «regresa». |
+| 13. El ritmo pasa a los pedidos | La fuente del ritmo cambia a los pedidos reales, completando con CCF donde todavía haya pocos. El tablero no cambia. |
 
 ### Etapa 4: pedido estimado
 
 | PR | Qué hace |
 |---|---|
-| 12. Cálculo del pedido estimado | Por sala: qué productos suele llevar y cuánto. Un producto entra si apareció en al menos la mitad de sus últimos 6 pedidos, y la cantidad es la mediana de lo que llevó esas veces. Usa la misma fuente cambiable: hoy los CCF (sus líneas), después los pedidos. Con pruebas. |
-| 13. Mostrarlo al sacar pedido | Al abrir el pedido de una sala, aparece el estimado ya cargado y el vendedor lo corrige según lo que cuenta en la sala. Nunca se manda solo. |
+| 14. Cálculo del pedido estimado | Por sala: qué productos suele llevar y cuánto. Un producto entra si apareció en al menos la mitad de sus últimos 6 pedidos, y la cantidad es la mediana de lo que llevó esas veces. Usa la misma fuente cambiable: hoy los CCF (sus líneas), después los pedidos. Con pruebas. |
+| 15. Mostrarlo al sacar pedido | Al abrir el pedido de una sala, aparece el estimado ya cargado y el vendedor lo corrige según lo que cuenta en la sala. Nunca se manda solo. |
 
 ---
 
 ## 6. Decisiones de Melqui (03/11/2026)
 
 1. **El jefe también sale a ruta**, no siempre pero sí. Va en una salida como cualquier vendedor y usa «Mi salida» (sección 3).
-2. **El jefe arma las salidas**, con su permiso propio `rutas.salidas.armar`, sin cierres ni dinero (etapa 2).
+2. **El jefe arma las salidas**, con su permiso propio `rutas.salidas.armar` (etapa 2).
 3. **El jefe no ve sueldos ni nada de Planilla.** No se le da permiso de Planilla; lo que necesita de cada vendedor lo ve en la sección Vendedores de Rutas.
 4. **El ritmo calculado reemplaza los días objetivo** cargados a mano. El campo queda solo de respaldo para rutas sin ritmo y deja de mostrarse en el tablero (sección 2).
 5. **El CCF puede salir después de la visita**, cuando se lleva el producto y la orden se saca en la sala. Se acepta: se sigue usando la fecha del CCF y el margen del ritmo absorbe la diferencia (sección 2).
+6. **El jefe puede terminar la ruta, pero no recibe el dinero.** El dinero lo cobran los de la salida y se le entrega a la oficina. Lleva el permiso propio `rutas.salidas.terminar` (sección 3 y PR 7).
+7. **El CCF facturado después de entregar entra a la salida donde se entregó**, con quién lo entregó. Si la salida ya se terminó, queda anotado sin tocar su liquidación ni su dinero (PR 5).
