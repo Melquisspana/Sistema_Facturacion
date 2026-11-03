@@ -18,9 +18,13 @@ use Illuminate\Support\Str;
  * el recibo de alguien. Las tasas se leen con {@see Dinero::centavos()}: «7.25» pasa a
  * 725 centésimas de punto.
  *
- * LO QUE NO HACE, y avisa en vez de callarlo: la deducción de US$1,600 del Tramo II,
- * el recálculo de junio y diciembre y la renta de pagos extraordinarios. Los tres
- * necesitan una regla que el decreto no da para la quincena o datos de todo el año.
+ * LO QUE NO HACE, y avisa en vez de callarlo: la deducción de US$1,600 del Tramo II y
+ * la renta de pagos extraordinarios, que necesitan una regla que el decreto no da para
+ * la quincena.
+ *
+ * EL RECÁLCULO DE JUNIO Y DICIEMBRE ya se calcula ({@see recalcularRenta()}), pero
+ * todavía no se aplica al generar: necesita lo gravado y retenido de los meses
+ * anteriores al sistema, y eso aún no tiene dónde guardarse. Mientras tanto se avisa.
  *
  * Solo calcula planillas regulares quincenales: la tabla es la quincenal y `Topes`
  * se reparten entre `pagos_por_mes`.
@@ -104,6 +108,87 @@ final class DescuentosLey
                 'renta' => $this->concepto('renta', $version['renta'], $renta),
             ],
             'avisos' => $avisos,
+        ];
+    }
+
+    /**
+     * ¿Esta planilla lleva recálculo de renta? El último pago de junio o de diciembre,
+     * que en la quincenal es la segunda quincena.
+     */
+    public function esRecalculo(Planilla $planilla): bool
+    {
+        return $this->aplicaA($planilla)
+            && in_array($planilla->hasta->month, [6, 12], true)
+            && $planilla->hasta->isLastOfMonth();
+    }
+
+    /**
+     * La renta de junio o diciembre por recálculo (Decreto 10, Art. 1 lit. f): la tabla
+     * semestral o anual sobre lo gravado del año, menos lo ya retenido. Si da negativo
+     * no se retiene nada: el decreto no manda devolver.
+     *
+     * @param  int  $gravadoAcumulado  remuneración gravada del año, INCLUIDO este pago
+     * @param  int  $rentaRetenida  renta retenida en los pagos anteriores del año
+     * @param  string  $fecha  del pago; su mes elige la tabla
+     * @return array{centavos: int, segun_tabla: int, avisos: array<int, string>}|null null si no hay parámetros para esa fecha
+     */
+    public function recalcularRenta(int $gravadoAcumulado, int $rentaRetenida, string $fecha): ?array
+    {
+        $mes = CarbonImmutable::parse($fecha)->month;
+
+        if (! in_array($mes, [6, 12], true)) {
+            throw new \InvalidArgumentException('Solo junio y diciembre llevan recálculo de renta.');
+        }
+
+        $tabla = $this->versionEn($fecha)['recalculo'][$mes] ?? null;
+
+        if ($tabla === null) {
+            return null;
+        }
+
+        $gravada = max($gravadoAcumulado, 0);
+        $avisos = [];
+        $deduccion = $tabla['deduccion'] ?? null;
+
+        if ($deduccion !== null && $gravada > 0 && $gravada <= Dinero::centavos($deduccion['hasta'])) {
+            $gravada = max($gravada - Dinero::centavos($deduccion['importe']), 0);
+            $avisos[] = $deduccion['aviso'];
+        }
+
+        [$segunTabla, $aviso] = $this->renta($gravada, $tabla['tramos']);
+
+        if ($aviso !== null) {
+            $avisos[] = $aviso;
+        }
+
+        return [
+            'centavos' => max($segunTabla - $rentaRetenida, 0),
+            'segun_tabla' => $segunTabla,
+            'avisos' => $avisos,
+        ];
+    }
+
+    /**
+     * Lo que se propone como acumulado de las quincenas anteriores al sistema: el sueldo
+     * de siempre repetido. La persona lo confirma o lo corrige; esto no lo decide.
+     *
+     * @param  int  $baseQuincenal  lo que cotiza en una quincena habitual
+     * @return array{gravado: int, renta: int}|null null si no hay parámetros para esa fecha
+     */
+    public function proponerAcumulado(int $baseQuincenal, int $quincenas, string $fecha): ?array
+    {
+        $calculo = $this->calcular($baseQuincenal, $fecha);
+
+        if ($calculo === null) {
+            return null;
+        }
+
+        $c = array_map(fn (array $concepto) => $concepto['centavos'], $calculo['conceptos']);
+        $quincenas = max($quincenas, 0);
+
+        return [
+            'gravado' => (max($baseQuincenal, 0) - $c['isss'] - $c['afp']) * $quincenas,
+            'renta' => $c['renta'] * $quincenas,
         ];
     }
 
