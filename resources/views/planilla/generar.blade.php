@@ -76,7 +76,7 @@
             </section>
 
             <form method="POST" action="{{ route('planilla.store') }}"
-                  class="flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+                  class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
                 @csrf
                 @foreach ($datos as $campo => $valor)
                     <input type="hidden" name="{{ $campo }}" value="{{ $valor }}">
