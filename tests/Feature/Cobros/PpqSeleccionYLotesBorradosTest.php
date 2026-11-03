@@ -392,7 +392,9 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $lote = $this->crear([$tomado, $devuelto]);
         // El vínculo también se resuelve en snapshots de correo.
         $lote->items()->where('dte_id', $ncDevuelto->id)->update(['dte_id' => null]);
+        // La NC del CCF tomado vino registrada; la del devuelto también, pero sale con su CCF.
         $reporte = ['caso' => '555', 'documentos' => [IdentidadPpq::normalizar($tomado->numero_control) => 'REGISTRADO',
+            IdentidadPpq::normalizar($ncTomado->numero_control) => 'REGISTRADO',
             IdentidadPpq::normalizar($ncDevuelto->numero_control) => 'REGISTRADO']];
         $servicio = app(ReporteCasoCalleja::class);
         $r = $servicio->aplicar($this->cliente, $reporte, lote: $lote);
@@ -400,7 +402,7 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         $this->assertSame(2, $lote->items()->count());
         $this->assertEquals(90, $lote->refresh()->totalMontoDte());
         $this->assertTrue($lote->items()->where('dte_id', $ncTomado->id)->exists());
-        $this->assertSame(EstadoPresentacionCobro::Presentada, $docNcTomado->refresh()->presentacion_estado);
+        $this->assertSame(EstadoPresentacionCobro::Recibida, $docNcTomado->refresh()->presentacion_estado);
         $this->assertStringContainsString('CCF '.$devuelto->correlativoCorto().' · $100.00 · 10/09/2026', $lote->observaciones);
         $this->assertStringContainsString('NC '.$docNc->correlativoCorto().' · -$15.00', $lote->observaciones);
         $antes = $lote->observaciones;
@@ -436,11 +438,32 @@ class PpqSeleccionYLotesBorradosTest extends TestCase
         ]], lote: $lote);
         $this->assertSame(3, $r['recibidos']);
         $this->assertSame(EstadoPresentacionCobro::Recibida, $docNc->refresh()->presentacion_estado);
-        // La NC que el portal no listó sigue a su CCF, que quedó registrado: no sale ni cambia.
+        // El reporte lista NC y esta no vino: Calleja la rechazó aunque su CCF quedara
+        // registrado. Sale del lote y va en el siguiente PPQ (lote #23 de producción).
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $docNcSinReporte->refresh()->presentacion_estado);
-        $this->assertSame(0, $docNcSinReporte->eventos()->count());
-        $this->assertSame(4, $lote->items()->count());
+        $this->assertSame(1, $docNcSinReporte->eventos()->where('referencia_linea', 'caso-556-fuera')->count());
+        $this->assertSame(3, $lote->items()->count());
+        $this->assertCount(1, $r['items_quitados']);
+        $this->assertFalse($lote->items()->where('dte_id', $ncSinReporte->id)->exists());
+        $this->assertTrue($lote->items()->where('dte_id', $sinReporte->dte_id)->exists(), 'Su CCF, registrado, se queda.');
+        $this->assertStringContainsString('NC '.$docNcSinReporte->correlativoCorto(), (string) $lote->refresh()->observaciones);
+    }
+
+    public function test_un_reporte_sin_ninguna_nc_no_saca_las_nc_de_los_ccf_que_quedan(): void
+    {
+        $doc = $this->ccf();
+        $nc = $this->dte('05', ['dte_relacionado_id' => $doc->dte_id, 'total_pagar' => 10]);
+        CobroDocumento::create(['cliente_id' => $this->cliente->id, 'origen' => 'dte', 'dte_id' => $nc->id,
+            'tipo_dte' => '05', 'numero_control' => $nc->numero_control, 'fecha_emision' => '2026-09-10', 'monto' => 10]);
+        $lote = $this->crear([$doc]);
+
+        $r = app(ReporteCasoCalleja::class)->aplicar($this->cliente, ['caso' => '557', 'documentos' => [
+            IdentidadPpq::normalizar($doc->numero_control) => 'REGISTRADO',
+        ]], lote: $lote);
+
+        // Sin NC en el reporte no se sabe nada de ellas: siguen a su CCF.
         $this->assertCount(0, $r['items_quitados']);
+        $this->assertTrue($lote->items()->where('dte_id', $nc->id)->exists());
     }
 
     /** Lote #20 de producción: el reporte se cargó con el código anterior y los devueltos quedaron dentro. */
