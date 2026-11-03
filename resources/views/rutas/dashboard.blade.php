@@ -1,168 +1,318 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between gap-3">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Rutas</h2>
-            <div class="flex flex-wrap items-center gap-4 text-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Rutas</h1>
+            <div class="flex flex-wrap items-center gap-3">
                 @if ($vaEnUnaSalida)
-                    <a href="{{ route('rutas.mi-salida.index') }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700">Mi salida</a>
+                    <a href="{{ route('rutas.mi-salida.index') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Mi salida</a>
                 @endif
-                <a href="{{ route('rutas.salidas.index') }}" class="text-gray-500 hover:underline dark:text-paper-300">Salidas anteriores</a>
-                <a href="{{ route('rutas.rutas.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Configurar rutas</a>
+                @can('rutas.gestionar')
+                    <a href="{{ route('rutas.salidas.create') }}" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Armar salida</a>
+                @endcan
             </div>
         </div>
     </x-slot>
 
+    @php
+        $R = \App\Services\Rutas\RitmoRutas::class;
+        $S = \App\Services\Rutas\Ritmo::class;
+
+        // Colores de la guía: rojo atrasada, ámbar toca pronto, verde al día, gris sin
+        // ritmo, celeste en camino. Clases completas para que Tailwind las vea.
+        $insignias = [
+            $R::ATRASADA => ['Atrasada', 'bg-red-100 text-red-700'],
+            $R::PRONTO => ['Toca pronto', 'bg-amber-100 text-amber-800'],
+            $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700'],
+            $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700'],
+            $R::SIN_RITMO => ['Sin ritmo', 'bg-gray-100 text-gray-600'],
+            $R::SIN_SALIDAS => ['Sin salidas', 'bg-gray-100 text-gray-600'],
+        ];
+        $insignia = 'inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium';
+        $caja = 'rounded-lg border border-gray-200 bg-white';
+        $titulo = 'text-xs font-semibold uppercase tracking-wide text-gray-500';
+        $secundario = 'inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50';
+        $campo = 'block min-h-11 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500';
+
+        $dias = fn (int $n) => $n.' '.($n === 1 ? 'día' : 'días');
+        // «hoy», «ayer» o «hace N días».
+        $hace = fn (int $n) => match ($n) { 0 => 'hoy', 1 => 'ayer', default => 'hace '.$n.' días' };
+        $ritmoTexto = fn (int $n, ?string $origen) => 'cada '.$dias($n).match ($origen) { $S::APROXIMADO => ' (aprox.)', $R::MANUAL => ' (cargado a mano)', default => '' };
+    @endphp
+
     <div class="py-6 sm:py-8">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-7xl space-y-8 px-4 sm:px-6 lg:px-8">
 
             <x-rutas.avisos />
 
-            @php
-                $R = \App\Services\Rutas\RitmoRutas::class;
-
-                $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
-
-                // [etiqueta, insignia, borde, barra]. Clases completas para que Tailwind las vea.
-                $tono = [
-                    $R::ATRASADA => ['Toca ir', 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300', 'ring-red-300 dark:ring-red-500/40', 'bg-red-500'],
-                    $R::PRONTO => ['Ya casi', 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300', 'ring-amber-300 dark:ring-amber-500/40', 'bg-amber-500'],
-                    $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300', '', 'bg-green-500'],
-                    $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300', 'ring-sky-300 dark:ring-sky-500/40', 'bg-sky-500'],
-                    $R::SIN_RITMO => ['Sin ritmo', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300', '', 'bg-gray-400'],
-                    $R::SIN_SALIDAS => ['Sin salidas', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300', '', 'bg-gray-400'],
-                ];
-            @endphp
-
-            {{-- ===================== En camino ===================== --}}
-            @foreach ($enCamino as ['salida' => $salida, 'resumen' => $resumen])
-                @php $hechos = $resumen['entregados'] + $resumen['no_entregados']; @endphp
-                <a href="{{ route('rutas.salidas.show', $salida) }}"
-                   class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sky-50 px-5 py-4 ring-1 ring-sky-200 transition hover:ring-sky-400 dark:bg-sky-500/10 dark:ring-sky-500/30">
-                    <div class="min-w-0">
-                        <p class="text-base font-semibold text-sky-900 dark:text-sky-200">
-                            {{ $salida->estado === \App\Enums\EstadoSalidaRuta::EnCurso ? 'En camino' : 'Programada' }}: {{ $salida->ruta->nombre }}
-                            <span class="font-normal text-sky-700 dark:text-sky-300">· {{ $salida->fecha_inicio->isToday() ? 'hoy' : 'desde el '.$salida->fecha_inicio->translatedFormat('d M') }}</span>
-                        </p>
-                        <p class="text-sm text-sky-700 dark:text-sky-300">
-                            {{ $salida->personal->pluck('nombre')->implode(' y ') ?: 'Sin vendedores' }}
-                            · {{ $resumen['entregados'] }} de {{ $resumen['total'] }} entregados
-                            @if ($resumen['no_entregados'] > 0) · {{ $resumen['no_entregados'] }} no entregados @endif
-                        </p>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <div class="hidden h-2 w-32 overflow-hidden rounded-full bg-sky-100 sm:block dark:bg-sky-500/20">
-                            <div class="h-2 rounded-full bg-sky-500" style="width: {{ $resumen['total'] ? round($hechos * 100 / $resumen['total']) : 0 }}%"></div>
-                        </div>
-                        <span class="text-sm font-medium text-sky-800 dark:text-sky-200">Abrir hoja →</span>
-                    </div>
-                </a>
-            @endforeach
-
-            {{-- ===================== Una tarjeta por ruta ===================== --}}
-            @if ($filas->isEmpty())
-                <div class="{{ $caja }} px-6 py-12 text-center">
-                    <p class="text-base font-medium text-gray-800 dark:text-paper-100">Creá tu primera ruta</p>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Nombre, cada cuántos días se va y qué lugares cubre.</p>
-                    @can('rutas.gestionar')
-                        <a href="{{ route('rutas.rutas.index') }}" class="mt-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Configurar rutas</a>
-                    @endcan
-                </div>
-            @else
-                <div class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    @foreach ($filas as $fila)
-                        @php
-                            [$texto, $insignia, $borde, $barra] = $tono[$fila['estado']];
-                            $ruta = $fila['ruta'];
-                            $pend = $pendientes[$ruta->id] ?? ['cantidad' => 0, 'monto' => 0];
-                            $faltan = $fila['faltan'];
-                        @endphp
-                        <div class="{{ $caja }} {{ $borde }} flex flex-col p-5">
-                            <div class="flex items-start justify-between gap-3">
-                                <p class="text-lg font-semibold text-gray-800 dark:text-paper-100">{{ $ruta->nombre }}</p>
-                                <span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {{ $insignia }}">{{ $texto }}</span>
-                            </div>
-
-                            {{-- El número grande: cuánto falta o cuánto se pasó. --}}
-                            <p class="mt-3 text-2xl font-semibold text-gray-800 dark:text-paper-100">
-                                @if ($fila['enCurso'])
-                                    En camino
-                                @elseif ($fila['dias'] === null)
-                                    Nunca se ha ido
-                                @elseif ($faltan === null)
-                                    Hace {{ $fila['dias'] }} {{ $fila['dias'] === 1 ? 'día' : 'días' }}
-                                @elseif ($faltan < 0)
-                                    {{ abs($faltan) }} {{ abs($faltan) === 1 ? 'día' : 'días' }} tarde
-                                @elseif ($faltan === 0)
-                                    Toca hoy
-                                @else
-                                    Faltan {{ $faltan }} {{ $faltan === 1 ? 'día' : 'días' }}
-                                @endif
-                            </p>
-                            <p class="text-sm text-gray-500 dark:text-paper-300">
-                                Última: {{ $fila['ultima']?->fecha_fin_real?->translatedFormat('d M') ?? $fila['ultima']?->fecha_inicio?->translatedFormat('d M') ?? '—' }}
-                                @if ($fila['ritmo']) · suele ir cada {{ $fila['ritmo'] }} días{{ match ($fila['origenRitmo']) { $R::MANUAL => ' (cargado a mano)', \App\Services\Rutas\Ritmo::APROXIMADO => ' (aprox.)', default => '' } }} @endif
-                            </p>
-
-                            @if ($fila['avance'] !== null && ! $fila['enCurso'])
-                                <div class="mt-3 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-ink-700">
-                                    <div class="h-2 rounded-full {{ $barra }}" style="width: {{ max(4, $fila['avance']) }}%"></div>
-                                </div>
-                            @endif
-
-                            <p class="mt-3 text-sm {{ $pend['cantidad'] > 0 ? 'font-medium text-gray-800 dark:text-paper-100' : 'text-gray-400 dark:text-paper-500' }}">
-                                @if ($pend['cantidad'] > 0)
-                                    {{ $pend['cantidad'] }} CCF por entregar · ${{ number_format($pend['monto'], 2) }}
-                                @else
-                                    Sin CCF por entregar
-                                @endif
-                                <span class="font-normal text-gray-400 dark:text-paper-500">· {{ $ruta->sucursales_count }} salas</span>
-                            </p>
-
-                            {{-- Salir a esta ruta: se eligen quiénes van y listo. --}}
-                            @can('rutas.gestionar')
-                                <div class="mt-auto pt-4">
-                                    @if ($fila['enCurso'])
-                                        <a href="{{ route('rutas.salidas.show', $fila['enCurso']) }}"
-                                           class="block rounded-lg bg-sky-600 px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-sky-700">Abrir hoja de la salida</a>
-                                    @elseif ($vendedores->isEmpty())
-                                        <a href="{{ route('rutas.personal.index') }}"
-                                           class="block rounded-lg bg-gray-100 px-4 py-2.5 text-center text-sm text-gray-600 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-300">Agregá un vendedor para salir</a>
-                                    @else
-                                        <details class="group">
-                                            <summary class="cursor-pointer list-none rounded-lg bg-indigo-600 px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-indigo-700 group-open:rounded-b-none">
-                                                Salir a esta ruta
-                                            </summary>
-                                            <form method="POST" action="{{ route('rutas.salidas.store') }}"
-                                                  class="space-y-3 rounded-b-lg border border-t-0 border-indigo-200 p-3 dark:border-indigo-500/30">
-                                                @csrf
-                                                <input type="hidden" name="ruta_id" value="{{ $ruta->id }}">
-                                                <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quiénes van?</p>
-                                                <div class="flex flex-wrap gap-2">
-                                                    @foreach ($vendedores as $v)
-                                                        <label class="cursor-pointer">
-                                                            <input type="checkbox" name="personal[]" value="{{ $v->id }}" class="peer sr-only" @checked($vendedores->count() === 1)>
-                                                            <span class="inline-block rounded-full px-3 py-1.5 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 dark:ring-ink-500 dark:text-paper-100">{{ $v->nombre }}</span>
-                                                        </label>
-                                                    @endforeach
-                                                </div>
-                                                <button class="w-full rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700">
-                                                    Salir hoy{{ $pend['cantidad'] > 0 ? ' con '.$pend['cantidad'].' CCF' : '' }}
-                                                </button>
-                                            </form>
-                                        </details>
-                                    @endif
-                                </div>
-                            @endcan
-                        </div>
+            {{-- ===================== Resumen: tocar un número filtra la lista ===================== --}}
+            <section aria-labelledby="resumen-titulo">
+                <h2 id="resumen-titulo" class="sr-only">Resumen</h2>
+                <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    @foreach ([
+                        ['n' => $resumen['rutasAtrasadas'], 'texto' => $resumen['rutasAtrasadas'] === 1 ? 'ruta atrasada' : 'rutas atrasadas', 'color' => 'text-red-700', 'url' => route('rutas.dashboard', ['rutas' => 'atrasadas']).'#rutas'],
+                        ['n' => $resumen['salasAtrasadas'], 'texto' => $resumen['salasAtrasadas'] === 1 ? 'sala atrasada' : 'salas atrasadas', 'color' => 'text-red-700', 'url' => route('rutas.dashboard', ['ver' => 'atrasadas']).'#salas'],
+                        ['n' => $resumen['salasSemana'], 'texto' => $resumen['salasSemana'] === 1 ? 'sala toca esta semana' : 'salas tocan esta semana', 'color' => 'text-amber-800', 'url' => route('rutas.dashboard', ['ver' => 'semana']).'#salas'],
+                        ['n' => $resumen['enCamino'], 'texto' => $resumen['enCamino'] === 1 ? 'salida en camino' : 'salidas en camino', 'color' => 'text-sky-700', 'url' => '#en-camino'],
+                    ] as $tarjeta)
+                        <a href="{{ $tarjeta['url'] }}" class="{{ $caja }} block p-4 hover:bg-gray-50">
+                            <span class="block text-3xl font-semibold tabular-nums {{ $tarjeta['n'] > 0 ? $tarjeta['color'] : 'text-gray-400' }}">{{ $tarjeta['n'] }}</span>
+                            <span class="mt-1 block text-sm text-gray-600">{{ $tarjeta['texto'] }}</span>
+                        </a>
                     @endforeach
                 </div>
+            </section>
+
+            {{-- ===================== En camino ===================== --}}
+            @if ($enCamino->isNotEmpty())
+                <section id="en-camino" aria-labelledby="en-camino-titulo">
+                    <h2 id="en-camino-titulo" class="{{ $titulo }}">En camino</h2>
+                    <ul class="mt-3 space-y-3">
+                        @foreach ($enCamino as ['salida' => $salida, 'resumen' => $avance])
+                            @php $enCurso = $salida->estado === \App\Enums\EstadoSalidaRuta::EnCurso; @endphp
+                            <li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
+                                <div class="min-w-0">
+                                    <p class="font-semibold text-sky-900">
+                                        {{ $salida->ruta->nombre }} · {{ $salida->personal->pluck('nombre')->implode(' y ') ?: 'Sin vendedores' }}
+                                    </p>
+                                    <p class="text-sm text-sky-800">
+                                        {{ $enCurso ? 'En camino' : 'Programada' }}
+                                        {{ $salida->fecha_inicio->isToday() ? 'desde hoy' : 'desde el '.$salida->fecha_inicio->format('d/m/Y') }}
+                                        · {{ $avance['entregados'] }} de {{ $avance['total'] }} entregados
+                                        @if ($avance['no_entregados'] > 0) · {{ $avance['no_entregados'] }} no entregados @endif
+                                    </p>
+                                </div>
+                                <a href="{{ route('rutas.salidas.show', $salida) }}" class="{{ $secundario }}">Abrir hoja</a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
             @endif
+
+            {{-- ===================== Rutas, las más urgentes primero ===================== --}}
+            <section id="rutas" aria-labelledby="rutas-titulo">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h2 id="rutas-titulo" class="{{ $titulo }}">{{ $soloRutasAtrasadas ? 'Rutas atrasadas' : 'Rutas' }}</h2>
+                    @if ($soloRutasAtrasadas)
+                        <a href="{{ route('rutas.dashboard') }}#rutas" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Ver todas las rutas</a>
+                    @endif
+                </div>
+
+                @if ($filas->isEmpty())
+                    <div class="{{ $caja }} mt-3 px-6 py-10 text-center text-gray-500">
+                        @if ($soloRutasAtrasadas)
+                            <p>Ninguna ruta está atrasada.</p>
+                        @else
+                            <p class="font-medium text-gray-800">Todavía no hay rutas.</p>
+                            @can('rutas.gestionar')
+                                <a href="{{ route('rutas.rutas.index') }}" class="mt-2 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Crear la primera</a>
+                            @endcan
+                        @endif
+                    </div>
+                @else
+                    <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        @foreach ($filas as $fila)
+                            @php
+                                $ruta = $fila['ruta'];
+                                [$estadoTexto, $estadoClase] = $insignias[$fila['estado']];
+                                $pend = $pendientes[$ruta->id] ?? ['cantidad' => 0, 'monto' => 0];
+                                ['atrasadas' => $atrasadas, 'semana' => $tocan] = $conteoRuta->get($ruta->id, ['atrasadas' => 0, 'semana' => 0]);
+                                $faltan = $fila['faltan'];
+                            @endphp
+                            <article class="{{ $caja }} flex flex-col p-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <h3 class="text-base font-semibold text-gray-800">{{ $ruta->nombre }}</h3>
+                                    <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto }}</span>
+                                </div>
+
+                                <div class="mt-2 space-y-0.5 text-sm text-gray-700">
+                                    <p>
+                                        @if ($fila['enCurso'])
+                                            En camino desde {{ $fila['enCurso']->fecha_inicio->isToday() ? 'hoy' : 'el '.$fila['enCurso']->fecha_inicio->format('d/m/Y') }}
+                                        @elseif ($fila['dias'] === null)
+                                            Nunca se ha ido
+                                        @elseif ($fila['ultima'])
+                                            {{ $fila['dias'] === 0 ? 'Volvió hoy' : 'Se fue '.$hace($fila['dias']) }}
+                                        @else
+                                            Último pedido de sus salas {{ $hace($fila['dias']) }}
+                                        @endif
+                                        @if (! $fila['enCurso'] && $faltan !== null && $fila['estado'] !== $R::AL_DIA)
+                                            · <span class="font-medium">{{ $faltan < 0 ? $dias(abs($faltan)).' tarde' : ($faltan === 0 ? 'toca hoy' : 'faltan '.$dias($faltan)) }}</span>
+                                        @endif
+                                    </p>
+                                    <p class="text-gray-500">
+                                        {{ $fila['ritmo'] ? 'Suele ir '.$ritmoTexto($fila['ritmo'], $fila['origenRitmo']) : 'Todavía sin ritmo' }}
+                                    </p>
+                                    <p>
+                                        @if ($atrasadas + $tocan > 0)
+                                            <span class="{{ $atrasadas > 0 ? 'font-medium text-red-700' : '' }}">{{ $atrasadas }} {{ $atrasadas === 1 ? 'sala atrasada' : 'salas atrasadas' }}</span>
+                                            · {{ $tocan }} {{ $tocan === 1 ? 'toca' : 'tocan' }} esta semana
+                                        @else
+                                            Ninguna sala atrasada
+                                        @endif
+                                    </p>
+                                    <p class="text-xs text-gray-500">
+                                        {{ $pend['cantidad'] > 0 ? $pend['cantidad'].' CCF por entregar · $'.number_format($pend['monto'], 2) : 'Sin CCF por entregar' }}
+                                        · {{ $ruta->sucursales_count }} {{ $ruta->sucursales_count === 1 ? 'sala' : 'salas' }}
+                                    </p>
+                                </div>
+
+                                <div class="mt-auto flex flex-wrap gap-2 pt-4">
+                                    <a href="{{ route('rutas.dashboard', ['ruta' => $ruta->id]) }}#salas" class="{{ $secundario }}">Ver salas</a>
+                                    @if ($fila['enCurso'])
+                                        <a href="{{ route('rutas.salidas.show', $fila['enCurso']) }}" class="{{ $secundario }}">Abrir hoja</a>
+                                    @endif
+                                </div>
+
+                                {{-- Salir a esta ruta: se eligen quiénes van y listo. --}}
+                                @can('rutas.gestionar')
+                                    @if (! $fila['enCurso'])
+                                        <div class="pt-2">
+                                            @if ($vendedores->isEmpty())
+                                                <a href="{{ route('rutas.personal.index') }}" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Agregá un vendedor para salir</a>
+                                            @else
+                                                <details class="group">
+                                                    <summary class="flex min-h-11 cursor-pointer list-none items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
+                                                        Salir a esta ruta
+                                                    </summary>
+                                                    <form method="POST" action="{{ route('rutas.salidas.store') }}" class="mt-2 space-y-3 rounded-md border border-gray-200 p-3">
+                                                        @csrf
+                                                        <input type="hidden" name="ruta_id" value="{{ $ruta->id }}">
+                                                        <fieldset>
+                                                            <legend class="text-xs font-medium text-gray-500">¿Quiénes van?</legend>
+                                                            <div class="mt-2 flex flex-wrap gap-2">
+                                                                @foreach ($vendedores as $v)
+                                                                    <label class="cursor-pointer">
+                                                                        <input type="checkbox" name="personal[]" value="{{ $v->id }}" class="peer sr-only" @checked($vendedores->count() === 1)>
+                                                                        <span class="inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-indigo-600">{{ $v->nombre }}</span>
+                                                                    </label>
+                                                                @endforeach
+                                                            </div>
+                                                        </fieldset>
+                                                        <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
+                                                            Salir hoy{{ $pend['cantidad'] > 0 ? ' con '.$pend['cantidad'].' CCF' : '' }}
+                                                        </button>
+                                                    </form>
+                                                </details>
+                                            @endif
+                                        </div>
+                                    @endif
+                                @endcan
+                            </article>
+                        @endforeach
+                    </div>
+                @endif
+            </section>
+
+            {{-- ===================== Salas que tocan ===================== --}}
+            <section id="salas" aria-labelledby="salas-titulo">
+                <h2 id="salas-titulo" class="{{ $titulo }}">Salas que tocan</h2>
+
+                <form method="GET" action="{{ route('rutas.dashboard') }}#salas" class="mt-3 flex flex-wrap items-end gap-3">
+                    <input type="hidden" name="ver" value="{{ $filtro['ver'] }}">
+                    <div class="min-w-0 flex-1">
+                        <label for="salas-q" class="block text-xs font-medium text-gray-500">Buscar sala</label>
+                        <input id="salas-q" name="q" type="search" value="{{ $filtro['q'] }}" maxlength="100" placeholder="Nombre o código" class="{{ $campo }} mt-1">
+                    </div>
+                    <div class="w-full sm:w-56">
+                        <label for="salas-ruta" class="block text-xs font-medium text-gray-500">Ruta</label>
+                        <select id="salas-ruta" name="ruta" class="{{ $campo }} mt-1">
+                            <option value="">Todas</option>
+                            @foreach ($salasDeRuta->keys() as $id)
+                                @php $nombre = $salasDeRuta[$id]->first()['ruta']->nombre; @endphp
+                                <option value="{{ $id }}" @selected($filtro['ruta'] === $id)>{{ $nombre }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <button class="{{ $secundario }}">Filtrar</button>
+                    @if ($filtro['ruta'] !== null || $filtro['q'] !== '')
+                        <a href="{{ route('rutas.dashboard', ['ver' => $filtro['ver'] === 'todas' ? null : $filtro['ver']]) }}#salas" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Limpiar</a>
+                    @endif
+                </form>
+
+                <nav aria-label="Qué salas mostrar" class="mt-3 flex gap-2 overflow-x-auto">
+                    @foreach (['atrasadas' => 'Atrasadas', 'semana' => 'Tocan esta semana', 'todas' => 'Todas'] as $clave => $texto)
+                        <a href="{{ request()->fullUrlWithQuery(['ver' => $clave === 'todas' ? null : $clave, 'page' => null]) }}#salas" @if ($filtro['ver'] === $clave) aria-current="page" @endif
+                           class="inline-flex min-h-11 shrink-0 items-center rounded-full px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 {{ $filtro['ver'] === $clave ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50' }}">{{ $texto }} {{ $conteoVer[$clave] }}</a>
+                    @endforeach
+                </nav>
+
+                <div class="{{ $caja }} mt-3">
+                    @if ($salas->isEmpty())
+                        <div class="px-4 py-10 text-center text-gray-500">
+                            @if ($hayFiltro)
+                                <p>Nada coincide con estos filtros.</p>
+                                <a href="{{ route('rutas.dashboard') }}#salas" class="mt-2 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Limpiar filtros</a>
+                            @else
+                                <p>Todavía no hay salas en las rutas.</p>
+                                @can('rutas.gestionar')
+                                    <a href="{{ route('rutas.asignacion.index') }}" class="mt-2 inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Asignar salas</a>
+                                @endcan
+                            @endif
+                        </div>
+                    @else
+                        <ul class="divide-y divide-gray-100">
+                            @foreach ($salas as $fila)
+                                @php
+                                    $sala = $fila['sala'];
+                                    [$estadoTexto, $estadoClase] = $insignias[$fila['estado']];
+                                    $entrega = $ultimaEntrega[$sala->id] ?? null;
+                                    $diasEntrega = $entrega ? max(0, (int) $entrega->diffInDays(today())) : null;
+                                    $ultimo = $fila['ritmo']->ultima();
+                                @endphp
+                                <li class="px-4 py-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="font-medium text-gray-800">{{ $sala->nombre }}</p>
+                                            <p class="text-sm text-gray-500">{{ $fila['ruta']->nombre }}</p>
+                                        </div>
+                                        <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto }}</span>
+                                    </div>
+                                    <dl class="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-600 sm:grid-cols-3">
+                                        <div>
+                                            <dt class="sr-only">Último pedido</dt>
+                                            <dd>
+                                                @if ($ultimo)
+                                                    Último pedido <time datetime="{{ $ultimo->toDateString() }}" title="{{ $ultimo->format('d/m/Y') }}">{{ $hace($fila['dias']) }}</time>
+                                                @else
+                                                    Sin pedidos en 12 meses
+                                                @endif
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt class="sr-only">Ritmo</dt>
+                                            <dd class="{{ $fila['ritmo']->confianza() === $S::APROXIMADO ? 'text-gray-500' : '' }}">
+                                                {{ $fila['ritmo']->dias !== null ? 'Compra '.$ritmoTexto($fila['ritmo']->dias, $fila['ritmo']->confianza()) : 'Todavía sin ritmo' }}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt class="sr-only">Última entrega</dt>
+                                            <dd>
+                                                @if ($entrega)
+                                                    Última entrega <time datetime="{{ $entrega->toDateString() }}" title="{{ $entrega->format('d/m/Y') }}">{{ $hace($diasEntrega) }}</time>
+                                                @else
+                                                    Última entrega: sin registro
+                                                @endif
+                                            </dd>
+                                        </div>
+                                    </dl>
+                                    @if ($fila['dejoDeComprar'])
+                                        <p class="mt-1 text-sm font-medium text-red-700">¿Dejó de comprar?</p>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                        @if ($salas->hasPages())
+                            <div class="border-t border-gray-100 px-4 py-3">{{ $salas->links() }}</div>
+                        @endif
+                    @endif
+                </div>
+            </section>
 
             @if ($salasSinRuta > 0)
                 <a href="{{ route('rutas.rutas.index') }}"
-                   class="mt-5 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-                    <span><strong>{{ $salasSinRuta }} {{ $salasSinRuta === 1 ? 'sala' : 'salas' }} sin ruta.</strong> No cuentan en ninguna ruta hasta asignarlas.</span>
-                    <span class="shrink-0 font-medium">Asignar →</span>
+                   class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
+                    <span><strong>{{ $salasSinRuta }} {{ $salasSinRuta === 1 ? 'sala activa' : 'salas activas' }} sin ruta.</strong> No cuentan en ninguna ruta hasta asignarlas.</span>
+                    <span class="shrink-0 font-medium">Asignar</span>
                 </a>
             @endif
 
