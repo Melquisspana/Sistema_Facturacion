@@ -572,7 +572,7 @@ class FlujoPlanillaTest extends TestCase
         ['planilla' => $planilla] = $this->planillaLista($u);
 
         $this->actingAs($u)->get(route('planilla.show', $planilla))->assertOk()
-            ->assertSee('Confirmar y crear las obligaciones');
+            ->assertSee('Terminar y generar');
 
         $this->actingAs($u)->post(route('planilla.confirmar', $planilla))->assertRedirect();
 

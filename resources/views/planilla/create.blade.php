@@ -6,7 +6,7 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <h1 class="text-xl font-semibold leading-tight text-gray-800">Preparar una planilla</h1>
+        <h1 class="text-xl font-semibold leading-tight text-gray-800">Generar una planilla</h1>
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6">
@@ -30,8 +30,8 @@
                 </nav>
             </details>
 
-            <form method="POST" action="{{ route('planilla.store') }}" class="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
-                @csrf
+            {{-- GET: elegir no crea nada. Lo que se crea pasa por la revisión. --}}
+            <form method="GET" action="{{ route('planilla.revisar') }}" class="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
                 <input type="hidden" name="tipo_periodo" value="{{ $tipo }}">
 
                 <fieldset>
@@ -91,12 +91,13 @@
                 </div>
 
                 <p class="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                    Se abre un <strong>borrador</strong>. No crea ninguna obligación ni nada que pagar; eso
-                    ocurre al confirmar. Si ya existe la planilla de ese período, se abre esa: no se duplica.
+                    Entra cada persona activa con su sueldo y sus descuentos de ley. Antes de crear nada te
+                    mostramos cuántas personas son y el total, para que lo confirmes una sola vez.
                 </p>
 
-                <div class="flex justify-end">
-                    <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">Abrir el borrador</button>
+                <div class="flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+                    <a href="{{ route('planilla.index') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</a>
+                    <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">Generar</button>
                 </div>
             </form>
         </div>
