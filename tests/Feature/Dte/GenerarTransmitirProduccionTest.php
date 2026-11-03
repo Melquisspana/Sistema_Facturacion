@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Dte;
 
-use App\Enums\EstadoDte;
 use App\Models\Cliente;
 use App\Models\Dte;
 use App\Models\Empresa;
@@ -15,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Mockery;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -92,7 +92,7 @@ class GenerarTransmitirProduccionTest extends TestCase
         return $dte;
     }
 
-    private function emitir(Dte $dte, array $data = []): \Illuminate\Testing\TestResponse
+    private function emitir(Dte $dte, array $data = []): TestResponse
     {
         return $this->actingAs($this->admin())
             ->post(route('facturacion.generar-transmitir-produccion', $dte), $data + [
@@ -173,6 +173,38 @@ class GenerarTransmitirProduccionTest extends TestCase
         $this->emitir($ccf)->assertRedirect();
 
         $this->assertSame('aceptado', $ccf->fresh()->estado->value); // generó → firmó → transmitió
+    }
+
+    public function test_desde_borrador_la_orden_con_otra_forma_pide_confirmar_y_confirmada_genera(): void
+    {
+        $this->preflightVerde();
+        $gen = Mockery::mock(DteGeneracionService::class);
+        $gen->shouldReceive('generar')->once()
+            ->withArgs(fn (Dte $dte, $usuario, $motivo, array $avisos) => str_contains($avisos[0] ?? '', 'tiene 15 dígitos'))
+            ->andReturnUsing(function (Dte $dte) {
+                $dte->forceFill([
+                    'estado' => 'generado',
+                    'numero_control' => 'DTE-03-M001P001-000000000001094',
+                    'codigo_generacion' => (string) Str::uuid(),
+                    'json_generado_path' => 'dte/json/x.json',
+                ])->save();
+
+                return $dte;
+            });
+        $this->app->instance(DteGeneracionService::class, $gen);
+
+        $ccf = $this->ccf('borrador', [
+            'numero_control' => null, 'codigo_generacion' => null, 'json_generado_path' => null,
+            'cliente_id' => Cliente::factory()->contribuyente()->create(['requiere_orden_compra' => true])->id,
+            'numero_orden_compra' => now()->format('ym').'01234567890',
+        ]);
+
+        // Sin la casilla: avisa y no hace nada (generar() no corre).
+        $this->emitir($ccf)->assertSessionHas('error', fn (string $e) => str_contains($e, 'tiene 15 dígitos'));
+        $this->assertSame('borrador', $ccf->fresh()->estado->value);
+
+        $this->emitir($ccf, ['confirmar_avisos_oc' => 1])->assertRedirect();
+        $this->assertSame('aceptado', $ccf->fresh()->estado->value);
     }
 
     public function test_desde_generado_no_vuelve_a_generar(): void

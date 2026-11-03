@@ -12,6 +12,7 @@
                            @class(['min-h-11 rounded px-3 py-2 text-sm font-medium', 'bg-indigo-50 text-indigo-700' => $formato === $clave, 'text-gray-600 hover:bg-gray-50' => $formato !== $clave])>{{ $texto }}</a>
                     @endforeach
                 </nav>
+                <button type="button" onclick="window.print()" class="no-imprimir inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Imprimir</button>
                 <a href="{{ route('planilla.show', $planilla) }}" class="inline-flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Volver</a>
             </div>
         </div>

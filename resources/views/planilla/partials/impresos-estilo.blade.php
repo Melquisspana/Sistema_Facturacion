@@ -130,6 +130,11 @@
         }
         .hoja-impresa + .hoja-impresa { break-before: page; page-break-before: always; }
         .no-imprimir { display: none !important; }
+        /* Ocultos no basta: el menú, la cabecera y el margen de la app seguirían ocupando
+           lugar y correrían la hoja hacia abajo. Se sacan del papel. */
+        nav, aside, header { display: none !important; }
+        .pt-16 { padding-top: 0 !important; }
+        main > div { padding: 0 !important; }
         /* Con más de diez personas: cabecera repetida y ninguna fila partida. */
         table.hi-grupal thead { display: table-header-group; }
         table.hi-grupal tfoot { display: table-footer-group; }

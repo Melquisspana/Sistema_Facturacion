@@ -119,6 +119,12 @@ class PlanillaFlujoController extends Controller
             $t = $totales->deDetalle($detalle);
             $e = $estado->deDetalle($detalle);
             $p = $pagos[$detalle->id] ?? ['pagado' => 0, 'fecha' => null, 'entrego' => null];
+            if (! config('planilla.pagos_enabled')) {
+                // Sin seguimiento de pagos, el papel dice lo que recibe cada uno: lo que se
+                // firma es el total a pagar, no lo que el sistema tenga registrado.
+                $p = ['pagado' => $t['a_pagar'], 'fecha' => null, 'entrego' => null];
+                $e['pendiente'] = 0;
+            }
 
             $propio = $detalle->periodo_desde !== null || $detalle->periodo_hasta !== null;
             $desde = $detalle->periodo_desde ?? $planilla->desde;

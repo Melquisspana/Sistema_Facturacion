@@ -50,6 +50,14 @@
                     </a>
                 </div>
 
+                <div class="mb-6 flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 p-3">
+                    <span class="text-sm text-gray-600">CCF con la <strong>orden de compra</strong> mal escrita o fuera de fecha.</span>
+                    <a href="{{ route('auditoria.ordenes_compra') }}"
+                       class="inline-flex items-center px-3 py-1.5 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700">
+                        Ver órdenes de compra para revisar
+                    </a>
+                </div>
+
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead>
