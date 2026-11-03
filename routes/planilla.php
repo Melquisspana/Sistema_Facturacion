@@ -55,7 +55,8 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
         Route::put('empleados/{empleado}/contrato', [PlanillaContratoController::class, 'update'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato.update');
         Route::get('empleados/{empleado}/contrato/pdf', [PlanillaContratoController::class, 'pdf'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato.pdf');
         Route::post('empleados/{empleado}/sueldo', [PlanillaController::class, 'cambiarSueldo'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.sueldo');
-        Route::post('empleados/{empleado}/nombre', [PlanillaController::class, 'cambiarNombre'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.nombre');
+        Route::post('empleados/{empleado}/datos', [PlanillaController::class, 'actualizarDatos'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.datos');
+        Route::post('empleados/{empleado}/modulos', [PlanillaController::class, 'completarModulos'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.modulos');
         Route::post('empleados/{empleado}/baja', [PlanillaController::class, 'bajaEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.baja');
         Route::post('empleados/{empleado}/reactivar', [PlanillaController::class, 'reactivarEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.reactivar');
         Route::post('empleados', [PlanillaController::class, 'guardarEmpleado'])

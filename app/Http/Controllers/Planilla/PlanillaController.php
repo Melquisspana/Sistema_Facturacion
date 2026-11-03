@@ -9,7 +9,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
-use App\Services\Planilla\NombreUnico;
+use App\Services\Planilla\DatosEmpleado;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
@@ -199,13 +199,20 @@ class PlanillaController extends Controller
         return back()->with('planilla.aviso', 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
     }
 
-    public function cambiarNombre(Request $request, PlanillaEmpleado $empleado, NombreUnico $nombres)
+    public function actualizarDatos(Request $request, PlanillaEmpleado $empleado, DatosEmpleado $datos)
     {
-        $nombres->cambiar($request->user(), $empleado, $request->only('nombre'));
+        $datos->actualizar($request->user(), $empleado, $request->only(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el']));
 
-        activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('corrigió el nombre');
+        return back()->with('planilla.aviso', 'Datos guardados. También quedaron en Asistencia y Rutas.');
+    }
 
-        return back()->with('planilla.aviso', 'Nombre corregido en Planilla y Rutas.');
+    public function completarModulos(Request $request, PlanillaEmpleado $empleado, AltaEmpleado $alta)
+    {
+        $alta->completar($request->user(), $empleado, $request->only([
+            'marca', 'sale_rutas', 'usa_sistema', 'nombres', 'apellidos', 'rol', 'email', 'password', 'password_confirmation',
+        ]));
+
+        return back()->with('planilla.aviso', 'Listo: se agregó lo que elegiste.');
     }
 
     public function bajaEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)

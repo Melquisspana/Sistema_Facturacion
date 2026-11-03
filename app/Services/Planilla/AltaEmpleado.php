@@ -51,18 +51,7 @@ class AltaEmpleado
     public function registrar(User $actor, array $datos): PlanillaEmpleado
     {
         abort_unless($actor->activo && $actor->can('planilla.gestionar'), 403);
-        // Autorizar antes de validar o escribir; Vendedor implica operar en Rutas.
-        $vendedorNuevo = filter_var($datos['usa_sistema'] ?? false, FILTER_VALIDATE_BOOLEAN) && ($datos['rol'] ?? null) === RolSistema::Vendedor->value;
-        $usuarioId = filter_var($datos['user_id'] ?? null, FILTER_VALIDATE_INT);
-        $vendedorEnlazado = $usuarioId && User::find($usuarioId)?->hasRole(RolSistema::Vendedor->value);
-        if ($vendedorNuevo || $vendedorEnlazado) {
-            $datos['sale_rutas'] = true;
-        }
-        foreach (['usuarios.gestionar' => ['usa_sistema', 'user_id'], 'asistencia.gestionar' => ['marca', 'asistencia_empleado_id'], 'rutas.personal.gestionar' => ['sale_rutas', 'personal_ruta_id']] as $permiso => [$casilla, $enlace]) {
-            if (! empty($datos[$casilla]) || filled($datos[$enlace] ?? null)) {
-                abort_unless($actor->can($permiso), 403);
-            }
-        }
+        $datos = $this->autorizarModulos($actor, $datos);
         if (filled($datos['sueldo_mensual'] ?? null)) {
             abort_unless($actor->can('planilla.salarios'), 403);
         }
@@ -81,21 +70,7 @@ class AltaEmpleado
         foreach (['user_id' => 'users', 'asistencia_empleado_id' => 'asistencia_empleados', 'personal_ruta_id' => 'rutas_personal'] as $columna => $tabla) {
             $reglas[$columna] = ['nullable', 'integer', 'exists:'.$tabla.',id', Rule::unique('planilla_empleados', $columna)];
         }
-        if (($datos['documento_tipo'] ?? null) === 'dui') {
-            $reglas['dui'][] = function ($atributo, $valor, $fallar) {
-                if (! Dui::esValido($valor)) {
-                    $fallar('El DUI no es válido (formato o dígito verificador).');
-                } elseif (PlanillaEmpleado::where('documento_tipo', 'dui')->whereNotNull('dui')->pluck('dui')
-                    ->contains(fn ($dui) => Dui::normalizar($dui) === Dui::normalizar($valor))) {
-                    // Las fichas anteriores pueden tener espacios: la migración no las rellena.
-                    $fallar('Ya existe una persona en planilla con ese tipo y número de documento.');
-                }
-            };
-            if (is_string($datos['dui'] ?? null) && Dui::esValido($datos['dui'])) {
-                $datos['dui'] = Dui::normalizar($datos['dui']);
-            }
-        }
-        $reglas['dui'][] = Rule::unique('planilla_empleados', 'dui')->where('documento_tipo', is_string($datos['documento_tipo'] ?? null) ? $datos['documento_tipo'] : 'dui');
+        $reglas['dui'] = array_merge($reglas['dui'], self::reglasDocumento($datos));
         // Un enlace existente prevalece sobre la casilla: nunca crea otra cuenta.
         if (! empty($datos['usa_sistema']) && empty($datos['user_id'])) {
             $datos['name'] = trim((is_string($datos['nombres'] ?? null) ? $datos['nombres'] : '').' '.(is_string($datos['apellidos'] ?? null) ? $datos['apellidos'] : ''));
@@ -140,52 +115,7 @@ class AltaEmpleado
                     'confirmar_bajo_minimo' => $datos['confirmar_bajo_minimo'] ?? false,
                 ]);
             }
-            if (! $asistencia && ! empty($datos['marca'])) {
-                $asistencia = AsistenciaEmpleado::create(['nombres' => $datos['nombres'], 'apellidos' => $datos['apellidos'], 'fecha_ingreso' => $datos['alta_el'] ?? null, 'activo' => true]);
-            }
-            if (! $ruta && ! empty($datos['sale_rutas'])) {
-                $ruta = PersonalRuta::create(['nombre' => Str::limit($empleado->nombre, 120, ''), 'activo' => true]);
-                $ruta->funciones()->create(['funcion' => 'vendedor']);
-            }
-            if (! $usuario && ! empty($datos['usa_sistema'])) {
-                // CrearUsuario enlaza antes de sincronizar, por eso comprobar primero.
-                $this->compatible($ruta, 'user_id', null);
-                $estadoRuta = $ruta?->activo;
-                $usuario = app(CrearUsuario::class)->crear($datos, $ruta);
-                if (filled($datos['personal_ruta_id'] ?? null)) {
-                    $ruta->refresh()->update(['activo' => $estadoRuta]);
-                }
-            }
-            $esVendedor = $usuario?->hasRole(RolSistema::Vendedor->value) ?? false;
-            $this->compatible($asistencia, 'user_id', $usuario?->id);
-            $this->compatible($ruta, 'asistencia_empleado_id', $asistencia?->id);
-            $this->compatible($ruta, 'user_id', $esVendedor ? $usuario?->id : null);
-            if ($asistencia && $usuario) {
-                if (AsistenciaEmpleado::where('user_id', $usuario->id)->whereKeyNot($asistencia->id)->exists()) {
-                    throw ValidationException::withMessages(['user_id' => 'El usuario ya tiene otra ficha de asistencia.']);
-                }
-                $asistencia->update(['user_id' => $usuario->id]);
-            }
-            if ($ruta) {
-                if ($asistencia && PersonalRuta::where('asistencia_empleado_id', $asistencia->id)->whereKeyNot($ruta->id)->exists()) {
-                    throw ValidationException::withMessages(['asistencia_empleado_id' => 'Asistencia ya está enlazada a otra ficha de Rutas.']);
-                }
-                if ($esVendedor && PersonalRuta::where('user_id', $usuario->id)->whereKeyNot($ruta->id)->exists()) {
-                    throw ValidationException::withMessages(['user_id' => 'El usuario ya tiene otra ficha de Rutas.']);
-                }
-                $punteros = [];
-                if ($asistencia) {
-                    $punteros['asistencia_empleado_id'] = $asistencia->id;
-                }
-                if ($esVendedor) {
-                    $punteros['user_id'] = $usuario->id;
-                    $ruta->funciones()->firstOrCreate(['funcion' => 'vendedor']);
-                }
-                if ($punteros) {
-                    $ruta->update($punteros);
-                }
-            }
-            $empleado->update(['asistencia_empleado_id' => $asistencia?->id, 'personal_ruta_id' => $ruta?->id, 'user_id' => $usuario?->id]);
+            $this->enlazar($empleado, $datos, $asistencia, $ruta, $usuario);
             activity('empleado')->performedOn($empleado)->causedBy($actor)->withProperties([
                 'usa_sistema' => (bool) ($datos['usa_sistema'] ?? false), 'marca' => (bool) ($datos['marca'] ?? false),
                 'sale_rutas' => (bool) ($datos['sale_rutas'] ?? false), 'con_descuentos_ley' => (bool) $datos['con_descuentos_ley'],
@@ -193,6 +123,169 @@ class AltaEmpleado
 
             return $empleado->fresh();
         });
+    }
+
+    /**
+     * Agrega después lo que no se marcó al dar de alta: que marque, que salga a rutas o
+     * que entre al sistema con un rol. Lo que ya tiene no se toca. Mismas reglas y
+     * permisos que el alta: es la misma persona, solo que en otro momento.
+     */
+    public function completar(User $actor, PlanillaEmpleado $empleado, array $datos): PlanillaEmpleado
+    {
+        abort_unless($actor->activo && $actor->can('planilla.gestionar'), 403);
+        foreach (['marca' => 'asistencia_empleado_id', 'sale_rutas' => 'personal_ruta_id', 'usa_sistema' => 'user_id'] as $casilla => $enlace) {
+            // Lo que ya tiene no se vuelve a pedir, ni se exige su permiso.
+            if ($empleado->$enlace !== null) {
+                unset($datos[$casilla]);
+            }
+        }
+        unset($datos['user_id'], $datos['asistencia_empleado_id'], $datos['personal_ruta_id']);
+        $datos = $this->autorizarModulos($actor, $datos);
+        if ($empleado->personal_ruta_id !== null) {
+            unset($datos['sale_rutas']);
+        }
+        if (empty($datos['marca']) && empty($datos['sale_rutas']) && empty($datos['usa_sistema'])) {
+            throw ValidationException::withMessages(['modulos' => 'Elegí qué agregarle.']);
+        }
+
+        $reglas = [
+            'marca' => ['sometimes', 'boolean'], 'sale_rutas' => ['sometimes', 'boolean'], 'usa_sistema' => ['sometimes', 'boolean'],
+        ];
+        // Asistencia guarda nombres y apellidos por separado: al empezar a marcar se piden.
+        if (! empty($datos['marca'])) {
+            $reglas += ['nombres' => ['required', 'string', 'max:80'], 'apellidos' => ['required', 'string', 'max:80']];
+        }
+        if (! empty($datos['usa_sistema'])) {
+            $datos['name'] = $empleado->nombre;
+            $datos['activo'] = true;
+            $reglas += StoreUserRequest::reglasUsuario();
+        }
+        $datos = Validator::make($datos, $reglas)->validate();
+        $datos['alta_el'] = $empleado->alta_el?->toDateString();
+
+        return DB::transaction(function () use ($actor, $empleado, $datos) {
+            $empleado = PlanillaEmpleado::whereKey($empleado->id)->lockForUpdate()->firstOrFail();
+            $asistencia = $empleado->asistencia;
+            $this->enlazar($empleado, $datos, $asistencia, $empleado->personalRuta, $empleado->usuario);
+            if (! $asistencia && $empleado->fresh()->asistencia) {
+                // Un solo nombre: el que se escribió para Asistencia queda en todos lados.
+                app(NombreUnico::class)->desdeAsistencia($empleado->fresh()->asistencia);
+            }
+            activity('empleado')->performedOn($empleado)->causedBy($actor)->withProperties([
+                'usa_sistema' => (bool) ($datos['usa_sistema'] ?? false), 'marca' => (bool) ($datos['marca'] ?? false),
+                'sale_rutas' => (bool) ($datos['sale_rutas'] ?? false),
+            ])->log('agregó módulos al empleado');
+
+            return $empleado->fresh();
+        });
+    }
+
+    /**
+     * Reglas del documento, compartidas por el alta y la edición. Normaliza el DUI en
+     * `$datos`. `$ignorar` es la persona que se está editando, que no choca consigo misma.
+     *
+     * @return array<int, mixed>
+     */
+    public static function reglasDocumento(array &$datos, ?int $ignorar = null): array
+    {
+        $reglas = [];
+        if (($datos['documento_tipo'] ?? null) === 'dui') {
+            $reglas[] = function ($atributo, $valor, $fallar) use ($ignorar) {
+                if (! Dui::esValido($valor)) {
+                    $fallar('El DUI no es válido (formato o dígito verificador).');
+                } elseif (PlanillaEmpleado::where('documento_tipo', 'dui')->whereNotNull('dui')
+                    ->when($ignorar !== null, fn ($q) => $q->whereKeyNot($ignorar))->pluck('dui')
+                    ->contains(fn ($dui) => Dui::normalizar($dui) === Dui::normalizar($valor))) {
+                    // Las fichas anteriores pueden tener espacios: la migración no las rellena.
+                    $fallar('Ya existe una persona en planilla con ese tipo y número de documento.');
+                }
+            };
+            if (is_string($datos['dui'] ?? null) && Dui::esValido($datos['dui'])) {
+                $datos['dui'] = Dui::normalizar($datos['dui']);
+            }
+        }
+        $reglas[] = Rule::unique('planilla_empleados', 'dui')
+            ->where('documento_tipo', is_string($datos['documento_tipo'] ?? null) ? $datos['documento_tipo'] : 'dui')
+            ->ignore($ignorar);
+
+        return $reglas;
+    }
+
+    /**
+     * Autoriza cada módulo antes de validar o escribir. Vendedor implica operar en Rutas.
+     *
+     * @return array<string, mixed>
+     */
+    private function autorizarModulos(User $actor, array $datos): array
+    {
+        $vendedorNuevo = filter_var($datos['usa_sistema'] ?? false, FILTER_VALIDATE_BOOLEAN) && ($datos['rol'] ?? null) === RolSistema::Vendedor->value;
+        $usuarioId = filter_var($datos['user_id'] ?? null, FILTER_VALIDATE_INT);
+        $vendedorEnlazado = $usuarioId && User::find($usuarioId)?->hasRole(RolSistema::Vendedor->value);
+        if ($vendedorNuevo || $vendedorEnlazado) {
+            $datos['sale_rutas'] = true;
+        }
+        foreach (['usuarios.gestionar' => ['usa_sistema', 'user_id'], 'asistencia.gestionar' => ['marca', 'asistencia_empleado_id'], 'rutas.personal.gestionar' => ['sale_rutas', 'personal_ruta_id']] as $permiso => [$casilla, $enlace]) {
+            if (! empty($datos[$casilla]) || filled($datos[$enlace] ?? null)) {
+                abort_unless($actor->can($permiso), 403);
+            }
+        }
+
+        return $datos;
+    }
+
+    /**
+     * Crea lo que falta (Asistencia, Rutas, usuario) y enlaza todo con la persona. Las
+     * fichas que ya existían conservan su estado.
+     */
+    private function enlazar(PlanillaEmpleado $empleado, array $datos, ?AsistenciaEmpleado $asistencia, ?PersonalRuta $ruta, ?User $usuario): void
+    {
+        $rutaExistente = $ruta !== null;
+        if (! $asistencia && ! empty($datos['marca'])) {
+            $asistencia = AsistenciaEmpleado::create(['nombres' => $datos['nombres'], 'apellidos' => $datos['apellidos'], 'fecha_ingreso' => $datos['alta_el'] ?? null, 'activo' => true]);
+        }
+        if (! $ruta && ! empty($datos['sale_rutas'])) {
+            $ruta = PersonalRuta::create(['nombre' => Str::limit($empleado->nombre, 120, ''), 'activo' => true]);
+            $ruta->funciones()->create(['funcion' => 'vendedor']);
+        }
+        if (! $usuario && ! empty($datos['usa_sistema'])) {
+            // CrearUsuario enlaza antes de sincronizar, por eso comprobar primero.
+            $this->compatible($ruta, 'user_id', null);
+            $estadoRuta = $ruta?->activo;
+            $usuario = app(CrearUsuario::class)->crear($datos, $ruta);
+            if ($rutaExistente) {
+                $ruta->refresh()->update(['activo' => $estadoRuta]);
+            }
+        }
+        $esVendedor = $usuario?->hasRole(RolSistema::Vendedor->value) ?? false;
+        $this->compatible($asistencia, 'user_id', $usuario?->id);
+        $this->compatible($ruta, 'asistencia_empleado_id', $asistencia?->id);
+        $this->compatible($ruta, 'user_id', $esVendedor ? $usuario?->id : null);
+        if ($asistencia && $usuario) {
+            if (AsistenciaEmpleado::where('user_id', $usuario->id)->whereKeyNot($asistencia->id)->exists()) {
+                throw ValidationException::withMessages(['user_id' => 'El usuario ya tiene otra ficha de asistencia.']);
+            }
+            $asistencia->update(['user_id' => $usuario->id]);
+        }
+        if ($ruta) {
+            if ($asistencia && PersonalRuta::where('asistencia_empleado_id', $asistencia->id)->whereKeyNot($ruta->id)->exists()) {
+                throw ValidationException::withMessages(['asistencia_empleado_id' => 'Asistencia ya está enlazada a otra ficha de Rutas.']);
+            }
+            if ($esVendedor && PersonalRuta::where('user_id', $usuario->id)->whereKeyNot($ruta->id)->exists()) {
+                throw ValidationException::withMessages(['user_id' => 'El usuario ya tiene otra ficha de Rutas.']);
+            }
+            $punteros = [];
+            if ($asistencia) {
+                $punteros['asistencia_empleado_id'] = $asistencia->id;
+            }
+            if ($esVendedor) {
+                $punteros['user_id'] = $usuario->id;
+                $ruta->funciones()->firstOrCreate(['funcion' => 'vendedor']);
+            }
+            if ($punteros) {
+                $ruta->update($punteros);
+            }
+        }
+        $empleado->update(['asistencia_empleado_id' => $asistencia?->id, 'personal_ruta_id' => $ruta?->id, 'user_id' => $usuario?->id]);
     }
 
     private function compatible(?Model $modelo, string $campo, ?int $id): void

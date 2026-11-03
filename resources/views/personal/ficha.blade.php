@@ -23,10 +23,11 @@
                     <x-asistencia.estado :activo="$asistencia->activo"
                                          :accion="route('asistencia.empleados.toggle-activo', $asistencia)"
                                          etiquetaActivo="Marca" etiquetaInactivo="No marca" />
-                    @can('asistencia.gestionar')
+                    {{-- Quien está en planilla se edita una sola vez, abajo, en «Editar datos». --}}
+                    @if (! $ficha && auth()->user()->can('asistencia.gestionar'))
                         <a href="{{ route('asistencia.empleados.edit', $asistencia) }}"
                            class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:text-paper-200 dark:hover:bg-ink-700">Editar</a>
-                    @endcan
+                    @endif
                 </div>
             @endif
         </div>
@@ -39,7 +40,7 @@
             @endif
 
             @if ($ficha)
-                @if ($errors->hasAny(['nombre', 'sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
+                @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id', 'sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
                     <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
                         <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
                     </div>
@@ -60,18 +61,96 @@
 
                     @if ($gestiona)
                         <div class="mt-4 flex flex-wrap items-start gap-3">
-                            {{-- Quien marca se corrige con «Editar», arriba: Asistencia separa nombres y apellidos. --}}
-                            @if ($ficha->asistencia_empleado_id === null)
-                                <details @if ($errors->has('nombre')) open @endif>
-                                    <summary class="{{ $secundario }} cursor-pointer">Corregir nombre</summary>
-                                    <form method="POST" action="{{ route('planilla.empleados.nombre', $ficha) }}" class="mt-2 w-72 space-y-2">
+                            {{-- Un solo lugar para los datos de la persona: llegan solos a Asistencia y Rutas.
+                                 Quien marca escribe nombres y apellidos por separado, como los guarda Asistencia. --}}
+                            @php
+                                $marca = $ficha->asistencia_empleado_id !== null;
+                                $puedeEditar = ! $marca || auth()->user()->can('asistencia.gestionar');
+                                $partes = preg_split('/\s+/', trim($ficha->nombre));
+                                $corte = count($partes) >= 4 ? 2 : 1;
+                                $sugerido = ['nombres' => implode(' ', array_slice($partes, 0, $corte)), 'apellidos' => implode(' ', array_slice($partes, $corte))];
+                            @endphp
+                            @if ($puedeEditar)
+                                <details @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el'])) open @endif>
+                                    <summary class="{{ $secundario }} cursor-pointer">Editar datos</summary>
+                                    <form method="POST" action="{{ route('planilla.empleados.datos', $ficha) }}" class="mt-2 grid w-full max-w-xl gap-2 sm:grid-cols-2">
                                         @csrf
-                                        <div>
-                                            <label for="nombre" class="{{ $etiqueta }}">Nombre completo</label>
-                                            <input id="nombre" name="nombre" value="{{ old('nombre', $ficha->nombre) }}" maxlength="120" required class="{{ $campo }}">
-                                        </div>
-                                        <p class="text-xs text-gray-500 dark:text-paper-400">Cambia también en Rutas. Las quincenas confirmadas no cambian.</p>
-                                        <button type="submit" class="{{ $secundario }}">Guardar nombre</button>
+                                        @if ($marca)
+                                            <div><label for="nombres" class="{{ $etiqueta }}">Nombres</label>
+                                                <input id="nombres" name="nombres" value="{{ old('nombres', $asistencia?->nombres) }}" maxlength="80" required class="{{ $campo }}"></div>
+                                            <div><label for="apellidos" class="{{ $etiqueta }}">Apellidos</label>
+                                                <input id="apellidos" name="apellidos" value="{{ old('apellidos', $asistencia?->apellidos) }}" maxlength="80" required class="{{ $campo }}"></div>
+                                        @else
+                                            <div class="sm:col-span-2"><label for="nombre" class="{{ $etiqueta }}">Nombre completo</label>
+                                                <input id="nombre" name="nombre" value="{{ old('nombre', $ficha->nombre) }}" maxlength="120" required class="{{ $campo }}"></div>
+                                        @endif
+                                        <div><label for="documento_tipo" class="{{ $etiqueta }}">Tipo de documento</label>
+                                            <select id="documento_tipo" name="documento_tipo" required class="{{ $campo }}">
+                                                @foreach (PlanillaEmpleado::DOCUMENTO_TIPOS as $valor => $texto)
+                                                    <option value="{{ $valor }}" @selected(old('documento_tipo', $ficha->documento_tipo) === $valor)>{{ $texto }}</option>
+                                                @endforeach
+                                            </select></div>
+                                        <div><label for="dui" class="{{ $etiqueta }}">Número de documento</label>
+                                            <input id="dui" name="dui" value="{{ old('dui', $ficha->dui) }}" maxlength="20" required class="{{ $campo }}"></div>
+                                        <div><label for="cargo" class="{{ $etiqueta }}">Cargo</label>
+                                            <input id="cargo" name="cargo" value="{{ old('cargo', $ficha->cargo) }}" maxlength="120" class="{{ $campo }}"></div>
+                                        <div><label for="alta_el" class="{{ $etiqueta }}">Fecha de ingreso</label>
+                                            <input id="alta_el" name="alta_el" type="date" value="{{ old('alta_el', $ficha->alta_el?->toDateString()) }}" class="{{ $campo }}"></div>
+                                        <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-400">Se guarda también en Asistencia y Rutas. Las quincenas confirmadas no cambian.</p>
+                                        <div class="sm:col-span-2"><button type="submit" class="{{ $secundario }}">Guardar datos</button></div>
+                                    </form>
+                                </details>
+                            @endif
+
+                            {{-- Lo que no se marcó al dar de alta se agrega acá, después. --}}
+                            @php
+                                $opciones = array_filter([
+                                    'marca' => $ficha->asistencia_empleado_id === null && auth()->user()->can('asistencia.gestionar') ? 'Marca con huella' : null,
+                                    'sale_rutas' => $ficha->personal_ruta_id === null && auth()->user()->can('rutas.personal.gestionar') ? 'Sale a rutas' : null,
+                                    'usa_sistema' => $ficha->user_id === null && auth()->user()->can('usuarios.gestionar') ? 'Darle acceso al sistema' : null,
+                                ]);
+                            @endphp
+                            @if ($ficha->activo && $opciones)
+                                <details @if ($errors->hasAny(['modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id'])) open @endif
+                                         x-data="{ marca: @js((bool) old('marca')), usa: @js((bool) old('usa_sistema')) }">
+                                    <summary class="{{ $secundario }} cursor-pointer">Agregar acceso o módulos</summary>
+                                    <form method="POST" action="{{ route('planilla.empleados.modulos', $ficha) }}" class="mt-2 w-full max-w-xl space-y-2">
+                                        @csrf
+                                        @foreach ($opciones as $clave => $texto)
+                                            <label class="flex min-h-11 items-center gap-2 text-sm text-gray-700 dark:text-paper-200">
+                                                <input type="hidden" name="{{ $clave }}" value="0">
+                                                <input type="checkbox" name="{{ $clave }}" value="1" @checked(old($clave))
+                                                       @if ($clave === 'marca') x-model="marca" @elseif ($clave === 'usa_sistema') x-model="usa" @endif
+                                                       class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                                {{ $texto }}
+                                            </label>
+                                        @endforeach
+                                        @isset($opciones['marca'])
+                                            <div x-show="marca" class="grid gap-2 sm:grid-cols-2">
+                                                <div><label for="m_nombres" class="{{ $etiqueta }}">Nombres</label>
+                                                    <input id="m_nombres" name="nombres" value="{{ old('nombres', $sugerido['nombres']) }}" maxlength="80" class="{{ $campo }}"></div>
+                                                <div><label for="m_apellidos" class="{{ $etiqueta }}">Apellidos</label>
+                                                    <input id="m_apellidos" name="apellidos" value="{{ old('apellidos', $sugerido['apellidos']) }}" maxlength="80" class="{{ $campo }}"></div>
+                                            </div>
+                                        @endisset
+                                        @isset($opciones['usa_sistema'])
+                                            <div x-show="usa" class="grid gap-2 sm:grid-cols-2">
+                                                <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-400">El rol dice qué puede hacer. Vendedor también sale a rutas.</p>
+                                                <div><label for="rol" class="{{ $etiqueta }}">Rol</label>
+                                                    <select id="rol" name="rol" class="{{ $campo }}">
+                                                        @foreach (\App\Enums\RolSistema::opciones() as $valor => $texto)
+                                                            <option value="{{ $valor }}" @selected(old('rol') === $valor)>{{ $texto }}</option>
+                                                        @endforeach
+                                                    </select></div>
+                                                <div><label for="email" class="{{ $etiqueta }}">Correo</label>
+                                                    <input id="email" name="email" type="email" value="{{ old('email') }}" class="{{ $campo }}"></div>
+                                                <div><label for="password" class="{{ $etiqueta }}">Contraseña</label>
+                                                    <input id="password" name="password" type="password" autocomplete="new-password" class="{{ $campo }}"></div>
+                                                <div><label for="password_confirmation" class="{{ $etiqueta }}">Repetí la contraseña</label>
+                                                    <input id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" class="{{ $campo }}"></div>
+                                            </div>
+                                        @endisset
+                                        <button type="submit" class="{{ $secundario }}">Agregar</button>
                                     </form>
                                 </details>
                             @endif
