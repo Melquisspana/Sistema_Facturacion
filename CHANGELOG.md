@@ -8,6 +8,10 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Cambiado
+
+- Personal: se quita la pantalla «Formatos», una muestra con datos inventados. La hoja de firmas y el recibo reales siguen saliendo desde cada quincena.
+
 ### Corregido
 
 - Planilla: la lista y la pantalla para editar una quincena llevan a su ficha, donde están Impresos y Confirmar. Antes un borrador no tenía cómo llegar a ellos.

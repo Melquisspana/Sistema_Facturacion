@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\Route;
 | Planilla de control y recibos — fase 3, EN CONSTRUCCIÓN.
 |
 | Qué hay hasta acá: el registro de personas —reutilizando las identidades que ya
-| existen en Asistencia, Rutas y usuarios—, la apertura de un período, el formulario
-| de preparación y la vista previa de los formatos con datos ficticios.
+| existen en Asistencia, Rutas y usuarios—, la apertura de un período y el formulario
+| de preparación.
 |
 | Y el flujo completo: confirmar (que es lo único que crea obligaciones), pagos
 | individuales, por lote y parciales, anticipos con control de saldo, reversiones
@@ -46,10 +46,6 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
 
         Route::get('/', [PlanillaController::class, 'index'])->name('index');
 
-        // Formatos ANTES de {planilla}: si no, /planilla/formatos entraría por el
-        // binding del modelo y daría 404. Mismo cuidado que en Gastos con informes.
-        Route::get('formatos', [PlanillaController::class, 'formatos'])->name('formatos');
-
         // Registro de personas. Reutiliza identidades; no exige biometría.
         // La lista vive en Personal. La dirección se queda para no romper enlaces guardados.
         Route::get('empleados', fn () => redirect()->route('personal.empleados', [], 301))->name('empleados');
@@ -68,7 +64,7 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
         Route::post('abrir', [PlanillaController::class, 'store'])->middleware($gestionar)->name('store');
 
         // Anticipos y documentos ANTES de {planilla}: si no, entrarían por el binding
-        // del modelo y darían 404. Mismo cuidado que con `formatos`.
+        // del modelo y darían 404. Mismo cuidado que en Gastos con informes.
         Route::get('anticipos', [PlanillaPagoController::class, 'anticipos'])->name('anticipos');
         // El comprobante IMPRIME un adelanto que ya existe: no registra dinero, así que
         // basta el permiso de importes. Registrarlo sigue exigiendo `planilla.gestionar`.

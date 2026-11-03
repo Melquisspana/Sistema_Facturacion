@@ -88,7 +88,7 @@ class AreaPersonalTest extends TestCase
     {
         $sidebar = $this->sidebar(route('personal.empleados'), $this->admin);
 
-        foreach (['asistencia.dashboard', 'personal.empleados', 'asistencia.reporte', 'planilla.index', 'planilla.anticipos', 'planilla.formatos'] as $ruta) {
+        foreach (['asistencia.dashboard', 'personal.empleados', 'asistencia.reporte', 'planilla.index', 'planilla.anticipos'] as $ruta) {
             $this->assertStringContainsString(route($ruta), $sidebar, "Falta $ruta en el menú.");
         }
     }

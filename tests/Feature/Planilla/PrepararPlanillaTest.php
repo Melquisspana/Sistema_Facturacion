@@ -24,7 +24,7 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Fase 3 — preparación de planilla, registro de personas y formatos.
+ * Fase 3 — preparación de planilla y registro de personas.
  *
  * Lo que defienden estas pruebas:
  *
@@ -426,33 +426,11 @@ class PrepararPlanillaTest extends TestCase
         $respuesta->assertSee('Ana Mendoza');
     }
 
-    public function test_los_formatos_se_previsualizan_con_datos_ficticios(): void
-    {
-        $u = $this->gestor();
-
-        $hoja = $this->actingAs($u)->get(route('planilla.formatos'))->assertOk();
-        $hoja->assertSee('datos ficticios', false);
-        $hoja->assertSee('Planilla para firma', false);
-        // El encabezado aprobado: logo, negocio y empleadora.
-        $hoja->assertSee('DULCES LA NEGRITA', false);
-        $hoja->assertSee('Ana Beatriz Mendoza');
-        // El total de la hoja: 225+35.50 + 200+20 + 187.50 = 668.00 de bruto.
-        $hoja->assertSee('929.00');
-        // Y el neto: 668 - 40 - 25 = 603.00
-        $hoja->assertSee('828.00');
-
-        $recibo = $this->actingAs($u)->get(route('planilla.formatos', ['formato' => 'recibo']))->assertOk();
-        $recibo->assertSee('Recibo de pago', false);
-        $recibo->assertSee('Cooperativa La Esperanza');
-        $recibo->assertSee('se entrega a', false);
-    }
-
     public function test_la_planilla_dice_que_calcula_y_que_no_en_cada_pantalla(): void
     {
         $u = $this->gestor();
 
         $this->actingAs($u)->get(route('planilla.index'))->assertOk()->assertSee('una propuesta que se', false)->assertSee('aporte patronal', false);
-        $this->actingAs($u)->get(route('planilla.formatos'))->assertOk()->assertSee('no sustituye la Planilla', false);
     }
 
     // ─────────────────── Lo que se corrigió del formulario ───────────────────
