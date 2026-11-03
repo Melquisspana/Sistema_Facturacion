@@ -9,7 +9,6 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
-use App\Services\Planilla\IdentidadNegocio;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
@@ -216,89 +215,5 @@ class PlanillaController extends Controller
         $bajas->reactivar($request->user(), $empleado);
 
         return back()->with('planilla.aviso', 'Empleado reactivado. Las huellas vigentes se conservan.');
-    }
-    // ── Formatos ──────────────────────────────────────────────────────────
-
-    /**
-     * Vista previa de la hoja de firmas y del recibo, CON DATOS FICTICIOS.
-     *
-     * Existe para poder juzgar el formato antes de que haya una planilla de verdad, y
-     * para revisarlo sin abrir los sueldos reales de nadie. Los nombres y los importes
-     * son inventados y la pantalla lo dice en grande.
-     */
-    public function formatos(Request $request, TotalesPlanilla $totales, IdentidadNegocio $identidad)
-    {
-        abort_unless($request->user()->can('planilla.ver'), 403);
-
-        return view('planilla.formatos', [
-            'ficticia' => $this->datosFicticios(),
-            'totales' => $totales,
-            'formato' => $request->query('formato') === 'recibo' ? 'recibo' : 'hoja',
-            // El encabezado real, con logo y empleadora: revisar el formato sin ellos
-            // no diría nada sobre el papel que se va a imprimir.
-            'negocio' => $identidad->negocio(),
-            'empleadora' => $identidad->empleadora(),
-            'logo' => asset('images/dte/logo-transparent.png'),
-        ]);
-    }
-
-    /** @return array<string, mixed> */
-    private function datosFicticios(): array
-    {
-        return [
-            'periodo' => 'Primera quincena de septiembre de 2026 (01 al 15)',
-            // Código corto del período: es lo que numera el recibo. La descripción
-            // larga sirve para leerla, no para meterla en un folio.
-            'codigo' => '2026-09-Q1',
-            'periodo_corto' => '01–15 sep',
-            'periodo_largo' => 'del 01/09/2026 al 15/09/2026',
-            'desde' => '2026-09-01',
-            'hasta' => '2026-09-15',
-            'fecha_pago' => '16/09/2026',
-            'moneda' => 'USD',
-            // Quien entrega el pago es un dato del pago, no del negocio. En la vista
-            // previa es inventado, igual que todo lo demás.
-            'entrego' => 'Sandra Melgar Ayala',
-            'lineas' => [
-                [
-                    'nombre' => 'Ana Beatriz Mendoza', 'cargo' => 'Ventas', 'dui' => '0123 4567-8',
-                    'salario' => '225.00',
-                    'ingresos' => [['concepto' => 'Comisión', 'importe' => '35.50']],
-                    'descuentos' => [['concepto' => 'Anticipo de quincena', 'importe' => '40.00', 'destino' => 'anticipo', 'tercero' => null, 'referencia' => 'pago del 02/09, recibo 148']],
-                ],
-                [
-                    'nombre' => 'Carlos Ernesto Rivas', 'cargo' => 'Reparto', 'dui' => '0234 5678-9',
-                    'salario' => '200.00',
-                    'ingresos' => [['concepto' => 'Viáticos', 'importe' => '20.00']],
-                    'descuentos' => [['concepto' => 'Cuota de préstamo', 'importe' => '25.00', 'destino' => 'tercero', 'tercero' => 'Cooperativa La Esperanza', 'referencia' => null]],
-                ],
-                [
-                    // Sin descuentos: en el recibo, ese apartado NO aparece.
-                    'nombre' => 'María Fernanda Cruz', 'cargo' => 'Producción', 'dui' => '0567 8901-2',
-                    'salario' => '187.50',
-                    'ingresos' => [],
-                    'descuentos' => [],
-                ],
-                [
-                    // Entró a mitad de quincena y cobró a cuenta: las dos excepciones
-                    // que el formato tiene que dejar claras.
-                    'nombre' => 'Luis Alberto Portillo', 'cargo' => 'Producción', 'dui' => '0456 7890-1',
-                    'salario' => '96.00',
-                    'periodo' => '08–15 sep',
-                    'periodo_largo' => 'del 08/09/2026 al 15/09/2026',
-                    'pagado' => 6000,
-                    'ingresos' => [],
-                    'descuentos' => [],
-                ],
-                [
-                    // Se le pagó dos días después que al resto.
-                    'nombre' => 'Nubia Guadalupe Flores', 'cargo' => 'Empaque', 'dui' => '1012 3456-7',
-                    'salario' => '165.00',
-                    'fecha_pago_propia' => '18/09/2026',
-                    'ingresos' => [],
-                    'descuentos' => [],
-                ],
-            ],
-        ];
     }
 }

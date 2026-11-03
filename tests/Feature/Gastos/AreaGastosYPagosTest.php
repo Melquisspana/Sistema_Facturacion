@@ -101,7 +101,7 @@ class AreaGastosYPagosTest extends TestCase
 
         // Esconder no autoriza: el candado real es el middleware de cada ruta. Si algún
         // día el menú se equivoca, esto sigue cerrado.
-        foreach (['planilla.index', 'planilla.empleados', 'planilla.anticipos', 'planilla.formatos', 'personal.empleados'] as $ruta) {
+        foreach (['planilla.index', 'planilla.empleados', 'planilla.anticipos', 'personal.empleados'] as $ruta) {
             $this->actingAs($contable)->get(route($ruta))->assertForbidden();
         }
     }

@@ -13,8 +13,7 @@
        · Un borrador no declara recibido. Cambia de nombre, pierde el número, gana
          el sello y se queda sin línea de firma. Una firma sobre un dinero que no
          salió es un problema de verdad. --}}
-{{-- Se recibe de quien incluye la parte. La vista previa de formatos no tiene
-     una planilla de verdad, y la parte no puede exigirle una. --}}
+{{-- Se recibe de quien incluye la parte; si no lo dice, lo dice la planilla. --}}
 @php($esBorrador = $esBorrador ?? (isset($planilla) && $planilla->borrador()))
 
 @foreach ($lineas as $l)

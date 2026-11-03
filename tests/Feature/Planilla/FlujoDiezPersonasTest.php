@@ -216,6 +216,7 @@ class FlujoDiezPersonasTest extends TestCase
         $hoja->assertSee('Planilla para firma', false);
         $hoja->assertSee('DULCES LA NEGRITA', false);
         $hoja->assertSee('10 trabajadores');
+        $hoja->assertSee('no sustituye la Planilla', false);
 
         foreach (self::PERSONAL as [$nombre, $dui]) {
             $hoja->assertSee($nombre);
@@ -239,6 +240,7 @@ class FlujoDiezPersonasTest extends TestCase
             ->assertOk();
 
         $recibos->assertSee('Recibo de pago', false);
+        $recibos->assertSee('no sustituye la Planilla', false);
         $recibos->assertSee('del 08/09/2026 al 15/09/2026', false);
         $recibos->assertSee('Total recibido');
         // Quien no tiene descuentos no imprime ese apartado; quien sí, lo imprime.

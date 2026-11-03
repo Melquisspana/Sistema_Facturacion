@@ -13,7 +13,6 @@
         @if ($vePlanilla)
             <x-sidebar-link :href="route('planilla.index')" :active="request()->routeIs('planilla.index', 'planilla.show', 'planilla.preparar', 'planilla.create', 'planilla.impresos', 'planilla.pagos')">Planilla</x-sidebar-link>
             <x-sidebar-link :href="route('planilla.anticipos')" :active="request()->routeIs('planilla.anticipos*')">Anticipos</x-sidebar-link>
-            <x-sidebar-link :href="route('planilla.formatos')" :active="request()->routeIs('planilla.formatos')">Formatos</x-sidebar-link>
         @endif
     </x-sidebar-group>
 </nav>
