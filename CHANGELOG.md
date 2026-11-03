@@ -12,6 +12,29 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.03.3] - 2026-11-03
+
+Personal, Usuarios, Asistencia y Rutas como una sola cosa, todo el sistema en castellano, PPQ con NC rechazadas y Compras solo con CCF y notas (#203 al #211), sin migraciones.
+
+### Agregado
+
+- Personal › «Posibles repetidos»: una lista de solo lectura de personas que pueden estar cargadas dos veces, de cuando cada módulo daba su propia alta. No enlaza ni borra nada (#208).
+- La ficha de Personal tiene el bloque «Acceso y módulos», con usuario, asistencia y rutas en ese orden y un enlace a cada parte. Lo que la persona no tiene se dice: «Sin usuario», «No marca», «No sale a rutas» (#209).
+- Guía única de pantallas en `docs/GUIA_PANTALLAS.md`, que pasa a ser regla para todo cambio en `AGENTS.md` y en la plantilla de PR (#203, #205).
+
+### Cambiado
+
+- Una persona se carga una sola vez, en Personal. Usuarios › Nuevo elige a alguien de Personal que todavía no tiene usuario y el nombre sale de su ficha. En la ficha se puede crear un usuario o enlazar uno que ya existe. Usuarios muestra la ficha de cada cuenta y avisa cuál no tiene, sin dejar a nadie afuera (#204).
+- Asistencia › Nuevo empleado y Rutas › Nueva persona de campo ya no vuelven a cargar a la persona: llevan a su ficha en Personal, y el servidor rechaza el alta repetida. Rutas y Usuarios vuelven a la ficha y se ven igual que Personal, también en modo oscuro (#208, #209).
+- Todo el sistema en castellano: paginación, mensajes de validación, inicio de sesión y fechas. El idioma por defecto pasa a `es` (#206).
+- Compras guarda solo los CCF y las notas de crédito y débito de proveedores (`tipos_compra`). Las facturas comunes, las retenciones y los demás DTE que llegan al correo ya no se guardan. Lo que ya estaba guardado no se toca (#211).
+
+### Corregido
+
+- PPQ: una NC que Calleja no registró sale del lote y queda para el siguiente PPQ, aunque su CCF sí haya entrado. Antes quedaba adentro y el lote no coincidía con el caso. Si el reporte no trae ninguna NC, las notas siguen a su CCF (#210).
+- Cobros: al sincronizar, la fecha de vinculación de un albarán ya no se mueve cuando los candidatos no cambiaron. MySQL guarda el JSON con las claves en otro orden (#179, #207).
+- Las pruebas pasan también en MySQL estricto (#207).
+
 ## [2026.11.03.2] - 2026-11-03
 
 Rutas de varios días con «Terminar ruta», Planilla sin seguimiento de pagos, aviso de orden de compra y modo oscuro (#195 al #201). Trae una migración.
