@@ -118,7 +118,7 @@
                     <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quién lo entregó?</p>
                     <div class="mt-1.5 flex flex-wrap gap-2">
                         @foreach ($participantes as $p)
-                            <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="{{ $pastilla }} hover:bg-green-50 dark:hover:bg-ink-700">{{ $p->personal->nombre }}</button>
+                            <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="{{ $pastilla }} hover:bg-gray-100 dark:hover:bg-ink-700">{{ $p->personal->nombre }}</button>
                         @endforeach
                     </div>
                 </form>

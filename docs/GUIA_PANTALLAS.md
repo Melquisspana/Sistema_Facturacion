@@ -81,10 +81,10 @@ Tomado de Gastos y Planilla (botones de 44 px, que se tocan bien con el dedo). L
 - Texto de cancelar: siempre «Cancelar». Lleva a donde se estaba antes (la lista o la ficha) y no borra nada.
 - Las acciones en una fila de tabla son enlaces de texto índigo («Editar», «Ver»), no botones.
 
-**Lugar.** Tomado de Planta y del diálogo de `x-modal`: al pie del formulario, separados por una línea, alineados a la derecha, **Cancelar a la izquierda y el principal a la derecha**. En el celular, el principal queda arriba y a todo el ancho.
+**Lugar.** Tomado de Planta y del diálogo de `x-modal`: al pie del formulario, separados por una línea, alineados a la derecha, **Cancelar a la izquierda y el principal a la derecha**. En el celular quedan uno arriba del otro, a todo el ancho, en el mismo orden: Cancelar arriba y el principal abajo. No se usa `flex-col-reverse` ni `order-*`: el CSS de producción no se compila en el servidor y esas clases no están, así que los botones quedaban en fila.
 
 ```blade
-<div class="flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+<div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
     <x-secondary-button :href="route('planta.insumos.index')">Cancelar</x-secondary-button>
     <x-primary-button>Guardar insumo</x-primary-button>
 </div>
