@@ -14,6 +14,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Planilla: la lista y la pantalla para editar una quincena llevan a su ficha, donde están Impresos y Confirmar. Antes un borrador no tenía cómo llegar a ellos.
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
 ## [2026.11.02.3] - 2026-11-02
