@@ -35,6 +35,9 @@
 
     <div class="py-8">
         <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
+            @if (session('status'))
+                <p role="status" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">{{ session('status') }}</p>
+            @endif
             @if (session('planilla.aviso'))
                 <p role="status" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{{ session('planilla.aviso') }}</p>
             @endif
@@ -243,12 +246,59 @@
                                 @endif
                             </dd>
                         </div>
-                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                        <div class="flex flex-wrap items-start gap-x-3 gap-y-1 py-2">
                             <dt class="w-24 shrink-0 {{ $dt }}">Rutas</dt>
                             <dd class="{{ $dd }}">
                                 @if ($rutaPersona)
                                     {{ $rutaPersona->funcionesEnum()->map(fn ($f) => $f->label())->implode(', ') ?: 'Sin funciones' }} · {{ $rutaPersona->activo ? 'Activo' : 'Inactivo' }}
-                                    @if (auth()->user()->can('rutas.ver') && auth()->user()->can('rutas.personal.ver'))
+                                    @if ($rutaPersona->telefono)
+                                        <p class="mt-1">Teléfono · {{ $rutaPersona->telefono }}</p>
+                                    @endif
+                                    @if ($rutaPersona->notas)
+                                        <p class="mt-1 whitespace-pre-line">{{ $rutaPersona->notas }}</p>
+                                    @endif
+                                    @can('rutas.ver')
+                                        @can('rutas.personal.gestionar')
+                                            <details class="mt-2" @if ($errors->hasAny(['telefono', 'notas', 'funciones', 'funciones.*'])) open @endif>
+                                                <summary class="{{ $secundario }} cursor-pointer">Editar datos de rutas</summary>
+                                                <form method="POST" action="{{ route('rutas.personal.update', $rutaPersona) }}" class="mt-2 grid w-full max-w-xl gap-2">
+                                                    @csrf
+                                                    @method('PUT')
+                                                    @if ($errors->hasAny(['telefono', 'notas', 'funciones', 'funciones.*']))
+                                                        <p role="alert" class="text-sm text-red-600 dark:text-red-400">Revisá estos datos. No se guardó nada.</p>
+                                                    @endif
+                                                    <div>
+                                                        <label for="ruta_telefono" class="{{ $etiqueta }}">Teléfono (opcional)</label>
+                                                        <input id="ruta_telefono" name="telefono" maxlength="30" value="{{ old('telefono', $rutaPersona->telefono) }}" class="{{ $campo }}">
+                                                        @error('telefono')<p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                                                    </div>
+                                                    <div>
+                                                        <label for="ruta_notas" class="{{ $etiqueta }}">Notas (opcional)</label>
+                                                        <textarea id="ruta_notas" name="notas" maxlength="300" class="{{ $campo }}">{{ old('notas', $rutaPersona->notas) }}</textarea>
+                                                        @error('notas')<p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                                                    </div>
+                                                    <fieldset>
+                                                        <legend class="{{ $etiqueta }}">Funciones</legend>
+                                                        @foreach (\App\Enums\FuncionPersonalRuta::cases() as $funcion)
+                                                            <label class="flex min-h-11 items-center gap-2">
+                                                                <input type="checkbox" name="funciones[]" value="{{ $funcion->value }}" @checked(in_array($funcion->value, old('funciones', session()->hasOldInput() ? [] : $rutaPersona->funcionesEnum()->map(fn ($f) => $f->value)->all()))) class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
+                                                                {{ $funcion->label() }}
+                                                            </label>
+                                                        @endforeach
+                                                        @error('funciones')<p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                                                        @error('funciones.*')<p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                                                    </fieldset>
+                                                    <div><button type="submit" class="{{ $secundario }}">Guardar</button></div>
+                                                </form>
+                                            </details>
+                                            <form method="POST" action="{{ route('rutas.personal.toggle-activo', $rutaPersona) }}" class="mt-2">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button type="submit" class="{{ $secundario }}">{{ $rutaPersona->activo ? 'Desactivar en rutas' : 'Activar en rutas' }}</button>
+                                            </form>
+                                        @endcan
+                                    @endcan
+                                    @if (auth()->user()->can('rutas.ver') && auth()->user()->can('rutas.personal.ver') && ! \App\Models\PersonalRuta::seGestionaEnPersonal(auth()->user()))
                                         <a href="{{ route('rutas.personal.show', $rutaPersona) }}" class="ml-2 text-indigo-600 hover:underline dark:text-indigo-400">Abrir en Rutas</a>
                                     @endif
                                 @else

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
+use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
@@ -91,6 +92,9 @@ class PersonalController extends Controller
             'verImportes' => $verImportes,
             'minimo' => $minimo,
             'bajoMinimo' => $bajoMinimo,
+            'rutasSinFicha' => $request->user()->can('rutas.personal.ver') && PlanillaEmpleado::enUso()
+                ? PersonalRuta::whereNotIn('id', PlanillaEmpleado::whereNotNull('personal_ruta_id')->select('personal_ruta_id'))->orderBy('nombre')->get()
+                : collect(),
         ]);
     }
 

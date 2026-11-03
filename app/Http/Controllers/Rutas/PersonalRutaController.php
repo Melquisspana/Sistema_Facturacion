@@ -27,8 +27,12 @@ use Illuminate\View\View;
  */
 class PersonalRutaController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
+        if (PersonalRuta::seGestionaEnPersonal($request->user())) {
+            return redirect()->route('personal.empleados');
+        }
+
         $personal = PersonalRuta::query()
             ->with(['funciones:id,rutas_personal_id,funcion', 'user:id,name'])
             ->withCount('participaciones')
@@ -55,8 +59,12 @@ class PersonalRutaController extends Controller
         ]);
     }
 
-    public function create(Request $request): View
+    public function create(Request $request): View|RedirectResponse
     {
+        if (PersonalRuta::seGestionaEnPersonal($request->user())) {
+            return redirect()->route('planilla.empleados.create');
+        }
+
         // Con Personal, la persona ya está (o se carga) ahí: no se la vuelve a escribir.
         if (PlanillaEmpleado::enUso()) {
             return view('personal.desde-personal', [
@@ -97,8 +105,12 @@ class PersonalRutaController extends Controller
             ->with('status', $personal->nombre.' quedó dado de alta.');
     }
 
-    public function show(PersonalRuta $personal): View
+    public function show(Request $request, PersonalRuta $personal): View|RedirectResponse
     {
+        if (PersonalRuta::seGestionaEnPersonal($request->user()) && ($ficha = $this->fichaDePersonal($personal))) {
+            return redirect()->route('personal.empleados.show', 'p'.$ficha->id);
+        }
+
         $personal->load([
             'funciones',
             'user:id,name',
@@ -109,8 +121,12 @@ class PersonalRutaController extends Controller
         return view('rutas.personal.show', ['personal' => $personal, 'enPersonal' => $this->fichaDePersonal($personal)]);
     }
 
-    public function edit(PersonalRuta $personal): View
+    public function edit(Request $request, PersonalRuta $personal): View|RedirectResponse
     {
+        if (PersonalRuta::seGestionaEnPersonal($request->user()) && ($ficha = $this->fichaDePersonal($personal))) {
+            return redirect()->route('personal.empleados.show', 'p'.$ficha->id);
+        }
+
         $personal->load('funciones');
 
         return view('rutas.personal.edit', $this->datosFormulario($personal) + [
@@ -125,7 +141,8 @@ class PersonalRutaController extends Controller
         // Quien está en Personal tiene un solo nombre, que se edita en su ficha y llega
         // solo acá: desde Rutas no se cambia, para que no vuelva a haber dos.
         // Lo mismo con sus enlaces: la ficha dice quién es su usuario y su asistencia.
-        $enPersonal = $this->fichaDePersonal($personal) !== null;
+        $ficha = $this->fichaDePersonal($personal);
+        $enPersonal = $ficha !== null;
         $nombre = $enPersonal ? $personal->nombre : $datos['nombre'];
         if ($enPersonal) {
             $datos['user_id'] = $personal->user_id;
@@ -144,9 +161,11 @@ class PersonalRutaController extends Controller
             $this->sincronizarFunciones($personal, $datos['funciones'] ?? []);
         });
 
-        return redirect()
-            ->route('rutas.personal.show', $personal)
-            ->with('status', 'Datos actualizados.');
+        if (PersonalRuta::seGestionaEnPersonal($request->user()) && $ficha) {
+            return redirect()->route('personal.empleados.show', 'p'.$ficha->id)->with('status', 'Datos actualizados.');
+        }
+
+        return redirect()->route('rutas.personal.show', $personal)->with('status', 'Datos actualizados.');
     }
 
     /** Activa o desactiva a la persona. Su historial de salidas se conserva. */

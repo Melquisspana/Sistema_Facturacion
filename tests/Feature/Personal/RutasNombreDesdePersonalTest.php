@@ -44,10 +44,8 @@ class RutasNombreDesdePersonalTest extends TestCase
         ]);
         $ruta = $empleado->personalRuta;
 
-        $this->actingAs($this->admin)->get(route('rutas.personal.edit', $ruta))->assertOk()
-            ->assertSee('Se edita en')
-            ->assertSee(route('personal.empleados.show', 'p'.$empleado->id), false)
-            ->assertDontSee('name="nombre"', false);
+        $this->actingAs($this->admin)->get(route('rutas.personal.edit', $ruta))
+            ->assertRedirect(route('personal.empleados.show', 'p'.$empleado->id));
 
         $this->actingAs($this->admin)->put(route('rutas.personal.update', $ruta), [
             'nombre' => 'Otro Nombre', 'telefono' => '0000-0000', 'funciones' => ['vendedor'],

@@ -47,6 +47,22 @@
                 </p>
             @endif
 
+            @if ($rutasSinFicha->isNotEmpty())
+                <div role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                    <p>{{ $rutasSinFicha->count() === 1 ? '1 persona de Rutas todavía no tiene ficha en Personal' : $rutasSinFicha->count().' personas de Rutas todavía no tienen ficha en Personal' }}</p>
+                    <ul>
+                        @foreach ($rutasSinFicha as $personaRuta)
+                            <li>
+                                <a href="{{ route('rutas.personal.show', $personaRuta) }}" class="inline-flex min-h-11 items-center underline">{{ $personaRuta->nombre }}</a>
+                                @can('planilla.gestionar')
+                                    <a href="{{ route('planilla.empleados.create', ['personal_ruta_id' => $personaRuta->id]) }}" class="ml-3 inline-flex min-h-11 items-center underline">Darla de alta</a>
+                                @endcan
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             <form method="GET" class="flex flex-wrap items-end gap-3">
                 <div>
                     <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Buscar</label>
