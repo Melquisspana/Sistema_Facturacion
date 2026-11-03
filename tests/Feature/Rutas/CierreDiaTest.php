@@ -15,6 +15,7 @@ use App\Models\SalidaRutaCierre;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\CierreDia;
+use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use App\Support\HoraNegocio;
 use Database\Seeders\CatalogosMhSeeder;
@@ -79,6 +80,42 @@ class CierreDiaTest extends TestCase
         return $this->postJson(route('rutas.mi-salida.cerrar', $this->salida), $datos);
     }
 
+    public function test_la_forma_de_pago_se_cambia_en_la_entrega_sin_tocar_al_cliente(): void
+    {
+        // Una sala de quedan que esta vez paga en efectivo.
+        $quedan = $this->entrega(null, false);
+        $url = route('rutas.mi-salida.update', [$this->salida, $quedan]);
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pago: Sin cobro (quedan)')->assertSee('cambiar');
+        $this->patch($url, ['resultado' => 'entregado', 'forma_cobro' => 'tarjeta'])->assertSessionHasErrors('forma_cobro');
+        $this->assertTrue($quedan->refresh()->estaPendiente());
+        $this->patch($url, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $quedan->refresh();
+        $this->assertSame('efectivo', $quedan->forma_cobro->value);
+        $this->assertSame('100.25', $quedan->monto_esperado);
+        $this->assertNull($quedan->dte->cliente->refresh()->cobro_en_entrega);
+
+        // Una sala que paga en efectivo y esta vez queda sin cobro.
+        $contado = $this->entrega('efectivo', false);
+        $this->patch(route('rutas.mi-salida.update', [$this->salida, $contado]), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO])->assertSessionHasNoErrors();
+        $contado->refresh();
+        $this->assertNull($contado->forma_cobro);
+        $this->assertNull($contado->monto_esperado);
+        $this->assertSame('efectivo', $contado->dte->cliente->refresh()->cobro_en_entrega->value);
+
+        // La oficina también elige; y el cierre del día cuenta lo elegido.
+        $cheque = $this->entrega('efectivo', false);
+        $this->actingAs($this->oficina)->patch(route('rutas.salidas.entregas.update', [$this->salida, $cheque]), ['resultado' => 'entregado', 'entregado_por_id' => $this->persona->id, 'forma_cobro' => 'cheque'])->assertSessionHasNoErrors();
+        $this->assertSame('cheque', $cheque->refresh()->forma_cobro->value);
+        $this->actingAs($this->vendedor);
+        $this->cerrar($this->datos([
+            $quedan->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo'],
+            $cheque->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'cheque'],
+        ]))->assertRedirect();
+        $cierre = $this->salida->cierreDelDia('2026-10-28');
+        $this->assertSame('100.25', $cierre->efectivo_cobrado);
+        $this->assertSame('100.25', $cierre->cheques_cobrado);
+    }
+
     public function test_foto_del_cobro_deshacer_y_todo_entregado(): void
     {
         $e = $this->entrega();
@@ -136,7 +173,7 @@ class CierreDiaTest extends TestCase
         $this->assertSame('40.20', $c->a_entregar);
         $this->assertSame('0.00', $c->gastos_total);
         $this->assertSame('40.20', $efectivo->refresh()->monto_cobrado);
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Día cerrado')->assertSee('Saldo pendiente $60.05')->assertDontSee('Todo entregado');
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Día terminado')->assertSee('Saldo pendiente $60.05')->assertDontSee('Todo entregado');
         $this->cerrar()->assertForbidden();
         $this->actingAs($this->oficina)->postJson(route('rutas.salidas.cerrar', $this->salida))->assertUnprocessable()->assertSee('cerrado');
         $this->assertSame(1, SalidaRutaCierre::count());
@@ -148,7 +185,6 @@ class CierreDiaTest extends TestCase
         foreach (['-0.01', '100.26', '1.001', 'abc'] as $monto) {
             $this->cerrar($this->datos([$e->id => ['monto_cobrado' => $monto, 'forma_cobro' => 'efectivo']]))->assertUnprocessable();
         }
-        $this->cerrar(['entregas' => [$e->id => ['monto_cobrado' => '1.00', 'forma_cobro' => 'efectivo']]])->assertUnprocessable();
         $this->cerrar($this->datos([$e->id => ['monto_cobrado' => '1.00', 'forma_cobro' => 'otro']]))->assertUnprocessable();
         $this->cerrar($this->datos([]))->assertUnprocessable();
         $this->assertSame(0, SalidaRutaCierre::count());
@@ -176,11 +212,10 @@ class CierreDiaTest extends TestCase
         $this->entrega(null, false);
         $this->get(route('rutas.mi-salida.cierre', $this->salida))->assertOk()->assertSee('Sin cobro (quedan)')->assertSee('1 sin marcar siguen en la salida')->assertSee('inputmode="decimal"', false);
         $datos = $this->datos([$e->id => ['monto_cobrado' => '75.25', 'forma_cobro' => 'transferencia']]);
-        $this->cerrar(array_replace($datos, ['entrega_dinero_personal_id' => PersonalRuta::create(['nombre' => 'Ajeno'])->id]))->assertUnprocessable();
-        $this->persona->update(['activo' => false]);
-        $this->actingAs($this->oficina)->postJson(route('rutas.salidas.cerrar', $this->salida), $datos)->assertUnprocessable();
-        $this->persona->update(['activo' => true]);
-        $this->post(route('rutas.salidas.cerrar', $this->salida), $datos)->assertRedirect();
+        // Terminar el día no es entregar el dinero: quién lo entrega no se pide ni se guarda.
+        $datos['entrega_dinero_personal_id'] = PersonalRuta::create(['nombre' => 'Ajeno'])->id;
+        $this->actingAs($this->oficina)->post(route('rutas.salidas.cerrar', $this->salida), $datos)->assertRedirect();
+        $this->assertNull(SalidaRutaCierre::sole()->entrega_dinero_personal_id);
         $this->assertSame('100.25', SalidaRutaCierre::sole()->transferencias_esperado);
         $this->assertSame('75.25', SalidaRutaCierre::sole()->transferencias_cobrado);
         $this->assertSame('0.00', SalidaRutaCierre::sole()->a_entregar);
@@ -208,7 +243,7 @@ class CierreDiaTest extends TestCase
         $this->travel(1)->days();
         $this->post(route('rutas.salidas.reabrir', [$this->salida, $fecha]), ['motivo' => 'Entrega anotada por error'])->assertRedirect();
         $this->patch(route('rutas.salidas.entregas.deshacer', [$this->salida, $e]))->assertRedirect();
-        $this->get(route('rutas.salidas.cierre', ['salida' => $this->salida, 'fecha' => $fecha]))->assertOk()->assertSee('Cerrar el día');
+        $this->get(route('rutas.salidas.cierre', ['salida' => $this->salida, 'fecha' => $fecha]))->assertOk()->assertSee('Terminar día');
         $this->post(route('rutas.salidas.cerrar', $this->salida), ['fecha' => $fecha])->assertRedirect();
         $cierre = SalidaRutaCierre::sole();
         $this->assertSame($id, $cierre->id);
@@ -258,7 +293,7 @@ class CierreDiaTest extends TestCase
             'entregas' => app(CierreDia::class)->entregas($this->salida, HoraNegocio::fechaHoy()),
             'empresa' => Empresa::first(),
         ])->render();
-        foreach ([$e->dte->numero_control, 'Pruebas', 'Carlos', 'Efectivo a entregar', 'Cheques', 'Transferencias', 'Gastos', 'Recibe'] as $texto) {
+        foreach ([$e->dte->numero_control, 'Pruebas', 'Carlos', 'Resumen del día', 'Efectivo del día menos gastos', 'Cheques', 'Transferencias', 'Gastos', 'al terminar la ruta'] as $texto) {
             $this->assertStringContainsString($texto, $html);
         }
         $this->actingAs($this->oficina)->get(route('rutas.salidas.liquidacion', [$this->salida, HoraNegocio::fechaHoy()]))->assertOk()->assertHeader('content-type', 'application/pdf');

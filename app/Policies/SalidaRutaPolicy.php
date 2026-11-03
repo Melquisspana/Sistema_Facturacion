@@ -40,7 +40,7 @@ class SalidaRutaPolicy
 
     public function agregarGasto(User $usuario, SalidaRuta $salida, string $fecha): bool
     {
-        if ($salida->diaCerrado($fecha)) {
+        if ($salida->estaLiquidada() || $salida->diaCerrado($fecha)) {
             return false;
         }
 
@@ -52,6 +52,7 @@ class SalidaRutaPolicy
     public function borrarGasto(User $usuario, SalidaRuta $salida, SalidaRutaGasto $gasto): bool
     {
         return (int) $gasto->salida_ruta_id === (int) $salida->id
+            && ! $salida->estaLiquidada()
             && ! $salida->diaCerrado($gasto->fecha->toDateString())
             && ($usuario->can('rutas.gestionar')
                 ? in_array($salida->estado, [EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada], true)

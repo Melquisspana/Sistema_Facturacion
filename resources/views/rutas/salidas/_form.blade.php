@@ -41,7 +41,7 @@
         <input type="date" name="fecha_fin_estimada" id="fecha_fin_estimada"
                value="{{ old('fecha_fin_estimada', $salida?->fecha_fin_estimada?->toDateString() ?? '') }}"
                class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-        <p class="mt-1 text-xs text-gray-400 dark:text-paper-500">Una salida puede durar varios días.</p>
+        <p class="mt-1 text-xs text-gray-400 dark:text-paper-500">Si se quedan varios días (por ejemplo San Miguel o Santa Ana), poné el día que regresan. Cada día se termina aparte y el dinero se entrega al terminar la ruta.</p>
         <x-input-error :messages="$errors->get('fecha_fin_estimada')" class="mt-1" />
     </div>
 </div>

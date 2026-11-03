@@ -10,6 +10,7 @@ use App\Http\Controllers\Rutas\RutasDashboardController;
 use App\Http\Controllers\Rutas\SalidaCierreController;
 use App\Http\Controllers\Rutas\SalidaEntregaController;
 use App\Http\Controllers\Rutas\SalidaGastoController;
+use App\Http\Controllers\Rutas\SalidaLiquidacionController;
 use App\Http\Controllers\Rutas\SalidaRutaController;
 use App\Http\Controllers\Rutas\VentasController;
 use Illuminate\Support\Facades\Route;
@@ -34,6 +35,10 @@ use Illuminate\Support\Facades\Route;
 | El selector superior de áreas y los botones de las vistas son solo presentación
 | y NUNCA autorizan.
 |
+| Ninguna pantalla de Rutas se guarda en el navegador (`no-store`): al tocar «atrás»
+| después de marcar, cerrar o anotar un gasto, se vuelve a pedir y muestra lo hecho,
+| no la copia vieja.
+|
 | Las rutas literales van ANTES que las paramétricas (regla del repo), por eso
 | `salidas/crear` se declara antes que `salidas/{salida}`.
 */
@@ -43,7 +48,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('rutas-cobros/{resto?}', fn (?string $resto = null) => redirect('/rutas/'.($resto ?? ''), 301))
     ->where('resto', '.*');
 
-Route::middleware(['auth', 'permission:rutas.entregas.registrar'])
+Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers:no_store;private'])
     ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
     ->group(function () {
         Route::get('/', [MiSalidaController::class, 'index'])->name('index');
@@ -53,13 +58,16 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar'])
         Route::get('{salida}/cierre', [SalidaCierreController::class, 'cierre'])->name('cierre');
         Route::post('{salida}/cierre', [SalidaCierreController::class, 'cerrar'])->name('cerrar');
         Route::get('{salida}/cierre/{fecha}/pdf', [SalidaCierreController::class, 'liquidacion'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('liquidacion');
+        Route::get('{salida}/terminar', [SalidaLiquidacionController::class, 'show'])->name('terminar');
+        Route::post('{salida}/terminar', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
+        Route::get('{salida}/terminar/pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
         Route::get('{salida}', [MiSalidaController::class, 'show'])->name('show');
         Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
     });
 
-Route::middleware(['auth', 'permission:rutas.ver'])
+Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;private'])
     ->prefix('rutas')
     ->name('rutas.')
     ->group(function () {
@@ -134,6 +142,12 @@ Route::middleware(['auth', 'permission:rutas.ver'])
             Route::post('/', [SalidaCierreController::class, 'cerrar'])->name('cerrar');
             Route::get('{fecha}/pdf', [SalidaCierreController::class, 'liquidacion'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('liquidacion');
             Route::post('{fecha}/reabrir', [SalidaCierreController::class, 'reabrir'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('reabrir');
+        });
+        // «Terminar ruta»: liquidación de la salida completa. También el vendedor, desde «Mi salida».
+        Route::prefix('salidas/{salida}/terminar')->name('salidas.')->middleware('permission:rutas.gestionar')->group(function () {
+            Route::get('/', [SalidaLiquidacionController::class, 'show'])->name('terminar');
+            Route::post('/', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
+            Route::get('pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
         });
         Route::get('salidas/crear', [SalidaRutaController::class, 'create'])->name('salidas.create')
             ->middleware('permission:rutas.gestionar');

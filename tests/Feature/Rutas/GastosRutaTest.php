@@ -129,12 +129,12 @@ class GastosRutaTest extends TestCase
     {
         $this->alta()->assertRedirect();
         $gasto = SalidaRutaGasto::sole();
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('Cerrar el día');
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('Terminar día');
         $this->postJson(route('rutas.mi-salida.cerrar', $this->salida))->assertRedirect();
         $cierre = $this->salida->cierreDelDia();
         $this->assertSame('30.10', $cierre->gastos_total);
         $this->assertSame('-30.10', $cierre->a_entregar);
-        $this->get(route('rutas.mi-salida.cierre', $this->salida))->assertOk()->assertSee('A reintegrar al vendedor $30.10')->assertSee('Sin comprobante');
+        $this->get(route('rutas.mi-salida.cierre', $this->salida))->assertOk()->assertSee('Efectivo del día menos gastos: −$30.10')->assertSee('Sin comprobante');
         $this->alta()->assertForbidden();
         $this->deleteJson(route('rutas.mi-salida.gastos.destroy', [$this->salida, $gasto]))->assertForbidden();
         $this->actingAs($this->oficina);
@@ -148,7 +148,7 @@ class GastosRutaTest extends TestCase
         $this->assertSame('0.05', $cierre->refresh()->gastos_total);
         $this->assertSame('-0.05', $cierre->a_entregar);
         $html = view('rutas.cierres.pdf', ['salida' => $this->salida, 'fecha' => HoraNegocio::fechaHoy(), 'cierre' => $cierre, 'entregas' => collect(), 'empresa' => null])->render();
-        foreach (['Parqueo', 'Sin comprobante', 'Efectivo cobrado $0.00', 'gastos $0.05', '= efectivo a entregar $-0.05', 'A reintegrar al vendedor $0.05'] as $texto) {
+        foreach (['Parqueo', 'Sin comprobante', 'Efectivo cobrado $0.00', 'gastos $0.05', 'Efectivo del día menos gastos: −$0.05'] as $texto) {
             $this->assertStringContainsString($texto, $html);
         }
         $this->get(route('rutas.mi-salida.liquidacion', [$this->salida, HoraNegocio::fechaHoy()]))->assertOk()->assertHeader('Content-Type', 'application/pdf');
@@ -197,7 +197,7 @@ class GastosRutaTest extends TestCase
         $this->alta(['monto' => '100.00'], 'rutas.salidas.')->assertRedirect();
         $this->postJson(route('rutas.salidas.cerrar', $this->salida), ['entrega_dinero_personal_id' => $this->persona->id, 'entregas' => [$entrega->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo']]])->assertRedirect();
         $this->assertSame('-29.85', $this->salida->cierreDelDia()->a_entregar);
-        $this->get(route('rutas.salidas.cierre', $this->salida))->assertOk()->assertSee('A reintegrar al vendedor $29.85');
+        $this->get(route('rutas.salidas.cierre', $this->salida))->assertOk()->assertSee('Efectivo del día menos gastos: −$29.85');
     }
 
     public function test_rollback_de_borrado_conserva_archivo_y_gasto(): void

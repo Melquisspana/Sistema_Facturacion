@@ -105,7 +105,7 @@ class VendedorMiSalidaTest extends TestCase
         app(ParticipantesSalida::class)->sincronizar($salida, [$this->persona->id, $ana->id], null);
         $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Vas con Ana')->assertSee('…0907')
             ->assertSee('title="'.$entrega->dte->numero_control.'"', false)->assertSee('<span class="sr-only sm:not-sr-only sm:break-all">'.$entrega->dte->numero_control.'</span>', false)
-            ->assertDontSee('Quitar de la salida')->assertDontSee('¿Quién entrega?')->assertDontSee('Terminar salida')->assertDontSee('sidebar');
+            ->assertDontSee('Quitar de la salida')->assertSee('¿Quién entrega?')->assertDontSee('Terminar salida')->assertDontSee('sidebar');
         foreach ([EstadoSalidaRuta::Planificada, EstadoSalidaRuta::Finalizada, EstadoSalidaRuta::Cancelada] as $estado) {
             $salida->update(['estado' => $estado]);
             $this->get(route('rutas.mi-salida.show', $salida))->assertForbidden();
@@ -130,7 +130,11 @@ class VendedorMiSalidaTest extends TestCase
         $salida = $this->salida();
         $entrega = $this->entrega($salida);
         $ajeno = PersonalRuta::create(['nombre' => 'Otro']);
-        $this->patch(route('rutas.mi-salida.update', [$salida, $entrega]), ['resultado' => 'entregado', 'entregado_por_id' => $ajeno->id, 'trae_nota_averia' => '1'])->assertSessionHas('status');
+        // Alguien que no va en la salida no puede quedar como quien entregó.
+        $this->patch(route('rutas.mi-salida.update', [$salida, $entrega]), ['resultado' => 'entregado', 'entregado_por_id' => $ajeno->id])->assertSessionHasErrors('entregado_por_id');
+        $this->assertTrue($entrega->refresh()->estaPendiente());
+        // Sin elegir, el que entrega es el propio vendedor.
+        $this->patch(route('rutas.mi-salida.update', [$salida, $entrega]), ['resultado' => 'entregado', 'trae_nota_averia' => '1'])->assertSessionHas('status');
         $entrega->refresh();
         $this->assertSame($this->persona->id, $entrega->entregado_por_id);
         $this->assertSame($this->usuario->id, $entrega->registrado_por);
@@ -149,6 +153,35 @@ class VendedorMiSalidaTest extends TestCase
         $this->get(route('rutas.mi-salida.show', $salida))->assertDontSee('Deshacer');
         $this->actingAs($oficina)->patch(route('rutas.salidas.entregas.deshacer', [$salida, $entrega]))->assertSessionHas('status');
         $this->get(route('rutas.salidas.show', $salida))->assertOk()->assertSee('…0907')->assertSee('title="'.$entrega->dte->numero_control.'"', false);
+    }
+
+    public function test_el_vendedor_marca_que_entrego_un_companero(): void
+    {
+        $salida = $this->salida();
+        $entrega = $this->entrega($salida);
+        $otroSala = $this->entrega($salida, $this->sala->cliente->sucursales()->create(['nombre' => 'Otra sala']));
+        $ana = PersonalRuta::create(['nombre' => 'Ana']);
+        app(ParticipantesSalida::class)->sincronizar($salida, [$this->persona->id, $ana->id], null);
+
+        $this->patch(route('rutas.mi-salida.update', [$salida, $entrega]), ['resultado' => 'entregado', 'entregado_por_id' => $ana->id])->assertSessionHas('status');
+        $entrega->refresh();
+        $this->assertSame($ana->id, $entrega->entregado_por_id);
+        $this->assertSame($this->usuario->id, $entrega->registrado_por);
+        $this->assertSame(OrigenRegistroEntrega::Vendedor, $entrega->origen_registro);
+
+        $this->post(route('rutas.mi-salida.sala', [$salida, $otroSala->sala]), ['entregado_por_id' => $ana->id])->assertSessionHas('status');
+        $this->assertSame($ana->id, $otroSala->refresh()->entregado_por_id);
+        $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Ana ·', false);
+    }
+
+    public function test_las_pantallas_de_rutas_no_quedan_en_la_memoria_del_navegador(): void
+    {
+        $salida = $this->salida();
+        $this->entrega($salida);
+        $respuesta = $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('e.persisted', false);
+        $this->assertStringContainsString('no-store', $respuesta->headers->get('Cache-Control'));
+        $oficina = User::factory()->create()->assignRole('facturacion');
+        $this->assertStringContainsString('no-store', $this->actingAs($oficina)->get(route('rutas.salidas.show', $salida))->assertOk()->headers->get('Cache-Control'));
     }
 
     public function test_no_entregado_valida_motivo_y_nota(): void
@@ -170,7 +203,9 @@ class VendedorMiSalidaTest extends TestCase
         $segunda = $this->entrega($salida);
         $otraSala = $this->sala->cliente->sucursales()->create(['nombre' => 'Otra sala']);
         $otra = $this->entrega($salida, $otraSala);
-        $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]), ['entregado_por_id' => 999])->assertSessionHas('status');
+        $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]), ['entregado_por_id' => 999])->assertSessionHasErrors('entregado_por_id');
+        $this->assertTrue($primera->refresh()->estaPendiente());
+        $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]))->assertSessionHas('status');
         foreach ([$primera, $segunda] as $entrega) {
             $this->assertSame($this->persona->id, $entrega->refresh()->entregado_por_id);
             $this->assertSame(OrigenRegistroEntrega::Vendedor, $entrega->origen_registro);

@@ -68,7 +68,7 @@ class SalidaCierreController extends Controller
         });
         $prefijo = $request->routeIs('rutas.mi-salida.*') ? 'rutas.mi-salida.' : 'rutas.salidas.';
 
-        return redirect()->route($prefijo.'cierre', ['salida' => $salida, 'fecha' => $fecha])->with('status', 'Día cerrado. La liquidación está lista.');
+        return redirect()->route($prefijo.'cierre', ['salida' => $salida, 'fecha' => $fecha])->with('status', 'Día terminado. El dinero se entrega al terminar la ruta.');
     }
 
     public function reabrir(Request $request, SalidaRuta $salida, string $fecha): RedirectResponse

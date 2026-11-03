@@ -3,7 +3,8 @@
      que el estado permite.
 
      «¿Quién entrega?» se elige UNA vez arriba y viaja en cada formulario (campo
-     .js-quien). Sin JavaScript igual funciona: el valor inicial es el preseleccionado. --}}
+     .js-quien). Sin JavaScript igual funciona: el valor inicial es el preseleccionado
+     (en «Mi salida», el propio vendedor). --}}
 @php
     $modoVendedor = $modoVendedor ?? false;
     $fechaHoy = \App\Support\HoraNegocio::fechaHoy();
@@ -18,7 +19,7 @@
     $puedeMarcar = ($modoVendedor || $puedeGestionar) && $registrable && $participantes->isNotEmpty();
 @endphp
 
-@if (! $modoVendedor && $puedeMarcar && $participantes->count() > 1)
+@if ($puedeMarcar && $participantes->count() > 1)
     <div class="sticky top-0 z-10 mt-4 rounded-2xl bg-white/95 px-4 py-3 shadow-sm ring-1 ring-gray-200 backdrop-blur dark:bg-ink-800/95 dark:ring-ink-600">
         <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quién entrega?</p>
         <div class="mt-2 flex flex-wrap gap-2">
@@ -117,6 +118,19 @@
                                     <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
                                     Trae nota de avería
                                 </label>
+                                {{-- Cómo pagó la sala esta vez. Vale la habitual del cliente y no se pregunta:
+                                     solo si esta vez fue distinto se abre y se cambia. No toca su ficha. --}}
+                                @php($habitual = $entrega->dte?->cliente?->cobro_en_entrega)
+                                <details class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">
+                                    <summary class="min-h-11 cursor-pointer py-2">Pago: {{ $habitual?->label() ?? 'Sin cobro (quedan)' }} · <span class="underline">cambiar</span></summary>
+                                    <label for="forma-{{ $entrega->id }}" class="sr-only">Forma de pago esta vez</label>
+                                    <select id="forma-{{ $entrega->id }}" name="forma_cobro" class="min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                                        <option value="{{ \App\Services\Rutas\EntregasCcf::SIN_COBRO }}" @selected($habitual === null)>Sin cobro (quedan)</option>
+                                        @foreach (\App\Enums\FormaCobroEntrega::opciones() as $valor => $label)
+                                            <option value="{{ $valor }}" @selected($habitual?->value === $valor)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </details>
                             </form>
 
                             <details class="group">
@@ -165,11 +179,15 @@
     @if ($diaCerrado)
         @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])
     @elseif (($registrable || (! $modoVendedor && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada)) && ($salida->entregas()->entregadas()->whereDate('fecha_resultado', $fechaHoy)->exists() || $salida->gastos()->whereDate('fecha', $fechaHoy)->exists()))
-        <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Cerrar el día</a>
+        <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Terminar día</a>
+    @endif
+    @if ($modoVendedor)
+        {{-- Al volver: lo que sobró lleva su motivo y el dinero de todos los días se entrega junto. --}}
+        <a href="{{ route('rutas.mi-salida.terminar', $salida) }}" class="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-gray-800 px-5 py-3 font-semibold text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900">Terminar ruta</a>
     @endif
     @if (! $modoVendedor)
         @foreach ($salida->cierres()->whereDate('fecha', '!=', $fechaHoy)->orderByDesc('fecha')->get() as $cierreAnterior)
-            <a href="{{ route($prefijoCierre.'cierre', ['salida' => $salida, 'fecha' => $cierreAnterior->fecha->toDateString()]) }}" class="mt-3 flex min-h-11 items-center text-sm underline">Liquidación {{ $cierreAnterior->fecha->format('d/m/Y') }}{{ $cierreAnterior->estaCerrado() ? '' : ' · Reabierta' }}</a>
+            <a href="{{ route($prefijoCierre.'cierre', ['salida' => $salida, 'fecha' => $cierreAnterior->fecha->toDateString()]) }}" class="mt-3 flex min-h-11 items-center text-sm underline">Día {{ $cierreAnterior->fecha->format('d/m/Y') }}{{ $cierreAnterior->estaCerrado() ? '' : ' · Reabierta' }}</a>
         @endforeach
     @endif
 @endif
@@ -199,7 +217,7 @@
     </details>
 @endif
 
-@if (! $modoVendedor && $puedeMarcar && $participantes->count() > 1)
+@if ($puedeMarcar && $participantes->count() > 1)
     <script>
         document.querySelectorAll('.js-elige-quien').forEach((radio) => radio.addEventListener('change', () => {
             document.querySelectorAll('.js-quien').forEach((campo) => { campo.value = radio.value; });

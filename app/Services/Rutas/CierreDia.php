@@ -49,6 +49,7 @@ class CierreDia
             // Una salida ya terminada todavía se liquida: la oficina suele terminarla al volver,
             // antes o después de cerrar el último día. Solo una cancelada no se cierra.
             abort_unless(in_array($salida->estado, [EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada], true), 422, 'Una salida cancelada no se liquida.');
+            self::exigirSinLiquidar($salida);
             $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->first();
             if ($cierre?->estaCerrado()) {
                 throw ValidationException::withMessages(['cierre' => 'El día ya está cerrado. Reabrilo antes de corregirlo.']);
@@ -59,10 +60,9 @@ class CierreDia
                 throw ValidationException::withMessages(['cierre' => 'No hay entregas ni gastos registrados en esa fecha.']);
             }
             $conCobro = $entregas->whereNotNull('monto_esperado');
-            $reglas = [
-                'entregas' => ['sometimes', 'array'],
-                'entrega_dinero_personal_id' => ['nullable', 'integer', Rule::in($salida->personal()->where('activo', true)->pluck('rutas_personal.id')->all())],
-            ];
+            // Terminar el día no es entregar el dinero: eso pasa una sola vez, al terminar la
+            // ruta ({@see LiquidacionSalida}). Acá no se pide ni se guarda quién lo entrega.
+            $reglas = ['entregas' => ['sometimes', 'array']];
             foreach ($conCobro as $entrega) {
                 $reglas["entregas.{$entrega->id}.monto_cobrado"] = ['required', 'numeric', 'regex:/^\d+(?:\.\d{1,2})?$/', 'min:0', 'max:'.$entrega->monto_esperado];
                 $reglas["entregas.{$entrega->id}.forma_cobro"] = ['required', Rule::enum(FormaCobroEntrega::class)];
@@ -85,10 +85,6 @@ class CierreDia
                 $totales[$forma->columna().'_cobrado'] += $cobrado;
                 $entrega->update(['forma_cobro' => $forma, 'monto_cobrado' => self::decimal($cobrado)]);
             }
-            $hayCobro = $totales['efectivo_cobrado'] + $totales['cheques_cobrado'] + $totales['transferencias_cobrado'] > 0;
-            if ($hayCobro && empty($validados['entrega_dinero_personal_id'])) {
-                throw ValidationException::withMessages(['entrega_dinero_personal_id' => 'Elegí quién entrega el dinero entre los participantes activos de la salida.']);
-            }
             foreach ([...$totales, $gastos] as $total) {
                 if ($total > 999999999999) {
                     throw ValidationException::withMessages(['cierre' => 'El total supera el monto admitido para una liquidación.']);
@@ -103,10 +99,10 @@ class CierreDia
             $cierre->fill(array_map(self::decimal(...), $totales) + [
                 'gastos_total' => self::decimal($gastos),
                 'a_entregar' => self::decimal($totales['efectivo_cobrado'] - $gastos),
-                'entrega_dinero_personal_id' => $validados['entrega_dinero_personal_id'] ?? null,
+                'entrega_dinero_personal_id' => null,
                 'cerrado_por' => $usuario->id, 'cerrado_en' => $ahora,
             ])->save();
-            activity('salida_ruta_cierre')->performedOn($cierre)->causedBy($usuario)->log('cerró el día');
+            activity('salida_ruta_cierre')->performedOn($cierre)->causedBy($usuario)->log('terminó el día');
 
             return $cierre;
         });
@@ -117,6 +113,7 @@ class CierreDia
         Validator::make(['motivo' => $motivo], ['motivo' => ['required', 'string', 'min:5', 'max:300']])->validate();
         DB::transaction(function () use ($salida, $fecha, $motivo, $usuario) {
             $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
+            self::exigirSinLiquidar($salida);
             $cierre = $salida->cierres()->whereDate('fecha', $fecha)->lockForUpdate()->firstOrFail();
             if (! $cierre->estaCerrado()) {
                 throw ValidationException::withMessages(['cierre' => 'El día ya está reabierto.']);
@@ -124,6 +121,14 @@ class CierreDia
             $cierre->update(['reabierto_por' => $usuario->id, 'reabierto_en' => now()->max($cierre->cerrado_en), 'reabierto_motivo' => $motivo]);
             activity('salida_ruta_cierre')->performedOn($cierre)->causedBy($usuario)->withProperties(['motivo' => $motivo])->log('reabrió el día');
         });
+    }
+
+    /** Con la ruta terminada, los importes de sus días ya están en la liquidación final. */
+    public static function exigirSinLiquidar(SalidaRuta $salida): void
+    {
+        if ($salida->estaLiquidada()) {
+            throw ValidationException::withMessages(['cierre' => 'La ruta ya está terminada: sus días no se cambian.']);
+        }
     }
 
     /** Saldos informativos de salidas anteriores, incluso si salieron el mismo día. */
