@@ -73,7 +73,7 @@ Tomado de Gastos y Planilla (botones de 44 px, que se tocan bien con el dedo). L
 | **Principal** | La acción que se viene a hacer. **Una sola por pantalla o formulario.** | Índigo: `inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700` |
 | **Secundario** | Cancelar, Volver, Filtrar, Imprimir, Descargar. | Blanco con borde: `inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50` |
 | **Peligro** | Eliminar, Anular, Invalidar, Revertir. | Rojo: igual que el principal con `bg-red-600 hover:bg-red-700` |
-| **Terminar** | Solo para cerrar algo que salió bien en Rutas: «Entregado», «Terminar día», «Terminar ruta». | Verde: igual que el principal con `bg-green-600 hover:bg-green-700` |
+| **Terminar** | Solo para cerrar algo que salió bien en Rutas: «Entregado» (o «Entregó Ana» / «Entregué yo», un botón por persona que va en la salida), «Terminar día», «Terminar ruta». | Verde: igual que el principal con `bg-green-600 hover:bg-green-700` |
 
 - Sin mayúsculas sostenidas: «Guardar insumo», no «GUARDAR INSUMO».
 - El ámbar, el celeste y el rosa son para avisos y etiquetas, **nunca** para botones.
@@ -131,6 +131,7 @@ Tomado de Planta (tabla, filtros y «Limpiar») y de Gastos (lista en tarjetas e
 - **Filtros:** formulario `GET` arriba de la tabla, etiquetas chicas, botón secundario «Filtrar» y enlace «Limpiar» que aparece solo si hay algún filtro puesto.
 - **Encabezado de la tabla:** `bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500`.
 - **Números y montos** alineados a la derecha con `tabular-nums`. La columna de acciones va última, a la derecha, y se llama «Acciones».
+- **Pocas opciones en el celular:** en Rutas, en lugar del formulario, pastillas que son enlaces (`?ver=`): «Faltan 3 · Entregados 5 · Todos 8», la elegida en índigo y con `aria-current="page"`. Si la elegida no tiene nada, se dice y se ofrece «Ver todos».
 - **Paginación:** `->paginate()->withQueryString()` en el controlador, para no perder los filtros al cambiar de página, y `{{ $lista->links() }}` al pie de la caja (`border-t border-gray-100 px-4 py-3`).
 - **Sin resultados:** una sola fila, centrada, `py-10 text-center text-gray-500`, con dos textos distintos:
   - sin filtros: «Todavía no hay insumos.» + enlace «Registrar el primero» si tiene permiso;

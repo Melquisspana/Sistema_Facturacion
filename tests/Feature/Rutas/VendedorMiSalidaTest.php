@@ -105,7 +105,7 @@ class VendedorMiSalidaTest extends TestCase
         app(ParticipantesSalida::class)->sincronizar($salida, [$this->persona->id, $ana->id], null);
         $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Vas con Ana')->assertSee('…0907')
             ->assertSee('title="'.$entrega->dte->numero_control.'"', false)->assertSee('<span class="sr-only sm:not-sr-only sm:break-all">'.$entrega->dte->numero_control.'</span>', false)
-            ->assertDontSee('Quitar de la salida')->assertSee('¿Quién entrega?')->assertDontSee('Terminar salida')->assertDontSee('sidebar');
+            ->assertDontSee('Quitar de la salida')->assertDontSee('¿Quién entrega?')->assertSee('Entregué yo')->assertSee('Entregó Ana')->assertDontSee('Terminar salida')->assertDontSee('sidebar');
         foreach ([EstadoSalidaRuta::Planificada, EstadoSalidaRuta::Finalizada, EstadoSalidaRuta::Cancelada] as $estado) {
             $salida->update(['estado' => $estado]);
             $this->get(route('rutas.mi-salida.show', $salida))->assertForbidden();

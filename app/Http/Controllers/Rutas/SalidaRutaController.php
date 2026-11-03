@@ -93,14 +93,12 @@ class SalidaRutaController extends Controller
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
 
-        // Quién puede figurar como «entregó»: los que van, activos. Se preselecciona al
-        // responsable o, si va una sola persona, a ella.
+        // Quién puede figurar como «entregó»: los que van, activos. Cada CCF lleva un botón
+        // por persona.
         $participantes = $salida->participantes
             ->filter(fn ($p) => $p->personal?->activo)
             ->sortBy(fn ($p) => $p->personal->nombre)
             ->values();
-        $preseleccion = $salida->participantes->first(fn ($p) => $p->esResponsable())?->rutas_personal_id
-            ?? ($participantes->count() === 1 ? $participantes->first()->rutas_personal_id : null);
 
         return view('rutas.salidas.show', [
             'salida' => $salida,
@@ -111,7 +109,6 @@ class SalidaRutaController extends Controller
             'noVigentes' => $servicio->noVigentes($entregas),
             'resumen' => $servicio->resumen($entregas, $resoluciones),
             'participantes' => $participantes,
-            'preseleccion' => $preseleccion,
             'motivos' => MotivoNoEntrega::opciones(),
             'abierta' => ! $salida->estado->esTerminal(),
             'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,

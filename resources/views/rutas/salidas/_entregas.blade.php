@@ -2,9 +2,10 @@
      La regla (qué se puede hacer y cuándo) vive en EntregasCcf; acá solo se dibuja lo
      que el estado permite.
 
-     «¿Quién entrega?» se elige UNA vez arriba y viaja en cada formulario (campo
-     .js-quien). Sin JavaScript igual funciona: el valor inicial es el preseleccionado
-     (en «Mi salida», el propio vendedor). --}}
+     Quién lo entregó se elige en cada CCF: un botón por persona que va en la salida
+     (si va una sola, un solo «Entregado»). Lo que trae albarán de Calleja ya consta
+     entregado y solo espera ese botón. Arriba, «Faltan / Entregados / Todos» filtra
+     la lista (?ver=), sin JavaScript. --}}
 @php
     $modoVendedor = $modoVendedor ?? false;
     $fechaHoy = \App\Support\HoraNegocio::fechaHoy();
@@ -15,33 +16,50 @@
     $saldosAnteriores = app(\App\Services\Rutas\CierreDia::class)->saldosAnteriores($salida, $porSala->keys()->all());
     $prefijoEntregas = $modoVendedor ? 'rutas.mi-salida.' : 'rutas.salidas.entregas.';
     $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
-    $quien = $modoVendedor ? $persona->id : ($preseleccion ?? $participantes->first()?->rutas_personal_id);
     $puedeMarcar = ($modoVendedor || $puedeGestionar) && $registrable && $participantes->isNotEmpty();
+    // En «Mi salida» el vendedor va primero y dice «Entregué yo».
+    $quienes = $participantes->sortBy(fn ($p) => $modoVendedor && $p->rutas_personal_id === $persona?->id ? 0 : 1)->values();
+    $nombreBoton = fn ($p) => $quienes->count() === 1 ? 'Entregado'
+        : ($modoVendedor && $p->rutas_personal_id === $persona?->id ? 'Entregué yo' : 'Entregó '.$p->personal->nombre);
+    $botonVerde = 'min-h-11 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600';
+
+    // Qué se ve: lo que falta marcar, lo entregado (también por albarán) o todo.
+    $ver = in_array(request('ver'), ['faltan', 'entregados'], true) ? request('ver') : 'todos';
+    $porAlbaran = fn ($e) => $e->estaPendiente() && ($resoluciones[$e->dte_id] ?? null)?->estaVinculado();
+    $seVe = fn ($e) => match ($ver) {
+        'faltan' => $e->estaPendiente() && ! $porAlbaran($e),
+        'entregados' => $e->resultado === \App\Enums\ResultadoEntrega::Entregado || $porAlbaran($e),
+        default => true,
+    };
 @endphp
 
-@if ($puedeMarcar && $participantes->count() > 1)
-    <div class="sticky top-0 z-10 mt-4 rounded-2xl bg-white/95 px-4 py-3 shadow-sm ring-1 ring-gray-200 backdrop-blur dark:bg-ink-800/95 dark:ring-ink-600">
-        <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quién entrega?</p>
-        <div class="mt-2 flex flex-wrap gap-2">
-            @foreach ($participantes as $p)
-                <label class="cursor-pointer">
-                    <input type="radio" name="quien" value="{{ $p->rutas_personal_id }}" class="peer sr-only js-elige-quien" @checked($p->rutas_personal_id === $quien)>
-                    <span class="inline-block rounded-full px-4 py-2 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 dark:text-paper-100 dark:ring-ink-500">{{ $p->personal->nombre }}</span>
-                </label>
-            @endforeach
-        </div>
-    </div>
+@if ($resumen['total'] > 0)
+    <nav aria-label="Qué CCF mostrar" class="mt-4 flex gap-2 overflow-x-auto">
+        @foreach (['faltan' => 'Faltan '.$resumen['sin_registrar'], 'entregados' => 'Entregados '.$resumen['entregados'], 'todos' => 'Todos '.$resumen['total']] as $clave => $texto)
+            <a href="{{ request()->fullUrlWithQuery(['ver' => $clave === 'todos' ? null : $clave]) }}" @if ($ver === $clave) aria-current="page" @endif
+               class="inline-flex min-h-11 shrink-0 items-center rounded-full px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 {{ $ver === $clave ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">{{ $texto }}</a>
+        @endforeach
+    </nav>
 @endif
 
 @if ($salida->estado === \App\Enums\EstadoSalidaRuta::Planificada && $resumen['total'] > 0)
     <p class="mt-4 text-sm text-gray-500 dark:text-paper-300">Tocá «Salir ahora» para empezar a marcar entregas.</p>
 @endif
 
+@if ($ver !== 'todos' && ! $porSala->collapse()->contains($seVe))
+    <div class="{{ $caja }} mt-4 px-5 py-8 text-center">
+        <p class="text-base font-medium text-gray-800 dark:text-paper-100">{{ $ver === 'faltan' ? 'No falta marcar ningún CCF.' : 'Todavía no hay CCF entregados.' }}</p>
+        <a href="{{ request()->fullUrlWithQuery(['ver' => null]) }}" class="mt-2 inline-flex min-h-11 items-center text-sm text-indigo-600 underline dark:text-indigo-300">Ver todos</a>
+    </div>
+@endif
+
 @forelse ($porSala as $entregas)
     @php
         $sala = $entregas->first()->sala;
         $pendientesSala = $entregas->filter(fn ($e) => $e->estaPendiente() && ! isset($noVigentes[$e->dte_id]) && ! ($resoluciones[$e->dte_id] ?? null)?->estaVinculado())->count();
+        $visibles = $entregas->filter($seVe);
     @endphp
+    @continue($visibles->isEmpty())
     <div class="{{ $caja }} mt-4 overflow-hidden">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-ink-700">
             <div class="min-w-0">
@@ -51,17 +69,28 @@
                 @endforeach
                 <p class="text-xs text-gray-400 dark:text-paper-500">{{ $entregas->count() }} CCF{{ $pendientesSala ? ' · '.$pendientesSala.' por marcar' : '' }}</p>
             </div>
-            @if ($puedeMarcar && ($pendientesSala > 1 || ($modoVendedor && $pendientesSala > 0)) && $sala)
-                <form method="POST" action="{{ route($prefijoEntregas.'sala', [$salida, $sala]) }}">
-                    @csrf
-                    <input type="hidden" name="entregado_por_id" value="{{ $quien }}" class="js-quien">
-                    <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">Todo entregado</button>
-                </form>
+            @if ($puedeMarcar && $ver !== 'entregados' && ($pendientesSala > 1 || ($modoVendedor && $pendientesSala > 0)) && $sala)
+                @if ($quienes->count() === 1)
+                    <form method="POST" action="{{ route($prefijoEntregas.'sala', [$salida, $sala]) }}">
+                        @csrf
+                        <button name="entregado_por_id" value="{{ $quienes->first()->rutas_personal_id }}" class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">Todo entregado</button>
+                    </form>
+                @else
+                    <details class="w-full sm:w-auto">
+                        <summary class="min-h-11 cursor-pointer list-none rounded-lg bg-green-600 px-3 py-2.5 text-center text-sm font-medium text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Todo entregado</summary>
+                        <form method="POST" action="{{ route($prefijoEntregas.'sala', [$salida, $sala]) }}" class="mt-2 space-y-1.5">
+                            @csrf
+                            @foreach ($quienes as $p)
+                                <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="{{ $botonVerde }}">{{ $nombreBoton($p) }}</button>
+                            @endforeach
+                        </form>
+                    </details>
+                @endif
             @endif
         </div>
 
         <div class="divide-y divide-gray-100 dark:divide-ink-700">
-            @foreach ($entregas as $entrega)
+            @foreach ($visibles as $entrega)
                 @php
                     $resolucion = $resoluciones[$entrega->dte_id] ?? null;
                     $albaran = $resolucion?->estaVinculado() ? $resolucion->albaran : null;
@@ -95,7 +124,7 @@
                                 <p class="text-xs text-gray-500 dark:text-paper-300">{{ $entrega->motivo_no_entrega?->label() }}{{ $entrega->nota ? ' · '.$entrega->nota : '' }}</p>
                             @elseif ($albaran)
                                 <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
-                                <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}</p>
+                                <p class="text-xs text-gray-500 dark:text-paper-300">Llegó el albarán {{ $albaran->numero_albaran }}{{ $puedeMarcar ? ' · falta quién lo entregó' : '' }}</p>
                             @endif
                             @if (($modoVendedor ? auth()->user()->can('deshacer', [$salida, $entrega]) : ($puedeGestionar && (! $entrega->fecha_resultado || ! $salida->diaCerrado($entrega->fecha_resultado->toDateString())))) && ! $entrega->estaPendiente() && $salida->estado !== \App\Enums\EstadoSalidaRuta::Cancelada)
                                 <form method="POST" action="{{ route($prefijoEntregas.'deshacer', [$salida, $entrega]) }}" class="mt-1">
@@ -106,14 +135,29 @@
                         </div>
                     </div>
 
-                    {{-- Por marcar: dos botones grandes --}}
+                    {{-- Con albarán ya consta entregado: solo falta quién. La forma de pago es la
+                         habitual del cliente, como en cualquier entrega. --}}
+                    @if ($puedeMarcar && $albaran && $entrega->estaPendiente())
+                        <form method="POST" action="{{ route($prefijoEntregas.'update', [$salida, $entrega]) }}" class="mt-3 grid gap-2 sm:grid-cols-2">
+                            @csrf @method('PATCH')
+                            <input type="hidden" name="resultado" value="entregado">
+                            @foreach ($quienes as $p)
+                                <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="{{ $botonVerde }}">{{ $quienes->count() === 1 ? 'Lo entregó '.$p->personal->nombre : $nombreBoton($p) }}</button>
+                            @endforeach
+                        </form>
+                    @endif
+
+                    {{-- Por marcar: quién lo entregó (un botón por persona) o «No entregado» --}}
                     @if ($puedeMarcar && $entrega->estaPendiente() && ! $albaran && ! isset($noVigentes[$entrega->dte_id]))
                         <div class="mt-3 grid grid-cols-2 gap-2">
                             <form method="POST" action="{{ route($prefijoEntregas.'update', [$salida, $entrega]) }}">
                                 @csrf @method('PATCH')
                                 <input type="hidden" name="resultado" value="entregado">
-                                <input type="hidden" name="entregado_por_id" value="{{ $quien }}" class="js-quien">
-                                <button class="min-h-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 w-full rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white hover:bg-green-700">Entregado</button>
+                                <div class="space-y-1.5">
+                                    @foreach ($quienes as $p)
+                                        <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="{{ $botonVerde }}">{{ $nombreBoton($p) }}</button>
+                                    @endforeach
+                                </div>
                                 <label class="mt-1.5 flex items-center gap-2 text-xs text-gray-600 dark:text-paper-300">
                                     <input type="checkbox" name="trae_nota_averia" value="1" class="h-4 w-4 rounded border-gray-300 text-amber-600 dark:border-ink-600 dark:bg-ink-800">
                                     Trae nota de avería
@@ -217,10 +261,3 @@
     </details>
 @endif
 
-@if ($puedeMarcar && $participantes->count() > 1)
-    <script>
-        document.querySelectorAll('.js-elige-quien').forEach((radio) => radio.addEventListener('change', () => {
-            document.querySelectorAll('.js-quien').forEach((campo) => { campo.value = radio.value; });
-        }));
-    </script>
-@endif

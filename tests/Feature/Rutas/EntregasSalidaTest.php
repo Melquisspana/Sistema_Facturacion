@@ -538,6 +538,58 @@ class EntregasSalidaTest extends TestCase
             ->assertViewHas('resumen', ['total' => 3, 'entregados' => 2, 'no_entregados' => 0, 'sin_registrar' => 1]);
     }
 
+    public function test_cada_ccf_tiene_su_boton_de_quien_lo_entrego_y_el_albaran_solo_espera_eso(): void
+    {
+        $entregado = $this->ccf();
+        $conAlbaran = $this->ccf();
+        $sinRegistrar = $this->ccf();
+        $salida = $this->salida();
+        $ana = PersonalRuta::create(['nombre' => 'Ana']);
+        app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
+        $this->servicio()->cargarPendientes($salida);
+        $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
+        PpqAlbaran::create([
+            'numero_albaran' => 'AC01/0232/00/6716', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
+            'monto_albaran' => 100, 'fecha_albaran' => '2026-10-04', 'origen' => 'gmail',
+        ]);
+        $this->actingAs($this->admin());
+
+        // Ya no hay un «¿Quién entrega?» general: cada CCF por marcar o con albarán lleva
+        // un botón por persona que va en la salida.
+        $html = $this->get(route('rutas.salidas.show', $salida))->assertOk()
+            ->assertDontSee('¿Quién entrega?')
+            ->assertSee('Llegó el albarán AC01/0232/00/6716 · falta quién lo entregó')
+            ->assertSee('Faltan 1')->assertSee('Entregados 2')->assertSee('Todos 3')
+            ->getContent();
+        $this->assertSame(2, substr_count($html, 'Entregó Ana'));
+        $this->assertSame(2, substr_count($html, 'Entregó Carlos'));
+
+        // Con albarán se marca solo quién lo entregó.
+        $fila = $salida->entregas()->where('dte_id', $conAlbaran->id)->sole();
+        $this->patch(route('rutas.salidas.entregas.update', [$salida, $fila]), ['resultado' => 'entregado', 'entregado_por_id' => $ana->id])
+            ->assertSessionHasNoErrors();
+        $fila->refresh();
+        $this->assertSame(ResultadoEntrega::Entregado, $fila->resultado);
+        $this->assertSame($ana->id, $fila->entregado_por_id);
+
+        // Quien no va en la salida no figura como «entregó».
+        $otro = PersonalRuta::create(['nombre' => 'Beto']);
+        $resto = $salida->entregas()->where('dte_id', $sinRegistrar->id)->sole();
+        $this->patch(route('rutas.salidas.entregas.update', [$salida, $resto]), ['resultado' => 'entregado', 'entregado_por_id' => $otro->id])
+            ->assertSessionHasErrors('entregado_por_id');
+        $this->assertTrue($resto->refresh()->estaPendiente());
+
+        // Filtro: lo que falta y lo entregado, por separado.
+        $this->get(route('rutas.salidas.show', [$salida, 'ver' => 'faltan']))->assertOk()
+            ->assertSee($sinRegistrar->numero_control)->assertDontSee($entregado->numero_control)->assertDontSee($conAlbaran->numero_control);
+        $this->get(route('rutas.salidas.show', [$salida, 'ver' => 'entregados']))->assertOk()
+            ->assertSee($entregado->numero_control)->assertSee($conAlbaran->numero_control)->assertDontSee($sinRegistrar->numero_control)
+            ->assertSee('Ana')->assertDontSee('falta quién lo entregó');
+
+        $this->entregar($resto);
+        $this->get(route('rutas.salidas.show', [$salida, 'ver' => 'faltan']))->assertOk()->assertSee('No falta marcar ningún CCF.')->assertSee('Ver todos');
+    }
+
     public function test_el_tablero_muestra_los_ccf_por_entregar(): void
     {
         $this->ccf();
