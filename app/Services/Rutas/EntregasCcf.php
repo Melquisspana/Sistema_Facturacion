@@ -4,6 +4,7 @@ namespace App\Services\Rutas;
 
 use App\Enums\EstadoDte;
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\ResultadoEntrega;
@@ -50,6 +51,9 @@ use Illuminate\Validation\ValidationException;
  */
 class EntregasCcf
 {
+    /** Forma de pago elegible al entregar: no se cobra ahora (quedan o crédito). */
+    public const SIN_COBRO = 'sin_cobro';
+
     public function __construct(private readonly AlbaranLocalizador $albaranes) {}
 
     // ================================================================ pendientes
@@ -194,7 +198,11 @@ class EntregasCcf
     /**
      * Anota qué pasó con un CCF.
      *
-     * @param  array{resultado: string, entregado_por_id?: int|string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
+     * `forma_cobro` es cómo pagó la sala ESTA vez: una {@see FormaCobroEntrega} o
+     * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente. No toca
+     * la ficha del cliente.
+     *
+     * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
      *
      * @throws ValidationException
      */
@@ -219,9 +227,10 @@ class EntregasCcf
                 'registrado_por' => $usuario?->id,
             ];
 
-            $this->exigirDiaAbierto($salida, $comun['fecha_resultado']->toDateString());
-
             if ($resultado === ResultadoEntrega::Entregado) {
+                // Solo lo entregado entra en el cierre del día. Un «no entregado» no mueve
+                // dinero: se anota aunque el día esté terminado (p. ej. al terminar la ruta).
+                $this->exigirDiaAbierto($salida, $comun['fecha_resultado']->toDateString());
                 $dte = Dte::with('cliente')->whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
                 if ($this->existeBloqueando(SalidaRutaEntrega::where('dte_id', $entrega->dte_id)->where('id', '!=', $entrega->id)->entregadas())) {
                     throw ValidationException::withMessages(['entrega' => 'Ese CCF ya consta como entregado en otra salida.']);
@@ -234,10 +243,12 @@ class EntregasCcf
                     ]);
                 }
 
+                $forma = $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
+
                 $entrega->update($comun + [
-                    'forma_cobro' => $dte->cliente?->cobro_en_entrega,
-                    'monto_esperado' => $dte->cliente?->cobro_en_entrega ? $dte->total_pagar : null,
-                    'monto_cobrado' => $dte->cliente?->cobro_en_entrega ? $dte->total_pagar : null,
+                    'forma_cobro' => $forma,
+                    'monto_esperado' => $forma ? $dte->total_pagar : null,
+                    'monto_cobrado' => $forma ? $dte->total_pagar : null,
                     'entregado_por_id' => $personaId,
                     'trae_nota_averia' => filter_var($datos['trae_nota_averia'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'motivo_no_entrega' => null,
@@ -269,6 +280,19 @@ class EntregasCcf
 
             return $entrega;
         });
+    }
+
+    /** @throws ValidationException */
+    private function formaCobro(array $datos, ?FormaCobroEntrega $habitual): ?FormaCobroEntrega
+    {
+        $elegida = $datos['forma_cobro'] ?? null;
+
+        return match (true) {
+            $elegida === null => $habitual,
+            $elegida === self::SIN_COBRO => null,
+            default => FormaCobroEntrega::tryFrom((string) $elegida)
+                ?? throw ValidationException::withMessages(['forma_cobro' => 'Elegí una forma de pago de la lista.']),
+        };
     }
 
     /** Toda la sala entregada, por la misma persona. Devuelve cuántos marcó. */
@@ -303,6 +327,7 @@ class EntregasCcf
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
             $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
             Dte::whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
+            CierreDia::exigirSinLiquidar($salida);
             if ($entrega->fecha_resultado) {
                 $this->exigirDiaAbierto($salida, $entrega->fecha_resultado->toDateString());
             }

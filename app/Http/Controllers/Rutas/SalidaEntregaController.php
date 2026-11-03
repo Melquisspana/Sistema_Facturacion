@@ -52,7 +52,7 @@ class SalidaEntregaController extends Controller
 
         $this->entregas->registrar(
             $entrega,
-            $request->only(['resultado', 'entregado_por_id', 'trae_nota_averia', 'motivo_no_entrega', 'nota']),
+            $request->only(['resultado', 'entregado_por_id', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota']),
             $request->user(),
             OrigenRegistroEntrega::Oficina,
         );

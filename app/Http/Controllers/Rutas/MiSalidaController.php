@@ -26,6 +26,15 @@ class MiSalidaController extends Controller
         return PersonalRuta::where('user_id', $request->user()->id)->where('activo', true)->first();
     }
 
+    /**
+     * Quién entregó: el vendedor puede marcar a un compañero de la salida; si no elige,
+     * es él. Que la persona vaya en la salida lo valida {@see EntregasCcf::registrar()}.
+     */
+    private function quienEntrega(Request $request): int
+    {
+        return $request->filled('entregado_por_id') ? (int) $request->input('entregado_por_id') : $this->persona($request)->id;
+    }
+
     public function index(Request $request): View|RedirectResponse
     {
         $persona = $this->persona($request);
@@ -44,7 +53,7 @@ class MiSalidaController extends Controller
     {
         Gate::authorize('view', $salida);
         $salida->load(['ruta', 'participantes.personal']);
-        $entregas = $salida->entregas()->with(['dte', 'sala', 'entregadoPor'])->get();
+        $entregas = $salida->entregas()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
         $resoluciones = $this->entregas->resolucionesAlbaran($entregas);
 
         return view('rutas.mi-salida.show', [
@@ -66,9 +75,8 @@ class MiSalidaController extends Controller
     public function update(Request $request, SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
     {
         Gate::authorize('registrar', $salida);
-        // Quién entregó lo pone el servidor: siempre la persona de este usuario.
-        $registrada = $this->entregas->registrar($entrega, $request->only(['resultado', 'trae_nota_averia', 'motivo_no_entrega', 'nota'])
-            + ['entregado_por_id' => $this->persona($request)->id], $request->user(), OrigenRegistroEntrega::Vendedor);
+        $registrada = $this->entregas->registrar($entrega, $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota'])
+            + ['entregado_por_id' => $this->quienEntrega($request)], $request->user(), OrigenRegistroEntrega::Vendedor);
 
         return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().'.');
     }
@@ -90,7 +98,7 @@ class MiSalidaController extends Controller
     {
         Gate::authorize('registrar', $salida);
         abort_unless($salida->entregas()->where('cliente_sucursal_id', $sucursal->id)->exists(), 404);
-        $marcados = $this->entregas->registrarSala($salida, $sucursal->id, $this->persona($request)->id, $request->user(), OrigenRegistroEntrega::Vendedor);
+        $marcados = $this->entregas->registrarSala($salida, $sucursal->id, $this->quienEntrega($request), $request->user(), OrigenRegistroEntrega::Vendedor);
 
         return back()->with('status', "«{$sucursal->nombre}»: {$marcados} CCF marcados como entregados.");
     }

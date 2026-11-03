@@ -11,15 +11,20 @@ El historial anterior a este archivo está en el registro de git.
 ### Agregado
 
 - Aviso al generar un CCF de un cliente que exige orden de compra (#169): si la orden no tiene 14 números (año y mes, un 0 y 9 números más, del mes del CCF o uno antes o después), o si la sala no tiene su código, pide confirmar; confirmado, genera igual y queda en la bitácora. Auditoría › «Órdenes de compra para revisar» lista los CCF cuya orden no cuadra, solo lectura.
+- Rutas: «Terminar ruta» liquida la salida completa. Lo que sobró lleva su motivo, los días con entregas o gastos tienen que estar terminados, y se suma lo cobrado en todos los días menos los gastos de todos los días. Ahí se elige quién entrega el dinero y sale el PDF con los días, los gastos y lo que no se entregó. La pueden terminar la oficina o el vendedor que va en la salida. Después ya no se cambian sus días, entregas ni gastos. Trae migración: 3 columnas nuevas en `salidas_ruta`.
 - Planilla: botón «Imprimir» en la hoja para firmas y los recibos. Al imprimir sale solo la hoja, sin el menú ni la cabecera de la app.
 - Planilla: interruptor `PLANILLA_PAGOS_ENABLED` para apagar el seguimiento de pagos (pagos, desembolsos y estado de cobro) mientras Gastos no se use. Con el interruptor apagado, el impreso sale con el total a pagar de cada persona.
 
 ### Cambiado
 
+- Rutas: «Cerrar el día» pasa a ser «Terminar día». Guarda lo entregado, lo cobrado y los gastos de ese día, pero ya no pide quién entrega el dinero ni lo da por entregado: en las salidas de varios días (San Miguel, Santa Ana) el dinero se entrega todo junto al terminar la ruta. Su PDF pasa a ser el resumen del día.
+- Rutas, «Mi salida»: el vendedor elige quién entregó cada CCF entre los que van en la salida, como ya podía la oficina. Si no elige, queda él. Alguien que no va en la salida se rechaza.
+- Rutas: cada entrega toma la forma de pago del cliente sin preguntar. Si esa vez pagó distinto, se toca «cambiar» y se elige efectivo, cheque, transferencia o sin cobro (quedan). El cambio vale solo para esa entrega, no toca la ficha del cliente y el cierre del día cuenta lo elegido.
 - Rutas › Personal: el nombre de quien está en Personal ya no se cambia desde Rutas; se edita en su ficha de Personal, que lo pasa solo a Rutas. Quien solo está en Rutas lo sigue editando ahí.
 
 ### Corregido
 
+- Rutas: al tocar «atrás» después de marcar una entrega, cerrar el día o anotar un gasto, el celular ya no muestra la pantalla vieja como si nada se hubiera hecho. Las pantallas de Rutas no se guardan en el navegador y «Mi salida» se vuelve a cargar al regresar.
 - Modo oscuro: los textos de Personal, Asistencia y otras 80 vistas usaban `paper-200` y `paper-400`, tonos que no existen en la paleta, y se veían con el color base. Pasan a `paper-100` y `paper-300`, como las vistas vecinas, y una prueba falla si vuelve a aparecer un tono de `paper` o `ink` que no esté en `tailwind.config.js` (#194).
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 

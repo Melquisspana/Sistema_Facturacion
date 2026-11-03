@@ -1,6 +1,6 @@
 <a href="{{ route($prefijo.'show', $salida) }}" class="inline-flex min-h-11 items-center text-sm underline dark:text-paper-300">Volver a la salida</a>
 <h1 class="mt-2 text-3xl font-bold dark:text-paper-100">{{ $salida->ruta->nombre }}</h1>
-<p class="mt-1 text-gray-600 dark:text-paper-300">Cierre del día · {{ \Illuminate\Support\Carbon::parse($fecha)->translatedFormat('d M Y') }}</p>
+<p class="mt-1 text-gray-600 dark:text-paper-300">Terminar día · {{ \Illuminate\Support\Carbon::parse($fecha)->translatedFormat('d M Y') }}</p>
 @if ($errors->any())
     <div role="alert" class="mt-4 rounded-xl bg-red-50 p-4 text-red-800 dark:bg-ink-800 dark:text-red-300"><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
 @endif
@@ -34,7 +34,8 @@
         $netoCentavos = $efectivoCentavos - $gastosCentavos;
     @endphp
     <p class="mt-4 dark:text-paper-300">Gastos −${{ number_format($gastosCentavos / 100, 2) }}</p>
-    <p class="mt-2 text-xl font-bold dark:text-paper-100" data-neto-gastos="{{ $gastosCentavos }}">{{ $netoCentavos < 0 ? 'A reintegrar al vendedor' : 'Efectivo a entregar' }} ${{ number_format(abs($netoCentavos) / 100, 2) }}</p>
+    <p class="mt-2 text-xl font-bold dark:text-paper-100" data-neto-gastos="{{ $gastosCentavos }}">Efectivo del día menos gastos: {{ $netoCentavos < 0 ? '−' : '' }}${{ number_format(abs($netoCentavos) / 100, 2) }}</p>
+    <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">Terminar el día no es entregar el dinero: se entrega todo junto al terminar la ruta.</p>
     @include('rutas.salidas._gastos', ['fechaGastos' => $fecha])
     @if ($pendientes)
         <p class="mt-4 text-sm text-amber-800 dark:text-amber-300">{{ $pendientes }} sin marcar siguen en la salida.</p>
@@ -66,14 +67,7 @@
             <p class="dark:text-paper-300">No hay entregas registradas en este día.</p>
         @endforelse
         @if ($entregas->isNotEmpty() || $gastosCierre->isNotEmpty() || $cierre)
-            <div><label for="entrega-dinero" class="block font-semibold dark:text-paper-100">¿Quién entrega el dinero?</label>
-                <select id="entrega-dinero" name="entrega_dinero_personal_id" class="mt-2 min-h-11 w-full rounded-xl border-gray-300 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-                    <option value="">Elegí una persona</option>
-                    @foreach ($participantes as $personaEntrega)<option value="{{ $personaEntrega->id }}" @selected((string) old('entrega_dinero_personal_id', $cierre?->entrega_dinero_personal_id ?? ($participantes->count() === 1 ? $personaEntrega->id : null)) === (string) $personaEntrega->id)>{{ $personaEntrega->nombre }}</option>@endforeach
-                </select>
-                <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">Obligatorio si hay algo cobrado.</p>
-            </div>
-            <button class="min-h-11 w-full rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Cerrar el día</button>
+            <button class="min-h-11 w-full rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Terminar día</button>
         @endif
     </form>
     <script>
@@ -89,11 +83,10 @@
                 document.querySelectorAll('[data-total-forma]').forEach(cifra => {
                     cifra.textContent = '$' + (totales[cifra.dataset.totalForma] / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 });
-                document.getElementById('entrega-dinero')?.toggleAttribute('required', Object.values(totales).some(monto => monto > 0));
                 const neto = document.querySelector('[data-neto-gastos]');
                 if (neto) {
                     const centavos = totales.efectivo - Number(neto.dataset.netoGastos);
-                    neto.textContent = (centavos < 0 ? 'A reintegrar al vendedor $' : 'Efectivo a entregar $') + (Math.abs(centavos) / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    neto.textContent = 'Efectivo del día menos gastos: ' + (centavos < 0 ? '−$' : '$') + (Math.abs(centavos) / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 }
             };
             form.addEventListener('input', actualizar);

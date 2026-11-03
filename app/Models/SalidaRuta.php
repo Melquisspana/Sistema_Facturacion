@@ -43,6 +43,9 @@ class SalidaRuta extends Model
         'estado',
         'observaciones',
         'created_by',
+        'entrega_dinero_personal_id',
+        'liquidada_por',
+        'liquidada_en',
     ];
 
     protected function casts(): array
@@ -52,6 +55,7 @@ class SalidaRuta extends Model
             'fecha_fin_estimada' => 'date',
             'fecha_fin_real' => 'date',
             'estado' => EstadoSalidaRuta::class,
+            'liquidada_en' => 'datetime',
         ];
     }
 
@@ -129,6 +133,23 @@ class SalidaRuta extends Model
     public function gastos(): HasMany
     {
         return $this->hasMany(SalidaRutaGasto::class, 'salida_ruta_id');
+    }
+
+    /** Quién entregó el dinero de toda la salida, al terminar la ruta. */
+    public function entregaDinero(): BelongsTo
+    {
+        return $this->belongsTo(PersonalRuta::class, 'entrega_dinero_personal_id');
+    }
+
+    public function liquidadaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'liquidada_por');
+    }
+
+    /** Ruta terminada y liquidada: ya no se tocan sus días, entregas ni gastos. */
+    public function estaLiquidada(): bool
+    {
+        return $this->liquidada_en !== null;
     }
 
     public function cierreDelDia(?string $fecha = null): ?SalidaRutaCierre
