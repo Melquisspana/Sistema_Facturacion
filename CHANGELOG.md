@@ -11,6 +11,7 @@ El historial anterior a este archivo está en el registro de git.
 ### Cambiado
 
 - Cobros › Seguimiento: al tocar un CCF se ve como su ficha del documento (datos, líneas y totales) y, en el mismo formato, todo su cobro: albarán, quedan, PPQ, pagos de los TXT, cobrado, saldo y estado (#167).
+- Personal: un solo nombre por persona. Corregirlo en Asistencia, o en Planilla para quien no marca, lo cambia también en Planilla y Rutas; las quincenas confirmadas conservan el nombre con que se pagaron. Abrir quincena viene con pago quincenal y los otros tipos quedan a un clic.
 - Planilla: pantallas más simples, con menos explicaciones, los avisos de cada persona en un solo renglón y sin elegir moneda cuando hay una sola.
 - Personal: textos más cortos en Jornadas, Marcaciones y Hoy, y el contrato vuelve a la ficha de la persona.
 - Personal: se quita la pantalla «Formatos», una muestra con datos inventados. La hoja de firmas y el recibo reales siguen saliendo desde cada quincena.

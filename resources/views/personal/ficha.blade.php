@@ -39,7 +39,7 @@
             @endif
 
             @if ($ficha)
-                @if ($errors->hasAny(['sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
+                @if ($errors->hasAny(['nombre', 'sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
                     <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
                         <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
                     </div>
@@ -60,6 +60,22 @@
 
                     @if ($gestiona)
                         <div class="mt-4 flex flex-wrap items-start gap-3">
+                            {{-- Quien marca se corrige con «Editar», arriba: Asistencia separa nombres y apellidos. --}}
+                            @if ($ficha->asistencia_empleado_id === null)
+                                <details @if ($errors->has('nombre')) open @endif>
+                                    <summary class="{{ $secundario }} cursor-pointer">Corregir nombre</summary>
+                                    <form method="POST" action="{{ route('planilla.empleados.nombre', $ficha) }}" class="mt-2 w-72 space-y-2">
+                                        @csrf
+                                        <div>
+                                            <label for="nombre" class="{{ $etiqueta }}">Nombre completo</label>
+                                            <input id="nombre" name="nombre" value="{{ old('nombre', $ficha->nombre) }}" maxlength="120" required class="{{ $campo }}">
+                                        </div>
+                                        <p class="text-xs text-gray-500 dark:text-paper-400">Cambia también en Rutas. Las quincenas confirmadas no cambian.</p>
+                                        <button type="submit" class="{{ $secundario }}">Guardar nombre</button>
+                                    </form>
+                                </details>
+                            @endif
+
                             @if ($ficha->activo && $ficha->con_descuentos_ley && $verImportes)
                                 <a href="{{ route('planilla.empleados.contrato', $ficha) }}" class="{{ $secundario }}">Contrato</a>
                             @endif
