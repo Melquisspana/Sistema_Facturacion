@@ -10,6 +10,7 @@ use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Asistencia\HoraOficial;
+use App\Services\Planilla\PosiblesRepetidos;
 use App\Services\Planilla\SalarioMinimo;
 use App\Services\Planilla\SueldoHabitual;
 use App\Support\Asistencia\ConsultaAsistencia;
@@ -91,6 +92,18 @@ class PersonalController extends Controller
             'minimo' => $minimo,
             'bajoMinimo' => $bajoMinimo,
         ]);
+    }
+
+    /**
+     * Posibles repetidos de cuando cada módulo daba su propia alta. Solo se muestran: cada
+     * grupo se revisa y se enlaza a mano desde la ficha. Lo ve quien gestiona Personal.
+     */
+    public function repetidos(Request $request, PosiblesRepetidos $repetidos): View
+    {
+        [$veAsistencia, $vePlanilla] = $this->accesos($request);
+        abort_unless($vePlanilla && $request->user()->can('planilla.gestionar'), 403);
+
+        return view('personal.repetidos', ['grupos' => $repetidos->grupos(), 'veAsistencia' => $veAsistencia]);
     }
 
     /** `$persona` es «p12» (planilla) o «a7» (solo Asistencia). */

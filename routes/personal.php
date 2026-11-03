@@ -16,6 +16,8 @@ Route::middleware('auth')
     ->name('personal.')
     ->group(function () {
         Route::get('empleados', [PersonalController::class, 'index'])->name('empleados');
+        // Solo lectura: personas que pueden estar cargadas dos veces, para revisarlas a mano.
+        Route::get('repetidos', [PersonalController::class, 'repetidos'])->name('repetidos');
         Route::get('empleados/{persona}', [PersonalController::class, 'show'])
             ->where('persona', '[ap][0-9]+')->name('empleados.show');
     });

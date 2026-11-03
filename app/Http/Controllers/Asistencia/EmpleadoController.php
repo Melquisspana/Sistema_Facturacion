@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Asistencia;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Asistencia\EmpleadoRequest;
 use App\Models\Asistencia\AsistenciaEmpleado;
+use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Planilla\NombreUnico;
 use App\Support\Asistencia\ConsultaAsistencia;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -45,13 +48,27 @@ use Illuminate\View\View;
  */
 class EmpleadoController extends Controller
 {
-    public function create(): View
+    public function create(Request $request): View
     {
+        // Con Personal, la persona ya está (o se carga) ahí: no se la vuelve a escribir.
+        if (PlanillaEmpleado::enUso()) {
+            return view('personal.desde-personal', [
+                'titulo' => 'Nuevo empleado que marca', 'modulo' => 'Marca con huella', 'volver' => route('personal.empleados'),
+                'personas' => $request->user()->can('planilla.ver')
+                    ? PlanillaEmpleado::whereNull('asistencia_empleado_id')->where('activo', true)->orderBy('nombre')->get(['id', 'nombre'])
+                    : collect(),
+            ]);
+        }
+
         return view('asistencia.empleados.create', ['empleado' => new AsistenciaEmpleado]);
     }
 
     public function store(EmpleadoRequest $request): RedirectResponse
     {
+        if (PlanillaEmpleado::enUso()) {
+            throw ValidationException::withMessages(['nombres' => 'Las personas se dan de alta en Personal; desde su ficha se las pone a marcar.']);
+        }
+
         $empleado = AsistenciaEmpleado::create($request->validated() + ['activo' => true]);
 
         return redirect()

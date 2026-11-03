@@ -57,6 +57,15 @@
         <x-input-error :messages="$errors->get('telefono')" class="mt-1" />
     </div>
 
+    @if ($enPersonal ?? null)
+        {{-- Su usuario y su asistencia se enlazan desde la ficha de Personal, no acá. --}}
+        <div>
+            <span class="block text-sm font-medium text-gray-700 dark:text-paper-100">Usuario y asistencia</span>
+            <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">
+                Se enlazan desde <a href="{{ route('personal.empleados.show', 'p'.$enPersonal->id) }}" class="text-indigo-600 underline">su ficha de Personal</a>.
+            </p>
+        </div>
+    @else
     <div>
         <label for="user_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
             Usuario del sistema <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
@@ -76,8 +85,10 @@
         </p>
         <x-input-error :messages="$errors->get('user_id')" class="mt-1" />
     </div>
+    @endif
 </div>
 
+@unless ($enPersonal ?? null)
 <div>
     <label for="asistencia_empleado_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
         Misma persona en planilla <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
@@ -100,6 +111,7 @@
     </p>
     <x-input-error :messages="$errors->get('asistencia_empleado_id')" class="mt-1" />
 </div>
+@endunless
 
 <div>
     <label for="notas" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
