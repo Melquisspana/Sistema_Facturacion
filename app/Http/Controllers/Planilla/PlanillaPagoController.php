@@ -29,6 +29,7 @@ class PlanillaPagoController extends Controller
 {
     public function pagos(Request $request, Planilla $planilla, EstadoPlanilla $estado, PagarPlanilla $pagar)
     {
+        abort_unless(config('planilla.pagos_enabled'), 404);
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
         $planilla->load('detalles.gasto.cuotas', 'detalles.conceptos');
@@ -76,6 +77,7 @@ class PlanillaPagoController extends Controller
 
     public function pagarPersona(Request $request, PlanillaDetalle $detalle, PagarPlanilla $pagar)
     {
+        abort_unless(config('planilla.pagos_enabled'), 404);
         $pagar->pagarPersona($request->user(), $detalle, $request->all());
 
         return back()->with('planilla.aviso', 'Pago registrado para '.$detalle->nombre_snapshot.'.');
@@ -83,6 +85,7 @@ class PlanillaPagoController extends Controller
 
     public function pagarTercero(Request $request, PlanillaObligacionTercero $obligacion, PagarPlanilla $pagar)
     {
+        abort_unless(config('planilla.pagos_enabled'), 404);
         $pagar->pagarTercero($request->user(), $obligacion, $request->all());
 
         return back()->with('planilla.aviso', 'Pago registrado para '.$obligacion->tercero.'.');
@@ -90,6 +93,7 @@ class PlanillaPagoController extends Controller
 
     public function pagarLote(Request $request, Planilla $planilla, PagarPlanilla $pagar)
     {
+        abort_unless(config('planilla.pagos_enabled'), 404);
         $resultado = $pagar->pagarLote(
             $request->user(),
             $planilla,
@@ -108,6 +112,7 @@ class PlanillaPagoController extends Controller
 
     public function revertirPago(Request $request, Pago $pago, PagarPlanilla $pagar)
     {
+        abort_unless(config('planilla.pagos_enabled'), 404);
         $pagar->revertirPago($request->user(), $pago, (string) $request->input('motivo', ''));
 
         return back()->with('planilla.aviso', 'Pago revertido. El saldo volvió a quedar pendiente y el historial conserva que existió.');

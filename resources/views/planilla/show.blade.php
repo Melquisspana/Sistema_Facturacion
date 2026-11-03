@@ -32,7 +32,7 @@
                     @endcan
                 @endif
                 <a href="{{ route('planilla.impresos', $planilla) }}" class="{{ $boton }}">Impresos</a>
-                @if ($planilla->confirmada())
+                @if ($planilla->confirmada() && config('planilla.pagos_enabled'))
                     @can('planilla.pagar')
                         <a href="{{ route('planilla.pagos', $planilla) }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Pagos</a>
                     @endcan
@@ -74,6 +74,7 @@
                     </dl>
                 </section>
 
+                @if (config('planilla.pagos_enabled'))
                 <section class="rounded-lg border border-gray-200 bg-white p-4">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Avance del pago</h2>
                     @if ($planilla->borrador())
@@ -98,6 +99,7 @@
                         </p>
                     @endif
                 </section>
+                @endif
             </div>
 
             {{-- ══ Dinero desembolsado ══
@@ -107,7 +109,7 @@
                  período al negocio, y para eso hay que contar los anticipos: ese dinero
                  salió antes, por su propio pago, pero salió por esta gente y este
                  período. --}}
-            @if (! $planilla->borrador() && $desembolsos)
+            @if (! $planilla->borrador() && $desembolsos && config('planilla.pagos_enabled'))
                 <section class="rounded-lg border border-gray-200 bg-white p-4">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">
                         Dinero desembolsado · {{ $planilla->moneda }}
@@ -206,8 +208,8 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-3 text-sm">
                                 <span class="whitespace-nowrap tabular-nums text-gray-900">{{ $planilla->moneda }} {{ Dinero::mostrar($detalle->a_pagar) }}</span>
-                                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $insignia[$e['estado']] }}">{{ EstadoPlanilla::ETIQUETAS[$e['estado']] }}</span>
-                                @if ($e['pendiente'] > 0 && ! $planilla->borrador())
+                                <span @class(['rounded-full px-2 py-0.5 text-xs font-medium', $insignia[$e['estado']], 'hidden' => ! config('planilla.pagos_enabled') && $planilla->estado !== 'anulada'])>{{ EstadoPlanilla::ETIQUETAS[$e['estado']] }}</span>
+                                @if ($e['pendiente'] > 0 && ! $planilla->borrador() && config('planilla.pagos_enabled'))
                                     <span class="whitespace-nowrap text-xs text-amber-700">queda {{ Dinero::mostrar($e['pendiente']) }}</span>
                                 @endif
                                 @if ($detalle->gasto && config('gastos.enabled'))
@@ -232,7 +234,7 @@
                                 <p class="text-sm font-medium text-gray-900">{{ $t->tercero }}</p>
                                 <div class="flex flex-wrap items-center gap-3 text-sm">
                                     <span class="whitespace-nowrap tabular-nums">{{ $planilla->moneda }} {{ Dinero::mostrar($t->importe) }}</span>
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $insignia[$e['estado']] }}">{{ EstadoPlanilla::ETIQUETAS[$e['estado']] }}</span>
+                                    <span @class(['rounded-full px-2 py-0.5 text-xs font-medium', $insignia[$e['estado']], 'hidden' => ! config('planilla.pagos_enabled') && $planilla->estado !== 'anulada'])>{{ EstadoPlanilla::ETIQUETAS[$e['estado']] }}</span>
                                     @if ($t->gasto && config('gastos.enabled'))
                                         <a href="{{ route('gastos.show', $t->gasto) }}" class="text-xs text-indigo-600 underline">Ver obligación</a>
                                     @endif
