@@ -8,6 +8,11 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Agregado
+
+- Avisos por correo cuando algo falla (#163): trabajos de la cola fallidos, DTE rechazados, contingencia con el plazo vencido, respaldo de la base que falla o no está, lector de asistencia sin señal en horario laboral, errores 500, tareas programadas con error y lo que marque `/salud`. Cada aviso dice qué falló, desde cuándo y qué hacer; los repetidos van juntos, hay un tope diario por tipo y llega un «ya se normalizó» al arreglarse. Apagado de fábrica (`ALERTAS_ENABLED`).
+- Ruta pública `/salud` para un vigilante de afuera: responde 200 si andan la base, la cola, los firmadores, el disco y la hora, y 503 con el nombre de lo que cayó, sin datos del servidor.
+
 ### Cambiado
 
 - Planilla: pantallas más simples, con menos explicaciones, los avisos de cada persona en un solo renglón y sin elegir moneda cuando hay una sola.

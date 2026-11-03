@@ -10,6 +10,7 @@ use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Ajustes\RepositorioAjustes;
 use App\Enums\AreaSistema;
 use App\Listeners\AuditoriaAccesos;
+use App\Services\Alertas\RegistroEventos;
 use App\Services\Asistencia\AutenticadorDispositivo;
 use App\Services\Contabilidad\SubidaDrivePaquete;
 use App\Services\Contabilidad\SubidaDrivePaqueteContrato;
@@ -24,6 +25,7 @@ use App\Services\Planilla\ProteccionPlanilla;
 use App\Support\PasswordRules;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Contracts\Cache\Factory;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessing;
@@ -163,6 +165,12 @@ class AppServiceProvider extends ServiceProvider
         // proceso worker; en peticiones web queda registrado pero no se ejecuta. Observación
         // pura: no toca la cola, el envío ni la firma/transmisión.
         Event::listen(Looping::class, static fn () => WorkerHeartbeat::pulse());
+
+        // Tarea programada que termina con error o con código distinto de cero: se anota
+        // para los avisos por correo (issue #163). El correo lo decide `alertas:revisar`.
+        Event::listen(ScheduledTaskFailed::class, static fn (ScheduledTaskFailed $e) => RegistroEventos::anotar(
+            RegistroEventos::TAREAS, RegistroEventos::nombreTarea($e->task),
+        ));
 
         // CONFIGURACIÓN DE CORREO AL DÍA EN EL WORKER.
         //

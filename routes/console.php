@@ -242,3 +242,20 @@ Schedule::command('cobros:leer-correos --aplicar')
         && (bool) config('cobros.correo.automatica', false))
     ->withoutOverlapping(15)
     ->appendOutputTo(storage_path('logs/cobros-correos.log'));
+
+/*
+|--------------------------------------------------------------------------
+| Avisos por correo cuando algo falla (issue #163)
+|--------------------------------------------------------------------------
+| Solo LEE: trabajos fallidos, DTE rechazados, contingencia, respaldos, lector de
+| asistencia, /salud y lo anotado por errores 500 y tareas que fallan. Escribe solo
+| en la caché (estado de cada aviso) y manda correo cuando algo se abre, empeora o se
+| normaliza, con tope diario por tipo. Ver App\Services\Alertas\Avisador.
+|
+| Cada 5 minutos: un DTE rechazado o un worker caído tienen que verse en minutos, y
+| cada corrida son unas pocas consultas. Apagado por defecto (ALERTAS_ENABLED).
+*/
+Schedule::command('alertas:revisar')
+    ->everyFiveMinutes()
+    ->when(fn () => (bool) config('alertas.enabled', false))
+    ->withoutOverlapping(10);

@@ -2,6 +2,7 @@
 
 use App\Ajustes\Excepciones\AlmacenAjustesNoDisponibleException;
 use App\Exceptions\Dte\PuntoVentaPredeterminadoInvalidoException;
+use App\Http\Controllers\SaludController;
 use App\Http\Middleware\AutenticaDispositivoAsistencia;
 use App\Http\Middleware\CerrarSesionUsuarioInactivo;
 use App\Http\Middleware\CloudflareAccessSso;
@@ -12,10 +13,12 @@ use App\Http\Middleware\ModuloPlanillaActivo;
 use App\Http\Middleware\ModuloPlantaActivo;
 use App\Http\Middleware\RedirigirAreaPrincipal;
 use App\Http\Middleware\SecurityHeaders;
+use App\Services\Alertas\RegistroEventos;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -29,6 +32,12 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        // /salud, para el vigilante de afuera (issue #163). Fuera del grupo `web`: sin
+        // sesión, sin cookies y sin el SSO de Cloudflare Access. Con límite de pedidos,
+        // porque cada consulta pregunta en vivo a los firmadores.
+        then: function () {
+            Route::get('/salud', SaludController::class)->middleware('throttle:30,1')->name('salud');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // Cabeceras de seguridad en todas las respuestas web + SSO de Cloudflare
@@ -78,6 +87,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Cada respuesta 500 se anota para los avisos por correo (issue #163). Solo se
+        // anota: el correo lo decide `alertas:revisar`, agrupado y con tope.
+        $exceptions->respond(function ($response, Throwable $e, Request $request) {
+            if ($response->getStatusCode() === 500) {
+                RegistroEventos::anotar(RegistroEventos::ERRORES_500,
+                    ($request->route()?->getName() ?? 'sin nombre de ruta').' · '.class_basename($e));
+            }
+
+            return $response;
+        });
+
         // Punto de venta predeterminado mal configurado (código inexistente/inactivo):
         // puede lanzarse ANTES de que corra el código del controller (CrearBorradorRequest
         // ::prepareForValidation()), así que se maneja acá para dar un mensaje claro en vez
