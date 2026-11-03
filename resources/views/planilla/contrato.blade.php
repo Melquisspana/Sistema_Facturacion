@@ -112,7 +112,7 @@
                 </form>
             @endif
 
-            <a href="{{ route('personal.empleados') }}" class="text-sm text-indigo-700 underline">Volver a personas en planilla</a>
+            <a href="{{ route('personal.empleados.show', 'p'.$empleado->id) }}" class="text-sm text-indigo-700 underline">Volver a la ficha</a>
         </div>
     </div>
 </x-app-layout>

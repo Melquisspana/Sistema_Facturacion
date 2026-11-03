@@ -11,10 +11,12 @@ El historial anterior a este archivo está en el registro de git.
 ### Cambiado
 
 - Personal: un solo nombre por persona. Corregirlo en Asistencia, o en Planilla para quien no marca, lo cambia también en Planilla y Rutas; las quincenas confirmadas conservan el nombre con que se pagaron. Abrir quincena viene con pago quincenal y los otros tipos quedan a un clic.
+- Personal: textos más cortos en Jornadas, Marcaciones y Hoy, y el contrato vuelve a la ficha de la persona.
 - Personal: se quita la pantalla «Formatos», una muestra con datos inventados. La hoja de firmas y el recibo reales siguen saliendo desde cada quincena.
 
 ### Corregido
 
+- Planilla: la lista y la pantalla para editar una quincena llevan a su ficha, donde están Impresos y Confirmar. Antes un borrador no tenía cómo llegar a ellos.
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
 ## [2026.11.02.3] - 2026-11-02

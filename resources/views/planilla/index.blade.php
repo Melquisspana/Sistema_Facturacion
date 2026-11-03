@@ -65,11 +65,8 @@
                                     @php $t = $verImportes ? $totales->dePlanilla($p) : null; @endphp
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-4 py-2.5">
-                                            @can('planilla.gestionar')
-                                                <a href="{{ route('planilla.preparar', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->periodo }}</a>
-                                            @else
-                                                <span class="font-medium text-gray-900">{{ $p->periodo }}</span>
-                                            @endcan
+                                            {{-- A la ficha: ahí están Editar, Impresos, Confirmar y Pagos. --}}
+                                            <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->periodo }}</a>
                                             <p class="text-xs text-gray-500">{{ $p->periodoEnPalabras() }}</p>
                                         </td>
                                         <td class="px-4 py-2.5 text-gray-600">

@@ -44,7 +44,10 @@
                     @if ($planilla->clase !== 'regular') · {{ Planilla::CLASES[$planilla->clase] }} @endif
                 </p>
             </div>
-            <a href="{{ route('planilla.index') }}" class="{{ $boton }}">Volver</a>
+            <div class="flex flex-wrap gap-2">
+                <a href="{{ route('planilla.show', $planilla) }}" class="{{ $boton }}">Ver e imprimir</a>
+                <a href="{{ route('planilla.index') }}" class="{{ $boton }}">Volver</a>
+            </div>
         </div>
     </x-slot>
 

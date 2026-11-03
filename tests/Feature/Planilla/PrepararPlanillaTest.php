@@ -204,6 +204,19 @@ class PrepararPlanillaTest extends TestCase
         $this->assertSame(1, Planilla::count());
     }
 
+    public function test_la_lista_y_el_formulario_llevan_a_la_ficha_de_la_quincena(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+
+        // En la ficha están Impresos y Confirmar: sin este enlace, un borrador no
+        // tenía cómo llegar a ellos.
+        $ficha = 'href="'.route('planilla.show', $planilla).'"';
+
+        $this->actingAs($u)->get(route('planilla.index'))->assertOk()->assertSee($ficha, false);
+        $this->actingAs($u)->get(route('planilla.preparar', $planilla))->assertOk()->assertSee($ficha, false);
+    }
+
     public function test_una_extraordinaria_puede_convivir_con_la_regular_del_mismo_periodo(): void
     {
         $u = $this->gestor();

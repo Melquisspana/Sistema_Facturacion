@@ -193,8 +193,7 @@
             </div>
 
             <p class="text-xs text-gray-400 dark:text-paper-500">
-                Las marcaciones no se editan ni se borran: son un registro de solo añadir. La hora que se
-                muestra es la que puso el servidor ({{ $zona }}); el reloj del lector nunca es fuente de verdad.
+                Las marcaciones no se editan ni se borran. La hora es la del servidor ({{ $zona }}).
             </p>
         </div>
     </div>
