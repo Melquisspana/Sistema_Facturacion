@@ -19,6 +19,13 @@ return [
     'enabled' => env('PLANILLA_ENABLED', false),
 
     /*
+    | Seguimiento de pagos (quién cobró, cuánto falta, desembolsos). Se puede apagar
+    | mientras Gastos no está en uso: la planilla, sus descuentos, los impresos y el
+    | documento firmado siguen funcionando; solo se esconde y se cierra lo de pagar.
+    */
+    'pagos_enabled' => (bool) env('PLANILLA_PAGOS_ENABLED', true),
+
+    /*
     |--------------------------------------------------------------------------
     | Lo que este módulo NO hace, y conviene tener escrito
     |--------------------------------------------------------------------------

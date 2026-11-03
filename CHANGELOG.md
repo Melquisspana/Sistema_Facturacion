@@ -11,6 +11,8 @@ El historial anterior a este archivo está en el registro de git.
 ### Agregado
 
 - Aviso al generar un CCF de un cliente que exige orden de compra (#169): si la orden no tiene 14 números (año y mes, un 0 y 9 números más, del mes del CCF o uno antes o después), o si la sala no tiene su código, pide confirmar; confirmado, genera igual y queda en la bitácora. Auditoría › «Órdenes de compra para revisar» lista los CCF cuya orden no cuadra, solo lectura.
+- Planilla: botón «Imprimir» en la hoja para firmas y los recibos. Al imprimir sale solo la hoja, sin el menú ni la cabecera de la app.
+- Planilla: interruptor `PLANILLA_PAGOS_ENABLED` para apagar el seguimiento de pagos (pagos, desembolsos y estado de cobro) mientras Gastos no se use. Con el interruptor apagado, el impreso sale con el total a pagar de cada persona.
 
 ### Corregido
 
