@@ -30,7 +30,8 @@ use Throwable;
  *    del lote, con sus NC, para meterlos en el siguiente PPQ: así el lote queda igual al caso.
  *    En las observaciones del lote queda la lista de lo que salió. Lo que ya se había
  *    presentado en un lote anterior no se toca;
- *  · las NC de los CCF que quedan se quedan con ellos.
+ *  · las NC de los CCF que quedan se quedan con ellos, salvo que el reporte liste NC y esa
+ *    no venga: Calleja la rechazó, sale y va en el siguiente PPQ (03/11/2026).
  *
  * Volver a cargar el mismo reporte no cambia nada, y corrige un lote cargado antes de que
  * los devueltos salieran (decisión del usuario, 13/10/2026).
@@ -77,13 +78,14 @@ class ReporteCasoCalleja
     {
         $caso = $reporte['caso'];
         $registrados = array_keys(array_filter($reporte['documentos'], fn ($estado) => $estado === '' || str_contains($estado, 'REGISTRADO')));
+        $traeNc = collect(array_keys($reporte['documentos']))->contains(fn ($clave) => str_starts_with($clave, 'DTE05'));
 
         $porClave = CobroDocumento::deCliente($cliente->id)->get()
             ->keyBy(fn (CobroDocumento $d) => EjercicioControl::llave($d->numero_control, $d->ejercicio_control));
 
         $resultado = ['caso' => $caso, 'recibidos' => 0, 'no_en_seguimiento' => [], 'devueltos' => [], 'items_quitados' => collect(), 'conservados' => collect()];
 
-        DB::transaction(function () use ($registrados, $porClave, $caso, $usuario, $lote, &$resultado) {
+        DB::transaction(function () use ($registrados, $traeNc, $porClave, $caso, $usuario, $lote, &$resultado) {
             $lote ??= ($id = $this->loteDelCaso($registrados, $porClave->values())) !== null ? PpqLote::find($id) : null;
             $lote = $lote ? PpqLote::whereKey($lote->id)->lockForUpdate()->firstOrFail() : null;
             $items = $lote ? $lote->items()->with('dte')->get() : collect();
@@ -120,10 +122,14 @@ class ReporteCasoCalleja
             foreach ($items->where('tipo_dte', '05') as $item) {
                 $ccf = $this->ccfDeNota($item, $items);
                 $doc = $this->documentoDelItem($item, $porClave->values());
-                if (($ccf && $devueltos->contains('id', $ccf->id)) || (! $ccf && $doc && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $ambiguos, true)
+                $noVino = $doc && ! in_array(IdentidadPpq::normalizar($doc->numero_control), $ambiguos, true)
                     && ! in_array(EjercicioControl::llave($doc->numero_control, $doc->ejercicio_control), $registrados, true)
                     && ! $anteriores->contains(fn ($anterior) => $this->mismoDocumento($anterior, $doc))
-                    && $doc->pago_estado === EstadoPagoCobro::Pendiente)) {
+                    && $doc->pago_estado === EstadoPagoCobro::Pendiente;
+                // Si el reporte lista NC, la que no vino la rechazó Calleja aunque su CCF quedara:
+                // sale y va en el siguiente PPQ (lote #23, 03/11/2026). Un reporte sin ninguna NC
+                // no dice nada de ellas, y entonces siguen a su CCF.
+                if (($ccf && $devueltos->contains('id', $ccf->id)) || ($noVino && (! $ccf || $traeNc))) {
                     $devueltos->push($item);
                 }
             }
