@@ -33,6 +33,8 @@
     $checks = (array) ($p['checks'] ?? []);
     $requiereBarrera = (bool) ($p['requiere_barrera'] ?? false);
     $etiqueta = (string) ($p['etiqueta'] ?? 'Firmar y transmitir a Hacienda');
+    // Avisos de la orden de compra (ReglaOrdenCompra::avisos): no frenan, se confirman.
+    $avisosOc = array_values((array) ($p['avisos_oc'] ?? []));
 
     // Un error devuelto por el servidor debe REABRIR la confirmación, no dejar al
     // usuario frente a un modal cerrado sin saber qué pasó.
@@ -129,7 +131,7 @@
          intento (DteController + preflight del tipo + DteTransmisionService). ===== --}}
     @if ($puede)
         <x-modal name="emitir-produccion" maxWidth="2xl" :show="$huboError" focusable>
-            <div class="p-6" x-data="{ frase: '', barrera: {{ $requiereBarrera ? 'false' : 'true' }} }">
+            <div class="p-6" x-data="{ frase: '', barrera: {{ $requiereBarrera ? 'false' : 'true' }}, avisosOc: {{ $avisosOc !== [] ? 'false' : 'true' }} }">
                 <div class="flex items-start justify-between gap-3">
                     <h2 class="text-lg font-semibold text-gray-800">Emitir en producción</h2>
                     <button type="button" x-on:click="$dispatch('close')" class="text-gray-400 hover:text-gray-600 text-sm">Cerrar</button>
@@ -232,6 +234,22 @@
                         </label>
                     @endif
 
+                    @if ($avisosOc !== [])
+                        <div role="alert" class="mt-3 rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
+                            <strong>⚠ Revisá la orden de compra:</strong>
+                            <ul class="mt-1 list-disc list-inside">
+                                @foreach ($avisosOc as $aviso)
+                                    <li>{{ $aviso }}</li>
+                                @endforeach
+                            </ul>
+                            <label class="mt-2 flex items-start gap-2">
+                                <input type="checkbox" name="confirmar_avisos_oc" value="1" x-model="avisosOc"
+                                       class="mt-0.5 rounded border-amber-400 text-amber-600">
+                                <span>Revisé la orden de compra y es correcta: emitir igual.</span>
+                            </label>
+                        </div>
+                    @endif
+
                     <div class="mt-3">
                         <label for="emision_frase" class="block text-xs font-semibold text-rose-700 mb-1">
                             Para continuar, escribí exactamente: <span class="font-mono">EMITIR PRODUCCION</span>
@@ -247,9 +265,9 @@
                             Cancelar
                         </button>
                         {{-- Único botón rojo del flujo, y solo en el paso final. --}}
-                        <button type="submit" :disabled="enviando || frase.trim() !== 'EMITIR PRODUCCION' || ! barrera"
+                        <button type="submit" :disabled="enviando || frase.trim() !== 'EMITIR PRODUCCION' || ! barrera || ! avisosOc"
                                 class="inline-flex items-center px-4 py-2 text-sm rounded-md font-medium"
-                                :class="(! enviando && frase.trim() === 'EMITIR PRODUCCION' && barrera)
+                                :class="(! enviando && frase.trim() === 'EMITIR PRODUCCION' && barrera && avisosOc)
                                     ? 'bg-rose-600 text-white hover:bg-rose-700'
                                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
                             <span x-show="! enviando">{{ $etiqueta }}</span>

@@ -8,6 +8,10 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+### Agregado
+
+- Aviso al generar un CCF de un cliente que exige orden de compra (#169): si la orden no tiene 14 números (año y mes, un 0 y 9 números más, del mes del CCF o uno antes o después), o si la sala no tiene su código, pide confirmar; confirmado, genera igual y queda en la bitácora. Auditoría › «Órdenes de compra para revisar» lista los CCF cuya orden no cuadra, solo lectura.
+
 ### Corregido
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.

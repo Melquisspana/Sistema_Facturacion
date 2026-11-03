@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Auditoria;
 
+use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
+use App\Support\Dte\ReglaOrdenCompra;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
@@ -77,5 +80,46 @@ class AuditoriaController extends Controller
             ->withQueryString();
 
         return view('auditoria.documentos-prueba', compact('dtes', 'filtros'));
+    }
+
+    /**
+     * CCF emitidos a un cliente o sala que exige orden de compra cuya orden no tiene la
+     * forma de {@see ReglaOrdenCompra::problemasForma()}. Solo lectura: es para revisarlos;
+     * la corrección se decide aparte. La forma se evalúa en PHP con la misma regla que
+     * avisa al generar, para que la lista y el aviso nunca discrepen.
+     */
+    public function ordenesCompra(Request $request): View
+    {
+        abort_unless($request->user()->can('auditoria.ver'), 403);
+
+        $filtros = $request->validate([
+            'desde' => ['nullable', 'date'],
+            'hasta' => ['nullable', 'date', 'after_or_equal:desde'],
+        ]);
+
+        $revisar = Dte::query()
+            ->ambienteOperativoActual()
+            ->where('tipo_dte', TipoDte::CreditoFiscal->value)
+            ->whereNotIn('estado', [EstadoDte::Borrador->value, EstadoDte::Invalidado->value])
+            ->where(fn ($q) => $q->whereHas('cliente', fn ($c) => $c->where('requiere_orden_compra', true))
+                ->orWhereHas('clienteSucursal', fn ($s) => $s->where('requiere_orden_compra', true)))
+            ->when($filtros['desde'] ?? null, fn ($q, $v) => $q->whereDate('fecha_emision', '>=', $v))
+            ->when($filtros['hasta'] ?? null, fn ($q, $v) => $q->whereDate('fecha_emision', '<=', $v))
+            ->with(['cliente:id,nombre', 'clienteSucursal:id,nombre,codigo'])
+            ->orderByDesc('fecha_emision')
+            ->orderByDesc('id')
+            ->lazy(500)
+            ->map(fn (Dte $dte) => [
+                'dte' => $dte,
+                'problemas' => ReglaOrdenCompra::problemasForma($dte->numero_orden_compra, $dte->fecha_emision ?? $dte->created_at),
+            ])
+            ->filter(fn (array $fila) => $fila['problemas'] !== [])
+            ->values()
+            ->all();
+
+        return view('auditoria.ordenes-compra', [
+            'revisar' => $revisar,
+            'filtros' => ['desde' => $filtros['desde'] ?? null, 'hasta' => $filtros['hasta'] ?? null],
+        ]);
     }
 }

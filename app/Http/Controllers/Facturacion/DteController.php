@@ -851,6 +851,8 @@ class DteController extends Controller
                     'checks' => (array) ($pf['checks'] ?? []),
                     // El controlador exige esta casilla en esta ruta (barrera_conta).
                     'requiere_barrera' => true,
+                    // Avisos de la orden de compra: se confirman con su propia casilla.
+                    'avisos_oc' => $dte->estado === EstadoDte::Borrador ? ReglaOrdenCompra::avisos($dte) : [],
                     'etiqueta' => 'Firmar y transmitir a Hacienda',
                 ];
             } else {
@@ -1262,10 +1264,17 @@ class DteController extends Controller
             return back()->withErrors(['generar' => PlazoNotaCredito::aviso($plazo)]);
         }
 
+        // Mismos avisos de la orden de compra que «Generar»: no frenan si se confirman.
+        $avisosOc = $dte->estado === EstadoDte::Borrador ? ReglaOrdenCompra::avisos($dte) : [];
+        if ($avisosOc !== [] && ! $request->boolean('confirmar_avisos_oc')) {
+            return $volver->with('error', 'Revise antes de emitir: '.implode(' ', $avisosOc)
+                .' Si es correcto, marque la confirmación de la orden de compra y emita de nuevo. No se hizo nada.');
+        }
+
         // 4. Generar SOLO si todavía es borrador (asigna correlativo + numeración + JSON).
         if ($dte->estado === EstadoDte::Borrador) {
             try {
-                $generacion->generar($dte, $request->user());
+                $generacion->generar($dte, $request->user(), null, $avisosOc);
                 $dte->refresh();
             } catch (GeneracionException $e) {
                 return $volver->with('error', 'No se pudo generar el documento: '.$e->getMessage().' No se transmitió nada.');
@@ -1721,7 +1730,10 @@ class DteController extends Controller
                 ->first();
         }
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'catalogosAduaneros', 'datosReceptor'));
+        // Orden de compra con otra forma o sala sin código: aviso con «Generar igual».
+        $avisosOc = ReglaOrdenCompra::avisos($dte);
+
+        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'catalogosAduaneros', 'datosReceptor'));
     }
 
     /**
@@ -2042,8 +2054,18 @@ class DteController extends Controller
             ]);
         }
 
+        // Orden de compra con otra forma o sala sin código: avisa, no frena. Se genera
+        // igual si el usuario lo confirma, y queda en la bitácora.
+        $avisosOc = ReglaOrdenCompra::avisos($dte);
+        if ($avisosOc !== [] && ! $request->boolean('confirmar_avisos_oc')) {
+            return back()->withErrors([
+                'generar' => 'Revise antes de generar: '.implode(' ', $avisosOc)
+                    .' Si es correcto, use «Revisé la orden: generar igual» en el aviso de la orden de compra.',
+            ]);
+        }
+
         try {
-            $generacion->generar($dte, request()->user(), $motivoPlazo);
+            $generacion->generar($dte, request()->user(), $motivoPlazo, $avisosOc);
         } catch (GeneracionException $e) {
             return back()->withErrors(['generar' => $e->getMessage()]);
         } catch (UniqueConstraintViolationException $e) {
