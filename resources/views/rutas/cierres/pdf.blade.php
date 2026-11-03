@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="utf-8"><title>Liquidación {{ $fecha }}</title>
+<head><meta charset="utf-8"><title>Resumen del día {{ $fecha }}</title>
 <style>
     @page { margin: 28px 30px; }
     body { font-family: DejaVu Sans, sans-serif; font-size: 9px; color: #111; }
@@ -21,11 +21,10 @@
     .nota { border: 1px solid #777; padding: 7px; margin-top: 12px; }
 </style></head>
 <body>
-    <h1>Liquidación de ruta</h1>
+    <h1>Resumen del día</h1>
     <p><strong>{{ $empresa?->razon_social }}</strong></p>
     <p><strong>Ruta:</strong> {{ $salida->ruta->nombre }} · <strong>Fecha:</strong> {{ \Illuminate\Support\Carbon::parse($fecha)->format('d/m/Y') }}</p>
     <p><strong>Vendedores:</strong> {{ $salida->personal->pluck('nombre')->join(', ') }}</p>
-    <p><strong>Entrega el dinero:</strong> {{ $cierre->entregaDinero?->nombre ?? 'Sin cobros' }}</p>
     @foreach ($entregas->groupBy('cliente_sucursal_id') as $filas)
         <h2>{{ $filas->first()->sala?->nombre ?? 'Sala sin identificar' }}</h2>
         <table><thead><tr><th>CCF</th><th class="dinero">Monto</th><th>Forma</th><th class="dinero">Esperado</th><th class="dinero">Cobrado</th></tr></thead><tbody>
@@ -51,7 +50,6 @@
     @endforeach
     <tr><td>Gastos</td><td></td><td class="dinero">${{ number_format((float) $cierre->gastos_total, 2) }}</td></tr>
     </tbody></table>
-    <div class="entregar"><p>Efectivo cobrado ${{ number_format((float) $cierre->efectivo_cobrado, 2) }} − gastos ${{ number_format((float) $cierre->gastos_total, 2) }} = efectivo a entregar ${{ number_format((float) $cierre->a_entregar, 2) }}</p><strong>{{ $cierre->a_entregar < 0 ? 'A reintegrar al vendedor' : 'Efectivo a entregar' }} ${{ number_format(abs((float) $cierre->a_entregar), 2) }}</strong></div>
+    <div class="entregar"><p>Efectivo cobrado ${{ number_format((float) $cierre->efectivo_cobrado, 2) }} − gastos ${{ number_format((float) $cierre->gastos_total, 2) }}</p><strong>Efectivo del día menos gastos: {{ $cierre->a_entregar < 0 ? '−' : '' }}${{ number_format(abs((float) $cierre->a_entregar), 2) }}</strong><p>El dinero se entrega todo junto al terminar la ruta, con su liquidación.</p></div>
     @if ($cierre->reabierto_en)<p class="nota">Este día se reabrió el {{ $cierre->reabierto_en->format('d/m/Y H:i') }}: {{ $cierre->reabierto_motivo }}. {{ $cierre->estaCerrado() ? 'Liquidación recalculada al volver a cerrar.' : 'Día reabierto: los importes del cierre están pendientes de recalcular.' }}</p>@endif
-    <table class="firmas"><tr><td>____________________________<br>Entrega: {{ $cierre->entregaDinero?->nombre }}</td><td>____________________________<br>Recibe</td></tr></table>
 </body></html>

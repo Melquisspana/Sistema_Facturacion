@@ -179,11 +179,15 @@
     @if ($diaCerrado)
         @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])
     @elseif (($registrable || (! $modoVendedor && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada)) && ($salida->entregas()->entregadas()->whereDate('fecha_resultado', $fechaHoy)->exists() || $salida->gastos()->whereDate('fecha', $fechaHoy)->exists()))
-        <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Cerrar el día</a>
+        <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Terminar día</a>
+    @endif
+    @if ($modoVendedor)
+        {{-- Al volver: lo que sobró lleva su motivo y el dinero de todos los días se entrega junto. --}}
+        <a href="{{ route('rutas.mi-salida.terminar', $salida) }}" class="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-gray-800 px-5 py-3 font-semibold text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900">Terminar ruta</a>
     @endif
     @if (! $modoVendedor)
         @foreach ($salida->cierres()->whereDate('fecha', '!=', $fechaHoy)->orderByDesc('fecha')->get() as $cierreAnterior)
-            <a href="{{ route($prefijoCierre.'cierre', ['salida' => $salida, 'fecha' => $cierreAnterior->fecha->toDateString()]) }}" class="mt-3 flex min-h-11 items-center text-sm underline">Liquidación {{ $cierreAnterior->fecha->format('d/m/Y') }}{{ $cierreAnterior->estaCerrado() ? '' : ' · Reabierta' }}</a>
+            <a href="{{ route($prefijoCierre.'cierre', ['salida' => $salida, 'fecha' => $cierreAnterior->fecha->toDateString()]) }}" class="mt-3 flex min-h-11 items-center text-sm underline">Día {{ $cierreAnterior->fecha->format('d/m/Y') }}{{ $cierreAnterior->estaCerrado() ? '' : ' · Reabierta' }}</a>
         @endforeach
     @endif
 @endif

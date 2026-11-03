@@ -53,14 +53,8 @@
                                 <button class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700">Salir ahora</button>
                             </form>
                         @else
-                            {{-- Lo que quede por marcar vuelve solo a pendientes; se avisa antes. --}}
-                            <form method="POST" action="{{ route('rutas.salidas.finalizar', $salida) }}" class="flex-1"
-                                  @if ($resumen['sin_registrar'] > 0)
-                                      onsubmit="return confirm('Quedan {{ $resumen['sin_registrar'] }} CCF por marcar. Al terminar vuelven a quedar pendientes para la próxima salida. ¿Terminar igual?');"
-                                  @endif>
-                                @csrf @method('PATCH')
-                                <button class="w-full rounded-lg bg-gray-800 px-4 py-3 text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar salida</button>
-                            </form>
+                            {{-- Terminar ruta: lo que sobró lleva su motivo y se liquida todo junto. --}}
+                            <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="flex-1 rounded-lg bg-gray-800 px-4 py-3 text-center text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar ruta</a>
                         @endif
                         <a href="{{ route('rutas.salidas.edit', $salida) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cambiar quiénes van</a>
                         <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
@@ -69,6 +63,10 @@
                             <button class="text-sm text-gray-400 hover:text-red-600 hover:underline dark:text-paper-500">Cancelar</button>
                         </form>
                     </div>
+                @endif
+
+                @if ($puedeGestionar && $salida->estaLiquidada())
+                    <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-green-700 px-4 py-3 text-sm font-medium text-white hover:bg-green-800">Liquidación de la ruta</a>
                 @endif
 
                 @if ($salida->observaciones)

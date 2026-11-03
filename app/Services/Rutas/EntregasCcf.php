@@ -227,9 +227,10 @@ class EntregasCcf
                 'registrado_por' => $usuario?->id,
             ];
 
-            $this->exigirDiaAbierto($salida, $comun['fecha_resultado']->toDateString());
-
             if ($resultado === ResultadoEntrega::Entregado) {
+                // Solo lo entregado entra en el cierre del día. Un «no entregado» no mueve
+                // dinero: se anota aunque el día esté terminado (p. ej. al terminar la ruta).
+                $this->exigirDiaAbierto($salida, $comun['fecha_resultado']->toDateString());
                 $dte = Dte::with('cliente')->whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
                 if ($this->existeBloqueando(SalidaRutaEntrega::where('dte_id', $entrega->dte_id)->where('id', '!=', $entrega->id)->entregadas())) {
                     throw ValidationException::withMessages(['entrega' => 'Ese CCF ya consta como entregado en otra salida.']);
@@ -326,6 +327,7 @@ class EntregasCcf
             $salida = SalidaRuta::lockForUpdate()->findOrFail($entrega->salida_ruta_id);
             $entrega = SalidaRutaEntrega::lockForUpdate()->findOrFail($entrega->id);
             Dte::whereKey($entrega->dte_id)->lockForUpdate()->firstOrFail();
+            CierreDia::exigirSinLiquidar($salida);
             if ($entrega->fecha_resultado) {
                 $this->exigirDiaAbierto($salida, $entrega->fecha_resultado->toDateString());
             }
