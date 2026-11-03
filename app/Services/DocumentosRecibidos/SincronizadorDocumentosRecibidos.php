@@ -363,7 +363,7 @@ class SincronizadorDocumentosRecibidos
         $nombresAdjuntos = array_values(array_filter(array_map(
             fn ($a) => (string) ($a['filename'] ?? ''), $adjuntos
         ), fn ($n) => $n !== ''));
-        $exclusion = $this->filtro->evaluar($clasificacion, (string) ($mensaje['asunto'] ?? ''), $nombresAdjuntos);
+        $exclusion = $this->filtro->evaluar($clasificacion, (string) ($mensaje['asunto'] ?? ''), $nombresAdjuntos, $datos['tipo_documento'] ?? null);
         if ($exclusion !== null) {
             Log::info('documentos_recibidos.correo_descartado', [
                 'identidad' => $identidad,

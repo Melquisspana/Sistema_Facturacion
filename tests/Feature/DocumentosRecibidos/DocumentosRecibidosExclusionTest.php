@@ -85,6 +85,41 @@ class DocumentosRecibidosExclusionTest extends TestCase
         ])];
     }
 
+    private function jsonDte(string $tipo, string $codigo): array
+    {
+        $json = $this->jsonCcf($codigo, 'DTE-'.$tipo.'-BBB-'.$codigo);
+        $json['data'] = str_replace('"tipoDte":"03"', '"tipoDte":"'.$tipo.'"', $json['data']);
+
+        return $json;
+    }
+
+    // Compras guarda solo CCF y notas de proveedores (decisión del usuario, 03/11/2026).
+    public function test_compras_guarda_ccf_y_notas_y_descarta_los_demas_tipos(): void
+    {
+        $r = $this->sync([
+            $this->mensaje('uid-301', 'CCF', 'a@proveedor.example', [$this->jsonDte('03', 'C1'), $this->pdf()]),
+            $this->mensaje('uid-302', 'Nota de crédito', 'b@proveedor.example', [$this->jsonDte('05', 'C2'), $this->pdf()]),
+            $this->mensaje('uid-303', 'Nota de débito', 'c@proveedor.example', [$this->jsonDte('06', 'C3'), $this->pdf()]),
+            $this->mensaje('uid-304', 'Factura', 'd@proveedor.example', [$this->jsonDte('01', 'C4'), $this->pdf()]),
+            $this->mensaje('uid-305', 'Comprobante de retención', 'e@cliente.example', [$this->jsonDte('07', 'C5'), $this->pdf()]),
+        ]);
+
+        $this->assertSame(3, $r->nuevos);
+        $this->assertSame(2, $r->descartados);
+        $this->assertEqualsCanonicalizing(['03', '05', '06'], DocumentoRecibido::pluck('tipo_documento')->all());
+    }
+
+    // Sin tipo legible (solo PDF que parece DTE) se conserva para revisarlo.
+    public function test_sin_tipo_legible_se_conserva_aunque_filtre_por_tipo(): void
+    {
+        $r = $this->sync([
+            $this->mensaje('uid-306', 'Crédito Fiscal DTE-03-ABC', 'f@proveedor.example', [$this->pdf('ccf.pdf')]),
+        ]);
+
+        $this->assertSame(1, $r->nuevos);
+        $this->assertSame('falta_adjunto', DocumentoRecibido::firstOrFail()->clasificacion);
+    }
+
     // 1) Estado de cuenta sin JSON DTE se descarta.
     public function test_estado_de_cuenta_sin_json_se_descarta(): void
     {
