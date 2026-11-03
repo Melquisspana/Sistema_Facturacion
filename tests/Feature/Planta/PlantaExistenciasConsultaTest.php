@@ -11,6 +11,7 @@ use App\Models\Planta\PlantaUbicacion;
 use App\Models\User;
 use App\Services\Planta\ReconciliacionExistenciasService;
 use App\Support\Planta\ExistenciaQuery;
+use App\Support\Planta\SumaInventario;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -80,7 +81,7 @@ class PlantaExistenciasConsultaTest extends TestCase
         $existencias = DB::table('planta_existencias')
             ->selectRaw(
                 'COUNT(*) as filas, '
-                .'COALESCE(SUM(CAST(ROUND(cantidad * 10000) AS INTEGER)), 0) as suma, '
+                .'COALESCE('.SumaInventario::expresion().', 0) as suma, '
                 .'COALESCE(MAX(id), 0) as max_id'
             )
             ->first();
@@ -89,7 +90,7 @@ class PlantaExistenciasConsultaTest extends TestCase
             'mayor' => $this->huellaMayor(),
             'existencias' => [
                 'filas' => (int) $existencias->filas,
-                'suma' => bcdiv((string) (int) $existencias->suma, '10000', 4),
+                'suma' => SumaInventario::desdeSuma($existencias->suma),
                 'max_id' => (int) $existencias->max_id,
             ],
         ];

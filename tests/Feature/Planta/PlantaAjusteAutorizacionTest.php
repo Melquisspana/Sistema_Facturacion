@@ -8,6 +8,7 @@ use App\Enums\Planta\TipoMovimientoPlanta;
 use App\Models\Planta\PlantaAjuste;
 use App\Models\Planta\PlantaMovimiento;
 use App\Models\User;
+use App\Support\Planta\SumaInventario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -474,14 +475,14 @@ class PlantaAjusteAutorizacionTest extends TestCase
         $fila = DB::table('planta_existencias')
             ->selectRaw(
                 'COUNT(*) as filas, '
-                .'COALESCE(SUM(CAST(ROUND(cantidad * 10000) AS INTEGER)), 0) as suma, '
+                .'COALESCE('.SumaInventario::expresion().', 0) as suma, '
                 .'COALESCE(MAX(id), 0) as max_id'
             )
             ->first();
 
         return [
             'filas' => (int) $fila->filas,
-            'suma' => bcdiv((string) (int) $fila->suma, '10000', 4),
+            'suma' => SumaInventario::desdeSuma($fila->suma),
             'max_id' => (int) $fila->max_id,
         ];
     }

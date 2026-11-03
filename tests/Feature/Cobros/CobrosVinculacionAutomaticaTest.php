@@ -241,6 +241,38 @@ class CobrosVinculacionAutomaticaTest extends TestCase
         $this->assertSame($primerMotivo, $ccf->vinculacion_motivo);
     }
 
+    /**
+     * La columna JSON de MySQL devuelve los candidatos con las claves reordenadas. Eso no
+     * es un cambio de veredicto: la corrida siguiente tampoco reescribe `vinculado_en`.
+     * Se simula aquí escribiendo las claves en orden inverso, porque SQLite no reordena.
+     */
+    public function test_candidatos_con_las_claves_en_otro_orden_no_cuentan_como_cambio(): void
+    {
+        $ccf = $this->documento($this->dte('DTE-03-M001P002-000000000000007'));
+        $this->albaranEntrega('AC01/0017/00/0007');
+        $this->albaranEntrega('AC01/0017/00/0008');
+
+        config()->set('cobros.alta.automatica', true);
+        config()->set('cobros.vinculacion.automatica', true);
+        $sincronizar = fn () => $this->artisan('cobros:sincronizar', [
+            '--cliente' => $this->cliente->id, '--aplicar' => true, '--vincular' => true,
+        ])->assertExitCode(0);
+
+        $sincronizar();
+        $ccf->refresh();
+        $this->assertNotEmpty($ccf->vinculacion_candidatos);
+        $primeraVez = $ccf->vinculado_en;
+
+        $reordenados = array_map(fn (array $c) => array_reverse($c, true), $ccf->vinculacion_candidatos);
+        CobroDocumento::whereKey($ccf->id)->update(['vinculacion_candidatos' => json_encode($reordenados)]);
+
+        $this->travel(2)->hours();
+        $sincronizar();
+
+        $ccf->refresh();
+        $this->assertSame($primeraVez->toDateTimeString(), $ccf->vinculado_en->toDateTimeString());
+    }
+
     public function test_actualiza_candidatos_si_cambian_aunque_el_motivo_siga_igual(): void
     {
         $ccf = $this->documento($this->dte('DTE-03-M001P002-000000000090041'));

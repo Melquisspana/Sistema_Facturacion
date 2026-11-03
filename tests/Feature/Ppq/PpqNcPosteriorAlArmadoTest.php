@@ -140,7 +140,8 @@ class PpqNcPosteriorAlArmadoTest extends TestCase
         $actividad = Activity::where('description', 'ppq.marcado_presentado')->sole();
         $this->assertSame($lote->id, $actividad->subject_id);
         $this->assertSame($usuario->id, $actividad->causer_id);
-        $this->assertSame(['fecha' => $fecha->toDateString(), 'ccf' => 1], $actividad->properties->all());
+        // Ordenado por clave: la columna JSON de MySQL no conserva el orden de inserción.
+        $this->assertSame(['ccf' => 1, 'fecha' => $fecha->toDateString()], $actividad->properties->sortKeys()->all());
         $real = app(EstadoRealLotePpq::class)->calcular(collect([$lote]))[$lote->id];
         $this->assertSame('presentado', $real['estado']['key']);
         $this->assertSame($fecha->toDateString(), $real['fecha']->toDateString());

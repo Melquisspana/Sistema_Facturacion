@@ -12,6 +12,7 @@ use App\Models\Planta\PlantaUbicacion;
 use App\Models\User;
 use App\Services\Planta\PlantaRecepcionService;
 use App\Support\Planta\BucketInventario;
+use App\Support\Planta\SumaInventario;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -162,14 +163,14 @@ trait RecepcionPlantaFixtures
         $fila = DB::table('planta_movimientos')
             ->selectRaw(
                 'COUNT(*) as filas, '
-                .'COALESCE(SUM(CAST(ROUND(cantidad * 10000) AS INTEGER)), 0) as suma, '
+                .'COALESCE('.SumaInventario::expresion().', 0) as suma, '
                 .'COALESCE(MAX(id), 0) as max_id'
             )
             ->first();
 
         return [
             'filas' => (int) $fila->filas,
-            'suma' => bcdiv((string) (int) $fila->suma, '10000', 4),
+            'suma' => SumaInventario::desdeSuma($fila->suma),
             'max_id' => (int) $fila->max_id,
         ];
     }

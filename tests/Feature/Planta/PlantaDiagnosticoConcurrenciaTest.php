@@ -81,7 +81,7 @@ class PlantaDiagnosticoConcurrenciaTest extends TestCase
         // Quien lanza esto contra la base equivocada debe poder leer cuál era.
         $this->artisan('planta:diagnostico-concurrencia --confirmar')
             ->expectsOutputToContain('production')
-            ->expectsOutputToContain('sqlite')
+            ->expectsOutputToContain(DB::connection()->getDriverName())
             ->assertExitCode(1);
     }
 

@@ -106,6 +106,8 @@ class BackfillListasProductivasTest extends TestCase
         foreach (array_reverse(self::CON_BACKFILL_DE_LISTAS) as $migracion) {
             (require $this->rutaMigracion($migracion))->down();
         }
+
+        $this->realinearTransaccionTrasDdl();
     }
 
     /** Aplica el lote, en el mismo orden que `php artisan migrate`. */
@@ -114,6 +116,8 @@ class BackfillListasProductivasTest extends TestCase
         foreach (self::CON_BACKFILL_DE_LISTAS as $migracion) {
             (require $this->rutaMigracion($migracion))->up();
         }
+
+        $this->realinearTransaccionTrasDdl();
     }
 
     // ----------------------------------------------------------------- fixtures

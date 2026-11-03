@@ -39,12 +39,16 @@ class PlantaConcurrenciaTest extends TestCase
 
     public function test_la_suite_corre_sobre_sqlite_en_memoria(): void
     {
+        $this->soloEnSqlite('describe la suite SQLite en memoria');
+
         $this->assertSame('sqlite', DB::connection()->getDriverName());
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
     }
 
     public function test_en_sqlite_el_bloqueo_de_fila_ni_siquiera_llega_a_la_base(): void
     {
+        $this->soloEnSqlite('en MySQL el bloqueo sí llega a la base');
+
         $sql = strtolower(
             DB::table('planta_existencias')->where('id', 1)->lockForUpdate()->toSql()
         );

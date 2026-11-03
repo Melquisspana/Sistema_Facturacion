@@ -14,6 +14,7 @@ use App\Support\Ubicacion\UbicacionCoherenteFactory;
 use Database\Seeders\RolesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -356,5 +357,42 @@ abstract class TestCase extends BaseTestCase
         $ccf->save();
 
         return $ccf->refresh();
+    }
+
+    /**
+     * Salta el test fuera de SQLite: para los que describen la suite en memoria
+     * (triggers, `sqlite_master`, el `FOR UPDATE` descartado). El job «PHPUnit (MySQL
+     * estricto)» corre la misma suite y ahí esas afirmaciones no aplican.
+     */
+    protected function soloEnSqlite(string $motivo): void
+    {
+        if (DB::connection()->getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('Solo en SQLite: '.$motivo.'.');
+        }
+    }
+
+    /**
+     * Llamar después de cambiar el esquema (Schema::drop, `down()`/`up()` de una
+     * migración) dentro de un test con RefreshDatabase.
+     *
+     * En MySQL todo DDL confirma por su cuenta la transacción abierta, pero Laravel
+     * sigue contándola: el siguiente `DB::transaction()` de la aplicación abre un
+     * SAVEPOINT que no existe y, si falla, el rollback revienta con «SAVEPOINT trans2
+     * does not exist» en vez de mostrar el error real. Se baja el contador a cero
+     * para que la aplicación abra transacciones de verdad, como en producción.
+     * Al terminar, RefreshDatabase ve que no hay transacción y vuelve a migrar
+     * antes del test siguiente. En SQLite el DDL es transaccional y no se toca nada.
+     */
+    protected function realinearTransaccionTrasDdl(): void
+    {
+        $conexion = DB::connection();
+
+        if ($conexion->getDriverName() !== 'mysql' || $conexion->getPdo()->inTransaction()) {
+            return;
+        }
+
+        while ($conexion->transactionLevel() > 0) {
+            $conexion->rollBack();
+        }
     }
 }
