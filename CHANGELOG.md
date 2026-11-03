@@ -16,6 +16,11 @@ El historial anterior a este archivo está en el registro de git.
 ### Cambiado
 
 - Rutas, «Mi salida»: el vendedor elige quién entregó cada CCF entre los que van en la salida, como ya podía la oficina. Si no elige, queda él. Alguien que no va en la salida se rechaza.
+- Rutas: al marcar «Entregado» se elige cómo pagó la sala esa vez: efectivo, cheque, transferencia o sin cobro (quedan). Arranca en la forma habitual del cliente, el cambio vale solo para esa entrega y no toca su ficha. El cierre del día cuenta lo elegido.
+
+### Corregido
+
+- Rutas: al tocar «atrás» después de marcar una entrega, cerrar el día o anotar un gasto, el celular ya no muestra la pantalla vieja como si nada se hubiera hecho. Las pantallas de Rutas no se guardan en el navegador y «Mi salida» se vuelve a cargar al regresar.
 
 ### Corregido
 

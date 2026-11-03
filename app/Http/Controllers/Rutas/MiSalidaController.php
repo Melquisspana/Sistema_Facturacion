@@ -53,7 +53,7 @@ class MiSalidaController extends Controller
     {
         Gate::authorize('view', $salida);
         $salida->load(['ruta', 'participantes.personal']);
-        $entregas = $salida->entregas()->with(['dte', 'sala', 'entregadoPor'])->get();
+        $entregas = $salida->entregas()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
         $resoluciones = $this->entregas->resolucionesAlbaran($entregas);
 
         return view('rutas.mi-salida.show', [
@@ -75,7 +75,7 @@ class MiSalidaController extends Controller
     public function update(Request $request, SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
     {
         Gate::authorize('registrar', $salida);
-        $registrada = $this->entregas->registrar($entrega, $request->only(['resultado', 'trae_nota_averia', 'motivo_no_entrega', 'nota'])
+        $registrada = $this->entregas->registrar($entrega, $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota'])
             + ['entregado_por_id' => $this->quienEntrega($request)], $request->user(), OrigenRegistroEntrega::Vendedor);
 
         return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().'.');

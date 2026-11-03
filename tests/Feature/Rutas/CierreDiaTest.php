@@ -15,6 +15,7 @@ use App\Models\SalidaRutaCierre;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Rutas\CierreDia;
+use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use App\Support\HoraNegocio;
 use Database\Seeders\CatalogosMhSeeder;
@@ -77,6 +78,42 @@ class CierreDiaTest extends TestCase
     private function cerrar(array $datos = [])
     {
         return $this->postJson(route('rutas.mi-salida.cerrar', $this->salida), $datos);
+    }
+
+    public function test_la_forma_de_pago_se_cambia_en_la_entrega_sin_tocar_al_cliente(): void
+    {
+        // Una sala de quedan que esta vez paga en efectivo.
+        $quedan = $this->entrega(null, false);
+        $url = route('rutas.mi-salida.update', [$this->salida, $quedan]);
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Sin cobro (quedan)');
+        $this->patch($url, ['resultado' => 'entregado', 'forma_cobro' => 'tarjeta'])->assertSessionHasErrors('forma_cobro');
+        $this->assertTrue($quedan->refresh()->estaPendiente());
+        $this->patch($url, ['resultado' => 'entregado', 'forma_cobro' => 'efectivo'])->assertSessionHasNoErrors();
+        $quedan->refresh();
+        $this->assertSame('efectivo', $quedan->forma_cobro->value);
+        $this->assertSame('100.25', $quedan->monto_esperado);
+        $this->assertNull($quedan->dte->cliente->refresh()->cobro_en_entrega);
+
+        // Una sala que paga en efectivo y esta vez queda sin cobro.
+        $contado = $this->entrega('efectivo', false);
+        $this->patch(route('rutas.mi-salida.update', [$this->salida, $contado]), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO])->assertSessionHasNoErrors();
+        $contado->refresh();
+        $this->assertNull($contado->forma_cobro);
+        $this->assertNull($contado->monto_esperado);
+        $this->assertSame('efectivo', $contado->dte->cliente->refresh()->cobro_en_entrega->value);
+
+        // La oficina también elige; y el cierre del día cuenta lo elegido.
+        $cheque = $this->entrega('efectivo', false);
+        $this->actingAs($this->oficina)->patch(route('rutas.salidas.entregas.update', [$this->salida, $cheque]), ['resultado' => 'entregado', 'entregado_por_id' => $this->persona->id, 'forma_cobro' => 'cheque'])->assertSessionHasNoErrors();
+        $this->assertSame('cheque', $cheque->refresh()->forma_cobro->value);
+        $this->actingAs($this->vendedor);
+        $this->cerrar($this->datos([
+            $quedan->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo'],
+            $cheque->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'cheque'],
+        ]))->assertRedirect();
+        $cierre = $this->salida->cierreDelDia('2026-10-28');
+        $this->assertSame('100.25', $cierre->efectivo_cobrado);
+        $this->assertSame('100.25', $cierre->cheques_cobrado);
     }
 
     public function test_foto_del_cobro_deshacer_y_todo_entregado(): void

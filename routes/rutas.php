@@ -34,6 +34,10 @@ use Illuminate\Support\Facades\Route;
 | El selector superior de áreas y los botones de las vistas son solo presentación
 | y NUNCA autorizan.
 |
+| Ninguna pantalla de Rutas se guarda en el navegador (`no-store`): al tocar «atrás»
+| después de marcar, cerrar o anotar un gasto, se vuelve a pedir y muestra lo hecho,
+| no la copia vieja.
+|
 | Las rutas literales van ANTES que las paramétricas (regla del repo), por eso
 | `salidas/crear` se declara antes que `salidas/{salida}`.
 */
@@ -43,7 +47,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('rutas-cobros/{resto?}', fn (?string $resto = null) => redirect('/rutas/'.($resto ?? ''), 301))
     ->where('resto', '.*');
 
-Route::middleware(['auth', 'permission:rutas.entregas.registrar'])
+Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers:no_store;private'])
     ->prefix('rutas/mi-salida')->name('rutas.mi-salida.')->scopeBindings()
     ->group(function () {
         Route::get('/', [MiSalidaController::class, 'index'])->name('index');
@@ -59,7 +63,7 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar'])
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
     });
 
-Route::middleware(['auth', 'permission:rutas.ver'])
+Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;private'])
     ->prefix('rutas')
     ->name('rutas.')
     ->group(function () {

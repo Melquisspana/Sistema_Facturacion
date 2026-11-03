@@ -10,6 +10,9 @@
             var t = localStorage.getItem('dlg-theme');
             document.documentElement.classList.toggle('dark', t ? t === 'dark' : true);
         })();
+        // Si el celular devuelve la pantalla desde su memoria al tocar «atrás», se pide
+        // de nuevo: así no muestra como pendiente lo que ya se marcó o se cerró.
+        window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
     </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>

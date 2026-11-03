@@ -174,6 +174,16 @@ class VendedorMiSalidaTest extends TestCase
         $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Ana ·', false);
     }
 
+    public function test_las_pantallas_de_rutas_no_quedan_en_la_memoria_del_navegador(): void
+    {
+        $salida = $this->salida();
+        $this->entrega($salida);
+        $respuesta = $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('e.persisted', false);
+        $this->assertStringContainsString('no-store', $respuesta->headers->get('Cache-Control'));
+        $oficina = User::factory()->create()->assignRole('facturacion');
+        $this->assertStringContainsString('no-store', $this->actingAs($oficina)->get(route('rutas.salidas.show', $salida))->assertOk()->headers->get('Cache-Control'));
+    }
+
     public function test_no_entregado_valida_motivo_y_nota(): void
     {
         $salida = $this->salida();

@@ -88,7 +88,7 @@ class SalidaRutaController extends Controller
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
         $entregas = $salida->entregas()
-            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_sucursal_id,estado', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre'])
+            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre'])
             ->get();
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
