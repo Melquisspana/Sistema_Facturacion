@@ -79,68 +79,7 @@
                 </div>
             </div>
 
-            <div class="bg-white shadow sm:rounded-lg p-6">
-                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-                    <h3 class="font-semibold text-gray-700">Datos del documento</h3>
-                    {{-- Este encabezado ya NO es una barra de acciones: es la cabecera de los
-                         DATOS. Queda ÚNICAMENTE «Imprimir», el gesto inmediato sobre el
-                         documento que se está mirando.
-
-                         Se retiraron de acá, y ahora viven en «Acciones del documento» más
-                         abajo: Ver PDF, Descargar PDF, Duplicar y Editar. Los tres primeros
-                         estaban duplicados en las dos secciones, con etiquetas distintas para
-                         la misma ruta («Ver PDF oficial» arriba, «Ver PDF» abajo), lo que
-                         hacía dudar si eran o no la misma cosa; Editar es una acción sobre el
-                         documento, no un dato suyo.
-
-                         También se retiró la insignia «Enviado por correo»: la tarjeta de
-                         ESTADO, tres líneas más arriba, ya dice «Correo enviado / Correo
-                         falló / Pendiente de correo» sobre el mismo dato. --}}
-                    <div class="flex items-center gap-3 flex-wrap">
-                        <a href="{{ route('facturacion.imprimir', $dte) }}" target="_blank" class="text-gray-600 hover:underline text-sm">Imprimir</a>
-                    </div>
-                </div>
-                <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div><dt class="text-gray-500">Cliente</dt><dd>{{ $dte->cliente?->nombre ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500">Sala / sucursal</dt><dd>{{ $dte->clienteSucursal?->nombre ?? '—' }}</dd></div>
-                    @if ($dte->tipo_nota_credito)
-                        <div><dt class="text-gray-500">Tipo de NC</dt><dd>{{ $dte->tipo_nota_credito->label() }}</dd></div>
-                    @endif
-                    <div><dt class="text-gray-500">Estado</dt><dd><x-estado-dte-badge :estado="$dte->estado" /></dd></div>
-                    {{-- Numeración COMERCIAL visible del sistema (compartida por todos los
-                         tipos). El id de la fila NO es un número comercial: se muestra
-                         aparte y etiquetado como técnico, solo para soporte/auditoría. --}}
-                    <div>
-                        <dt class="text-gray-500">N.º sistema</dt>
-                        <dd class="font-semibold">{{ $dte->etiquetaNumeroSistema() }}</dd>
-                    </div>
-                    <div><dt class="text-gray-500">Número interno</dt><dd class="font-mono">{{ $dte->numero_interno ?? '—' }}</dd></div>
-                    @if ($dte->numero_control)
-                        <div><dt class="text-gray-500">Número de control</dt><dd class="font-mono">{{ $dte->numero_control }}</dd></div>
-                    @endif
-                    <div><dt class="text-gray-500">Fecha</dt><dd>{{ $dte->fecha_emision?->format('d/m/Y') }}</dd></div>
-                    <div><dt class="text-gray-500">Orden de compra</dt><dd>{{ $dte->numero_orden_compra ?? '—' }}</dd></div>
-                    {{-- Identificador TÉCNICO de la fila: solo para soporte y auditoría,
-                         nunca como número de documento frente al cliente. --}}
-                    <div><dt class="text-gray-500">ID técnico (soporte)</dt><dd class="font-mono text-xs text-gray-400">{{ $dte->id }}</dd></div>
-                    @if ($dte->dte_relacionado_id)
-                        <div>
-                            <dt class="text-gray-500">Documento original</dt>
-                            <dd><a href="{{ route('facturacion.show', $dte->dteRelacionado) }}" class="text-indigo-600 hover:underline font-mono">
-                                {{ $dte->dteRelacionado?->numero_interno ?? ('#'.$dte->dte_relacionado_id) }}
-                            </a></dd>
-                        </div>
-                    @elseif ($dte->tipo_dte === \App\Enums\TipoDte::NotaCredito)
-                        <div>
-                            <dt class="text-gray-500">Documento relacionado</dt>
-                            <dd class="text-gray-400">Sin documento relacionado interno</dd>
-                        </div>
-                    @endif
-                    @if ($dte->motivo)
-                        <div class="md:col-span-2"><dt class="text-gray-500">Motivo</dt><dd>{{ $dte->motivo }}</dd></div>
-                    @endif
-                </dl>
-            </div>
+            @include('facturacion.partials.datos-documento', ['dte' => $dte])
 
             {{-- Receptor (solo FEX tipo 11): destino, documento, actividad, correo,
                  dirección y teléfono (si existe). No aparece para CCF/NC/Factura
@@ -206,43 +145,7 @@
 
             {{-- Líneas y Totales: contenido real del documento, arriba y bien visible
                  (antes quedaban al final de la ficha, después de todos los paneles técnicos). --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-700 mb-3">Líneas</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead>
-                            <tr class="text-left text-gray-500">
-                                <th class="px-3 py-2">#</th>
-                                <th class="px-3 py-2">Descripción</th>
-                                <th class="px-3 py-2 text-right">Precio</th>
-                                <th class="px-3 py-2 text-right">Cantidad</th>
-                                @if ($datosExportacion ?? null)<th class="px-3 py-2">Presentación</th>@endif
-                                <th class="px-3 py-2 text-right">Descuento</th>
-                                <th class="px-3 py-2 text-right">Gravado</th>
-                                <th class="px-3 py-2 text-right">IVA</th>
-                                <th class="px-3 py-2 text-right">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            @forelse ($dte->lineas as $linea)
-                                <tr>
-                                    <td class="px-3 py-2">{{ $linea->numero_linea }}</td>
-                                    <td class="px-3 py-2 font-medium">{{ $linea->descripcion }}</td>
-                                    <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->precio_unitario, 2) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono">{{ rtrim(rtrim($linea->cantidad, '0'), '.') }}</td>
-                                    @if ($datosExportacion ?? null)<td class="px-3 py-2">{{ \App\Support\Dte\PresentacionUnidadLinea::etiqueta($linea, $dte) }}</td>@endif
-                                    <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->descuento_monto, 2) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->venta_gravada, 2) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->iva_linea, 2) }}</td>
-                                    <td class="px-3 py-2 text-right font-mono">${{ number_format($linea->total_linea, 2) }}</td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="{{ ($datosExportacion ?? null) ? 9 : 8 }}" class="px-3 py-6 text-center text-gray-400">Sin líneas.</td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            @include('facturacion.partials.lineas', ['dte' => $dte, 'datosExportacion' => $datosExportacion ?? null])
 
             {{-- Totales: partial único de presentación (no recalcula nada). --}}
             @include('facturacion.partials.totales', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null])

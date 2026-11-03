@@ -21,6 +21,7 @@ use App\Models\Cobros\CobroSolicitud;
 use App\Models\Cobros\CobroSolicitudItem;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
+use App\Models\PpqItem;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\DevolucionesAlbaran;
@@ -42,6 +43,7 @@ use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use App\Support\EjercicioControl;
+use App\Support\IdentidadPpq;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -235,7 +237,12 @@ class CobrosController extends Controller
     /** Ficha de un documento: su historia completa. */
     public function show(Request $request, CobroDocumento $documento, SugerenciasAlbaran $sugerencias): View
     {
-        $documento->loadMissing(['albaran', 'solicitud', 'eventos.usuario', 'dte', 'cliente']);
+        // Lo del DTE va cargado acá para que la ficha (datos, líneas y totales, las mismas
+        // piezas que la de Facturación) no consulte una vez por línea.
+        $documento->loadMissing([
+            'albaran', 'solicitud', 'eventos.usuario', 'cliente',
+            'dte.cliente', 'dte.clienteSucursal', 'dte.dteRelacionado', 'dte.lineas',
+        ]);
 
         // «Corregir vínculo»: solo para quien puede vincular, en un CCF vigente.
         $corregible = $documento->tipo_dte === '03' && ! $documento->estaInvalidado()
@@ -267,7 +274,37 @@ class CobrosController extends Controller
             'corregible' => $corregible,
             'movible' => $movible,
             'sugeridos' => $corregible && $movible ? $sugerencias->para($documento) : [],
+            'cobro' => $this->resumenCobro($documento),
         ]);
+    }
+
+    /**
+     * La tarjeta «Cobro» de la ficha: los PPQ que llevaron el documento, lo que informaron
+     * los TXT y el saldo. El PPQ se reconoce como en {@see ElegibilidadPpqSeguimiento}: por
+     * su DTE o por número de control y ejercicio (los PPQ viejos no guardaban el DTE). Nada
+     * se atribuye por importe ni por orden de compra.
+     *
+     * @return array{ppq: Collection<int, PpqItem>, pagos: Collection<int, CobroEvento>, ajustes: Collection<int, CobroEvento>, saldo: string}
+     */
+    private function resumenCobro(CobroDocumento $documento): array
+    {
+        $cuentan = fn (TipoEventoCobro $tipo) => $documento->eventos
+            ->filter(fn (CobroEvento $e) => $e->tipo === $tipo && $e->cuenta())->values();
+
+        return [
+            'ppq' => PpqItem::query()
+                ->whereHas('lote')
+                ->where(fn (Builder $q) => $q
+                    ->when($documento->dte_id !== null, fn (Builder $q) => $q->where('dte_id', $documento->dte_id))
+                    ->orWhere(fn (Builder $q) => $q->where('ejercicio_control', $documento->ejercicio_control)
+                        ->where(IdentidadPpq::columnaNormalizada(), $documento->numero_control_norm)))
+                ->with('lote:id,referencia,fecha,estado')
+                ->orderBy('id')
+                ->get(['id', 'ppq_lote_id', 'dte_id']),
+            'pagos' => $cuentan(TipoEventoCobro::Pago),
+            'ajustes' => $cuentan(TipoEventoCobro::Ajuste),
+            'saldo' => $documento->saldo(),
+        ];
     }
 
     /** Albaranes de entrega por número, para elegir uno que no salió entre los sugeridos. */
