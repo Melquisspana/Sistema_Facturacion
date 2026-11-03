@@ -18,6 +18,14 @@ Aplica a todo encargo de código, de Claude a Codex o al revés. Idea tomada de 
 - **Nunca se recortan:** validaciones en el servidor, autorización (políticas, permisos y roles), manejo de errores que evita perder datos, seguridad, accesibilidad ni pruebas. La lógica nueva no trivial (dinero, impuestos, DTE, permisos, importaciones) lleva su prueba. El código que se mueve conserva sus validaciones.
 - Al entregar, una o dos líneas: qué se dejó afuera o no se comprobó, y qué riesgo queda.
 
+## Pantallas: una sola forma en todo el sistema
+
+Desde el 03/11/2026, toda pantalla nueva o cambiada sigue [`docs/GUIA_PANTALLAS.md`](docs/GUIA_PANTALLAS.md), que aprobó el usuario. Esa guía cubre botones, formularios, avisos, tablas, fechas, montos, modo oscuro y celular. Para el usuario el sistema es una sola aplicación, no módulos sueltos.
+
+- Usar los componentes compartidos que indica la guía en vez de escribir las clases a mano. No crear un componente nuevo para algo que ya tiene el suyo.
+- Si una pantalla necesita ser distinta, anotar el motivo en la vista. Si la guía no cubre algo, se agrega a la guía en el mismo PR, en lugar de inventar otra forma.
+- Una persona se carga una sola vez, en Personal. Usuarios, Asistencia y Rutas la eligen y la enlazan; nunca la crean otra vez.
+
 ## Reparto anterior (24/09/2026, sustituido en roles)
 
 Preferencia expresa del usuario, aclarada el 24/09/2026: **Claude es el desarrollador principal; Codex asiste al usuario, coordina y revisa, y también puede programar cuando sea útil o necesario.** Ambos colaboran en la misma tarea, sin consumir Claude para análisis, documentación, verificaciones o arreglos acotados que Codex puede resolver con seguridad.
