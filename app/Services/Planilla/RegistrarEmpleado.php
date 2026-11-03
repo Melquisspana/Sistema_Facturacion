@@ -67,7 +67,7 @@ final class RegistrarEmpleado
             ];
         }
 
-        foreach (PersonalRuta::where('activo', true)->orderBy('nombre')->get() as $p) {
+        foreach (PersonalRuta::orderBy('nombre')->get() as $p) {
             if (in_array($p->id, $usados['ruta'], true)) {
                 continue;
             }

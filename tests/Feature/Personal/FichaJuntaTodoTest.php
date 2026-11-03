@@ -46,13 +46,14 @@ class FichaJuntaTodoTest extends TestCase
         $this->actingAs($this->admin)->get(route('personal.empleados.show', 'p'.$p->id))->assertOk()
             ->assertSeeInOrder(['Acceso y módulos', 'Usuario', 'ana@icloud.com', 'Asistencia', 'Marca con huella', 'Rutas', 'Vendedor'])
             ->assertSee(route('usuarios.show', $p->user_id), false)
-            ->assertSee(route('rutas.personal.show', $p->personal_ruta_id), false)
+            ->assertSee('Editar datos de rutas')
+            ->assertDontSee('Abrir en Rutas')
             ->assertSee('href="#asistencia"', false)->assertSee('id="asistencia"', false);
 
         // Y cada parte vuelve a la ficha.
         $ficha = route('personal.empleados.show', 'p'.$p->id);
         $this->actingAs($this->admin)->get(route('usuarios.show', $p->user_id))->assertOk()->assertSee($ficha, false);
-        $this->actingAs($this->admin)->get(route('rutas.personal.show', $p->personal_ruta_id))->assertOk()->assertSee($ficha, false);
+        $this->actingAs($this->admin)->get(route('rutas.personal.show', $p->personal_ruta_id))->assertRedirect($ficha);
     }
 
     public function test_sin_modulos_la_ficha_lo_dice(): void

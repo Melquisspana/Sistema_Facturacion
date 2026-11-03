@@ -66,11 +66,10 @@ class UnaSolaAltaTest extends TestCase
 
     public function test_rutas_nueva_persona_lleva_a_personal_y_no_crea_a_nadie(): void
     {
-        $p = $this->persona();
+        $this->persona();
 
-        $this->actingAs($this->admin)->get(route('rutas.personal.create'))->assertOk()
-            ->assertSee('Sale a rutas')->assertSee(route('personal.empleados.show', 'p'.$p->id), false)
-            ->assertDontSee('name="nombre"', false);
+        $this->actingAs($this->admin)->get(route('rutas.personal.create'))
+            ->assertRedirect(route('planilla.empleados.create'));
 
         $this->actingAs($this->admin)->post(route('rutas.personal.store'), ['nombre' => 'Ana Ficticia', 'funciones' => ['vendedor']])
             ->assertSessionHasErrors('nombre');
@@ -104,10 +103,9 @@ class UnaSolaAltaTest extends TestCase
         $otro = User::factory()->create(['activo' => true]);
         $ficha = route('personal.empleados.show', 'p'.$p->id);
 
-        $this->actingAs($this->admin)->get(route('rutas.personal.index'))->assertOk()->assertSee($ficha, false);
-        $this->actingAs($this->admin)->get(route('rutas.personal.show', $ruta))->assertOk()->assertSee($ficha, false);
-        $this->actingAs($this->admin)->get(route('rutas.personal.edit', $ruta))->assertOk()
-            ->assertSee('Se enlazan desde')->assertDontSee('name="user_id"', false);
+        $this->actingAs($this->admin)->get(route('rutas.personal.index'))->assertRedirect(route('personal.empleados'));
+        $this->actingAs($this->admin)->get(route('rutas.personal.show', $ruta))->assertRedirect($ficha);
+        $this->actingAs($this->admin)->get(route('rutas.personal.edit', $ruta))->assertRedirect($ficha);
 
         $this->actingAs($this->admin)->put(route('rutas.personal.update', $ruta), [
             'user_id' => $otro->id, 'telefono' => '0000-0000', 'funciones' => ['vendedor'],

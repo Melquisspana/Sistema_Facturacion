@@ -50,7 +50,7 @@
                     @foreach (['user_id' => ['usuario', 'Usuario existente', 'usuarios.gestionar'], 'asistencia_empleado_id' => ['asistencia', 'Ficha de asistencia existente', 'asistencia.gestionar'], 'personal_ruta_id' => ['ruta', 'Ficha de rutas existente', 'rutas.personal.gestionar']] as $campo => [$tipo, $etiqueta, $permiso])
                         @can($permiso)
                             <div><label for="{{ $campo }}" class="block text-sm font-medium text-gray-700">{{ $etiqueta }}</label><select id="{{ $campo }}" name="{{ $campo }}" class="{{ $c }}"><option value="">Sin enlace</option>
-                                @foreach ($candidatos as $candidato) @if ($candidato['tipo'] === $tipo)<option value="{{ $candidato['id'] }}" @selected((string) old($campo) === (string) $candidato['id'])>{{ $candidato['nombre'] }}</option>@endif @endforeach
+                                @foreach ($candidatos as $candidato) @if ($candidato['tipo'] === $tipo)<option value="{{ $candidato['id'] }}" @selected((string) old($campo, request()->query($campo)) === (string) $candidato['id'])>{{ $candidato['nombre'] }}</option>@endif @endforeach
                             </select></div>
                         @endcan
                     @endforeach

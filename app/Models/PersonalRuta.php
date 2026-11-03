@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\FuncionPersonalRuta;
 use App\Models\Asistencia\AsistenciaEmpleado;
+use App\Models\Planilla\PlanillaEmpleado;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -56,6 +57,11 @@ class PersonalRuta extends Model
     protected $attributes = [
         'activo' => true,
     ];
+
+    public static function seGestionaEnPersonal(?User $usuario): bool
+    {
+        return PlanillaEmpleado::enUso() && ($usuario?->can('planilla.ver') ?? false);
+    }
 
     protected function casts(): array
     {

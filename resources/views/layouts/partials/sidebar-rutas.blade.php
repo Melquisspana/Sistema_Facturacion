@@ -18,7 +18,9 @@
         <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas anteriores</x-sidebar-link>
         <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*', 'rutas.asignacion.*')">Configurar rutas</x-sidebar-link>
         @can('rutas.personal.ver')
-            <x-sidebar-link :href="route('rutas.personal.index')" :active="request()->routeIs('rutas.personal.*')">Personal</x-sidebar-link>
+            @unless (\App\Models\PersonalRuta::seGestionaEnPersonal(auth()->user()))
+                <x-sidebar-link :href="route('rutas.personal.index')" :active="request()->routeIs('rutas.personal.*')">Personal</x-sidebar-link>
+            @endunless
         @endcan
     </x-sidebar-group>
 

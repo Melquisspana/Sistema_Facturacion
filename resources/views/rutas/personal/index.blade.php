@@ -2,12 +2,13 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Personal operativo</h2>
-            @can('rutas.personal.gestionar')
+            {{-- Con Personal en uso, el alta se hace allá: este botón solo mandaba a otro lado. --}}
+            @if (auth()->user()->can('rutas.personal.gestionar') && ! \App\Models\Planilla\PlanillaEmpleado::enUso())
                 <a href="{{ route('rutas.personal.create') }}"
                    class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
                     Nueva persona
                 </a>
-            @endcan
+            @endif
         </div>
     </x-slot>
 
@@ -117,9 +118,9 @@
                                 <tr>
                                     <td colspan="6" class="py-10 text-center text-gray-400 dark:text-paper-500">
                                         No hay nadie dado de alta todavía.
-                                        @can('rutas.personal.gestionar')
+                                        @if (auth()->user()->can('rutas.personal.gestionar') && ! \App\Models\Planilla\PlanillaEmpleado::enUso())
                                             <a href="{{ route('rutas.personal.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Agregá a la primera persona</a>.
-                                        @endcan
+                                        @endif
                                     </td>
                                 </tr>
                             @endforelse
