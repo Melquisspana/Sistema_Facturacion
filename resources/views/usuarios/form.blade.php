@@ -20,18 +20,52 @@
                     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
                 @endif
 
+                @php $desdePersonal = ! $usuario->exists && $conPersonal; @endphp
+                @if ($desdePersonal)
+                    <p class="mb-4 text-sm text-gray-600">
+                        Cada usuario es de una persona de Personal: elegila y ponele rol, correo y contraseña. El nombre sale de su ficha.
+                        Si todavía no está, dala de alta en
+                        <a href="{{ auth()->user()->can('planilla.gestionar') ? route('planilla.empleados.create') : route('personal.empleados') }}" class="font-medium text-indigo-600 underline">Personal</a>.
+                    </p>
+                @endif
+
+                @if ($desdePersonal && ! auth()->user()->can('planilla.gestionar'))
+                    <p class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">Para crear un usuario también hace falta poder gestionar Personal.</p>
+                @elseif ($desdePersonal && $personasSinUsuario->isEmpty())
+                    <p class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">Todas las personas de Personal ya tienen usuario.</p>
+                @else
                 <form method="POST"
                       action="{{ $usuario->exists ? route('usuarios.update', $usuario) : route('usuarios.store') }}"
                       class="space-y-5">
                     @csrf
                     @if ($usuario->exists) @method('PUT') @endif
 
+                    @if ($desdePersonal)
+                        <div>
+                            <x-input-label for="planilla_empleado_id" value="Persona *" />
+                            <select id="planilla_empleado_id" name="planilla_empleado_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required>
+                                <option value="">— Seleccione —</option>
+                                @foreach ($personasSinUsuario as $persona)
+                                    <option value="{{ $persona->id }}" @selected((string) old('planilla_empleado_id', $personaElegida) === (string) $persona->id)>{{ $persona->nombre }}</option>
+                                @endforeach
+                            </select>
+                            <x-input-error :messages="$errors->get('planilla_empleado_id')" class="mt-1" />
+                        </div>
+                    @else
                     <div>
                         <x-input-label for="name" value="Nombre *" />
-                        <x-text-input id="name" name="name" type="text" class="mt-1 block w-full"
-                            :value="old('name', $usuario->name)" required />
+                        @if ($ficha)
+                            {{-- Un solo nombre: el de quien está en Personal se corrige en su ficha. --}}
+                            <x-text-input id="name" name="name" type="text" class="mt-1 block w-full bg-gray-50"
+                                :value="$ficha->nombre" readonly aria-describedby="name-ficha" />
+                            <p id="name-ficha" class="text-xs text-gray-500 mt-1">Se corrige en su ficha de Personal.</p>
+                        @else
+                            <x-text-input id="name" name="name" type="text" class="mt-1 block w-full"
+                                :value="old('name', $usuario->name)" required />
+                        @endif
                         <x-input-error :messages="$errors->get('name')" class="mt-1" />
                     </div>
+                    @endif
                     <div>
                         <x-input-label for="email" value="Correo *" />
                         <x-text-input id="email" name="email" type="email" class="mt-1 block w-full"
@@ -62,18 +96,21 @@
                         </div>
                     @endunless
 
+                    @unless ($desdePersonal)
                     <label class="inline-flex items-center">
                         <input type="hidden" name="activo" value="0">
                         <input type="checkbox" name="activo" value="1" class="rounded border-gray-300"
                             @checked(old('activo', $usuario->activo ?? true))>
                         <span class="ml-2 text-sm text-gray-700">Activo</span>
                     </label>
+                    @endunless
 
                     <div class="flex items-center gap-3">
                         <x-primary-button>Guardar</x-primary-button>
                         <a href="{{ route('usuarios.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
                     </div>
                 </form>
+                @endif
             </div>
         </div>
     </div>

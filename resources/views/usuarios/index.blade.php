@@ -14,8 +14,21 @@
                     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
                 @endif
 
+                @if ($conPersonal && $sinFicha > 0)
+                    <p class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                        {{ $sinFicha === 1 ? 'Hay 1 usuario sin ficha en Personal.' : 'Hay '.$sinFicha.' usuarios sin ficha en Personal.' }}
+                        Siguen entrando; abrí cada uno para enlazarlo con su persona.
+                        @if ($filtros['sin_ficha'])
+                            <a href="{{ route('usuarios.index') }}" class="font-medium underline">Ver todos</a>
+                        @else
+                            <a href="{{ route('usuarios.index', ['sin_ficha' => 1]) }}" class="font-medium underline">Ver solo esos</a>
+                        @endif
+                    </p>
+                @endif
+
                 <div class="flex items-end justify-between gap-3 mb-6">
                     <form method="GET" class="flex-1 max-w-md">
+                        @if ($filtros['sin_ficha'])<input type="hidden" name="sin_ficha" value="1">@endif
                         <x-input-label for="q" value="Buscar (nombre o correo)" />
                         <div class="flex gap-2 mt-1">
                             <x-text-input id="q" name="q" type="text" class="block w-full" :value="$filtros['q']" />
@@ -35,6 +48,9 @@
                                 <th class="px-3 py-2">Nombre</th>
                                 <th class="px-3 py-2">Correo</th>
                                 <th class="px-3 py-2">Rol</th>
+                                @if ($conPersonal)
+                                    <th class="px-3 py-2">Personal</th>
+                                @endif
                                 <th class="px-3 py-2">Estado</th>
                                 <th class="px-3 py-2 text-right">Acciones</th>
                             </tr>
@@ -45,6 +61,17 @@
                                     <td class="px-3 py-2 font-medium">{{ $usuario->name }}</td>
                                     <td class="px-3 py-2">{{ $usuario->email }}</td>
                                     <td class="px-3 py-2">{{ $usuario->roles->first()?->name ?? '—' }}</td>
+                                    @if ($conPersonal)
+                                        <td class="px-3 py-2">
+                                            @if ($usuario->planillaEmpleado && $verFichas)
+                                                <a href="{{ route('personal.empleados.show', 'p'.$usuario->planillaEmpleado->id) }}" class="text-indigo-600 hover:underline">{{ $usuario->planillaEmpleado->nombre }}</a>
+                                            @elseif ($usuario->planillaEmpleado)
+                                                {{ $usuario->planillaEmpleado->nombre }}
+                                            @else
+                                                <a href="{{ route('usuarios.show', $usuario) }}" class="text-gray-500 hover:underline">Sin ficha en Personal</a>
+                                            @endif
+                                        </td>
+                                    @endif
                                     <td class="px-3 py-2">
                                         <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $usuario->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">
                                             {{ $usuario->activo ? 'Activo' : 'Inactivo' }}
@@ -68,7 +95,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400">No hay usuarios.</td></tr>
+                                <tr><td colspan="{{ $conPersonal ? 6 : 5 }}" class="px-3 py-6 text-center text-gray-400">No hay usuarios.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

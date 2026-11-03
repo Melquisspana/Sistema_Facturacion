@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Planilla\PlanillaEmpleado;
 use App\Observers\UserObserver;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -85,5 +86,14 @@ class User extends Authenticatable
     public function personalRuta(): HasOne
     {
         return $this->hasOne(PersonalRuta::class, 'user_id');
+    }
+
+    /**
+     * La persona de Personal que usa esta cuenta, si está enlazada. Cuentas como la del
+     * administrador pueden no tenerla.
+     */
+    public function planillaEmpleado(): HasOne
+    {
+        return $this->hasOne(PlanillaEmpleado::class, 'user_id');
     }
 }

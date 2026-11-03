@@ -337,11 +337,14 @@ class AltaEmpleadoTest extends TestCase
         $this->get(route('planilla.impresos', $planilla))->assertOk()->assertSee('DUI FICTICIO-8');
     }
 
-    public function test_contadora_externa_se_crea_en_usuarios_sin_planilla(): void
+    public function test_usuarios_nuevo_ya_no_crea_una_cuenta_sin_persona(): void
     {
+        // El sistema es solo para empleados (03/11/2026): cada usuario sale de una persona
+        // de Personal, que se carga una sola vez.
         $actor = $this->actor();
-        $this->actingAs($actor)->get(route('planilla.empleados.create'))->assertOk()->assertSee('Usuarios › Nuevo')->assertSee(route('usuarios.create'));
-        $this->post(route('usuarios.store'), ['name' => 'Contadora Externa Ficticia', 'email' => 'externa@example.test', 'password' => 'Prueba#Segura2026', 'password_confirmation' => 'Prueba#Segura2026', 'rol' => 'contabilidad', 'activo' => '1'])->assertSessionHasNoErrors()->assertRedirect();
+        $this->actingAs($actor)->get(route('planilla.empleados.create'))->assertOk()->assertDontSee(route('usuarios.create'));
+        $this->post(route('usuarios.store'), ['name' => 'Contadora Externa Ficticia', 'email' => 'externa@example.test', 'password' => 'Prueba#Segura2026', 'password_confirmation' => 'Prueba#Segura2026', 'rol' => 'contabilidad', 'activo' => '1'])->assertSessionHasErrors('planilla_empleado_id');
+        $this->assertSame(0, User::where('email', 'externa@example.test')->count());
         $this->assertSame(0, PlanillaEmpleado::count());
         $this->assertSame(0, PersonalRuta::count());
         $this->assertSame(0, AsistenciaEmpleado::count());

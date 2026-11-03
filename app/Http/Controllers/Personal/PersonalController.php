@@ -8,6 +8,7 @@ use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\User;
 use App\Services\Asistencia\HoraOficial;
 use App\Services\Planilla\SalarioMinimo;
 use App\Services\Planilla\SueldoHabitual;
@@ -121,6 +122,10 @@ class PersonalController extends Controller
             'mensual' => $verImportes ? ($sueldos->mensualesEn(new Collection([$ficha]), now()->toDateString())[$ficha->id] ?? null) : null,
             'quincenas' => $ficha === null ? collect() : PlanillaDetalle::where('planilla_empleado_id', $ficha->id)
                 ->with('planilla')->latest('id')->limit(12)->get(),
+            // Cuentas creadas en Usuarios que todavía no son de nadie: se pueden enlazar acá.
+            'usuariosSinFicha' => $ficha?->user_id === null && $ficha?->activo && $request->user()->can('usuarios.gestionar')
+                ? User::whereNotIn('id', PlanillaEmpleado::whereNotNull('user_id')->select('user_id'))->with('roles')->orderBy('name')->get()
+                : collect(),
         ];
 
         if ($asistencia === null) {
