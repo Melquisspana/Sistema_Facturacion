@@ -7,6 +7,7 @@ use App\Http\Controllers\Rutas\RutaCoberturaController;
 use App\Http\Controllers\Rutas\RutaController;
 use App\Http\Controllers\Rutas\RutaSalaController;
 use App\Http\Controllers\Rutas\RutasDashboardController;
+use App\Http\Controllers\Rutas\SalidaCcfController;
 use App\Http\Controllers\Rutas\SalidaCierreController;
 use App\Http\Controllers\Rutas\SalidaEntregaController;
 use App\Http\Controllers\Rutas\SalidaGastoController;
@@ -61,6 +62,8 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         Route::get('{salida}/terminar', [SalidaLiquidacionController::class, 'show'])->name('terminar');
         Route::post('{salida}/terminar', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
         Route::get('{salida}/terminar/pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
+        // El PDF de un CCF de la salida: solo de esta salida y solo si va en ella.
+        Route::get('{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('ccf');
         Route::get('{salida}', [MiSalidaController::class, 'show'])->name('show');
         Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
@@ -154,6 +157,9 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
         Route::post('salidas', [SalidaRutaController::class, 'store'])->name('salidas.store')
             ->middleware('permission:rutas.gestionar');
         Route::get('salidas/{salida}', [SalidaRutaController::class, 'show'])->name('salidas.show');
+        // El PDF de un CCF de la salida, para verlo al tocar su tarjeta. Solo lectura.
+        Route::get('salidas/{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('salidas.ccf')
+            ->scopeBindings();
         Route::get('salidas/{salida}/editar', [SalidaRutaController::class, 'edit'])->name('salidas.edit')
             ->middleware('permission:rutas.gestionar');
         Route::put('salidas/{salida}', [SalidaRutaController::class, 'update'])->name('salidas.update')

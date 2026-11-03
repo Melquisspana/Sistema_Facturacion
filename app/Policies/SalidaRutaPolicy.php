@@ -33,6 +33,12 @@ class SalidaRutaPolicy
         return $this->participa($usuario, $salida);
     }
 
+    /** El PDF de un CCF de la salida, desde «Mi salida»: solo quien va en ella. */
+    public function verCcf(User $usuario, SalidaRuta $salida): bool
+    {
+        return $this->participa($usuario, $salida);
+    }
+
     public function verFotoGasto(User $usuario, SalidaRuta $salida): bool
     {
         return $usuario->can('rutas.ver') || $this->participa($usuario, $salida);
