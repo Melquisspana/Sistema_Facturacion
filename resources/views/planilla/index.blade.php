@@ -26,8 +26,8 @@
             @endif
 
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-                ISSS, AFP y renta son una propuesta que se puede corregir. <strong>No calcula</strong> aporte
-                patronal, vacaciones, indemnización ni horas extra.
+                ISSS, AFP y renta son una propuesta que se puede corregir.
+                <strong>No calcula</strong> aporte patronal, vacaciones, indemnización ni horas extra.
             </p>
 
             @unless ($verImportes)

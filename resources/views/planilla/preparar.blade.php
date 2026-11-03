@@ -561,8 +561,8 @@
 
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-gray-500">
-                        ISSS, AFP y renta son una propuesta que se puede corregir. Para confirmar e imprimir,
-                        guardá y entrá en «Ver e imprimir».
+                        ISSS, AFP y renta son una propuesta que se puede corregir; no calcula aporte patronal
+                        ni horas extra. Para confirmar e imprimir, guardá y entrá en «Ver e imprimir».
                     </p>
                     <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto">
                         Guardar borrador
