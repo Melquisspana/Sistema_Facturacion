@@ -353,8 +353,7 @@ class EntregasSalidaTest extends TestCase
         $entrega = $salida->entregas()->where('dte_id', $dte->id)->sole();
         $dte->update(['estado' => 'invalidado']);
         $respuesta = $this->actingAs($this->admin())->get(route('rutas.salidas.show', $salida))
-            ->assertOk()->assertSee('Invalidado · no entregar')
-            ->assertSee('Todo entregado');
+            ->assertOk()->assertSee('Invalidado · no entregar');
         $dom = new \DOMDocument;
         @$dom->loadHTML($respuesta->getContent());
         $xpath = new \DOMXPath($dom);
@@ -536,6 +535,78 @@ class EntregasSalidaTest extends TestCase
             // Con un solo CCF por marcar no hace falta el atajo de «todo entregado».
             ->assertDontSee('Todo entregado')
             ->assertViewHas('resumen', ['total' => 3, 'entregados' => 2, 'no_entregados' => 0, 'sin_registrar' => 1]);
+    }
+
+    public function test_cada_ccf_va_en_su_tarjeta_y_pregunta_quien_lo_entrego(): void
+    {
+        $entregado = $this->ccf();
+        $conAlbaran = $this->ccf();
+        $sinRegistrar = $this->ccf();
+        $salida = $this->salida();
+        $ana = PersonalRuta::create(['nombre' => 'Ana']);
+        app(ParticipantesSalida::class)->sincronizar($salida, [$this->carlos->id, $ana->id], $this->carlos->id);
+        $this->servicio()->cargarPendientes($salida);
+        $this->entregar($salida->entregas()->where('dte_id', $entregado->id)->sole());
+        PpqAlbaran::create([
+            'numero_albaran' => 'AC01/0232/00/6716', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
+            'monto_albaran' => 100, 'fecha_albaran' => '2026-10-04', 'origen' => 'gmail',
+        ]);
+        $this->actingAs($this->admin());
+
+        // Sin selector general ni «Todo entregado»: la tarjeta de cada CCF pregunta quién,
+        // con el responsable elegido. El de albarán ya figura entregado y solo pide quién.
+        $respuesta = $this->get(route('rutas.salidas.show', $salida))->assertOk()
+            ->assertDontSee('¿Quién entrega?')->assertDontSee('Todo entregado')
+            ->assertSee('Llegó el albarán AC01/0232/00/6716 · falta quién lo entregó')
+            ->assertSee('Faltan 1')->assertSee('Entregados 2')->assertSee('Todos 3');
+        $xpath = new \DOMXPath(tap(new \DOMDocument, fn ($d) => @$d->loadHTML($respuesta->getContent())));
+        $fila = $salida->entregas()->where('dte_id', $sinRegistrar->id)->sole();
+        $radios = $xpath->query("//input[@type='radio'][@form='entregar-{$fila->id}'][@name='entregado_por_id']");
+        $this->assertSame(2, $radios->length);
+        $this->assertSame((string) $this->carlos->id, $xpath->query("//input[@form='entregar-{$fila->id}'][@checked]")->item(0)->getAttribute('value'));
+        $albaranFila = $salida->entregas()->where('dte_id', $conAlbaran->id)->sole();
+        $this->assertSame(2, $xpath->query("//form[@action='".route('rutas.salidas.entregas.update', [$salida, $albaranFila])."']//button[@name='entregado_por_id']")->length);
+
+        // El de albarán se guarda solo con quién.
+        $this->patch(route('rutas.salidas.entregas.update', [$salida, $albaranFila]), ['resultado' => 'entregado', 'entregado_por_id' => $ana->id])
+            ->assertSessionHasNoErrors();
+        $albaranFila->refresh();
+        $this->assertSame(ResultadoEntrega::Entregado, $albaranFila->resultado);
+        $this->assertSame($ana->id, $albaranFila->entregado_por_id);
+
+        // Quien no va en la salida no figura como «entregó».
+        $otro = PersonalRuta::create(['nombre' => 'Beto']);
+        $this->patch(route('rutas.salidas.entregas.update', [$salida, $fila]), ['resultado' => 'entregado', 'entregado_por_id' => $otro->id])
+            ->assertSessionHasErrors('entregado_por_id');
+        $this->assertTrue($fila->refresh()->estaPendiente());
+
+        // Filtro: lo que falta y lo entregado, por separado.
+        $this->get(route('rutas.salidas.show', [$salida, 'ver' => 'faltan']))->assertOk()
+            ->assertSee($sinRegistrar->numero_control)->assertDontSee($entregado->numero_control)->assertDontSee($conAlbaran->numero_control);
+        $this->get(route('rutas.salidas.show', [$salida, 'ver' => 'entregados']))->assertOk()
+            ->assertSee($entregado->numero_control)->assertSee($conAlbaran->numero_control)->assertDontSee($sinRegistrar->numero_control);
+
+        $this->entregar($fila);
+        $this->get(route('rutas.salidas.show', [$salida, 'ver' => 'faltan']))->assertOk()->assertSee('No falta marcar ningún CCF.')->assertSee('Ver todos');
+    }
+
+    public function test_con_albaran_cuenta_como_entregado_en_toda_rutas(): void
+    {
+        $this->ccf();
+        $conAlbaran = $this->ccf();
+        $salida = $this->salida();
+        $this->servicio()->cargarPendientes($salida);
+        // Llega el albarán y nadie marca nada en Rutas.
+        PpqAlbaran::create([
+            'numero_albaran' => 'AC01/0232/00/6717', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
+            'monto_albaran' => 100, 'fecha_albaran' => '2026-10-04', 'origen' => 'gmail',
+        ]);
+        $this->actingAs($this->admin());
+
+        $this->get(route('rutas.salidas.index'))->assertOk()->assertSee('1 / 2');
+        $this->get(route('rutas.salidas.show', $salida))->assertOk()
+            ->assertViewHas('resumen', ['total' => 2, 'entregados' => 1, 'no_entregados' => 0, 'sin_registrar' => 1]);
+        $this->get(route('rutas.dashboard'))->assertOk()->assertSee('1 de 2 entregados');
     }
 
     public function test_el_tablero_muestra_los_ccf_por_entregar(): void
