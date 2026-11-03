@@ -21,6 +21,7 @@ Cierra #
 - [ ] Pruebas nuevas o actualizadas.
 - [ ] Suite completa en verde.
 - [ ] Pint sobre los archivos tocados.
+- [ ] Pantallas según `docs/GUIA_PANTALLAS.md` (claro, oscuro y celular), o el motivo anotado si no se sigue.
 - [ ] Revisión de código hecha.
 - [ ] Sin datos reales (clientes, empleados, NIT/NRC, correos, servidor) ni credenciales.
 - [ ] Documentación al día. El PR no toca `CHANGELOG.md`: lo escribe la coordinación al desplegar, para que los PR no choquen entre sí.
