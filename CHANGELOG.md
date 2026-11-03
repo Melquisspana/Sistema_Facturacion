@@ -11,12 +11,21 @@ El historial anterior a este archivo está en el registro de git.
 ### Cambiado
 
 - Planilla: pantallas más simples, con menos explicaciones, los avisos de cada persona en un solo renglón y sin elegir moneda cuando hay una sola.
+- Personal: textos más cortos en Jornadas, Marcaciones y Hoy, y el contrato vuelve a la ficha de la persona.
 - Personal: se quita la pantalla «Formatos», una muestra con datos inventados. La hoja de firmas y el recibo reales siguen saliendo desde cada quincena.
 
 ### Corregido
 
 - Planilla: la lista y la pantalla para editar una quincena llevan a su ficha, donde están Impresos y Confirmar. Antes un borrador no tenía cómo llegar a ellos.
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
+
+## [2026.11.02.3] - 2026-11-02
+
+Más espacio de firma en el contrato (#182), sin migraciones.
+
+### Cambiado
+
+- Planilla: el contrato de trabajo deja más espacio para las firmas, las huellas y la firma a ruego, y sigue saliendo en 2 páginas.
 
 ## [2026.11.02.2] - 2026-11-02
 
