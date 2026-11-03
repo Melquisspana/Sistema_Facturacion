@@ -129,7 +129,8 @@ class PersonalController extends Controller
         $verImportes = $ficha !== null && $request->user()->can('planilla.salarios');
         $datos = [
             'nombre' => $ficha?->nombre ?? $asistencia->nombreCompleto(),
-            'ficha' => $ficha,
+            // Todo lo de la persona en un lugar: su usuario y su ficha de Rutas.
+            'ficha' => $ficha?->load(['usuario.roles', 'personalRuta.funciones']),
             'asistencia' => $asistencia,
             'verImportes' => $verImportes,
             'mensual' => $verImportes ? ($sueldos->mensualesEn(new Collection([$ficha]), now()->toDateString())[$ficha->id] ?? null) : null,

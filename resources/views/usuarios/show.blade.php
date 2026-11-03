@@ -1,97 +1,104 @@
+{{-- Detalle de un usuario. Mismo aspecto que la ficha de Personal, y lleva a ella. --}}
+@php
+    $tarjeta = 'rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
+    $dt = 'text-gray-500 dark:text-paper-300';
+    $dd = 'text-gray-800 dark:text-paper-100';
+    $campo = 'block min-h-11 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
+    $secundario = 'inline-flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
+    $rol = $usuario->roles->first()?->name;
+@endphp
+
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Usuario: {{ $usuario->name }}</h2>
-            <a href="{{ route('usuarios.index') }}" class="text-sm text-gray-500 hover:underline">← Volver</a>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $usuario->name }}</h2>
+            <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $usuario->activo ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300' }}">
+                {{ $usuario->activo ? 'Activo' : 'Inactivo' }}
+            </span>
         </div>
     </x-slot>
 
     <div class="py-8">
-        <div class="max-w-3xl mx-auto sm:px-6 lg:px-8 space-y-6">
-
+        <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
             @if (session('status'))
-                <div class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ session('status') }}</div>
+                <p role="status" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{{ session('status') }}</p>
             @endif
             @if (session('error'))
-                <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
+                <p role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{{ session('error') }}</p>
             @endif
 
-            <div class="bg-white shadow sm:rounded-lg p-6">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $usuario->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">
-                        {{ $usuario->activo ? 'Activo' : 'Inactivo' }}
-                    </span>
-                    <div class="flex items-center gap-3">
-                        <a href="{{ route('usuarios.edit', $usuario) }}" class="text-indigo-600 hover:underline text-sm">Editar</a>
-                        <a href="{{ route('usuarios.password.edit', $usuario) }}" class="text-blue-600 hover:underline text-sm">Cambiar contraseña</a>
-                    </div>
-                </div>
-                <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
-                    <div><dt class="text-gray-500">Nombre</dt><dd>{{ $usuario->name }}</dd></div>
-                    <div><dt class="text-gray-500">Correo</dt><dd>{{ $usuario->email }}</dd></div>
-                    <div><dt class="text-gray-500">Rol</dt><dd>{{ $usuario->roles->first()?->name ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500">Registrado</dt><dd>{{ $usuario->created_at?->format('d/m/Y H:i') }}</dd></div>
+            <div class="{{ $tarjeta }}">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Usuario</h3>
+                <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+                    <div class="flex gap-2"><dt class="{{ $dt }}">Rol:</dt><dd class="{{ $dd }}">{{ $rol ? (\App\Enums\RolSistema::opciones()[$rol] ?? $rol) : '—' }}</dd></div>
+                    <div class="flex gap-2"><dt class="{{ $dt }}">Correo:</dt><dd class="{{ $dd }}">{{ $usuario->email }}</dd></div>
+                    <div class="flex gap-2"><dt class="{{ $dt }}">Registrado:</dt><dd class="{{ $dd }}">{{ $usuario->created_at?->format('d/m/Y H:i') }}</dd></div>
                 </dl>
+                <div class="mt-4 flex flex-wrap gap-3">
+                    <a href="{{ route('usuarios.edit', $usuario) }}" class="{{ $secundario }}">Editar</a>
+                    <a href="{{ route('usuarios.password.edit', $usuario) }}" class="{{ $secundario }}">Cambiar contraseña</a>
+                </div>
             </div>
 
             @if ($conPersonal)
-                <div class="bg-white shadow sm:rounded-lg p-6">
-                    <h3 class="font-medium text-gray-700 mb-3">Personal</h3>
+                <div class="{{ $tarjeta }}">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Personal</h3>
                     @if ($ficha)
-                        <p class="text-sm">Es la cuenta de
+                        <p class="mt-3 text-sm {{ $dd }}">Es la cuenta de
                             @if ($verFicha)
-                                <a href="{{ route('personal.empleados.show', 'p'.$ficha->id) }}" class="text-indigo-600 hover:underline">{{ $ficha->nombre }}</a>.
+                                <a href="{{ route('personal.empleados.show', 'p'.$ficha->id) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">{{ $ficha->nombre }}</a>.
                             @else
                                 {{ $ficha->nombre }}.
                             @endif
                             Su nombre se corrige en su ficha de Personal.
                         </p>
                     @else
-                        <p class="text-sm text-gray-700">Sin ficha en Personal.</p>
+                        <p class="mt-3 text-sm {{ $dd }}">Sin ficha en Personal.</p>
                         @if ($fichasSinUsuario === null)
-                            <p class="mt-1 text-sm text-gray-500">Si es un empleado, quien gestiona Planilla puede enlazarlo desde la ficha de la persona, en «Agregar acceso o módulos».</p>
+                            <p class="mt-1 text-sm {{ $dt }}">Quien gestiona Personal puede enlazarla desde la ficha de la persona, en «Agregar acceso o módulos».</p>
                         @elseif ($fichasSinUsuario->isEmpty())
-                            <p class="mt-1 text-sm text-gray-500">No hay personas sin usuario en Personal. Si es un empleado, dalo de alta en
-                                <a href="{{ route('planilla.empleados.create') }}" class="text-indigo-600 hover:underline">Personal</a> y enlazalo desde su ficha.</p>
+                            <p class="mt-1 text-sm {{ $dt }}">No hay personas sin usuario en Personal. Dala de alta en
+                                <a href="{{ route('planilla.empleados.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Personal</a> y enlazala desde su ficha.</p>
                         @else
-                            <form method="POST" action="{{ route('usuarios.personal', $usuario) }}" class="mt-3 flex flex-wrap items-end gap-2">
+                            <form method="POST" action="{{ route('usuarios.personal', $usuario) }}" class="mt-3 flex flex-wrap items-end gap-3">
                                 @csrf
-                                <div class="flex-1 min-w-56">
-                                    <x-input-label for="planilla_empleado_id" value="Enlazar con la persona" />
-                                    <select id="planilla_empleado_id" name="planilla_empleado_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-                                        <option value="">— Seleccione —</option>
+                                <div class="min-w-56 flex-1">
+                                    <label for="planilla_empleado_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Persona</label>
+                                    <select id="planilla_empleado_id" name="planilla_empleado_id" required class="{{ $campo }}">
+                                        <option value="">— Elegí —</option>
                                         @foreach ($fichasSinUsuario as $persona)
                                             <option value="{{ $persona->id }}" @selected((string) old('planilla_empleado_id') === (string) $persona->id)>{{ $persona->nombre }}</option>
                                         @endforeach
                                     </select>
                                 </div>
-                                <x-primary-button>Enlazar</x-primary-button>
+                                <button type="submit" class="{{ $secundario }}">Enlazar</button>
                             </form>
-                            <p class="mt-2 text-xs text-gray-500">El usuario toma el nombre de la ficha. Si es Vendedor, queda también en Rutas.</p>
+                            <p class="mt-2 text-xs {{ $dt }}">El usuario toma el nombre de la ficha. Si es Vendedor, queda también en Rutas.</p>
                         @endif
                         @if ($errors->any())
-                            <ul class="mt-3 list-disc list-inside rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-                                @foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach
-                            </ul>
+                            <div role="alert" class="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+                                <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
+                            </div>
                         @endif
                     @endif
                 </div>
             @endif
 
-            <div class="bg-white shadow sm:rounded-lg p-6">
-                <h3 class="font-medium text-gray-700 mb-3">Historial de auditoría</h3>
-                @forelse ($actividades as $actividad)
-                    <div class="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0 text-sm">
-                        <div class="text-gray-400 whitespace-nowrap">{{ $actividad->created_at->format('d/m/Y H:i') }}</div>
-                        <div>
-                            <span class="font-medium">{{ $actividad->causer?->name ?? 'Sistema' }}</span>
-                            {{ $actividad->description }}
-                        </div>
-                    </div>
-                @empty
-                    <p class="text-sm text-gray-400">Sin actividad registrada.</p>
-                @endforelse
+            <div class="{{ $tarjeta }}">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Historial</h3>
+                <ul class="mt-3 divide-y divide-gray-100 text-sm dark:divide-ink-700">
+                    @forelse ($actividades as $actividad)
+                        <li class="flex items-start gap-3 py-2">
+                            <span class="whitespace-nowrap {{ $dt }}">{{ $actividad->created_at->format('d/m/Y H:i') }}</span>
+                            <span class="{{ $dd }}"><span class="font-medium">{{ $actividad->causer?->name ?? 'Sistema' }}</span> {{ $actividad->description }}</span>
+                        </li>
+                    @empty
+                        <li class="py-2 {{ $dt }}">Sin actividad registrada.</li>
+                    @endforelse
+                </ul>
             </div>
+
+            <a href="{{ route('usuarios.index') }}" class="inline-block text-sm text-gray-500 hover:underline dark:text-paper-300">← Volver a usuarios</a>
         </div>
     </div>
 </x-app-layout>

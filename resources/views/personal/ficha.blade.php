@@ -149,19 +149,7 @@
                                                 </div>
                                             @endif
                                             <div x-show="usa && existente === ''" class="grid gap-2 sm:grid-cols-2">
-                                                <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">El rol dice qué puede hacer. Vendedor también sale a rutas.</p>
-                                                <div><label for="rol" class="{{ $etiqueta }}">Rol</label>
-                                                    <select id="rol" name="rol" class="{{ $campo }}">
-                                                        @foreach (\App\Enums\RolSistema::opciones() as $valor => $texto)
-                                                            <option value="{{ $valor }}" @selected(old('rol') === $valor)>{{ $texto }}</option>
-                                                        @endforeach
-                                                    </select></div>
-                                                <div><label for="email" class="{{ $etiqueta }}">Correo</label>
-                                                    <input id="email" name="email" type="email" value="{{ old('email') }}" class="{{ $campo }}"></div>
-                                                <div><label for="password" class="{{ $etiqueta }}">Contraseña</label>
-                                                    <input id="password" name="password" type="password" autocomplete="new-password" class="{{ $campo }}"></div>
-                                                <div><label for="password_confirmation" class="{{ $etiqueta }}">Repetí la contraseña</label>
-                                                    <input id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" class="{{ $campo }}"></div>
+                                                @include('usuarios._campos-acceso')
                                             </div>
                                         @endisset
                                         <button type="submit" class="{{ $secundario }}">Agregar</button>
@@ -219,6 +207,58 @@
                     @endif
                 </div>
 
+                {{-- Todo lo de esta persona, en el mismo orden en todas las fichas, con el
+                     camino a cada parte. Cada parte vuelve acá. --}}
+                @php
+                    $cuenta = $ficha->usuario;
+                    $rolCuenta = $cuenta?->roles->first()?->name;
+                    $rutaPersona = $ficha->personalRuta;
+                @endphp
+                <div class="{{ $tarjeta }}">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Acceso y módulos</h3>
+                    <dl class="mt-3 divide-y divide-gray-100 text-sm dark:divide-ink-700">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                            <dt class="w-24 shrink-0 {{ $dt }}">Usuario</dt>
+                            <dd class="{{ $dd }}">
+                                @if ($cuenta)
+                                    {{ $cuenta->email }} · {{ $rolCuenta ? (\App\Enums\RolSistema::opciones()[$rolCuenta] ?? $rolCuenta) : 'sin rol' }} · {{ $cuenta->activo ? 'Activo' : 'Inactivo' }}
+                                    @can('usuarios.gestionar')
+                                        <a href="{{ route('usuarios.show', $cuenta) }}" class="ml-2 text-indigo-600 hover:underline dark:text-indigo-400">Abrir en Usuarios</a>
+                                    @endcan
+                                @else
+                                    <span class="{{ $dt }}">Sin usuario</span>
+                                @endif
+                            </dd>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                            <dt class="w-24 shrink-0 {{ $dt }}">Asistencia</dt>
+                            <dd class="{{ $dd }}">
+                                @if ($ficha->asistencia_empleado_id !== null)
+                                    Marca con huella
+                                    @if ($asistencia)
+                                        <a href="#asistencia" class="ml-2 text-indigo-600 hover:underline dark:text-indigo-400">Ver huellas y marcaciones</a>
+                                    @endif
+                                @else
+                                    <span class="{{ $dt }}">No marca</span>
+                                @endif
+                            </dd>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                            <dt class="w-24 shrink-0 {{ $dt }}">Rutas</dt>
+                            <dd class="{{ $dd }}">
+                                @if ($rutaPersona)
+                                    {{ $rutaPersona->funcionesEnum()->map(fn ($f) => $f->label())->implode(', ') ?: 'Sin funciones' }} · {{ $rutaPersona->activo ? 'Activo' : 'Inactivo' }}
+                                    @if (auth()->user()->can('rutas.ver') && auth()->user()->can('rutas.personal.ver'))
+                                        <a href="{{ route('rutas.personal.show', $rutaPersona) }}" class="ml-2 text-indigo-600 hover:underline dark:text-indigo-400">Abrir en Rutas</a>
+                                    @endif
+                                @else
+                                    <span class="{{ $dt }}">No sale a rutas</span>
+                                @endif
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+
                 <div class="{{ $tarjeta }}">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimas quincenas</h3>
                     @if ($quincenas->isEmpty())
@@ -256,7 +296,9 @@
             @endif
 
             @if ($asistencia)
-                @include('asistencia.empleados._ficha')
+                <div id="asistencia" class="scroll-mt-4">
+                    @include('asistencia.empleados._ficha')
+                </div>
             @endif
 
             <a href="{{ route('personal.empleados') }}" class="inline-block text-sm text-gray-500 hover:underline dark:text-paper-300">← Volver a empleados</a>
