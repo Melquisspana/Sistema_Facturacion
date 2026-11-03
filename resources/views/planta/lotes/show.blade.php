@@ -18,7 +18,7 @@
                 </x-planta.badge>
             </h2>
             <a href="{{ route('planta.lotes.index') }}"
-               class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver al listado</a>
+               class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver al listado</a>
         </div>
     </x-slot>
 
@@ -28,7 +28,7 @@
             <x-planta.avisos />
 
             @php
-                $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400';
+                $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300';
                 $dd = 'mt-0.5 text-gray-800 dark:text-paper-100';
                 $unidad = $lote->insumo?->unidad_base->abreviatura();
                 $vencido = $lote->fecha_vencimiento !== null
@@ -113,7 +113,7 @@
                             </p>
                         </div>
                     @empty
-                        <div class="sm:col-span-3 rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-400 dark:ring-ink-600">
+                        <div class="sm:col-span-3 rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-300 dark:ring-ink-600">
                             Este lote no tiene saldo en ninguna ubicación. Si tuvo movimientos, siguen abajo:
                             el historial no desaparece al agotarse el saldo.
                         </div>
@@ -127,7 +127,7 @@
             <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                     <thead class="bg-gray-50 dark:bg-ink-900">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Ubicación</th>
                             <th class="px-4 py-3">Estado</th>
                             <th class="px-4 py-3">Traslado</th>
@@ -137,7 +137,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 text-sm dark:divide-ink-700">
                         @forelse ($saldos as $saldo)
-                            <tr class="text-gray-700 dark:text-paper-200">
+                            <tr class="text-gray-700 dark:text-paper-100">
                                 <td class="px-4 py-3">{{ $saldo->ubicacion?->codigo ?? '—' }} — {{ $saldo->ubicacion?->nombre }}</td>
                                 <td class="px-4 py-3">
                                     <x-planta.badge :color="$saldo->estado->color()">{{ $saldo->estado->label() }}</x-planta.badge>
@@ -159,7 +159,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-400">
+                                <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-300">
                                     Sin saldo en ninguna ubicación.
                                 </td>
                             </tr>
@@ -198,7 +198,7 @@
                 <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                         <thead class="bg-gray-50 dark:bg-ink-900">
-                            <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                            <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                                 <th class="px-4 py-3">Fecha</th>
                                 <th class="px-4 py-3">Tipo</th>
                                 <th class="px-4 py-3">Ubicación</th>
@@ -216,7 +216,7 @@
                                     $claveDocumento = ltrim((string) $movimiento->documento_type, '\\').'#'.$movimiento->documento_id;
                                     $numeroDocumento = $numerosDocumento[$claveDocumento] ?? null;
                                 @endphp
-                                <tr class="text-gray-700 dark:text-paper-200">
+                                <tr class="text-gray-700 dark:text-paper-100">
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $movimiento->fecha_efectiva?->format('d/m/Y') ?? '—' }}</td>
                                     <td class="px-4 py-3">
                                         <x-planta.badge :color="$movimiento->tipo->color()">{{ $movimiento->tipo->label() }}</x-planta.badge>
@@ -250,7 +250,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-400">
+                                    <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-paper-300">
                                         Este lote todavía no tiene movimientos.
                                     </td>
                                 </tr>

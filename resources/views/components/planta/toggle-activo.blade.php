@@ -6,7 +6,7 @@
 @php
     $clases = $activo
         ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
-        : 'bg-gray-100 text-gray-500 dark:bg-ink-700 dark:text-paper-400';
+        : 'bg-gray-100 text-gray-500 dark:bg-ink-700 dark:text-paper-300';
     $etiqueta = $activo ? 'Activo' : 'Inactivo';
 @endphp
 

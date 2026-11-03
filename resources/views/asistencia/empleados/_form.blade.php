@@ -9,7 +9,7 @@
         sistema la ataría también a sus permisos fiscales. --}}
 <div class="grid gap-5 sm:grid-cols-2">
     <div>
-        <label for="nombres" class="block text-sm font-medium text-gray-700 dark:text-paper-200">Nombres</label>
+        <label for="nombres" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Nombres</label>
         <input id="nombres" name="nombres" type="text" required maxlength="80"
                value="{{ old('nombres', $empleado->nombres) }}"
                class="mt-1 block w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
@@ -17,7 +17,7 @@
     </div>
 
     <div>
-        <label for="apellidos" class="block text-sm font-medium text-gray-700 dark:text-paper-200">Apellidos</label>
+        <label for="apellidos" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Apellidos</label>
         <input id="apellidos" name="apellidos" type="text" required maxlength="80"
                value="{{ old('apellidos', $empleado->apellidos) }}"
                class="mt-1 block w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
@@ -25,24 +25,24 @@
     </div>
 
     <div>
-        <label for="codigo" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+        <label for="codigo" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
             Código de planilla <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
         </label>
         <input id="codigo" name="codigo" type="text" maxlength="30"
                value="{{ old('codigo', $empleado->codigo) }}"
                class="mt-1 block w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">El número con el que Recursos Humanos ya identifica a esta persona.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">El número con el que Recursos Humanos ya identifica a esta persona.</p>
         @error('codigo') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
     </div>
 
     <div>
-        <label for="fecha_ingreso" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+        <label for="fecha_ingreso" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
             Fecha de ingreso <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
         </label>
         <input id="fecha_ingreso" name="fecha_ingreso" type="date"
                value="{{ old('fecha_ingreso', $empleado->fecha_ingreso?->format('Y-m-d')) }}"
                class="mt-1 block w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">Cuesta rellenarla hacia atrás; si la sabés, ponela ahora.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Cuesta rellenarla hacia atrás; si la sabés, ponela ahora.</p>
         @error('fecha_ingreso') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
     </div>
 </div>

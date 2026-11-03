@@ -6,7 +6,7 @@
                 <x-planta.badge :color="$cambio->estado->color()" class="ms-2">{{ $cambio->estado->label() }}</x-planta.badge>
             </h2>
             <a href="{{ route('planta.disponibilidad.index') }}"
-               class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver al listado</a>
+               class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver al listado</a>
         </div>
     </x-slot>
 
@@ -40,18 +40,18 @@
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 dark:bg-ink-800 dark:ring-ink-600">
                 <div class="flex flex-wrap items-center gap-3 text-lg">
                     <span class="font-semibold text-gray-800 dark:text-paper-100">{{ $cambio->cantidad }}</span>
-                    <span class="text-sm text-gray-500 dark:text-paper-400">{{ $cambio->insumo?->unidad_base?->abreviatura() }}</span>
+                    <span class="text-sm text-gray-500 dark:text-paper-300">{{ $cambio->insumo?->unidad_base?->abreviatura() }}</span>
                     <x-planta.badge :color="$cambio->estado_origen->color()">{{ $cambio->estado_origen->label() }}</x-planta.badge>
                     <span class="text-gray-400">&rarr;</span>
                     <x-planta.badge :color="$cambio->estado_destino->color()">{{ $cambio->estado_destino->label() }}</x-planta.badge>
                 </div>
-                <p class="mt-2 text-xs text-gray-500 dark:text-paper-400">
+                <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">
                     La cantidad física no cambia: el par de movimientos suma cero. Lo que cambia es qué parte del saldo es utilizable.
                 </p>
 
                 <dl class="mt-5 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                     @php
-                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400';
+                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300';
                         $dd = 'mt-0.5 text-gray-800 dark:text-paper-100';
                     @endphp
                     <div><dt class="{{ $dt }}">Insumo</dt><dd class="{{ $dd }}">{{ $cambio->insumo?->codigo }} — {{ $cambio->insumo?->nombre }}</dd></div>
@@ -87,7 +87,7 @@
                 @can('planta.calidad.gestionar')
                     @if ($cambio->esEditable())
                         <a href="{{ route('planta.disponibilidad.edit', $cambio) }}"
-                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">Editar</a>
+                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Editar</a>
 
                         <form method="POST" action="{{ route('planta.disponibilidad.anular', $cambio) }}"
                               onsubmit="return confirm('Anular el borrador #{{ $cambio->numero }}? No se podrá reabrir.')">
@@ -108,7 +108,7 @@
                               onsubmit="return confirm('Reversar el cambio #{{ $cambio->numero }}? El saldo volverá a retenido.')">
                             @csrf @method('PATCH')
                             <div>
-                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Motivo de la reversión</label>
+                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Motivo de la reversión</label>
                                 <input type="text" name="motivo" id="motivo" required minlength="10" maxlength="500"
                                        placeholder="Por qué se deshace esta decisión"
                                        class="mt-1 w-80 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">

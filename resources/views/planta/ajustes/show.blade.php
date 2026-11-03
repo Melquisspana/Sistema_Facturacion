@@ -7,7 +7,7 @@
                 <x-planta.badge :color="$ajuste->estado->color()" class="ms-1">{{ $ajuste->estado->label() }}</x-planta.badge>
             </h2>
             <a href="{{ route('planta.ajustes.index') }}"
-               class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver al listado</a>
+               class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver al listado</a>
         </div>
     </x-slot>
 
@@ -41,7 +41,7 @@
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 dark:bg-ink-800 dark:ring-ink-600">
                 <dl class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                     @php
-                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400';
+                        $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300';
                         $dd = 'mt-0.5 text-gray-800 dark:text-paper-100';
                     @endphp
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $ajuste->fecha->format('d/m/Y') }}</dd></div>
@@ -63,7 +63,7 @@
             <div class="overflow-x-auto bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-ink-600">
                     <thead class="bg-gray-50 dark:bg-ink-900">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-400">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-paper-300">
                             <th class="px-4 py-3">Insumo</th>
                             <th class="px-4 py-3">Lote</th>
                             <th class="px-4 py-3">Ubicación</th>
@@ -80,12 +80,12 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100 text-sm dark:divide-ink-700">
                         @foreach ($ajuste->detalles as $detalle)
-                            <tr class="text-gray-700 dark:text-paper-200">
+                            <tr class="text-gray-700 dark:text-paper-100">
                                 <td class="px-4 py-3">{{ $detalle->insumo?->codigo }} — {{ $detalle->insumo?->nombre }}</td>
                                 <td class="px-4 py-3">
                                     {{ $detalle->lote?->codigo_interno ?? '—' }}
                                     @if ($detalle->lote?->fecha_vencimiento)
-                                        <span class="block text-[11px] text-gray-500 dark:text-paper-400">vence {{ $detalle->lote->fecha_vencimiento->toDateString() }}</span>
+                                        <span class="block text-[11px] text-gray-500 dark:text-paper-300">vence {{ $detalle->lote->fecha_vencimiento->toDateString() }}</span>
                                     @endif
                                 </td>
                                 <td class="px-4 py-3">{{ $detalle->ubicacion?->codigo ?? '—' }}</td>
@@ -107,10 +107,10 @@
                                 @else
                                     <td class="px-4 py-3 text-right font-semibold">
                                         {{ $ajuste->sumaSaldo() === false ? '−' : '+' }}{{ $detalle->cantidad }}
-                                        <span class="text-xs font-normal text-gray-500 dark:text-paper-400">{{ $detalle->unidad_base?->abreviatura() }}</span>
+                                        <span class="text-xs font-normal text-gray-500 dark:text-paper-300">{{ $detalle->unidad_base?->abreviatura() }}</span>
                                     </td>
                                 @endif
-                                <td class="px-4 py-3 text-right text-gray-500 dark:text-paper-400">{{ $saldos[$detalle->id] ?? '—' }}</td>
+                                <td class="px-4 py-3 text-right text-gray-500 dark:text-paper-300">{{ $saldos[$detalle->id] ?? '—' }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -118,7 +118,7 @@
             </div>
 
             @if ($ajuste->esCorreccionDeConteo() && $ajuste->esEditable())
-                <p class="text-xs text-gray-500 dark:text-paper-400">
+                <p class="text-xs text-gray-500 dark:text-paper-300">
                     La cantidad del sistema y la diferencia se calculan al confirmar, con el saldo bloqueado.
                     Lo que se muestre ahora como «saldo actual» puede cambiar antes de eso.
                 </p>
@@ -136,7 +136,7 @@
                 @if ($ajuste->esEditable())
                     @can('planta.ajustes.crear')
                         <a href="{{ route('planta.ajustes.edit', $ajuste) }}"
-                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">Editar</a>
+                           class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Editar</a>
 
                         <form method="POST" action="{{ route('planta.ajustes.anular', $ajuste) }}"
                               onsubmit="return confirm('Anular el borrador #{{ $ajuste->numero }}? No se podrá reabrir.')">
@@ -161,7 +161,7 @@
                               onsubmit="return confirm('Reversar el ajuste #{{ $ajuste->numero }}? Se aplicará su efecto al revés.')">
                             @csrf @method('PATCH')
                             <div>
-                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Motivo de la reversión</label>
+                                <label for="motivo" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Motivo de la reversión</label>
                                 <input type="text" name="motivo" id="motivo" required minlength="10" maxlength="500"
                                        placeholder="Por qué se deshace este ajuste"
                                        class="mt-1 w-80 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">

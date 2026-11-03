@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Configurar rutas</h2>
-            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver a rutas</a>
+            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver a rutas</a>
         </div>
     </x-slot>
 
@@ -26,11 +26,11 @@
                     @csrf
                     <input type="hidden" name="en_linea" value="1">
                     <div class="min-w-0 flex-1">
-                        <label for="nueva_nombre" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Nueva ruta</label>
+                        <label for="nueva_nombre" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Nueva ruta</label>
                         <input id="nueva_nombre" name="nombre" required maxlength="120" placeholder="Puerto" class="mt-1 w-full {{ $campo }}">
                     </div>
                     <div>
-                        <label for="nueva_frecuencia" class="block text-xs font-medium text-gray-500 dark:text-paper-400">Cada cuántos días</label>
+                        <label for="nueva_frecuencia" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Cada cuántos días</label>
                         <input id="nueva_frecuencia" name="frecuencia_objetivo_dias" type="number" min="1" max="365" placeholder="15" class="mt-1 w-28 {{ $campo }}">
                     </div>
                     <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Crear</button>
@@ -49,13 +49,13 @@
                             <input type="hidden" name="en_linea" value="1">
                             <input name="nombre" value="{{ $ruta->nombre }}" required maxlength="120" aria-label="Nombre de la ruta"
                                    class="min-w-0 flex-1 rounded-lg border-transparent bg-transparent px-2 text-lg font-semibold text-gray-800 hover:border-gray-300 focus:border-indigo-500 dark:text-paper-100">
-                            <label class="flex items-center gap-2 text-sm text-gray-500 dark:text-paper-400">
+                            <label class="flex items-center gap-2 text-sm text-gray-500 dark:text-paper-300">
                                 cada
                                 <input name="frecuencia_objetivo_dias" type="number" min="1" max="365" value="{{ $ruta->frecuencia_objetivo_dias }}"
                                        aria-label="Cada cuántos días" class="w-20 {{ $campo }}">
                                 días
                             </label>
-                            <button class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200">Guardar</button>
+                            <button class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Guardar</button>
                         </form>
                     @else
                         <p class="text-lg font-semibold text-gray-800 dark:text-paper-100">
@@ -66,7 +66,7 @@
 
                     {{-- Lugares que cubre --}}
                     <div class="mt-4">
-                        <p class="text-xs font-medium text-gray-500 dark:text-paper-400">Lugares que cubre</p>
+                        <p class="text-xs font-medium text-gray-500 dark:text-paper-300">Lugares que cubre</p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             @forelse ($ruta->coberturas->sortBy(fn ($c) => [$c->esDepartamento() ? 0 : 1, $c->etiqueta()]) as $cobertura)
                                 <span class="inline-flex items-center gap-1 rounded-full py-1 pl-3 pr-1 text-sm {{ $cobertura->esDepartamento() ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' : 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' }}">
@@ -93,7 +93,7 @@
                                             <option value="{{ $departamento->id }}">{{ $departamento->nombre }}</option>
                                         @endforeach
                                     </select>
-                                    <button class="rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200">Agregar</button>
+                                    <button class="rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Agregar</button>
                                 </form>
                                 <form method="POST" action="{{ route('rutas.rutas.cobertura.store', $ruta) }}" class="flex gap-1.5">
                                     @csrf
@@ -107,7 +107,7 @@
                                             </optgroup>
                                         @endforeach
                                     </select>
-                                    <button class="rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200">Agregar</button>
+                                    <button class="rounded-lg bg-gray-100 px-3 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Agregar</button>
                                 </form>
                             </div>
                         @endif
@@ -144,7 +144,7 @@
                     </div>
                 </div>
             @empty
-                <div class="{{ $caja }} px-6 py-10 text-center text-sm text-gray-500 dark:text-paper-400">
+                <div class="{{ $caja }} px-6 py-10 text-center text-sm text-gray-500 dark:text-paper-300">
                     Todavía no hay rutas. Creá la primera arriba.
                 </div>
             @endforelse
@@ -152,7 +152,7 @@
             {{-- ===================== Lo que ninguna ruta cubre ===================== --}}
             @if ($sinCobertura->isNotEmpty())
                 <div class="{{ $caja }} p-5">
-                    <p class="text-sm font-medium text-gray-700 dark:text-paper-200">Salas sin ruta que ninguna ruta cubre</p>
+                    <p class="text-sm font-medium text-gray-700 dark:text-paper-100">Salas sin ruta que ninguna ruta cubre</p>
                     <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">Agregá su departamento o pueblo a alguna ruta, o asignalas a mano desde «ver o cambiar».</p>
                     <div class="mt-3 flex flex-wrap gap-2">
                         @foreach ($sinCobertura as $grupo)

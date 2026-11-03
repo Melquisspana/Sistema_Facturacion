@@ -21,7 +21,7 @@
 @endphp
 
 @if ($marcacion->origen === 'diferida')
-    <span class="block text-xs text-gray-500 dark:text-paper-400">Lector (sin red)</span>
+    <span class="block text-xs text-gray-500 dark:text-paper-300">Lector (sin red)</span>
 @endif
 
 @if ($esManual)
@@ -30,7 +30,7 @@
         Manual
     </span>
 @elseif ($esDispositivo && $lector)
-    <span class="text-gray-700 dark:text-paper-200">{{ $lector->nombre }}</span>
+    <span class="text-gray-700 dark:text-paper-100">{{ $lector->nombre }}</span>
     <span class="block text-xs text-gray-400 dark:text-paper-500">{{ $lector->codigo }}</span>
 @elseif ($esDispositivo)
     {{-- El lector se borró de la base (`nullOnDelete`). La marcación sigue siendo
@@ -39,5 +39,5 @@
         Lector no disponible
     </span>
 @else
-    <span class="text-gray-500 dark:text-paper-400" title="Valor de origen no reconocido">{{ $marcacion->origen }}</span>
+    <span class="text-gray-500 dark:text-paper-300" title="Valor de origen no reconocido">{{ $marcacion->origen }}</span>
 @endif

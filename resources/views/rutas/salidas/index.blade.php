@@ -16,7 +16,7 @@
 
             <form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Ruta</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Ruta</label>
                     <select name="ruta_id" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todas</option>
                         @foreach ($rutas as $r)
@@ -25,7 +25,7 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-400">Estado</label>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-paper-300">Estado</label>
                     <select name="estado" class="mt-1 rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
                         <option value="">Todos</option>
                         @foreach ($estados as $estado)
@@ -35,7 +35,7 @@
                 </div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
                 @if (request()->hasAny(['ruta_id', 'estado']))
-                    <a href="{{ route('rutas.salidas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Limpiar</a>
+                    <a href="{{ route('rutas.salidas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
 
@@ -43,7 +43,7 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-400 dark:border-ink-600">
+                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-300 dark:border-ink-600">
                                 <th class="py-3 px-4">Ruta</th>
                                 <th class="py-3 px-4">Inicio</th>
                                 <th class="py-3 px-4">Regreso</th>
@@ -70,7 +70,7 @@
                                         @endif
                                     </td>
                                     <td class="py-3 px-4 text-gray-600 dark:text-paper-300">{{ $salida->personal->pluck('nombre')->implode(' · ') ?: '—' }}</td>
-                                    <td class="py-3 px-4 text-center tabular-nums {{ $salida->entregas_count > 0 ? 'text-gray-700 dark:text-paper-200' : 'text-gray-400 dark:text-paper-500' }}">
+                                    <td class="py-3 px-4 text-center tabular-nums {{ $salida->entregas_count > 0 ? 'text-gray-700 dark:text-paper-100' : 'text-gray-400 dark:text-paper-500' }}">
                                         {{ $salida->entregados_count }} / {{ $salida->entregas_count }}
                                     </td>
                                     <td class="py-3 px-4 text-center"><x-rutas.estado-badge :estado="$salida->estado" /></td>
@@ -80,7 +80,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="py-8 px-4 text-center text-gray-500 dark:text-paper-400">
+                                    <td colspan="7" class="py-8 px-4 text-center text-gray-500 dark:text-paper-300">
                                         No hay salidas que coincidan.
                                         @can('rutas.gestionar')
                                             <a href="{{ route('rutas.salidas.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear una</a>.

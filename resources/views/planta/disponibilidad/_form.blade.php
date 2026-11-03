@@ -25,7 +25,7 @@
         ],
     ]);
 
-    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-200';
+    $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
     $campo = 'mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
 @endphp
 
@@ -58,7 +58,7 @@
                 </option>
             @endforeach
         </select>
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
             Solo aparecen combinaciones con saldo retenido mayor que cero.
         </p>
         @error('planta_insumo_id')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
@@ -67,7 +67,7 @@
     {{-- Resumen del bucket elegido --}}
     <template x-if="elegido">
         <div class="grid grid-cols-2 gap-4 rounded-lg border border-gray-200 p-4 text-sm sm:grid-cols-5 dark:border-ink-600">
-            @php $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400'; @endphp
+            @php $dt = 'text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300'; @endphp
             <div><p class="{{ $dt }}">Insumo</p><p class="mt-0.5 text-gray-800 dark:text-paper-100" x-text="elegido.insumo"></p></div>
             <div><p class="{{ $dt }}">Lote</p><p class="mt-0.5 text-gray-800 dark:text-paper-100" x-text="elegido.lote"></p></div>
             <div><p class="{{ $dt }}">Ubicación</p><p class="mt-0.5 text-gray-800 dark:text-paper-100" x-text="elegido.ubicacion"></p></div>
@@ -81,8 +81,8 @@
         <div>
             <label class="{{ $etiqueta }}">Estado de origen</label>
             <input type="text" value="Retenido" disabled
-                   class="{{ $campo }} bg-gray-100 text-gray-500 dark:bg-ink-900 dark:text-paper-400">
-            <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+                   class="{{ $campo }} bg-gray-100 text-gray-500 dark:bg-ink-900 dark:text-paper-300">
+            <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
                 No se elige: este documento solo mueve saldo retenido.
             </p>
         </div>
@@ -105,7 +105,7 @@
             <input type="number" step="0.0001" min="0.0001" name="cantidad" id="cantidad" required
                    value="{{ old('cantidad', $cambio?->cantidad) }}"
                    :max="elegido ? elegido.saldo : null" class="{{ $campo }}">
-            <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+            <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
                 En unidad base. Nunca más de lo retenido.
             </p>
             @error('cantidad')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
@@ -145,7 +145,7 @@
         <textarea name="motivo" id="motivo" rows="3" required minlength="10" maxlength="2000"
                   placeholder="Por qué este saldo se libera o se rechaza"
                   class="{{ $campo }}">{{ old('motivo', $cambio?->motivo) }}</textarea>
-        <p class="mt-1 text-xs text-gray-500 dark:text-paper-400">
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">
             Obligatorio: dentro de un mes será la única forma de saber por qué cambió.
         </p>
         @error('motivo')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror

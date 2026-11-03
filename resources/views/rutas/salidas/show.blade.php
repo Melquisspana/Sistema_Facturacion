@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Hoja de la salida</h2>
-            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Volver a rutas</a>
+            <a href="{{ route('rutas.dashboard') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Volver a rutas</a>
         </div>
     </x-slot>
 
@@ -24,7 +24,7 @@
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <p class="text-2xl font-semibold text-gray-800 dark:text-paper-100">{{ $salida->ruta->nombre }}</p>
-                        <p class="mt-0.5 text-sm text-gray-500 dark:text-paper-400">
+                        <p class="mt-0.5 text-sm text-gray-500 dark:text-paper-300">
                             {{ $salida->periodoLegible() }} · {{ $salida->participantes->map(fn ($p) => $p->personal?->nombre)->filter()->implode(' y ') ?: 'Sin vendedores' }}
                         </p>
                     </div>
@@ -62,7 +62,7 @@
                                 <button class="w-full rounded-lg bg-gray-800 px-4 py-3 text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar salida</button>
                             </form>
                         @endif
-                        <a href="{{ route('rutas.salidas.edit', $salida) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-400">Cambiar quiénes van</a>
+                        <a href="{{ route('rutas.salidas.edit', $salida) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cambiar quiénes van</a>
                         <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
                               onsubmit="return confirm('¿Cancelar esta salida? Sus CCF vuelven a quedar pendientes.');">
                             @csrf @method('PATCH')

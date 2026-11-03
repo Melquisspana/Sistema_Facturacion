@@ -8,7 +8,7 @@
 @endphp
 
 <div>
-    <label for="nombre" class="block text-sm font-medium text-gray-700 dark:text-paper-200">Nombre</label>
+    <label for="nombre" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Nombre</label>
     <input type="text" name="nombre" id="nombre" required maxlength="120" autofocus
            value="{{ old('nombre', $personal->nombre ?? '') }}"
            class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
@@ -16,7 +16,7 @@
 </div>
 
 <div>
-    <span class="block text-sm font-medium text-gray-700 dark:text-paper-200">Funciones</span>
+    <span class="block text-sm font-medium text-gray-700 dark:text-paper-100">Funciones</span>
     <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
         Qué se le puede pedir a esta persona. Son combinables y no otorgan permisos del sistema:
         quién puede pulsar qué botón se decide por rol, no acá.
@@ -29,7 +29,7 @@
                        @checked(in_array($funcion->value, $funcionesElegidas))
                        class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
                 <span>
-                    <span class="block text-sm font-medium text-gray-700 dark:text-paper-200">{{ $funcion->label() }}</span>
+                    <span class="block text-sm font-medium text-gray-700 dark:text-paper-100">{{ $funcion->label() }}</span>
                     <span class="block text-xs text-gray-400 dark:text-paper-500">{{ $funcion->detalle() }}</span>
                 </span>
             </label>
@@ -40,7 +40,7 @@
 
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
     <div>
-        <label for="telefono" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+        <label for="telefono" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
             Teléfono <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
         </label>
         <input type="text" name="telefono" id="telefono" maxlength="30"
@@ -50,7 +50,7 @@
     </div>
 
     <div>
-        <label for="user_id" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+        <label for="user_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
             Usuario del sistema <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
         </label>
         <select name="user_id" id="user_id"
@@ -71,7 +71,7 @@
 </div>
 
 <div>
-    <label for="asistencia_empleado_id" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+    <label for="asistencia_empleado_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
         Misma persona en planilla <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
     </label>
     <select name="asistencia_empleado_id" id="asistencia_empleado_id"
@@ -94,7 +94,7 @@
 </div>
 
 <div>
-    <label for="notas" class="block text-sm font-medium text-gray-700 dark:text-paper-200">
+    <label for="notas" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
         Notas <span class="font-normal text-gray-400 dark:text-paper-500">(opcional)</span>
     </label>
     <textarea name="notas" id="notas" rows="2" maxlength="300"

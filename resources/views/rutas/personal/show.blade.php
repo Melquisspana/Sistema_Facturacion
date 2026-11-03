@@ -3,14 +3,14 @@
         <div class="flex items-center justify-between gap-4">
             <div class="min-w-0">
                 <h2 class="truncate font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">{{ $personal->nombre }}</h2>
-                <p class="text-sm text-gray-500 dark:text-paper-400">
+                <p class="text-sm text-gray-500 dark:text-paper-300">
                     {{ $personal->activo ? 'Disponible para salidas' : 'Inactivo: no se le asignan salidas' }}
                 </p>
             </div>
             @can('rutas.personal.gestionar')
                 <div class="flex shrink-0 items-center gap-2">
                     <a href="{{ route('rutas.personal.edit', $personal) }}"
-                       class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-200 dark:hover:bg-ink-600">
+                       class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">
                         Editar
                     </a>
                     <form method="POST" action="{{ route('rutas.personal.toggle-activo', $personal) }}"
@@ -34,7 +34,7 @@
             <div class="bg-white p-6 shadow-sm ring-1 ring-gray-200 sm:rounded-xl dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
                 <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-3">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400">Funciones</dt>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300">Funciones</dt>
                         <dd class="mt-1 flex flex-wrap gap-1">
                             @forelse ($personal->funcionesEnum() as $funcion)
                                 <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $funcion->clase() }}">{{ $funcion->label() }}</span>
@@ -44,11 +44,11 @@
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400">Teléfono</dt>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300">Teléfono</dt>
                         <dd class="mt-1 text-sm text-gray-800 dark:text-paper-100">{{ $personal->telefono ?: '—' }}</dd>
                     </div>
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-400">Enlaces</dt>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300">Enlaces</dt>
                         <dd class="mt-1 text-sm text-gray-800 dark:text-paper-100">
                             {{-- Que no tenga ninguno es lo normal, no una carencia. --}}
                             @if ($personal->user)
@@ -72,12 +72,12 @@
             {{-- Historial de salidas --}}
             <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl overflow-hidden dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
                 <div class="border-b border-gray-200 px-5 py-3 dark:border-ink-600">
-                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-200">Salidas ({{ $personal->participaciones->count() }})</h3>
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-100">Salidas ({{ $personal->participaciones->count() }})</h3>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
-                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-400 dark:border-ink-600">
+                            <tr class="text-left text-xs uppercase tracking-wide text-gray-500 bg-gray-50 border-b border-gray-200 dark:bg-ink-700 dark:text-paper-300 dark:border-ink-600">
                                 <th class="py-2.5 px-4">Salida</th>
                                 <th class="py-2.5 px-4">Papel</th>
                                 <th class="py-2.5 px-4 text-center">Estado</th>
