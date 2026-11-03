@@ -1,6 +1,6 @@
 # Guía de pantallas
 
-**Estado:** propuesta, espera la aprobación de Melqui. Revisión hecha el 03/11/2026 sobre `master` en `8e3a908`.
+**Estado:** aprobada por Melqui el 03/11/2026, con las tres decisiones de la sección 4. Revisión hecha el 03/11/2026 sobre `master` en `8e3a908`.
 
 Para Melqui el sistema es una sola aplicación, pero cada módulo se hizo en otro momento y quedó a su manera. Esta guía fija **una sola forma** para cada cosa que se repite en las pantallas. Cada forma se tomó de la mejor versión que **ya existe** en el sistema; no se inventó nada de cero.
 
@@ -45,7 +45,7 @@ Números contados en las 337 vistas de `resources/views`.
 ### Idioma y trato
 
 - Todo en castellano, también lo que escribe Laravel: paginación, errores de validación, nombres de meses y días.
-- Trato de **vos** (Gastos, Planilla y Rutas, que son las pantallas más nuevas y como habla la oficina): «Revisá», «Elegí», «Guardá». *Decisión de Melqui, ver la sección 4.*
+- Trato de **vos** (Gastos, Planilla y Rutas, que son las pantallas más nuevas y como habla la oficina): «Revisá», «Elegí», «Guardá». *Decidido por Melqui.*
 - Frases cortas que digan qué pasó y qué hacer. Sin palabras técnicas («dry-run», «mock», «payload») en lo que ve la oficina.
 
 ### Encabezado de la pantalla
@@ -196,8 +196,10 @@ Cada PR de pantallas incluye: las pruebas que ya existen pasando, una revisión 
 
 ---
 
-## 4. Decisiones para Melqui
+## 4. Decisiones de Melqui
 
-1. **¿Vos o usted?** La guía propone **vos**, como Gastos, Planilla y Rutas. Si preferís usted, se cambia solo esa línea.
-2. **¿Guardar a la derecha?** La guía propone Cancelar a la izquierda y Guardar a la derecha (como Planta y los diálogos). Hoy la mayoría de las pantallas de Facturación lo tienen al revés; con esta guía cambia de lugar ahí.
-3. **¿Verde para «Terminar» en Rutas?** La guía lo deja solo para cerrar algo bien hecho en el celular. Si preferís todo índigo, se quita esa fila.
+Tomadas el 03/11/2026:
+
+1. **Trato de vos**, como Gastos, Planilla y Rutas.
+2. **Cancelar a la izquierda y Guardar a la derecha**, como Planta y los diálogos. En Facturación cambia de lugar.
+3. **Verde solo para «Terminar» en Rutas** («Entregado», «Terminar día», «Terminar ruta»). Todo lo demás, índigo.
