@@ -24,10 +24,8 @@
 
             {{-- Lo que hay que entender de esta pantalla, y es lo que evita el error caro. --}}
             <p class="rounded-md border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
-                Un anticipo es <strong>dinero que ya se le entregó a alguien</strong>. Se registra acá con su
-                importe, y cada vez que una planilla lo descuenta se aplica contra él. Así
-                <strong>no se puede recuperar dos veces</strong>: escribir «anticipo» en un descuento no bastaría,
-                porque el mes siguiente alguien lo escribiría otra vez y nada lo impediría.
+                Un anticipo es dinero que ya se le entregó a alguien. Registralo acá y descontalo en la quincena:
+                el sistema lleva cuánto falta y no deja descontarlo dos veces.
             </p>
 
             @if ($anticipos->isNotEmpty())

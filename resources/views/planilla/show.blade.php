@@ -95,7 +95,6 @@
                         </dl>
                         <p class="mt-2 text-xs text-gray-500">
                             {{ $avance['personas_pagadas'] }} de {{ $avance['personas'] }} personas cobradas.
-                            Lo de terceros <strong>no se suma</strong> a lo de empleados: son dos partes del mismo total de ingresos.
                         </p>
                     @endif
                 </section>
@@ -141,15 +140,7 @@
                         </dl>
 
                         <div class="rounded border border-gray-100 bg-gray-50 p-3 text-xs leading-relaxed text-gray-600">
-                            <p>
-                                Los <strong>anticipos</strong> se cuentan acá aunque su pago sea anterior y viva en su
-                                propio gasto: para saber cuánto costó este período, ese dinero salió por este período.
-                            </p>
-                            <p class="mt-2">
-                                No sumés esta cifra con el <strong>total de ingresos</strong> del resumen: el total de
-                                ingresos <em>ya contiene</em> los anticipos. Son la misma plata mirada desde dos lados,
-                                no dos plata distintas.
-                            </p>
+                            <p>Incluye los anticipos que se descontaron en esta quincena.</p>
                             @if ($cuadre && $cuadre['cuadra'])
                                 <p class="mt-2 font-medium text-emerald-700">
                                     Cuadra: {{ Dinero::mostrar($cuadre['desembolsado']) }} desembolsados
@@ -174,22 +165,21 @@
                     <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
                         <h2 class="text-sm font-semibold text-indigo-900">Confirmar la planilla</h2>
                         <p class="mt-1 text-sm text-indigo-900">
-                            Al confirmar se crean las obligaciones: una con cada persona por lo que se le paga, y una
-                            con cada tercero por lo que se le entrega. <strong>Se crean una sola vez</strong>, y a
-                            partir de ahí la planilla deja de editarse.
+                            Al confirmar queda lo que se le debe a cada persona y ya no se puede editar.
+                            Revisá los montos antes.
                         </p>
 
                         @if ($avisos !== [])
                             <div class="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
                                 <p class="font-medium">Para revisar antes de confirmar:</p>
-                                <ul class="mt-1 list-inside list-disc">@foreach ($avisos as $a)<li>{{ $a }}</li>@endforeach</ul>
+                                @include('planilla.partials.avisos-por-persona', ['lista' => $avisos])
                             </div>
                         @endif
 
                         @if ($reparos !== [])
                             <div class="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                                 <p class="font-medium">Antes hay que resolver:</p>
-                                <ul class="mt-1 list-inside list-disc">@foreach ($reparos as $r)<li>{{ $r }}</li>@endforeach</ul>
+                                @include('planilla.partials.avisos-por-persona', ['lista' => $reparos])
                             </div>
                         @else
                             <form method="POST" action="{{ route('planilla.confirmar', $planilla) }}" class="mt-3">
@@ -250,10 +240,6 @@
                             </li>
                         @endforeach
                     </ul>
-                    <p class="border-t border-gray-100 px-4 py-2 text-xs text-gray-500">
-                        Una obligación por tercero, sumando lo que se le descontó a todos. Solo existen desde que la
-                        planilla se confirmó.
-                    </p>
                 </section>
             @endif
 
@@ -304,10 +290,6 @@
                             <button type="submit" class="{{ $boton }} mt-2 w-full">Adjuntar</button>
                         </div>
                     </form>
-                    <p class="mt-2 text-xs text-gray-500">
-                        Se guardan en disco privado y solo se entregan por esta pantalla: un recibo de sueldo no puede
-                        quedar detrás de una dirección adivinable.
-                    </p>
                 </section>
             @endcan
 
@@ -317,10 +299,8 @@
                     <section class="rounded-lg border border-red-200 bg-white p-4">
                         <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Anular la planilla</h2>
                         <p class="mt-1 text-xs text-gray-600">
-                            Extingue las obligaciones con un ajuste interno por lo que queda —queda el rastro, no se emite
-                            ninguna nota de crédito— y libera los anticipos
-                            que esta planilla iba a recuperar. <strong>No borra nada.</strong> Si ya hay pagos
-                            registrados, primero hay que revertirlos uno por uno.
+                            Deja sin efecto lo que se debía y libera los anticipos. No borra nada. Si ya hay pagos,
+                            primero hay que revertirlos.
                         </p>
                         <form method="POST" action="{{ route('planilla.anular', $planilla) }}" class="mt-2 flex flex-wrap items-end gap-2">
                             @csrf
