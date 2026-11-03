@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Cambiado
 
+- Planilla: pantallas más simples, con menos explicaciones, los avisos de cada persona en un solo renglón y sin elegir moneda cuando hay una sola.
 - Personal: se quita la pantalla «Formatos», una muestra con datos inventados. La hoja de firmas y el recibo reales siguen saliendo desde cada quincena.
 
 ### Corregido

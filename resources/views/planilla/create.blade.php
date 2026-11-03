@@ -57,14 +57,19 @@
                             @endforeach
                         </select>
                     </div>
-                    <div>
-                        <label for="moneda" class="block text-sm font-medium text-gray-700">Moneda</label>
-                        <select id="moneda" name="moneda" class="{{ $c }}">
-                            @foreach (config('gastos.monedas') as $moneda)
-                                <option value="{{ $moneda }}">{{ $moneda }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    {{-- Con una sola moneda no hay nada que elegir. --}}
+                    @if (count(config('gastos.monedas')) > 1)
+                        <div>
+                            <label for="moneda" class="block text-sm font-medium text-gray-700">Moneda</label>
+                            <select id="moneda" name="moneda" class="{{ $c }}">
+                                @foreach (config('gastos.monedas') as $moneda)
+                                    <option value="{{ $moneda }}">{{ $moneda }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @else
+                        <input type="hidden" name="moneda" value="{{ config('gastos.monedas')[0] }}">
+                    @endif
                     <div>
                         <label for="fecha_pago" class="block text-sm font-medium text-gray-700">Fecha de pago</label>
                         <input id="fecha_pago" name="fecha_pago" type="date" value="{{ old('fecha_pago') }}" class="{{ $c }}">

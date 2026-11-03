@@ -219,14 +219,14 @@
                 @if ($avisos !== [])
                     <div class="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
                         <p class="font-medium">Para revisar antes de confirmar:</p>
-                        <ul class="mt-1 list-inside list-disc">@foreach ($avisos as $a)<li>{{ $a }}</li>@endforeach</ul>
+                        @include('planilla.partials.avisos-por-persona', ['lista' => $avisos])
                     </div>
                 @endif
 
                 @if ($reparos !== [])
                     <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
                         <p class="font-medium">Antes de confirmar hay que resolver:</p>
-                        <ul class="mt-1 list-inside list-disc">@foreach ($reparos as $r)<li>{{ $r }}</li>@endforeach</ul>
+                        @include('planilla.partials.avisos-por-persona', ['lista' => $reparos])
                     </div>
                 @endif
 
@@ -561,8 +561,8 @@
 
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-gray-500">
-                        ISSS, AFP y renta son una propuesta que se puede corregir. El sistema <strong>no calcula</strong>
-                        aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
+                        ISSS, AFP y renta son una propuesta que se puede corregir. Para confirmar e imprimir,
+                        guardá y entrá en «Ver e imprimir».
                     </p>
                     <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto">
                         Guardar borrador
@@ -575,11 +575,6 @@
                     <option value="{{ $s }}"></option>
                 @endforeach
             </datalist>
-
-            <p class="text-xs text-gray-500">
-                Confirmar la planilla —que es lo que crea las obligaciones— llega en el siguiente paso, junto
-                con los pagos, los lotes y los documentos firmados.
-            </p>
         </div>
     </div>
 </x-app-layout>
