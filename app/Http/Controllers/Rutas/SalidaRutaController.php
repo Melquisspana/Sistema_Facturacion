@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\MotivoNoEntrega;
-use App\Enums\ResultadoEntrega;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\SalidaRutaRequest;
 use App\Models\PersonalRuta;
@@ -25,14 +24,11 @@ use Illuminate\View\View;
  */
 class SalidaRutaController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, EntregasCcf $servicio): View
     {
         $salidas = SalidaRuta::query()
-            ->with(['ruta:id,nombre', 'personal:id,nombre'])
-            ->withCount([
-                'entregas',
-                'entregas as entregados_count' => fn ($q) => $q->where('resultado', ResultadoEntrega::Entregado->value),
-            ])
+            ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra'])
+            ->withCount('entregas')
             ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
             ->when($request->filled('ruta_id'), fn ($q) => $q->where('ruta_id', $request->integer('ruta_id')))
             // Lo más reciente primero: el listado se abre para ver qué está pasando
@@ -41,6 +37,11 @@ class SalidaRutaController extends Controller
             ->orderByDesc('id')
             ->paginate(25)
             ->withQueryString();
+
+        // «CCF entregados» como en el detalle: con albarán de entrega cuenta aunque nadie
+        // lo haya marcado todavía.
+        $resoluciones = $servicio->resolucionesAlbaran($salidas->getCollection()->flatMap->entregas);
+        $salidas->getCollection()->each(fn (SalidaRuta $s) => $s->entregados_count = $servicio->resumen($s->entregas, $resoluciones)['entregados']);
 
         return view('rutas.salidas.index', [
             'salidas' => $salidas,
@@ -93,12 +94,14 @@ class SalidaRutaController extends Controller
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
 
-        // Quién puede figurar como «entregó»: los que van, activos. Cada CCF lleva un botón
-        // por persona.
+        // Quién puede figurar como «entregó»: los que van, activos. Se preselecciona al
+        // responsable o, si va una sola persona, a ella.
         $participantes = $salida->participantes
             ->filter(fn ($p) => $p->personal?->activo)
             ->sortBy(fn ($p) => $p->personal->nombre)
             ->values();
+        $preseleccion = $salida->participantes->first(fn ($p) => $p->esResponsable())?->rutas_personal_id
+            ?? ($participantes->count() === 1 ? $participantes->first()->rutas_personal_id : null);
 
         return view('rutas.salidas.show', [
             'salida' => $salida,
@@ -109,6 +112,7 @@ class SalidaRutaController extends Controller
             'noVigentes' => $servicio->noVigentes($entregas),
             'resumen' => $servicio->resumen($entregas, $resoluciones),
             'participantes' => $participantes,
+            'preseleccion' => $preseleccion,
             'motivos' => MotivoNoEntrega::opciones(),
             'abierta' => ! $salida->estado->esTerminal(),
             'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,
