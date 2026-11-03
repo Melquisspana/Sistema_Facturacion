@@ -16,6 +16,14 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.02.3] - 2026-11-02
+
+Más espacio de firma en el contrato (#182), sin migraciones.
+
+### Cambiado
+
+- Planilla: el contrato de trabajo deja más espacio para las firmas, las huellas y la firma a ruego, y sigue saliendo en 2 páginas.
+
 ## [2026.11.02.2] - 2026-11-02
 
 Planilla y área Personal (#173, #175, #177 y #180), con 8 migraciones y el módulo de Gastos apagado.
