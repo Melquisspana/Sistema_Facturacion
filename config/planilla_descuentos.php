@@ -61,6 +61,51 @@ return [
                     ['desde' => '1019.06', 'porcentaje' => '30.00', 'exceso' => '1019.05', 'cuota' => '144.28'],
                 ],
             ],
+
+            // Recálculo de renta en el último pago de junio y de diciembre, por número de
+            // mes. Fuente: Decreto 10, Art. 1 lit. f. Se aplica la tabla a lo gravado
+            // acumulado en el año hasta ese pago (enero a junio, o el año entero), se resta
+            // la renta ya retenida y la diferencia es lo que se retiene. «Si la diferencia
+            // es negativa no se retendrá valor alguno»: queda en cero, sin devolución.
+            //
+            // El mismo literal pide considerar en el recálculo, en el Tramo II de las dos
+            // tablas, la deducción fija de US$1,600 (LISR Art. 29 num. 7) para quien gana
+            // US$9,100 o menos al año. En diciembre el año ya está completo y se resta. En
+            // junio el decreto no dice cuánto se resta de un semestre ni cómo saber el
+            // monto anual: se avisa para revisarla con la contadora.
+            'recalculo' => [
+                6 => [
+                    'tramos' => [
+                        // Hasta 3,300.00: sin retención.
+                        ['desde' => '0.00', 'porcentaje' => '0.00', 'exceso' => '0.00', 'cuota' => '0.00'],
+                        // 3,300.01 a 5,371.44.
+                        ['desde' => '3300.01', 'porcentaje' => '10.00', 'exceso' => '3300.00', 'cuota' => '106.20',
+                            'aviso' => 'Revisá con la contadora la deducción de $1,600 en el recálculo de junio (Decreto 10, art. 1 lit. f).'],
+                        // 5,371.45 a 12,228.60.
+                        ['desde' => '5371.45', 'porcentaje' => '20.00', 'exceso' => '5371.44', 'cuota' => '360.00'],
+                        // 12,228.61 en adelante.
+                        ['desde' => '12228.61', 'porcentaje' => '30.00', 'exceso' => '12228.60', 'cuota' => '1731.42'],
+                    ],
+                ],
+                12 => [
+                    'tramos' => [
+                        // Hasta 6,600.00: sin retención.
+                        ['desde' => '0.00', 'porcentaje' => '0.00', 'exceso' => '0.00', 'cuota' => '0.00'],
+                        // 6,600.01 a 10,742.86.
+                        ['desde' => '6600.01', 'porcentaje' => '10.00', 'exceso' => '6600.00', 'cuota' => '212.12'],
+                        // 10,742.87 a 24,457.14.
+                        ['desde' => '10742.87', 'porcentaje' => '20.00', 'exceso' => '10742.86', 'cuota' => '720.00'],
+                        // 24,457.15 en adelante.
+                        ['desde' => '24457.15', 'porcentaje' => '30.00', 'exceso' => '24457.14', 'cuota' => '3462.86'],
+                    ],
+                    // Se resta de lo gravado del año cuando no pasa de `hasta`. Con ese
+                    // límite la persona nunca está más allá del Tramo II. Que el límite se
+                    // mida sobre lo gravado (y no sobre el sueldo bruto) está por confirmar
+                    // con la contadora: el decreto dice «monto anual» sin precisar.
+                    'deduccion' => ['importe' => '1600.00', 'hasta' => '9100.00',
+                        'aviso' => 'Se restó la deducción de $1,600 porque lo gravado del año no pasa de $9,100 (Decreto 10, art. 1 lit. f).'],
+                ],
+            ],
         ],
     ],
 
