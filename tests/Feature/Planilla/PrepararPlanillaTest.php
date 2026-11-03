@@ -217,6 +217,19 @@ class PrepararPlanillaTest extends TestCase
         $this->actingAs($u)->get(route('planilla.preparar', $planilla))->assertOk()->assertSee($ficha, false);
     }
 
+    public function test_los_avisos_de_una_misma_persona_salen_en_un_solo_renglon(): void
+    {
+        $html = view('planilla.partials.avisos-por-persona', ['lista' => [
+            'Ana Mendoza: falta el importe de ISSS.',
+            'Ana Mendoza: falta el importe de AFP.',
+            'Aviso sin persona.',
+        ]])->render();
+
+        $this->assertStringContainsString('<strong>Ana Mendoza</strong>: falta el importe de ISSS · falta el importe de AFP.', $html);
+        $this->assertSame(1, substr_count($html, 'Ana Mendoza'));
+        $this->assertStringContainsString('Aviso sin persona.', $html);
+    }
+
     public function test_una_extraordinaria_puede_convivir_con_la_regular_del_mismo_periodo(): void
     {
         $u = $this->gestor();

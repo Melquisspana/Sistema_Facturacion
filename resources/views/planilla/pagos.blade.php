@@ -36,8 +36,6 @@
             @endif
 
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-                Cada pago de acá es un <strong>pago normal de Gastos</strong> contra la obligación de esa persona.
-                No hay una segunda contabilidad: el saldo que ves es el de su gasto.
                 Pendiente total: <strong class="tabular-nums">{{ $planilla->moneda }} {{ Dinero::mostrar($avance['empleados_pendiente'] + $avance['terceros_pendiente']) }}</strong>.
             </p>
 
