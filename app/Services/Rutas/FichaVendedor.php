@@ -11,8 +11,9 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
- * Un usuario con rol Vendedor tiene su ficha en Rutas, enlazada, sin cargarlo en otro lado
- * (el usuario pidió registrar al vendedor en UN solo lugar, 29/10/2026).
+ * Un usuario con rol Vendedor o Jefe de vendedores tiene su ficha en Rutas, enlazada, sin
+ * cargarlo en otro lado (el usuario pidió registrar al vendedor en UN solo lugar,
+ * 29/10/2026). El jefe también sale a ruta a veces (plan del tablero, decisión 1).
  *
  *  - Si ya hay una ficha enlazada a ese usuario, se usa.
  *  - Si la persona está en Personal y ya tiene ficha de Rutas, se usa esa.
@@ -23,14 +24,17 @@ use Illuminate\Support\Str;
  *
  * La persona de Personal queda enlazada a la ficha que se usó: no hay una segunda.
  *
- * La ficha queda activa mientras el usuario esté activo y sea Vendedor; si deja de serlo, se
+ * La ficha queda activa mientras el usuario esté activo y tenga uno de esos roles; si no, se
  * desactiva y se conserva (el historial de salidas no se pierde). Nunca se borra.
  */
 class FichaVendedor
 {
+    /** Roles que salen a ruta y por eso tienen ficha de campo. */
+    public const ROLES = [RolSistema::Vendedor->value, RolSistema::JefeVendedores->value];
+
     public function sincronizar(User $usuario): ?PersonalRuta
     {
-        $esVendedor = $usuario->hasRole(RolSistema::Vendedor->value);
+        $esVendedor = $usuario->hasAnyRole(self::ROLES);
         $ficha = PersonalRuta::where('user_id', $usuario->id)->first();
 
         if (! $esVendedor) {

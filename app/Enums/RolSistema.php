@@ -14,6 +14,9 @@ enum RolSistema: string
     case Facturacion = 'facturacion';
     case Contabilidad = 'contabilidad';
     case Vendedor = 'vendedor';
+    // Ve todas las rutas del país y sabe cuándo toca ir a cada sala; a veces también sale.
+    // Nada de Facturación, Cobros ni Planilla (docs/PLAN_TABLERO_RUTAS.md, sección 3).
+    case JefeVendedores = 'jefe_vendedores';
     /*
      * Producción (área «planta»). El ROL conserva el nombre del negocio
      * ('produccion') porque es la cadena que se elige en el formulario de
@@ -31,6 +34,7 @@ enum RolSistema: string
             self::Facturacion => 'Facturación',
             self::Contabilidad => 'Contabilidad',
             self::Vendedor => 'Vendedor',
+            self::JefeVendedores => 'Jefe de vendedores',
             self::Produccion => 'Producción',
         };
     }

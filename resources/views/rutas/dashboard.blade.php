@@ -2,7 +2,10 @@
     <x-slot name="header">
         <div class="flex items-center justify-between gap-3">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Rutas</h2>
-            <div class="flex items-center gap-4 text-sm">
+            <div class="flex flex-wrap items-center gap-4 text-sm">
+                @if ($vaEnUnaSalida)
+                    <a href="{{ route('rutas.mi-salida.index') }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700">Mi salida</a>
+                @endif
                 <a href="{{ route('rutas.salidas.index') }}" class="text-gray-500 hover:underline dark:text-paper-300">Salidas anteriores</a>
                 <a href="{{ route('rutas.rutas.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Configurar rutas</a>
             </div>
