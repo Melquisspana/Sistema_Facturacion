@@ -51,13 +51,16 @@
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300">Enlaces</dt>
                         <dd class="mt-1 text-sm text-gray-800 dark:text-paper-100">
                             {{-- Que no tenga ninguno es lo normal, no una carencia. --}}
+                            @if ($enPersonal)
+                                <a href="{{ route('personal.empleados.show', 'p'.$enPersonal->id) }}" class="block text-indigo-600 hover:underline dark:text-indigo-400">Ficha en Personal</a>
+                            @endif
                             @if ($personal->user)
                                 <span class="block">Usuario: {{ $personal->user->name }}</span>
                             @endif
                             @if ($personal->empleado)
-                                <span class="block">Planilla: {{ $personal->empleado->nombreCompleto() }}</span>
+                                <span class="block">Asistencia: {{ $personal->empleado->nombreCompleto() }}</span>
                             @endif
-                            @if (! $personal->user && ! $personal->empleado)
+                            @if (! $personal->user && ! $personal->empleado && ! $enPersonal)
                                 <span class="text-gray-400 dark:text-paper-500">Sin enlazar</span>
                             @endif
                         </dd>

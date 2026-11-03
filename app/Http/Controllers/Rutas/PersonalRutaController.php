@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -47,16 +48,33 @@ class PersonalRutaController extends Controller
             'personal' => $personal,
             'filtros' => $request->only(['q', 'estado', 'funcion']),
             'funciones' => FuncionPersonalRuta::cases(),
+            // De quién es cada ficha en Personal, para llevar a ella.
+            'fichas' => PlanillaEmpleado::enUso()
+                ? PlanillaEmpleado::whereIn('personal_ruta_id', $personal->pluck('id'))->pluck('id', 'personal_ruta_id')
+                : collect(),
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
+        // Con Personal, la persona ya está (o se carga) ahí: no se la vuelve a escribir.
+        if (PlanillaEmpleado::enUso()) {
+            return view('personal.desde-personal', [
+                'titulo' => 'Nueva persona de campo', 'modulo' => 'Sale a rutas', 'volver' => route('rutas.personal.index'),
+                'personas' => $request->user()->can('planilla.ver')
+                    ? PlanillaEmpleado::whereNull('personal_ruta_id')->where('activo', true)->orderBy('nombre')->get(['id', 'nombre'])
+                    : collect(),
+            ]);
+        }
+
         return view('rutas.personal.create', $this->datosFormulario());
     }
 
     public function store(Request $request): RedirectResponse
     {
+        if (PlanillaEmpleado::enUso()) {
+            throw ValidationException::withMessages(['nombre' => 'Las personas se dan de alta en Personal; desde su ficha se las pone a salir a rutas.']);
+        }
         $datos = $this->validar($request);
 
         $personal = DB::transaction(function () use ($datos) {
@@ -88,7 +106,7 @@ class PersonalRutaController extends Controller
             'participaciones.salida.ruta:id,nombre',
         ]);
 
-        return view('rutas.personal.show', ['personal' => $personal]);
+        return view('rutas.personal.show', ['personal' => $personal, 'enPersonal' => $this->fichaDePersonal($personal)]);
     }
 
     public function edit(PersonalRuta $personal): View
@@ -106,7 +124,13 @@ class PersonalRutaController extends Controller
         $datos = $this->validar($request, $personal);
         // Quien está en Personal tiene un solo nombre, que se edita en su ficha y llega
         // solo acá: desde Rutas no se cambia, para que no vuelva a haber dos.
-        $nombre = $this->fichaDePersonal($personal) !== null ? $personal->nombre : $datos['nombre'];
+        // Lo mismo con sus enlaces: la ficha dice quién es su usuario y su asistencia.
+        $enPersonal = $this->fichaDePersonal($personal) !== null;
+        $nombre = $enPersonal ? $personal->nombre : $datos['nombre'];
+        if ($enPersonal) {
+            $datos['user_id'] = $personal->user_id;
+            $datos['asistencia_empleado_id'] = $personal->asistencia_empleado_id;
+        }
 
         DB::transaction(function () use ($personal, $datos, $nombre) {
             $personal->update([

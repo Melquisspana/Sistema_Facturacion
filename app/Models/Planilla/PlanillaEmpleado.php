@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Una persona en planilla.
@@ -26,6 +27,16 @@ class PlanillaEmpleado extends Model
     protected $table = 'planilla_empleados';
 
     protected $guarded = ['id'];
+
+    /**
+     * ¿Las personas se cargan en Personal? Con Planilla encendida e instalada, sí: cada
+     * persona se da de alta una sola vez ahí, y Usuarios, Asistencia y Rutas la eligen o
+     * llevan a su ficha en vez de volver a escribirla.
+     */
+    public static function enUso(): bool
+    {
+        return (bool) config('planilla.enabled') && Schema::hasTable('planilla_empleados');
+    }
 
     protected function casts(): array
     {

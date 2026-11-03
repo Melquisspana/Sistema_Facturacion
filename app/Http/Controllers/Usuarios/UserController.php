@@ -224,7 +224,7 @@ class UserController extends Controller
     /** Personal enlaza cuentas solo con Planilla encendida e instalada. */
     private function conPersonal(): bool
     {
-        return (bool) config('planilla.enabled') && Schema::hasTable('planilla_empleados');
+        return PlanillaEmpleado::enUso();
     }
 
     /** La persona de esta cuenta. Sin la tabla (Planilla sin instalar) no hay ninguna. */

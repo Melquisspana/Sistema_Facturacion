@@ -88,13 +88,16 @@
                                     <td class="py-3 px-4 text-xs text-gray-500 dark:text-paper-300">
                                         {{-- Los enlaces son punteros de identidad, no requisitos: casi nadie de
                                              campo tiene login, y eso es normal. --}}
+                                        @if ($fichas->has($persona->id))
+                                            <a href="{{ route('personal.empleados.show', 'p'.$fichas[$persona->id]) }}" class="block text-indigo-600 hover:underline dark:text-indigo-400">Ficha en Personal</a>
+                                        @endif
                                         @if ($persona->user)
                                             <span class="block">Usuario: {{ $persona->user->name }}</span>
                                         @endif
                                         @if ($persona->asistencia_empleado_id)
                                             <span class="block">Enlazado a planilla</span>
                                         @endif
-                                        @if (! $persona->user && ! $persona->asistencia_empleado_id)
+                                        @if (! $persona->user && ! $persona->asistencia_empleado_id && ! $fichas->has($persona->id))
                                             <span class="text-gray-400 dark:text-paper-500">—</span>
                                         @endif
                                     </td>

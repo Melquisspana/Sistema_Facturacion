@@ -15,8 +15,11 @@
         <div class="flex items-center justify-between">
             <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Empleados</h2>
             @if ($altaUnica)
-                <a href="{{ route('planilla.empleados.create') }}"
-                   class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo empleado</a>
+                <div class="flex items-center gap-3">
+                    <a href="{{ route('personal.repetidos') }}" class="text-sm text-gray-600 hover:underline dark:text-paper-300">Posibles repetidos</a>
+                    <a href="{{ route('planilla.empleados.create') }}"
+                       class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo empleado</a>
+                </div>
             @elseif ($altaAsistencia)
                 <a href="{{ route('asistencia.empleados.create') }}"
                    class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Nuevo empleado</a>
