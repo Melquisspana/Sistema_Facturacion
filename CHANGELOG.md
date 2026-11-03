@@ -10,6 +10,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Cambiado
 
+- Personal: la ficha de cada persona tiene un solo «Editar datos» (nombre, documento, cargo e ingreso), que llega solo a Asistencia y Rutas, y «Agregar acceso o módulos» para que, después del alta, marque con huella, salga a rutas o entre al sistema con un rol. Vendedor sale a rutas.
 - Personal: un solo nombre por persona. Corregirlo en Asistencia, o en Planilla para quien no marca, lo cambia también en Planilla y Rutas; las quincenas confirmadas conservan el nombre con que se pagaron. Abrir quincena viene con pago quincenal y los otros tipos quedan a un clic.
 - Planilla: pantallas más simples, con menos explicaciones, los avisos de cada persona en un solo renglón y sin elegir moneda cuando hay una sola.
 - Personal: textos más cortos en Jornadas, Marcaciones y Hoy, y el contrato vuelve a la ficha de la persona.
