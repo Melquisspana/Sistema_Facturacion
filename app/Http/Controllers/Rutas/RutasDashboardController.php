@@ -6,8 +6,11 @@ use App\Enums\EstadoSalidaRuta;
 use App\Http\Controllers\Controller;
 use App\Models\ClienteSucursal;
 use App\Models\PersonalRuta;
+use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
+use App\Models\SalidaRutaParticipante;
+use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
@@ -33,6 +36,9 @@ class RutasDashboardController extends Controller
     private const VER = ['atrasadas', 'semana', 'todas'];
 
     private const DIAS_SEMANA = 7;
+
+    /** «Sus rutas»: no hay rutas fijas por vendedor; se muestran a las que fue en estos días. */
+    private const DIAS_RUTAS_VENDEDOR = 90;
 
     public function index(Request $request, RitmoRutas $ritmo, EntregasCcf $entregas): View
     {
@@ -75,6 +81,8 @@ class RutasDashboardController extends Controller
         $lista = $this->filtrar($salas, $ver, $rutaId, $buscar);
         $pagina = $this->paginar($lista, $request);
 
+        $vendedores = PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre', 'telefono']);
+
         return view('rutas.dashboard', [
             'resumen' => [
                 'rutasAtrasadas' => $rutas->where('estado', RitmoRutas::ATRASADA)->count(),
@@ -100,7 +108,8 @@ class RutasDashboardController extends Controller
                 'semana' => $this->filtrar($salas, 'semana', $rutaId, $buscar)->count(),
                 'todas' => $this->filtrar($salas, 'todas', $rutaId, $buscar)->count(),
             ],
-            'vendedores' => PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre']),
+            'vendedores' => $vendedores,
+            'tarjetasVendedores' => $this->tarjetasVendedores($vendedores, $usuario, $hoy),
             'salasSinRuta' => ClienteSucursal::whereNull('ruta_id')->where('activo', true)->count(),
             'vaEnUnaSalida' => $vaEnUnaSalida,
         ]);
@@ -124,6 +133,56 @@ class RutasDashboardController extends Controller
             'faltan' => $ritmo->dias !== null ? $ritmo->dias - $dias : null,
             'dejoDeComprar' => $ritmo->dejoDeComprar($hoy),
         ];
+    }
+
+    /**
+     * La sección Vendedores: una tarjeta por persona activa de Rutas (el jefe incluido),
+     * con su salida de ahora o la última, las rutas a las que fue en los últimos 90 días
+     * (la más frecuente primero) y a qué ficha lleva «Ver ficha».
+     *
+     * «Ver ficha» lleva a la ficha de Personal solo a quien puede abrirla
+     * ({@see PersonalRuta::seGestionaEnPersonal()}); a los demás, como el jefe, a la ficha de
+     * campo de Rutas. Para ellos ni se consulta Planilla.
+     *
+     * @param  Collection<int, PersonalRuta>  $personas
+     * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, rutas: array<int, string>, ficha: string}>
+     */
+    private function tarjetasVendedores(Collection $personas, User $usuario, CarbonImmutable $hoy): Collection
+    {
+        if ($personas->isEmpty()) {
+            return collect();
+        }
+
+        $desde = $hoy->subDays(self::DIAS_RUTAS_VENDEDOR)->toDateString();
+        $participaciones = SalidaRutaParticipante::query()
+            ->whereIn('rutas_personal_id', $personas->pluck('id'))
+            ->whereHas('salida', fn ($q) => $q->where(fn ($q) => $q->where('estado', EstadoSalidaRuta::EnCurso->value)
+                ->orWhere(fn ($q) => $q->where('estado', EstadoSalidaRuta::Finalizada->value)->whereDate('fecha_inicio', '>=', $desde))))
+            ->with('salida.ruta:id,nombre')
+            ->get()
+            ->groupBy('rutas_personal_id');
+
+        $enPersonal = PersonalRuta::seGestionaEnPersonal($usuario)
+            ? PlanillaEmpleado::whereIn('personal_ruta_id', $personas->pluck('id'))->pluck('id', 'personal_ruta_id')
+            : collect();
+
+        return $personas->map(function (PersonalRuta $persona) use ($participaciones, $enPersonal) {
+            $salidas = $participaciones->get($persona->id, collect())->pluck('salida')->sortByDesc(fn (SalidaRuta $s) => [$s->fecha_inicio, $s->id]);
+
+            return [
+                'persona' => $persona,
+                'ahora' => $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::EnCurso),
+                'ultima' => $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::Finalizada),
+                'rutas' => $salidas->groupBy('ruta_id')
+                    ->sortBy([fn ($a, $b) => $b->count() <=> $a->count(), fn ($a, $b) => strcmp($a->first()->ruta->nombre, $b->first()->ruta->nombre)])
+                    ->map(fn (Collection $deRuta) => $deRuta->first()->ruta->nombre)
+                    ->values()
+                    ->all(),
+                'ficha' => isset($enPersonal[$persona->id])
+                    ? route('personal.empleados.show', 'p'.$enPersonal[$persona->id])
+                    : route('rutas.personal.show', $persona),
+            ];
+        });
     }
 
     private function tocaEstaSemana(array $sala): bool
