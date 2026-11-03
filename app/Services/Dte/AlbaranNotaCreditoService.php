@@ -52,11 +52,16 @@ class AlbaranNotaCreditoService
 
         $validado = Validator::make($datos, [
             'numero' => ['required', 'string', 'max:60'],
-            'fecha' => ['nullable', 'date'],
+            // El albarán de crédito ya existe cuando se hace su nota: una fecha futura es un
+            // día y mes invertidos o un mes mal escrito, y el portal del cliente rechaza la
+            // fila porque busca el albarán en ese período.
+            'fecha' => ['nullable', 'date', 'before_or_equal:today'],
             'total' => ['nullable', 'numeric', 'min:0'],
             'tipo_codigo' => ['nullable', 'string', 'max:10'],
             'sala_codigo' => ['nullable', 'string', 'max:10'],
-        ], [], [
+        ], [
+            'fecha.before_or_equal' => 'La fecha del albarán no puede ser posterior a hoy. Revise que el día y el mes no estén invertidos.',
+        ], [
             'numero' => 'número de albarán',
             'total' => 'total del albarán',
         ])->validate();
@@ -340,6 +345,9 @@ class AlbaranNotaCreditoService
         }
         if ($albaran->fecha === null) {
             $faltan[] = 'la fecha del albarán';
+        } elseif ($albaran->fecha->isAfter(today())) {
+            // Guardada antes de que existiera el freno de registrar().
+            $faltan[] = 'corregir la fecha del albarán ('.$albaran->fecha->format('d/m/Y').' es posterior a hoy)';
         }
         if ($albaran->total === null) {
             $faltan[] = 'el total del albarán';

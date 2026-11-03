@@ -18,6 +18,7 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Corregido
 
+- Notas de crédito: la fecha del albarán ya no puede ser posterior a hoy, ni al registrarla ni al generar la nota. Una fecha futura (día y mes invertidos o mes mal escrito) hacía que el portal de Calleja no encontrara el albarán en la carga masiva.
 - Planilla: la lista y la pantalla para editar una quincena llevan a su ficha, donde están Impresos y Confirmar. Antes un borrador no tenía cómo llegar a ellos.
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
