@@ -14,6 +14,10 @@ El historial anterior a este archivo está en el registro de git.
 - Planilla: botón «Imprimir» en la hoja para firmas y los recibos. Al imprimir sale solo la hoja, sin el menú ni la cabecera de la app.
 - Planilla: interruptor `PLANILLA_PAGOS_ENABLED` para apagar el seguimiento de pagos (pagos, desembolsos y estado de cobro) mientras Gastos no se use. Con el interruptor apagado, el impreso sale con el total a pagar de cada persona.
 
+### Cambiado
+
+- Rutas › Personal: el nombre de quien está en Personal ya no se cambia desde Rutas; se edita en su ficha de Personal, que lo pasa solo a Rutas. Quien solo está en Rutas lo sigue editando ahí.
+
 ### Corregido
 
 - Modo oscuro: los textos de Personal, Asistencia y otras 80 vistas usaban `paper-200` y `paper-400`, tonos que no existen en la paleta, y se veían con el color base. Pasan a `paper-100` y `paper-300`, como las vistas vecinas, y una prueba falla si vuelve a aparecer un tono de `paper` o `ink` que no esté en `tailwind.config.js` (#194).
