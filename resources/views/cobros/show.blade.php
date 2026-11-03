@@ -89,7 +89,7 @@
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-gray-500">Quedan</dt>
+                        <dt class="text-gray-500">Presentación (quedan)</dt>
                         <dd>
                             <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->presentacion_estado->clase() }}">{{ $documento->presentacion_estado->label() }}</span>
                             <span class="block mt-1 text-xs text-gray-500">{{ $documento->presentacion_estado->detalle() }}</span>
