@@ -36,31 +36,57 @@ class UserController extends Controller
             ->when($busqueda !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$busqueda}%")
                 ->orWhere('email', 'like', "%{$busqueda}%")))
+            ->when($this->conPersonal() && $request->boolean('sin_ficha'), fn ($q) => $q->whereDoesntHave('planillaEmpleado'))
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
 
         return view('usuarios.index', [
-            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda],
+            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha')],
+            'sinFicha' => $this->conPersonal() ? User::whereDoesntHave('planillaEmpleado')->count() : 0,
             'conPersonal' => $this->conPersonal(), 'verFichas' => $request->user()->can('planilla.ver'),
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         $this->authorize('create', User::class);
 
         return view('usuarios.form', [
             'usuario' => new User(['activo' => true]), 'roles' => RolSistema::opciones(), 'rolActual' => null,
             'ficha' => null, 'conPersonal' => $this->conPersonal(),
+            // Todo usuario es de una persona de Personal: se elige, no se escribe el nombre.
+            'personasSinUsuario' => $this->conPersonal()
+                ? PlanillaEmpleado::whereNull('user_id')->where('activo', true)->orderBy('nombre')->get(['id', 'nombre'])
+                : collect(),
+            'personaElegida' => $request->integer('persona') ?: null,
         ]);
     }
 
-    public function store(StoreUserRequest $request, CrearUsuario $crear): RedirectResponse
+    /**
+     * Con Personal, el usuario sale de la ficha de una persona: es lo mismo que «Agregar
+     * acceso» en la ficha, con el mismo servicio. Sin Planilla instalada (por ejemplo, al
+     * empezar) queda la cuenta suelta de siempre, para no dejar a nadie sin poder entrar.
+     */
+    public function store(Request $request, CrearUsuario $crear, AltaEmpleado $alta): RedirectResponse
     {
         $this->authorize('create', User::class);
 
-        $usuario = $crear->crear($request->validated());
+        if ($this->conPersonal()) {
+            $id = $request->validate([
+                'planilla_empleado_id' => ['required', 'integer', 'exists:planilla_empleados,id'],
+            ], ['planilla_empleado_id.required' => 'Elegí la persona.'])['planilla_empleado_id'];
+            $empleado = PlanillaEmpleado::findOrFail($id);
+            if ($empleado->user_id !== null) {
+                throw ValidationException::withMessages(['planilla_empleado_id' => 'Esa persona ya tiene usuario.']);
+            }
+            $usuario = $alta->completar($request->user(), $empleado, ['usa_sistema' => true] + $request->only([
+                'rol', 'email', 'password', 'password_confirmation',
+            ]))->usuario;
+        } else {
+            $request->merge(['activo' => $request->boolean('activo')]);
+            $usuario = $crear->crear($request->validate(StoreUserRequest::reglasUsuario()));
+        }
 
         return redirect()->route('usuarios.show', $usuario)->with('status', 'Usuario creado correctamente.');
     }

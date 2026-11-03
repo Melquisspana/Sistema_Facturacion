@@ -3,7 +3,7 @@
     <x-slot name="header"><h1 class="text-xl font-semibold leading-tight text-gray-800">Nuevo empleado</h1></x-slot>
     <div class="px-4 py-5 sm:px-6">
         <div class="mx-auto max-w-5xl space-y-3">
-            <p class="text-sm text-gray-600">Esta alta siempre incorpora a la persona en planilla. Para una persona externa sin planilla, como la contadora, usá <a href="{{ route('usuarios.create') }}" class="text-indigo-700 underline">Usuarios › Nuevo</a>.</p>
+            <p class="text-sm text-gray-600">Esta alta siempre incorpora a la persona en planilla. Cada persona se carga una sola vez, acá: su usuario, su asistencia y su ficha de Rutas salen de esta ficha.</p>
             @if ($errors->any())
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700" role="alert">
                     <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>

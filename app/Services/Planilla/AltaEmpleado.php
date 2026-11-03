@@ -142,7 +142,7 @@ class AltaEmpleado
                 unset($datos[$casilla]);
             }
         }
-        // El acceso puede ser un usuario que ya existe (creado en Usuarios › Nuevo) en vez
+        // El acceso puede ser un usuario que ya existe (creado antes en Usuarios) en vez
         // de uno nuevo. Solo cuenta si se pidió el acceso y la persona todavía no lo tiene.
         if (empty($datos['usa_sistema']) || blank($datos['user_id'] ?? null)) {
             unset($datos['user_id']);

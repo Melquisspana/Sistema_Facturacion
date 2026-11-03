@@ -263,10 +263,75 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         $this->assertSame('Ana María Ficticia', $cuenta->fresh()->name);
     }
 
-    public function test_nuevo_usuario_avisa_que_el_personal_va_por_personal(): void
+    public function test_usuarios_nuevo_elige_la_persona_y_el_nombre_sale_de_su_ficha(): void
     {
-        $this->actingAs($this->admin)->get(route('usuarios.create'))->assertOk()
-            ->assertSee('¿Es un empleado?')->assertSee(route('planilla.empleados.create'), false);
+        $p = $this->persona();
+        $conUsuario = $this->persona(['nombres' => 'Bea', 'dui' => 'FICTICIO-2']);
+        app(AltaEmpleado::class)->completar($this->admin, $conUsuario, ['usa_sistema' => true, 'user_id' => $this->cuenta('contabilidad')->id]);
+
+        $this->actingAs($this->admin)->get(route('usuarios.create', ['persona' => $p->id]))->assertOk()
+            ->assertSee('Ana Ficticia')->assertDontSee('Bea Ficticia')->assertDontSee('id="name"', false)
+            ->assertSee(route('planilla.empleados.create'), false);
+
+        $this->actingAs($this->admin)->post(route('usuarios.store'), [
+            'planilla_empleado_id' => $p->id, 'name' => 'Otro Nombre', 'rol' => 'vendedor', 'email' => 'ana@icloud.com',
+            'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026',
+        ])->assertSessionHasNoErrors();
+
+        $p = $p->fresh();
+        $usuario = User::where('email', 'ana@icloud.com')->sole();
+        $this->assertSame($usuario->id, $p->user_id);
+        $this->assertSame('Ana Ficticia', $usuario->name);
+        $this->assertTrue($usuario->activo);
+        // Vendedor: queda también en Rutas, enlazado, una sola vez.
+        $this->assertSame($usuario->id, $p->personalRuta->user_id);
+        $this->assertSame(1, PersonalRuta::count());
+    }
+
+    public function test_usuarios_nuevo_no_crea_cuentas_sueltas_ni_repite_usuario(): void
+    {
+        $p = $this->persona();
+        $usuarios = User::count();
+        $datos = ['rol' => 'contabilidad', 'email' => 'ana@icloud.com', 'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026'];
+
+        $this->actingAs($this->admin)->post(route('usuarios.store'), $datos + ['name' => 'Suelta', 'activo' => '1'])
+            ->assertSessionHasErrors('planilla_empleado_id');
+        $this->actingAs($this->admin)->post(route('usuarios.store'), array_replace($datos, ['password_confirmation' => 'otra']) + ['planilla_empleado_id' => $p->id])
+            ->assertSessionHasErrors('password');
+        $this->assertSame($usuarios, User::count());
+
+        $this->actingAs($this->admin)->post(route('usuarios.store'), $datos + ['planilla_empleado_id' => $p->id])->assertSessionHasNoErrors();
+        $this->actingAs($this->admin)->post(route('usuarios.store'), array_replace($datos, ['email' => 'otra@icloud.com']) + ['planilla_empleado_id' => $p->id])
+            ->assertSessionHasErrors('planilla_empleado_id');
+        $this->assertSame($usuarios + 1, User::count());
+    }
+
+    public function test_usuarios_nuevo_pide_poder_gestionar_personal(): void
+    {
+        $p = $this->persona();
+        $soloUsuarios = $this->usuario([PermisoSistema::UsuariosGestionar->value]);
+
+        $this->actingAs($soloUsuarios)->get(route('usuarios.create'))->assertOk()
+            ->assertSee('hace falta poder gestionar Personal');
+        $this->actingAs($soloUsuarios)->post(route('usuarios.store'), [
+            'planilla_empleado_id' => $p->id, 'rol' => 'contabilidad', 'email' => 'ana@icloud.com',
+            'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026',
+        ])->assertForbidden();
+        $this->assertNull($p->fresh()->user_id);
+    }
+
+    public function test_usuarios_marca_cuantos_faltan_y_los_filtra(): void
+    {
+        $p = $this->persona();
+        $enlazada = $this->cuenta('contabilidad', 'Enlazada', 'enlazada@icloud.com');
+        app(AltaEmpleado::class)->completar($this->admin, $p, ['usa_sistema' => true, 'user_id' => $enlazada->id]);
+        $this->cuenta('contabilidad', 'Suelta', 'suelta@icloud.com');
+
+        // El administrador y la suelta siguen entrando, pero se avisa.
+        $this->actingAs($this->admin)->get(route('usuarios.index'))->assertOk()
+            ->assertSee('Hay 2 usuarios sin ficha en Personal.')->assertSee('enlazada@icloud.com');
+        $this->actingAs($this->admin)->get(route('usuarios.index', ['sin_ficha' => 1]))->assertOk()
+            ->assertSee('suelta@icloud.com')->assertDontSee('enlazada@icloud.com');
     }
 
     public function test_con_planilla_apagada_usuarios_no_habla_de_personal(): void
@@ -276,7 +341,7 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
 
         $this->actingAs($this->admin)->get(route('usuarios.index'))->assertOk()->assertDontSee('Sin ficha en Personal');
         $this->actingAs($this->admin)->get(route('usuarios.show', $cuenta))->assertOk()->assertDontSee('Sin ficha en Personal');
-        $this->actingAs($this->admin)->get(route('usuarios.create'))->assertOk()->assertDontSee('¿Es un empleado?');
+        $this->actingAs($this->admin)->get(route('usuarios.create'))->assertOk()->assertSee('id="name"', false)->assertDontSee('planilla_empleado_id');
         $this->actingAs($this->admin)->post(route('usuarios.personal', $cuenta), ['planilla_empleado_id' => 1])->assertNotFound();
     }
 }

@@ -14,8 +14,21 @@
                     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
                 @endif
 
+                @if ($conPersonal && $sinFicha > 0)
+                    <p class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                        {{ $sinFicha === 1 ? 'Hay 1 usuario sin ficha en Personal.' : 'Hay '.$sinFicha.' usuarios sin ficha en Personal.' }}
+                        Siguen entrando; abrí cada uno para enlazarlo con su persona.
+                        @if ($filtros['sin_ficha'])
+                            <a href="{{ route('usuarios.index') }}" class="font-medium underline">Ver todos</a>
+                        @else
+                            <a href="{{ route('usuarios.index', ['sin_ficha' => 1]) }}" class="font-medium underline">Ver solo esos</a>
+                        @endif
+                    </p>
+                @endif
+
                 <div class="flex items-end justify-between gap-3 mb-6">
                     <form method="GET" class="flex-1 max-w-md">
+                        @if ($filtros['sin_ficha'])<input type="hidden" name="sin_ficha" value="1">@endif
                         <x-input-label for="q" value="Buscar (nombre o correo)" />
                         <div class="flex gap-2 mt-1">
                             <x-text-input id="q" name="q" type="text" class="block w-full" :value="$filtros['q']" />
