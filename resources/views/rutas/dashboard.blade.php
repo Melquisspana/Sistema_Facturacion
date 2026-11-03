@@ -308,6 +308,52 @@
                 </div>
             </section>
 
+            {{-- ===================== Vendedores ===================== --}}
+            <section id="vendedores" aria-labelledby="vendedores-titulo">
+                <h2 id="vendedores-titulo" class="{{ $titulo }}">Vendedores</h2>
+                @if ($tarjetasVendedores->isEmpty())
+                    <div class="{{ $caja }} mt-3 px-4 py-10 text-center text-gray-500">
+                        <p>Todavía no hay vendedores activos.</p>
+                    </div>
+                @else
+                    <ul class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        @foreach ($tarjetasVendedores as $tarjeta)
+                            @php
+                                $persona = $tarjeta['persona'];
+                                $telefono = preg_replace('/[^0-9+]/', '', (string) $persona->telefono);
+                            @endphp
+                            <li class="{{ $caja }} flex flex-col p-4">
+                                <h3 class="text-base font-semibold text-gray-800">{{ $persona->nombre }}</h3>
+                                <div class="mt-2 space-y-0.5 text-sm text-gray-700">
+                                    <p>
+                                        @if ($telefono !== '')
+                                            <a href="tel:{{ $telefono }}" class="inline-flex min-h-11 items-center text-indigo-600 hover:underline">Tel. {{ $persona->telefono }}</a>
+                                        @else
+                                            <a href="{{ $tarjeta['ficha'] }}" class="inline-flex min-h-11 items-center text-gray-500 hover:underline">Sin teléfono</a>
+                                        @endif
+                                    </p>
+                                    <p>
+                                        @if ($tarjeta['ahora'])
+                                            Ahora: {{ $tarjeta['ahora']->ruta->nombre }}, desde {{ $tarjeta['ahora']->fecha_inicio->isToday() ? 'hoy' : 'el '.$tarjeta['ahora']->fecha_inicio->format('d/m/Y') }}
+                                        @elseif ($tarjeta['ultima'])
+                                            Última: {{ $tarjeta['ultima']->ruta->nombre }}, {{ ($tarjeta['ultima']->fecha_fin_real ?? $tarjeta['ultima']->fecha_inicio)->format('d/m/Y') }}
+                                        @else
+                                            <span class="text-gray-500">Sin salidas en los últimos 90 días</span>
+                                        @endif
+                                    </p>
+                                    @if ($tarjeta['rutas'] !== [])
+                                        <p class="text-gray-500">Sus rutas: {{ implode(', ', $tarjeta['rutas']) }}</p>
+                                    @endif
+                                </div>
+                                <div class="mt-auto pt-3">
+                                    <a href="{{ $tarjeta['ficha'] }}" class="{{ $secundario }}">Ver ficha</a>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+            </section>
+
             @if ($salasSinRuta > 0)
                 <a href="{{ route('rutas.rutas.index') }}"
                    class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
