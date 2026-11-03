@@ -29,60 +29,110 @@
                 </div>
             @endif
 
-            {{-- ---------- Identidad ---------- --}}
-            <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
-                <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Documento</h3>
-                <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-3 text-sm">
-                    <div><dt class="text-gray-500 dark:text-paper-300">Tipo</dt><dd>{{ $documento->esNc() ? 'Nota de crédito' : 'Crédito fiscal' }}</dd></div>
-                    <div><dt class="text-gray-500 dark:text-paper-300">Origen</dt><dd>{{ $documento->origen->label() }}</dd></div>
-                    <div><dt class="text-gray-500 dark:text-paper-300">Emitida</dt><dd>{{ $documento->fecha_emision?->format('d/m/Y') ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500 dark:text-paper-300">Días desde la emisión</dt><dd class="font-mono">{{ $documento->diasDesdeEmision() ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500 dark:text-paper-300">Código de generación</dt><dd class="font-mono text-xs break-all">{{ $documento->codigo_generacion ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500 dark:text-paper-300">Sello de recepción</dt><dd class="font-mono text-xs break-all">{{ $documento->sello_recepcion ?? '—' }}</dd></div>
-                    {{-- Establecimiento y punto de venta: sin ellos, el mismo correlativo de
-                         dos series distintas parecería el mismo documento. --}}
-                    <div><dt class="text-gray-500 dark:text-paper-300">Establecimiento / punto de venta</dt>
-                        <dd class="font-mono">{{ $documento->establecimiento_codigo ?? '—' }} / {{ $documento->punto_venta_codigo ?? '—' }}</dd></div>
-                    <div><dt class="text-gray-500 dark:text-paper-300">Monto</dt><dd class="font-mono">{{ number_format((float) $documento->monto, 2) }}</dd></div>
-                </dl>
-            </div>
+            {{-- ---------- El CCF: las mismas piezas que la ficha de Facturación ---------- --}}
+            @if ($documento->dte)
+                @include('facturacion.partials.datos-documento', ['dte' => $documento->dte])
+                @include('facturacion.partials.lineas', ['dte' => $documento->dte])
+                @include('facturacion.partials.totales', ['dte' => $documento->dte, 'esAgenteRetencion' => null])
+            @else
+                {{-- Documento incorporado sin DTE en el sistema: solo lo que trajo su origen. --}}
+                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
+                    <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-3">Documento</h3>
+                    <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-3 text-sm">
+                        <div><dt class="text-gray-500 dark:text-paper-300">Tipo</dt><dd>{{ $documento->esNc() ? 'Nota de crédito' : 'Crédito fiscal' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Origen</dt><dd>{{ $documento->origen->label() }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Emitida</dt><dd>{{ $documento->fecha_emision?->format('d/m/Y') ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Días desde la emisión</dt><dd class="font-mono">{{ $documento->diasDesdeEmision() ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Código de generación</dt><dd class="font-mono text-xs break-all">{{ $documento->codigo_generacion ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Sello de recepción</dt><dd class="font-mono text-xs break-all">{{ $documento->sello_recepcion ?? '—' }}</dd></div>
+                        {{-- Establecimiento y punto de venta: sin ellos, el mismo correlativo de
+                             dos series distintas parecería el mismo documento. --}}
+                        <div><dt class="text-gray-500 dark:text-paper-300">Establecimiento / punto de venta</dt>
+                            <dd class="font-mono">{{ $documento->establecimiento_codigo ?? '—' }} / {{ $documento->punto_venta_codigo ?? '—' }}</dd></div>
+                        <div><dt class="text-gray-500 dark:text-paper-300">Monto</dt><dd class="font-mono">{{ number_format((float) $documento->monto, 2) }}</dd></div>
+                    </dl>
+                </div>
+            @endif
 
-            {{-- ---------- Estados ---------- --}}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4">
-                    <div class="text-xs text-gray-500 dark:text-paper-300">Presentación</div>
-                    <div class="mt-1"><span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->presentacion_estado->clase() }}">{{ $documento->presentacion_estado->label() }}</span></div>
-                    <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">{{ $documento->presentacion_estado->detalle() }}</p>
-                    @if ($documento->solicitud)
-                        <p class="mt-1 text-xs font-mono">{{ $documento->solicitud->referencia }}</p>
-                    @endif
+            {{-- ---------- Cobro: en el mismo formato que «Datos del documento» ---------- --}}
+            <div class="bg-white shadow sm:rounded-lg p-6">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 class="font-semibold text-gray-700">Cobro</h3>
+                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->pago_estado->clase() }}">{{ $documento->pago_estado->label() }}</span>
                 </div>
-                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4">
-                    <div class="text-xs text-gray-500 dark:text-paper-300">Pago</div>
-                    <div class="mt-1"><span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->pago_estado->clase() }}">{{ $documento->pago_estado->label() }}</span></div>
-                    <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">{{ $documento->pago_estado->detalle() }}</p>
-                    <p class="mt-1 text-xs font-mono">
-                        cobrado {{ number_format((float) $documento->monto_pagado, 2) }} · saldo {{ number_format((float) $documento->saldo(), 2) }}
-                    </p>
-                </div>
-                <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4">
-                    <div class="text-xs text-gray-500 dark:text-paper-300">Albarán</div>
-                    <div class="mt-1"><span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->vinculacion_estado->clase() }}">{{ $documento->vinculacion_estado->label() }}</span></div>
-                    <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">{{ $documento->vinculacion_motivo ?? 'Todavía no se ha auditado.' }}</p>
-                    @if ($documento->albaran)
-                        <p class="mt-1 text-xs font-mono">{{ $documento->albaran->numero_albaran }}</p>
-                    @endif
-                    @if ($corregible)
-                        @if ($movible)
-                            <button type="button" x-data x-on:click="$dispatch('open-modal', 'corregir-vinculo')"
-                                    class="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 hover:underline">
-                                {{ $documento->albaran ? 'Vincular con otro albarán' : 'Elegir albarán' }}
-                            </button>
-                        @else
-                            <p class="mt-2 text-xs text-gray-500 dark:text-paper-300">Ya está en una solicitud o tiene pagos: el albarán no se cambia desde aquí.</p>
-                        @endif
-                    @endif
-                </div>
+                <dl class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <dt class="text-gray-500">Albarán de entrega (AC01)</dt>
+                        <dd>
+                            @if ($documento->albaran)
+                                <span class="block font-mono break-all">{{ $documento->albaran->numero_albaran }}</span>
+                                <span class="block text-xs text-gray-500">
+                                    {{ $documento->albaran->fecha_albaran?->format('d/m/Y') ?? 'sin fecha' }}
+                                    · {{ $documento->albaran->monto_albaran !== null ? '$'.number_format((float) $documento->albaran->monto_albaran, 2) : 'sin monto' }}
+                                    @if ($documento->albaran->sala_codigo)
+                                        · {{ \App\Support\Sala::descripcion($documento->albaran->sala_codigo) }}
+                                    @endif
+                                </span>
+                            @endif
+                            <span class="mt-1 inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->vinculacion_estado->clase() }}">{{ $documento->vinculacion_estado->label() }}</span>
+                            <span class="block mt-1 text-xs text-gray-500">{{ $documento->vinculacion_motivo ?? 'Todavía no se ha auditado.' }}</span>
+                            @if ($corregible)
+                                @if ($movible)
+                                    <button type="button" x-data x-on:click="$dispatch('open-modal', 'corregir-vinculo')"
+                                            class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-300 hover:underline">
+                                        {{ $documento->albaran ? 'Vincular con otro albarán' : 'Elegir albarán' }}
+                                    </button>
+                                @else
+                                    <span class="block mt-1 text-xs text-gray-500">Ya está en una solicitud o tiene pagos: el albarán no se cambia desde aquí.</span>
+                                @endif
+                            @endif
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Presentación (quedan)</dt>
+                        <dd>
+                            <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $documento->presentacion_estado->clase() }}">{{ $documento->presentacion_estado->label() }}</span>
+                            <span class="block mt-1 text-xs text-gray-500">{{ $documento->presentacion_estado->detalle() }}</span>
+                            @if ($documento->solicitud)
+                                <a href="{{ route('cobros.solicitudes.show', $documento->solicitud) }}" class="block mt-1 font-mono text-indigo-600 hover:underline break-all">{{ $documento->solicitud->referencia }}</a>
+                            @endif
+                            @if ($documento->fechaProgramadaPago())
+                                <span class="block text-xs text-gray-500">Pago programado: {{ $documento->fechaProgramadaPago()->format('d/m/Y') }}</span>
+                            @endif
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">PPQ</dt>
+                        <dd>
+                            @forelse ($cobro['ppq'] as $item)
+                                <a href="{{ route('ppq.lotes.show', $item->lote) }}" class="block font-mono text-indigo-600 hover:underline break-all">{{ $item->lote->referencia }}</a>
+                                <span class="block text-xs text-gray-500">{{ $item->lote->fecha?->format('d/m/Y') ?? 'sin fecha' }} · {{ $item->lote->estado->label() }}</span>
+                            @empty
+                                <span class="text-gray-500">No está en ningún PPQ.</span>
+                            @endforelse
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Pagos (TXT)</dt>
+                        <dd>
+                            @forelse ($cobro['pagos'] as $pago)
+                                <span class="block font-mono">${{ number_format((float) $pago->monto, 2) }}
+                                    <span class="font-sans text-xs text-gray-500">{{ $pago->fecha?->format('d/m/Y') ?? 'sin fecha' }}</span></span>
+                                @if ($pago->evidencia_nombre)
+                                    <span class="block font-mono text-[11px] text-gray-500 break-all">{{ $pago->evidencia_nombre }}</span>
+                                @endif
+                            @empty
+                                <span class="text-gray-500">Ningún pago informado.</span>
+                            @endforelse
+                            @foreach ($cobro['ajustes'] as $ajuste)
+                                <span class="block text-xs text-gray-500">Ajuste ${{ number_format((float) $ajuste->monto, 2) }} · {{ $ajuste->fecha?->format('d/m/Y') ?? 'sin fecha' }}</span>
+                            @endforeach
+                        </dd>
+                    </div>
+                    <div><dt class="text-gray-500">Cobrado</dt><dd class="font-mono">${{ number_format((float) $documento->monto_pagado, 2) }}</dd></div>
+                    <div><dt class="text-gray-500">Saldo</dt><dd class="font-mono font-semibold">${{ number_format((float) $cobro['saldo'], 2) }}</dd></div>
+                    <div class="sm:col-span-2"><dt class="text-gray-500">Estado del pago</dt><dd>{{ $documento->pago_estado->detalle() }}</dd></div>
+                </dl>
             </div>
 
             @if ($avisosAlbaran['reciente'] || $avisosAlbaran['pedir_nota'])
