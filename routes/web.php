@@ -760,6 +760,8 @@ Route::middleware(['auth', 'permission:usuarios.gestionar'])->group(function () 
     Route::patch('usuarios/{usuario}/toggle-activo', [UserController::class, 'toggleActivo'])->name('usuarios.toggle-activo');
     Route::get('usuarios/{usuario}/password', [UserController::class, 'editPassword'])->name('usuarios.password.edit');
     Route::put('usuarios/{usuario}/password', [UserController::class, 'updatePassword'])->name('usuarios.password.update');
+    // Enlazar la cuenta con su persona en Personal: mismo servicio que la ficha.
+    Route::post('usuarios/{usuario}/personal', [UserController::class, 'enlazarPersonal'])->middleware('modulo.planilla')->name('usuarios.personal');
     Route::resource('usuarios', UserController::class)->parameters(['usuarios' => 'usuario']);
 });
 

@@ -34,6 +34,50 @@
                 </dl>
             </div>
 
+            @if ($conPersonal)
+                <div class="bg-white shadow sm:rounded-lg p-6">
+                    <h3 class="font-medium text-gray-700 mb-3">Personal</h3>
+                    @if ($ficha)
+                        <p class="text-sm">Es la cuenta de
+                            @if ($verFicha)
+                                <a href="{{ route('personal.empleados.show', 'p'.$ficha->id) }}" class="text-indigo-600 hover:underline">{{ $ficha->nombre }}</a>.
+                            @else
+                                {{ $ficha->nombre }}.
+                            @endif
+                            Su nombre se corrige en su ficha de Personal.
+                        </p>
+                    @else
+                        <p class="text-sm text-gray-700">Sin ficha en Personal.</p>
+                        @if ($fichasSinUsuario === null)
+                            <p class="mt-1 text-sm text-gray-500">Si es un empleado, quien gestiona Planilla puede enlazarlo desde la ficha de la persona, en «Agregar acceso o módulos».</p>
+                        @elseif ($fichasSinUsuario->isEmpty())
+                            <p class="mt-1 text-sm text-gray-500">No hay personas sin usuario en Personal. Si es un empleado, dalo de alta en
+                                <a href="{{ route('planilla.empleados.create') }}" class="text-indigo-600 hover:underline">Personal</a> y enlazalo desde su ficha.</p>
+                        @else
+                            <form method="POST" action="{{ route('usuarios.personal', $usuario) }}" class="mt-3 flex flex-wrap items-end gap-2">
+                                @csrf
+                                <div class="flex-1 min-w-56">
+                                    <x-input-label for="planilla_empleado_id" value="Enlazar con la persona" />
+                                    <select id="planilla_empleado_id" name="planilla_empleado_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                        <option value="">— Seleccione —</option>
+                                        @foreach ($fichasSinUsuario as $persona)
+                                            <option value="{{ $persona->id }}" @selected((string) old('planilla_empleado_id') === (string) $persona->id)>{{ $persona->nombre }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <x-primary-button>Enlazar</x-primary-button>
+                            </form>
+                            <p class="mt-2 text-xs text-gray-500">El usuario toma el nombre de la ficha. Si es Vendedor, queda también en Rutas.</p>
+                        @endif
+                        @if ($errors->any())
+                            <ul class="mt-3 list-disc list-inside rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                                @foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach
+                            </ul>
+                        @endif
+                    @endif
+                </div>
+            @endif
+
             <div class="bg-white shadow sm:rounded-lg p-6">
                 <h3 class="font-medium text-gray-700 mb-3">Historial de auditoría</h3>
                 @forelse ($actividades as $actividad)

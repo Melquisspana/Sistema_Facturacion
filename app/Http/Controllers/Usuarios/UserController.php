@@ -7,7 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Usuarios\CambiarPasswordRequest;
 use App\Http\Requests\Usuarios\StoreUserRequest;
 use App\Http\Requests\Usuarios\UpdateUserRequest;
+use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
+use App\Services\Planilla\AltaEmpleado;
 use App\Services\Rutas\FichaVendedor;
 use App\Services\Usuarios\CrearUsuario;
 use App\Services\Usuarios\UltimoAdministrador;
@@ -15,6 +17,8 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class UserController extends Controller
@@ -28,7 +32,7 @@ class UserController extends Controller
         $busqueda = trim((string) $request->input('q', ''));
 
         $usuarios = User::query()
-            ->with('roles')
+            ->with($this->conPersonal() ? ['roles', 'planillaEmpleado'] : ['roles'])
             ->when($busqueda !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$busqueda}%")
                 ->orWhere('email', 'like', "%{$busqueda}%")))
@@ -36,14 +40,20 @@ class UserController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        return view('usuarios.index', ['usuarios' => $usuarios, 'filtros' => ['q' => $busqueda]]);
+        return view('usuarios.index', [
+            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda],
+            'conPersonal' => $this->conPersonal(), 'verFichas' => $request->user()->can('planilla.ver'),
+        ]);
     }
 
     public function create(): View
     {
         $this->authorize('create', User::class);
 
-        return view('usuarios.form', ['usuario' => new User(['activo' => true]), 'roles' => RolSistema::opciones(), 'rolActual' => null]);
+        return view('usuarios.form', [
+            'usuario' => new User(['activo' => true]), 'roles' => RolSistema::opciones(), 'rolActual' => null,
+            'ficha' => null, 'conPersonal' => $this->conPersonal(),
+        ]);
     }
 
     public function store(StoreUserRequest $request, CrearUsuario $crear): RedirectResponse
@@ -55,13 +65,44 @@ class UserController extends Controller
         return redirect()->route('usuarios.show', $usuario)->with('status', 'Usuario creado correctamente.');
     }
 
-    public function show(User $usuario): View
+    public function show(Request $request, User $usuario): View
     {
         $this->authorize('view', $usuario);
 
         $actividades = $usuario->activities()->with('causer')->latest()->limit(30)->get();
+        $ficha = $this->fichaDe($usuario);
+        $puedeEnlazar = $this->conPersonal() && $ficha === null && $request->user()->can('planilla.gestionar');
 
-        return view('usuarios.show', ['usuario' => $usuario->load('roles'), 'actividades' => $actividades]);
+        return view('usuarios.show', [
+            'usuario' => $usuario->load('roles'), 'actividades' => $actividades,
+            'conPersonal' => $this->conPersonal(), 'ficha' => $ficha,
+            'verFicha' => $request->user()->can('planilla.ver'),
+            // Quien está en Personal y todavía no tiene usuario.
+            'fichasSinUsuario' => $puedeEnlazar
+                ? PlanillaEmpleado::whereNull('user_id')->where('activo', true)->orderBy('nombre')->get(['id', 'nombre'])
+                : null,
+        ]);
+    }
+
+    /**
+     * Enlaza esta cuenta con una persona de Personal que no tiene usuario. Es lo mismo
+     * que elegirla en la ficha de la persona: mismo servicio, permisos y bitácora.
+     */
+    public function enlazarPersonal(Request $request, User $usuario, AltaEmpleado $alta): RedirectResponse
+    {
+        $this->authorize('update', $usuario);
+
+        $id = $request->validate([
+            'planilla_empleado_id' => ['required', 'integer', 'exists:planilla_empleados,id'],
+        ], ['planilla_empleado_id.required' => 'Elegí la persona.'])['planilla_empleado_id'];
+        $empleado = PlanillaEmpleado::findOrFail($id);
+        if ($empleado->user_id !== null) {
+            throw ValidationException::withMessages(['planilla_empleado_id' => 'Esa persona ya tiene otro usuario.']);
+        }
+
+        $empleado = $alta->completar($request->user(), $empleado, ['usa_sistema' => true, 'user_id' => $usuario->id]);
+
+        return redirect()->route('usuarios.show', $usuario)->with('status', 'Usuario enlazado a '.$empleado->nombre.' en Personal.');
     }
 
     public function edit(User $usuario): View
@@ -72,6 +113,8 @@ class UserController extends Controller
             'usuario' => $usuario,
             'roles' => RolSistema::opciones(),
             'rolActual' => $usuario->roles->first()?->name,
+            'ficha' => $this->fichaDe($usuario),
+            'conPersonal' => $this->conPersonal(),
         ]);
     }
 
@@ -92,7 +135,8 @@ class UserController extends Controller
         $rolAnterior = $usuario->roles->first()?->name;
 
         $usuario->update([
-            'name' => $datos['name'],
+            // Un solo nombre: el de quien tiene ficha en Personal se corrige allá.
+            'name' => $this->fichaDe($usuario)?->nombre ?? $datos['name'],
             'email' => $datos['email'],
             'activo' => $activoNuevo,
         ]);
@@ -149,5 +193,17 @@ class UserController extends Controller
         $usuario->delete();
 
         return redirect()->route('usuarios.index')->with('status', 'Usuario eliminado.');
+    }
+
+    /** Personal enlaza cuentas solo con Planilla encendida e instalada. */
+    private function conPersonal(): bool
+    {
+        return (bool) config('planilla.enabled') && Schema::hasTable('planilla_empleados');
+    }
+
+    /** La persona de esta cuenta. Sin la tabla (Planilla sin instalar) no hay ninguna. */
+    private function fichaDe(User $usuario): ?PlanillaEmpleado
+    {
+        return Schema::hasTable('planilla_empleados') ? $usuario->planillaEmpleado : null;
     }
 }

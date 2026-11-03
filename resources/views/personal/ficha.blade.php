@@ -112,7 +112,7 @@
                             @endphp
                             @if ($ficha->activo && $opciones)
                                 <details @if ($errors->hasAny(['modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id'])) open @endif
-                                         x-data="{ marca: @js((bool) old('marca')), usa: @js((bool) old('usa_sistema')) }">
+                                         x-data="{ marca: @js((bool) old('marca')), usa: @js((bool) old('usa_sistema')), existente: @js((string) old('user_id', '')) }">
                                     <summary class="{{ $secundario }} cursor-pointer">Agregar acceso o módulos</summary>
                                     <form method="POST" action="{{ route('planilla.empleados.modulos', $ficha) }}" class="mt-2 w-full max-w-xl space-y-2">
                                         @csrf
@@ -134,7 +134,21 @@
                                             </div>
                                         @endisset
                                         @isset($opciones['usa_sistema'])
-                                            <div x-show="usa" class="grid gap-2 sm:grid-cols-2">
+                                            @if ($usuariosSinFicha->isNotEmpty())
+                                                <div x-show="usa">
+                                                    <label for="user_id" class="{{ $etiqueta }}">Usuario</label>
+                                                    <select id="user_id" name="user_id" x-model="existente" class="{{ $campo }}">
+                                                        <option value="">Crear uno nuevo</option>
+                                                        @foreach ($usuariosSinFicha as $cuenta)
+                                                            <option value="{{ $cuenta->id }}" @selected((string) old('user_id') === (string) $cuenta->id)>
+                                                                {{ $cuenta->name }} · {{ $cuenta->email }} · {{ $cuenta->roles->first()?->name ?? 'sin rol' }}{{ $cuenta->activo ? '' : ' · inactivo' }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Si ya le crearon el usuario en Usuarios, elegilo: queda enlazado y toma el nombre de esta ficha.</p>
+                                                </div>
+                                            @endif
+                                            <div x-show="usa && existente === ''" class="grid gap-2 sm:grid-cols-2">
                                                 <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">El rol dice qué puede hacer. Vendedor también sale a rutas.</p>
                                                 <div><label for="rol" class="{{ $etiqueta }}">Rol</label>
                                                     <select id="rol" name="rol" class="{{ $campo }}">

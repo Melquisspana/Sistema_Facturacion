@@ -35,6 +35,9 @@
                                 <th class="px-3 py-2">Nombre</th>
                                 <th class="px-3 py-2">Correo</th>
                                 <th class="px-3 py-2">Rol</th>
+                                @if ($conPersonal)
+                                    <th class="px-3 py-2">Personal</th>
+                                @endif
                                 <th class="px-3 py-2">Estado</th>
                                 <th class="px-3 py-2 text-right">Acciones</th>
                             </tr>
@@ -45,6 +48,17 @@
                                     <td class="px-3 py-2 font-medium">{{ $usuario->name }}</td>
                                     <td class="px-3 py-2">{{ $usuario->email }}</td>
                                     <td class="px-3 py-2">{{ $usuario->roles->first()?->name ?? '—' }}</td>
+                                    @if ($conPersonal)
+                                        <td class="px-3 py-2">
+                                            @if ($usuario->planillaEmpleado && $verFichas)
+                                                <a href="{{ route('personal.empleados.show', 'p'.$usuario->planillaEmpleado->id) }}" class="text-indigo-600 hover:underline">{{ $usuario->planillaEmpleado->nombre }}</a>
+                                            @elseif ($usuario->planillaEmpleado)
+                                                {{ $usuario->planillaEmpleado->nombre }}
+                                            @else
+                                                <a href="{{ route('usuarios.show', $usuario) }}" class="text-gray-500 hover:underline">Sin ficha en Personal</a>
+                                            @endif
+                                        </td>
+                                    @endif
                                     <td class="px-3 py-2">
                                         <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $usuario->activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600' }}">
                                             {{ $usuario->activo ? 'Activo' : 'Inactivo' }}
@@ -68,7 +82,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400">No hay usuarios.</td></tr>
+                                <tr><td colspan="{{ $conPersonal ? 6 : 5 }}" class="px-3 py-6 text-center text-gray-400">No hay usuarios.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

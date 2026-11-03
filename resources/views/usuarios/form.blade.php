@@ -20,6 +20,14 @@
                     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
                 @endif
 
+                @if (! $usuario->exists && $conPersonal)
+                    <p class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                        ¿Es un empleado? Dalo de alta en
+                        <a href="{{ auth()->user()->can('planilla.gestionar') ? route('planilla.empleados.create') : route('personal.empleados') }}" class="font-medium underline">Personal</a>
+                        y creale el acceso desde su ficha: así queda una sola persona. Acá van las cuentas que no son empleados, como la del administrador.
+                    </p>
+                @endif
+
                 <form method="POST"
                       action="{{ $usuario->exists ? route('usuarios.update', $usuario) : route('usuarios.store') }}"
                       class="space-y-5">
@@ -28,8 +36,15 @@
 
                     <div>
                         <x-input-label for="name" value="Nombre *" />
-                        <x-text-input id="name" name="name" type="text" class="mt-1 block w-full"
-                            :value="old('name', $usuario->name)" required />
+                        @if ($ficha)
+                            {{-- Un solo nombre: el de quien está en Personal se corrige en su ficha. --}}
+                            <x-text-input id="name" name="name" type="text" class="mt-1 block w-full bg-gray-50"
+                                :value="$ficha->nombre" readonly aria-describedby="name-ficha" />
+                            <p id="name-ficha" class="text-xs text-gray-500 mt-1">Se corrige en su ficha de Personal.</p>
+                        @else
+                            <x-text-input id="name" name="name" type="text" class="mt-1 block w-full"
+                                :value="old('name', $usuario->name)" required />
+                        @endif
                         <x-input-error :messages="$errors->get('name')" class="mt-1" />
                     </div>
                     <div>

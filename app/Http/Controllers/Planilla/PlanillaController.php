@@ -209,7 +209,7 @@ class PlanillaController extends Controller
     public function completarModulos(Request $request, PlanillaEmpleado $empleado, AltaEmpleado $alta)
     {
         $alta->completar($request->user(), $empleado, $request->only([
-            'marca', 'sale_rutas', 'usa_sistema', 'nombres', 'apellidos', 'rol', 'email', 'password', 'password_confirmation',
+            'marca', 'sale_rutas', 'usa_sistema', 'user_id', 'nombres', 'apellidos', 'rol', 'email', 'password', 'password_confirmation',
         ]));
 
         return back()->with('planilla.aviso', 'Listo: se agregó lo que elegiste.');

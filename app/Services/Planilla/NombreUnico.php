@@ -12,8 +12,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * Un solo nombre por persona.
  *
- * El nombre vive en tres tablas —planilla, Asistencia y Rutas— porque cada módulo nació
- * por su cuenta. Corregirlo en una sola dejaba a la misma persona con dos nombres. Acá se
+ * El nombre vive en cuatro tablas —planilla, Asistencia, Rutas y el usuario— porque cada
+ * módulo nació por su cuenta. Corregirlo en una sola dejaba a la misma persona con dos nombres. Acá se
  * corrige una vez y se copia a las fichas enlazadas.
  *
  * Asistencia guarda nombres y apellidos por separado; las otras dos, el nombre entero. Por
@@ -57,6 +57,12 @@ final class NombreUnico
         DB::transaction(fn () => $this->copiar($empleado, $nombre));
     }
 
+    /** Al enlazar una ficha que ya existía (un usuario, por ejemplo): toma el nombre de planilla. */
+    public function repartir(PlanillaEmpleado $empleado): void
+    {
+        $this->copiar($empleado, $empleado->nombre);
+    }
+
     private function copiar(PlanillaEmpleado $empleado, string $nombre): void
     {
         $nombre = trim((string) preg_replace('/\s+/u', ' ', $nombre));
@@ -64,5 +70,6 @@ final class NombreUnico
         $empleado->update(['nombre' => $nombre]);
         // Rutas guarda hasta 120 caracteres; Asistencia admite nombres más largos.
         $empleado->personalRuta?->update(['nombre' => mb_substr($nombre, 0, 120)]);
+        $empleado->usuario?->update(['name' => $nombre]);
     }
 }
