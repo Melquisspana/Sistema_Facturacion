@@ -10,11 +10,13 @@ El historial anterior a este archivo está en el registro de git.
 
 ### Agregado
 
+- Rutas: «Terminar ruta» liquida la salida completa. Lo que sobró lleva su motivo, los días con entregas o gastos tienen que estar terminados, y se suma lo cobrado en todos los días menos los gastos de todos los días. Ahí se elige quién entrega el dinero y sale el PDF con los días, los gastos y lo que no se entregó. La pueden terminar la oficina o el vendedor que va en la salida. Después ya no se cambian sus días, entregas ni gastos. Trae migración: 3 columnas nuevas en `salidas_ruta`.
 - Planilla: botón «Imprimir» en la hoja para firmas y los recibos. Al imprimir sale solo la hoja, sin el menú ni la cabecera de la app.
 - Planilla: interruptor `PLANILLA_PAGOS_ENABLED` para apagar el seguimiento de pagos (pagos, desembolsos y estado de cobro) mientras Gastos no se use. Con el interruptor apagado, el impreso sale con el total a pagar de cada persona.
 
 ### Cambiado
 
+- Rutas: «Cerrar el día» pasa a ser «Terminar día». Guarda lo entregado, lo cobrado y los gastos de ese día, pero ya no pide quién entrega el dinero ni lo da por entregado: en las salidas de varios días (San Miguel, Santa Ana) el dinero se entrega todo junto al terminar la ruta. Su PDF pasa a ser el resumen del día.
 - Rutas, «Mi salida»: el vendedor elige quién entregó cada CCF entre los que van en la salida, como ya podía la oficina. Si no elige, queda él. Alguien que no va en la salida se rechaza.
 - Rutas: cada entrega toma la forma de pago del cliente sin preguntar. Si esa vez pagó distinto, se toca «cambiar» y se elige efectivo, cheque, transferencia o sin cobro (quedan). El cambio vale solo para esa entrega, no toca la ficha del cliente y el cierre del día cuenta lo elegido.
 
