@@ -12,6 +12,23 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.03.5] - 2026-11-03
+
+Tablero nuevo de Rutas con ritmo de compra y vendedores, rol Jefe de vendedores, PDF del CCF desde la salida, hoja de firmas sin página en blanco y el cálculo del recálculo de renta (#218 al #225), sin migraciones.
+
+### Agregado
+
+- Rutas: ritmo de compra por sala y por ruta, calculado con los CCF de los últimos 12 meses. Dice si va al día, si toca pronto, si está atrasada o si «¿dejó de comprar?» (#219).
+- Rutas: rol Jefe de vendedores. Ve el tablero y las fichas de campo, y en sus salidas trabaja desde «Mi salida» como un vendedor. No arma ni termina salidas, y no entra a Facturación, Cobros, Gastos, Planilla ni Personal (#221).
+- Rutas: el inicio es un tablero con resumen (rutas y salas atrasadas, salas que tocan esta semana, salidas en camino), rutas, salas que tocan y una sección Vendedores con teléfono, salida actual o última y sus rutas (#222, #223).
+- Rutas: al tocar un CCF en la hoja de la salida o en «Mi salida» se abre su PDF, el mismo de Facturación. Solo los CCF de esa salida; en «Mi salida», solo para quien va en ella (#225).
+- Planilla: cálculo del recálculo de renta del último pago de junio y de diciembre (Decreto Ejecutivo 10), todavía sin aplicar al generar (#224).
+
+### Corregido
+
+- Planilla: la hoja de firmas ya no sale con una página en blanco al imprimir. Cada hoja lleva los renglones que caben y el total va una sola vez, al final (#220).
+- Cuatro vistas usaban clases que no existen en el CSS de producción: el aviso de la ficha de Personal en modo oscuro, los botones de Planilla en el celular y las pastillas de la salida (#218).
+
 ## [2026.11.03.4] - 2026-11-03
 
 Rutas con una tarjeta por CCF y quién lo entregó, Planilla en un solo paso con borrado de la última, y Rutas › Personal en la ficha (#213 al #216), sin migraciones.
