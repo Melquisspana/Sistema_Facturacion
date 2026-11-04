@@ -15,7 +15,6 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
-use App\Support\HoraNegocio;
 use App\Support\IdentidadPpq;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -132,24 +131,70 @@ class EntregasCcf
         return DB::transaction(function () use ($salida) {
             $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
             $this->exigirAbierta($salida);
-            $ids = $this->pendientesDeRuta($salida->ruta)->pluck('id')->all();
-            $candidatos = Dte::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
-            $agregados = 0;
 
-            foreach ($candidatos as $dte) {
-                if ($this->conflictoCarga($salida, $dte->id) !== null) {
-                    continue;
-                }
+            return $this->agregarPendientes($salida);
+        });
+    }
 
-                $salida->entregas()->create([
-                    'dte_id' => $dte->id,
-                    'cliente_sucursal_id' => $dte->cliente_sucursal_id,
-                ]);
-                $agregados++;
+    /**
+     * El CCF que se factura con la salida ya en camino entra solo: la sala hace la orden
+     * mientras los vendedores están ahí, y se entrega y cobra en esta misma salida. Se llama
+     * al abrir «Mi salida» y la hoja de la oficina.
+     *
+     * Solo en curso: la planificada carga al empezar y la terminada ya no se toca. Con el día
+     * de hoy ya terminado tampoco: hoy no se marca nada más y entra al abrir mañana. Primero
+     * mira sin bloquear; si no hay nada nuevo, no abre transacción ni bloquea la salida. Si
+     * hay, carga como «Buscar CCF nuevos» ({@see self::cargarPendientes()}), con la salida
+     * bloqueada: dos pestañas a la vez no duplican.
+     */
+    public function cargarNuevosEnCurso(SalidaRuta $salida): int
+    {
+        if ($salida->estado !== EstadoSalidaRuta::EnCurso || $salida->diaCerrado()) {
+            return 0;
+        }
+        $nuevos = $this->pendientesDeRuta($salida->ruta)->pluck('id')
+            ->diff($salida->entregas()->pluck('dte_id'));
+        if ($nuevos->isEmpty()) {
+            return 0;
+        }
+
+        return DB::transaction(function () use ($salida) {
+            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
+
+            return $salida->estado === EstadoSalidaRuta::EnCurso ? $this->agregarPendientes($salida) : 0;
+        });
+    }
+
+    /** «Se agregó 1 CCF nuevo de la ruta.», o nada si no entró ninguno. */
+    public static function avisoNuevos(int $cantidad): string
+    {
+        return match (true) {
+            $cantidad <= 0 => '',
+            $cantidad === 1 => 'Se agregó 1 CCF nuevo de la ruta.',
+            default => "Se agregaron {$cantidad} CCF nuevos de la ruta.",
+        };
+    }
+
+    /** Con la salida ya bloqueada y abierta: agrega los pendientes que no chocan con nada. */
+    private function agregarPendientes(SalidaRuta $salida): int
+    {
+        $ids = $this->pendientesDeRuta($salida->ruta)->pluck('id')->all();
+        $candidatos = Dte::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+        $agregados = 0;
+
+        foreach ($candidatos as $dte) {
+            if ($this->conflictoCarga($salida, $dte->id) !== null) {
+                continue;
             }
 
-            return $agregados;
-        });
+            $salida->entregas()->create([
+                'dte_id' => $dte->id,
+                'cliente_sucursal_id' => $dte->cliente_sucursal_id,
+            ]);
+            $agregados++;
+        }
+
+        return $agregados;
     }
 
     /**
@@ -180,60 +225,11 @@ class EntregasCcf
 
     // ================================================================ facturado después
 
-    /**
-     * El CCF que se facturó DESPUÉS de entregar el producto: el producto se llevó en la ruta,
-     * la orden de compra llegó días después y recién ahí se facturó. Queda entregado en esta
-     * salida, el día y por la persona que dice la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 5).
-     *
-     * Vale con la salida en curso (con ese día abierto o ya terminado) y con la salida
-     * terminada o liquidada. NUNCA mueve dinero: se anota sin cobro, no entra en el cierre del
-     * día ni en la liquidación ({@see SalidaRutaEntrega::scopeSinFacturadosDespues()}) y no
-     * reabre nada. El cobro sigue el camino normal del CCF (crédito, quedan, próxima visita).
-     *
-     * @param  array{numero_control: string, ejercicio?: int|string|null, entregado_por_id: int|string, fecha_entrega: string, nota?: string|null}  $datos
-     *
-     * @throws ValidationException
+    /*
+     * Desde el 04/11/2026 ya no se anotan: el producto nunca se entrega sin CCF (Melqui). Los
+     * registros que quedaron siguen fuera del dinero ({@see SalidaRutaEntrega::scopeSinFacturadosDespues()})
+     * y la oficina los puede deshacer.
      */
-    public function anotarFacturadoDespues(SalidaRuta $salida, array $datos, User $usuario): SalidaRutaEntrega
-    {
-        $this->exigirAnotable($salida);
-        $fecha = (string) $datos['fecha_entrega'];
-        [$desde, $hasta] = $this->diasDeLaSalida($salida);
-        if ($fecha < $desde || $fecha > $hasta) {
-            throw ValidationException::withMessages(['fecha_entrega' => 'Elegí un día entre el '.Carbon::parse($desde)->format('d/m/Y').' y el '.Carbon::parse($hasta)->format('d/m/Y').'.']);
-        }
-        $ejercicio = filled($datos['ejercicio'] ?? null) ? (int) $datos['ejercicio'] : null;
-        $dte = $this->ccfCargable((string) $datos['numero_control'], $ejercicio);
-
-        return DB::transaction(function () use ($salida, $dte, $datos, $fecha, $usuario) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-            $this->exigirAnotable($salida);
-            $dte = Dte::whereKey($dte->id)->lockForUpdate()->firstOrFail();
-            if (($motivo = $this->conflictoCarga($salida, $dte->id)) !== null) {
-                throw ValidationException::withMessages(['numero_control' => $motivo]);
-            }
-            $personaId = (int) $datos['entregado_por_id'];
-            if (! $salida->participantes()->where('rutas_personal_id', $personaId)->exists()) {
-                throw ValidationException::withMessages(['entregado_por_id' => 'Elegí quién lo entregó entre las personas que fueron en la salida.']);
-            }
-
-            return $salida->entregas()->create([
-                'dte_id' => $dte->id,
-                'cliente_sucursal_id' => $dte->cliente_sucursal_id,
-                'resultado' => ResultadoEntrega::Entregado,
-                'fecha_resultado' => Carbon::parse($fecha)->startOfDay(),
-                'entregado_por_id' => $personaId,
-                'nota' => trim((string) ($datos['nota'] ?? '')) ?: null,
-                'trae_nota_averia' => false,
-                'origen_registro' => OrigenRegistroEntrega::FacturadoDespues,
-                'registrado_por' => $usuario->id,
-                // Sin cobro: no suma a la salida en ningún caso.
-                'forma_cobro' => null,
-                'monto_esperado' => null,
-                'monto_cobrado' => null,
-            ]);
-        });
-    }
 
     /** Quita el registro: el CCF vuelve a quedar sin entregar. Como no movió dinero, no lo mueve. */
     public function deshacerFacturadoDespues(SalidaRutaEntrega $entrega): void
@@ -246,32 +242,6 @@ class EntregasCcf
             }
             $entrega->delete();
         });
-    }
-
-    /**
-     * Los días en que se pudo entregar: del inicio de la salida a su regreso, o a hoy si
-     * sigue en curso. Nunca después de hoy.
-     *
-     * @return array{0: string, 1: string} Y-m-d
-     */
-    public function diasDeLaSalida(SalidaRuta $salida): array
-    {
-        $hoy = HoraNegocio::fechaHoy();
-        $hasta = $salida->fecha_fin_real?->toDateString() ?? $hoy;
-
-        return [$salida->fecha_inicio->toDateString(), min($hasta, $hoy)];
-    }
-
-    /** Solo en una salida que de verdad salió: en curso o terminada (liquidada o no). */
-    private function exigirAnotable(SalidaRuta $salida): void
-    {
-        if (! in_array($salida->estado, [EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada], true)) {
-            throw ValidationException::withMessages([
-                'salida' => $salida->estado === EstadoSalidaRuta::Planificada
-                    ? 'La salida todavía no inició: no se entregó nada en ella.'
-                    : 'La salida está cancelada: no se anota nada en ella.',
-            ]);
-        }
     }
 
     /** Quita un CCF de la salida. Solo si nadie registró nada y la salida sigue abierta. */

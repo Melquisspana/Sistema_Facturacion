@@ -121,7 +121,8 @@ class UserManagementTest extends TestCase
     public function test_no_puede_eliminarse_a_si_mismo(): void
     {
         $admin = $this->admin();
-        $this->actingAs($admin)->delete(route('personal.accesos.destroy', $admin))->assertForbidden();
+        $this->actingAs($admin)->delete(route('personal.accesos.destroy', $admin))
+            ->assertSessionHas('error', 'No podés quitarte tu propio acceso: pedíselo a otro administrador.');
         $this->assertDatabaseHas('users', ['id' => $admin->id]);
     }
 

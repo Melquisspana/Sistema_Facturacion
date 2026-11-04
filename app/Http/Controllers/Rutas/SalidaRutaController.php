@@ -99,8 +99,12 @@ class SalidaRutaController extends Controller
     public function show(SalidaRuta $salida, EntregasCcf $servicio): View
     {
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
+        // Lo facturado con la salida en camino entra solo, como en «Mi salida».
+        if (($nuevos = $servicio->cargarNuevosEnCurso($salida)) > 0) {
+            session()->now('status', trim(session('status').' '.EntregasCcf::avisoNuevos($nuevos)));
+        }
 
-        // Los facturados después de entregar no viajaron con la salida: van en su bloque aparte.
+        // Los facturados después de entregar (registros viejos) van en su bloque aparte.
         [$facturadosDespues, $entregas] = $salida->entregas()
             ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre', 'registradoPor:id,name'])
             ->get()
@@ -131,7 +135,6 @@ class SalidaRutaController extends Controller
             'abierta' => ! $salida->estado->esTerminal(),
             'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,
             'facturadosDespues' => $facturadosDespues->sortBy(fn ($e) => [$e->fecha_resultado, $e->sala?->nombre ?? ''])->values(),
-            'diasDeLaSalida' => $servicio->diasDeLaSalida($salida),
         ]);
     }
 
@@ -176,9 +179,36 @@ class SalidaRutaController extends Controller
 
     // ------------------------------------------------------------- transiciones
 
-    public function iniciar(Request $request, SalidaRuta $salida): RedirectResponse
+    /**
+     * «Salir ahora» de la oficina: como «Empezar ruta» de {@see MiSalidaController::empezar()},
+     * con la salida bloqueada y en la misma transacción carga lo facturado para la ruta desde
+     * que se armó. Si falla la carga, la salida no queda iniciada.
+     */
+    public function iniciar(Request $request, SalidaRuta $salida, EntregasCcf $entregas): RedirectResponse
     {
-        return $this->cambiarEstado($request, $salida, 'iniciar', 'inició la salida', 'Salida iniciada.');
+        [$tipo, $mensaje] = DB::transaction(function () use ($request, $salida, $entregas) {
+            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
+            $anterior = $salida->estado;
+
+            // Como «Empezar ruta»: la programada para otro día sale ese día, no antes.
+            if ($anterior === EstadoSalidaRuta::Planificada && $salida->fecha_inicio->toDateString() > HoraNegocio::fechaHoy()) {
+                return ['error', 'Esta salida es para el '.$salida->fecha_inicio->copy()->locale('es')->dayName.' '
+                    .$salida->fecha_inicio->format('d/m/Y').'. La podés empezar ese día.'];
+            }
+
+            if (! $salida->iniciar()) {
+                return ['error', "No se puede iniciar una salida {$anterior->label()}."];
+            }
+
+            $this->auditar($request, $salida, 'inició la salida', [
+                'estado_anterior' => $anterior->value,
+                'estado_nuevo' => $salida->estado->value,
+            ]);
+
+            return ['status', trim('Salida iniciada. '.EntregasCcf::avisoNuevos($entregas->cargarPendientes($salida, $request->user())))];
+        });
+
+        return back()->with($tipo, $mensaje);
     }
 
     public function finalizar(Request $request, SalidaRuta $salida): RedirectResponse

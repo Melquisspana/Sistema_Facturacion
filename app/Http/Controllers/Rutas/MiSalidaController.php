@@ -79,7 +79,11 @@ class MiSalidaController extends Controller
         Gate::authorize('view', $salida);
         $persona = $this->persona($request);
         $salida->load(['ruta', 'participantes.personal']);
-        // Los facturados después de entregar los anota y los ve la oficina, en la hoja de la salida.
+        // Lo facturado con la salida en camino entra solo; se avisa junto al mensaje que ya hubiera.
+        if (($nuevos = $this->entregas->cargarNuevosEnCurso($salida)) > 0) {
+            session()->now('status', trim(session('status').' '.EntregasCcf::avisoNuevos($nuevos)));
+        }
+        // Los facturados después de entregar (registros viejos) solo se ven en la hoja de la oficina.
         $entregas = $salida->entregas()->sinFacturadosDespues()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
         $resoluciones = $this->entregas->resolucionesAlbaran($entregas);
 
@@ -174,9 +178,7 @@ class MiSalidaController extends Controller
             // «Salir a esta ruta». En la misma transacción: si falla, la ruta no queda empezada.
             $nuevos = $this->entregas->cargarPendientes($salida, $request->user());
 
-            return ['status', 'Ruta empezada.'
-                .($nuevos > 0 ? ' Se '.($nuevos === 1 ? 'agregó 1 CCF nuevo' : 'agregaron '.$nuevos.' CCF nuevos').' de la ruta.' : '')
-                .' Ya podés marcar las entregas.'];
+            return ['status', trim('Ruta empezada. '.EntregasCcf::avisoNuevos($nuevos)).' Ya podés marcar las entregas.'];
         });
 
         return redirect()->route('rutas.mi-salida.show', $salida)->with($tipo, $mensaje);

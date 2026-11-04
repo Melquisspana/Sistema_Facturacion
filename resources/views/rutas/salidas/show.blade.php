@@ -14,6 +14,8 @@
         $hechos = $resumen['entregados'] + $resumen['no_entregados'];
         $porcentaje = $resumen['total'] ? (int) round($hechos * 100 / $resumen['total']) : 0;
         $planificada = $salida->estado === \App\Enums\EstadoSalidaRuta::Planificada;
+        // Programada para otro día: sale ese día, como «Empezar ruta» de Mi salida.
+        $futura = $planificada && $salida->fecha_inicio->toDateString() > \App\Support\HoraNegocio::fechaHoy();
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -49,7 +51,11 @@
 
                 @if (($puedeGestionar || ($puedeTerminar && ! $planificada)) && ! $salida->estado->esTerminal())
                     <div class="mt-5 flex flex-wrap items-center gap-3">
-                        @if ($planificada)
+                        @if ($futura)
+                            <p class="flex-1 rounded-lg bg-gray-50 px-4 py-3 text-center text-sm font-medium text-gray-700 dark:bg-ink-700 dark:text-paper-100">
+                                Sale el {{ $salida->fecha_inicio->copy()->locale('es')->dayName }} {{ $salida->fecha_inicio->format('d/m/Y') }}
+                            </p>
+                        @elseif ($planificada)
                             <form method="POST" action="{{ route('rutas.salidas.iniciar', $salida) }}" class="flex-1">
                                 @csrf @method('PATCH')
                                 <button class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700">Salir ahora</button>

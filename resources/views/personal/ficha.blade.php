@@ -347,7 +347,7 @@
             @endif
 
             @if ($asistencia)
-                <div id="asistencia" class="scroll-mt-4">
+                <div id="asistencia" class="scroll-mt-6">
                     @include('asistencia.empleados._ficha')
                 </div>
             @endif
