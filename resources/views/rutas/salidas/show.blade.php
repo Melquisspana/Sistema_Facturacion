@@ -9,6 +9,8 @@
     @php
         $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
         $puedeGestionar = auth()->user()?->can('rutas.gestionar');
+        // El jefe de vendedores termina días y rutas, pero no edita, cancela ni reabre.
+        $puedeTerminar = $puedeGestionar || auth()->user()?->can('rutas.salidas.terminar');
         $hechos = $resumen['entregados'] + $resumen['no_entregados'];
         $porcentaje = $resumen['total'] ? (int) round($hechos * 100 / $resumen['total']) : 0;
         $planificada = $salida->estado === \App\Enums\EstadoSalidaRuta::Planificada;
@@ -45,7 +47,7 @@
                     </div>
                 </div>
 
-                @if ($puedeGestionar && ! $salida->estado->esTerminal())
+                @if (($puedeGestionar || ($puedeTerminar && ! $planificada)) && ! $salida->estado->esTerminal())
                     <div class="mt-5 flex flex-wrap items-center gap-3">
                         @if ($planificada)
                             <form method="POST" action="{{ route('rutas.salidas.iniciar', $salida) }}" class="flex-1">
@@ -56,16 +58,18 @@
                             {{-- Terminar ruta: lo que sobró lleva su motivo y se liquida todo junto. --}}
                             <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="flex-1 rounded-lg bg-gray-800 px-4 py-3 text-center text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar ruta</a>
                         @endif
-                        <a href="{{ route('rutas.salidas.edit', $salida) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cambiar quiénes van</a>
-                        <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
-                              onsubmit="return confirm('¿Cancelar esta salida? Sus CCF vuelven a quedar pendientes.');">
-                            @csrf @method('PATCH')
-                            <button class="text-sm text-gray-400 hover:text-red-600 hover:underline dark:text-paper-500">Cancelar</button>
-                        </form>
+                        @if ($puedeGestionar)
+                            <a href="{{ route('rutas.salidas.edit', $salida) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Cambiar quiénes van</a>
+                            <form method="POST" action="{{ route('rutas.salidas.cancelar', $salida) }}"
+                                  onsubmit="return confirm('¿Cancelar esta salida? Sus CCF vuelven a quedar pendientes.');">
+                                @csrf @method('PATCH')
+                                <button class="text-sm text-gray-400 hover:text-red-600 hover:underline dark:text-paper-500">Cancelar</button>
+                            </form>
+                        @endif
                     </div>
                 @endif
 
-                @if ($puedeGestionar && $salida->estaLiquidada())
+                @if ($puedeTerminar && $salida->estaLiquidada())
                     <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-green-700 px-4 py-3 text-sm font-medium text-white hover:bg-green-800">Liquidación de la ruta</a>
                 @endif
 

@@ -3,7 +3,10 @@
     $gastosDia = $salida->gastos()->whereDate('fecha', $fechaGastos)->orderBy('id')->get();
     $totalGastos = $gastosDia->sum(fn ($gasto) => \App\Services\Rutas\CierreDia::centavos($gasto->monto));
     $prefijoGastos = ($modoVendedor ?? false) ? 'rutas.mi-salida.' : 'rutas.salidas.';
-    $agregarGasto = ! ($soloListaGastos ?? false) && auth()->user()->can('agregarGasto', [$salida, $fechaGastos]);
+    // En la hoja de la oficina los gastos se anotan y se borran solo con `rutas.gestionar`:
+    // el jefe de vendedores los ve para terminar el día, pero no toca los de salidas ajenas.
+    $editaGastos = ! ($soloListaGastos ?? false) && (($modoVendedor ?? false) || auth()->user()->can('rutas.gestionar'));
+    $agregarGasto = $editaGastos && auth()->user()->can('agregarGasto', [$salida, $fechaGastos]);
 @endphp
 <section class="mt-5 rounded-2xl bg-white p-4 text-ink-900 ring-1 ring-gray-200 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-600" aria-label="Gastos del día">
     <h2 class="text-lg font-bold">{{ $fechaGastos === \App\Support\HoraNegocio::fechaHoy() ? 'Gastos de hoy' : 'Gastos del día' }} · ${{ number_format($totalGastos / 100, 2) }}</h2>
@@ -18,7 +21,7 @@
                     <span class="text-sm text-amber-800 dark:text-amber-300">Sin comprobante</span>
                 @endif
                 <div class="min-w-0 flex-1 break-words"><p class="font-semibold">{{ $gasto->concepto->label() }} · ${{ number_format((float) $gasto->monto, 2) }}</p><p class="text-sm text-gray-600 dark:text-paper-300">{{ $gasto->detalle }}</p></div>
-                @if (! ($soloListaGastos ?? false) && auth()->user()->can('borrarGasto', [$salida, $gasto]))
+                @if ($editaGastos && auth()->user()->can('borrarGasto', [$salida, $gasto]))
                     <form method="POST" action="{{ route($prefijoGastos.'gastos.destroy', [$salida, $gasto]) }}">
                         @csrf @method('DELETE')
                         <button class="min-h-11 rounded-lg px-3 text-sm text-red-700 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 dark:text-red-300" aria-label="Borrar gasto de {{ $gasto->concepto->label() }} por ${{ $gasto->monto }}">Borrar</button>

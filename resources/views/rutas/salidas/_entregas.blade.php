@@ -17,6 +17,8 @@
     $prefijoEntregas = $modoVendedor ? 'rutas.mi-salida.' : 'rutas.salidas.entregas.';
     $caja = 'rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none';
     $puedeMarcar = ($modoVendedor || $puedeGestionar) && $registrable && $participantes->isNotEmpty();
+    // «Terminar día» en la hoja de la oficina: también el jefe de vendedores, aunque no haya ido.
+    $puedeTerminarDia = ! $modoVendedor && auth()->user()->canAny(['rutas.gestionar', 'rutas.salidas.terminar']);
     // Quién viene elegido en cada tarjeta: en «Mi salida», el vendedor; en la oficina, el
     // responsable o, si va una sola persona, ella.
     $quien = $modoVendedor ? $persona?->id : ($preseleccion ?? $participantes->first()?->rutas_personal_id);
@@ -220,7 +222,7 @@
     </div>
 @endforelse
 
-@if ($modoVendedor || $puedeGestionar)
+@if ($modoVendedor || $puedeTerminarDia)
     @include('rutas.salidas._gastos')
     @if ($diaCerrado)
         @include('rutas.cierres._cerrado', ['cierre' => $cierreHoy, 'fecha' => $fechaHoy, 'prefijo' => $prefijoCierre])

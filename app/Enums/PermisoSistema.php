@@ -137,6 +137,10 @@ enum PermisoSistema: string
     // no edita ni cancela salidas, no reabre días ni configura rutas. Para el jefe de
     // vendedores (docs/PLAN_TABLERO_RUTAS.md, PR 6).
     case RutasSalidasArmar = 'rutas.salidas.armar';
+    // «Terminar día» y «Terminar ruta» de cualquier salida desde la hoja de la oficina,
+    // aunque no haya ido. No da reabrir días, gastos ajenos ni editar o cancelar salidas,
+    // y no lo hace recibir el dinero: lo recibe la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 7).
+    case RutasSalidasTerminar = 'rutas.salidas.terminar';
     // Ventas netas y su Excel: consulta comercial de solo lectura.
     case RutasVentasVer = 'rutas.ventas.ver';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
@@ -233,13 +237,14 @@ enum PermisoSistema: string
             //
             // Sin `rutas.gestionar` (reabrir días, gastos ajenos, configurar rutas), sin
             // `rutas.personal.gestionar` y sin nada de Planilla: no ve sueldos ni la ficha
-            // de Personal (decisión de Melqui, 03/11/2026). Arma salidas con su permiso
-            // propio; terminarlas llega en la etapa 2 con otro.
+            // de Personal (decisión de Melqui, 03/11/2026). Arma y termina salidas con sus
+            // permisos propios; el dinero lo recibe la oficina, nunca él.
             RolSistema::JefeVendedores => self::valores([
                 self::RutasVer,
                 self::RutasPersonalVer,
                 self::RutasEntregasRegistrar,
                 self::RutasSalidasArmar,
+                self::RutasSalidasTerminar,
             ]),
 
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
