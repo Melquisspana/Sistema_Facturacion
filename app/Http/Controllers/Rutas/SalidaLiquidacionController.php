@@ -71,6 +71,7 @@ class SalidaLiquidacionController extends Controller
             'salida' => $salida,
             'empresa' => $empresa,
             'totales' => $this->liquidacion->totales($salida),
+            'entregadas' => $this->liquidacion->entregadas($salida),
             'noEntregadas' => $this->liquidacion->noEntregadas($salida),
             'gastos' => $salida->gastos()->orderBy('fecha')->orderBy('id')->get(),
         ])->setPaper('a4', 'portrait')->setOption('enable_font_subsetting', true)

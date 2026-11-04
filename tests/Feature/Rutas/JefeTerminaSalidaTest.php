@@ -195,8 +195,8 @@ class JefeTerminaSalidaTest extends TestCase
 
         $html = view('rutas.liquidacion.pdf', [
             'salida' => $salida->fresh()->load(['ruta', 'personal', 'entregaDinero']), 'empresa' => Empresa::first(),
-            'totales' => app(LiquidacionSalida::class)->totales($salida), 'noEntregadas' => app(LiquidacionSalida::class)->noEntregadas($salida),
-            'gastos' => $salida->gastos,
+            'totales' => app(LiquidacionSalida::class)->totales($salida), 'entregadas' => app(LiquidacionSalida::class)->entregadas($salida),
+            'noEntregadas' => app(LiquidacionSalida::class)->noEntregadas($salida), 'gastos' => $salida->gastos,
         ])->render();
         $this->assertStringContainsString('Entrega: '.$persona->nombre, $html);
         $this->assertStringContainsString('Recibe: Oficina', $html);

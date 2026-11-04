@@ -82,6 +82,16 @@ class LiquidacionSalida
         ];
     }
 
+    /**
+     * Lo que se entregó en la salida, para el PDF. Mismo criterio que los cierres de cada día
+     * ({@see CierreDia::entregas()}): sin los facturados después de entregar, que no tienen dinero.
+     */
+    public function entregadas(SalidaRuta $salida): Collection
+    {
+        return $salida->entregas()->entregadas()->sinFacturadosDespues()
+            ->with(['dte', 'sala', 'entregadoPor'])->orderBy('cliente_sucursal_id')->orderBy('id')->get();
+    }
+
     /** Lo que no se entregó en la salida, con su motivo. Para la pantalla y el PDF. */
     public function noEntregadas(SalidaRuta $salida): Collection
     {

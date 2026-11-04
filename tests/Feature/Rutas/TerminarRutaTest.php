@@ -142,9 +142,13 @@ class TerminarRutaTest extends TestCase
         $this->assertStringContainsString('liquidacion-ruta-san-miguel-2026-11-04.pdf', $pdf->headers->get('content-disposition'));
         $html = view('rutas.liquidacion.pdf', [
             'salida' => $this->salida->load(['ruta', 'personal', 'entregaDinero']), 'empresa' => Empresa::first(),
-            'totales' => $totales, 'noEntregadas' => app(LiquidacionSalida::class)->noEntregadas($this->salida), 'gastos' => $this->salida->gastos,
+            'totales' => $totales, 'entregadas' => app(LiquidacionSalida::class)->entregadas($this->salida),
+            'noEntregadas' => app(LiquidacionSalida::class)->noEntregadas($this->salida), 'gastos' => $this->salida->gastos,
         ])->render();
-        foreach (['Liquidación de la ruta', '04/11/2026', '05/11/2026', 'Gasolina', 'Parqueo', 'Sala cerrada', $sobra->dte->numero_control, 'Efectivo a entregar $85.25', 'Entrega: Carlos'] as $texto) {
+        foreach (['Liquidación de la ruta', '04/11/2026', '05/11/2026', 'Gasolina', 'Parqueo', 'Sala cerrada', $sobra->dte->numero_control, 'Efectivo a entregar $85.25', 'Entrega: Carlos',
+            // Los documentos de la salida: los entregados con su forma, lo cobrado y quién los entregó.
+            'Entregados:</strong> 2 · $200.50', 'No entregados:</strong> 1 · $100.25', $efectivo->dte->numero_control, $cheque->dte->numero_control,
+            '<td>Efectivo</td><td class="dinero">$100.25</td><td>Carlos</td>', '<td>Cheque</td><td class="dinero">$100.25</td><td>Carlos</td>'] as $texto) {
             $this->assertStringContainsString($texto, $html);
         }
     }
@@ -171,7 +175,11 @@ class TerminarRutaTest extends TestCase
 
     public function test_quien_puede_terminar_la_ruta(): void
     {
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee(route('rutas.mi-salida.terminar', $this->salida));
+        // «Terminar ruta» viene plegado y pregunta antes; el que entró sin querer vuelve a marcar.
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee(route('rutas.mi-salida.terminar', $this->salida))
+            ->assertSeeInOrder(['Terminar ruta', '¿Ya terminaron toda la ruta?', 'Para cerrar solo hoy, usá «Terminar día».', 'Sí, terminar ruta'], false);
+        $this->get(route('rutas.mi-salida.terminar', $this->salida))->assertOk()
+            ->assertSeeInOrder(['href="'.route('rutas.mi-salida.show', $this->salida).'"', 'Seguir marcando entregas'], false);
         $this->get(route('rutas.mi-salida.liquidacion-final', $this->salida))->assertNotFound();
 
         // Un vendedor que no va en la salida no la ve ni la termina.
@@ -187,12 +195,13 @@ class TerminarRutaTest extends TestCase
         $this->actingAs($this->vendedor)->post(route('rutas.mi-salida.liquidar', $this->salida))->assertForbidden();
         $this->salida->update(['estado' => EstadoSalidaRuta::EnCurso]);
         $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk()->assertSee(route('rutas.salidas.terminar', $this->salida));
-        $this->get(route('rutas.salidas.terminar', $this->salida))->assertOk()->assertSee('Ningún día terminado todavía.');
+        $this->get(route('rutas.salidas.terminar', $this->salida))->assertOk()->assertSee('Ningún día terminado todavía.')
+            ->assertSee('Volver a la salida')->assertDontSee('Seguir marcando entregas');
         $this->post(route('rutas.salidas.liquidar', $this->salida))->assertSessionHasNoErrors()->assertRedirect(route('rutas.salidas.terminar', $this->salida));
         $this->assertSame($this->oficina->id, $this->salida->refresh()->liquidada_por);
 
         // Terminada, el vendedor ve su liquidación aunque ya no esté en curso.
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.terminar', $this->salida))->assertOk()->assertSee('Descargar liquidación de la ruta');
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.terminar', $this->salida))->assertOk()->assertSee('Descargar liquidación de la ruta')->assertDontSee('Seguir marcando entregas');
         $this->get(route('rutas.mi-salida.liquidacion-final', $this->salida))->assertOk();
     }
 

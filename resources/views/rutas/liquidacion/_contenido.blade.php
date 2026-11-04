@@ -8,9 +8,15 @@
 
 <div class="space-y-5">
     <div>
-        <a href="{{ $modoVendedor ? ($enCurso ? route('rutas.mi-salida.show', $salida) : route('rutas.mi-salida.index')) : route('rutas.salidas.show', $salida) }}" class="inline-flex min-h-11 items-center text-sm underline dark:text-paper-300">Volver a la salida</a>
+        {{-- El vendedor que entró sin querer (buscaba marcar entregas) vuelve con un botón grande. --}}
+        @unless ($modoVendedor && $enCurso)
+            <a href="{{ $modoVendedor ? route('rutas.mi-salida.index') : route('rutas.salidas.show', $salida) }}" class="inline-flex min-h-11 items-center text-sm underline dark:text-paper-300">Volver a la salida</a>
+        @endunless
         <h1 class="text-3xl font-bold dark:text-paper-100">{{ $salida->ruta->nombre }}</h1>
         <p class="mt-1 text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }} · {{ $salida->quienesVan() ?: 'Sin vendedores' }}</p>
+        @if ($modoVendedor && $enCurso)
+            <a href="{{ route('rutas.mi-salida.show', $salida) }}" class="mt-4 flex min-h-11 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 py-4 text-lg font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Seguir marcando entregas</a>
+        @endif
     </div>
 
     @if ($errors->any())
