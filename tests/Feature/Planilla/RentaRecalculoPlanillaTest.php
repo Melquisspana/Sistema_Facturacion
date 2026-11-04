@@ -235,7 +235,8 @@ class RentaRecalculoPlanillaTest extends TestCase
         $this->assertSame(['confirmó la renta antes del sistema', 'corrigió la renta antes del sistema'], $actividades->pluck('description')->all());
 
         foreach ($actividades as $actividad) {
-            $this->assertSame(['planilla_empleado_id' => $this->ana->id, 'anio' => 2026], $actividad->properties->all());
+            // MySQL guarda el JSON con las claves en otro orden: se compara sin orden.
+            $this->assertEquals(['planilla_empleado_id' => $this->ana->id, 'anio' => 2026], $actividad->properties->all());
         }
 
         $this->actingAs($this->actor)->get(route('planilla.renta.index', ['anio' => 2026]))
