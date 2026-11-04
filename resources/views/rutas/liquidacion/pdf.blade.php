@@ -28,6 +28,11 @@
     <p><strong>Vendedores:</strong> {{ $salida->quienesVan() }}</p>
     <p><strong>Entrega el dinero:</strong> {{ $salida->entregaDinero?->nombre ?? 'Sin cobros' }}</p>
 
+    @php($montoDe = fn ($lista) => $lista->sum(fn ($e) => \App\Services\Rutas\CierreDia::centavos($e->dte->total_pagar)))
+    <h2>Documentos</h2>
+    <p><strong>Entregados:</strong> {{ $entregadas->count() }} · {{ $plata($montoDe($entregadas)) }}</p>
+    <p><strong>No entregados:</strong> {{ $noEntregadas->count() }} · {{ $plata($montoDe($noEntregadas)) }}</p>
+
     <h2>Cobrado y gastos por día</h2>
     <table><thead><tr><th>Día</th><th class="dinero">Efectivo</th><th class="dinero">Cheques</th><th class="dinero">Transferencias</th><th class="dinero">Gastos</th></tr></thead><tbody>
     @foreach ($totales['dias'] as $dia)
@@ -42,6 +47,15 @@
         <tr><td>{{ $gasto->fecha->format('d/m/Y') }}</td><td>{{ $gasto->concepto->label() }}</td><td>{{ $gasto->detalle }}</td><td class="dinero">${{ number_format((float) $gasto->monto, 2) }}</td><td>{{ $gasto->archivo_ruta ? 'Con foto' : 'Sin comprobante' }}</td></tr>
     @empty
         <tr><td colspan="5">Sin gastos</td></tr>
+    @endforelse
+    </tbody></table>
+
+    <h2>Entregados</h2>
+    <table><thead><tr><th>Sala</th><th>CCF</th><th class="dinero">Monto</th><th>Forma</th><th class="dinero">Cobrado</th><th>Entregó</th></tr></thead><tbody>
+    @forelse ($entregadas as $entrega)
+        <tr><td>{{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</td><td class="numero">{{ $entrega->dte->numero_control }}</td><td class="dinero">${{ number_format((float) $entrega->dte->total_pagar, 2) }}</td><td>{{ $entrega->forma_cobro?->label() ?? 'Sin cobro (quedan)' }}</td><td class="dinero">{{ $entrega->monto_cobrado !== null ? '$'.number_format((float) $entrega->monto_cobrado, 2) : '—' }}</td><td>{{ $entrega->entregadoPor?->nombre }}</td></tr>
+    @empty
+        <tr><td colspan="6">No se entregó ninguno</td></tr>
     @endforelse
     </tbody></table>
 

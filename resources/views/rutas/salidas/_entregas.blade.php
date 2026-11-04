@@ -231,8 +231,16 @@
         <a href="{{ route($prefijoCierre.'cierre', $salida) }}" class="mt-6 flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-4 text-lg font-bold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600">Terminar día</a>
     @endif
     @if ($modoVendedor)
-        {{-- Al volver: lo que sobró lleva su motivo y el dinero de todos los días se entrega junto. --}}
-        <a href="{{ route('rutas.mi-salida.terminar', $salida) }}" class="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-gray-800 px-5 py-3 font-semibold text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900">Terminar ruta</a>
+        {{-- Al volver: lo que sobró lleva su motivo y el dinero de todos los días se entrega junto.
+             Plegado y con pregunta, para que no se confunda con marcar entregas o terminar el día. --}}
+        <details class="mt-3">
+            <summary class="flex min-h-11 w-full cursor-pointer list-none items-center justify-center rounded-xl bg-white px-5 py-3 font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500">Terminar ruta</summary>
+            <div class="{{ $caja }} mt-2 space-y-3 px-5 py-4">
+                <p class="font-semibold text-gray-800 dark:text-paper-100">¿Ya terminaron toda la ruta?</p>
+                <p class="text-sm text-gray-600 dark:text-paper-300">Para cerrar solo hoy, usá «Terminar día». Al terminar la ruta se anota por qué sobró cada CCF y se entrega el dinero.</p>
+                <a href="{{ route('rutas.mi-salida.terminar', $salida) }}" class="flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 py-3 font-semibold text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Sí, terminar ruta</a>
+            </div>
+        </details>
     @endif
     @if (! $modoVendedor)
         @foreach ($salida->cierres()->whereDate('fecha', '!=', $fechaHoy)->orderByDesc('fecha')->get() as $cierreAnterior)
