@@ -43,9 +43,8 @@ return [
             // Renta, tabla QUINCENAL. Fuente: Decreto Ejecutivo No. 10 del 30/04/2025, Art. 1
             // lit. b. La base es el total del período menos ISSS y AFP (Art. 1 lit. d).
             //
-            // Tramo II: el Art. 1 lit. e pide considerar la deducción de US$1,600 para quien
-            // gana US$9,100 o menos al año, y el decreto no da la fórmula quincenal. No se
-            // inventa: se avisa para revisarla con la contadora.
+            // Tramo II: la deducción de US$1,600 (Art. 1 lit. e) no se aplica en la quincena,
+            // solo en el recálculo de diciembre (lo confirmó la contadora el 04/11/2026).
             'renta' => [
                 'concepto' => 'Renta',
                 'tercero' => 'Ministerio de Hacienda',
@@ -53,8 +52,7 @@ return [
                     // Hasta 275.00: sin retención.
                     ['desde' => '0.00', 'porcentaje' => '0.00', 'exceso' => '0.00', 'cuota' => '0.00'],
                     // 275.01 a 447.62.
-                    ['desde' => '275.01', 'porcentaje' => '10.00', 'exceso' => '275.00', 'cuota' => '8.83',
-                        'aviso' => 'Revisá con la contadora la deducción de $1,600 (Decreto 10, art. 1 lit. e).'],
+                    ['desde' => '275.01', 'porcentaje' => '10.00', 'exceso' => '275.00', 'cuota' => '8.83'],
                     // 447.63 a 1,019.05.
                     ['desde' => '447.63', 'porcentaje' => '20.00', 'exceso' => '447.62', 'cuota' => '30.00'],
                     // 1,019.06 en adelante.
@@ -70,17 +68,18 @@ return [
             //
             // El mismo literal pide considerar en el recálculo, en el Tramo II de las dos
             // tablas, la deducción fija de US$1,600 (LISR Art. 29 num. 7) para quien gana
-            // US$9,100 o menos al año. En diciembre el año ya está completo y se resta. En
-            // junio el decreto no dice cuánto se resta de un semestre ni cómo saber el
-            // monto anual: se avisa para revisarla con la contadora.
+            // US$9,100 o menos al año. Según la contadora (04/11/2026), se resta solo en
+            // diciembre, y el tope se compara con lo gravado (sueldo menos ISSS y AFP).
+            // El aguinaldo no lleva renta y las planillas fuera de calendario suman solo si
+            // se les aplicaron los descuentos de ley: el sistema no se los calcula, así que
+            // lo acumulado cuenta solo las quincenas regulares (AcumuladoRenta).
             'recalculo' => [
                 6 => [
                     'tramos' => [
                         // Hasta 3,300.00: sin retención.
                         ['desde' => '0.00', 'porcentaje' => '0.00', 'exceso' => '0.00', 'cuota' => '0.00'],
                         // 3,300.01 a 5,371.44.
-                        ['desde' => '3300.01', 'porcentaje' => '10.00', 'exceso' => '3300.00', 'cuota' => '106.20',
-                            'aviso' => 'Revisá con la contadora la deducción de $1,600 en el recálculo de junio (Decreto 10, art. 1 lit. f).'],
+                        ['desde' => '3300.01', 'porcentaje' => '10.00', 'exceso' => '3300.00', 'cuota' => '106.20'],
                         // 5,371.45 a 12,228.60.
                         ['desde' => '5371.45', 'porcentaje' => '20.00', 'exceso' => '5371.44', 'cuota' => '360.00'],
                         // 12,228.61 en adelante.
@@ -99,9 +98,8 @@ return [
                         ['desde' => '24457.15', 'porcentaje' => '30.00', 'exceso' => '24457.14', 'cuota' => '3462.86'],
                     ],
                     // Se resta de lo gravado del año cuando no pasa de `hasta`. Con ese
-                    // límite la persona nunca está más allá del Tramo II. Que el límite se
-                    // mida sobre lo gravado (y no sobre el sueldo bruto) está por confirmar
-                    // con la contadora: el decreto dice «monto anual» sin precisar.
+                    // límite la persona nunca está más allá del Tramo II. El límite se mide
+                    // sobre lo gravado, no sobre el sueldo bruto (contadora, 04/11/2026).
                     'deduccion' => ['importe' => '1600.00', 'hasta' => '9100.00',
                         'aviso' => 'Se restó la deducción de $1,600 porque lo gravado del año no pasa de $9,100 (Decreto 10, art. 1 lit. f).'],
                 ],
