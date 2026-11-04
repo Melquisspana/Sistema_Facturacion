@@ -115,6 +115,24 @@ class UnaSolaAltaTest extends TestCase
         $this->assertSame('0000-0000', $ruta->fresh()->telefono);
     }
 
+    public function test_acceso_de_jefe_de_vendedores_usa_la_ficha_de_rutas_que_ya_tenia(): void
+    {
+        // Caso real (04/11/2026): ya salía a rutas y fallaba con «El usuario ya tiene otra ficha de Rutas».
+        $p = $this->persona(['sale_rutas' => true]);
+        $ficha = $p->personal_ruta_id;
+
+        app(AltaEmpleado::class)->completar($this->admin, $p, [
+            'usa_sistema' => true, 'rol' => 'jefe_vendedores', 'email' => 'jefe@example.test',
+            'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026',
+        ]);
+
+        $p = $p->fresh();
+        $this->assertSame(1, PersonalRuta::count());
+        $this->assertSame($ficha, $p->personal_ruta_id);
+        $this->assertSame($p->user_id, $p->personalRuta->user_id);
+        $this->assertTrue($p->usuario->hasRole('jefe_vendedores'));
+    }
+
     public function test_hacerlo_vendedor_desde_su_acceso_usa_su_ficha_de_personal(): void
     {
         $p = $this->persona();
