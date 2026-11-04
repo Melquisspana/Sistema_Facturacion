@@ -53,7 +53,8 @@ class MiSalidaController extends Controller
     {
         Gate::authorize('view', $salida);
         $salida->load(['ruta', 'participantes.personal']);
-        $entregas = $salida->entregas()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
+        // Los facturados después de entregar los anota y los ve la oficina, en la hoja de la salida.
+        $entregas = $salida->entregas()->sinFacturadosDespues()->with(['dte.cliente:id,cobro_en_entrega', 'sala', 'entregadoPor'])->get();
         $resoluciones = $this->entregas->resolucionesAlbaran($entregas);
 
         return view('rutas.mi-salida.show', [

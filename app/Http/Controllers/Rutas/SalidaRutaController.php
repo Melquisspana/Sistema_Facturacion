@@ -28,7 +28,7 @@ class SalidaRutaController extends Controller
     {
         $salidas = SalidaRuta::query()
             ->with(['ruta:id,nombre', 'personal:id,nombre', 'entregas.dte:id,numero_orden_compra'])
-            ->withCount('entregas')
+            ->withCount(['entregas' => fn ($q) => $q->sinFacturadosDespues()])
             ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
             ->when($request->filled('ruta_id'), fn ($q) => $q->where('ruta_id', $request->integer('ruta_id')))
             // Lo más reciente primero: el listado se abre para ver qué está pasando
@@ -88,9 +88,11 @@ class SalidaRutaController extends Controller
     {
         $salida->load(['ruta', 'creador:id,name', 'participantes.personal:id,nombre,activo']);
 
-        $entregas = $salida->entregas()
-            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre'])
-            ->get();
+        // Los facturados después de entregar no viajaron con la salida: van en su bloque aparte.
+        [$facturadosDespues, $entregas] = $salida->entregas()
+            ->with(['dte:id,numero_control,fecha_emision,total_pagar,numero_orden_compra,cliente_id,cliente_sucursal_id,estado', 'dte.cliente:id,cobro_en_entrega', 'sala:id,nombre,codigo', 'entregadoPor:id,nombre', 'registradoPor:id,name'])
+            ->get()
+            ->partition(fn ($e) => $e->esFacturadoDespues());
 
         $resoluciones = $servicio->resolucionesAlbaran($entregas);
 
@@ -116,6 +118,8 @@ class SalidaRutaController extends Controller
             'motivos' => MotivoNoEntrega::opciones(),
             'abierta' => ! $salida->estado->esTerminal(),
             'registrable' => $salida->estado === EstadoSalidaRuta::EnCurso,
+            'facturadosDespues' => $facturadosDespues->sortBy(fn ($e) => [$e->fecha_resultado, $e->sala?->nombre ?? ''])->values(),
+            'diasDeLaSalida' => $servicio->diasDeLaSalida($salida),
         ]);
     }
 

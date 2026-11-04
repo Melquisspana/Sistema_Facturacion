@@ -23,7 +23,7 @@ class CierreDia
 
     public function entregas(SalidaRuta $salida, string $fecha): Collection
     {
-        return $salida->entregas()->entregadas()->whereDate('fecha_resultado', $fecha)
+        return $salida->entregas()->entregadas()->sinFacturadosDespues()->whereDate('fecha_resultado', $fecha)
             ->with(['sala', 'dte.establecimiento.empresa'])->orderBy('cliente_sucursal_id')->orderBy('id')->get();
     }
 
@@ -54,7 +54,8 @@ class CierreDia
             if ($cierre?->estaCerrado()) {
                 throw ValidationException::withMessages(['cierre' => 'El día ya está cerrado. Reabrilo antes de corregirlo.']);
             }
-            $entregas = $salida->entregas()->entregadas()->whereDate('fecha_resultado', $fecha)->lockForUpdate()->get();
+            // Los facturados después de entregar no tienen dinero: no entran en el día.
+            $entregas = $salida->entregas()->entregadas()->sinFacturadosDespues()->whereDate('fecha_resultado', $fecha)->lockForUpdate()->get();
             $gastos = $this->gastos($salida, $fecha)->sum(fn ($gasto) => self::centavos($gasto->monto));
             if ($entregas->isEmpty() && $gastos === 0 && $cierre === null) {
                 throw ValidationException::withMessages(['cierre' => 'No hay entregas ni gastos registrados en esa fecha.']);

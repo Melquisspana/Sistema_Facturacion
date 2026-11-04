@@ -182,12 +182,15 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             ->group(function () {
                 // Literales antes que paramétricas (regla del repo).
                 Route::post('cargar', [SalidaEntregaController::class, 'cargar'])->name('cargar');
+                // El CCF facturado después de entregar: sin dinero, también en salidas terminadas.
+                Route::post('facturado-despues', [SalidaEntregaController::class, 'facturadoDespues'])->name('facturado-despues');
                 Route::post('sala/{sucursal}', [SalidaEntregaController::class, 'sala'])->name('sala')
                     ->withoutScopedBindings();
                 Route::post('/', [SalidaEntregaController::class, 'store'])->name('store');
                 Route::patch('{entrega}', [SalidaEntregaController::class, 'update'])->name('update');
                 Route::patch('{entrega}/deshacer', [SalidaEntregaController::class, 'deshacer'])->name('deshacer');
                 Route::delete('{entrega}', [SalidaEntregaController::class, 'destroy'])->name('destroy');
+                Route::delete('{entrega}/facturado-despues', [SalidaEntregaController::class, 'deshacerFacturadoDespues'])->name('facturado-despues.destroy');
             });
 
         /*

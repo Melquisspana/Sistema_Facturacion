@@ -61,9 +61,9 @@ class SalidaRutaEntrega extends Model
             ->dontSubmitEmptyLogs()
             ->useLogName('salida_ruta_entrega')
             ->setDescriptionForEvent(fn (string $evento) => match ($evento) {
-                'created' => 'cargó el CCF a la salida',
+                'created' => $this->esFacturadoDespues() ? 'anotó el CCF facturado después de entregar' : 'cargó el CCF a la salida',
                 'updated' => 'registró la entrega del CCF',
-                'deleted' => 'quitó el CCF de la salida',
+                'deleted' => $this->esFacturadoDespues() ? 'deshizo el CCF facturado después de entregar' : 'quitó el CCF de la salida',
                 default => $evento,
             });
     }
@@ -96,6 +96,22 @@ class SalidaRutaEntrega extends Model
     public function estaPendiente(): bool
     {
         return $this->resultado === null;
+    }
+
+    /** Anotado por la oficina después de facturar: entregado, pero sin dinero en la salida. */
+    public function esFacturadoDespues(): bool
+    {
+        return $this->origen_registro === OrigenRegistroEntrega::FacturadoDespues;
+    }
+
+    /**
+     * Lo que viajó y se registró en la ruta. Deja afuera los facturados después de entregar,
+     * que no entran en el cierre del día ni en la liquidación.
+     */
+    public function scopeSinFacturadosDespues(Builder $q): Builder
+    {
+        return $q->where(fn (Builder $q) => $q->whereNull('origen_registro')
+            ->orWhere('origen_registro', '!=', OrigenRegistroEntrega::FacturadoDespues->value));
     }
 
     public function scopePendientes(Builder $q): Builder
