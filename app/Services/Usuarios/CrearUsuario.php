@@ -2,7 +2,6 @@
 
 namespace App\Services\Usuarios;
 
-use App\Enums\RolSistema;
 use App\Models\PersonalRuta;
 use App\Models\User;
 use App\Services\Rutas\FichaVendedor;
@@ -23,7 +22,8 @@ class CrearUsuario
             $usuario->save();
             $usuario->syncRoles([$validados['rol']]);
             activity('usuario')->performedOn($usuario)->log('asignó el rol '.$validados['rol']);
-            if ($ficha && $validados['rol'] === RolSistema::Vendedor->value) {
+            // También el jefe de vendedores: sale a ruta y usa la ficha que ya tenía.
+            if ($ficha && in_array($validados['rol'], FichaVendedor::ROLES, true)) {
                 $ficha->update(['user_id' => $usuario->id]);
             }
             app(FichaVendedor::class)->sincronizar($usuario);
