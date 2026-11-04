@@ -11,9 +11,9 @@ use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * El PDF de un CCF de la salida, para verlo en el celular al tocar la tarjeta. Es la misma
- * representación de Facturación ({@see DtePdfService}); se abre en el navegador y se
- * guarda desde ahí.
+ * El PDF de un CCF de la salida: al tocar la tarjeta se DESCARGA (pedido de los vendedores,
+ * 04/11/2026: lo guardan y lo mandan desde el celular). Es la misma representación de
+ * Facturación ({@see DtePdfService}).
  *
  * Solo sirve CCF que van en ESTA salida (la entrega se busca dentro de la salida: otra da
  * 404). En la oficina basta `rutas.ver`, que ya ve la hoja completa; en «Mi salida», solo
@@ -29,6 +29,6 @@ class SalidaCcfController extends Controller
 
         $dte = $entrega->dte ?? abort(404);
 
-        return $pdf->pdf($dte)->stream($pdf->nombre($dte));
+        return $pdf->pdf($dte)->download($pdf->nombre($dte));
     }
 }
