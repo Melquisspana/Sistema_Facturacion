@@ -16,8 +16,9 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Usuarios y Personal son la misma persona: una cuenta creada antes en Usuarios › Nuevo
- * se enlaza con su ficha, desde la ficha o desde Usuarios, y cada lado muestra al otro.
+ * El acceso y la ficha son la misma persona: una cuenta de antes (de cuando existía
+ * Usuarios › Nuevo) se enlaza con su ficha desde la ficha, el único lugar para eso, y
+ * Personal › Accesos lleva a la ficha de cada uno.
  */
 class UsuariosEnlazadosConPersonalTest extends TestCase
 {
@@ -56,7 +57,7 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         ], $cambios));
     }
 
-    /** Una cuenta creada en Usuarios › Nuevo, como las de los vendedores. */
+    /** Una cuenta suelta de antes, como las de los vendedores que se crearon en Usuarios › Nuevo. */
     private function cuenta(string $rol, string $nombre = 'Anita', string $correo = 'anita@icloud.com'): User
     {
         return app(CrearUsuario::class)->crear([
@@ -188,7 +189,7 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
             ->assertSee('Crear uno nuevo')->assertSee('anita@icloud.com')->assertDontSee('ocupada@icloud.com');
     }
 
-    public function test_usuarios_muestra_la_persona_enlazada_y_a_quien_no_tiene_ficha(): void
+    public function test_accesos_muestra_la_persona_enlazada_y_a_quien_no_tiene_ficha(): void
     {
         $p = $this->persona();
         $enlazada = $this->cuenta('contabilidad');
@@ -196,58 +197,31 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         app(AltaEmpleado::class)->completar($this->admin, $p, ['usa_sistema' => true, 'user_id' => $enlazada->id]);
         $ficha = route('personal.empleados.show', 'p'.$p->id);
 
-        $this->actingAs($this->admin)->get(route('usuarios.index'))->assertOk()
-            ->assertSee($ficha, false)->assertSee('Sin ficha en Personal');
-        $this->actingAs($this->admin)->get(route('usuarios.show', $enlazada))->assertOk()
-            ->assertSee($ficha, false)->assertDontSee('Sin ficha en Personal');
-        $this->actingAs($this->admin)->get(route('usuarios.show', $suelta))->assertOk()
-            ->assertSee('Sin ficha en Personal')->assertSee('No hay personas sin usuario en Personal');
+        $this->actingAs($this->admin)->get(route('personal.accesos.index'))->assertOk()
+            ->assertSee($ficha, false)->assertSee('Abrir ficha')->assertSee('Sin ficha en Personal');
+        // Quien tiene ficha se ve en su ficha.
+        $this->actingAs($this->admin)->get(route('personal.accesos.show', $enlazada))->assertRedirect($ficha);
+        $this->actingAs($this->admin)->get(route('personal.accesos.show', $suelta))->assertOk()
+            ->assertSee('Sin ficha en Personal')->assertSee('Agregar acceso o módulos');
     }
 
-    public function test_desde_usuarios_se_enlaza_con_una_persona_sin_usuario(): void
+    /** Enlazar una cuenta con su persona se hace en un solo lugar: la ficha. */
+    public function test_enlazar_desde_la_cuenta_ya_no_existe(): void
     {
         $p = $this->persona();
         $cuenta = $this->cuenta('vendedor');
 
-        $this->actingAs($this->admin)->get(route('usuarios.show', $cuenta))->assertOk()
-            ->assertSee(route('usuarios.personal', $cuenta), false)->assertSee('Ana Ficticia');
-
-        $this->actingAs($this->admin)->post(route('usuarios.personal', $cuenta), ['planilla_empleado_id' => $p->id])
-            ->assertRedirect(route('usuarios.show', $cuenta))->assertSessionHasNoErrors();
-
-        $p = $p->fresh();
-        $this->assertSame($cuenta->id, $p->user_id);
-        $this->assertSame($cuenta->personalRuta->id, $p->personal_ruta_id);
-        $this->assertSame('Ana Ficticia', $cuenta->fresh()->name);
+        $this->actingAs($this->admin)->post('/usuarios/'.$cuenta->id.'/personal', ['planilla_empleado_id' => $p->id])->assertNotFound();
+        $this->actingAs($this->admin)->get(route('personal.accesos.show', $cuenta))->assertOk()->assertDontSee('planilla_empleado_id');
+        $this->assertNull($p->fresh()->user_id);
     }
 
-    public function test_desde_usuarios_no_se_pisa_a_quien_ya_tiene_usuario_ni_sin_permiso(): void
-    {
-        $p = $this->persona();
-        $primera = $this->cuenta('contabilidad');
-        $segunda = $this->cuenta('contabilidad', 'Otra', 'otra@icloud.com');
-        app(AltaEmpleado::class)->completar($this->admin, $p, ['usa_sistema' => true, 'user_id' => $primera->id]);
-        $soloUsuarios = $this->usuario([PermisoSistema::UsuariosGestionar->value]);
-        $libre = $this->persona(['nombres' => 'Bea', 'dui' => 'FICTICIO-2']);
-
-        $this->actingAs($this->admin)->post(route('usuarios.personal', $segunda), ['planilla_empleado_id' => $p->id])
-            ->assertSessionHasErrors('planilla_empleado_id');
-        $this->actingAs($this->admin)->post(route('usuarios.personal', $segunda), [])
-            ->assertSessionHasErrors('planilla_empleado_id');
-        $this->actingAs($soloUsuarios)->post(route('usuarios.personal', $segunda), ['planilla_empleado_id' => $libre->id])
-            ->assertForbidden();
-        $this->actingAs($this->usuario([PermisoSistema::PlanillaGestionar->value]))
-            ->post(route('usuarios.personal', $segunda), ['planilla_empleado_id' => $libre->id])->assertForbidden();
-
-        $this->assertSame($primera->id, $p->fresh()->user_id);
-        $this->assertNull($libre->fresh()->user_id);
-    }
-
-    public function test_un_solo_nombre_entre_personal_y_usuarios(): void
+    public function test_un_solo_nombre_entre_personal_y_su_acceso(): void
     {
         $p = $this->persona();
         $cuenta = $this->cuenta('contabilidad');
         app(AltaEmpleado::class)->completar($this->admin, $p, ['usa_sistema' => true, 'user_id' => $cuenta->id]);
+        $ficha = route('personal.empleados.show', 'p'.$p->id);
 
         // Corregido en Personal, llega al usuario.
         $this->actingAs($this->admin)->post(route('planilla.empleados.datos', $p), [
@@ -255,74 +229,53 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         ])->assertSessionHasNoErrors();
         $this->assertSame('Ana María Ficticia', $cuenta->fresh()->name);
 
-        // En Usuarios no se cambia: se corrige en la ficha.
-        $this->actingAs($this->admin)->get(route('usuarios.edit', $cuenta))->assertOk()->assertSee('Se corrige en su')->assertSee('readonly', false);
-        $this->actingAs($this->admin)->put(route('usuarios.update', $cuenta), [
-            'name' => 'Otro Nombre', 'email' => 'anita@icloud.com', 'rol' => 'contabilidad', 'activo' => '1',
-        ])->assertRedirect(route('usuarios.show', $cuenta));
+        // En «Acceso y módulos» no se escribe el nombre, y si llega uno no se toma.
+        $this->actingAs($this->admin)->get($ficha)->assertOk()
+            ->assertSee('Cambiar rol o correo')->assertDontSee('id="acceso_name"', false);
+        $this->actingAs($this->admin)->put(route('personal.accesos.update', $cuenta), [
+            'name' => 'Otro Nombre', 'email' => 'anita@icloud.com', 'rol' => 'contabilidad',
+        ])->assertRedirect($ficha);
         $this->assertSame('Ana María Ficticia', $cuenta->fresh()->name);
     }
 
-    public function test_usuarios_nuevo_elige_la_persona_y_el_nombre_sale_de_su_ficha(): void
-    {
-        $p = $this->persona();
-        $conUsuario = $this->persona(['nombres' => 'Bea', 'dui' => 'FICTICIO-2']);
-        app(AltaEmpleado::class)->completar($this->admin, $conUsuario, ['usa_sistema' => true, 'user_id' => $this->cuenta('contabilidad')->id]);
-
-        $this->actingAs($this->admin)->get(route('usuarios.create', ['persona' => $p->id]))->assertOk()
-            ->assertSee('Ana Ficticia')->assertDontSee('Bea Ficticia')
-            // El único nombre que se escribe es el de la cuenta externa; el de la persona sale de su ficha.
-            ->assertSee('aria-describedby="name-externa"', false)->assertDontSee('aria-describedby="name-ficha"', false)
-            ->assertSee(route('planilla.empleados.create'), false);
-
-        $this->actingAs($this->admin)->post(route('usuarios.store'), [
-            'planilla_empleado_id' => $p->id, 'name' => 'Otro Nombre', 'rol' => 'vendedor', 'email' => 'ana@icloud.com',
-            'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026',
-        ])->assertSessionHasNoErrors();
-
-        $p = $p->fresh();
-        $usuario = User::where('email', 'ana@icloud.com')->sole();
-        $this->assertSame($usuario->id, $p->user_id);
-        $this->assertSame('Ana Ficticia', $usuario->name);
-        $this->assertTrue($usuario->activo);
-        // Vendedor: queda también en Rutas, enlazado, una sola vez.
-        $this->assertSame($usuario->id, $p->personalRuta->user_id);
-        $this->assertSame(1, PersonalRuta::count());
-    }
-
-    public function test_usuarios_nuevo_no_crea_cuentas_sueltas_ni_repite_usuario(): void
+    /** Accesos › Nuevo ya no da acceso a una persona del personal: eso es de su ficha. */
+    public function test_accesos_nuevo_no_carga_otra_vez_a_una_persona(): void
     {
         $p = $this->persona();
         $usuarios = User::count();
-        $datos = ['rol' => 'contabilidad', 'email' => 'ana@icloud.com', 'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026'];
+        $datos = ['rol' => 'vendedor', 'email' => 'ana@icloud.com', 'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026'];
 
-        $this->actingAs($this->admin)->post(route('usuarios.store'), $datos + ['name' => 'Suelta', 'activo' => '1'])
-            ->assertSessionHasErrors('planilla_empleado_id');
-        $this->actingAs($this->admin)->post(route('usuarios.store'), array_replace($datos, ['password_confirmation' => 'otra']) + ['planilla_empleado_id' => $p->id])
-            ->assertSessionHasErrors('password');
+        $this->actingAs($this->admin)->get(route('personal.accesos.create'))->assertOk()
+            ->assertDontSee('Ana Ficticia')->assertSee(route('personal.empleados'), false);
+        // Con Personal solo sale una cuenta externa, pedida a propósito y solo con Contabilidad.
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $datos + ['planilla_empleado_id' => $p->id, 'name' => 'Otra'])
+            ->assertSessionHasErrors('cuenta_externa');
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $datos + ['cuenta_externa' => '1', 'name' => 'Otra'])
+            ->assertSessionHasErrors('rol');
+        // Ni como externa con el nombre de la persona.
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), array_replace($datos, ['rol' => 'contabilidad']) + ['cuenta_externa' => '1', 'name' => 'Ana Ficticia'])
+            ->assertSessionHasErrors('name');
         $this->assertSame($usuarios, User::count());
-
-        $this->actingAs($this->admin)->post(route('usuarios.store'), $datos + ['planilla_empleado_id' => $p->id])->assertSessionHasNoErrors();
-        $this->actingAs($this->admin)->post(route('usuarios.store'), array_replace($datos, ['email' => 'otra@icloud.com']) + ['planilla_empleado_id' => $p->id])
-            ->assertSessionHasErrors('planilla_empleado_id');
-        $this->assertSame($usuarios + 1, User::count());
-    }
-
-    public function test_usuarios_nuevo_pide_poder_gestionar_personal(): void
-    {
-        $p = $this->persona();
-        $soloUsuarios = $this->usuario([PermisoSistema::UsuariosGestionar->value]);
-
-        $this->actingAs($soloUsuarios)->get(route('usuarios.create'))->assertOk()
-            ->assertSee('hace falta poder gestionar Personal');
-        $this->actingAs($soloUsuarios)->post(route('usuarios.store'), [
-            'planilla_empleado_id' => $p->id, 'rol' => 'contabilidad', 'email' => 'ana@icloud.com',
-            'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026',
-        ])->assertForbidden();
         $this->assertNull($p->fresh()->user_id);
     }
 
-    public function test_usuarios_marca_cuantos_faltan_y_los_filtra(): void
+    /** En la ficha el acceso se da una sola vez: la segunda vez no hay nada que agregar. */
+    public function test_la_ficha_no_da_dos_accesos_a_la_misma_persona(): void
+    {
+        $p = $this->persona();
+        $usuarios = User::count();
+        $datos = ['usa_sistema' => '1', 'rol' => 'contabilidad', 'email' => 'ana@icloud.com', 'password' => 'Clave-Ficticia-2026', 'password_confirmation' => 'Clave-Ficticia-2026'];
+
+        $this->actingAs($this->admin)->post(route('planilla.empleados.modulos', $p), $datos)->assertSessionHasNoErrors();
+        $this->actingAs($this->admin)->post(route('planilla.empleados.modulos', $p), array_replace($datos, ['email' => 'otra@icloud.com']))
+            ->assertSessionHasErrors('modulos');
+
+        $this->assertSame($usuarios + 1, User::count());
+        $this->actingAs($this->admin)->get(route('personal.empleados.show', 'p'.$p->id))->assertOk()
+            ->assertDontSee('Darle acceso al sistema')->assertSee('Cambiar rol o correo');
+    }
+
+    public function test_accesos_marca_cuantos_faltan_y_los_filtra(): void
     {
         $p = $this->persona();
         $enlazada = $this->cuenta('contabilidad', 'Enlazada', 'enlazada@icloud.com');
@@ -330,20 +283,21 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         $this->cuenta('contabilidad', 'Suelta', 'suelta@icloud.com');
 
         // El administrador y la suelta siguen entrando, pero se avisa.
-        $this->actingAs($this->admin)->get(route('usuarios.index'))->assertOk()
+        $this->actingAs($this->admin)->get(route('personal.accesos.index'))->assertOk()
             ->assertSee('Hay 2 usuarios sin ficha en Personal.')->assertSee('enlazada@icloud.com');
-        $this->actingAs($this->admin)->get(route('usuarios.index', ['sin_ficha' => 1]))->assertOk()
+        $this->actingAs($this->admin)->get(route('personal.accesos.index', ['sin_ficha' => 1]))->assertOk()
             ->assertSee('suelta@icloud.com')->assertDontSee('enlazada@icloud.com');
     }
 
-    public function test_con_planilla_apagada_usuarios_no_habla_de_personal(): void
+    public function test_con_planilla_apagada_accesos_no_habla_de_personal(): void
     {
         config(['planilla.enabled' => false]);
         $cuenta = $this->cuenta('contabilidad');
 
-        $this->actingAs($this->admin)->get(route('usuarios.index'))->assertOk()->assertDontSee('Sin ficha en Personal');
-        $this->actingAs($this->admin)->get(route('usuarios.show', $cuenta))->assertOk()->assertDontSee('Sin ficha en Personal');
-        $this->actingAs($this->admin)->get(route('usuarios.create'))->assertOk()->assertSee('id="name"', false)->assertDontSee('planilla_empleado_id');
-        $this->actingAs($this->admin)->post(route('usuarios.personal', $cuenta), ['planilla_empleado_id' => 1])->assertNotFound();
+        $this->actingAs($this->admin)->get(route('personal.accesos.index'))->assertOk()
+            ->assertDontSee('Sin ficha en Personal')->assertSee('Nuevo usuario');
+        $this->actingAs($this->admin)->get(route('personal.accesos.show', $cuenta))->assertOk()->assertDontSee('Sin ficha en Personal');
+        $this->actingAs($this->admin)->get(route('personal.accesos.create'))->assertOk()
+            ->assertSee('id="name"', false)->assertSee('value="administrador"', false)->assertDontSee('planilla_empleado_id');
     }
 }

@@ -84,7 +84,7 @@
     $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*');
     $grupoCobrosActivo = request()->routeIs('ppq.*', 'cobros.*');
     $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
-    $grupoAdministracionActivo = request()->routeIs('usuarios.*', 'auditoria.*', 'importaciones.*');
+    $grupoAdministracionActivo = request()->routeIs('auditoria.*', 'importaciones.*');
     $grupoGastosActivo = request()->routeIs('gastos.*');
     // Configuración ya no es un grupo colapsable sino una entrada directa, así que
     // esto no marca «qué grupo contiene la ruta» sino simplemente si estamos dentro

@@ -45,14 +45,15 @@ class FichaJuntaTodoTest extends TestCase
 
         $this->actingAs($this->admin)->get(route('personal.empleados.show', 'p'.$p->id))->assertOk()
             ->assertSeeInOrder(['Acceso y módulos', 'Usuario', 'ana@icloud.com', 'Asistencia', 'Marca con huella', 'Rutas', 'Vendedor'])
-            ->assertSee(route('usuarios.show', $p->user_id), false)
+            // El acceso se cambia en la ficha misma: no hay pantalla de Usuarios aparte.
+            ->assertSee(route('personal.accesos.update', $p->user_id), false)->assertDontSee('Abrir en Usuarios')
             ->assertSee('Editar datos de rutas')
             ->assertDontSee('Abrir en Rutas')
             ->assertSee('href="#asistencia"', false)->assertSee('id="asistencia"', false);
 
         // Y cada parte vuelve a la ficha.
         $ficha = route('personal.empleados.show', 'p'.$p->id);
-        $this->actingAs($this->admin)->get(route('usuarios.show', $p->user_id))->assertOk()->assertSee($ficha, false);
+        $this->actingAs($this->admin)->get(route('personal.accesos.show', $p->user_id))->assertRedirect($ficha);
         $this->actingAs($this->admin)->get(route('rutas.personal.show', $p->personal_ruta_id))->assertRedirect($ficha);
     }
 
@@ -67,7 +68,7 @@ class FichaJuntaTodoTest extends TestCase
             ->assertSee('Sin usuario')->assertSee('No marca')->assertSee('No sale a rutas');
     }
 
-    public function test_usuarios_y_la_ficha_piden_lo_mismo_en_el_mismo_orden(): void
+    public function test_la_cuenta_externa_y_la_ficha_piden_lo_mismo_en_el_mismo_orden(): void
     {
         $p = app(AltaEmpleado::class)->registrar($this->admin, [
             'nombres' => 'Bea', 'apellidos' => 'Ficticia', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-2',
@@ -75,7 +76,7 @@ class FichaJuntaTodoTest extends TestCase
         ]);
         $orden = ['El rol dice qué puede hacer', 'Rol', 'Correo', 'Contraseña', 'Repetí la contraseña', 'Mínimo'];
 
-        $this->actingAs($this->admin)->get(route('usuarios.create'))->assertOk()->assertSeeInOrder($orden);
+        $this->actingAs($this->admin)->get(route('personal.accesos.create'))->assertOk()->assertSeeInOrder($orden);
         $this->actingAs($this->admin)->get(route('personal.empleados.show', 'p'.$p->id))->assertOk()->assertSeeInOrder($orden);
     }
 }

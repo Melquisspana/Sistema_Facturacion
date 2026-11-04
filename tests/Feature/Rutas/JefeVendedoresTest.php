@@ -61,10 +61,10 @@ class JefeVendedoresTest extends TestCase
         }
     }
 
-    public function test_aparece_en_el_formulario_de_usuarios(): void
+    public function test_aparece_en_el_formulario_de_accesos(): void
     {
         $this->actingAs(User::factory()->create()->assignRole('administrador'))
-            ->get(route('usuarios.create'))
+            ->get(route('personal.accesos.create'))
             ->assertOk()
             ->assertSee('<option value="jefe_vendedores"', false)
             ->assertSee('Jefe de vendedores');

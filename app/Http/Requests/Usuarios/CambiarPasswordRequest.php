@@ -7,6 +7,9 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class CambiarPasswordRequest extends FormRequest
 {
+    /** Mismo bloque de errores que el resto de las acciones del acceso (ver UpdateUserRequest). */
+    protected $errorBag = 'acceso';
+
     public function authorize(): bool
     {
         return true; // UserPolicy::update se valida en el controlador.

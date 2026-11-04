@@ -136,8 +136,8 @@ class AltaEmpleadoTest extends TestCase
     {
         $actor = $this->actor();
         $e = app(AltaEmpleado::class)->registrar($actor, $this->datos(['usa_sistema' => true, 'sale_rutas' => true]));
-        $this->actingAs($actor)->put(route('usuarios.update', $e->user_id), [
-            'name' => $e->nombre, 'email' => 'elena@example.test', 'rol' => 'contabilidad', 'activo' => '1',
+        $this->actingAs($actor)->put(route('personal.accesos.update', $e->user_id), [
+            'email' => 'elena@example.test', 'rol' => 'contabilidad',
         ])->assertSessionHasNoErrors()->assertRedirect();
         $this->assertNull($e->personalRuta->user_id);
         $this->assertTrue($e->personalRuta->fresh()->activo);
@@ -352,8 +352,9 @@ class AltaEmpleadoTest extends TestCase
         // El sistema es solo para empleados (03/11/2026): cada usuario sale de una persona
         // de Personal, que se carga una sola vez.
         $actor = $this->actor();
-        $this->actingAs($actor)->get(route('planilla.empleados.create'))->assertOk()->assertDontSee(route('usuarios.create'));
-        $this->post(route('usuarios.store'), ['name' => 'Contadora Externa Ficticia', 'email' => 'externa@example.test', 'password' => 'Prueba#Segura2026', 'password_confirmation' => 'Prueba#Segura2026', 'rol' => 'contabilidad', 'activo' => '1'])->assertSessionHasErrors('planilla_empleado_id');
+        // de Personal, que se carga una sola vez. La cuenta externa se pide a propósito.
+        $this->actingAs($actor)->get(route('planilla.empleados.create'))->assertOk()->assertDontSee(route('personal.accesos.create'));
+        $this->post(route('personal.accesos.store'), ['name' => 'Contadora Externa Ficticia', 'email' => 'externa@example.test', 'password' => 'Prueba#Segura2026', 'password_confirmation' => 'Prueba#Segura2026', 'rol' => 'contabilidad', 'activo' => '1'])->assertSessionHasErrors('cuenta_externa');
         $this->assertSame(0, User::where('email', 'externa@example.test')->count());
         $this->assertSame(0, PlanillaEmpleado::count());
         $this->assertSame(0, PersonalRuta::count());

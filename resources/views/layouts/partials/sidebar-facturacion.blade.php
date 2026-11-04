@@ -117,12 +117,17 @@
          queda ningún consumidor. --}}
 
 
-    {{-- Administración: gente y rastro (quién entra, qué hizo, qué se cargó). Las
-         herramientas técnicas de infraestructura viven aparte, en «Sistema». --}}
+    {{-- Administración: rastro (qué hizo cada quien, qué se cargó). Las herramientas
+         técnicas de infraestructura viven aparte, en «Sistema».
+
+         «Usuarios» salió de acá (03/11/2026): el acceso al sistema vive en Personal (la ficha
+         de cada persona y Personal › Accesos). Solo si el área Personal está apagada —ni
+         Asistencia ni Planilla encendidas, como en una instalación nueva— queda acá una fila
+         «Accesos», para que el administrador no se quede sin poder crear usuarios. --}}
     @if ($esAdmin || $veAuditoria)
         <x-sidebar-group titulo="Administración" icono="usuarios" clave="administracion" :activo="$grupoAdministracionActivo">
-            @if ($esAdmin)
-                <x-sidebar-link :href="route('usuarios.index')" :active="request()->routeIs('usuarios.*')">Usuarios</x-sidebar-link>
+            @if ($esAdmin && ! \App\Enums\AreaSistema::Asistencia->habilitada())
+                <x-sidebar-link :href="route('personal.accesos.index')" :active="false">Accesos</x-sidebar-link>
             @endif
             @if ($veAuditoria)
                 <x-sidebar-link :href="route('auditoria.index')" :active="request()->routeIs('auditoria.*')">Auditoría</x-sidebar-link>
