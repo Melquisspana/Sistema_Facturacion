@@ -270,7 +270,9 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         app(AltaEmpleado::class)->completar($this->admin, $conUsuario, ['usa_sistema' => true, 'user_id' => $this->cuenta('contabilidad')->id]);
 
         $this->actingAs($this->admin)->get(route('usuarios.create', ['persona' => $p->id]))->assertOk()
-            ->assertSee('Ana Ficticia')->assertDontSee('Bea Ficticia')->assertDontSee('id="name"', false)
+            ->assertSee('Ana Ficticia')->assertDontSee('Bea Ficticia')
+            // El único nombre que se escribe es el de la cuenta externa; el de la persona sale de su ficha.
+            ->assertSee('aria-describedby="name-externa"', false)->assertDontSee('aria-describedby="name-ficha"', false)
             ->assertSee(route('planilla.empleados.create'), false);
 
         $this->actingAs($this->admin)->post(route('usuarios.store'), [

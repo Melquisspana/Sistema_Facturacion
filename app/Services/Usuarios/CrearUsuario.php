@@ -17,6 +17,7 @@ class CrearUsuario
             $usuario = new User([
                 'name' => $validados['name'], 'email' => $validados['email'],
                 'password' => Hash::make($validados['password']), 'activo' => $validados['activo'],
+                'cuenta_externa' => $validados['cuenta_externa'] ?? false,
             ]);
             $usuario->email_verified_at = now();
             $usuario->save();

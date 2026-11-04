@@ -284,6 +284,10 @@ class AltaEmpleado
                 $ruta->refresh()->update(['activo' => $estadoRuta]);
             }
         }
+        // Quien queda en Personal ya es empleado: su cuenta deja de ser externa.
+        if ($usuario?->cuenta_externa) {
+            $usuario->update(['cuenta_externa' => false]);
+        }
         $esVendedor = $usuario?->hasAnyRole(FichaVendedor::ROLES) ?? false;
         $this->compatible($asistencia, 'user_id', $usuario?->id);
         $this->compatible($ruta, 'asistencia_empleado_id', $asistencia?->id);

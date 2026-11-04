@@ -79,6 +79,8 @@
                                                 <a href="{{ route('personal.empleados.show', 'p'.$usuario->planillaEmpleado->id) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">{{ $usuario->planillaEmpleado->nombre }}</a>
                                             @elseif ($usuario->planillaEmpleado)
                                                 <span class="text-gray-700 dark:text-paper-100">{{ $usuario->planillaEmpleado->nombre }}</span>
+                                            @elseif ($usuario->cuenta_externa)
+                                                <span class="text-gray-500 dark:text-paper-300">Cuenta externa</span>
                                             @else
                                                 <a href="{{ route('usuarios.show', $usuario) }}" class="text-amber-700 hover:underline dark:text-amber-300">Sin ficha en Personal</a>
                                             @endif

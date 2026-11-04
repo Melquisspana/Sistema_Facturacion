@@ -53,7 +53,11 @@
                             Su nombre se corrige en su ficha de Personal.
                         </p>
                     @else
-                        <p class="mt-3 text-sm {{ $dd }}">Sin ficha en Personal.</p>
+                        @if ($usuario->cuenta_externa)
+                            <p class="mt-3 text-sm {{ $dd }}">Cuenta externa: no es empleada y no está en Personal. Si pasa a ser empleada, se enlaza con su persona.</p>
+                        @else
+                            <p class="mt-3 text-sm {{ $dd }}">Sin ficha en Personal.</p>
+                        @endif
                         @if ($fichasSinUsuario === null)
                             <p class="mt-1 text-sm {{ $dt }}">Quien gestiona Personal puede enlazarla desde la ficha de la persona, en «Agregar acceso o módulos».</p>
                         @elseif ($fichasSinUsuario->isEmpty())

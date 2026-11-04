@@ -31,6 +31,7 @@ class User extends Authenticatable
         'email',
         'password',
         'activo',
+        'cuenta_externa',
     ];
 
     /**
@@ -54,16 +55,17 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'activo' => 'boolean',
+            'cuenta_externa' => 'boolean',
         ];
     }
 
     /**
-     * Auditoría: registra name/email/activo. NUNCA el password.
+     * Auditoría: registra name/email/activo/cuenta_externa. NUNCA el password.
      */
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['name', 'email', 'activo'])
+            ->logOnly(['name', 'email', 'activo', 'cuenta_externa'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->useLogName('usuario')
