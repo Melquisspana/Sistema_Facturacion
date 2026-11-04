@@ -89,7 +89,7 @@
                                     <td class="py-3 px-4 text-xs text-gray-500 dark:text-paper-300">
                                         {{-- Los enlaces son punteros de identidad, no requisitos: casi nadie de
                                              campo tiene login, y eso es normal. --}}
-                                        @if ($fichas->has($persona->id))
+                                        @if ($fichas->has($persona->id) && auth()->user()->can('planilla.ver'))
                                             <a href="{{ route('personal.empleados.show', 'p'.$fichas[$persona->id]) }}" class="block text-indigo-600 hover:underline dark:text-indigo-400">Ficha en Personal</a>
                                         @endif
                                         @if ($persona->user)

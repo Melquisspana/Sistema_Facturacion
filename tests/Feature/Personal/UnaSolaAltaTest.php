@@ -82,8 +82,8 @@ class UnaSolaAltaTest extends TestCase
         $soloRutas = User::factory()->create(['activo' => true]);
         $soloRutas->syncPermissions(['rutas.ver', PermisoSistema::RutasPersonalVer->value, PermisoSistema::RutasPersonalGestionar->value]);
 
-        $this->actingAs($soloRutas)->get(route('rutas.personal.create'))->assertOk()
-            ->assertSee('hace falta poder gestionar Personal')->assertDontSee('Ana Ficticia');
+        // Las fichas de los empleados son solo de la administración (`planilla.ver`).
+        $this->actingAs($soloRutas)->get(route('rutas.personal.create'))->assertForbidden();
     }
 
     public function test_con_planilla_apagada_asistencia_y_rutas_siguen_como_antes(): void

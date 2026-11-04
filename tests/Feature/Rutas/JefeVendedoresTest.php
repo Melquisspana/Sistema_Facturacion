@@ -10,6 +10,7 @@ use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
+use App\Services\Planilla\AltaEmpleado;
 use App\Services\Rutas\FichaVendedor;
 use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Usuarios\CrearUsuario;
@@ -54,17 +55,25 @@ class JefeVendedoresTest extends TestCase
     public function test_el_rol_tiene_solo_los_permisos_de_rutas_que_le_tocan(): void
     {
         $this->assertSame('Jefe de vendedores', RolSistema::JefeVendedores->label());
-        $this->assertSame(['rutas.ver', 'rutas.personal.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar', 'rutas.salidas.terminar'], RolSistema::JefeVendedores->permisos());
+        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar', 'rutas.salidas.terminar'], RolSistema::JefeVendedores->permisos());
 
-        foreach (['rutas.gestionar', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
+        foreach (['rutas.gestionar', 'rutas.personal.ver', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
             $this->assertFalse($this->jefe->can($permiso), "El jefe no debería tener {$permiso}.");
         }
     }
 
-    public function test_aparece_en_el_formulario_de_accesos(): void
+    /** El acceso de un empleado se da en su ficha de Personal, en «Agregar acceso o módulos». */
+    public function test_aparece_en_el_acceso_de_la_ficha(): void
     {
-        $this->actingAs(User::factory()->create()->assignRole('administrador'))
-            ->get(route('personal.accesos.create'))
+        config(['planilla.enabled' => true]);
+        $admin = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $persona = app(AltaEmpleado::class)->registrar($admin, [
+            'nombres' => 'Rosa', 'apellidos' => 'Ficticia', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-9',
+            'con_descuentos_ley' => false,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('personal.empleados.show', 'p'.$persona->id))
             ->assertOk()
             ->assertSee('<option value="jefe_vendedores"', false)
             ->assertSee('Jefe de vendedores');

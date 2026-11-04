@@ -17,9 +17,16 @@
         @csrf
         @method('patch')
 
+        {{-- Un solo nombre: quien tiene ficha en Personal lo ve acá y lo cambia allá. --}}
+        @php($conFicha = $user->tieneFichaEnPersonal())
         <div>
             <x-input-label for="name" :value="__('Name')" />
-            <x-text-input id="name" name="name" type="text" class="mt-1 block w-full" :value="old('name', $user->name)" required autofocus autocomplete="name" />
+            @if ($conFicha)
+                <x-text-input id="name" type="text" class="mt-1 block w-full bg-gray-50" :value="$user->name" readonly aria-describedby="name-ayuda" autocomplete="name" />
+                <p id="name-ayuda" class="mt-1 text-xs text-gray-500">Tu nombre se cambia en tu ficha de Personal.</p>
+            @else
+                <x-text-input id="name" name="name" type="text" class="mt-1 block w-full" :value="old('name', $user->name)" required autofocus autocomplete="name" />
+            @endif
             <x-input-error class="mt-2" :messages="$errors->get('name')" />
         </div>
 

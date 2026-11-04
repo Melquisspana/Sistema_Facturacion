@@ -54,17 +54,20 @@ class NombreUnicoTest extends TestCase
         ], $cambios));
     }
 
-    public function test_corregir_en_asistencia_llega_a_planilla_y_rutas(): void
+    public function test_asistencia_no_edita_aparte_el_nombre_de_quien_esta_en_personal(): void
     {
         $p = $this->persona(['marca' => true]);
         $asistencia = $p->asistencia;
+        $ficha = route('personal.empleados.show', 'p'.$p->id);
 
+        $this->actingAs($this->admin)->get(route('asistencia.empleados.edit', $asistencia))->assertRedirect($ficha);
         $this->actingAs($this->admin)->put(route('asistencia.empleados.update', $asistencia), [
-            'nombres' => 'Ana Lucía', 'apellidos' => 'Ficticia Prueba',
-        ])->assertRedirect();
+            'nombres' => 'Otra', 'apellidos' => 'Persona',
+        ])->assertRedirect($ficha)->assertSessionHasErrors('nombres');
 
-        $this->assertSame('Ana Lucía Ficticia Prueba', $p->fresh()->nombre);
-        $this->assertSame('Ana Lucía Ficticia Prueba', $p->fresh()->personalRuta->nombre);
+        $this->assertSame('Ana', $asistencia->fresh()->nombres);
+        $this->assertSame('Ana Ficticia', $p->fresh()->nombre);
+        $this->assertSame('Ana Ficticia', $p->fresh()->personalRuta->nombre);
     }
 
     /** @return array<string, string> */
@@ -143,13 +146,15 @@ class NombreUnicoTest extends TestCase
     {
         $p = $this->persona();
 
+        // Un nombre escrito en el formulario no pisa el de la ficha: Asistencia toma el de la ficha.
         $this->actingAs($this->admin)->post(route('planilla.empleados.modulos', $p), [
-            'marca' => '1', 'nombres' => 'Ana', 'apellidos' => 'Ficticia Prueba',
+            'marca' => '1', 'nombres' => 'Otra', 'apellidos' => 'Persona',
         ])->assertRedirect()->assertSessionHasNoErrors();
 
         $p = $p->fresh();
         $this->assertNotNull($p->asistencia);
-        $this->assertSame('Ana Ficticia Prueba', $p->nombre);
+        $this->assertSame('Ana Ficticia', $p->nombre);
+        $this->assertSame(['Ana', 'Ficticia'], [$p->asistencia->nombres, $p->asistencia->apellidos]);
         $this->assertSame($p->asistencia_empleado_id, $p->personalRuta->asistencia_empleado_id);
     }
 

@@ -116,6 +116,10 @@ class AltaEmpleado
                 ]);
             }
             $this->enlazar($empleado, $datos, $asistencia, $ruta, $usuario);
+            // Un solo nombre: lo que ya existía (Asistencia, Rutas, el usuario) toma el de la
+            // ficha. Asistencia, con los nombres y apellidos tal como se escribieron.
+            $asistencia?->update(['nombres' => trim($datos['nombres']), 'apellidos' => trim($datos['apellidos'])]);
+            app(NombreUnico::class)->repartir($empleado->fresh());
             activity('empleado')->performedOn($empleado)->causedBy($actor)->withProperties([
                 'usa_sistema' => (bool) ($datos['usa_sistema'] ?? false), 'marca' => (bool) ($datos['marca'] ?? false),
                 'sale_rutas' => (bool) ($datos['sale_rutas'] ?? false), 'con_descuentos_ley' => (bool) $datos['con_descuentos_ley'],
@@ -129,6 +133,10 @@ class AltaEmpleado
      * Agrega después lo que no se marcó al dar de alta: que marque, que salga a rutas o
      * que entre al sistema con un rol. Lo que ya tiene no se toca. Mismas reglas y
      * permisos que el alta: es la misma persona, solo que en otro momento.
+     *
+     * El nombre no se escribe acá: Asistencia, Rutas y el usuario toman el de la ficha.
+     * Se puede enlazar un usuario o una ficha de Asistencia de antes, que todavía no son
+     * de nadie en Personal, en vez de crear otro: así no queda la misma persona dos veces.
      */
     public function completar(User $actor, PlanillaEmpleado $empleado, array $datos): PlanillaEmpleado
     {
@@ -142,12 +150,13 @@ class AltaEmpleado
                 unset($datos[$casilla]);
             }
         }
-        // El acceso puede ser un usuario que ya existe (una cuenta de antes, sin ficha) en vez
-        // de uno nuevo. Solo cuenta si se pidió el acceso y la persona todavía no lo tiene.
-        if (empty($datos['usa_sistema']) || blank($datos['user_id'] ?? null)) {
-            unset($datos['user_id']);
+        // Un enlace de antes solo cuenta si se pidió ese módulo y la persona todavía no lo tiene.
+        foreach (['usa_sistema' => 'user_id', 'marca' => 'asistencia_empleado_id'] as $casilla => $enlace) {
+            if (empty($datos[$casilla]) || blank($datos[$enlace] ?? null)) {
+                unset($datos[$enlace]);
+            }
         }
-        unset($datos['asistencia_empleado_id'], $datos['personal_ruta_id']);
+        unset($datos['personal_ruta_id']);
         $datos = $this->autorizarModulos($actor, $datos);
         if ($empleado->personal_ruta_id !== null) {
             unset($datos['sale_rutas']);
@@ -159,9 +168,8 @@ class AltaEmpleado
         $reglas = [
             'marca' => ['sometimes', 'boolean'], 'sale_rutas' => ['sometimes', 'boolean'], 'usa_sistema' => ['sometimes', 'boolean'],
         ];
-        // Asistencia guarda nombres y apellidos por separado: al empezar a marcar se piden.
-        if (! empty($datos['marca'])) {
-            $reglas += ['nombres' => ['required', 'string', 'max:80'], 'apellidos' => ['required', 'string', 'max:80']];
+        if (isset($datos['asistencia_empleado_id'])) {
+            $reglas['asistencia_empleado_id'] = ['integer', 'exists:asistencia_empleados,id', Rule::unique('planilla_empleados', 'asistencia_empleado_id')];
         }
         if (isset($datos['user_id'])) {
             $reglas['user_id'] = ['integer', 'exists:users,id', Rule::unique('planilla_empleados', 'user_id')];
@@ -170,8 +178,13 @@ class AltaEmpleado
             $datos['activo'] = true;
             $reglas += StoreUserRequest::reglasUsuario();
         }
-        $datos = Validator::make($datos, $reglas, ['user_id.unique' => 'Ese usuario ya está enlazado a otra persona en Personal.'])->validate();
+        $datos = Validator::make($datos, $reglas, [
+            'user_id.unique' => 'Ese usuario ya está enlazado a otra persona en Personal.',
+            'asistencia_empleado_id.unique' => 'Esa ficha de Asistencia ya es de otra persona en Personal.',
+        ])->validate();
         $datos['alta_el'] = $empleado->alta_el?->toDateString();
+        // Asistencia nueva: con el nombre de la ficha, partido en nombres y apellidos.
+        [$datos['nombres'], $datos['apellidos']] = NombreUnico::partir($empleado->nombre);
 
         return DB::transaction(function () use ($actor, $empleado, $datos) {
             $empleado = PlanillaEmpleado::whereKey($empleado->id)->lockForUpdate()->firstOrFail();
@@ -179,18 +192,17 @@ class AltaEmpleado
             if ($existente && PlanillaEmpleado::where('user_id', $existente->id)->exists()) {
                 throw ValidationException::withMessages(['user_id' => 'Ese usuario ya está enlazado a otra persona en Personal.']);
             }
-            $asistencia = $empleado->asistencia;
-            $this->enlazar($empleado, $datos, $asistencia, $empleado->personalRuta, $empleado->usuario ?? $existente);
-            if (! $asistencia && $empleado->fresh()->asistencia) {
-                // Un solo nombre: el que se escribió para Asistencia queda en todos lados.
-                app(NombreUnico::class)->desdeAsistencia($empleado->fresh()->asistencia);
-            } elseif ($existente) {
-                // El usuario ya tenía un nombre: queda el de Personal.
-                app(NombreUnico::class)->repartir($empleado->fresh());
+            $suelta = isset($datos['asistencia_empleado_id']) ? AsistenciaEmpleado::lockForUpdate()->findOrFail($datos['asistencia_empleado_id']) : null;
+            if ($suelta && PlanillaEmpleado::where('asistencia_empleado_id', $suelta->id)->exists()) {
+                throw ValidationException::withMessages(['asistencia_empleado_id' => 'Esa ficha de Asistencia ya es de otra persona en Personal.']);
             }
+            $this->enlazar($empleado, $datos, $empleado->asistencia ?? $suelta, $empleado->personalRuta, $empleado->usuario ?? $existente);
+            // Un solo nombre: lo que se enlazó o se creó queda con el de la ficha.
+            app(NombreUnico::class)->repartir($empleado->fresh());
             activity('empleado')->performedOn($empleado)->causedBy($actor)->withProperties([
                 'usa_sistema' => (bool) ($datos['usa_sistema'] ?? false), 'marca' => (bool) ($datos['marca'] ?? false),
                 'sale_rutas' => (bool) ($datos['sale_rutas'] ?? false), 'usuario_existente' => $existente !== null,
+                'asistencia_existente' => $suelta !== null,
             ])->log('agregó módulos al empleado');
             if ($existente) {
                 activity('usuario')->performedOn($existente)->causedBy($actor)->log('lo enlazó a la ficha de '.$empleado->fresh()->nombre.' en Personal');

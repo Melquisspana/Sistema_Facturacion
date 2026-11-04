@@ -92,7 +92,7 @@ class PersonalController extends Controller
             'verImportes' => $verImportes,
             'minimo' => $minimo,
             'bajoMinimo' => $bajoMinimo,
-            'rutasSinFicha' => $request->user()->can('rutas.personal.ver') && PlanillaEmpleado::enUso()
+            'rutasSinFicha' => $request->user()->can('rutas.personal.ver') && $request->user()->can('planilla.ver') && PlanillaEmpleado::enUso()
                 ? PersonalRuta::whereNotIn('id', PlanillaEmpleado::whereNotNull('personal_ruta_id')->select('personal_ruta_id'))->orderBy('nombre')->get()
                 : collect(),
         ]);
@@ -143,6 +143,11 @@ class PersonalController extends Controller
             // Cuentas de antes que todavía no son de nadie: se pueden enlazar acá.
             'usuariosSinFicha' => $ficha?->user_id === null && $ficha?->activo && $request->user()->can('usuarios.gestionar')
                 ? User::whereNotIn('id', PlanillaEmpleado::whereNotNull('user_id')->select('user_id'))->with('roles')->orderBy('name')->get()
+                : collect(),
+            // Fichas de Asistencia de antes que no son de nadie en Personal: al ponerla a
+            // marcar se enlaza la suya en vez de crear otra (si no, sale dos veces en «Hoy»).
+            'asistenciasSueltas' => $ficha?->asistencia_empleado_id === null && $ficha?->activo && $request->user()->can('asistencia.gestionar')
+                ? $this->asistenciasSueltas($ficha)
                 : collect(),
             // El historial de su acceso, para quien lo gestiona (las acciones son de AccesoController).
             'actividadesCuenta' => $ficha?->usuario && $request->user()->can('usuarios.gestionar')
@@ -198,6 +203,27 @@ class PersonalController extends Controller
         abort_unless($veAsistencia || $vePlanilla, 403);
 
         return [$veAsistencia, $vePlanilla];
+    }
+
+    /**
+     * Las fichas de Asistencia sin persona en Personal, las de nombre parecido primero:
+     * mismo primer nombre y su primer apellido entre las demás palabras de la ficha.
+     *
+     * @return Collection<int, array{id: int, nombre: string, activo: bool, parecido: bool}>
+     */
+    private function asistenciasSueltas(PlanillaEmpleado $ficha): Collection
+    {
+        $palabras = fn (?string $s) => preg_split('/\s+/', Str::lower(Str::ascii(trim((string) $s))), -1, PREG_SPLIT_NO_EMPTY);
+        $deLaFicha = $palabras($ficha->nombre);
+
+        return AsistenciaEmpleado::whereNotIn('id', PlanillaEmpleado::whereNotNull('asistencia_empleado_id')->select('asistencia_empleado_id'))
+            ->orderBy('nombres')->orderBy('apellidos')->get()
+            ->map(fn (AsistenciaEmpleado $a) => [
+                'id' => $a->id, 'nombre' => $a->nombreCompleto(), 'activo' => (bool) $a->activo,
+                'parecido' => ($palabras($a->nombres)[0] ?? null) === ($deLaFicha[0] ?? '')
+                    && in_array($palabras($a->apellidos)[0] ?? null, array_slice($deLaFicha, 1), true),
+            ])
+            ->sortByDesc('parecido')->values();
     }
 
     /**

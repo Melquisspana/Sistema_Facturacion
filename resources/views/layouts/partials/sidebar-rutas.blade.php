@@ -17,11 +17,12 @@
         @endcan
         <x-sidebar-link :href="route('rutas.salidas.index')" :active="request()->routeIs('rutas.salidas.*')">Salidas anteriores</x-sidebar-link>
         <x-sidebar-link :href="route('rutas.rutas.index')" :active="request()->routeIs('rutas.rutas.*', 'rutas.asignacion.*')">Configurar rutas</x-sidebar-link>
-        @can('rutas.personal.ver')
+        {{-- Los empleados son solo de la administración (`planilla.ver`, 04/11/2026). --}}
+        @if (auth()->user()->can('rutas.personal.ver') && auth()->user()->can('planilla.ver'))
             @unless (\App\Models\PersonalRuta::seGestionaEnPersonal(auth()->user()))
                 <x-sidebar-link :href="route('rutas.personal.index')" :active="request()->routeIs('rutas.personal.*')">Personal</x-sidebar-link>
             @endunless
-        @endcan
+        @endif
     </x-sidebar-group>
 
 </nav>

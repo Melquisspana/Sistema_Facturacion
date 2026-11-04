@@ -76,16 +76,26 @@ class EmpleadoController extends Controller
             ->with('status', "«{$empleado->nombreCompleto()}» dado de alta. Guardá su huella para que pueda marcar.");
     }
 
-    public function edit(AsistenciaEmpleado $empleado): View
+    public function edit(AsistenciaEmpleado $empleado): View|RedirectResponse
     {
+        // Un solo lugar para los datos: quien está en Personal se edita en su ficha.
+        if ($ficha = $this->fichaDePersonal($empleado)) {
+            return redirect()->route('personal.empleados.show', 'p'.$ficha->id);
+        }
+
         return view('asistencia.empleados.edit', ['empleado' => $empleado]);
     }
 
     public function update(EmpleadoRequest $request, AsistenciaEmpleado $empleado, NombreUnico $nombres): RedirectResponse
     {
+        if ($ficha = $this->fichaDePersonal($empleado)) {
+            return redirect()->route('personal.empleados.show', 'p'.$ficha->id)
+                ->withErrors(['nombres' => 'Esta persona está en Personal: sus datos se cambian acá, en «Editar datos».']);
+        }
+
         DB::transaction(function () use ($request, $empleado, $nombres) {
             $empleado->update($request->validated());
-            // Un solo nombre: lo corregido acá llega a Planilla y Rutas.
+            // Sin Planilla en uso, una ficha que haya quedado enlazada sigue con este nombre.
             $nombres->desdeAsistencia($empleado);
         });
 
@@ -118,5 +128,11 @@ class EmpleadoController extends Controller
         }
 
         return back()->with('status', $mensaje);
+    }
+
+    /** Su ficha de Personal, si Planilla está en uso y la tiene. */
+    private function fichaDePersonal(AsistenciaEmpleado $empleado): ?PlanillaEmpleado
+    {
+        return PlanillaEmpleado::enUso() ? PlanillaEmpleado::where('asistencia_empleado_id', $empleado->id)->first() : null;
     }
 }

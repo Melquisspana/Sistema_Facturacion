@@ -188,7 +188,7 @@ Hoy hay seis roles: Administrador, Jefatura, Facturación, Contabilidad, Vendedo
 | Permiso | Ya existe | Para qué |
 |---|---|---|
 | `rutas.ver` | Sí | Entrar a Rutas y ver el tablero, las rutas, las salas y las salidas de todo el país. |
-| `rutas.personal.ver` | Sí | Ver a los vendedores y su ficha de campo (teléfono, funciones, salidas). |
+| ~~`rutas.personal.ver`~~ | Sí | **Quitado el 04/11/2026:** las fichas de los empleados son solo de la administración (`planilla.ver`). Ve el teléfono de cada vendedor en el tablero. |
 | `rutas.entregas.registrar` | Sí | Ir en una salida como cualquier vendedor y usar «Mi salida» desde el celular. |
 | `rutas.salidas.armar` | **No: nuevo, en la etapa 2** | Armar una salida: a qué ruta, qué día y quiénes van. |
 | `rutas.salidas.terminar` | **No: nuevo, en la etapa 2** | «Terminar día» y «Terminar ruta» de cualquier salida, aunque él no haya ido. |
