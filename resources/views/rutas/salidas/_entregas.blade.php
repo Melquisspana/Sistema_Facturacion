@@ -44,7 +44,7 @@
     </nav>
 @endif
 
-@if ($salida->estado === \App\Enums\EstadoSalidaRuta::Planificada && $resumen['total'] > 0)
+@if ($salida->estado === \App\Enums\EstadoSalidaRuta::Planificada && $resumen['total'] > 0 && ! ($futura ?? false))
     <p class="mt-4 text-sm text-gray-500 dark:text-paper-300">Tocá «Salir ahora» para empezar a marcar entregas.</p>
 @endif
 

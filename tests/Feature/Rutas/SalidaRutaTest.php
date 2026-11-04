@@ -179,6 +179,8 @@ class SalidaRutaTest extends TestCase
         $salida = $this->crearSalida($admin, $this->ruta(), [$this->vendedor('Carlos')->id]);
         $this->assertSame(EstadoSalidaRuta::Planificada, $salida->estado);
 
+        // Sale el 14/08, no antes: ese día se inicia.
+        $this->travelTo('2026-08-14 07:00:00');
         $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida))->assertRedirect();
         $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
 
