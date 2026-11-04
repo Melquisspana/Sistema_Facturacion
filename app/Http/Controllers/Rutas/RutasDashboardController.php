@@ -45,10 +45,10 @@ class RutasDashboardController extends Controller
         $hoy = CarbonImmutable::today();
 
         // El jefe de vendedores aterriza acá y no en «Mi salida»: si va en una salida en
-        // curso, se le ofrece el enlace.
+        // curso o en una planificada («Tu próxima salida»), se le ofrece el enlace.
         $usuario = $request->user();
         $vaEnUnaSalida = $usuario->can('rutas.entregas.registrar')
-            && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)
+            && SalidaRuta::abiertas()
                 ->whereHas('personal', fn ($q) => $q->where('rutas_personal.user_id', $usuario->id)->where('rutas_personal.activo', true))
                 ->exists();
 
@@ -121,18 +121,7 @@ class RutasDashboardController extends Controller
      */
     private function filaSala(ClienteSucursal $sala, array $ruta, Ritmo $ritmo, CarbonImmutable $hoy): array
     {
-        $dias = $ritmo->diasDesde($hoy);
-
-        return [
-            'sala' => $sala,
-            'ruta' => $ruta['ruta'],
-            'ritmo' => $ritmo,
-            'estado' => $ritmo->estadoEn($hoy),
-            'dias' => $dias,
-            // Días para el próximo pedido esperado; negativo = días de atraso.
-            'faltan' => $ritmo->dias !== null ? $ritmo->dias - $dias : null,
-            'dejoDeComprar' => $ritmo->dejoDeComprar($hoy),
-        ];
+        return RitmoRutas::filaSala($sala, $ritmo, $hoy) + ['ruta' => $ruta['ruta']];
     }
 
     /**
@@ -191,8 +180,7 @@ class RutasDashboardController extends Controller
     }
 
     /**
-     * Las atrasadas primero (la más atrasada arriba), después las que tocan antes, al
-     * final las que no tienen ritmo.
+     * Las salas filtradas, en el orden de urgencia de {@see RitmoRutas::ordenarSalas()}.
      *
      * @param  Collection<int, array>  $salas
      * @return Collection<int, array>
@@ -200,21 +188,13 @@ class RutasDashboardController extends Controller
     private function filtrar(Collection $salas, string $ver, ?int $rutaId, string $buscar): Collection
     {
         $norm = fn (?string $s) => Str::lower(Str::ascii((string) $s));
-        $orden = [Ritmo::ATRASADA => 0, Ritmo::PRONTO => 1, Ritmo::AL_DIA => 2, Ritmo::SIN_RITMO => 3];
 
-        return $salas
+        return RitmoRutas::ordenarSalas($salas
             ->when($ver === 'atrasadas', fn ($c) => $c->where('estado', Ritmo::ATRASADA))
             ->when($ver === 'semana', fn ($c) => $c->filter(fn (array $s) => $this->tocaEstaSemana($s)))
             ->when($rutaId !== null, fn ($c) => $c->filter(fn (array $s) => $s['ruta']->id === $rutaId))
             ->when($buscar !== '', fn ($c) => $c->filter(fn (array $s) => str_contains($norm($s['sala']->nombre), $norm($buscar))
-                || str_contains($norm($s['sala']->codigo), $norm($buscar))))
-            ->sortBy([
-                fn ($a, $b) => $orden[$a['estado']] <=> $orden[$b['estado']],
-                fn ($a, $b) => ($a['faltan'] ?? PHP_INT_MAX) <=> ($b['faltan'] ?? PHP_INT_MAX),
-                fn ($a, $b) => ($b['dias'] ?? -1) <=> ($a['dias'] ?? -1),
-                fn ($a, $b) => strcmp($a['sala']->nombre, $b['sala']->nombre),
-            ])
-            ->values();
+                || str_contains($norm($s['sala']->codigo), $norm($buscar)))));
     }
 
     /** @param  Collection<int, array>  $lista */
