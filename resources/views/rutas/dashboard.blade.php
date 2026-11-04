@@ -24,6 +24,7 @@
             $R::PRONTO => ['Toca pronto', 'bg-amber-100 text-amber-800'],
             $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700'],
             $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700'],
+            $R::PROGRAMADA => ['Programada', 'bg-indigo-100 text-indigo-700'],
             $R::SIN_RITMO => ['Sin ritmo', 'bg-gray-100 text-gray-600'],
             $R::SIN_SALIDAS => ['Sin salidas', 'bg-gray-100 text-gray-600'],
         ];
@@ -62,23 +63,33 @@
                 </div>
             </section>
 
-            {{-- ===================== En camino ===================== --}}
-            @if ($enCamino->isNotEmpty())
-                <section id="en-camino" aria-labelledby="en-camino-titulo">
-                    <h2 id="en-camino-titulo" class="{{ $titulo }}">En camino</h2>
+            {{-- ===================== En camino y programadas =====================
+                 «En camino» son solo las en curso, igual que el número del resumen. Las armadas
+                 para otro día (o para hoy y todavía sin empezar) van aparte, en «Programadas». --}}
+            @foreach ([
+                ['id' => 'en-camino', 'titulo' => 'En camino', 'lista' => $enCamino],
+                ['id' => 'programadas', 'titulo' => 'Programadas', 'lista' => $programadas],
+            ] as $grupo)
+                @continue($grupo['lista']->isEmpty())
+                <section id="{{ $grupo['id'] }}" aria-labelledby="{{ $grupo['id'] }}-titulo">
+                    <h2 id="{{ $grupo['id'] }}-titulo" class="{{ $titulo }}">{{ $grupo['titulo'] }}</h2>
                     <ul class="mt-3 space-y-3">
-                        @foreach ($enCamino as ['salida' => $salida, 'resumen' => $avance])
+                        @foreach ($grupo['lista'] as ['salida' => $salida, 'resumen' => $avance])
                             @php $enCurso = $salida->estado === \App\Enums\EstadoSalidaRuta::EnCurso; @endphp
-                            <li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
+                            <li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 {{ $enCurso ? 'border-sky-200 bg-sky-50' : 'border-gray-200 bg-white' }}">
                                 <div class="min-w-0">
-                                    <p class="font-semibold text-sky-900">
-                                        {{ $salida->ruta->nombre }} · {{ $salida->personal->pluck('nombre')->implode(' y ') ?: 'Sin vendedores' }}
+                                    <p class="font-semibold {{ $enCurso ? 'text-sky-900' : 'text-gray-800' }}">
+                                        {{ $salida->ruta->nombre }} · {{ $salida->quienesVan() ?: 'Sin vendedores' }}
                                     </p>
-                                    <p class="text-sm text-sky-800">
-                                        {{ $enCurso ? 'En camino' : 'Programada' }}
-                                        {{ $salida->fecha_inicio->isToday() ? 'desde hoy' : 'desde el '.$salida->fecha_inicio->format('d/m/Y') }}
-                                        · {{ $avance['entregados'] }} de {{ $avance['total'] }} entregados
-                                        @if ($avance['no_entregados'] > 0) · {{ $avance['no_entregados'] }} no entregados @endif
+                                    <p class="text-sm {{ $enCurso ? 'text-sky-800' : 'text-gray-600' }}">
+                                        @if ($enCurso)
+                                            En camino {{ $salida->fecha_inicio->isToday() ? 'desde hoy' : 'desde el '.$salida->fecha_inicio->format('d/m/Y') }}
+                                            · {{ $avance['entregados'] }} de {{ $avance['total'] }} entregados
+                                            @if ($avance['no_entregados'] > 0) · {{ $avance['no_entregados'] }} no entregado{{ $avance['no_entregados'] === 1 ? '' : 's' }} @endif
+                                        @else
+                                            Sale {{ $salida->fecha_inicio->isToday() ? 'hoy' : 'el '.$salida->fecha_inicio->format('d/m/Y') }}
+                                            · lleva {{ $avance['total'] }} CCF
+                                        @endif
                                     </p>
                                 </div>
                                 <a href="{{ route('rutas.salidas.show', $salida) }}" class="{{ $secundario }}">Abrir hoja</a>
@@ -86,7 +97,7 @@
                         @endforeach
                     </ul>
                 </section>
-            @endif
+            @endforeach
 
             {{-- ===================== Rutas, las más urgentes primero ===================== --}}
             <section id="rutas" aria-labelledby="rutas-titulo">
@@ -125,6 +136,12 @@
                                 </div>
 
                                 <div class="mt-2 space-y-0.5 text-sm text-gray-700">
+                                    {{-- Con la salida ya armada no se alarma con el atraso: se dice para cuándo. --}}
+                                    @if (! $fila['enCurso'] && $fila['proxima'])
+                                        <p class="font-medium text-indigo-700">
+                                            Ya tiene salida armada para {{ $fila['proxima']->fecha_inicio->isToday() ? 'hoy' : 'el '.$fila['proxima']->fecha_inicio->format('d/m/Y') }}
+                                        </p>
+                                    @endif
                                     <p>
                                         @if ($fila['enCurso'])
                                             En camino desde {{ $fila['enCurso']->fecha_inicio->isToday() ? 'hoy' : 'el '.$fila['enCurso']->fecha_inicio->format('d/m/Y') }}
@@ -135,7 +152,7 @@
                                         @else
                                             Último pedido de sus salas {{ $hace($fila['dias']) }}
                                         @endif
-                                        @if (! $fila['enCurso'] && $faltan !== null && $fila['estado'] !== $R::AL_DIA)
+                                        @if (! $fila['enCurso'] && ! $fila['proxima'] && $faltan !== null && $fila['estado'] !== $R::AL_DIA)
                                             · <span class="font-medium">{{ $faltan < 0 ? $dias(abs($faltan)).' tarde' : ($faltan === 0 ? 'toca hoy' : 'faltan '.$dias($faltan)) }}</span>
                                         @endif
                                     </p>
@@ -158,8 +175,8 @@
 
                                 <div class="mt-auto flex flex-wrap gap-2 pt-4">
                                     <a href="{{ route('rutas.dashboard', ['ruta' => $ruta->id]) }}#salas" class="{{ $secundario }}">Ver salas</a>
-                                    @if ($fila['enCurso'])
-                                        <a href="{{ route('rutas.salidas.show', $fila['enCurso']) }}" class="{{ $secundario }}">Abrir hoja</a>
+                                    @if ($fila['enCurso'] ?? $fila['proxima'])
+                                        <a href="{{ route('rutas.salidas.show', $fila['enCurso'] ?? $fila['proxima']) }}" class="{{ $secundario }}">Abrir hoja</a>
                                     @endif
                                 </div>
 
@@ -229,7 +246,7 @@
                     @endif
                 </form>
 
-                <nav aria-label="Qué salas mostrar" class="mt-3 flex gap-2 overflow-x-auto">
+                <nav aria-label="Qué salas mostrar" class="mt-3 flex flex-wrap gap-2">
                     @foreach (['atrasadas' => 'Atrasadas', 'semana' => 'Tocan esta semana', 'todas' => 'Todas'] as $clave => $texto)
                         <a href="{{ request()->fullUrlWithQuery(['ver' => $clave === 'todas' ? null : $clave, 'page' => null]) }}#salas" @if ($filtro['ver'] === $clave) aria-current="page" @endif
                            class="inline-flex min-h-11 shrink-0 items-center rounded-full px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 {{ $filtro['ver'] === $clave ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50' }}">{{ $texto }} {{ $conteoVer[$clave] }}</a>
@@ -320,7 +337,7 @@
                         @foreach ($tarjetasVendedores as $tarjeta)
                             @php
                                 $persona = $tarjeta['persona'];
-                                $telefono = preg_replace('/[^0-9+]/', '', (string) $persona->telefono);
+                                $telefono = $persona->telefonoMarcable();
                             @endphp
                             <li class="{{ $caja }} flex flex-col p-4">
                                 <h3 class="text-base font-semibold text-gray-800">{{ $persona->nombre }}</h3>

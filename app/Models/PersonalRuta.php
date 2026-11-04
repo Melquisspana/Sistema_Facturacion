@@ -154,6 +154,12 @@ class PersonalRuta extends Model
             : trim($partes->first().' '.$partes->get(1));
     }
 
+    /** El teléfono para un enlace `tel:`: solo dígitos y «+». Vacío si no tiene. */
+    public function telefonoMarcable(): string
+    {
+        return (string) preg_replace('/[^0-9+]/', '', (string) $this->telefono);
+    }
+
     /** Etiqueta para listas: «Hugo Ficticio (inactivo)». */
     public function etiqueta(): string
     {

@@ -10,7 +10,7 @@
     <div>
         <a href="{{ $modoVendedor ? ($enCurso ? route('rutas.mi-salida.show', $salida) : route('rutas.mi-salida.index')) : route('rutas.salidas.show', $salida) }}" class="inline-flex min-h-11 items-center text-sm underline dark:text-paper-300">Volver a la salida</a>
         <h1 class="text-3xl font-bold dark:text-paper-100">{{ $salida->ruta->nombre }}</h1>
-        <p class="mt-1 text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }} · {{ $salida->personal->pluck('nombre')->join(', ', ' y ') ?: 'Sin vendedores' }}</p>
+        <p class="mt-1 text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }} · {{ $salida->quienesVan() ?: 'Sin vendedores' }}</p>
     </div>
 
     @if ($errors->any())

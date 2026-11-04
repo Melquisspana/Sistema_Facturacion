@@ -97,7 +97,8 @@ class RitmoRutasTest extends TestCase
         $filas = $this->filas();
 
         $this->assertSame(RitmoRutas::EN_RUTA, $filas['San Miguel']['estado']);
-        $this->assertSame(RitmoRutas::SIN_SALIDAS, $filas['Chalatenango']['estado']);
+        // Nunca fue, pero ya tiene una salida armada: se dice eso, no «sin salidas».
+        $this->assertSame(RitmoRutas::PROGRAMADA, $filas['Chalatenango']['estado']);
         $this->assertNull($filas['Chalatenango']['ultima']);
         $this->assertSame($planificada->id, $filas['Chalatenango']['proxima']?->id);
     }

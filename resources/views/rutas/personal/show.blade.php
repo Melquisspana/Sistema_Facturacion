@@ -45,7 +45,14 @@
                     </div>
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300">Teléfono</dt>
-                        <dd class="mt-1 text-sm text-gray-800 dark:text-paper-100">{{ $personal->telefono ?: '—' }}</dd>
+                        <dd class="mt-1 text-sm text-gray-800 dark:text-paper-100">
+                            {{-- Se toca para llamar, igual que en el tablero. --}}
+                            @if ($personal->telefonoMarcable() !== '')
+                                <a href="tel:{{ $personal->telefonoMarcable() }}" class="inline-flex min-h-11 items-center text-indigo-600 hover:underline dark:text-indigo-400">{{ $personal->telefono }}</a>
+                            @else
+                                —
+                            @endif
+                        </dd>
                     </div>
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-paper-300">Enlaces</dt>
@@ -92,7 +99,13 @@
                                 <tr class="hover:bg-gray-50 dark:hover:bg-ink-700">
                                     <td class="py-2 px-4 text-gray-800 dark:text-paper-100">
                                         <a href="{{ route('rutas.salidas.show', $participacion->salida_ruta_id) }}" class="hover:underline">
-                                            {{ $participacion->salida?->descripcionCorta() ?? '—' }}
+                                            {{-- La ruta y, abajo, el día de salida en d/m/Y (guía) entero: la fecha no se parte. --}}
+                                            @if ($participacion->salida)
+                                                <span class="block">{{ $participacion->salida->ruta?->nombre ?? 'Salida' }}</span>
+                                                <span class="block whitespace-nowrap text-gray-500 dark:text-paper-300">{{ $participacion->salida->fecha_inicio->format('d/m/Y') }}</span>
+                                            @else
+                                                —
+                                            @endif
                                         </a>
                                     </td>
                                     <td class="py-2 px-4">

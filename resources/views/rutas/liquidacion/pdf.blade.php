@@ -25,7 +25,7 @@
     <h1>Liquidación de la ruta</h1>
     <p><strong>{{ $empresa?->razon_social }}</strong></p>
     <p><strong>Ruta:</strong> {{ $salida->ruta->nombre }} · <strong>Fechas:</strong> {{ $salida->fecha_inicio->format('d/m/Y') }}{{ $salida->fecha_fin_real && ! $salida->fecha_fin_real->isSameDay($salida->fecha_inicio) ? ' al '.$salida->fecha_fin_real->format('d/m/Y') : '' }}</p>
-    <p><strong>Vendedores:</strong> {{ $salida->personal->pluck('nombre')->join(', ') }}</p>
+    <p><strong>Vendedores:</strong> {{ $salida->quienesVan() }}</p>
     <p><strong>Entrega el dinero:</strong> {{ $salida->entregaDinero?->nombre ?? 'Sin cobros' }}</p>
 
     <h2>Cobrado y gastos por día</h2>

@@ -24,7 +24,7 @@
     <h1>Resumen del día</h1>
     <p><strong>{{ $empresa?->razon_social }}</strong></p>
     <p><strong>Ruta:</strong> {{ $salida->ruta->nombre }} · <strong>Fecha:</strong> {{ \Illuminate\Support\Carbon::parse($fecha)->format('d/m/Y') }}</p>
-    <p><strong>Vendedores:</strong> {{ $salida->personal->pluck('nombre')->join(', ') }}</p>
+    <p><strong>Vendedores:</strong> {{ $salida->quienesVan() }}</p>
     @foreach ($entregas->groupBy('cliente_sucursal_id') as $filas)
         <h2>{{ $filas->first()->sala?->nombre ?? 'Sala sin identificar' }}</h2>
         <table><thead><tr><th>CCF</th><th class="dinero">Monto</th><th>Forma</th><th class="dinero">Esperado</th><th class="dinero">Cobrado</th></tr></thead><tbody>

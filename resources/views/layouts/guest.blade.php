@@ -27,7 +27,7 @@
         <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100 dark:bg-ink-950">
             <div class="flex items-center gap-2">
                 <a href="/">
-                    <x-application-logo class="w-16 h-16 fill-current text-gray-500 dark:text-paper-300" />
+                    <x-application-logo class="h-16 w-auto" />
                 </a>
                 <x-theme-toggle class="ms-2" />
             </div>
