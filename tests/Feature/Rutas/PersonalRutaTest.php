@@ -143,8 +143,13 @@ class PersonalRutaTest extends TestCase
 
         $this->actingAs($sinPermiso)->get(route('rutas.personal.index'))->assertForbidden();
 
+        // Los empleados son solo de la administración: hace falta también `planilla.ver`.
+        $soloRutas = User::factory()->create();
+        $soloRutas->givePermissionTo(['rutas.ver', 'rutas.personal.ver']);
+        $this->actingAs($soloRutas)->get(route('rutas.personal.index'))->assertForbidden();
+
         $conPermiso = User::factory()->create();
-        $conPermiso->givePermissionTo(['rutas.ver', 'rutas.personal.ver']);
+        $conPermiso->givePermissionTo(['rutas.ver', 'rutas.personal.ver', 'planilla.ver']);
 
         $this->actingAs($conPermiso)->get(route('rutas.personal.index'))->assertOk();
 

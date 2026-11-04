@@ -5,12 +5,14 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Observers\UserObserver;
+use App\Services\Planilla\NombreUnico;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
@@ -97,5 +99,14 @@ class User extends Authenticatable
     public function planillaEmpleado(): HasOne
     {
         return $this->hasOne(PlanillaEmpleado::class, 'user_id');
+    }
+
+    /**
+     * Si tiene ficha en Personal, su nombre es el de la ficha y solo se cambia ahí
+     * ({@see NombreUnico}). Las cuentas externas no tienen ficha.
+     */
+    public function tieneFichaEnPersonal(): bool
+    {
+        return Schema::hasTable('planilla_empleados') && $this->planillaEmpleado()->exists();
     }
 }

@@ -28,8 +28,8 @@ use Illuminate\View\View;
  * A una persona del personal se le da acceso en su ficha («Agregar acceso o módulos», con
  * AltaEmpleado), y ahí mismo se le cambia el rol, el correo, la contraseña o se le desactiva:
  * las acciones de este controlador, dibujadas en `personal/accesos/_acciones`. Acá queda la
- * lista de quién entra y lo que no tiene ficha: la cuenta externa (la contadora, que no es
- * empleada) y, sin Planilla instalada, la cuenta suelta de siempre.
+ * lista de quién entra (todos, para la administración) y lo único que se crea acá: la cuenta
+ * externa (la contadora, que no es empleada).
  *
  * El permiso es el mismo de antes: `usuarios.gestionar` (middleware de la ruta y UserPolicy).
  */
@@ -67,36 +67,30 @@ class AccesoController extends Controller
     {
         $this->authorize('create', User::class);
 
-        return view('personal.accesos.nuevo', ['conPersonal' => $this->conPersonal()]);
+        return view('personal.accesos.nuevo');
     }
 
     /**
-     * Con Personal, acá solo se crea la cuenta externa (la contadora, que no es empleada),
-     * solo con rol Contabilidad: el acceso de una persona del personal se da en su ficha.
-     * Sin Planilla instalada (por ejemplo, al empezar) queda la cuenta suelta de siempre,
-     * para no dejar a nadie sin poder entrar.
+     * Acá solo se crea la cuenta externa (la contadora, que no es empleada), solo con rol
+     * Contabilidad. El acceso de un empleado se da en su ficha de Personal, siempre: aunque
+     * Planilla esté apagada, desde acá no sale una cuenta suelta de empleado con otro rol.
      */
     public function store(Request $request, CrearUsuario $crear): RedirectResponse
     {
         $this->authorize('create', User::class);
 
-        if ($this->conPersonal()) {
-            // Se pide a propósito: nadie crea una cuenta suelta pensando que es de un empleado.
-            if (! $request->boolean('cuenta_externa')) {
-                throw ValidationException::withMessages(['cuenta_externa' => 'El acceso de una persona del personal se da en su ficha, en «Agregar acceso o módulos». Acá solo se crea la cuenta externa.']);
-            }
-            $request->merge(['activo' => true]);
-            $reglas = ['rol' => ['required', Rule::in([RolSistema::Contabilidad->value])]] + StoreUserRequest::reglasUsuario();
-            $datos = $request->validate($reglas, ['rol.in' => 'Una cuenta externa solo puede tener el rol Contabilidad.']);
-            // Quien ya está en Personal no se carga otra vez: su acceso se da en su ficha.
-            if (PlanillaEmpleado::whereRaw('lower(nombre) = ?', [mb_strtolower(trim($datos['name']))])->exists()) {
-                throw ValidationException::withMessages(['name' => 'Esa persona ya está en Personal: dale el acceso desde su ficha, en «Agregar acceso o módulos».']);
-            }
-            $usuario = $crear->crear(['cuenta_externa' => true] + $datos);
-        } else {
-            $request->merge(['activo' => $request->boolean('activo')]);
-            $usuario = $crear->crear($request->validate(StoreUserRequest::reglasUsuario()));
+        // Se pide a propósito: nadie crea una cuenta suelta pensando que es de un empleado.
+        if (! $request->boolean('cuenta_externa')) {
+            throw ValidationException::withMessages(['cuenta_externa' => 'El acceso de una persona del personal se da en su ficha, en «Agregar acceso o módulos». Acá solo se crea la cuenta externa.']);
         }
+        $request->merge(['activo' => true]);
+        $reglas = ['rol' => ['required', Rule::in([RolSistema::Contabilidad->value])]] + StoreUserRequest::reglasUsuario();
+        $datos = $request->validate($reglas, ['rol.in' => 'Una cuenta externa solo puede tener el rol Contabilidad.']);
+        // Quien ya está en Personal no se carga otra vez: su acceso se da en su ficha.
+        if (Schema::hasTable('planilla_empleados') && PlanillaEmpleado::whereRaw('lower(nombre) = ?', [mb_strtolower(trim($datos['name']))])->exists()) {
+            throw ValidationException::withMessages(['name' => 'Esa persona ya está en Personal: dale el acceso desde su ficha, en «Agregar acceso o módulos».']);
+        }
+        $usuario = $crear->crear(['cuenta_externa' => true] + $datos);
 
         return redirect()->route('personal.accesos.show', $usuario)->with('status', 'Acceso de '.$usuario->name.' creado.');
     }

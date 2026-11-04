@@ -185,7 +185,11 @@
                                     @if (! $fila['enCurso'])
                                         <div class="pt-2">
                                             @if ($vendedores->isEmpty())
-                                                <a href="{{ route('rutas.personal.index') }}" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Agregá un vendedor para salir</a>
+                                                @if (auth()->user()->can('planilla.ver') && auth()->user()->can('rutas.personal.ver'))
+                                                    <a href="{{ route('rutas.personal.index') }}" class="inline-flex min-h-11 items-center text-sm text-indigo-600 hover:underline">Agregá un vendedor para salir</a>
+                                                @else
+                                                    <p class="inline-flex min-h-11 items-center text-sm text-gray-500">No hay vendedores activos: pedile a la administración que agregue uno.</p>
+                                                @endif
                                             @else
                                                 <details class="group">
                                                     <summary class="flex min-h-11 cursor-pointer list-none items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
@@ -345,8 +349,10 @@
                                     <p>
                                         @if ($telefono !== '')
                                             <a href="tel:{{ $telefono }}" class="inline-flex min-h-11 items-center text-indigo-600 hover:underline">Tel. {{ $persona->telefono }}</a>
-                                        @else
+                                        @elseif ($tarjeta['ficha'])
                                             <a href="{{ $tarjeta['ficha'] }}" class="inline-flex min-h-11 items-center text-gray-500 hover:underline">Sin teléfono</a>
+                                        @else
+                                            <span class="text-gray-500">Sin teléfono</span>
                                         @endif
                                     </p>
                                     <p>
@@ -362,9 +368,11 @@
                                         <p class="text-gray-500">Sus rutas: {{ implode(', ', $tarjeta['rutas']) }}</p>
                                     @endif
                                 </div>
-                                <div class="mt-auto pt-3">
-                                    <a href="{{ $tarjeta['ficha'] }}" class="{{ $secundario }}">Ver ficha</a>
-                                </div>
+                                @if ($tarjeta['ficha'])
+                                    <div class="mt-auto pt-3">
+                                        <a href="{{ $tarjeta['ficha'] }}" class="{{ $secundario }}">Ver ficha</a>
+                                    </div>
+                                @endif
                             </li>
                         @endforeach
                     </ul>

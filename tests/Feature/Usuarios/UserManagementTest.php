@@ -61,21 +61,27 @@ class UserManagementTest extends TestCase
         $this->get('/register')->assertNotFound();
     }
 
-    public function test_admin_crea_usuario_con_rol(): void
+    /** Acá solo se crea la cuenta externa; el acceso de un empleado se da en su ficha. */
+    public function test_admin_crea_cuenta_externa_y_no_cuentas_sueltas(): void
     {
         $admin = $this->admin();
 
+        $this->actingAs($admin)->post(route('personal.accesos.store'), $this->datosUsuario(['email' => 'facturador@dulces.test']))
+            ->assertSessionHasErrors('cuenta_externa');
+        $this->assertSame(0, User::where('email', 'facturador@dulces.test')->count());
+
         $this->actingAs($admin)->post(route('personal.accesos.store'), $this->datosUsuario([
-            'email' => 'facturador@dulces.test',
+            'email' => 'contadora@dulces.test', 'rol' => 'contabilidad', 'cuenta_externa' => '1',
         ]))->assertRedirect();
 
-        $usuario = User::where('email', 'facturador@dulces.test')->firstOrFail();
-        $this->assertTrue($usuario->hasRole('facturacion'));
+        $usuario = User::where('email', 'contadora@dulces.test')->firstOrFail();
+        $this->assertTrue($usuario->hasRole('contabilidad'));
+        $this->assertTrue($usuario->cuenta_externa);
         $this->assertTrue(Hash::check('Str0ng#Passw0rd!', $usuario->password));
         $this->assertDatabaseHas('activity_log', [
             'log_name' => 'usuario',
             'subject_id' => $usuario->id,
-            'description' => 'asignó el rol facturacion',
+            'description' => 'asignó el rol contabilidad',
         ]);
     }
 
@@ -84,7 +90,7 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
         $otro = User::factory()->create()->assignRole('jefatura');
 
-        $this->actingAs($admin)->get(route('personal.accesos.index'))->assertOk()->assertSee('Nuevo usuario');
+        $this->actingAs($admin)->get(route('personal.accesos.index'))->assertOk()->assertSee('Nueva cuenta externa');
         $this->actingAs($admin)->get(route('personal.accesos.create'))->assertOk()->assertSee('Rol');
         $this->actingAs($admin)->get(route('personal.accesos.show', $otro))->assertOk()
             ->assertSee('Cambiar rol o correo')->assertSee('Cambiar contraseña')->assertSee('Desactivar acceso')
@@ -114,7 +120,7 @@ class UserManagementTest extends TestCase
     public function test_password_debil_es_rechazado(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('personal.accesos.store'), $this->datosUsuario(['password' => 'abc', 'password_confirmation' => 'abc']))
+            ->post(route('personal.accesos.store'), $this->datosUsuario(['password' => 'abc', 'password_confirmation' => 'abc', 'rol' => 'contabilidad', 'cuenta_externa' => '1']))
             ->assertSessionHasErrors('password');
     }
 

@@ -204,8 +204,12 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
         /*
         | PERSONAL OPERATIVO. Sin `destroy`: una persona que ya fue en salidas no se
         | borra, se desactiva — igual que las rutas.
+        |
+        | Los datos de los empleados son solo de la administración (`planilla.ver`, decisión
+        | de Melqui, 04/11/2026): jefe de vendedores, Jefatura y Facturación eligen a quién
+        | va en una salida, pero no abren estas fichas.
         */
-        Route::prefix('personal')->name('personal.')->middleware('permission:rutas.personal.ver')->group(function () {
+        Route::prefix('personal')->name('personal.')->middleware(['permission:planilla.ver', 'permission:rutas.personal.ver'])->group(function () {
             Route::get('/', [PersonalRutaController::class, 'index'])->name('index');
             // Literales antes que paramétricas (regla del repo).
             Route::get('crear', [PersonalRutaController::class, 'create'])

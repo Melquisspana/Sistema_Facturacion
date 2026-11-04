@@ -100,7 +100,11 @@
         @empty
             <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-300">
                 No hay personal de campo activo.
-                <a href="{{ route('rutas.personal.index') }}" class="underline">Agregá vendedores en Personal</a>.
+                @if (auth()->user()->can('planilla.ver') && auth()->user()->can('rutas.personal.ver'))
+                    <a href="{{ route('rutas.personal.index') }}" class="underline">Agregá vendedores en Personal</a>.
+                @else
+                    Pedile a la administración que agregue uno.
+                @endif
             </p>
         @endforelse
     </div>

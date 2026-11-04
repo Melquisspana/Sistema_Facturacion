@@ -1,6 +1,6 @@
-{{-- Personal › Accesos: quién entra al sistema. Antes era el módulo «Usuarios». El acceso de
-     una persona se da y se cambia en su ficha; acá se ve la lista, se crea la cuenta externa
-     y se llega a las cuentas que no tienen ficha. --}}
+{{-- Personal › Accesos: quién entra al sistema (todos; lo ve solo quien administra accesos).
+     Antes era el módulo «Usuarios». El acceso de una persona del personal se da y se cambia
+     en su ficha; acá solo se crea la cuenta externa y se llega a las cuentas sin ficha. --}}
 @php
     $rotulos = \App\Enums\RolSistema::opciones();
     $columnas = $conPersonal ? 6 : 5;
@@ -16,7 +16,7 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h1 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Accesos al sistema</h1>
-            <a href="{{ route('personal.accesos.create') }}" class="{{ $primario }}">{{ $conPersonal ? 'Nueva cuenta externa' : 'Nuevo usuario' }}</a>
+            <a href="{{ route('personal.accesos.create') }}" class="{{ $primario }}">Nueva cuenta externa</a>
         </div>
     </x-slot>
 

@@ -295,9 +295,10 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
         $cuenta = $this->cuenta('contabilidad');
 
         $this->actingAs($this->admin)->get(route('personal.accesos.index'))->assertOk()
-            ->assertDontSee('Sin ficha en Personal')->assertSee('Nuevo usuario');
+            ->assertDontSee('Sin ficha en Personal')->assertSee('Nueva cuenta externa');
         $this->actingAs($this->admin)->get(route('personal.accesos.show', $cuenta))->assertOk()->assertDontSee('Sin ficha en Personal');
+        // Aun sin Planilla, acá solo se crea la cuenta externa: el empleado entra desde su ficha.
         $this->actingAs($this->admin)->get(route('personal.accesos.create'))->assertOk()
-            ->assertSee('id="name"', false)->assertSee('value="administrador"', false)->assertDontSee('planilla_empleado_id');
+            ->assertSee('id="name"', false)->assertDontSee('value="administrador"', false)->assertDontSee('planilla_empleado_id');
     }
 }

@@ -131,7 +131,8 @@ class PantallasSimplesRutasTest extends TestCase
     public function test_el_personal_tiene_puerta_propia_y_ya_no_vive_en_configurar_rutas(): void
     {
         PersonalRuta::create(['nombre' => 'José', 'activo' => true]);
-        $usuario = $this->usuario('facturacion');
+        // Los empleados son solo de la administración (04/11/2026).
+        $usuario = $this->usuario('administrador');
 
         $this->actingAs($usuario)->get(route('rutas.rutas.index'))
             ->assertOk()
@@ -143,8 +144,10 @@ class PantallasSimplesRutasTest extends TestCase
             ->assertOk()
             ->assertSee('José');
 
-        // Sin rutas.personal.ver la puerta no se dibuja.
+        // Sin rutas.personal.ver la puerta no se dibuja; sin planilla.ver, tampoco.
         $this->actingAs($this->usuario('contabilidad'))->get(route('dashboard'))
+            ->assertDontSee(route('rutas.personal.index'), false);
+        $this->actingAs($this->usuario('facturacion'))->get(route('rutas.rutas.index'))->assertOk()
             ->assertDontSee(route('rutas.personal.index'), false);
     }
 }

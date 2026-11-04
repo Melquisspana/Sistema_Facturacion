@@ -69,9 +69,6 @@
                             @php
                                 $marca = $ficha->asistencia_empleado_id !== null;
                                 $puedeEditar = ! $marca || auth()->user()->can('asistencia.gestionar');
-                                $partes = preg_split('/\s+/', trim($ficha->nombre));
-                                $corte = count($partes) >= 4 ? 2 : 1;
-                                $sugerido = ['nombres' => implode(' ', array_slice($partes, 0, $corte)), 'apellidos' => implode(' ', array_slice($partes, $corte))];
                             @endphp
                             @if ($puedeEditar)
                                 <details @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el'])) open @endif>
@@ -128,12 +125,25 @@
                                                 {{ $texto }}
                                             </label>
                                         @endforeach
+                                        {{-- Asistencia toma el nombre de esta ficha: no se escribe otro. Si ya
+                                             había una ficha de Asistencia suelta de esta persona, se enlaza esa. --}}
                                         @isset($opciones['marca'])
-                                            <div x-show="marca" class="grid gap-2 sm:grid-cols-2">
-                                                <div><label for="m_nombres" class="{{ $etiqueta }}">Nombres</label>
-                                                    <input id="m_nombres" name="nombres" value="{{ old('nombres', $sugerido['nombres']) }}" maxlength="80" class="{{ $campo }}"></div>
-                                                <div><label for="m_apellidos" class="{{ $etiqueta }}">Apellidos</label>
-                                                    <input id="m_apellidos" name="apellidos" value="{{ old('apellidos', $sugerido['apellidos']) }}" maxlength="80" class="{{ $campo }}"></div>
+                                            <div x-show="marca" class="space-y-1">
+                                                @if ($asistenciasSueltas->isNotEmpty())
+                                                    <label for="asistencia_empleado_id" class="{{ $etiqueta }}">Ficha de Asistencia</label>
+                                                    <select id="asistencia_empleado_id" name="asistencia_empleado_id" class="{{ $campo }}">
+                                                        <option value="">Crear una nueva</option>
+                                                        @foreach ($asistenciasSueltas as $suelta)
+                                                            <option value="{{ $suelta['id'] }}" @selected((string) old('asistencia_empleado_id') === (string) $suelta['id'])>
+                                                                {{ $suelta['nombre'] }}{{ $suelta['parecido'] ? ' · nombre parecido' : '' }}{{ $suelta['activo'] ? '' : ' · no marca' }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    @if ($asistenciasSueltas->contains('parecido', true))
+                                                        <p class="text-xs text-amber-900 dark:text-amber-300">Ya marca alguien con un nombre parecido. Si es esta persona, elegila para no tenerla dos veces.</p>
+                                                    @endif
+                                                @endif
+                                                <p class="text-xs text-gray-500 dark:text-paper-300">Marca con el nombre de esta ficha: {{ $ficha->nombre }}. Para cambiarlo, usá «Editar datos».</p>
                                             </div>
                                         @endisset
                                         @isset($opciones['usa_sistema'])

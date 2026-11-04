@@ -186,14 +186,16 @@ class RutasEnElCelularTest extends TestCase
 
     public function test_en_la_ficha_de_campo_el_telefono_se_toca_para_llamar(): void
     {
+        // La ficha de campo es de la administración; el jefe llama desde el tablero.
         [$jefe] = $this->usuario('Ernesto Ficticio', RolSistema::JefeVendedores);
+        $admin = User::factory()->create(['activo' => true])->assignRole(RolSistema::Administrador->value);
         $mario = PersonalRuta::create(['nombre' => 'Mario Inventado', 'telefono' => '7012-3401']);
         $sinTelefono = PersonalRuta::create(['nombre' => 'Kevin Ejemplo']);
 
-        $this->actingAs($jefe)->get(route('rutas.personal.show', $mario))
+        $this->actingAs($admin)->get(route('rutas.personal.show', $mario))
             ->assertOk()->assertSee('href="tel:70123401"', false)->assertSee('7012-3401');
         // El tablero usa el mismo enlace.
         $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('href="tel:70123401"', false);
-        $this->actingAs($jefe)->get(route('rutas.personal.show', $sinTelefono))->assertOk()->assertDontSee('tel:', false);
+        $this->actingAs($admin)->get(route('rutas.personal.show', $sinTelefono))->assertOk()->assertDontSee('tel:', false);
     }
 }

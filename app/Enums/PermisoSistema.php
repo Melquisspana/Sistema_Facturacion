@@ -232,16 +232,15 @@ enum PermisoSistema: string
             RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar]),
 
             // Jefe de vendedores: ve el tablero, las rutas, las salas y las salidas de todo
-            // el país, y a los vendedores en su ficha de campo. Cuando sale a ruta, registra
-            // en SUS salidas como cualquier vendedor (la policy pide que vaya en la salida).
+            // el país. Cuando sale a ruta, registra en SUS salidas como cualquier vendedor
+            // (la policy pide que vaya en la salida).
             //
             // Sin `rutas.gestionar` (reabrir días, gastos ajenos, configurar rutas), sin
-            // `rutas.personal.gestionar` y sin nada de Planilla: no ve sueldos ni la ficha
-            // de Personal (decisión de Melqui, 03/11/2026). Arma y termina salidas con sus
-            // permisos propios; el dinero lo recibe la oficina, nunca él.
+            // nada de Planilla (decisión de Melqui, 03/11/2026) y sin las fichas de los
+            // empleados, ni las de Rutas: son solo de la administración (04/11/2026). Elige
+            // a quién lleva al armar la salida. El dinero lo recibe la oficina, nunca él.
             RolSistema::JefeVendedores => self::valores([
                 self::RutasVer,
-                self::RutasPersonalVer,
                 self::RutasEntregasRegistrar,
                 self::RutasSalidasArmar,
                 self::RutasSalidasTerminar,
@@ -263,9 +262,8 @@ enum PermisoSistema: string
                 self::ReportesVer,
                 self::RutasVer,
                 self::RutasGestionar,
-                // Y da de alta a los vendedores: sin ellos no se puede salir (27/09/2026).
-                self::RutasPersonalVer,
-                self::RutasPersonalGestionar,
+                // Ya no da de alta a los vendedores: los empleados son solo de la
+                // administración (04/11/2026). Los sigue eligiendo al armar la salida.
                 self::RutasVentasVer,
             ]),
 
@@ -291,12 +289,10 @@ enum PermisoSistema: string
                 self::DocumentosRecibidosVer,
                 self::ReportesVer,
                 self::PreparacionVer,
-                // Quien factura los CCF también arma la salida que los lleva, y da de alta
-                // a los vendedores que van en ella.
+                // Quien factura los CCF también arma la salida que los lleva y elige quién
+                // va. Las fichas de los empleados son solo de la administración (04/11/2026).
                 self::RutasVer,
                 self::RutasGestionar,
-                self::RutasPersonalVer,
-                self::RutasPersonalGestionar,
                 // Y consulta las ventas por producto y sala (decisión del usuario, 28/10/2026).
                 self::RutasVentasVer,
             ]),

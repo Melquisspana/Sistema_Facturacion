@@ -58,14 +58,12 @@ class PersonalRutaEnFichaTest extends TestCase
     {
         $persona = PersonalRuta::create(['nombre' => 'Ana Ficticia']);
         $this->ficha($persona);
+        // Sin planilla.ver no hay fichas de empleados, tampoco las de Rutas (04/11/2026).
         foreach (['jefatura', 'facturacion'] as $rol) {
             $usuario = User::factory()->create(['activo' => true])->assignRole($rol);
             $this->assertFalse($usuario->can('planilla.ver'));
-            $this->actingAs($usuario)->get(route('rutas.personal.index'))->assertOk()
-                ->assertSee('href="'.route('rutas.personal.index').'"', false)
-                // Consulta y edición sí; el alta es en Personal, así que no hay «Nueva persona».
-                ->assertDontSee('href="'.route('rutas.personal.create').'"', false);
-            $this->get(route('rutas.personal.show', $persona))->assertOk();
+            $this->actingAs($usuario)->get(route('rutas.personal.index'))->assertForbidden();
+            $this->get(route('rutas.personal.show', $persona))->assertForbidden();
         }
         config(['planilla.enabled' => false]);
         $this->actingAs($this->admin)->get(route('rutas.personal.index'))->assertOk()

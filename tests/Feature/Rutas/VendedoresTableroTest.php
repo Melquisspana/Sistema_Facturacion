@@ -17,7 +17,7 @@ use Tests\TestCase;
 /**
  * La sección Vendedores del tablero de Rutas (sección 1 de docs/PLAN_TABLERO_RUTAS.md):
  * teléfono, salida de ahora o la última, sus rutas de los últimos 90 días y «Ver ficha».
- * El jefe va a la ficha de campo y nunca a Planilla.
+ * Las fichas de los empleados son solo de la administración: el jefe no ve «Ver ficha».
  */
 class VendedoresTableroTest extends TestCase
 {
@@ -89,7 +89,7 @@ class VendedoresTableroTest extends TestCase
 
         $respuesta->assertSeeInOrder(['Vendedores', 'Jefe Inventado', 'Luis Inventado', 'Rosa Ficticia']);
         $respuesta->assertSeeInOrder(['Luis Inventado', 'href="tel:70000000"', 'Tel. 7000-0000', 'Ahora: Ruta Norte, desde hoy', 'Sus rutas: Ruta Oriente, Ruta Norte'], false);
-        $respuesta->assertSeeInOrder(['Rosa Ficticia', 'href="tel:70000001"', 'Última: Ruta Costa, 28/10/2026', 'Sus rutas: Ruta Costa', 'Ver ficha'], false);
+        $respuesta->assertSeeInOrder(['Rosa Ficticia', 'href="tel:70000001"', 'Última: Ruta Costa, 28/10/2026', 'Sus rutas: Ruta Costa'], false);
     }
 
     public function test_vendedor_sin_telefono_ni_salidas(): void
@@ -98,25 +98,24 @@ class VendedoresTableroTest extends TestCase
 
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Zoe Ejemplo', 'href="'.route('rutas.personal.show', $sinNada).'"', 'Sin teléfono', 'Sin salidas en los últimos 90 días', 'Ver ficha'], false);
+            ->assertSeeInOrder(['Zoe Ejemplo', 'Sin teléfono', 'Sin salidas en los últimos 90 días'], false)
+            ->assertDontSee(route('rutas.personal.show', $sinNada))
+            ->assertDontSee('Ver ficha');
     }
 
-    public function test_el_jefe_va_a_la_ficha_de_campo_y_nunca_ve_planilla(): void
+    public function test_el_jefe_no_abre_fichas_de_empleados(): void
     {
         $ficha = $this->fichaDePersonal($this->luis);
 
+        // Ve el teléfono para llamar, pero no hay «Ver ficha» ni de campo ni de Personal.
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSee('href="'.route('rutas.personal.show', $this->luis).'"', false)
+            ->assertSee('7000-0000')
+            ->assertDontSee(route('rutas.personal.show', $this->luis))
             ->assertDontSee(route('personal.empleados.show', 'p'.$ficha->id))
             ->assertDontSee('/personal/empleados');
 
-        // La ficha de campo abre, sin enlace a Personal; la de Personal le da 403.
-        $this->actingAs($this->jefe)->get(route('rutas.personal.show', $this->luis))
-            ->assertOk()
-            ->assertSee('7000-0000')
-            ->assertDontSee('Ficha en Personal')
-            ->assertDontSee('/personal/empleados');
+        $this->actingAs($this->jefe)->get(route('rutas.personal.show', $this->luis))->assertForbidden();
         $this->actingAs($this->jefe)->get(route('personal.empleados.show', 'p'.$ficha->id))->assertForbidden();
     }
 

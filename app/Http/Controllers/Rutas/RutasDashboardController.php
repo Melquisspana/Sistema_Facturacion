@@ -135,11 +135,12 @@ class RutasDashboardController extends Controller
      * (la más frecuente primero) y a qué ficha lleva «Ver ficha».
      *
      * «Ver ficha» lleva a la ficha de Personal solo a quien puede abrirla
-     * ({@see PersonalRuta::seGestionaEnPersonal()}); a los demás, como el jefe, a la ficha de
-     * campo de Rutas. Para ellos ni se consulta Planilla.
+     * ({@see PersonalRuta::seGestionaEnPersonal()}), o a la de Rutas a la administración sin
+     * Planilla. Los demás, como el jefe, no ven fichas de empleados (decisión de Melqui,
+     * 04/11/2026): para ellos ni se consulta Planilla.
      *
      * @param  Collection<int, PersonalRuta>  $personas
-     * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, rutas: array<int, string>, ficha: string}>
+     * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, rutas: array<int, string>, ficha: ?string}>
      */
     private function tarjetasVendedores(Collection $personas, User $usuario, CarbonImmutable $hoy): Collection
     {
@@ -160,7 +161,10 @@ class RutasDashboardController extends Controller
             ? PlanillaEmpleado::whereIn('personal_ruta_id', $personas->pluck('id'))->pluck('id', 'personal_ruta_id')
             : collect();
 
-        return $personas->map(function (PersonalRuta $persona) use ($participaciones, $enPersonal) {
+        // Las fichas de los empleados son solo de la administración (04/11/2026).
+        $verFichas = $usuario->can('planilla.ver') && $usuario->can('rutas.personal.ver');
+
+        return $personas->map(function (PersonalRuta $persona) use ($participaciones, $enPersonal, $verFichas) {
             $salidas = $participaciones->get($persona->id, collect())->pluck('salida')->sortByDesc(fn (SalidaRuta $s) => [$s->fecha_inicio, $s->id]);
 
             return [
@@ -172,9 +176,11 @@ class RutasDashboardController extends Controller
                     ->map(fn (Collection $deRuta) => $deRuta->first()->ruta->nombre)
                     ->values()
                     ->all(),
-                'ficha' => isset($enPersonal[$persona->id])
-                    ? route('personal.empleados.show', 'p'.$enPersonal[$persona->id])
-                    : route('rutas.personal.show', $persona),
+                'ficha' => match (true) {
+                    isset($enPersonal[$persona->id]) => route('personal.empleados.show', 'p'.$enPersonal[$persona->id]),
+                    $verFichas => route('rutas.personal.show', $persona),
+                    default => null,
+                },
             ];
         });
     }

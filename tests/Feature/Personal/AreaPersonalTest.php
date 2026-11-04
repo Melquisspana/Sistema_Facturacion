@@ -281,7 +281,8 @@ class AreaPersonalTest extends TestCase
         $this->actingAs($this->admin);
 
         $this->get(route('asistencia.empleados.create'))->assertOk();
-        $this->get(route('asistencia.empleados.edit', $e->asistencia_empleado_id))->assertOk();
+        // Quien está en Personal se edita en su ficha: la edición de Asistencia lleva allá.
+        $this->get(route('asistencia.empleados.edit', $e->asistencia_empleado_id))->assertRedirect(route('personal.empleados.show', 'p'.$e->id));
         $this->get(route('planilla.empleados.create'))->assertOk();
     }
 
