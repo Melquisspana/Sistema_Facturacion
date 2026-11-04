@@ -67,6 +67,8 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         // El PDF de un CCF de la salida: solo de esta salida y solo si va en ella.
         Route::get('{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('ccf');
         Route::get('{salida}', [MiSalidaController::class, 'show'])->name('show');
+        // «Empezar ruta»: la planificada pasa a en curso, solo quien va y desde el día de la salida.
+        Route::post('{salida}/empezar', [MiSalidaController::class, 'empezar'])->name('empezar');
         Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();

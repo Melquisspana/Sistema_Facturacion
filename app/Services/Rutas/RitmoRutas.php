@@ -103,6 +103,65 @@ class RitmoRutas
     }
 
     /**
+     * Las salas activas de UNA ruta con su ritmo al día dado, las más urgentes primero.
+     * «Tu próxima salida» lo pide para el día de la salida: qué salas tocan sacar pedido.
+     *
+     * @return Collection<int, array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool}>
+     */
+    public function salasDeRuta(Ruta $ruta, CarbonImmutable $dia): Collection
+    {
+        $salas = ClienteSucursal::query()
+            ->where('activo', true)
+            ->where('ruta_id', $ruta->id)
+            ->orderBy('nombre')
+            ->get(['id', 'ruta_id', 'nombre', 'codigo']);
+        $ritmos = $this->pedidos->porSala($salas->pluck('id')->all(), $dia);
+
+        return self::ordenarSalas($salas->map(fn (ClienteSucursal $sala) => self::filaSala($sala, $ritmos[$sala->id], $dia)));
+    }
+
+    /**
+     * Una sala con su ritmo a una fecha. La comparten el tablero y «Tu próxima salida».
+     *
+     * @return array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool}
+     */
+    public static function filaSala(ClienteSucursal $sala, Ritmo $ritmo, CarbonImmutable $dia): array
+    {
+        $dias = $ritmo->diasDesde($dia);
+
+        return [
+            'sala' => $sala,
+            'ritmo' => $ritmo,
+            'estado' => $ritmo->estadoEn($dia),
+            'dias' => $dias,
+            // Días para el próximo pedido esperado; negativo = días de atraso.
+            'faltan' => $ritmo->dias !== null ? $ritmo->dias - $dias : null,
+            'dejoDeComprar' => $ritmo->dejoDeComprar($dia),
+        ];
+    }
+
+    /**
+     * Las atrasadas primero (la más atrasada arriba), después las que tocan antes, al
+     * final las que no tienen ritmo.
+     *
+     * @param  Collection<int, array>  $filas  de {@see filaSala()}
+     * @return Collection<int, array>
+     */
+    public static function ordenarSalas(Collection $filas): Collection
+    {
+        $orden = [Ritmo::ATRASADA => 0, Ritmo::PRONTO => 1, Ritmo::AL_DIA => 2, Ritmo::SIN_RITMO => 3];
+
+        return $filas
+            ->sortBy([
+                fn ($a, $b) => $orden[$a['estado']] <=> $orden[$b['estado']],
+                fn ($a, $b) => ($a['faltan'] ?? PHP_INT_MAX) <=> ($b['faltan'] ?? PHP_INT_MAX),
+                fn ($a, $b) => ($b['dias'] ?? -1) <=> ($a['dias'] ?? -1),
+                fn ($a, $b) => strcmp($a['sala']->nombre, $b['sala']->nombre),
+            ])
+            ->values();
+    }
+
+    /**
      * @param  Collection<int, SalidaRuta>  $salidas
      * @param  array<int, Ritmo>  $ritmoSalas  sala_id => ritmo, solo las de esta ruta
      */

@@ -17,5 +17,18 @@
                 <li class="rounded-2xl bg-white p-5 dark:bg-ink-800">No tenés salidas en camino</li>
             @endforelse
         </ul>
+        @if ($proximas->isNotEmpty())
+            <h2 class="mt-6 text-xl font-semibold">Próximas salidas</h2>
+            <ul class="mt-3 space-y-3">
+                @foreach ($proximas as $salida)
+                    <li>
+                        <a href="{{ route('rutas.mi-salida.show', $salida) }}" class="block min-h-11 rounded-2xl bg-white p-5 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
+                            <span class="block text-xl font-semibold">{{ $salida->ruta->nombre }}</span>
+                            <span class="text-sm text-gray-600 dark:text-paper-300">{{ ucfirst($salida->fecha_inicio->copy()->locale('es')->dayName) }} {{ $salida->fecha_inicio->format('d/m/Y') }}</span>
+                        </a>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
     @endif
 @endsection

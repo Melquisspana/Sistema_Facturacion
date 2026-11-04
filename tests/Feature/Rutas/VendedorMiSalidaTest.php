@@ -108,7 +108,10 @@ class VendedorMiSalidaTest extends TestCase
             ->assertDontSee('Quitar de la salida')->assertDontSee('¿Quién entrega?')->assertSee('¿Quién lo entregó?')->assertDontSee('Terminar salida')->assertDontSee('sidebar');
         foreach ([EstadoSalidaRuta::Planificada, EstadoSalidaRuta::Finalizada, EstadoSalidaRuta::Cancelada] as $estado) {
             $salida->update(['estado' => $estado]);
-            $this->get(route('rutas.mi-salida.show', $salida))->assertForbidden();
+            // La planificada se mira («Tu próxima salida», ProximaSalidaTest); no se registra nada.
+            $estado === EstadoSalidaRuta::Planificada
+                ? $this->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Tu próxima salida')
+                : $this->get(route('rutas.mi-salida.show', $salida))->assertForbidden();
             $this->patch(route('rutas.mi-salida.update', [$salida, $entrega]), ['resultado' => 'entregado'])->assertForbidden();
             $this->patch(route('rutas.mi-salida.deshacer', [$salida, $entrega]))->assertForbidden();
             $this->post(route('rutas.mi-salida.sala', [$salida, $this->sala]))->assertForbidden();
