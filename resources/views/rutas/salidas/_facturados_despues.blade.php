@@ -22,7 +22,7 @@
                     <div class="min-w-0 flex-1 break-words">
                         <p class="text-xs font-medium text-gray-500 dark:text-paper-300">{{ $fd->sala?->nombre ?? 'Sala sin identificar' }}</p>
                         <p class="font-mono text-sm">
-                            <a href="{{ route('rutas.salidas.ccf', [$salida, $fd]) }}" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center text-indigo-600 underline dark:text-indigo-400"><span class="sr-only">Ver el CCF </span>{{ $fd->dte?->numero_control ?? '—' }}</a>
+                            <a href="{{ route('rutas.salidas.ccf', [$salida, $fd]) }}" download class="inline-flex min-h-11 items-center text-indigo-600 underline dark:text-indigo-400"><span class="sr-only">Descargar el CCF </span>{{ $fd->dte?->numero_control ?? '—' }}</a>
                         </p>
                         <p class="text-sm text-gray-800 dark:text-paper-100">Entregó {{ $fd->entregadoPor?->nombre ?? '—' }} · {{ $fd->fecha_resultado?->format('d/m/Y') }}</p>
                         @if ($fd->nota)

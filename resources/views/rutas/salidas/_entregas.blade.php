@@ -65,13 +65,13 @@
         @php
             $resolucion = $resoluciones[$entrega->dte_id] ?? null;
             $albaran = $resolucion?->estaVinculado() ? $resolucion->albaran : null;
-            // Tocar la sala o el número abre el PDF del CCF (se ve y se guarda en el celular).
+            // Tocar la sala o el número descarga el PDF del CCF al celular.
             $verCcf = $entrega->dte ? route($modoVendedor ? 'rutas.mi-salida.ccf' : 'rutas.salidas.ccf', [$salida, $entrega]) : null;
         @endphp
         <div class="{{ $caja }} mt-3 px-4 py-3">
             @if ($verCcf)
                 {{-- Repite el enlace del número para el dedo; el lector de pantalla usa el del número. --}}
-                <a href="{{ $verCcf }}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="block truncate text-xs font-medium text-gray-500 hover:underline dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</a>
+                <a href="{{ $verCcf }}" download tabindex="-1" aria-hidden="true" class="block truncate text-xs font-medium text-gray-500 hover:underline dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</a>
             @else
                 <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $sala?->nombre ?? 'Sala sin identificar' }}</p>
             @endif
@@ -85,8 +85,8 @@
                     {{-- En el celular, el final del correlativo (lo que se busca en el papel); el número completo queda en el title y para el lector de pantalla. --}}
                     <p class="font-mono text-sm text-gray-600 dark:text-paper-300" title="{{ $entrega->dte?->numero_control }}">
                         @if ($verCcf)
-                            <a href="{{ $verCcf }}" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center text-indigo-600 underline dark:text-indigo-400">
-                                <span class="sr-only">Ver el CCF </span>
+                            <a href="{{ $verCcf }}" download class="inline-flex min-h-11 items-center text-indigo-600 underline dark:text-indigo-400">
+                                <span class="sr-only">Descargar el CCF </span>
                         @endif
                         <span class="sm:hidden" aria-hidden="true">{{ $entrega->dte?->numero_control ? '…'.\App\Support\OrdenCompra::ultimosDigitos($entrega->dte->numero_control) : '—' }}</span>
                         <span class="sr-only sm:not-sr-only sm:break-all">{{ $entrega->dte?->numero_control ?? '—' }}</span>

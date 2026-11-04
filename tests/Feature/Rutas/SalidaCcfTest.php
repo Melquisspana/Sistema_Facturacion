@@ -87,7 +87,8 @@ class SalidaCcfTest extends TestCase
 
         $respuesta = $this->actingAs($this->vendedor)->get($url)->assertOk();
         $this->assertSame('application/pdf', $respuesta->headers->get('Content-Type'));
-        $this->assertStringStartsWith('inline;', (string) $respuesta->headers->get('Content-Disposition'));
+        // Se descarga, no se abre en el navegador (pedido de los vendedores).
+        $this->assertStringStartsWith('attachment;', (string) $respuesta->headers->get('Content-Disposition'));
     }
 
     public function test_el_vendedor_no_abre_ccf_de_otras_salidas_ni_otros_documentos(): void
