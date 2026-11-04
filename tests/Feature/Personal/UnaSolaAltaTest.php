@@ -115,7 +115,7 @@ class UnaSolaAltaTest extends TestCase
         $this->assertSame('0000-0000', $ruta->fresh()->telefono);
     }
 
-    public function test_hacerlo_vendedor_desde_usuarios_usa_su_ficha_de_personal(): void
+    public function test_hacerlo_vendedor_desde_su_acceso_usa_su_ficha_de_personal(): void
     {
         $p = $this->persona();
         $cuenta = app(CrearUsuario::class)->crear([
@@ -125,9 +125,9 @@ class UnaSolaAltaTest extends TestCase
         // Otra persona de Personal con el mismo nombre en Rutas: no se toma por el nombre.
         $ajena = $this->persona(['nombres' => 'Ana', 'apellidos' => 'Ficticia', 'dui' => 'FICTICIO-2', 'sale_rutas' => true, 'es_otra_persona' => true]);
 
-        $this->actingAs($this->admin)->put(route('usuarios.update', $cuenta), [
-            'name' => 'Ana Ficticia', 'email' => 'ana@icloud.com', 'rol' => 'vendedor', 'activo' => '1',
-        ])->assertSessionHasNoErrors();
+        $this->actingAs($this->admin)->put(route('personal.accesos.update', $cuenta), [
+            'email' => 'ana@icloud.com', 'rol' => 'vendedor',
+        ])->assertSessionHasNoErrors()->assertRedirect(route('personal.empleados.show', 'p'.$p->id));
 
         $p = $p->fresh();
         $this->assertNotNull($p->personal_ruta_id);
@@ -157,7 +157,7 @@ class UnaSolaAltaTest extends TestCase
         $this->actingAs($this->admin)->get(route('personal.repetidos'))->assertOk()
             ->assertSee(route('personal.empleados.show', 'p'.$p->id), false)
             ->assertSee(route('rutas.personal.show', $suelta), false)
-            ->assertSee(route('usuarios.show', $cuenta), false)
+            ->assertSee(route('personal.accesos.show', $cuenta), false)
             ->assertDontSee('Carla Prueba');
         $this->actingAs($this->admin)->get(route('personal.empleados'))->assertOk()->assertSee(route('personal.repetidos'), false);
 

@@ -9,6 +9,10 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
+/**
+ * La gestión de usuarios vive en Personal › Accesos (antes, el módulo «Usuarios»). Acá, con
+ * Planilla apagada (como en una instalación nueva): es el único lugar para crear un usuario.
+ */
 class UserManagementTest extends TestCase
 {
     use RefreshDatabase;
@@ -41,13 +45,15 @@ class UserManagementTest extends TestCase
 
     public function test_invitado_es_redirigido(): void
     {
-        $this->get(route('usuarios.index'))->assertRedirect('/login');
+        $this->get(route('personal.accesos.index'))->assertRedirect('/login');
+        $this->get('/usuarios')->assertRedirect('/login');
     }
 
     public function test_no_admin_no_entra(): void
     {
         $u = User::factory()->create()->assignRole('facturacion');
-        $this->actingAs($u)->get(route('usuarios.index'))->assertForbidden();
+        $this->actingAs($u)->get(route('personal.accesos.index'))->assertForbidden();
+        $this->actingAs($u)->get('/usuarios')->assertForbidden();
     }
 
     public function test_registro_publico_sigue_desactivado(): void
@@ -59,7 +65,7 @@ class UserManagementTest extends TestCase
     {
         $admin = $this->admin();
 
-        $this->actingAs($admin)->post(route('usuarios.store'), $this->datosUsuario([
+        $this->actingAs($admin)->post(route('personal.accesos.store'), $this->datosUsuario([
             'email' => 'facturador@dulces.test',
         ]))->assertRedirect();
 
@@ -78,24 +84,44 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
         $otro = User::factory()->create()->assignRole('jefatura');
 
-        $this->actingAs($admin)->get(route('usuarios.index'))->assertOk()->assertSee('Nuevo usuario');
-        $this->actingAs($admin)->get(route('usuarios.create'))->assertOk()->assertSee('Rol');
-        $this->actingAs($admin)->get(route('usuarios.show', $otro))->assertOk();
-        $this->actingAs($admin)->get(route('usuarios.edit', $otro))->assertOk();
-        $this->actingAs($admin)->get(route('usuarios.password.edit', $otro))->assertOk()->assertSee('Nueva contraseña');
+        $this->actingAs($admin)->get(route('personal.accesos.index'))->assertOk()->assertSee('Nuevo usuario');
+        $this->actingAs($admin)->get(route('personal.accesos.create'))->assertOk()->assertSee('Rol');
+        $this->actingAs($admin)->get(route('personal.accesos.show', $otro))->assertOk()
+            ->assertSee('Cambiar rol o correo')->assertSee('Cambiar contraseña')->assertSee('Desactivar acceso')
+            ->assertSee('Historial del acceso')->assertSee('Eliminar cuenta');
+    }
+
+    /** Los favoritos de Usuarios siguen sirviendo; sus formularios viejos ya no existen. */
+    public function test_las_direcciones_viejas_de_usuarios_llevan_al_lugar_nuevo(): void
+    {
+        $admin = $this->admin();
+        $otro = User::factory()->create()->assignRole('jefatura');
+
+        $this->actingAs($admin)->get('/usuarios')->assertStatus(301)->assertRedirect(route('personal.accesos.index'));
+        $this->actingAs($admin)->get('/usuarios/create')->assertStatus(301)->assertRedirect(route('personal.accesos.create'));
+        foreach (["/usuarios/{$otro->id}", "/usuarios/{$otro->id}/edit", "/usuarios/{$otro->id}/password"] as $vieja) {
+            $this->actingAs($admin)->get($vieja)->assertStatus(301)->assertRedirect(route('personal.accesos.show', $otro));
+        }
+
+        $this->actingAs($admin)->post('/usuarios', $this->datosUsuario())->assertStatus(405);
+        $this->actingAs($admin)->put("/usuarios/{$otro->id}", ['rol' => 'administrador'])->assertStatus(405);
+        $this->actingAs($admin)->delete("/usuarios/{$otro->id}")->assertStatus(405);
+        $this->actingAs($admin)->patch("/usuarios/{$otro->id}/toggle-activo")->assertNotFound();
+        $this->assertSame(0, User::where('email', 'nuevo@dulces.test')->count());
+        $this->assertTrue($otro->fresh()->hasRole('jefatura'));
     }
 
     public function test_password_debil_es_rechazado(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('usuarios.store'), $this->datosUsuario(['password' => 'abc', 'password_confirmation' => 'abc']))
+            ->post(route('personal.accesos.store'), $this->datosUsuario(['password' => 'abc', 'password_confirmation' => 'abc']))
             ->assertSessionHasErrors('password');
     }
 
     public function test_no_puede_eliminarse_a_si_mismo(): void
     {
         $admin = $this->admin();
-        $this->actingAs($admin)->delete(route('usuarios.destroy', $admin))->assertForbidden();
+        $this->actingAs($admin)->delete(route('personal.accesos.destroy', $admin))->assertForbidden();
         $this->assertDatabaseHas('users', ['id' => $admin->id]);
     }
 
@@ -103,7 +129,8 @@ class UserManagementTest extends TestCase
     {
         $admin = $this->admin(); // único administrador activo
 
-        $this->actingAs($admin)->patch(route('usuarios.toggle-activo', $admin));
+        $this->actingAs($admin)->patch(route('personal.accesos.toggle-activo', $admin))
+            ->assertSessionHasErrorsIn('acceso', 'activo');
 
         $this->assertTrue($admin->fresh()->activo, 'El último admin no debe poder inactivarse.');
     }
@@ -112,12 +139,11 @@ class UserManagementTest extends TestCase
     {
         $admin = $this->admin();
 
-        $this->actingAs($admin)->put(route('usuarios.update', $admin), [
+        $this->actingAs($admin)->put(route('personal.accesos.update', $admin), [
             'name' => $admin->name,
             'email' => $admin->email,
             'rol' => 'jefatura',
-            'activo' => '1',
-        ]);
+        ])->assertSessionHasErrorsIn('acceso', 'rol');
 
         $this->assertTrue($admin->fresh()->hasRole('administrador'), 'El último admin no debe perder el rol.');
     }
@@ -127,7 +153,8 @@ class UserManagementTest extends TestCase
         $admin1 = $this->admin();
         $admin2 = User::factory()->create(['activo' => true])->assignRole('administrador');
 
-        $this->actingAs($admin1)->patch(route('usuarios.toggle-activo', $admin2));
+        $this->actingAs($admin1)->patch(route('personal.accesos.toggle-activo', $admin2))
+            ->assertRedirect(route('personal.accesos.show', $admin2));
 
         $this->assertFalse($admin2->fresh()->activo);
     }
@@ -153,10 +180,10 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
         $usuario = User::factory()->create()->assignRole('jefatura');
 
-        $this->actingAs($admin)->put(route('usuarios.password.update', $usuario), [
+        $this->actingAs($admin)->put(route('personal.accesos.password', $usuario), [
             'password' => 'Nuev0#Passw0rd!',
             'password_confirmation' => 'Nuev0#Passw0rd!',
-        ])->assertRedirect(route('usuarios.show', $usuario));
+        ])->assertRedirect(route('personal.accesos.show', $usuario));
 
         $this->assertTrue(Hash::check('Nuev0#Passw0rd!', $usuario->fresh()->password));
         $this->assertDatabaseHas('activity_log', [
@@ -164,5 +191,29 @@ class UserManagementTest extends TestCase
             'subject_id' => $usuario->id,
             'description' => 'cambió la contraseña',
         ]);
+
+        // Débil o sin repetir: no cambia, y el error va al bloque del acceso.
+        $this->actingAs($admin)->put(route('personal.accesos.password', $usuario), [
+            'password' => 'abc', 'password_confirmation' => 'abc',
+        ])->assertSessionHasErrorsIn('acceso', 'password');
+        $this->assertTrue(Hash::check('Nuev0#Passw0rd!', $usuario->fresh()->password));
+    }
+
+    public function test_cambiar_correo_valida_que_sea_unico(): void
+    {
+        $admin = $this->admin();
+        $usuario = User::factory()->create(['email' => 'uno@dulces.test'])->assignRole('jefatura');
+
+        $this->actingAs($admin)->put(route('personal.accesos.update', $usuario), [
+            'name' => $usuario->name, 'email' => $admin->email, 'rol' => 'jefatura',
+        ])->assertSessionHasErrorsIn('acceso', 'email');
+        $this->actingAs($admin)->put(route('personal.accesos.update', $usuario), [
+            'name' => $usuario->name, 'email' => 'uno@dulces.test', 'rol' => 'inventado',
+        ])->assertSessionHasErrorsIn('acceso', 'rol');
+        $this->actingAs($admin)->put(route('personal.accesos.update', $usuario), [
+            'name' => '', 'email' => 'uno@dulces.test', 'rol' => 'jefatura',
+        ])->assertSessionHasErrorsIn('acceso', 'name');
+
+        $this->assertSame('uno@dulces.test', $usuario->fresh()->email);
     }
 }

@@ -140,9 +140,13 @@ class PersonalController extends Controller
             'mensual' => $verImportes ? ($sueldos->mensualesEn(new Collection([$ficha]), now()->toDateString())[$ficha->id] ?? null) : null,
             'quincenas' => $ficha === null ? collect() : PlanillaDetalle::where('planilla_empleado_id', $ficha->id)
                 ->with('planilla')->latest('id')->limit(12)->get(),
-            // Cuentas creadas en Usuarios que todavía no son de nadie: se pueden enlazar acá.
+            // Cuentas de antes que todavía no son de nadie: se pueden enlazar acá.
             'usuariosSinFicha' => $ficha?->user_id === null && $ficha?->activo && $request->user()->can('usuarios.gestionar')
                 ? User::whereNotIn('id', PlanillaEmpleado::whereNotNull('user_id')->select('user_id'))->with('roles')->orderBy('name')->get()
+                : collect(),
+            // El historial de su acceso, para quien lo gestiona (las acciones son de AccesoController).
+            'actividadesCuenta' => $ficha?->usuario && $request->user()->can('usuarios.gestionar')
+                ? $ficha->usuario->activities()->with('causer')->latest()->limit(30)->get()
                 : collect(),
         ];
 

@@ -43,7 +43,6 @@ use App\Http\Controllers\Productos\ProductoController;
 use App\Http\Controllers\Productos\ProductoPrecioController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SinInternetController;
-use App\Http\Controllers\Usuarios\UserController;
 use App\Http\Middleware\ContingenciaHabilitada;
 use App\Models\Exportacion;
 use App\Models\ExportacionCliente;
@@ -755,15 +754,8 @@ Route::middleware(['auth', 'permission:sistema.salud'])
     ->get('admin/salud-sistema', [SaludSistemaController::class, 'index'])
     ->name('admin.salud-sistema');
 
-// Gestión de usuarios — solo administrador.
-Route::middleware(['auth', 'permission:usuarios.gestionar'])->group(function () {
-    Route::patch('usuarios/{usuario}/toggle-activo', [UserController::class, 'toggleActivo'])->name('usuarios.toggle-activo');
-    Route::get('usuarios/{usuario}/password', [UserController::class, 'editPassword'])->name('usuarios.password.edit');
-    Route::put('usuarios/{usuario}/password', [UserController::class, 'updatePassword'])->name('usuarios.password.update');
-    // Enlazar la cuenta con su persona en Personal: mismo servicio que la ficha.
-    Route::post('usuarios/{usuario}/personal', [UserController::class, 'enlazarPersonal'])->middleware('modulo.planilla')->name('usuarios.personal');
-    Route::resource('usuarios', UserController::class)->parameters(['usuarios' => 'usuario']);
-});
+// La gestión de usuarios pasó a Personal (ficha de cada persona y Personal › Accesos):
+// ver routes/personal.php, que también redirige las direcciones viejas /usuarios.
 
 /*
 | Configuración del sistema — SOLO administrador.

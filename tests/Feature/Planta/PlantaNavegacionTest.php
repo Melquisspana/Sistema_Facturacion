@@ -159,7 +159,7 @@ class PlantaNavegacionTest extends TestCase
 
         foreach ([
             'facturacion.index', 'clientes.index', 'productos.index', 'ppq.index',
-            'exportaciones.index', 'documentos-recibidos.index', 'usuarios.index',
+            'exportaciones.index', 'documentos-recibidos.index', 'personal.accesos.index',
             'contabilidad.paquete', 'admin.salud-sistema', 'auditoria.index',
         ] as $ruta) {
             $resp->assertDontSee(route($ruta), false);
@@ -184,7 +184,7 @@ class PlantaNavegacionTest extends TestCase
             ->assertOk();
 
         $resp->assertDontSee(route('facturacion.index'), false);
-        $resp->assertDontSee(route('usuarios.index'), false);
+        $resp->assertDontSee(route('personal.accesos.index'), false);
         $resp->assertSee(route('planta.dashboard'), false);
     }
 

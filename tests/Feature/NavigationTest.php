@@ -373,7 +373,7 @@ class NavigationTest extends TestCase
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
                 'rutas.dashboard',
-                'usuarios.index', 'auditoria.index', 'importaciones.index',
+                'personal.accesos.index', 'auditoria.index', 'importaciones.index',
                 'configuracion.resumen',
                 'admin.salud-sistema',
             ]],
@@ -467,7 +467,7 @@ class NavigationTest extends TestCase
         // Exportaciones ya no es una sección; su parte visible es la fila de listas.
         $resp->assertSee('Listas de empaque');
         $resp->assertDontSee('Administración');
-        $resp->assertDontSee(route('usuarios.index'), false);
+        $resp->assertDontSee(route('personal.accesos.index'), false);
         $resp->assertDontSee(route('admin.salud-sistema'), false);
         $resp->assertDontSee(route('configuracion.empresa.edit'), false);
     }
@@ -495,6 +495,30 @@ class NavigationTest extends TestCase
             ->assertSeeInOrder(['Administración', 'Configuración', 'Sistema', 'Salud del sistema']);
     }
 
+    /**
+     * «Usuarios» salió del menú de Facturación (03/11/2026): el acceso al sistema vive en
+     * Personal. Con el área Personal encendida, Facturación no ofrece ni Usuarios ni Accesos,
+     * y la barra de Personal sí. Con Personal apagada (como en la suite y en una instalación
+     * nueva) Facturación conserva una fila «Accesos» para no dejar al administrador sin
+     * poder crear usuarios: es la que figura en las listas de arriba.
+     */
+    public function test_usuarios_sale_de_facturacion_y_accesos_vive_en_personal(): void
+    {
+        config()->set('planilla.enabled', true);
+        $admin = $this->usuario('administrador');
+
+        $facturacion = $this->sidebarDe($this->actingAs($admin)->get(route('dashboard'))->assertOk()->getContent());
+        $this->assertStringNotContainsString('>Usuarios<', $facturacion);
+        $this->assertStringNotContainsString('/usuarios', $facturacion);
+        $this->assertNotContains(route('personal.accesos.index'), $this->enlacesDelSidebar(
+            $this->actingAs($admin)->get(route('dashboard'))->getContent()
+        ));
+
+        $personal = $this->actingAs($admin)->get(route('personal.accesos.index'))->assertOk()->getContent();
+        $this->assertContains(route('personal.accesos.index'), $this->enlacesDelSidebar($personal));
+        $this->assertStringNotContainsString('/usuarios', $this->sidebarDe($personal));
+    }
+
     // ------------------------------------------------------------------ rutas y estado activo
 
     public function test_enlaces_del_menu_apuntan_a_las_mismas_rutas_de_siempre(): void
@@ -505,7 +529,7 @@ class NavigationTest extends TestCase
             'clientes.index', 'productos.index', 'facturacion.index',
             'cobros.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
             'contabilidad.paquete', 'facturacion.listas.index',
-            'usuarios.index', 'auditoria.index', 'importaciones.index',
+            'personal.accesos.index', 'auditoria.index', 'importaciones.index',
             'configuracion.resumen', 'admin.salud-sistema',
         ] as $ruta) {
             $resp->assertSee(route($ruta), false);
@@ -539,7 +563,7 @@ class NavigationTest extends TestCase
             'contabilidad / ventas' => ['facturacion.reporte-contadora', 'contabilidad'],
             'ventas / listas de empaque' => ['facturacion.listas.index', 'ventas'],
             'ventas / productos de exportación' => ['productos.exportacion.index', 'ventas'],
-            'administracion / usuarios' => ['usuarios.index', 'administracion'],
+            'administracion / auditoría' => ['auditoria.index', 'administracion'],
             // «configuracion» ya no figura: con una sola fila el grupo dejó de ser
             // colapsable (x-sidebar-group sin `clave`), igual que Inicio y Sistema.
         ];

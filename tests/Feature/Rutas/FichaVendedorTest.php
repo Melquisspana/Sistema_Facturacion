@@ -34,7 +34,7 @@ class FichaVendedorTest extends TestCase
 
     private function crear(string $nombre, string $rol = 'vendedor', string $email = 'vendedor@ejemplo.test'): User
     {
-        $this->actingAs($this->admin())->post(route('usuarios.store'), [
+        $this->actingAs($this->admin())->post(route('personal.accesos.store'), [
             'name' => $nombre, 'email' => $email,
             'password' => 'Str0ng#Passw0rd!', 'password_confirmation' => 'Str0ng#Passw0rd!',
             'rol' => $rol, 'activo' => '1',
@@ -86,13 +86,13 @@ class FichaVendedorTest extends TestCase
         $usuario = $this->crear('Pedro Pérez');
         $admin = $this->admin();
 
-        $this->actingAs($admin)->patch(route('usuarios.toggle-activo', $usuario))->assertRedirect();
+        $this->actingAs($admin)->patch(route('personal.accesos.toggle-activo', $usuario))->assertRedirect();
         $this->assertFalse(PersonalRuta::where('user_id', $usuario->id)->sole()->activo);
 
-        $this->actingAs($admin)->patch(route('usuarios.toggle-activo', $usuario->fresh()))->assertRedirect();
+        $this->actingAs($admin)->patch(route('personal.accesos.toggle-activo', $usuario->fresh()))->assertRedirect();
         $this->assertTrue(PersonalRuta::where('user_id', $usuario->id)->sole()->activo);
 
-        $this->actingAs($admin)->put(route('usuarios.update', $usuario), [
+        $this->actingAs($admin)->put(route('personal.accesos.update', $usuario), [
             'name' => 'Pedro Pérez', 'email' => 'vendedor@ejemplo.test', 'rol' => 'facturacion', 'activo' => '1',
         ])->assertRedirect();
         $this->assertFalse(PersonalRuta::where('user_id', $usuario->id)->sole()->activo);

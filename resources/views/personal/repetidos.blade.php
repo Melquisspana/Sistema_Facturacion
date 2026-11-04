@@ -5,7 +5,7 @@
         'planilla' => route('personal.empleados.show', 'p'.$p['id']),
         'asistencia' => $veAsistencia ? route('personal.empleados.show', 'a'.$p['id']) : null,
         'rutas' => auth()->user()->can('rutas.personal.ver') ? route('rutas.personal.show', $p['id']) : null,
-        'usuario' => auth()->user()->can('usuarios.gestionar') ? route('usuarios.show', $p['id']) : null,
+        'usuario' => auth()->user()->can('usuarios.gestionar') ? route('personal.accesos.show', $p['id']) : null,
     };
 @endphp
 

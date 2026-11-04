@@ -80,7 +80,7 @@ class SesionesYAccesoTest extends TestCase
         $this->sesionGuardada($usuario, 'sesion-del-usuario');
 
         $this->actingAs($this->admin())
-            ->patch(route('usuarios.toggle-activo', $usuario))
+            ->patch(route('personal.accesos.toggle-activo', $usuario))
             ->assertRedirect();
 
         $this->assertFalse($usuario->fresh()->activo);
@@ -95,7 +95,7 @@ class SesionesYAccesoTest extends TestCase
         $this->sesionGuardada($usuario, 'sesion-del-usuario');
 
         $this->actingAs($this->admin())
-            ->put(route('usuarios.password.update', $usuario), [
+            ->put(route('personal.accesos.password', $usuario), [
                 'password' => self::CLAVE_FUERTE,
                 'password_confirmation' => self::CLAVE_FUERTE,
             ])->assertSessionHasNoErrors();

@@ -1,11 +1,13 @@
-{{-- Rol, correo y contraseña de un usuario nuevo. Los usan Usuarios › Nuevo y «Agregar
-     acceso o módulos» de la ficha: mismos campos, mismos nombres y mismo orden.
+{{-- Rol, correo y contraseña de un acceso nuevo. Los usan «Agregar acceso o módulos» de la
+     ficha y Personal › Accesos › Nueva cuenta externa: mismos campos, mismos nombres y mismo orden.
 
      `$obligatorio` pone `required`. En la ficha va sin él: los campos están ocultos hasta
      marcar la casilla, y un campo oculto obligatorio no deja enviar el formulario. El
-     servidor los exige igual. --}}
+     servidor los exige igual. `$roles` limita los roles (la cuenta externa solo lleva
+     Contabilidad); el servidor valida lo mismo. --}}
 @php
     $obligatorio = $obligatorio ?? false;
+    $roles = $roles ?? \App\Enums\RolSistema::opciones();
     $campo = 'block min-h-11 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100';
     $etiqueta = 'block text-sm font-medium text-gray-700 dark:text-paper-100';
 @endphp
@@ -15,8 +17,8 @@
     <label for="rol" class="{{ $etiqueta }}">Rol</label>
     <select id="rol" name="rol" class="{{ $campo }}" @if ($obligatorio) required @endif>
         <option value="">— Elegí —</option>
-        @foreach (\App\Enums\RolSistema::opciones() as $valor => $texto)
-            <option value="{{ $valor }}" @selected(old('rol') === $valor)>{{ $texto }}</option>
+        @foreach ($roles as $valor => $texto)
+            <option value="{{ $valor }}" @selected(old('rol', count($roles) === 1 ? $valor : null) === $valor)>{{ $texto }}</option>
         @endforeach
     </select>
 </div>

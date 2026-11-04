@@ -148,11 +148,11 @@
                                                             </option>
                                                         @endforeach
                                                     </select>
-                                                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Si ya le crearon el usuario en Usuarios, elegilo: queda enlazado y toma el nombre de esta ficha.</p>
+                                                    <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Si ya tiene una cuenta sin ficha (de antes), elegila: queda enlazada y toma el nombre de esta ficha.</p>
                                                 </div>
                                             @endif
                                             <div x-show="usa && existente === ''" class="grid gap-2 sm:grid-cols-2">
-                                                @include('usuarios._campos-acceso')
+                                                @include('personal.accesos._campos')
                                             </div>
                                         @endisset
                                         <button type="submit" class="{{ $secundario }}">Agregar</button>
@@ -220,13 +220,14 @@
                 <div class="{{ $tarjeta }}">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Acceso y módulos</h3>
                     <dl class="mt-3 divide-y divide-gray-100 text-sm dark:divide-ink-700">
-                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                        <div class="flex flex-wrap items-start gap-x-3 gap-y-1 py-2">
                             <dt class="w-24 shrink-0 {{ $dt }}">Usuario</dt>
                             <dd class="{{ $dd }}">
                                 @if ($cuenta)
                                     {{ $cuenta->email }} · {{ $rolCuenta ? (\App\Enums\RolSistema::opciones()[$rolCuenta] ?? $rolCuenta) : 'sin rol' }} · {{ $cuenta->activo ? 'Activo' : 'Inactivo' }}
+                                    {{-- El acceso se cambia acá mismo: ya no hay pantalla de Usuarios aparte. --}}
                                     @can('usuarios.gestionar')
-                                        <a href="{{ route('usuarios.show', $cuenta) }}" class="ml-2 text-indigo-600 hover:underline dark:text-indigo-400">Abrir en Usuarios</a>
+                                        @include('personal.accesos._acciones', ['cuenta' => $cuenta, 'ficha' => $ficha, 'actividades' => $actividadesCuenta])
                                     @endcan
                                 @else
                                     <span class="{{ $dt }}">Sin usuario</span>

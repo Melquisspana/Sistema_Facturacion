@@ -8,6 +8,7 @@ use App\Models\Dte;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -70,7 +71,7 @@ class RolesPermisosTest extends TestCase
             'reporte contadora (ventas)' => ['facturacion.reporte-contadora', self::ROLES_FACTURACION],
             'paquete contabilidad' => ['contabilidad.paquete', self::ROLES_FACTURACION],
             'auditoría' => ['auditoria.index', ['administrador', 'contabilidad']],
-            'usuarios' => ['usuarios.index', ['administrador']],
+            'accesos al sistema (antes usuarios)' => ['personal.accesos.index', ['administrador']],
             'configuración empresa' => ['configuracion.empresa.edit', ['administrador']],
             'salud del sistema' => ['admin.salud-sistema', ['administrador']],
             'importaciones' => ['importaciones.index', ['administrador']],
@@ -81,7 +82,7 @@ class RolesPermisosTest extends TestCase
     /**
      * @param  array<int, string>  $permitidos
      */
-    #[\PHPUnit\Framework\Attributes\DataProvider('lecturas')]
+    #[DataProvider('lecturas')]
     public function test_lectura_por_rol(string $rutaNombre, array $permitidos): void
     {
         foreach (self::ROLES as $rol) {
@@ -123,7 +124,7 @@ class RolesPermisosTest extends TestCase
     /**
      * @param  array<int, string>  $permitidos
      */
-    #[\PHPUnit\Framework\Attributes\DataProvider('escrituras')]
+    #[DataProvider('escrituras')]
     public function test_escritura_por_rol(string $metodo, string $rutaNombre, array $permitidos): void
     {
         foreach (self::ROLES as $rol) {
@@ -164,7 +165,7 @@ class RolesPermisosTest extends TestCase
     public function test_invitado_es_redirigido_al_login(): void
     {
         $this->get(route('facturacion.index'))->assertRedirect(route('login'));
-        $this->get(route('usuarios.index'))->assertRedirect(route('login'));
+        $this->get(route('personal.accesos.index'))->assertRedirect(route('login'));
         $this->get(route('ppq.index'))->assertRedirect(route('login'));
     }
 

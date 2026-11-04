@@ -44,12 +44,14 @@ class CuentaExternaTest extends TestCase
         ], $cambios);
     }
 
-    public function test_usuarios_nuevo_crea_la_cuenta_externa_sin_ficha_y_sin_aviso(): void
+    public function test_accesos_crea_la_cuenta_externa_sin_ficha_y_sin_aviso(): void
     {
-        $this->actingAs($this->admin)->get(route('usuarios.create'))->assertOk()
-            ->assertSee('Cuenta externa (contadora, no es empleada)');
+        // Con Personal, acá solo se crea la cuenta externa: no se elige ninguna persona.
+        $this->actingAs($this->admin)->get(route('personal.accesos.create'))->assertOk()
+            ->assertSee('Nueva cuenta externa')->assertSee('Crear cuenta externa')
+            ->assertDontSee('planilla_empleado_id')->assertDontSee('value="administrador"', false);
 
-        $this->actingAs($this->admin)->post(route('usuarios.store'), $this->datos())->assertSessionHasNoErrors();
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $this->datos())->assertSessionHasNoErrors();
 
         $externa = User::where('email', 'externa@example.test')->sole();
         $this->assertTrue($externa->cuenta_externa);
@@ -58,25 +60,40 @@ class CuentaExternaTest extends TestCase
         $this->assertSame(0, PlanillaEmpleado::count());
 
         // Solo el administrador (sin ficha) cuenta en el aviso; la externa se ve como tal.
-        $this->actingAs($this->admin)->get(route('usuarios.index'))->assertOk()
+        $this->actingAs($this->admin)->get(route('personal.accesos.index'))->assertOk()
             ->assertSee('Hay 1 usuario sin ficha en Personal.')->assertSee('Cuenta externa');
-        $this->actingAs($this->admin)->get(route('usuarios.index', ['sin_ficha' => 1]))->assertOk()
+        $this->actingAs($this->admin)->get(route('personal.accesos.index', ['sin_ficha' => 1]))->assertOk()
             ->assertDontSee('externa@example.test');
-        $this->actingAs($this->admin)->get(route('usuarios.show', $externa))->assertOk()
-            ->assertSee('Cuenta externa: no es empleada');
+        // Su página: las mismas acciones que la ficha, con el nombre editable y solo Contabilidad.
+        $this->actingAs($this->admin)->get(route('personal.accesos.show', $externa))->assertOk()
+            ->assertSee('Cuenta externa: no es empleada')->assertSee('id="acceso_name"', false)
+            ->assertSee('Cambiar contraseña')->assertSee('Desactivar acceso')
+            ->assertDontSee('<option value="administrador"', false);
+    }
+
+    public function test_no_se_carga_como_externa_a_quien_ya_esta_en_personal(): void
+    {
+        app(AltaEmpleado::class)->registrar($this->admin, [
+            'nombres' => 'Carla', 'apellidos' => 'Ficticia', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-9',
+            'con_descuentos_ley' => false, 'alta_el' => '2026-01-01',
+        ]);
+
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $this->datos(['name' => ' carla ficticia ']))
+            ->assertSessionHasErrors('name');
+        $this->assertSame(0, User::where('email', 'externa@example.test')->count());
     }
 
     public function test_la_cuenta_externa_solo_lleva_el_rol_contabilidad(): void
     {
-        $this->actingAs($this->admin)->post(route('usuarios.store'), $this->datos(['rol' => 'administrador']))
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $this->datos(['rol' => 'administrador']))
             ->assertSessionHasErrors('rol');
         $this->assertSame(0, User::where('email', 'externa@example.test')->count());
 
-        $this->actingAs($this->admin)->post(route('usuarios.store'), $this->datos());
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $this->datos());
         $externa = User::where('email', 'externa@example.test')->sole();
-        $this->actingAs($this->admin)->put(route('usuarios.update', $externa), [
-            'name' => $externa->name, 'email' => $externa->email, 'rol' => 'administrador', 'activo' => '1',
-        ])->assertSessionHasErrors('rol');
+        $this->actingAs($this->admin)->put(route('personal.accesos.update', $externa), [
+            'name' => $externa->name, 'email' => $externa->email, 'rol' => 'administrador',
+        ])->assertSessionHasErrorsIn('acceso', 'rol');
         $this->assertTrue($externa->fresh()->hasRole('contabilidad'));
     }
 
@@ -86,26 +103,27 @@ class CuentaExternaTest extends TestCase
         $soloUsuarios->syncPermissions([PermisoSistema::UsuariosGestionar->value]);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->actingAs($soloUsuarios)->post(route('usuarios.store'), $this->datos(['password_confirmation' => 'otra']))
+        $this->actingAs($soloUsuarios)->post(route('personal.accesos.store'), $this->datos(['password_confirmation' => 'otra']))
             ->assertSessionHasErrors('password');
-        $this->actingAs($soloUsuarios)->post(route('usuarios.store'), $this->datos(['name' => '']))
+        $this->actingAs($soloUsuarios)->post(route('personal.accesos.store'), $this->datos(['name' => '']))
             ->assertSessionHasErrors('name');
         $this->assertSame(0, User::where('email', 'externa@example.test')->count());
 
-        $this->actingAs($soloUsuarios)->post(route('usuarios.store'), $this->datos())->assertSessionHasNoErrors();
+        $this->actingAs($soloUsuarios)->post(route('personal.accesos.store'), $this->datos())->assertSessionHasNoErrors();
         $this->assertTrue(User::where('email', 'externa@example.test')->sole()->cuenta_externa);
     }
 
     public function test_si_pasa_a_ser_empleada_deja_de_ser_externa(): void
     {
-        $this->actingAs($this->admin)->post(route('usuarios.store'), $this->datos());
+        $this->actingAs($this->admin)->post(route('personal.accesos.store'), $this->datos());
         $externa = User::where('email', 'externa@example.test')->sole();
         $p = app(AltaEmpleado::class)->registrar($this->admin, [
             'nombres' => 'Carla', 'apellidos' => 'Ficticia', 'documento_tipo' => 'pasaporte', 'dui' => 'FICTICIO-9',
             'con_descuentos_ley' => false, 'alta_el' => '2026-01-01',
         ]);
 
-        $this->actingAs($this->admin)->post(route('usuarios.personal', $externa), ['planilla_empleado_id' => $p->id])
+        // Se enlaza desde su ficha, como cualquier cuenta sin ficha.
+        $this->actingAs($this->admin)->post(route('planilla.empleados.modulos', $p), ['usa_sistema' => '1', 'user_id' => (string) $externa->id])
             ->assertSessionHasNoErrors();
 
         $this->assertSame($externa->id, $p->fresh()->user_id);
