@@ -12,6 +12,14 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.04.2] - 2026-11-04
+
+El CCF de Rutas se descarga (#236), sin migraciones.
+
+### Cambiado
+
+- Rutas: al tocar un CCF en la hoja de la salida, en «Mi salida» o en «Facturados después de entregar», el PDF se descarga al celular en vez de abrirse en el navegador. Es un pedido de los vendedores (#236).
+
 ## [2026.11.04] - 2026-11-04
 
 Rutas para los jefes de vendedores (armar y terminar salidas, «Tu próxima salida», CCF facturado después de entregar y arreglos en el celular), y el acceso al sistema en un solo lugar dentro de Personal (#228, #230 al #235), con una migración.
