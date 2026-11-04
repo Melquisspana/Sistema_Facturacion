@@ -13,11 +13,13 @@ use App\Services\Planilla\AltaEmpleado;
 use App\Services\Rutas\FichaVendedor;
 use App\Services\Usuarios\CrearUsuario;
 use App\Services\Usuarios\UltimoAdministrador;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -36,14 +38,14 @@ class UserController extends Controller
             ->when($busqueda !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$busqueda}%")
                 ->orWhere('email', 'like', "%{$busqueda}%")))
-            ->when($this->conPersonal() && $request->boolean('sin_ficha'), fn ($q) => $q->whereDoesntHave('planillaEmpleado'))
+            ->when($this->conPersonal() && $request->boolean('sin_ficha'), fn ($q) => $this->sinFicha($q))
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
 
         return view('usuarios.index', [
             'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha')],
-            'sinFicha' => $this->conPersonal() ? User::whereDoesntHave('planillaEmpleado')->count() : 0,
+            'sinFicha' => $this->conPersonal() ? $this->sinFicha(User::query())->count() : 0,
             'conPersonal' => $this->conPersonal(), 'verFichas' => $request->user()->can('planilla.ver'),
         ]);
     }
@@ -65,14 +67,21 @@ class UserController extends Controller
 
     /**
      * Con Personal, el usuario sale de la ficha de una persona: es lo mismo que «Agregar
-     * acceso» en la ficha, con el mismo servicio. Sin Planilla instalada (por ejemplo, al
-     * empezar) queda la cuenta suelta de siempre, para no dejar a nadie sin poder entrar.
+     * acceso» en la ficha, con el mismo servicio. La excepción es la cuenta externa (la
+     * contadora, que no es empleada): solo con rol Contabilidad. Sin Planilla instalada (por
+     * ejemplo, al empezar) queda la cuenta suelta de siempre, para no dejar a nadie sin poder entrar.
      */
     public function store(Request $request, CrearUsuario $crear, AltaEmpleado $alta): RedirectResponse
     {
         $this->authorize('create', User::class);
 
-        if ($this->conPersonal()) {
+        if ($this->conPersonal() && $request->boolean('cuenta_externa')) {
+            $request->merge(['activo' => true]);
+            $reglas = ['rol' => ['required', Rule::in([RolSistema::Contabilidad->value])]] + StoreUserRequest::reglasUsuario();
+            $usuario = $crear->crear(['cuenta_externa' => true] + $request->validate($reglas, [
+                'rol.in' => 'Una cuenta externa solo puede tener el rol Contabilidad.',
+            ]));
+        } elseif ($this->conPersonal()) {
             $id = $request->validate([
                 'planilla_empleado_id' => ['required', 'integer', 'exists:planilla_empleados,id'],
             ], ['planilla_empleado_id.required' => 'Elegí la persona.'])['planilla_empleado_id'];
@@ -158,6 +167,10 @@ class UserController extends Controller
             return back()->withInput()->with('error', 'No se puede quitar el rol de administrador ni inactivar al último administrador activo.');
         }
 
+        if ($usuario->cuenta_externa && $rolNuevo !== RolSistema::Contabilidad->value) {
+            throw ValidationException::withMessages(['rol' => 'Una cuenta externa solo puede tener el rol Contabilidad.']);
+        }
+
         $rolAnterior = $usuario->roles->first()?->name;
 
         $usuario->update([
@@ -225,6 +238,12 @@ class UserController extends Controller
     private function conPersonal(): bool
     {
         return PlanillaEmpleado::enUso();
+    }
+
+    /** Cuentas a las que les falta su persona en Personal: no cuentan las externas. */
+    private function sinFicha(Builder $consulta): Builder
+    {
+        return $consulta->whereDoesntHave('planillaEmpleado')->where('cuenta_externa', false);
     }
 
     /** La persona de esta cuenta. Sin la tabla (Planilla sin instalar) no hay ninguna. */
