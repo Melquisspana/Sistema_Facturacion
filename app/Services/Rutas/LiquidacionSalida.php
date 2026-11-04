@@ -51,7 +51,8 @@ class LiquidacionSalida
      */
     public function diasSinTerminar(SalidaRuta $salida): array
     {
-        $fechas = $salida->entregas()->entregadas()->pluck('fecha_resultado')->map(fn ($f) => $f->toDateString())
+        // Un facturado después de entregar no obliga a terminar su día: no tiene dinero.
+        $fechas = $salida->entregas()->entregadas()->sinFacturadosDespues()->pluck('fecha_resultado')->map(fn ($f) => $f->toDateString())
             ->merge($salida->gastos()->pluck('fecha')->map(fn ($f) => $f->toDateString()))
             ->unique()->sort()->values();
         $cerrados = $salida->cierres()->get()->filter->estaCerrado()->map(fn ($c) => $c->fecha->toDateString())->all();
