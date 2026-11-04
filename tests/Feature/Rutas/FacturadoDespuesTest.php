@@ -12,7 +12,6 @@ use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PersonalRuta;
-use App\Models\PpqAlbaran;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
@@ -27,8 +26,9 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * El CCF que se factura DESPUÉS de entregar el producto (docs/PLAN_TABLERO_RUTAS.md, PR 5):
- * queda entregado en la salida, el día y por quien dice la oficina, sin mover dinero.
+ * Los CCF anotados como facturados DESPUÉS de entregar (PR #230). Desde el 04/11/2026 ya no
+ * se anotan nuevos: el producto nunca se entrega sin CCF. Los registros que quedaron siguen
+ * fuera del dinero, se ven en la hoja solo para leer y la oficina los puede deshacer.
  * Datos ficticios.
  */
 class FacturadoDespuesTest extends TestCase
@@ -64,20 +64,32 @@ class FacturadoDespuesTest extends TestCase
             ->sucursales()->create(['nombre' => 'Sala Ficticia Centro', 'ruta_id' => $ruta->id]);
     }
 
-    /** Un CCF aceptado. `$extra` lo vuelve borrador, de otro tipo, etc. */
-    private function ccf(array $extra = []): Dte
+    /** Un CCF aceptado. */
+    private function ccf(): Dte
     {
         $empresa = Empresa::firstOrCreate(['razon_social' => 'Pruebas'], ['ambiente' => '01', 'activo' => true]);
         $establecimiento = Establecimiento::firstOrCreate(['empresa_id' => $empresa->id, 'codigo' => 'M001'], ['nombre' => 'Casa', 'activo' => true]);
         $n = 907 + Dte::count();
 
-        return Dte::create($extra + [
+        return Dte::create([
             'establecimiento_id' => $establecimiento->id, 'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01',
             'sello_recepcion' => '2026'.strtoupper(Str::random(36)), 'fecha_procesamiento_mh' => now(),
             'cliente_id' => $this->sala->cliente_id, 'cliente_sucursal_id' => $this->sala->id,
             'numero_control' => 'DTE-03-M001P002-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT),
             'numero_orden_compra' => '26060232'.str_pad((string) $n, 5, '0', STR_PAD_LEFT),
             'fecha_emision' => now()->toDateString(), 'hora_emision' => '10:00:00', 'total_pagar' => 100.25,
+        ]);
+    }
+
+    /** Un registro como los que dejó «Entregado antes de facturar»: entregado y sin dinero. */
+    private function registroViejo(Dte $dte): SalidaRutaEntrega
+    {
+        return $this->salida->entregas()->create([
+            'dte_id' => $dte->id, 'cliente_sucursal_id' => $dte->cliente_sucursal_id,
+            'resultado' => ResultadoEntrega::Entregado, 'fecha_resultado' => '2026-11-04',
+            'entregado_por_id' => $this->persona->id, 'nota' => 'La orden de compra llegó el jueves.',
+            'trae_nota_averia' => false, 'origen_registro' => OrigenRegistroEntrega::FacturadoDespues,
+            'registrado_por' => $this->oficina->id,
         ]);
     }
 
@@ -91,17 +103,6 @@ class FacturadoDespuesTest extends TestCase
         $this->post(route('rutas.mi-salida.gastos.store', $this->salida), ['concepto' => 'gasolina', 'monto' => '10.00'])->assertSessionHasNoErrors();
         $this->post(route('rutas.mi-salida.cerrar', $this->salida), ['entregas' => [$entrega->id => ['monto_cobrado' => '100.25', 'forma_cobro' => 'efectivo']]])
             ->assertSessionHasNoErrors();
-    }
-
-    private function anotar(Dte $dte, array $datos = [])
-    {
-        return $this->actingAs($this->oficina)->from(route('rutas.salidas.show', $this->salida))
-            ->post(route('rutas.salidas.entregas.facturado-despues', $this->salida), $datos + [
-                'numero_control' => $dte->numero_control,
-                'entregado_por_id' => $this->persona->id,
-                'fecha_entrega' => '2026-11-04',
-                'nota' => 'La orden de compra llegó el jueves.',
-            ]);
     }
 
     /** Todo lo que dice cuánto dinero dejó la salida: cierres, liquidación y lo que lista el día. */
@@ -123,191 +124,110 @@ class FacturadoDespuesTest extends TestCase
         ];
     }
 
-    private function asertarAnotado(Dte $dte, string $fecha): SalidaRutaEntrega
+    // ══════════════════════════════ los registros que quedaron
+
+    public function test_un_registro_viejo_no_entra_al_dia_ni_a_mi_salida(): void
     {
-        $fila = SalidaRutaEntrega::where('dte_id', $dte->id)->sole();
-        $this->assertSame($this->salida->id, $fila->salida_ruta_id);
-        $this->assertSame(ResultadoEntrega::Entregado, $fila->resultado);
-        $this->assertSame(OrigenRegistroEntrega::FacturadoDespues, $fila->origen_registro);
-        $this->assertSame($this->persona->id, $fila->entregado_por_id);
-        $this->assertSame($fecha, $fila->fecha_resultado->toDateString());
-        $this->assertSame($this->oficina->id, $fila->registrado_por);
-        $this->assertNull($fila->forma_cobro);
-        $this->assertNull($fila->monto_esperado);
-        $this->assertNull($fila->monto_cobrado);
-        // Ya no está pendiente de entregar.
-        $this->assertNotContains($dte->id, app(EntregasCcf::class)->pendientesDeRuta($this->salida->ruta)->pluck('id')->all());
+        $fila = $this->registroViejo($this->ccf());
 
-        return $fila;
-    }
-
-    // ══════════════════════════════ los tres casos
-
-    public function test_en_curso_con_el_dia_abierto_queda_entregado_sin_dinero(): void
-    {
-        $dte = $this->ccf();
-
-        $this->anotar($dte)->assertSessionHasNoErrors()->assertRedirect(route('rutas.salidas.show', $this->salida))
-            ->assertSessionHas('status', 'CCF '.$dte->numero_control.' anotado como entregado el 04/11/2026, sin dinero.');
-
-        $fila = $this->asertarAnotado($dte, '2026-11-04');
-        $this->assertSame('La orden de compra llegó el jueves.', $fila->nota);
-        $this->assertDatabaseHas('activity_log', ['log_name' => 'salida_ruta_entrega', 'description' => 'anotó el CCF facturado después de entregar', 'subject_id' => $fila->id]);
-
-        // No entra al día: ni en lo que lista el cierre ni en «Terminar día».
         $this->assertSame([], app(CierreDia::class)->entregas($this->salida, '2026-11-04')->modelKeys());
         $this->assertSame([], app(LiquidacionSalida::class)->diasSinTerminar($this->salida));
         $this->actingAs($this->oficina)->postJson(route('rutas.salidas.cerrar', $this->salida))->assertUnprocessable();
         $this->assertSame(0, $this->salida->cierres()->count());
 
-        // Tampoco aparece en «Mi salida» del vendedor.
         $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.show', $this->salida))->assertOk()
             ->assertDontSee(route('rutas.mi-salida.ccf', [$this->salida, $fila]))->assertSee('Esta salida no lleva CCF');
     }
 
-    public function test_en_curso_con_el_dia_terminado_no_reabre_el_dia_ni_cambia_el_dinero(): void
+    public function test_con_el_dia_terminado_no_cambia_el_dinero(): void
     {
         $this->diaConDinero();
         $this->travel(1)->days();
         $antes = $this->dinero();
-        $dte = $this->ccf();
 
-        $this->anotar($dte)->assertSessionHasNoErrors();
+        $this->registroViejo($this->ccf());
 
-        $this->asertarAnotado($dte, '2026-11-04');
         $this->assertEquals($antes, $this->dinero());
         $this->assertTrue($this->salida->diaCerrado('2026-11-04'));
-
-        // En el tablero, la última entrega de la sala es el día real de la entrega.
-        $this->assertSame('2026-11-04', app(EntregasCcf::class)->ultimaVisitaPorSala([$this->sala->id])[$this->sala->id]->toDateString());
     }
 
-    public function test_terminada_y_liquidada_no_toca_la_liquidacion_y_deshacer_tampoco(): void
+    public function test_deshacer_en_una_salida_liquidada_no_toca_la_liquidacion(): void
     {
         $this->diaConDinero();
+        $dte = $this->ccf();
+        $fila = $this->registroViejo($dte);
         $this->post(route('rutas.mi-salida.liquidar', $this->salida), ['entrega_dinero_personal_id' => $this->persona->id])->assertSessionHasNoErrors();
         $this->assertTrue($this->salida->refresh()->estaLiquidada());
         $this->travel(2)->days();
         $antes = $this->dinero();
         $this->assertSame(10025 - 1000, $antes['totales']['a_entregar']);
-        $dte = $this->ccf();
 
-        $this->anotar($dte)->assertSessionHasNoErrors();
+        $this->actingAs($this->oficina)->delete(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, $fila]))->assertSessionHasNoErrors();
 
-        $fila = $this->asertarAnotado($dte, '2026-11-04');
-        $this->assertEquals($antes, $this->dinero());
-        $this->actingAs($this->oficina)->get(route('rutas.salidas.terminar', $this->salida))->assertOk()->assertSee('Efectivo a entregar $90.25');
-
-        // Deshacer: el CCF vuelve a quedar sin entregar y el dinero no se mueve.
-        $this->delete(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, $fila]))->assertSessionHasNoErrors();
         $this->assertDatabaseMissing('salida_ruta_entregas', ['id' => $fila->id]);
         $this->assertEquals($antes, $this->dinero());
         $this->assertContains($dte->id, app(EntregasCcf::class)->pendientesDeRuta($this->salida->ruta)->pluck('id')->all());
         $this->assertDatabaseHas('activity_log', ['log_name' => 'salida_ruta_entrega', 'description' => 'deshizo el CCF facturado después de entregar', 'subject_id' => $fila->id]);
     }
 
-    public function test_la_hoja_lo_muestra_aparte_con_quien_y_que_dia(): void
+    // ══════════════════════════════ la hoja
+
+    public function test_la_hoja_lo_lista_solo_para_leer_con_deshacer_para_la_oficina(): void
     {
         $dte = $this->ccf();
-        $this->anotar($dte)->assertSessionHasNoErrors();
+        $fila = $this->registroViejo($dte);
 
-        $hoja = $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk();
-        $hoja->assertSeeInOrder(['Facturados después de entregar (sin dinero)', 'Sala Ficticia Centro', $dte->numero_control, 'Entregó Carlos · 04/11/2026', 'La orden de compra llegó el jueves.', 'Anotó Oficina Prueba'])
-            ->assertSee('Entregado antes de facturar')
-            ->assertSee(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, SalidaRutaEntrega::where('dte_id', $dte->id)->sole()]))
-            // No cuenta en la lista de la ruta: sigue «Esta salida no lleva CCF».
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk()
+            ->assertSeeInOrder(['Facturados después de entregar (sin dinero)', 'Sala Ficticia Centro', $dte->numero_control, 'Entregó Carlos · 04/11/2026', 'La orden de compra llegó el jueves.', 'Anotó Oficina Prueba'])
+            ->assertSee(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, $fila]))
+            // Ya no hay formulario para anotar nuevos.
+            ->assertDontSee('Entregado antes de facturar')
+            ->assertDontSee('fd-numero')
             ->assertSee('Esta salida no lleva CCF');
 
-        // Quien solo ve Rutas ve el bloque, pero no anota ni deshace.
+        // Quien solo ve Rutas ve la lista, pero no deshace.
         $mirador = User::factory()->create(['activo' => true])->givePermissionTo('rutas.ver');
         $this->actingAs($mirador)->get(route('rutas.salidas.show', $this->salida))->assertOk()
             ->assertSee('Facturados después de entregar (sin dinero)')
-            ->assertDontSee('Entregado antes de facturar')
-            ->assertDontSee(route('rutas.salidas.entregas.facturado-despues', $this->salida));
+            ->assertDontSee(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, $fila]));
     }
 
-    // ══════════════════════════════ rechazos
-
-    public function test_rechaza_a_quien_no_fue_y_un_dia_fuera_de_la_salida(): void
+    public function test_sin_registros_la_seccion_no_aparece(): void
     {
-        $dte = $this->ccf();
-        $ajena = PersonalRuta::create(['nombre' => 'Ana']);
-
-        $this->anotar($dte, ['entregado_por_id' => $ajena->id])->assertSessionHasErrorsIn('facturadoDespues', 'entregado_por_id');
-        $this->anotar($dte, ['fecha_entrega' => '2026-11-03'])->assertSessionHasErrorsIn('facturadoDespues', 'fecha_entrega');
-        $this->anotar($dte, ['fecha_entrega' => '2026-11-05'])->assertSessionHasErrorsIn('facturadoDespues', 'fecha_entrega');
-        $this->anotar($dte, ['fecha_entrega' => '04/11/2026'])->assertSessionHasErrorsIn('facturadoDespues', 'fecha_entrega');
-
-        // Terminada, el último día es el del regreso.
-        $this->salida->update(['estado' => EstadoSalidaRuta::Finalizada, 'fecha_fin_real' => '2026-11-04']);
-        $this->travel(3)->days();
-        $this->anotar($dte, ['fecha_entrega' => '2026-11-06'])->assertSessionHasErrorsIn('facturadoDespues', 'fecha_entrega');
-
-        $this->assertSame(0, SalidaRutaEntrega::count());
-    }
-
-    public function test_rechaza_lo_mismo_que_agregar_un_ccf(): void
-    {
-        // Ya entregado en otra salida.
-        $entregado = $this->ccf();
-        $otra = SalidaRuta::create(['ruta_id' => $this->salida->ruta_id, 'fecha_inicio' => '2026-11-01', 'estado' => EstadoSalidaRuta::Finalizada]);
-        $otra->entregas()->create(['dte_id' => $entregado->id, 'cliente_sucursal_id' => $this->sala->id, 'resultado' => ResultadoEntrega::Entregado, 'fecha_resultado' => '2026-11-01']);
-        $this->anotar($entregado)->assertSessionHasErrorsIn('facturadoDespues', ['numero_control' => 'Ese CCF ya consta como entregado.']);
-
-        // Sin registrar en otra salida abierta.
-        $enCamino = $this->ccf();
-        $abierta = SalidaRuta::create(['ruta_id' => $this->salida->ruta_id, 'fecha_inicio' => '2026-11-04', 'estado' => EstadoSalidaRuta::EnCurso]);
-        $abierta->entregas()->create(['dte_id' => $enCamino->id, 'cliente_sucursal_id' => $this->sala->id]);
-        $this->anotar($enCamino)->assertSessionHasErrorsIn('facturadoDespues', ['numero_control' => 'Ese CCF ya va sin registrar en otra salida abierta.']);
-
-        // Con albarán de entrega.
-        $conAlbaran = $this->ccf();
-        PpqAlbaran::create([
-            'numero_albaran' => 'AC01/0232/00/9001', 'numero_orden_compra' => $conAlbaran->numero_orden_compra,
-            'monto_albaran' => 100.25, 'fecha_albaran' => '2026-11-04', 'origen' => 'gmail',
-        ]);
-        $this->anotar($conAlbaran)->assertSessionHasErrorsIn('facturadoDespues', ['numero_control' => 'Ese CCF ya tiene albarán de entrega: consta como entregado.']);
-
-        // No aceptado por Hacienda, o no es un CCF, o no existe.
-        $this->anotar($this->ccf(['estado' => 'borrador', 'sello_recepcion' => null]))->assertSessionHasErrorsIn('facturadoDespues', 'numero_control');
-        $this->anotar($this->ccf(['tipo_dte' => '01']))->assertSessionHasErrorsIn('facturadoDespues', ['numero_control' => 'Ese documento no es un CCF.']);
-        $this->anotar($entregado, ['numero_control' => 'DTE-03-M001P002-999999999999999'])->assertSessionHasErrorsIn('facturadoDespues', 'numero_control');
-
-        $this->assertSame(0, SalidaRutaEntrega::where('origen_registro', OrigenRegistroEntrega::FacturadoDespues->value)->count());
-    }
-
-    public function test_no_se_anota_en_una_salida_planificada_ni_cancelada(): void
-    {
-        $dte = $this->ccf();
-        foreach ([EstadoSalidaRuta::Planificada, EstadoSalidaRuta::Cancelada] as $estado) {
+        foreach ([EstadoSalidaRuta::EnCurso, EstadoSalidaRuta::Finalizada] as $estado) {
             $this->salida->update(['estado' => $estado]);
-            $this->anotar($dte)->assertSessionHasErrorsIn('facturadoDespues', 'salida');
+            $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk()
+                ->assertDontSee('Facturados después de entregar')
+                ->assertDontSee('Entregado antes de facturar');
         }
+    }
+
+    public function test_ya_no_se_pueden_anotar_nuevos(): void
+    {
+        $this->actingAs($this->oficina)->post('/rutas/salidas/'.$this->salida->id.'/entregas/facturado-despues', [
+            'numero_control' => $this->ccf()->numero_control, 'entregado_por_id' => $this->persona->id, 'fecha_entrega' => '2026-11-04',
+        ])->assertMethodNotAllowed();
+
         $this->assertSame(0, SalidaRutaEntrega::count());
     }
 
-    public function test_sin_gestionar_da_403(): void
+    // ══════════════════════════════ permisos y caminos
+
+    public function test_sin_gestionar_no_se_deshace(): void
     {
-        $dte = $this->ccf();
-        $this->anotar($dte)->assertSessionHasNoErrors();
-        $fila = SalidaRutaEntrega::where('dte_id', $dte->id)->sole();
+        $fila = $this->registroViejo($this->ccf());
 
         $jefe = User::factory()->create(['activo' => true])->assignRole(RolSistema::JefeVendedores->value);
         foreach ([$jefe, $this->vendedor] as $usuario) {
-            $this->actingAs($usuario)->post(route('rutas.salidas.entregas.facturado-despues', $this->salida), [
-                'numero_control' => $this->ccf()->numero_control, 'entregado_por_id' => $this->persona->id, 'fecha_entrega' => '2026-11-04',
-            ])->assertForbidden();
-            $this->delete(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, $fila]))->assertForbidden();
+            $this->actingAs($usuario)->delete(route('rutas.salidas.entregas.facturado-despues.destroy', [$this->salida, $fila]))->assertForbidden();
         }
         $this->assertDatabaseHas('salida_ruta_entregas', ['id' => $fila->id]);
-        $this->assertSame(1, SalidaRutaEntrega::count());
     }
 
     public function test_cada_registro_se_deshace_solo_por_su_camino(): void
     {
-        $dte = $this->ccf();
-        $this->anotar($dte)->assertSessionHasNoErrors();
-        $fila = SalidaRutaEntrega::where('dte_id', $dte->id)->sole();
+        $fila = $this->registroViejo($this->ccf());
+        $this->actingAs($this->oficina);
 
         // El «Deshacer» normal no lo devuelve a pendiente.
         $this->patch(route('rutas.salidas.entregas.deshacer', [$this->salida, $fila]))->assertSessionHasErrors('entrega');

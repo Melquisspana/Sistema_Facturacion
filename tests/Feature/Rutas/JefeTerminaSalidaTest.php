@@ -92,8 +92,8 @@ class JefeTerminaSalidaTest extends TestCase
     }
 
     /**
-     * El día del vendedor: entrega un CCF en efectivo y otro con cheque y echa gasolina. La
-     * oficina anota además un CCF facturado después de entregar, que no lleva dinero.
+     * El día del vendedor: entrega un CCF en efectivo y otro con cheque y echa gasolina. Queda
+     * además un registro viejo de CCF facturado después de entregar, que no lleva dinero.
      *
      * @return array<string, SalidaRutaEntrega>
      */
@@ -109,10 +109,13 @@ class JefeTerminaSalidaTest extends TestCase
         }
         $this->post(route('rutas.mi-salida.gastos.store', $salida), ['concepto' => 'gasolina', 'monto' => '10.00'])->assertSessionHasNoErrors();
 
+        // Ya no se anotan nuevos (04/11/2026), pero los registros viejos siguen fuera del dinero.
         $despues = $this->ccf($salida, 'efectivo');
-        $this->actingAs($this->oficina)->post(route('rutas.salidas.entregas.facturado-despues', $salida), [
-            'numero_control' => $despues->numero_control, 'entregado_por_id' => $persona->id, 'fecha_entrega' => self::FECHA,
-        ])->assertSessionHasNoErrors();
+        $salida->entregas()->create([
+            'dte_id' => $despues->id, 'cliente_sucursal_id' => $despues->cliente_sucursal_id,
+            'resultado' => 'entregado', 'fecha_resultado' => self::FECHA, 'entregado_por_id' => $persona->id,
+            'origen_registro' => OrigenRegistroEntrega::FacturadoDespues, 'registrado_por' => $this->oficina->id,
+        ]);
         $this->assertSame(OrigenRegistroEntrega::FacturadoDespues, SalidaRutaEntrega::where('dte_id', $despues->id)->sole()->origen_registro);
 
         return $entregas;

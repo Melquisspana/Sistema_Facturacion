@@ -192,8 +192,6 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             ->group(function () {
                 // Literales antes que paramétricas (regla del repo).
                 Route::post('cargar', [SalidaEntregaController::class, 'cargar'])->name('cargar');
-                // El CCF facturado después de entregar: sin dinero, también en salidas terminadas.
-                Route::post('facturado-despues', [SalidaEntregaController::class, 'facturadoDespues'])->name('facturado-despues');
                 Route::post('sala/{sucursal}', [SalidaEntregaController::class, 'sala'])->name('sala')
                     ->withoutScopedBindings();
                 Route::post('/', [SalidaEntregaController::class, 'store'])->name('store');

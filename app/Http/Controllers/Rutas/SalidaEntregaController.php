@@ -10,7 +10,6 @@ use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\EntregasCcf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Los CCF de una salida, desde la oficina: cargarlos, agregar o quitar uno, y registrar
@@ -75,36 +74,6 @@ class SalidaEntregaController extends Controller
         $this->entregas->quitar($entrega);
 
         return back()->with('status', 'CCF quitado de la salida. Vuelve a quedar pendiente.');
-    }
-
-    /**
-     * «Entregado antes de facturar»: el CCF que se facturó después de entregar queda
-     * entregado en esta salida, sin dinero. Los errores van en su propia bolsa, para que no
-     * abran ni rellenen los otros formularios de la hoja.
-     */
-    public function facturadoDespues(Request $request, SalidaRuta $salida): RedirectResponse
-    {
-        $datos = $request->validateWithBag('facturadoDespues', [
-            'numero_control' => ['required', 'string', 'max:60'],
-            'ejercicio' => ['nullable', 'integer', 'min:2026', 'max:2100'],
-            'entregado_por_id' => ['required', 'integer'],
-            'fecha_entrega' => ['required', 'date_format:Y-m-d'],
-            'nota' => ['nullable', 'string', 'max:300'],
-        ], [
-            'numero_control.required' => 'Escribí el número de control del CCF.',
-            'entregado_por_id.required' => 'Elegí quién lo entregó.',
-            'fecha_entrega.required' => 'Elegí qué día se entregó.',
-            'fecha_entrega.date_format' => 'Elegí qué día se entregó.',
-            'nota.max' => 'La nota puede tener hasta 300 letras.',
-        ]);
-
-        try {
-            $entrega = $this->entregas->anotarFacturadoDespues($salida, $datos, $request->user());
-        } catch (ValidationException $e) {
-            throw $e->errorBag('facturadoDespues');
-        }
-
-        return back()->with('status', 'CCF '.$entrega->dte->numero_control.' anotado como entregado el '.$entrega->fecha_resultado->format('d/m/Y').', sin dinero.');
     }
 
     public function deshacerFacturadoDespues(SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse
