@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ModuloSistema;
 use App\Models\Gastos\PreferenciaAvisos;
 use App\Models\User;
 use App\Services\Gastos\Avisos\ArmarAvisos;
@@ -38,8 +39,8 @@ class GastosAvisosCommand extends Command
 
     public function handle(ArmarAvisos $armar, EnviarResumenes $resumenes, CandadoCorreoReal $candado): int
     {
-        if (! config('gastos.enabled')) {
-            $this->error('El módulo Gastos está apagado (GASTOS_ENABLED=false). No se arma nada.');
+        if (! ModuloSistema::Gastos->activo()) {
+            $this->error('El módulo Gastos está apagado (Configuración › Módulos, o GASTOS_ENABLED si ahí no se guardó nada). No se arma nada.');
 
             return self::FAILURE;
         }

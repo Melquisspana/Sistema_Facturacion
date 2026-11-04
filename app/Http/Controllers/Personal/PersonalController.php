@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Personal;
 
+use App\Enums\ModuloSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
@@ -190,9 +191,9 @@ class PersonalController extends Controller
      */
     private function accesos(Request $request): array
     {
-        $asistencia = (bool) config('asistencia.enabled');
+        $asistencia = ModuloSistema::Asistencia->activo();
         // Sin tablas, Planilla no está instalada: esta pantalla sigue por Asistencia.
-        $planilla = (bool) config('planilla.enabled') && Schema::hasTable('planilla_empleados');
+        $planilla = ModuloSistema::Planilla->activo() && Schema::hasTable('planilla_empleados');
 
         abort_unless($asistencia || $planilla, 404);
         abort_unless((bool) $request->user()?->activo, 403);

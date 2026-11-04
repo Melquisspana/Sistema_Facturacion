@@ -13,8 +13,12 @@
     // que cada usuario puede hacer. La protección real vive en backend (policies +
     // middleware permission:); esto es solo complemento visual.
     $usuario = auth()->user();
-    $esAdmin = $usuario->hasRole('administrador');
+    // Configuración, Auditoría y Salud se deciden por PERMISO, el mismo que exige
+    // cada ruta. Antes el menú preguntaba por el rol administrador y la ruta por el
+    // permiso: un rol con el permiso no veía la puerta.
+    $veConfiguracion = $usuario->can('configuracion.gestionar');
     $veAuditoria = $usuario->can('auditoria.ver');
+    $veSalud = $usuario->can('sistema.salud');
     $vePpq = $usuario->can('ppq.ver');
     $veExportaciones = $usuario->can('exportaciones.ver');
     $veCompras = $usuario->can('documentos-recibidos.ver');
@@ -26,7 +30,7 @@
     // Gastos: doble condición porque el módulo tiene interruptor propio mientras se
     // construye (GASTOS_ENABLED). Ocultar NO autoriza: el candado real es
     // `modulo.gastos` + `permission:gastos.ver` en routes/gastos.php.
-    $veGastos = config('gastos.enabled') && $usuario->can('gastos.ver');
+    $veGastos = App\Enums\ModuloSistema::Gastos->activo() && $usuario->can('gastos.ver');
 
     // ¿La fase 2 —recurrencias y avisos— está MIGRADA en esta base? Es otra pregunta
     // que «está encendido el módulo»: entre desplegar el código y correr las
@@ -49,7 +53,7 @@
     // Planilla están migradas la hace el middleware `modulo.planilla` cuando alguien
     // entra; el menú no puede permitirse esa consulta, por la misma razón por la que el
     // contador de avisos dejó de hacerla.
-    $vePlanilla = config('planilla.enabled') && $usuario->can('planilla.ver');
+    $vePlanilla = App\Enums\ModuloSistema::Planilla->activo() && $usuario->can('planilla.ver');
 
     // Activos por item (rutas actuales, sin cambios de lógica).
     $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
@@ -84,12 +88,13 @@
     $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*');
     $grupoCobrosActivo = request()->routeIs('ppq.*', 'cobros.*');
     $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
-    $grupoAdministracionActivo = request()->routeIs('auditoria.*', 'importaciones.*');
     $grupoGastosActivo = request()->routeIs('gastos.*');
-    // Configuración ya no es un grupo colapsable sino una entrada directa, así que
-    // esto no marca «qué grupo contiene la ruta» sino simplemente si estamos dentro
-    // del Centro de Configuración. Cubre sus catorce pantallas de una vez.
-    $enConfiguracion = request()->routeIs('configuracion.*');
+
+    // APARTADO CONFIGURACIÓN: no es un área. Se entra desde la barra superior en
+    // cualquier área y trae su propio índice (configuracion/_nav), así que en sus
+    // pantallas no se dibuja la barra lateral de área: con ella, Auditoría o Salud
+    // mostraban el menú de Facturación aunque nadie hubiera ido a Facturación.
+    $enConfiguracion = App\Enums\AreaSistema::enApartadoConfiguracion();
 @endphp
 
 {{-- Navegación: topbar fija (logo + usuario; los badges de modo DTE aparecen SOLO
@@ -105,6 +110,7 @@
             {{-- Hamburguesa (solo móvil). Lleva nombre accesible fijo —el icono cambia
                  de dibujo, no de significado— y declara qué panel abre y en qué estado
                  está, para que un lector de pantalla anuncie el cambio sin verlo. --}}
+            @unless ($enConfiguracion)
             <button type="button" x-ref="hamburguesa"
                     @click="sidebarAbierta = ! sidebarAbierta"
                     aria-label="Menú de navegación"
@@ -116,6 +122,7 @@
                     <path x-show="sidebarAbierta" x-cloak stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
+            @endunless
 
             <a href="{{ route('dashboard') }}" class="flex shrink-0 items-center gap-2">
                 <x-application-logo class="block h-9 w-auto" />
@@ -125,7 +132,9 @@
             {{-- Selector de áreas de trabajo. Solo se dibuja si el usuario ve más de
                  un área; con una sola (los cuatro roles históricos, y también el rol
                  de producción) no aparece nada nuevo en la barra. Nunca autoriza. --}}
-            <x-area-selector :areas="$areasVisibles" :activa="$areaActiva" />
+            {{-- En Configuración ninguna área está «activa»: el selector sirve para
+                 volver a una, sin fingir que se está en Facturación. --}}
+            <x-area-selector :areas="$areasVisibles" :activa="$enConfiguracion ? null : $areaActiva" />
 
             {{-- Badges de modo DTE: SOLO en pantallas de Facturación/DTE (no en el resto
                  del sistema). No cambia ningún candado ni validación; es solo dónde se
@@ -153,8 +162,30 @@
                 </div>
             @endif
 
-            {{-- Tema + Usuario / logout --}}
+            {{-- Configuración + Tema + Usuario / logout --}}
             <div class="ms-auto flex items-center gap-1">
+                {{-- CONFIGURACIÓN, un apartado propio y no un grupo de Facturación: se
+                     llega desde cualquier área. Visible por el mismo permiso que exige
+                     la ruta. En el celular queda solo el engranaje, con su nombre
+                     accesible. El contador de trabajos fallidos viaja con ella porque
+                     «Salud del sistema» vive ahora dentro de Configuración. --}}
+                @if ($veConfiguracion)
+                    <a href="{{ route('configuracion.resumen') }}"
+                       aria-label="Configuración"
+                       @if ($enConfiguracion) aria-current="page" @endif
+                       class="inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:focus-visible:outline-indigo-400 {{ $enConfiguracion
+                           ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100' }}">
+                        <x-sidebar-icon name="configuracion" class="h-5 w-5" />
+                        <span class="hidden sm:inline">Configuración</span>
+                        @if ($veSalud && ($jobsFallidos ?? 0) > 0)
+                            <span class="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
+                                  title="{{ $jobsFallidos }} trabajos en cola fallidos (correos/DTE). Revisá Salud del sistema.">
+                                {{ $jobsFallidos }}
+                            </span>
+                        @endif
+                    </a>
+                @endif
                 <x-theme-toggle />
                 <x-dropdown align="right" width="48">
                     <x-slot name="trigger">
@@ -169,6 +200,12 @@
                     </x-slot>
                     <x-slot name="content">
                         <x-dropdown-link :href="route('profile.edit')">{{ __('Profile') }}</x-dropdown-link>
+                        {{-- Quien revisa la auditoría sin administrar la configuración
+                             (contabilidad) la encuentra acá. Quien sí la administra la
+                             tiene dentro de Configuración › Administración. --}}
+                        @if ($veAuditoria && ! $veConfiguracion)
+                            <x-dropdown-link :href="route('auditoria.index')">Auditoría</x-dropdown-link>
+                        @endif
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <x-dropdown-link :href="route('logout')"
@@ -193,6 +230,7 @@
         </div>
     </nav>
 
+    @unless ($enConfiguracion)
     {{-- Fondo oscuro al abrir la sidebar en móvil --}}
     <div x-show="sidebarAbierta" x-cloak @click="sidebarAbierta = false"
          class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden"></div>
@@ -217,4 +255,5 @@
              presentación: quien autoriza es el middleware de cada grupo de rutas. --}}
         @include('layouts.partials.sidebar-'.$areaActiva->value)
     </aside>
+    @endunless
 </div>

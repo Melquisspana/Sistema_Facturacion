@@ -10,6 +10,7 @@ use App\Ajustes\Definicion\Persistencia;
 use App\Ajustes\Definicion\Sensibilidad;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\AjusteDesconocidoException;
+use App\Enums\ModuloSistema;
 use App\Support\Dte\PlantillaCorreo;
 
 /**
@@ -678,6 +679,31 @@ class CatalogoAjustes
                 claveConfig: 'documentos_recibidos.storage_dir',
                 porDefecto: 'documentos-recibidos',
             ),
+
+            // ================================================================
+            // N2 — MÓDULOS. Prender y apagar Gastos, Producción, Asistencia,
+            // Planilla y Pagos de planilla desde Configuración › Módulos.
+            //
+            // Uno por caso de App\Enums\ModuloSistema, que es la fuente única de
+            // nombres, claves de config y valores por defecto. Fallback al .env de
+            // siempre (GASTOS_ENABLED…): sin nada guardado, cada instalación sigue
+            // como estaba. N2 porque apagar uno esconde un área entera; la pantalla
+            // pide confirmación al apagar. Ningún dato se borra.
+            // ================================================================
+            ...array_map(static fn (ModuloSistema $modulo) => DefinicionAjuste::hacer(
+                clave: $modulo->clave(),
+                seccion: 'modulos',
+                tipo: TipoAjuste::Booleano,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: $modulo->etiqueta(),
+                descripcion: $modulo->descripcion(),
+                claveConfig: $modulo->claveConfig(),
+                porDefecto: $modulo->porDefecto(),
+            ), ModuloSistema::cases()),
 
             // ================================================================
             // N3 — FISCAL CRÍTICO. SOLO DEFINICIÓN Y LECTURA en esta fase.

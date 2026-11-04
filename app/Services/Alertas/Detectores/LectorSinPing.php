@@ -2,6 +2,7 @@
 
 namespace App\Services\Alertas\Detectores;
 
+use App\Enums\ModuloSistema;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Services\Alertas\Detector;
 use App\Services\Alertas\Hallazgo;
@@ -29,7 +30,7 @@ class LectorSinPing implements Detector
      */
     public function aplica(): bool
     {
-        if (! config('asistencia.enabled')) {
+        if (! ModuloSistema::Asistencia->activo()) {
             return false;
         }
 

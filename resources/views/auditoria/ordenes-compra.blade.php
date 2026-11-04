@@ -1,11 +1,8 @@
-<x-app-layout>
-    <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Auditoría · Órdenes de compra para revisar</h2>
-    </x-slot>
-
-    <div class="py-8">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white shadow sm:rounded-lg p-6">
+<x-configuracion-layout titulo="Auditoría · Órdenes de compra para revisar">
+    {{-- Marco de Configuración (04/11/2026): esta pantalla salió de la barra de
+         Facturación y vive en el índice de Configuración › Administración. Misma URL y mismo
+         permiso de siempre. --}}
+    <div>
 
                 <div class="mb-4">
                     <a href="{{ route('auditoria.index') }}" class="text-sm text-gray-500 hover:underline">← Volver a Auditoría</a>
@@ -79,7 +76,5 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
     </div>
-</x-app-layout>
+</x-configuracion-layout>

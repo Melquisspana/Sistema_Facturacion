@@ -1,7 +1,7 @@
-<x-app-layout>
-    <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Salud del sistema</h2>
-    </x-slot>
+<x-configuracion-layout titulo="Salud del sistema">
+    {{-- Marco de Configuración (04/11/2026): esta pantalla salió de la barra de
+         Facturación y vive en el índice de Configuración › Sistema. Misma URL y mismo
+         permiso de siempre. --}}
 
     @php
         // Clases literales para el JIT de Tailwind (no interpolar).
@@ -33,8 +33,8 @@
         }
     @endphp
 
-    <div class="py-8">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+    <div>
+        <div class="space-y-6">
 
             {{-- Estado general --}}
             <div class="rounded-lg border p-5 {{ $generalBanner }}">
@@ -51,7 +51,7 @@
             </div>
 
             {{-- Seguridad --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <h3 class="font-semibold text-gray-700 mb-4">Seguridad</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     @foreach ($seguridad as $c)
@@ -68,7 +68,7 @@
             </div>
 
             {{-- Diagnóstico operativo (BD, worker, jobs, backup, firmador, transmisión, ambiente/PV, correlativos P002, storage, migraciones) --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Diagnóstico operativo</h3>
                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$diagnostico['nivel'] === 'correcto' ? 'ok' : $diagnostico['nivel']] }}">
@@ -91,7 +91,7 @@
             </div>
 
             {{-- Transmisión DTE / modo de operación --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 class="font-semibold text-gray-700">Transmisión DTE (modo de operación)</h3>
                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs {{ $badge[$transmisionDte['color']] }}">{{ $transmisionDte['etiqueta'] }}</span>
@@ -132,7 +132,7 @@
             </div>
 
             {{-- Datos --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <h3 class="font-semibold text-gray-700 mb-4">Datos principales</h3>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     @foreach ($datos as $d)
@@ -145,7 +145,7 @@
             </div>
 
             {{-- Alertas --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <h3 class="font-semibold text-gray-700 mb-4">Alertas de datos</h3>
                 @php $alertasActivas = collect($alertas)->where('count', '>', 0); @endphp
                 @if ($alertasActivas->isEmpty())
@@ -167,7 +167,7 @@
             </div>
 
             {{-- Auditoría reciente --}}
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <h3 class="font-semibold text-gray-700 mb-4">Auditoría reciente</h3>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -199,4 +199,4 @@
 
         </div>
     </div>
-</x-app-layout>
+</x-configuracion-layout>

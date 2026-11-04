@@ -53,6 +53,16 @@ class NavigationTest extends TestCase
         return substr($html, $inicio, $fin - $inicio);
     }
 
+    /** Devuelve solo la barra superior fija (logo, áreas, Configuración, usuario). */
+    private function barraSuperiorDe(string $html): string
+    {
+        $inicio = strpos($html, '<nav class="fixed inset-x-0 top-0');
+        $this->assertNotFalse($inicio, 'La página no tiene barra superior.');
+        $fin = strpos($html, '</nav>', $inicio);
+
+        return substr($html, $inicio, $fin - $inicio);
+    }
+
     /**
      * Todos los href del sidebar, sin repetir y ordenados. Es la forma de comparar
      * "qué puertas ve este rol" contra una lista explícita.
@@ -113,7 +123,6 @@ class NavigationTest extends TestCase
             'Ventas y facturación',
             'Cobros Calleja',
             'Contabilidad',
-            'Administración', 'Sistema',
         ] as $categoria) {
             $resp->assertSee($categoria);
         }
@@ -123,6 +132,11 @@ class NavigationTest extends TestCase
         // quedó sin puerta — ver test_los_destinos_de_exportaciones_siguen_alcanzables.
         $sidebar = $this->sidebarDe($resp->getContent());
         $this->assertDoesNotMatchRegularExpression('/>\s*Exportaciones\s*</u', $sidebar);
+
+        // «Administración» y «Sistema» salieron de Facturación (04/11/2026): viven en el
+        // índice de Configuración. Ver test_facturacion_ya_no_tiene_los_bloques_de_administracion.
+        $this->assertStringNotContainsString('Administración', $sidebar);
+        $this->assertStringNotContainsString('Salud del sistema', $sidebar);
     }
 
     /**
@@ -154,54 +168,137 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * Configuración es una ENTRADA, no una categoría: una fila directa que abre el
-     * Centro de Configuración.
-     *
-     * Estuvo un rato siendo un <x-sidebar-group> de una sola opción, y el resultado
-     * era que la barra decía «Configuración» dos veces seguidas —una en el rótulo de
-     * la sección y otra en la fila de debajo—. Un grupo existe para agrupar; con un
-     * solo hijo el encabezado no aporta jerarquía, sólo repetición.
-     *
-     * Esta prueba fija las tres cosas que definen la decisión: la fila existe y lleva
-     * al resumen, no hay encabezado de grupo llamado «Configuración» sobre ella, y no
-     * es colapsable (no tiene panel con id ni botón que lo controle).
+     * Configuración es un APARTADO propio, no un grupo de Facturación (04/11/2026). Se
+     * entra desde la barra superior, junto al usuario, en cualquier área.
      */
-    public function test_configuracion_es_una_entrada_directa_y_no_un_grupo(): void
+    public function test_configuracion_esta_en_la_barra_superior_y_no_en_facturacion(): void
     {
-        $sidebar = $this->sidebarDe(
-            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
-        );
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+        $barra = $this->barraSuperiorDe($html);
 
-        // La fila existe y apunta al Centro de Configuración.
-        $this->assertStringContainsString(route('configuracion.resumen', [], false), $sidebar);
-        $this->assertStringContainsString('>Configuración<', $sidebar);
+        $this->assertStringContainsString(route('configuracion.resumen'), $barra);
+        $this->assertStringContainsString('>Configuración<', $barra);
+        $this->assertStringContainsString('aria-label="Configuración"', $barra);
 
-        // No es colapsable: ni panel con id ni botón que lo controle.
-        $this->assertStringNotContainsString('sidebar-grupo-configuracion', $sidebar);
-
-        // Y «Configuración» aparece UNA sola vez en el sidebar: si volviera a
-        // envolverse en un grupo, el encabezado la repetiría y esto lo delataría.
-        $this->assertSame(
-            1,
-            substr_count($sidebar, '>Configuración<'),
-            'El sidebar no debe decir «Configuración» más de una vez.',
-        );
+        // Y la barra lateral de Facturación ya no la nombra.
+        $this->assertStringNotContainsString(route('configuracion.resumen', [], false), $this->sidebarDe($html));
+        $this->assertStringNotContainsString('>Configuración<', $this->sidebarDe($html));
     }
 
-    /** Y estando dentro del módulo, la entrada se marca como activa. */
+    /**
+     * El acceso a Configuración está en CUALQUIER área, no solo en Facturación: es la
+     * misma barra superior en Rutas, Gastos o Producción.
+     */
+    public function test_el_acceso_a_configuracion_se_ve_desde_otras_areas(): void
+    {
+        config()->set('gastos.enabled', true);
+        config()->set('planta.enabled', true);
+        $admin = $this->usuario('administrador');
+
+        foreach (['rutas.dashboard', 'gastos.panel', 'planta.dashboard'] as $ruta) {
+            $barra = $this->barraSuperiorDe($this->actingAs($admin)->get(route($ruta))->assertOk()->getContent());
+
+            $this->assertStringContainsString(route('configuracion.resumen'), $barra, "Falta el acceso a Configuración en {$ruta}.");
+        }
+    }
+
+    /**
+     * Se ve por PERMISO, no por rol: es el mismo permiso que exige la ruta. Un usuario
+     * sin rol al que se le da `configuracion.gestionar` ve la puerta; el rol
+     * administrador sin ese permiso no la vería.
+     */
+    public function test_el_acceso_a_configuracion_se_decide_por_permiso(): void
+    {
+        $conPermiso = User::factory()->create(['activo' => true])->assignRole('facturacion');
+        $conPermiso->givePermissionTo('configuracion.gestionar');
+
+        $barra = $this->barraSuperiorDe($this->actingAs($conPermiso)->get(route('dashboard'))->assertOk()->getContent());
+        $this->assertStringContainsString(route('configuracion.resumen'), $barra);
+        $this->actingAs($conPermiso)->get(route('configuracion.resumen'))->assertOk();
+
+        $sinPermiso = $this->usuario('facturacion');
+        $this->assertStringNotContainsString(
+            route('configuracion.resumen'),
+            $this->actingAs($sinPermiso)->get(route('dashboard'))->assertOk()->getContent(),
+        );
+        $this->actingAs($sinPermiso)->get(route('configuracion.resumen'))->assertForbidden();
+    }
+
+    /**
+     * Dentro del apartado, el acceso se marca activo y NO se dibuja la barra lateral de
+     * área: el índice de Configuración es el menú. Vale también para Auditoría,
+     * Importaciones y Salud del sistema, que salieron de Facturación; antes su menú
+     * saltaba a Facturación.
+     */
     public function test_la_entrada_de_configuracion_se_marca_activa_en_todo_el_modulo(): void
     {
-        foreach (['configuracion.resumen', 'configuracion.fiscal.hacienda', 'configuracion.sistema'] as $ruta) {
-            $sidebar = $this->sidebarDe(
-                $this->actingAs($this->usuario('administrador'))->get(route($ruta))->assertOk()->getContent()
-            );
+        $admin = $this->usuario('administrador');
+
+        foreach (['configuracion.resumen', 'configuracion.fiscal.hacienda', 'configuracion.sistema', 'configuracion.modulos',
+            'auditoria.index', 'importaciones.index', 'admin.salud-sistema'] as $ruta) {
+            $html = $this->actingAs($admin)->get(route($ruta))->assertOk()->getContent();
 
             $this->assertMatchesRegularExpression(
-                '/<a[^>]*'.preg_quote(route('configuracion.resumen', [], false), '/').'[^>]*aria-current="page"/s',
-                $sidebar,
-                "La entrada de Configuración debería marcarse activa en {$ruta}.",
+                '/<a[^>]*'.preg_quote(route('configuracion.resumen'), '/').'[^>]*aria-current="page"/s',
+                $this->barraSuperiorDe($html),
+                "El acceso a Configuración debería marcarse activo en {$ruta}.",
             );
+            $this->assertStringNotContainsString('<aside id="sidebar-principal"', $html, "{$ruta} no debe dibujar la barra lateral de un área.");
+            $this->assertStringContainsString('<nav aria-label="Secciones de configuración"', $html, "{$ruta} debe llevar el índice de Configuración.");
+            $this->assertStringNotContainsString('lg:pl-64', $html, "{$ruta} no debe reservar el ancho de una barra lateral que no está.");
         }
+    }
+
+    /**
+     * Facturación ya no tiene Administración (Auditoría, Importaciones), Configuración
+     * ni Sistema › Salud. Las URL y los permisos no cambiaron: los enlaces están en el
+     * índice de Configuración.
+     */
+    public function test_facturacion_ya_no_tiene_los_bloques_de_administracion(): void
+    {
+        $admin = $this->usuario('administrador');
+        $sidebar = $this->sidebarDe($this->actingAs($admin)->get(route('dashboard'))->assertOk()->getContent());
+
+        foreach (['auditoria.index', 'importaciones.index', 'admin.salud-sistema', 'configuracion.resumen', 'personal.accesos.index'] as $ruta) {
+            $this->assertStringNotContainsString(route($ruta, [], false), $sidebar, "Facturación todavía enlaza {$ruta}.");
+        }
+        foreach (['Administración', 'Salud del sistema', 'Importaciones', 'Auditoría'] as $texto) {
+            $this->assertStringNotContainsString($texto, $sidebar);
+        }
+
+        // Y desde Configuración están las tres, en sus grupos.
+        $this->actingAs($admin)->get(route('configuracion.resumen'))->assertOk()
+            ->assertSee(route('auditoria.index'), false)
+            ->assertSee(route('importaciones.index'), false)
+            ->assertSee(route('admin.salud-sistema'), false)
+            ->assertSeeInOrder(['Sistema', 'Respaldos y estado', 'Salud del sistema', 'Administración', 'Auditoría', 'Importaciones']);
+    }
+
+    /**
+     * Contabilidad revisa la auditoría (`auditoria.ver`) sin administrar la
+     * configuración: la encuentra en el menú de su usuario y entra sin que se le abra
+     * ninguna puerta de Configuración.
+     */
+    public function test_contabilidad_sigue_llegando_a_auditoria_sin_configuracion(): void
+    {
+        $contabilidad = $this->usuario('contabilidad');
+
+        $html = $this->actingAs($contabilidad)->get(route('dashboard'))->assertOk()->getContent();
+        $this->assertStringContainsString(route('auditoria.index'), $this->barraSuperiorDe($html));
+        $this->assertStringNotContainsString(route('configuracion.resumen'), $html);
+
+        $auditoria = $this->actingAs($contabilidad)->get(route('auditoria.index'))->assertOk()->getContent();
+        $this->assertStringContainsString(route('auditoria.index'), $auditoria);
+        $this->assertStringNotContainsString(route('configuracion.resumen'), $auditoria);
+        $this->assertStringNotContainsString(route('importaciones.index'), $auditoria);
+        $this->assertStringNotContainsString(route('admin.salud-sistema'), $auditoria);
+        $this->assertStringNotContainsString('Configuración &mdash;', $auditoria);
+
+        $this->actingAs($contabilidad)->get(route('configuracion.resumen'))->assertForbidden();
+
+        // Quien administra la configuración no la recibe duplicada en su menú.
+        $admin = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
+        $this->assertStringNotContainsString(route('auditoria.index'), $this->barraSuperiorDe($admin));
     }
 
     /**
@@ -289,20 +386,17 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * Correo sigue siendo alcanzable, pero por el camino nuevo: el sidebar ya no
-     * lleva a seis pantallas sueltas de configuración, lleva al Centro de
-     * Configuración, y desde ahí está el índice completo.
+     * Correo sigue siendo alcanzable, pero por el camino nuevo: el menú no lleva a
+     * pantallas sueltas de configuración, lleva al Centro de Configuración (desde la
+     * barra superior), y desde ahí está el índice completo.
      */
     public function test_configuracion_correo_es_alcanzable_desde_el_centro_de_configuracion(): void
     {
         $usuario = $this->usuario('administrador');
 
-        // El sidebar ya NO enlaza Correo directamente: enlaza el centro.
-        $sidebar = $this->sidebarDe(
-            $this->actingAs($usuario)->get(route('dashboard'))->assertOk()->getContent()
-        );
-        $this->assertStringNotContainsString(route('configuracion.correo.edit', [], false), $sidebar);
-        $this->assertStringContainsString(route('configuracion.resumen', [], false), $sidebar);
+        $html = $this->actingAs($usuario)->get(route('dashboard'))->assertOk()->getContent();
+        $this->assertStringNotContainsString(route('configuracion.correo.edit', [], false), $html);
+        $this->assertStringContainsString(route('configuracion.resumen'), $this->barraSuperiorDe($html));
 
         // Y desde el centro, en un clic.
         $this->actingAs($usuario)->get(route('configuracion.resumen'))->assertOk()
@@ -314,9 +408,8 @@ class NavigationTest extends TestCase
     public function test_configuracion_no_aparece_para_los_demas_roles(): void
     {
         foreach (['jefatura', 'facturacion', 'contabilidad'] as $rol) {
-            $sidebar = $this->sidebarDe(
-                $this->actingAs($this->usuario($rol))->get(route('dashboard'))->assertOk()->getContent()
-            );
+            // La página entera: ni la barra lateral ni la superior.
+            $sidebar = $this->actingAs($this->usuario($rol))->get(route('dashboard'))->assertOk()->getContent();
 
             $this->assertStringNotContainsString(route('configuracion.correo.edit', [], false), $sidebar, "El rol {$rol} no debe ver Configuración > Correo.");
             // La entrada nueva tampoco: sustituir seis filas por una no puede
@@ -370,12 +463,13 @@ class NavigationTest extends TestCase
             //    del panel lateral, para poder cambiar de área en móvil. Es la MISMA
             //    lista que ya ofrecía el desplegable superior (AreaSistema::visiblesPara),
             //    que el administrador siempre tuvo.
+            //  - SALEN Accesos, Auditoría, Importaciones, Configuración y Salud del
+            //    sistema (04/11/2026): Configuración es un apartado propio en la barra
+            //    superior y los otros cuatro viven en su índice. Ninguno perdió la
+            //    puerta: ver test_facturacion_ya_no_tiene_los_bloques_de_administracion.
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
                 'rutas.dashboard',
-                'personal.accesos.index', 'auditoria.index', 'importaciones.index',
-                'configuracion.resumen',
-                'admin.salud-sistema',
             ]],
             // Jefatura: lectura amplia, sin administración. ENTRA 'rutas.dashboard':
             // desde el 26/09/2026 planifica las salidas (rutas.ver + rutas.gestionar), así
@@ -384,8 +478,10 @@ class NavigationTest extends TestCase
             // Facturación: pierde el checklist de emisión real. ENTRA 'rutas.dashboard',
             // por la misma razón que jefatura: quien factura arma la salida.
             'facturacion' => ['facturacion', [...$lecturaOperativa, 'rutas.dashboard']],
-            // Contabilidad: lo mismo + auditoría (auditoria.ver). Sin cambios.
-            'contabilidad' => ['contabilidad', [...$lecturaOperativa, 'auditoria.index']],
+            // Contabilidad: lo mismo. Auditoría (auditoria.ver) salió de la barra lateral
+            // y está en el menú de su usuario: ver
+            // test_contabilidad_sigue_llegando_a_auditoria_sin_configuracion.
+            'contabilidad' => ['contabilidad', $lecturaOperativa],
         ];
     }
 
@@ -486,21 +582,21 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * «Salud del sistema» es infraestructura, no administración de negocio: va en su
-     * propio bloque «Sistema», DESPUÉS de Administración y Configuración.
+     * «Salud del sistema» es infraestructura, no administración de negocio: dentro
+     * del índice de Configuración va en «Sistema», separada de «Administración».
      */
     public function test_salud_del_sistema_esta_separada_de_administracion(): void
     {
-        $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()
-            ->assertSeeInOrder(['Administración', 'Configuración', 'Sistema', 'Salud del sistema']);
+        $this->actingAs($this->usuario('administrador'))->get(route('admin.salud-sistema'))->assertOk()
+            ->assertSeeInOrder(['Sistema', 'Salud del sistema', 'Administración', 'Auditoría']);
     }
 
     /**
      * «Usuarios» salió del menú de Facturación (03/11/2026): el acceso al sistema vive en
      * Personal. Con el área Personal encendida, Facturación no ofrece ni Usuarios ni Accesos,
      * y la barra de Personal sí. Con Personal apagada (como en la suite y en una instalación
-     * nueva) Facturación conserva una fila «Accesos» para no dejar al administrador sin
-     * poder crear usuarios: es la que figura en las listas de arriba.
+     * nueva) la fila «Accesos» está en Configuración › Administración, para no dejar al
+     * administrador sin poder crear usuarios.
      */
     public function test_usuarios_sale_de_facturacion_y_accesos_vive_en_personal(): void
     {
@@ -517,6 +613,18 @@ class NavigationTest extends TestCase
         $personal = $this->actingAs($admin)->get(route('personal.accesos.index'))->assertOk()->getContent();
         $this->assertContains(route('personal.accesos.index'), $this->enlacesDelSidebar($personal));
         $this->assertStringNotContainsString('/usuarios', $this->sidebarDe($personal));
+
+        // Con Personal encendida, Configuración no la repite.
+        $this->actingAs($admin)->get(route('configuracion.resumen'))->assertOk()
+            ->assertDontSee(route('personal.accesos.index'), false);
+    }
+
+    /** Con Personal apagada, Accesos sigue a un clic: en Configuración › Administración. */
+    public function test_sin_personal_accesos_queda_en_configuracion(): void
+    {
+        $this->actingAs($this->usuario('administrador'))->get(route('configuracion.resumen'))->assertOk()
+            ->assertSee(route('personal.accesos.index'), false)
+            ->assertSeeInOrder(['Administración', 'Accesos']);
     }
 
     // ------------------------------------------------------------------ rutas y estado activo
@@ -529,10 +637,16 @@ class NavigationTest extends TestCase
             'clientes.index', 'productos.index', 'facturacion.index',
             'cobros.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
             'contabilidad.paquete', 'facturacion.listas.index',
-            'personal.accesos.index', 'auditoria.index', 'importaciones.index',
-            'configuracion.resumen', 'admin.salud-sistema',
+            'configuracion.resumen',
         ] as $ruta) {
             $resp->assertSee(route($ruta), false);
+        }
+
+        // Los que salieron de Facturación siguen apuntando a las mismas rutas, ahora
+        // desde el índice de Configuración.
+        $configuracion = $this->actingAs($this->usuario('administrador'))->get(route('configuracion.resumen'))->assertOk();
+        foreach (['personal.accesos.index', 'auditoria.index', 'importaciones.index', 'admin.salud-sistema'] as $ruta) {
+            $configuracion->assertSee(route($ruta), false);
         }
     }
 
@@ -563,9 +677,8 @@ class NavigationTest extends TestCase
             'contabilidad / ventas' => ['facturacion.reporte-contadora', 'contabilidad'],
             'ventas / listas de empaque' => ['facturacion.listas.index', 'ventas'],
             'ventas / productos de exportación' => ['productos.exportacion.index', 'ventas'],
-            'administracion / auditoría' => ['auditoria.index', 'administracion'],
-            // «configuracion» ya no figura: con una sola fila el grupo dejó de ser
-            // colapsable (x-sidebar-group sin `clave`), igual que Inicio y Sistema.
+            // «administracion» y «configuracion» ya no figuran: salieron de la barra
+            // de Facturación al apartado Configuración (04/11/2026).
         ];
     }
 
@@ -744,8 +857,8 @@ class NavigationTest extends TestCase
     // ------------------------------------------------------------------ configuración
 
     /**
-     * Las CATORCE pantallas del Centro de Configuración son alcanzables desde su
-     * portada, que es la única fila de configuración que queda en el sidebar.
+     * Las pantallas del Centro de Configuración son alcanzables desde su portada, a
+     * la que se llega desde la barra superior.
      *
      * Es la prueba que justifica haber cambiado seis atajos por una puerta: antes
      * ocho de estas pantallas no tenían ninguna entrada y solo se llegaba a ellas
@@ -771,6 +884,10 @@ class NavigationTest extends TestCase
             'gmail / prontos pagos' => ['configuracion.integraciones.gmail'],
             'buzón de compras' => ['configuracion.integraciones.documentos-recibidos'],
             'respaldos y estado' => ['configuracion.sistema'],
+            'módulos' => ['configuracion.modulos'],
+            'salud del sistema' => ['admin.salud-sistema'],
+            'auditoría' => ['auditoria.index'],
+            'importaciones' => ['importaciones.index'],
         ];
     }
 
@@ -787,14 +904,12 @@ class NavigationTest extends TestCase
         $this->actingAs($usuario)->get(route($ruta))->assertOk();
     }
 
-    /** Y el sidebar llega al centro en un solo clic. */
-    public function test_el_sidebar_lleva_al_centro_de_configuracion_con_una_sola_fila(): void
+    /** Y la barra superior llega al centro en un solo clic, sin atajos sueltos. */
+    public function test_la_barra_superior_lleva_al_centro_de_configuracion_con_una_sola_entrada(): void
     {
-        $sidebar = $this->sidebarDe(
-            $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
-        );
+        $html = $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent();
 
-        $this->assertStringContainsString(route('configuracion.resumen', [], false), $sidebar);
+        $this->assertSame(1, substr_count($html, 'href="'.route('configuracion.resumen').'"'));
 
         // Las seis filas sueltas de antes ya no están: eran atajos que escondían el
         // resto del módulo.
@@ -803,7 +918,7 @@ class NavigationTest extends TestCase
             'configuracion.puntos-venta.index', 'configuracion.correlativos.index',
             'configuracion.contabilidad.edit', 'configuracion.correo.edit',
         ] as $ruta) {
-            $this->assertStringNotContainsString(route($ruta, [], false), $sidebar);
+            $this->assertStringNotContainsString(route($ruta, [], false), $html);
         }
     }
 

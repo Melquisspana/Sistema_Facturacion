@@ -4,17 +4,28 @@
      * este HTML por su cuenta: todas lo reciben a través de <x-configuracion-layout>.
      *
      * POR QUÉ UN ÍNDICE AGRUPADO Y NO PESTAÑAS. Con seis secciones las pestañas
-     * cabían; con las que vienen (integraciones, módulos, sistema) no caben en
+     * cabían; con las que vinieron (integraciones, módulos, sistema) no caben en
      * ninguna pantalla, y una barra que se desplaza en horizontal esconde
      * justamente lo que el usuario todavía no sabe que existe. Un índice agrupado
      * crece hacia abajo, que es la dirección en la que sobra sitio.
      *
-     * Los grupos son los del mapa acordado (General, Facturación electrónica,
-     * Correo, y más adelante Integraciones / Módulos / Sistema). SOLO se dibujan
-     * los que tienen pantallas reales: un grupo vacío o un enlace a una página que
-     * todavía no existe enseña al usuario a desconfiar del resto del índice.
+     * Los grupos son los del mapa acordado (General, Módulos, Facturación
+     * electrónica, Correo, Integraciones, Sistema y Administración). SOLO se
+     * dibujan los que tienen pantallas reales y que el usuario puede abrir: un
+     * grupo vacío o un enlace que da 403 enseña al usuario a desconfiar del resto.
+     *
+     * VISIBILIDAD POR PERMISO, igual que las rutas. Todo el centro va con
+     * `configuracion.gestionar`; «Salud del sistema» y el grupo «Administración»
+     * tienen su propio permiso (sistema.salud, auditoria.ver,
+     * importaciones.gestionar). Por eso quien solo tiene `auditoria.ver`
+     * (contabilidad) entra a Auditoría por este mismo marco y ve únicamente lo suyo,
+     * sin ninguna puerta de configuración. Ocultar no autoriza: cada ruta lleva su
+     * middleware.
      */
-    $grupos = [
+    $usuario = auth()->user();
+    $configura = $usuario->can('configuracion.gestionar');
+
+    $grupos = $configura ? [
         [
             'titulo' => null,
             'items' => [
@@ -27,6 +38,12 @@
                 ['ruta' => 'configuracion.empresa.edit', 'patron' => 'configuracion.empresa.*', 'titulo' => 'Empresa emisora'],
                 ['ruta' => 'configuracion.establecimientos.index', 'patron' => 'configuracion.establecimientos.*', 'titulo' => 'Establecimientos'],
                 ['ruta' => 'configuracion.puntos-venta.index', 'patron' => 'configuracion.puntos-venta.*', 'titulo' => 'Puntos de venta'],
+            ],
+        ],
+        [
+            'titulo' => 'Módulos',
+            'items' => [
+                ['ruta' => 'configuracion.modulos', 'patron' => 'configuracion.modulos*', 'titulo' => 'Prender y apagar'],
             ],
         ],
         [
@@ -51,18 +68,42 @@
             'items' => [
                 ['ruta' => 'configuracion.integraciones.gmail', 'patron' => 'configuracion.integraciones.gmail*', 'titulo' => 'Gmail / Pronto pago'],
                 ['ruta' => 'configuracion.integraciones.documentos-recibidos', 'patron' => 'configuracion.integraciones.documentos-recibidos*', 'titulo' => 'Buzón de compras'],
-                ...((config('asistencia.enabled') && auth()->user()->can('asistencia.dispositivos.gestionar'))
+                ...((\App\Enums\ModuloSistema::Asistencia->activo() && $usuario->can('asistencia.dispositivos.gestionar'))
                     ? [['ruta' => 'configuracion.lectores.index', 'patron' => 'configuracion.lectores.*', 'titulo' => 'Lectores de huella']]
                     : []),
             ],
         ],
-        [
-            'titulo' => 'Sistema',
-            'items' => [
-                ['ruta' => 'configuracion.sistema', 'patron' => 'configuracion.sistema*', 'titulo' => 'Respaldos y estado'],
-            ],
+    ] : [];
+
+    // Sistema: lo editable de los respaldos y, aparte, «Salud del sistema», que salió
+    // de la barra de Facturación con su contador de trabajos fallidos.
+    $grupos[] = [
+        'titulo' => 'Sistema',
+        'items' => [
+            ...($configura ? [['ruta' => 'configuracion.sistema', 'patron' => 'configuracion.sistema*', 'titulo' => 'Respaldos y estado']] : []),
+            ...($usuario->can('sistema.salud')
+                ? [['ruta' => 'admin.salud-sistema', 'patron' => 'admin.salud-sistema', 'titulo' => 'Salud del sistema', 'contador' => (int) ($jobsFallidos ?? 0)]]
+                : []),
         ],
     ];
+
+    // Administración: el rastro (Auditoría) y las cargas masivas (Importaciones), que
+    // vivían en la barra de Facturación. «Accesos» aparece SOLO con el área Personal
+    // apagada (instalación nueva): hasta que se encienda Asistencia o Planilla, donde
+    // vive normalmente, es el único lugar para crear un usuario.
+    $grupos[] = [
+        'titulo' => 'Administración',
+        'items' => [
+            ...($usuario->can('auditoria.ver') ? [['ruta' => 'auditoria.index', 'patron' => 'auditoria.*', 'titulo' => 'Auditoría']] : []),
+            ...($usuario->can('importaciones.gestionar') ? [['ruta' => 'importaciones.index', 'patron' => 'importaciones.*', 'titulo' => 'Importaciones']] : []),
+            ...(($usuario->can('usuarios.gestionar') && ! \App\Enums\AreaSistema::Asistencia->habilitada())
+                ? [['ruta' => 'personal.accesos.index', 'patron' => 'personal.accesos.*', 'titulo' => 'Accesos']]
+                : []),
+        ],
+    ];
+
+    // Un grupo sin enlaces no se dibuja.
+    $grupos = array_values(array_filter($grupos, static fn (array $g) => $g['items'] !== []));
 @endphp
 
 {{-- RESPONSIVE SIN DUPLICAR MARCADO: el mismo <nav> es una lista de pastillas que
@@ -87,6 +128,12 @@
                            ? 'bg-indigo-50 text-indigo-700'
                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' }}">
                         {{ $item['titulo'] }}
+                        @if (($item['contador'] ?? 0) > 0)
+                            <span class="ms-1 inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
+                                  title="{{ $item['contador'] }} trabajos en cola fallidos (correos/DTE). Revisá Salud del sistema.">
+                                {{ $item['contador'] }}
+                            </span>
+                        @endif
                     </a>
                 @endforeach
             </div>

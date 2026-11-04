@@ -152,13 +152,15 @@ class CentroConfiguracionTest extends TestCase
         // Una entrada por sección real: Resumen; las tres de General; las cinco de
         // Facturación electrónica (Hacienda / API, Certificado y firmador,
         // Correlativos, Parámetros fiscales, Invalidación); las dos de Correo; las
-        // dos de Integraciones; y Sistema.
+        // dos de Integraciones; Módulos; las dos de Sistema (Respaldos y estado,
+        // Salud del sistema); y las tres de Administración (Auditoría, Importaciones
+        // y Accesos, que aparece porque en la suite el área Personal está apagada).
         //
         // El número está escrito a mano a propósito: es un tropiezo deliberado para
         // que añadir una pantalla obligue a mirar el índice, que es donde se nota si
         // quedó en el grupo equivocado.
         $this->assertSame(
-            14,
+            19,
             substr_count($barra, 'whitespace-nowrap'),
             'El índice debe listar exactamente las secciones existentes, sin partir sus nombres.',
         );

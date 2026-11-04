@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Planilla;
 
+use App\Enums\ModuloSistema;
 use App\Enums\PermisoSistema;
+use App\Facades\Ajustes;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\User;
@@ -93,5 +95,26 @@ class PlanillaSinPagosTest extends TestCase
             ->assertSee(route('planilla.pagos', $this->planilla), false)
             ->assertSee('Avance del pago');
         $this->actingAs($this->actor)->get(route('planilla.pagos', $this->planilla))->assertOk();
+    }
+
+    /**
+     * Configuración › Módulos manda sobre el .env: prender los pagos desde la pantalla
+     * abre sus rutas aunque PLANILLA_PAGOS_ENABLED siga en false, y apagarlos las cierra.
+     */
+    public function test_los_pagos_se_prenden_y_apagan_desde_configuracion(): void
+    {
+        Ajustes::guardarComoSistema(ModuloSistema::PlanillaPagos->clave(), true);
+
+        $this->assertFalse((bool) config('planilla.pagos_enabled'));
+        $this->actingAs($this->actor)->get(route('planilla.pagos', $this->planilla))->assertOk();
+        $this->actingAs($this->actor)->get(route('planilla.show', $this->planilla))->assertOk()
+            ->assertSee(route('planilla.pagos', $this->planilla), false);
+
+        config(['planilla.pagos_enabled' => true]);
+        Ajustes::guardarComoSistema(ModuloSistema::PlanillaPagos->clave(), false);
+
+        $this->actingAs($this->actor)->get(route('planilla.pagos', $this->planilla))->assertNotFound();
+        $this->actingAs($this->actor)->get(route('planilla.show', $this->planilla))->assertOk()
+            ->assertDontSee(route('planilla.pagos', $this->planilla), false);
     }
 }

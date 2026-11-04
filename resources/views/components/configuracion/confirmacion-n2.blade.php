@@ -31,6 +31,12 @@
     <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
         <h2 class="text-sm font-semibold text-amber-800">{{ $titulo }}</h2>
         <p class="mt-1 text-sm text-amber-800">{{ $consecuencia }}</p>
+
+        {{-- Detalle opcional de la consecuencia (p. ej. qué deja de verse de cada
+             módulo que se apaga). Quien no lo pasa no ve ningún cambio. --}}
+        @if (isset($slot) && $slot->isNotEmpty())
+            <div class="mt-2 text-sm text-amber-800">{{ $slot }}</div>
+        @endif
     </div>
 
     <div>

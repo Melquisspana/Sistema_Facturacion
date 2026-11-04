@@ -1,5 +1,7 @@
 <?php
 
+use App\Ajustes\Integraciones\ConfiguracionGmail;
+use App\Enums\ModuloSistema;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -149,7 +151,7 @@ Schedule::command('compras:sincronizar --aplicar --solape=2')
 */
 Schedule::command('gastos:generar-recurrentes --aplicar')
     ->dailyAt('05:30')
-    ->when(fn () => (bool) config('gastos.enabled', false)
+    ->when(fn () => ModuloSistema::Gastos->activo()
         && (bool) config('gastos.recurrencias.generacion_automatica', false))
     ->withoutOverlapping(30)
     ->appendOutputTo(storage_path('logs/gastos-recurrentes.log'));
@@ -173,7 +175,7 @@ Schedule::command('gastos:generar-recurrentes --aplicar')
 */
 Schedule::command('gastos:avisos --aplicar')
     ->dailyAt('06:00')
-    ->when(fn () => (bool) config('gastos.enabled', false)
+    ->when(fn () => ModuloSistema::Gastos->activo()
         && (bool) config('gastos.avisos.automaticos', false))
     ->withoutOverlapping(20)
     ->appendOutputTo(storage_path('logs/gastos-avisos.log'));
@@ -237,7 +239,9 @@ Schedule::command('cobros:sincronizar --aplicar --vincular')
 */
 Schedule::command('cobros:leer-correos --aplicar')
     ->everyThirtyMinutes()
-    ->when(fn () => (bool) config('ppq.gmail.enabled', false)
+    // Por Ajustes y no por config(): la integración se prende y apaga desde
+    // Configuración › Integraciones. Si la base no responde, cae al .env.
+    ->when(fn () => (bool) rescue(fn () => app(ConfiguracionGmail::class)->habilitado(), fn () => (bool) config('ppq.gmail.enabled', false), report: false)
         && (bool) config('cobros.correo.enabled', false)
         && (bool) config('cobros.correo.automatica', false))
     ->withoutOverlapping(15)

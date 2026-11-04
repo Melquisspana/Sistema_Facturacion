@@ -37,8 +37,10 @@
         <div class="min-h-screen bg-gray-100 dark:bg-ink-950">
             @include('layouts.navigation')
 
-            {{-- Contenido corrido: 4rem bajo la topbar fija y 16rem a la derecha de la sidebar en desktop. --}}
-            <div class="pt-16 lg:pl-64">
+            {{-- Contenido corrido: 4rem bajo la topbar fija y 16rem a la derecha de la sidebar en desktop.
+                 En el apartado Configuración no hay barra lateral de área (su índice va
+                 dentro de la página), así que el contenido usa todo el ancho. --}}
+            <div class="pt-16 {{ \App\Enums\AreaSistema::enApartadoConfiguracion() ? '' : 'lg:pl-64' }}">
                 <x-aviso-contingencia />
                 <!-- Page Heading -->
                 @isset($header)
