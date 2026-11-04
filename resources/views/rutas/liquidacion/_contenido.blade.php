@@ -67,7 +67,7 @@
             <p class="mt-1 text-sm dark:text-paper-300">Más los cheques por {{ $plata($totales['cheques']) }}.</p>
         @endif
         @if ($salida->estaLiquidada())
-            <p class="mt-4 text-sm dark:text-paper-300">Ruta terminada el {{ $salida->liquidada_en->format('d/m/Y H:i') }} por {{ $salida->liquidadaPor?->name }}. Entrega el dinero: {{ $salida->entregaDinero?->nombre ?? 'sin cobros' }}.</p>
+            <p class="mt-4 text-sm dark:text-paper-300">Ruta terminada el {{ $salida->liquidada_en->format('d/m/Y H:i') }} por {{ $salida->liquidadaPor?->name }}. Entrega el dinero: {{ $salida->entregaDinero?->nombre ?? 'sin cobros' }}. Recibe: Oficina.</p>
             <a href="{{ route($prefijo.'liquidacion-final', $salida) }}" class="mt-4 inline-flex min-h-11 items-center rounded-xl bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800">Descargar liquidación de la ruta</a>
         @endif
     </section>

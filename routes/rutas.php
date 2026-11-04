@@ -31,7 +31,9 @@ use Illuminate\Support\Facades\Route;
 |
 | Un tercer candado, INLINE en cada ruta que escribe:
 |   3. permission:rutas.gestionar -> crear/editar rutas, su cobertura, asignar salas,
-|                                  crear salidas y moverles el estado.
+|                                  crear salidas y moverles el estado. Armar y terminar
+|                                  salidas aceptan además los permisos propios del jefe
+|                                  de vendedores (`rutas.salidas.armar|terminar`).
 |
 | El selector superior de áreas y los botones de las vistas son solo presentación
 | y NUNCA autorizan.
@@ -140,14 +142,18 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             Route::delete('{gasto}', [SalidaGastoController::class, 'destroy'])->middleware('permission:rutas.gestionar')->name('destroy');
             Route::get('{gasto}/foto', [SalidaGastoController::class, 'foto'])->name('foto');
         });
-        Route::prefix('salidas/{salida}/cierre')->name('salidas.')->middleware('permission:rutas.gestionar')->group(function () {
+        // «Terminar día» y «Terminar ruta» de la oficina: también el jefe de vendedores
+        // (`rutas.salidas.terminar`), aunque no haya ido. Reabrir un día sigue siendo solo
+        // de `rutas.gestionar`, igual que los gastos de arriba.
+        Route::prefix('salidas/{salida}/cierre')->name('salidas.')->middleware('permission:rutas.gestionar|rutas.salidas.terminar')->group(function () {
             Route::get('/', [SalidaCierreController::class, 'cierre'])->name('cierre');
             Route::post('/', [SalidaCierreController::class, 'cerrar'])->name('cerrar');
             Route::get('{fecha}/pdf', [SalidaCierreController::class, 'liquidacion'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('liquidacion');
-            Route::post('{fecha}/reabrir', [SalidaCierreController::class, 'reabrir'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('reabrir');
+            Route::post('{fecha}/reabrir', [SalidaCierreController::class, 'reabrir'])->where('fecha', '\d{4}-\d{2}-\d{2}')->name('reabrir')
+                ->middleware('permission:rutas.gestionar');
         });
         // «Terminar ruta»: liquidación de la salida completa. También el vendedor, desde «Mi salida».
-        Route::prefix('salidas/{salida}/terminar')->name('salidas.')->middleware('permission:rutas.gestionar')->group(function () {
+        Route::prefix('salidas/{salida}/terminar')->name('salidas.')->middleware('permission:rutas.gestionar|rutas.salidas.terminar')->group(function () {
             Route::get('/', [SalidaLiquidacionController::class, 'show'])->name('terminar');
             Route::post('/', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
             Route::get('pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');

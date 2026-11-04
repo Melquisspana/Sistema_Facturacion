@@ -7,7 +7,7 @@
 @if ($cierre?->estaCerrado())
     @include('rutas.cierres._cerrado')
     @include('rutas.salidas._gastos', ['fechaGastos' => $fecha, 'soloListaGastos' => true])
-    @if (! $modoVendedor)
+    @if (! $modoVendedor && auth()->user()->can('rutas.gestionar'))
         <form method="POST" action="{{ route('rutas.salidas.reabrir', [$salida, $fecha]) }}" class="mt-6 space-y-3">
             @csrf
             <label for="motivo" class="block font-semibold dark:text-paper-100">Motivo de reapertura</label>

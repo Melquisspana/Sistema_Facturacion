@@ -59,5 +59,5 @@
         <strong>{{ $totales['a_entregar'] < 0 ? 'A reintegrar al vendedor' : 'Efectivo a entregar' }} {{ $plata(abs($totales['a_entregar'])) }}</strong>
         @if ($totales['cheques'] > 0)<p>Más los cheques por {{ $plata($totales['cheques']) }}.</p>@endif
     </div>
-    <table class="firmas"><tr><td>____________________________<br>Entrega: {{ $salida->entregaDinero?->nombre }}</td><td>____________________________<br>Recibe</td></tr></table>
+    <table class="firmas"><tr><td>____________________________<br>Entrega: {{ $salida->entregaDinero?->nombre }}</td><td>____________________________<br>Recibe: Oficina</td></tr></table>
 </body></html>

@@ -54,7 +54,7 @@ class JefeVendedoresTest extends TestCase
     public function test_el_rol_tiene_solo_los_permisos_de_rutas_que_le_tocan(): void
     {
         $this->assertSame('Jefe de vendedores', RolSistema::JefeVendedores->label());
-        $this->assertSame(['rutas.ver', 'rutas.personal.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar'], RolSistema::JefeVendedores->permisos());
+        $this->assertSame(['rutas.ver', 'rutas.personal.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar', 'rutas.salidas.terminar'], RolSistema::JefeVendedores->permisos());
 
         foreach (['rutas.gestionar', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
             $this->assertFalse($this->jefe->can($permiso), "El jefe no debería tener {$permiso}.");
@@ -125,8 +125,6 @@ class JefeVendedoresTest extends TestCase
             'Planilla' => route('planilla.index'),
             'Personal' => route('personal.empleados'),
             'Gastos' => route('gastos.panel'),
-            'Cierre del día de la oficina' => route('rutas.salidas.cierre', $salida),
-            'Terminar ruta de la oficina' => route('rutas.salidas.terminar', $salida),
             'Alta de personas' => route('rutas.personal.create'),
         ];
 
@@ -137,14 +135,18 @@ class JefeVendedoresTest extends TestCase
         $this->actingAs($this->jefe)
             ->post(route('rutas.salidas.gastos.store', $salida), ['fecha' => now()->toDateString(), 'categoria' => 'comida', 'monto' => '5.00'])
             ->assertForbidden();
+        // Termina días (JefeTerminaSalidaTest), pero no los reabre.
+        $this->actingAs($this->jefe)
+            ->post(route('rutas.salidas.reabrir', [$salida, now()->toDateString()]), ['motivo' => 'Corregir el cobro'])
+            ->assertForbidden();
         // Arma salidas (ArmarSalidaTest), pero no las edita ni las cancela.
         $this->actingAs($this->jefe)->get(route('rutas.salidas.edit', $salida))->assertForbidden();
         $this->actingAs($this->jefe)->patch(route('rutas.salidas.cancelar', $salida))->assertForbidden();
         $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
     }
 
-    /** Arma salidas con `rutas.salidas.armar`; terminarlas llega en el PR 7, con otro permiso. */
-    public function test_ve_salir_a_esta_ruta_pero_no_terminar_ruta(): void
+    /** Arma salidas con `rutas.salidas.armar` y las termina con `rutas.salidas.terminar`. */
+    public function test_ve_salir_a_esta_ruta_y_terminar_ruta_pero_no_editar_ni_cancelar(): void
     {
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
@@ -155,7 +157,16 @@ class JefeVendedoresTest extends TestCase
 
         $this->actingAs($this->jefe)->get(route('rutas.salidas.show', $salida))
             ->assertOk()
-            ->assertDontSee('Terminar ruta')
-            ->assertDontSee('Terminar día');
+            ->assertSee(route('rutas.salidas.terminar', $salida))
+            ->assertSee('Terminar ruta')
+            ->assertDontSee('Cambiar quiénes van')
+            ->assertDontSee(route('rutas.salidas.cancelar', $salida));
+
+        // Una planificada todavía no se termina: no ve «Salir ahora» ni «Terminar ruta».
+        $planificada = $this->salida(PersonalRuta::create(['nombre' => 'Pedro Ficticio']), EstadoSalidaRuta::Planificada);
+        $this->actingAs($this->jefe)->get(route('rutas.salidas.show', $planificada))
+            ->assertOk()
+            ->assertDontSee('Salir ahora')
+            ->assertDontSee(route('rutas.salidas.terminar', $planificada));
     }
 }

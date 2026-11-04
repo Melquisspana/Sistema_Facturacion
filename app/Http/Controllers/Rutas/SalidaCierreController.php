@@ -25,7 +25,8 @@ class SalidaCierreController extends Controller
         if ($request->routeIs('rutas.mi-salida.*')) {
             Gate::authorize($accion, $salida);
         } else {
-            abort_unless($request->user()->can('rutas.gestionar'), 403);
+            // La oficina o el jefe de vendedores, aunque no haya ido. Reabrir es aparte.
+            abort_unless($request->user()->canAny(['rutas.gestionar', 'rutas.salidas.terminar']), 403);
         }
     }
 
