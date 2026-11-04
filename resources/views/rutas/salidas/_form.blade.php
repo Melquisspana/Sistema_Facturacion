@@ -2,16 +2,22 @@
 
      NO incluye `estado` ni `fecha_fin_real`: el estado se mueve con las acciones
      del detalle (terminar / cancelar) y la fecha real la escribe el acto de
-     terminar. Tampoco responsable: desde el 27/09/2026 solo se marca quiénes van. --}}
+     terminar. Quién la encabeza volvió el 03/11/2026 con «Armar salida» (opcional).
+
+     Al ARMAR, el día es «Hoy» u «Otro día» (hoy o uno que viene): para hoy sale en
+     camino, para otro día queda planificada. Sin JavaScript: el servidor lee `dia`. --}}
 @php
     $salida = $salida ?? null;
     $elegidos = old('personal', $salida?->participantes->pluck('rutas_personal_id')->all() ?? []);
+    $encabeza = old('responsable_id', $salida?->participantes->first(fn ($p) => $p->esResponsable())?->rutas_personal_id);
+    $hoy = \App\Support\HoraNegocio::fechaHoy();
+    $dia = old('dia', 'hoy');
 @endphp
 
 <div>
     <label for="ruta_id" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Ruta</label>
     <select name="ruta_id" id="ruta_id" required
-            class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+            class="mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
         <option value="">Elegí una ruta…</option>
         @foreach ($rutas as $r)
             <option value="{{ $r->id }}" @selected(old('ruta_id', $salida->ruta_id ?? '') == $r->id)>{{ $r->nombre }}</option>
@@ -26,13 +32,35 @@
 </div>
 
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-    <div>
-        <label for="fecha_inicio" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Fecha de inicio</label>
-        <input type="date" name="fecha_inicio" id="fecha_inicio"
-               value="{{ old('fecha_inicio', $salida?->fecha_inicio?->toDateString() ?? now()->toDateString()) }}"
-               class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
-        <x-input-error :messages="$errors->get('fecha_inicio')" class="mt-1" />
-    </div>
+    @if ($salida === null)
+        <fieldset>
+            <legend class="block text-sm font-medium text-gray-700">Día</legend>
+            <div class="mt-1 flex flex-wrap items-center gap-2">
+                <label class="cursor-pointer">
+                    <input type="radio" name="dia" value="hoy" @checked($dia !== 'otro') class="peer sr-only">
+                    <span class="inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-indigo-600">Hoy</span>
+                </label>
+                <label class="cursor-pointer">
+                    <input type="radio" name="dia" value="otro" @checked($dia === 'otro') class="peer sr-only">
+                    <span class="inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-indigo-600">Otro día</span>
+                </label>
+                <label for="fecha_inicio" class="sr-only">Fecha del otro día</label>
+                <input type="date" name="fecha_inicio" id="fecha_inicio" min="{{ $hoy }}"
+                       value="{{ old('fecha_inicio', $hoy) }}"
+                       class="min-h-11 rounded-md border-gray-300 text-sm">
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Para hoy sale en camino. Para otro día queda planificada hasta ese día.</p>
+            <x-input-error :messages="$errors->get('fecha_inicio')" class="mt-1" />
+        </fieldset>
+    @else
+        <div>
+            <label for="fecha_inicio" class="block text-sm font-medium text-gray-700 dark:text-paper-100">Fecha de inicio</label>
+            <input type="date" name="fecha_inicio" id="fecha_inicio"
+                   value="{{ old('fecha_inicio', $salida->fecha_inicio?->toDateString()) }}"
+                   class="mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+            <x-input-error :messages="$errors->get('fecha_inicio')" class="mt-1" />
+        </div>
+    @endif
 
     <div>
         <label for="fecha_fin_estimada" class="block text-sm font-medium text-gray-700 dark:text-paper-100">
@@ -40,21 +68,21 @@
         </label>
         <input type="date" name="fecha_fin_estimada" id="fecha_fin_estimada"
                value="{{ old('fecha_fin_estimada', $salida?->fecha_fin_estimada?->toDateString() ?? '') }}"
-               class="mt-1 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+               class="mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
         <p class="mt-1 text-xs text-gray-400 dark:text-paper-500">Si se quedan varios días (por ejemplo San Miguel o Santa Ana), poné el día que regresan. Cada día se termina aparte y el dinero se entrega al terminar la ruta.</p>
         <x-input-error :messages="$errors->get('fecha_fin_estimada')" class="mt-1" />
     </div>
 </div>
 
 <div>
-    <span class="block text-sm font-medium text-gray-700 dark:text-paper-100">Participantes</span>
+    <span class="block text-sm font-medium text-gray-700 dark:text-paper-100">¿Quiénes van?</span>
     <p class="mt-0.5 text-xs text-gray-400 dark:text-paper-500">
         Quiénes van en esta salida. Puede ir más de una persona, y nadie tiene ruta fija.
     </p>
 
     <div class="mt-2 max-h-56 overflow-y-auto rounded-md border border-gray-200 dark:border-ink-600">
         @forelse ($personal as $persona)
-            <label class="flex cursor-pointer items-center gap-2.5 border-b border-gray-100 px-3 py-2 last:border-0 hover:bg-gray-50 dark:border-ink-700 dark:hover:bg-ink-700">
+            <label class="flex min-h-11 cursor-pointer items-center gap-2.5 border-b border-gray-100 px-3 py-2 last:border-0 hover:bg-gray-50 dark:border-ink-700 dark:hover:bg-ink-700">
                 <input type="checkbox" name="personal[]" value="{{ $persona->id }}"
                        @checked(in_array($persona->id, $elegidos))
                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
@@ -71,6 +99,21 @@
         @endforelse
     </div>
     <x-input-error :messages="$errors->get('personal')" class="mt-1" />
+</div>
+
+<div>
+    <label for="responsable_id" class="block text-sm font-medium text-gray-700">
+        ¿Quién la encabeza? <span class="font-normal text-gray-500">(opcional)</span>
+    </label>
+    <select name="responsable_id" id="responsable_id"
+            class="mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm">
+        <option value="">Nadie en especial</option>
+        @foreach ($personal as $persona)
+            <option value="{{ $persona->id }}" @selected((string) $encabeza === (string) $persona->id)>{{ $persona->nombre }}</option>
+        @endforeach
+    </select>
+    <p class="mt-1 text-xs text-gray-500">Tiene que ir en la salida.</p>
+    <x-input-error :messages="$errors->get('responsable_id')" class="mt-1" />
 </div>
 
 <div>

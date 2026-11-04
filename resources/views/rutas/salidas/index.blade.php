@@ -2,10 +2,10 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Salidas</h2>
-            @can('rutas.gestionar')
+            @canany(['rutas.gestionar', 'rutas.salidas.armar'])
                 <a href="{{ route('rutas.salidas.create') }}"
                    class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ Nueva salida</a>
-            @endcan
+            @endcanany
         </div>
     </x-slot>
 
@@ -82,9 +82,9 @@
                                 <tr>
                                     <td colspan="7" class="py-8 px-4 text-center text-gray-500 dark:text-paper-300">
                                         No hay salidas que coincidan.
-                                        @can('rutas.gestionar')
+                                        @canany(['rutas.gestionar', 'rutas.salidas.armar'])
                                             <a href="{{ route('rutas.salidas.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear una</a>.
-                                        @endcan
+                                        @endcanany
                                     </td>
                                 </tr>
                             @endforelse

@@ -6,9 +6,9 @@
                 @if ($vaEnUnaSalida)
                     <a href="{{ route('rutas.mi-salida.index') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Mi salida</a>
                 @endif
-                @can('rutas.gestionar')
+                @canany(['rutas.gestionar', 'rutas.salidas.armar'])
                     <a href="{{ route('rutas.salidas.create') }}" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Armar salida</a>
-                @endcan
+                @endcanany
             </div>
         </div>
     </x-slot>
@@ -163,8 +163,8 @@
                                     @endif
                                 </div>
 
-                                {{-- Salir a esta ruta: se eligen quiénes van y listo. --}}
-                                @can('rutas.gestionar')
+                                {{-- Salir a esta ruta: se eligen quiénes van y listo. También el jefe de vendedores. --}}
+                                @canany(['rutas.gestionar', 'rutas.salidas.armar'])
                                     @if (! $fila['enCurso'])
                                         <div class="pt-2">
                                             @if ($vendedores->isEmpty())
@@ -196,7 +196,7 @@
                                             @endif
                                         </div>
                                     @endif
-                                @endcan
+                                @endcanany
                             </article>
                         @endforeach
                     </div>
