@@ -118,7 +118,7 @@
             </button>
 
             <a href="{{ route('dashboard') }}" class="flex shrink-0 items-center gap-2">
-                <x-application-logo class="block h-9 w-auto fill-current text-gray-800 dark:text-paper-100" />
+                <x-application-logo class="block h-9 w-auto" />
                 <span class="hidden text-sm font-semibold text-gray-800 dark:text-paper-100 sm:block">{{ config('app.name') }}</span>
             </a>
 

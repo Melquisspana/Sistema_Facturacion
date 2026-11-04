@@ -5,7 +5,8 @@
      terminar. Quién la encabeza volvió el 03/11/2026 con «Armar salida» (opcional).
 
      Al ARMAR, el día es «Hoy» u «Otro día» (hoy o uno que viene): para hoy sale en
-     camino, para otro día queda planificada. Sin JavaScript: el servidor lee `dia`. --}}
+     camino, para otro día queda planificada. Sin JavaScript: el servidor lee `dia`. La fecha se
+     ve solo con «Otro día» (Alpine); sin JavaScript se ve siempre y con «Hoy» se ignora. --}}
 @php
     $salida = $salida ?? null;
     $elegidos = old('personal', $salida?->participantes->pluck('rutas_personal_id')->all() ?? []);
@@ -33,21 +34,23 @@
 
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
     @if ($salida === null)
-        <fieldset>
+        <fieldset x-data="{ dia: @js($dia === 'otro' ? 'otro' : 'hoy') }">
             <legend class="block text-sm font-medium text-gray-700">Día</legend>
             <div class="mt-1 flex flex-wrap items-center gap-2">
                 <label class="cursor-pointer">
-                    <input type="radio" name="dia" value="hoy" @checked($dia !== 'otro') class="peer sr-only">
+                    <input type="radio" name="dia" value="hoy" x-model="dia" @checked($dia !== 'otro') class="peer sr-only">
                     <span class="inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-indigo-600">Hoy</span>
                 </label>
                 <label class="cursor-pointer">
-                    <input type="radio" name="dia" value="otro" @checked($dia === 'otro') class="peer sr-only">
+                    <input type="radio" name="dia" value="otro" x-model="dia" @checked($dia === 'otro') class="peer sr-only">
                     <span class="inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-indigo-600">Otro día</span>
                 </label>
-                <label for="fecha_inicio" class="sr-only">Fecha del otro día</label>
-                <input type="date" name="fecha_inicio" id="fecha_inicio" min="{{ $hoy }}"
-                       value="{{ old('fecha_inicio', $hoy) }}"
-                       class="min-h-11 rounded-md border-gray-300 text-sm">
+                <div x-show="dia === 'otro'">
+                    <label for="fecha_inicio" class="sr-only">Fecha del otro día</label>
+                    <input type="date" name="fecha_inicio" id="fecha_inicio" min="{{ $hoy }}"
+                           value="{{ old('fecha_inicio', $hoy) }}"
+                           class="min-h-11 rounded-md border-gray-300 text-sm">
+                </div>
             </div>
             <p class="mt-1 text-xs text-gray-500">Para hoy sale en camino. Para otro día queda planificada hasta ese día.</p>
             <x-input-error :messages="$errors->get('fecha_inicio')" class="mt-1" />
@@ -80,16 +83,19 @@
         Quiénes van en esta salida. Puede ir más de una persona, y nadie tiene ruta fija.
     </p>
 
-    <div class="mt-2 max-h-56 overflow-y-auto rounded-md border border-gray-200 dark:border-ink-600">
+    {{-- Sin alto máximo: la lista se ve entera, sin un desplazamiento propio que esconda gente. --}}
+    <div class="mt-2 rounded-md border border-gray-200 dark:border-ink-600">
         @forelse ($personal as $persona)
             <label class="flex min-h-11 cursor-pointer items-center gap-2.5 border-b border-gray-100 px-3 py-2 last:border-0 hover:bg-gray-50 dark:border-ink-700 dark:hover:bg-ink-700">
                 <input type="checkbox" name="personal[]" value="{{ $persona->id }}"
                        @checked(in_array($persona->id, $elegidos))
-                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
-                <span class="text-sm text-gray-700 dark:text-paper-100">{{ $persona->nombre }}</span>
-                @foreach ($persona->funcionesEnum() as $funcion)
-                    <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium {{ $funcion->clase() }}">{{ $funcion->label() }}</span>
-                @endforeach
+                       class="shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-ink-600 dark:bg-ink-800">
+                <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <span class="text-sm text-gray-700 dark:text-paper-100">{{ $persona->nombre }}</span>
+                    @foreach ($persona->funcionesEnum() as $funcion)
+                        <span class="whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium {{ $funcion->clase() }}">{{ $funcion->label() }}</span>
+                    @endforeach
+                </span>
             </label>
         @empty
             <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-paper-300">

@@ -234,6 +234,26 @@ class ProximaSalidaTest extends TestCase
         $this->assertSame(ResultadoEntrega::Entregado, $entrega->refresh()->resultado);
     }
 
+    public function test_empezar_ruta_carga_los_ccf_facturados_desde_que_se_armo(): void
+    {
+        $salida = $this->armarParaElJueves([$this->fichaVendedor]);
+        $alArmar = $salida->entregas()->count();
+
+        // El miércoles se facturan dos CCF más para salas de la ruta.
+        $this->travelTo('2026-11-04 15:00:00');
+        $this->pedidos($this->centro, ['2026-11-04', '2026-11-04']);
+        $nuevos = Dte::where('fecha_emision', '2026-11-04')->pluck('id')->sort()->values()->all();
+
+        $this->travelTo('2026-11-05 07:30:00');
+        $this->actingAs($this->vendedor)->post(route('rutas.mi-salida.empezar', $salida))
+            ->assertRedirect(route('rutas.mi-salida.show', $salida))
+            ->assertSessionHas('status', 'Ruta empezada. Se agregaron 2 CCF nuevos de la ruta. Ya podés marcar las entregas.');
+
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
+        $this->assertSame($alArmar + 2, $salida->entregas()->count());
+        $this->assertSame($nuevos, $salida->entregas()->whereIn('dte_id', $nuevos)->pluck('dte_id')->sort()->values()->all());
+    }
+
     public function test_doble_clic_en_empezar_no_rompe_nada(): void
     {
         $salida = $this->armarParaElJueves([$this->fichaVendedor, $this->fichaJefe]);

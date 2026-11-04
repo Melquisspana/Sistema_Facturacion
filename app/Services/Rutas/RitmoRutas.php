@@ -19,6 +19,8 @@ use Illuminate\Support\Collection;
  * {@see Ritmo::estado()}, más:
  *
  *   · en_ruta     — hay una salida en curso.
+ *   · programada  — ya hay una salida armada (planificada) para la ruta: no se avisa como
+ *                   atrasada ni «toca pronto», porque ya se resolvió.
  *   · sin_ritmo   — ni ritmo calculado ni días cargados: se muestran los días, sin color.
  *   · sin_salidas — nunca se registró una salida ni hay pedidos de sus salas.
  *
@@ -29,6 +31,8 @@ use Illuminate\Support\Collection;
 class RitmoRutas
 {
     public const EN_RUTA = 'en_ruta';
+
+    public const PROGRAMADA = 'programada';
 
     public const ATRASADA = Ritmo::ATRASADA;
 
@@ -86,7 +90,7 @@ class RitmoRutas
             ->groupBy('ruta_id');
         $ritmoSalas = $this->pedidos->porSala($salas->flatten()->pluck('id')->all(), $hoy);
 
-        $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
+        $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::PROGRAMADA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
 
         return $rutas
             ->map(fn (Ruta $ruta) => $this->fila(
@@ -194,6 +198,7 @@ class RitmoRutas
 
         $estado = match (true) {
             $enCurso !== null => self::EN_RUTA,
+            $proxima !== null => self::PROGRAMADA,
             $dias === null => self::SIN_SALIDAS,
             ! $ritmo => self::SIN_RITMO,
             default => Ritmo::estado($ritmo, $dias),

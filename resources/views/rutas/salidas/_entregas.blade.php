@@ -22,6 +22,7 @@
     // Quién viene elegido en cada tarjeta: en «Mi salida», el vendedor; en la oficina, el
     // responsable o, si va una sola persona, ella.
     $quien = $modoVendedor ? $persona?->id : ($preseleccion ?? $participantes->first()?->rutas_personal_id);
+    // Pastillas con el nombre corto (nombre y primer apellido) para que entren varias por renglón en el celular; el completo, en el title.
     $pastilla = 'inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 dark:text-paper-100 dark:ring-ink-500';
 
     // Qué se ve: lo que falta marcar, lo entregado (también por albarán) o todo.
@@ -35,7 +36,7 @@
 @endphp
 
 @if ($resumen['total'] > 0)
-    <nav aria-label="Qué CCF mostrar" class="mt-4 flex gap-2 overflow-x-auto">
+    <nav aria-label="Qué CCF mostrar" class="mt-4 flex flex-wrap gap-2">
         @foreach (['faltan' => 'Faltan '.$resumen['sin_registrar'], 'entregados' => 'Entregados '.$resumen['entregados'], 'todos' => 'Todos '.$resumen['total']] as $clave => $texto)
             <a href="{{ request()->fullUrlWithQuery(['ver' => $clave === 'todos' ? null : $clave]) }}" @if ($ver === $clave) aria-current="page" @endif
                class="inline-flex min-h-11 shrink-0 items-center rounded-full px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 {{ $ver === $clave ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-ink-800 dark:text-paper-100 dark:ring-ink-500' }}">{{ $texto }}</a>
@@ -134,7 +135,7 @@
                     <p class="text-xs font-medium text-gray-500 dark:text-paper-300">¿Quién lo entregó?</p>
                     <div class="mt-1.5 flex flex-wrap gap-2">
                         @foreach ($participantes as $p)
-                            <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="{{ $pastilla }} hover:bg-gray-100 dark:hover:bg-ink-700">{{ $p->personal->nombre }}</button>
+                            <button name="entregado_por_id" value="{{ $p->rutas_personal_id }}" title="{{ $p->personal->nombre }}" class="{{ $pastilla }} hover:bg-gray-100 dark:hover:bg-ink-700">{{ $p->personal->nombreCorto() }}</button>
                         @endforeach
                     </div>
                 </form>
@@ -150,7 +151,7 @@
                             @foreach ($participantes as $p)
                                 <label class="cursor-pointer">
                                     <input type="radio" form="entregar-{{ $entrega->id }}" name="entregado_por_id" value="{{ $p->rutas_personal_id }}" class="peer sr-only" @checked($p->rutas_personal_id === $quien)>
-                                    <span class="{{ $pastilla }} peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-600">{{ $p->personal->nombre }}</span>
+                                    <span title="{{ $p->personal->nombre }}" class="{{ $pastilla }} peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-600">{{ $p->personal->nombreCorto() }}</span>
                                 </label>
                             @endforeach
                         </div>

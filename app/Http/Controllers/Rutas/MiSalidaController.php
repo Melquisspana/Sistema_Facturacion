@@ -124,9 +124,7 @@ class MiSalidaController extends Controller
 
         return view('rutas.mi-salida.proxima', [
             'salida' => $salida,
-            'companeros' => $salida->participantes
-                ->filter(fn ($p) => $p->personal && $p->rutas_personal_id !== $persona->id)
-                ->pluck('personal.nombre')->join(', ', ' y '),
+            'companeros' => $salida->quienesVan($persona->id),
             'tocan' => $tocan->values(),
             'otrasSalas' => $otras->count(),
             'entregas' => $entregas,
@@ -139,7 +137,8 @@ class MiSalidaController extends Controller
     }
 
     /**
-     * «Empezar ruta»: la planificada pasa a en curso, solo el día de la salida o después.
+     * «Empezar ruta»: la planificada pasa a en curso, solo el día de la salida o después, y
+     * se cargan los CCF de la ruta facturados desde que se armó ({@see EntregasCcf::cargarPendientes()}).
      * Con la salida bloqueada, para que dos toques (o el compañero a la vez) no la
      * empiecen dos veces: si ya está en curso, no se hace nada.
      */
@@ -171,7 +170,13 @@ class MiSalidaController extends Controller
                 ])
                 ->log('empezó la ruta');
 
-            return ['status', 'Ruta empezada. Ya podés marcar las entregas.'];
+            // Lo facturado para la ruta desde que se armó la salida también se lleva, como al
+            // «Salir a esta ruta». En la misma transacción: si falla, la ruta no queda empezada.
+            $nuevos = $this->entregas->cargarPendientes($salida, $request->user());
+
+            return ['status', 'Ruta empezada.'
+                .($nuevos > 0 ? ' Se '.($nuevos === 1 ? 'agregó 1 CCF nuevo' : 'agregaron '.$nuevos.' CCF nuevos').' de la ruta.' : '')
+                .' Ya podés marcar las entregas.'];
         });
 
         return redirect()->route('rutas.mi-salida.show', $salida)->with($tipo, $mensaje);

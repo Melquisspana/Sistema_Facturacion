@@ -22,10 +22,16 @@
 <body class="min-h-screen bg-gray-100 font-sans text-ink-900 antialiased dark:bg-ink-950 dark:text-paper-100">
     <header class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3">
         <span class="min-w-0 truncate text-sm">{{ auth()->user()->name }}</span>
-        <form method="POST" action="{{ route('logout') }}">
-            @csrf
-            <button class="min-h-11 rounded-lg px-4 text-sm font-medium underline">Salir</button>
-        </form>
+        <div class="flex shrink-0 items-center">
+            {{-- El jefe de vendedores también sale a ruta: desde acá vuelve a su tablero. --}}
+            @can('rutas.ver')
+                <a href="{{ route('rutas.dashboard') }}" class="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-medium underline">Volver al tablero</a>
+            @endcan
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button class="min-h-11 rounded-lg px-4 text-sm font-medium underline">Salir</button>
+            </form>
+        </div>
     </header>
     <main class="mx-auto max-w-3xl px-4 pb-8">
         <x-rutas.avisos />

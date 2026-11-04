@@ -4,7 +4,7 @@
     <h1 class="text-3xl font-bold">{{ $salida->ruta->nombre }}</h1>
     <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }}</p>
     @php
-        $companeros = $salida->participantes->filter(fn ($p) => $p->rutas_personal_id !== $persona->id)->pluck('personal.nombre')->filter()->join(', ', ' y ');
+        $companeros = $salida->quienesVan($persona?->id);
     @endphp
     @if ($companeros)
         <p class="mt-2 text-base">Vas con {{ $companeros }}</p>

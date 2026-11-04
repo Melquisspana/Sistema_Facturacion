@@ -203,6 +203,24 @@ class SalidaRuta extends Model
         return $this->update(['estado' => $destino] + $extra);
     }
 
+    /**
+     * Quiénes van, para leer: «Ana Ficticia (encabeza), Beto Ejemplo y Carla Inventada».
+     * Quien encabeza va primero y marcado (solo si van varios); los demás, por nombre.
+     * Con `$sin` se deja afuera a una persona: en «Mi salida», «Vas con …» no se nombra a
+     * quien mira. Usa `personal` (con el rol en el pivote): cargarlo antes en listas.
+     */
+    public function quienesVan(?int $sin = null): string
+    {
+        $encabeza = fn (PersonalRuta $p) => $p->pivot?->rol === RolEnSalida::Responsable->value;
+        $marcar = $this->personal->count() > 1;
+
+        return $this->personal
+            ->reject(fn (PersonalRuta $p) => $p->id === $sin)
+            ->sortBy(fn (PersonalRuta $p) => ($encabeza($p) ? '0' : '1').mb_strtolower($p->nombre))
+            ->map(fn (PersonalRuta $p) => $p->nombre.($marcar && $encabeza($p) ? ' (encabeza)' : ''))
+            ->join(', ', ' y ');
+    }
+
     /** Etiqueta breve para mensajes: «San Miguel · 14–16 ago 2026». */
     public function descripcionCorta(): string
     {

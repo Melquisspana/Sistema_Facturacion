@@ -27,7 +27,7 @@
                     <div>
                         <p class="text-2xl font-semibold text-gray-800 dark:text-paper-100">{{ $salida->ruta->nombre }}</p>
                         <p class="mt-0.5 text-sm text-gray-500 dark:text-paper-300">
-                            {{ $salida->periodoLegible() }} · {{ $salida->participantes->map(fn ($p) => $p->personal?->nombre)->filter()->implode(' y ') ?: 'Sin vendedores' }}
+                            {{ $salida->periodoLegible() }} · {{ $salida->quienesVan() ?: 'Sin vendedores' }}
                         </p>
                     </div>
                     <x-rutas.estado-badge :estado="$salida->estado" class="!px-3 !py-1 !text-sm" />
@@ -37,7 +37,7 @@
                     <div class="flex items-baseline justify-between text-sm">
                         <span class="text-gray-600 dark:text-paper-300">
                             <strong class="text-gray-800 dark:text-paper-100">{{ $resumen['entregados'] }}</strong> entregados ·
-                            <strong class="text-gray-800 dark:text-paper-100">{{ $resumen['no_entregados'] }}</strong> no entregados ·
+                            <strong class="text-gray-800 dark:text-paper-100">{{ $resumen['no_entregados'] }}</strong> no entregado{{ $resumen['no_entregados'] === 1 ? '' : 's' }} ·
                             <strong class="text-gray-800 dark:text-paper-100">{{ $resumen['sin_registrar'] }}</strong> por marcar
                         </span>
                         <span class="text-gray-400 dark:text-paper-500">{{ $resumen['total'] }} CCF</span>

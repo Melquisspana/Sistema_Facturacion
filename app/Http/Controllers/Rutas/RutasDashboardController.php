@@ -60,10 +60,14 @@ class RutasDashboardController extends Controller
             ->get();
         // Los albaranes de todas las salidas de una vez, no salida por salida.
         $resoluciones = $entregas->resolucionesAlbaran($salidasAbiertas->flatMap->entregas);
-        $enCamino = $salidasAbiertas->map(fn (SalidaRuta $s) => [
-            'salida' => $s,
-            'resumen' => $entregas->resumen($s->entregas, $resoluciones),
-        ]);
+        // «En camino» son solo las en curso, como el número del resumen; las planificadas van
+        // aparte, en «Programadas».
+        [$enCamino, $programadas] = $salidasAbiertas
+            ->map(fn (SalidaRuta $s) => [
+                'salida' => $s,
+                'resumen' => $entregas->resumen($s->entregas, $resoluciones),
+            ])
+            ->partition(fn (array $f) => $f['salida']->estado === EstadoSalidaRuta::EnCurso);
 
         $rutas = $ritmo->porRuta($hoy);
         $salas = $rutas->flatMap(fn (array $fila) => $fila['salas']->map(
@@ -88,7 +92,7 @@ class RutasDashboardController extends Controller
                 'rutasAtrasadas' => $rutas->where('estado', RitmoRutas::ATRASADA)->count(),
                 'salasAtrasadas' => $salas->where('estado', Ritmo::ATRASADA)->count(),
                 'salasSemana' => $salas->filter(fn (array $s) => $this->tocaEstaSemana($s))->count(),
-                'enCamino' => $salidasAbiertas->where('estado', EstadoSalidaRuta::EnCurso)->count(),
+                'enCamino' => $enCamino->count(),
             ],
             'filas' => $soloRutasAtrasadas ? $rutas->where('estado', RitmoRutas::ATRASADA)->values() : $rutas,
             'soloRutasAtrasadas' => $soloRutasAtrasadas,
@@ -98,7 +102,8 @@ class RutasDashboardController extends Controller
                 'semana' => $deEsta->filter(fn (array $s) => $this->tocaEstaSemana($s))->count(),
             ]),
             'pendientes' => $entregas->pendientesPorRuta(),
-            'enCamino' => $enCamino,
+            'enCamino' => $enCamino->values(),
+            'programadas' => $programadas->values(),
             'salas' => $pagina,
             'ultimaEntrega' => $entregas->ultimaVisitaPorSala($pagina->getCollection()->map(fn (array $s) => $s['sala']->id)->all()),
             'hayFiltro' => $ver !== 'todas' || $rutaId !== null || $buscar !== '',
