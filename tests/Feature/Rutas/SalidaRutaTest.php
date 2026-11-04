@@ -20,6 +20,15 @@ class SalidaRutaTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Las salidas de estas pruebas salen el 14/08/2026: se arman ese mismo día, porque
+        // desde el 03/11/2026 no se arma una salida para un día pasado.
+        $this->travelTo('2026-08-14 09:00:00');
+    }
+
     private function admin(): User
     {
         return User::factory()->create(['activo' => true, 'name' => 'Admin'])->assignRole('administrador');
@@ -89,10 +98,10 @@ class SalidaRutaTest extends TestCase
     }
 
     /**
-     * Como lo manda el formulario: ids como texto. Antes rechazaba al responsable; desde el
-     * 27/09/2026 no hay responsable y lo que llegue en ese campo se ignora.
+     * Como lo manda el formulario: ids como texto. Quién la encabeza volvió el 03/11/2026
+     * con «Armar salida»; antes de normalizar los ids se rechazaba aunque fuera.
      */
-    public function test_dos_vendedores_con_los_ids_como_texto_y_sin_responsable(): void
+    public function test_dos_vendedores_con_los_ids_como_texto_y_quien_la_encabeza(): void
     {
         $admin = $this->admin();
         $carlos = $this->vendedor('Carlos');
@@ -109,7 +118,7 @@ class SalidaRutaTest extends TestCase
             ->assertRedirect();
 
         $this->assertSame(2, SalidaRuta::sole()->participantes()->count());
-        $this->assertNull(SalidaRuta::sole()->responsable);
+        $this->assertSame($jose->id, SalidaRuta::sole()->responsable?->rutas_personal_id);
     }
 
     public function test_exige_al_menos_un_participante(): void
@@ -163,14 +172,17 @@ class SalidaRutaTest extends TestCase
 
     public function test_ciclo_completo_planificada_en_curso_finalizada(): void
     {
-        Carbon::setTestNow('2026-08-16 18:00:00');
+        $this->travelTo('2026-08-13 18:00:00');
 
         $admin = $this->admin();
+        // Armada la víspera: queda planificada hasta el 14/08.
         $salida = $this->crearSalida($admin, $this->ruta(), [$this->vendedor('Carlos')->id]);
+        $this->assertSame(EstadoSalidaRuta::Planificada, $salida->estado);
 
         $this->actingAs($admin)->patch(route('rutas.salidas.iniciar', $salida))->assertRedirect();
         $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
 
+        Carbon::setTestNow('2026-08-16 18:00:00');
         $this->actingAs($admin)->patch(route('rutas.salidas.finalizar', $salida))->assertRedirect();
         $salida->refresh();
         $this->assertSame(EstadoSalidaRuta::Finalizada, $salida->estado);
@@ -215,7 +227,9 @@ class SalidaRutaTest extends TestCase
         $ruta = $this->ruta();
         $carlos = $this->vendedor('Carlos');
 
+        $this->travelTo('2026-08-13 18:00:00');
         $planificada = $this->crearSalida($admin, $ruta, [$carlos->id]);
+        $this->assertSame(EstadoSalidaRuta::Planificada, $planificada->estado);
         $this->actingAs($admin)->patch(route('rutas.salidas.cancelar', $planificada));
         $this->assertSame(EstadoSalidaRuta::Cancelada, $planificada->refresh()->estado);
 

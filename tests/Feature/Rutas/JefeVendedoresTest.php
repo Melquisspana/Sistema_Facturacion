@@ -54,7 +54,7 @@ class JefeVendedoresTest extends TestCase
     public function test_el_rol_tiene_solo_los_permisos_de_rutas_que_le_tocan(): void
     {
         $this->assertSame('Jefe de vendedores', RolSistema::JefeVendedores->label());
-        $this->assertSame(['rutas.ver', 'rutas.personal.ver', 'rutas.entregas.registrar'], RolSistema::JefeVendedores->permisos());
+        $this->assertSame(['rutas.ver', 'rutas.personal.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar'], RolSistema::JefeVendedores->permisos());
 
         foreach (['rutas.gestionar', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
             $this->assertFalse($this->jefe->can($permiso), "El jefe no debería tener {$permiso}.");
@@ -127,7 +127,6 @@ class JefeVendedoresTest extends TestCase
             'Gastos' => route('gastos.panel'),
             'Cierre del día de la oficina' => route('rutas.salidas.cierre', $salida),
             'Terminar ruta de la oficina' => route('rutas.salidas.terminar', $salida),
-            'Armar salida' => route('rutas.salidas.create'),
             'Alta de personas' => route('rutas.personal.create'),
         ];
 
@@ -138,21 +137,21 @@ class JefeVendedoresTest extends TestCase
         $this->actingAs($this->jefe)
             ->post(route('rutas.salidas.gastos.store', $salida), ['fecha' => now()->toDateString(), 'categoria' => 'comida', 'monto' => '5.00'])
             ->assertForbidden();
-        $this->actingAs($this->jefe)
-            ->post(route('rutas.salidas.store'), ['ruta_id' => $this->ruta->id, 'personal' => [(string) $this->ficha->id]])
-            ->assertForbidden();
-        $this->assertSame(1, SalidaRuta::count());
+        // Arma salidas (ArmarSalidaTest), pero no las edita ni las cancela.
+        $this->actingAs($this->jefe)->get(route('rutas.salidas.edit', $salida))->assertForbidden();
+        $this->actingAs($this->jefe)->patch(route('rutas.salidas.cancelar', $salida))->assertForbidden();
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $salida->refresh()->estado);
     }
 
-    /** Armar y terminar salidas llegan en la etapa 2, con permisos propios. */
-    public function test_no_ve_salir_a_esta_ruta_ni_terminar_ruta(): void
+    /** Arma salidas con `rutas.salidas.armar`; terminarlas llega en el PR 7, con otro permiso. */
+    public function test_ve_salir_a_esta_ruta_pero_no_terminar_ruta(): void
     {
-        $salida = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
-
         $this->actingAs($this->jefe)->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertDontSee('Salir a esta ruta')
-            ->assertDontSee('Salir hoy');
+            ->assertSee('Salir a esta ruta')
+            ->assertSee('Salir hoy');
+
+        $salida = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
 
         $this->actingAs($this->jefe)->get(route('rutas.salidas.show', $salida))
             ->assertOk()

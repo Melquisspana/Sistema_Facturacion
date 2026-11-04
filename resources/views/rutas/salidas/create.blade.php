@@ -1,6 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight dark:text-paper-100">Nueva salida</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Armar salida</h1>
+        </div>
     </x-slot>
 
     <div class="py-8">
@@ -8,19 +10,20 @@
             <x-rutas.avisos />
 
             <form method="POST" action="{{ route('rutas.salidas.store') }}"
-                  class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6 space-y-5 dark:bg-ink-800 dark:ring-ink-600 dark:shadow-none">
+                  class="rounded-lg border border-gray-200 bg-white p-6 space-y-5">
                 @csrf
                 @include('rutas.salidas._form')
 
-                <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100 dark:border-ink-700">
-                    <a href="{{ route('rutas.salidas.index') }}"
-                       class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100 dark:hover:bg-ink-600">Cancelar</a>
-                    <button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Crear salida</button>
+                {{-- Cancelar a la izquierda y el principal a la derecha; en el celular, uno arriba del otro. --}}
+                <div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+                    <a href="{{ route('rutas.dashboard') }}"
+                       class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</a>
+                    <button class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Armar salida</button>
                 </div>
             </form>
 
-            <p class="mt-3 text-xs text-gray-400 dark:text-paper-500">
-                La salida nace <strong>planificada</strong>. Cuando arranque de verdad, marcala como iniciada desde su detalle.
+            <p class="mt-3 text-xs text-gray-500">
+                Los CCF por entregar de la ruta se cargan solos al armarla.
             </p>
         </div>
     </div>

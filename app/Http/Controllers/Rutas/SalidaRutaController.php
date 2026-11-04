@@ -11,8 +11,11 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
+use App\Support\HoraNegocio;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -58,19 +61,26 @@ class SalidaRutaController extends Controller
     public function store(SalidaRutaRequest $request, ParticipantesSalida $participantes, EntregasCcf $entregas): RedirectResponse
     {
         $datos = $request->validated();
+        $fecha = isset($datos['fecha_inicio']) ? Carbon::parse($datos['fecha_inicio'])->toDateString() : HoraNegocio::fechaHoy();
+        // Para hoy sale EN CURSO, como «Salir a esta ruta» desde el 27/09/2026. Para un día
+        // que viene queda PLANIFICADA hasta ese día (decisión de Melqui, 03/11/2026).
+        $planificada = $fecha > HoraNegocio::fechaHoy();
 
-        $salida = SalidaRuta::create([
-            'ruta_id' => $datos['ruta_id'],
-            'fecha_inicio' => $datos['fecha_inicio'] ?? today()->toDateString(),
-            'fecha_fin_estimada' => $datos['fecha_fin_estimada'] ?? null,
-            'observaciones' => $datos['observaciones'] ?? null,
-            // Nace EN CURSO: «Salir a esta ruta» es salir ahora (el usuario quitó el paso
-            // de planificar el 27/09/2026). Las planificadas viejas se siguen iniciando.
-            'estado' => EstadoSalidaRuta::EnCurso,
-            'created_by' => $request->user()?->id,
-        ]);
+        // La salida y su gente juntas: si algo falla al anotar quiénes van, no queda una
+        // salida vacía.
+        [$salida, $resultado] = DB::transaction(function () use ($datos, $fecha, $planificada, $request, $participantes) {
+            $salida = SalidaRuta::create([
+                'ruta_id' => $datos['ruta_id'],
+                'fecha_inicio' => $fecha,
+                'fecha_fin_estimada' => $datos['fecha_fin_estimada'] ?? null,
+                'observaciones' => $datos['observaciones'] ?? null,
+                'estado' => $planificada ? EstadoSalidaRuta::Planificada : EstadoSalidaRuta::EnCurso,
+                'created_by' => $request->user()?->id,
+            ]);
 
-        $resultado = $participantes->sincronizar($salida, $datos['personal'], null);
+            return [$salida, $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null)];
+        });
+
         $this->auditar($request, $salida, 'definió los participantes de la salida', [
             'participantes' => $resultado['agregados'],
             'responsable' => $resultado['responsable'],
@@ -81,7 +91,9 @@ class SalidaRutaController extends Controller
 
         return redirect()
             ->route('rutas.salidas.show', $salida)
-            ->with('status', 'Salida en camino con '.$cargados.' CCF por entregar.');
+            ->with('status', ($planificada
+                ? 'Salida planificada para el '.$salida->fecha_inicio->format('d/m/Y')
+                : 'Salida en camino').' con '.$cargados.' CCF por entregar.');
     }
 
     public function show(SalidaRuta $salida, EntregasCcf $servicio): View
@@ -145,7 +157,7 @@ class SalidaRutaController extends Controller
             'observaciones' => $datos['observaciones'] ?? null,
         ]);
 
-        $resultado = $participantes->sincronizar($salida, $datos['personal'], null);
+        $resultado = $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null);
 
         // Solo se audita si de verdad cambió la gente, para que el historial no se llene de
         // «cambió los participantes» vacíos.

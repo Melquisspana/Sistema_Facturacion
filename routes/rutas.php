@@ -152,10 +152,12 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             Route::post('/', [SalidaLiquidacionController::class, 'liquidar'])->name('liquidar');
             Route::get('pdf', [SalidaLiquidacionController::class, 'pdf'])->name('liquidacion-final');
         });
+        // Armar una salida: la oficina (`rutas.gestionar`) o el jefe de vendedores
+        // (`rutas.salidas.armar`, que no da nada más). Editarla y cancelarla siguen abajo.
         Route::get('salidas/crear', [SalidaRutaController::class, 'create'])->name('salidas.create')
-            ->middleware('permission:rutas.gestionar');
+            ->middleware('permission:rutas.gestionar|rutas.salidas.armar');
         Route::post('salidas', [SalidaRutaController::class, 'store'])->name('salidas.store')
-            ->middleware('permission:rutas.gestionar');
+            ->middleware('permission:rutas.gestionar|rutas.salidas.armar');
         Route::get('salidas/{salida}', [SalidaRutaController::class, 'show'])->name('salidas.show');
         // El PDF de un CCF de la salida, para verlo al tocar su tarjeta. Solo lectura.
         Route::get('salidas/{salida}/ccf/{entrega}', [SalidaCcfController::class, 'show'])->name('salidas.ccf')
