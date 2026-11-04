@@ -12,6 +12,28 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.04.3] - 2026-11-04
+
+Rutas con el CCF nuevo que entra solo y la liquidación con los entregados, el acceso del jefe de vendedores desde su ficha y la renta según la contadora (#239 al #243), sin migraciones.
+
+### Agregado
+
+- Rutas: la liquidación en PDF trae los documentos entregados, con su cantidad y monto (#239).
+- Rutas: el CCF que se factura mientras la salida está en camino entra solo a la salida al abrirla, con un aviso. Si ese día ya se terminó, entra al día siguiente (#242).
+
+### Cambiado
+
+- Rutas: el vendedor tiene a mano «Seguir marcando entregas», y «Terminar ruta» pregunta antes si ya terminaron toda la ruta; para cerrar solo el día está «Terminar día» (#239).
+- Rutas: sale el formulario «Facturados después de entregar», porque el CCF nuevo entra solo. Los registros viejos se siguen viendo y se pueden deshacer (#242).
+- Rutas: una salida programada para otro día dice «Sale el …» y no se puede empezar antes de esa fecha (#243).
+- Planilla: la deducción de $1,600 del Tramo II va solo en el recálculo de diciembre, comparada con lo gravado; la quincena y junio ya no la avisan (#241).
+- El logo se ve sobre un fondo claro en modo oscuro (#243).
+
+### Corregido
+
+- Personal: dar acceso de Jefe de vendedores a quien ya tenía ficha de Rutas usa esa ficha en vez de fallar con «El usuario ya tiene otra ficha de Rutas» (#240).
+- Personal › Accesos: nadie puede cambiarse el rol, desactivarse ni eliminarse a sí mismo (#243).
+
 ## [2026.11.04.2] - 2026-11-04
 
 El CCF de Rutas se descarga (#236), sin migraciones.
