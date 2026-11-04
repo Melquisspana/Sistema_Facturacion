@@ -12,6 +12,27 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.04] - 2026-11-04
+
+Rutas para los jefes de vendedores (armar y terminar salidas, «Tu próxima salida», CCF facturado después de entregar y arreglos en el celular), y el acceso al sistema en un solo lugar dentro de Personal (#228, #230 al #235), con una migración.
+
+### Agregado
+
+- Rutas: «Entregado antes de facturar» en la hoja de la salida, para el CCF que se factura después de entregar. Queda entregado ese día y por esa persona, sin dinero: no suma al cierre ni a la liquidación. Se puede deshacer desde la oficina (#230).
+- Rutas: «Armar salida» para hoy o para otro día, con quién la encabeza. La de otro día queda programada. El Jefe de vendedores la arma con su permiso propio, `rutas.salidas.armar` (#231).
+- Rutas: el Jefe de vendedores termina días y rutas de cualquier salida, aunque no haya ido (`rutas.salidas.terminar`). Elige quién entrega el dinero, la hoja dice «Recibe: Oficina» y reabrir días sigue siendo de la oficina (#232).
+- Rutas: «Tu próxima salida» en el celular del vendedor: ruta, día, compañeros, salas que tocan pedido y CCF que lleva. Solo se mira hasta que toca «Empezar ruta» ese día, que además carga los CCF facturados después de armarla (#233, #234).
+- Personal › Accesos: la lista de quién entra al sistema y la cuenta externa de la contadora, que no es empleada y solo lleva el rol Contabilidad (#228, #235).
+
+### Cambiado
+
+- El acceso al sistema se maneja desde la ficha de Personal: dar acceso, cambiar rol, correo o contraseña, activar o desactivar y ver el historial. «Usuarios» sale del menú de Facturación y sus direcciones viejas llevan a Personal (#235).
+- Rutas en el celular: el logo de la empresa arriba; «En camino» y «Programadas» separadas; una ruta con salida armada ya no sale atrasada; «A (encabeza), B y C»; tarjetas de «Mi salida» más cortas; «Volver al tablero» para el jefe; en «Armar salida» la fecha solo aparece con «Otro día», y el teléfono de la ficha del vendedor se toca para llamar (#234).
+
+### Corregido
+
+- Rutas: «1 no entregado» en singular, y los botones de filtro ya no se cortan en el celular (#234).
+
 ## [2026.11.03.6] - 2026-11-03
 
 Planilla: renta antes del sistema y recálculo de junio y diciembre al generar (#226), con una migración.
