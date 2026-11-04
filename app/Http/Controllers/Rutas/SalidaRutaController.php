@@ -190,6 +190,12 @@ class SalidaRutaController extends Controller
             $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
             $anterior = $salida->estado;
 
+            // Como «Empezar ruta»: la programada para otro día sale ese día, no antes.
+            if ($anterior === EstadoSalidaRuta::Planificada && $salida->fecha_inicio->toDateString() > HoraNegocio::fechaHoy()) {
+                return ['error', 'Esta salida es para el '.$salida->fecha_inicio->copy()->locale('es')->dayName.' '
+                    .$salida->fecha_inicio->format('d/m/Y').'. La podés empezar ese día.'];
+            }
+
             if (! $salida->iniciar()) {
                 return ['error', "No se puede iniciar una salida {$anterior->label()}."];
             }
