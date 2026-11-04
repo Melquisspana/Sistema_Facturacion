@@ -4,6 +4,7 @@ use App\Http\Controllers\Planilla\PlanillaContratoController;
 use App\Http\Controllers\Planilla\PlanillaController;
 use App\Http\Controllers\Planilla\PlanillaFlujoController;
 use App\Http\Controllers\Planilla\PlanillaPagoController;
+use App\Http\Controllers\Planilla\PlanillaRentaController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -76,6 +77,12 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
             ->whereNumber('anticipo')->name('anticipos.comprobante');
         Route::post('empleados/{empleado}/anticipos', [PlanillaPagoController::class, 'guardarAnticipo'])
             ->whereNumber('empleado')->middleware($gestionar)->name('anticipos.store');
+
+        // Renta antes del sistema, para el recálculo de junio y diciembre. Son sueldos.
+        Route::get('renta-antes', [PlanillaRentaController::class, 'index'])
+            ->middleware([$gestionar, 'permission:planilla.salarios'])->name('renta.index');
+        Route::post('renta-antes', [PlanillaRentaController::class, 'store'])
+            ->middleware([$gestionar, 'permission:planilla.salarios'])->name('renta.store');
 
         // Los documentos firmados se entregan SOLO por controlador autorizado.
         Route::get('documentos/{documento}', [PlanillaFlujoController::class, 'verDocumento'])

@@ -27,7 +27,8 @@ use Illuminate\Validation\ValidationException;
  *
  * ISSS, AFP Y RENTA SE PROPONEN SOLOS para quien va con descuentos de ley, en la
  * quincena regular: {@see DescuentosLey} los calcula y una persona los revisa o los
- * corrige. Vacaciones, aguinaldo, indemnización y horas extra no se calculan.
+ * corrige. Vacaciones, aguinaldo, indemnización y horas extra no se calculan. En la
+ * última quincena de junio y de diciembre la renta sale del recálculo del año.
  *
  * UNA PLANILLA POR PERÍODO. Lo garantiza el índice único
  * `(tipo_periodo, periodo, clase)` en la base, no una comprobación previa.
@@ -40,6 +41,7 @@ final class PrepararPlanilla
         private SueldoHabitual $sueldos,
         private DescuentosLey $descuentos,
         private PrestacionAnual $prestaciones,
+        private AcumuladoRenta $acumulados,
     ) {}
 
     /**
@@ -346,6 +348,13 @@ final class PrepararPlanilla
         $deLey = [];
 
         foreach ($calculo['conceptos'] as $clave => $propuesta) {
+            if ($clave === 'renta') {
+                // ISSS y AFP ya quedaron arriba, con su corrección a mano si la hubo.
+                $gravado = $base - array_sum(array_map(fn (array $c) => Dinero::centavos($c['importe']), $deLey));
+                $propuesta['centavos'] = $this->rentaRecalculada($planilla, $empleado, $gravado)['centavos']
+                    ?? $propuesta['centavos'];
+            }
+
             $importe = $propuesta['centavos'];
             $escrito = trim((string) ($entrantes->get($clave)['importe'] ?? ''));
 
@@ -380,6 +389,35 @@ final class PrepararPlanilla
         }
 
         return array_merge($deLey, $otros);
+    }
+
+    /**
+     * La renta de esta línea por el recálculo de junio o diciembre. Null si esta planilla
+     * no lo lleva o si falta lo acumulado: entonces queda la renta de la quincena y
+     * {@see reparosParaConfirmar()} frena la planilla.
+     *
+     * @param  int  $gravado  lo gravado de esta línea: base menos ISSS y AFP
+     * @return array{centavos: int, segun_tabla: int, avisos: array<int, string>}|null
+     */
+    private function rentaRecalculada(Planilla $planilla, PlanillaEmpleado $empleado, int $gravado): ?array
+    {
+        if (! $this->descuentos->esRecalculo($planilla)) {
+            return null;
+        }
+
+        $acumulado = $this->acumulados->paraRecalculo($empleado, $planilla);
+
+        if (! $acumulado['listo']) {
+            return null;
+        }
+
+        return $this->descuentos->recalcularRenta($acumulado['gravado'] + $gravado, $acumulado['renta'], $planilla->hasta->toDateString());
+    }
+
+    /** Lo gravado de una línea ya guardada: lo que cotiza menos el ISSS y la AFP que quedaron. */
+    private function gravadoDe(PlanillaDetalle $detalle, int $base): int
+    {
+        return $base - $detalle->conceptos->whereIn('ley', ['isss', 'afp'])->sum(fn ($c) => Dinero::centavos((string) $c->importe));
     }
 
     /** @return array<int, array<string, PlanillaConcepto>> empleado_id => ley => concepto */
@@ -452,9 +490,20 @@ final class PrepararPlanilla
             }
 
             $base = $this->descuentos->baseDeLinea(Dinero::centavos((string) $detalle->salario), $detalle->conceptos->toArray());
-            $calculo = $this->descuentos->calcular($base['base'], $planilla->desde->toDateString());
 
-            foreach (array_merge($base['avisos'], $calculo['avisos'] ?? []) as $aviso) {
+            // En el recálculo, los avisos de renta son los del recálculo: los del tramo
+            // quincenal hablarían de una cuenta que no se usó.
+            if ($this->descuentos->esRecalculo($planilla)) {
+                $recalculo = $this->rentaRecalculada($planilla, $detalle->empleado, $this->gravadoDe($detalle, $base['base']));
+                $deRenta = $recalculo === null ? [] : array_merge(
+                    ['La renta de esta quincena sale del recálculo de '.($planilla->hasta->month === 6 ? 'junio' : 'diciembre').' (Decreto 10).'],
+                    $recalculo['avisos'],
+                );
+            } else {
+                $deRenta = $this->descuentos->calcular($base['base'], $planilla->desde->toDateString())['avisos'] ?? [];
+            }
+
+            foreach (array_merge($base['avisos'], $deRenta) as $aviso) {
                 $avisos[] = $detalle->nombre_snapshot.': '.$aviso;
             }
         }
@@ -542,6 +591,14 @@ final class PrepararPlanilla
 
                     if ($concepto === null || Dinero::centavos((string) $concepto->importe) <= 0) {
                         $reparos[] = $detalle->nombre_snapshot.': falta el importe de '.$nombre.'.';
+                    }
+                }
+
+                if ($this->descuentos->esRecalculo($planilla)) {
+                    $falta = $this->acumulados->paraRecalculo($detalle->empleado, $planilla)['falta'];
+
+                    if ($falta !== null) {
+                        $reparos[] = $detalle->nombre_snapshot.': '.$falta.'.';
                     }
                 }
             }

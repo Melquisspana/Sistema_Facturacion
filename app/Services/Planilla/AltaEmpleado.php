@@ -2,12 +2,12 @@
 
 namespace App\Services\Planilla;
 
-use App\Enums\RolSistema;
 use App\Http\Requests\Usuarios\StoreUserRequest;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
+use App\Services\Rutas\FichaVendedor;
 use App\Services\Usuarios\CrearUsuario;
 use App\Support\Dui;
 use Illuminate\Database\Eloquent\Model;
@@ -238,9 +238,9 @@ class AltaEmpleado
      */
     private function autorizarModulos(User $actor, array $datos): array
     {
-        $vendedorNuevo = filter_var($datos['usa_sistema'] ?? false, FILTER_VALIDATE_BOOLEAN) && ($datos['rol'] ?? null) === RolSistema::Vendedor->value;
+        $vendedorNuevo = filter_var($datos['usa_sistema'] ?? false, FILTER_VALIDATE_BOOLEAN) && in_array($datos['rol'] ?? null, FichaVendedor::ROLES, true);
         $usuarioId = filter_var($datos['user_id'] ?? null, FILTER_VALIDATE_INT);
-        $vendedorEnlazado = $usuarioId && User::find($usuarioId)?->hasRole(RolSistema::Vendedor->value);
+        $vendedorEnlazado = $usuarioId && User::find($usuarioId)?->hasAnyRole(FichaVendedor::ROLES);
         if ($vendedorNuevo || $vendedorEnlazado) {
             $datos['sale_rutas'] = true;
         }
@@ -261,7 +261,7 @@ class AltaEmpleado
     {
         // Un vendedor que ya era usuario ya tiene su ficha en Rutas (FichaVendedor): se usa
         // esa y no se crea otra.
-        if (! $ruta && $usuario?->hasRole(RolSistema::Vendedor->value)) {
+        if (! $ruta && $usuario?->hasAnyRole(FichaVendedor::ROLES)) {
             $ruta = PersonalRuta::where('user_id', $usuario->id)->lockForUpdate()->first();
             if ($ruta && PlanillaEmpleado::where('personal_ruta_id', $ruta->id)->whereKeyNot($empleado->id)->exists()) {
                 throw ValidationException::withMessages(['personal_ruta_id' => 'La ficha de Rutas de ese usuario ya es de otra persona en planilla.']);
@@ -284,7 +284,7 @@ class AltaEmpleado
                 $ruta->refresh()->update(['activo' => $estadoRuta]);
             }
         }
-        $esVendedor = $usuario?->hasRole(RolSistema::Vendedor->value) ?? false;
+        $esVendedor = $usuario?->hasAnyRole(FichaVendedor::ROLES) ?? false;
         $this->compatible($asistencia, 'user_id', $usuario?->id);
         $this->compatible($ruta, 'asistencia_empleado_id', $asistencia?->id);
         $this->compatible($ruta, 'user_id', $esVendedor ? $usuario?->id : null);
