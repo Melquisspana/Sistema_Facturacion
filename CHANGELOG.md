@@ -12,6 +12,22 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.03.6] - 2026-11-03
+
+Planilla: renta antes del sistema y recálculo de junio y diciembre al generar (#226), con una migración.
+
+### Agregado
+
+- Planilla › «Renta antes del sistema»: lo gravado y la renta retenida de cada persona en los meses del año que no están en el sistema, con una propuesta a partir del sueldo habitual que una persona revisa y confirma. Pide `planilla.gestionar` y `planilla.salarios` (#226).
+
+### Cambiado
+
+- Planilla: la última quincena de junio y de diciembre calcula la renta con el recálculo del año (Decreto Ejecutivo 10). Si a alguien le falta la cifra confirmada o hay quincenas sin contar, la planilla no se confirma y dice a quién le falta (#226).
+
+### Corregido
+
+- Personal: un Jefe de vendedores dado de alta con «Sale a rutas» queda enlazado a su ficha de campo como un vendedor. Antes el alta se rechazaba (#226).
+
 ## [2026.11.03.5] - 2026-11-03
 
 Tablero nuevo de Rutas con ritmo de compra y vendedores, rol Jefe de vendedores, PDF del CCF desde la salida, hoja de firmas sin página en blanco y el cálculo del recálculo de renta (#218 al #225), sin migraciones.
