@@ -111,16 +111,15 @@ class DescuentosLeyTest extends TestCase
         $this->assertTrue(app(DescuentosLey::class)->hayVigentes('2025-05-01'));
     }
 
-    public function test_avisa_la_deduccion_del_tramo_ii_y_el_recalculo(): void
+    public function test_avisa_la_deduccion_del_tramo_ii(): void
     {
         $servicio = app(DescuentosLey::class);
 
         $this->assertSame([], $servicio->calcular(20440, self::FECHA)['avisos']);
         $this->assertStringContainsString('$1,600', $servicio->calcular(40000, self::FECHA)['avisos'][0]);
 
-        $this->assertStringContainsString('recálculo', $servicio->calcular(100000, '2026-06-01')['avisos'][0]);
-        $this->assertStringContainsString('recálculo', $servicio->calcular(100000, '2026-12-16')['avisos'][0]);
-        $this->assertSame([], $servicio->calcular(20440, '2026-12-16')['avisos']);
+        // El recálculo de junio y diciembre ya no se avisa: se calcula al generar.
+        $this->assertSame([], $servicio->calcular(100000, '2026-12-16')['avisos']);
     }
 
     public function test_la_base_deja_afuera_lo_que_no_cotiza(): void

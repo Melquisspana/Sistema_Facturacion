@@ -28,6 +28,10 @@
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 ISSS, AFP y renta son una propuesta que se puede corregir.
                 <strong>No calcula</strong> aporte patronal, vacaciones, indemnización ni horas extra.
+                @if ($verImportes && auth()->user()->can('planilla.gestionar'))
+                    El recálculo de renta de junio y diciembre usa la
+                    <a href="{{ route('planilla.renta.index') }}" class="font-medium text-indigo-700 underline">renta antes del sistema</a>.
+                @endif
             </p>
 
             @unless ($verImportes)

@@ -22,9 +22,8 @@ use Illuminate\Support\Str;
  * la renta de pagos extraordinarios, que necesitan una regla que el decreto no da para
  * la quincena.
  *
- * EL RECÁLCULO DE JUNIO Y DICIEMBRE ya se calcula ({@see recalcularRenta()}), pero
- * todavía no se aplica al generar: necesita lo gravado y retenido de los meses
- * anteriores al sistema, y eso aún no tiene dónde guardarse. Mientras tanto se avisa.
+ * EL RECÁLCULO DE JUNIO Y DICIEMBRE lo calcula {@see recalcularRenta()} con lo
+ * acumulado del año, que junta {@see AcumuladoRenta}.
  *
  * Solo calcula planillas regulares quincenales: la tabla es la quincenal y `Topes`
  * se reparten entre `pagos_por_mes`.
@@ -96,10 +95,6 @@ final class DescuentosLey
         [$renta, $aviso] = $this->renta($base - $isss - $afp, $version['renta']['tramos']);
 
         $avisos = $aviso !== null ? [$aviso] : [];
-
-        if ($renta > 0 && in_array(CarbonImmutable::parse($fecha)->month, [6, 12], true)) {
-            $avisos[] = 'Junio y diciembre llevan recálculo de renta: revisalo con la contadora.';
-        }
 
         return [
             'conceptos' => [

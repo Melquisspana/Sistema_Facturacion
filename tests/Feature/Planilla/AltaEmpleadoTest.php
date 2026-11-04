@@ -3,6 +3,7 @@
 namespace Tests\Feature\Planilla;
 
 use App\Enums\PermisoSistema;
+use App\Enums\RolSistema;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
@@ -104,6 +105,15 @@ class AltaEmpleadoTest extends TestCase
         $this->assertSame($e->user_id, $ruta->fresh()->user_id);
         $this->assertSame('vendedor', $ruta->fresh()->funciones->sole()->funcion->value);
         $this->assertTrue($e->usuario->hasRole('vendedor'));
+    }
+
+    public function test_jefe_de_vendedores_sale_a_ruta_como_un_vendedor(): void
+    {
+        $e = app(AltaEmpleado::class)->registrar($this->actor(), $this->datos(['usa_sistema' => true, 'rol' => RolSistema::JefeVendedores->value]));
+
+        $this->assertSame(1, PersonalRuta::count());
+        $this->assertSame($e->user_id, $e->personalRuta->user_id);
+        $this->assertTrue($e->usuario->hasRole(RolSistema::JefeVendedores->value));
     }
 
     public function test_vendedor_crea_su_ficha_y_enlace_inactivo_conserva_estado(): void
