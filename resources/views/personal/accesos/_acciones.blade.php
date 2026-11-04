@@ -15,6 +15,8 @@
     $rolesAcceso = $cuenta->cuenta_externa
         ? [\App\Enums\RolSistema::Contabilidad->value => \App\Enums\RolSistema::Contabilidad->label()]
         : \App\Enums\RolSistema::opciones();
+    // La cuenta propia no se cambia el rol ni se desactiva: lo hace otro administrador (el servidor también lo frena).
+    $propia = $cuenta->is(auth()->user());
 @endphp
 
 @if ($erroresAcceso->any())
@@ -38,7 +40,11 @@
             @endunless
             <div>
                 <label for="acceso_rol" class="{{ $etiqueta }}">Rol</label>
-                <select id="acceso_rol" name="rol" required class="{{ $campo }}">
+                @if ($propia)
+                    {{-- Deshabilitado no se envía: el rol actual va oculto para poder cambiar el correo. --}}
+                    <input type="hidden" name="rol" value="{{ $rolActual }}">
+                @endif
+                <select id="acceso_rol" @unless ($propia) name="rol" @endunless required @disabled($propia) @if ($propia) aria-describedby="acceso-propio" @endif class="{{ $campo }}">
                     @foreach ($rolesAcceso as $valor => $texto)
                         <option value="{{ $valor }}" @selected(old('rol', $rolActual) === $valor)>{{ $texto }}</option>
                     @endforeach
@@ -82,12 +88,16 @@
         </form>
     </details>
 
-    <form method="POST" action="{{ route('personal.accesos.toggle-activo', $cuenta) }}"
-          @if ($cuenta->activo) onsubmit="return confirm('¿Desactivar este acceso? No va a poder entrar hasta que lo actives.')" @endif>
-        @csrf
-        @method('PATCH')
-        <button type="submit" class="{{ $secundario }}">{{ $cuenta->activo ? 'Desactivar acceso' : 'Activar acceso' }}</button>
-    </form>
+    @if ($propia)
+        <p id="acceso-propio" class="w-full text-sm text-gray-500 dark:text-paper-300">Es tu cuenta: tu rol y tu acceso los cambia otro administrador.</p>
+    @else
+        <form method="POST" action="{{ route('personal.accesos.toggle-activo', $cuenta) }}"
+              @if ($cuenta->activo) onsubmit="return confirm('¿Desactivar este acceso? No va a poder entrar hasta que lo actives.')" @endif>
+            @csrf
+            @method('PATCH')
+            <button type="submit" class="{{ $secundario }}">{{ $cuenta->activo ? 'Desactivar acceso' : 'Activar acceso' }}</button>
+        </form>
+    @endif
 
     <details class="w-full">
         <summary class="{{ $secundario }} cursor-pointer">Historial del acceso</summary>

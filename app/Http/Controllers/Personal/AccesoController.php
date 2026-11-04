@@ -37,6 +37,9 @@ class AccesoController extends Controller
 {
     use AuthorizesRequests;
 
+    /** Nadie se desactiva, se cambia el rol ni se elimina a sí mismo: lo hace otro administrador. */
+    private const ACCESO_PROPIO = 'No podés quitarte tu propio acceso: pedíselo a otro administrador.';
+
     public function index(Request $request): View
     {
         $this->authorize('viewAny', User::class);
@@ -128,6 +131,11 @@ class AccesoController extends Controller
         $datos = $request->validated();
         $rolNuevo = $datos['rol'];
         $ficha = $this->fichaDe($usuario);
+        $rolAnterior = $usuario->roles->first()?->name;
+
+        if ($rolNuevo !== $rolAnterior && $usuario->is($request->user())) {
+            return redirect()->to($this->destino($request, $usuario))->withErrors(['rol' => self::ACCESO_PROPIO], 'acceso');
+        }
 
         // No dejar el sistema sin un administrador activo.
         if ($rolNuevo !== RolSistema::Administrador->value && UltimoAdministrador::es($usuario)) {
@@ -142,8 +150,6 @@ class AccesoController extends Controller
         if ($ficha === null && blank($datos['name'] ?? null)) {
             throw ValidationException::withMessages(['name' => 'Escribí el nombre.'])->errorBag('acceso');
         }
-
-        $rolAnterior = $usuario->roles->first()?->name;
 
         $usuario->update([
             // Un solo nombre: el de quien tiene ficha en Personal se corrige allá.
@@ -163,6 +169,10 @@ class AccesoController extends Controller
     public function toggleActivo(Request $request, User $usuario, FichaVendedor $fichas): RedirectResponse
     {
         $this->authorize('update', $usuario);
+
+        if ($usuario->activo && $usuario->is($request->user())) {
+            return redirect()->to($this->destino($request, $usuario))->withErrors(['activo' => self::ACCESO_PROPIO], 'acceso');
+        }
 
         // Desactivar al último administrador activo dejaría el sistema sin admin.
         if ($usuario->activo && UltimoAdministrador::es($usuario)) {
@@ -187,9 +197,14 @@ class AccesoController extends Controller
         return redirect()->to($this->destino($request, $usuario))->with('status', 'Contraseña de '.$usuario->name.' cambiada.');
     }
 
-    public function destroy(User $usuario): RedirectResponse
+    public function destroy(Request $request, User $usuario): RedirectResponse
     {
-        $this->authorize('delete', $usuario); // bloquea auto-eliminación
+        // La ruta ya exige usuarios.gestionar. La propia cuenta se frena con su mensaje;
+        // la policy también la bloquea (403), por si se llega por otro lado.
+        if ($usuario->is($request->user())) {
+            return back()->with('error', self::ACCESO_PROPIO);
+        }
+        $this->authorize('delete', $usuario);
 
         if (UltimoAdministrador::es($usuario)) {
             return back()->with('error', 'No se puede eliminar al último administrador activo.');
