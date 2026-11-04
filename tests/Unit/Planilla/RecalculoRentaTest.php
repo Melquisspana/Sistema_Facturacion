@@ -153,9 +153,12 @@ class RecalculoRentaTest extends TestCase
         $this->assertSame([], $calculo['avisos']);
     }
 
-    public function test_avisa_la_deduccion_de_junio_y_la_aplicada_en_diciembre(): void
+    public function test_la_deduccion_va_solo_en_diciembre(): void
     {
-        $this->assertStringContainsString('$1,600', $this->servicio()->recalcularRenta(400000, 0, self::JUNIO)['avisos'][0]);
+        // Junio no la resta ni la avisa (contadora, 04/11/2026): 4,000.00 al 10 %.
+        $junio = $this->servicio()->recalcularRenta(400000, 0, self::JUNIO);
+        $this->assertSame([], $junio['avisos']);
+        $this->assertSame(17620, $junio['centavos']);
         $this->assertSame([], $this->servicio()->recalcularRenta(600000, 0, self::JUNIO)['avisos']);
 
         $this->assertStringContainsString('Se restó', $this->servicio()->recalcularRenta(800000, 0, self::DICIEMBRE)['avisos'][0]);
