@@ -100,15 +100,17 @@
                     <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</p>
                 </div>
 
-                {{-- Resultado ya registrado --}}
-                <div class="min-w-0 max-w-full break-words text-right">
+                {{-- Resultado ya registrado. En el celular va siempre en su propia línea, para que
+                     todas las tarjetas queden iguales sin importar el largo del nombre. --}}
+                @if (! $entrega->estaPendiente() || $albaran)
+                <div class="w-full min-w-0 max-w-full break-words text-right sm:w-auto">
                     @if ($entrega->resultado === \App\Enums\ResultadoEntrega::Entregado)
                         @if ($entrega->monto_esperado !== null && $entrega->monto_cobrado < $entrega->monto_esperado)
                             <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">Saldo pendiente ${{ number_format((float) $entrega->monto_esperado - (float) $entrega->monto_cobrado, 2) }}</p>
                         @endif
                         <p class="text-sm font-medium text-green-700 dark:text-green-400">✓ Entregado</p>
                         <p class="text-xs text-gray-500 dark:text-paper-300">
-                            {{ $entrega->entregadoPor?->nombre }} · {{ $entrega->fecha_resultado?->translatedFormat($modoVendedor ? 'H:i' : 'd M') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
+                            {{ $entrega->entregadoPor?->nombreCorto() }} · {{ $entrega->fecha_resultado?->translatedFormat($modoVendedor ? 'H:i' : 'd M') }}{{ $entrega->trae_nota_averia ? ' · con nota de avería' : '' }}
                         </p>
                     @elseif ($entrega->resultado === \App\Enums\ResultadoEntrega::NoEntregado)
                         <p class="text-sm font-medium text-red-700 dark:text-red-400">✗ No entregado</p>
@@ -124,6 +126,7 @@
                         </form>
                     @endif
                 </div>
+                @endif
             </div>
 
             {{-- Con albarán ya consta entregado: solo falta quién. Tocar el nombre lo guarda,
