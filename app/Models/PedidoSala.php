@@ -11,15 +11,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Pedido que un vendedor saca en una sala, con la foto de la hoja «Orden de compra»
- * firmada por el gerente. La regla (quién, cuándo, qué se valida) vive en
+ * Pedido que un vendedor saca en una sala: lo que anota en el sugerido que
+ * firma el gerente. La regla (quién, cuándo, qué se valida) vive en
  * {@see PedidosSala}, que también deja la auditoría (con las líneas);
  * ver la migración para cada columna.
  */
 class PedidoSala extends Model
 {
-    public const FOTO_MAX_KB = 10240;
-
     /** Tope de cada cantidad: cabe en `decimal(11,4)` y ninguna sala pide más. */
     public const CANTIDAD_MAXIMA = 99999;
 
@@ -34,10 +32,6 @@ class PedidoSala extends Model
         'fecha',
         'estado',
         'numero_orden_compra',
-        'foto_ruta',
-        'foto_mime',
-        'foto_bytes',
-        'foto_sha256',
         'notas',
     ];
 
@@ -46,7 +40,6 @@ class PedidoSala extends Model
         return [
             'fecha' => 'date',
             'estado' => EstadoPedidoSala::class,
-            'foto_bytes' => 'integer',
             'sacado_por_id' => 'integer',
             'registrado_por' => 'integer',
         ];

@@ -1,6 +1,6 @@
 {{-- Detalle de un pedido de sala para la oficina (docs/GUIA_PANTALLAS.md, «Fichas y
      detalles»): estado y datos arriba, la OC (que suele llegar después por EDI y se agrega
-     acá), los productos y la foto del sugerido firmado. --}}
+     acá) y los productos. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -24,9 +24,6 @@
             <section class="{{ $caja }}">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <x-rutas.estado-badge :estado="$pedido->estado" />
-                    @unless ($pedido->foto_ruta)
-                        <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Falta la foto</span>
-                    @endunless
                 </div>
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
@@ -91,18 +88,6 @@
                         @endforeach
                     </tbody>
                 </table>
-            </section>
-
-            <section class="{{ $caja }}" aria-labelledby="foto-titulo">
-                <h2 id="foto-titulo" class="text-base font-semibold text-gray-800">Foto del sugerido firmado</h2>
-                @if ($pedido->foto_ruta)
-                    <a href="{{ route('rutas.pedidos.foto', $pedido) }}" target="_blank" rel="noopener" class="mt-3 block">
-                        <img src="{{ route('rutas.pedidos.foto', $pedido) }}" alt="Sugerido firmado de {{ $pedido->sala?->nombre }}" class="max-h-80 max-w-full rounded-lg">
-                    </a>
-                    <a href="{{ route('rutas.pedidos.foto', $pedido) }}" target="_blank" rel="noopener" class="mt-2 inline-flex min-h-11 items-center text-sm text-indigo-600 underline">Abrir la foto</a>
-                @else
-                    <p class="mt-1 text-sm text-gray-600">Falta la foto. El vendedor la puede agregar el mismo día desde «Mi salida».</p>
-                @endif
             </section>
         </div>
     </div>

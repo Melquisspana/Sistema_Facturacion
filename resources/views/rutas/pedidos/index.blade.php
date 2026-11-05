@@ -12,7 +12,6 @@
     @php
         $campo = 'mt-1 min-h-11 w-full rounded-md border-gray-300 text-sm';
         $etiqueta = 'block text-xs font-medium text-gray-500';
-        $faltaFoto = 'inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800';
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -77,9 +76,6 @@
                                 <p class="mt-1 text-sm text-gray-600">
                                     {{ $pedido->lineas_count }} {{ $pedido->lineas_count === 1 ? 'producto' : 'productos' }} · {{ $pedido->numero_orden_compra ? 'OC '.$pedido->numero_orden_compra : 'Sin OC' }}
                                 </p>
-                                @unless ($pedido->foto_ruta)
-                                    <p class="mt-1"><span class="{{ $faltaFoto }}">Falta la foto</span></p>
-                                @endunless
                             </li>
                         @endforeach
                     </ul>
@@ -95,7 +91,6 @@
                                     <th class="px-4 py-3">Sacó</th>
                                     <th class="px-4 py-3 text-right">Productos</th>
                                     <th class="px-4 py-3">OC</th>
-                                    <th class="px-4 py-3">Foto</th>
                                     <th class="px-4 py-3">Estado</th>
                                     <th class="px-4 py-3 text-right">Acciones</th>
                                 </tr>
@@ -109,13 +104,6 @@
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td>
                                         <td class="px-4 py-3 text-right tabular-nums">{{ $pedido->lineas_count }}</td>
                                         <td class="px-4 py-3 font-mono text-gray-600">{{ $pedido->numero_orden_compra ?? '—' }}</td>
-                                        <td class="px-4 py-3">
-                                            @if ($pedido->foto_ruta)
-                                                <span class="text-gray-600">Con foto</span>
-                                            @else
-                                                <span class="{{ $faltaFoto }}">Falta la foto</span>
-                                            @endif
-                                        </td>
                                         <td class="px-4 py-3"><x-rutas.estado-badge :estado="$pedido->estado" /></td>
                                         <td class="px-4 py-3 text-right"><a href="{{ route('rutas.pedidos.show', $pedido) }}" class="text-indigo-600 hover:underline">Ver</a></td>
                                     </tr>

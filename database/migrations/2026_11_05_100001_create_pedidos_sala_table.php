@@ -6,13 +6,12 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Pedidos que el vendedor saca en la sala (docs/PLAN_TABLERO_RUTAS.md, etapa 3). Hasta
- * ahora vivían en la hoja «Orden de compra» y en una foto por WhatsApp.
+ * ahora vivían solo en el sugerido de papel y en el grupo de WhatsApp.
  *
  *  - `sacado_por_id` es la ficha de campo de quien lo sacó y `registrado_por` el usuario
  *    que lo guardó, igual que en las entregas.
  *  - `estado` es texto validado por el enum `EstadoPedidoSala`: la pantalla de
  *    producción agrega sus estados sin migrar.
- *  - La foto de la hoja firmada va al disco privado, como los comprobantes de gastos.
  *  - El enlace con el CCF llega con «facturar desde el pedido».
  *
  * Sin borrado suave: como el resto de Rutas, un pedido no se borra, se anula.
@@ -31,10 +30,6 @@ return new class extends Migration
             $table->date('fecha');
             $table->string('estado', 20)->default('registrado');
             $table->string('numero_orden_compra', 30)->nullable();
-            $table->string('foto_ruta')->nullable();
-            $table->string('foto_mime', 50)->nullable();
-            $table->unsignedInteger('foto_bytes')->nullable();
-            $table->char('foto_sha256', 64)->nullable();
             $table->string('notas', 500)->nullable();
             $table->timestamps();
 

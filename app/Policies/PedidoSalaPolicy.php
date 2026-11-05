@@ -39,10 +39,4 @@ class PedidoSalaPolicy
             && $usuario->can(PermisoSistema::RutasGestionar->value)
             && $pedido->estaRegistrado();
     }
-
-    /** La foto de la hoja firmada: la oficina o quien sacó el pedido. */
-    public function verFoto(User $usuario, PedidoSala $pedido): bool
-    {
-        return $this->view($usuario, $pedido) || PedidosSala::loSaco($usuario, $pedido);
-    }
 }

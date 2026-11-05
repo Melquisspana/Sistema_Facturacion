@@ -13,7 +13,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * «Sacar pedido» desde «Mi salida»: el formulario de una sala, guardarlo, corregirlo y
@@ -42,7 +41,7 @@ class MiPedidoController extends Controller
 
     public function store(PedidoSalaRequest $request, SalidaRuta $salida, ClienteSucursal $sucursal): RedirectResponse
     {
-        $pedido = $this->pedidos->guardar($salida, $sucursal, $request->validated(), $request->file('foto'), $request->user());
+        $pedido = $this->pedidos->guardar($salida, $sucursal, $request->validated(), $request->user());
 
         return $this->volver($salida, $pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.');
     }
@@ -56,7 +55,7 @@ class MiPedidoController extends Controller
 
     public function update(PedidoSalaRequest $request, SalidaRuta $salida, PedidoSala $pedido): RedirectResponse
     {
-        $pedido = $this->pedidos->guardar($salida, $pedido->sala, $request->validated(), $request->file('foto'), $request->user(), $pedido);
+        $pedido = $this->pedidos->guardar($salida, $pedido->sala, $request->validated(), $request->user(), $pedido);
 
         return $this->volver($salida, $pedido, 'Pedido de «'.$pedido->sala->nombre.'» corregido.');
     }
@@ -67,12 +66,6 @@ class MiPedidoController extends Controller
 
         return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$pedido->cliente_sucursal_id)
             ->with('status', 'Pedido de «'.$pedido->sala->nombre.'» anulado. Si hace falta, sacalo de nuevo.');
-    }
-
-    /** La foto de la hoja firmada, desde «Mi salida». La misma regla que en la oficina. */
-    public function foto(SalidaRuta $salida, PedidoSala $pedido): BinaryFileResponse
-    {
-        return app(PedidoSalaController::class)->foto($pedido);
     }
 
     private function formulario(SalidaRuta $salida, ClienteSucursal $sala, ?PedidoSala $pedido): View

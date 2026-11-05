@@ -82,7 +82,6 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
             Route::get('{salida}/pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');
             Route::put('{salida}/pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
             Route::patch('{salida}/pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
-            Route::get('{salida}/pedidos/{pedido}/foto', [MiPedidoController::class, 'foto'])->name('foto');
         });
     });
 
@@ -214,12 +213,11 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
             });
 
         /*
-        | Pedidos de sala: la lista y el detalle de la oficina, con la foto. Solo lectura.
+        | Pedidos de sala: la lista y el detalle de la oficina.
         */
         Route::prefix('pedidos')->name('pedidos.')->middleware('permission:rutas.pedidos.ver')->group(function () {
             Route::get('/', [PedidoSalaController::class, 'index'])->name('index');
             Route::get('{pedido}', [PedidoSalaController::class, 'show'])->name('show');
-            Route::get('{pedido}/foto', [PedidoSalaController::class, 'foto'])->name('foto');
             // La OC llega después por EDI: la agrega o corrige la oficina.
             Route::patch('{pedido}/orden-compra', [PedidoSalaController::class, 'ordenCompra'])->name('orden-compra')
                 ->middleware('permission:rutas.gestionar');

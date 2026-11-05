@@ -43,7 +43,6 @@ class PedidoSalaRequest extends FormRequest
             'lineas.*.cantidad' => ['required', 'numeric', 'regex:/^\d+(?:\.\d{1,4})?$/', 'gt:0', 'max:'.PedidoSala::CANTIDAD_MAXIMA],
             'numero_orden_compra' => ['nullable', 'string', 'max:30'],
             'notas' => ['nullable', 'string', 'max:500'],
-            'foto' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:'.PedidoSala::FOTO_MAX_KB],
         ];
     }
 
@@ -60,10 +59,6 @@ class PedidoSalaRequest extends FormRequest
             'lineas.*.cantidad.*' => 'Cada cantidad tiene que ser un número mayor que cero, con hasta 4 decimales.',
             'numero_orden_compra.max' => 'El número de orden de compra puede tener hasta 30 caracteres.',
             'notas.max' => 'Las notas pueden tener hasta 500 caracteres.',
-            'foto.image' => 'La foto tiene que ser una imagen (JPG, PNG o WebP).',
-            'foto.mimes' => 'La foto tiene que ser una imagen (JPG, PNG o WebP).',
-            'foto.max' => 'La foto puede pesar hasta 10 MB.',
-            'foto.*' => 'No se pudo subir la foto. Tomala de nuevo.',
         ];
     }
 }

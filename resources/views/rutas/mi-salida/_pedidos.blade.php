@@ -43,14 +43,7 @@
                                 <li><span class="font-semibold tabular-nums">{{ $linea->cantidadLegible() }}</span> × {{ $linea->producto?->nombre }}</li>
                             @endforeach
                         </ul>
-                        <p class="mt-2 {{ $gris }}">
-                            {{ $pedido->numero_orden_compra ? 'OC '.$pedido->numero_orden_compra : 'Sin OC' }} ·
-                            @if ($pedido->foto_ruta)
-                                <a href="{{ route('rutas.mi-salida.pedidos.foto', [$salida, $pedido]) }}" target="_blank" rel="noopener" class="inline-flex min-h-11 items-center text-indigo-600 underline dark:text-indigo-400">Ver foto del sugerido</a>
-                            @else
-                                <span class="text-amber-800 dark:text-amber-300">Falta la foto del sugerido</span>
-                            @endif
-                        </p>
+                        <p class="mt-2 {{ $gris }}">{{ $pedido->numero_orden_compra ? 'OC '.$pedido->numero_orden_compra : 'Sin OC' }}</p>
                         @foreach ($pedido->avisosOrdenCompra() as $aviso)
                             <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">{{ $aviso }}</p>
                         @endforeach
@@ -60,7 +53,7 @@
                         @can('corregir', $pedido)
                             <div class="mt-3 grid grid-cols-2 gap-2">
                                 <a href="{{ route('rutas.mi-salida.pedidos.edit', [$salida, $pedido]) }}"
-                                   class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">{{ $pedido->foto_ruta ? 'Corregir' : 'Agregar foto o corregir' }}</a>
+                                   class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Corregir</a>
                                 <form method="POST" action="{{ route('rutas.mi-salida.pedidos.anular', [$salida, $pedido]) }}"
                                       onsubmit="return confirm('¿Anular el pedido de {{ addslashes($sala->nombre) }}? Después lo podés sacar de nuevo.');">
                                     @csrf @method('PATCH')

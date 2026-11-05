@@ -143,7 +143,7 @@ enum PermisoSistema: string
     case RutasSalidasTerminar = 'rutas.salidas.terminar';
     // Pedidos de sala (docs/PLAN_TABLERO_RUTAS.md, etapa 3). `registrar`: sacar el pedido
     // en la sala desde «Mi salida», solo en las salidas donde va. `ver`: la lista y el
-    // detalle de la oficina, con la foto de la hoja firmada. Producción lleva los suyos
+    // detalle de la oficina. Producción lleva los suyos
     // con su pantalla.
     case RutasPedidosRegistrar = 'rutas.pedidos.registrar';
     case RutasPedidosVer = 'rutas.pedidos.ver';

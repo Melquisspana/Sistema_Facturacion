@@ -21,9 +21,7 @@ use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
@@ -31,7 +29,7 @@ use Tests\TestCase;
 
 /**
  * Sacar pedido en la sala desde el celular (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10): el
- * propósito de la salida, el «Sugerido» de cada sala con su foto, corregir y anular el mismo
+ * propósito de la salida, el «Sugerido» de cada sala (sin foto), corregir y anular el mismo
  * día, la lista y el detalle de la oficina y la OC que se agrega después desde ahí. Todos
  * los datos son inventados.
  */
@@ -66,7 +64,6 @@ class PedidosSalaTest extends TestCase
         parent::setUp();
         config(['rutas.entregas_desde' => '2026-09-28', 'rutas.ambiente_ccf' => null, 'dte.ambiente' => '01']);
         $this->travelTo('2026-11-05 09:00:00');
-        Storage::fake('local');
 
         $this->vendedor = User::factory()->create(['activo' => true])->assignRole('vendedor');
         $this->companero = User::factory()->create(['activo' => true])->assignRole('vendedor');
@@ -185,7 +182,7 @@ class PedidosSalaTest extends TestCase
 
         Producto::factory()->create(['nombre' => 'Producto apagado', 'activo' => false]);
         $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertOk()
-            ->assertSee('Sugerido')->assertSee('Foto del sugerido firmado')->assertSee('capture="environment"', false)
+            ->assertSee('Sugerido')->assertDontSee('type="file"', false)->assertDontSee('multipart/form-data', false)
             ->assertSee('Galleta de prueba')->assertDontSee('Producto apagado')
             // Esta sala no usa OC.
             ->assertDontSee('Número de orden de compra');
@@ -193,11 +190,9 @@ class PedidosSalaTest extends TestCase
             ->assertSee('Número de orden de compra');
     }
 
-    public function test_guarda_el_pedido_con_foto_privada_y_auditoria(): void
+    public function test_guarda_el_pedido_con_auditoria(): void
     {
-        $foto = UploadedFile::fake()->image('sugerido.jpg');
-        $hash = hash_file('sha256', $foto->getRealPath());
-        $this->sacar(['foto' => $foto, 'notas' => ' Pidió para el viernes '])
+        $this->sacar(['notas' => ' Pidió para el viernes '])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('rutas.mi-salida.show', $this->salida).'#sala-'.$this->sala->id)
             ->assertSessionHas('status', 'Pedido de «Tienda Centro» guardado.');
@@ -210,18 +205,13 @@ class PedidosSalaTest extends TestCase
         $this->assertSame('2026-11-05', $pedido->fecha->toDateString());
         $this->assertSame('Pidió para el viernes', $pedido->notas);
         $this->assertSame([[$this->galleta->id, '12.0000']], $pedido->lineas->map(fn ($l) => [$l->producto_id, $l->cantidad])->all());
-        $this->assertSame($hash, $pedido->foto_sha256);
-        $this->assertMatchesRegularExpression('~^rutas/pedidos/'.$this->salida->id.'/[a-f0-9-]+\.jpg$~', $pedido->foto_ruta);
-        Storage::disk('local')->assertExists($pedido->foto_ruta);
 
         $actividad = Activity::where('log_name', 'pedido_sala')->sole();
         $this->assertSame('sacó el pedido de la sala', $actividad->description);
         $this->assertSame($this->galleta->id, $actividad->properties['lineas'][0]['producto_id']);
 
         $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('Pedido sacado')->assertSee('Galleta de prueba')
-            ->assertSee('Ver foto del sugerido')->assertSee('Anular');
-        $this->get(route('rutas.mi-salida.pedidos.foto', [$this->salida, $pedido]))->assertOk()
-            ->assertHeader('Content-Type', 'image/jpeg')->assertHeader('X-Content-Type-Options', 'nosniff');
+            ->assertSee('Anular');
 
         // Una sola vez por sala: el segundo intento no crea otro.
         $this->sacar()->assertSessionHasErrors('lineas');
@@ -242,8 +232,6 @@ class PedidosSalaTest extends TestCase
             [['cantidades' => [$this->galleta->id => '100000']], 'lineas.0.cantidad'],
             [['cantidades' => [$inactivo->id => '2']], 'lineas.0.producto_id'],
             [['cantidades' => [999999 => '2']], 'lineas.0.producto_id'],
-            [['foto' => UploadedFile::fake()->create('hoja.pdf', 10, 'application/pdf')], 'foto'],
-            [['foto' => UploadedFile::fake()->image('grande.jpg')->size(10241)], 'foto'],
             [['notas' => str_repeat('a', 501)], 'notas'],
         ];
         foreach ($casos as [$datos, $campo]) {
@@ -253,12 +241,10 @@ class PedidosSalaTest extends TestCase
             ->assertSessionHasErrors(['lineas.0.cantidad' => 'Cada cantidad tiene que ser mayor que cero.']);
         $this->sacar(['cantidades' => []])->assertSessionHasErrors(['lineas' => 'Anotá al menos un producto con su cantidad.']);
         $this->assertSame(0, PedidoSala::count());
-        $this->assertSame([], Storage::disk('local')->allFiles());
 
-        // Con decimales y sin foto: se guarda.
+        // Con decimales: se guarda.
         $this->sacar(['cantidades' => [$this->pan->id => '2.5']])->assertSessionHasNoErrors();
         $this->assertSame('2.5000', PedidoSala::sole()->lineas->sole()->cantidad);
-        $this->assertNull(PedidoSala::sole()->foto_ruta);
     }
 
     public function test_la_sala_tiene_que_ser_de_la_salida(): void
@@ -310,7 +296,7 @@ class PedidosSalaTest extends TestCase
 
     // ══════════════════════════════ corregir y anular
 
-    public function test_corrige_el_mismo_dia_y_la_foto_se_reemplaza(): void
+    public function test_corrige_el_mismo_dia(): void
     {
         $this->sacar()->assertSessionHasNoErrors();
         $pedido = PedidoSala::sole();
@@ -318,22 +304,14 @@ class PedidosSalaTest extends TestCase
             ->assertSee('Guardar cambios')->assertSee('value="12"', false);
 
         $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), [
-            'cantidades' => [$this->pan->id => '4'], 'foto' => UploadedFile::fake()->image('primera.png'),
+            'cantidades' => [$this->pan->id => '4'], 'notas' => 'Cambió de idea',
         ])->assertSessionHasNoErrors()->assertSessionHas('status', 'Pedido de «Tienda Centro» corregido.');
         $pedido->refresh();
-        $primera = $pedido->foto_ruta;
         $this->assertSame([$this->pan->id], $pedido->lineas->pluck('producto_id')->all());
-
-        // Otra foto reemplaza la anterior; sin foto nueva, la guardada queda.
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), [
-            'cantidades' => [$this->pan->id => '5'], 'foto' => UploadedFile::fake()->image('segunda.png'),
-        ])->assertSessionHasNoErrors();
-        Storage::disk('local')->assertMissing($primera);
-        $segunda = $pedido->refresh()->foto_ruta;
-        Storage::disk('local')->assertExists($segunda);
+        $this->assertSame('Cambió de idea', $pedido->notas);
         $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '6']])->assertSessionHasNoErrors();
-        $this->assertSame($segunda, $pedido->refresh()->foto_ruta);
-        $this->assertSame(3, Activity::where('description', 'corrigió el pedido de la sala')->count());
+        $this->assertNull($pedido->refresh()->notas);
+        $this->assertSame(2, Activity::where('description', 'corrigió el pedido de la sala')->count());
 
         // El compañero no lo corrige ni lo anula.
         $this->actingAs($this->companero);
@@ -433,16 +411,16 @@ class PedidosSalaTest extends TestCase
 
     // ══════════════════════════════ oficina
 
-    public function test_la_oficina_ve_la_lista_con_filtros_y_el_detalle_con_la_foto(): void
+    public function test_la_oficina_ve_la_lista_con_filtros_y_el_detalle(): void
     {
-        $this->sacar(['foto' => UploadedFile::fake()->image('sugerido.jpg')])->assertSessionHasNoErrors();
+        $this->sacar()->assertSessionHasNoErrors();
         $this->sacar([], $this->salaOc)->assertSessionHasNoErrors();
-        [$conFoto, $sinFoto] = PedidoSala::orderBy('id')->get()->all();
+        $primero = PedidoSala::orderBy('id')->firstOrFail();
         $otraRuta = Ruta::create(['nombre' => 'San Miguel']);
 
         $this->actingAs($this->oficina);
         $this->get(route('rutas.pedidos.index'))->assertOk()
-            ->assertSee('Tienda Centro')->assertSee('Súper Ficticio Norte')->assertSee('Falta la foto');
+            ->assertSee('Tienda Centro')->assertSee('Súper Ficticio Norte')->assertDontSee('Falta la foto');
         $this->get(route('rutas.pedidos.index', ['sala' => 'Norte']))->assertOk()->assertSee('Súper Ficticio Norte')->assertDontSee('Tienda Centro');
         $this->get(route('rutas.pedidos.index', ['ruta_id' => $otraRuta->id]))->assertOk()->assertSee('Nada coincide con estos filtros.');
         $this->get(route('rutas.pedidos.index', ['desde' => '2026-11-06']))->assertOk()->assertSee('Nada coincide con estos filtros.');
@@ -450,11 +428,8 @@ class PedidosSalaTest extends TestCase
         $this->get(route('rutas.pedidos.index', ['salida' => $this->salida->id]))->assertOk()->assertSee('Tienda Centro');
         $this->get(route('rutas.pedidos.index', ['desde' => 'ayer']))->assertSessionHasErrors('desde');
 
-        $this->get(route('rutas.pedidos.show', $conFoto))->assertOk()
-            ->assertSee('Pedido de Tienda Centro')->assertSee('Galleta de prueba')->assertSee('Carlos Inventado')
-            ->assertSee(route('rutas.pedidos.foto', $conFoto));
-        $this->get(route('rutas.pedidos.foto', $conFoto))->assertOk()->assertHeader('Content-Type', 'image/jpeg');
-        $this->get(route('rutas.pedidos.foto', $sinFoto))->assertNotFound();
+        $this->get(route('rutas.pedidos.show', $primero))->assertOk()
+            ->assertSee('Pedido de Tienda Centro')->assertSee('Galleta de prueba')->assertSee('Carlos Inventado')->assertDontSee('Falta la foto');
         $this->get(route('rutas.salidas.show', $this->salida))->assertOk()->assertSee('2 pedidos sacados');
 
         // El jefe de vendedores también mira; el vendedor, contabilidad y producción no.
@@ -463,10 +438,7 @@ class PedidosSalaTest extends TestCase
         foreach (['vendedor', 'contabilidad', 'produccion'] as $rol) {
             $this->actingAs(User::factory()->create(['activo' => true])->assignRole($rol));
             $this->get(route('rutas.pedidos.index'))->assertForbidden();
-            $this->get(route('rutas.pedidos.show', $conFoto))->assertForbidden();
-            $this->get(route('rutas.pedidos.foto', $conFoto))->assertForbidden();
+            $this->get(route('rutas.pedidos.show', $primero))->assertForbidden();
         }
-        // El compañero de la salida no ve la foto de un pedido que no sacó.
-        $this->actingAs($this->companero)->get(route('rutas.mi-salida.pedidos.foto', [$this->salida, $conFoto]))->assertForbidden();
     }
 }

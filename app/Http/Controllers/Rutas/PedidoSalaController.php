@@ -10,13 +10,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * «Pedidos» de la oficina: la lista con filtros por fecha, ruta y sala, y el detalle con la
- * foto de la hoja firmada. Solo lectura: las acciones de producción llegan con su pantalla.
+ * «Pedidos» de la oficina: la lista con filtros por fecha, ruta y sala, y el detalle, donde
+ * se agrega la OC. Las acciones de producción llegan con su pantalla.
  */
 class PedidoSalaController extends Controller
 {
@@ -73,19 +71,5 @@ class PedidoSalaController extends Controller
             ($pedido->numero_orden_compra ? 'Orden de compra guardada.' : 'Orden de compra quitada.')
             .($avisos ? ' Revisala: '.implode(' ', $avisos) : '')
         ));
-    }
-
-    /** La foto de la hoja firmada, para la oficina o para quien sacó el pedido. */
-    public function foto(PedidoSala $pedido): BinaryFileResponse
-    {
-        Gate::authorize('verFoto', $pedido);
-        abort_unless($pedido->foto_ruta && Storage::disk('local')->exists($pedido->foto_ruta), 404);
-
-        return response()->file(Storage::disk('local')->path($pedido->foto_ruta), [
-            'Content-Type' => $pedido->foto_mime,
-            'Content-Disposition' => 'inline',
-            'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'private, no-store',
-        ]);
     }
 }
