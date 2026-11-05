@@ -5,12 +5,21 @@ namespace Tests\Feature\Cobros;
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\OrigenCobroDocumento;
+use App\Enums\EstadoSalidaRuta;
 use App\Enums\PermisoSistema;
+use App\Enums\ResultadoEntrega;
 use App\Enums\RolSistema;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroDocumento;
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
+use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
+use App\Models\Ruta;
+use App\Models\SalidaRuta;
+use App\Models\SalidaRutaEntrega;
 use App\Models\User;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\VinculadorAlbaranes;
@@ -147,6 +156,65 @@ class CobrosBandejaTest extends TestCase
             ->assertOk();
         $julio->assertSee($sinPresentar->numero_control);
         $julio->assertDontSee($pagada->numero_control);
+    }
+
+    /**
+     * Un CCF sin albarán que el vendedor ya marcó entregado en Rutas no es «No entregado»:
+     * va aparte, como «Entregado · falta albarán», con quién y cuándo lo entregó.
+     */
+    public function test_lo_entregado_en_rutas_sin_albaran_dice_falta_albaran(): void
+    {
+        $cliente = $this->cliente();
+        $sala = $cliente->sucursales()->create(['nombre' => 'Selectos La Unión', 'ruta_id' => Ruta::create(['nombre' => 'Oriente'])->id]);
+        $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '01', 'activo' => true]);
+        $establecimiento = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa Matriz', 'activo' => true]);
+        $marlon = PersonalRuta::create(['nombre' => 'Marlon']);
+        $salida = SalidaRuta::create(['ruta_id' => $sala->ruta_id, 'fecha_inicio' => '2026-11-04', 'estado' => EstadoSalidaRuta::EnCurso]);
+
+        $ccf = fn (string $control) => Dte::create([
+            'establecimiento_id' => $establecimiento->id, 'tipo_dte' => '03', 'estado' => 'aceptado', 'ambiente' => '01',
+            'cliente_id' => $cliente->id, 'cliente_sucursal_id' => $sala->id, 'numero_control' => $control,
+            'fecha_emision' => '2026-11-02', 'hora_emision' => '10:00:00', 'total_pagar' => 100.00,
+        ]);
+        $entregadoDte = $ccf('DTE-03-M001P002-000000000000901');
+        $noEntregadoDte = $ccf('DTE-03-M001P002-000000000000902');
+        $intentadoDte = $ccf('DTE-03-M001P002-000000000000903');
+
+        $entregado = $this->documento($cliente, ['dte_id' => $entregadoDte->id, 'numero_control' => $entregadoDte->numero_control, 'fecha_emision' => '2026-11-02']);
+        $sinNada = $this->documento($cliente, ['dte_id' => $noEntregadoDte->id, 'numero_control' => $noEntregadoDte->numero_control, 'fecha_emision' => '2026-11-02']);
+        $intentado = $this->documento($cliente, ['dte_id' => $intentadoDte->id, 'numero_control' => $intentadoDte->numero_control, 'fecha_emision' => '2026-11-02']);
+
+        $entrega = fn (Dte $dte, ResultadoEntrega $resultado) => SalidaRutaEntrega::create([
+            'salida_ruta_id' => $salida->id, 'dte_id' => $dte->id, 'cliente_sucursal_id' => $sala->id,
+            'resultado' => $resultado, 'entregado_por_id' => $marlon->id, 'fecha_resultado' => '2026-11-04 16:54:00',
+        ]);
+        $entrega($entregadoDte, ResultadoEntrega::Entregado);
+        $entrega($intentadoDte, ResultadoEntrega::NoEntregado);
+
+        $respuesta = $this->actingAs($this->usuario())
+            ->get(route('cobros.index', ['cliente_id' => $cliente->id]))
+            ->assertOk();
+
+        $this->assertSame(2, $respuesta->viewData('etapas')['no_entregados']);
+        $this->assertSame(1, $respuesta->viewData('etapas')['falta_albaran']);
+        $this->assertSame(0, $respuesta->viewData('etapas')['listos']);
+        $respuesta->assertSeeText('Entregado · falta albarán');
+        $respuesta->assertSeeText('Lo entregó Marlon el 04/11.');
+
+        // Cada pestaña lista solo lo suyo.
+        $falta = $this->actingAs($this->usuario())
+            ->get(route('cobros.index', ['cliente_id' => $cliente->id, 'etapa' => 'falta_albaran']))
+            ->assertOk();
+        $falta->assertSee($entregado->numero_control);
+        $falta->assertDontSee($sinNada->numero_control);
+        $falta->assertDontSee($intentado->numero_control);
+
+        $no = $this->actingAs($this->usuario())
+            ->get(route('cobros.index', ['cliente_id' => $cliente->id, 'etapa' => 'no_entregados']))
+            ->assertOk();
+        $no->assertSee($sinNada->numero_control);
+        $no->assertSee($intentado->numero_control);
+        $no->assertDontSee($entregado->numero_control);
     }
 
     /** Los CCF recientes van primero, incluso sin albarán y sin presentar. */

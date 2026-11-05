@@ -10,6 +10,7 @@ use App\Enums\Cobros\EstadoSolicitudCobro;
 use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
+use App\Enums\ResultadoEntrega;
 use App\Exceptions\CopiaArchivadaInservibleException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
 use App\Http\Controllers\Controller;
@@ -23,6 +24,7 @@ use App\Models\Cobros\CobroSolicitudItem;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
+use App\Models\SalidaRutaEntrega;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\DevolucionesAlbaran;
@@ -86,6 +88,7 @@ class CobrosController extends Controller
     /** Etapas de la bandeja (pestañas): qué le falta a cada CCF. */
     public const ETAPAS = [
         'no_entregados' => 'No entregados',
+        'falta_albaran' => 'Entregados, falta albarán',
         'listos' => 'Entregados, por presentar',
         'presentados' => 'En PPQ / presentados',
         'pagados' => 'Pagados',
@@ -211,6 +214,12 @@ class CobrosController extends Controller
             'cantidadListosEnFiltro' => $listosEnFiltro->count(),
             'totalListosEnFiltro' => Dinero::redondear($totalListosEnFiltro),
             'motivosPpq' => $documentos->getCollection()->mapWithKeys(fn ($doc) => [$doc->id => $elegibilidad->motivo($doc, $clavesPpq)]),
+            // La entrega de Rutas de los CCF de la página que todavía no tienen albarán.
+            'entregasRutas' => SalidaRutaEntrega::with('entregadoPor')
+                ->whereIn('dte_id', $documentos->getCollection()->whereNull('ppq_albaran_id')->pluck('dte_id')->filter())
+                ->where('resultado', ResultadoEntrega::Entregado->value)
+                ->orderBy('fecha_resultado')
+                ->get()->keyBy('dte_id'),
             'clientes' => $clientes,
             'cliente' => $cliente,
             // Sin Gmail no entran albaranes: se avisa arriba para que no pase inadvertido.
@@ -1138,8 +1147,12 @@ class CobrosController extends Controller
         $enCurso = [EstadoPresentacionCobro::Preparada->value, EstadoPresentacionCobro::Presentada->value, EstadoPresentacionCobro::Recibida->value];
 
         return match ($etapa) {
-            // Sin albarán en el correo: el pedido no se ha entregado en la sala.
-            'no_entregados' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNull('ppq_albaran_id'),
+            // Sin albarán en el correo. Si el vendedor ya lo marcó entregado en Rutas, no es
+            // «no entregado»: está entregado y solo falta que Calleja mande el albarán.
+            'no_entregados' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNull('ppq_albaran_id')
+                ->whereNotExists($this->entregadoEnRutas()),
+            'falta_albaran' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNull('ppq_albaran_id')
+                ->whereExists($this->entregadoEnRutas()),
             'listos' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNotNull('ppq_albaran_id'),
             'presentados' => $q->where('pago_estado', $pendiente)->whereIn('presentacion_estado', $enCurso),
             // Pagado es solo lo que cuadra con el CCF menos sus NC; un faltante o un cobro de
@@ -1148,6 +1161,14 @@ class CobrosController extends Controller
             'diferencias' => $q->whereIn('pago_estado', [EstadoPagoCobro::Parcial->value, EstadoPagoCobro::Diferencia->value]),
             default => $q,
         };
+    }
+
+    /** El CCF tiene una entrega marcada «Entregado» en Rutas. */
+    private function entregadoEnRutas(): \Closure
+    {
+        return fn ($sub) => $sub->selectRaw('1')->from('salida_ruta_entregas')
+            ->whereColumn('salida_ruta_entregas.dte_id', 'cobro_documentos.dte_id')
+            ->where('salida_ruta_entregas.resultado', ResultadoEntrega::Entregado->value);
     }
 
     /**
