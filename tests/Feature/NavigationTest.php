@@ -539,6 +539,8 @@ class NavigationTest extends TestCase
                 // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
                 // (29/10/2026), con `rutas.personal.ver`.
                 'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'rutas.personal.index',
+                // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
+                'rutas.pedidos.index',
             ]),
             $this->enlacesDelSidebar($html),
         );
