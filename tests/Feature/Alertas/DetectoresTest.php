@@ -10,10 +10,12 @@ use App\Models\Contingencia;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
+use App\Models\GmailCuenta;
 use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
+use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\TrabajosFallidos;
@@ -95,6 +97,25 @@ class DetectoresTest extends TestCase
 
         $this->respaldo(false, now()->subMinutes(5));
         $this->assertSame('El respaldo de la base de datos falló', app(RespaldoFallido::class)->revisar()->titulo);
+    }
+
+    public function test_gmail_desconectado_avisa_solo_con_la_integracion_prendida(): void
+    {
+        config(['ppq.gmail.enabled' => false]);
+        $this->assertFalse(app(GmailDesconectado::class)->aplica(), 'Con Gmail apagado no opina.');
+
+        config(['ppq.gmail.enabled' => true]);
+        $this->assertTrue(app(GmailDesconectado::class)->aplica());
+        $this->assertSame('Gmail está desconectado', app(GmailDesconectado::class)->revisar()->titulo, 'Sin cuenta conectada avisa.');
+
+        $cuenta = GmailCuenta::create(['email' => 'correo@example.com', 'refresh_token' => 'token-de-prueba']);
+        $this->assertNull(app(GmailDesconectado::class)->revisar(), 'Con la cuenta conectada, todo bien.');
+
+        // Google respondió invalid_grant: GmailClient borra el token.
+        $cuenta->marcarDesconectada();
+        $h = app(GmailDesconectado::class)->revisar();
+        $this->assertSame('Gmail está desconectado', $h->titulo);
+        $this->assertStringNotContainsString('correo@example.com', $h->detalle.$h->queHacer, 'El aviso no lleva la cuenta.');
     }
 
     public function test_lector_sin_ping_solo_en_horario_laboral(): void
