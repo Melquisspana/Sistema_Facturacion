@@ -193,7 +193,8 @@ class UnSoloNombreYAccesosTest extends TestCase
         $this->assertSame('Ana Ficticia', $p->asistencia->nombreCompleto());
         $this->assertSame('Ana Ficticia', $p->personalRuta->nombre);
         $registro = Activity::where('log_name', 'empleado')->where('subject_id', $p->id)->where('description', 'like', 'igualó su nombre%')->sole();
-        $this->assertSame(['asistencia' => 'Anita Ficticia', 'rutas' => 'Ana F.'], $registro->properties['antes']);
+        // assertEquals y no assertSame: la columna JSON de MySQL reordena las claves.
+        $this->assertEquals(['asistencia' => 'Anita Ficticia', 'rutas' => 'Ana F.'], $registro->properties['antes']);
 
         $this->artisan('personal:nombres-distintos')->expectsOutputToContain('Todas las copias coinciden')->assertSuccessful();
     }

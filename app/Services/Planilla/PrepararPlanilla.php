@@ -97,7 +97,9 @@ final class PrepararPlanilla
                 'clase' => $datos['clase'],
                 'desde' => $periodo['desde'],
                 'hasta' => $periodo['hasta'],
-                'fecha_pago' => $datos['fecha_pago'] ?? null,
+                // Quien llama al servicio sin pasar por HTTP puede mandar '' (la regla
+                // `nullable` lo acepta); MySQL estricto no guarda '' en una fecha.
+                'fecha_pago' => blank($datos['fecha_pago'] ?? null) ? null : $datos['fecha_pago'],
                 'moneda' => $datos['moneda'],
                 'estado' => 'borrador',
                 'observaciones' => $datos['observaciones'] ?? null,
