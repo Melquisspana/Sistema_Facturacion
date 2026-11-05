@@ -12,6 +12,23 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.05] - 2026-11-05
+
+Configuración como apartado propio, con los módulos que se prenden y apagan desde la pantalla, y las tarjetas de entregas parejas en el celular (#246, #247), sin migraciones.
+
+### Agregado
+
+- Configuración › Módulos: Gastos, Producción, Asistencia, Planilla y Pagos de planilla se prenden y apagan desde la pantalla. Apagar uno pide confirmar y avisa qué deja de verse; los datos no se borran. Sin nada guardado, cada módulo sigue como lo dice el `.env` del servidor (#247).
+
+### Cambiado
+
+- Configuración tiene su propio botón arriba, junto al usuario, para quien tiene el permiso `configuracion.gestionar`, y ya no está dentro de Facturación (#247).
+- Auditoría, Importaciones y Salud del sistema pasan de la barra de Facturación a Configuración. Contabilidad sigue entrando a Auditoría desde el menú de su usuario (#247).
+
+### Corregido
+
+- Rutas: en el celular, las tarjetas de entregas quedan del mismo tamaño aunque el nombre de quien entregó sea largo (#246).
+
 ## [2026.11.04.4] - 2026-11-04
 
 Un solo nombre por persona y el acceso al sistema solo desde la ficha de Personal (#245), sin migraciones.
