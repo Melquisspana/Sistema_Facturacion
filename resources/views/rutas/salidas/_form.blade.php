@@ -32,6 +32,22 @@
     <x-input-error :messages="$errors->get('ruta_id')" class="mt-1" />
 </div>
 
+{{-- Para qué sale. Las mismas pastillas que el día; sin elegir, entregar (lo de siempre). --}}
+@php($proposito = old('proposito', $salida?->proposito?->value ?? \App\Enums\PropositoSalida::Entregar->value))
+<fieldset>
+    <legend class="block text-sm font-medium text-gray-700">¿Para qué sale?</legend>
+    <div class="mt-1 flex flex-wrap items-center gap-2">
+        @foreach (\App\Enums\PropositoSalida::opciones() as $valor => $texto)
+            <label class="cursor-pointer">
+                <input type="radio" name="proposito" value="{{ $valor }}" @checked($proposito === $valor) class="peer sr-only">
+                <span class="inline-flex min-h-11 items-center rounded-full px-4 text-sm ring-1 ring-gray-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-indigo-600">{{ $texto }}</span>
+            </label>
+        @endforeach
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Para entregar lleva los CCF por entregar de la ruta. Para sacar pedido, en cada sala se anota el pedido desde el celular.</p>
+    <x-input-error :messages="$errors->get('proposito')" class="mt-1" />
+</fieldset>
+
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
     @if ($salida === null)
         <fieldset x-data="{ dia: @js($dia === 'otro' ? 'otro' : 'hoy') }">

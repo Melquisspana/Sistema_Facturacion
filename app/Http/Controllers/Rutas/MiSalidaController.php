@@ -11,6 +11,7 @@ use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
 use App\Support\HoraNegocio;
@@ -18,6 +19,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -27,7 +29,7 @@ class MiSalidaController extends Controller
     /** Hasta esta cantidad, «Tu próxima salida» lista los CCF uno por uno. */
     private const CCF_EN_LISTA = 10;
 
-    public function __construct(private readonly EntregasCcf $entregas, private readonly RitmoRutas $ritmo) {}
+    public function __construct(private readonly EntregasCcf $entregas, private readonly RitmoRutas $ritmo, private readonly PedidosSala $pedidos) {}
 
     private function persona(Request $request): ?PersonalRuta
     {
@@ -102,7 +104,28 @@ class MiSalidaController extends Controller
             'puedeGestionar' => false,
             'registrable' => ! $salida->diaCerrado(),
             'abierta' => true,
+            'salasPedido' => $salida->proposito->sacaPedido() ? $this->salasParaPedido($salida) : collect(),
+            'pedidosPorSala' => $salida->proposito->sacaPedido()
+                ? $salida->pedidos()->registrados()->with('lineas.producto:id,nombre')->get()->keyBy('cliente_sucursal_id')
+                : collect(),
         ]);
+    }
+
+    /**
+     * Las salas donde se saca pedido en esta salida, con el ritmo del tablero: las atrasadas
+     * primero. Al final, las de otra ruta que llevan un CCF en esta salida.
+     *
+     * @return Collection<int, array{sala: ClienteSucursal, estado: ?string}>
+     */
+    private function salasParaPedido(SalidaRuta $salida): Collection
+    {
+        $deRuta = $this->ritmo->salasDeRuta($salida->ruta, CarbonImmutable::parse(HoraNegocio::fechaHoy()))
+            ->map(fn (array $f) => ['sala' => $f['sala'], 'estado' => $f['estado']]);
+        $otras = $this->pedidos->salasDeSalida($salida)->whereNotIn('id', $deRuta->pluck('sala.id'))
+            ->orderBy('nombre')->get(['id', 'ruta_id', 'nombre', 'codigo'])
+            ->map(fn (ClienteSucursal $sala) => ['sala' => $sala, 'estado' => null]);
+
+        return $deRuta->concat($otras)->values();
     }
 
     /**

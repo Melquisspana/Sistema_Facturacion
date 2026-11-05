@@ -10,7 +10,7 @@
                 <li>
                     <a href="{{ route('rutas.mi-salida.show', $salida) }}" class="block min-h-11 rounded-2xl bg-white p-5 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
                         <span class="block text-xl font-semibold">{{ $salida->ruta->nombre }}</span>
-                        <span class="text-sm text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }}</span>
+                        <span class="text-sm text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }} · {{ $salida->proposito->descripcion() }}</span>
                     </a>
                 </li>
             @empty

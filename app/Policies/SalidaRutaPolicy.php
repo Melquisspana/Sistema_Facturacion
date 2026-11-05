@@ -9,6 +9,7 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaGasto;
 use App\Models\User;
+use App\Services\Rutas\PedidosSala;
 use App\Support\HoraNegocio;
 
 /**
@@ -42,6 +43,17 @@ class SalidaRutaPolicy
     public function registrar(User $usuario, SalidaRuta $salida): bool
     {
         return $this->view($usuario, $salida) && ! $salida->diaCerrado();
+    }
+
+    /**
+     * «Sacar pedido» en las salas: quien va en la salida, con ella en curso y si sale para
+     * sacar pedido. Que la sala sea de la salida lo valida {@see PedidosSala}.
+     */
+    public function sacarPedido(User $usuario, SalidaRuta $salida): bool
+    {
+        return $usuario->can(PermisoSistema::RutasPedidosRegistrar->value)
+            && $salida->proposito->sacaPedido()
+            && $this->view($usuario, $salida);
     }
 
     public function liquidacion(User $usuario, SalidaRuta $salida): bool

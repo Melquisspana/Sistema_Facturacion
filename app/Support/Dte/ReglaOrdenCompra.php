@@ -50,10 +50,11 @@ final class ReglaOrdenCompra
 
     /**
      * Qué no cuadra en la forma de la orden respecto de la fecha del CCF. Vacío si cuadra.
+     * `$documento` nombra al que lleva la fecha en el aviso: el pedido de sala también la usa.
      *
      * @return list<string>
      */
-    public static function problemasForma(?string $orden, CarbonInterface $fecha): array
+    public static function problemasForma(?string $orden, CarbonInterface $fecha, string $documento = 'el CCF'): array
     {
         $orden = trim((string) $orden);
         if ($orden === '') {
@@ -77,7 +78,7 @@ final class ReglaOrdenCompra
             $problemas[] = 'La orden de compra «'.$orden.'» no empieza con un año y mes válidos (AAMM).';
         } elseif (abs(($anio * 12 + $mes) - ($fecha->year * 12 + $fecha->month)) > 1) {
             $problemas[] = 'La orden de compra «'.$orden.'» es de '.sprintf('%02d/%d', $mes, $anio)
-                .' y el CCF es del '.$fecha->format('d/m/Y').': debería ser del mismo mes, del anterior o del siguiente.';
+                .' y '.$documento.' es del '.$fecha->format('d/m/Y').': debería ser del mismo mes, del anterior o del siguiente.';
         }
 
         return $problemas;
