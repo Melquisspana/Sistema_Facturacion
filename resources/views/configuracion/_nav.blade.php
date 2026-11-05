@@ -44,6 +44,19 @@
             'titulo' => 'Módulos',
             'items' => [
                 ['ruta' => 'configuracion.modulos', 'patron' => 'configuracion.modulos*', 'titulo' => 'Prender y apagar'],
+                // Opciones de cada módulo. La de un módulo apagado no se dibuja (y su
+                // ruta responde 404): visible() solo mira el interruptor, sin tablas.
+                ...array_values(array_map(
+                    static fn (string $pagina) => [
+                        'ruta' => 'configuracion.opciones.'.$pagina,
+                        'patron' => 'configuracion.opciones.'.$pagina.'*',
+                        'titulo' => \App\Http\Controllers\Configuracion\OpcionesModuloController::titulo($pagina),
+                    ],
+                    array_filter(
+                        \App\Http\Controllers\Configuracion\OpcionesModuloController::paginas(),
+                        static fn (string $pagina) => \App\Http\Controllers\Configuracion\OpcionesModuloController::visible($pagina),
+                    ),
+                )),
             ],
         ],
         [
@@ -68,6 +81,7 @@
             'items' => [
                 ['ruta' => 'configuracion.integraciones.gmail', 'patron' => 'configuracion.integraciones.gmail*', 'titulo' => 'Gmail / Pronto pago'],
                 ['ruta' => 'configuracion.integraciones.documentos-recibidos', 'patron' => 'configuracion.integraciones.documentos-recibidos*', 'titulo' => 'Buzón de compras'],
+                ['ruta' => 'configuracion.integraciones.buzon-adicional', 'patron' => 'configuracion.integraciones.buzon-adicional*', 'titulo' => 'Segundo buzón'],
                 ...((\App\Enums\ModuloSistema::Asistencia->activo() && $usuario->can('asistencia.dispositivos.gestionar'))
                     ? [['ruta' => 'configuracion.lectores.index', 'patron' => 'configuracion.lectores.*', 'titulo' => 'Lectores de huella']]
                     : []),

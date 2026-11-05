@@ -2,6 +2,7 @@
 
 use App\Ajustes\Integraciones\ConfiguracionGmail;
 use App\Enums\ModuloSistema;
+use App\Facades\Ajustes;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -69,7 +70,10 @@ Schedule::command('ppq:sincronizar-albaranes --aplicar --solape=1')
     //
     // El comando comprueba la MISMA llave cuando recibe `--aplicar`, así que una
     // invocación accidental por fuera del planificador tampoco consulta el correo.
-    ->when(fn () => (bool) config('ppq.albaranes.sincronizacion_automatica', false))
+    //
+    // Las llaves de este archivo se leen por Ajustes::boolSinBase(): lo guardado en
+    // Configuración › Módulos manda sobre el .env, y si la base no responde se cae al .env.
+    ->when(fn () => Ajustes::boolSinBase('ppq.albaranes.sincronizacion_automatica'))
     ->withoutOverlapping(10)
     ->appendOutputTo(storage_path('logs/ppq-albaranes.log'));
 
@@ -152,7 +156,7 @@ Schedule::command('compras:sincronizar --aplicar --solape=2')
 Schedule::command('gastos:generar-recurrentes --aplicar')
     ->dailyAt('05:30')
     ->when(fn () => ModuloSistema::Gastos->activo()
-        && (bool) config('gastos.recurrencias.generacion_automatica', false))
+        && Ajustes::boolSinBase('gastos.recurrencias.generacion_automatica'))
     ->withoutOverlapping(30)
     ->appendOutputTo(storage_path('logs/gastos-recurrentes.log'));
 
@@ -176,7 +180,7 @@ Schedule::command('gastos:generar-recurrentes --aplicar')
 Schedule::command('gastos:avisos --aplicar')
     ->dailyAt('06:00')
     ->when(fn () => ModuloSistema::Gastos->activo()
-        && (bool) config('gastos.avisos.automaticos', false))
+        && Ajustes::boolSinBase('gastos.avisos.automaticos'))
     ->withoutOverlapping(20)
     ->appendOutputTo(storage_path('logs/gastos-avisos.log'));
 
@@ -212,7 +216,7 @@ Schedule::command('gastos:avisos --aplicar')
 */
 Schedule::command('cobros:sincronizar --aplicar --vincular')
     ->everyTenMinutes() // el albarán se une a su CCF poco después de llegar al correo
-    ->when(fn () => (bool) config('cobros.alta.automatica', false))
+    ->when(fn () => Ajustes::boolSinBase('cobros.alta.automatica'))
     ->withoutOverlapping(30)
     ->appendOutputTo(storage_path('logs/cobros-alta.log'));
 
@@ -242,8 +246,8 @@ Schedule::command('cobros:leer-correos --aplicar')
     // Por Ajustes y no por config(): la integración se prende y apaga desde
     // Configuración › Integraciones. Si la base no responde, cae al .env.
     ->when(fn () => (bool) rescue(fn () => app(ConfiguracionGmail::class)->habilitado(), fn () => (bool) config('ppq.gmail.enabled', false), report: false)
-        && (bool) config('cobros.correo.enabled', false)
-        && (bool) config('cobros.correo.automatica', false))
+        && Ajustes::boolSinBase('cobros.correo.enabled')
+        && Ajustes::boolSinBase('cobros.correo.automatica'))
     ->withoutOverlapping(15)
     ->appendOutputTo(storage_path('logs/cobros-correos.log'));
 
@@ -261,5 +265,5 @@ Schedule::command('cobros:leer-correos --aplicar')
 */
 Schedule::command('alertas:revisar')
     ->everyFiveMinutes()
-    ->when(fn () => (bool) config('alertas.enabled', false))
+    ->when(fn () => Ajustes::boolSinBase('alertas.enabled'))
     ->withoutOverlapping(10);

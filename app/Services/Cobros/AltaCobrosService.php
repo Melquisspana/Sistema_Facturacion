@@ -4,6 +4,7 @@ namespace App\Services\Cobros;
 
 use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\TipoDte;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
@@ -285,8 +286,8 @@ class AltaCobrosService
     {
         // Con fecha de inicio configurada, solo lo emitido ANTES de ella es histórico: un CCF
         // nuevo que envejece sin presentarse es «no presentado», no un caso histórico.
-        $inicio = config('cobros.inicio_seguimiento');
-        $dias = (int) config('cobros.dias_revision_historica', 30);
+        $inicio = Ajustes::texto('cobros.inicio_seguimiento');
+        $dias = (int) Ajustes::entero('cobros.dias_revision_historica', 30);
         $corte ??= filled($inicio) ? Carbon::parse($inicio) : Carbon::today()->subDays($dias);
 
         return CobroDocumento::deCliente($cliente->id)

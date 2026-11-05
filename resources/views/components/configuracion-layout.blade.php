@@ -82,6 +82,16 @@
                         @endif
 
                         {{ $slot }}
+
+                        {{-- Formulario de «Usar el valor del servidor». Va AFUERA de los
+                             formularios de cada pantalla (no se pueden anidar): cada botón
+                             lo envía con `form` y pone su propia dirección con `formaction`. --}}
+                        @can('configuracion.gestionar')
+                            <form id="form-usar-valor-servidor" method="POST" action="{{ route('configuracion.resumen') }}">
+                                @csrf
+                                @method('DELETE')
+                            </form>
+                        @endcan
                     </div>
                 </div>
             </div>

@@ -3,6 +3,7 @@
 namespace App\Services\Alertas;
 
 use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
+use App\Facades\Ajustes;
 use App\Mail\AlertaSistemaCorreo;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
@@ -67,7 +68,7 @@ class Avisador
     public function destinatarios(): array
     {
         return array_values(array_filter(
-            array_map('trim', explode(',', (string) config('alertas.correo', ''))),
+            array_map('trim', explode(',', (string) Ajustes::texto('alertas.correo', ''))),
             fn (string $c) => filter_var($c, FILTER_VALIDATE_EMAIL) !== false,
         ));
     }
@@ -160,7 +161,7 @@ class Avisador
     private function pasoElReaviso(array $estado): bool
     {
         return $estado['ultimo_intento'] === null
-            || $estado['ultimo_intento'] <= now()->subMinutes((int) config('alertas.reaviso_minutos', 60))->getTimestamp();
+            || $estado['ultimo_intento'] <= now()->subMinutes((int) Ajustes::entero('alertas.reaviso_minutos', 60))->getTimestamp();
     }
 
     /** true = salió (o quedó simulado fuera de producción). */
@@ -168,7 +169,7 @@ class Avisador
     {
         $claveTope = 'alertas.envios.'.$detector->tipo().'.'.HoraNegocio::fechaHoy();
         $enviados = (int) Cache::get($claveTope, 0);
-        $tope = max(1, (int) config('alertas.tope_diario', 6));
+        $tope = max(1, (int) Ajustes::entero('alertas.tope_diario', 6));
 
         if ($enviados >= $tope) {
             Log::info('Alertas: tope diario alcanzado, no se manda', ['tipo' => $detector->tipo(), 'accion' => $accion]);

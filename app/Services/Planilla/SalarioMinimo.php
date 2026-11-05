@@ -2,6 +2,7 @@
 
 namespace App\Services\Planilla;
 
+use App\Facades\Ajustes;
 use App\Services\Gastos\Dinero;
 use Illuminate\Validation\ValidationException;
 
@@ -20,7 +21,7 @@ final class SalarioMinimo
             ->sortBy('vigente_desde')
             ->last();
 
-        $sector = (string) config('planilla.sector_salario_minimo');
+        $sector = (string) Ajustes::texto('planilla.sector_salario_minimo', 'industria');
 
         if ($version === null || ! isset($version['sectores'][$sector])) {
             throw ValidationException::withMessages([

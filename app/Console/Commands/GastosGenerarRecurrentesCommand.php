@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\ModuloSistema;
+use App\Facades\Ajustes;
 use App\Models\Gastos\Regla;
 use App\Services\Gastos\InstalacionGastos;
 use App\Services\Gastos\Recurrencia\CalendarioRecurrencia;
@@ -50,7 +51,7 @@ class GastosGenerarRecurrentesCommand extends Command
 
         $aplicar = (bool) $this->option('aplicar');
 
-        if ($aplicar && ! config('gastos.recurrencias.generacion_automatica')) {
+        if ($aplicar && ! Ajustes::bool('gastos.recurrencias.generacion_automatica')) {
             $this->error('La generación automática está apagada (GASTOS_RECURRENCIAS_AUTO=false).');
             $this->line('Este comando CREA DEUDA: no se aplica sin que alguien lo haya encendido a propósito.');
             $this->line('Para revisar qué haría, corrélo sin --aplicar.');

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Facades\Ajustes;
 use App\Support\NumeroAlbaran;
 use App\Support\OrdenCompra;
 use Illuminate\Database\Eloquent\Builder;
@@ -79,7 +80,7 @@ class PpqAlbaran extends Model
      */
     public static function tipoDeEntrega(): string
     {
-        return strtoupper((string) config('ppq.albaranes.tipo_entrega', 'AC01'));
+        return strtoupper((string) Ajustes::texto('ppq.albaranes.tipo_entrega', 'AC01'));
     }
 
     /**

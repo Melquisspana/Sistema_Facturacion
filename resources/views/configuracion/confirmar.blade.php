@@ -6,14 +6,16 @@
 
         Los valores que se reenvían ya pasaron la validación del formulario y
         ninguno es secreto: cada secreto tiene su propia pantalla justamente para
-        no aparecer en los campos ocultos de aquí.
+        no aparecer en los campos ocultos de aquí. «Usar el valor del servidor» pasa
+        por acá con DELETE.
     --}}
     <x-configuracion.confirmacion-n2
         :titulo="$titulo"
         :consecuencia="$consecuencia"
         :cambios="$cambios"
         :accion="$accion"
-        metodo="PUT"
+        :metodo="$metodo ?? 'PUT'"
         :campos="$valores"
-        :volver="$volver" />
+        :volver="$volver"
+        :etiqueta-confirmar="$etiquetaConfirmar ?? 'Confirmar y guardar'" />
 </x-configuracion-layout>

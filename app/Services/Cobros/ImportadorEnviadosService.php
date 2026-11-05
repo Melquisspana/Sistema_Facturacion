@@ -3,6 +3,7 @@
 namespace App\Services\Cobros;
 
 use App\Enums\Cobros\OrigenCobroDocumento;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroDocumentoProcedencia;
@@ -717,7 +718,7 @@ class ImportadorEnviadosService
             return false;
         }
 
-        $corte = Carbon::today()->subDays((int) config('cobros.dias_revision_historica', 30));
+        $corte = Carbon::today()->subDays((int) Ajustes::entero('cobros.dias_revision_historica', 30));
 
         return Carbon::createFromFormat('Y-m-d', $fecha)->startOfDay()->lt($corte);
     }

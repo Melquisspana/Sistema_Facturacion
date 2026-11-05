@@ -46,11 +46,11 @@ class PruebaConexionImap
 
         if ($resultado->comprobo) {
             $this->registro->registrar(
-                ConfiguracionDocumentosRecibidos::CLAVE_VERIFICACION,
+                $this->configuracion::CLAVE_VERIFICACION,
                 $resultado->resultado(),
                 $resultado->mensaje,
             );
-            $this->auditoria->verificacion('Conexión con el buzón de compras', $resultado->exito, $resultado->mensaje);
+            $this->auditoria->verificacion('Conexión con el '.$this->configuracion->nombre(), $resultado->exito, $resultado->mensaje);
         }
 
         return $resultado;

@@ -16,15 +16,18 @@ use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\EstablecimientoController;
 use App\Http\Controllers\Configuracion\FirmadorController;
 use App\Http\Controllers\Configuracion\HaciendaController;
+use App\Http\Controllers\Configuracion\IntegracionBuzonAdicionalController;
 use App\Http\Controllers\Configuracion\IntegracionDocumentosRecibidosController;
 use App\Http\Controllers\Configuracion\IntegracionGmailController;
 use App\Http\Controllers\Configuracion\InvalidacionController;
 use App\Http\Controllers\Configuracion\ModulosController;
+use App\Http\Controllers\Configuracion\OpcionesModuloController;
 use App\Http\Controllers\Configuracion\ParametrosFiscalesController;
 use App\Http\Controllers\Configuracion\PuntoVentaController;
 use App\Http\Controllers\Configuracion\ResumenController;
 use App\Http\Controllers\Configuracion\SecretoController;
 use App\Http\Controllers\Configuracion\SistemaController;
+use App\Http\Controllers\Configuracion\ValorServidorController;
 use App\Http\Controllers\Contabilidad\PaqueteContabilidadController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentosRecibidos\DocumentoRecibidoController;
@@ -858,6 +861,20 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
             ->name('integraciones.documentos-recibidos.secreto.destroy')
             ->defaults('clave', 'documentos_recibidos.password')->defaults('volver', 'configuracion.integraciones.documentos-recibidos');
 
+        // Segundo buzón de compras (cambio de correo): mismo patrón que el principal.
+        Route::get('integraciones/segundo-buzon', [IntegracionBuzonAdicionalController::class, 'index'])->name('integraciones.buzon-adicional');
+        Route::put('integraciones/segundo-buzon', [IntegracionBuzonAdicionalController::class, 'update'])->name('integraciones.buzon-adicional.update');
+        Route::post('integraciones/segundo-buzon/probar', [IntegracionBuzonAdicionalController::class, 'probar'])->name('integraciones.buzon-adicional.probar');
+        Route::get('integraciones/segundo-buzon/secreto', [SecretoController::class, 'edit'])
+            ->name('integraciones.buzon-adicional.secreto.edit')
+            ->defaults('clave', 'documentos_recibidos.buzon_adicional.password')->defaults('volver', 'configuracion.integraciones.buzon-adicional');
+        Route::put('integraciones/segundo-buzon/secreto', [SecretoController::class, 'update'])
+            ->name('integraciones.buzon-adicional.secreto.update')
+            ->defaults('clave', 'documentos_recibidos.buzon_adicional.password')->defaults('volver', 'configuracion.integraciones.buzon-adicional');
+        Route::delete('integraciones/segundo-buzon/secreto', [SecretoController::class, 'destroy'])
+            ->name('integraciones.buzon-adicional.secreto.destroy')
+            ->defaults('clave', 'documentos_recibidos.buzon_adicional.password')->defaults('volver', 'configuracion.integraciones.buzon-adicional');
+
         // Contabilidad: correo de contabilidad + copia (BCC) en el envío manual de DTE.
         // Guardar NO envía nada; la copia viaja dentro del envío existente.
         Route::get('contabilidad', [ContabilidadController::class, 'edit'])->name('contabilidad.edit');
@@ -882,6 +899,21 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
         */
         Route::get('modulos', [ModulosController::class, 'index'])->name('modulos');
         Route::put('modulos', [ModulosController::class, 'update'])->name('modulos.update');
+
+        // OPCIONES DE CADA MÓDULO (plazos, montos, horarios, correos de aviso…). Qué
+        // página es cada ruta se fija acá con ->defaults(), nunca en la petición; la
+        // página de un módulo apagado responde 404. Ver OpcionesModuloController.
+        foreach (OpcionesModuloController::paginas() as $pagina) {
+            Route::get('modulos/'.$pagina, [OpcionesModuloController::class, 'edit'])
+                ->name('opciones.'.$pagina)->defaults('pagina', $pagina);
+            Route::put('modulos/'.$pagina, [OpcionesModuloController::class, 'update'])
+                ->name('opciones.'.$pagina.'.update')->defaults('pagina', $pagina);
+        }
+
+        // «Usar el valor del servidor»: borra lo guardado de UN ajuste (lista blanca del
+        // catálogo, no secretos) y vuelve a mandar el .env. El nivel lo pide el ajuste.
+        Route::delete('ajustes/{clave}/servidor', [ValorServidorController::class, 'destroy'])
+            ->where('clave', '[a-z0-9_.]+')->name('ajustes.servidor');
 
         // Establecimientos.
         Route::get('establecimientos', [EstablecimientoController::class, 'index'])->name('establecimientos.index');

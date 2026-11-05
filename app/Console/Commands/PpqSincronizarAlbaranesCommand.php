@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Exceptions\Ppq\AlbaranDadoDeBajaException;
 use App\Exceptions\Ppq\GmailDesconectadoException;
 use App\Exceptions\Ppq\GmailNoDisponibleException;
+use App\Facades\Ajustes;
 use App\Models\Configuracion;
 use App\Models\PpqAlbaran;
 use App\Services\Cobros\DevolucionesAlbaran;
@@ -69,7 +70,7 @@ class PpqSincronizarAlbaranesCommand extends Command
         // un `--aplicar` tecleado de más, o un script viejo, entrarían por la puerta de
         // al lado. El dry-run NO se bloquea: es el paso con el que se comprueba que todo
         // anda antes de encender la automática.
-        if ((bool) $this->option('aplicar') && ! config('ppq.albaranes.sincronizacion_automatica', false)) {
+        if ((bool) $this->option('aplicar') && ! Ajustes::bool('ppq.albaranes.sincronizacion_automatica')) {
             $this->error('La sincronización automática de albaranes está apagada (PPQ_ALBARANES_AUTO_SYNC=false): no se consultó Gmail ni se escribió nada.');
             $this->line('Probá primero en seco —sin --aplicar— y encendé el interruptor cuando el resultado sea el esperado. Ver docs/PPQ_ALBARANES_AUTOMATICO.md.');
 

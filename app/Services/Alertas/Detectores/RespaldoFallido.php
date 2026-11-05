@@ -2,6 +2,7 @@
 
 namespace App\Services\Alertas\Detectores;
 
+use App\Facades\Ajustes;
 use App\Models\RespaldoEjecucion;
 use App\Services\Alertas\Detector;
 use App\Services\Alertas\Hallazgo;
@@ -44,7 +45,7 @@ class RespaldoFallido implements Detector
             );
         }
 
-        $limite = HoraNegocio::hoy()->setTimeFromTimeString((string) config('alertas.respaldo_hora_limite', '06:00'));
+        $limite = HoraNegocio::hoy()->setTimeFromTimeString((string) Ajustes::texto('alertas.respaldo_hora_limite', '06:00'));
 
         if (HoraNegocio::ahora()->gte($limite) && ! RespaldoEjecucion::hayValidoHoy()) {
             return new Hallazgo(

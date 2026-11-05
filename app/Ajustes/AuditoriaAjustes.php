@@ -69,15 +69,28 @@ class AuditoriaAjustes
         );
     }
 
-    /** Se quitó el override y el ajuste vuelve a resolverse por su fallback. */
+    /**
+     * Se quitó el override y el ajuste vuelve a resolverse por su fallback. Como en
+     * cualquier cambio, de un ajuste no secreto queda el antes y el después (el valor
+     * del servidor que vuelve a mandar); de un secreto, solo el hecho.
+     */
     public function overrideQuitado(
         DefinicionAjuste $definicion,
         FuenteAjuste $fuenteAntes,
         FuenteAjuste $fuenteDespues,
+        mixed $valorAntes = null,
+        mixed $valorDespues = null,
     ): void {
+        $propiedades = $this->comunes($definicion, 'override_quitado', $fuenteAntes, $fuenteDespues);
+
+        if ($definicion->valorAuditable()) {
+            $propiedades['valor_antes'] = $this->presentable($valorAntes);
+            $propiedades['valor_despues'] = $this->presentable($valorDespues);
+        }
+
         $this->escribir(
             "quitó el valor guardado de «{$definicion->clave}»",
-            $this->comunes($definicion, 'override_quitado', $fuenteAntes, $fuenteDespues),
+            $propiedades,
         );
     }
 

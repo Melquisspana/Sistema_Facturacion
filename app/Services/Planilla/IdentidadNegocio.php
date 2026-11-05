@@ -25,9 +25,11 @@ use Illuminate\Support\Facades\Schema;
  *
  * ═══════ De dónde salen ═══════
  *
- * De la tabla `empresas`, que es la fuente fiscal, con `config/company.php` de respaldo
- * para que un impreso no salga en blanco si todavía no hay empresa cargada. Se
- * memoiza: lo consultan todas las hojas de una impresión.
+ * Solo de la tabla `empresas` (Configuración › Empresa emisora), que es la fuente fiscal:
+ * un solo lugar para los datos de la empresa. Sin nombre comercial cargado, el negocio es
+ * la razón social. `config/company.php` ya no participa: era una segunda fuente que se
+ * quedaba vieja en cuanto alguien corregía la empresa en la pantalla. Se memoiza: lo
+ * consultan todas las hojas de una impresión.
  */
 final class IdentidadNegocio
 {
@@ -53,15 +55,16 @@ final class IdentidadNegocio
                 ->first(['razon_social', 'nombre_comercial', 'nit']);
         }
 
-        $negocio = $fila?->nombre_comercial
-            ?: config('company.nombre_comercial')
-            ?: config('company.nombre');
+        $negocio = $fila?->nombre_comercial ?: $fila?->razon_social;
 
         // La razón social solo se ofrece como empleadora si es distinta del nombre
         // comercial: si coinciden, no hay persona que nombrar y repetir la misma línea
         // dos veces no informa de nada.
+        // Se compara con el nombre comercial CARGADO, no con el negocio resuelto: sin
+        // nombre comercial, el negocio cae a la razón social y la empleadora no puede
+        // desaparecer por eso (el contrato la necesita).
         $empleadora = $fila?->razon_social;
-        if ($empleadora !== null && trim($empleadora) === trim((string) $negocio)) {
+        if ($empleadora !== null && trim($empleadora) === trim((string) $fila?->nombre_comercial)) {
             $empleadora = null;
         }
 

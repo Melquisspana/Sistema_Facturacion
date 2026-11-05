@@ -3,6 +3,7 @@
 namespace Tests\Feature\Planilla;
 
 use App\Enums\PermisoSistema;
+use App\Models\Empresa;
 use App\Models\Gastos\Gasto;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
@@ -210,6 +211,8 @@ class FlujoDiezPersonasTest extends TestCase
         }
 
         // ═══ 5. La hoja grupal: diez renglones con su firma ═══
+        // El encabezado sale de la empresa emisora (tabla `empresas`), no del .env.
+        Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
         $hoja = $this->actingAs($u)->get(route('planilla.impresos', $planilla))->assertOk();
         $papel = $hoja->getContent();
 

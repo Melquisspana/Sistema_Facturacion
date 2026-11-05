@@ -40,7 +40,7 @@
 
                 <form method="POST" action="{{ route('planilla.empleados.contrato.update', $empleado) }}" class="space-y-3 rounded-lg border border-gray-200 bg-white p-4"
                       x-data="{
-                          modelos: @js(config('planilla.contrato.modelos')),
+                          modelos: @js(\App\Services\Planilla\ContratoTrabajo::modelos()),
                           // Solo precarga: el dato se puede editar y lo que se guarda es lo que quede escrito.
                           aplicar(clave) {
                               const modelo = this.modelos[clave];
@@ -57,7 +57,7 @@
                     <div>
                         <label for="modelo" class="{{ $etiqueta }}">Modelo de contrato</label>
                         <select id="modelo" @change="aplicar($event.target.value)" class="{{ $c }}">
-                            @foreach (config('planilla.contrato.modelos') as $clave => $opcion)
+                            @foreach (\App\Services\Planilla\ContratoTrabajo::modelos() as $clave => $opcion)
                                 <option value="{{ $clave }}" @selected($clave === $modelo)>{{ $opcion['etiqueta'] }}</option>
                             @endforeach
                         </select>

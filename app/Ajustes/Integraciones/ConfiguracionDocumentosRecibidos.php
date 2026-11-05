@@ -26,7 +26,13 @@ class ConfiguracionDocumentosRecibidos
     /** Valor de `encryption` que significa "sin cifrado". */
     public const SIN_CIFRADO = 'ninguna';
 
-    public function __construct(private readonly Ajustes $ajustes) {}
+    public function __construct(protected readonly Ajustes $ajustes) {}
+
+    /** Cómo se nombra este buzón en la auditoría y en los mensajes. */
+    public function nombre(): string
+    {
+        return 'buzón de compras';
+    }
 
     public function driver(): string
     {

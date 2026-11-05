@@ -38,6 +38,8 @@
                 @if ($estado) &middot; @endif
                 <code>{{ $claveTecnica }}</code>
             @endif
+            {{-- Solo si el valor está guardado en la aplicación (ver el componente). --}}
+            <x-configuracion.usar-valor-servidor :estado="$estado" />
         </p>
     @endif
 </div>

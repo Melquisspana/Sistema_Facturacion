@@ -2,6 +2,7 @@
 
 namespace App\Services\Alertas;
 
+use App\Facades\Ajustes;
 use Illuminate\Console\Scheduling\Event as TareaProgramada;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
@@ -26,7 +27,7 @@ final class RegistroEventos
 
     public static function anotar(string $tipo, string $etiqueta): void
     {
-        if (! config('alertas.enabled')) {
+        if (! Ajustes::boolSinBase('alertas.enabled')) {
             return;
         }
 

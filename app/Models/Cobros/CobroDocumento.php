@@ -9,6 +9,7 @@ use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\EstadoDte;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\Dte;
@@ -566,7 +567,7 @@ class CobroDocumento extends Model
     {
         $facturado = Dinero::redondear($facturado ?? '0');
         $cobrado = Dinero::redondear($cobrado ?? '0');
-        $tolerancia = (string) config('ppq.diferencia_coincide', 0.05);
+        $tolerancia = (string) Ajustes::decimal('ppq.diferencia_coincide', '0.05');
 
         if (Dinero::comparar($cobrado, '0') === 0) {
             return EstadoPagoCobro::Pendiente;

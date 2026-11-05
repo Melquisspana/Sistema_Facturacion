@@ -3,6 +3,7 @@
 namespace App\Services\Alertas\Detectores;
 
 use App\Enums\ModuloSistema;
+use App\Facades\Ajustes;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Services\Alertas\Detector;
 use App\Services\Alertas\Hallazgo;
@@ -35,9 +36,11 @@ class LectorSinPing implements Detector
         }
 
         $ahora = HoraNegocio::ahora();
-        $horario = config('alertas.lector.horario')[$ahora->dayOfWeekIso] ?? null;
+        // «08:00-17:00»; vacío = ese día no se vigila. El formato lo valida el ajuste.
+        $texto = (string) Ajustes::texto('alertas.lector.horario.'.$ahora->dayOfWeekIso, '');
+        $horario = explode('-', $texto);
 
-        if ($horario === null) {
+        if (count($horario) !== 2) {
             return false;
         }
 
@@ -79,6 +82,6 @@ class LectorSinPing implements Detector
 
     private function margen(): int
     {
-        return max(1, (int) config('alertas.lector.sin_ping_minutos', 15));
+        return max(1, (int) Ajustes::entero('alertas.lector.sin_ping_minutos', 15));
     }
 }

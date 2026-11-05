@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\ModuloSistema;
+use App\Facades\Ajustes;
 use App\Models\Gastos\PreferenciaAvisos;
 use App\Models\User;
 use App\Services\Gastos\Avisos\ArmarAvisos;
@@ -53,7 +54,7 @@ class GastosAvisosCommand extends Command
 
         $aplicar = (bool) $this->option('aplicar');
 
-        if ($aplicar && ! config('gastos.avisos.automaticos')) {
+        if ($aplicar && ! Ajustes::bool('gastos.avisos.automaticos')) {
             $this->error('Los avisos automáticos están apagados (GASTOS_AVISOS_AUTO=false).');
             $this->line('Para ver qué se armaría, corrélo sin --aplicar.');
 

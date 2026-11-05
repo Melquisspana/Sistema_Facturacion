@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EstadoPpq;
+use App\Facades\Ajustes;
 use App\Services\Ppq\FichaLotePpq;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -125,7 +126,7 @@ class PpqLote extends Model
     /** Items con albarán cuyo monto difiere del CCF/NC más allá de la tolerancia. */
     public function cantidadConDiferencia(): int
     {
-        $tolerancia = (float) config('ppq.diferencia_coincide', 0.05);
+        $tolerancia = (float) Ajustes::decimal('ppq.diferencia_coincide', '0.05');
 
         return $this->items
             ->filter(fn (PpqItem $i) => $i->monto_albaran !== null && abs((float) $i->diferencia) > $tolerancia)

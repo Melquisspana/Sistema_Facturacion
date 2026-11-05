@@ -4,6 +4,7 @@ namespace App\Services\Cobros;
 
 use App\Enums\EstadoDte;
 use App\Enums\TipoDte;
+use App\Facades\Ajustes;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
@@ -267,7 +268,7 @@ class DevolucionesAlbaran
         $diferencia = $this->diferencia($doc, $entrega, collect());
 
         return [
-            'reciente' => $fecha !== null && $fecha->betweenIncluded(now()->subDays(max(0, (int) config('cobros.dias_albaran_reciente', 3))), now()),
+            'reciente' => $fecha !== null && $fecha->betweenIncluded(now()->subDays(max(0, (int) Ajustes::entero('cobros.dias_albaran_reciente', 3))), now()),
             'pedir_nota' => $recibidas->isEmpty() && $diferencia !== null && Dinero::comparar($diferencia, '0') !== 0
                 && $entrega->fecha_albaran !== null && today()->gt($entrega->fecha_albaran),
         ];

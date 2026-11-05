@@ -110,7 +110,7 @@ class ComprasSincronizarCommand extends Command
         $adicional = app(ConfiguracionBuzonAdicional::class);
         if (! $adicional->lecturaActivada()) {
             if ($buzon === 'adicional') {
-                $this->error('El buzón adicional no está configurado (DOCUMENTOS_RECIBIDOS_MAIL2_* en .env).');
+                $this->error('El buzón adicional no está configurado (Configuración › Integraciones › Segundo buzón, o DOCUMENTOS_RECIBIDOS_MAIL2_* en .env).');
 
                 return self::FAILURE;
             }
@@ -122,7 +122,7 @@ class ComprasSincronizarCommand extends Command
         // sus cursores y uno saltearía correos del otro. Se frena en vez de arriesgarlo.
         if ($adicional->carpeta() === $configuracion->carpeta()) {
             $this->error('El buzón adicional usa la misma carpeta que el principal ('.$adicional->carpeta()
-                .'). Su progreso se mezclaría: poné otra carpeta en DOCUMENTOS_RECIBIDOS_MAIL2_FOLDER.');
+                .'). Su progreso se mezclaría: poné otra carpeta en Configuración › Integraciones › Segundo buzón.');
 
             return self::FAILURE;
         }

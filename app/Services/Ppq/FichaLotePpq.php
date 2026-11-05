@@ -2,6 +2,7 @@
 
 namespace App\Services\Ppq;
 
+use App\Facades\Ajustes;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Support\Albaran;
@@ -119,7 +120,7 @@ class FichaLotePpq
      */
     public function resumen(Collection $filas): array
     {
-        $tolerancia = (float) config('ppq.diferencia_coincide', 0.05);
+        $tolerancia = (float) Ajustes::decimal('ppq.diferencia_coincide', '0.05');
 
         $totalDte = 0.0;
         $totalAlb = 0.0;
