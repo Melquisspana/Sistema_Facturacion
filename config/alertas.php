@@ -36,14 +36,15 @@ return [
     // Lector de asistencia: cuánto puede estar callado en horario laboral.
     'lector' => [
         'sin_ping_minutos' => (int) env('ALERTAS_LECTOR_SIN_PING_MINUTOS', 15),
-        // Día ISO (1 = lunes) => [desde, hasta], hora de El Salvador.
+        // Día ISO (1 = lunes) => 'desde-hasta', hora de El Salvador. Un día que no
+        // está no se vigila. Se cambia en Configuración › Módulos › Avisos de fallas.
         'horario' => [
-            1 => ['08:00', '17:00'],
-            2 => ['08:00', '17:00'],
-            3 => ['08:00', '17:00'],
-            4 => ['08:00', '17:00'],
-            5 => ['08:00', '17:00'],
-            6 => ['08:00', '12:00'],
+            1 => '08:00-17:00',
+            2 => '08:00-17:00',
+            3 => '08:00-17:00',
+            4 => '08:00-17:00',
+            5 => '08:00-17:00',
+            6 => '08:00-12:00',
         ],
     ],
 

@@ -15,10 +15,10 @@ use App\Models\Empresa;
  *
  * CADENA DE RESOLUCIÓN, en este orden y sin saltos:
  *
- *   1. Configuración → Parámetros fiscales (el ajuste administrable).
- *   2. `config('exportaciones.*')`, configurado desde el entorno, sin datos
- *      operativos por defecto. Una instalación sin configurar devuelve vacío.
- *   3. Para nombre y dirección, la Empresa emisora registrada. Es la fuente más
+ *   1. El ajuste administrable (Configuración › Módulos › Exportaciones), que a
+ *      su vez cae al `.env` (`config('exportaciones.*')`) si no hay nada guardado.
+ *      Una instalación sin configurar devuelve vacío.
+ *   2. Para nombre y dirección, la Empresa emisora registrada. Es la fuente más
  *      correcta conceptualmente, pero va última a propósito: la razón social
  *      fiscal no siempre es el nombre con el que se exporta, y cambiar eso en
  *      silencio alteraría la cabecera de documentos que hoy salen bien.
@@ -35,7 +35,6 @@ class DatosExportador
     {
         return $this->primeroNoVacio([
             $this->deAjustes('exportaciones.fda_reg_number'),
-            (string) config('exportaciones.fda_reg_number', ''),
         ]);
     }
 
@@ -43,7 +42,6 @@ class DatosExportador
     {
         return $this->primeroNoVacio([
             $this->deAjustes('exportaciones.exportador_nombre'),
-            (string) config('exportaciones.exportador_nombre', ''),
             (string) (Empresa::query()->where('activo', true)->orderBy('id')->value('razon_social') ?? ''),
         ]);
     }
@@ -52,7 +50,6 @@ class DatosExportador
     {
         return $this->primeroNoVacio([
             $this->deAjustes('exportaciones.exportador_direccion'),
-            (string) config('exportaciones.exportador_direccion', ''),
             (string) (Empresa::query()->where('activo', true)->orderBy('id')->value('direccion') ?? ''),
         ]);
     }

@@ -2,6 +2,7 @@
 
 namespace App\Services\Sistema;
 
+use App\Facades\Ajustes;
 use App\Services\Alertas\Avisador;
 use App\Support\HoraNegocio;
 use App\Support\WorkerHeartbeat;
@@ -45,7 +46,7 @@ class SaludPublica
 
         // Con los avisos encendidos, el planificador tiene que estar corriendo: si se
         // para, los avisos internos callan sin que nadie se entere.
-        if (config('alertas.enabled')) {
+        if (Ajustes::boolSinBase('alertas.enabled')) {
             $componentes['avisos'] = $this->avisos();
         }
 

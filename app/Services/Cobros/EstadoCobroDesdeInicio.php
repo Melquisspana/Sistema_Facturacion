@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoEventoCobro;
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Enums\TipoNotaCredito;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
@@ -24,7 +25,8 @@ class EstadoCobroDesdeInicio
     /** @return array{inicio: ?Carbon, ccf: array<int, array<string, mixed>>, nc: array<int, array<string, mixed>>, no_aplican: array<int, array<string, mixed>>, totales: array<string, mixed>} */
     public function generar(Cliente $cliente): array
     {
-        $inicio = config('cobros.inicio_seguimiento') ? Carbon::parse(config('cobros.inicio_seguimiento'))->startOfDay() : null;
+        $fecha = Ajustes::texto('cobros.inicio_seguimiento');
+        $inicio = filled($fecha) ? Carbon::parse($fecha)->startOfDay() : null;
         $documentos = CobroDocumento::deCliente($cliente->id)->with('eventos')->get();
         $ccfs = CobroDocumento::deCliente($cliente->id)->where('tipo_dte', '03')
             ->when($inicio, fn ($q) => $q->whereDate('fecha_emision', '>=', $inicio))->with('eventos')->porAntiguedad()->get();

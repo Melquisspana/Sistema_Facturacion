@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Services\Cobros\BarridoCorreosCobro;
 use App\Services\Cobros\CorreoCobroParser;
@@ -48,7 +49,7 @@ class CobrosLeerCorreosCommand extends Command
     ): int {
         $aplicar = (bool) $this->option('aplicar');
 
-        if ($aplicar && ! config('cobros.correo.enabled')) {
+        if ($aplicar && ! Ajustes::bool('cobros.correo.enabled')) {
             $this->error('La lectura de correo de cobros está apagada (COBROS_CORREO_ENABLED=false). '
                 .'No se consultó el buzón. Ver config/cobros.php.');
 
@@ -69,8 +70,8 @@ class CobrosLeerCorreosCommand extends Command
             return self::FAILURE;
         }
 
-        $query = (string) ($this->option('query') ?: config('cobros.correo.query'));
-        $limite = (int) ($this->option('limite') ?: config('cobros.correo.limite', 50));
+        $query = (string) ($this->option('query') ?: Ajustes::texto('cobros.correo.query'));
+        $limite = (int) ($this->option('limite') ?: Ajustes::entero('cobros.correo.limite', 50));
 
         $this->line("Cliente: {$cliente->nombre} (id {$cliente->id})");
         $this->line("Consulta: {$query} · límite {$limite}");

@@ -152,7 +152,10 @@ class CentroConfiguracionTest extends TestCase
         // Una entrada por sección real: Resumen; las tres de General; las cinco de
         // Facturación electrónica (Hacienda / API, Certificado y firmador,
         // Correlativos, Parámetros fiscales, Invalidación); las dos de Correo; las
-        // dos de Integraciones; Módulos; las dos de Sistema (Respaldos y estado,
+        // tres de Integraciones (Gmail, Buzón de compras, Segundo buzón); las seis de
+        // Módulos (Prender y apagar más las opciones de Pronto pago, Cobros, Rutas,
+        // Avisos de fallas y Exportaciones: Gastos y Planilla no salen porque en la
+        // suite están apagados); las dos de Sistema (Respaldos y estado,
         // Salud del sistema); y las tres de Administración (Auditoría, Importaciones
         // y Accesos, que aparece porque en la suite el área Personal está apagada).
         //
@@ -160,7 +163,7 @@ class CentroConfiguracionTest extends TestCase
         // que añadir una pantalla obligue a mirar el índice, que es donde se nota si
         // quedó en el grupo equivocado.
         $this->assertSame(
-            19,
+            25,
             substr_count($barra, 'whitespace-nowrap'),
             'El índice debe listar exactamente las secciones existentes, sin partir sus nombres.',
         );

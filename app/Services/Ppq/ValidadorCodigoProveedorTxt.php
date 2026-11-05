@@ -3,6 +3,7 @@
 namespace App\Services\Ppq;
 
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
+use App\Facades\Ajustes;
 use App\Services\Cobros\AplicadorPagosTxt;
 
 /**
@@ -21,7 +22,7 @@ class ValidadorCodigoProveedorTxt
 {
     public static function codigoConfigurado(): string
     {
-        $codigo = trim((string) config('ppq.codigo_proveedor'));
+        $codigo = trim((string) Ajustes::texto('ppq.codigo_proveedor', ''));
 
         if ($codigo === '') {
             throw new ArchivoProveedorInvalidoException('', '', 0);

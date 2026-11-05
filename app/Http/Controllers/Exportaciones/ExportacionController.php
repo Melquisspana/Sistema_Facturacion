@@ -6,12 +6,15 @@ use App\Exceptions\Exportaciones\FexYaExisteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Exportaciones\ExportacionRequest;
 use App\Models\Exportacion;
+use App\Models\ExportacionCliente;
 use App\Models\ExportacionItem;
 use App\Models\ExportacionProducto;
 use App\Services\Exportaciones\CrearFexDesdeExportacionService;
 use App\Services\Exportaciones\ListaEmpaqueExcelService;
+use App\Support\Exportaciones\DatosExportador;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -59,11 +62,8 @@ class ExportacionController extends Controller
         return view('exportaciones.create', [
             'productos' => $this->productosParaFormulario(),
             'clientes' => $this->clientesParaFormulario(),
-            'defaults' => [
-                'exportador_nombre' => config('exportaciones.exportador_nombre'),
-                'exportador_direccion' => config('exportaciones.exportador_direccion'),
-                'fda_reg_number' => config('exportaciones.fda_reg_number'),
-            ],
+            // Mismos datos que imprime la lista: Configuración › Módulos › Exportaciones.
+            'defaults' => app(DatosExportador::class)->paraEncabezado(),
         ]);
     }
 
@@ -288,7 +288,7 @@ class ExportacionController extends Controller
         }
 
         $cliente = $exportacion->exportacion_cliente_id !== null
-            ? \App\Models\ExportacionCliente::with('productos')->find($exportacion->exportacion_cliente_id)
+            ? ExportacionCliente::with('productos')->find($exportacion->exportacion_cliente_id)
             : null;
 
         // Un mismo producto repetido en el formulario se consolida sumando cajas.
@@ -334,16 +334,16 @@ class ExportacionController extends Controller
             .implode(', ', $conPrecioBase).'.';
     }
 
-    private function productosParaFormulario(): \Illuminate\Support\Collection
+    private function productosParaFormulario(): Collection
     {
         return ExportacionProducto::where('activo', true)
             ->orderBy('nombre_es')
             ->get(['id', 'nombre_es', 'nombre_en', 'unidad', 'unidades_por_caja', 'precio_caja', 'peso_neto_caja_kg', 'peso_bruto_caja_kg']);
     }
 
-    private function clientesParaFormulario(): \Illuminate\Support\Collection
+    private function clientesParaFormulario(): Collection
     {
-        return \App\Models\ExportacionCliente::where('activo', true)
+        return ExportacionCliente::where('activo', true)
             ->with(['productos' => fn ($q) => $q->where('activo', true)])
             ->orderBy('nombre')
             ->get();

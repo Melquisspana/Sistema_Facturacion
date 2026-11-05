@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\EstadoDte;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqAlbaran;
@@ -67,7 +68,7 @@ class CobrosSincronizarCommand extends Command
     {
         $aplicar = (bool) $this->option('aplicar');
 
-        if ($aplicar && ! config('cobros.alta.automatica')) {
+        if ($aplicar && ! Ajustes::bool('cobros.alta.automatica')) {
             $this->error('El alta automática de cobros está apagada (COBROS_ALTA_AUTO=false). '
                 .'No se escribió nada. Ver config/cobros.php.');
 
@@ -153,7 +154,7 @@ class CobrosSincronizarCommand extends Command
                 $resumen['sin_albaran'],
             ));
 
-            if (! config('cobros.vinculacion.automatica')) {
+            if (! Ajustes::bool('cobros.vinculacion.automatica')) {
                 $this->warn('  La vinculación automática está apagada (COBROS_VINCULACION_AUTO=false); '
                     .'con --aplicar tampoco escribiría ningún vínculo. Ver config/cobros.php.');
             }
@@ -175,7 +176,7 @@ class CobrosSincronizarCommand extends Command
      */
     private function vincular(Cliente $cliente, VinculadorAlbaranes $vinculador): string
     {
-        if (! config('cobros.vinculacion.automatica')) {
+        if (! Ajustes::bool('cobros.vinculacion.automatica')) {
             return 'Vinculación automática apagada (COBROS_VINCULACION_AUTO=false); no se vinculó ningún '
                 .'albarán. Auditá en seco (sin --aplicar) y revisá docs/COBROS_CALLEJA.md antes de encenderla.';
         }

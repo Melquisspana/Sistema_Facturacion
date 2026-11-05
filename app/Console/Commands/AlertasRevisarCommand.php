@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Facades\Ajustes;
 use App\Services\Alertas\Avisador;
 use Illuminate\Console\Command;
 
@@ -21,7 +22,7 @@ class AlertasRevisarCommand extends Command
 
     public function handle(Avisador $avisador): int
     {
-        if (! config('alertas.enabled')) {
+        if (! Ajustes::bool('alertas.enabled')) {
             $this->info('Los avisos están apagados (ALERTAS_ENABLED=false). No se revisa nada.');
 
             return self::SUCCESS;

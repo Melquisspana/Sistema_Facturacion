@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\Cobros\EstadoPresentacionCobro;
 use App\Enums\OrigenConciliacionPpq;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\PpqConciliacion;
@@ -99,7 +100,7 @@ class CobrosCompletarHistorialCommand extends Command
 
         // 3. Los que la regla de «N días sin eventos» marcó siendo posteriores al inicio del
         //    seguimiento no son históricos: son CCF sin presentar.
-        $inicio = config('cobros.inicio_seguimiento');
+        $inicio = Ajustes::texto('cobros.inicio_seguimiento');
         if (filled($inicio)) {
             $malMarcados = CobroDocumento::deCliente($cliente->id)
                 ->where('revisar_historico', true)

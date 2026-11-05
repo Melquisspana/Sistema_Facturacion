@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Facades\Ajustes;
+
 /**
  * Clasificación de la conciliación entre el monto del CCF/NC y el del albarán.
  * Devuelve un estado legible y su clase de color, reutilizable en la búsqueda,
@@ -24,8 +26,8 @@ class PpqConciliacion
         }
 
         $dif = abs(round((float) $montoDte - (float) $montoAlbaran, 2));
-        $coincide = (float) config('ppq.diferencia_coincide', 0.05);
-        $pequena = (float) config('ppq.diferencia_pequena', 1.00);
+        $coincide = (float) Ajustes::decimal('ppq.diferencia_coincide', '0.05');
+        $pequena = (float) Ajustes::decimal('ppq.diferencia_pequena', '1.00');
 
         if ($dif <= $coincide) {
             return ['key' => 'coincide', 'label' => 'Monto coincide', 'clase' => 'bg-green-100 text-green-700'];
@@ -47,8 +49,8 @@ class PpqConciliacion
      */
     public static function salaMismatch(?string $salaDoc, ?string $salaAlbaran): ?array
     {
-        $doc = \App\Support\Sala::normalizar($salaDoc);
-        $alb = \App\Support\Sala::normalizar($salaAlbaran);
+        $doc = Sala::normalizar($salaDoc);
+        $alb = Sala::normalizar($salaAlbaran);
         if ($doc === null || $alb === null || $doc === $alb) {
             return null;
         }

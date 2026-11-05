@@ -96,6 +96,24 @@ class Ajustes
         return $valor === null ? $porDefecto : (bool) $valor;
     }
 
+    /**
+     * Como {@see bool()}, pero si la base no responde cae al valor de config() en vez
+     * de romper. Para los lectores que corren justo cuando la base puede faltar: las
+     * tareas de `routes/console.php` (se cargan con cualquier comando de artisan), el
+     * registro de errores 500 y la ruta pública /salud. Es lo que el sistema hacía
+     * antes de que existiera la pantalla.
+     */
+    public function boolSinBase(string $clave, bool $porDefecto = false): bool
+    {
+        $definicion = $this->catalogo->definicion($clave);
+
+        return (bool) rescue(
+            fn () => $this->bool($clave, $porDefecto),
+            fn () => $definicion->claveConfig === null ? $porDefecto : (bool) config($definicion->claveConfig, $porDefecto),
+            report: false,
+        );
+    }
+
     public function entero(string $clave, ?int $porDefecto = null): ?int
     {
         $this->exigirTipo($clave, TipoAjuste::Entero);
@@ -158,6 +176,12 @@ class Ajustes
             );
         }
 
+        return $this->resolverSinOverride($definicion);
+    }
+
+    /** Pasos 2 a 4 de la resolución: config()/.env → defecto → nada. */
+    private function resolverSinOverride(DefinicionAjuste $definicion): ValorAjuste
+    {
         // 2) config()/.env, solo si la definición declara la clave. Nunca env()
         //    dinámico sobre una clave arbitraria.
         if ($definicion->claveConfig !== null) {
@@ -291,7 +315,7 @@ class Ajustes
             throw AjusteNoEditableException::para($definicion);
         }
 
-        $fuenteAntes = $this->fuente($clave);
+        $antes = $this->resolver($clave);
 
         match ($definicion->persistencia) {
             Persistencia::Nueva => $this->repositorio->eliminar($clave),
@@ -299,7 +323,26 @@ class Ajustes
             Persistencia::Ninguna => null,
         };
 
-        $this->auditoria->overrideQuitado($definicion, $fuenteAntes, $this->fuente($clave));
+        $despues = $this->resolver($clave);
+
+        // La auditoría decide si los valores se registran (nunca los de un secreto).
+        $this->auditoria->overrideQuitado($definicion, $antes->fuente, $despues->fuente, $antes->valor, $despues->valor);
+    }
+
+    /**
+     * Lo que valdría el ajuste SIN el valor guardado: config/.env o, en su defecto, el
+     * valor por defecto. Es lo que la pantalla anuncia antes de «Usar el valor del
+     * servidor». Para un secreto no se ofrece: usá {@see estadoParaPantalla()}.
+     */
+    public function valorDelServidor(string $clave): ValorAjuste
+    {
+        $definicion = $this->catalogo->definicion($clave);
+
+        if ($definicion->tipo->esSecreto()) {
+            throw new \LogicException("«{$clave}» es un secreto: su valor no se anuncia.");
+        }
+
+        return $this->resolverSinOverride($definicion);
     }
 
     // ------------------------------------------------------------- permisos

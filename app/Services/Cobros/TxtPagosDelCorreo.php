@@ -3,6 +3,7 @@
 namespace App\Services\Cobros;
 
 use App\Exceptions\DocumentosRecibidos\BuzonInaccesibleException;
+use App\Facades\Ajustes;
 use App\Services\DocumentosRecibidos\Contracts\MailboxClient;
 use App\Services\Ppq\ArchivoConciliacion;
 use Illuminate\Support\Carbon;
@@ -30,9 +31,9 @@ class TxtPagosDelCorreo
      */
     public function buscar(): array
     {
-        $remitente = mb_strtolower(trim((string) config('cobros.txt_correo.remitente', '')));
+        $remitente = mb_strtolower(trim((string) Ajustes::texto('cobros.txt_correo.remitente', '')));
         if ($remitente === '') {
-            throw new BuzonInaccesibleException('La búsqueda de TXT por correo está apagada: falta COBROS_TXT_REMITENTE.');
+            throw new BuzonInaccesibleException('La búsqueda de TXT por correo está apagada: falta quién manda los TXT (Configuración › Módulos › Cobros).');
         }
         if (! $this->buzon->disponible()) {
             throw new BuzonInaccesibleException('El buzón de compras no está disponible. Revisá Configuración > Integraciones > Documentos recibidos.');
@@ -43,7 +44,7 @@ class TxtPagosDelCorreo
             today()->subDays((int) config('cobros.txt_correo.dias', 60)),
             ['txt'],
             // Los TXT llegan a otra carpeta que los DTE de Compras: se abre la suya, no la de Compras.
-            trim((string) config('cobros.txt_correo.carpeta', 'INBOX')) ?: 'INBOX',
+            trim((string) Ajustes::texto('cobros.txt_correo.carpeta', 'INBOX')) ?: 'INBOX',
         );
         // Por UID ascendente: si el mismo TXT llegó dos veces, queda el correo más viejo.
         usort($mensajes, fn ($a, $b) => (int) $a['uid'] <=> (int) $b['uid']);

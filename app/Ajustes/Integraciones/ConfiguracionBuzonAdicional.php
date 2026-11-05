@@ -7,10 +7,12 @@ namespace App\Ajustes\Integraciones;
  *
  * Existe para los cambios de correo: durante un tiempo los proveedores mandan sus DTE
  * a dos direcciones (la vieja y la nueva) y hay que leer las dos sin perder ninguna.
- * Cuando la vieja se deja, se vacían estas variables y el sistema vuelve a leer uno.
+ * Cuando la vieja se deja, se vacía el servidor y el sistema vuelve a leer uno.
  *
- * Vive SOLO en .env (`DOCUMENTOS_RECIBIDOS_MAIL2_*`), no en la pantalla: es un estado
- * de transición, no una opción permanente. Sin servidor configurado está apagado.
+ * Se resuelve por el Centro de Configuración igual que el principal: lo guardado en
+ * Configuración › Integraciones › Segundo buzón manda, y sin nada guardado sale del
+ * .env (`DOCUMENTOS_RECIBIDOS_MAIL2_*`). La contraseña va cifrada y solo por la pantalla
+ * de secretos. Sin servidor configurado está apagado.
  *
  * Hereda de la configuración principal para que el lector IMAP y el sincronizador lo
  * usen sin enterarse de que es otro buzón: mismas claves, mismo `paraLector()`. El
@@ -21,6 +23,14 @@ class ConfiguracionBuzonAdicional extends ConfiguracionDocumentosRecibidos
     /** Clave del contenedor para el lector de este buzón (IMAP o nulo si está apagado). */
     public const LECTOR = 'documentos_recibidos.buzon_adicional';
 
+    /** Servicio comprobado, para el historial de verificaciones. Aparte del principal. */
+    public const CLAVE_VERIFICACION = 'imap_adicional';
+
+    public function nombre(): string
+    {
+        return 'segundo buzón de compras';
+    }
+
     public function driver(): string
     {
         return filled($this->host()) ? 'imap' : 'none';
@@ -28,60 +38,54 @@ class ConfiguracionBuzonAdicional extends ConfiguracionDocumentosRecibidos
 
     public function host(): string
     {
-        return (string) $this->valor('host', '');
+        return (string) $this->ajustes->texto('documentos_recibidos.buzon_adicional.host', '');
     }
 
     public function puerto(): int
     {
-        return (int) $this->valor('port', 993);
+        return (int) $this->ajustes->entero('documentos_recibidos.buzon_adicional.port', 993);
     }
 
     public function cifrado(): string
     {
-        return strtolower((string) $this->valor('encryption', 'ssl'));
+        return strtolower((string) $this->ajustes->texto('documentos_recibidos.buzon_adicional.encryption', 'ssl'));
     }
 
     public function usuario(): string
     {
-        return (string) $this->valor('username', '');
+        return (string) $this->ajustes->texto('documentos_recibidos.buzon_adicional.username', '');
     }
 
     /** Contraseña del buzón. SOLO para abrir la conexión; nunca a una vista ni a un log. */
     public function password(): string
     {
-        return (string) $this->valor('password', '');
+        return (string) $this->ajustes->secretoParaRuntime('documentos_recibidos.buzon_adicional.password');
     }
 
     public function passwordConfigurada(): bool
     {
-        return filled($this->password());
+        return $this->ajustes->estaConfigurado('documentos_recibidos.buzon_adicional.password');
     }
 
     public function carpeta(): string
     {
-        return (string) $this->valor('folder', 'INBOX');
+        return (string) $this->ajustes->texto('documentos_recibidos.buzon_adicional.folder', 'INBOX');
     }
 
+    /** Sin filtro propio: se revisa toda la carpeta, como hasta ahora. */
     public function busqueda(): string
     {
-        return (string) $this->valor('search', 'ALL');
+        return 'ALL';
     }
 
     public function timeout(): int
     {
-        return (int) $this->valor('timeout', 15);
+        return 15;
     }
 
     /** Las filas viejas sin identidad salieron del principal: sus UID no son de acá. */
     public function reconoceFilasSinIdentidad(): bool
     {
         return false;
-    }
-
-    private function valor(string $clave, mixed $defecto): mixed
-    {
-        $valor = config('documentos_recibidos.buzon_adicional.'.$clave);
-
-        return $valor === null || $valor === '' ? $defecto : $valor;
     }
 }

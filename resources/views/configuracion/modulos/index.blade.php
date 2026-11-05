@@ -39,6 +39,7 @@
                                 <span class="mt-0.5 block text-sm text-gray-500">{{ $modulo->descripcion() }}</span>
                                 <span class="mt-1 block text-xs text-gray-400">
                                     Fuente: {{ $estado->fuente->etiqueta() }} &middot; <code>{{ $modulo->variableEntorno() }}</code>
+                                    <x-configuracion.usar-valor-servidor :estado="$estado" />
                                 </span>
                             </span>
                         </label>

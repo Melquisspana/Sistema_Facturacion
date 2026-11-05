@@ -4,6 +4,7 @@ namespace App\Services\Planilla;
 
 use App\Enums\FuncionPersonalRuta;
 use App\Enums\RolSistema;
+use App\Facades\Ajustes;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
@@ -24,7 +25,8 @@ use Illuminate\Validation\ValidationException;
  * sueldo y se vuelve a generar.
  *
  * El texto legal va en la vista, con marcadores. Los datos del patrono no están en el
- * repositorio: razón social y NIT salen de `empresas`, y lo demás del `.env`. Sin
+ * repositorio: razón social y NIT salen de `empresas`, y lo demás de Configuración ›
+ * Módulos › Planilla (con el `.env` de respaldo). Sin
  * valores de ejemplo a propósito: un contrato con un patrono inventado es peor que uno
  * que no sale.
  */
@@ -115,7 +117,7 @@ final class ContratoTrabajo
     public function conModelo(PlanillaEmpleado $empleado): PlanillaEmpleado
     {
         $copia = clone $empleado;
-        $modelo = config('planilla.contrato.modelos.'.$this->modeloDe($empleado));
+        $modelo = self::modelos()[$this->modeloDe($empleado)];
 
         foreach (['cargo', 'funciones', 'lugar_trabajo', 'herramientas'] as $campo) {
             if (blank($copia->$campo)) {
@@ -187,7 +189,7 @@ final class ContratoTrabajo
 
         $hoy = CarbonImmutable::now()->locale('es');
         $mensual = Dinero::decimal($this->mensualVigente($empleado));
-        $patrono = (array) config('planilla.contrato.patrono');
+        $patrono = $this->patrono();
         $nacioPatrono = CarbonImmutable::parse($patrono['fecha_nacimiento']);
 
         return [
@@ -209,10 +211,41 @@ final class ContratoTrabajo
         ];
     }
 
+    /**
+     * Los dos modelos de contrato, con el lugar de trabajo de producción que se fija en
+     * Configuración › Módulos › Planilla (el .env queda de respaldo). Lo usan esta clase y
+     * el formulario que los precarga: los dos tienen que proponer lo mismo.
+     *
+     * @return array<string, array<string, string>>
+     */
+    public static function modelos(): array
+    {
+        $modelos = (array) config('planilla.contrato.modelos');
+        $modelos['produccion']['lugar_trabajo'] = (string) Ajustes::texto('planilla.contrato.modelos.produccion.lugar_trabajo', '');
+
+        return $modelos;
+    }
+
+    /**
+     * Datos del patrono, uno por uno desde Configuración › Módulos › Planilla, con el
+     * .env de respaldo. Razón social y NIT no están acá: salen de la empresa emisora.
+     *
+     * @return array<string, string>
+     */
+    private function patrono(): array
+    {
+        $patrono = [];
+        foreach (array_keys(self::PATRONO) as $campo) {
+            $patrono[$campo] = (string) Ajustes::texto('planilla.contrato.patrono.'.$campo, '');
+        }
+
+        return $patrono;
+    }
+
     /** @return array<int, string> */
     private function faltantesDelPatrono(): array
     {
-        $patrono = (array) config('planilla.contrato.patrono');
+        $patrono = $this->patrono();
         $faltan = array_values(array_map(
             fn (string $nombre) => $nombre.' del patrono',
             array_filter(self::PATRONO, fn (string $campo) => blank($patrono[$campo] ?? null), ARRAY_FILTER_USE_KEY),

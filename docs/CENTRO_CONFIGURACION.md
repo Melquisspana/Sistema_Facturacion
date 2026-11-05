@@ -352,6 +352,10 @@ secretos.
 | `documentos_recibidos.folder` / `.search` / `.timeout` / `.limite` | N1 | Nueva | `documentos_recibidos.*` |
 | `documentos_recibidos.storage_dir` | N2 | **Ninguna (solo lectura)** | ruta del servidor |
 | `modulos.gastos` / `.planta` / `.asistencia` / `.planilla` / `.planilla_pagos` | N2 | Nueva | `gastos.enabled`, `planta.enabled`, `asistencia.enabled`, `planilla.enabled`, `planilla.pagos_enabled` — ver §27 |
+| `documentos_recibidos.buzon_adicional.host` / `.port` / `.encryption` / `.username` | N2 | Nueva | `DOCUMENTOS_RECIBIDOS_MAIL2_*` — ver §20 |
+| `documentos_recibidos.buzon_adicional.password` | N2 | Nueva (cifrado) | `DOCUMENTOS_RECIBIDOS_MAIL2_PASSWORD` |
+| `documentos_recibidos.buzon_adicional.folder` | N1 | Nueva | `DOCUMENTOS_RECIBIDOS_MAIL2_FOLDER` |
+| opciones de **Pronto pago, Cobros, Avisos de fallas, Planilla, Rutas, Gastos y Exportaciones** (~55 claves) | N1/N2 | Nueva | la misma clave de `config()` — ver §28 |
 
 **Ningún valor existente fue migrado.** `MAIL_PASSWORD`, `DTE_PROD_PASSWORD`,
 `DTE_CERT_PASSWORD`, `GMAIL_CLIENT_SECRET`, `IMAP_PASSWORD` y el resto siguen donde
@@ -514,13 +518,15 @@ Configuración                  ← barra superior, en cualquier área (permiso 
 │   ├── Establecimientos
 │   └── Puntos de venta
 ├── Módulos
-│   └── Prender y apagar       ← Gastos, Producción, Asistencia, Planilla, Pagos de planilla (§27)
+│   ├── Prender y apagar       ← Gastos, Producción, Asistencia, Planilla, Pagos de planilla (§27)
+│   └── Pronto pago, Cobros, Rutas, Avisos de fallas, Gastos*, Planilla*, Exportaciones (§28)
+│                                * solo con el módulo encendido
 ├── Facturación electrónica
 │   └── Hacienda / API, Certificado y firmador, Correlativos, Parámetros, Invalidación
 ├── Correo
 │   ├── Correo y servidor      ← SMTP + documentos fiscales + contabilidad
 │   └── Contabilidad
-├── Integraciones              ← Gmail, buzón de compras, lectores de huella
+├── Integraciones              ← Gmail, buzón de compras, segundo buzón, lectores de huella
 ├── Sistema
 │   ├── Respaldos y estado
 │   └── Salud del sistema      ← permiso sistema.salud
@@ -618,6 +624,16 @@ confirmar qué buzón está configurado sin repartir la dirección completa.
 servidor, puerto, seguridad, usuario y contraseña —todo lo que puede estar mal— sin
 listar mensajes ni sincronizar. La bandera de solo lectura es la misma que usa el
 lector: el modo de escritura no se abre nunca, ni para probar.
+
+### Segundo buzón de compras
+
+Para los cambios de correo: mientras los proveedores mandan a la dirección vieja y a la
+nueva, `compras:sincronizar` lee las dos. Mismo patrón que el principal —estado,
+conexión N2, contraseña cifrada en la pantalla de secretos, prueba en solo lectura— y
+`ConfiguracionBuzonAdicional` resuelve por Ajustes con `DOCUMENTOS_RECIBIDOS_MAIL2_*` de
+respaldo. Sin servidor está apagado. La prueba anota en su propio historial
+(`imap_adicional`). Su carpeta no puede ser la del principal: el progreso se lleva por
+carpeta, y la pantalla no deja guardarla igual (el comando ya frenaba).
 
 ### Lo que NO se abrió
 
@@ -970,3 +986,65 @@ cualquier comando de artisan y el menú se dibuja en todas las pantallas.
 dice qué deja de verse de cada módulo; los datos no se borran. Solo se escribe lo
 que cambia: un módulo que se deja como estaba sigue saliendo del `.env`. Cada cambio
 queda en la auditoría de ajustes con el antes, el después y la fuente.
+
+---
+
+## 28. Configuración → Módulos → opciones de cada módulo
+
+Las opciones de negocio que vivían solo en el `.env`: plazos, montos, horarios, textos,
+correos de aviso y llaves de comportamiento. Una página por módulo
+(`OpcionesModuloController`, `configuracion/modulos/{página}`); qué página es cada ruta
+lo fija el archivo de rutas con `->defaults('pagina', …)` y qué ajustes tiene cada una,
+un mapa fijo en el controlador. Del navegador solo llegan valores.
+
+| Página | Ajustes | Nivel |
+|---|---|---|
+| Pronto pago | `ppq.diferencia_coincide`, `ppq.diferencia_pequena`, `ppq.sala_oc_prefix`, `ppq.sala_oc_length`, `ppq.albaranes.tipo_entrega`, `ppq.codigo_proveedor`, `ppq.albaranes.sincronizacion_automatica` | N2 |
+| Cobros | `cobros.inicio_seguimiento`, `cobros.dias_revision_historica`, `cobros.alta.automatica`, `cobros.vinculacion.automatica`, `cobros.correo.automatica` | N2 |
+| Cobros | `cobros.dias_albaran_reciente`, `cobros.correo.enabled`, `cobros.correo.query`, `cobros.correo.limite`, `cobros.txt_correo.remitente`, `cobros.txt_correo.carpeta` | N1 |
+| Avisos de fallas | `alertas.enabled`, `alertas.correo` (lista de correos) | N2 |
+| Avisos de fallas | `alertas.reaviso_minutos`, `alertas.tope_diario`, `alertas.respaldo_hora_limite`, `alertas.lector.sin_ping_minutos`, `alertas.lector.horario.1`…`.7` (solo con Asistencia) | N1 |
+| Rutas | `rutas.entregas_desde` | N2 |
+| Gastos (con Gastos encendido) | `gastos.recurrencias.generacion_automatica` | N2 |
+| Gastos (con Gastos encendido) | `gastos.avisos.automaticos` | N1 |
+| Planilla (con Planilla encendida) | `planilla.sector_salario_minimo`, `planilla.contrato.patrono.*` (13), `planilla.contrato.modelos.produccion.lugar_trabajo` | N2 |
+| Exportaciones | `exportaciones.exportador_nombre`, `.exportador_direccion`, `.fda_reg_number` (salieron de `fiscal_parametros`: son de un documento comercial) | N2 |
+
+**La clave es la de `config()`.** Sin nada guardado, cada instalación sigue haciendo lo
+que dice su `.env`. El horario del lector pasó de `[desde, hasta]` a `'08:00-17:00'` en
+`config/alertas.php` para poder resolverse igual que el resto.
+
+**Formatos nuevos del conversor** (reglas de la definición): `hora` (HH:MM), `fecha`
+(AAAA-MM-DD válida), `rango_horas` (HH:MM-HH:MM con el fin después del inicio) y
+`correos` (lista separada por coma, guardada en minúsculas). Los decimales aceptan
+`min:`/`max:` comparados con bcmath.
+
+**Todo lector pasa por Ajustes**: servicios, modelos, comandos, vistas y las tareas de
+`routes/console.php`. Las tareas, el registro de errores 500 y `/salud` usan
+`Ajustes::boolSinBase()`, que cae al `.env` si la base no responde (mismo criterio que
+`ModuloSistema::activo()`).
+
+**Guardado.** Solo se escribe lo que cambia; un campo vacío no borra (es «dejá el que ya
+manda»); lo N2 pide confirmación con el antes y el después. La validación del catálogo
+corre ANTES de calcular los cambios: `ConfirmacionN2` omite en silencio lo que no valida,
+y sin eso un correo mal escrito diría «nada que cambiar».
+
+**Lo que no entró, a propósito:** carpetas del servidor (`*.storage_dir`, plantilla de
+exportaciones), `rutas.ambiente_ccf` y `dte.contingencia.*` (son de Hacienda, §25),
+`alertas.salud.*` (vigilancia de infraestructura), `ppq.cliente_default_id` (un número
+interno de cliente: necesita un selector, no un campo de texto) y
+`ppq.quedan.salas_confirmadas` (excepciones documento por documento, no una opción).
+
+### Usar el valor del servidor
+
+En cada ajuste guardado en la aplicación (fuente «Guardado en la aplicación»), un botón
+borra ese valor para que vuelva a mandar el `.env` (`ValorServidorController`, `DELETE
+configuracion/ajustes/{clave}/servidor`). Mismas barreras que cualquier escritura: lista
+blanca del catálogo, ajuste editable, permiso del nivel. Un N1 se borra con el clic; un N2
+muestra antes la confirmación con el valor que vuelve a mandar. Los secretos no pasan por
+acá: su pantalla ya ofrece lo mismo. Queda en la auditoría como `override_quitado`, con el
+antes y el después cuando el valor es auditable.
+
+El botón vive en `<x-configuracion.campo>` y envía un formulario único del marco
+(`form="form-usar-valor-servidor"` + `formaction`), porque los formularios no se pueden
+anidar.

@@ -172,6 +172,23 @@ class ConversorValor
             );
         }
 
+        // Rango con bcmath: comparar un importe por float es justo lo que este
+        // archivo existe para evitar.
+        foreach ($definicion->reglas as $regla) {
+            if (str_starts_with($regla, 'min:') && bccomp($texto, substr($regla, 4), 6) < 0) {
+                throw ValorAjusteInvalidoException::con(
+                    $definicion->clave,
+                    "«{$definicion->etiqueta}» no puede ser menor que ".substr($regla, 4).'.'
+                );
+            }
+            if (str_starts_with($regla, 'max:') && bccomp($texto, substr($regla, 4), 6) > 0) {
+                throw ValorAjusteInvalidoException::con(
+                    $definicion->clave,
+                    "«{$definicion->etiqueta}» no puede ser mayor que ".substr($regla, 4).'.'
+                );
+            }
+        }
+
         return $texto;
     }
 
@@ -210,9 +227,74 @@ class ConversorValor
     private function validarTexto(DefinicionAjuste $definicion, string $valor): string
     {
         $texto = trim($valor);
+
+        if (in_array('correos', $definicion->reglas, true)) {
+            $texto = $this->validarCorreos($definicion, $texto);
+        }
+
         $this->comprobarLongitud($definicion, $texto);
+        $this->comprobarFormato($definicion, $texto);
 
         return $texto;
+    }
+
+    /**
+     * Uno o varios correos separados por coma. Se guardan en minúsculas y con una
+     * sola forma («a@x.com, b@x.com») para que el lector no tenga que adivinar.
+     */
+    private function validarCorreos(DefinicionAjuste $definicion, string $texto): string
+    {
+        $correos = array_values(array_filter(array_map(
+            static fn (string $c) => strtolower(trim($c)),
+            explode(',', $texto),
+        ), static fn (string $c) => $c !== ''));
+
+        foreach ($correos as $correo) {
+            if (filter_var($correo, FILTER_VALIDATE_EMAIL) === false) {
+                throw ValorAjusteInvalidoException::con(
+                    $definicion->clave,
+                    "«{$definicion->etiqueta}»: «{$correo}» no es un correo válido. Separá los correos con coma."
+                );
+            }
+        }
+
+        return implode(', ', $correos);
+    }
+
+    /**
+     * Formatos cerrados de texto: hora (HH:MM), fecha (AAAA-MM-DD) y rango de horas
+     * (HH:MM-HH:MM, con el fin después del inicio). Lo que no encaja es un error, no
+     * una hora interpretada a medias por Carbon.
+     */
+    private function comprobarFormato(DefinicionAjuste $definicion, string $texto): void
+    {
+        $hora = '([01]\d|2[0-3]):[0-5]\d';
+
+        if (in_array('hora', $definicion->reglas, true) && preg_match('/^'.$hora.'$/', $texto) !== 1) {
+            throw ValorAjusteInvalidoException::con(
+                $definicion->clave,
+                "«{$definicion->etiqueta}» debe ser una hora en formato HH:MM (por ejemplo 06:00)."
+            );
+        }
+
+        if (in_array('fecha', $definicion->reglas, true)) {
+            $partes = preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $texto, $m) === 1 ? $m : null;
+
+            if ($partes === null || ! checkdate((int) $partes[2], (int) $partes[3], (int) $partes[1])) {
+                throw ValorAjusteInvalidoException::con(
+                    $definicion->clave,
+                    "«{$definicion->etiqueta}» debe ser una fecha válida (AAAA-MM-DD)."
+                );
+            }
+        }
+
+        if (in_array('rango_horas', $definicion->reglas, true)
+            && (preg_match('/^('.$hora.')-('.$hora.')$/', $texto, $m) !== 1 || $m[1] >= $m[4])) {
+            throw ValorAjusteInvalidoException::con(
+                $definicion->clave,
+                "«{$definicion->etiqueta}» debe ser un horario «desde-hasta» en formato HH:MM-HH:MM, con la hora de cierre después de la de apertura (por ejemplo 08:00-17:00)."
+            );
+        }
     }
 
     private function validarSecreto(DefinicionAjuste $definicion, string $valor): string

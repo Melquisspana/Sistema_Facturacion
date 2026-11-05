@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Facades\Ajustes;
+
 /**
  * Utilidades para la orden de compra (OC) de Calleja en el módulo PPQ.
  *
@@ -25,8 +27,8 @@ class OrdenCompra
     public static function salaDesde(?string $oc): ?string
     {
         $oc = self::normalizar($oc);
-        $prefix = (int) config('ppq.sala_oc_prefix', 4);
-        $length = (int) config('ppq.sala_oc_length', 4);
+        $prefix = (int) Ajustes::entero('ppq.sala_oc_prefix', 4);
+        $length = (int) Ajustes::entero('ppq.sala_oc_length', 4);
 
         if (strlen($oc) < $prefix + $length) {
             return null;

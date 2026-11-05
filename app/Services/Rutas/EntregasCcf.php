@@ -8,6 +8,7 @@ use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\ResultadoEntrega;
+use App\Facades\Ajustes;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Models\PpqAlbaran;
@@ -513,7 +514,7 @@ class EntregasCcf
 
     public function desde(): Carbon
     {
-        return Carbon::parse((string) config('rutas.entregas_desde'))->startOfDay();
+        return Carbon::parse((string) Ajustes::texto('rutas.entregas_desde', '2026-09-28'))->startOfDay();
     }
 
     // ================================================================ apoyo

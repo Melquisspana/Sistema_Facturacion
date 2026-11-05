@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Ppq;
 
 use App\Ajustes\Integraciones\DesconectarGmail;
+use App\Facades\Ajustes;
 use App\Http\Controllers\Controller;
 use App\Services\Ppq\GmailClient;
 use Illuminate\Http\RedirectResponse;
@@ -102,8 +103,8 @@ class PpqGmailController extends Controller
             'error' => $error,
             'disponible' => $gmail->disponible(),
             'configurado' => $gmail->configurado(),
-            'enviadosQuery' => config('ppq.gmail.enviados_query'),
-            'labelAlbaranes' => config('ppq.gmail.label_albaranes'),
+            'enviadosQuery' => Ajustes::texto('ppq.gmail.enviados_query'),
+            'labelAlbaranes' => Ajustes::texto('ppq.gmail.label_albaranes'),
         ]);
     }
 }

@@ -8,6 +8,7 @@ use App\Ajustes\Correo\PruebaConexionSmtp;
 use App\Ajustes\Definicion\FuenteAjuste;
 use App\Ajustes\Fiscal\EstadoFirmador;
 use App\Ajustes\Fiscal\EstadoHaciendaApi;
+use App\Ajustes\Integraciones\ConfiguracionDocumentosRecibidos;
 use App\Ajustes\Verificaciones\RegistroVerificaciones;
 use App\Enums\ModuloSistema;
 use App\Models\GmailCuenta;
@@ -252,7 +253,9 @@ class ResumenConfiguracion
     private function gmail(): TarjetaResumen
     {
         $cuenta = $this->intentar(static fn () => GmailCuenta::query()->latest('id')->first());
-        $credenciales = filled(config('ppq.gmail.client_id')) && filled(config('ppq.gmail.client_secret'));
+        // Por Ajustes, igual que la pantalla de Integraciones: lo guardado ahí manda.
+        $credenciales = filled($this->ajustes->texto('ppq.gmail.client_id'))
+            && $this->ajustes->estaConfigurado('ppq.gmail.client_secret');
 
         return new TarjetaResumen(
             clave: 'gmail',
@@ -271,7 +274,7 @@ class ResumenConfiguracion
                 $cuenta !== null ? 'Cuenta: '.$cuenta->email : null,
                 'Credenciales de la aplicación: '.($credenciales ? 'configuradas' : 'sin configurar'),
             ]),
-            fuente: 'Archivo de configuración / .env + base de datos',
+            fuente: $this->fuente('ppq.gmail.client_id'),
             // La conexión de Gmail vive en PPQ; el Resumen enlaza a lo que existe.
             ruta: $this->ruta('ppq.gmail.conectar'),
             etiquetaRuta: 'Conectar',
@@ -280,11 +283,12 @@ class ResumenConfiguracion
 
     private function imap(): TarjetaResumen
     {
-        $driver = strtolower((string) config('documentos_recibidos.mail.driver', 'none'));
-        $host = (string) config('documentos_recibidos.mail.host', '');
-        $usuario = (string) config('documentos_recibidos.mail.username', '');
-        $password = (string) config('documentos_recibidos.mail.password', '');
-        $completo = $driver === 'imap' && filled($host) && filled($usuario) && filled($password);
+        // La MISMA resolución que el lector y la pantalla del buzón (Ajustes → .env), y
+        // el usuario tapado como allá. De la contraseña solo se sabe si está.
+        $buzon = (new ConfiguracionDocumentosRecibidos($this->ajustes))->paraPantalla();
+        $driver = (string) $buzon['driver'];
+        $host = (string) $buzon['host'];
+        $completo = $driver === 'imap' && filled($host) && filled($buzon['usuario']) && $buzon['password_configurada'];
 
         return new TarjetaResumen(
             clave: 'imap',
@@ -300,11 +304,11 @@ class ResumenConfiguracion
                 default => 'Lectura activada pero faltan datos de conexión.',
             },
             lineas: array_filter([
-                filled($host) ? 'Servidor: '.$host.':'.(int) config('documentos_recibidos.mail.port') : null,
-                filled($usuario) ? 'Usuario: '.$usuario : null,
-                'Contraseña: '.(filled($password) ? 'configurada' : 'sin configurar'),
+                filled($host) ? 'Servidor: '.$host.':'.(int) $buzon['port'] : null,
+                filled($buzon['usuario']) ? 'Usuario: '.$buzon['usuario_parcial'] : null,
+                'Contraseña: '.($buzon['password_configurada'] ? 'configurada' : 'sin configurar'),
             ]),
-            fuente: 'Archivo de configuración / .env',
+            fuente: $this->fuente('documentos_recibidos.host'),
         );
     }
 
