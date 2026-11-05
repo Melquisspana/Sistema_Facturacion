@@ -12,6 +12,27 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.04.4] - 2026-11-04
+
+Un solo nombre por persona y el acceso al sistema solo desde la ficha de Personal (#245), sin migraciones.
+
+### Agregado
+
+- Personal: el comando `personal:nombres-distintos` lista a las personas cuyo nombre en Asistencia, Rutas o el usuario no coincide con la ficha; con `--aplicar` los copia de la ficha (#245).
+- Personal › Agregar acceso: se puede enlazar un registro de Asistencia que ya existía, en vez de crear otro (#245).
+
+### Cambiado
+
+- El nombre de cada persona sale de su ficha de Personal: al darla de alta, al enlazar su ficha de vendedor o al darle acceso, se copia a Asistencia, Rutas y su usuario (#245).
+- Perfil: quien tiene ficha en Personal ya no cambia su nombre ahí; el sistema le indica que se cambia en su ficha (#245).
+- Asistencia: editar un empleado lleva a su ficha de Personal (#245).
+- Personal › Accesos: «Agregar acceso» queda solo para cuentas externas, con el rol Contabilidad; el acceso de los empleados se da desde su ficha (#245).
+- Rutas › Personal: solo lo ven quienes pueden ver Planilla. Jefe de vendedores, Jefatura y Facturación ya no lo ven (#245).
+
+### Corregido
+
+- Rutas: enlazar la ficha de un vendedor ya no lo une con otra persona solo porque tiene el mismo primer nombre (#245).
+
 ## [2026.11.04.3] - 2026-11-04
 
 Rutas con el CCF nuevo que entra solo y la liquidación con los entregados, el acceso del jefe de vendedores desde su ficha y la renta según la contadora (#239 al #243), sin migraciones.
