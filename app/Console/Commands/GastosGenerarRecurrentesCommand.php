@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ModuloSistema;
 use App\Models\Gastos\Regla;
 use App\Services\Gastos\InstalacionGastos;
 use App\Services\Gastos\Recurrencia\CalendarioRecurrencia;
@@ -35,8 +36,8 @@ class GastosGenerarRecurrentesCommand extends Command
 
     public function handle(GenerarObligaciones $generador, CalendarioRecurrencia $calendario): int
     {
-        if (! config('gastos.enabled')) {
-            $this->error('El módulo Gastos está apagado (GASTOS_ENABLED=false). No se genera nada.');
+        if (! ModuloSistema::Gastos->activo()) {
+            $this->error('El módulo Gastos está apagado (Configuración › Módulos, o GASTOS_ENABLED si ahí no se guardó nada). No se genera nada.');
 
             return self::FAILURE;
         }

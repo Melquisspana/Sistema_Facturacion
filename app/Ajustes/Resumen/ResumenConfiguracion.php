@@ -9,6 +9,7 @@ use App\Ajustes\Definicion\FuenteAjuste;
 use App\Ajustes\Fiscal\EstadoFirmador;
 use App\Ajustes\Fiscal\EstadoHaciendaApi;
 use App\Ajustes\Verificaciones\RegistroVerificaciones;
+use App\Enums\ModuloSistema;
 use App\Models\GmailCuenta;
 use App\Models\RespaldoEjecucion;
 use App\Models\VerificacionConfiguracion;
@@ -372,7 +373,7 @@ class ResumenConfiguracion
 
     private function planta(): TarjetaResumen
     {
-        $activo = (bool) config('planta.enabled', false);
+        $activo = ModuloSistema::Planta->activo();
 
         return new TarjetaResumen(
             clave: 'planta',
@@ -381,7 +382,9 @@ class ResumenConfiguracion
             detalle: $activo
                 ? 'Módulo activo: el área aparece en el selector y sus pantallas responden.'
                 : 'Módulo desactivado: sus pantallas responden 404 para todos los roles.',
-            fuente: 'Archivo de configuración / .env',
+            fuente: $this->fuente(ModuloSistema::Planta->clave()),
+            ruta: $this->ruta('configuracion.modulos'),
+            etiquetaRuta: 'Configurar',
         );
     }
 

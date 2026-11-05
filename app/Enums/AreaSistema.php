@@ -84,11 +84,11 @@ enum AreaSistema: string
                 // pagó, de una vez. El listado con búsqueda y filtros sigue estando
                 // (`gastos.index`, en /gastos/listado), pero no es por donde se entra.
                 ['permiso' => PermisoSistema::GastosVer->value,
-                    'habilitada' => (bool) config('gastos.enabled'), 'ruta' => 'gastos.panel'],
+                    'habilitada' => ModuloSistema::Gastos->activo(), 'ruta' => 'gastos.panel'],
             ],
             self::Planta => [
                 ['permiso' => PermisoSistema::PlantaVer->value,
-                    'habilitada' => (bool) config('planta.enabled'), 'ruta' => 'planta.dashboard'],
+                    'habilitada' => ModuloSistema::Planta->activo(), 'ruta' => 'planta.dashboard'],
             ],
             self::Rutas => [
                 ['permiso' => PermisoSistema::RutasVer->value, 'habilitada' => true, 'ruta' => 'rutas.dashboard'],
@@ -96,9 +96,9 @@ enum AreaSistema: string
             ],
             self::Asistencia => [
                 ['permiso' => PermisoSistema::AsistenciaVer->value,
-                    'habilitada' => (bool) config('asistencia.enabled'), 'ruta' => 'asistencia.dashboard'],
+                    'habilitada' => ModuloSistema::Asistencia->activo(), 'ruta' => 'asistencia.dashboard'],
                 ['permiso' => PermisoSistema::PlanillaVer->value,
-                    'habilitada' => (bool) config('planilla.enabled'), 'ruta' => 'planilla.index'],
+                    'habilitada' => ModuloSistema::Planilla->activo(), 'ruta' => 'planilla.index'],
             ],
         };
     }
@@ -158,7 +158,8 @@ enum AreaSistema: string
 
     /**
      * ¿El módulo del área está encendido? Facturación es el núcleo del sistema y
-     * no tiene interruptor; Planta se apaga con PLANTA_ENABLED (config/planta.php).
+     * no tiene interruptor; Planta se apaga desde Configuración › Módulos o, si ahí
+     * no se guardó nada, con PLANTA_ENABLED (ver {@see ModuloSistema}).
      *
      * Rutas tampoco lleva interruptor: quien la ve se decide solo por el permiso
      * `rutas.ver` (administrador, facturación y jefatura). Un flag de config sería
@@ -185,7 +186,9 @@ enum AreaSistema: string
 
     /**
      * Áreas que el usuario PUEDE VER: módulo encendido Y permiso de entrada.
-     * Solo consulta permisos (Spatie los cachea) y config: NO toca la base de datos.
+     * Solo consulta permisos (Spatie los cachea) y los interruptores de
+     * {@see ModuloSistema} (caché de ajustes, con caída a config si la base no
+     * responde): ninguna tabla de un módulo.
      *
      * @return array<int, self> en orden de prioridad de aterrizaje
      */
@@ -232,6 +235,24 @@ enum AreaSistema: string
     public static function principalPara(?User $usuario): ?self
     {
         return self::visiblesPara($usuario)[0] ?? null;
+    }
+
+    /**
+     * ¿La URL actual es del apartado Configuración?
+     *
+     * Configuración NO es un área: no tiene puertas ni permiso de entrada propio ni
+     * aparece en el selector. Es un apartado aparte, al que se entra desde la barra
+     * superior en cualquier área, y que dibuja su propio índice
+     * (configuracion/_nav.blade.php) en vez de la barra lateral del área. Incluye
+     * Auditoría, Importaciones y Salud del sistema, que salieron de la barra de
+     * Facturación. Sin esto, esas pantallas caían en el área por defecto y el menú
+     * saltaba a Facturación sin que el usuario hubiera ido ahí.
+     *
+     * Presentación pura: cada ruta conserva su URL y su permiso.
+     */
+    public static function enApartadoConfiguracion(): bool
+    {
+        return request()->routeIs('configuracion.*', 'auditoria.*', 'importaciones.*', 'admin.salud-sistema');
     }
 
     /**

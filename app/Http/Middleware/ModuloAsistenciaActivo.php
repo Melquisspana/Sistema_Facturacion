@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\ModuloSistema;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,7 +23,7 @@ class ModuloAsistenciaActivo
 {
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless((bool) config('asistencia.enabled'), 404);
+        abort_unless(ModuloSistema::Asistencia->activo(), 404);
 
         return $next($request);
     }

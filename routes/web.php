@@ -19,6 +19,7 @@ use App\Http\Controllers\Configuracion\HaciendaController;
 use App\Http\Controllers\Configuracion\IntegracionDocumentosRecibidosController;
 use App\Http\Controllers\Configuracion\IntegracionGmailController;
 use App\Http\Controllers\Configuracion\InvalidacionController;
+use App\Http\Controllers\Configuracion\ModulosController;
 use App\Http\Controllers\Configuracion\ParametrosFiscalesController;
 use App\Http\Controllers\Configuracion\PuntoVentaController;
 use App\Http\Controllers\Configuracion\ResumenController;
@@ -873,6 +874,14 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
         Route::put('sistema', [SistemaController::class, 'update'])->name('sistema.update');
         Route::post('sistema/respaldar', [SistemaController::class, 'respaldar'])
             ->middleware('permission:respaldos.ejecutar')->name('sistema.respaldar');
+
+        /*
+        | MÓDULOS — prender y apagar Gastos, Producción, Asistencia, Planilla y Pagos
+        | de planilla. Lo guardado acá manda sobre el .env; apagar pide confirmación
+        | (N2). No borra datos. Ver App\Enums\ModuloSistema.
+        */
+        Route::get('modulos', [ModulosController::class, 'index'])->name('modulos');
+        Route::put('modulos', [ModulosController::class, 'update'])->name('modulos.update');
 
         // Establecimientos.
         Route::get('establecimientos', [EstablecimientoController::class, 'index'])->name('establecimientos.index');

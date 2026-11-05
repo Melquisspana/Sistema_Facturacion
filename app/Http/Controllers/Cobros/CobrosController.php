@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Cobros;
 
+use App\Ajustes\Integraciones\ConfiguracionGmail;
 use App\Enums\Cobros\EstadoEventoCobro;
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\EstadoPresentacionCobro;
@@ -213,7 +214,7 @@ class CobrosController extends Controller
             'clientes' => $clientes,
             'cliente' => $cliente,
             // Sin Gmail no entran albaranes: se avisa arriba para que no pase inadvertido.
-            'gmailDesconectado' => (bool) config('ppq.gmail.enabled') && ! app(GmailClient::class)->disponible(),
+            'gmailDesconectado' => app(ConfiguracionGmail::class)->habilitado() && ! app(GmailClient::class)->disponible(),
             'meses' => $this->meses($cliente, $filtros),
             'etapas' => $this->conteoEtapas($cliente, $filtros),
             'notasPorCcf' => $this->notasPorCcf($documentos->getCollection()),

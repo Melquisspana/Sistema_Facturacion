@@ -5,7 +5,7 @@
          «Accesos» (quién entra al sistema; antes, «Usuarios» en Facturación) va con
          `usuarios.gestionar` y no depende de los módulos. Empleados solo se ofrece si se
          alcanza Asistencia o Planilla: es lo mismo que pide su pantalla. --}}
-    @php($veAsistencia = config('asistencia.enabled') && auth()->user()->can('asistencia.ver'))
+    @php($veAsistencia = \App\Enums\ModuloSistema::Asistencia->activo() && auth()->user()->can('asistencia.ver'))
     <x-sidebar-group titulo="Personal" icono="asistencia">
         @if ($veAsistencia)
             <x-sidebar-link :href="route('asistencia.dashboard')" :active="request()->routeIs('asistencia.dashboard')">Hoy</x-sidebar-link>

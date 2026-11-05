@@ -2,6 +2,7 @@
 
 namespace App\Models\Planilla;
 
+use App\Enums\ModuloSistema;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
 use App\Models\User;
@@ -35,7 +36,7 @@ class PlanillaEmpleado extends Model
      */
     public static function enUso(): bool
     {
-        return (bool) config('planilla.enabled') && Schema::hasTable('planilla_empleados');
+        return ModuloSistema::Planilla->activo() && Schema::hasTable('planilla_empleados');
     }
 
     protected function casts(): array

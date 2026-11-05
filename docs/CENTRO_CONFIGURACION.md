@@ -351,6 +351,7 @@ secretos.
 | `documentos_recibidos.password` | N2 | Nueva (cifrado) | `documentos_recibidos.mail.password` |
 | `documentos_recibidos.folder` / `.search` / `.timeout` / `.limite` | N1 | Nueva | `documentos_recibidos.*` |
 | `documentos_recibidos.storage_dir` | N2 | **Ninguna (solo lectura)** | ruta del servidor |
+| `modulos.gastos` / `.planta` / `.asistencia` / `.planilla` / `.planilla_pagos` | N2 | Nueva | `gastos.enabled`, `planta.enabled`, `asistencia.enabled`, `planilla.enabled`, `planilla.pagos_enabled` — ver §27 |
 
 **Ningún valor existente fue migrado.** `MAIL_PASSWORD`, `DTE_PROD_PASSWORD`,
 `DTE_CERT_PASSWORD`, `GMAIL_CLIENT_SECRET`, `IMAP_PASSWORD` y el resto siguen donde
@@ -506,27 +507,45 @@ con el servidor) y se acota. Nunca la excepción entera.
 ## 19. Pantallas
 
 ```
-Configuración
+Configuración                  ← barra superior, en cualquier área (permiso configuracion.gestionar)
 ├── Resumen                    ← estado de todo el sistema (solo lectura)
 ├── General
 │   ├── Empresa emisora
 │   ├── Establecimientos
 │   └── Puntos de venta
+├── Módulos
+│   └── Prender y apagar       ← Gastos, Producción, Asistencia, Planilla, Pagos de planilla (§27)
 ├── Facturación electrónica
-│   └── Correlativos
-└── Correo
-    ├── Correo y servidor      ← SMTP + documentos fiscales + contabilidad
-    └── Contabilidad
+│   └── Hacienda / API, Certificado y firmador, Correlativos, Parámetros, Invalidación
+├── Correo
+│   ├── Correo y servidor      ← SMTP + documentos fiscales + contabilidad
+│   └── Contabilidad
+├── Integraciones              ← Gmail, buzón de compras, lectores de huella
+├── Sistema
+│   ├── Respaldos y estado
+│   └── Salud del sistema      ← permiso sistema.salud
+└── Administración
+    ├── Auditoría              ← permiso auditoria.ver
+    ├── Importaciones          ← permiso importaciones.gestionar
+    └── Accesos                ← solo con el área Personal apagada
 ```
+
+**Apartado propio (04/11/2026).** Configuración no es un grupo de Facturación: se
+entra desde la barra superior, junto al usuario, en cualquier área, y en sus
+pantallas no se dibuja la barra lateral de área (`AreaSistema::enApartadoConfiguracion()`).
+Auditoría, Importaciones y Salud del sistema salieron de la barra de Facturación y
+usan el mismo marco; sus URL y sus permisos no cambiaron. Cada enlace se ve por el
+permiso de su ruta, no por el rol: contabilidad (`auditoria.ver`) entra a Auditoría
+desde el menú de su usuario y en ese marco solo ve Auditoría.
 
 El índice pasó de pestañas horizontales a **columna agrupada**: con las secciones
 que vienen, una barra horizontal solo podía crecer desplazándose de lado y
 escondiendo justo lo que el usuario no sabe que existe. En móvil el mismo marcado se
 envuelve en pastillas; en ninguna de las dos formas hay desplazamiento horizontal.
 
-Los grupos que todavía no tienen pantallas reales (Integraciones, Módulos, Sistema)
-**no se dibujan**. Un grupo vacío o un enlace a una página inexistente enseña al
-usuario a desconfiar del resto del índice.
+Un grupo sin pantallas, o cuyas pantallas el usuario no puede abrir, **no se
+dibuja**. Un grupo vacío o un enlace que da 403 enseña al usuario a desconfiar del
+resto del índice.
 
 ### Resumen
 
@@ -919,3 +938,35 @@ con su consumidor—. Las credenciales del MH y la contraseña del certificado N
 forman parte de ese camino: se quedan en el servidor a propósito (ver §25).
 **Ninguna decisión de estas fases lo bloquea**: el registry es extensible, los
 secretos ya tienen su patrón y el estado ya es consultable.
+
+---
+
+## 27. Configuración → Módulos
+
+Prender y apagar Gastos, Producción, Asistencia, Planilla y Pagos de planilla para
+toda la empresa. Cada módulo es un ajuste `modulos.*` (N2, persistencia nueva) y
+`App\Enums\ModuloSistema` es la fuente única de su clave, su clave de config, su
+variable del `.env`, su valor por defecto y los textos de la pantalla.
+
+**Orden de resolución, el de siempre:** valor guardado desde la pantalla →
+`config()`/`.env` (`GASTOS_ENABLED`…) → defecto. Sin nada guardado, cada instalación
+sigue haciendo lo que dice su `.env`; con algo guardado, la pantalla manda.
+
+**Todo lector pasa por `ModuloSistema::X->activo()`**: `AreaSistema` (menú y
+selector de áreas), los middlewares `modulo.gastos` / `modulo.planta` /
+`modulo.asistencia` / `modulo.planilla`, `PersonalController`,
+`PlanillaEmpleado::enUso()`, los controladores de pagos de planilla, las vistas que
+lo consultan, los comandos `gastos:*` y `asistencia:dispositivo`, el detector de
+lectores sin señal y las tareas programadas de `routes/console.php`. Si uno leyera
+`config()` directo, apagar desde la pantalla escondería el menú y dejaría la
+puerta abierta.
+
+**Sin base.** Sin la tabla `ajustes_sistema` el repositorio ya devuelve «sin
+overrides» y el valor sale del `.env`. Si además la base no responde, `activo()`
+cae al mismo valor de `config()` en vez de romper: `routes/console.php` se carga con
+cualquier comando de artisan y el menú se dibuja en todas las pantallas.
+
+**Ceremonia.** Prender guarda directo. Apagar pide confirmación N2 y la pantalla
+dice qué deja de verse de cada módulo; los datos no se borran. Solo se escribe lo
+que cambia: un módulo que se deja como estaba sigue saliendo del `.env`. Cada cambio
+queda en la auditoría de ajustes con el antes, el después y la fuente.

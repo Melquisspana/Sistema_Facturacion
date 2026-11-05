@@ -117,76 +117,10 @@
          queda ningún consumidor. --}}
 
 
-    {{-- Administración: rastro (qué hizo cada quien, qué se cargó). Las herramientas
-         técnicas de infraestructura viven aparte, en «Sistema».
-
-         «Usuarios» salió de acá (03/11/2026): el acceso al sistema vive en Personal (la ficha
-         de cada persona y Personal › Accesos). Solo si el área Personal está apagada —ni
-         Asistencia ni Planilla encendidas, como en una instalación nueva— queda acá una fila
-         «Accesos», para que el administrador no se quede sin poder crear usuarios. --}}
-    @if ($esAdmin || $veAuditoria)
-        <x-sidebar-group titulo="Administración" icono="usuarios" clave="administracion" :activo="$grupoAdministracionActivo">
-            @if ($esAdmin && ! \App\Enums\AreaSistema::Asistencia->habilitada())
-                <x-sidebar-link :href="route('personal.accesos.index')" :active="false">Accesos</x-sidebar-link>
-            @endif
-            @if ($veAuditoria)
-                <x-sidebar-link :href="route('auditoria.index')" :active="request()->routeIs('auditoria.*')">Auditoría</x-sidebar-link>
-            @endif
-            @if ($esAdmin)
-                <x-sidebar-link :href="route('importaciones.index')" :active="request()->routeIs('importaciones.*')">Importaciones</x-sidebar-link>
-            @endif
-        </x-sidebar-group>
-    @endif
-
-    {{-- Configuración: UNA entrada directa, sin grupo que la envuelva.
-
-         Antes había seis filas sueltas —empresa, establecimientos, puntos de venta,
-         correlativos, contabilidad y correo—, elegidas en su día porque eran las
-         pantallas que existían. Hoy el Centro de Configuración tiene CATORCE, y las
-         ocho restantes (Hacienda / API, certificado y firmador, parámetros fiscales,
-         invalidación, las dos integraciones, respaldos y estado, y el propio resumen)
-         no tenían ninguna entrada: para llegar a «Hacienda / API» había que entrar
-         antes a «Empresa emisora» y descubrir el índice de al lado.
-
-         Seis atajos que además escondían la mitad del módulo valen menos que una
-         puerta que lo muestra entera. El índice agrupado ya existe y es la fuente
-         única (configuracion/_nav.blade.php, vía <x-configuracion-layout>): esta fila
-         lleva a su portada y desde ahí las catorce están a un clic.
-
-         NO ES UN <x-sidebar-group>. Un grupo existe para agrupar, y con una sola
-         opción el encabezado sólo conseguía decir «Configuración» dos veces
-         seguidas: una en el rótulo de la sección y otra en la fila de debajo. El
-         icono se pone acá dentro para que la entrada conserve el peso visual de una
-         sección sin fingir que contiene algo.
-
-         Misma condición de visibilidad de siempre ($esAdmin) y mismo permiso de ruta
-         (configuracion.gestionar). No se retiró ninguna pantalla ni ninguna ruta. --}}
-    @if ($esAdmin)
-        <x-sidebar-link :href="route('configuracion.resumen')" :active="$enConfiguracion">
-            <span class="flex min-w-0 items-center gap-1.5">
-                <x-sidebar-icon name="configuracion" />
-                <span class="truncate">Configuración</span>
-            </span>
-        </x-sidebar-link>
-    @endif
-
-    {{-- Sistema: infraestructura (colas, worker, modo de transmisión). Va al final y
-         separado por una línea porque no es una opción de trabajo diario ni de
-         administración de negocio: se entra cuando algo falla. Misma ruta y mismo
-         permiso de siempre. --}}
-    @if ($esAdmin)
-        <div class="border-t border-gray-200 pt-5 dark:border-ink-600">
-            <x-sidebar-group titulo="Sistema" icono="sistema">
-                <x-sidebar-link :href="route('admin.salud-sistema')" :active="request()->routeIs('admin.salud-sistema')">
-                    <span>Salud del sistema</span>
-                    @if (($jobsFallidos ?? 0) > 0)
-                        <span class="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700"
-                              title="{{ $jobsFallidos }} trabajos en cola fallidos (correos/DTE). Revisá Salud del sistema.">
-                            {{ $jobsFallidos }}
-                        </span>
-                    @endif
-                </x-sidebar-link>
-            </x-sidebar-group>
-        </div>
-    @endif
+    {{-- Administración (Auditoría, Importaciones), Configuración y Sistema › Salud ya NO
+         viven acá (04/11/2026). Configuración es un apartado propio, al que se entra
+         desde la barra superior en cualquier área, y esos enlaces están en su índice
+         (configuracion/_nav.blade.php), cada uno con el permiso de su ruta. Las URL y
+         los permisos no cambiaron. Contabilidad, que revisa la auditoría sin
+         administrar la configuración, la encuentra en el menú de su usuario. --}}
 </nav>

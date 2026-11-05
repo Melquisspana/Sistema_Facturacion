@@ -1,4 +1,4 @@
-@props(['areas' => [], 'activa'])
+@props(['areas' => [], 'activa' => null])
 
 {{-- Selector superior de ÁREAS de trabajo.
 
@@ -15,15 +15,20 @@
      panel lateral deslizante, y el cambio de área vive allí dentro
      (<x-area-selector-panel>). Antes este elemento era `hidden sm:block` y el panel
      no ofrecía nada: entre 0 y 640 px no había NINGUNA forma de cambiar de área.
-     Ahora cada ancho tiene exactamente un selector, y ninguno depende del otro. --}}
+     Ahora cada ancho tiene exactamente un selector, y ninguno depende del otro.
+
+     Sin `activa` (en el apartado Configuración, que no es un área) el botón dice
+     «Áreas» y ninguna opción se marca: sirve para volver a una. --}}
 @if (count($areas) > 1)
     <div class="hidden lg:block" data-area-selector>
         <x-dropdown align="left" width="48">
             <x-slot name="trigger">
                 <button type="button" aria-label="Cambiar de área de trabajo"
                         class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-ink-600 dark:bg-transparent dark:text-paper-300 dark:hover:bg-ink-700 dark:hover:text-paper-100 dark:focus-visible:outline-indigo-400">
-                    <x-sidebar-icon :name="$activa->icono()" />
-                    <span>{{ $activa->label() }}</span>
+                    @if ($activa)
+                        <x-sidebar-icon :name="$activa->icono()" />
+                    @endif
+                    <span>{{ $activa?->label() ?? 'Áreas' }}</span>
                     <svg class="h-4 w-4 fill-current text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                     </svg>

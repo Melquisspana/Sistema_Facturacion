@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\ModuloSistema;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -28,7 +29,7 @@ class ModuloGastosActivo
 {
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless((bool) config('gastos.enabled'), 404);
+        abort_unless(ModuloSistema::Gastos->activo(), 404);
         abort_unless((bool) $request->user()?->activo, 403);
 
         return $next($request);

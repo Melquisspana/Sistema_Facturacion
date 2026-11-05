@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ModuloSistema;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Services\Asistencia\RotarTokenDispositivo;
 use Illuminate\Console\Command;
@@ -36,8 +37,8 @@ class AsistenciaDispositivoCommand extends Command
 
     public function handle(RotarTokenDispositivo $rotar): int
     {
-        if (! config('asistencia.enabled')) {
-            $this->warn('El módulo de asistencia está apagado (ASISTENCIA_ENABLED=false).');
+        if (! ModuloSistema::Asistencia->activo()) {
+            $this->warn('El módulo de asistencia está apagado (Configuración › Módulos, o ASISTENCIA_ENABLED si ahí no se guardó nada).');
             $this->line('El lector se puede registrar igual, pero sus endpoints responderán 404 hasta encenderlo.');
             $this->newLine();
         }

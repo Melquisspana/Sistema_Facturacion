@@ -196,12 +196,18 @@ class AppServiceProvider extends ServiceProvider
             app(ConfiguracionCorreoRuntime::class)->aplicar();
         });
 
-        // Contador de trabajos fallidos para el navbar (badge junto a "Salud del sistema").
-        // Solo se consulta para administradores (que ven ese enlace); para el resto es 0 sin
-        // tocar la BD. Solo lectura de failed_jobs; no reintenta ni borra nada.
+        // Contador de trabajos fallidos (junto a «Configuración» en la barra superior y a
+        // «Salud del sistema» en el índice de Configuración). Solo se consulta para quien
+        // puede abrir Salud del sistema (`sistema.salud`, el permiso de su ruta); para el
+        // resto es 0 sin tocar la BD. Solo lectura de failed_jobs; no reintenta ni borra.
+        View::composer('configuracion._nav', static function ($view) {
+            $veSalud = (bool) auth()->user()?->can('sistema.salud');
+            $view->with('jobsFallidos', $veSalud ? (int) DB::table('failed_jobs')->count() : 0);
+        });
+
         View::composer('layouts.navigation', static function ($view) {
-            $esAdmin = (bool) auth()->user()?->hasRole('administrador');
-            $view->with('jobsFallidos', $esAdmin ? (int) DB::table('failed_jobs')->count() : 0);
+            $veSalud = (bool) auth()->user()?->can('sistema.salud');
+            $view->with('jobsFallidos', $veSalud ? (int) DB::table('failed_jobs')->count() : 0);
 
             // Badge de modo DTE (paralelo/respaldo/principal) visible para quienes facturan
             // (administrador/facturación), para que quede claro en TODA pantalla si el

@@ -1,16 +1,10 @@
-<x-app-layout>
-    <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Importaciones / Exportaciones</h2>
-    </x-slot>
-
-    <div class="py-8" x-data="{ clienteId: @js((string) ($clientes->first()->id ?? '')) }">
-        <div class="max-w-5xl mx-auto sm:px-6 lg:px-8 space-y-6">
-
-            @if ($errors->any())
-                <div class="rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
-                    <ul class="list-disc list-inside">@foreach ($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul>
-                </div>
-            @endif
+<x-configuracion-layout titulo="Importaciones / Exportaciones">
+    {{-- Marco de Configuración (04/11/2026): esta pantalla salió de la barra de
+         Facturación y vive en el índice de Configuración › Administración. Misma URL y mismo
+         permiso de siempre. --}}
+    {{-- Los errores de validación los muestra el marco, arriba del contenido. --}}
+    <div x-data="{ clienteId: @js((string) ($clientes->first()->id ?? '')) }">
+        <div class="space-y-6">
 
             {{-- Resumen + detalle de la última importación --}}
             @if (session('resumen'))
@@ -25,7 +19,7 @@
                         'error' => 'bg-red-100 text-red-700',
                     ];
                 @endphp
-                <div class="bg-white shadow sm:rounded-lg p-6">
+                <div class="rounded-lg border border-gray-200 bg-white p-6">
                     <h3 class="font-semibold text-gray-700 mb-3">{{ session('resumen_titulo', 'Resumen de importación') }}</h3>
 
                     <div class="flex flex-wrap gap-3 text-sm mb-4">
@@ -68,7 +62,7 @@
                 </div>
             @endif
 
-            <div class="bg-white shadow sm:rounded-lg p-6">
+            <div class="rounded-lg border border-gray-200 bg-white p-6">
                 <label class="block text-sm text-gray-600 mb-1">Cliente</label>
                 <select x-model="clienteId" class="block w-full md:w-1/2 border-gray-300 rounded-md shadow-sm text-sm">
                     @foreach ($clientes as $c)
@@ -96,7 +90,7 @@
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {{-- Salas --}}
-                <div class="bg-white shadow sm:rounded-lg p-6 space-y-4">
+                <div class="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
                     <div class="flex items-center justify-between">
                         <h3 class="font-semibold text-gray-700">Salas / sucursales</h3>
                         <a href="{{ route('importaciones.salas.plantilla') }}" class="text-xs text-indigo-600 hover:underline">Descargar plantilla</a>
@@ -118,7 +112,7 @@
                 </div>
 
                 {{-- Precios/productos --}}
-                <div class="bg-white shadow sm:rounded-lg p-6 space-y-4">
+                <div class="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
                     <div class="flex items-center justify-between">
                         <h3 class="font-semibold text-gray-700">Precios / productos</h3>
                         <a href="{{ route('importaciones.precios.plantilla') }}" class="text-xs text-indigo-600 hover:underline">Descargar plantilla</a>
@@ -141,4 +135,4 @@
             </div>
         </div>
     </div>
-</x-app-layout>
+</x-configuracion-layout>

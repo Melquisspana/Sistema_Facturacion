@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\ModuloSistema;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -30,7 +31,7 @@ class ModuloPlanillaActivo
 
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless((bool) config('planilla.enabled'), 404);
+        abort_unless(ModuloSistema::Planilla->activo(), 404);
         abort_unless((bool) $request->user()?->activo, 403);
 
         $faltan = array_values(array_filter(self::TABLAS, fn (string $t) => ! Schema::hasTable($t)));

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Planilla;
 
+use App\Enums\ModuloSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
@@ -127,12 +128,13 @@ class PlanillaFlujoController extends Controller
         $lineas = [];
         $suma = ['total_ingresos' => 0, 'descuentos' => 0, 'a_pagar' => 0, 'pagado' => 0];
         $entregaron = [];
+        $pagosActivos = ModuloSistema::PlanillaPagos->activo();
 
         foreach ($planilla->detalles as $i => $detalle) {
             $t = $totales->deDetalle($detalle);
             $e = $estado->deDetalle($detalle);
             $p = $pagos[$detalle->id] ?? ['pagado' => 0, 'fecha' => null, 'entrego' => null];
-            if (! config('planilla.pagos_enabled')) {
+            if (! $pagosActivos) {
                 // Sin seguimiento de pagos, el papel dice lo que recibe cada uno: lo que se
                 // firma es el total a pagar, no lo que el sistema tenga registrado.
                 $p = ['pagado' => $t['a_pagar'], 'fecha' => null, 'entrego' => null];

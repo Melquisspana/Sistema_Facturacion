@@ -25,12 +25,25 @@
 
     Esto es presentación pura: no toca rutas, permisos (el grupo entero va con
     `permission:configuracion.gestionar`), controladores ni valores guardados.
+
+    APARTADO PROPIO. Configuración no es parte de Facturación ni de ningún área: en
+    estas pantallas (y en Auditoría, Importaciones y Salud del sistema, que usan este
+    mismo marco) la barra lateral de área no se dibuja y el índice de acá es el
+    menú. Ver AreaSistema::enApartadoConfiguracion().
+
+    El título dice «Configuración —» solo a quien administra la configuración.
+    Contabilidad llega a Auditoría por este marco y para ella esa pantalla es solo
+    «Auditoría».
 --}}
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">
-            Configuración &mdash; {{ $titulo }}
-        </h2>
+        <h1 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">
+            @can('configuracion.gestionar')
+                Configuración &mdash; {{ $titulo }}
+            @else
+                {{ $titulo }}
+            @endcan
+        </h1>
     </x-slot>
 
     <div class="py-8">
