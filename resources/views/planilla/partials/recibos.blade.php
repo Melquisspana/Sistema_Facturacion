@@ -34,6 +34,9 @@
             @if ($l['dui'])
                 <div class="dui mono">{{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}</div>
             @endif
+            @if (filled($l['cargo'] ?? null))
+                <div class="dui">Puesto: {{ $l['cargo'] }}</div>
+            @endif
         </div>
 
         @if ($vac && ! $esBorrador)
@@ -133,14 +136,24 @@
                     </div>
                     <div class="quien mono">{{ $l['nombre'] }}@if ($l['dui']) · {{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}@endif</div>
                 </div>
-                <div class="bloque">
-                    <div class="linea"></div>
-                    <div class="txt">Entregó el pago</div>
-                    @if ($l['entrego'])
-                        <div class="quien mono">{{ $l['entrego'] }}</div>
-                        <div class="fuente">quien entregó este pago según el registro</div>
-                    @endif
-                </div>
+                @if ($vac)
+                    {{-- Vacaciones: firma la empleadora y pone su sello encima de la firma
+                         (Melqui, 06/11/2026: sin recuadro aparte para el sello). --}}
+                    <div class="bloque">
+                        <div class="linea"></div>
+                        <div class="txt">Firma y sello de la empleadora</div>
+                        <div class="quien mono">{{ $empleadora ?: $negocio }}</div>
+                    </div>
+                @else
+                    <div class="bloque">
+                        <div class="linea"></div>
+                        <div class="txt">Entregó el pago</div>
+                        @if ($l['entrego'])
+                            <div class="quien mono">{{ $l['entrego'] }}</div>
+                            <div class="fuente">quien entregó este pago según el registro</div>
+                        @endif
+                    </div>
+                @endif
             </div>
         @endunless
 

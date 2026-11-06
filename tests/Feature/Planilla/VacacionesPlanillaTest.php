@@ -406,11 +406,15 @@ class VacacionesPlanillaTest extends TestCase
         // Sin seguimiento de pagos, el papel dice lo que recibe cada uno.
         config(['planilla.pagos_enabled' => false]);
         Empresa::create(['razon_social' => 'Patrona Ejemplo', 'nombre_comercial' => 'Negocio Ejemplo', 'nit' => '00000000000000', 'ambiente' => '00', 'activo' => true]);
-        $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $this->persona('Ana', 'FICTICIO-1', '2020-11-10')->update(['cargo' => 'Vendedora']);
         $planilla = $this->generar('2026-11-20');
 
         $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo']))->assertOk()
             ->assertSee('Recibo de vacaciones')
+            ->assertSee('Puesto: Vendedora')
+            // Firman la persona y la empleadora; el sello va sobre la firma, sin recuadro.
+            ->assertSeeInOrder(['Recibí conforme', 'Firma y sello de la empleadora', 'Patrona Ejemplo'])
+            ->assertDontSee('Entregó el pago')
             ->assertSeeInOrder(['Recibí de Patrona Ejemplo', 'la cantidad de US$', '238.49', 'en concepto de vacaciones anuales remuneradas:',
                 '15 días de salario más 30 % de recargo, correspondientes al año de servicio del', '10/11/2025 al 10/11/2026.'])
             // Bruto, ISSS, AFP y neto, como los demás recibos. La renta en cero no se imprime.
@@ -427,7 +431,8 @@ class VacacionesPlanillaTest extends TestCase
         ]);
 
         $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $quincena, 'formato' => 'recibo']))->assertOk()
-            ->assertSee('Recibo de pago')->assertSee('Período pagado')
+            ->assertSee('Recibo de pago')->assertSee('Período pagado')->assertSee('Entregó el pago')
+            ->assertDontSee('Firma y sello de la empleadora')
             ->assertDontSee('vacaciones anuales')->assertDontSee('Período de goce')->assertDontSee('Año de servicio');
     }
 
