@@ -12,6 +12,23 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.06] - 2026-11-06
+
+Pedidos de sala en Rutas y su pedido estimado (#252, #253), con 3 migraciones. Cobros avisa lo entregado sin albarán y el albarán con la orden casi igual (#255, #260). Llegan el aviso de Gmail desconectado (#256), la orden de compra de 13 a 15 dígitos (#257) y la pantalla del TXT de pagos simplificada (#258).
+
+### Agregado
+
+- Rutas › Pedidos: el vendedor saca el pedido de cada sala desde su salida, con las cantidades y la orden de compra opcional, y la oficina la agrega después. Las salidas pueden ser para entregar o para sacar pedido. Permisos nuevos `rutas.pedidos.registrar` y `rutas.pedidos.ver` (#253).
+- Rutas: el pedido estimado de cada sala, calculado con lo facturado. Todavía no se muestra en pantalla (#252).
+- Avisos de fallas: «Gmail está desconectado» cuando la integración está prendida y la cuenta perdió el permiso. Sin cuenta conectada no entran los albaranes ni las respuestas de cobros (#256).
+
+### Cambiado
+
+- Cobros › Seguimiento: lo que el vendedor marcó entregado en Rutas y todavía no tiene albarán sale como «Entregado · falta albarán», con quién y cuándo, en su propia pestaña (#255).
+- Cobros › Seguimiento: si un CCF no tiene albarán con su orden exacta pero hay uno libre de la misma sala con la orden a 1 o 2 dígitos, queda en «Revisar albarán», con el motivo y un botón para enlazarlo. Nunca se enlaza solo (#260).
+- Cobros › TXT de pago: la pantalla muestra solo el PPQ que paga el archivo, el ajuste de pronto pago con «Crear nota de crédito» a la vista al aplicar y lo que no cuadró de ese PPQ. El estado de cobro de todo el historial queda en el Excel (#258).
+- Orden de compra: se aceptan de 13 a 15 dígitos, porque el correlativo de Calleja crece. Se avisa cuando la orden trae el código de otra sala (#257).
+
 ## [2026.11.05.2] - 2026-11-05
 
 Las opciones de cada módulo en Configuración, el segundo buzón de compras y los datos de la empresa en un solo lugar (#249), y un arreglo de Planilla con MySQL estricto (#250), sin migraciones.
