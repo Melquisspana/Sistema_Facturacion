@@ -36,6 +36,7 @@ use App\Http\Controllers\Exportaciones\ExportacionProductoController;
 use App\Http\Controllers\Facturacion\ContingenciaController;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Facturacion\ListaEmpaqueController;
+use App\Http\Controllers\Facturacion\OrdenCompraRecibidaController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
 use App\Http\Controllers\Ppq\NcExportacionController;
 use App\Http\Controllers\Ppq\PpqBusquedaController;
@@ -299,7 +300,14 @@ Route::middleware('auth')->group(function () {
         // (contabilidad.paquete), que reutiliza ReporteContadoraQuery y su Excel, y una
         // por una desde la ficha (facturacion.enviar-contabilidad).
 
+        // Órdenes de compra recibidas por correo (ordenes:sincronizar). Lectura con `dte.ver`
+        // (DtePolicy, en el controlador). Antes de `{dte}` para que el segmento no se lea como id.
+        Route::get('ordenes-recibidas', [OrdenCompraRecibidaController::class, 'index'])->name('ordenes-recibidas.index');
+        Route::get('ordenes-recibidas/{orden}/pdf', [OrdenCompraRecibidaController::class, 'pdf'])->whereNumber('orden')->name('ordenes-recibidas.pdf');
+
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
+        // CCF + su orden de compra recibida, en un solo PDF (DtePolicy::view). El PDF normal no cambia.
+        Route::get('{dte}/pdf-con-orden', [OrdenCompraRecibidaController::class, 'pdfConOrden'])->name('pdf-con-orden');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');
         // Representación gráfica PRELIMINAR en PDF (solo lectura; DtePolicy::view). NO transmite.
         Route::get('{dte}/pdf', [DteController::class, 'pdf'])->name('pdf');

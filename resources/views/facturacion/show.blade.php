@@ -415,7 +415,8 @@
                 :dte="$dte"
                 :invalidacion="$invalidacion ?? null"
                 :mostrarReversion="$mostrarReversion"
-                :salasNotaCredito="$salasNotaCredito ?? []" />
+                :salasNotaCredito="$salasNotaCredito ?? []"
+                :ordenRecibida="$ordenRecibida ?? null" />
 
             {{-- EMITIR EN PRODUCCIÓN — tarjeta única para los cuatro tipos (01/03/05/11).
                  Antes esto era un modal propio de "Emitir a Hacienda" que solo veían CCF,
