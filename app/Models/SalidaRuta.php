@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\PropositoSalida;
 use App\Enums\RolEnSalida;
 use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,11 +42,17 @@ class SalidaRuta extends Model
         'fecha_fin_estimada',
         'fecha_fin_real',
         'estado',
+        'proposito',
         'observaciones',
         'created_by',
         'entrega_dinero_personal_id',
         'liquidada_por',
         'liquidada_en',
+    ];
+
+    /** Las salidas que no dicen para qué salen son de entregar, como todas hasta el 05/11/2026. */
+    protected $attributes = [
+        'proposito' => 'entregar',
     ];
 
     protected function casts(): array
@@ -55,6 +62,7 @@ class SalidaRuta extends Model
             'fecha_fin_estimada' => 'date',
             'fecha_fin_real' => 'date',
             'estado' => EstadoSalidaRuta::class,
+            'proposito' => PropositoSalida::class,
             'liquidada_en' => 'datetime',
         ];
     }
@@ -122,6 +130,12 @@ class SalidaRuta extends Model
     public function entregas(): HasMany
     {
         return $this->hasMany(SalidaRutaEntrega::class, 'salida_ruta_id');
+    }
+
+    /** Los pedidos que se sacaron en las salas durante esta salida. */
+    public function pedidos(): HasMany
+    {
+        return $this->hasMany(PedidoSala::class, 'salida_ruta_id');
     }
 
     // ----------------------------------------------------------------- cierres

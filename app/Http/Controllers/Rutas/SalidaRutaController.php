@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\MotivoNoEntrega;
+use App\Enums\PropositoSalida;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\SalidaRutaRequest;
 use App\Models\PersonalRuta;
@@ -75,6 +76,7 @@ class SalidaRutaController extends Controller
                 'fecha_fin_estimada' => $datos['fecha_fin_estimada'] ?? null,
                 'observaciones' => $datos['observaciones'] ?? null,
                 'estado' => $planificada ? EstadoSalidaRuta::Planificada : EstadoSalidaRuta::EnCurso,
+                'proposito' => $datos['proposito'] ?? PropositoSalida::Entregar->value,
                 'created_by' => $request->user()?->id,
             ]);
 
@@ -86,14 +88,17 @@ class SalidaRutaController extends Controller
             'responsable' => $resultado['responsable'],
         ]);
 
-        // Los CCF pendientes de la ruta se cargan solos: es lo que la salida va a llevar.
+        // Los CCF pendientes de la ruta se cargan solos: es lo que la salida va a llevar. La
+        // que solo saca pedido no lleva ninguno.
         $cargados = $entregas->cargarPendientes($salida->load('ruta'), $request->user());
 
         return redirect()
             ->route('rutas.salidas.show', $salida)
             ->with('status', ($planificada
                 ? 'Salida planificada para el '.$salida->fecha_inicio->format('d/m/Y')
-                : 'Salida en camino').' con '.$cargados.' CCF por entregar.');
+                : 'Salida en camino').($salida->proposito->entrega()
+                    ? ' con '.$cargados.' CCF por entregar.'
+                    : ' para sacar pedido.'));
     }
 
     public function show(SalidaRuta $salida, EntregasCcf $servicio): View
@@ -158,6 +163,7 @@ class SalidaRutaController extends Controller
             'fecha_inicio' => $datos['fecha_inicio'],
             'fecha_fin_estimada' => $datos['fecha_fin_estimada'] ?? null,
             'observaciones' => $datos['observaciones'] ?? null,
+            'proposito' => $datos['proposito'] ?? $salida->proposito,
         ]);
 
         $resultado = $participantes->sincronizar($salida, $datos['personal'], $datos['responsable_id'] ?? null);

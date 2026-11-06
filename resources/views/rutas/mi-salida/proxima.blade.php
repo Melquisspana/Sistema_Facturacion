@@ -22,6 +22,7 @@
     <h1 class="text-3xl font-bold">{{ $salida->ruta->nombre }}</h1>
     <p class="mt-1 text-base">
         <time datetime="{{ $salida->fecha_inicio->toDateString() }}">{{ ucfirst($fecha($salida->fecha_inicio)) }}</time>
+        · {{ $salida->proposito->descripcion() }}
     </p>
     <p class="mt-2 text-base">{{ $companeros !== '' ? 'Vas con '.$companeros : 'Nadie más va en esta salida.' }}</p>
 
@@ -75,7 +76,8 @@
         @endif
     </section>
 
-    {{-- CCF que lleva la salida: la cantidad y, si son pocos, cuáles. --}}
+    {{-- CCF que lleva la salida: la cantidad y, si son pocos, cuáles. La que solo saca pedido no lleva. --}}
+    @if ($salida->proposito->entrega())
     <section class="mt-6" aria-labelledby="ccf-titulo">
         <h2 id="ccf-titulo" class="{{ $titulo }}">CCF por entregar</h2>
         <div class="mt-3 {{ $caja }}">
@@ -104,6 +106,7 @@
             @endif
         </div>
     </section>
+    @endif
 
     @if ($despues->isNotEmpty())
         <section class="mt-6" aria-labelledby="despues-titulo">

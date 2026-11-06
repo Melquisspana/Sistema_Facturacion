@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\Rutas\AsignacionSalasController;
+use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
+use App\Http\Controllers\Rutas\PedidoSalaController;
 use App\Http\Controllers\Rutas\PersonalRutaController;
 use App\Http\Controllers\Rutas\RutaCoberturaController;
 use App\Http\Controllers\Rutas\RutaController;
@@ -72,6 +74,15 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
+        // «Sacar pedido» en una sala de la salida (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10). Que
+        // vaya en la salida, en curso y para sacar pedido lo pide la policy; la sala, PedidosSala.
+        Route::middleware('permission:rutas.pedidos.registrar')->name('pedidos.')->group(function () {
+            Route::get('{salida}/sala/{sucursal}/pedido', [MiPedidoController::class, 'create'])->name('create')->withoutScopedBindings();
+            Route::post('{salida}/sala/{sucursal}/pedido', [MiPedidoController::class, 'store'])->name('store')->withoutScopedBindings();
+            Route::get('{salida}/pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');
+            Route::put('{salida}/pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
+            Route::patch('{salida}/pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
+        });
     });
 
 Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;private'])
@@ -200,6 +211,17 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
                 Route::delete('{entrega}', [SalidaEntregaController::class, 'destroy'])->name('destroy');
                 Route::delete('{entrega}/facturado-despues', [SalidaEntregaController::class, 'deshacerFacturadoDespues'])->name('facturado-despues.destroy');
             });
+
+        /*
+        | Pedidos de sala: la lista y el detalle de la oficina.
+        */
+        Route::prefix('pedidos')->name('pedidos.')->middleware('permission:rutas.pedidos.ver')->group(function () {
+            Route::get('/', [PedidoSalaController::class, 'index'])->name('index');
+            Route::get('{pedido}', [PedidoSalaController::class, 'show'])->name('show');
+            // La OC llega después por EDI: la agrega o corrige la oficina.
+            Route::patch('{pedido}/orden-compra', [PedidoSalaController::class, 'ordenCompra'])->name('orden-compra')
+                ->middleware('permission:rutas.gestionar');
+        });
 
         /*
         | PERSONAL OPERATIVO. Sin `destroy`: una persona que ya fue en salidas no se

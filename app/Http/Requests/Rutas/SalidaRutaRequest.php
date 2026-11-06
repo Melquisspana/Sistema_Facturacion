@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Rutas;
 
+use App\Enums\PropositoSalida;
 use App\Support\HoraNegocio;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -43,6 +44,8 @@ class SalidaRutaRequest extends FormRequest
             // revivirla por la puerta de atrás.
             'ruta_id' => ['required', Rule::exists('rutas', 'id')->where('activa', true)],
             'dia' => ['nullable', Rule::in(['hoy', 'otro'])],
+            // Para qué sale: entregar, sacar pedido o las dos. Sin elegir, entregar.
+            'proposito' => ['nullable', Rule::enum(PropositoSalida::class)],
             // Sin fecha = hoy: «Salir a esta ruta» es salir ahora.
             'fecha_inicio' => array_merge(
                 [$this->input('dia') === 'otro' ? 'required' : 'nullable', 'date'],
@@ -74,6 +77,7 @@ class SalidaRutaRequest extends FormRequest
             'fecha_fin_estimada' => 'fecha estimada de regreso',
             'personal' => 'participantes',
             'responsable_id' => 'quién la encabeza',
+            'proposito' => 'para qué sale',
         ];
     }
 
@@ -86,6 +90,7 @@ class SalidaRutaRequest extends FormRequest
             'personal.*.exists' => 'Alguna de las personas elegidas no existe o está inactiva.',
             'fecha_fin_estimada.after_or_equal' => 'El regreso estimado no puede ser anterior a la salida.',
             'fecha_inicio.required' => 'Elegí el día de la salida.',
+            'proposito.enum' => 'Elegí para qué sale: Entregar, Sacar pedido o Las dos.',
             'fecha_inicio.after_or_equal' => 'La salida tiene que ser para hoy o para un día que viene.',
             'responsable_id.in' => 'Quien la encabeza tiene que ir en la salida. Marcalo en «¿Quiénes van?» o elegí a otro.',
         ];

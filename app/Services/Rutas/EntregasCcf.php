@@ -150,7 +150,7 @@ class EntregasCcf
      */
     public function cargarNuevosEnCurso(SalidaRuta $salida): int
     {
-        if ($salida->estado !== EstadoSalidaRuta::EnCurso || $salida->diaCerrado()) {
+        if ($salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->proposito->entrega() || $salida->diaCerrado()) {
             return 0;
         }
         $nuevos = $this->pendientesDeRuta($salida->ruta)->pluck('id')
@@ -179,6 +179,11 @@ class EntregasCcf
     /** Con la salida ya bloqueada y abierta: agrega los pendientes que no chocan con nada. */
     private function agregarPendientes(SalidaRuta $salida): int
     {
+        // La salida que solo saca pedido no lleva CCF: si los cargara, quedarían tomados por
+        // ella y la salida que va a entregar no los podría llevar.
+        if (! $salida->proposito->entrega()) {
+            return 0;
+        }
         $ids = $this->pendientesDeRuta($salida->ruta)->pluck('id')->all();
         $candidatos = Dte::whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
         $agregados = 0;

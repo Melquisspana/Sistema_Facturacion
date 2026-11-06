@@ -220,10 +220,13 @@
         </div>
     @endforeach
 @empty
-    <div class="{{ $caja }} mt-4 px-5 py-10 text-center">
-        <p class="text-base font-medium text-gray-800 dark:text-paper-100">Esta salida no lleva CCF</p>
-        <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">No había CCF pendientes para esta ruta cuando se creó.</p>
-    </div>
+    {{-- La que solo saca pedido no lleva CCF: no hay nada que avisar. --}}
+    @if ($salida->proposito->entrega())
+        <div class="{{ $caja }} mt-4 px-5 py-10 text-center">
+            <p class="text-base font-medium text-gray-800 dark:text-paper-100">Esta salida no lleva CCF</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">No había CCF pendientes para esta ruta cuando se creó.</p>
+        </div>
+    @endif
 @endforelse
 
 @if ($modoVendedor || $puedeTerminarDia)

@@ -141,6 +141,12 @@ enum PermisoSistema: string
     // aunque no haya ido. No da reabrir días, gastos ajenos ni editar o cancelar salidas,
     // y no lo hace recibir el dinero: lo recibe la oficina (docs/PLAN_TABLERO_RUTAS.md, PR 7).
     case RutasSalidasTerminar = 'rutas.salidas.terminar';
+    // Pedidos de sala (docs/PLAN_TABLERO_RUTAS.md, etapa 3). `registrar`: sacar el pedido
+    // en la sala desde «Mi salida», solo en las salidas donde va. `ver`: la lista y el
+    // detalle de la oficina. Producción lleva los suyos
+    // con su pantalla.
+    case RutasPedidosRegistrar = 'rutas.pedidos.registrar';
+    case RutasPedidosVer = 'rutas.pedidos.ver';
     // Ventas netas y su Excel: consulta comercial de solo lectura.
     case RutasVentasVer = 'rutas.ventas.ver';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
@@ -229,7 +235,7 @@ enum PermisoSistema: string
     {
         return match ($rol) {
             RolSistema::Administrador => self::todos(),
-            RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar]),
+            RolSistema::Vendedor => self::valores([self::RutasEntregasRegistrar, self::RutasPedidosRegistrar]),
 
             // Jefe de vendedores: ve el tablero, las rutas, las salas y las salidas de todo
             // el país. Cuando sale a ruta, registra en SUS salidas como cualquier vendedor
@@ -244,6 +250,8 @@ enum PermisoSistema: string
                 self::RutasEntregasRegistrar,
                 self::RutasSalidasArmar,
                 self::RutasSalidasTerminar,
+                self::RutasPedidosRegistrar,
+                self::RutasPedidosVer,
             ]),
 
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
@@ -265,6 +273,7 @@ enum PermisoSistema: string
                 // Ya no da de alta a los vendedores: los empleados son solo de la
                 // administración (04/11/2026). Los sigue eligiendo al armar la salida.
                 self::RutasVentasVer,
+                self::RutasPedidosVer,
             ]),
 
             // Facturación: operación diaria. Emite y gestiona DTE, PPQ y
@@ -295,6 +304,8 @@ enum PermisoSistema: string
                 self::RutasGestionar,
                 // Y consulta las ventas por producto y sala (decisión del usuario, 28/10/2026).
                 self::RutasVentasVer,
+                // Los pedidos de sala que va a facturar.
+                self::RutasPedidosVer,
             ]),
 
             // Contabilidad: solo lectura contable + envío del paquete a la

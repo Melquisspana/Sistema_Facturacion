@@ -73,7 +73,7 @@ class VendedorMiSalidaTest extends TestCase
     public function test_rol_permiso_y_aterrizaje(): void
     {
         $this->assertSame('Vendedor', RolSistema::Vendedor->label());
-        $this->assertSame(['rutas.entregas.registrar'], RolSistema::Vendedor->permisos());
+        $this->assertSame(['rutas.entregas.registrar', 'rutas.pedidos.registrar'], RolSistema::Vendedor->permisos());
         foreach (RolSistema::cases() as $rol) {
             $this->assertSame(in_array($rol, [RolSistema::Administrador, RolSistema::Vendedor, RolSistema::JefeVendedores], true), in_array(PermisoSistema::RutasEntregasRegistrar->value, $rol->permisos(), true));
         }

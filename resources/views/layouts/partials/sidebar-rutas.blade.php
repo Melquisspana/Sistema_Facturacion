@@ -12,6 +12,9 @@
          y enlazarle el usuario (29/10/2026). --}}
     <x-sidebar-group titulo="Rutas" icono="rutas">
         <x-sidebar-link :href="route('rutas.dashboard')" :active="request()->routeIs('rutas.dashboard')">Rutas</x-sidebar-link>
+        @can('rutas.pedidos.ver')
+            <x-sidebar-link :href="route('rutas.pedidos.index')" :active="request()->routeIs('rutas.pedidos.*')">Pedidos</x-sidebar-link>
+        @endcan
         @can('rutas.ventas.ver')
             <x-sidebar-link :href="route('rutas.ventas.index')" :active="request()->routeIs('rutas.ventas.*')">Ventas</x-sidebar-link>
         @endcan
