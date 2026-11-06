@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Documento (CCF/factura) recibido por correo, donde SOMOS EL RECEPTOR. Registro
@@ -138,6 +140,30 @@ class DocumentoRecibido extends Model
     public function scopeParaContabilidad(Builder $q): Builder
     {
         return $q->where('estado', '!=', 'ignorado');
+    }
+
+    /**
+     * Ruta (disco `local`) del primer adjunto GUARDADO con esa extensión (pdf | json),
+     * o null si no hay. Sale siempre de `metadata_json.archivos`, que escribió el
+     * sincronizador: nunca de un dato que mande el usuario.
+     */
+    public function archivoGuardado(string $extension): ?string
+    {
+        return $this->archivosGuardados($extension)->first();
+    }
+
+    /**
+     * Todas las rutas guardadas con esa extensión, en el orden en que llegaron.
+     *
+     * @return Collection<int, string>
+     */
+    public function archivosGuardados(string $extension): Collection
+    {
+        return collect((array) data_get($this->metadata_json, 'archivos', []))
+            ->filter(fn ($ruta) => is_string($ruta)
+                && str_ends_with(strtolower($ruta), '.'.$extension)
+                && Storage::disk('local')->exists($ruta))
+            ->values();
     }
 
     /** Etiqueta legible del tipo de documento (CAT-002) si se conoce. */

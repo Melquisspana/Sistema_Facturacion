@@ -283,8 +283,6 @@
                                 <th class="py-3 px-3">Tipo</th>
                                 <th class="py-3 px-3">Número de control</th>
                                 <th class="py-3 px-3 text-right">Total</th>
-                                <th class="py-3 px-3 text-center">Adjuntos</th>
-                                <th class="py-3 px-3 text-center">Clasificación</th>
                                 <th class="py-3 px-3 text-center">Estado</th>
                                 <th class="py-3 px-3 text-right">Contabilidad y acciones</th>
                             </tr>
@@ -294,14 +292,6 @@
                                 // «Pendiente» en gris, no en ámbar: es lo normal hasta que sale el paquete
                                 // mensual, no algo que haya que atender compra por compra.
                                 $badge = ['pendiente' => 'bg-gray-100 text-gray-600', 'enviado' => 'bg-green-100 text-green-700', 'ignorado' => 'bg-gray-100 text-gray-500'];
-                                // Motivo de datos faltantes (independiente de `estado`). Ver DocumentoRecibido::CLASIFICACIONES.
-                                $badgeClasificacion = [
-                                    'dte_valido' => 'bg-green-100 text-green-700',
-                                    'no_es_dte' => 'bg-gray-100 text-gray-500',
-                                    'json_invalido' => 'bg-red-100 text-red-700',
-                                    'tipo_no_soportado' => 'bg-amber-100 text-amber-700',
-                                    'falta_adjunto' => 'bg-amber-100 text-amber-700',
-                                ];
                                 // Cuando no hay total, el motivo (no la palabra "—") explica por qué.
                                 $sinTotalPorClasificacion = [
                                     'no_es_dte' => 'No es DTE',
@@ -329,7 +319,18 @@
                                         <div class="font-medium text-gray-800">{{ $doc->emisor_nombre ?? $doc->remitente ?? '—' }}</div>
                                         <div class="text-xs text-gray-500">{{ $doc->emisor_nit ? 'NIT '.$doc->emisor_nit : '' }}{{ $doc->emisor_nrc ? ' · NRC '.$doc->emisor_nrc : '' }}</div>
                                     </td>
-                                    <td class="py-2 px-3 text-gray-600">{{ $doc->tipoLabel() }}</td>
+                                    <td class="py-2 px-3 text-gray-600">
+                                        {{ $doc->tipoLabel() }}
+                                        {{-- Ya no hay columnas de adjuntos ni de «DTE válido»: solo se marca
+                                             el que NO es un DTE válido (mismo criterio que la columna), para
+                                             que no se le pase a nadie antes de mandárselo a la contadora. --}}
+                                        @if ($doc->clasificacion !== 'dte_valido')
+                                            <div class="mt-1">
+                                                <span class="inline-flex whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+                                                      title="No es un DTE válido: revisalo antes de mandarlo a contabilidad.">{{ $doc->clasificacionLabel() }}</span>
+                                            </div>
+                                        @endif
+                                    </td>
                                     <td class="py-2 px-3 font-mono text-xs text-gray-600">{{ $doc->numero_control ?? '—' }}</td>
                                     <td class="py-2 px-3 text-right text-gray-700">
                                         @if ($doc->total !== null)
@@ -340,13 +341,6 @@
                                         @else
                                             <span class="text-xs text-gray-400">{{ $sinTotalPorClasificacion[$doc->clasificacion] ?? '—' }}</span>
                                         @endif
-                                    </td>
-                                    <td class="py-2 px-3 text-center">
-                                        <span class="inline-flex rounded px-1.5 py-0.5 text-xs {{ $doc->tiene_pdf ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-400' }}">PDF</span>
-                                        <span class="inline-flex rounded px-1.5 py-0.5 text-xs {{ $doc->tiene_json ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-400' }}">JSON</span>
-                                    </td>
-                                    <td class="py-2 px-3 text-center">
-                                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badgeClasificacion[$doc->clasificacion] ?? 'bg-gray-100 text-gray-400' }}">{{ $doc->clasificacionLabel() }}</span>
                                     </td>
                                     <td class="py-2 px-3 text-center">
                                         <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $badge[$doc->estado] ?? 'bg-gray-100 text-gray-600' }}">{{ ucfirst($doc->estado) }}</span>
@@ -360,6 +354,9 @@
                                     @endphp
                                     <td class="py-2 px-3 align-top">
                                         <div class="flex items-start justify-end gap-3">
+                                            {{-- Acción principal: la factura armada desde su JSON. --}}
+                                            <a href="{{ route('documentos-recibidos.ver', $doc) }}"
+                                               class="py-1.5 text-sm font-medium text-indigo-600 hover:underline">Ver</a>
                                             <div class="flex flex-col items-end gap-1">
                                                 @if ($puedeEnviarContabilidad)
                                                     @php($accion = $envioExitoso ? 'Reenviar a contabilidad' : 'Enviar a contabilidad')
@@ -422,7 +419,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="10" class="py-10 text-center text-gray-400">
+                                <tr><td colspan="8" class="py-10 text-center text-gray-400">
                                     No hay documentos para este filtro.
                                     @if ($fuenteDisponible) Usá "Revisar ahora" para adelantar la revisión, o cambiá el rango a "Todos". @endif
                                 </td></tr>
