@@ -58,7 +58,7 @@ class OrdenCompraFormaAvisoTest extends TestCase
         return HoraNegocio::hoy()->format('ym').'0123456789';
     }
 
-    private function borrador(string $orden, ?string $codigoSala = 'S-101'): Dte
+    private function borrador(string $orden, ?string $codigoSala = '0123'): Dte
     {
         if ($this->emisor === null) {
             $this->emisor = $this->crearEmisorDte();
@@ -104,7 +104,7 @@ class OrdenCompraFormaAvisoTest extends TestCase
 
         $this->actingAs($usuario)->get(route('facturacion.edit', $dte))
             ->assertOk()
-            ->assertSee('tiene 16 dígitos y deben ser 14')
+            ->assertSee('tiene 16 dígitos y deben ser de 13 a 15')
             ->assertSee('Revisé la orden: generar igual');
 
         $this->actingAs($usuario)
@@ -144,6 +144,27 @@ class OrdenCompraFormaAvisoTest extends TestCase
         $this->assertStringContainsString('no tiene cargado su código de sala', session('errors')->first('generar'));
     }
 
+    public function test_orden_de_otra_sala_avisa(): void
+    {
+        // La orden trae la sala 0025 y la factura va para la 0250 (un 0 de más al copiarla).
+        $dte = $this->borrador(HoraNegocio::hoy()->format('ym').'00250004665', codigoSala: '0250');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.generar', $dte))
+            ->assertSessionHasErrors('generar');
+        $this->assertSame(EstadoDte::Borrador, $dte->refresh()->estado);
+        $this->assertStringContainsString('es de la sala 0025 y la factura va para', session('errors')->first('generar'));
+    }
+
+    public function test_sala_con_codigo_que_no_es_de_calleja_no_compara(): void
+    {
+        $dte = $this->borrador($this->ordenValida(), codigoSala: 'S-101');
+
+        $this->actingAs($this->usuario('facturacion'))
+            ->post(route('facturacion.generar', $dte))
+            ->assertRedirect(route('facturacion.show', $dte));
+    }
+
     public function test_cliente_que_no_exige_orden_no_avisa(): void
     {
         $dte = $this->borrador('ABC');
@@ -156,7 +177,7 @@ class OrdenCompraFormaAvisoTest extends TestCase
 
     public function test_auditoria_lista_solo_los_ccf_cuya_orden_no_cuadra(): void
     {
-        $malo = $this->borrador('261101234567890');
+        $malo = $this->borrador('2611012345678901');
         $bueno = $this->borrador($this->ordenValida());
         $this->borrador('99'); // borrador: todavía no se emitió
         $malo->forceFill(['estado' => EstadoDte::Generado->value, 'numero_interno' => 'INT-MALO'])->saveQuietly();
@@ -166,7 +187,7 @@ class OrdenCompraFormaAvisoTest extends TestCase
             ->get(route('auditoria.ordenes_compra'))
             ->assertOk()
             ->assertSee('INT-MALO')
-            ->assertSee('tiene 15 dígitos y deben ser 14')
+            ->assertSee('tiene 16 dígitos y deben ser de 13 a 15')
             ->assertDontSee('INT-BUENO')
             ->assertDontSee('«99»', false);
 
