@@ -149,13 +149,15 @@ Si una sala pasa **más de 3 veces su ritmo** sin pedido, la tarjeta dice ademá
 3. **El ritmo de la ruta es la mediana** de los días entre el comienzo de una vuelta y el de la siguiente.
 4. La regla de confiable y de atrasada es la misma que la de las salas.
 
-**Hace cuánto no se va a la ruta:** se cuenta desde la última salida terminada (desde su regreso) o se marca «en camino» si hay una en curso. Es lo que ya hace `RitmoRutas::porRuta`. Si la ruta nunca tuvo una salida registrada, se usa la última vuelta de pedidos.
+**Hace cuánto no se va a la ruta:** se cuenta desde la última salida terminada (desde su regreso) o desde la última visita a cualquiera de sus salas, lo que sea más nuevo; se marca «en camino» si hay una en curso. Es lo que hace `RitmoRutas::porRuta` (cambiado el 06/11/2026, tablero para jefes).
 
-**Hace cuánto no se entrega a una sala:** la última entrega conocida, sea registrada por el vendedor, por la oficina o probada por un albarán de entrega. Es lo que ya hace `EntregasCcf::ultimaVisitaPorSala`.
+**Hace cuánto no se entrega a una sala:** la más nueva entre su último CCF facturado y la última entrega conocida, sea registrada por el vendedor, por la oficina o probada por un albarán de entrega (`EntregasCcf::ultimaVisitaPorSala`). El semáforo de la sala cuenta desde su última visita: esa entrega o el último pedido sacado, lo que sea más nuevo (06/11/2026).
 
 ### Los «días objetivo» que hoy se cargan a mano
 
 Hoy cada ruta puede tener «días objetivo» cargados a mano (`frecuencia_objetivo_dias`). Con el plan:
+
+> **Cambiado el 06/11/2026** (tablero para jefes): si la ruta tiene días cargados, **mandan esos** sobre el ritmo calculado; vacío, se usa el calculado. El formulario dice «Cada cuántos días ir (opcional)». Lo de abajo queda como historia.
 
 - Manda el **ritmo calculado** (decidido por Melqui).
 - El campo **queda como respaldo**: se usa solo para una ruta que todavía no tiene ritmo (menos de 3 vueltas).
@@ -347,7 +349,7 @@ Antes de programarla, una sesión propia de diseño con Melqui, que parte de la 
 1. **El jefe también sale a ruta**, no siempre pero sí. Va en una salida como cualquier vendedor y usa «Mi salida» (sección 3).
 2. **El jefe arma las salidas**, con su permiso propio `rutas.salidas.armar` (etapa 2).
 3. **El jefe no ve sueldos ni nada de Planilla.** No se le da permiso de Planilla; lo que necesita de cada vendedor lo ve en la sección Vendedores de Rutas.
-4. **El ritmo calculado reemplaza los días objetivo** cargados a mano. El campo queda solo de respaldo para rutas sin ritmo y deja de mostrarse en el tablero (sección 2).
+4. **El ritmo calculado reemplaza los días objetivo** cargados a mano. El campo queda solo de respaldo para rutas sin ritmo y deja de mostrarse en el tablero (sección 2). **Cambiado el 06/11/2026** con el encargo del tablero para jefes: si la ruta tiene días cargados, mandan esos sobre el cálculo; vacío, se usa el calculado.
 5. **El CCF puede salir después de la visita**, cuando se lleva el producto y la orden se saca en la sala. Se acepta: se sigue usando la fecha del CCF y el margen del ritmo absorbe la diferencia (sección 2).
 6. **El jefe puede terminar la ruta, pero no recibe el dinero.** El dinero lo cobran los de la salida y se le entrega a la oficina. Lleva el permiso propio `rutas.salidas.terminar` (sección 3 y PR 7).
 7. **El CCF facturado después de entregar entra a la salida donde se entregó**, con quién lo entregó. Si la salida ya se terminó, queda anotado sin tocar su liquidación ni su dinero (PR 5).

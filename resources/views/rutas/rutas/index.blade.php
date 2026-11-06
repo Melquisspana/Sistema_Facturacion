@@ -30,7 +30,7 @@
                         <input id="nueva_nombre" name="nombre" required maxlength="120" placeholder="Puerto" class="mt-1 w-full {{ $campo }}">
                     </div>
                     <div>
-                        <label for="nueva_frecuencia" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Días aproximados (opcional)</label>
+                        <label for="nueva_frecuencia" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Cada cuántos días (opcional)</label>
                         <input id="nueva_frecuencia" name="frecuencia_objetivo_dias" type="number" min="1" max="365" placeholder="15" class="mt-1 w-28 {{ $campo }}">
                     </div>
                     <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Crear</button>
@@ -52,7 +52,7 @@
                             <label class="flex items-center gap-2 text-sm text-gray-500 dark:text-paper-300">
                                 cada
                                 <input name="frecuencia_objetivo_dias" type="number" min="1" max="365" value="{{ $ruta->frecuencia_objetivo_dias }}"
-                                       aria-label="Días aproximados, solo mientras la ruta no tenga ritmo" class="w-20 {{ $campo }}">
+                                       aria-label="Cada cuántos días ir; vacío, se calcula solo" class="w-20 {{ $campo }}">
                                 días
                             </label>
                             <button class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-ink-700 dark:text-paper-100">Guardar</button>

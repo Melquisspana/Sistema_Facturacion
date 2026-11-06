@@ -15,8 +15,8 @@ use Tests\TestCase;
 
 /**
  * El tablero «¿a dónde toca ir?»: días desde la última salida contra el ritmo de la ruta.
- * Estas rutas no tienen pedidos, así que mandan los días cargados a mano (respaldo); el
- * ritmo calculado se prueba en RitmoPedidosTest.
+ * Estas rutas no tienen pedidos, así que su ritmo son los días cargados a mano; el ritmo
+ * calculado se prueba en RitmoPedidosTest.
  */
 class RitmoRutasTest extends TestCase
 {
@@ -127,8 +127,7 @@ class RitmoRutasTest extends TestCase
             ->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSee('San Miguel')
-            ->assertSee('Atrasada')
-            ->assertSee('5 días tarde')
+            ->assertSee('Atrasada 5 días')
             ->assertSee('Suele ir cada 15 días (cargado a mano)')
             // Sin vendedores no se puede salir: se dice qué falta.
             ->assertSee('Agregá un vendedor para salir')
