@@ -8,6 +8,7 @@ use App\Mail\AlertaSistemaCorreo;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\EventosRecientes;
+use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\SaludDelSistema;
@@ -59,6 +60,7 @@ class Avisador
             app(ContingenciaVencida::class),
             app(RespaldoFallido::class),
             app(LectorSinPing::class),
+            app(GmailDesconectado::class),
             EventosRecientes::errores500(),
             EventosRecientes::tareasProgramadas(),
         ];
