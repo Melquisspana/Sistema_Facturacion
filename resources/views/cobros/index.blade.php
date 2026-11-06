@@ -184,7 +184,7 @@
                             @endif
                         </p>
                     @else
-                        @php $puedeGestionar = auth()->user()?->can('ppq.gestionar') ?? false; $listasEnPagina = 0; @endphp
+                        @php $puedeGestionar = auth()->user()?->can('ppq.gestionar') ?? false; $listasEnPagina = 0; $enlacesSugeridos = []; @endphp
                         <form method="POST" autocomplete="off" action="{{ route('cobros.ppq.crear', $cliente) }}"
                               x-data="{
                                   avisos: @js(collect($avisosPpq)->map(fn ($aviso) => ['r' => $aviso['reciente'], 'd' => $aviso['duplicado'] !== null])),
@@ -274,10 +274,21 @@
                                                     in_array($pres, [\App\Enums\Cobros\EstadoPresentacionCobro::Presentada, \App\Enums\Cobros\EstadoPresentacionCobro::Recibida], true) => 'presentado',
                                                     $pres === \App\Enums\Cobros\EstadoPresentacionCobro::Preparada => 'en_ppq',
                                                     $doc->esNc() => 'nc',
+                                                    $doc->albaran === null && $doc->vinculacion_estado === \App\Enums\Cobros\EstadoVinculacionAlbaran::Revisar => 'revisar_albaran',
                                                     $doc->albaran === null => isset($entregasRutas[$doc->dte_id]) ? 'falta_albaran' : 'no_entregado',
                                                     $doc->revisar_historico => 'revisar',
                                                     default => 'listo',
                                                 };
+                                                // Enlace de un clic solo con UN albarán libre de OC casi igual; si hay
+                                                // más, o es otra duda, se resuelve en la ficha.
+                                                $candidatos = $doc->vinculacion_candidatos ?? [];
+                                                $sugerido = $estado === 'revisar_albaran' && $puedeGestionar && count($candidatos) === 1
+                                                    && empty($candidatos[0]['tomado_por'])
+                                                    && \App\Support\OrdenCompra::casiIgual($doc->dte?->numero_orden_compra, $candidatos[0]['orden_compra'] ?? null)
+                                                    ? $candidatos[0] : null;
+                                                if ($sugerido !== null) {
+                                                    $enlacesSugeridos[$doc->id] = $sugerido;
+                                                }
                                                 $presentable = isset($listosPpq[$doc->id]);
                                                 $motivoPpq = $motivosPpq[$doc->id] ?? null;
                                                 if ($estado === 'listo' && ! $presentable) {
@@ -341,6 +352,7 @@
                                                             'en_ppq' => ['En PPQ', 'bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-900/30 dark:text-sky-200 dark:ring-sky-800'],
                                                             'nc' => ['Va con su CCF', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300'],
                                                             'no_entregado' => ['No entregado', 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'],
+                                                            'revisar_albaran' => ['Revisar albarán', 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'],
                                                             'falta_albaran' => ['Entregado · falta albarán', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'],
                                                             'revisar' => ['Revisar', 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300'],
                                                             'bloqueado_ppq' => [match ($motivoPpq) {
@@ -369,6 +381,14 @@
                                                         <a href="{{ route('cobros.documentos.show', $doc) }}" class="mt-0.5 block text-gray-500 dark:text-paper-300 hover:underline">Cobrado {{ number_format((float) $doc->monto_pagado, 2) }}: revíselo</a>
                                                     @elseif ($estado === 'no_entregado')
                                                         <span class="mt-0.5 block text-gray-500 dark:text-paper-300">El albarán no ha llegado al correo</span>
+                                                    @elseif ($estado === 'revisar_albaran')
+                                                        <span class="mt-0.5 block max-w-xs whitespace-normal text-gray-500 dark:text-paper-300">{{ $doc->vinculacion_motivo }}</span>
+                                                        @if ($sugerido !== null)
+                                                            {{-- El formulario va fuera de la tabla: esta fila ya está dentro del de «Crear PPQ». --}}
+                                                            <button type="submit" form="enlazar_{{ $doc->id }}" class="mt-0.5 block font-medium text-indigo-600 hover:underline dark:text-indigo-300">Enlazar {{ $sugerido['numero'] }}</button>
+                                                        @else
+                                                            <a href="{{ route('cobros.documentos.show', $doc) }}" class="mt-0.5 block font-medium text-indigo-600 hover:underline dark:text-indigo-300">Revisar en la ficha</a>
+                                                        @endif
                                                     @elseif ($estado === 'falta_albaran')
                                                         @php($entrega = $entregasRutas[$doc->dte_id])
                                                         <span class="mt-0.5 block text-gray-500 dark:text-paper-300">Lo entregó {{ $entrega->entregadoPor?->nombreCorto() ?? 'el vendedor' }} el {{ $entrega->fecha_resultado?->format('d/m') }}. El albarán de Calleja no ha llegado al correo.</span>
@@ -403,6 +423,17 @@
                                 @endif
                             </div>
                         </form>
+
+                        {{-- «Enlazar» de las filas con un albarán de OC casi igual. Pasa por el mismo
+                             vínculo a mano que la ficha, que vuelve a comprobar todo bajo bloqueo. --}}
+                        @foreach ($enlacesSugeridos as $docId => $sugerido)
+                            <form id="enlazar_{{ $docId }}" method="POST" action="{{ route('cobros.documentos.vincular', $docId) }}" class="hidden"
+                                  onsubmit="return confirm(@js('¿Enlazar el albarán '.$sugerido['numero'].' (orden '.$sugerido['orden_compra'].') a este CCF? Queda registrado como vinculado a mano por usted.'));">
+                                @csrf
+                                <input type="hidden" name="ppq_albaran_id" value="{{ $sugerido['id'] }}">
+                                <input type="hidden" name="nota" value="{{ \Illuminate\Support\Str::limit('Enlazado desde Seguimiento: el albarán trae la orden '.$sugerido['orden_compra'].', casi igual a la del CCF.', 250) }}">
+                            </form>
+                        @endforeach
 
                         @if ($documentos->hasPages())
                             <nav class="border-t border-gray-100 dark:border-ink-600 px-4 py-3" aria-label="Páginas de documentos">{{ $documentos->links() }}</nav>
