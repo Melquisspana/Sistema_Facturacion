@@ -45,7 +45,7 @@
                     <div class="{{ $card }}">
                         <p class="text-xs text-gray-400 dark:text-paper-500">Compras pendientes</p>
                         <p class="mt-1 text-2xl font-semibold tabular-nums text-gray-800 dark:text-paper-100">{{ number_format($stats['documentos_pendientes']) }}</p>
-                        <a href="{{ route('documentos-recibidos.index') }}" class="text-xs text-indigo-600 hover:underline dark:text-indigo-400">Ver compras</a>
+                        <a href="{{ route('documentos-recibidos.index', ['vista' => 'pendientes', 'rango' => 'todos']) }}" class="text-xs text-indigo-600 hover:underline dark:text-indigo-400">Ver compras</a>
                     </div>
                     <div class="{{ $card }}">
                         <p class="text-xs text-gray-400 dark:text-paper-500">Listas de empaque (mes)</p>

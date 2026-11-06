@@ -102,15 +102,13 @@ class ArchivoEntregaDteTest extends TestCase
         });
     }
 
-    public function test_ambas_descargas_entregan_firma_y_sello(): void
+    public function test_la_descarga_entrega_firma_y_sello(): void
     {
         $dte = $this->documento();
-        foreach (['facturacion.json.descargar', 'facturacion.reporte-contadora.json'] as $ruta) {
-            $respuesta = $this->get(route($ruta, $dte))->assertOk();
-            $json = json_decode($respuesta->streamedContent(), true);
-            $this->assertArrayHasKey('firmaElectronica', $json);
-            $this->assertSame($dte->sello_recepcion, $json['selloRecibido']);
-        }
+        $respuesta = $this->get(route('facturacion.json.descargar', $dte))->assertOk();
+        $json = json_decode($respuesta->streamedContent(), true);
+        $this->assertArrayHasKey('firmaElectronica', $json);
+        $this->assertSame($dte->sello_recepcion, $json['selloRecibido']);
     }
 
     public function test_entrega_identica_y_evidencia_intacta(): void
@@ -127,10 +125,8 @@ class ArchivoEntregaDteTest extends TestCase
         $this->assertSame(Storage::get($dte->json_generado_path), json_encode($json, self::FLAGS));
         $payload = explode('.', trim(Storage::get($dte->json_firmado_path)))[1];
         $this->assertSame($json, json_decode(base64_decode(strtr($payload, '-_', '+/')), true));
-        foreach (['facturacion.json.descargar', 'facturacion.reporte-contadora.json'] as $ruta) {
-            $respuesta = $this->get(route($ruta, $dte))->assertDownload($entrega->nombre);
-            $this->assertSame($entrega->contenido, $respuesta->streamedContent());
-        }
+        $respuesta = $this->get(route('facturacion.json.descargar', $dte))->assertDownload($entrega->nombre);
+        $this->assertSame($entrega->contenido, $respuesta->streamedContent());
         $this->enviar($dte);
         Mail::assertSent(DteCorreo::class, fn ($mail) => $mail->adjuntosExtra[0]['contenido'] === $entrega->contenido && $mail->adjuntosExtra[0]['nombre'] === $entrega->nombre);
         $this->assertSame($archivos, Storage::allFiles());
@@ -213,9 +209,6 @@ class ArchivoEntregaDteTest extends TestCase
             $this->assertSame('PDF', $envio->adjuntos);
             $this->assertStringContainsString('Entrega fiscal incompleta', $envio->error);
             $this->get(route('facturacion.json.descargar', $dte))->assertRedirect()->assertSessionHas('error');
-            if ($dte->aceptadoRealmentePorMh()) {
-                $this->get(route('facturacion.reporte-contadora.json', $dte))->assertRedirect()->assertSessionHas('error');
-            }
         }
         $dte = $this->documento();
         Storage::delete([$dte->json_generado_path, $dte->json_firmado_path]);

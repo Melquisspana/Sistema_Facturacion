@@ -111,7 +111,7 @@ class ComprasEnvioContabilidadTest extends TestCase
 
     // --- Pantalla ---
 
-    public function test_la_pantalla_muestra_enviar_badge_y_menu(): void
+    public function test_la_pantalla_muestra_enviar_y_menu_sin_aviso_por_compra(): void
     {
         $doc = $this->compra();
 
@@ -119,8 +119,10 @@ class ComprasEnvioContabilidadTest extends TestCase
             ->pantalla()
             ->assertOk()
             ->assertSee($doc->numero_control)
+            // El envío individual se queda; el aviso de «no enviada» por compra, no:
+            // el único aviso es el de mandar el paquete mensual.
             ->assertSee('Enviar a contabilidad')
-            ->assertSee('Pendiente')
+            ->assertDontSee('Todavía no se envió a contabilidad.')
             ->assertSee('Más acciones')
             ->assertSee('Abrir PDF')
             ->assertSee('Abrir JSON')

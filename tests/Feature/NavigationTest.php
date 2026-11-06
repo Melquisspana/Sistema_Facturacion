@@ -440,7 +440,7 @@ class NavigationTest extends TestCase
             // Cobros Calleja reemplazó la búsqueda de PPQ como primera fila;
             // se conserva el mismo permiso ppq.ver.
             'cobros.index', 'ppq.lotes.index',
-            'documentos-recibidos.index', 'facturacion.reporte-contadora', 'contabilidad.paquete',
+            'documentos-recibidos.index', 'contabilidad.paquete',
             // Exportaciones ya no aporta tres filas: aporta UNA, la de listas de empaque,
             // dentro de Ventas y facturación. El catálogo de productos de exportación se
             // alcanza desde «Productos» (es su segunda pestaña) y los clientes de
@@ -637,7 +637,7 @@ class NavigationTest extends TestCase
 
         foreach ([
             'clientes.index', 'productos.index', 'facturacion.index',
-            'cobros.index', 'ppq.lotes.index', 'documentos-recibidos.index', 'facturacion.reporte-contadora',
+            'cobros.index', 'ppq.lotes.index', 'documentos-recibidos.index',
             'contabilidad.paquete', 'facturacion.listas.index',
             'configuracion.resumen',
         ] as $ruta) {
@@ -676,7 +676,7 @@ class NavigationTest extends TestCase
             'ventas / documentos fiscales' => ['facturacion.index', 'ventas'],
             'cobros / ppq' => ['ppq.index', 'cobros'],
             'contabilidad / compras' => ['documentos-recibidos.index', 'contabilidad'],
-            'contabilidad / ventas' => ['facturacion.reporte-contadora', 'contabilidad'],
+            'contabilidad / paquete mensual' => ['contabilidad.paquete', 'contabilidad'],
             'ventas / listas de empaque' => ['facturacion.listas.index', 'ventas'],
             'ventas / productos de exportación' => ['productos.exportacion.index', 'ventas'],
             // «administracion» y «configuracion» ya no figuran: salieron de la barra

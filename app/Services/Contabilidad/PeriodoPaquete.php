@@ -73,7 +73,7 @@ class PeriodoPaquete
     }
 
     /**
-     * Resuelve el rango: fecha_desde/hasta explícitas, o mes+año (default mes actual).
+     * Resuelve el rango: fecha_desde/hasta explícitas, o mes+año (default mes anterior).
      *
      * @return array{desde: string, hasta: string, etiqueta: string, mes: int, anio: int}
      */
@@ -90,8 +90,11 @@ class PeriodoPaquete
             return ['desde' => $desde, 'hasta' => $hasta, 'etiqueta' => $etiqueta, 'mes' => (int) $d->month, 'anio' => (int) $d->year];
         }
 
-        $mes = max(1, min(12, (int) $request->input('mes', now()->month)));
-        $anio = (int) $request->input('anio', now()->year);
+        // Sin mes ni año: el mes que toca mandar, que es el anterior. Así la pantalla
+        // abre directo en el paquete pendiente, sin tener que elegirlo.
+        $porDefecto = now()->startOfMonth()->subMonthNoOverflow();
+        $mes = max(1, min(12, (int) $request->input('mes', $porDefecto->month)));
+        $anio = (int) $request->input('anio', $request->has('mes') ? now()->year : $porDefecto->year);
         $inicio = Carbon::create($anio, $mes, 1)->startOfMonth();
 
         return [

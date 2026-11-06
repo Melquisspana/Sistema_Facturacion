@@ -10,6 +10,7 @@ use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\EventosRecientes;
 use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
+use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\SaludDelSistema;
 use App\Services\Alertas\Detectores\TrabajosFallidos;
@@ -61,6 +62,7 @@ class Avisador
             app(RespaldoFallido::class),
             app(LectorSinPing::class),
             app(GmailDesconectado::class),
+            app(PaqueteMensualPendiente::class),
             EventosRecientes::errores500(),
             EventosRecientes::tareasProgramadas(),
         ];

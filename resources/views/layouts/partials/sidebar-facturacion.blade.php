@@ -91,14 +91,14 @@
     @if ($veContabilidad)
         <x-sidebar-group titulo="Contabilidad" icono="contabilidad" clave="contabilidad" :activo="$grupoContabilidadActivo">
             {{-- Compras: CCF/facturas de proveedores recibidas por correo (con sus
-                 filtros por estado dentro de la pantalla). Ventas: reporte de lo que
-                 emitimos, que se le manda a la contadora. Los nombres técnicos de las
-                 rutas son los históricos y no se tocan: solo navegación. --}}
+                 filtros por estado dentro de la pantalla). Las ventas no tienen pantalla
+                 propia desde el 06/11/2026 (no se usaba): siguen viajando en el paquete
+                 mensual. Los nombres técnicos de las rutas son los históricos y no se
+                 tocan: solo navegación. --}}
             @if ($veCompras)
                 <x-sidebar-link :href="route('documentos-recibidos.index')" :active="request()->routeIs('documentos-recibidos.*')">Compras</x-sidebar-link>
             @endif
             @if ($veReportes)
-                <x-sidebar-link :href="route('facturacion.reporte-contadora')" :active="$enReporteContadora">Ventas</x-sidebar-link>
                 <x-sidebar-link :href="route('contabilidad.paquete')" :active="request()->routeIs('contabilidad.paquete*')">Paquete mensual</x-sidebar-link>
             @endif
         </x-sidebar-group>

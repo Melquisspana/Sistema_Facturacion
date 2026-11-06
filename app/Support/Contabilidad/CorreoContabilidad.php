@@ -13,7 +13,7 @@ use App\Facades\Ajustes;
  *
  *   PaqueteContabilidadController::correoContabilidad()
  *   DocumentoRecibidoController::correoContabilidad()
- *   ReporteContadoraController::correoContabilidad()
+ *   ReporteContadoraController::correoContabilidad()  (pantalla Ventas, retirada el 06/11/2026)
  *   EnviarDteCorreo::correoContabilidad()
  *
  * Cuatro copias de tres líneas no parecen un problema hasta que se comprueba que
