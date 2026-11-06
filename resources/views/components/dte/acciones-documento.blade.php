@@ -3,6 +3,7 @@
     'invalidacion' => null,
     'mostrarReversion' => false,
     'salasNotaCredito' => [],
+    'ordenRecibida' => null,
 ])
 
 {{--
@@ -68,6 +69,20 @@
                class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Imprimir
             </a>
+
+            {{-- CCF con su orden de compra recibida por correo, en un solo PDF para imprimir de
+                 una vez. Solo aparece si la orden llegó; el PDF de arriba y los correos al
+                 cliente y a contabilidad siguen siendo solo el CCF. --}}
+            @if ($ordenRecibida)
+                <a href="{{ route('facturacion.pdf-con-orden', $dte) }}" target="_blank"
+                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    PDF + orden
+                </a>
+                <a href="{{ route('facturacion.ordenes-recibidas.pdf', $ordenRecibida) }}" target="_blank"
+                   class="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Ver orden de compra
+                </a>
+            @endif
 
             {{-- Correo: este acceso rápido es un ANCLA a la sección, nunca un segundo
                  botón de envío. El sistema mantiene deliberadamente UN solo punto de

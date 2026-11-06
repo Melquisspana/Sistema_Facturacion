@@ -45,6 +45,7 @@ use App\Models\DteLinea;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Exportacion;
+use App\Models\OrdenCompraRecibida;
 use App\Models\PpqAlbaran;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -899,7 +900,10 @@ class DteController extends Controller
         // salas administrativas sin CCF propio, como "Bodega Oficina Central Calleja".
         $salasNotaCredito = $this->salasReceptorasNotaCredito($dte);
 
-        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion'));
+        // Orden de compra recibida por correo con el número de este CCF: habilita «PDF + orden».
+        $ordenRecibida = OrdenCompraRecibida::deCcf($dte);
+
+        return view('facturacion.show', compact('dte', 'esAgenteRetencion', 'tecnico', 'invalidacion', 'correosAtascados', 'emisionProduccion', 'copiaContabilidad', 'enReporteContadora', 'datosExportacion', 'datosReceptor', 'salasNotaCredito', 'confirmacionProduccion', 'ordenRecibida'));
     }
 
     /**
@@ -2947,6 +2951,8 @@ class DteController extends Controller
 
         return [
             'opcionesCliente' => $this->opcionesClienteSucursal($clientes),
+            // Órdenes recibidas por correo y sin CCF, por sala, para elegirlas en vez de copiarlas.
+            'ordenesPorSala' => OrdenCompraRecibida::pendientesPorSucursal(),
             'establecimientos' => Establecimiento::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre']),
             'puntosVenta' => PuntoVenta::where('activo', true)->orderBy('nombre')->get(['id', 'codigo', 'nombre', 'establecimiento_id']),
         ];

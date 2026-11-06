@@ -343,6 +343,7 @@ secretos.
 | `ppq.gmail.client_secret` | N2 | Nueva (cifrado) | `ppq.gmail.client_secret` |
 | `ppq.gmail.redirect_uri` | N2 | Nueva | `ppq.gmail.redirect_uri` |
 | `ppq.gmail.label_albaranes` | N1 | Nueva | `ppq.gmail.label_albaranes` |
+| `ppq.gmail.label_ordenes` | N1 | Nueva | `ppq.gmail.label_ordenes` (`ordenes:sincronizar`) |
 | `ppq.gmail.enviados_query` | N1 | Nueva | `ppq.gmail.enviados_query` |
 | `ppq.gmail.dte_adjunto_query` | N1 | Nueva | `ppq.gmail.dte_adjunto_query` |
 | `ppq.gmail.storage_dir` | N2 | **Ninguna (solo lectura)** | ruta del servidor |

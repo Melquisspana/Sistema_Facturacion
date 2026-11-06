@@ -35,6 +35,9 @@
         <x-sidebar-group titulo="Ventas y facturación" icono="facturacion" clave="ventas" :activo="$grupoVentasActivo">
             @if ($veFacturacion)
                 <x-sidebar-link :href="route('facturacion.index')" :active="$enDocumentosFiscales">Documentos fiscales</x-sidebar-link>
+                {{-- Órdenes de compra que llegaron por correo, para ver las que faltan facturar.
+                     Mismo permiso que los documentos (dte.ver). --}}
+                <x-sidebar-link :href="route('facturacion.ordenes-recibidas.index')" :active="request()->routeIs('facturacion.ordenes-recibidas.*')">Órdenes recibidas</x-sidebar-link>
             @endif
             @if ($veClientes)
                 <x-sidebar-link :href="route('clientes.index')" :active="request()->routeIs('clientes.*')">Clientes</x-sidebar-link>
