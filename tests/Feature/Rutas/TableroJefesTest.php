@@ -13,9 +13,11 @@ use App\Models\Establecimiento;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\PpqAlbaran;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\User;
+use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
 use Carbon\CarbonImmutable;
@@ -30,7 +32,7 @@ use Tests\TestCase;
  *  · Sala: días desde su última visita, que es la entrega más nueva (último CCF o entrega
  *    marcada en Rutas) o el último pedido sacado.
  *  · Ruta: días desde la última salida o la última visita a cualquiera de sus salas.
- *  · Ritmo: el calculado con los CCF; si la ruta tiene días cargados, mandan esos.
+ *  · Ritmo: el calculado con los CCF; los días cargados en la ruta, solo si no hay datos.
  *
  * Nombres inventados: el repositorio es público.
  */
@@ -190,6 +192,36 @@ class TableroJefesTest extends TestCase
             ->assertSee('title="30/10/2026"', false);
     }
 
+    /** El albarán de entrega más nuevo de cada sala sale de una fila agregada, no de todos sus albaranes. */
+    public function test_el_albaran_de_entrega_mas_nuevo_cuenta_y_se_trae_una_fila_por_sala(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Ruta Norte']);
+        $sala = $this->sala('Tienda Inventada Uno', $ruta);
+        $otra = $this->sala('Tienda Inventada Dos', $ruta);
+        foreach ([[$sala, '2026-10-01', '2026-10-03'], [$sala, '2026-10-12', '2026-10-14'], [$sala, '2026-10-22', '2026-10-25'], [$otra, '2026-10-05', '2026-10-06']] as $i => [$de, $emitido, $entregado]) {
+            PpqAlbaran::create([
+                'numero_albaran' => 'AC01/0232/00/'.(6700 + $i), 'dte_id' => $this->ccf($de, $emitido)->id,
+                'monto_albaran' => 100, 'fecha_albaran' => $entregado, 'origen' => 'gmail',
+            ]);
+        }
+        // Un albarán que no es de entrega no cuenta, aunque sea más nuevo.
+        PpqAlbaran::create([
+            'numero_albaran' => 'AC02/0232/00/6799', 'dte_id' => Dte::where('cliente_sucursal_id', $sala->id)->latest('fecha_emision')->value('id'),
+            'monto_albaran' => 2.89, 'fecha_albaran' => '2026-11-01', 'origen' => 'gmail',
+        ]);
+
+        $cargados = 0;
+        PpqAlbaran::retrieved(function () use (&$cargados) {
+            $cargados++;
+        });
+        $fechas = app(EntregasCcf::class)->ultimaVisitaPorSala([$sala->id, $otra->id]);
+
+        $this->assertSame('2026-10-25', $fechas[$sala->id]->toDateString());
+        $this->assertSame('2026-10-06', $fechas[$otra->id]->toDateString());
+        $this->assertSame(0, $cargados, 'No debería cargar los albaranes uno por uno.');
+        $this->assertSame('2026-10-25', $this->salas()['Tienda Inventada Uno']['ultimaEntrega']->toDateString());
+    }
+
     public function test_la_ruta_cuenta_desde_su_ultima_salida_o_la_ultima_visita_a_sus_salas(): void
     {
         $sur = Ruta::create(['nombre' => 'Ruta Sur', 'frecuencia_objetivo_dias' => 15]);
@@ -217,20 +249,21 @@ class TableroJefesTest extends TestCase
             ->assertSeeInOrder(['Ruta Nueva', 'Nunca se ha ido']);
     }
 
-    public function test_los_dias_cargados_en_la_ruta_mandan_sobre_el_ritmo_calculado(): void
+    /** Decisión 4 de Melqui (03/11/2026): no se carga a mano; el campo es solo respaldo. */
+    public function test_con_datos_manda_el_ritmo_calculado_y_sin_datos_los_dias_cargados(): void
     {
-        $ruta = Ruta::create(['nombre' => 'Ruta Oriente', 'frecuencia_objetivo_dias' => 30]);
-        $calculada = Ruta::create(['nombre' => 'Ruta Costa']);
-        // Las dos tienen vueltas cada 10 días y volvieron hace 13: el ritmo calculado diría «atrasada».
-        foreach ([$ruta, $calculada] as $r) {
-            $this->ccfs($this->sala('Sala de '.$r->nombre, $r), ['2026-09-21', '2026-10-01', '2026-10-11', '2026-10-21']);
-            $this->salida($r, '2026-10-20', '2026-10-21');
-        }
+        $conDatos = Ruta::create(['nombre' => 'Ruta Costa', 'frecuencia_objetivo_dias' => 30]);
+        $sinDatos = Ruta::create(['nombre' => 'Ruta Oriente', 'frecuencia_objetivo_dias' => 30]);
+        // Costa: vueltas cada 10 días y volvió hace 13. Aunque diga 30, manda el calculado: atrasada.
+        $this->ccfs($this->sala('Sala de la Costa', $conDatos), ['2026-09-21', '2026-10-01', '2026-10-11', '2026-10-21']);
+        $this->salida($conDatos, '2026-10-20', '2026-10-21');
+        // Oriente: sin CCF no hay ritmo; se usan sus 30 días cargados.
+        $this->salida($sinDatos, '2026-10-20', '2026-10-21');
 
         $rutas = $this->rutas();
 
+        $this->assertSame([10, Ritmo::CONFIABLE, -3, RitmoRutas::ATRASADA], [$rutas['Ruta Costa']['ritmo'], $rutas['Ruta Costa']['origenRitmo'], $rutas['Ruta Costa']['faltan'], $rutas['Ruta Costa']['estado']]);
         $this->assertSame([30, RitmoRutas::MANUAL, 17, RitmoRutas::AL_DIA], [$rutas['Ruta Oriente']['ritmo'], $rutas['Ruta Oriente']['origenRitmo'], $rutas['Ruta Oriente']['faltan'], $rutas['Ruta Oriente']['estado']]);
-        $this->assertSame([10, Ritmo::CONFIABLE, RitmoRutas::ATRASADA], [$rutas['Ruta Costa']['ritmo'], $rutas['Ruta Costa']['origenRitmo'], $rutas['Ruta Costa']['estado']]);
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard'))
             ->assertOk()

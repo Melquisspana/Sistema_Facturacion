@@ -15,8 +15,8 @@ use Tests\TestCase;
 
 /**
  * El tablero «¿a dónde toca ir?»: días desde la última salida contra el ritmo de la ruta.
- * Estas rutas no tienen pedidos, así que su ritmo son los días cargados a mano; el ritmo
- * calculado se prueba en RitmoPedidosTest.
+ * Estas rutas no tienen pedidos, así que mandan los días cargados a mano (respaldo); el
+ * ritmo calculado se prueba en RitmoPedidosTest.
  */
 class RitmoRutasTest extends TestCase
 {

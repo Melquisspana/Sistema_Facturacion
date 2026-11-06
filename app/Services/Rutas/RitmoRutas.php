@@ -13,8 +13,8 @@ use Illuminate\Support\Collection;
 /**
  * ¿A qué ruta toca ir? Una fila por ruta activa: su última visita, cuántos días pasaron
  * y cómo va contra el RITMO de la ruta, calculado con los pedidos de sus salas
- * ({@see RitmoPedidos}). Si la ruta tiene días cargados a mano (`frecuencia_objetivo_dias`),
- * mandan esos sobre el cálculo (encargo del tablero para jefes, 06/11/2026).
+ * ({@see RitmoPedidos}). Los días aproximados cargados a mano (`frecuencia_objetivo_dias`)
+ * se usan solo de respaldo, mientras la ruta no tenga ritmo (decisión 4 del plan).
  *
  * Esto avisa, no agenda: no hay calendario ni fecha obligatoria. El semáforo es el de
  * {@see Ritmo::estado()}, más:
@@ -270,11 +270,11 @@ class RitmoRutas
             default => self::DESDE_SALAS,
         };
 
-        // Si la ruta tiene días cargados a mano, mandan esos; si no, el ritmo calculado.
-        $ritmo = $ruta->frecuencia_objetivo_dias ?: $calculado->dias;
+        // Manda el ritmo calculado; los días cargados a mano, solo si no hay.
+        $ritmo = $calculado->dias ?? $ruta->frecuencia_objetivo_dias;
         $origen = match (true) {
-            (bool) $ruta->frecuencia_objetivo_dias => self::MANUAL,
             $calculado->dias !== null => $calculado->confianza(),
+            (bool) $ruta->frecuencia_objetivo_dias => self::MANUAL,
             default => null,
         };
 

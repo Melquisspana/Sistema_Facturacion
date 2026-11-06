@@ -245,26 +245,18 @@ class RitmoPedidosTest extends TestCase
         $this->assertSame(['2026-09-01', '2026-09-05'], $vueltas(['2026-09-01', '2026-09-05']));
     }
 
-    /** Encargo del tablero para jefes (06/11/2026): los días cargados en la ruta mandan. */
-    public function test_los_dias_cargados_a_mano_mandan_sobre_el_ritmo_calculado(): void
+    public function test_el_ritmo_calculado_manda_sobre_los_dias_cargados_a_mano(): void
     {
         $this->ruta->update(['frecuencia_objetivo_dias' => 30]);
-        // Vueltas cada 10 días; la última salida volvió hace 13 días: con el calculado serían
-        // 3 tarde, pero la ruta dice cada 30: faltan 17.
+        // Vueltas cada 10 días; la última salida volvió hace 13 días: 3 tarde, margen 2.
         $this->ccfs(['2026-09-21', '2026-10-01', '2026-10-11', '2026-10-21']);
         SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-10-20', 'fecha_fin_real' => '2026-10-21', 'estado' => EstadoSalidaRuta::Finalizada]);
 
         $fila = $this->filas()['Oriente'];
 
-        $this->assertSame([30, RitmoRutas::MANUAL], [$fila['ritmo'], $fila['origenRitmo']]);
-        $this->assertSame([13, 17, RitmoRutas::AL_DIA], [$fila['dias'], $fila['faltan'], $fila['estado']]);
-        $this->assertArrayHasKey($this->sala->id, $fila['ritmoSalas']);
-
-        $this->ruta->update(['frecuencia_objetivo_dias' => null]);
-        $fila = $this->filas()['Oriente'];
-
         $this->assertSame([10, Ritmo::CONFIABLE], [$fila['ritmo'], $fila['origenRitmo']]);
         $this->assertSame([13, -3, RitmoRutas::ATRASADA], [$fila['dias'], $fila['faltan'], $fila['estado']]);
+        $this->assertArrayHasKey($this->sala->id, $fila['ritmoSalas']);
     }
 
     public function test_sin_ritmo_se_usan_los_dias_cargados_a_mano_y_sin_salidas_la_ultima_vuelta(): void
