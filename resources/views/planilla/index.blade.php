@@ -36,7 +36,7 @@
 
             @if ($vacaciones['del_mes'] > 0 || $vacaciones['atrasados'] > 0)
                 {{-- Solo cuántas personas: no lleva importes. --}}
-                <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900" role="status">
+                <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800" role="status">
                     <p>
                         Este mes cumplen aniversario: <strong>{{ $vacaciones['del_mes'] }}</strong> (vacaciones por pagar).
                         @if ($vacaciones['atrasados'] > 0)
