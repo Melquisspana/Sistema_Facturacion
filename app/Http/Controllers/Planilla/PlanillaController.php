@@ -18,6 +18,7 @@ use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
 use App\Services\Planilla\SueldoHabitual;
 use App\Services\Planilla\TotalesPlanilla;
+use App\Services\Planilla\VacacionesAnuales;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -34,7 +35,7 @@ class PlanillaController extends Controller
     /** Lo que define qué planilla se genera. Viaja de la revisión a «Generar» tal cual. */
     private const DATOS_DEL_PERIODO = ['tipo_periodo', 'fecha', 'clase', 'moneda', 'fecha_pago', 'observaciones'];
 
-    public function index(Request $request, TotalesPlanilla $totales)
+    public function index(Request $request, TotalesPlanilla $totales, VacacionesAnuales $vacaciones)
     {
         $verImportes = $request->user()->can('planilla.salarios');
 
@@ -48,6 +49,8 @@ class PlanillaController extends Controller
             'planillas' => $planillas,
             'verImportes' => $verImportes,
             'totales' => $totales,
+            // Solo cuántas personas, sin importes: lo ve todo el que entra a Planilla.
+            'vacaciones' => $vacaciones->pendientes(CarbonImmutable::now()),
         ]);
     }
 
@@ -60,8 +63,12 @@ class PlanillaController extends Controller
             ? $request->query('tipo')
             : 'quincenal';
 
+        // El aviso de vacaciones del inicio llega con la clase ya elegida.
+        $clase = array_key_exists((string) $request->query('clase'), Planilla::CLASES) ? $request->query('clase') : 'regular';
+
         return view('planilla.create', [
             'tipo' => $tipo,
+            'clase' => $clase,
             'periodos' => $periodos->recientes($tipo, CarbonImmutable::now()),
             'hoy' => CarbonImmutable::now()->toDateString(),
         ]);
@@ -227,7 +234,7 @@ class PlanillaController extends Controller
 
     public function actualizarDatos(Request $request, PlanillaEmpleado $empleado, DatosEmpleado $datos)
     {
-        $datos->actualizar($request->user(), $empleado, $request->only(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el']));
+        $datos->actualizar($request->user(), $empleado, $request->only(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'vacaciones_pagadas_hasta']));
 
         return back()->with('planilla.aviso', 'Datos guardados. También quedaron en Asistencia y Rutas.');
     }

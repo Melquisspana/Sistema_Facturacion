@@ -57,7 +57,7 @@
                         <label for="clase" class="block text-sm font-medium text-gray-700">Tipo</label>
                         <select id="clase" name="clase" class="{{ $c }}">
                             @foreach (Planilla::CLASES as $clave => $texto)
-                                <option value="{{ $clave }}" @selected(old('clase', 'regular') === $clave)>{{ $texto }}</option>
+                                <option value="{{ $clave }}" @selected(old('clase', $clase) === $clave)>{{ $texto }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -76,13 +76,14 @@
                     @endif
                     <div>
                         <label for="fecha_pago" class="block text-sm font-medium text-gray-700">Fecha de pago</label>
-                        <input id="fecha_pago" name="fecha_pago" type="date" value="{{ old('fecha_pago') }}" class="{{ $c }}">
+                        <input id="fecha_pago" name="fecha_pago" type="date" value="{{ old('fecha_pago', $clase === 'vacaciones' ? $hoy : null) }}" class="{{ $c }}">
                     </div>
                 </div>
 
                 <p class="text-xs text-gray-500">
-                    Aguinaldo y Quincena 25 usan la <strong>fecha de pago</strong> en vez del período de arriba, y
-                    calculan solos el monto de cada persona, con y sin descuentos de ley.
+                    Aguinaldo, Quincena 25 y Vacaciones usan la <strong>fecha de pago</strong> en vez del período de arriba, y
+                    calculan solos el monto de cada persona, con y sin descuentos de ley. Vacaciones paga a quien cumplió
+                    aniversario de ingreso ese mes o en los once anteriores y todavía no las cobró.
                 </p>
 
                 <div>

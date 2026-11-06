@@ -14,7 +14,14 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h1 class="text-xl font-semibold leading-tight text-gray-800">Planillas</h1>
             @can('planilla.gestionar')
-                <a href="{{ route('planilla.create') }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Generar una planilla</a>
+                <div class="flex flex-wrap items-center gap-3">
+                    {{-- Discreto a pedido de Melqui: casi todo el año hay alguien por pagar. Solo
+                         cuántas personas, sin importes. --}}
+                    @if ($vacaciones['por_pagar'] > 0)
+                        <a href="{{ route('planilla.create', ['clase' => 'vacaciones']) }}" class="inline-flex min-h-11 items-center text-sm text-gray-500 underline hover:text-gray-700">Vacaciones por pagar ({{ $vacaciones['por_pagar'] }})</a>
+                    @endif
+                    <a href="{{ route('planilla.create') }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Generar una planilla</a>
+                </div>
             @endcan
         </div>
     </x-slot>
@@ -27,7 +34,7 @@
 
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 ISSS, AFP y renta son una propuesta que se puede corregir.
-                <strong>No calcula</strong> aporte patronal, vacaciones, indemnización ni horas extra.
+                <strong>No calcula</strong> aporte patronal, indemnización ni horas extra.
                 @if ($verImportes && auth()->user()->can('planilla.gestionar'))
                     El recálculo de renta de junio y diciembre usa la
                     <a href="{{ route('planilla.renta.index') }}" class="font-medium text-indigo-700 underline">renta antes del sistema</a>.

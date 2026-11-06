@@ -26,13 +26,19 @@ use Illuminate\Support\Str;
  * acumulado del año, que junta {@see AcumuladoRenta}.
  *
  * Solo calcula planillas regulares quincenales: la tabla es la quincenal y `Topes`
- * se reparten entre `pagos_por_mes`.
+ * se reparten entre `pagos_por_mes`. Y las vacaciones, si
+ * `planilla_prestaciones.vacaciones.con_descuentos_ley` lo dice: se calculan igual que
+ * una quincena, sobre el monto de las vacaciones solo.
  */
 final class DescuentosLey
 {
     /** ¿Esta planilla lleva cálculo? */
     public function aplicaA(Planilla $planilla): bool
     {
+        if ($planilla->clase === VacacionesAnuales::CLASE) {
+            return (bool) config('planilla_prestaciones.vacaciones.con_descuentos_ley');
+        }
+
         return $planilla->tipo_periodo === 'quincenal' && $planilla->clase === 'regular';
     }
 
@@ -113,6 +119,7 @@ final class DescuentosLey
     public function esRecalculo(Planilla $planilla): bool
     {
         return $this->aplicaA($planilla)
+            && $planilla->clase === 'regular'
             && in_array($planilla->hasta->month, [6, 12], true)
             && $planilla->hasta->isLastOfMonth();
     }
