@@ -172,7 +172,7 @@ class CobrosTxtNoPagadosTest extends TestCase
         $this->assertSame('10.00', $pendientes['pagados_de_menos'][0]['diferencia']);
         $this->assertSame(EstadoPagoCobro::Parcial, $e['b']->refresh()->pago_estado);
 
-        $respuesta->assertSeeText('Para volver a presentar')
+        $respuesta->assertSeeText('Lo que no cuadra en este PPQ')
             ->assertSeeText('No vinieron pagados')
             ->assertSeeText('NC no descontadas')
             ->assertSeeText('Pagados de menos')

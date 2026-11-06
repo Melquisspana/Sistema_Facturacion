@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Puesta al día de Cobros: aplica de una vez varios TXT de pago, cada uno con el mismo flujo
- * que el TXT normal (idempotente por huella y línea), y arma el estado de cobro desde el
- * inicio del seguimiento. Un archivo que falla no frena a los demás.
+ * que el TXT normal (idempotente por huella y línea), con lo que no cuadra en los PPQ que
+ * paga cada uno. Un archivo que falla no frena a los demás.
  *
  * La revisión corre en una transacción que siempre se deshace. Las copias privadas
  * se guardan antes de revisar. La cadena no despacha jobs ni manda correos.
@@ -66,7 +66,6 @@ class PuestaAlDiaPagos
                 $archivos[] = $resultado;
             }
             // El informe debe conservar el resultado simulado antes de deshacerlo.
-            $reporte = app(EstadoCobroDesdeInicio::class)->generar($cliente);
             foreach ($archivos as &$archivo) {
                 if ($archivo['estado'] === 'aplicado') {
                     $archivo['pendientes'] = app(PendientesDelTxt::class)->analizar($cliente, collect($archivo['lotes'])->pluck('lote'));
@@ -74,7 +73,7 @@ class PuestaAlDiaPagos
             }
             unset($archivo);
 
-            return compact('archivos', 'reporte');
+            return compact('archivos');
         } finally {
             if ($soloRevisar) {
                 DB::rollBack();
