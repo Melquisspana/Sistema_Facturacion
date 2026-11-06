@@ -478,7 +478,7 @@ class CobrosController extends Controller
             ->where('tipo_dte', '03')
             ->whereDoesntHave('dte', fn ($d) => $d->where('estado', EstadoDte::Invalidado->value))
             ->whereNull('ppq_albaran_id')
-            ->with('dte:id,numero_orden_compra,estado')
+            ->with(['dte:id,numero_orden_compra,estado,cliente_sucursal_id', 'dte.clienteSucursal:id,codigo'])
             ->porAntiguedad()
             ->limit(500)
             ->get();
@@ -1148,11 +1148,15 @@ class CobrosController extends Controller
 
         return match ($etapa) {
             // Sin albarán en el correo. Si el vendedor ya lo marcó entregado en Rutas, no es
-            // «no entregado»: está entregado y solo falta que Calleja mande el albarán.
+            // «no entregado»: está entregado y solo falta que Calleja mande el albarán. Tampoco
+            // lo es el que tiene un albarán para revisar (por ejemplo, con la OC casi igual):
+            // la entrega llegó y falta que una persona lo enlace.
             'no_entregados' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNull('ppq_albaran_id')
-                ->whereNotExists($this->entregadoEnRutas()),
+                ->whereNotExists($this->entregadoEnRutas())
+                ->where('vinculacion_estado', '!=', EstadoVinculacionAlbaran::Revisar->value),
             'falta_albaran' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNull('ppq_albaran_id')
-                ->whereExists($this->entregadoEnRutas()),
+                ->where(fn (Builder $q) => $q->whereExists($this->entregadoEnRutas())
+                    ->orWhere('vinculacion_estado', EstadoVinculacionAlbaran::Revisar->value)),
             'listos' => $q->where('pago_estado', $pendiente)->whereNotIn('presentacion_estado', $enCurso)->whereNotNull('ppq_albaran_id'),
             'presentados' => $q->where('pago_estado', $pendiente)->whereIn('presentacion_estado', $enCurso),
             // Pagado es solo lo que cuadra con el CCF menos sus NC; un faltante o un cobro de

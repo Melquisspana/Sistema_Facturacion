@@ -230,7 +230,7 @@ class CobrosSincronizarCommand extends Command
             ->where('tipo_dte', '03')
             ->whereDoesntHave('dte', fn ($d) => $d->where('estado', EstadoDte::Invalidado->value))
             ->whereNull('ppq_albaran_id')
-            ->with('dte:id,numero_orden_compra,estado');
+            ->with(['dte:id,numero_orden_compra,estado,cliente_sucursal_id', 'dte.clienteSucursal:id,codigo']);
     }
 
     /** Solo se retiran vínculos sin presentación en curso ni pago registrado. */

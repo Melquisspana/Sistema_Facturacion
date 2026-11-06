@@ -50,6 +50,28 @@ class OrdenCompra
     }
 
     /**
+     * Dos OC que parecen la misma mal tecleada: del MISMO largo y con 1 o 2 dígitos
+     * distintos, posición por posición (26100218003741 ↔ 20100218003741). Iguales no
+     * cuentan: eso ya es la misma OC. Solo sirve para pedir revisión, nunca para vincular.
+     */
+    public static function casiIgual(?string $a, ?string $b): bool
+    {
+        $a = self::normalizar($a);
+        $b = self::normalizar($b);
+
+        if ($a === '' || $a === $b || strlen($a) !== strlen($b)) {
+            return false;
+        }
+
+        $distintos = 0;
+        for ($i = 0, $largo = strlen($a); $i < $largo; $i++) {
+            $distintos += $a[$i] !== $b[$i] ? 1 : 0;
+        }
+
+        return $distintos <= 2;
+    }
+
+    /**
      * Últimos N dígitos significativos de un número de control, para la búsqueda
      * por "últimos 4". Ej.: DTE-03-M001P001-0000000000000986 -> "986" (o "0986").
      */

@@ -16,6 +16,7 @@ use App\Support\Dinero;
 use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\OrdenCompra;
+use App\Support\Sala;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -167,6 +168,27 @@ class VinculadorAlbaranes
             ->get();
 
         if ($candidatos->isEmpty()) {
+            // Una OC mal tecleada en el CCF dejaba el documento «sin albarán» en silencio
+            // aunque la entrega hubiera llegado. Si hay un albarán LIBRE de la misma sala con
+            // la OC casi igual, se pide revisión con su nombre; nunca se vincula solo.
+            $casiIguales = $this->conOrdenCasiIgual($documento, $oc);
+            if ($casiIguales->count() === 1) {
+                $albaran = $casiIguales->first();
+
+                return $this->revisar(
+                    "El albarán {$albaran->numero_albaran} trae la orden ".OrdenCompra::normalizar($albaran->numero_orden_compra)
+                        .", casi igual a la del CCF ({$oc}): revisá y enlazalo.",
+                    $casiIguales,
+                );
+            }
+            if ($casiIguales->count() > 1) {
+                return $this->revisar(
+                    'Hay '.$casiIguales->count().' albaranes de entrega libres de la misma sala con la orden casi igual '
+                        ."a la del CCF ({$oc}): ".$casiIguales->pluck('numero_albaran')->implode(', ').'. Revisá cuál es y enlazalo.',
+                    $casiIguales,
+                );
+            }
+
             return [
                 'estado' => EstadoVinculacionAlbaran::SinAlbaran,
                 'albaran_id' => null,
@@ -203,6 +225,38 @@ class VinculadorAlbaranes
         }
 
         return $this->veredictoUnico($documento, $libres->first(), "orden de compra {$oc}, albarán de entrega único");
+    }
+
+    /**
+     * Albaranes de ENTREGA libres —sin otro documento ni otro DTE que los reclame, y no de
+     * otro cliente— de la MISMA sala que el CCF, cuya OC es casi igual a la suya
+     * ({@see OrdenCompra::casiIgual()}). La sala del CCF es la de su sucursal o, si no la
+     * tiene, la que trae su OC. Sin sala no se busca: sin ella «casi igual» es cualquiera.
+     *
+     * @return Collection<int, PpqAlbaran>
+     */
+    private function conOrdenCasiIgual(CobroDocumento $documento, string $oc): Collection
+    {
+        $sala = Sala::normalizar($documento->dte?->clienteSucursal?->codigo) ?? OrdenCompra::salaDesde($oc);
+        if ($sala === null) {
+            return collect();
+        }
+
+        return PpqAlbaran::query()
+            ->deEntrega()
+            ->whereNotIn('id', CobroDocumento::whereNotNull('ppq_albaran_id')->whereKeyNot($documento->id)->select('ppq_albaran_id'))
+            ->where(fn ($q) => $q->whereNull('dte_id')->orWhere('dte_id', $documento->dte_id ?? 0))
+            ->where(fn ($q) => $q->whereNull('cliente_sucursal_id')
+                ->orWhereHas('clienteSucursal', fn ($s) => $s->where('cliente_id', $documento->cliente_id)))
+            // La sala puede venir en su columna o solo en el número (AC01/0218/00/5633).
+            ->where(fn ($q) => $q->whereIn('sala_codigo', array_unique([$sala, ltrim($sala, '0')]))
+                ->orWhereNull('sala_codigo')->orWhere('sala_codigo', ''))
+            ->whereRaw("LENGTH(REPLACE(REPLACE(numero_orden_compra, '-', ''), ' ', '')) = ?", [strlen($oc)])
+            ->orderBy('id')
+            ->get()
+            ->filter(fn (PpqAlbaran $a) => Sala::normalizar($a->sala_codigo ?: Albaran::salaDesdeNumero($a->numero_albaran)) === $sala
+                && OrdenCompra::casiIgual($oc, $a->numero_orden_compra))
+            ->values();
     }
 
     /**
