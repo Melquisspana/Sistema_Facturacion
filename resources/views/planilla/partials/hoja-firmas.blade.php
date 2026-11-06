@@ -115,7 +115,7 @@
     <p class="hi-legal">
         Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
         propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
-        Única. No incluye aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
+        Única. No incluye aporte patronal, indemnización ni horas extra.
         @unless ($esBorrador)
             Cada trabajador firma únicamente por el total recibido de su renglón; las diferencias
             entre importe y total recibido están señaladas donde corresponde.

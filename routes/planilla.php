@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\Route;
 |  - `planilla.gestionar` : preparar y confirmar. Confirmar crea obligaciones.
 |
 | ISSS, AFP y renta se proponen solos para quien va con descuentos, y una persona los
-| revisa. No calcula aporte patronal, vacaciones, aguinaldo, indemnización ni horas extra.
+| revisa. No calcula aporte patronal, indemnización ni horas extra.
 */
 
 Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])

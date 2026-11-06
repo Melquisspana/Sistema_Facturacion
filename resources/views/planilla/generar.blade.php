@@ -66,7 +66,12 @@
                 <ul class="divide-y divide-gray-100">
                     @forelse ($personas as $persona)
                         <li class="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                            <span class="font-medium text-gray-900">{{ $persona['nombre'] }}</span>
+                            <span class="min-w-0">
+                                <span class="block font-medium text-gray-900">{{ $persona['nombre'] }}</span>
+                                @if ($persona['nota'] ?? null)
+                                    <span class="block text-xs text-amber-700">{{ $persona['nota'] }}</span>
+                                @endif
+                            </span>
                             <span class="whitespace-nowrap tabular-nums text-gray-900">{{ $planilla->moneda }} {{ Dinero::mostrar($persona['a_pagar']) }}</span>
                         </li>
                     @empty

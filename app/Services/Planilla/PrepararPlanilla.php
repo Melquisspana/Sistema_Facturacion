@@ -27,7 +27,8 @@ use Illuminate\Validation\ValidationException;
  *
  * ISSS, AFP Y RENTA SE PROPONEN SOLOS para quien va con descuentos de ley, en la
  * quincena regular: {@see DescuentosLey} los calcula y una persona los revisa o los
- * corrige. Vacaciones, aguinaldo, indemnización y horas extra no se calculan. En la
+ * corrige. Aguinaldo, Quincena 25 y vacaciones tienen su propia planilla
+ * ({@see PrestacionAnual}); indemnización y horas extra no se calculan. En la
  * última quincena de junio y de diciembre la renta sale del recálculo del año.
  *
  * UNA PLANILLA POR PERÍODO. Lo garantiza el índice único
@@ -204,9 +205,11 @@ final class PrepararPlanilla
                 'salario' => '0.00',
                 'conceptos' => $calculo['falta'] !== null ? [] : [[
                     'tipo' => 'ingreso',
-                    'concepto' => $this->prestaciones->concepto($planilla->clase, $pago),
+                    'concepto' => $calculo['concepto'] ?? $this->prestaciones->concepto($planilla->clase, $pago),
                     'importe' => Dinero::decimal($calculo['centavos']),
                 ]],
+                // Las vacaciones atrasadas lo dicen en la línea.
+                'observaciones' => $calculo['nota'] ?? null,
             ];
         }
 
@@ -531,9 +534,11 @@ final class PrepararPlanilla
         }
 
         foreach ($activos->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id')) as $empleado) {
-            $motivo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago)['fuera'];
+            $calculo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago);
+            $motivo = $calculo['fuera'];
 
-            if ($motivo !== null) {
+            // En vacaciones, que ya haya cobrado o no cumpla el año es lo normal: no se avisa.
+            if ($motivo !== null && ($calculo['avisar'] ?? true)) {
                 // El motivo puede decir cuánto gana: solo lo ve quien ve importes.
                 $avisos[] = $empleado->nombre.' queda fuera'.($verImportes ? ': '.$motivo : '').'.';
             }
@@ -576,10 +581,16 @@ final class PrepararPlanilla
             $mensuales = $this->sueldos->mensualesEn($planilla->detalles->pluck('empleado')->filter(), $pago->toDateString());
 
             foreach ($planilla->detalles as $detalle) {
-                $falta = $this->prestaciones->calcular($planilla->clase, $detalle->empleado, $mensuales[$detalle->planilla_empleado_id] ?? null, $pago)['falta'];
+                $calculo = $this->prestaciones->calcular($planilla->clase, $detalle->empleado, $mensuales[$detalle->planilla_empleado_id] ?? null, $pago);
 
-                if ($falta !== null) {
-                    $reparos[] = $detalle->nombre_snapshot.': falta '.$falta.' para calcularlo.';
+                if ($calculo['falta'] !== null) {
+                    $reparos[] = $detalle->nombre_snapshot.': falta '.$calculo['falta'].' para calcularlo.';
+                }
+
+                // Vacaciones de alguien agregado a mano que no las tiene por cobrar: es el
+                // mismo año de servicio pagado dos veces, o uno que todavía no se cumplió.
+                if ($planilla->clase === VacacionesAnuales::CLASE && $calculo['fuera'] !== null) {
+                    $reparos[] = $detalle->nombre_snapshot.': no le tocan vacaciones en esta planilla ('.$calculo['fuera'].').';
                 }
             }
         }

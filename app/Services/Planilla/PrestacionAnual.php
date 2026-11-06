@@ -9,21 +9,24 @@ use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Aguinaldo y Quincena 25: lo que le toca a cada persona, con los parámetros de
- * `config/planilla_prestaciones.php`.
+ * Aguinaldo, Quincena 25 y vacaciones: lo que le toca a cada persona, con los parámetros de
+ * `config/planilla_prestaciones.php`. Las vacaciones las resuelve {@see VacacionesAnuales}.
  *
  * Son planillas de su propia clase y usan todo lo demás tal cual: preparar, confirmar,
  * pagar y recibos. El monto entra como un ingreso más, y por eso se puede corregir a mano
  * en la pantalla. Es una propuesta, igual que ISSS, AFP y renta.
  *
  * Valen para quien va con y sin descuentos de ley: la ley habla de «todo patrono» y «sus
- * trabajadores», y Melqui lo confirmó. Ninguna de las dos lleva ISSS ni AFP.
+ * trabajadores», y Melqui lo confirmó. Ninguna de las dos lleva ISSS ni AFP. Las vacaciones
+ * sí los llevan para quien va con descuentos ({@see DescuentosLey::aplicaA()}).
  *
  * Todo en centavos enteros: el monto es una fracción, y se redondea una sola vez al final.
  */
 final class PrestacionAnual
 {
-    public const CLASES = ['aguinaldo', 'quincena25'];
+    public const CLASES = ['aguinaldo', 'quincena25', VacacionesAnuales::CLASE];
+
+    public function __construct(private VacacionesAnuales $vacaciones) {}
 
     public function es(string $clase): bool
     {
@@ -40,6 +43,12 @@ final class PrestacionAnual
         }
 
         $pago = CarbonImmutable::parse($fecha);
+
+        // Las vacaciones se pagan cualquier mes: el de la fecha de pago es el de la planilla.
+        if ($clase === VacacionesAnuales::CLASE) {
+            return;
+        }
+
         $parametros = $this->parametros($clase, $pago);
 
         if ($parametros === null) {
@@ -60,11 +69,15 @@ final class PrestacionAnual
     }
 
     /**
-     * @return array{centavos: int, falta: ?string, fuera: ?string}
-     *                                                              `falta` = no se puede calcular todavía; `fuera` = no le corresponde
+     * @return array{centavos: int, falta: ?string, fuera: ?string, avisar?: bool, concepto?: ?string, nota?: ?string}
+     *                                                                                                                 `falta` = no se puede calcular todavía; `fuera` = no le corresponde
      */
     public function calcular(string $clase, PlanillaEmpleado $empleado, ?int $mensual, CarbonImmutable $pago): array
     {
+        if ($clase === VacacionesAnuales::CLASE) {
+            return $this->vacaciones->calcular($empleado, $mensual, $pago);
+        }
+
         $parametros = $this->parametros($clase, $pago);
         $corte = CarbonImmutable::parse($pago->year.'-'.$parametros['corte']);
 

@@ -27,12 +27,27 @@
 
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 ISSS, AFP y renta son una propuesta que se puede corregir.
-                <strong>No calcula</strong> aporte patronal, vacaciones, indemnización ni horas extra.
+                <strong>No calcula</strong> aporte patronal, indemnización ni horas extra.
                 @if ($verImportes && auth()->user()->can('planilla.gestionar'))
                     El recálculo de renta de junio y diciembre usa la
                     <a href="{{ route('planilla.renta.index') }}" class="font-medium text-indigo-700 underline">renta antes del sistema</a>.
                 @endif
             </p>
+
+            @if ($vacaciones['del_mes'] > 0 || $vacaciones['atrasados'] > 0)
+                {{-- Solo cuántas personas: no lleva importes. --}}
+                <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900" role="status">
+                    <p>
+                        Este mes cumplen aniversario: <strong>{{ $vacaciones['del_mes'] }}</strong> (vacaciones por pagar).
+                        @if ($vacaciones['atrasados'] > 0)
+                            Atrasados de meses anteriores: <strong>{{ $vacaciones['atrasados'] }}</strong>.
+                        @endif
+                    </p>
+                    @can('planilla.gestionar')
+                        <a href="{{ route('planilla.create', ['clase' => 'vacaciones']) }}" class="mt-1 inline-flex min-h-11 items-center font-medium text-indigo-700 underline">Generar la planilla de vacaciones</a>
+                    @endcan
+                </div>
+            @endif
 
             @unless ($verImportes)
                 <p class="rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-xs text-sky-900">

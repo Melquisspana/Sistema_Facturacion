@@ -49,7 +49,7 @@ final class GenerarPlanilla
      * Qué se va a crear, sin dejar nada creado.
      *
      * @param  array<string, mixed>  $datos
-     * @return array{existente: ?Planilla, planilla: ?Planilla, personas: array<int, array{nombre: string, a_pagar: int}>, resumen: ?array<string, int>, avisos: array<int, string>, reparos: array<int, string>}
+     * @return array{existente: ?Planilla, planilla: ?Planilla, personas: array<int, array{nombre: string, a_pagar: int, nota: ?string}>, resumen: ?array<string, int>, avisos: array<int, string>, reparos: array<int, string>}
      */
     public function revisar(User $usuario, array $datos): array
     {
@@ -72,6 +72,7 @@ final class GenerarPlanilla
                 'personas' => $planilla->detalles->map(fn ($d) => [
                     'nombre' => $d->nombre_snapshot,
                     'a_pagar' => $this->totales->deDetalle($d)['a_pagar'],
+                    'nota' => $d->observaciones,
                 ])->all(),
                 'resumen' => $this->totales->dePlanilla($planilla),
                 'avisos' => $this->preparar->avisosParaConfirmar($planilla, true),
