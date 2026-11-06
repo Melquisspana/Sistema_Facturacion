@@ -296,7 +296,8 @@ Route::middleware('auth')->group(function () {
 
         // La pantalla «Ventas» (reporte contadora) se retiró el 06/11/2026: no la usaba
         // nadie. Las ventas siguen yendo a contabilidad en el paquete mensual
-        // (contabilidad.paquete), que reutiliza ReporteContadoraQuery y su Excel.
+        // (contabilidad.paquete), que reutiliza ReporteContadoraQuery y su Excel, y una
+        // por una desde la ficha (facturacion.enviar-contabilidad).
 
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');
@@ -355,6 +356,11 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/correo', [DteController::class, 'enviarCorreo'])->name('correo.enviar');
         // Envío rápido de un clic al correo del cliente/sala (mismo pipeline encolado).
         Route::post('{dte}/correo/cliente', [DteController::class, 'enviarCorreoCliente'])->name('correo.cliente');
+        // Envío INDIVIDUAL de un documento aceptado a contabilidad (encolado, canal
+        // contabilidad), desde la ficha. Solo administrador y contabilidad; facturación NO.
+        // No emite, no transmite, no toca correlativos ni el estado fiscal.
+        Route::post('{dte}/enviar-contabilidad', [DteController::class, 'enviarContabilidad'])
+            ->middleware('permission:contabilidad.enviar')->name('enviar-contabilidad');
         Route::post('{dte}/correo/{envio}/reenviar', [DteController::class, 'reenviarCorreo'])->name('correo.reenviar');
         Route::delete('{dte}', [DteController::class, 'destroy'])->name('destroy');
 

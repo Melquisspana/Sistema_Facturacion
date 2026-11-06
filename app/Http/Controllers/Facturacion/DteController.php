@@ -1962,6 +1962,35 @@ class DteController extends Controller
     }
 
     /**
+     * Envía UN documento a contabilidad por correo (PDF + JSON oficial), encolado. Es el
+     * mismo envío que tenía la pantalla «Ventas» (retirada el 06/11/2026), ahora en la
+     * ficha: hay quien trabaja mandando a diario en vez de esperar el paquete mensual.
+     *
+     * Solo documentos ACEPTADOS REALMENTE por Hacienda y solo al correo configurado en
+     * Configuración > Contabilidad. El permiso `contabilidad.enviar` lo exige la ruta.
+     * Reutiliza el servicio compartido con canal `contabilidad`: el anti-duplicado por
+     * canal evita encolar dos veces lo mismo. No cambia el estado fiscal, ni sello, ni
+     * correlativos: el resultado vive en `dte_envios` (en cola → enviado | simulado | error).
+     */
+    public function enviarContabilidad(Request $request, Dte $dte): RedirectResponse
+    {
+        abort_unless($dte->aceptadoRealmentePorMh(), 403);
+
+        $correo = app(CorreoContabilidad::class)->direccion();
+        if ($correo === null) {
+            return back()->with('error', 'No hay un correo de contabilidad válido. Configuralo en Configuración > Contabilidad.');
+        }
+
+        $envio = $this->envioCorreo->encolar($dte, [$correo], $request->user()?->id, DteEnvio::CANAL_CONTABILIDAD);
+
+        if ($envio === null) {
+            return back()->with('status', 'Ese documento ya está en cola para contabilidad; no se duplicó.');
+        }
+
+        return back()->with('status', 'Documento en cola para envío a contabilidad ('.$correo.').');
+    }
+
+    /**
      * Garantiza que el DTE tenga su JSON oficial guardado antes de encolar el correo.
      * Si ya lo tiene, no hace nada. Si falta y el documento está en condiciones (tipo
      * soportado + estado generado), lo genera al vuelo. Si no se puede, devuelve el

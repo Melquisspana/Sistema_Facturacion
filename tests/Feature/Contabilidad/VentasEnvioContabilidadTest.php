@@ -11,26 +11,30 @@ use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\Establecimiento;
+use App\Models\User;
 use App\Services\Dte\DtePdfService;
 use App\Support\Sala;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaArchivoEntregaDte;
 use Tests\TestCase;
 
 /**
- * Correo de un DTE por el canal `contabilidad`: asunto y cuerpo propios, sin BCC
- * duplicado, y solo `enviado` cuando el correo sale de verdad.
+ * Envío INDIVIDUAL de una venta a contabilidad (canal `contabilidad`) desde la ficha
+ * de la factura: botón según permiso, estado del último envío, guardas y el correo.
  *
- * La pantalla «Ventas», que tenía el botón de envío individual, se retiró el
- * 06/11/2026 (no se usaba): las ventas van a contabilidad en el paquete mensual. Lo
- * que queda probado acá es el canal del correo, que sigue en el código. Nunca sale
- * un correo real (Mail::fake) y no se toca estado fiscal, sello ni correlativos.
+ * Antes vivía en la pantalla «Ventas», retirada el 06/11/2026. Las ventas van en el
+ * paquete mensual, pero hay quien trabaja mandando a diario. Reglas: solo aceptados
+ * REALMENTE por Hacienda; destinatario desde `contabilidad.correo`; solo `enviado`
+ * cuenta como enviado. Nunca sale un correo real (Mail::fake) y no se toca estado
+ * fiscal, sello ni correlativos.
  */
 class VentasEnvioContabilidadTest extends TestCase
 {
@@ -98,6 +102,155 @@ class VentasEnvioContabilidadTest extends TestCase
             'estado' => $estado,
             'error' => $error,
         ]);
+    }
+
+    private function usuario(string $rol): User
+    {
+        return User::factory()->create()->assignRole($rol);
+    }
+
+    private function ficha(Dte $dte): TestResponse
+    {
+        return $this->get(route('facturacion.show', $dte));
+    }
+
+    // --- Ficha: botón y estado ---
+
+    public function test_la_ficha_muestra_el_envio_a_contabilidad_a_quien_tiene_permiso(): void
+    {
+        $dte = $this->venta();
+
+        foreach (['contabilidad', 'administrador'] as $rol) {
+            $this->actingAs($this->usuario($rol))->ficha($dte)->assertOk()
+                ->assertSee(route('facturacion.enviar-contabilidad', $dte), false)
+                ->assertSee('Enviar a contabilidad')
+                ->assertSee(self::CORREO_CONTA);
+        }
+
+        // Facturación ve la ficha, pero no tiene contabilidad.enviar: sin botón.
+        $this->actingAs($this->usuario('facturacion'))->ficha($dte)->assertOk()
+            ->assertDontSee(route('facturacion.enviar-contabilidad', $dte), false);
+    }
+
+    public function test_la_ficha_no_ofrece_el_envio_de_un_documento_no_aceptado_realmente(): void
+    {
+        $mock = $this->venta(sello: 'MOCK-SIMULADO-ABCD');
+
+        $this->actingAs($this->usuario('contabilidad'))->ficha($mock)->assertOk()
+            ->assertDontSee(route('facturacion.enviar-contabilidad', $mock), false);
+    }
+
+    public function test_la_ficha_muestra_el_estado_del_ultimo_envio_a_contabilidad(): void
+    {
+        $dte = $this->venta();
+        $user = $this->usuario('contabilidad');
+
+        $this->envio($dte, DteEnvio::CANAL_CONTABILIDAD, 'error', 'SMTP connect() failed');
+        $this->actingAs($user)->ficha($dte)->assertOk()->assertSee('SMTP connect() failed')->assertSee('Enviar a contabilidad');
+
+        $this->envio($dte, DteEnvio::CANAL_CONTABILIDAD, 'enviado');
+        $this->actingAs($user)->ficha($dte)->assertOk()->assertSee('Reenviar a contabilidad');
+    }
+
+    public function test_un_envio_a_contabilidad_no_cuenta_como_correo_al_cliente(): void
+    {
+        $dte = $this->venta();
+        $this->envio($dte, DteEnvio::CANAL_CONTABILIDAD, 'enviado');
+
+        $this->actingAs($this->usuario('administrador'))->ficha($dte)->assertOk()
+            ->assertSee('Pendiente de correo')
+            ->assertDontSee('Correo enviado');
+    }
+
+    // --- Envío desde la ficha: encolado con canal contabilidad ---
+
+    public function test_enviar_encola_canal_contabilidad_y_registra_quien(): void
+    {
+        Mail::fake();
+        Queue::fake();
+        $dte = $this->venta();
+        $user = $this->usuario('contabilidad');
+
+        $this->actingAs($user)
+            ->post(route('facturacion.enviar-contabilidad', $dte))
+            ->assertRedirect()
+            ->assertSessionHas('status');
+
+        Queue::assertPushed(EnviarDteCorreo::class);
+        $envio = DteEnvio::where('dte_id', $dte->id)->firstOrFail();
+        $this->assertSame(DteEnvio::CANAL_CONTABILIDAD, $envio->canal);
+        $this->assertSame('pendiente', $envio->estado);
+        $this->assertSame([self::CORREO_CONTA], $envio->destinatarios);
+        $this->assertSame($user->id, $envio->user_id);
+        Mail::assertNothingSent(); // solo encola: el correo lo manda el job
+
+        $this->actingAs($user)->ficha($dte)->assertOk()->assertSee('En cola');
+    }
+
+    public function test_permisos_del_envio(): void
+    {
+        Queue::fake();
+        $dte = $this->venta();
+
+        foreach (['facturacion', 'jefatura'] as $rol) { // no tienen contabilidad.enviar
+            $this->actingAs($this->usuario($rol))
+                ->post(route('facturacion.enviar-contabilidad', $dte))
+                ->assertForbidden();
+        }
+        $this->assertDatabaseCount('dte_envios', 0);
+
+        foreach (['contabilidad', 'administrador'] as $rol) {
+            $this->actingAs($this->usuario($rol))
+                ->post(route('facturacion.enviar-contabilidad', $this->venta()))
+                ->assertRedirect();
+        }
+        $this->assertSame(2, DteEnvio::where('canal', DteEnvio::CANAL_CONTABILIDAD)->count());
+    }
+
+    public function test_no_envia_un_dte_no_aceptado_realmente(): void
+    {
+        Queue::fake();
+        $user = $this->usuario('contabilidad');
+
+        $this->actingAs($user)->post(route('facturacion.enviar-contabilidad', $this->venta(sello: 'MOCK-SIMULADO-ABCD')))->assertForbidden();
+
+        $generado = $this->venta();
+        $generado->update(['estado' => 'generado']);
+        $this->actingAs($user)->post(route('facturacion.enviar-contabilidad', $generado))->assertForbidden();
+
+        $this->assertDatabaseCount('dte_envios', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_sin_correo_de_contabilidad_no_encola(): void
+    {
+        Queue::fake();
+        Configuracion::set('contabilidad.correo', '');
+        Configuracion::olvidarCache();
+
+        $this->actingAs($this->usuario('contabilidad'))
+            ->post(route('facturacion.enviar-contabilidad', $this->venta()))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseCount('dte_envios', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_no_duplica_si_ya_esta_en_cola_y_reenvia_tras_un_envio_exitoso(): void
+    {
+        Queue::fake();
+        $user = $this->usuario('contabilidad');
+
+        $dte = $this->venta();
+        $this->actingAs($user)->post(route('facturacion.enviar-contabilidad', $dte));
+        $this->actingAs($user)->post(route('facturacion.enviar-contabilidad', $dte))->assertSessionHas('status');
+        $this->assertSame(1, DteEnvio::where('dte_id', $dte->id)->count());
+
+        $otro = $this->venta();
+        $this->envio($otro, DteEnvio::CANAL_CONTABILIDAD, 'enviado');
+        $this->actingAs($user)->post(route('facturacion.enviar-contabilidad', $otro))->assertRedirect();
+        $this->assertSame(2, DteEnvio::where('dte_id', $otro->id)->where('canal', DteEnvio::CANAL_CONTABILIDAD)->count());
     }
 
     // --- Resultado del job ---
@@ -234,8 +387,9 @@ class VentasEnvioContabilidadTest extends TestCase
         $correlAntes = Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray();
         $dtesAntes = Dte::count();
 
-        $envio = $this->envio($dte, DteEnvio::CANAL_CONTABILIDAD, 'pendiente');
-        (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
+        $this->actingAs($this->usuario('contabilidad'))
+            ->post(route('facturacion.enviar-contabilidad', $dte))->assertRedirect();
+        (new EnviarDteCorreo(DteEnvio::firstOrFail()->id))->handle(app(DtePdfService::class));
 
         $this->assertSame($antes, $instantanea($dte->refresh()));
         $this->assertEquals($correlAntes, Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());

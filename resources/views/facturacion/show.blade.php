@@ -43,8 +43,10 @@
 
             {{-- Tarjeta de ESTADO (clara, de un vistazo). Solo lectura. --}}
             @php
-                $correoEnviado = $dte->envios->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
-                $correoFallo = ! $correoEnviado && $dte->envios->contains(fn ($e) => $e->estado === 'error');
+                // Solo los envíos al CLIENTE: un envío a contabilidad no es «correo enviado».
+                $enviosCliente = $dte->envios->reject(fn ($e) => $e->esCanalContabilidad());
+                $correoEnviado = $enviosCliente->contains(fn ($e) => in_array($e->estado, ['enviado', 'simulado'], true));
+                $correoFallo = ! $correoEnviado && $enviosCliente->contains(fn ($e) => $e->estado === 'error');
                 $listoEmitir = ! empty($emisionProduccion['preflight']['puede']);
                 $aceptadoMock = \Illuminate\Support\Str::startsWith((string) $dte->sello_recepcion, 'MOCK');
                 [$stTxt, $stColor, $stSub] = match (true) {
@@ -217,7 +219,8 @@
                 @php
                     // Misma regla sala → cliente que usa el envío y que imprime el PDF.
                     $correoDefault = \App\Support\Dte\CorreoReceptorDte::resolver($dte) ?? '';
-                    $envios = $dte->envios;
+                    // Los envíos a contabilidad tienen su propio bloque, abajo.
+                    $envios = $enviosCliente;
                     $ultimo = $envios->first();
                     $estadoEnvio = match ($ultimo?->estado) {
                         'enviado' => ['Enviado', '🟢', 'bg-green-100 text-green-700'],
@@ -347,6 +350,53 @@
                     </div>
                 </div>
             @endcan
+
+            {{-- Envío de ESTE documento a contabilidad (canal `contabilidad`). Las ventas van
+                 en el paquete mensual, pero hay quien trabaja mandando a diario. Solo para
+                 aceptados REALES y para quien tiene `contabilidad.enviar` (la ruta lo exige
+                 igual). Sin envío no se muestra distintivo: el aviso es el del paquete. --}}
+            @if (! empty($enReporteContadora) && auth()->user()?->can('contabilidad.enviar'))
+                @php
+                    $ultimoConta = $dte->envios->first(fn ($e) => $e->esCanalContabilidad());
+                    // SOLO 'enviado' cuenta como enviado: simulado, error y en cola siguen pendientes.
+                    $conta = [
+                        'pendiente' => ['En cola', 'bg-amber-100 text-amber-800', 'El envío está en la cola: todavía no salió.'],
+                        'enviado' => ['Enviado', 'bg-green-100 text-green-700', 'El correo salió correctamente.'],
+                        'simulado' => ['Simulado', 'bg-amber-100 text-amber-800', 'El correo NO salió por SMTP (mailer en modo prueba): sigue pendiente.'],
+                        'error' => ['Error', 'bg-red-100 text-red-700', 'El envío falló: sigue pendiente.'],
+                    ][$ultimoConta?->estado] ?? null;
+                    $contaExitoso = $ultimoConta?->estado === 'enviado';
+                    $correoConta = $copiaContabilidad['correo'] ?? null;
+                    $accionConta = $contaExitoso ? 'Reenviar a contabilidad' : 'Enviar a contabilidad';
+                @endphp
+                <div id="envio-contabilidad" class="bg-white shadow sm:rounded-lg px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="font-semibold text-gray-700">Contabilidad</h3>
+                        <p class="text-xs text-gray-500">
+                            Va en el paquete mensual. Si hace falta antes, mandalo solo: PDF y JSON oficial
+                            {{ $correoConta ? 'a '.$correoConta : '(falta el correo en Configuración › Contabilidad)' }}.
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        @if ($conta)
+                            <span class="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium {{ $conta[1] }}"
+                                  title="{{ $ultimoConta->estado === 'error' && $ultimoConta->error ? $ultimoConta->error : $conta[2] }}">{{ $conta[0] }}</span>
+                            @if ($contaExitoso)
+                                <span class="text-[11px] whitespace-nowrap text-gray-400">{{ $ultimoConta->updated_at->format('d/m/Y H:i') }}</span>
+                            @endif
+                        @endif
+                        <form method="POST" action="{{ route('facturacion.enviar-contabilidad', $dte) }}"
+                              onsubmit="return confirm('¿Enviar este documento a contabilidad por correo?');">
+                            @csrf
+                            <button type="submit" @disabled(! $correoConta)
+                                    title="{{ $correoConta ? $accionConta.': envía el PDF y el JSON oficial a '.$correoConta : 'No hay un correo de contabilidad configurado.' }}"
+                                    class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                                {{ $accionConta }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            @endif
 
             {{-- ACCIONES DEL DOCUMENTO — sección única para los cuatro tipos (01/03/05/11).
                  Antes esto era "Corrección / reversión del documento", con la invalidación
