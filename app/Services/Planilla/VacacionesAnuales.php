@@ -94,6 +94,37 @@ final class VacacionesAnuales
     }
 
     /**
+     * El año de servicio que paga la planilla de vacaciones del mes de `$mes`: del
+     * aniversario anterior al último cumplido hasta el fin de ese mes. Null si no cumple
+     * un año o no tiene fecha de ingreso. Lo usa el recibo para firmar.
+     *
+     * @return array{desde: CarbonImmutable, hasta: CarbonImmutable}|null
+     */
+    public function anioDeServicio(PlanillaEmpleado $empleado, CarbonImmutable $mes): ?array
+    {
+        if ($empleado->alta_el === null) {
+            return null;
+        }
+
+        $ingreso = CarbonImmutable::parse($empleado->alta_el->toDateString());
+        $anios = $this->aniosCumplidos($ingreso, $mes);
+
+        return $anios < 1 ? null : [
+            'desde' => $ingreso->addYearsNoOverflow($anios - 1),
+            'hasta' => $ingreso->addYearsNoOverflow($anios),
+        ];
+    }
+
+    /** Años cumplidos hasta el fin del mes. Quien entró un 29 de febrero los cumple el 28. */
+    private function aniosCumplidos(CarbonImmutable $ingreso, CarbonImmutable $mes): int
+    {
+        $finDeMes = $mes->endOfMonth()->startOfDay();
+        $anios = $finDeMes->year - $ingreso->year;
+
+        return $ingreso->addYearsNoOverflow($anios) > $finDeMes ? $anios - 1 : $anios;
+    }
+
+    /**
      * @param  ?string  $salvoPeriodo  la planilla que se está armando, que no cuenta como pago
      * @return array{fuera: ?string, avisar: bool, aniversario: ?CarbonImmutable, del_mes: bool}
      */
@@ -106,14 +137,7 @@ final class VacacionesAnuales
         }
 
         $ingreso = CarbonImmutable::parse($empleado->alta_el->toDateString());
-        $finDeMes = $mes->endOfMonth()->startOfDay();
-
-        // El último aniversario hasta el fin del mes. Quien entró un 29 de febrero lo
-        // cumple el 28 en los años que no son bisiestos.
-        $anios = $finDeMes->year - $ingreso->year;
-        if ($ingreso->addYearsNoOverflow($anios) > $finDeMes) {
-            $anios--;
-        }
+        $anios = $this->aniosCumplidos($ingreso, $mes);
 
         if ($anios < 1) {
             return $fuera('todavía no cumple un año');

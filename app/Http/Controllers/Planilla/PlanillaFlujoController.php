@@ -18,6 +18,7 @@ use App\Services\Planilla\IdentidadNegocio;
 use App\Services\Planilla\InformePlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\TotalesPlanilla;
+use App\Services\Planilla\VacacionesAnuales;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -117,12 +118,14 @@ class PlanillaFlujoController extends Controller
         TotalesPlanilla $totales,
         EstadoPlanilla $estado,
         IdentidadNegocio $identidad,
+        VacacionesAnuales $vacaciones,
     ) {
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
-        $planilla->load('detalles.conceptos', 'detalles.gasto.cuotas');
+        $planilla->load('detalles.conceptos', 'detalles.gasto.cuotas', 'detalles.empleado');
 
         $formato = $request->query('formato') === 'recibo' ? 'recibo' : 'hoja';
+        $esVacaciones = $planilla->clase === VacacionesAnuales::CLASE;
         $pagos = $this->pagosPorDetalle($planilla);
 
         $lineas = [];
@@ -187,6 +190,10 @@ class PlanillaFlujoController extends Controller
                         ? $p['fecha']->format('d/m/Y') : null,
                 'entrego' => $p['entrego'],
                 'estado' => $e + ['etiqueta' => EstadoPlanilla::ETIQUETAS[$e['estado']]],
+                // Solo en vacaciones: el año de servicio que se paga, para el recibo que se firma.
+                'vacaciones' => $esVacaciones && $detalle->empleado
+                    ? $vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable())
+                    : null,
             ];
 
             $suma['total_ingresos'] += $t['total_ingresos'];

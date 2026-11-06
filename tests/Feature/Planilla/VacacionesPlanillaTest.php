@@ -3,6 +3,7 @@
 namespace Tests\Feature\Planilla;
 
 use App\Enums\PermisoSistema;
+use App\Models\Empresa;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
@@ -386,24 +387,48 @@ class VacacionesPlanillaTest extends TestCase
         $this->persona('Carla', 'FICTICIO-3', '2026-01-15');
         $this->persona('Dora', 'FICTICIO-4', '2019-06-20')->update(['vacaciones_pagadas_hasta' => 2026]);
 
-        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()
-            ->assertSee('Vacaciones por pagar: <strong>3</strong> (2 cumplen este mes).', false)
+        // Un enlace discreto junto al botón: sin caja de color ni negritas.
+        $html = $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()
+            ->assertSee('Vacaciones por pagar (3)</a>', false)
+            ->assertSee('href="'.route('planilla.create', ['clase' => 'vacaciones']).'"', false)
             ->assertDontSee('atrasad')
-            ->assertSee(route('planilla.create', ['clase' => 'vacaciones']), false);
+            ->assertDontSee('bg-amber-50')
+            ->getContent();
+        $this->assertDoesNotMatchRegularExpression('/<strong>\s*3\s*<\/strong>/', $html);
 
         $this->generar('2026-11-06');
 
         $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()->assertDontSee('Vacaciones por pagar');
     }
 
-    public function test_aviso_sin_nadie_de_este_mes(): void
+    public function test_el_recibo_de_vacaciones_dice_que_es_de_vacaciones_y_el_ano_de_servicio(): void
     {
-        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
-        $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
+        // Sin seguimiento de pagos, el papel dice lo que recibe cada uno.
+        config(['planilla.pagos_enabled' => false]);
+        Empresa::create(['razon_social' => 'Patrona Ejemplo', 'nombre_comercial' => 'Negocio Ejemplo', 'nit' => '00000000000000', 'ambiente' => '00', 'activo' => true]);
+        $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $planilla = $this->generar('2026-11-20');
 
-        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()
-            ->assertSee('Vacaciones por pagar: <strong>1</strong>.', false)
-            ->assertDontSee('este mes)');
+        $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo']))->assertOk()
+            ->assertSee('Recibo de vacaciones')
+            ->assertSeeInOrder(['Recibí de Patrona Ejemplo', 'la cantidad de US$', '238.49', 'en concepto de vacaciones anuales remuneradas:',
+                '15 días de salario más 30 % de recargo, correspondientes al año de servicio del', '10/11/2025 al 10/11/2026.'])
+            // Bruto, ISSS, AFP y neto, como los demás recibos. La renta en cero no se imprime.
+            ->assertSeeInOrder(['Vacaciones', '265.72', 'ISSS', '7.97', 'AFP', '19.26', '238.49'])
+            ->assertSee('Período de goce: del')
+            ->assertSee('Recibí conforme');
+    }
+
+    public function test_el_recibo_de_una_quincena_no_cambia(): void
+    {
+        $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $quincena = app(GenerarPlanilla::class)->generar($this->actor, [
+            'tipo_periodo' => 'quincenal', 'fecha' => '2026-11-01', 'clase' => 'regular', 'moneda' => 'USD',
+        ]);
+
+        $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $quincena, 'formato' => 'recibo']))->assertOk()
+            ->assertSee('Recibo de pago')->assertSee('Período pagado')
+            ->assertDontSee('vacaciones anuales')->assertDontSee('Período de goce')->assertDontSee('Año de servicio');
     }
 
     public function test_sin_nadie_por_pagar_no_hay_aviso(): void
@@ -496,14 +521,12 @@ class VacacionesPlanillaTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
         $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
 
-        // Solo ver: el aviso con la cantidad, sin enlace, y no puede generar.
+        // Solo ver: el enlace es para generar, así que no lo ve, y no puede generar.
         $ver = User::factory()->create(['activo' => true]);
         $ver->syncPermissions(['planilla.ver']);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        $this->actingAs($ver)->get(route('planilla.index'))->assertOk()
-            ->assertSee('Vacaciones por pagar:')
-            ->assertDontSee('Generar la planilla de vacaciones');
+        $this->actingAs($ver)->get(route('planilla.index'))->assertOk()->assertDontSee('Vacaciones por pagar');
         $this->actingAs($ver)->get(route('planilla.create', ['clase' => 'vacaciones']))->assertForbidden();
         $this->actingAs($ver)->get(route('planilla.revisar', $this->datos('2026-11-06')))->assertForbidden();
         $this->actingAs($ver)->post(route('planilla.store'), $this->datos('2026-11-06'))->assertForbidden();

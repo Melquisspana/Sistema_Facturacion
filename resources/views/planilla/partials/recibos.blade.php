@@ -17,13 +17,15 @@
 @php($esBorrador = $esBorrador ?? (isset($planilla) && $planilla->borrador()))
 
 @foreach ($lineas as $l)
+    {{-- Vacaciones: el recibo dice qué se paga y de qué año de servicio, para que se firme. --}}
+    @php($vac = $l['vacaciones'] ?? null)
     <div class="hoja-impresa">
         @if ($esBorrador)
             <div class="hi-sello">Borrador<small>no es comprobante de pago</small></div>
         @endif
 
         @include('planilla.partials.membrete', [
-            'documento' => $esBorrador ? 'Detalle de la quincena' : 'Recibo de pago',
+            'documento' => $esBorrador ? 'Detalle de la quincena' : ($vac ? 'Recibo de vacaciones' : 'Recibo de pago'),
             'folio' => $esBorrador ? 'Sin número · impreso el '.e($cabecera['hoy']) : e($l['folio']),
         ])
 
@@ -34,12 +36,28 @@
             @endif
         </div>
 
+        @if ($vac && ! $esBorrador)
+            {{-- La misma cifra que «Total recibido» abajo: el papel no puede decir dos montos.
+                 Se recibe de la empleadora; sin razón social cargada aparte, del negocio. --}}
+            <p class="hi-declara">
+                Recibí de {{ $empleadora ?: $negocio }} la cantidad de {{ $moneda === 'USD' ? 'US$' : $moneda }}
+                <span class="mono">{{ $l['pagado_txt'] }}</span> en concepto de vacaciones anuales remuneradas:
+                15 días de salario más 30 % de recargo, correspondientes al año de servicio del
+                {{ $vac['desde']->format('d/m/Y') }} al {{ $vac['hasta']->format('d/m/Y') }}.
+            </p>
+        @endif
+
         <div class="hi-fechas">
             <div>
-                <span class="et">Período pagado</span>
-                <span class="val mono">{{ $l['periodo_largo'] }}</span>
-                @if ($l['periodo_propio'])
-                    <span class="apunte">Período particular dentro de la quincena</span>
+                @if ($vac)
+                    <span class="et">Año de servicio</span>
+                    <span class="val mono">del {{ $vac['desde']->format('d/m/Y') }} al {{ $vac['hasta']->format('d/m/Y') }}</span>
+                @else
+                    <span class="et">Período pagado</span>
+                    <span class="val mono">{{ $l['periodo_largo'] }}</span>
+                    @if ($l['periodo_propio'])
+                        <span class="apunte">Período particular dentro de la quincena</span>
+                    @endif
                 @endif
             </div>
             <div>
@@ -98,6 +116,11 @@
                 </div>
             @else
                 <p class="hi-completo">Pago completo · no queda saldo pendiente</p>
+            @endif
+
+            @if ($vac)
+                {{-- Se llena a mano: el sistema no sabe cuándo se toman los días. --}}
+                <p class="hi-goce">Período de goce: del ____________________ al ____________________</p>
             @endif
 
             <div class="hi-firmas">

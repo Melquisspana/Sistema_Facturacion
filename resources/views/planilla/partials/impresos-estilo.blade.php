@@ -90,6 +90,9 @@
     .hi-parcial .et { font-weight: 700; font-size: 9pt; letter-spacing: .14em; text-transform: uppercase; }
     .hi-parcial .saldo { font-size: 9.5pt; font-variant-numeric: tabular-nums; }
     .hi-completo { margin-top: 3.5mm; font-size: 7.8pt; letter-spacing: .12em; text-transform: uppercase; color: #3a3a3a; text-align: right; }
+    /* Recibo de vacaciones: lo que la persona declara recibir, y el goce escrito a mano. */
+    .hi-declara { margin-top: 4mm; font-size: 10pt; line-height: 1.5; color: #141414; }
+    .hi-goce { margin-top: 5mm; font-size: 9.5pt; color: #141414; }
 
     .hi-firmas { display: flex; gap: 10mm; margin-top: 9mm; }
     .hi-firmas .bloque { flex: 1; }
