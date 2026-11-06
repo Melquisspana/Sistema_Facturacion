@@ -19,8 +19,12 @@
                 <div class="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{{ session('error') }}</div>
             @endif
 
-            {{-- Filtros --}}
-            <form method="GET" action="{{ route('contabilidad.paquete') }}" class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
+            {{-- Filtros. Distinto de la guía a propósito: no hay botón «Filtrar». Al cambiar
+                 el mes, el año o una fuente, el resumen se actualiza solo (lo pidió Melqui:
+                 «sin tener que darle ver resumen»). Las fechas opcionales se aplican cuando
+                 están las dos puestas, o las dos vacías, al salir del campo: si se mandaran
+                 con cada tecla, la página se recargaría a mitad de escribir el año. --}}
+            <form id="filtros-paquete" method="GET" action="{{ route('contabilidad.paquete') }}" class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-6">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Periodo</h3>
                 <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div>
@@ -46,17 +50,43 @@
                 </div>
                 <p class="mt-2 text-xs text-gray-400">Si indicás fechas, tienen prioridad sobre mes/año.</p>
                 <div class="mt-4 flex flex-wrap items-center gap-4">
+                    {{-- El 0 oculto va antes de cada casilla: una casilla sin marcar no viaja
+                         en el formulario y el servidor la tomaría como «incluir». --}}
                     <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input type="hidden" name="incluir_compras" value="0">
                         <input type="checkbox" name="incluir_compras" value="1" @checked($incluirCompras) class="rounded border-gray-300">
                         Incluir compras (recibidos)
                     </label>
                     <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input type="hidden" name="incluir_ventas" value="0">
                         <input type="checkbox" name="incluir_ventas" value="1" @checked($incluirVentas) class="rounded border-gray-300">
                         Incluir ventas (emitidos)
                     </label>
-                    <button class="ms-auto rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700">Ver resumen</button>
+                    <noscript>
+                        <button class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Ver resumen</button>
+                    </noscript>
                 </div>
             </form>
+            <script>
+                (function () {
+                    const form = document.getElementById('filtros-paquete');
+                    const fechas = form.querySelectorAll('input[type=date]');
+                    form.addEventListener('change', function (e) {
+                        if (e.target.type !== 'date') {
+                            form.submit();
+                        }
+                    });
+                    fechas.forEach(function (campo) {
+                        campo.addEventListener('blur', function () {
+                            const llenas = Array.from(fechas).filter(function (f) { return f.value !== ''; }).length;
+                            const cambio = Array.from(fechas).some(function (f) { return f.value !== f.defaultValue; });
+                            if (cambio && (llenas === 0 || llenas === fechas.length)) {
+                                form.submit();
+                            }
+                        });
+                    });
+                })();
+            </script>
 
             {{-- COBERTURA del período. Va ANTES del resumen a propósito: los totales de
                  abajo solo significan algo si se sabe que los correos del período están

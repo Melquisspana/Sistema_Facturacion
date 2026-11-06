@@ -3,15 +3,15 @@
 namespace Tests\Feature\Facturacion;
 
 use App\Models\Cliente;
-use App\Models\Correlativo;
 use App\Models\Dte;
 use App\Models\Establecimiento;
 use App\Models\User;
 use App\Services\Reportes\ReporteContadoraExcel;
 use App\Services\Reportes\ReporteContadoraQuery;
+use App\Support\Sala;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Role;
@@ -19,9 +19,9 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Reporte contadora: pantalla + Excel de SOLO LECTURA. Por defecto excluye
- * pruebas/mock (ambiente 01 + aceptados reales). No emite, no transmite, no toca
- * correlativos ni envía correos.
+ * Reporte contadora: consulta + Excel de SOLO LECTURA que reutiliza el paquete
+ * mensual. Por defecto excluye pruebas/mock (ambiente 01 + aceptados reales). La
+ * pantalla «Ventas» que los mostraba se retiró el 06/11/2026.
  */
 class ReporteContadoraTest extends TestCase
 {
@@ -34,7 +34,7 @@ class ReporteContadoraTest extends TestCase
             Role::findOrCreate($rol, 'web');
         }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        \App\Support\Sala::olvidarCache();
+        Sala::olvidarCache();
         $this->seed(DatosInicialesNegritaSeeder::class);
     }
 
@@ -64,38 +64,34 @@ class ReporteContadoraTest extends TestCase
         ]);
     }
 
-    public function test_el_reporte_carga_para_todos_los_roles_con_reportes_ver(): void
+    /**
+     * La pantalla «Ventas» se retiró (06/11/2026): no la usaba nadie. Ni la ruta ni el
+     * enlace del menú existen; las ventas siguen yendo en el paquete mensual.
+     */
+    public function test_la_pantalla_ventas_ya_no_existe(): void
     {
-        // Todos los roles tienen reportes.ver (incluye jefatura de solo lectura).
-        foreach (['administrador', 'contabilidad', 'facturacion', 'jefatura'] as $rol) {
-            $this->actingAs($this->usuario($rol))
-                ->get(route('facturacion.reporte-contadora'))
-                ->assertOk()
-                ->assertSee('Ventas')
-                // El aviso de alcance (Conta Portable / pruebas) se retiró de la interfaz.
-                ->assertDontSee('No incluye documentos hechos en Conta Portable');
+        foreach (['facturacion.reporte-contadora', 'facturacion.reporte-contadora.exportar',
+            'facturacion.reporte-contadora.json', 'facturacion.reporte-contadora.enviar'] as $ruta) {
+            $this->assertFalse(Route::has($ruta), "La ruta {$ruta} debería haberse quitado.");
         }
+
+        $usuario = $this->usuario('contabilidad');
+        $this->actingAs($usuario)->get('/facturacion/reporte-contadora')->assertNotFound();
+        $this->actingAs($usuario)->get(route('dashboard'))->assertOk()
+            ->assertDontSee('/facturacion/reporte-contadora', false)
+            ->assertSee(route('contabilidad.paquete'), false);
     }
 
-    public function test_invitado_no_accede(): void
-    {
-        $this->get(route('facturacion.reporte-contadora'))->assertRedirect(route('login'));
-    }
-
+    /** El recorte que el paquete mensual reutiliza: por defecto, solo producción real. */
     public function test_por_defecto_excluye_ambiente_00_y_mock(): void
     {
         $real = $this->crearDte('01', '2026SELLOREAL0001', true);           // producción, aceptado real
-        $pruebas = $this->crearDte('00', '2026SELLOPRUEBA1', true);          // ambiente 00 (excluir)
-        $mock = $this->crearDte('01', 'MOCK-SIMULADO-ABCD', true);           // sello mock (excluir)
+        $this->crearDte('00', '2026SELLOPRUEBA1', true);                    // ambiente 00 (excluir)
+        $this->crearDte('01', 'MOCK-SIMULADO-ABCD', true);                  // sello mock (excluir)
 
-        $html = $this->actingAs($this->usuario('contabilidad'))
-            ->get(route('facturacion.reporte-contadora'))
-            ->assertOk()
-            ->getContent();
+        $ids = ReporteContadoraQuery::query(ReporteContadoraQuery::filtros([]))->pluck('id')->all();
 
-        $this->assertStringContainsString($real->numero_control, $html);
-        $this->assertStringNotContainsString($pruebas->numero_control, $html);
-        $this->assertStringNotContainsString($mock->numero_control, $html);
+        $this->assertSame([$real->id], $ids);
     }
 
     public function test_el_excel_se_genera_con_las_columnas_esperadas(): void
@@ -106,7 +102,7 @@ class ReporteContadoraTest extends TestCase
 
         $filtros = ReporteContadoraQuery::filtros([]); // defaults: prod 01 + aceptado real
         $dtes = ReporteContadoraQuery::query($filtros)->get();
-        $ruta = (new ReporteContadoraExcel())->generar($dtes);
+        $ruta = (new ReporteContadoraExcel)->generar($dtes);
 
         $hoja = IOFactory::load($ruta)->getActiveSheet();
         // Encabezados en la fila 1, en el orden pedido.
@@ -119,31 +115,5 @@ class ReporteContadoraTest extends TestCase
         $this->assertNull($hoja->getCell([6, 3])->getValue()); // no hay una tercera fila (mock fuera)
 
         @unlink($ruta);
-    }
-
-    public function test_exportar_descarga_un_xlsx(): void
-    {
-        $this->crearDte('01', '2026SELLOREAL0003', true);
-
-        $this->actingAs($this->usuario('contabilidad'))
-            ->get(route('facturacion.reporte-contadora.exportar'))
-            ->assertOk()
-            ->assertDownload();
-    }
-
-    public function test_ver_y_exportar_no_emite_ni_toca_correlativos_ni_envia_correo(): void
-    {
-        Mail::fake();
-        $this->crearDte('01', '2026SELLOREAL0004', true);
-        $dtesAntes = Dte::count();
-        $correlAntes = Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray();
-
-        $admin = $this->usuario('administrador');
-        $this->actingAs($admin)->get(route('facturacion.reporte-contadora'))->assertOk();
-        $this->actingAs($admin)->get(route('facturacion.reporte-contadora.exportar'))->assertOk();
-
-        $this->assertSame($dtesAntes, Dte::count());                 // no se creó/emitió nada
-        $this->assertEquals($correlAntes, Correlativo::orderBy('id')->get(['id', 'ultimo_numero'])->toArray());
-        Mail::assertNothingSent();                                    // el reporte no manda correos
     }
 }

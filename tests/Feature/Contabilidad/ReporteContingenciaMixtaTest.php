@@ -179,15 +179,10 @@ class ReporteContingenciaMixtaTest extends TestCase
         $this->assertStringContainsString('DOCUMENTOS INVALIDADOS (1)', $leeme);
     }
 
-    public function test_pantallas_avisan_y_no_permiten_enviar_un_pendiente(): void
+    public function test_el_paquete_y_su_correo_avisan_de_los_pendientes(): void
     {
         $contadora = $this->usuario('contabilidad');
-        $this->actingAs($contadora)->get(route('facturacion.reporte-contadora', ['fecha_desde' => '2026-07-01', 'fecha_hasta' => '2026-07-31']))
-            ->assertOk()->assertSee('Pendiente de sello')->assertSee('En contingencia');
-        $this->get(route('facturacion.reporte-contadora.json', $this->sinSello))->assertForbidden();
-        $this->post(route('facturacion.reporte-contadora.enviar', $this->sinSello))->assertForbidden();
-
-        $resumen = $this->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
+        $resumen = $this->actingAs($contadora)->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026]))
             ->assertOk()->assertSee('1 pendientes de sello (no suman)')->viewData('resumen');
         $this->assertSame(500.0, $resumen['ventas_total']);
         $this->assertSame(1, $resumen['ventas_pendientes_sello']);

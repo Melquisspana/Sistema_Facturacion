@@ -73,7 +73,7 @@
                             {{ $correoEnviado ? 'Correo enviado' : ($correoFallo ? 'Correo falló' : 'Pendiente de correo') }}
                         </span>
                         @if (! empty($enReporteContadora))
-                            <span class="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-700" title="Aparece en Facturación → Reporte contadora (ventas reales)">En Reporte contadora</span>
+                            <span class="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-700" title="Va en las ventas del paquete mensual para contabilidad (ventas reales)">En el paquete mensual</span>
                         @endif
                     @endif
                 </div>

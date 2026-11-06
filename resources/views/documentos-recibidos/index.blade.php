@@ -152,11 +152,12 @@
                 </div>
             @endunless
 
-            {{-- Pestañas (estado) --}}
+            {{-- Pestañas (estado). «Bandeja» va primero porque es la de por defecto:
+                 muestra todas las compras del rango, también las ya enviadas. --}}
             @php
                 $tabs = [
-                    'pendientes' => ['Pendientes contabilidad', $conteos['pendiente']],
                     'bandeja' => ['Bandeja recibidos', null],
+                    'pendientes' => ['Pendientes contabilidad', $conteos['pendiente']],
                     'enviados' => ['Enviados a contabilidad', $conteos['enviado']],
                     'ignorados' => ['Ignorados', $conteos['ignorado']],
                 ];
@@ -290,7 +291,9 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             @php
-                                $badge = ['pendiente' => 'bg-amber-100 text-amber-700', 'enviado' => 'bg-green-100 text-green-700', 'ignorado' => 'bg-gray-100 text-gray-500'];
+                                // «Pendiente» en gris, no en ámbar: es lo normal hasta que sale el paquete
+                                // mensual, no algo que haya que atender compra por compra.
+                                $badge = ['pendiente' => 'bg-gray-100 text-gray-600', 'enviado' => 'bg-green-100 text-green-700', 'ignorado' => 'bg-gray-100 text-gray-500'];
                                 // Motivo de datos faltantes (independiente de `estado`). Ver DocumentoRecibido::CLASIFICACIONES.
                                 $badgeClasificacion = [
                                     'dte_valido' => 'bg-green-100 text-green-700',
@@ -307,9 +310,10 @@
                                     'falta_adjunto' => 'Falta JSON',
                                 ];
                                 // Estado del envío individual a contabilidad. SOLO 'enviado' cuenta
-                                // como enviado: simulado / error / en cola siguen pendientes.
+                                // como enviado: simulado / error / en cola siguen pendientes. Sin
+                                // envío individual no se muestra nada: las compras viajan en el
+                                // paquete mensual y el aviso es uno solo, el de mandar el paquete.
                                 $envioBadge = [
-                                    '' => ['Pendiente', 'bg-gray-100 text-gray-600', 'Todavía no se envió a contabilidad.'],
                                     'pendiente' => ['En cola', 'bg-amber-100 text-amber-800', 'El envío está en la cola: todavía no salió.'],
                                     'enviado' => ['Enviado', 'bg-green-100 text-green-700', 'El correo salió correctamente.'],
                                     'simulado' => ['Simulado', 'bg-amber-100 text-amber-800', 'El correo NO salió por SMTP (mailer en modo prueba): sigue pendiente.'],
@@ -351,7 +355,7 @@
                                          estado del envío y menú discreto con las descargas y el triage
                                          interno (documentos-recibidos.gestionar). --}}
                                     @php
-                                        $envio = $envioBadge[(string) ($doc->envio_estado ?? '')] ?? $envioBadge[''];
+                                        $envio = $envioBadge[(string) ($doc->envio_estado ?? '')] ?? null;
                                         $envioExitoso = $doc->envio_estado === 'enviado';
                                     @endphp
                                     <td class="py-2 px-3 align-top">
@@ -370,8 +374,10 @@
                                                     </form>
                                                 @endif
 
-                                                <span class="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium {{ $envio[1] }}"
-                                                      title="{{ $doc->envio_estado === 'error' && $doc->envio_error ? $doc->envio_error : $envio[2] }}">{{ $envio[0] }}</span>
+                                                @if ($envio)
+                                                    <span class="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium {{ $envio[1] }}"
+                                                          title="{{ $doc->envio_estado === 'error' && $doc->envio_error ? $doc->envio_error : $envio[2] }}">{{ $envio[0] }}</span>
+                                                @endif
 
                                                 @if ($envioExitoso && $doc->envio_enviado_at)
                                                     <span class="text-[11px] whitespace-nowrap text-gray-400">{{ \Illuminate\Support\Carbon::parse($doc->envio_enviado_at)->format('d/m/Y H:i') }}</span>

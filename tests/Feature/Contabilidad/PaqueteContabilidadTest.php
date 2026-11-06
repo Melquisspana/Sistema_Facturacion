@@ -366,6 +366,47 @@ class PaqueteContabilidadTest extends TestCase
         $this->assertNull($ultimo);
     }
 
+    /**
+     * Sin elegir nada, la pantalla abre en el mes que toca mandar (el anterior) con el
+     * resumen ya calculado: no hay que apretar «Ver resumen».
+     */
+    public function test_sin_filtros_abre_en_el_mes_anterior_con_el_resumen(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $this->travelTo(Carbon::parse('2026-08-06 10:00'));
+        $this->compra('2026-07-05', 100);   // julio: el que toca
+        $this->compra('2026-08-02', 999);   // agosto: todavía en curso
+
+        $r = $this->actingAs($this->usuario('contabilidad'))->get(route('contabilidad.paquete'))->assertOk();
+
+        $this->assertSame(['mes' => 7, 'anio' => 2026], array_intersect_key($r->viewData('rango'), ['mes' => 0, 'anio' => 0]));
+        $this->assertSame(1, $r->viewData('resumen')['compras_cantidad']);
+        $this->assertSame(100.0, $r->viewData('resumen')['compras_total']);
+
+        // En enero, el anterior es diciembre del año pasado.
+        $this->travelTo(Carbon::parse('2027-01-04 10:00'));
+        $rango = $this->get(route('contabilidad.paquete'))->assertOk()->viewData('rango');
+        $this->assertSame([12, 2026], [$rango['mes'], $rango['anio']]);
+
+        // Un mes elegido sin año sigue siendo del año en curso.
+        $rango = $this->get(route('contabilidad.paquete', ['mes' => 3]))->assertOk()->viewData('rango');
+        $this->assertSame([3, 2027], [$rango['mes'], $rango['anio']]);
+    }
+
+    /** La casilla desmarcada viaja como 0 (campo oculto) y saca esa fuente del resumen. */
+    public function test_desmarcar_una_fuente_la_saca_del_resumen(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+
+        $r = $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026, 'incluir_compras' => '0', 'incluir_ventas' => '1']))
+            ->assertOk()
+            ->assertSee('name="incluir_compras" value="0"', false);
+
+        $this->assertFalse($r->viewData('incluirCompras'));
+        $this->assertTrue($r->viewData('incluirVentas'));
+    }
+
     public function test_resumen_respeta_el_rango(): void
     {
         $this->seed(DatosInicialesNegritaSeeder::class);

@@ -42,7 +42,7 @@ class DocumentoRecibidoController extends Controller
         BitacoraSincronizacionCompras $bitacora,
         ConfiguracionDocumentosRecibidos $configuracion,
     ): View {
-        // Por defecto: pendientes del mes actual (para que no se llene con el histórico).
+        // Por defecto: todas las compras del mes actual (para que no se llene con el histórico).
         $filtros = DocumentosRecibidosQuery::filtros($request->all());
 
         $documentos = DocumentosRecibidosQuery::query($filtros)

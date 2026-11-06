@@ -12,8 +12,11 @@ use Illuminate\Support\Carbon;
  * locales (no toca el buzón ni DTE emitidos). Reutilizado por el listado y por la
  * exportación a Excel, para que ambos respeten exactamente los mismos filtros.
  *
- * Por defecto, para que la pantalla no se llene con el histórico: pestaña
- * "pendientes" + rango "mes actual".
+ * Por defecto: pestaña "bandeja" (todas las compras, en cualquier estado) + rango
+ * "mes actual". Antes arrancaba en "pendientes": al pedir «Mes pasado» quedaban a la
+ * vista solo las que nadie había mandado, y las que ya habían salido en el paquete
+ * mensual (que las marca `enviado`) o por envío individual desaparecían de la lista,
+ * y el mes parecía tener muchas menos compras de las que tenía.
  */
 class DocumentosRecibidosQuery
 {
@@ -33,9 +36,9 @@ class DocumentosRecibidosQuery
      */
     public static function filtros(array $in): array
     {
-        $vista = (string) ($in['vista'] ?? 'pendientes');
+        $vista = (string) ($in['vista'] ?? 'bandeja');
         if (! in_array($vista, self::VISTAS, true)) {
-            $vista = 'pendientes';
+            $vista = 'bandeja';
         }
 
         $desde = self::fecha($in['fecha_desde'] ?? null);

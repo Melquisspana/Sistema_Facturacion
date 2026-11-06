@@ -17,7 +17,7 @@ use Tests\TestCase;
  *
  *   PaqueteContabilidadController::correoContabilidad()
  *   DocumentoRecibidoController::correoContabilidad()
- *   ReporteContadoraController::correoContabilidad()
+ *   ReporteContadoraController::correoContabilidad()  (pantalla Ventas, retirada el 06/11/2026)
  *   EnviarDteCorreo::correoContabilidad()
  *
  * Y no eran idénticas: tres normalizaban a minúsculas y la del paquete mensual
@@ -102,11 +102,7 @@ class CorreoContabilidadUnicoTest extends TestCase
         $paquete = $this->actingAs($admin)->get(route('contabilidad.paquete'))->assertOk();
         $this->assertSame(self::CORREO, $paquete->viewData('correoContabilidad'));
 
-        // 2) Reporte de la contadora (ventas).
-        $reporte = $this->actingAs($admin)->get(route('facturacion.reporte-contadora'))->assertOk();
-        $this->assertSame(self::CORREO, $reporte->viewData('correoContabilidad'));
-
-        // 3) y 4) Compras y copia oculta del DTE comparten el resolver.
+        // 2) y 3) Compras y copia oculta del DTE comparten el resolver.
         $this->assertSame(self::CORREO, $this->resolver()->direccion());
         $this->assertSame(self::CORREO, $this->resolver()->copiaOculta());
     }

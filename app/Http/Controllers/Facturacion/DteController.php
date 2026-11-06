@@ -878,7 +878,7 @@ class DteController extends Controller
 
         // Indicadores SOLO LECTURA para la ficha (no cambian nada):
         //  - copia a contabilidad activa (BCC en el envío manual del correo).
-        //  - si el documento ya cae en el Reporte contadora (aceptado REAL ambiente 01).
+        //  - si el documento ya cae en las ventas del paquete mensual (aceptado REAL).
         // Misma fuente que usa el job al enviar (CorreoContabilidad): la ficha no
         // puede decir "va copia a X" mientras el envío resuelve otra cosa.
         $contabilidad = app(CorreoContabilidad::class);

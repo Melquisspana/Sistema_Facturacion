@@ -7,18 +7,22 @@ use App\Enums\TipoDte;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Cliente;
 use App\Models\Contingencia;
+use App\Models\DocumentoRecibido;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\GmailCuenta;
 use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
+use App\Models\User;
 use App\Services\Alertas\Detectores\ContingenciaVencida;
 use App\Services\Alertas\Detectores\DteRechazados;
 use App\Services\Alertas\Detectores\GmailDesconectado;
 use App\Services\Alertas\Detectores\LectorSinPing;
+use App\Services\Alertas\Detectores\PaqueteMensualPendiente;
 use App\Services\Alertas\Detectores\RespaldoFallido;
 use App\Services\Alertas\Detectores\TrabajosFallidos;
+use App\Services\Contabilidad\AuditoriaPaquete;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -116,6 +120,50 @@ class DetectoresTest extends TestCase
         $h = app(GmailDesconectado::class)->revisar();
         $this->assertSame('Gmail está desconectado', $h->titulo);
         $this->assertStringNotContainsString('correo@example.com', $h->detalle.$h->queHacer, 'El aviso no lleva la cuenta.');
+    }
+
+    public function test_paquete_mensual_avisa_si_el_mes_anterior_no_se_envio(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-06 10:00', 'America/El_Salvador'));
+        $detector = app(PaqueteMensualPendiente::class);
+
+        $this->assertTrue($detector->aplica());
+        $this->assertSame('paquete_mensual_pendiente.2026-10', $detector->tipo());
+        $this->assertNull($detector->revisar(), 'Un mes sin compras ni ventas no tiene nada que mandar.');
+
+        DocumentoRecibido::create([
+            'gmail_message_id' => 'm-octubre', 'emisor_nombre' => 'PROVEEDOR SECRETO', 'tipo_documento' => '03',
+            'estado' => 'pendiente', 'total' => 100, 'tiene_pdf' => true, 'tiene_json' => true,
+            'fecha_correo' => Carbon::parse('2026-11-01 08:00'), 'fecha_dte' => '2026-10-31',
+        ]);
+
+        $h = $detector->revisar();
+        $this->assertSame('Falta mandar el paquete de octubre 2026 a contabilidad', $h->titulo);
+        $this->assertSame('contabilidad.paquete', $h->enlace);
+        $this->assertStringNotContainsString('SECRETO', $h->titulo.$h->detalle.$h->queHacer);
+
+        // Simulado, fallido o de medio mes no cuentan como enviado.
+        $usuario = User::factory()->create();
+        $auditoria = app(AuditoriaPaquete::class);
+        $resumen = ['compras_cantidad' => 1, 'compras_total' => 100, 'ventas_cantidad' => 0, 'ventas_total' => 0];
+        $octubre = ['desde' => '2026-10-01', 'hasta' => '2026-10-31', 'etiqueta' => '2026-10'];
+        $auditoria->registrar($usuario, 'simulado', 'conta@example.com', $octubre, $resumen, 'p.zip', 'candado');
+        $auditoria->registrar($usuario, 'fallido', 'conta@example.com', $octubre, $resumen, 'p.zip', 'drive');
+        $auditoria->registrar($usuario, 'enviado', 'conta@example.com', ['desde' => '2026-10-01', 'hasta' => '2026-10-15', 'etiqueta' => '2026-10'], $resumen, 'p.zip', null, 1);
+        $this->assertNotNull($detector->revisar());
+
+        $auditoria->registrar($usuario, 'enviado', 'conta@example.com', $octubre, $resumen, 'p.zip', null, 1);
+        $this->assertNull($detector->revisar(), 'Con el paquete del mes completo enviado, todo bien.');
+
+        // En diciembre el mes que toca es noviembre: aviso propio, con sus ventas.
+        $this->travelTo(Carbon::parse('2026-12-01 09:00', 'America/El_Salvador'));
+        $this->assertSame('paquete_mensual_pendiente.2026-11', $detector->tipo());
+        $this->assertNull($detector->revisar());
+        $this->dte([
+            'estado' => EstadoDte::Aceptado->value, 'ambiente' => '01', 'sello_recepcion' => '2026SELLOREAL0001',
+            'fecha_procesamiento_mh' => now(), 'fecha_emision' => '2026-11-20',
+        ]);
+        $this->assertSame('Falta mandar el paquete de noviembre 2026 a contabilidad', $detector->revisar()->titulo);
     }
 
     public function test_lector_sin_ping_solo_en_horario_laboral(): void
