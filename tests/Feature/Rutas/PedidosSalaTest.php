@@ -360,11 +360,11 @@ class PedidosSalaTest extends TestCase
         $this->assertSame([], PedidoSala::sole()->avisosOrdenCompra());
         PedidoSala::query()->delete();
 
-        $this->sacar(['numero_orden_compra' => ' 2611023600458 '], $this->salaOc)->assertSessionHasNoErrors()
-            ->assertSessionHas('status', fn ($m) => str_contains($m, 'tiene 13 dígitos y deben ser 14'));
+        $this->sacar(['numero_orden_compra' => ' 261102360045 '], $this->salaOc)->assertSessionHasNoErrors()
+            ->assertSessionHas('status', fn ($m) => str_contains($m, 'tiene 12 dígitos y deben ser de 13 a 15'));
         $pedido = PedidoSala::sole();
-        $this->assertSame('2611023600458', $pedido->numero_orden_compra);
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('tiene 13 dígitos y deben ser 14');
+        $this->assertSame('261102360045', $pedido->numero_orden_compra);
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('tiene 12 dígitos y deben ser de 13 a 15');
 
         $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), [
             'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26080236004586',
@@ -383,9 +383,9 @@ class PedidosSalaTest extends TestCase
 
         $this->actingAs($this->oficina);
         $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Todavía sin OC')->assertSee('Agregar la OC');
-        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '2611023600458'])
+        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '261102360045'])
             ->assertRedirect(route('rutas.pedidos.show', $pedido))
-            ->assertSessionHas('status', fn ($m) => str_starts_with($m, 'Orden de compra guardada.') && str_contains($m, '13 dígitos'));
+            ->assertSessionHas('status', fn ($m) => str_starts_with($m, 'Orden de compra guardada.') && str_contains($m, '12 dígitos'));
         $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236004586'])
             ->assertSessionHas('status', 'Orden de compra guardada.');
         $this->assertSame('26110236004586', $pedido->refresh()->numero_orden_compra);

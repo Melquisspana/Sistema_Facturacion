@@ -180,7 +180,7 @@ class GenerarTransmitirProduccionTest extends TestCase
         $this->preflightVerde();
         $gen = Mockery::mock(DteGeneracionService::class);
         $gen->shouldReceive('generar')->once()
-            ->withArgs(fn (Dte $dte, $usuario, $motivo, array $avisos) => str_contains($avisos[0] ?? '', 'tiene 15 dígitos'))
+            ->withArgs(fn (Dte $dte, $usuario, $motivo, array $avisos) => str_contains($avisos[0] ?? '', 'tiene 16 dígitos'))
             ->andReturnUsing(function (Dte $dte) {
                 $dte->forceFill([
                     'estado' => 'generado',
@@ -196,11 +196,11 @@ class GenerarTransmitirProduccionTest extends TestCase
         $ccf = $this->ccf('borrador', [
             'numero_control' => null, 'codigo_generacion' => null, 'json_generado_path' => null,
             'cliente_id' => Cliente::factory()->contribuyente()->create(['requiere_orden_compra' => true])->id,
-            'numero_orden_compra' => now()->format('ym').'01234567890',
+            'numero_orden_compra' => now()->format('ym').'012345678901',
         ]);
 
         // Sin la casilla: avisa y no hace nada (generar() no corre).
-        $this->emitir($ccf)->assertSessionHas('error', fn (string $e) => str_contains($e, 'tiene 15 dígitos'));
+        $this->emitir($ccf)->assertSessionHas('error', fn (string $e) => str_contains($e, 'tiene 16 dígitos'));
         $this->assertSame('borrador', $ccf->fresh()->estado->value);
 
         $this->emitir($ccf, ['confirmar_avisos_oc' => 1])->assertRedirect();

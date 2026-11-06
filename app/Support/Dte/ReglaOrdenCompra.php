@@ -7,6 +7,8 @@ use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Support\HoraNegocio;
+use App\Support\OrdenCompra;
+use App\Support\Sala;
 use Carbon\CarbonInterface;
 
 /**
@@ -20,14 +22,17 @@ use Carbon\CarbonInterface;
  * servicios de borrador/generación/validación, el formulario y la
  * representación gráfica, para que la UI y el backend nunca discrepen.
  *
- * También guarda la FORMA de la orden del cliente que la exige: 14 dígitos,
- * `AAMM` + `0` + 9 dígitos, con el año y el mes de la orden a no más de un mes
- * de la fecha del CCF. La forma solo AVISA (el usuario confirma y se genera
- * igual); la usan la emisión y la auditoría de Auditoría › Órdenes de compra.
+ * También guarda la FORMA de la orden del cliente que la exige: `AAMM` + la sala
+ * (4 dígitos, empieza con 0) + un correlativo que crece con el tiempo, así que
+ * vienen de 13, 14 y 15 dígitos (ej. 2611 0232 0010394). El año y el mes de la
+ * orden van a no más de un mes de la fecha del CCF. La forma solo AVISA (el
+ * usuario confirma y se genera igual); la usan la emisión y la auditoría de Auditoría › Órdenes de compra.
  */
 final class ReglaOrdenCompra
 {
-    public const LARGO = 14;
+    public const LARGO_MINIMO = 13;
+
+    public const LARGO_MAXIMO = 15;
 
     /** ¿El par cliente/sala exige orden de compra? (independiente del tipo de DTE) */
     public static function requerida(?Cliente $cliente, ?ClienteSucursal $sucursal): bool
@@ -63,8 +68,9 @@ final class ReglaOrdenCompra
         if (preg_match('/^\d+$/', $orden) !== 1) {
             return ['La orden de compra «'.$orden.'» tiene caracteres que no son números.'];
         }
-        if (strlen($orden) !== self::LARGO) {
-            return ['La orden de compra «'.$orden.'» tiene '.strlen($orden).' dígitos y deben ser '.self::LARGO.'.'];
+        if (strlen($orden) < self::LARGO_MINIMO || strlen($orden) > self::LARGO_MAXIMO) {
+            return ['La orden de compra «'.$orden.'» tiene '.strlen($orden).' dígitos y deben ser de '
+                .self::LARGO_MINIMO.' a '.self::LARGO_MAXIMO.'.'];
         }
 
         $problemas = [];
@@ -85,9 +91,9 @@ final class ReglaOrdenCompra
     }
 
     /**
-     * Avisos que se confirman antes de generar el CCF: la forma de la orden y la sala
-     * sin código. Vacío si el documento no exige orden de compra. La orden vacía no
-     * avisa acá: la generación ya la frena por su cuenta.
+     * Avisos que se confirman antes de generar el CCF: la forma de la orden, la sala
+     * sin código y la orden que trae el código de otra sala. Vacío si el documento no
+     * exige orden de compra. La orden vacía no avisa acá: la generación ya la frena por su cuenta.
      *
      * @return list<string>
      */
@@ -104,6 +110,14 @@ final class ReglaOrdenCompra
         $sala = $dte->clienteSucursal;
         if ($sala !== null && blank($sala->codigo)) {
             $avisos[] = 'La sala «'.$sala->nombre.'» no tiene cargado su código de sala: cargalo en la ficha del cliente.';
+        } elseif ($sala !== null && $avisos === [] && filled($dte->numero_orden_compra)) {
+            // Solo con la forma bien y un código de sala de 4 dígitos (el de Calleja).
+            $codigo = Sala::normalizar($sala->codigo);
+            $deLaOrden = OrdenCompra::salaDesde($dte->numero_orden_compra);
+            if (preg_match('/^\d{4}$/', (string) $codigo) === 1 && $deLaOrden !== null && $deLaOrden !== $codigo) {
+                $avisos[] = 'La orden de compra «'.trim($dte->numero_orden_compra).'» es de la sala '.$deLaOrden
+                    .' y la factura va para «'.$sala->nombre.'» ('.$codigo.'): revisá la orden o la sala.';
+            }
         }
 
         return $avisos;

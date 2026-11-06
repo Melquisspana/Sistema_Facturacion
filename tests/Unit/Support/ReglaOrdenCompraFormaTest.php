@@ -7,9 +7,9 @@ use Illuminate\Support\Carbon;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Forma de la orden de compra del cliente que la exige (#169): 14 dígitos, `AAMM` + `0`
- * + 9 dígitos, con el año y el mes a no más de un mes de la fecha del CCF. Órdenes
- * ficticias.
+ * Forma de la orden de compra del cliente que la exige (#169): `AAMM` + sala de 4
+ * dígitos que empieza con 0 + correlativo, de 13 a 15 dígitos en total, con el año
+ * y el mes a no más de un mes de la fecha del CCF. Órdenes ficticias.
  */
 class ReglaOrdenCompraFormaTest extends TestCase
 {
@@ -32,11 +32,23 @@ class ReglaOrdenCompraFormaTest extends TestCase
         $this->assertSame([], $this->problemas('27010123456789', '2026-12-28'));
     }
 
-    public function test_quince_digitos_avisa(): void
+    public function test_de_13_a_15_digitos_cuadran_porque_el_correlativo_crece(): void
+    {
+        // Como vienen de Calleja: 2611 + sala 0232 + correlativo de 5, 6 o 7 cifras.
+        $this->assertSame([], $this->problemas('2611023200103'));
+        $this->assertSame([], $this->problemas('26110232001039'));
+        $this->assertSame([], $this->problemas('261102320010394'));
+    }
+
+    public function test_menos_de_13_o_mas_de_15_digitos_avisa(): void
     {
         $this->assertSame(
-            ['La orden de compra «261101234567890» tiene 15 dígitos y deben ser 14.'],
-            $this->problemas('261101234567890'),
+            ['La orden de compra «2611023200103941» tiene 16 dígitos y deben ser de 13 a 15.'],
+            $this->problemas('2611023200103941'),
+        );
+        $this->assertSame(
+            ['La orden de compra «261102320010» tiene 12 dígitos y deben ser de 13 a 15.'],
+            $this->problemas('261102320010'),
         );
     }
 
