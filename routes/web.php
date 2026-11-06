@@ -426,6 +426,8 @@ Route::middleware('auth')->group(function () {
         Route::get('exportar', [DocumentoRecibidoController::class, 'exportar'])->name('exportar');
         // Abre/descarga un adjunto YA guardado (pdf | json). Solo lectura de disco.
         Route::get('{documento}/archivo/{tipo}', [DocumentoRecibidoController::class, 'descargarArchivo'])->name('archivo');
+        // «Ver»: la factura armada en pantalla desde el JSON guardado. Solo lectura.
+        Route::get('{documento}/ver', [DocumentoRecibidoController::class, 'ver'])->name('ver');
 
         // Envío INDIVIDUAL de la compra a contabilidad (encolado, con los adjuntos ya
         // guardados). Solo administrador y contabilidad (permiso contabilidad.enviar).

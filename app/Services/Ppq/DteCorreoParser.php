@@ -127,7 +127,7 @@ class DteCorreoParser
      * @param  array<string, mixed>  $json
      * @return array<string, mixed>
      */
-    private function desenvolver(array $json): array
+    public function desenvolver(array $json): array
     {
         foreach (['documento', 'dte', 'json', 'dteJson'] as $envoltorio) {
             if (is_array($json[$envoltorio] ?? null)) {
