@@ -12,6 +12,31 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.06.2] - 2026-11-06
+
+Compras y paquete mensual sin la página de Ventas (#259), vacaciones anuales en Planilla (#261, con 1 migración) y el tablero para jefes en Rutas (#263).
+
+### Agregado
+
+- Planilla: vacaciones anuales, 15 días de salario más 30 % de recargo, con ISSS, AFP y renta para quien lleva descuentos de ley. Se pagan a quien cumplió aniversario y todavía no las cobró. El inicio de Planilla tiene un enlace discreto «Vacaciones por pagar (N)», y el recibo para firmar dice el puesto, el año de servicio y una línea para el período de goce, y lleva la firma de la empleadora. En la ficha de Personal, el campo «Vacaciones pagadas hasta (año)» registra las que se pagaron fuera del sistema (#261).
+- Avisos de fallas: cuando termina el mes y su paquete mensual no se envió a contabilidad, llega un aviso (#259).
+- Ficha de la factura: «Enviar a contabilidad» manda una venta sola, para quien trabaja enviando a diario (#259).
+- Rutas: el inicio dice cuándo se visitó por última vez cada sala y cada ruta (último CCF, entrega o pedido sacado), cuáles están «Atrasada N días» o «Toca ir» según su ritmo calculado, y lo facturado en 30 días por ruta. En Vendedores se ve su última entrega (#263).
+
+### Cambiado
+
+- Compras abre en «Bandeja», con todas las compras del mes. Antes abría en «Pendientes contabilidad» y escondía las que ya se habían enviado en el paquete. Ya no muestra un aviso por cada compra sin enviar (#259).
+- Contabilidad › Paquete abre en el mes anterior y actualiza el resumen al cambiar mes, año o casillas, sin «Ver resumen» (#259).
+
+### Quitado
+
+- La página Ventas (reporte de la contadora). Las ventas siguen yendo en el paquete mensual (#259).
+
+### Corregido
+
+- Paquete: una casilla desmarcada ya no se toma como «incluir» (#259).
+- Ficha de la factura: un envío a contabilidad ya no cuenta como correo enviado al cliente (#259).
+
 ## [2026.11.06] - 2026-11-06
 
 Pedidos de sala en Rutas y su pedido estimado (#252, #253), con 3 migraciones. Cobros avisa lo entregado sin albarán y el albarán con la orden casi igual (#255, #260). Llegan el aviso de Gmail desconectado (#256), la orden de compra de 13 a 15 dígitos (#257) y la pantalla del TXT de pagos simplificada (#258).
