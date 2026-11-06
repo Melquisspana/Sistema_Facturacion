@@ -9,6 +9,7 @@ use App\Models\ClienteSucursal;
 use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
+use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
@@ -136,15 +137,17 @@ class TableroRutasTest extends TestCase
 
         // Rutas: la atrasada primero, con su ritmo calculado y sus salas.
         // Oriente se cuenta desde el regreso de su salida; Costa, que nunca salió, desde
-        // su última vuelta de pedidos.
-        $respuesta->assertSeeInOrder(['Ruta Oriente', 'Atrasada', 'Se fue hace 19 días', '5 días tarde', 'Suele ir cada 14 días', '2 salas atrasadas', 'Ruta Costa', 'Al día', 'Último pedido de sus salas hoy', 'Suele ir cada 7 días']);
+        // la última visita a sus salas (el CCF de hoy).
+        $respuesta->assertSeeInOrder(['Ruta Oriente', 'Atrasada 5 días', 'Se fue hace 19 días', 'Suele ir cada 14 días', '2 salas atrasadas', 'Ruta Costa', 'Al día', 'Última visita a sus salas hoy', 'Suele ir cada 7 días']);
 
-        // Salas: atrasadas (la más atrasada arriba), toca pronto, al día y sin ritmo.
+        // Salas: atrasadas (la más atrasada arriba), toca ir, al día y sin ritmo.
         $respuesta->assertSeeInOrder(['Tienda Inventada Norte', 'Súper Ficticio Centro', 'Tienda La Inventada Playa', 'Bodega Ejemplo Puerto', 'Kiosco Ejemplo Bahía']);
-        $respuesta->assertSeeInOrder(['Tienda Inventada Norte', 'Último pedido', 'hace 66 días', 'Compra cada 14 días (aprox.)', 'Última entrega: sin registro', '¿Dejó de comprar?']);
-        $respuesta->assertSeeInOrder(['Súper Ficticio Centro', 'hace 21 días', 'Compra cada 14 días', 'Última entrega', 'hace 19 días']);
-        $respuesta->assertSeeInOrder(['Tienda La Inventada Playa', 'Toca pronto', 'Compra cada 7 días']);
-        $respuesta->assertSeeInOrder(['Kiosco Ejemplo Bahía', 'Sin ritmo', 'Sin pedidos en 12 meses', 'Todavía sin ritmo']);
+        // Norte: su última entrega es su último CCF.
+        $respuesta->assertSeeInOrder(['Tienda Inventada Norte', 'Atrasada 52 días', 'Última entrega', 'hace 66 días', 'Compra cada 14 días (aprox.)', '¿Dejó de comprar?']);
+        // Centro: la entrega marcada el 15/10 es más nueva que su CCF del 13/10.
+        $respuesta->assertSeeInOrder(['Súper Ficticio Centro', 'Atrasada 5 días', 'Última entrega', 'hace 19 días', 'Compra cada 14 días']);
+        $respuesta->assertSeeInOrder(['Tienda La Inventada Playa', 'Toca ir', 'Compra cada 7 días']);
+        $respuesta->assertSeeInOrder(['Kiosco Ejemplo Bahía', 'Sin ritmo', 'Sin entregas en 12 meses', 'Todavía sin ritmo']);
         $respuesta->assertSee('title="15/10/2026"', false);
     }
 
@@ -201,7 +204,7 @@ class TableroRutasTest extends TestCase
         $admin = $this->admin();
         $vendedor = PersonalRuta::create(['nombre' => 'Ana Ejemplo']);
 
-        $poblar = function (int $rutas) use ($vendedor) {
+        $poblar = function (int $rutas) use ($vendedor, $admin) {
             for ($r = 0; $r < $rutas; $r++) {
                 $ruta = Ruta::create(['nombre' => 'Ruta '.Str::random(6)]);
                 for ($s = 0; $s < 3; $s++) {
@@ -211,6 +214,13 @@ class TableroRutasTest extends TestCase
                 app(ParticipantesSalida::class)->sincronizar($salida, [$vendedor->id], $vendedor->id);
                 $dte = $this->ccf($ruta->sucursales()->first(), '2026-11-01');
                 $salida->entregas()->create(['dte_id' => $dte->id, 'cliente_sucursal_id' => $dte->cliente_sucursal_id]);
+                // Una entrega hecha y un pedido sacado: la última visita de cada sala y vendedor.
+                $otro = $this->ccf($ruta->sucursales()->skip(1)->first(), '2026-10-31');
+                $salida->entregas()->create([
+                    'dte_id' => $otro->id, 'cliente_sucursal_id' => $otro->cliente_sucursal_id,
+                    'resultado' => ResultadoEntrega::Entregado, 'entregado_por_id' => $vendedor->id, 'fecha_resultado' => '2026-11-02 10:00:00',
+                ]);
+                PedidoSala::create(['cliente_sucursal_id' => $dte->cliente_sucursal_id, 'ruta_id' => $ruta->id, 'salida_ruta_id' => $salida->id, 'registrado_por' => $admin->id, 'fecha' => '2026-11-02']);
             }
         };
 
@@ -230,6 +240,7 @@ class TableroRutasTest extends TestCase
         $muchas = $contar();
 
         $this->assertSame($pocas, $muchas, 'El tablero no debería hacer una consulta por ruta, sala o salida.');
-        $this->assertLessThan(25, $muchas);
+        // 27 hoy: todas agregadas (visitas de cada sala, pedidos sacados, facturado por ruta, …).
+        $this->assertLessThan(30, $muchas);
     }
 }

@@ -4,13 +4,14 @@ namespace App\Services\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
 use App\Models\ClienteSucursal;
+use App\Models\PedidoSala;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
- * ¿A qué ruta toca ir? Una fila por ruta activa: su última salida, cuántos días pasaron
+ * ¿A qué ruta toca ir? Una fila por ruta activa: su última visita, cuántos días pasaron
  * y cómo va contra el RITMO de la ruta, calculado con los pedidos de sus salas
  * ({@see RitmoPedidos}). Los días aproximados cargados a mano (`frecuencia_objetivo_dias`)
  * se usan solo de respaldo, mientras la ruta no tenga ritmo (decisión 4 del plan).
@@ -22,11 +23,15 @@ use Illuminate\Support\Collection;
  *   · programada  — ya hay una salida armada (planificada) para la ruta: no se avisa como
  *                   atrasada ni «toca pronto», porque ya se resolvió.
  *   · sin_ritmo   — ni ritmo calculado ni días cargados: se muestran los días, sin color.
- *   · sin_salidas — nunca se registró una salida ni hay pedidos de sus salas.
+ *   · sin_salidas — nunca se registró una salida ni hay visitas a sus salas.
  *
- * Los días se cuentan desde el REGRESO de la última salida finalizada (o su inicio si no
- * se anotó regreso). Una salida cancelada no cuenta: nadie fue. Si la ruta nunca tuvo
- * una salida, se cuentan desde el comienzo de la última vuelta de pedidos.
+ * Los días se cuentan desde la ÚLTIMA VISITA a la ruta: el regreso de la última salida
+ * finalizada (o su inicio si no se anotó regreso) o la última visita a cualquiera de sus
+ * salas, lo que sea más nuevo. Una salida cancelada no cuenta: nadie fue.
+ *
+ * La última visita a una sala es su última entrega (el último CCF facturado o la última
+ * entrega marcada en Rutas, la más nueva) o el último pedido sacado, lo que sea más nuevo:
+ * con el pedido ya sacado no toca volver a sacarlo.
  */
 class RitmoRutas
 {
@@ -47,13 +52,20 @@ class RitmoRutas
     /** El ritmo de la ruta salió de los días cargados a mano. */
     public const MANUAL = 'manual';
 
-    public function __construct(private readonly RitmoPedidos $pedidos) {}
+    /** Los días se cuentan desde el regreso de la última salida. */
+    public const DESDE_SALIDA = 'salida';
+
+    /** Los días se cuentan desde la última visita a una de sus salas. */
+    public const DESDE_SALAS = 'salas';
+
+    public function __construct(private readonly RitmoPedidos $pedidos, private readonly EntregasCcf $entregas) {}
 
     /**
      * @return Collection<int, array{
      *     ruta: Ruta,
      *     estado: string,
      *     dias: ?int,
+     *     desde: ?string,
      *     ultima: ?SalidaRuta,
      *     enCurso: ?SalidaRuta,
      *     proxima: ?SalidaRuta,
@@ -62,6 +74,7 @@ class RitmoRutas
      *     ritmo: ?int,
      *     origenRitmo: ?string,
      *     ritmoSalas: array<int, Ritmo>,
+     *     visitas: array<int, array{entrega: ?CarbonImmutable, pedido: ?CarbonImmutable}>,
      *     salas: Collection<int, ClienteSucursal>,
      * }>
      */
@@ -88,22 +101,75 @@ class RitmoRutas
             ->orderBy('nombre')
             ->get(['id', 'ruta_id', 'nombre', 'codigo'])
             ->groupBy('ruta_id');
-        $ritmoSalas = $this->pedidos->porSala($salas->flatten()->pluck('id')->all(), $hoy);
+        $salaIds = $salas->flatten()->pluck('id')->all();
+        $ritmoSalas = $this->pedidos->porSala($salaIds, $hoy);
+        $visitas = $this->visitas($salaIds, $ritmoSalas);
 
         $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::PROGRAMADA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
 
         return $rutas
-            ->map(fn (Ruta $ruta) => $this->fila(
-                $ruta,
-                $salidas->get($ruta->id, collect()),
-                array_intersect_key($ritmoSalas, array_flip($salas->get($ruta->id, collect())->pluck('id')->all())),
-                $hoy,
-            ) + ['salas' => $salas->get($ruta->id, collect())])
+            ->map(function (Ruta $ruta) use ($salas, $salidas, $ritmoSalas, $visitas, $hoy) {
+                $deRuta = array_flip($salas->get($ruta->id, collect())->pluck('id')->all());
+
+                return $this->fila(
+                    $ruta,
+                    $salidas->get($ruta->id, collect()),
+                    array_intersect_key($ritmoSalas, $deRuta),
+                    array_intersect_key($visitas, $deRuta),
+                    $hoy,
+                ) + ['salas' => $salas->get($ruta->id, collect())];
+            })
             ->sortBy([
                 fn ($a, $b) => $orden[$a['estado']] <=> $orden[$b['estado']],
+                // La más atrasada (o la que toca antes) arriba.
+                fn ($a, $b) => ($a['faltan'] ?? PHP_INT_MAX) <=> ($b['faltan'] ?? PHP_INT_MAX),
                 fn ($a, $b) => ($b['dias'] ?? -1) <=> ($a['dias'] ?? -1),
             ])
             ->values();
+    }
+
+    /**
+     * La última entrega y el último pedido sacado de cada sala: tres consultas agregadas
+     * para todas juntas. La entrega es la más nueva entre el último CCF facturado (el
+     * comienzo del último pedido del ritmo) y la última entrega conocida en Rutas
+     * ({@see EntregasCcf::ultimaVisitaPorSala()}).
+     *
+     * @param  array<int, int>  $salaIds
+     * @param  array<int, Ritmo>  $ritmoSalas
+     * @return array<int, array{entrega: ?CarbonImmutable, pedido: ?CarbonImmutable}>
+     */
+    private function visitas(array $salaIds, array $ritmoSalas): array
+    {
+        if ($salaIds === []) {
+            return [];
+        }
+
+        $entregadas = $this->entregas->ultimaVisitaPorSala($salaIds);
+        $pedidos = PedidoSala::registrados()
+            ->whereIn('cliente_sucursal_id', $salaIds)
+            ->groupBy('cliente_sucursal_id')
+            ->selectRaw('cliente_sucursal_id, MAX(fecha) as ultima')
+            ->pluck('ultima', 'cliente_sucursal_id');
+
+        $visitas = [];
+        foreach ($salaIds as $id) {
+            $entrega = isset($entregadas[$id]) ? CarbonImmutable::instance($entregadas[$id])->startOfDay() : null;
+            $visitas[$id] = [
+                'entrega' => self::masNueva($ritmoSalas[$id]?->ultima(), $entrega),
+                'pedido' => isset($pedidos[$id]) ? CarbonImmutable::parse($pedidos[$id])->startOfDay() : null,
+            ];
+        }
+
+        return $visitas;
+    }
+
+    private static function masNueva(?CarbonImmutable $a, ?CarbonImmutable $b): ?CarbonImmutable
+    {
+        return match (true) {
+            $a === null => $b,
+            $b === null => $a,
+            default => $a->max($b),
+        };
     }
 
     /**
@@ -127,20 +193,29 @@ class RitmoRutas
     /**
      * Una sala con su ritmo a una fecha. La comparten el tablero y «Tu próxima salida».
      *
-     * @return array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool}
+     * Con `$visita` (la de {@see porRuta()}), los días se cuentan desde la última visita:
+     * la entrega o el pedido sacado más nuevo. Sin ella, desde el último pedido del ritmo.
+     *
+     * @param  array{entrega: ?CarbonImmutable, pedido: ?CarbonImmutable}|null  $visita
+     * @return array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool, ultimaEntrega: ?CarbonImmutable, ultimoPedido: ?CarbonImmutable}
      */
-    public static function filaSala(ClienteSucursal $sala, Ritmo $ritmo, CarbonImmutable $dia): array
+    public static function filaSala(ClienteSucursal $sala, Ritmo $ritmo, CarbonImmutable $dia, ?array $visita = null): array
     {
-        $dias = $ritmo->diasDesde($dia);
+        $entrega = $visita['entrega'] ?? $ritmo->ultima();
+        $pedido = $visita['pedido'] ?? null;
+        $ultimaVisita = self::masNueva($entrega, $pedido);
+        $dias = $ultimaVisita === null ? null : max(0, (int) $ultimaVisita->diffInDays($dia->startOfDay()));
 
         return [
             'sala' => $sala,
             'ritmo' => $ritmo,
-            'estado' => $ritmo->estadoEn($dia),
+            'estado' => $ritmo->dias === null ? Ritmo::SIN_RITMO : Ritmo::estado($ritmo->dias, (int) $dias),
             'dias' => $dias,
-            // Días para el próximo pedido esperado; negativo = días de atraso.
+            // Días para la próxima visita esperada; negativo = días de atraso.
             'faltan' => $ritmo->dias !== null ? $ritmo->dias - $dias : null,
-            'dejoDeComprar' => $ritmo->dejoDeComprar($dia),
+            'dejoDeComprar' => $ritmo->dejoDeComprar($dia, $dias),
+            'ultimaEntrega' => $entrega,
+            'ultimoPedido' => $pedido,
         ];
     }
 
@@ -168,8 +243,9 @@ class RitmoRutas
     /**
      * @param  Collection<int, SalidaRuta>  $salidas
      * @param  array<int, Ritmo>  $ritmoSalas  sala_id => ritmo, solo las de esta ruta
+     * @param  array<int, array{entrega: ?CarbonImmutable, pedido: ?CarbonImmutable}>  $visitas  ídem
      */
-    private function fila(Ruta $ruta, Collection $salidas, array $ritmoSalas, CarbonImmutable $hoy): array
+    private function fila(Ruta $ruta, Collection $salidas, array $ritmoSalas, array $visitas, CarbonImmutable $hoy): array
     {
         $enCurso = $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::EnCurso);
         $ultima = $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::Finalizada);
@@ -180,13 +256,19 @@ class RitmoRutas
 
         $calculado = $this->pedidos->deRuta($ritmoSalas);
 
-        $dias = null;
-        if ($ultima !== null) {
-            $regreso = CarbonImmutable::parse($ultima->fecha_fin_real ?? $ultima->fecha_inicio)->startOfDay();
-            $dias = max(0, (int) $regreso->diffInDays($hoy));
-        } elseif ($calculado->ultima() !== null) {
-            $dias = $calculado->diasDesde($hoy);
+        // La última visita: el regreso de la última salida o la visita más nueva a una de sus salas.
+        $regreso = $ultima === null ? null : CarbonImmutable::parse($ultima->fecha_fin_real ?? $ultima->fecha_inicio)->startOfDay();
+        $enSalas = null;
+        foreach ($visitas as $visita) {
+            $enSalas = self::masNueva($enSalas, self::masNueva($visita['entrega'], $visita['pedido']));
         }
+        $visto = self::masNueva($regreso, $enSalas);
+        $dias = $visto === null ? null : max(0, (int) $visto->diffInDays($hoy->startOfDay()));
+        $desde = match (true) {
+            $visto === null => null,
+            $regreso !== null && $regreso->gte($visto) => self::DESDE_SALIDA,
+            default => self::DESDE_SALAS,
+        };
 
         // Manda el ritmo calculado; los días cargados a mano, solo si no hay.
         $ritmo = $calculado->dias ?? $ruta->frecuencia_objetivo_dias;
@@ -208,6 +290,7 @@ class RitmoRutas
             'ruta' => $ruta,
             'estado' => $estado,
             'dias' => $dias,
+            'desde' => $desde,
             'ultima' => $ultima,
             'enCurso' => $enCurso,
             'proxima' => $proxima,
@@ -219,6 +302,7 @@ class RitmoRutas
             // confiable, aproximado, manual o null (sin ritmo).
             'origenRitmo' => $origen,
             'ritmoSalas' => $ritmoSalas,
+            'visitas' => $visitas,
         ];
     }
 }

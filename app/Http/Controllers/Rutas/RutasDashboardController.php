@@ -7,10 +7,11 @@ use App\Http\Controllers\Controller;
 use App\Models\ClienteSucursal;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaEmpleado;
-use App\Models\Ruta;
 use App\Models\SalidaRuta;
+use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaParticipante;
 use App\Models\User;
+use App\Services\Planilla\NombreUnico;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
@@ -18,6 +19,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -39,6 +41,9 @@ class RutasDashboardController extends Controller
 
     /** «Sus rutas»: no hay rutas fijas por vendedor; se muestran a las que fue en estos días. */
     private const DIAS_RUTAS_VENDEDOR = 90;
+
+    /** El resumen muestra lo facturado a cada ruta en estos días, hoy incluido. */
+    private const DIAS_FACTURADO = 30;
 
     public function index(Request $request, RitmoRutas $ritmo, EntregasCcf $entregas): View
     {
@@ -71,7 +76,7 @@ class RutasDashboardController extends Controller
 
         $rutas = $ritmo->porRuta($hoy);
         $salas = $rutas->flatMap(fn (array $fila) => $fila['salas']->map(
-            fn (ClienteSucursal $sala) => $this->filaSala($sala, $fila, $fila['ritmoSalas'][$sala->id], $hoy)
+            fn (ClienteSucursal $sala) => RitmoRutas::filaSala($sala, $fila['ritmoSalas'][$sala->id], $hoy, $fila['visitas'][$sala->id]) + ['ruta' => $fila['ruta']]
         ));
         $salasDeRuta = $salas->groupBy(fn (array $s) => $s['ruta']->id);
 
@@ -86,11 +91,17 @@ class RutasDashboardController extends Controller
         $pagina = $this->paginar($lista, $request);
 
         $vendedores = PersonalRuta::activos()->orderBy('nombre')->get(['id', 'nombre', 'telefono']);
+        $facturado = $this->facturadoPorRuta($entregas, $hoy);
 
         return view('rutas.dashboard', [
             'resumen' => [
                 'rutasAtrasadas' => $rutas->where('estado', RitmoRutas::ATRASADA)->count(),
+                // Con la salida en camino o ya armada, la ruta está resuelta: cuenta como al día.
+                'rutasAlDia' => $rutas->whereIn('estado', [RitmoRutas::AL_DIA, RitmoRutas::EN_RUTA, RitmoRutas::PROGRAMADA])->count(),
+                'rutas' => $rutas->count(),
                 'salasAtrasadas' => $salas->where('estado', Ritmo::ATRASADA)->count(),
+                'salasAlDia' => $salas->where('estado', Ritmo::AL_DIA)->count(),
+                'salas' => $salas->count(),
                 'salasSemana' => $salas->filter(fn (array $s) => $this->tocaEstaSemana($s))->count(),
                 'enCamino' => $enCamino->count(),
             ],
@@ -102,10 +113,10 @@ class RutasDashboardController extends Controller
                 'semana' => $deEsta->filter(fn (array $s) => $this->tocaEstaSemana($s))->count(),
             ]),
             'pendientes' => $entregas->pendientesPorRuta(),
+            'facturado' => $facturado,
             'enCamino' => $enCamino->values(),
             'programadas' => $programadas->values(),
             'salas' => $pagina,
-            'ultimaEntrega' => $entregas->ultimaVisitaPorSala($pagina->getCollection()->map(fn (array $s) => $s['sala']->id)->all()),
             'hayFiltro' => $ver !== 'todas' || $rutaId !== null || $buscar !== '',
             'filtro' => ['ver' => $ver, 'ruta' => $rutaId, 'q' => $buscar],
             'conteoVer' => [
@@ -121,18 +132,38 @@ class RutasDashboardController extends Controller
     }
 
     /**
-     * @param  array<string, mixed>  $ruta  fila de {@see RitmoRutas::porRuta()}
-     * @return array{sala: ClienteSucursal, ruta: Ruta, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool}
+     * Lo facturado a las salas de cada ruta en los últimos 30 días (hoy incluido): la suma
+     * sin IVA de los CCF que cuentan en Rutas ({@see EntregasCcf::baseCcf()}). Una consulta.
+     * No resta notas de crédito: para eso está Ventas.
+     *
+     * @return array<int, float> ruta_id => monto
      */
-    private function filaSala(ClienteSucursal $sala, array $ruta, Ritmo $ritmo, CarbonImmutable $hoy): array
+    private function facturadoPorRuta(EntregasCcf $entregas, CarbonImmutable $hoy): array
     {
-        return RitmoRutas::filaSala($sala, $ritmo, $hoy) + ['ruta' => $ruta['ruta']];
+        $ccf = $entregas->baseCcf()
+            ->whereDate('fecha_emision', '>=', $hoy->subDays(self::DIAS_FACTURADO - 1)->toDateString())
+            ->whereDate('fecha_emision', '<=', $hoy->toDateString())
+            ->select('id');
+
+        return DB::table('dtes')
+            ->join('cliente_sucursales as sala', 'sala.id', '=', 'dtes.cliente_sucursal_id')
+            ->whereIn('dtes.id', $ccf)
+            ->whereNotNull('sala.ruta_id')
+            ->groupBy('sala.ruta_id')
+            ->selectRaw('sala.ruta_id, SUM(dtes.subtotal) as monto')
+            ->pluck('monto', 'ruta_id')
+            ->map(fn ($monto) => round((float) $monto, 2))
+            ->all();
     }
 
     /**
      * La sección Vendedores: una tarjeta por persona activa de Rutas (el jefe incluido),
-     * con su salida de ahora o la última, las rutas a las que fue en los últimos 90 días
-     * (la más frecuente primero) y a qué ficha lleva «Ver ficha».
+     * con su salida de ahora o la última, su última entrega, las rutas a las que fue en los
+     * últimos 90 días (la más frecuente primero) y a qué ficha lleva «Ver ficha».
+     *
+     * Nombre y teléfono son los de su ficha de Personal: el nombre se edita ahí y llega solo
+     * a `rutas_personal` ({@see NombreUnico}), y el teléfono se
+     * edita en el bloque «Rutas» de esa misma ficha.
      *
      * «Ver ficha» lleva a la ficha de Personal solo a quien puede abrirla
      * ({@see PersonalRuta::seGestionaEnPersonal()}), o a la de Rutas a la administración sin
@@ -140,7 +171,7 @@ class RutasDashboardController extends Controller
      * 04/11/2026): para ellos ni se consulta Planilla.
      *
      * @param  Collection<int, PersonalRuta>  $personas
-     * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, rutas: array<int, string>, ficha: ?string}>
+     * @return Collection<int, array{persona: PersonalRuta, ahora: ?SalidaRuta, ultima: ?SalidaRuta, ultimaEntrega: ?CarbonImmutable, rutas: array<int, string>, ficha: ?string}>
      */
     private function tarjetasVendedores(Collection $personas, User $usuario, CarbonImmutable $hoy): Collection
     {
@@ -157,6 +188,14 @@ class RutasDashboardController extends Controller
             ->get()
             ->groupBy('rutas_personal_id');
 
+        // La última entrega que hizo cada uno, de cualquier salida: una consulta para todos.
+        $entregas = SalidaRutaEntrega::query()
+            ->entregadas()
+            ->whereIn('entregado_por_id', $personas->pluck('id'))
+            ->groupBy('entregado_por_id')
+            ->selectRaw('entregado_por_id, MAX(fecha_resultado) as ultima')
+            ->pluck('ultima', 'entregado_por_id');
+
         $enPersonal = PersonalRuta::seGestionaEnPersonal($usuario)
             ? PlanillaEmpleado::whereIn('personal_ruta_id', $personas->pluck('id'))->pluck('id', 'personal_ruta_id')
             : collect();
@@ -164,13 +203,14 @@ class RutasDashboardController extends Controller
         // Las fichas de los empleados son solo de la administración (04/11/2026).
         $verFichas = $usuario->can('planilla.ver') && $usuario->can('rutas.personal.ver');
 
-        return $personas->map(function (PersonalRuta $persona) use ($participaciones, $enPersonal, $verFichas) {
+        return $personas->map(function (PersonalRuta $persona) use ($participaciones, $entregas, $enPersonal, $verFichas) {
             $salidas = $participaciones->get($persona->id, collect())->pluck('salida')->sortByDesc(fn (SalidaRuta $s) => [$s->fecha_inicio, $s->id]);
 
             return [
                 'persona' => $persona,
                 'ahora' => $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::EnCurso),
                 'ultima' => $salidas->first(fn (SalidaRuta $s) => $s->estado === EstadoSalidaRuta::Finalizada),
+                'ultimaEntrega' => isset($entregas[$persona->id]) ? CarbonImmutable::parse($entregas[$persona->id])->startOfDay() : null,
                 'rutas' => $salidas->groupBy('ruta_id')
                     ->sortBy([fn ($a, $b) => $b->count() <=> $a->count(), fn ($a, $b) => strcmp($a->first()->ruta->nombre, $b->first()->ruta->nombre)])
                     ->map(fn (Collection $deRuta) => $deRuta->first()->ruta->nombre)

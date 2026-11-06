@@ -127,8 +127,7 @@ class RitmoRutasTest extends TestCase
             ->get(route('rutas.dashboard'))
             ->assertOk()
             ->assertSee('San Miguel')
-            ->assertSee('Atrasada')
-            ->assertSee('5 días tarde')
+            ->assertSee('Atrasada 5 días')
             ->assertSee('Suele ir cada 15 días (cargado a mano)')
             // Sin vendedores no se puede salir: se dice qué falta.
             ->assertSee('Agregá un vendedor para salir')

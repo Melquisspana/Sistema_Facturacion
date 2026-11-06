@@ -124,12 +124,12 @@ class RutasEnElCelularTest extends TestCase
         $respuesta->assertSee('Ya tiene salida armada para el 05/11/2026')
             ->assertSee(route('rutas.salidas.show', $programada))
             ->assertDontSee('días tarde')
+            ->assertDontSee('Atrasada 18 días')
             ->assertSeeInOrder(['0', 'rutas atrasadas']);
-        $this->assertStringNotContainsString('>Atrasada<', $respuesta->getContent());
 
         // Sin la salida armada, la misma ruta sí está atrasada.
         $programada->cancelar();
-        $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('18 días tarde')->assertSee('Atrasada');
+        $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertSee('Atrasada 18 días');
     }
 
     public function test_los_nombres_van_con_comas_y_y_y_primero_quien_encabeza(): void
