@@ -134,7 +134,7 @@ class CrearPpqDesdeSeguimientoTest extends TestCase
             .'000123;TITULAR DE EJEMPLO;NC;'.str_replace('-', '', $nc->numero_control).";10-SEP-26;-1.11\n";
         $this->actingAs($usuario)->revisarYAplicarTxt($this->cliente, [
             'archivo' => UploadedFile::fake()->createWithContent('pagos.txt', $txt),
-        ])->assertOk()->assertSeeText('También se actualizaron los PPQ');
+        ])->assertOk()->assertSeeText('Este TXT paga el PPQ '.$lote->referencia.' (queda pagado)');
 
         $this->assertSame(EstadoPpq::Pagado, $lote->refresh()->estado);
     }

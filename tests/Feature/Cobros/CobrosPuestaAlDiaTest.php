@@ -19,6 +19,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqConciliacion;
 use App\Models\User;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
+use App\Services\Cobros\EstadoCobroDesdeInicio;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -165,10 +166,14 @@ class CobrosPuestaAlDiaTest extends TestCase
         $respuesta = $this->subirVarios(['pagos-1.txt' => $e['txt1'], 'pagos-2.txt' => $e['txt2']], soloRevisar: true)->assertOk();
 
         $respuesta->assertSeeText('Revisión: todavía no se aplicó nada');
-        $this->assertCount(2, $respuesta->viewData('archivos'));
-        $estados = collect($respuesta->viewData('reporte')['ccf'])->mapWithKeys(fn ($f) => [$f['documento']->id => $f['estado']]);
-        $this->assertSame('pagado', $estados[$e['a']->id]);
-        $this->assertSame('no_pagado', $estados[$e['d']->id]);
+        $archivos = collect($respuesta->viewData('archivos'))->keyBy('nombre');
+        $this->assertCount(2, $archivos);
+        // La revisión muestra el resultado simulado de cada PPQ: el primero queda pagado y del
+        // segundo D no vino, en solo lectura.
+        $this->assertTrue($archivos['pagos-1.txt']['lotes'][0]['pagado']);
+        $this->assertSame([$e['d']->dte_id], collect($archivos['pagos-2.txt']['pendientes']['no_pagados'])->pluck('item.dte_id')->all());
+        $respuesta->assertSeeText('Este TXT paga el PPQ')->assertSeeText('No vinieron pagados')->assertSee($e['d']->numero_control)
+            ->assertDontSeeText('Dejar listos para el próximo PPQ');
 
         $this->assertSame(0, CobroEvento::where('tipo', TipoEventoCobro::Pago->value)->count());
         $this->assertSame(0, PpqConciliacion::count());
@@ -194,7 +199,7 @@ class CobrosPuestaAlDiaTest extends TestCase
         }
         $this->assertSame(EstadoPagoCobro::Pendiente, $e['d']->refresh()->pago_estado);
 
-        $reporte = $respuesta->viewData('reporte');
+        $reporte = app(EstadoCobroDesdeInicio::class)->generar($this->cliente);
         $ccf = collect($reporte['ccf'])->mapWithKeys(fn ($f) => [$f['documento']->id => $f['estado']]);
         $this->assertSame(['pagado', 'pagado', 'pagado', 'no_pagado'],
             [$ccf[$e['a']->id], $ccf[$e['b']->id], $ccf[$e['c']->id], $ccf[$e['d']->id]]);
@@ -203,8 +208,11 @@ class CobrosPuestaAlDiaTest extends TestCase
         $this->assertSame('no_descontada', $nc[$e['n1']->id]);
         $this->assertSame('pronto_pago', $nc[$e['pronto']->id]);
 
-        $respuesta->assertSeeText('copia.txt')
-            ->assertSeeText('No pagados')->assertSee($e['d']->numero_control)
+        // La pantalla ya no repite el estado de todo el historial: muestra lo de cada PPQ y
+        // deja el estado completo en el Excel.
+        $respuesta->assertSeeText('copia.txt')->assertSeeText('Este TXT paga el PPQ')
+            ->assertSeeText('No vinieron pagados')->assertSee($e['d']->numero_control)
+            ->assertDontSeeText('Estado de cobro de')->assertDontSeeText('Archivos procesados')
             ->assertSee(route('cobros.estado-cobro', $this->cliente), false);
     }
 
@@ -338,11 +346,35 @@ class CobrosPuestaAlDiaTest extends TestCase
         $this->subirVarios(['primero.txt' => $primero], soloRevisar: false)->assertOk();
         $segundo = $this->txt([$this->linea('CF', $doc->numero_control, '40.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
         $revision = $this->subirVarios(['segundo.txt' => $segundo], soloRevisar: true)->assertOk();
-        $revision->assertSeeText('Detalle de segundo.txt')->assertSeeText('EN REVISIÓN')->assertSeeText('PPQ/33762')
+        $revision->assertSeeText('segundo.txt')->assertSeeText('EN REVISIÓN')->assertSeeText('PPQ/33762')
             ->assertDontSeeText('Vincular NC existente')->assertDontSeeText('Crear nota de crédito');
         $this->assertSame(0, CobroAjuste::count());
         $this->assertSame(1, $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count());
         $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [hash('sha256', $segundo)]])
             ->assertOk()->assertSeeText('EN REVISIÓN')->assertSeeText('Vincular NC existente')->assertSeeText('Crear nota de crédito');
+    }
+
+    public function test_el_txt_con_qd_muestra_el_ppq_que_paga_y_la_nota_de_credito_al_aplicar(): void
+    {
+        $doc = $this->ccf();
+        $lote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$doc->id]);
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
+
+        // Al revisar: el PPQ que paga y el ajuste, sin acciones todavía.
+        $this->subirVarios(['quedan.txt' => $txt], soloRevisar: true)->assertOk()
+            ->assertSeeText('Este TXT paga el PPQ '.$lote->referencia)
+            ->assertSeeText('Ajuste de pronto pago (QD)')->assertSeeText('PPQ/33762')
+            ->assertSeeText('Al aplicar vas a poder crear la nota de crédito.')
+            ->assertDontSeeText('Crear nota de crédito')->assertDontSeeText('Estado de cobro de');
+
+        // Al aplicar: el botón de la nota queda a la vista, sin abrir ningún detalle.
+        $aplicado = $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [hash('sha256', $txt)]])->assertOk()
+            ->assertSeeText('Este TXT paga el PPQ '.$lote->referencia.' (queda pagado)')
+            ->assertSeeText('Crear nota de crédito')->assertSeeText('Vincular NC existente')
+            ->assertDontSeeText('Al aplicar vas a poder crear la nota de crédito')
+            ->assertSeeText('Todo el PPQ vino pagado como se presentó.');
+        $ajuste = CobroAjuste::sole();
+        $this->assertStringNotContainsString('<details', explode('Crear nota de crédito', $aplicado->getContent())[0]);
+        $aplicado->assertSee(route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id]), false);
     }
 }
