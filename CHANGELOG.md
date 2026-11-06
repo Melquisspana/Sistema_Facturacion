@@ -12,6 +12,25 @@ El historial anterior a este archivo está en el registro de git.
 
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
+## [2026.11.05.2] - 2026-11-05
+
+Las opciones de cada módulo en Configuración, el segundo buzón de compras y los datos de la empresa en un solo lugar (#249), y un arreglo de Planilla con MySQL estricto (#250), sin migraciones.
+
+### Agregado
+
+- Configuración › Módulos: una página de opciones por módulo (Pronto pago, Cobros, Rutas, Avisos de fallas, Gastos, Planilla y Exportaciones), con lo que antes solo se cambiaba en el `.env`: plazos, correos de aviso, horario del lector, datos del patrono para los contratos y tareas automáticas. Lo que toca dinero, planilla o avisos pide confirmar con el antes y el después. Sin nada guardado, cada opción sigue con el valor del servidor (#249).
+- Configuración: el botón «Usar el valor del servidor» en cada ajuste guardado, para volver al `.env`. Queda en la auditoría (#249).
+- Configuración › Segundo buzón: un segundo buzón de compras, con su contraseña cifrada y su prueba de conexión (#249).
+
+### Cambiado
+
+- Los contratos y documentos de Planilla toman el nombre de la empresa solo de Configuración › Empresa emisora (#249).
+- El Resumen de Configuración lee Gmail y el buzón como el resto del sistema y muestra el usuario del buzón tapado (#249).
+
+### Corregido
+
+- Planilla: una fecha de pago vacía se guarda como vacía y ya no falla en MySQL estricto (#250).
+
 ## [2026.11.05] - 2026-11-05
 
 Configuración como apartado propio, con los módulos que se prenden y apagan desde la pantalla, y las tarjetas de entregas parejas en el celular (#246, #247), sin migraciones.
