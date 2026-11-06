@@ -82,8 +82,8 @@
 
                 <p class="text-xs text-gray-500">
                     Aguinaldo, Quincena 25 y Vacaciones usan la <strong>fecha de pago</strong> en vez del período de arriba, y
-                    calculan solos el monto de cada persona, con y sin descuentos de ley. Vacaciones paga a quien cumple
-                    aniversario de ingreso en el mes de esa fecha y a quien quedó atrasado.
+                    calculan solos el monto de cada persona, con y sin descuentos de ley. Vacaciones paga a quien cumplió
+                    aniversario de ingreso ese mes o en los once anteriores y todavía no las cobró.
                 </p>
 
                 <div>

@@ -234,7 +234,7 @@ class PlanillaController extends Controller
 
     public function actualizarDatos(Request $request, PlanillaEmpleado $empleado, DatosEmpleado $datos)
     {
-        $datos->actualizar($request->user(), $empleado, $request->only(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el']));
+        $datos->actualizar($request->user(), $empleado, $request->only(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'vacaciones_pagadas_hasta']));
 
         return back()->with('planilla.aviso', 'Datos guardados. También quedaron en Asistencia y Rutas.');
     }

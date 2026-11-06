@@ -17,13 +17,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Vacaciones anuales: 15 días + 30 % en el mes del aniversario de ingreso, con atrasados.
- * Valores esperados escritos a mano, con la cuenta al lado. Datos ficticios.
+ * Vacaciones anuales: 15 días + 30 % desde el mes del aniversario de ingreso, una vez por
+ * año de servicio. Valores esperados escritos a mano, con la cuenta al lado. Datos ficticios.
  */
 class VacacionesPlanillaTest extends TestCase
 {
@@ -40,7 +41,7 @@ class VacacionesPlanillaTest extends TestCase
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        config(['planilla.enabled' => true, 'gastos.enabled' => false, 'planilla_prestaciones.vacaciones.aniversarios_desde' => null]);
+        config(['planilla.enabled' => true, 'gastos.enabled' => false]);
 
         $this->actor = User::factory()->create(['activo' => true]);
         $this->actor->syncPermissions(PermisoSistema::todos());
@@ -75,6 +76,17 @@ class VacacionesPlanillaTest extends TestCase
         return PlanillaDetalle::where('planilla_id', $planilla->id)->where('planilla_empleado_id', $empleado->id)->first();
     }
 
+    /** Lo que manda el formulario «Editar datos» de la ficha. */
+    private function formulario(PlanillaEmpleado $e, mixed $pagadasHasta): array
+    {
+        return [
+            'nombre' => $e->nombre, 'documento_tipo' => $e->documento_tipo, 'dui' => $e->dui,
+            'cargo' => $e->cargo, 'alta_el' => $e->alta_el?->toDateString(), 'vacaciones_pagadas_hasta' => $pagadasHasta,
+        ];
+    }
+
+    // ── El monto ──────────────────────────────────────────────────────────
+
     /** @return array<string, array{0: int, 1: int}> */
     public static function montos(): array
     {
@@ -106,6 +118,7 @@ class VacacionesPlanillaTest extends TestCase
 
     public function test_con_descuentos_lleva_isss_afp_y_renta_como_una_quincena(): void
     {
+        // Melqui, 06/11/2026: llevan descuentos de ley.
         $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
         $planilla = $this->abrir('2026-11-20');
 
@@ -115,7 +128,8 @@ class VacacionesPlanillaTest extends TestCase
         $linea = $this->linea($planilla, $ana);
         $conceptos = $linea->conceptos->keyBy(fn ($c) => $c->ley ?? $c->tipo);
 
-        $this->assertSame('Vacaciones, año cumplido el 10/11/2026', $conceptos['ingreso']->concepto);
+        $this->assertSame('Vacaciones', $conceptos['ingreso']->concepto);
+        $this->assertNull($linea->observaciones);
         $this->assertSame('265.72', (string) $conceptos['ingreso']->importe);
         // ISSS 3 % de 265.72 = 7.9716 → 7.97. AFP 7.25 % = 19.2647 → 19.26.
         $this->assertSame('7.97', (string) $conceptos['isss']->importe);
@@ -124,7 +138,27 @@ class VacacionesPlanillaTest extends TestCase
         $this->assertSame('0.00', (string) $conceptos['renta']->importe);
         // 265.72 − 7.97 − 19.26 = 238.49.
         $this->assertSame('238.49', (string) $linea->a_pagar);
-        $this->assertNull($linea->observaciones);
+    }
+
+    public function test_quien_va_sin_descuentos_cobra_el_bruto(): void
+    {
+        $bea = $this->persona('Bea', 'FICTICIO-2', '2021-11-03', '300.00', false);
+        $linea = $this->linea($this->abrir('2026-11-20'), $bea);
+
+        // 300.00 ÷ 30 × 19.5 = 195.00, sin ningún descuento.
+        $this->assertSame('195.00', (string) $linea->a_pagar);
+        $this->assertSame(1, $linea->conceptos->count());
+    }
+
+    public function test_con_el_interruptor_apagado_todos_cobran_el_bruto(): void
+    {
+        config(['planilla_prestaciones.vacaciones.con_descuentos_ley' => false]);
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+
+        $linea = $this->linea($this->abrir('2026-11-20'), $ana);
+        $this->assertSame('265.72', (string) $linea->a_pagar);
+        $this->assertSame('0.00', (string) $linea->descuentos);
+        $this->assertSame(1, $linea->conceptos->count());
     }
 
     public function test_con_descuentos_y_renta(): void
@@ -143,23 +177,16 @@ class VacacionesPlanillaTest extends TestCase
         $this->assertSame('529.82', (string) $linea->a_pagar);
     }
 
-    public function test_sin_descuentos_cobra_el_bruto(): void
+    public function test_no_es_recalculo_de_renta_aunque_sea_diciembre(): void
     {
-        $bea = $this->persona('Bea', 'FICTICIO-2', '2021-11-03', '300.00', false);
-        $linea = $this->linea($this->abrir('2026-11-20'), $bea);
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-12-10');
 
-        // 300.00 ÷ 30 × 19.5 = 195.00, sin ningún descuento.
-        $this->assertSame('195.00', (string) $linea->a_pagar);
-        $this->assertSame(1, $linea->conceptos->count());
+        // Sin renta acumulada confirmada, una quincena de diciembre frenaría; esta no.
+        $this->assertSame([], app(PrepararPlanilla::class)->reparosParaConfirmar($this->abrir('2026-12-15')->fresh()));
+        $this->assertNotNull($this->linea(Planilla::sole(), $ana));
     }
 
-    public function test_si_la_configuracion_lo_dice_no_llevan_descuentos(): void
-    {
-        config(['planilla_prestaciones.vacaciones.con_descuentos_ley' => false]);
-        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
-
-        $this->assertSame('265.72', (string) $this->linea($this->abrir('2026-11-20'), $ana)->a_pagar);
-    }
+    // ── Quién entra ───────────────────────────────────────────────────────
 
     public function test_quien_entra_y_quien_no(): void
     {
@@ -167,7 +194,8 @@ class VacacionesPlanillaTest extends TestCase
         $nuevo = $this->persona('Carla', 'FICTICIO-3', '2025-12-01');
         $inactivo = $this->persona('Dora', 'FICTICIO-4', '2021-11-05');
         $inactivo->update(['activo' => false, 'baja_el' => '2026-10-01']);
-        $atrasado = $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
+        // Cumplió hace tres meses y no cobró: entra, sin dato en la ficha.
+        $otroMes = $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
         // Aniversario el 03/12/2025: el más viejo que todavía entra, once meses atrás.
         $onceMeses = $this->persona('Fany', 'FICTICIO-6', '2018-12-03');
         $sinIngreso = $this->persona('Gina', 'FICTICIO-7', null);
@@ -175,15 +203,15 @@ class VacacionesPlanillaTest extends TestCase
         $planilla = $this->abrir('2026-11-05');
 
         // El aniversario del 28 entra aunque se pague el 5: es de este mes.
-        $this->assertNotNull($this->linea($planilla, $delMes));
+        $this->assertNull($this->linea($planilla, $delMes)->observaciones);
         $this->assertNull($this->linea($planilla, $nuevo));
         $this->assertNull($this->linea($planilla, $inactivo));
         $this->assertNull($this->linea($planilla, $sinIngreso));
 
-        $eva = $this->linea($planilla, $atrasado);
-        $this->assertSame('Vacaciones atrasadas: cumplió aniversario el 12/08/2026.', $eva->observaciones);
-        $this->assertSame('Vacaciones, año cumplido el 12/08/2026 (atrasadas)', $eva->conceptos->firstWhere('tipo', 'ingreso')->concepto);
-        $this->assertSame('Vacaciones atrasadas: cumplió aniversario el 03/12/2025.', $this->linea($planilla, $onceMeses)->observaciones);
+        $eva = $this->linea($planilla, $otroMes);
+        $this->assertSame('Cumplió aniversario el 12/08/2026.', $eva->observaciones);
+        $this->assertSame('Vacaciones', $eva->conceptos->firstWhere('tipo', 'ingreso')->concepto);
+        $this->assertSame('Cumplió aniversario el 03/12/2025.', $this->linea($planilla, $onceMeses)->observaciones);
 
         // Sin fecha de ingreso no se sabe cuándo le tocan: se avisa.
         $avisos = implode(' ', app(PrepararPlanilla::class)->avisosParaConfirmar($planilla->fresh(), true));
@@ -191,12 +219,54 @@ class VacacionesPlanillaTest extends TestCase
         $this->assertStringNotContainsString('Carla', $avisos);
     }
 
+    public function test_sin_el_dato_entra_aunque_haya_cumplido_hace_cinco_meses(): void
+    {
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+
+        $linea = $this->linea($this->abrir('2026-11-20'), $e);
+        // 265.72 − 7.97 − 19.26 = 238.49.
+        $this->assertSame('238.49', (string) $linea->a_pagar);
+        $this->assertSame('Cumplió aniversario el 20/06/2026.', $linea->observaciones);
+    }
+
+    public function test_con_el_dato_en_el_ano_del_ultimo_aniversario_no_entra(): void
+    {
+        $pagada = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+        $pagada->update(['vacaciones_pagadas_hasta' => 2026]);
+        $delAnoAnterior = $this->persona('Fany', 'FICTICIO-6', '2019-06-20');
+        $delAnoAnterior->update(['vacaciones_pagadas_hasta' => 2025]);
+
+        $planilla = $this->abrir('2026-11-20');
+
+        $this->assertNull($this->linea($planilla, $pagada));
+        // Pagada hasta 2025: el aniversario de 2026 sigue por pagar.
+        $this->assertNotNull($this->linea($planilla, $delAnoAnterior));
+    }
+
+    public function test_el_dato_no_tapa_el_ano_siguiente(): void
+    {
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+        $e->update(['vacaciones_pagadas_hasta' => 2026]);
+
+        $this->assertNotNull($this->linea($this->abrir('2027-06-25'), $e));
+    }
+
     public function test_quien_entro_un_29_de_febrero_cumple_el_28(): void
     {
         $e = $this->persona('Ana', 'FICTICIO-1', '2024-02-29');
 
-        $this->assertSame('Vacaciones, año cumplido el 28/02/2025', $this->linea($this->abrir('2025-02-10'), $e)->conceptos->first()->concepto);
+        // Entra en febrero de 2025 como aniversario del mes: el 28.
+        $this->assertNull($this->linea($this->abrir('2025-02-10'), $e)->observaciones);
     }
+
+    public function test_quien_entro_un_29_de_febrero_y_cobra_en_marzo(): void
+    {
+        $e = $this->persona('Ana', 'FICTICIO-1', '2024-02-29');
+
+        $this->assertSame('Cumplió aniversario el 28/02/2025.', $this->linea($this->abrir('2025-03-10'), $e)->observaciones);
+    }
+
+    // ── Una sola vez por año de servicio ──────────────────────────────────
 
     public function test_lo_ya_pagado_no_entra_y_se_paga_una_sola_vez_por_ano_de_servicio(): void
     {
@@ -222,13 +292,27 @@ class VacacionesPlanillaTest extends TestCase
         app(ConfirmarPlanilla::class)->confirmar($this->actor, $diciembre->fresh());
     }
 
+    public function test_agregar_a_mano_a_quien_la_ficha_da_por_pagado_frena(): void
+    {
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+        $e->update(['vacaciones_pagadas_hasta' => 2026]);
+        $planilla = $this->abrir('2026-11-20');
+
+        app(PrepararPlanilla::class)->guardarLineas($this->actor, $planilla, [[
+            'planilla_empleado_id' => $e->id, 'salario' => '0.00',
+            'conceptos' => [['tipo' => 'ingreso', 'concepto' => 'Vacaciones', 'importe' => '265.72']],
+        ]]);
+
+        $reparos = implode(' ', app(PrepararPlanilla::class)->reparosParaConfirmar($planilla->fresh()));
+        $this->assertStringContainsString('según su ficha, ya cobró las vacaciones hasta 2026', $reparos);
+    }
+
     public function test_el_ano_siguiente_vuelve_a_tocarle(): void
     {
         $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
         $this->generar('2026-11-20');
 
-        $siguiente = $this->linea($this->abrir('2027-11-15'), $ana);
-        $this->assertSame('Vacaciones, año cumplido el 10/11/2027', $siguiente->conceptos->firstWhere('tipo', 'ingreso')->concepto);
+        $this->assertNotNull($this->linea($this->abrir('2027-11-15'), $ana));
     }
 
     public function test_el_mismo_mes_no_se_genera_dos_veces(): void
@@ -246,28 +330,15 @@ class VacacionesPlanillaTest extends TestCase
         $noviembre = $this->generar('2026-11-20');
         app(AnularPlanilla::class)->anular($this->actor, $noviembre, 'Prueba de anulación');
 
-        $diciembre = $this->linea($this->abrir('2026-12-10'), $ana);
-        $this->assertSame('Vacaciones atrasadas: cumplió aniversario el 10/11/2026.', $diciembre->observaciones);
+        $this->assertSame('Cumplió aniversario el 10/11/2026.', $this->linea($this->abrir('2026-12-10'), $ana)->observaciones);
     }
 
-    public function test_un_atrasado_pagado_despues_tampoco_se_repite(): void
+    public function test_lo_pagado_otro_mes_tampoco_se_repite(): void
     {
         $eva = $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
         $this->generar('2026-10-15');
 
         $this->assertNull($this->linea($this->abrir('2026-11-20'), $eva));
-    }
-
-    public function test_los_aniversarios_de_antes_del_sistema_no_se_proponen(): void
-    {
-        config(['planilla_prestaciones.vacaciones.aniversarios_desde' => '2026-11-01']);
-        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
-        $eva = $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
-
-        $planilla = $this->abrir('2026-11-20');
-
-        $this->assertNotNull($this->linea($planilla, $ana));
-        $this->assertNull($this->linea($planilla, $eva));
     }
 
     public function test_exige_fecha_de_pago(): void
@@ -285,49 +356,54 @@ class VacacionesPlanillaTest extends TestCase
         $this->assertStringContainsString('falta el sueldo', $reparos);
     }
 
-    public function test_no_es_recalculo_de_renta_aunque_sea_diciembre(): void
-    {
-        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-12-10');
+    // ── Pantallas ─────────────────────────────────────────────────────────
 
-        // Sin renta acumulada confirmada, una quincena de diciembre frenaría; esta no.
-        $this->assertSame([], app(PrepararPlanilla::class)->reparosParaConfirmar($this->abrir('2026-12-15')->fresh()));
-        $this->assertNotNull($this->linea(Planilla::sole(), $ana));
-    }
-
-    public function test_recibo_y_hoja_salen_con_el_concepto(): void
+    public function test_recibo_y_ficha_de_la_planilla(): void
     {
         $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
         $planilla = $this->generar('2026-11-20');
 
         $this->actingAs($this->actor)->get(route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo']))
-            ->assertOk()->assertSee('Vacaciones, año cumplido el 10/11/2026');
+            ->assertOk()->assertSee('Vacaciones')->assertSee('265.72');
         $this->actingAs($this->actor)->get(route('planilla.show', $planilla))->assertOk()->assertSee('2026-11 · Vacaciones');
     }
 
-    public function test_la_revision_marca_a_los_atrasados(): void
+    public function test_la_revision_dice_cuando_cumplio(): void
     {
         $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
 
         $this->actingAs($this->actor)->get(route('planilla.revisar', $this->datos('2026-11-20')))
-            ->assertOk()->assertSee('Vacaciones atrasadas: cumplió aniversario el 12/08/2026.');
+            ->assertOk()->assertSee('Cumplió aniversario el 12/08/2026.')->assertDontSee('atrasad');
         $this->assertSame(0, Planilla::count());
     }
 
-    public function test_aviso_del_inicio_con_atrasados_y_enlace(): void
+    public function test_aviso_del_inicio_y_enlace(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
         $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
         $this->persona('Bea', 'FICTICIO-2', '2021-11-25', '300.00', false);
         $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
         $this->persona('Carla', 'FICTICIO-3', '2026-01-15');
+        $this->persona('Dora', 'FICTICIO-4', '2019-06-20')->update(['vacaciones_pagadas_hasta' => 2026]);
 
         $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()
-            ->assertSeeInOrder(['Este mes cumplen aniversario:', '2', '(vacaciones por pagar)', 'Atrasados de meses anteriores:', '1'])
+            ->assertSee('Vacaciones por pagar: <strong>3</strong> (2 cumplen este mes).', false)
+            ->assertDontSee('atrasad')
             ->assertSee(route('planilla.create', ['clase' => 'vacaciones']), false);
 
         $this->generar('2026-11-06');
 
-        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()->assertDontSee('Este mes cumplen aniversario');
+        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()->assertDontSee('Vacaciones por pagar');
+    }
+
+    public function test_aviso_sin_nadie_de_este_mes(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
+        $this->persona('Eva', 'FICTICIO-5', '2019-08-12');
+
+        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()
+            ->assertSee('Vacaciones por pagar: <strong>1</strong>.', false)
+            ->assertDontSee('este mes)');
     }
 
     public function test_sin_nadie_por_pagar_no_hay_aviso(): void
@@ -335,7 +411,7 @@ class VacacionesPlanillaTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
         $this->persona('Carla', 'FICTICIO-3', '2026-01-15');
 
-        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()->assertDontSee('Este mes cumplen aniversario');
+        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()->assertDontSee('Vacaciones por pagar');
     }
 
     public function test_el_enlace_abre_el_formulario_con_vacaciones_elegida(): void
@@ -346,6 +422,74 @@ class VacacionesPlanillaTest extends TestCase
             ->assertSee('<option value="vacaciones" selected', false)
             ->assertSee('value="2026-11-06"', false);
     }
+
+    // ── «Vacaciones pagadas hasta» en la ficha ────────────────────────────
+
+    public function test_la_ficha_muestra_y_guarda_el_dato_con_bitacora(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+
+        $this->actingAs($this->actor)->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()
+            ->assertSee('Vacaciones pagadas hasta (año)')
+            ->assertSee('Último año en que cobró sus vacaciones, aunque haya sido fuera del sistema.');
+
+        $this->actingAs($this->actor)->post(route('planilla.empleados.datos', $e), $this->formulario($e, '2026'))
+            ->assertSessionHasNoErrors()->assertRedirect();
+
+        $this->assertSame(2026, $e->fresh()->vacaciones_pagadas_hasta);
+        $this->assertTrue(Activity::where('subject_id', $e->id)->where('description', 'editó los datos del empleado')->exists());
+
+        // Vacío lo borra.
+        $this->actingAs($this->actor)->post(route('planilla.empleados.datos', $e), $this->formulario($e, ''))->assertSessionHasNoErrors();
+        $this->assertNull($e->fresh()->vacaciones_pagadas_hasta);
+    }
+
+    /** @return array<string, array{0: mixed}> */
+    public static function anosInvalidos(): array
+    {
+        return [
+            'antes del ingreso' => ['2018'],
+            'futuro' => ['2027'],
+            'no es un año' => ['dos mil'],
+            'con decimales' => ['2025.5'],
+        ];
+    }
+
+    #[DataProvider('anosInvalidos')]
+    public function test_valida_el_rango_del_ano(mixed $valor): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+
+        $this->actingAs($this->actor)->post(route('planilla.empleados.datos', $e), $this->formulario($e, $valor))
+            ->assertSessionHasErrors('vacaciones_pagadas_hasta');
+        $this->assertNull($e->fresh()->vacaciones_pagadas_hasta);
+    }
+
+    public function test_los_bordes_del_rango_valen(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+
+        foreach (['2019', '2026'] as $valor) {
+            $this->actingAs($this->actor)->post(route('planilla.empleados.datos', $e), $this->formulario($e, $valor))->assertSessionHasNoErrors();
+            $this->assertSame((int) $valor, $e->fresh()->vacaciones_pagadas_hasta);
+        }
+    }
+
+    public function test_sin_permiso_de_gestionar_no_cambia_el_dato(): void
+    {
+        $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
+        $ver = User::factory()->create(['activo' => true]);
+        $ver->syncPermissions(['planilla.ver', 'planilla.salarios']);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->actingAs($ver)->post(route('planilla.empleados.datos', $e), $this->formulario($e, '2026'))->assertForbidden();
+        $this->assertNull($e->fresh()->vacaciones_pagadas_hasta);
+    }
+
+    // ── Permisos de la planilla ───────────────────────────────────────────
 
     public function test_permisos(): void
     {
@@ -358,7 +502,7 @@ class VacacionesPlanillaTest extends TestCase
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $this->actingAs($ver)->get(route('planilla.index'))->assertOk()
-            ->assertSee('Este mes cumplen aniversario:')
+            ->assertSee('Vacaciones por pagar:')
             ->assertDontSee('Generar la planilla de vacaciones');
         $this->actingAs($ver)->get(route('planilla.create', ['clase' => 'vacaciones']))->assertForbidden();
         $this->actingAs($ver)->get(route('planilla.revisar', $this->datos('2026-11-06')))->assertForbidden();

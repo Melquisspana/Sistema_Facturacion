@@ -34,14 +34,11 @@
                 @endif
             </p>
 
-            @if ($vacaciones['del_mes'] > 0 || $vacaciones['atrasados'] > 0)
+            @if ($vacaciones['por_pagar'] > 0)
                 {{-- Solo cuántas personas: no lleva importes. --}}
                 <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800" role="status">
                     <p>
-                        Este mes cumplen aniversario: <strong>{{ $vacaciones['del_mes'] }}</strong> (vacaciones por pagar).
-                        @if ($vacaciones['atrasados'] > 0)
-                            Atrasados de meses anteriores: <strong>{{ $vacaciones['atrasados'] }}</strong>.
-                        @endif
+                        Vacaciones por pagar: <strong>{{ $vacaciones['por_pagar'] }}</strong>@if ($vacaciones['del_mes'] > 0) ({{ $vacaciones['del_mes'] }} {{ $vacaciones['del_mes'] === 1 ? 'cumple' : 'cumplen' }} este mes)@endif.
                     </p>
                     @can('planilla.gestionar')
                         <a href="{{ route('planilla.create', ['clase' => 'vacaciones']) }}" class="mt-1 inline-flex min-h-11 items-center font-medium text-indigo-700 underline">Generar la planilla de vacaciones</a>

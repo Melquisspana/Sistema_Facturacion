@@ -208,7 +208,7 @@ final class PrepararPlanilla
                     'concepto' => $calculo['concepto'] ?? $this->prestaciones->concepto($planilla->clase, $pago),
                     'importe' => Dinero::decimal($calculo['centavos']),
                 ]],
-                // Las vacaciones atrasadas lo dicen en la línea.
+                // Las vacaciones de un aniversario de otro mes dicen cuándo fue.
                 'observaciones' => $calculo['nota'] ?? null,
             ];
         }

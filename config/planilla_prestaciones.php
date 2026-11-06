@@ -73,8 +73,9 @@ return [
     ],
 
     // Vacaciones anuales. Código de Trabajo Art. 177: después de un año de trabajo
-    // continuo, 15 días con el salario ordinario más un recargo del 30 %. Se pagan en el
-    // mes del aniversario de la fecha de ingreso, o después si se atrasaron.
+    // continuo, 15 días con el salario ordinario más un recargo del 30 %. Se pagan desde el
+    // mes del aniversario de la fecha de ingreso, y casi siempre en otro mes después.
+    // Lo pagado fuera del sistema se anota en la ficha: «Vacaciones pagadas hasta».
     //
     // Confirmar con la contadora: los días, el recargo, el salario diario = mensual ÷ 30,
     // el sueldo vigente a la fecha de pago y que lleven ISSS, AFP y renta.
@@ -83,14 +84,9 @@ return [
         'recargo' => '0.30',
         'dias_del_mes' => 30,
 
-        // Quien va con descuentos de ley paga ISSS, AFP y renta como en una quincena.
+        // Melqui, 06/11/2026: llevan descuentos de ley. Quien va con descuentos paga ISSS,
+        // AFP y renta como en una quincena; quien va sin descuentos cobra el bruto.
         'con_descuentos_ley' => true,
-
-        // Los aniversarios de antes de esta fecha se pagaron fuera del sistema y no se
-        // proponen como atrasados: sin esto, la primera planilla le pagaría otra vez a
-        // todo el que ya cobró este año. Para incluir a alguien que todavía no cobró,
-        // mover la fecha hacia atrás. Confirmar con Melqui.
-        'aniversarios_desde' => '2026-11-01',
     ],
 
 ];
