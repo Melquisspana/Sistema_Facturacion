@@ -80,12 +80,26 @@
             <h3 class="font-medium text-gray-800">Ajuste de pronto pago (QD)</h3>
             <ul class="mt-1">
                 @foreach ($informe['ajustes'] as $entrada)
-                    <li><x-cobros.ajuste :ajuste="$entrada['ajuste']" :solo-revisar="$soloRevisar" /></li>
+                    <li>
+                        {{-- Sin el motivo interno («no se encontró ninguna solicitud…»): en el TXT confunde. --}}
+                        <x-cobros.ajuste :ajuste="$entrada['ajuste']" :solo-revisar="$soloRevisar" :con-motivo="false" />
+                        {{-- La nota se hace desde la revisión, sin aplicar el TXT (Melqui, 06/11/2026):
+                             se registra solo este ajuste y, al aplicar después, ya tiene su nota. --}}
+                        @if ($soloRevisar && $entrada['ajuste']->estadoEfectivo() === 'pendiente_nc' && isset($cliente))
+                            @can('ppq.gestionar')
+                                @can('create', \App\Models\Dte::class)
+                                    <form method="POST" action="{{ route('cobros.pagos.ajuste-nc', $cliente) }}" class="pb-2">
+                                        @csrf
+                                        <input type="hidden" name="hash" value="{{ $informe['hash'] }}">
+                                        <input type="hidden" name="linea" value="{{ $entrada['fila']['linea'] }}">
+                                        <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Hacer nota de crédito</button>
+                                    </form>
+                                @endcan
+                            @endcan
+                        @endif
+                    </li>
                 @endforeach
             </ul>
-            @if ($soloRevisar && collect($informe['ajustes'])->contains(fn ($entrada) => $entrada['ajuste']->estadoEfectivo() === 'pendiente_nc'))
-                <p class="text-sm text-amber-800">Al aplicar vas a poder crear la nota de crédito.</p>
-            @endif
         </div>
     @endif
 

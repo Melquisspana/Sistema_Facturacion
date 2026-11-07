@@ -26,6 +26,7 @@ use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\SalidaRutaEntrega;
 use App\Services\Cobros\AltaCobrosService;
+use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Cobros\CrearPpqDesdeSeguimiento;
 use App\Services\Cobros\DevolucionesAlbaran;
 use App\Services\Cobros\ElegibilidadPpqSeguimiento;
@@ -41,6 +42,7 @@ use App\Services\Cobros\SugerenciasAlbaran;
 use App\Services\Cobros\TxtPagosDelCorreo;
 use App\Services\Cobros\VinculadorAlbaranes;
 use App\Services\Ppq\ArchivoConciliacion;
+use App\Services\Ppq\ConciliacionTxtParser;
 use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\NcPosterioresLotePpq;
 use App\Services\RegistroDescargas;
@@ -54,6 +56,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -881,6 +884,49 @@ class CobrosController extends Controller
         $resultado['archivos'] = array_merge($resultado['archivos'], $errores);
 
         return view('cobros.pagos-varios', $resultado + compact('cliente', 'soloRevisar'));
+    }
+
+    /**
+     * La NC de pronto pago desde la revisión del TXT, sin aplicarlo (Melqui, 06/11/2026).
+     * Solo se registra el ajuste (QD) de esa línea, con la misma clave que usa aplicar
+     * (huella + línea): al aplicar el TXT después, el ajuste se encuentra con su nota.
+     */
+    public function notaDeAjusteRevisado(Request $request, Cliente $cliente, AplicadorPagosTxt $aplicador): RedirectResponse
+    {
+        $this->verificarClienteDeCobros($cliente);
+        abort_unless($request->user()?->can('create', Dte::class), 403);
+        $datos = $request->validate([
+            'hash' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
+            'linea' => ['required', 'integer', 'min:1'],
+        ]);
+
+        // Solo un TXT que se revisó en esta sesión y para este cliente, como al aplicar.
+        $dato = $request->session()->get('cobros.txt_revisados.'.$cliente->id, [])[$datos['hash']] ?? null;
+        $archivo = $dato ? ArchivoConciliacion::desdeCopia($datos['hash'], $dato['nombre']) : null;
+        if ($archivo === null) {
+            return $this->volver($cliente)->with('error', 'Este TXT no se revisó en esta sesión: revisalo de nuevo para hacer la nota.');
+        }
+
+        $fila = collect(app(ConciliacionTxtParser::class)->parse($archivo->contenido))
+            ->first(fn (array $f) => (int) $f['linea'] === (int) $datos['linea'] && $f['tipo'] === 'QD');
+        if ($fila === null) {
+            return $this->volver($cliente)->with('error', 'Esa línea del TXT no es un ajuste de pronto pago.');
+        }
+
+        $ajuste = DB::transaction(fn () => $aplicador->registrarAjuste($cliente, $fila, $archivo, $request->user())['ajuste']);
+
+        // Ya tiene su nota vigente (o la misma deducción ya la tenía): se va a ella, no se
+        // hace otra. Con la nota invalidada o borrada sigue pendiente y se hace la nueva.
+        if ($ajuste->estadoEfectivo() !== 'pendiente_nc') {
+            $nc = $ajuste->notaCredito;
+
+            return $nc === null
+                ? $this->volver($cliente)->with('error', 'Ese ajuste está descartado.')
+                : redirect()->route($request->user()->can('update', $nc) ? 'facturacion.edit' : 'facturacion.show', $nc)
+                    ->with('status', 'Ese pronto pago ya tiene su nota de crédito.');
+        }
+
+        return redirect()->route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id]);
     }
 
     public function estadoCobro(Cliente $cliente, EstadoCobroDesdeInicio $servicio, EstadoCobroExporter $exportador): BinaryFileResponse

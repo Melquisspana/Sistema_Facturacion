@@ -399,11 +399,13 @@ class AplicadorPagosTxt
 
     /**
      * Guarda el ajuste (QD) y lo relaciona con la SOLICITUD por su referencia, sin imputarlo
-     * a ninguna factura.
+     * a ninguna factura. Público para que la NC de pronto pago se pueda hacer desde la
+     * revisión del TXT, sin aplicarlo: la misma línea del mismo archivo (huella + línea)
+     * es el mismo ajuste, así que al aplicar después se encuentra con su nota ya hecha.
      *
      * @return array<string, mixed>
      */
-    private function registrarAjuste(Cliente $cliente, array $fila, ArchivoConciliacion $archivo, ?User $usuario): array
+    public function registrarAjuste(Cliente $cliente, array $fila, ArchivoConciliacion $archivo, ?User $usuario): array
     {
         $referencia = (string) $fila['numero'];
         $referenciaCalleja = CobroAjuste::referenciaCalleja($referencia);
