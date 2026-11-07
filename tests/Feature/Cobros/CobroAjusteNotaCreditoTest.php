@@ -21,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\Concerns\RevisaYAplicaTxt;
@@ -112,7 +113,7 @@ class CobroAjusteNotaCreditoTest extends TestCase
         // El de siempre (el más viejo) alcanza; 60 más nuevos no tienen saldo.
         $nuevos = collect(range(1, 60))->map(fn ($i) => $this->ccf->replicate()->forceFill([
             'numero_control' => 'DTE-03-M001P001-'.str_pad((string) (900 + $i), 15, '0', STR_PAD_LEFT),
-            'codigo_generacion' => strtoupper((string) \Illuminate\Support\Str::uuid()),
+            'codigo_generacion' => strtoupper((string) Str::uuid()),
             'fecha_emision' => now()->toDateString(), 'monto_total_operacion' => '0.01',
         ]))->each->save();
         $this->assertCount(60, $nuevos);
