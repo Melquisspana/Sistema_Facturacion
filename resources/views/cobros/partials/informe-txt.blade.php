@@ -81,7 +81,8 @@
             <ul class="mt-1">
                 @foreach ($informe['ajustes'] as $entrada)
                     <li>
-                        <x-cobros.ajuste :ajuste="$entrada['ajuste']" :solo-revisar="$soloRevisar" />
+                        {{-- Sin el motivo interno («no se encontró ninguna solicitud…»): en el TXT confunde. --}}
+                        <x-cobros.ajuste :ajuste="$entrada['ajuste']" :solo-revisar="$soloRevisar" :con-motivo="false" />
                         {{-- La nota se hace desde la revisión, sin aplicar el TXT (Melqui, 06/11/2026):
                              se registra solo este ajuste y, al aplicar después, ya tiene su nota. --}}
                         @if ($soloRevisar && $entrada['ajuste']->estadoEfectivo() === 'pendiente_nc' && isset($cliente))

@@ -1,4 +1,4 @@
-@props(['ajuste', 'soloRevisar' => false])
+@props(['ajuste', 'soloRevisar' => false, 'conMotivo' => true])
 @php
     $estado = $ajuste->estadoEfectivo();
     // Los mismos dos estilos de botón del resto de Cobros: primario como «Revisar TXT»,
@@ -33,7 +33,7 @@
             <a href="{{ route('cobros.ajustes.notas-credito', $ajuste) }}" class="{{ $secundario }}">Vincular NC existente</a>
         @endcan
     @endif
-    @if ($ajuste->motivo)
+    @if ($conMotivo && $ajuste->motivo)
         <p class="w-full text-xs text-gray-600 dark:text-paper-300">{{ $ajuste->motivo }}</p>
     @endif
 </div>
