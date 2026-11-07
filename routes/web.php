@@ -582,6 +582,9 @@ Route::middleware('auth')->group(function () {
             Route::post('clientes/{cliente}/pagos/revisar', [CobrosController::class, 'revisarPagos'])->name('pagos.revisar');
             Route::post('clientes/{cliente}/pagos/correo', [CobrosController::class, 'buscarPagosCorreo'])->name('pagos.correo');
             Route::post('clientes/{cliente}/pagos/aplicar', [CobrosController::class, 'aplicarPagosRevisados'])->name('pagos.aplicar');
+            // La NC de pronto pago desde la REVISIÓN del TXT, sin aplicarlo: registra solo el
+            // ajuste (QD) de esa línea y abre la nota.
+            Route::post('clientes/{cliente}/pagos/ajuste-nc', [CobrosController::class, 'notaDeAjusteRevisado'])->name('pagos.ajuste-nc');
             // Ajuste QD del TXT ↔ su nota de crédito de pronto pago.
             Route::get('ajustes/{ajuste}/notas-credito', [AjusteNotaCreditoController::class, 'index'])->name('ajustes.notas-credito');
             Route::post('ajustes/{ajuste}/vincular-nc', [AjusteNotaCreditoController::class, 'store'])->name('ajustes.vincular-nc');

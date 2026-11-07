@@ -65,7 +65,7 @@ class TxtPagosDelCorreo
                 $encontrados[$hash] = [
                     'nombre' => $nombre,
                     'hash' => $hash,
-                    'estado' => app(EvidenciaEntreCircuitos::class)->enCobros($hash) !== null ? 'ya_aplicado' : 'nuevo',
+                    'estado' => $this->yaAplicado($hash) ? 'ya_aplicado' : 'nuevo',
                     'fecha' => $this->fecha($mensaje['fecha'] ?? null),
                     'asunto' => $mensaje['asunto'] ?? null,
                     // La copia se guarda al revisar: es lo que «Aplicar» vuelve a cargar y verifica.
@@ -75,6 +75,18 @@ class TxtPagosDelCorreo
         }
 
         return array_values($encontrados);
+    }
+
+    /**
+     * Aplicado = con pagos registrados o conciliado en PPQ. Un ajuste solo no cuenta: la NC
+     * de pronto pago se puede hacer desde la revisión, sin aplicar el TXT (06/11/2026), y
+     * ese TXT tiene que seguir saliendo como nuevo para aplicar sus pagos.
+     */
+    private function yaAplicado(string $hash): bool
+    {
+        $rastro = app(EvidenciaEntreCircuitos::class);
+
+        return ($rastro->enCobros($hash)['pagos'] ?? 0) > 0 || $rastro->enPpq($hash) !== [];
     }
 
     private function fecha(?string $valor): ?Carbon

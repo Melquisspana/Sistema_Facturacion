@@ -9,6 +9,7 @@ use App\Models\Cliente;
 use App\Models\Cobros\CobroAjuste;
 use App\Models\Dte;
 use App\Models\User;
+use App\Services\Dte\BusquedaCcfParaNotaCredito;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\SaldoMontoCcf;
 use App\Support\Dinero;
@@ -189,6 +190,27 @@ class NotaCreditoAjuste
                 'alcanza' => Dinero::comparar($saldo, $necesita) >= 0,
             ];
         }, $opciones);
+    }
+
+    /**
+     * CCF que la pantalla propone de entrada para la NC del ajuste: el más reciente del
+     * cliente, de cualquier sala, cuyo saldo alcanza el monto de la nota. Es solo una
+     * propuesta: el usuario lo puede cambiar, y crear() vuelve a medir el saldo.
+     */
+    public function ccfSugerido(CobroAjuste $ajuste): ?int
+    {
+        $busqueda = app(BusquedaCcfParaNotaCredito::class);
+        $pagina = 1;
+        do {
+            $p = $busqueda->paginar(pagina: $pagina++, porPagina: BusquedaCcfParaNotaCredito::POR_PAGINA_MAX, clienteId: $ajuste->cliente_id);
+            $saldos = app(SaldoMontoCcf::class)->saldos($p['resultados']);
+            $id = $p['resultados']->first(fn (Dte $ccf) => Dinero::comparar($saldos[$ccf->id], $this->brutoEstimado($ajuste, $ccf)) >= 0)?->id;
+            if ($id !== null) {
+                return $id;
+            }
+        } while ($p['hay_mas']);
+
+        return null;
     }
 
     private function frenarSiNoAlcanza(Dte $ccf, string $total): void
