@@ -1,0 +1,45 @@
+# Lo que NUNCA entra a la imagen: secretos, datos, material criptográfico y lo que
+# se genera dentro de la construcción. Ver docs/MIGRACION_LINUX_DOCKER.md §4.2.
+
+# Configuración con secretos (el .env se monta al arrancar). Las plantillas sí entran:
+# no tienen valores y las pruebas leen .env.example.
+.env*
+!.env.example
+!.env.compose.example
+
+# Datos y respaldos: viven en volúmenes.
+storage/
+backups/
+public/storage
+
+# Firmador del MH y certificados: solo en el host, montados en su contenedor.
+resources/firmador/
+*.crt
+*.p12
+*.pfx
+*.key
+*.pem
+cert.txt
+
+# Se generan en la construcción (vendor y assets), o son de cada máquina.
+vendor/
+node_modules/
+public/build
+public/hot
+bootstrap/cache/*.php
+.phpunit.cache
+.phpunit.result.cache
+
+# Repositorio, herramientas y material que no hace falta para correr la app.
+.git
+.github
+.claude
+.idea
+.vscode
+tmp/
+evidencias/
+firmware/
+*.log
+compose*.yaml
+Dockerfile
+.dockerignore
