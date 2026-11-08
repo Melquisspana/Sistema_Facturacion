@@ -38,6 +38,14 @@ if not exist "%FIRMADOR_DIR%\%JAR%" (
 
 cd /d "%FIRMADOR_DIR%"
 
+rem Carpeta de los sockets AF_UNIX que Tomcat usa para su Selector NIO.
+rem En esta maquina AF_UNIX falla dentro de %LOCALAPPDATA%\Temp (java.io.tmpdir
+rem por defecto) con "Invalid argument: connect", y sin Selector el conector de
+rem Tomcat no arranca: el firmador moria a los pocos segundos, en bucle.
+rem Se apunta a una carpeta del propio firmador, donde AF_UNIX si funciona.
+set "SOCK_DIR=%FIRMADOR_DIR%\tmp"
+if not exist "%SOCK_DIR%" mkdir "%SOCK_DIR%"
+
 echo ============================================================
 echo   FIRMADOR LOCAL MH - Facturacion
 echo.
@@ -52,7 +60,7 @@ echo.
 :loop
 rem Perfil nonssl = HTTP en localhost (recomendado). El JAR trae 8113 por defecto;
 rem se fuerza 8080 porque es el puerto que la app espera (DTE_FIRMADOR_URL).
-"%JAVA%" -Dspring.profiles.active=nonssl -jar "%JAR%" --server.port=8080 --server.address=127.0.0.1
+"%JAVA%" -Dspring.profiles.active=nonssl -Djdk.net.unixdomain.tmpdir="%SOCK_DIR%" -jar "%JAR%" --server.port=8080 --server.address=127.0.0.1
 
 rem Si el firmador se detuvo (cierre, error o reinicio), esperar y relanzar.
 rem Backoff corto para no entrar en un bucle apretado ante un error persistente.
