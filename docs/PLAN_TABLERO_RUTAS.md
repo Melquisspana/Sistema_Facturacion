@@ -149,9 +149,9 @@ Si una sala pasa **más de 3 veces su ritmo** sin pedido, la tarjeta dice ademá
 3. **El ritmo de la ruta es la mediana** de los días entre el comienzo de una vuelta y el de la siguiente.
 4. La regla de confiable y de atrasada es la misma que la de las salas.
 
-**Hace cuánto no se va a la ruta:** se cuenta desde la última salida terminada (desde su regreso) o se marca «en camino» si hay una en curso. Es lo que ya hace `RitmoRutas::porRuta`. Si la ruta nunca tuvo una salida registrada, se usa la última vuelta de pedidos.
+**Hace cuánto no se va a la ruta:** se cuenta desde la última salida terminada (desde su regreso) o desde la última visita a cualquiera de sus salas, lo que sea más nuevo; se marca «en camino» si hay una en curso. Es lo que hace `RitmoRutas::porRuta`.
 
-**Hace cuánto no se entrega a una sala:** la última entrega conocida, sea registrada por el vendedor, por la oficina o probada por un albarán de entrega. Es lo que ya hace `EntregasCcf::ultimaVisitaPorSala`.
+**Hace cuánto no se entrega a una sala:** la más nueva entre su último CCF facturado y la última entrega conocida, sea registrada por el vendedor, por la oficina o probada por un albarán de entrega (`EntregasCcf::ultimaVisitaPorSala`). El semáforo de la sala cuenta desde su última visita: esa entrega o el último pedido sacado, lo que sea más nuevo.
 
 ### Los «días objetivo» que hoy se cargan a mano
 

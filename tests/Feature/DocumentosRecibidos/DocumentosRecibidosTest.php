@@ -25,7 +25,7 @@ use Tests\TestCase;
 /**
  * Documentos recibidos: herramienta interna para preparar lo que se le manda a la
  * contadora (ella no entra al sistema). Fuente de correo INDEPENDIENTE de Gmail/PPQ
- * (MailboxClient). Verifica parser, dedupe, defaults (pendientes del mes),
+ * (MailboxClient). Verifica parser, dedupe, defaults (todas las del mes),
  * paginación, filtros, resumen y Excel. Nada envía correos ni toca el buzón.
  */
 class DocumentosRecibidosTest extends TestCase
@@ -171,23 +171,50 @@ class DocumentosRecibidosTest extends TestCase
         }
     }
 
-    // ---------- vista por defecto: pendientes del mes actual ----------
+    // ---------- vista por defecto: todas las del mes actual ----------
 
-    public function test_por_defecto_muestra_pendientes_del_mes_actual(): void
+    public function test_por_defecto_muestra_todas_las_del_mes_actual(): void
     {
-        $pendienteEsteMes = $this->doc(['emisor_nombre' => 'DEL MES PENDIENTE', 'estado' => 'pendiente', 'fecha_correo' => now()]);
-        $enviadoEsteMes = $this->doc(['emisor_nombre' => 'DEL MES ENVIADO', 'estado' => 'enviado', 'fecha_correo' => now()]);
-        $pendienteMesPasado = $this->doc(['emisor_nombre' => 'MES PASADO', 'estado' => 'pendiente', 'fecha_correo' => now()->subMonthNoOverflow()->startOfMonth()->addDays(3)]);
+        $this->doc(['emisor_nombre' => 'DEL MES PENDIENTE', 'estado' => 'pendiente', 'fecha_correo' => now()]);
+        $this->doc(['emisor_nombre' => 'DEL MES ENVIADO', 'estado' => 'enviado', 'fecha_correo' => now()]);
+        $this->doc(['emisor_nombre' => 'MES PASADO', 'estado' => 'pendiente', 'fecha_correo' => now()->subMonthNoOverflow()->startOfMonth()->addDays(3)]);
 
         $resp = $this->actingAs($this->usuario('contabilidad'))
             ->get(route('documentos-recibidos.index'))
             ->assertOk();
 
-        $resp->assertSee('DEL MES PENDIENTE');          // pendiente + mes actual
-        $resp->assertDontSee('DEL MES ENVIADO');        // otro estado
+        $resp->assertSee('DEL MES PENDIENTE');
+        $resp->assertSee('DEL MES ENVIADO');            // ya enviada: igual se ve
         $resp->assertDontSee('MES PASADO');             // mes anterior
-        $this->assertSame('pendientes', $resp->viewData('filtros')['vista']);
+        $this->assertSame('bandeja', $resp->viewData('filtros')['vista']);
         $this->assertSame('mes_actual', $resp->viewData('filtros')['rango']);
+    }
+
+    /**
+     * «Mes pasado» sin elegir pestaña lista TODAS las compras del mes. Antes la pestaña
+     * por defecto era «Pendientes»: las que ya habían salido en el paquete mensual
+     * (marcadas `enviado`) no aparecían y el mes se veía casi vacío.
+     */
+    public function test_mes_pasado_incluye_las_ya_enviadas_en_el_paquete(): void
+    {
+        $mesPasado = now()->subMonthNoOverflow()->startOfMonth()->addDays(5);
+        for ($i = 0; $i < 5; $i++) {
+            $this->doc(['estado' => 'enviado', 'fecha_correo' => $mesPasado]);
+        }
+        $this->doc(['estado' => 'pendiente', 'fecha_correo' => $mesPasado]);
+        $this->doc(['estado' => 'ignorado', 'fecha_correo' => $mesPasado]);
+
+        $resp = $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('documentos-recibidos.index', ['rango' => 'mes_pasado']))
+            ->assertOk();
+
+        $this->assertSame(7, $resp->viewData('documentos')->total());
+        $this->assertSame(7, $resp->viewData('resumen')['total_docs']);
+
+        // La pestaña «Pendientes» sigue filtrando a propósito.
+        $this->assertSame(1, $this->actingAs($this->usuario('contabilidad'))
+            ->get(route('documentos-recibidos.index', ['rango' => 'mes_pasado', 'vista' => 'pendientes']))
+            ->viewData('documentos')->total());
     }
 
     public function test_paginacion_respeta_por_pagina(): void

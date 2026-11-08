@@ -24,7 +24,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ Planilla::TIPOS_PERIODO[$planilla->tipo_periodo] }} · {{ $planilla->periodo }}
+                    {{ Planilla::TIPOS_PERIODO[$planilla->tipo_periodo] }} · {{ $planilla->periodo }}@if ($planilla->clase !== 'regular') · {{ Planilla::CLASES[$planilla->clase] }}@endif
                 </h1>
                 <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }} · {{ Planilla::ESTADOS[$planilla->estado] }}</p>
             </div>
@@ -194,6 +194,9 @@
                             <div class="min-w-0">
                                 <p class="text-sm font-medium text-gray-900">{{ $detalle->nombre_snapshot }}</p>
                                 <p class="text-xs text-gray-500">{{ $detalle->cargo_snapshot ?: 'Sin cargo' }}</p>
+                                @if ($detalle->observaciones)
+                                    <p class="text-xs text-amber-700">{{ $detalle->observaciones }}</p>
+                                @endif
                             </div>
                             <div class="flex flex-wrap items-center gap-3 text-sm">
                                 <span class="whitespace-nowrap tabular-nums text-gray-900">{{ $planilla->moneda }} {{ Dinero::mostrar($detalle->a_pagar) }}</span>

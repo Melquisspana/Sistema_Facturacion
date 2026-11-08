@@ -33,6 +33,7 @@ class Planilla extends Model
         'extraordinaria' => 'Fuera de calendario',
         'aguinaldo' => 'Aguinaldo',
         'quincena25' => 'Quincena 25',
+        'vacaciones' => 'Vacaciones',
     ];
 
     public const ESTADOS = [

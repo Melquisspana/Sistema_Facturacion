@@ -12,6 +12,7 @@ use App\Models\Dte;
 use App\Models\User;
 use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Cobros\NotaCreditoAjuste;
+use App\Services\Dte\AlbaranNotaCreditoService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\SaldoMontoCcf;
 use App\Services\Ppq\ArchivoConciliacion;
@@ -20,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\Concerns\RevisaYAplicaTxt;
@@ -90,7 +92,7 @@ class CobroAjusteNotaCreditoTest extends TestCase
         ], $datos);
     }
 
-    public function test_formulario_prellena_ultima_sala_vigente_sin_elegir_ccf(): void
+    public function test_formulario_prellena_ultima_sala_vigente_y_un_ccf_que_alcanza(): void
     {
         $sala = ClienteSucursal::factory()->create(['cliente_id' => $this->cliente->id, 'activo' => true, 'permite_nota_credito' => true]);
         $this->nc(['cliente_sucursal_id' => $sala->id]);
@@ -98,11 +100,59 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $invalida->update(['estado' => EstadoDte::Invalidado]);
         $ajuste = $this->ajuste();
 
-        $this->get(route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id, 'ccf' => $this->ccf->id]))
+        // La nota abre lista (Melqui, 06/11/2026): con el CCF más reciente que alcanza ya elegido.
+        $this->get(route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id]))
             ->assertOk()->assertSee('pagos.txt')->assertSee('153.01')->assertSee('name="cobro_ajuste_id"', false)
             ->assertViewHas('datosNc', fn ($d) => $d['clienteId'] === (string) $this->cliente->id
                 && $d['clienteSalaId'] === (string) $sala->id && $d['modalidad'] === 'pronto_pago'
-                && $d['motivo'] === 'Pronto pago PPQ/33762' && $d['ccfId'] === '');
+                && $d['motivo'] === 'Pronto pago PPQ/33762' && $d['ccfId'] === (string) $this->ccf->id);
+    }
+
+    public function test_el_ccf_sugerido_se_busca_mas_alla_de_la_primera_pagina(): void
+    {
+        // El de siempre (el más viejo) alcanza; 60 más nuevos no tienen saldo.
+        $nuevos = collect(range(1, 60))->map(fn ($i) => $this->ccf->replicate()->forceFill([
+            'numero_control' => 'DTE-03-M001P001-'.str_pad((string) (900 + $i), 15, '0', STR_PAD_LEFT),
+            'codigo_generacion' => strtoupper((string) Str::uuid()),
+            'fecha_emision' => now()->toDateString(), 'monto_total_operacion' => '0.01',
+        ]))->each->save();
+        $this->assertCount(60, $nuevos);
+
+        $this->assertSame($this->ccf->id, app(NotaCreditoAjuste::class)->ccfSugerido($this->ajuste()));
+    }
+
+    public function test_sin_ccf_que_alcance_no_elige_ninguno(): void
+    {
+        $this->saldoCcf('10.00');
+
+        $this->get(route('facturacion.create-nota-credito', ['cobro_ajuste' => $this->ajuste()->id]))
+            ->assertOk()->assertViewHas('datosNc', fn ($d) => $d['ccfId'] === '');
+    }
+
+    public function test_el_buscador_del_ajuste_no_filtra_por_la_sala_de_las_notas(): void
+    {
+        // La sala de las notas de pronto pago (la bodega) no tiene CCF propios.
+        $bodega = ClienteSucursal::factory()->create(['cliente_id' => $this->cliente->id, 'activo' => true, 'permite_nota_credito' => true]);
+        $ajuste = $this->ajuste();
+        $buscar = fn (array $extra) => $this->getJson(route('facturacion.nota-credito.buscar-ccf', [
+            'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $bodega->id,
+        ] + $extra))->assertOk()->json('resultados');
+
+        $this->assertSame([$this->ccf->id], array_column($buscar(['cobro_ajuste' => $ajuste->id]), 'id'));
+        // Fuera del ajuste, la sala sigue filtrando como siempre.
+        $this->assertSame([], $buscar([]));
+    }
+
+    public function test_la_nota_del_ajuste_se_genera_sin_avisos_ni_casilla(): void
+    {
+        // Esta nota retiene IVA: a una NC de albarán le saldría el aviso de retención.
+        $ajuste = $this->ajuste(['monto' => '-153.01']);
+        $this->post(route('facturacion.store-nota-credito'), $this->datos($ajuste))->assertSessionHasNoErrors();
+        $nc = $ajuste->fresh()->notaCredito;
+        $this->assertTrue((bool) $nc->aplica_retencion_iva);
+
+        $this->assertSame([], app(AlbaranNotaCreditoService::class)->avisos($nc));
+        $this->get(route('facturacion.edit', $nc))->assertOk()->assertDontSee('Reviso y confirmo');
     }
 
     public function test_formulario_sin_nc_anterior_no_inventa_sala(): void

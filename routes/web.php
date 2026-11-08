@@ -36,8 +36,8 @@ use App\Http\Controllers\Exportaciones\ExportacionProductoController;
 use App\Http\Controllers\Facturacion\ContingenciaController;
 use App\Http\Controllers\Facturacion\DteController;
 use App\Http\Controllers\Facturacion\ListaEmpaqueController;
+use App\Http\Controllers\Facturacion\OrdenCompraRecibidaController;
 use App\Http\Controllers\Facturacion\PreparacionProduccionController;
-use App\Http\Controllers\Facturacion\ReporteContadoraController;
 use App\Http\Controllers\Ppq\NcExportacionController;
 use App\Http\Controllers\Ppq\PpqBusquedaController;
 use App\Http\Controllers\Ppq\PpqGmailController;
@@ -295,23 +295,19 @@ Route::middleware('auth')->group(function () {
         Route::post('preparar-produccion/backup', [PreparacionProduccionController::class, 'backup'])
             ->middleware('permission:respaldos.ejecutar')->name('preparar-produccion.backup');
 
-        // Reporte contadora (SOLO lectura + Excel; no emite, no transmite, no toca
-        // correlativos). Debe ir ANTES de `{dte}`. Cualquier rol con reportes.ver.
-        Route::get('reporte-contadora', [ReporteContadoraController::class, 'index'])
-            ->middleware('permission:reportes.ver')->name('reporte-contadora');
-        Route::get('reporte-contadora/exportar', [ReporteContadoraController::class, 'exportar'])
-            ->middleware('permission:reportes.ver')->name('reporte-contadora.exportar');
-        // JSON oficial ya generado, para el registro contable (solo lectura; NO lo genera).
-        // Va por reportes.ver porque contabilidad no tiene dte.emitir (DtePolicy::verJson).
-        Route::get('reporte-contadora/{dte}/json', [ReporteContadoraController::class, 'descargarJson'])
-            ->middleware('permission:reportes.ver')->name('reporte-contadora.json');
-        // Envío INDIVIDUAL de un documento aceptado a contabilidad (encolado, canal
-        // contabilidad). Solo administrador y contabilidad; facturación NO. No emite,
-        // no transmite, no toca correlativos ni el estado fiscal.
-        Route::post('reporte-contadora/{dte}/enviar-contabilidad', [ReporteContadoraController::class, 'enviarContabilidad'])
-            ->middleware('permission:contabilidad.enviar')->name('reporte-contadora.enviar');
+        // La pantalla «Ventas» (reporte contadora) se retiró el 06/11/2026: no la usaba
+        // nadie. Las ventas siguen yendo a contabilidad en el paquete mensual
+        // (contabilidad.paquete), que reutiliza ReporteContadoraQuery y su Excel, y una
+        // por una desde la ficha (facturacion.enviar-contabilidad).
+
+        // Órdenes de compra recibidas por correo (ordenes:sincronizar). Lectura con `dte.ver`
+        // (DtePolicy, en el controlador). Antes de `{dte}` para que el segmento no se lea como id.
+        Route::get('ordenes-recibidas', [OrdenCompraRecibidaController::class, 'index'])->name('ordenes-recibidas.index');
+        Route::get('ordenes-recibidas/{orden}/pdf', [OrdenCompraRecibidaController::class, 'pdf'])->whereNumber('orden')->name('ordenes-recibidas.pdf');
 
         Route::get('{dte}', [DteController::class, 'show'])->name('show');
+        // CCF + su orden de compra recibida, en un solo PDF (DtePolicy::view). El PDF normal no cambia.
+        Route::get('{dte}/pdf-con-orden', [OrdenCompraRecibidaController::class, 'pdfConOrden'])->name('pdf-con-orden');
         Route::get('{dte}/imprimir', [DteController::class, 'imprimir'])->name('imprimir');
         // Representación gráfica PRELIMINAR en PDF (solo lectura; DtePolicy::view). NO transmite.
         Route::get('{dte}/pdf', [DteController::class, 'pdf'])->name('pdf');
@@ -368,6 +364,11 @@ Route::middleware('auth')->group(function () {
         Route::post('{dte}/correo', [DteController::class, 'enviarCorreo'])->name('correo.enviar');
         // Envío rápido de un clic al correo del cliente/sala (mismo pipeline encolado).
         Route::post('{dte}/correo/cliente', [DteController::class, 'enviarCorreoCliente'])->name('correo.cliente');
+        // Envío INDIVIDUAL de un documento aceptado a contabilidad (encolado, canal
+        // contabilidad), desde la ficha. Solo administrador y contabilidad; facturación NO.
+        // No emite, no transmite, no toca correlativos ni el estado fiscal.
+        Route::post('{dte}/enviar-contabilidad', [DteController::class, 'enviarContabilidad'])
+            ->middleware('permission:contabilidad.enviar')->name('enviar-contabilidad');
         Route::post('{dte}/correo/{envio}/reenviar', [DteController::class, 'reenviarCorreo'])->name('correo.reenviar');
         Route::delete('{dte}', [DteController::class, 'destroy'])->name('destroy');
 
@@ -433,6 +434,8 @@ Route::middleware('auth')->group(function () {
         Route::get('exportar', [DocumentoRecibidoController::class, 'exportar'])->name('exportar');
         // Abre/descarga un adjunto YA guardado (pdf | json). Solo lectura de disco.
         Route::get('{documento}/archivo/{tipo}', [DocumentoRecibidoController::class, 'descargarArchivo'])->name('archivo');
+        // «Ver»: la factura armada en pantalla desde el JSON guardado. Solo lectura.
+        Route::get('{documento}/ver', [DocumentoRecibidoController::class, 'ver'])->name('ver');
 
         // Envío INDIVIDUAL de la compra a contabilidad (encolado, con los adjuntos ya
         // guardados). Solo administrador y contabilidad (permiso contabilidad.enviar).
@@ -589,6 +592,9 @@ Route::middleware('auth')->group(function () {
             Route::post('clientes/{cliente}/pagos/revisar', [CobrosController::class, 'revisarPagos'])->name('pagos.revisar');
             Route::post('clientes/{cliente}/pagos/correo', [CobrosController::class, 'buscarPagosCorreo'])->name('pagos.correo');
             Route::post('clientes/{cliente}/pagos/aplicar', [CobrosController::class, 'aplicarPagosRevisados'])->name('pagos.aplicar');
+            // La NC de pronto pago desde la REVISIÓN del TXT, sin aplicarlo: registra solo el
+            // ajuste (QD) de esa línea y abre la nota.
+            Route::post('clientes/{cliente}/pagos/ajuste-nc', [CobrosController::class, 'notaDeAjusteRevisado'])->name('pagos.ajuste-nc');
             // Ajuste QD del TXT ↔ su nota de crédito de pronto pago.
             Route::get('ajustes/{ajuste}/notas-credito', [AjusteNotaCreditoController::class, 'index'])->name('ajustes.notas-credito');
             Route::post('ajustes/{ajuste}/vincular-nc', [AjusteNotaCreditoController::class, 'store'])->name('ajustes.vincular-nc');

@@ -2,7 +2,7 @@
 
 /*
 |--------------------------------------------------------------------------
-| Aguinaldo y Quincena 25
+| Aguinaldo, Quincena 25 y vacaciones
 |--------------------------------------------------------------------------
 |
 | Parámetros con vigencia y fuente. Cuando la ley cambia se agrega una versión: las
@@ -70,6 +70,23 @@ return [
             'corte' => '01-14',
             'dias_del_anio' => 365,
         ],
+    ],
+
+    // Vacaciones anuales. Código de Trabajo Art. 177: después de un año de trabajo
+    // continuo, 15 días con el salario ordinario más un recargo del 30 %. Se pagan desde el
+    // mes del aniversario de la fecha de ingreso, y casi siempre en otro mes después.
+    // Lo pagado fuera del sistema se anota en la ficha: «Vacaciones pagadas hasta».
+    //
+    // Confirmar con la contadora: los días, el recargo, el salario diario = mensual ÷ 30,
+    // el sueldo vigente a la fecha de pago y que lleven ISSS, AFP y renta.
+    'vacaciones' => [
+        'dias' => 15,
+        'recargo' => '0.30',
+        'dias_del_mes' => 30,
+
+        // Melqui, 06/11/2026: llevan descuentos de ley. Quien va con descuentos paga ISSS,
+        // AFP y renta como en una quincena; quien va sin descuentos cobra el bruto.
+        'con_descuentos_ley' => true,
     ],
 
 ];

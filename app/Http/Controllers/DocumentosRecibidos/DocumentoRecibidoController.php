@@ -12,6 +12,7 @@ use App\Services\DocumentosRecibidos\DocumentosRecibidosExcel;
 use App\Services\DocumentosRecibidos\DocumentosRecibidosQuery;
 use App\Services\DocumentosRecibidos\EnvioDocumentoRecibidoService;
 use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
+use App\Services\DocumentosRecibidos\RepresentacionDteRecibido;
 use App\Services\DocumentosRecibidos\SincronizadorDocumentosRecibidos;
 use App\Support\Contabilidad\CorreoContabilidad;
 use Illuminate\Http\RedirectResponse;
@@ -22,6 +23,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 /**
  * Documentos recibidos (CCF/facturas de proveedores que llegan por correo).
@@ -42,7 +44,7 @@ class DocumentoRecibidoController extends Controller
         BitacoraSincronizacionCompras $bitacora,
         ConfiguracionDocumentosRecibidos $configuracion,
     ): View {
-        // Por defecto: pendientes del mes actual (para que no se llene con el histórico).
+        // Por defecto: todas las compras del mes actual (para que no se llene con el histórico).
         $filtros = DocumentosRecibidosQuery::filtros($request->all());
 
         $documentos = DocumentosRecibidosQuery::query($filtros)
@@ -298,6 +300,29 @@ class DocumentoRecibidoController extends Controller
     }
 
     /**
+     * «Ver»: la factura armada en pantalla desde el JSON guardado del DTE. Solo lee:
+     * no genera PDF ni archivo, no toca el buzón ni cambia el estado. Si el JSON falta
+     * o no se puede leer, la misma pantalla lo dice en vez de fallar.
+     */
+    public function ver(DocumentoRecibido $documento, RepresentacionDteRecibido $representacion): View
+    {
+        try {
+            ['dte' => $dte, 'aviso' => $aviso] = $representacion->leer($documento);
+        } catch (Throwable $e) {
+            // El JSON es de terceros: ante algo que no se previó, aviso y no un error 500.
+            report($e);
+            [$dte, $aviso] = [null, 'El JSON guardado de esta compra no se pudo leer.'];
+        }
+
+        return view('documentos-recibidos.ver', [
+            'documento' => $documento,
+            'dte' => $dte,
+            'aviso' => $aviso,
+            'tienePdf' => $documento->archivoGuardado('pdf') !== null,
+        ]);
+    }
+
+    /**
      * Abre/descarga un adjunto YA GUARDADO del documento (pdf | json). Solo lectura de
      * disco: no vuelve al buzón y no genera nada. Sin archivo guardado → 404.
      */
@@ -305,10 +330,7 @@ class DocumentoRecibidoController extends Controller
     {
         abort_unless(in_array($tipo, ['pdf', 'json'], true), 404);
 
-        $ruta = collect((array) data_get($documento->metadata_json, 'archivos', []))
-            ->first(fn ($r) => is_string($r)
-                && str_ends_with(strtolower($r), '.'.$tipo)
-                && Storage::disk('local')->exists($r));
+        $ruta = $documento->archivoGuardado($tipo);
 
         abort_if($ruta === null, 404);
 

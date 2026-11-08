@@ -74,10 +74,13 @@ final class Ritmo
         return $this->dias === null ? self::SIN_RITMO : self::estado($this->dias, (int) $this->diasDesde($hoy));
     }
 
-    /** ¿Pasó más de 3 veces su ritmo sin pedido? No se oculta: puede ser una sala perdida. */
-    public function dejoDeComprar(CarbonImmutable $hoy): bool
+    /**
+     * ¿Pasó más de 3 veces su ritmo sin pedido? No se oculta: puede ser una sala perdida.
+     * `$diasDesde` cuenta desde otra fecha (la última visita del tablero); si no, desde el último pedido.
+     */
+    public function dejoDeComprar(CarbonImmutable $hoy, ?int $diasDesde = null): bool
     {
-        return $this->dias !== null && $this->diasDesde($hoy) > self::DEJO_DE_COMPRAR * $this->dias;
+        return $this->dias !== null && ($diasDesde ?? $this->diasDesde($hoy)) > self::DEJO_DE_COMPRAR * $this->dias;
     }
 
     public static function margen(int $ritmo): int

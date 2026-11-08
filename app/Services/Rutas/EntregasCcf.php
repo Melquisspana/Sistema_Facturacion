@@ -534,18 +534,23 @@ class EntregasCcf
             });
 
         // Albaranes de entrega vinculados por `dte_id`: es el vínculo explícito. La orden de
-        // compra no se usa acá; basta con que el albarán diga de qué CCF es.
+        // compra no se usa acá; basta con que el albarán diga de qué CCF es. Una fila por
+        // sala (el más nuevo), no todos los albaranes: el tablero pide esto para todas las
+        // salas. El tipo se compara en mayúsculas, como {@see PpqAlbaran::esDeEntrega()}.
         PpqAlbaran::query()
             ->join('dtes', 'dtes.id', '=', 'ppq_albaranes.dte_id')
             ->whereIn('dtes.cliente_sucursal_id', $salaIds)
             ->whereNotNull('ppq_albaranes.fecha_albaran')
-            ->get(['ppq_albaranes.*', 'dtes.cliente_sucursal_id as sala_id'])
-            ->filter(fn (PpqAlbaran $a) => $a->esDeEntrega())
-            ->each(function (PpqAlbaran $a) use (&$fechas) {
-                $fecha = $a->fecha_albaran->copy()->startOfDay();
-                $actual = $fechas[$a->sala_id] ?? null;
+            ->whereRaw('UPPER(ppq_albaranes.tipo_codigo) = ?', [PpqAlbaran::tipoDeEntrega()])
+            ->groupBy('dtes.cliente_sucursal_id')
+            ->toBase()
+            ->selectRaw('dtes.cliente_sucursal_id as sala_id, MAX(ppq_albaranes.fecha_albaran) as ultima')
+            ->get()
+            ->each(function ($fila) use (&$fechas) {
+                $fecha = Carbon::parse($fila->ultima)->startOfDay();
+                $actual = $fechas[$fila->sala_id] ?? null;
                 if ($actual === null || $fecha->gt($actual)) {
-                    $fechas[$a->sala_id] = $fecha;
+                    $fechas[$fila->sala_id] = $fecha;
                 }
             });
 

@@ -17,11 +17,11 @@
         $R = \App\Services\Rutas\RitmoRutas::class;
         $S = \App\Services\Rutas\Ritmo::class;
 
-        // Colores de la guía: rojo atrasada, ámbar toca pronto, verde al día, gris sin
+        // Colores de la guía: rojo atrasada, ámbar toca ir, verde al día, gris sin
         // ritmo, celeste en camino. Clases completas para que Tailwind las vea.
         $insignias = [
             $R::ATRASADA => ['Atrasada', 'bg-red-100 text-red-700'],
-            $R::PRONTO => ['Toca pronto', 'bg-amber-100 text-amber-800'],
+            $R::PRONTO => ['Toca ir', 'bg-amber-100 text-amber-800'],
             $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700'],
             $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700'],
             $R::PROGRAMADA => ['Programada', 'bg-indigo-100 text-indigo-700'],
@@ -38,6 +38,12 @@
         // «hoy», «ayer» o «hace N días».
         $hace = fn (int $n) => match ($n) { 0 => 'hoy', 1 => 'ayer', default => 'hace '.$n.' días' };
         $ritmoTexto = fn (int $n, ?string $origen) => 'cada '.$dias($n).match ($origen) { $S::APROXIMADO => ' (aprox.)', $R::MANUAL => ' (cargado a mano)', default => '' };
+        // La insignia de una ruta o sala: la atrasada dice por cuántos días.
+        $estadoTexto = fn (string $estado, ?int $faltan) => $estado === $R::ATRASADA && $faltan !== null && $faltan < 0
+            ? 'Atrasada '.$dias(abs($faltan))
+            : $insignias[$estado][0];
+        $plata = fn (float $monto) => '$'.number_format($monto, 2);
+        $desdeHoy = fn ($fecha) => max(0, (int) $fecha->diffInDays(today()));
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -50,17 +56,26 @@
                 <h2 id="resumen-titulo" class="sr-only">Resumen</h2>
                 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     @foreach ([
-                        ['n' => $resumen['rutasAtrasadas'], 'texto' => $resumen['rutasAtrasadas'] === 1 ? 'ruta atrasada' : 'rutas atrasadas', 'color' => 'text-red-700', 'url' => route('rutas.dashboard', ['rutas' => 'atrasadas']).'#rutas'],
-                        ['n' => $resumen['salasAtrasadas'], 'texto' => $resumen['salasAtrasadas'] === 1 ? 'sala atrasada' : 'salas atrasadas', 'color' => 'text-red-700', 'url' => route('rutas.dashboard', ['ver' => 'atrasadas']).'#salas'],
-                        ['n' => $resumen['salasSemana'], 'texto' => $resumen['salasSemana'] === 1 ? 'sala toca esta semana' : 'salas tocan esta semana', 'color' => 'text-amber-800', 'url' => route('rutas.dashboard', ['ver' => 'semana']).'#salas'],
-                        ['n' => $resumen['enCamino'], 'texto' => $resumen['enCamino'] === 1 ? 'salida en camino' : 'salidas en camino', 'color' => 'text-sky-700', 'url' => '#en-camino'],
+                        ['n' => $resumen['rutasAtrasadas'], 'texto' => $resumen['rutasAtrasadas'] === 1 ? 'ruta atrasada' : 'rutas atrasadas', 'detalle' => $resumen['rutasAlDia'].' al día de '.$resumen['rutas'], 'color' => 'text-red-700', 'url' => route('rutas.dashboard', ['rutas' => 'atrasadas']).'#rutas'],
+                        ['n' => $resumen['salasAtrasadas'], 'texto' => $resumen['salasAtrasadas'] === 1 ? 'sala atrasada' : 'salas atrasadas', 'detalle' => $resumen['salasAlDia'].' al día de '.$resumen['salas'], 'color' => 'text-red-700', 'url' => route('rutas.dashboard', ['ver' => 'atrasadas']).'#salas'],
+                        ['n' => $resumen['salasSemana'], 'texto' => $resumen['salasSemana'] === 1 ? 'sala toca esta semana' : 'salas tocan esta semana', 'detalle' => null, 'color' => 'text-amber-800', 'url' => route('rutas.dashboard', ['ver' => 'semana']).'#salas'],
+                        ['n' => $resumen['enCamino'], 'texto' => $resumen['enCamino'] === 1 ? 'salida en camino' : 'salidas en camino', 'detalle' => null, 'color' => 'text-sky-700', 'url' => '#en-camino'],
                     ] as $tarjeta)
                         <a href="{{ $tarjeta['url'] }}" class="{{ $caja }} block p-4 hover:bg-gray-50">
                             <span class="block text-3xl font-semibold tabular-nums {{ $tarjeta['n'] > 0 ? $tarjeta['color'] : 'text-gray-400' }}">{{ $tarjeta['n'] }}</span>
                             <span class="mt-1 block text-sm text-gray-600">{{ $tarjeta['texto'] }}</span>
+                            @if ($tarjeta['detalle'])
+                                <span class="mt-0.5 block text-xs text-gray-500">{{ $tarjeta['detalle'] }}</span>
+                            @endif
                         </a>
                     @endforeach
                 </div>
+                @if ($facturado !== [])
+                    <p class="mt-3 text-sm text-gray-600">
+                        Facturado en los últimos 30 días: <span class="font-semibold tabular-nums text-gray-800">{{ $plata(array_sum($facturado)) }}</span>
+                        <span class="text-gray-500">en CCF, sin IVA. Cada ruta dice el suyo.</span>
+                    </p>
+                @endif
             </section>
 
             {{-- ===================== En camino y programadas =====================
@@ -124,7 +139,7 @@
                         @foreach ($filas as $fila)
                             @php
                                 $ruta = $fila['ruta'];
-                                [$estadoTexto, $estadoClase] = $insignias[$fila['estado']];
+                                $estadoClase = $insignias[$fila['estado']][1];
                                 $pend = $pendientes[$ruta->id] ?? ['cantidad' => 0, 'monto' => 0];
                                 ['atrasadas' => $atrasadas, 'semana' => $tocan] = $conteoRuta->get($ruta->id, ['atrasadas' => 0, 'semana' => 0]);
                                 $faltan = $fila['faltan'];
@@ -132,7 +147,7 @@
                             <article class="{{ $caja }} flex flex-col p-4">
                                 <div class="flex items-start justify-between gap-3">
                                     <h3 class="text-base font-semibold text-gray-800">{{ $ruta->nombre }}</h3>
-                                    <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto }}</span>
+                                    <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto($fila['estado'], $faltan) }}</span>
                                 </div>
 
                                 <div class="mt-2 space-y-0.5 text-sm text-gray-700">
@@ -147,12 +162,13 @@
                                             En camino desde {{ $fila['enCurso']->fecha_inicio->isToday() ? 'hoy' : 'el '.$fila['enCurso']->fecha_inicio->format('d/m/Y') }}
                                         @elseif ($fila['dias'] === null)
                                             Nunca se ha ido
-                                        @elseif ($fila['ultima'])
+                                        @elseif ($fila['desde'] === $R::DESDE_SALIDA)
                                             {{ $fila['dias'] === 0 ? 'Volvió hoy' : 'Se fue '.$hace($fila['dias']) }}
                                         @else
-                                            Último pedido de sus salas {{ $hace($fila['dias']) }}
+                                            Última visita a sus salas {{ $hace($fila['dias']) }}
                                         @endif
-                                        @if (! $fila['enCurso'] && ! $fila['proxima'] && $faltan !== null && $fila['estado'] !== $R::AL_DIA)
+                                        {{-- La atrasada ya dice sus días en la insignia. --}}
+                                        @if ($fila['estado'] === $R::PRONTO && $faltan !== null)
                                             · <span class="font-medium">{{ $faltan < 0 ? $dias(abs($faltan)).' tarde' : ($faltan === 0 ? 'toca hoy' : 'faltan '.$dias($faltan)) }}</span>
                                         @endif
                                     </p>
@@ -167,6 +183,7 @@
                                             Ninguna sala atrasada
                                         @endif
                                     </p>
+                                    <p>Facturado en 30 días: <span class="tabular-nums">{{ $plata($facturado[$ruta->id] ?? 0) }}</span></p>
                                     <p class="text-xs text-gray-500">
                                         {{ $pend['cantidad'] > 0 ? $pend['cantidad'].' CCF por entregar · $'.number_format($pend['monto'], 2) : 'Sin CCF por entregar' }}
                                         · {{ $ruta->sucursales_count }} {{ $ruta->sucursales_count === 1 ? 'sala' : 'salas' }}
@@ -275,10 +292,9 @@
                             @foreach ($salas as $fila)
                                 @php
                                     $sala = $fila['sala'];
-                                    [$estadoTexto, $estadoClase] = $insignias[$fila['estado']];
-                                    $entrega = $ultimaEntrega[$sala->id] ?? null;
-                                    $diasEntrega = $entrega ? max(0, (int) $entrega->diffInDays(today())) : null;
-                                    $ultimo = $fila['ritmo']->ultima();
+                                    $estadoClase = $insignias[$fila['estado']][1];
+                                    $entrega = $fila['ultimaEntrega'];
+                                    $pedido = $fila['ultimoPedido'];
                                 @endphp
                                 <li class="px-4 py-3">
                                     <div class="flex items-start justify-between gap-3">
@@ -286,16 +302,17 @@
                                             <p class="font-medium text-gray-800">{{ $sala->nombre }}</p>
                                             <p class="text-sm text-gray-500">{{ $fila['ruta']->nombre }}</p>
                                         </div>
-                                        <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto }}</span>
+                                        <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto($fila['estado'], $fila['faltan']) }}</span>
                                     </div>
                                     <dl class="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-600 sm:grid-cols-3">
+                                        {{-- El último CCF facturado o la última entrega marcada en Rutas, la más nueva. --}}
                                         <div>
-                                            <dt class="sr-only">Último pedido</dt>
+                                            <dt class="sr-only">Última entrega</dt>
                                             <dd>
-                                                @if ($ultimo)
-                                                    Último pedido <time datetime="{{ $ultimo->toDateString() }}" title="{{ $ultimo->format('d/m/Y') }}">{{ $hace($fila['dias']) }}</time>
+                                                @if ($entrega)
+                                                    Última entrega <time datetime="{{ $entrega->toDateString() }}" title="{{ $entrega->format('d/m/Y') }}">{{ $hace($desdeHoy($entrega)) }}</time>
                                                 @else
-                                                    Sin pedidos en 12 meses
+                                                    Sin entregas en 12 meses
                                                 @endif
                                             </dd>
                                         </div>
@@ -305,16 +322,12 @@
                                                 {{ $fila['ritmo']->dias !== null ? 'Compra '.$ritmoTexto($fila['ritmo']->dias, $fila['ritmo']->confianza()) : 'Todavía sin ritmo' }}
                                             </dd>
                                         </div>
-                                        <div>
-                                            <dt class="sr-only">Última entrega</dt>
-                                            <dd>
-                                                @if ($entrega)
-                                                    Última entrega <time datetime="{{ $entrega->toDateString() }}" title="{{ $entrega->format('d/m/Y') }}">{{ $hace($diasEntrega) }}</time>
-                                                @else
-                                                    Última entrega: sin registro
-                                                @endif
-                                            </dd>
-                                        </div>
+                                        @if ($pedido)
+                                            <div>
+                                                <dt class="sr-only">Último pedido sacado</dt>
+                                                <dd>Pedido sacado <time datetime="{{ $pedido->toDateString() }}" title="{{ $pedido->format('d/m/Y') }}">{{ $hace($desdeHoy($pedido)) }}</time></dd>
+                                            </div>
+                                        @endif
                                     </dl>
                                     @if ($fila['dejoDeComprar'])
                                         <p class="mt-1 text-sm font-medium text-red-700">¿Dejó de comprar?</p>
@@ -364,6 +377,9 @@
                                             <span class="text-gray-500">Sin salidas en los últimos 90 días</span>
                                         @endif
                                     </p>
+                                    @if ($tarjeta['ultimaEntrega'])
+                                        <p>Última entrega <time datetime="{{ $tarjeta['ultimaEntrega']->toDateString() }}" title="{{ $tarjeta['ultimaEntrega']->format('d/m/Y') }}">{{ $hace($desdeHoy($tarjeta['ultimaEntrega'])) }}</time></p>
+                                    @endif
                                     @if ($tarjeta['rutas'] !== [])
                                         <p class="text-gray-500">Sus rutas: {{ implode(', ', $tarjeta['rutas']) }}</p>
                                     @endif

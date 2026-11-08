@@ -68,7 +68,6 @@ class RolesPermisosTest extends TestCase
             'listas de empaque' => ['facturacion.listas.index', self::ROLES_FACTURACION],
             'productos de exportación' => ['productos.exportacion.index', self::ROLES_FACTURACION],
             'compras (documentos recibidos)' => ['documentos-recibidos.index', self::ROLES_FACTURACION],
-            'reporte contadora (ventas)' => ['facturacion.reporte-contadora', self::ROLES_FACTURACION],
             'paquete contabilidad' => ['contabilidad.paquete', self::ROLES_FACTURACION],
             'auditoría' => ['auditoria.index', ['administrador', 'contabilidad']],
             'accesos al sistema (antes usuarios)' => ['personal.accesos.index', ['administrador']],

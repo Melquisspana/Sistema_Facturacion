@@ -43,7 +43,7 @@
             @endif
 
             @if ($ficha)
-                @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id', 'sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
+                @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'vacaciones_pagadas_hasta', 'modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id', 'sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
                     <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
                         <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
                     </div>
@@ -57,6 +57,7 @@
                         <div class="flex gap-2"><dt class="{{ $dt }}">{{ PlanillaEmpleado::DOCUMENTO_TIPOS[$ficha->documento_tipo] }}:</dt><dd class="{{ $dd }}">{{ $ficha->dui ?? '—' }}</dd></div>
                         <div class="flex gap-2"><dt class="{{ $dt }}">Cargo:</dt><dd class="{{ $dd }}">{{ $ficha->cargo ?? '—' }}</dd></div>
                         <div class="flex gap-2"><dt class="{{ $dt }}">Ingreso:</dt><dd class="{{ $dd }}">{{ $ficha->alta_el?->format('d/m/Y') ?? '—' }}</dd></div>
+                        <div class="flex gap-2"><dt class="{{ $dt }}">Vacaciones pagadas hasta:</dt><dd class="{{ $dd }}">{{ $ficha->vacaciones_pagadas_hasta ?? '—' }}</dd></div>
                         @if ($verImportes)
                             <div class="flex gap-2"><dt class="{{ $dt }}">Sueldo mensual:</dt><dd class="tabular-nums {{ $dd }}">{{ $mensual !== null ? Dinero::mostrar($mensual) : 'Sin sueldo' }}</dd></div>
                         @endif
@@ -71,7 +72,7 @@
                                 $puedeEditar = ! $marca || auth()->user()->can('asistencia.gestionar');
                             @endphp
                             @if ($puedeEditar)
-                                <details @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el'])) open @endif>
+                                <details @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'vacaciones_pagadas_hasta'])) open @endif>
                                     <summary class="{{ $secundario }} cursor-pointer">Editar datos</summary>
                                     <form method="POST" action="{{ route('planilla.empleados.datos', $ficha) }}" class="mt-2 grid w-full max-w-xl gap-2 sm:grid-cols-2">
                                         @csrf
@@ -96,6 +97,12 @@
                                             <input id="cargo" name="cargo" value="{{ old('cargo', $ficha->cargo) }}" maxlength="120" class="{{ $campo }}"></div>
                                         <div><label for="alta_el" class="{{ $etiqueta }}">Fecha de ingreso</label>
                                             <input id="alta_el" name="alta_el" type="date" value="{{ old('alta_el', $ficha->alta_el?->toDateString()) }}" class="{{ $campo }}"></div>
+                                        <div class="sm:col-span-2"><label for="vacaciones_pagadas_hasta" class="{{ $etiqueta }}">Vacaciones pagadas hasta (año) (opcional)</label>
+                                            <input id="vacaciones_pagadas_hasta" name="vacaciones_pagadas_hasta" type="number" inputmode="numeric" step="1"
+                                                   min="{{ $ficha->alta_el?->year ?? 1900 }}" max="{{ now()->year }}"
+                                                   value="{{ old('vacaciones_pagadas_hasta', $ficha->vacaciones_pagadas_hasta) }}"
+                                                   aria-describedby="vacaciones_pagadas_hasta_ayuda" class="{{ $campo }}">
+                                            <p id="vacaciones_pagadas_hasta_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">Último año en que cobró sus vacaciones, aunque haya sido fuera del sistema.</p></div>
                                         <p class="text-xs text-gray-500 sm:col-span-2 dark:text-paper-300">Se guarda también en Asistencia y Rutas. Las quincenas confirmadas no cambian.</p>
                                         <div class="sm:col-span-2"><button type="submit" class="{{ $secundario }}">Guardar datos</button></div>
                                     </form>

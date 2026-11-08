@@ -43,7 +43,7 @@ class PlanillaEmpleado extends Model
     {
         return [
             'activo' => 'boolean', 'salario_referencia' => 'decimal:2', 'con_descuentos_ley' => 'boolean',
-            'alta_el' => 'date', 'fecha_nacimiento' => 'date', 'dui_expedido_el' => 'date', 'dependientes' => 'array',
+            'alta_el' => 'date', 'vacaciones_pagadas_hasta' => 'integer', 'fecha_nacimiento' => 'date', 'dui_expedido_el' => 'date', 'dependientes' => 'array',
         ];
     }
 

@@ -5,6 +5,7 @@ namespace App\Services\Dte;
 use App\Enums\TipoDte;
 use App\Exceptions\Dte\DocumentoInmutableException;
 use App\Models\Cliente;
+use App\Models\Cobros\CobroAjuste;
 use App\Models\Dte;
 use App\Models\DteAlbaran;
 use App\Models\PpqAlbaran;
@@ -257,6 +258,13 @@ class AlbaranNotaCreditoService
     public function avisos(Dte $nc): array
     {
         if ($nc->tipo_dte !== TipoDte::NotaCredito) {
+            return [];
+        }
+
+        // La NC de pronto pago no nace de un albarán: es la nota por el monto del TXT a la
+        // sala de las notas. No hay nada que comparar ni que confirmar (Melqui, 06/11/2026).
+        // Si su total no calza con el TXT, lo dice NotaCreditoAjuste::avisoImporte().
+        if (CobroAjuste::where('nc_dte_id', $nc->id)->exists()) {
             return [];
         }
 

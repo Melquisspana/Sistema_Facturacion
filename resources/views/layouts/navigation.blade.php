@@ -56,7 +56,6 @@
     $vePlanilla = App\Enums\ModuloSistema::Planilla->activo() && $usuario->can('planilla.ver');
 
     // Activos por item (rutas actuales, sin cambios de lógica).
-    $enReporteContadora = request()->routeIs('facturacion.reporte-contadora*');
     // "Documentos fiscales" cubre el listado y TODAS las pantallas del documento —crear
     // CCF/NC/factura/exportación, la ficha, la edición, el PDF, el JSON, la
     // invalidación—, que no tienen enlace propio en el sidebar: crear e invalidar son
@@ -85,9 +84,9 @@
     // «Productos» cubre nacionales Y la pestaña de exportación: productos.exportacion.*
     // cuelga del mismo prefijo de nombre, así que `productos.*` las enciende las dos y
     // no hay que mantener ninguna lista de excepciones.
-    $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*');
+    $grupoVentasActivo = $enDocumentosFiscales || $enListasEmpaque || request()->routeIs('clientes.*', 'productos.*', 'facturacion.ordenes-recibidas.*');
     $grupoCobrosActivo = request()->routeIs('ppq.*', 'cobros.*');
-    $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*') || $enReporteContadora;
+    $grupoContabilidadActivo = request()->routeIs('documentos-recibidos.*', 'contabilidad.*');
     $grupoGastosActivo = request()->routeIs('gastos.*');
 
     // APARTADO CONFIGURACIÓN: no es un área. Se entra desde la barra superior en
@@ -139,9 +138,8 @@
             {{-- Badges de modo DTE: SOLO en pantallas de Facturación/DTE (no en el resto
                  del sistema). No cambia ningún candado ni validación; es solo dónde se
                  muestra el aviso. Las vistas de facturación además llevan su propio
-                 banner detallado (<x-modo-dte-aviso>), que no se toca. Se OCULTA en la
-                 pantalla contable de Ventas (Reporte contadora), donde no es relevante. --}}
-            @if ($modoDte && request()->routeIs('facturacion.*') && ! $enReporteContadora)
+                 banner detallado (<x-modo-dte-aviso>), que no se toca. --}}
+            @if ($modoDte && request()->routeIs('facturacion.*'))
                 <div class="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" title="{{ $modoDte['detalle'] }}">
                     <span class="inline-flex items-center rounded-full px-2 py-0.5 font-semibold {{ $modoDteBadge[$modoDte['color']] ?? 'bg-gray-100 text-gray-600' }}">
                         MODO {{ $modoDte['etiqueta'] }}

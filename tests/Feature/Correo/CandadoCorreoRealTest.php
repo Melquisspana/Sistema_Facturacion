@@ -17,6 +17,7 @@ use App\Models\Establecimiento;
 use App\Models\User;
 use App\Services\DocumentosRecibidos\AdjuntosDocumentoRecibido;
 use App\Services\Dte\DtePdfService;
+use App\Services\Reportes\ReporteContadoraQuery;
 use App\Support\Correo\CandadoCorreoReal;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -181,10 +182,8 @@ class CandadoCorreoRealTest extends TestCase
         $this->assertSame('simulado', $envio->refresh()->estado);
 
         // El filtro "Enviados a contabilidad" exige estado 'enviado': un simulado no entra.
-        $this->actingAs(User::factory()->create()->assignRole('contabilidad'))
-            ->get(route('facturacion.reporte-contadora', ['contabilidad' => 'enviados']))
-            ->assertOk()
-            ->assertDontSee($dte->numero_control);
+        $f = ReporteContadoraQuery::filtros(['contabilidad' => 'enviados']);
+        $this->assertFalse(ReporteContadoraQuery::query($f)->whereKey($dte->id)->exists());
     }
 
     public function test_dte_en_produccion_si_envia(): void
@@ -327,13 +326,13 @@ class CandadoCorreoRealTest extends TestCase
 
     // ---------- Aviso en la interfaz ----------
 
-    public function test_las_pantallas_de_compras_y_ventas_avisan_del_candado(): void
+    public function test_las_pantallas_de_compras_y_del_paquete_avisan_del_candado(): void
     {
         $texto = 'el correo se registrará como simulado y no se enviará realmente';
         $user = User::factory()->create()->assignRole('contabilidad');
 
         $this->actingAs($user)->get(route('documentos-recibidos.index'))->assertOk()->assertSee($texto);
-        $this->actingAs($user)->get(route('facturacion.reporte-contadora'))->assertOk()->assertSee($texto);
+        $this->actingAs($user)->get(route('contabilidad.paquete'))->assertOk()->assertSee($texto);
     }
 
     public function test_en_produccion_no_se_muestra_el_aviso(): void
