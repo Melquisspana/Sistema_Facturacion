@@ -790,6 +790,40 @@ class IndemnizacionBajaTest extends TestCase
             ->assertSessionHasErrors('sueldo_mensual');
     }
 
+    public function test_el_sueldo_de_baja_se_valida_con_el_minimo_del_ultimo_dia_en_que_rige(): void
+    {
+        $e = $this->deBaja('2021-08-01', '2026-10-31', 'despido', '408.80', true);
+
+        // Dos versiones del mínimo: 408.80 y, desde el 01/10/2026, 420.00.
+        $minimos = config('planilla_descuentos.salario_minimo');
+        $minimos[] = ['vigente_desde' => '2026-10-01', 'sectores' => ['industria' => '420.00']];
+        config(['planilla_descuentos.salario_minimo' => $minimos]);
+        $sueldo = fn (string $importe, string $desde) => $this->actingAs($this->actor)
+            ->post(route('planilla.empleados.sueldo', $e), ['sueldo_mensual' => $importe, 'vigente_desde' => $desde]);
+
+        // Desde septiembre y sin fila después: rige hasta la baja, cuando el mínimo ya es 420.00.
+        $sueldo('410.00', '2026-09-01')->assertSessionHasErrors('sueldo_mensual');
+
+        // Con otra fila desde octubre, la de septiembre rige hasta el 30/09: le toca 408.80.
+        $sueldo('425.00', '2026-10-01')->assertSessionHasNoErrors();
+        $sueldo('410.00', '2026-09-01')->assertSessionHasNoErrors();
+        // A la baja rige 425.00: 425.00 × 1,917 ÷ 365 = 2,232.1233 → 2,232.12.
+        $this->assertSame(223212, $this->calculo($e->fresh())['centavos']);
+    }
+
+    public function test_con_la_baja_antes_del_primer_minimo_se_compara_con_el_primero_y_se_avisa(): void
+    {
+        // La configuración del mínimo empieza el 01/06/2025.
+        $e = $this->deBaja('2020-01-01', '2025-03-31', 'despido', '408.80', true);
+
+        $this->actingAs($this->actor)->post(route('planilla.empleados.sueldo', $e), ['sueldo_mensual' => '408.80', 'vigente_desde' => '2020-01-01'])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('planilla.aviso', fn ($a) => str_contains($a,
+                'No hay salario mínimo cargado al 31/03/2025: se comparó con el primero que hay, vigente desde el 01/06/2025.'));
+        $this->actingAs($this->actor)->post(route('planilla.empleados.sueldo', $e), ['sueldo_mensual' => '400.00', 'vigente_desde' => '2020-01-01'])
+            ->assertSessionHasErrors(['sueldo_mensual' => 'El sueldo queda por debajo del salario mínimo vigente (408.80). No hay salario mínimo cargado al 31/03/2025: se comparó con el primero que hay, vigente desde el 01/06/2025.']);
+    }
+
     public function test_una_recontratacion_que_se_va_el_mismo_mes_tiene_su_propio_pago(): void
     {
         $e = $this->deBaja('2021-08-01', '2026-10-05', 'despido');

@@ -276,9 +276,13 @@ class PlanillaController extends Controller
         // Sin el importe: la bitácora la ve quien no tiene `planilla.salarios`.
         activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('cambió el sueldo');
 
-        return back()->with('planilla.aviso', $corrige
+        // Si no había mínimo a esa fecha y se comparó con el primero, se dice.
+        $aviso = $sueldos->minimoParaValidar($empleado, (string) $fecha)['aviso'];
+
+        return back()->with('planilla.aviso', ($corrige
             ? 'Sueldo corregido: ya había uno vigente desde el '.CarbonImmutable::parse($fecha)->format('d/m/Y').' y se corrigió esa fila.'
-            : 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
+            : 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.')
+            .($aviso === null ? '' : ' '.$aviso));
     }
 
     public function actualizarDatos(Request $request, PlanillaEmpleado $empleado, DatosEmpleado $datos)
