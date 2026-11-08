@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Console;
 
+use App\Facades\Ajustes;
 use App\Models\RespaldoEjecucion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
@@ -205,5 +206,26 @@ class BackupMysqlDiarioCommandTest extends TestCase
         $this->assertNotContains('auto-2026-07-02_020000.sql', $restantes);
         $this->assertContains('auto-2026-07-20_020000.sql', $restantes);
         $this->assertContains('respaldo-manual-antes-de-migracion.sql', $restantes);
+    }
+
+    public function test_la_retencion_guardada_en_configuracion_gana_al_env(): void
+    {
+        // El .env dice 30 días; en pantalla se guardaron 10.
+        config(['backup_diario.dias_retencion' => 30]);
+        Ajustes::guardarComoSistema('respaldos.dias_retencion', 10);
+        $disco = Storage::disk('backups');
+
+        $disco->put('auto-2026-07-08_020000.sql', 'de hace 15 dias');
+        touch($disco->path('auto-2026-07-08_020000.sql'), now()->subDays(15)->getTimestamp());
+
+        $disco->put('auto-2026-07-18_020000.sql', 'de hace 5 dias');
+        touch($disco->path('auto-2026-07-18_020000.sql'), now()->subDays(5)->getTimestamp());
+
+        Process::fake(['*' => Process::result(output: $this->dumpValido(), exitCode: 0)]);
+        $this->artisan('backup:mysql-diario')->assertExitCode(0);
+
+        $restantes = $disco->allFiles();
+        $this->assertNotContains('auto-2026-07-08_020000.sql', $restantes, 'Con 10 días guardados, uno de 15 se borra aunque el .env diga 30.');
+        $this->assertContains('auto-2026-07-18_020000.sql', $restantes);
     }
 }
