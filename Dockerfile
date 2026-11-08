@@ -43,14 +43,15 @@ ENV TZ=America/El_Salvador \
 
 # Extensiones de §2.2. curl, iconv, mbstring, dom/xml, posix, fileinfo y opcache ya
 # vienen en la imagen oficial; se agregan las que faltan y se quitan los paquetes de
-# compilación, dejando solo las bibliotecas que las extensiones usan.
+# compilación, dejando solo las bibliotecas que las extensiones usan. gd va con WebP,
+# como el PHP de Windows: las fotos de gastos aceptan webp.
 RUN set -eux; \
     apt-get update; \
     savedAptMark="$(apt-mark showmanual)"; \
     apt-get install -y --no-install-recommends \
-        libfreetype6-dev libjpeg62-turbo-dev libpng-dev libzip-dev libicu-dev \
+        libfreetype6-dev libjpeg62-turbo-dev libpng-dev libwebp-dev libzip-dev libicu-dev \
         libc-client-dev libkrb5-dev; \
-    docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
     docker-php-ext-install -j"$(nproc)" bcmath gd zip imap intl pdo_mysql pcntl; \
     apt-mark auto '.*' > /dev/null; \
