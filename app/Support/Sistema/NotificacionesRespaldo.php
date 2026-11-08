@@ -2,6 +2,13 @@
 
 namespace App\Support\Sistema;
 
+use App\Ajustes\Ajustes;
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
+use Spatie\Backup\Config\Config as ConfigRespaldo;
+use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
+use Spatie\Backup\Notifications\Notifications\CleanupHasFailedNotification;
+use Spatie\Backup\Notifications\Notifications\UnhealthyBackupWasFoundNotification;
+
 /**
  * Destinatario de los avisos de respaldo (spatie/laravel-backup).
  *
@@ -14,7 +21,8 @@ namespace App\Support\Sistema;
  * del `your@example.com` de la plantilla original, que se leía como si fuera un
  * destinatario real ya puesto.
  *
- * Se configura con BACKUP_NOTIFICACIONES_CORREO en el .env del entorno.
+ * Se configura en Configuración › Sistema (`respaldos.notificaciones.correo`); sin nada
+ * guardado ahí, manda BACKUP_NOTIFICACIONES_CORREO del .env del entorno.
  */
 class NotificacionesRespaldo
 {
@@ -80,10 +88,85 @@ class NotificacionesRespaldo
         return self::destinatarioConfigurado($valor) === self::SIN_CONFIGURAR ? [] : ['mail'];
     }
 
+    /** Notificaciones de spatie que avisan de una INCIDENCIA (las de éxito no salen por correo). */
+    private const INCIDENCIAS = [
+        BackupHasFailedNotification::class,
+        UnhealthyBackupWasFoundNotification::class,
+        CleanupHasFailedNotification::class,
+    ];
+
+    /**
+     * Pone en la configuración del proceso el correo de aviso guardado en pantalla, con
+     * sus canales, justo antes de que corra un comando de spatie (`backup:run`,
+     * `backup:clean`, `backup:monitor`).
+     *
+     * config/backup.php se arma al arrancar con lo del .env y ahí no se puede leer la
+     * base. Por eso se aplica al ejecutar, como {@see ConfiguracionCorreoRuntime} hace
+     * con el servidor de correo.
+     *
+     * Sin nada guardado —o sin base, que es justo cuando un aviso de respaldo fallido
+     * hace falta— no se toca nada: queda lo del .env, igual que antes. Nunca lanza: un
+     * aviso no puede impedir que el respaldo corra.
+     *
+     * Si el remitente también se guardó en pantalla, los avisos salen con él (de
+     * `mail.from`, que ese runtime ya alineó): el servidor de pantalla puede rechazar el
+     * remitente del .env.
+     *
+     * Spatie arma su configuración con `scoped()` una vez: se olvida para que la próxima
+     * lectura vea estos valores.
+     */
+    public static function aplicar(): void
+    {
+        $nuevos = [];
+
+        $destino = self::correoGuardado('respaldos.notificaciones.correo');
+        if ($destino !== null) {
+            $nuevos['backup.notifications.mail.to'] = $destino;
+
+            foreach (self::INCIDENCIAS as $notificacion) {
+                $nuevos['backup.notifications.notifications.'.$notificacion] = self::canalesDeAviso($destino);
+            }
+        }
+
+        $remitente = self::correoGuardado('mail.from.address');
+        if ($remitente !== null) {
+            $nuevos['backup.notifications.mail.from.address'] = $remitente;
+            $nuevos['backup.notifications.mail.from.name'] = config('mail.from.name');
+        }
+
+        if ($nuevos === []) {
+            return;
+        }
+
+        config($nuevos);
+
+        app()->forgetInstance(ConfigRespaldo::class);
+    }
+
+    /**
+     * Correo guardado en pantalla para ese ajuste, o null si no hay nada guardado, la
+     * base no responde o lo guardado no es un correo válido. Spatie valida el formato
+     * con FILTER_VALIDATE_EMAIL y lanza InvalidConfig si no lo es: un valor así
+     * rompería el respaldo entero, así que se ignora y queda el del .env.
+     */
+    private static function correoGuardado(string $clave): ?string
+    {
+        $guardado = rescue(static function () use ($clave) {
+            $valor = app(Ajustes::class)->resolver($clave);
+
+            return $valor->fuente->esOverride() ? $valor->valor : null;
+        }, null, report: false);
+
+        $correo = is_string($guardado) ? trim($guardado) : '';
+
+        return filter_var($correo, FILTER_VALIDATE_EMAIL) ? $correo : null;
+    }
+
     /** Destinatarios configurados de verdad (lista ya normalizada, sin placeholders). */
     public static function destinatarios(): array
     {
-        $to = config('backup.notifications.mail.to');
+        // Lo guardado en pantalla gana al .env.
+        $to = self::correoGuardado('respaldos.notificaciones.correo') ?? config('backup.notifications.mail.to');
         $lista = is_array($to) ? $to : [$to];
 
         return array_values(array_filter(

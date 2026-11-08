@@ -25,8 +25,10 @@ use App\Services\Planilla\ProteccionPlanilla;
 use App\Services\Rutas\FuentePedidos;
 use App\Services\Rutas\FuentePedidosCcf;
 use App\Support\PasswordRules;
+use App\Support\Sistema\NotificacionesRespaldo;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Contracts\Cache\Factory;
 use Illuminate\Http\Request;
@@ -194,6 +196,19 @@ class AppServiceProvider extends ServiceProvider
         // NO decide si el correo sale: eso sigue siendo del candado de entorno.
         Event::listen(JobProcessing::class, static function () {
             app(ConfiguracionCorreoRuntime::class)->aplicar();
+        });
+
+        // AVISOS DE RESPALDO CON LO GUARDADO EN PANTALLA. Los comandos de spatie avisan
+        // por correo en el mismo proceso: antes de que corran se aplican el servidor de
+        // correo y el destinatario de Configuración. Si la base no responde, el servidor
+        // queda el del .env: el aviso de un respaldo fallido tiene que poder salir igual.
+        Event::listen(CommandStarting::class, static function (CommandStarting $evento) {
+            if (! in_array($evento->command, ['backup:run', 'backup:clean', 'backup:monitor'], true)) {
+                return;
+            }
+
+            rescue(static fn () => app(ConfiguracionCorreoRuntime::class)->aplicar(), report: false);
+            NotificacionesRespaldo::aplicar();
         });
 
         // Contador de trabajos fallidos (junto a «Configuración» en la barra superior y a
