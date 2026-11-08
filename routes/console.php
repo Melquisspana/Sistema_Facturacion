@@ -78,6 +78,21 @@ Schedule::command('ppq:sincronizar-albaranes --aplicar --solape=1')
     ->appendOutputTo(storage_path('logs/ppq-albaranes.log'));
 
 /*
+| Órdenes de compra de Calleja desde la etiqueta «Ordenes» de Gmail. SOLO LECTURA de
+| Gmail; escribe únicamente en `ordenes_compra_recibidas` y en el disco privado (el PDF).
+| Idempotente por id de mensaje, así que releer los últimos días no duplica.
+|
+| Cada 10 minutos: la orden tiene que estar antes de facturar, para elegirla en el CCF
+| en vez de copiarla a mano. La llave es la de la integración (`ppq.gmail.enabled`): sin
+| Gmail habilitado no corre. No escribe nada fiscal, por eso no lleva un interruptor propio.
+*/
+Schedule::command('ordenes:sincronizar')
+    ->everyTenMinutes()
+    ->when(fn () => (bool) rescue(fn () => app(ConfiguracionGmail::class)->habilitado(), fn () => (bool) config('ppq.gmail.enabled', false), report: false))
+    ->withoutOverlapping(15)
+    ->appendOutputTo(storage_path('logs/ordenes-compra.log'));
+
+/*
 | Compras (documentos recibidos) desde el buzón Yahoo/IMAP. SOLO LECTURA del buzón; no
 | borra, no mueve, no marca leído. Escribe únicamente en `documentos_recibidos`, en los
 | adjuntos del disco local y en `documentos_recibidos_progreso`.

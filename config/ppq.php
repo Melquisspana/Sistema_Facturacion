@@ -119,6 +119,8 @@ return [
         'dte_adjunto_query' => env('PPQ_GMAIL_DTE_ADJUNTO_QUERY', '(filename:json OR filename:pdf)'),
         // Label donde Calleja deja los albaranes.
         'label_albaranes' => env('PPQ_GMAIL_LABEL', 'Calleja_Albaranes'),
+        // Label donde caen las órdenes de compra de Calleja (ordenes:sincronizar).
+        'label_ordenes' => env('PPQ_GMAIL_LABEL_ORDENES', 'Ordenes'),
         // Carpeta donde se guardan los PDF/JSON descargados de los correos.
         'storage_dir' => env('PPQ_GMAIL_STORAGE_DIR', 'ppq/gmail'),
     ],

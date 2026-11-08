@@ -11,6 +11,7 @@ use App\Enums\RolSistema;
 use App\Exceptions\DocumentosRecibidos\BuzonInaccesibleException;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
+use App\Models\Cobros\CobroAjuste;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroEvento;
 use App\Models\Dte;
@@ -234,6 +235,28 @@ class CobrosTxtPorCorreoTest extends TestCase
         $this->assertSame('nuevo', $encontrados['000123_20261022090000.txt']['estado']);
         $this->assertSame(['000123_20261022090000.txt'], collect($respuesta->viewData('archivos'))->pluck('nombre')->all(),
             'Solo se revisa lo nuevo.');
+    }
+
+    public function test_hacer_la_nota_del_ajuste_desde_la_revision_no_deja_el_txt_como_ya_aplicado(): void
+    {
+        $e = $this->escenario();
+        $txt = $e['txt1'].'000123;TITULAR DE EJEMPLO;QD;PPQ/33762;;-1.50'."\n";
+        $hash = hash('sha256', $txt);
+        $this->buzon->conTxt(10, '2026-10-20 09:00', self::REMITENTE, '000123_20261020090000.txt', $txt);
+        $usuario = $this->usuario();
+        $this->buscar($usuario)->assertOk();
+
+        // La nota del pronto pago se hace desde la revisión: queda solo el ajuste.
+        $this->actingAs($usuario)->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 4])
+            ->assertRedirect();
+        $this->assertSame(1, CobroAjuste::count());
+
+        // Sigue saliendo como nuevo en el correo y se puede aplicar: sus pagos entran.
+        $this->assertSame('nuevo', $this->encontrados($this->buscar($usuario)->assertOk())['000123_20261020090000.txt']['estado']);
+        $this->aplicar(['000123_20261020090000.txt' => $hash], $usuario)->assertOk();
+        $this->assertSame(EstadoPagoCobro::Pagado, $e['a']->refresh()->pago_estado);
+        $this->assertSame(1, CobroAjuste::count(), 'Aplicar encuentra el mismo ajuste, no hace otro.');
+        $this->assertSame('ya_aplicado', $this->encontrados($this->buscar($usuario)->assertOk())['000123_20261020090000.txt']['estado']);
     }
 
     public function test_el_mismo_txt_en_dos_correos_sale_una_sola_vez(): void

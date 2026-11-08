@@ -50,9 +50,11 @@
                 <form method="POST" action="{{ route('facturacion.store-ccf') }}"
                       x-data="{
                           opciones: @js($opcionesCliente),
+                          ordenesPorSala: @js((object) ($ordenesPorSala ?? [])),
                           clienteId: @js((string) old('cliente_id', '')),
                           sucursalId: @js((string) old('cliente_sucursal_id', '')),
                           buscar: '',
+                          ordenElegida: @js((string) old('numero_orden_compra', '')),
                           abierto: false,
                           esAgente: false,
                           requiereOc: false,
@@ -73,6 +75,10 @@
                                   && String(o.cliente_sucursal_id ?? '') === String(this.sucursalId);
                           },
                           get seleccionada() { return this.opciones.find(o => this.mismaOpcion(o)) ?? null; },
+                          // Órdenes recibidas por correo de la sala elegida que todavía no tienen CCF.
+                          get ordenesSala() {
+                              return (this.requiereOc && this.sucursalId !== '') ? (this.ordenesPorSala[this.sucursalId] ?? []) : [];
+                          },
                           etiqueta(o) {
                               return [o.nombre, o.sucursal, (o.num_documento || o.nrc)].filter(Boolean).join(' — ');
                           },
@@ -224,9 +230,30 @@
                                        : 'Si la sala entrega una orden de compra, anótela aquí; quedará en el apéndice del DTE.'"></p>
                                 <x-text-input id="numero_orden_compra" name="numero_orden_compra" type="text"
                                               class="mt-2 block w-full md:w-2/3" :value="old('numero_orden_compra')"
-                                              x-bind:required="requiereOc"
+                                              x-ref="ordenCompra" x-bind:required="requiereOc" x-on:input="ordenElegida = $event.target.value"
                                               placeholder="N.º de orden de compra" />
                                 <x-input-error :messages="$errors->get('numero_orden_compra')" class="mt-1" />
+
+                                {{-- Órdenes que llegaron por correo para esta sala y no tienen CCF (de la
+                                     más nueva a la más vieja). Elegir una llena el campo; se puede
+                                     seguir escribiendo a mano. --}}
+                                <div x-show="ordenesSala.length > 0" x-cloak class="mt-3">
+                                    <p class="text-sm font-medium text-gray-700">Órdenes recibidas de esta sala sin CCF</p>
+                                    <ul class="mt-2 space-y-2">
+                                        <template x-for="orden in ordenesSala" :key="orden.numero">
+                                            <li>
+                                                <button type="button" @click="$refs.ordenCompra.value = orden.numero; ordenElegida = orden.numero"
+                                                        class="flex w-full flex-wrap items-center gap-x-3 rounded-md border bg-white px-3 py-2 text-left text-sm hover:bg-gray-50 md:w-2/3"
+                                                        :class="ordenElegida === orden.numero ? 'border-indigo-500' : 'border-gray-300'"
+                                                        :aria-pressed="ordenElegida === orden.numero">
+                                                    <span class="font-mono font-medium text-gray-800" x-text="orden.numero"></span>
+                                                    <span class="text-xs text-gray-500" x-text="orden.detalle"></span>
+                                                </button>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                    <p class="mt-1 text-xs text-gray-500">Elegí una para llenar el campo, o escribí el número a mano.</p>
+                                </div>
                             </div>
                         </div>
 

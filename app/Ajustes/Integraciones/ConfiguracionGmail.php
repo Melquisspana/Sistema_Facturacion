@@ -59,6 +59,12 @@ class ConfiguracionGmail
         return (string) $this->ajustes->texto('ppq.gmail.label_albaranes', 'Calleja_Albaranes');
     }
 
+    /** Etiqueta donde caen las órdenes de compra del cliente (ordenes:sincronizar). */
+    public function labelOrdenes(): string
+    {
+        return (string) $this->ajustes->texto('ppq.gmail.label_ordenes', 'Ordenes');
+    }
+
     public function enviadosQuery(): string
     {
         return (string) $this->ajustes->texto('ppq.gmail.enviados_query', 'in:sent');
