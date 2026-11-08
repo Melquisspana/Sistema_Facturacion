@@ -8,6 +8,25 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.08.2] - 2026-11-08
+
+Indemnización y prestación por renuncia como pago de una sola persona desde la baja (#271), y el lector de órdenes de compra ajustado al PDF real del EDI (#273). Sin migraciones.
+
+### Agregado
+
+- Personal: dar de baja pide el motivo (despido sin causa, renuncia voluntaria u otro), que queda en la bitácora de la baja (#271).
+- Planilla › Calcular indemnización / Calcular prestación por renuncia, desde la ficha de quien está de baja: años trabajados, sueldo a la fecha de baja, salario diario, tope aplicado, días y monto, sin ISSS, AFP ni renta. Se paga como «Pago de indemnización de {nombre}» o «Prestación por renuncia de {nombre}», de una sola persona, con revisión, confirmar, pagar y anular, y recibo para firmar con el detalle del cálculo. Con motivo «otro» no calcula. Las reglas están en `config/planilla_prestaciones.php`, pendientes de confirmar con la contadora (#271).
+
+### Cambiado
+
+- Planilla: la misma relación laboral no se indemniza dos veces. Un borrador de una baja que se corrigió no se puede confirmar y se calcula de nuevo, y al reactivar a alguien con un pago vigente hay un aviso (#271).
+- Planilla: «Cambiar sueldo» de quien está de baja se compara con el salario mínimo vigente a su fecha de baja (#271).
+- Órdenes recibidas: cada sincronización vuelve a leer desde su PDF guardado las órdenes «Sin leer», una vez por versión del lector y sin tocar Gmail (#273).
+
+### Corregido
+
+- Órdenes recibidas: el lector entiende el PDF real del EDI. Toma el número, la sala, las fechas y las líneas por columnas, y controla las líneas contra el descuento general impreso. Lo que no cuadra, o una orden de más de una página, queda vacío en lugar de inventarse. Las órdenes que habían quedado «Sin leer» se leyeron solas después del despliegue (#273).
+
 ## [2026.11.08] - 2026-11-08
 
 Rutas › Por entregar para los vendedores, sin armar salidas (#269), y las vacaciones como pago de una sola persona con su pantalla propia (#270, con 1 migración).
