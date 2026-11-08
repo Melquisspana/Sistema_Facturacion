@@ -35,7 +35,11 @@ class SecurityHeaders
                 ? 'Content-Security-Policy-Report-Only'
                 : 'Content-Security-Policy';
 
-            $response->headers->set($header, $value);
+            // Una respuesta que trae su propia política (por ejemplo, los archivos de
+            // Gastos con sandbox) la conserva: la global no la pisa.
+            if (! $response->headers->has($header)) {
+                $response->headers->set($header, $value);
+            }
         }
 
         return $response;
