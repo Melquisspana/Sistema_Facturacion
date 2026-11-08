@@ -8,8 +8,25 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.07] - 2026-11-07
+
+Órdenes de compra leídas del correo e impresas con el CCF (#264, con 1 migración y la dependencia FPDI), la factura de Compras vista desde su JSON (#265) y la nota de crédito del pronto pago hecha desde la revisión del TXT (#267).
+
+### Agregado
+
+- Facturación › Órdenes recibidas: el sistema lee cada 10 minutos las órdenes de compra de la etiqueta de Gmail «Ordenes» y las lista como «Sin facturar», «Facturada» (con su CCF) o «Sin leer», con su PDF. Al hacer un CCF que exige orden, ofrece las órdenes de esa sala que todavía no tienen CCF y llena el campo; se puede seguir escribiendo a mano (#264).
+- Ficha del CCF: «PDF + orden» une el CCF y su orden de compra en un solo PDF para imprimir, y «Ver orden de compra» la abre. El PDF normal y los correos no cambian (#264).
+- Compras: «Ver» arma en pantalla la factura del proveedor desde su JSON, aunque no se haya guardado el PDF, con emisor, receptor, líneas, totales y el documento relacionado de las notas. Se imprime desde el navegador (#265).
+
+### Cambiado
+
+- Compras: la lista ya no tiene las columnas de adjuntos y de clasificación. Solo los documentos que no son un DTE válido llevan una etiqueta roja con el motivo, y «Abrir PDF» y «Abrir JSON» pasan al menú ⋮ (#265).
+- Cobros › TXT de pago: al revisar el TXT, el ajuste de pronto pago trae «Hacer nota de crédito» sin aplicar el archivo. La nota abre lista, con el CCF del cliente cuyo saldo alcanza, y se genera sin avisos ni casilla de confirmación. Al aplicar el TXT después, reconoce la nota ya hecha (#267).
+
 ### Corregido
 
+- Nota de crédito del pronto pago: el buscador de CCF ya no filtra por la sala de las notas, que no tiene CCF propios y lo dejaba vacío (#267).
+- Si la nota del pronto pago se borró o se invalidó, el botón deja hacer la nueva en vez de llevar a la vieja (#267).
 - La contraseña al azar del administrador inicial (`UsuarioAdminInicialSeeder`) cumple siempre las reglas de `config/security.php`: antes, cerca de 1 de cada 1000 salía sin mayúsculas o sin minúsculas. La suite de pruebas pasa a 1,5 GB de memoria, porque ya llegaba a 1,02 GB y moría en el tope de 1 GB.
 
 ## [2026.11.06.2] - 2026-11-06
