@@ -21,8 +21,8 @@ use Spatie\Activitylog\Models\Activity;
  * EL MOTIVO se elige al dar de baja y queda en la bitácora de la baja ({@see BajaEmpleado}):
  * `planilla_empleados` no tiene columna para él. Con motivo «otro» no corresponde nada.
  *
- * UNA SOLA VEZ POR RELACIÓN LABORAL. El pago va en el mes de la baja (su clave técnica),
- * así que la clave única de la base impide dos de la misma clase ese mes; {@see generada()}
+ * UNA SOLA VEZ POR RELACIÓN LABORAL. La clave técnica del pago es el día de la baja, así
+ * que la clave única de la base impide dos de la misma clase esa baja; {@see generada()}
  * frena además cualquier otro de las dos clases desde el ingreso actual, aunque sea de otra
  * baja. Uno anulado deja libre el lugar ({@see AnularPlanilla}) y se puede volver a generar.
  *
@@ -105,6 +105,11 @@ final class IndemnizacionBaja
             ->where('individual_de', $empleado->id)
             ->where('estado', '!=', 'anulada')
             ->when($empleado->alta_el !== null, fn ($q) => $q->whereDate('desde', '>=', $empleado->alta_el->toDateString()))
+            // Un borrador de una baja que después se corrigió no frena calcular de nuevo: su
+            // monto es el de la fecha vieja y no se puede confirmar
+            // ({@see PrepararPlanilla::reparosParaConfirmar()}). Uno confirmado sí frena.
+            ->where(fn ($q) => $q->where('estado', '!=', 'borrador')
+                ->when($empleado->baja_el !== null, fn ($q) => $q->orWhereDate('desde', $this->baja($empleado)->toDateString())))
             ->when($salvoPlanilla !== null, fn ($q) => $q->whereKeyNot($salvoPlanilla))
             ->latest('id')
             ->first();

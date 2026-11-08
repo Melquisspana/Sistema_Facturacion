@@ -10,6 +10,7 @@ use App\Models\Asistencia\AsistenciaOrdenEnrolamiento;
 use App\Models\PersonalRuta;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\Planilla\PlanillaSueldo;
 use App\Models\User;
 use App\Services\Asistencia\HoraOficial;
 use App\Services\Planilla\IndemnizacionBaja;
@@ -19,6 +20,7 @@ use App\Services\Planilla\SueldoHabitual;
 use App\Support\Asistencia\ConsultaAsistencia;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -145,7 +147,13 @@ class PersonalController extends Controller
             'baja' => $ficha !== null && ! $ficha->activo && $ficha->baja_el !== null ? [
                 'motivo' => $indemnizacion->motivoDeBaja($ficha),
                 'pago' => $verImportes ? $indemnizacion->generada($ficha) : null,
+                // «Cambiar sueldo» propone su ingreso solo si no hay ningún sueldo a la fecha
+                // de baja; si lo hay, la baja, para no corregir sin querer la fila del ingreso.
+                'con_sueldo' => $verImportes && $sueldos->vigenteEn($ficha, $indemnizacion->baja($ficha)->toDateString()) !== null,
             ] : null,
+            // Desde cuándo tiene sueldo cargado: elegir una de esas fechas corrige esa fila.
+            'fechasSueldo' => $verImportes ? PlanillaSueldo::where('planilla_empleado_id', $ficha->id)
+                ->orderBy('vigente_desde')->pluck('vigente_desde')->map(fn ($f) => Carbon::parse($f)->format('d/m/Y'))->all() : [],
             'quincenas' => $ficha === null ? collect() : PlanillaDetalle::where('planilla_empleado_id', $ficha->id)
                 ->with('planilla')->latest('id')->limit(12)->get(),
             // Cuentas de antes que todavía no son de nadie: se pueden enlazar acá.

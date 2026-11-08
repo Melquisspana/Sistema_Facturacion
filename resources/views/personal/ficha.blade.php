@@ -185,12 +185,14 @@
                                 <a href="{{ route('planilla.empleados.contrato', $ficha) }}" class="{{ $secundario }}">Contrato</a>
                             @endif
 
-                            {{-- También de baja: la indemnización usa el sueldo a la fecha de baja, y si
-                                 falta se carga acá, vigente desde el ingreso (o la baja), no desde hoy. --}}
+                            {{-- También de baja: la indemnización usa el sueldo a la fecha de baja. Si
+                                 falta, se propone su ingreso; si ya hay uno a esa fecha, la baja,
+                                 para no corregir sin querer la fila del ingreso. Nunca hoy. --}}
                             @if ($verImportes)
                                 @php
+                                    $fechaBaja = $ficha->baja_el ? \Illuminate\Support\Carbon::parse($ficha->baja_el)->toDateString() : now()->toDateString();
                                     $vigenteDesde = $ficha->activo ? now()->toDateString()
-                                        : ($ficha->alta_el?->toDateString() ?? ($ficha->baja_el ? \Illuminate\Support\Carbon::parse($ficha->baja_el)->toDateString() : now()->toDateString()));
+                                        : (($baja['con_sueldo'] ?? false) ? $fechaBaja : ($ficha->alta_el?->toDateString() ?? $fechaBaja));
                                 @endphp
                                 <details @if (! $ficha->activo && $errors->hasAny(['sueldo_mensual', 'vigente_desde'])) open @endif>
                                     <summary class="{{ $secundario }} cursor-pointer">Cambiar sueldo</summary>
@@ -202,7 +204,11 @@
                                         </div>
                                         <div>
                                             <label for="vigente_desde" class="{{ $etiqueta }}">Vigente desde</label>
-                                            <input id="vigente_desde" name="vigente_desde" type="date" value="{{ old('vigente_desde', $vigenteDesde) }}" required class="{{ $campo }}">
+                                            <input id="vigente_desde" name="vigente_desde" type="date" value="{{ old('vigente_desde', $vigenteDesde) }}" required
+                                                   @if ($fechasSueldo !== []) aria-describedby="vigente_desde_ayuda" @endif class="{{ $campo }}">
+                                            @if ($fechasSueldo !== [])
+                                                <p id="vigente_desde_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">Ya tiene sueldo desde el {{ implode(', ', $fechasSueldo) }}. Con una de esas fechas se corrige esa fila.</p>
+                                            @endif
                                         </div>
                                         <div>
                                             <label for="motivo" class="{{ $etiqueta }}">Motivo</label>

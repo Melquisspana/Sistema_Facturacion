@@ -6,6 +6,7 @@ use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\Planilla\PlanillaSueldo;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
@@ -266,12 +267,18 @@ class PlanillaController extends Controller
     /** El sueldo nunca cambia solo: lo cambia una persona, con fecha. */
     public function cambiarSueldo(Request $request, PlanillaEmpleado $empleado, SueldoHabitual $sueldos)
     {
+        // Misma fecha que una fila que ya existe: se corrige esa fila, y se dice.
+        $fecha = $request->input('vigente_desde');
+        $corrige = is_string($fecha) && PlanillaSueldo::where('planilla_empleado_id', $empleado->id)->whereDate('vigente_desde', $fecha)->exists();
+
         $sueldos->registrarMensual($request->user(), $empleado, $request->only(['sueldo_mensual', 'vigente_desde', 'motivo', 'confirmar_bajo_minimo']));
 
         // Sin el importe: la bitácora la ve quien no tiene `planilla.salarios`.
         activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('cambió el sueldo');
 
-        return back()->with('planilla.aviso', 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
+        return back()->with('planilla.aviso', $corrige
+            ? 'Sueldo corregido: ya había uno vigente desde el '.CarbonImmutable::parse($fecha)->format('d/m/Y').' y se corrigió esa fila.'
+            : 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
     }
 
     public function actualizarDatos(Request $request, PlanillaEmpleado $empleado, DatosEmpleado $datos)
@@ -314,9 +321,13 @@ class PlanillaController extends Controller
         $bajas->reactivar($request->user(), $empleado);
         $mensaje = 'Empleado reactivado. Las huellas vigentes se conservan.';
 
-        if ($pagada !== null) {
-            $mensaje .= ' Ya se le pagó '.IndemnizacionBaja::nombre((string) IndemnizacionBaja::motivoDeClase($pagada->clase))
-                .' por la baja del '.$pagada->desde->format('d/m/Y').': si vuelve a trabajar, poné su nueva fecha de ingreso.';
+        $que = $pagada === null ? null : IndemnizacionBaja::nombre((string) IndemnizacionBaja::motivoDeClase($pagada->clase));
+
+        if ($pagada?->borrador()) {
+            // Sin confirmar no se pagó nada, pero quedó con el monto de esta baja.
+            $mensaje .= ' Hay un borrador de '.$que.' de la baja del '.$pagada->desde->format('d/m/Y').': como la reactivaste, borralo.';
+        } elseif ($pagada !== null) {
+            $mensaje .= ' Ya se le pagó '.$que.' por la baja del '.$pagada->desde->format('d/m/Y').': si vuelve a trabajar, poné su nueva fecha de ingreso.';
         }
 
         return back()->with('planilla.aviso', $mensaje);

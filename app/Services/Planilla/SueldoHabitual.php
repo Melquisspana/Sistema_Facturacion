@@ -6,6 +6,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaSueldo;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -130,8 +131,20 @@ final class SueldoHabitual
             throw ValidationException::withMessages(['sueldo_mensual' => 'El sueldo tiene que ser mayor a cero.']);
         }
 
-        $fecha = max($datos['vigente_desde'], now()->toDateString());
-        $minimo = $this->salarioMinimo->vigenteEn($fecha);
+        if (! $empleado->activo && $empleado->baja_el !== null) {
+            // De baja (por ejemplo, para su indemnización): su sueldo es el de entonces, y se
+            // compara con el mínimo de entonces, no con el de hoy, que pudo subir después. Sin
+            // mínimo cargado para esa fecha (la configuración empieza en 2025), el de la baja.
+            $baja = Carbon::parse((string) $empleado->baja_el)->toDateString();
+
+            try {
+                $minimo = $this->salarioMinimo->vigenteEn(min($datos['vigente_desde'], $baja));
+            } catch (ValidationException) {
+                $minimo = $this->salarioMinimo->vigenteEn($baja);
+            }
+        } else {
+            $minimo = $this->salarioMinimo->vigenteEn(max($datos['vigente_desde'], now()->toDateString()));
+        }
 
         if ($mensual < $minimo && ($empleado->con_descuentos_ley || ! filter_var($datos['confirmar_bajo_minimo'] ?? false, FILTER_VALIDATE_BOOLEAN))) {
             throw ValidationException::withMessages([

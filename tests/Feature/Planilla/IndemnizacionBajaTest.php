@@ -14,6 +14,7 @@ use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\AnularPlanilla;
 use App\Services\Planilla\BajaEmpleado;
 use App\Services\Planilla\BorrarPlanilla;
+use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\GenerarPlanilla;
 use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\PrepararPlanilla;
@@ -278,8 +279,8 @@ class IndemnizacionBajaTest extends TestCase
         $this->assertSame($e->id, (int) $planilla->individual_de);
         $this->assertSame('confirmada', $planilla->estado);
         $this->assertSame('2026-11-06', $planilla->fecha_pago->toDateString());
-        // La clave técnica es el mes de la baja; las fechas, el día de la baja.
-        $this->assertSame('2026-10', $planilla->periodo);
+        // La clave técnica y las fechas son el día de la baja.
+        $this->assertSame('2026-10-31', $planilla->periodo);
         $this->assertSame('2026-10-31', $planilla->desde->toDateString());
         $this->assertSame('2026-10-31', $planilla->hasta->toDateString());
 
@@ -359,7 +360,7 @@ class IndemnizacionBajaTest extends TestCase
         app(AnularPlanilla::class)->anular($this->actor, $primero, 'Fecha de pago equivocada');
 
         // Anulado deja libre su lugar en la clave única.
-        $this->assertSame('2026-10-A'.$primero->id, $primero->fresh()->periodo);
+        $this->assertSame('2026-10-31-A'.$primero->id, $primero->fresh()->periodo);
         $this->actingAs($this->actor)->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()
             ->assertSee('Calcular indemnización');
 
@@ -367,7 +368,7 @@ class IndemnizacionBajaTest extends TestCase
 
         $this->assertNotSame($primero->id, $segundo->id);
         $this->assertSame('confirmada', $segundo->estado);
-        $this->assertSame('2026-10', $segundo->periodo);
+        $this->assertSame('2026-10-31', $segundo->periodo);
         $this->assertSame('2147.04', (string) PlanillaDetalle::where('planilla_id', $segundo->id)->sole()->a_pagar);
         $this->assertThrows(fn () => $this->generar($e), ValidationException::class, 'ya está hecho');
     }
@@ -727,6 +728,83 @@ class IndemnizacionBajaTest extends TestCase
             ->assertSee('2,197.44')
             ->assertSee('La baja es del 15/12/2026: el pago se genera a partir de ese mes.')
             ->assertDontSee('Revisar el pago')->assertDontSee('name="fecha_pago"', false);
+    }
+
+    public function test_un_borrador_de_una_baja_corregida_no_se_confirma_y_se_calcula_de_nuevo(): void
+    {
+        $e = $this->deBaja('2021-08-01', '2026-10-31', 'despido');
+        $borrador = app(PrepararPlanilla::class)->abrir($this->actor, $this->datos($e));
+
+        // Al reactivarla para corregir la fecha, se avisa del borrador.
+        $this->actingAs($this->actor)->post(route('planilla.empleados.reactivar', $e))
+            ->assertSessionHas('planilla.aviso', fn ($aviso) => str_contains($aviso,
+                'Hay un borrador de indemnización de la baja del 31/10/2026: como la reactivaste, borralo.'));
+
+        // La nueva baja, mismo ingreso: el borrador viejo no frena el cálculo nuevo.
+        // Del 01/08/2021 al 20/10/2026: 5 años y 81 días = 1,906 días × 1.12 = 2,134.72.
+        app(BajaEmpleado::class)->dar($this->actor, $e->fresh(), '2026-10-20', 'despido');
+        $e = $e->fresh();
+        $this->assertNull(app(IndemnizacionBaja::class)->generada($e));
+        $this->assertNull($this->calculo($e)['fuera']);
+
+        // El borrador viejo, con el monto de la fecha vieja, no se confirma.
+        $viejo = $borrador->fresh()->load('detalles.conceptos', 'detalles.empleado');
+        $this->assertContains('La baja cambió desde que se generó este borrador: borralo y calculalo de nuevo.',
+            app(PrepararPlanilla::class)->reparosParaConfirmar($viejo));
+        $this->assertThrows(fn () => app(ConfirmarPlanilla::class)->confirmar($this->actor, $viejo), ValidationException::class);
+
+        $nuevo = $this->generar($e);
+        $this->assertSame('2134.72', (string) PlanillaDetalle::where('planilla_id', $nuevo->id)->sole()->a_pagar);
+        // Uno confirmado sí frena.
+        $this->assertThrows(fn () => $this->generar($e->fresh(), 'indemnizacion', '2026-11-20'), ValidationException::class);
+        $this->assertSame('borrador', $viejo->fresh()->estado);
+    }
+
+    public function test_el_sueldo_de_quien_esta_de_baja_se_compara_con_el_minimo_de_su_fecha(): void
+    {
+        $e = $this->deBaja('2021-08-01', '2026-10-31', 'despido', '408.80', true);
+        $activa = $this->persona('2020-01-01', '408.80', true, 'FICTICIO-OTRA', 'Bea');
+
+        // El mínimo sube después de la baja.
+        $minimos = config('planilla_descuentos.salario_minimo');
+        $minimos[] = ['vigente_desde' => '2026-11-01', 'sectores' => ['industria' => '450.00']];
+        config(['planilla_descuentos.salario_minimo' => $minimos]);
+
+        // Ya tiene sueldo a la fecha de baja: se propone la baja, no su ingreso, y se avisa de las filas.
+        $this->actingAs($this->actor)->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()
+            ->assertSee('name="vigente_desde" type="date" value="2026-10-31"', false)
+            ->assertSee('Ya tiene sueldo desde el 01/01/2015. Con una de esas fechas se corrige esa fila.');
+
+        // 420.00 vale contra el mínimo de entonces (408.80), aunque hoy sea 450.00.
+        $this->actingAs($this->actor)->post(route('planilla.empleados.sueldo', $e), ['sueldo_mensual' => '420.00', 'vigente_desde' => '2026-10-31'])
+            ->assertSessionHasNoErrors()->assertSessionHas('planilla.aviso', fn ($a) => str_starts_with($a, 'Sueldo actualizado.'));
+        $this->actingAs($this->actor)->post(route('planilla.empleados.sueldo', $e), ['sueldo_mensual' => '430.00', 'vigente_desde' => '2026-10-31'])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('planilla.aviso', 'Sueldo corregido: ya había uno vigente desde el 31/10/2026 y se corrigió esa fila.');
+
+        // 430.00 × 1,917 ÷ 365 = 2,258.3835 → 2,258.38.
+        $this->assertSame(225838, $this->calculo($e->fresh())['centavos']);
+
+        // Quien sigue activo se compara, como siempre, con el mínimo de hoy.
+        $this->actingAs($this->actor)->post(route('planilla.empleados.sueldo', $activa), ['sueldo_mensual' => '420.00', 'vigente_desde' => '2026-10-31'])
+            ->assertSessionHasErrors('sueldo_mensual');
+    }
+
+    public function test_una_recontratacion_que_se_va_el_mismo_mes_tiene_su_propio_pago(): void
+    {
+        $e = $this->deBaja('2021-08-01', '2026-10-05', 'despido');
+        $this->generar($e, 'indemnizacion', '2026-10-06');
+
+        // Vuelve con nueva fecha de ingreso y se va otra vez en octubre.
+        app(BajaEmpleado::class)->reactivar($this->actor, $e->fresh());
+        $e->fresh()->update(['alta_el' => '2026-10-10']);
+        app(BajaEmpleado::class)->dar($this->actor, $e->fresh(), '2026-10-28', 'despido');
+
+        // Del 10/10/2026 al 28/10/2026: 19 días → los 15 del mínimo, 204.40.
+        $segundo = $this->generar($e->fresh());
+        $this->assertSame('2026-10-28', $segundo->periodo);
+        $this->assertSame('204.40', (string) PlanillaDetalle::where('planilla_id', $segundo->id)->sole()->a_pagar);
+        $this->assertSame(2, Planilla::where('estado', 'confirmada')->count());
     }
 
     // ── Permisos ──────────────────────────────────────────────────────────

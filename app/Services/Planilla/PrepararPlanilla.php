@@ -87,6 +87,7 @@ final class PrepararPlanilla
         }
 
         $indemnizacion = IndemnizacionBaja::es($datos['clase']);
+        $alta = null;
         if ($indemnizacion) {
             $baja = blank($datos['empleado'] ?? null) ? null : PlanillaEmpleado::whereKey((int) $datos['empleado'])->value('baja_el');
 
@@ -94,8 +95,9 @@ final class PrepararPlanilla
                 throw ValidationException::withMessages(['empleado' => 'La indemnización se paga desde la baja de la persona: calculala en su ficha de Personal.']);
             }
 
-            // Va en el mes de la baja: un solo pago por baja ({@see IndemnizacionBaja::generada()}).
+            // Va en el día de la baja: un solo pago por baja ({@see IndemnizacionBaja::generada()}).
             $datos['fecha'] = CarbonImmutable::parse((string) $baja)->toDateString();
+            $alta = PlanillaEmpleado::whereKey((int) $datos['empleado'])->first()?->alta_el?->toDateString();
         }
 
         // `individual_de` entra en la clave única: 0 en las planillas de varios.
@@ -103,13 +105,16 @@ final class PrepararPlanilla
 
         $periodo = $this->periodos->para($datos['tipo_periodo'], CarbonImmutable::parse($datos['fecha']));
 
-        // La clave técnica es el mes de la baja; las fechas, el día de la baja: así va
-        // después de la última quincena que cobró, en la lista y al borrar.
+        // La clave técnica y las fechas son el día de la baja: así va después de la última
+        // quincena que cobró, en la lista y al borrar. Con el día, y no el mes, una
+        // recontratación que se va el mismo mes que la relación anterior no choca con su
+        // pago en la clave única: las dos bajas no pueden caer el mismo día. Anulado le
+        // queda «2026-10-31-A123», que cabe en los 20 caracteres.
         if ($indemnizacion) {
-            $periodo['desde'] = $periodo['hasta'] = $datos['fecha'];
+            $periodo['periodo'] = $periodo['desde'] = $periodo['hasta'] = $datos['fecha'];
         }
 
-        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual) {
+        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual, $alta) {
             // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
             $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
@@ -125,6 +130,9 @@ final class PrepararPlanilla
                 ->when(IndemnizacionBaja::es($datos['clase']),
                     fn ($q) => $q->whereIn('clase', IndemnizacionBaja::CLASES),
                     fn ($q) => $q->where('clase', $datos['clase']))
+                // De esta relación laboral, como {@see IndemnizacionBaja::generada()}: el pago
+                // de antes de una recontratación no es el de esta baja.
+                ->when($alta !== null, fn ($q) => $q->whereDate('desde', '>=', $alta))
                 ->where('individual_de', $individual)
                 // Un pago de vacaciones anulado no ocupa el lugar: se puede pagar de nuevo.
                 // Al anularlo ya dejó libre la clave única ({@see AnularPlanilla}).
@@ -771,6 +779,13 @@ final class PrepararPlanilla
                 // Lo mismo en la indemnización: otra baja, otro motivo o una ya generada.
                 if ($planilla->esIndemnizacion() && $calculo['fuera'] !== null) {
                     $reparos[] = $detalle->nombre_snapshot.': no corresponde este pago ('.$calculo['fuera'].').';
+                }
+
+                // Un borrador de una baja que después se corrigió llevaría el monto de la fecha
+                // vieja con el recibo de la nueva.
+                $baja = $detalle->empleado?->baja_el;
+                if ($planilla->esIndemnizacion() && ($baja === null || CarbonImmutable::parse((string) $baja)->toDateString() !== $planilla->desde->toDateString())) {
+                    $reparos[] = 'La baja cambió desde que se generó este borrador: borralo y calculalo de nuevo.';
                 }
             }
         }
