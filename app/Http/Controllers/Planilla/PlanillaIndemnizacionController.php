@@ -46,6 +46,8 @@ class PlanillaIndemnizacionController extends Controller
             // Ni antes de la baja ni de un mes que todavía no llegó, igual que el servidor.
             'hoy' => max($hoy->toDateString(), $indemnizacion->baja($empleado)->toDateString()),
             'maxima' => $hoy->endOfMonth()->toDateString(),
+            // Una baja de un mes que no llegó: se ve el cálculo, pero todavía no se paga.
+            'futura' => $indemnizacion->baja($empleado) > $hoy->endOfMonth(),
             'moneda' => config('gastos.monedas')[0],
         ]);
     }

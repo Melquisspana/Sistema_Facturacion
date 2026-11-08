@@ -185,8 +185,14 @@
                                 <a href="{{ route('planilla.empleados.contrato', $ficha) }}" class="{{ $secundario }}">Contrato</a>
                             @endif
 
-                            @if ($ficha->activo && $verImportes)
-                                <details>
+                            {{-- También de baja: la indemnización usa el sueldo a la fecha de baja, y si
+                                 falta se carga acá, vigente desde el ingreso (o la baja), no desde hoy. --}}
+                            @if ($verImportes)
+                                @php
+                                    $vigenteDesde = $ficha->activo ? now()->toDateString()
+                                        : ($ficha->alta_el?->toDateString() ?? ($ficha->baja_el ? \Illuminate\Support\Carbon::parse($ficha->baja_el)->toDateString() : now()->toDateString()));
+                                @endphp
+                                <details @if (! $ficha->activo && $errors->hasAny(['sueldo_mensual', 'vigente_desde'])) open @endif>
                                     <summary class="{{ $secundario }} cursor-pointer">Cambiar sueldo</summary>
                                     <form method="POST" action="{{ route('planilla.empleados.sueldo', $ficha) }}" class="mt-2 w-72 space-y-2">
                                         @csrf
@@ -196,7 +202,7 @@
                                         </div>
                                         <div>
                                             <label for="vigente_desde" class="{{ $etiqueta }}">Vigente desde</label>
-                                            <input id="vigente_desde" name="vigente_desde" type="date" value="{{ now()->toDateString() }}" required class="{{ $campo }}">
+                                            <input id="vigente_desde" name="vigente_desde" type="date" value="{{ old('vigente_desde', $vigenteDesde) }}" required class="{{ $campo }}">
                                         </div>
                                         <div>
                                             <label for="motivo" class="{{ $etiqueta }}">Motivo</label>

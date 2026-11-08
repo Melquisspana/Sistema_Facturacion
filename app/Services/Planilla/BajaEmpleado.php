@@ -55,6 +55,10 @@ class BajaEmpleado
         DB::transaction(function () use ($actor, $e, $activo, $fecha, $motivo) {
             $e = PlanillaEmpleado::lockForUpdate()->findOrFail($e->id);
             $this->autorizar($actor, $e);
+            // Una segunda baja cambiaría la fecha y el motivo que lee la indemnización.
+            if (! $activo && ! $e->activo) {
+                throw ValidationException::withMessages(['empleado' => 'Esta persona ya está de baja. Para cambiar la fecha o el motivo, primero reactivala.']);
+            }
             $usuario = $e->usuario()->lockForUpdate()->first();
             if (! $activo && $usuario && ($usuario->id === $actor->id || UltimoAdministrador::es($usuario))) {
                 throw ValidationException::withMessages(['empleado' => 'No podés dar de baja a tu propio usuario ni al último administrador activo.']);

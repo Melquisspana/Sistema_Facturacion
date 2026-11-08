@@ -54,7 +54,14 @@
             @elseif ($c !== null && $c['falta'] !== null)
                 <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
                     <p class="font-medium">Falta {{ $c['falta'] }} para calcularlo.</p>
-                    <p>Completalo en la ficha de la persona y volvé a esta pantalla.</p>
+                    {{-- Cada dato se carga en su lugar: no todos están en la ficha. --}}
+                    @if ($c['falta'] === 'el salario mínimo vigente a la fecha de baja')
+                        <p>El salario mínimo no se carga en la ficha: va en la configuración del salario mínimo, que la mantiene quien administra el sistema. Cuando esté, volvé a esta pantalla.</p>
+                    @elseif ($c['falta'] === 'el sueldo a la fecha de baja')
+                        <p>Cargalo en «Cambiar sueldo» de <a href="{{ $ficha }}" class="font-medium underline">su ficha</a>: propone como fecha su ingreso. Después volvé a esta pantalla.</p>
+                    @else
+                        <p>Completalo en «Editar datos» de <a href="{{ $ficha }}" class="font-medium underline">su ficha</a> y volvé a esta pantalla.</p>
+                    @endif
                 </div>
             @elseif ($listo)
                 @php($regla = $c['regla'])
@@ -117,6 +124,12 @@
                     </p>
                 </section>
 
+                @if ($futura)
+                    {{-- La fecha de pago no puede ser de un mes que no llegó ni anterior a la baja. --}}
+                    <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+                        La baja es del {{ $c['hasta']->format('d/m/Y') }}: el pago se genera a partir de ese mes.
+                    </div>
+                @else
                 {{-- GET: no crea nada, lleva a la revisión del pago, que es donde se genera. --}}
                 <form method="GET" action="{{ route('planilla.revisar') }}" class="space-y-3">
                     <input type="hidden" name="tipo_periodo" value="mensual">
@@ -136,6 +149,7 @@
                         </button>
                     </div>
                 </form>
+                @endif
             @endif
         </div>
     </div>

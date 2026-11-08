@@ -21,9 +21,10 @@ use Spatie\Activitylog\Models\Activity;
  * EL MOTIVO se elige al dar de baja y queda en la bitácora de la baja ({@see BajaEmpleado}):
  * `planilla_empleados` no tiene columna para él. Con motivo «otro» no corresponde nada.
  *
- * UNA SOLA VEZ POR BAJA. El pago va en el mes de la baja (su clave técnica), así que la
- * clave única de la base impide dos de la misma clase; {@see generada()} mira las dos. Uno
- * anulado deja libre el lugar ({@see AnularPlanilla}) y se puede volver a generar.
+ * UNA SOLA VEZ POR RELACIÓN LABORAL. El pago va en el mes de la baja (su clave técnica),
+ * así que la clave única de la base impide dos de la misma clase ese mes; {@see generada()}
+ * frena además cualquier otro de las dos clases desde el ingreso actual, aunque sea de otra
+ * baja. Uno anulado deja libre el lugar ({@see AnularPlanilla}) y se puede volver a generar.
  *
  * LO QUE QUEDA EN LA LÍNEA, como foto que el recibo imprime: el tiempo de servicio en
  * `periodo_desde`–`periodo_hasta` (lo escribe {@see ConfirmarPlanilla}) y el detalle del
@@ -92,19 +93,18 @@ final class IndemnizacionBaja
         return array_key_exists((string) $motivo, self::MOTIVOS) ? $motivo : null;
     }
 
-    /** El pago no anulado de la baja actual de esta persona, de cualquiera de las dos clases. */
+    /**
+     * El pago no anulado de esta relación laboral, de cualquiera de las dos clases: el que
+     * va del ingreso actual en adelante, sea de la baja que sea. Quien se reactiva y vuelve
+     * a darse de baja no cobra otra vez los mismos años; solo si se corrige su fecha de
+     * ingreso a la de la recontratación cuenta como otra relación.
+     */
     public function generada(PlanillaEmpleado $empleado, ?int $salvoPlanilla = null): ?Planilla
     {
-        if ($empleado->baja_el === null) {
-            return null;
-        }
-
-        // Por la clave técnica, el mes de la baja: lo mismo que mira {@see PrepararPlanilla::abrir()}.
         return Planilla::whereIn('clase', self::CLASES)
-            ->where('tipo_periodo', 'mensual')
-            ->where('periodo', $this->baja($empleado)->format('Y-m'))
             ->where('individual_de', $empleado->id)
             ->where('estado', '!=', 'anulada')
+            ->when($empleado->alta_el !== null, fn ($q) => $q->whereDate('desde', '>=', $empleado->alta_el->toDateString()))
             ->when($salvoPlanilla !== null, fn ($q) => $q->whereKeyNot($salvoPlanilla))
             ->latest('id')
             ->first();

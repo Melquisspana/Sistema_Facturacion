@@ -308,8 +308,17 @@ class PlanillaController extends Controller
 
     public function reactivarEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
     {
+        // Antes de reactivar: con la indemnización ya pagada, volver a darle de baja no la
+        // paga otra vez ({@see IndemnizacionBaja::generada()}), salvo con otra fecha de ingreso.
+        $pagada = app(IndemnizacionBaja::class)->generada($empleado);
         $bajas->reactivar($request->user(), $empleado);
+        $mensaje = 'Empleado reactivado. Las huellas vigentes se conservan.';
 
-        return back()->with('planilla.aviso', 'Empleado reactivado. Las huellas vigentes se conservan.');
+        if ($pagada !== null) {
+            $mensaje .= ' Ya se le pagó '.IndemnizacionBaja::nombre((string) IndemnizacionBaja::motivoDeClase($pagada->clase))
+                .' por la baja del '.$pagada->desde->format('d/m/Y').': si vuelve a trabajar, poné su nueva fecha de ingreso.';
+        }
+
+        return back()->with('planilla.aviso', $mensaje);
     }
 }

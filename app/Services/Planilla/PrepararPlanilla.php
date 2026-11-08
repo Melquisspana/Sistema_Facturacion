@@ -114,6 +114,11 @@ final class PrepararPlanilla
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
             $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
 
+            // Un pago individual sin su persona bloqueada no pasaría por sus comprobaciones.
+            if ($individual > 0 && $persona === null) {
+                throw ValidationException::withMessages(['empleado' => 'No se encontró a esa persona en planilla.']);
+            }
+
             $existente = Planilla::where('tipo_periodo', $datos['tipo_periodo'])
                 ->where('periodo', $periodo['periodo'])
                 // La de la misma baja, sea despido o renuncia: se genera una sola vez.
@@ -188,12 +193,17 @@ final class PrepararPlanilla
     public function bloquearPersona(array $datos): ?PlanillaEmpleado
     {
         $clase = (string) ($datos['clase'] ?? '');
+        // El mismo entero que acepta la regla `integer` de {@see abrir()}: «+5» o « 5» también
+        // son la persona 5, y tienen que bloquearla y pasar por sus comprobaciones.
+        $id = is_scalar($datos['empleado'] ?? null)
+            ? filter_var($datos['empleado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
+            : false;
 
-        if (($clase !== VacacionesAnuales::CLASE && ! IndemnizacionBaja::es($clase)) || ! ctype_digit((string) ($datos['empleado'] ?? ''))) {
+        if (($clase !== VacacionesAnuales::CLASE && ! IndemnizacionBaja::es($clase)) || $id === false) {
             return null;
         }
 
-        return PlanillaEmpleado::whereKey((int) $datos['empleado'])->lockForUpdate()->first();
+        return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
     }
 
     /** Que la persona de un pago de vacaciones de verdad las tenga por pagar en esa fecha. */
