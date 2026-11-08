@@ -556,7 +556,14 @@ class VacacionesPlanillaTest extends TestCase
 
             // MySQL toma la foto de lo que lee en la primera lectura de la transacción:
             // la primera tiene que ser el bloqueo de la persona.
-            $this->assertStringContainsString('from "planilla_empleados" where "planilla_empleados"."id" = ?', $consultas[0] ?? '', $paso);
+            // Sin comillas ni acentos graves: SQLite cita con " y MySQL con `.
+            $primera = str_replace(['"', '`'], '', mb_strtolower($consultas[0] ?? ''));
+            $this->assertStringContainsString('from planilla_empleados where planilla_empleados.id = ?', $primera, $paso);
+
+            // SQLite no tiene bloqueo de filas (bloquea la base entera); MySQL sí.
+            if (DB::connection()->getDriverName() !== 'sqlite') {
+                $this->assertStringContainsString('for update', $primera, $paso);
+            }
         }
     }
 
