@@ -69,7 +69,7 @@
                                             <input type="hidden" name="moneda" value="{{ $moneda }}">
                                             <input type="hidden" name="empleado" value="{{ $e->id }}">
                                             <label for="fecha-pago-{{ $e->id }}" class="sr-only">Fecha de pago de {{ $e->nombre }}</label>
-                                            <input id="fecha-pago-{{ $e->id }}" name="fecha_pago" type="date" value="{{ (string) old('empleado') === (string) $e->id ? old('fecha_pago', $hoy) : $hoy }}" required class="{{ $campo }}">
+                                            <input id="fecha-pago-{{ $e->id }}" name="fecha_pago" type="date" value="{{ (string) old('empleado') === (string) $e->id ? old('fecha_pago', $hoy) : $hoy }}" max="{{ $maxima }}" required class="{{ $campo }}">
                                             <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Pagar vacaciones</button>
                                         </form>
                                     </td>

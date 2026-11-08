@@ -9,6 +9,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -45,6 +46,7 @@ final class PrepararPlanilla
         private DescuentosLey $descuentos,
         private PrestacionAnual $prestaciones,
         private AcumuladoRenta $acumulados,
+        private VacacionesAnuales $vacaciones,
     ) {}
 
     /**
@@ -89,14 +91,17 @@ final class PrepararPlanilla
         $periodo = $this->periodos->para($datos['tipo_periodo'], CarbonImmutable::parse($datos['fecha']));
 
         return DB::transaction(function () use ($usuario, $datos, $periodo, $individual) {
-            // Dos pagos de la misma persona a la vez (dos pestañas, otro mes) esperan uno al
-            // otro: el segundo ya ve el primero y no paga dos veces el mismo año.
-            $persona = $individual > 0 ? PlanillaEmpleado::whereKey($individual)->lockForUpdate()->firstOrFail() : null;
+            // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
+            // bloquear antes que nada; acá se repite sin costo para quien llama directo.
+            $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
 
             $existente = Planilla::where('tipo_periodo', $datos['tipo_periodo'])
                 ->where('periodo', $periodo['periodo'])
                 ->where('clase', $datos['clase'])
                 ->where('individual_de', $individual)
+                // Un pago de vacaciones anulado no ocupa el lugar: se puede pagar de nuevo.
+                // Al anularlo ya dejó libre la clave única ({@see AnularPlanilla}).
+                ->when($individual > 0, fn ($q) => $q->where('estado', '!=', 'anulada'))
                 ->first();
 
             if ($existente === null && $persona !== null) {
@@ -115,27 +120,53 @@ final class PrepararPlanilla
                 return $existente;
             }
 
-            $planilla = Planilla::create([
-                'clave' => (string) Str::uuid(),
-                'tipo_periodo' => $datos['tipo_periodo'],
-                'periodo' => $periodo['periodo'],
-                'clase' => $datos['clase'],
-                'individual_de' => $individual,
-                'desde' => $periodo['desde'],
-                'hasta' => $periodo['hasta'],
-                // Quien llama al servicio sin pasar por HTTP puede mandar '' (la regla
-                // `nullable` lo acepta); MySQL estricto no guarda '' en una fecha.
-                'fecha_pago' => blank($datos['fecha_pago'] ?? null) ? null : $datos['fecha_pago'],
-                'moneda' => $datos['moneda'],
-                'estado' => 'borrador',
-                'observaciones' => $datos['observaciones'] ?? null,
-                'registrado_por' => $usuario->id,
-            ]);
+            try {
+                $planilla = Planilla::create([
+                    'clave' => (string) Str::uuid(),
+                    'tipo_periodo' => $datos['tipo_periodo'],
+                    'periodo' => $periodo['periodo'],
+                    'clase' => $datos['clase'],
+                    'individual_de' => $individual,
+                    'desde' => $periodo['desde'],
+                    'hasta' => $periodo['hasta'],
+                    // Quien llama al servicio sin pasar por HTTP puede mandar '' (la regla
+                    // `nullable` lo acepta); MySQL estricto no guarda '' en una fecha.
+                    'fecha_pago' => blank($datos['fecha_pago'] ?? null) ? null : $datos['fecha_pago'],
+                    'moneda' => $datos['moneda'],
+                    'estado' => 'borrador',
+                    'observaciones' => $datos['observaciones'] ?? null,
+                    'registrado_por' => $usuario->id,
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                // Otra pantalla la generó en el mismo instante: el índice único la frenó.
+                throw ValidationException::withMessages(['periodo' => ($individual > 0 ? 'Ese pago de vacaciones' : 'Esa planilla')
+                    .' se acaba de generar desde otra pantalla. Buscalo en la lista de Planillas antes de intentarlo de nuevo.']);
+            }
 
             $this->precargarActivos($usuario, $planilla);
 
             return $planilla;
         });
+    }
+
+    /**
+     * Bloquea la ficha de la persona de un pago de vacaciones, y nada si no lo es.
+     *
+     * Dos pagos de la misma persona a la vez (dos pestañas, dos meses) se esperan: el
+     * segundo ve el primero y no paga dos veces el mismo año. En MySQL (REPEATABLE READ)
+     * la foto de lo que lee la transacción se toma en su primera lectura común, así que
+     * este bloqueo tiene que ser LO PRIMERO de la transacción de afuera: por eso
+     * {@see GenerarPlanilla} lo llama antes de abrir.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    public function bloquearPersona(array $datos): ?PlanillaEmpleado
+    {
+        if (($datos['clase'] ?? null) !== VacacionesAnuales::CLASE || ! ctype_digit((string) ($datos['empleado'] ?? ''))) {
+            return null;
+        }
+
+        return PlanillaEmpleado::whereKey((int) $datos['empleado'])->lockForUpdate()->first();
     }
 
     /** Que la persona de un pago de vacaciones de verdad las tenga por pagar en esa fecha. */
@@ -148,6 +179,15 @@ final class PrepararPlanilla
 
         if ($motivo !== null) {
             throw ValidationException::withMessages(['empleado' => $empleado->nombre.' no tiene vacaciones por pagar: '.$motivo.'.']);
+        }
+
+        // No se paga un año que todavía no se trabajó. El que se cumple este mes, sí.
+        $anio = $this->vacaciones->anioDeServicio($empleado, $pago);
+
+        if ($anio !== null && $anio['hasta'] > CarbonImmutable::now()->endOfMonth()) {
+            throw ValidationException::withMessages([
+                'fecha_pago' => 'Con esa fecha se pagaría el año que se cumple el '.$anio['hasta']->format('d/m/Y').', que todavía no se trabajó.',
+            ]);
         }
     }
 

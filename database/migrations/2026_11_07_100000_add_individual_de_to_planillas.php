@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Planilla\AnularPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -17,8 +18,11 @@ use Illuminate\Support\Facades\Schema;
  * foránea; quien la escribe es {@see PrepararPlanilla::abrir()}, que
  * valida que la persona exista.
  *
- * down() falla si ya hay dos pagos de vacaciones del mismo mes: hay que anular y borrar
- * uno antes, porque la clave vieja no los admite.
+ * Un pago de vacaciones anulado deja libre su lugar: al anularlo, su `periodo` técnico
+ * pasa a `2026-11-A{id}` ({@see AnularPlanilla}), y se le puede pagar de nuevo.
+ *
+ * down() falla si ya hay dos pagos de vacaciones vigentes del mismo mes: hay que borrar
+ * uno antes, porque la clave vieja no los admite. Si falla, la tabla queda con la nueva.
  */
 return new class extends Migration
 {
@@ -36,9 +40,15 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Primero la clave vieja y después se quita la nueva, cada una por su lado: si la
+        // vieja no entra (dos pagos del mismo mes), la tabla se queda con la nueva y no
+        // sin ninguna.
+        Schema::table('planillas', function (Blueprint $t) {
+            $t->unique(['tipo_periodo', 'periodo', 'clase']);
+        });
+
         Schema::table('planillas', function (Blueprint $t) {
             $t->dropUnique(['tipo_periodo', 'periodo', 'clase', 'individual_de']);
-            $t->unique(['tipo_periodo', 'periodo', 'clase']);
         });
 
         Schema::table('planillas', function (Blueprint $t) {

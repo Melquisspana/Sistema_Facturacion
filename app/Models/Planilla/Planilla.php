@@ -129,14 +129,24 @@ class Planilla extends Model
             return null;
         }
 
-        return app(VacacionesAnuales::class)->anioDeServicio($persona, $this->desde->toImmutable());
+        $vacaciones = app(VacacionesAnuales::class);
+        $linea = $this->detalles->firstWhere('planilla_empleado_id', $persona->id);
+
+        // El que quedó escrito al confirmar; sin confirmar, se calcula.
+        return $linea !== null
+            ? $vacaciones->anioDeLinea($linea, $this->desde->toImmutable())
+            : $vacaciones->anioDeServicio($persona, $this->desde->toImmutable());
     }
 
     /** Cómo se lee el período, en palabras. En vacaciones, el año de servicio. */
     public function periodoEnPalabras(): string
     {
-        // Una de antes con varias personas no tiene un solo año de servicio: va con sus fechas.
-        if ($this->personaDeVacaciones() !== null) {
+        if ($this->esVacaciones()) {
+            // Las de antes con varias personas: cada una tenía su año, que va en su recibo.
+            if ($this->personaDeVacaciones() === null && $this->detalles->count() > 1) {
+                return 'Vacaciones de varias personas, cada una con su año de servicio';
+            }
+
             $anio = $this->anioDeServicio();
 
             return $anio === null ? 'Año de servicio sin fecha de ingreso'

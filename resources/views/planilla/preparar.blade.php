@@ -28,6 +28,7 @@
     // Vacaciones: un pago anual de una persona, no una quincena.
     $vacaciones = $planilla->esVacaciones();
     $deEsto = $vacaciones ? 'de este pago' : 'de esta quincena';
+    $pagoDe = $vacaciones ? 'Pago de vacaciones' : 'Pago del período';
     $pregunta = $vacaciones
         ? '¿Generar el '.lcfirst($planilla->nombreDeVacaciones()).'? '
         : '¿Generar la planilla '.$planilla->periodo.'? ';
@@ -251,7 +252,7 @@
                      dos maquetaciones, y enviaría cada dato dos veces—. --}}
                 <div class="hidden rounded-t-lg border border-b-0 border-gray-200 bg-gray-50 px-4 py-2 lg:grid lg:grid-cols-12 lg:gap-3">
                     <p class="col-span-3 text-xs font-medium uppercase tracking-wide text-gray-500">Persona</p>
-                    <p class="col-span-2 text-xs font-medium uppercase tracking-wide text-gray-500">Pago del período</p>
+                    <p class="col-span-2 text-xs font-medium uppercase tracking-wide text-gray-500">{{ $pagoDe }}</p>
                     <p class="col-span-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Extras</p>
                     <p class="col-span-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Descuentos</p>
                     <p class="col-span-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total a pagar</p>
@@ -286,7 +287,7 @@
 
                             {{-- ── Pago del período ── --}}
                             <div class="mt-3 lg:col-span-2 lg:mt-0">
-                                <label :for="'salario-'+i" class="block text-sm font-medium text-gray-700 lg:sr-only">Pago del período</label>
+                                <label :for="'salario-'+i" class="block text-sm font-medium text-gray-700 lg:sr-only">{{ $pagoDe }}</label>
                                 <input :id="'salario-'+i" type="text" inputmode="decimal"
                                        :name="'lineas['+i+'][salario]'" x-model="l.salario"
                                        @blur="l.salario = fmt(l.salario)"

@@ -149,10 +149,10 @@ class PlanillaFlujoController extends Controller
             $propio = $detalle->periodo_desde !== null || $detalle->periodo_hasta !== null;
             $desde = $detalle->periodo_desde ?? $planilla->desde;
             $hasta = $detalle->periodo_hasta ?? $planilla->hasta;
-            // Vacaciones: el año de servicio, no el mes de la clave técnica.
-            $anio = $esVacaciones && $detalle->empleado
-                ? $vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable())
-                : null;
+            // Vacaciones: el año de servicio que quedó escrito al confirmar, no el mes de la
+            // clave técnica. En vacaciones `periodo_desde` es ese año, no un período particular.
+            $anio = $esVacaciones ? $vacaciones->anioDeLinea($detalle, $planilla->desde->toImmutable()) : null;
+            $propio = $propio && ! $esVacaciones;
 
             if (filled($p['entrego'])) {
                 $entregaron[$p['entrego']] = true;
@@ -203,6 +203,8 @@ class PlanillaFlujoController extends Controller
                         ? $p['fecha']->format('d/m/Y') : null,
                 'entrego' => $p['entrego'],
                 'estado' => $e + ['etiqueta' => EstadoPlanilla::ETIQUETAS[$e['estado']]],
+                // El formato del recibo sale de la clase del pago, nunca de las fechas.
+                'es_vacaciones' => $esVacaciones,
                 // Solo en vacaciones: el año de servicio que se paga, para el recibo que se firma.
                 'vacaciones' => $anio,
             ];

@@ -328,7 +328,7 @@
                 </div>
 
                 <div class="{{ $tarjeta }}">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimas quincenas</h3>
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimos pagos</h3>
                     @if ($quincenas->isEmpty())
                         <p class="mt-3 text-sm text-gray-500 dark:text-paper-300">Todavía no está en ninguna planilla.</p>
                     @else
@@ -337,7 +337,7 @@
                                 <caption class="sr-only">Últimas planillas de la persona</caption>
                                 <thead>
                                     <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-300">
-                                        <th scope="col" class="py-2 pr-4">Período</th>
+                                        <th scope="col" class="py-2 pr-4">Pago</th>
                                         <th scope="col" class="py-2 pr-4">Tipo</th>
                                         <th scope="col" class="py-2 pr-4">Estado</th>
                                         @if ($verImportes)

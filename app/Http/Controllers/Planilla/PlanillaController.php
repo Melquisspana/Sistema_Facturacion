@@ -86,6 +86,8 @@ class PlanillaController extends Controller
         return view('planilla.vacaciones', [
             'filas' => $vacaciones->porPagar($hoy),
             'hoy' => $hoy->toDateString(),
+            // No se paga un año que todavía no se trabajó; el que se cumple este mes, sí.
+            'maxima' => $hoy->endOfMonth()->toDateString(),
             'moneda' => config('gastos.monedas')[0],
         ]);
     }

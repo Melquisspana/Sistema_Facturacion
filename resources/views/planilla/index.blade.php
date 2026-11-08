@@ -61,7 +61,8 @@
                             <caption class="sr-only">Planillas</caption>
                             <thead>
                                 <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                                    <th scope="col" class="px-4 py-2 font-medium">Período</th>
+                                    {{-- Neutro: hay planillas de un período y pagos de vacaciones de una persona. --}}
+                                    <th scope="col" class="px-4 py-2 font-medium">Planilla o pago</th>
                                     <th scope="col" class="px-4 py-2 font-medium">Tipo</th>
                                     <th scope="col" class="px-4 py-2 text-right font-medium">Personas</th>
                                     @if ($verImportes)

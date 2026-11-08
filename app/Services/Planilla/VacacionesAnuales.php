@@ -2,6 +2,7 @@
 
 namespace App\Services\Planilla;
 
+use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Services\Gastos\Dinero;
 use Carbon\CarbonImmutable;
@@ -144,6 +145,24 @@ final class VacacionesAnuales
             'desde' => $ingreso->addYearsNoOverflow($anios - 1),
             'hasta' => $ingreso->addYearsNoOverflow($anios),
         ];
+    }
+
+    /**
+     * El año de servicio de la línea de un pago: el que quedó escrito al confirmarlo, para
+     * que el recibo firmado no cambie. Solo si está vacía (un pago sin confirmar) se calcula.
+     *
+     * @return array{desde: CarbonImmutable, hasta: CarbonImmutable}|null
+     */
+    public function anioDeLinea(PlanillaDetalle $detalle, CarbonImmutable $mes): ?array
+    {
+        if ($detalle->periodo_desde !== null && $detalle->periodo_hasta !== null) {
+            return [
+                'desde' => CarbonImmutable::parse($detalle->periodo_desde->toDateString()),
+                'hasta' => CarbonImmutable::parse($detalle->periodo_hasta->toDateString()),
+            ];
+        }
+
+        return $detalle->empleado === null ? null : $this->anioDeServicio($detalle->empleado, $mes);
     }
 
     /** ISSS, AFP y renta que le tocarían, igual que los pone el pago (como una quincena). */

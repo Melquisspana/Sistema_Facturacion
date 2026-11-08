@@ -62,6 +62,7 @@ final class ConfirmarPlanilla
     public function __construct(
         private PrepararPlanilla $preparar,
         private TotalesPlanilla $totales,
+        private VacacionesAnuales $vacaciones,
     ) {}
 
     public function confirmar(User $usuario, Planilla $planilla): Planilla
@@ -92,6 +93,7 @@ final class ConfirmarPlanilla
                 }
 
                 $this->comprobarAnticipos($planilla);
+                $this->fijarAnioDeServicio($planilla);
 
                 $creadas = 0;
                 foreach ($planilla->detalles as $detalle) {
@@ -190,6 +192,26 @@ final class ConfirmarPlanilla
         }
     }
 
+    /**
+     * Vacaciones: el año de servicio que se paga queda escrito en la línea al confirmar,
+     * en `periodo_desde` y `periodo_hasta`. Así el recibo firmado no cambia si después se
+     * corrige la fecha de ingreso de la ficha. Lo que ya tenga fechas no se toca.
+     */
+    private function fijarAnioDeServicio(Planilla $planilla): void
+    {
+        if (! $planilla->esVacaciones()) {
+            return;
+        }
+
+        foreach ($planilla->detalles->whereNull('periodo_desde') as $detalle) {
+            $anio = $detalle->empleado === null ? null : $this->vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable());
+
+            if ($anio !== null) {
+                $detalle->update(['periodo_desde' => $anio['desde']->toDateString(), 'periodo_hasta' => $anio['hasta']->toDateString()]);
+            }
+        }
+    }
+
     /** La obligación con la persona por lo que se le paga. */
     private function obligacionDelEmpleado(User $usuario, Planilla $planilla, PlanillaDetalle $detalle): bool
     {
@@ -216,8 +238,9 @@ final class ConfirmarPlanilla
             'naturaleza' => 'operativo',
             'moneda' => $planilla->moneda,
             'importe' => Dinero::decimal($aPagar),
-            'periodo_desde' => $planilla->desde,
-            'periodo_hasta' => $planilla->hasta,
+            // Vacaciones: el mes de `desde` es solo su clave técnica, no un período pagado.
+            'periodo_desde' => $planilla->esVacaciones() ? null : $planilla->desde,
+            'periodo_hasta' => $planilla->esVacaciones() ? null : $planilla->hasta,
             'documentacion' => 'pendiente',
             'responsable_id' => $planilla->registrado_por,
             'registrado_por' => $usuario->id,
@@ -282,8 +305,8 @@ final class ConfirmarPlanilla
                 'naturaleza' => 'operativo',
                 'moneda' => $planilla->moneda,
                 'importe' => Dinero::decimal($importe),
-                'periodo_desde' => $planilla->desde,
-                'periodo_hasta' => $planilla->hasta,
+                'periodo_desde' => $planilla->esVacaciones() ? null : $planilla->desde,
+                'periodo_hasta' => $planilla->esVacaciones() ? null : $planilla->hasta,
                 'documentacion' => 'pendiente',
                 'responsable_id' => $planilla->registrado_por,
                 'registrado_por' => $usuario->id,

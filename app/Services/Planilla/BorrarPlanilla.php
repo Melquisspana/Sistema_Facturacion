@@ -12,7 +12,8 @@ use Illuminate\Validation\ValidationException;
  * Borrar una planilla con todo lo que creó, como si nunca se hubiera generado.
  *
  * SOLO LA ÚLTIMA. La que va arriba en la lista: la de período más reciente y, con el
- * mismo período, la que se hizo después. Borrar una del medio dejaría un hueco en la
+ * mismo período, la que se hizo después. Para un pago de vacaciones, la última de su
+ * persona ({@see posterior()}). Borrar una del medio dejaría un hueco en la
  * historia y descontaría de nuevo anticipos que la siguiente ya dio por recuperados.
  * Un borrador se borra siempre: no creó nada.
  *
@@ -26,14 +27,30 @@ use Illuminate\Validation\ValidationException;
  */
 final class BorrarPlanilla
 {
-    /** La planilla que va después de esta, si hay alguna. */
+    /**
+     * La planilla que va después de esta, si hay alguna.
+     *
+     * Un pago de vacaciones es de una persona: solo lo frena, o es frenado por, una
+     * planilla posterior en la que esté alguien de los suyos. Entre quincenas y mensuales
+     * todo sigue igual: cualquiera posterior cuenta.
+     */
     public function posterior(Planilla $planilla): ?Planilla
     {
         $desde = $planilla->desde->toDateString();
+        $personas = DB::table('planilla_detalles')->where('planilla_id', $planilla->id)->pluck('planilla_empleado_id');
 
         return Planilla::whereKeyNot($planilla->id)
             ->where(fn ($q) => $q->whereDate('desde', '>', $desde)
                 ->orWhere(fn ($q) => $q->whereDate('desde', $desde)->where('id', '>', $planilla->id)))
+            ->where(function ($q) use ($planilla, $personas) {
+                $q->whereExists(fn ($s) => $s->from('planilla_detalles as d')
+                    ->whereColumn('d.planilla_id', 'planillas.id')
+                    ->whereIn('d.planilla_empleado_id', $personas));
+
+                if (! $planilla->esVacaciones()) {
+                    $q->orWhere('clase', '!=', VacacionesAnuales::CLASE);
+                }
+            })
             ->orderBy('desde')
             ->orderBy('id')
             ->first();
