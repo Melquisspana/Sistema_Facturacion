@@ -2,6 +2,7 @@
 
 namespace App\Services\Gastos\Avisos;
 
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Mail\Gastos\ResumenGastosCorreo;
 use App\Models\Gastos\Resumen;
 use App\Models\User;
@@ -208,6 +209,8 @@ final class EnviarResumenes
         }
 
         try {
+            // El servidor de correo guardado en Configuración, no el del arranque del proceso.
+            app(ConfiguracionCorreoRuntime::class)->aplicar();
             Mail::to($usuario->email)->send(new ResumenGastosCorreo($usuario->name, $contenido));
 
             $resumen->update(['estado' => 'enviado', 'intentos' => $resumen->intentos + 1, 'enviado_at' => now()]);

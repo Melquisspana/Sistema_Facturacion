@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Ajustes\Ajustes;
 use App\Models\User;
 use Illuminate\Auth\Events\Verified;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
@@ -54,5 +57,20 @@ class EmailVerificationTest extends TestCase
         $this->actingAs($user)->get($verificationUrl);
 
         $this->assertFalse($user->fresh()->hasVerifiedEmail());
+    }
+
+    /** El reenvío del enlace sale por el servidor de correo guardado en Configuración. */
+    public function test_el_reenvio_sale_por_el_servidor_de_correo_guardado_en_pantalla(): void
+    {
+        Notification::fake();
+        config(['mail.mailers.smtp.host' => 'smtp.delenv.test']);
+        app(Ajustes::class)->guardarComoSistema('mail.smtp.host', 'smtp.pantalla.test');
+        $user = User::factory()->unverified()->create();
+
+        $this->actingAs($user)->post(route('verification.send'))
+            ->assertSessionHas('status', 'verification-link-sent');
+
+        Notification::assertSentTo($user, VerifyEmail::class);
+        $this->assertSame('smtp.pantalla.test', config('mail.mailers.smtp.host'));
     }
 }

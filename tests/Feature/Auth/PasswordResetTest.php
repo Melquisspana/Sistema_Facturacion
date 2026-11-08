@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Ajustes\Ajustes;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -69,5 +70,19 @@ class PasswordResetTest extends TestCase
 
             return true;
         });
+    }
+
+    /** El enlace sale por el servidor de correo guardado en Configuración, no por el del .env. */
+    public function test_el_enlace_sale_por_el_servidor_de_correo_guardado_en_pantalla(): void
+    {
+        Notification::fake();
+        config(['mail.mailers.smtp.host' => 'smtp.delenv.test']);
+        app(Ajustes::class)->guardarComoSistema('mail.smtp.host', 'smtp.pantalla.test');
+        $user = User::factory()->create();
+
+        $this->post('/forgot-password', ['email' => $user->email]);
+
+        Notification::assertSentTo($user, ResetPassword::class);
+        $this->assertSame('smtp.pantalla.test', config('mail.mailers.smtp.host'));
     }
 }
