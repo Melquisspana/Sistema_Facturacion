@@ -399,23 +399,108 @@ class PorEntregarTest extends TestCase
         $this->assertNull($fila['ultima'], 'La cancelada no es la última visita.');
     }
 
-    public function test_el_no_se_pudo_de_un_dia_cerrado_no_se_reabre(): void
+    public function test_el_no_se_pudo_de_un_dia_cerrado_del_viaje_se_reintenta_en_el_viaje(): void
     {
         $viaje = $this->salidaFormal('San Marcos', $this->persona, fecha: '2026-11-05');
         $dte = $this->ccf('San Marcos', '2026-11-05');
         $anterior = $viaje->entregas()->create(['dte_id' => $dte->id, 'cliente_sucursal_id' => $dte->cliente_sucursal_id,
             'resultado' => ResultadoEntrega::NoEntregado, 'motivo_no_entrega' => 'sala_cerrada', 'fecha_resultado' => '2026-11-05 16:00:00', 'registrado_por' => $this->vendedor->id]);
-        $viaje->cierres()->create(['fecha' => '2026-11-05', 'cerrado_por' => User::factory()->create()->id, 'cerrado_en' => '2026-11-05 18:00:00']);
+        $cierre = $viaje->cierres()->create(['fecha' => '2026-11-05', 'cerrado_por' => User::factory()->create()->id, 'cerrado_en' => '2026-11-05 18:00:00']);
+        $antesDelCierre = $cierre->refresh()->only(['efectivo_cobrado', 'cheques_cobrado', 'transferencias_cobrado', 'gastos_total', 'a_entregar']);
 
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
 
+        // En el viaje, la misma fila con fecha de hoy; sin automática y con el intento anterior en la bitácora.
+        $this->assertSame(1, SalidaRuta::count(), 'No se arma una automática: el cobro queda en el viaje.');
         $anterior->refresh();
-        $this->assertSame(ResultadoEntrega::NoEntregado, $anterior->resultado, 'El día cerrado no se toca.');
-        $this->assertSame('2026-11-05 16:00:00', $anterior->fecha_resultado->toDateTimeString());
-        $auto = SalidaRuta::whereKeyNot($viaje->id)->sole();
-        $this->assertTrue($auto->esAutomatica());
-        $this->assertSame(ResultadoEntrega::Entregado, $auto->entregas()->sole()->resultado);
-        $this->assertFalse(Activity::where('description', 'reintento desde Por entregar')->exists());
+        $this->assertSame(ResultadoEntrega::Entregado, $anterior->resultado);
+        $this->assertSame('2026-11-06', $anterior->fecha_resultado->toDateString());
+        $intento = Activity::where('description', 'reintento desde Por entregar')->sole();
+        $this->assertSame('2026-11-05 16:00:00', $intento->properties['antes']['fecha_resultado']);
+        $this->assertSame('sala_cerrada', $intento->properties['antes']['motivo_no_entrega']);
+        // El cierre del día anterior no cambia.
+        $this->assertSame($antesDelCierre, $cierre->refresh()->only(array_keys($antesDelCierre)));
+        $this->assertTrue($viaje->diaCerrado('2026-11-05'));
+    }
+
+    public function test_la_oficina_ve_las_salidas_por_liquidar(): void
+    {
+        $oficina = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $porLiquidar = $this->automatica('Antiguo', '2026-11-04', $this->persona);
+        $porLiquidar->finalizar('2026-11-04');
+        $liquidada = $this->automatica('San Marcos', '2026-11-04', $this->persona);
+        $liquidada->finalizar('2026-11-04');
+        $liquidada->update(['liquidada_por' => $oficina->id, 'liquidada_en' => now()]);
+        $formal = $this->salidaFormal('Santa Tecla', $this->persona, fecha: '2026-11-03');
+        $formal->finalizar('2026-11-04');
+
+        $this->assertSame([$porLiquidar->id], SalidaRuta::porLiquidar()->pluck('id')->all());
+        $this->assertTrue($porLiquidar->refresh()->esPorLiquidar());
+        $this->assertFalse($liquidada->refresh()->esPorLiquidar(), 'La liquidada no cuenta.');
+        $this->assertFalse($formal->refresh()->esPorLiquidar());
+
+        // Insignia en el listado y filtro.
+        $todas = $this->actingAs($oficina)->get(route('rutas.salidas.index'))->assertOk()->getContent();
+        $this->assertSame(1, substr_count($todas, '>Por liquidar</span>'));
+        $this->actingAs($oficina)->get(route('rutas.salidas.index', ['por_liquidar' => 1]))->assertOk()
+            ->assertSee('href="'.route('rutas.salidas.show', $porLiquidar).'"', false)
+            ->assertDontSee('href="'.route('rutas.salidas.show', $liquidada).'"', false)
+            ->assertDontSee('href="'.route('rutas.salidas.show', $formal).'"', false);
+
+        // Aviso en el inicio de Rutas, con enlace al filtro.
+        $this->actingAs($oficina)->get(route('rutas.dashboard'))->assertOk()
+            ->assertSee('1 salida por liquidar')
+            ->assertSee('href="'.route('rutas.salidas.index', ['por_liquidar' => 1]).'"', false);
+        $porLiquidar->update(['liquidada_por' => $oficina->id, 'liquidada_en' => now()]);
+        $this->actingAs($oficina)->get(route('rutas.dashboard'))->assertOk()->assertDontSee('por liquidar');
+    }
+
+    public function test_por_entregar_avisa_que_la_oficina_recibe_el_efectivo_de_hoy(): void
+    {
+        $aviso = 'Al terminar, la oficina recibe el efectivo de hoy.';
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
+
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($aviso);
+    }
+
+    public function test_deshacer_la_unica_entrega_desde_mi_salida_vuelve_a_por_entregar(): void
+    {
+        $dte = $this->ccf('Antiguo');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $auto = SalidaRuta::sole();
+
+        $this->actingAs($this->vendedor)->from(route('rutas.mi-salida.show', $auto))->followingRedirects()
+            ->patch(route('rutas.mi-salida.deshacer', [$auto, $auto->entregas()->sole()]))
+            ->assertOk()->assertSee('Se quitó el CCF de la salida; vuelve a Por entregar.')->assertSee($dte->numero_control);
+        $this->assertSame(EstadoSalidaRuta::Cancelada, $auto->refresh()->estado);
+    }
+
+    public function test_la_automatica_finalizada_que_queda_vacia_se_cancela(): void
+    {
+        $this->travelTo('2026-11-05 10:00:00');
+        $dte = $this->ccf('Antiguo', '2026-11-05');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $auto = SalidaRuta::sole();
+        $this->travelTo('2026-11-06 05:00:00');
+        $this->artisan('rutas:finalizar-automaticas')->assertSuccessful();
+        $this->assertTrue($auto->refresh()->esPorLiquidar());
+
+        // La oficina deshace su única entrega: no queda nada que liquidar.
+        $oficina = User::factory()->create(['activo' => true])->assignRole('administrador');
+        $this->actingAs($oficina)->from(route('rutas.salidas.show', $auto))
+            ->patch(route('rutas.salidas.entregas.deshacer', [$auto, $auto->entregas()->sole()]))->assertSessionHasNoErrors();
+
+        $auto->refresh();
+        $this->assertSame(EstadoSalidaRuta::Cancelada, $auto->estado);
+        $this->assertNull($auto->fecha_fin_real);
+        $this->assertSame(0, SalidaRuta::porLiquidar()->count());
+        $bitacora = Activity::where('subject_type', SalidaRuta::class)->where('subject_id', $auto->id)->where('description', 'se canceló sola: quedó vacía')->sole();
+        $this->assertSame(EstadoSalidaRuta::Finalizada->value, $bitacora->properties['estado_anterior']);
+        $fila = app(RitmoRutas::class)->porRuta(CarbonImmutable::parse('2026-11-06'))->firstWhere('ruta.id', $this->rutas['Antiguo']->id);
+        $this->assertNull($fila['ultima'], 'La cancelada no cuenta como visita.');
     }
 
     public function test_deshacer_en_la_automatica_no_lo_frena_otra_salida_abierta(): void

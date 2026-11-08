@@ -156,21 +156,21 @@ class PorEntregar
     private function enLaDeHoy(Dte $dte, int $rutaId, PersonalRuta $persona, User $usuario): SalidaRutaEntrega
     {
         $hoy = HoraNegocio::fechaHoy();
-        $candidatas = SalidaRuta::where('ruta_id', $rutaId)->enEstado(EstadoSalidaRuta::EnCurso)
+        // Un «No se pudo entregar» ya anotado en una salida en curso donde se puede marcar hoy
+        // se reintenta en ella (aunque sea de otra ruta, o de un día ya cerrado del viaje: no
+        // movió dinero y el cierre de ese día no cambia). Así el vendedor no queda en dos
+        // salidas con el cobro en otra liquidación.
+        $conIntento = SalidaRutaEntrega::where('dte_id', $dte->id)->where('resultado', ResultadoEntrega::NoEntregado->value)
+            ->whereHas('salida', fn ($q) => $q->enEstado(EstadoSalidaRuta::EnCurso))->pluck('salida_ruta_id')->map(fn ($id) => (int) $id)->all();
+        $candidatas = SalidaRuta::where(fn ($q) => $q->where('ruta_id', $rutaId)->orWhereIn('id', $conIntento))->enEstado(EstadoSalidaRuta::EnCurso)
             ->whereDate('fecha_inicio', '<=', $hoy)->orderByDesc('fecha_inicio')->orderBy('id')->lockForUpdate()->get()
             ->filter(fn (SalidaRuta $s) => $s->proposito->entrega() && ! $s->diaCerrado($hoy)
                 && ($s->esAutomatica() ? $s->fecha_inicio->toDateString() === $hoy : self::participa($s, $persona)))
-            ->sortBy(fn (SalidaRuta $s) => $s->esAutomatica() ? 1 : 0);
+            ->sortBy(fn (SalidaRuta $s) => [in_array($s->id, $conIntento, true) ? 0 : 1, $s->esAutomatica() ? 1 : 0]);
+        // La automática, solo si no hay formal posible.
         $salida = $candidatas->first() ?? $this->armar($rutaId, $hoy, $usuario, $dte);
 
         $entrega = $salida->entregas()->where('dte_id', $dte->id)->lockForUpdate()->first();
-        // El «No se pudo entregar» de un día ya cerrado de esa salida no se toca: el intento de
-        // hoy va a la automática de hoy (el CCF no queda pendiente en dos salidas: se registra ya).
-        if ($entrega?->resultado === ResultadoEntrega::NoEntregado && $entrega->fecha_resultado
-            && $salida->diaCerrado($entrega->fecha_resultado->toDateString())) {
-            $salida = $candidatas->first(fn (SalidaRuta $s) => $s->esAutomatica()) ?? $this->armar($rutaId, $hoy, $usuario, $dte);
-            $entrega = $salida->entregas()->where('dte_id', $dte->id)->lockForUpdate()->first();
-        }
         if ($entrega?->resultado === ResultadoEntrega::NoEntregado) {
             $this->reintentar($entrega, $usuario);
         }
@@ -181,8 +181,9 @@ class PorEntregar
 
     /**
      * Un «No se pudo entregar» ya anotado en esta salida (hoy, por él u otro, o un día
-     * anterior del viaje que siga abierto): el toque nuevo es un nuevo intento. La fila vuelve a pendiente y
-     * se registra lo nuevo, en la misma transacción: si el registro no pasa, queda como estaba.
+     * anterior del viaje, aunque ese día esté cerrado): el toque nuevo es un nuevo intento. La
+     * fila vuelve a pendiente y se registra lo nuevo con fecha de hoy, en la misma transacción:
+     * si el registro no pasa, queda como estaba. La bitácora guarda el intento anterior.
      */
     private function reintentar(SalidaRutaEntrega $entrega, User $usuario): void
     {

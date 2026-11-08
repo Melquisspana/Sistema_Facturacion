@@ -481,18 +481,20 @@ class EntregasCcf
     }
 
     /**
-     * La automática en curso que quedó sin entregas, gastos ni cierres no fue una salida: se
-     * cancela (no cuenta como visita en el tablero). Con la salida ya bloqueada.
+     * La automática en curso, o finalizada sin liquidar, que quedó sin entregas, gastos ni
+     * cierres no fue una salida: se cancela (no cuenta como visita en el tablero ni queda por
+     * liquidar). Con la salida ya bloqueada.
      */
     public function cancelarAutomaticaVacia(SalidaRuta $salida): bool
     {
-        if (! $salida->esAutomatica() || $salida->estado !== EstadoSalidaRuta::EnCurso
+        $anterior = $salida->estado;
+        if (! $salida->esAutomatica() || ! ($anterior === EstadoSalidaRuta::EnCurso || $salida->esPorLiquidar())
             || $salida->entregas()->exists() || $salida->gastos()->exists() || $salida->cierres()->exists()) {
             return false;
         }
-        $salida->cancelar();
+        $anterior === EstadoSalidaRuta::EnCurso ? $salida->cancelar() : $salida->anularAutomaticaFinalizada();
         activity('salida_ruta')->performedOn($salida)
-            ->withProperties(['estado_anterior' => EstadoSalidaRuta::EnCurso->value, 'estado_nuevo' => EstadoSalidaRuta::Cancelada->value, 'desde' => 'por_entregar'])
+            ->withProperties(['estado_anterior' => $anterior->value, 'estado_nuevo' => EstadoSalidaRuta::Cancelada->value, 'desde' => 'por_entregar'])
             ->log('se canceló sola: quedó vacía');
 
         return true;

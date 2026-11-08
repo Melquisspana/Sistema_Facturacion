@@ -16,6 +16,9 @@
 
     <h1 class="text-3xl font-bold">Por entregar</h1>
     <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $total }} CCF de los últimos {{ \App\Services\Rutas\EntregasCcf::DIAS_POR_ENTREGAR }} días. Los más viejos van primero.</p>
+    @if ($cobroHoy)
+        <p class="mt-1 text-xs text-gray-500 dark:text-paper-300">Al terminar, la oficina recibe el efectivo de hoy.</p>
+    @endif
 
     @if (! $persona && auth()->user()->can('rutas.entregas.registrar'))
         <p class="mt-4 rounded-2xl bg-white p-5 dark:bg-ink-800">Tu usuario no está enlazado a una persona de Rutas. Pedile a la oficina que lo enlace.</p>

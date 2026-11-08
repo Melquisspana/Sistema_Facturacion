@@ -107,8 +107,7 @@ class LiquidacionSalida
      */
     public static function seLiquida(SalidaRuta $salida): bool
     {
-        return ! $salida->estaLiquidada() && ($salida->estado === EstadoSalidaRuta::EnCurso
-            || ($salida->estado === EstadoSalidaRuta::Finalizada && $salida->esAutomatica()));
+        return ($salida->estado === EstadoSalidaRuta::EnCurso && ! $salida->estaLiquidada()) || $salida->esPorLiquidar();
     }
 
     /**

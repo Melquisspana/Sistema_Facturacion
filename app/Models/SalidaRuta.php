@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\RolEnSalida;
+use App\Services\Rutas\LiquidacionSalida;
 use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -178,6 +179,30 @@ class SalidaRuta extends Model
         return $this->liquidada_en !== null;
     }
 
+    /**
+     * La automática que se finalizó sola y espera que la oficina haga «Terminar ruta». Misma
+     * condición que {@see scopePorLiquidar()} y que {@see LiquidacionSalida::seLiquida()}.
+     */
+    public function esPorLiquidar(): bool
+    {
+        return $this->estado === EstadoSalidaRuta::Finalizada && $this->esAutomatica() && ! $this->estaLiquidada();
+    }
+
+    /**
+     * La automática finalizada que quedó sin nada (la oficina deshizo su única entrega) no fue
+     * una salida. Finalizada → cancelada no es una transición de la máquina de estados
+     * ({@see EstadoSalidaRuta::siguientesEstados()}): se hace acá, explícita y solo para este
+     * caso, sin fecha de regreso como cualquier cancelada. Devuelve false si no corresponde.
+     */
+    public function anularAutomaticaFinalizada(): bool
+    {
+        if (! $this->esPorLiquidar()) {
+            return false;
+        }
+
+        return $this->update(['estado' => EstadoSalidaRuta::Cancelada, 'fecha_fin_real' => null]);
+    }
+
     public function cierreDelDia(?string $fecha = null): ?SalidaRutaCierre
     {
         return $this->cierres()->whereDate('fecha', $fecha ?? HoraNegocio::fechaHoy())->first();
@@ -258,6 +283,13 @@ class SalidaRuta extends Model
     public function scopeEnEstado(Builder $query, EstadoSalidaRuta $estado): Builder
     {
         return $query->where('estado', $estado->value);
+    }
+
+    /** Automáticas finalizadas sin liquidar: la oficina tiene que hacer «Terminar ruta». */
+    public function scopePorLiquidar(Builder $query): Builder
+    {
+        return $query->where('estado', EstadoSalidaRuta::Finalizada->value)
+            ->where('observaciones', self::OBSERVACION_AUTOMATICA)->whereNull('liquidada_en');
     }
 
     /** Salidas todavía abiertas: planificadas o en curso. */

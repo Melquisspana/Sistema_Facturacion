@@ -9,6 +9,7 @@ use App\Enums\PermisoSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\PersonalRuta;
+use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaParticipante;
 use App\Services\Dte\DtePdfService;
@@ -92,6 +93,11 @@ class PorEntregarController extends Controller
             'total' => $dtes->count(),
             'enCamino' => $enCamino,
             'trabados' => $trabados,
+            // Su automática de hoy ya cobró: el efectivo se rinde cuando la oficina la termina.
+            'cobroHoy' => $puedeMarcar && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->where('observaciones', SalidaRuta::OBSERVACION_AUTOMATICA)
+                ->whereDate('fecha_inicio', HoraNegocio::fechaHoy())
+                ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id))
+                ->whereHas('entregas', fn ($q) => $q->entregadas()->whereNotNull('forma_cobro'))->exists(),
             'marcados' => $marcados,
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,
