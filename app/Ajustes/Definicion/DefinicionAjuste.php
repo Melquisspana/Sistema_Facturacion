@@ -24,6 +24,7 @@ class DefinicionAjuste
      * @param  string|null  $claveConfig  Clave de config() usada como fallback. NULL = sin fallback.
      * @param  string|null  $claveLegacy  Clave en la tabla `configuraciones` (transición).
      * @param  array<int, string>  $reglas  Reglas Laravel adicionales a las del tipo.
+     * @param  bool  $datoPersonal  Dato de una persona (DUI, nacimiento, domicilio…): su valor no queda en la auditoría.
      */
     private function __construct(
         public readonly string $clave,
@@ -41,6 +42,7 @@ class DefinicionAjuste
         public readonly array $reglas,
         public readonly string $etiqueta,
         public readonly string $descripcion,
+        public readonly bool $datoPersonal,
     ) {}
 
     /**
@@ -63,6 +65,7 @@ class DefinicionAjuste
         mixed $porDefecto = null,
         array $opciones = [],
         array $reglas = [],
+        bool $datoPersonal = false,
     ): self {
         // Invariantes que NO deben poder llegar a producción como bug silencioso.
         if ($tipo === TipoAjuste::Enumerado && $opciones === []) {
@@ -104,6 +107,7 @@ class DefinicionAjuste
             reglas: array_values($reglas),
             etiqueta: $etiqueta,
             descripcion: $descripcion,
+            datoPersonal: $datoPersonal,
         );
     }
 
@@ -119,9 +123,19 @@ class DefinicionAjuste
         return ! $this->tipo->esSecreto() && $this->sensibilidad !== Sensibilidad::SecretoCritico;
     }
 
+    /**
+     * ¿Es un dato personal? La pantalla de configuración lo muestra a quien la
+     * administra, pero la auditoría la lee más gente (Contabilidad, una cuenta
+     * externa): ahí queda solo que cambió.
+     */
+    public function esDatoPersonal(): bool
+    {
+        return $this->datoPersonal;
+    }
+
     /** ¿Su valor puede quedar escrito en la auditoría? */
     public function valorAuditable(): bool
     {
-        return $this->valorMostrable() && $this->sensibilidad->valorAuditable();
+        return $this->valorMostrable() && $this->sensibilidad->valorAuditable() && ! $this->datoPersonal;
     }
 }

@@ -20,6 +20,9 @@ use Spatie\Activitylog\ActivityLogger;
  *
  *   Usuario reemplazó el secreto «mail.smtp.password»
  *
+ * Un dato personal (DUI, nacimiento, domicilio…) se registra igual que un secreto, con
+ * la marca `dato_personal`: quién lo cambió y cuándo, nunca el valor.
+ *
  * Sin valor, sin valor anterior, sin longitud y SIN HASH. Un hash parece inofensivo
  * y no lo es: convierte el registro de auditoría —que leen más personas que la
  * configuración misma— en un objetivo contra el que probar contraseñas offline.
@@ -46,10 +49,7 @@ class AuditoriaAjustes
 
         // Doble candado: el llamador ya distingue secretos, pero si algún día se
         // equivoca, acá no pasa el valor igualmente.
-        if ($definicion->valorAuditable()) {
-            $propiedades['valor_antes'] = $this->presentable($valorAntes);
-            $propiedades['valor_despues'] = $this->presentable($valorDespues);
-        }
+        $propiedades += $this->valores($definicion, $valorAntes, $valorDespues);
 
         $this->escribir(
             "cambió la configuración «{$definicion->clave}»",
@@ -82,11 +82,7 @@ class AuditoriaAjustes
         mixed $valorDespues = null,
     ): void {
         $propiedades = $this->comunes($definicion, 'override_quitado', $fuenteAntes, $fuenteDespues);
-
-        if ($definicion->valorAuditable()) {
-            $propiedades['valor_antes'] = $this->presentable($valorAntes);
-            $propiedades['valor_despues'] = $this->presentable($valorDespues);
-        }
+        $propiedades += $this->valores($definicion, $valorAntes, $valorDespues);
 
         $this->escribir(
             "quitó el valor guardado de «{$definicion->clave}»",
@@ -194,6 +190,30 @@ class AuditoriaAjustes
         $ip = request()?->ip();
 
         return is_string($ip) && $ip !== '' ? $ip : null;
+    }
+
+    /**
+     * El antes y el después, si el valor puede quedar escrito. De un dato personal
+     * (DUI, nacimiento, domicilio…) queda solo la marca: la auditoría la lee quien no
+     * administra la configuración —Contabilidad, una cuenta externa— y el valor
+     * vigente ya se ve en la pantalla de Configuración, que es de quien la administra.
+     *
+     * @return array<string, mixed>
+     */
+    private function valores(DefinicionAjuste $definicion, mixed $valorAntes, mixed $valorDespues): array
+    {
+        if ($definicion->esDatoPersonal()) {
+            return ['dato_personal' => true];
+        }
+
+        if (! $definicion->valorAuditable()) {
+            return [];
+        }
+
+        return [
+            'valor_antes' => $this->presentable($valorAntes),
+            'valor_despues' => $this->presentable($valorDespues),
+        ];
     }
 
     /** Un booleano en el log se lee mejor como Sí/No que como 1/0. */

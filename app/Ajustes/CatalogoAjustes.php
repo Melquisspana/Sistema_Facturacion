@@ -64,6 +64,12 @@ class CatalogoAjustes
         'direccion_pago' => ['Dirección donde se paga', ['maxlen:255']],
     ];
 
+    /** Campos de {@see PATRONO} que son datos de la persona, no de la empresa. */
+    private const PATRONO_PERSONALES = [
+        'sexo', 'fecha_nacimiento', 'estado_civil', 'profesion', 'domicilio', 'residencia',
+        'nacionalidad', 'dui', 'dui_expedido_en', 'dui_expedido_el',
+    ];
+
     /** @return array<string, DefinicionAjuste> */
     public function todos(): array
     {
@@ -1254,6 +1260,7 @@ class CatalogoAjustes
                 descripcion: 'Va en el contrato de trabajo. Sin este dato el contrato no se genera.',
                 claveConfig: 'planilla.contrato.patrono.'.$campo,
                 reglas: $dato[1],
+                datoPersonal: in_array($campo, self::PATRONO_PERSONALES, true),
             ), array_keys(self::PATRONO), self::PATRONO),
             DefinicionAjuste::hacer(
                 clave: 'planilla.contrato.modelos.produccion.lugar_trabajo',
@@ -2017,6 +2024,7 @@ class CatalogoAjustes
                 descripcion: 'Número del documento del responsable (CAT-022: 36 = NIT, 13 = DUI).',
                 claveConfig: 'dte.invalidacion.responsable.num_doc',
                 reglas: ['maxlen:25'],
+                datoPersonal: true,
             ),
             DefinicionAjuste::hacer(
                 clave: 'dte.invalidacion.solicita.nombre',
@@ -2045,6 +2053,7 @@ class CatalogoAjustes
                 descripcion: 'Número del documento del solicitante (CAT-022: 36 = NIT, 13 = DUI).',
                 claveConfig: 'dte.invalidacion.solicita.num_doc',
                 reglas: ['maxlen:25'],
+                datoPersonal: true,
             ),
 
             // ================================================================
