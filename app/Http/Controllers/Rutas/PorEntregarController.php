@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Dte;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRutaEntrega;
+use App\Models\SalidaRutaParticipante;
 use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\PorEntregar;
@@ -59,6 +60,16 @@ class PorEntregarController extends Controller
         // Los que ya van en una salida abierta: se marcan en ella (o esperan a que empiece).
         $enCamino = SalidaRutaEntrega::with('salida.ruta:id,nombre')->whereIn('dte_id', $dtes->pluck('id'))->pendientes()
             ->whereHas('salida', fn ($q) => $q->abiertas())->get()->keyBy('dte_id');
+        // Dónde no se puede marcar (sin botones, con el porqué): una formal donde no va, o
+        // una salida que ya cerró el día de hoy. Las mismas reglas de PorEntregar.
+        $vaEn = $puedeMarcar ? SalidaRutaParticipante::where('rutas_personal_id', $persona->id)
+            ->whereIn('salida_ruta_id', $enCamino->pluck('salida_ruta_id'))->pluck('salida_ruta_id')->map(fn ($id) => (int) $id)->all() : [];
+        $trabados = ! $puedeMarcar ? collect() : $enCamino->map(fn (SalidaRutaEntrega $e) => match (true) {
+            $e->salida->estado !== EstadoSalidaRuta::EnCurso => null,
+            $e->salida->diaCerrado() => PorEntregar::diaCerrado($e->salida),
+            ! $e->salida->esAutomatica() && ! in_array((int) $e->salida_ruta_id, $vaEn, true) => PorEntregar::noVa($e->salida),
+            default => null,
+        })->filter();
 
         $grupos = $dtes->groupBy(fn (Dte $d) => $d->clienteSucursal?->ruta_id ?? self::SIN_RUTA)
             ->map(fn ($lista, $clave) => [
@@ -80,6 +91,7 @@ class PorEntregarController extends Controller
             'filtroInvalido' => $request->filled('ruta') && $ruta === null,
             'total' => $dtes->count(),
             'enCamino' => $enCamino,
+            'trabados' => $trabados,
             'marcados' => $marcados,
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,

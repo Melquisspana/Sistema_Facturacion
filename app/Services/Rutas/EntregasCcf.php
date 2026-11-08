@@ -371,6 +371,10 @@ class EntregasCcf
 
             $nota = trim((string) ($datos['nota'] ?? '')) ?: null;
 
+            // La columna es de 300: el `maxlength` del formulario no alcanza.
+            if ($nota !== null && mb_strlen($nota) > 300) {
+                throw ValidationException::withMessages(['nota' => 'La nota puede tener hasta 300 caracteres.']);
+            }
             if ($motivo->exigeNota() && $nota === null) {
                 throw ValidationException::withMessages(['nota' => 'Con «Otro», escribí qué pasó.']);
             }
@@ -445,6 +449,15 @@ class EntregasCcf
             }
             if (! $salida->estado->esTerminal() && $this->existeBloqueando($this->enOtraSalidaAbierta($salida, $entrega->dte_id))) {
                 throw ValidationException::withMessages(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
+            }
+
+            // La automática ({@see PorEntregar}) lleva solo lo marcado: si la fila quedara
+            // pendiente, el CCF quedaría tomado por ella y ninguna otra salida lo podría llevar.
+            if ($salida->esAutomatica()) {
+                $entrega->delete();
+                $original->exists = false;
+
+                return;
             }
 
             $entrega->update([

@@ -5,6 +5,7 @@ namespace Tests\Feature\Rutas;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\PropositoSalida;
 use App\Enums\ResultadoEntrega;
+use App\Enums\RolEnSalida;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Dte;
@@ -18,6 +19,9 @@ use App\Models\User;
 use App\Services\Rutas\EntregasCcf;
 use App\Services\Rutas\ParticipantesSalida;
 use App\Services\Rutas\PorEntregar;
+use App\Services\Rutas\RitmoRutas;
+use Carbon\CarbonImmutable;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -75,10 +79,11 @@ class PorEntregarTest extends TestCase
         ]);
     }
 
-    private function salidaFormal(string $ruta, PersonalRuta $persona, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso, string $fecha = '2026-11-06'): SalidaRuta
+    /** @param  array<int, PersonalRuta>  $acompanantes */
+    private function salidaFormal(string $ruta, PersonalRuta $persona, EstadoSalidaRuta $estado = EstadoSalidaRuta::EnCurso, string $fecha = '2026-11-06', array $acompanantes = []): SalidaRuta
     {
         $salida = SalidaRuta::create(['ruta_id' => $this->rutas[$ruta]->id, 'fecha_inicio' => $fecha, 'estado' => $estado]);
-        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id], $persona->id);
+        app(ParticipantesSalida::class)->sincronizar($salida, [$persona->id, ...array_map(fn (PersonalRuta $p) => $p->id, $acompanantes)], $persona->id);
 
         return $salida;
     }
@@ -187,41 +192,54 @@ class PorEntregarTest extends TestCase
             ->assertSee('action="'.$deshacer.'"', false)
             ->assertSee('2 CCF de los últimos');
         $this->actingAs($this->vendedor)->from(route('rutas.por-entregar.index'))->patch($deshacer)->assertRedirect(route('rutas.por-entregar.index'));
-        $this->assertNull($salida->entregas()->where('dte_id', $primero->id)->first()->resultado);
+        // En la automática, deshacer quita la fila: el CCF queda libre para cualquier salida.
+        $this->assertFalse($salida->entregas()->where('dte_id', $primero->id)->exists());
     }
 
-    public function test_con_salida_formal_en_curso_se_marca_dentro_de_ella(): void
+    public function test_con_salida_formal_en_curso_se_marca_dentro_de_ella_solo_si_va_en_ella(): void
     {
         $ana = PersonalRuta::create(['nombre' => 'Ana Inventada']);
-        // San Miguel: el CCF ya va en la salida formal, aunque esa salida empezó ayer.
+        // San Miguel: el CCF ya va en la salida formal donde va el vendedor, que empezó ayer.
         $cargado = $this->ccf('San Marcos', '2026-11-05');
-        $formal = $this->salidaFormal('San Marcos', $ana, fecha: '2026-11-05');
+        $formal = $this->salidaFormal('San Marcos', $ana, fecha: '2026-11-05', acompanantes: [$this->persona]);
         app(EntregasCcf::class)->cargarPendientes($formal);
-        // Antiguo: la oficina armó la salida de hoy y el CCF se facturó después.
-        $hoy = $this->salidaFormal('Antiguo', $ana);
+        // Antiguo: la oficina armó la salida de hoy solo con Ana; un CCF va en ella y otro se
+        // facturó después.
+        $ajeno = $this->ccf('Antiguo');
+        $deAna = $this->salidaFormal('Antiguo', $ana);
+        app(EntregasCcf::class)->cargarPendientes($deAna);
         $facturadoDespues = $this->ccf('Antiguo');
 
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
-            ->assertSee('Va en la salida San Marcos');
+            ->assertSee('Va en la salida San Marcos')
+            ->assertSee(PorEntregar::noVa($deAna))
+            ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $ajeno).'"', false)
+            ->assertSee('action="'.route('rutas.por-entregar.marcar', $cargado).'"', false);
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $cargado), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
-        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $facturadoDespues), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
-
-        $this->assertSame(2, SalidaRuta::count(), 'No se arma ninguna salida nueva.');
         $this->assertSame(ResultadoEntrega::Entregado, $formal->entregas()->sole()->resultado);
-        $this->assertSame(ResultadoEntrega::Entregado, $hoy->entregas()->where('dte_id', $facturadoDespues->id)->sole()->resultado);
-        foreach ([$formal, $hoy] as $salida) {
-            // El vendedor se suma; Ana sigue y sigue encabezando.
-            $this->assertEqualsCanonicalizing([$ana->id, $this->persona->id], $salida->participantes()->pluck('rutas_personal_id')->all());
-            $this->assertSame($ana->id, $salida->responsable->rutas_personal_id);
-            $this->assertTrue(Activity::where('subject_id', $salida->id)->where('description', 'cambió los participantes de la salida')->exists());
-        }
+
+        // En la formal donde no va no se marca ni se lo suma: ir en ella le daría el cierre y la liquidación.
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $ajeno), ['resultado' => 'entregado'])
+            ->assertSessionHasErrors(['entrega' => PorEntregar::noVa($deAna)]);
+        $this->assertNull($deAna->entregas()->where('dte_id', $ajeno->id)->sole()->resultado);
+
+        // Lo que no va en ella lo lleva su automática de hoy, no la formal de Ana.
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $facturadoDespues), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $auto = SalidaRuta::whereKeyNot([$formal->id, $deAna->id])->sole();
+        $this->assertTrue($auto->esAutomatica());
+        $this->assertSame([$facturadoDespues->id], $auto->entregas()->pluck('dte_id')->all());
+
+        $this->assertSame([$ana->id], $deAna->participantes()->pluck('rutas_personal_id')->all());
+        $this->assertSame($ana->id, $formal->responsable->rutas_personal_id);
+        $this->assertFalse(Activity::whereIn('subject_id', [$formal->id, $deAna->id])->where('subject_type', SalidaRuta::class)
+            ->where('description', 'cambió los participantes de la salida')->where('properties->desde', 'por_entregar')->exists());
     }
 
     public function test_viaje_de_varios_dias_automatica_de_ayer_y_dia_cerrado(): void
     {
         // San Marcos: un viaje formal que empezó ayer sigue en curso; lo facturado hoy va en él.
         $ana = PersonalRuta::create(['nombre' => 'Ana Inventada']);
-        $viaje = $this->salidaFormal('San Marcos', $ana, fecha: '2026-11-05');
+        $viaje = $this->salidaFormal('San Marcos', $ana, fecha: '2026-11-05', acompanantes: [$this->persona]);
         $nuevo = $this->ccf('San Marcos');
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $nuevo), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
         $this->assertSame(1, SalidaRuta::count());
@@ -236,6 +254,7 @@ class PorEntregarTest extends TestCase
         $this->assertTrue($hoy->esAutomatica());
         $this->assertSame('2026-11-06', $hoy->fecha_inicio->toDateString());
         $this->assertSame(0, $ayer->entregas()->count());
+        $this->assertSame(EstadoSalidaRuta::Finalizada, $ayer->refresh()->estado);
 
         // Con el día de hoy cerrado, la de hoy ya no recibe: se arma otra.
         $hoy->cierres()->create(['fecha' => '2026-11-06', 'cerrado_por' => User::factory()->create()->id, 'cerrado_en' => now()]);
@@ -247,9 +266,154 @@ class PorEntregarTest extends TestCase
         // Y si el CCF ya va en una salida con el día cerrado, se dice por qué no se marca.
         $tercero = $this->ccf('Antiguo');
         $hoy->entregas()->create(['dte_id' => $tercero->id, 'cliente_sucursal_id' => $tercero->cliente_sucursal_id]);
+        // En la lista, el aviso y sin botones que siempre fallarían.
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee(PorEntregar::diaCerrado($hoy))
+            ->assertDontSee('action="'.route('rutas.por-entregar.marcar', $tercero).'"', false);
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $tercero), ['resultado' => 'entregado'])
-            ->assertSessionHasErrors('entrega');
+            ->assertSessionHasErrors(['entrega' => PorEntregar::diaCerrado($hoy)]);
         $this->assertNull($hoy->entregas()->where('dte_id', $tercero->id)->sole()->resultado);
+    }
+
+    private function automatica(string $ruta, string $fecha, PersonalRuta $persona): SalidaRuta
+    {
+        $salida = SalidaRuta::create(['ruta_id' => $this->rutas[$ruta]->id, 'fecha_inicio' => $fecha, 'estado' => EstadoSalidaRuta::EnCurso,
+            'observaciones' => SalidaRuta::OBSERVACION_AUTOMATICA, 'created_by' => $this->vendedor->id]);
+        $salida->participantes()->create(['rutas_personal_id' => $persona->id, 'rol' => RolEnSalida::Acompanante]);
+
+        return $salida;
+    }
+
+    private function vendedorMas(string $nombre): array
+    {
+        $usuario = User::factory()->create(['activo' => true])->assignRole('vendedor');
+
+        return [$usuario, PersonalRuta::create(['nombre' => $nombre, 'user_id' => $usuario->id])];
+    }
+
+    public function test_las_automaticas_de_dias_anteriores_se_finalizan_solas_sin_liquidarse(): void
+    {
+        $ayer = $this->automatica('Antiguo', '2026-11-05', $this->persona);
+        $entregado = $this->ccf('Antiguo', '2026-11-05');
+        $ayer->entregas()->create(['dte_id' => $entregado->id, 'cliente_sucursal_id' => $entregado->cliente_sucursal_id,
+            'resultado' => ResultadoEntrega::Entregado, 'fecha_resultado' => '2026-11-05 11:00:00', 'entregado_por_id' => $this->persona->id]);
+        $deHoy = $this->automatica('San Marcos', '2026-11-06', $this->persona);
+        $viaje = $this->salidaFormal('Santa Tecla', $this->persona, fecha: '2026-11-04');
+        $proxima = $this->salidaFormal('Antiguo', $this->persona, EstadoSalidaRuta::Planificada, '2026-11-07');
+
+        $estadoAntiguo = fn () => app(RitmoRutas::class)->porRuta(CarbonImmutable::parse('2026-11-06'))
+            ->firstWhere('ruta.id', $this->rutas['Antiguo']->id)['estado'];
+        $this->assertSame(RitmoRutas::EN_RUTA, $estadoAntiguo());
+
+        $this->artisan('rutas:finalizar-automaticas')->assertSuccessful();
+
+        $ayer->refresh();
+        $this->assertSame(EstadoSalidaRuta::Finalizada, $ayer->estado);
+        $this->assertSame('2026-11-05', $ayer->fecha_fin_real->toDateString());
+        $this->assertFalse($ayer->estaLiquidada(), 'La liquida la oficina, como cualquier salida finalizada.');
+        $this->assertTrue(Activity::where('subject_type', SalidaRuta::class)->where('subject_id', $ayer->id)->where('description', 'se finalizó sola')->exists());
+        // La de hoy y las formales, como estaban.
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $deHoy->refresh()->estado);
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $viaje->refresh()->estado);
+        // La ruta ya no figura «en ruta», y «Mi salida» abre su próxima salida, no la vieja.
+        $this->assertNotSame(RitmoRutas::EN_RUTA, $estadoAntiguo());
+        $deHoy->finalizar('2026-11-06');
+        $viaje->finalizar('2026-11-06');
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $proxima));
+
+        // Temprano cada día y sin pisarse.
+        $evento = collect(app(Schedule::class)->events())->first(fn ($e) => str_contains((string) $e->command, 'rutas:finalizar-automaticas'));
+        $this->assertNotNull($evento);
+        $this->assertSame('0 4 * * *', $evento->expression);
+        $this->assertTrue($evento->withoutOverlapping);
+    }
+
+    public function test_al_marcar_se_finalizan_las_automaticas_viejas_de_esa_ruta(): void
+    {
+        $ayer = $this->automatica('Antiguo', '2026-11-05', $this->persona);
+        $otraRuta = $this->automatica('San Marcos', '2026-11-05', $this->persona);
+
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+
+        $this->assertSame(EstadoSalidaRuta::Finalizada, $ayer->refresh()->estado);
+        $this->assertSame(EstadoSalidaRuta::EnCurso, $otraRuta->refresh()->estado, 'Solo la ruta que se marca; el resto, el planificador.');
+    }
+
+    public function test_deshacer_en_la_automatica_quita_la_fila_y_la_formal_lo_puede_llevar(): void
+    {
+        $dte = $this->ccf('Antiguo');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $auto = SalidaRuta::sole();
+        $entrega = $auto->entregas()->sole();
+
+        $this->actingAs($this->vendedor)->from(route('rutas.por-entregar.index'))
+            ->patch(route('rutas.mi-salida.deshacer', [$auto, $entrega]))->assertSessionHasNoErrors();
+
+        $this->assertSame(0, $auto->entregas()->count());
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee($dte->numero_control)->assertDontSee('Va en la salida');
+        $formal = $this->salidaFormal('Antiguo', PersonalRuta::create(['nombre' => 'Ana Inventada']));
+        $this->assertSame(1, app(EntregasCcf::class)->cargarPendientes($formal));
+        $this->assertSame([$dte->id], $formal->entregas()->pluck('dte_id')->all());
+    }
+
+    public function test_un_no_se_pudo_entregar_ya_anotado_se_reintenta(): void
+    {
+        // Hoy: Beto no lo pudo entregar; después Carlos sí.
+        [$beto, $personaBeto] = $this->vendedorMas('Beto Inventado');
+        $dte = $this->ccf('Antiguo');
+        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])->assertSessionHasNoErrors();
+        $fila = SalidaRuta::sole()->entregas()->sole();
+
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('action="'.route('rutas.por-entregar.marcar', $dte).'"', false);
+        // Sin motivo el reintento no pasa y lo anotado queda como estaba.
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado'])->assertSessionHasErrors('motivo_no_entrega');
+        $this->assertSame(ResultadoEntrega::NoEntregado, $fila->refresh()->resultado);
+        $this->assertSame($beto->id, $fila->registrado_por);
+
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $fila->refresh();
+        $this->assertSame(1, SalidaRuta::sole()->entregas()->count(), 'La misma fila, no otra.');
+        $this->assertSame(ResultadoEntrega::Entregado, $fila->resultado);
+        $this->assertSame($this->persona->id, $fila->entregado_por_id);
+        $this->assertSame($this->vendedor->id, $fila->registrado_por);
+        $this->assertTrue(Activity::where('description', 'reintento desde Por entregar')->where('properties->entrega', $fila->id)->exists());
+        $this->assertEqualsCanonicalizing([$personaBeto->id, $this->persona->id], SalidaRuta::sole()->participantes()->pluck('rutas_personal_id')->all());
+
+        // Un día anterior del viaje: el mismo vendedor lo vuelve a intentar hoy.
+        $viaje = $this->salidaFormal('San Marcos', $this->persona, fecha: '2026-11-05');
+        $otro = $this->ccf('San Marcos', '2026-11-05');
+        $anterior = $viaje->entregas()->create(['dte_id' => $otro->id, 'cliente_sucursal_id' => $otro->cliente_sucursal_id,
+            'resultado' => ResultadoEntrega::NoEntregado, 'motivo_no_entrega' => 'sala_cerrada', 'fecha_resultado' => '2026-11-05 16:00:00', 'registrado_por' => $this->vendedor->id]);
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $otro), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $this->assertSame(ResultadoEntrega::Entregado, $anterior->refresh()->resultado);
+        $this->assertSame(1, $viaje->entregas()->count());
+    }
+
+    public function test_sumarse_con_un_participante_inactivo_no_rompe_el_registro(): void
+    {
+        [$beto, $personaBeto] = $this->vendedorMas('Beto Inventado');
+        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $personaBeto->update(['activo' => false]);
+
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+
+        $auto = SalidaRuta::sole();
+        $this->assertSame(2, $auto->entregas()->entregadas()->count());
+        $this->assertEqualsCanonicalizing([$personaBeto->id, $this->persona->id], $auto->participantes()->pluck('rutas_personal_id')->all());
+        $this->assertSame(RolEnSalida::Acompanante, $auto->participantes()->where('rutas_personal_id', $this->persona->id)->sole()->rol);
+    }
+
+    public function test_la_nota_tiene_un_limite_de_300_en_el_servidor(): void
+    {
+        $dte = $this->ccf('Antiguo');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => str_repeat('a', 301)])
+            ->assertSessionHasErrors('nota');
+        $this->assertSame(0, SalidaRuta::count());
+
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'otro', 'nota' => str_repeat('a', 300)])
+            ->assertSessionHasNoErrors();
     }
 
     public function test_lo_que_va_en_una_salida_planificada_espera_a_que_empiece(): void

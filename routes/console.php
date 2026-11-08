@@ -282,3 +282,14 @@ Schedule::command('alertas:revisar')
     ->everyFiveMinutes()
     ->when(fn () => Ajustes::boolSinBase('alertas.enabled'))
     ->withoutOverlapping(10);
+
+/*
+| Rutas: las salidas que se armaron solas en «Por entregar» los días anteriores se
+| finalizan temprano, antes de que salgan los vendedores. Sin esto quedaban en curso para
+| siempre (la ruta figuraba «en ruta» en el tablero y «Mi salida» abría la vieja). No las
+| liquida: siguen pendientes para la oficina. «Por entregar» hace lo mismo con la ruta que
+| marca, por si el planificador no corrió.
+*/
+Schedule::command('rutas:finalizar-automaticas')
+    ->dailyAt('04:00')
+    ->withoutOverlapping(10);
