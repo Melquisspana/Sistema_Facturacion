@@ -128,6 +128,8 @@ class RutasDashboardController extends Controller
             'tarjetasVendedores' => $this->tarjetasVendedores($vendedores, $usuario, $hoy),
             'salasSinRuta' => ClienteSucursal::whereNull('ruta_id')->where('activo', true)->count(),
             'vaEnUnaSalida' => $vaEnUnaSalida,
+            // Automáticas que se finalizaron solas y esperan «Terminar ruta»: una consulta.
+            'porLiquidar' => SalidaRuta::porLiquidar()->count(),
         ]);
     }
 

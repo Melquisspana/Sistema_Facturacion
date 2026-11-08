@@ -51,6 +51,13 @@
 
             <x-rutas.avisos />
 
+            {{-- Las salidas de «Por entregar» se finalizan solas: el efectivo espera «Terminar ruta». --}}
+            @if ($porLiquidar > 0)
+                <a href="{{ route('rutas.salidas.index', ['por_liquidar' => 1]) }}" class="{{ $caja }} flex min-h-11 items-center px-4 py-3 text-sm font-medium text-amber-800 hover:bg-gray-50 dark:text-amber-300">
+                    {{ $porLiquidar === 1 ? '1 salida por liquidar' : $porLiquidar.' salidas por liquidar' }} · Ver
+                </a>
+            @endif
+
             {{-- ===================== Resumen: tocar un número filtra la lista ===================== --}}
             <section aria-labelledby="resumen-titulo">
                 <h2 id="resumen-titulo" class="sr-only">Resumen</h2>

@@ -35,6 +35,8 @@ class SalidaRutaController extends Controller
             ->withCount(['entregas' => fn ($q) => $q->sinFacturadosDespues()])
             ->when($request->filled('estado'), fn ($q) => $q->where('estado', $request->string('estado')))
             ->when($request->filled('ruta_id'), fn ($q) => $q->where('ruta_id', $request->integer('ruta_id')))
+            // Las automáticas que se finalizaron solas y esperan «Terminar ruta» (el efectivo sin rendir).
+            ->when($request->boolean('por_liquidar'), fn ($q) => $q->porLiquidar())
             // Lo más reciente primero: el listado se abre para ver qué está pasando
             // ahora, no para leer el historial desde el principio.
             ->orderByDesc('fecha_inicio')

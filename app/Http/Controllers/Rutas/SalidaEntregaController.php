@@ -65,7 +65,9 @@ class SalidaEntregaController extends Controller
         $entrega->setRelation('salida', $salida);
         $this->entregas->deshacer($entrega);
 
-        return back()->with('status', 'El CCF volvió a quedar sin registrar.');
+        // En la automática la fila se borra (y si era la única, la salida se cancela).
+        return back()->with('status', $salida->esAutomatica()
+            ? 'Se quitó el CCF de la salida; vuelve a Por entregar.' : 'El CCF volvió a quedar sin registrar.');
     }
 
     public function destroy(SalidaRuta $salida, SalidaRutaEntrega $entrega): RedirectResponse

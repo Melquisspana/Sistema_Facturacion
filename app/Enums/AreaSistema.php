@@ -92,6 +92,8 @@ enum AreaSistema: string
             ],
             self::Rutas => [
                 ['permiso' => PermisoSistema::RutasVer->value, 'habilitada' => true, 'ruta' => 'rutas.dashboard'],
+                // El vendedor entra por «Por entregar» (06/11/2026); «Mi salida» sigue a un toque.
+                ['permiso' => PermisoSistema::RutasEntregasRegistrar->value, 'habilitada' => true, 'ruta' => 'rutas.por-entregar.index'],
                 ['permiso' => PermisoSistema::RutasEntregasRegistrar->value, 'habilitada' => true, 'ruta' => 'rutas.mi-salida.index'],
             ],
             self::Asistencia => [
