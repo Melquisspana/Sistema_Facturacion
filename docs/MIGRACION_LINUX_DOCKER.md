@@ -406,7 +406,7 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
 
 - **Código.** De 1635 archivos versionados, 1579 son iguales, 38 distintos y faltan 18.
   - `firmador-auto.bat` **va adelante de git**: tiene el arreglo AF_UNIX (`SOCK_DIR` y `-Djdk.net.unixdomain.tmpdir`). Hay que traerlo a git antes de igualar.
-  - Las vistas `exportaciones/clientes/index` y `show` del servidor llaman a un método que ya no existe. Se igualan con git en la próxima subida.
+  - Las vistas `exportaciones/clientes/index` y `show` del servidor llaman a un método que ya no existe, pero son código muerto: esas rutas redirigen a la ficha del cliente y responden bien (comprobado con GET el 08/11). Se igualan con git sin apuro.
   - La función de importar y auditar correos enviados de Cobros (13 archivos y la migración `2026_09_25_120000`) **nunca se desplegó**. Decisión de Melqui: desplegarla o quitarla de git.
   - El resto son textos con datos reales que git ya limpió, copias `.backup` y scripts sueltos para descartar.
 - **CSS.** A producción no le falta nada que git necesite. Tiene 84 clases de más que salen de vistas compiladas viejas, porque `tailwind.config.js` incluye `storage/framework/views`. **Un build limpio desde git sirve.** Conviene sacar esa ruta del `content` de Tailwind.
@@ -419,7 +419,9 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
 - **Firmadores.** El de 8119 (`signer-mh`, javaw) arranca desde la carpeta Inicio del usuario (responde en parte P2). `resources/firmador/` (unos 380 MB, con el certificado) no está en git y trae variantes `dockerConSSL`, `dockerSinSSL` y `svfe-api-firmador` (responde en parte P13).
 - **Servicios y versiones.** Apache, MySQL **8.4** (responde P6: la vuelta atrás con un volcado 8.4 es viable), cloudflared, sshd y Tailscale, como servicios de Windows.
 - **Equipo:** un solo disco NVMe de 512 GB. La revisión de seguridad del equipo (P14 y P17) se lleva aparte, **fuera de este repo público**.
-- **Otros proyectos en la misma máquina:** `ControlTomas` (su propio `schedule:run`) y un respaldo de `RestaurantePOS`. **La migración tiene que contemplarlos**: moverlos también, dejarlos en Windows o apagarlos, a decisión de Melqui.
+- **Otros proyectos en la misma máquina:** `ControlTomas` (su propio `schedule:run`) y un respaldo de `RestaurantePOS`.
+  - `RestaurantePOS` **no se migra** (decisión de Melqui, 08/11).
+  - `ControlTomas`: falta decidir si se mueve también, se queda en Windows o se apaga.
 
 Lo que sigue de esta fase:
 
