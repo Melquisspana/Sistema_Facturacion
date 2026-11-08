@@ -64,7 +64,7 @@ final class GenerarPlanilla
                 return ['existente' => $planilla, 'planilla' => null, 'personas' => [], 'resumen' => null, 'avisos' => [], 'reparos' => []];
             }
 
-            $planilla->load('detalles.conceptos', 'detalles.empleado');
+            $planilla->load('detalles.conceptos', 'detalles.empleado', 'individual');
 
             return [
                 'existente' => null,
@@ -85,6 +85,11 @@ final class GenerarPlanilla
 
     public function yaExiste(Planilla $planilla): string
     {
+        if ($planilla->esVacaciones()) {
+            return 'Ya hay un '.lcfirst($planilla->nombreDeVacaciones()).' de ese mes ('
+                .mb_strtolower(Planilla::ESTADOS[$planilla->estado]).'). Para hacerlo de nuevo, primero hay que borrarlo.';
+        }
+
         if ($planilla->borrador()) {
             return 'Ya hay un borrador de '.$planilla->periodo.' que quedó de antes. Terminalo o borralo.';
         }

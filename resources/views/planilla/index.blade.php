@@ -17,8 +17,8 @@
                 <div class="flex flex-wrap items-center gap-3">
                     {{-- Discreto a pedido de Melqui: casi todo el año hay alguien por pagar. Solo
                          cuántas personas, sin importes. --}}
-                    @if ($vacaciones['por_pagar'] > 0)
-                        <a href="{{ route('planilla.create', ['clase' => 'vacaciones']) }}" class="inline-flex min-h-11 items-center text-sm text-gray-500 underline hover:text-gray-700">Vacaciones por pagar ({{ $vacaciones['por_pagar'] }})</a>
+                    @if ($vacaciones['por_pagar'] > 0 && $verImportes)
+                        <a href="{{ route('planilla.vacaciones') }}" class="inline-flex min-h-11 items-center text-sm text-gray-500 underline hover:text-gray-700">Vacaciones por pagar ({{ $vacaciones['por_pagar'] }})</a>
                     @endif
                     <a href="{{ route('planilla.create') }}" class="inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Generar una planilla</a>
                 </div>
@@ -76,13 +76,26 @@
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-4 py-2.5">
                                             {{-- A la ficha: ahí están Impresos, Pagos, Anular y Borrar. --}}
-                                            <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->periodo }}</a>
-                                            <p class="text-xs text-gray-500">{{ $p->periodoEnPalabras() }}</p>
+                                            @if ($p->esVacaciones())
+                                                {{-- Anual y de una persona: sin mes ni tipo de período. --}}
+                                                @php($anio = $p->anioDeServicio())
+                                                <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">Vacaciones · {{ $p->individual?->nombre ?? '—' }}@if ($anio) · {{ $anio['desde']->format('d/m/Y') }} al {{ $anio['hasta']->format('d/m/Y') }}@endif</a>
+                                                @if ($p->fecha_pago)
+                                                    <p class="text-xs text-gray-500">Pago el {{ $p->fecha_pago->format('d/m/Y') }}</p>
+                                                @endif
+                                            @else
+                                                <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->periodo }}</a>
+                                                <p class="text-xs text-gray-500">{{ $p->periodoEnPalabras() }}</p>
+                                            @endif
                                         </td>
                                         <td class="px-4 py-2.5 text-gray-600">
-                                            {{ Planilla::TIPOS_PERIODO[$p->tipo_periodo] }}
-                                            @if ($p->clase !== 'regular')
-                                                <span class="block text-xs text-amber-700">{{ Planilla::CLASES[$p->clase] }}</span>
+                                            @if ($p->esVacaciones())
+                                                Vacaciones
+                                            @else
+                                                {{ Planilla::TIPOS_PERIODO[$p->tipo_periodo] }}
+                                                @if ($p->clase !== 'regular')
+                                                    <span class="block text-xs text-amber-700">{{ Planilla::CLASES[$p->clase] }}</span>
+                                                @endif
                                             @endif
                                         </td>
                                         <td class="px-4 py-2.5 text-right tabular-nums text-gray-600">{{ $p->detalles_count }}</td>

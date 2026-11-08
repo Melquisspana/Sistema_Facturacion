@@ -25,7 +25,7 @@
         @endif
 
         @include('planilla.partials.membrete', [
-            'documento' => $esBorrador ? 'Detalle de la quincena' : ($vac ? 'Recibo de vacaciones' : 'Recibo de pago'),
+            'documento' => $esBorrador ? ($vac ? 'Detalle de vacaciones' : 'Detalle de la quincena') : ($vac ? 'Recibo de vacaciones' : 'Recibo de pago'),
             'folio' => $esBorrador ? 'Sin número · impreso el '.e($cabecera['hoy']) : e($l['folio']),
         ])
 

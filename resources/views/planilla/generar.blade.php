@@ -8,7 +8,9 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <h1 class="text-xl font-semibold leading-tight text-gray-800">Generar la planilla {{ $planilla->periodo }}</h1>
+        <h1 class="text-xl font-semibold leading-tight text-gray-800">
+            {{ $planilla->esVacaciones() ? $planilla->nombreDeVacaciones() : 'Generar la planilla '.$planilla->periodo }}
+        </h1>
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6">
@@ -20,6 +22,35 @@
                 </div>
             @endif
 
+            @if ($planilla->esVacaciones())
+                {{-- Vacaciones: anual y de una persona. Sin tipo de período ni mes: el año de
+                     servicio, la fecha de pago y el monto con sus descuentos. --}}
+                @php($detalle = $planilla->detalles->first())
+                <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="que-se-crea">
+                    <h2 id="que-se-crea" class="text-sm font-semibold text-indigo-900">Se va a generar</h2>
+                    <p class="mt-1 text-sm text-indigo-900">
+                        {{ $planilla->periodoEnPalabras() }}
+                        @if ($planilla->fecha_pago) · Pago el {{ $planilla->fecha_pago->format('d/m/Y') }} @endif
+                    </p>
+
+                    @if ($detalle)
+                        <dl class="mt-3 space-y-1 rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm">
+                            @foreach ($detalle->conceptos->where('tipo', 'ingreso') as $ingreso)
+                                <div class="flex justify-between gap-4"><dt class="text-gray-700">{{ $ingreso->concepto }}</dt><dd class="whitespace-nowrap tabular-nums">{{ $planilla->moneda }} {{ Dinero::mostrar(Dinero::centavos((string) $ingreso->importe)) }}</dd></div>
+                            @endforeach
+                            {{-- Una renta en cero no dice nada: como en el recibo, no se muestra. --}}
+                            @foreach ($detalle->conceptos->where('tipo', 'descuento')->reject(fn ($c) => $c->ley !== null && Dinero::centavos((string) $c->importe) === 0) as $descuento)
+                                <div class="flex justify-between gap-4 pl-4 text-gray-600"><dt>− {{ $descuento->concepto }}</dt><dd class="whitespace-nowrap tabular-nums">{{ Dinero::mostrar(Dinero::centavos((string) $descuento->importe)) }}</dd></div>
+                            @endforeach
+                            <div class="flex justify-between gap-4 border-t border-gray-200 pt-1 font-semibold"><dt>A pagar</dt><dd class="whitespace-nowrap tabular-nums text-indigo-900">{{ $planilla->moneda }} {{ $d['a_pagar'] }}</dd></div>
+                        </dl>
+                    @endif
+
+                    <p class="mt-3 text-sm text-indigo-900">
+                        Queda lo que se le debe a la persona y a los terceros, y sale el recibo para imprimir y firmar.
+                    </p>
+                </section>
+            @else
             {{-- Toca dinero: la confirmación va en la pantalla y dice qué queda, con los datos del caso. --}}
             <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="que-se-crea">
                 <h2 id="que-se-crea" class="text-sm font-semibold text-indigo-900">Se va a generar</h2>
@@ -46,6 +77,7 @@
                     Si hay que corregirla, se puede borrar mientras sea la última.
                 </p>
             </section>
+            @endif
 
             @if ($avisos !== [])
                 <div class="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900" role="status">
@@ -61,6 +93,7 @@
                 </div>
             @endif
 
+            @unless ($planilla->esVacaciones())
             <section class="overflow-hidden rounded-lg border border-gray-200 bg-white" aria-labelledby="personas-a-generar">
                 <h2 id="personas-a-generar" class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Quién entra</h2>
                 <ul class="divide-y divide-gray-100">
@@ -79,6 +112,7 @@
                     @endforelse
                 </ul>
             </section>
+            @endunless
 
             <form method="POST" action="{{ route('planilla.store') }}"
                   class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
@@ -86,10 +120,10 @@
                 @foreach ($datos as $campo => $valor)
                     <input type="hidden" name="{{ $campo }}" value="{{ $valor }}">
                 @endforeach
-                <a href="{{ route('planilla.create', ['tipo' => $datos['tipo_periodo'] ?? null]) }}" class="{{ $secundario }}">Cancelar</a>
+                <a href="{{ $planilla->esVacaciones() ? route('planilla.vacaciones') : route('planilla.create', ['tipo' => $datos['tipo_periodo'] ?? null]) }}" class="{{ $secundario }}">Cancelar</a>
                 @if ($reparos === [])
                     <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Sí, generar la planilla
+                        {{ $planilla->esVacaciones() ? 'Sí, generar el pago' : 'Sí, generar la planilla' }}
                     </button>
                 @endif
             </form>

@@ -210,7 +210,7 @@ final class ConfirmarPlanilla
         $gasto = Gasto::firstOrCreate(['clave' => $clave], [
             'huella_peticion' => hash('sha256', $clave),
             'beneficiario' => $detalle->nombre_snapshot,
-            'concepto' => 'Planilla '.$planilla->periodo.' · '.$detalle->nombre_snapshot,
+            'concepto' => ($planilla->esVacaciones() ? 'Vacaciones' : 'Planilla '.$planilla->periodo).' · '.$detalle->nombre_snapshot,
             'categoria' => 'Planilla',
             'ambito' => 'empresarial',
             'naturaleza' => 'operativo',
@@ -276,7 +276,7 @@ final class ConfirmarPlanilla
             $gasto = Gasto::firstOrCreate(['clave' => $clave], [
                 'huella_peticion' => hash('sha256', $clave),
                 'beneficiario' => $nombre,
-                'concepto' => 'Descuentos de planilla '.$planilla->periodo,
+                'concepto' => $planilla->esVacaciones() ? 'Descuentos de vacaciones de '.$planilla->detalles->first()?->nombre_snapshot : 'Descuentos de planilla '.$planilla->periodo,
                 'categoria' => 'Planilla',
                 'ambito' => 'empresarial',
                 'naturaleza' => 'operativo',

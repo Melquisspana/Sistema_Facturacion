@@ -23,10 +23,20 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h1 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ Planilla::TIPOS_PERIODO[$planilla->tipo_periodo] }} · {{ $planilla->periodo }}@if ($planilla->clase !== 'regular') · {{ Planilla::CLASES[$planilla->clase] }}@endif
-                </h1>
-                <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }} · {{ Planilla::ESTADOS[$planilla->estado] }}</p>
+                @if ($planilla->esVacaciones())
+                    {{-- Anual y de una persona: sin mes ni tipo de período. --}}
+                    <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $planilla->nombreDeVacaciones() }}</h1>
+                    <p class="text-sm text-gray-500">
+                        {{ $planilla->periodoEnPalabras() }}
+                        @if ($planilla->fecha_pago) · Pago el {{ $planilla->fecha_pago->format('d/m/Y') }} @endif
+                        · {{ Planilla::ESTADOS[$planilla->estado] }}
+                    </p>
+                @else
+                    <h1 class="text-xl font-semibold leading-tight text-gray-800">
+                        {{ Planilla::TIPOS_PERIODO[$planilla->tipo_periodo] }} · {{ $planilla->periodo }}@if ($planilla->clase !== 'regular') · {{ Planilla::CLASES[$planilla->clase] }}@endif
+                    </h1>
+                    <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }} · {{ Planilla::ESTADOS[$planilla->estado] }}</p>
+                @endif
             </div>
             <div class="flex flex-wrap gap-2">
                 <a href="{{ route('planilla.impresos', $planilla) }}" class="{{ $boton }}">Impresos</a>
@@ -328,7 +338,7 @@
                                 anticipos que descontaba vuelven a tener su saldo. Después se puede generar de nuevo.
                             </p>
                             <form method="POST" action="{{ route('planilla.destroy', $planilla) }}" class="mt-2"
-                                  onsubmit="return confirm(@js('¿Borrar la planilla '.$planilla->periodo.'? Se borra con todo lo que creó y no se puede deshacer.'))">
+                                  onsubmit="return confirm(@js('¿Borrar '.($planilla->esVacaciones() ? 'el '.lcfirst($planilla->nombreDeVacaciones()) : 'la planilla '.$planilla->periodo).'? Se borra con todo lo que creó y no se puede deshacer.'))">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Borrar la planilla</button>

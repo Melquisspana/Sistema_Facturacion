@@ -37,11 +37,11 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ Planilla::TIPOS_PERIODO[$planilla->tipo_periodo] }} · {{ $planilla->periodo }}
+                    {{ $planilla->esVacaciones() ? $planilla->nombreDeVacaciones() : Planilla::TIPOS_PERIODO[$planilla->tipo_periodo].' · '.$planilla->periodo }}
                 </h1>
                 <p class="text-sm text-gray-500">
                     {{ $planilla->periodoEnPalabras() }}
-                    @if ($planilla->clase !== 'regular') · {{ Planilla::CLASES[$planilla->clase] }} @endif
+                    @if ($planilla->clase !== 'regular' && ! $planilla->esVacaciones()) · {{ Planilla::CLASES[$planilla->clase] }} @endif
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">

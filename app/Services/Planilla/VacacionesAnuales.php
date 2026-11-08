@@ -11,22 +11,29 @@ use Illuminate\Support\Facades\DB;
  * Vacaciones anuales (Código de Trabajo Art. 177): 15 días de salario más un 30 %, por cada
  * año cumplido desde la fecha de ingreso. Parámetros en `config/planilla_prestaciones.php`.
  *
- * La planilla de vacaciones de un mes paga, a cada persona, el ÚLTIMO año de servicio
- * cumplido hasta el fin de ese mes, si todavía no lo cobró. Lo normal es pagarlas algún
- * mes después del aniversario: por eso entra quien cumplió este mes o en los 11 anteriores.
+ * SE PAGAN DE A UNA PERSONA. Cada pago es una planilla de clase `vacaciones` con una sola
+ * línea y `individual_de` = esa persona; puede haber varios en el mismo mes. Paga el ÚLTIMO
+ * año de servicio cumplido hasta el fin del mes de la fecha de pago, si todavía no se
+ * cobró. Lo normal es pagarlas algún mes después del aniversario: por eso vale quien
+ * cumplió ese mes o en los 11 anteriores.
  *
  * UN AÑO DE SERVICIO YA ESTÁ PAGADO si:
  *  - el año de su aniversario es igual o anterior a «Vacaciones pagadas hasta» de la
  *    ficha, que es lo que se pagó fuera del sistema; o
- *  - hay una planilla de vacaciones no anulada que lo incluye. Qué año pagó una planilla
- *    sale de su mes: la de un mes entre el aniversario y el siguiente paga ese año. Los
- *    borradores cuentan, porque están en curso.
+ *  - hay un pago de vacaciones no anulado que lo incluye. Qué año pagó sale del mes del
+ *    pago: uno entre el aniversario y el siguiente paga ese año. Los borradores cuentan,
+ *    porque están en curso.
  *
  * Todo en centavos enteros, y se redondea una sola vez, al centavo, la mitad hacia arriba.
  */
 final class VacacionesAnuales
 {
     public const CLASE = 'vacaciones';
+
+    public function __construct(
+        private SueldoHabitual $sueldos,
+        private DescuentosLey $descuentos,
+    ) {}
 
     /** 408.80 ÷ 30 × 15 × 1.30 = 265.72. */
     public function monto(int $mensual): int
@@ -38,16 +45,17 @@ final class VacacionesAnuales
     }
 
     /**
-     * Lo que le toca a una persona en la planilla de vacaciones del mes de `$pago`.
+     * Lo que le toca a una persona en un pago de vacaciones con fecha `$pago`.
      *
      * `avisar` = si el motivo por el que queda fuera merece un aviso. Que ya haya cobrado o
      * que no cumpla un año es lo normal y no se avisa; que falte la fecha de ingreso, sí.
      *
+     * @param  ?int  $salvoPlanilla  el pago que se está armando, que no cuenta como pagado
      * @return array{centavos: int, falta: ?string, fuera: ?string, avisar: bool, concepto: ?string, nota: ?string}
      */
-    public function calcular(PlanillaEmpleado $empleado, ?int $mensual, CarbonImmutable $pago): array
+    public function calcular(PlanillaEmpleado $empleado, ?int $mensual, CarbonImmutable $pago, ?int $salvoPlanilla = null): array
     {
-        $estado = $this->estado($empleado, $pago, $pago->format('Y-m'));
+        $estado = $this->estado($empleado, $pago, $salvoPlanilla);
         $salida = ['centavos' => 0, 'falta' => null, 'fuera' => $estado['fuera'], 'avisar' => $estado['avisar'], 'concepto' => null, 'nota' => null];
 
         if ($estado['fuera'] !== null) {
@@ -66,37 +74,60 @@ final class VacacionesAnuales
     }
 
     /**
-     * Para el aviso del inicio: cuántos tienen vacaciones por pagar en el mes de `$hoy`, y
-     * cuántos de ellos cumplen este mes. Aquí cuenta también la planilla de este mes:
-     * quien ya está en ella ya no falta.
+     * Quién tiene vacaciones por pagar con fecha de pago `$pago`, con lo que se le pagaría.
+     * El neto es una estimación: el pago lo calcula de nuevo, y se puede corregir.
+     *
+     * @return array<int, array{empleado: PlanillaEmpleado, aniversario: CarbonImmutable, desde: CarbonImmutable, del_mes: bool, bruto: ?int, neto: ?int}>
+     */
+    public function porPagar(CarbonImmutable $pago): array
+    {
+        $inicio = $pago->startOfMonth()->toDateString();
+        $empleados = PlanillaEmpleado::where('activo', true)
+            ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $inicio))
+            ->orderBy('nombre')
+            ->get();
+        $mensuales = $this->sueldos->mensualesEn($empleados, $pago->toDateString());
+        $filas = [];
+
+        foreach ($empleados as $empleado) {
+            $estado = $this->estado($empleado, $pago, null);
+
+            if ($estado['fuera'] !== null) {
+                continue;
+            }
+
+            $bruto = isset($mensuales[$empleado->id]) ? $this->monto($mensuales[$empleado->id]) : null;
+
+            $filas[] = [
+                'empleado' => $empleado,
+                'aniversario' => $estado['aniversario'],
+                'desde' => $this->anioDeServicio($empleado, $pago)['desde'],
+                'del_mes' => $estado['del_mes'],
+                'bruto' => $bruto,
+                'neto' => $bruto === null ? null : $bruto - $this->descuentosEstimados($empleado, $bruto, $inicio),
+            ];
+        }
+
+        return $filas;
+    }
+
+    /**
+     * Para el enlace del inicio: cuántos tienen vacaciones por pagar este mes, y cuántos
+     * de ellos cumplen este mes.
      *
      * @return array{por_pagar: int, del_mes: int}
      */
     public function pendientes(CarbonImmutable $hoy): array
     {
-        $cuenta = ['por_pagar' => 0, 'del_mes' => 0];
-        $inicio = $hoy->startOfMonth()->toDateString();
+        $filas = $this->porPagar($hoy);
 
-        $empleados = PlanillaEmpleado::where('activo', true)
-            ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $inicio))
-            ->get();
-
-        foreach ($empleados as $empleado) {
-            $estado = $this->estado($empleado, $hoy, null);
-
-            if ($estado['fuera'] === null) {
-                $cuenta['por_pagar']++;
-                $cuenta['del_mes'] += $estado['del_mes'] ? 1 : 0;
-            }
-        }
-
-        return $cuenta;
+        return ['por_pagar' => count($filas), 'del_mes' => count(array_filter($filas, fn (array $f) => $f['del_mes']))];
     }
 
     /**
-     * El año de servicio que paga la planilla de vacaciones del mes de `$mes`: del
-     * aniversario anterior al último cumplido hasta el fin de ese mes. Null si no cumple
-     * un año o no tiene fecha de ingreso. Lo usa el recibo para firmar.
+     * El año de servicio que paga un pago de vacaciones del mes de `$mes`: del aniversario
+     * anterior al último cumplido hasta el fin de ese mes. Null si no cumple un año o no
+     * tiene fecha de ingreso.
      *
      * @return array{desde: CarbonImmutable, hasta: CarbonImmutable}|null
      */
@@ -115,6 +146,18 @@ final class VacacionesAnuales
         ];
     }
 
+    /** ISSS, AFP y renta que le tocarían, igual que los pone el pago (como una quincena). */
+    private function descuentosEstimados(PlanillaEmpleado $empleado, int $bruto, string $fecha): int
+    {
+        if (! $empleado->con_descuentos_ley || ! config('planilla_prestaciones.vacaciones.con_descuentos_ley')) {
+            return 0;
+        }
+
+        $calculo = $this->descuentos->calcular($bruto, $fecha);
+
+        return $calculo === null ? 0 : array_sum(array_column($calculo['conceptos'], 'centavos'));
+    }
+
     /** Años cumplidos hasta el fin del mes. Quien entró un 29 de febrero los cumple el 28. */
     private function aniosCumplidos(CarbonImmutable $ingreso, CarbonImmutable $mes): int
     {
@@ -125,10 +168,10 @@ final class VacacionesAnuales
     }
 
     /**
-     * @param  ?string  $salvoPeriodo  la planilla que se está armando, que no cuenta como pago
+     * @param  ?int  $salvoPlanilla  el pago que se está armando, que no cuenta como pagado
      * @return array{fuera: ?string, avisar: bool, aniversario: ?CarbonImmutable, del_mes: bool}
      */
-    private function estado(PlanillaEmpleado $empleado, CarbonImmutable $mes, ?string $salvoPeriodo): array
+    private function estado(PlanillaEmpleado $empleado, CarbonImmutable $mes, ?int $salvoPlanilla): array
     {
         $fuera = fn (string $motivo, bool $avisar = false) => ['fuera' => $motivo, 'avisar' => $avisar, 'aniversario' => null, 'del_mes' => false];
 
@@ -155,13 +198,15 @@ final class VacacionesAnuales
             ->where('d.planilla_empleado_id', $empleado->id)
             ->where('p.clase', self::CLASE)
             ->where('p.estado', '!=', 'anulada')
-            ->when($salvoPeriodo !== null, fn ($q) => $q->where('p.periodo', '!=', $salvoPeriodo))
+            ->when($salvoPlanilla !== null, fn ($q) => $q->where('p.id', '!=', $salvoPlanilla))
             ->whereDate('p.desde', '>=', $aniversario->startOfMonth()->toDateString())
             ->whereDate('p.desde', '<', $ingreso->addYearsNoOverflow($anios + 1)->startOfMonth()->toDateString())
-            ->value('p.periodo');
+            ->first(['p.fecha_pago', 'p.desde']);
 
         if ($pagado !== null) {
-            return $fuera('ya cobró las vacaciones del año cumplido el '.$aniversario->format('d/m/Y').', en la planilla '.$pagado);
+            $fecha = CarbonImmutable::parse($pagado->fecha_pago ?? $pagado->desde)->format('d/m/Y');
+
+            return $fuera('ya cobró las vacaciones del año cumplido el '.$aniversario->format('d/m/Y').', en el pago del '.$fecha);
         }
 
         return ['fuera' => null, 'avisar' => false, 'aniversario' => $aniversario, 'del_mes' => $aniversario >= $mes->startOfMonth()];

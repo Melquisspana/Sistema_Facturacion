@@ -3,6 +3,8 @@
 namespace App\Models\Planilla;
 
 use App\Models\User;
+use App\Services\Planilla\VacacionesAnuales;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -70,9 +72,54 @@ class Planilla extends Model
         return $this->estado === 'confirmada';
     }
 
-    /** Cómo se lee el período, en palabras. */
+    /**
+     * La persona de un pago individual (vacaciones). Las planillas de varios guardan 0 en
+     * `individual_de`, así que no la tienen.
+     */
+    public function individual(): BelongsTo
+    {
+        return $this->belongsTo(PlanillaEmpleado::class, 'individual_de');
+    }
+
+    /**
+     * Pago de vacaciones: siempre de UNA persona y anual. En pantalla no se le muestra
+     * tipo de período ni mes: `tipo_periodo` y `periodo` son solo su clave técnica.
+     */
+    public function esVacaciones(): bool
+    {
+        return $this->clase === VacacionesAnuales::CLASE;
+    }
+
+    /** «Pago de vacaciones de Ana Pérez». */
+    public function nombreDeVacaciones(): string
+    {
+        return 'Pago de vacaciones de '.($this->individual?->nombre ?? $this->detalles->first()?->nombre_snapshot ?? '—');
+    }
+
+    /**
+     * El año de servicio que paga, para un pago de vacaciones.
+     *
+     * @return array{desde: CarbonImmutable, hasta: CarbonImmutable}|null
+     */
+    public function anioDeServicio(): ?array
+    {
+        if (! $this->esVacaciones() || $this->individual === null || $this->desde === null) {
+            return null;
+        }
+
+        return app(VacacionesAnuales::class)->anioDeServicio($this->individual, $this->desde->toImmutable());
+    }
+
+    /** Cómo se lee el período, en palabras. En vacaciones, el año de servicio. */
     public function periodoEnPalabras(): string
     {
+        if ($this->esVacaciones()) {
+            $anio = $this->anioDeServicio();
+
+            return $anio === null ? 'Año de servicio sin fecha de ingreso'
+                : 'Año de servicio: del '.$anio['desde']->format('d/m/Y').' al '.$anio['hasta']->format('d/m/Y');
+        }
+
         return $this->desde?->format('d/m/Y').' al '.$this->hasta?->format('d/m/Y');
     }
 }

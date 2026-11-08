@@ -67,6 +67,8 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
         // Revisar no guarda nada: muestra cuántas personas y cuánto antes de generar.
         Route::get('abrir/revisar', [PlanillaController::class, 'revisar'])->middleware($gestionar)->name('revisar');
         Route::post('abrir', [PlanillaController::class, 'store'])->middleware($gestionar)->name('store');
+        // Vacaciones: de a una persona, con su botón. Cada pago pasa por la revisión de arriba.
+        Route::get('vacaciones', [PlanillaController::class, 'vacaciones'])->middleware($gestionar)->name('vacaciones');
 
         // Anticipos y documentos ANTES de {planilla}: si no, entrarían por el binding
         // del modelo y darían 404. Mismo cuidado que en Gastos con informes.

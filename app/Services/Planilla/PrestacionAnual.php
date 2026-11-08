@@ -72,10 +72,10 @@ final class PrestacionAnual
      * @return array{centavos: int, falta: ?string, fuera: ?string, avisar?: bool, concepto?: ?string, nota?: ?string}
      *                                                                                                                 `falta` = no se puede calcular todavía; `fuera` = no le corresponde
      */
-    public function calcular(string $clase, PlanillaEmpleado $empleado, ?int $mensual, CarbonImmutable $pago): array
+    public function calcular(string $clase, PlanillaEmpleado $empleado, ?int $mensual, CarbonImmutable $pago, ?int $salvoPlanilla = null): array
     {
         if ($clase === VacacionesAnuales::CLASE) {
-            return $this->vacaciones->calcular($empleado, $mensual, $pago);
+            return $this->vacaciones->calcular($empleado, $mensual, $pago, $salvoPlanilla);
         }
 
         $parametros = $this->parametros($clase, $pago);
