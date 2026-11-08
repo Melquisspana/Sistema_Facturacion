@@ -461,6 +461,9 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO])->assertSessionHasNoErrors();
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
+        // Con transferencia no hay efectivo que rendir.
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado', 'forma_cobro' => 'transferencia'])->assertSessionHasNoErrors();
+        $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee($aviso);
 
         $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $this->ccf('Antiguo')), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($aviso);
@@ -501,6 +504,25 @@ class PorEntregarTest extends TestCase
         $this->assertSame(EstadoSalidaRuta::Finalizada->value, $bitacora->properties['estado_anterior']);
         $fila = app(RitmoRutas::class)->porRuta(CarbonImmutable::parse('2026-11-06'))->firstWhere('ruta.id', $this->rutas['Antiguo']->id);
         $this->assertNull($fila['ultima'], 'La cancelada no cuenta como visita.');
+    }
+
+    public function test_el_reintento_no_lo_mete_en_la_automatica_de_otra_ruta(): void
+    {
+        // Beto no lo pudo entregar en su automática de San Marcos; después la sala pasó a Antiguo.
+        [$beto, $personaBeto] = $this->vendedorMas('Beto Inventado');
+        $dte = $this->ccf('San Marcos');
+        $this->actingAs($beto)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sala_cerrada'])->assertSessionHasNoErrors();
+        $deBeto = SalidaRuta::sole();
+        $this->salas['San Marcos']->update(['ruta_id' => $this->rutas['Antiguo']->id]);
+
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $dte->fresh()), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+
+        $this->assertSame([$personaBeto->id], $deBeto->participantes()->pluck('rutas_personal_id')->all(), 'Carlos no entra a la de Beto.');
+        $this->assertSame(ResultadoEntrega::NoEntregado, $deBeto->entregas()->sole()->resultado);
+        $propia = SalidaRuta::whereKeyNot($deBeto->id)->sole();
+        $this->assertTrue($propia->esAutomatica());
+        $this->assertSame($this->rutas['Antiguo']->id, $propia->ruta_id);
+        $this->assertSame(ResultadoEntrega::Entregado, $propia->entregas()->sole()->resultado);
     }
 
     public function test_deshacer_en_la_automatica_no_lo_frena_otra_salida_abierta(): void

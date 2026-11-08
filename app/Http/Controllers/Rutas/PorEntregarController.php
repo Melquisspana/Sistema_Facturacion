@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Rutas;
 
 use App\Enums\EstadoSalidaRuta;
+use App\Enums\FormaCobroEntrega;
 use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Enums\PermisoSistema;
@@ -97,7 +98,7 @@ class PorEntregarController extends Controller
             'cobroHoy' => $puedeMarcar && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->where('observaciones', SalidaRuta::OBSERVACION_AUTOMATICA)
                 ->whereDate('fecha_inicio', HoraNegocio::fechaHoy())
                 ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id))
-                ->whereHas('entregas', fn ($q) => $q->entregadas()->whereNotNull('forma_cobro'))->exists(),
+                ->whereHas('entregas', fn ($q) => $q->entregadas()->where('forma_cobro', FormaCobroEntrega::Efectivo->value))->exists(),
             'marcados' => $marcados,
             'persona' => $persona,
             'puedeMarcar' => $puedeMarcar,

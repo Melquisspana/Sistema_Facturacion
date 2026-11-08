@@ -165,7 +165,10 @@ class PorEntregar
         $candidatas = SalidaRuta::where(fn ($q) => $q->where('ruta_id', $rutaId)->orWhereIn('id', $conIntento))->enEstado(EstadoSalidaRuta::EnCurso)
             ->whereDate('fecha_inicio', '<=', $hoy)->orderByDesc('fecha_inicio')->orderBy('id')->lockForUpdate()->get()
             ->filter(fn (SalidaRuta $s) => $s->proposito->entrega() && ! $s->diaCerrado($hoy)
-                && ($s->esAutomatica() ? $s->fecha_inicio->toDateString() === $hoy : self::participa($s, $persona)))
+                // Sin ir en ella, solo la automática de hoy de su propia ruta: a una ajena (otra
+                // ruta, con su cobro y su vista) no se lo mete por un reintento.
+                && ($s->esAutomatica() && $s->fecha_inicio->toDateString() === $hoy && (int) $s->ruta_id === $rutaId
+                    || (! $s->esAutomatica() || $s->fecha_inicio->toDateString() === $hoy) && self::participa($s, $persona)))
             ->sortBy(fn (SalidaRuta $s) => [in_array($s->id, $conIntento, true) ? 0 : 1, $s->esAutomatica() ? 1 : 0]);
         // La automática, solo si no hay formal posible.
         $salida = $candidatas->first() ?? $this->armar($rutaId, $hoy, $usuario, $dte);
