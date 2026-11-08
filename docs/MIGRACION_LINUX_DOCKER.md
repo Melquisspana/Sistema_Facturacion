@@ -24,7 +24,8 @@
    - Melqui ya tiene el instalador (ISO) de Windows (08/11). Sirve para reinstalar Windows **limpio**, pero no guarda los programas, la configuración ni los datos del servidor: no reemplaza la imagen ni las copias.
 3. **Nunca dos sistemas emitiendo a la vez.** En ningún momento pueden estar activos, al mismo tiempo, dos instancias con el mismo certificado, la transmisión a Hacienda encendida y el mismo túnel de Cloudflare. Eso duplica documentos y números correlativos.
 4. **Ninguna migración de base nueva** forma parte de este trabajo. El contenedor no corre `migrate` solo al arrancar.
-5. Siguen todas las reglas del proyecto: rama y PR, sin commit ni push directo a `master` y la guía de pantallas para cualquier vista que se toque.
+5. **Sin monitor, sin teclado y sin iniciar sesión** (pedido de Melqui, 08/11). Con Linux el servidor queda sin pantalla. Todo arranca solo al encender: Docker con `restart: unless-stopped` y los servicios del host por systemd, sin escritorio gráfico ni sesión abierta. Se administra por SSH sobre Tailscale. En Windows no se cambia nada: esto queda para Linux.
+6. Siguen todas las reglas del proyecto: rama y PR, sin commit ni push directo a `master` y la guía de pantallas para cualquier vista que se toque.
 
 ---
 
@@ -458,7 +459,7 @@ Lo que sigue de esta fase:
    - `backup:mysql-diario` deja su `.sql` con SHA-256 en `respaldo_ejecuciones`. `backup:run` termina bien. `scripts/linux/backup-restore-test.sh` restaura en una base `_restore_test`.
    - Lector: simular con `curl` un `ping` y un `marcar` hacia `IP:80` con `Host: facturacion.test` y los encabezados `X-Dispositivo`/`X-Dispositivo-Token` de un lector de prueba. Si hay un ESP32 de banco, probarlo de verdad.
    - IMAP contra un buzón de prueba, si existe. Si no, al menos `imap_open` cargada.
-   - Reiniciar el host: todo vuelve solo y en orden. Simular un corte con NUT si el UPS está disponible.
+   - Reiniciar el host **sin monitor ni teclado y sin iniciar sesión**: todo vuelve solo y en orden, y se entra por SSH. Simular un corte de luz (desenchufar) y comprobar que enciende solo y que todo vuelve. Simular un corte con NUT si el UPS está disponible.
    - Escaneo de puertos desde otra máquina: solo responde el 80 (y el 443 si aplica).
 4. Anotar cada falla y su arreglo en este documento antes de pasar a D.
 
@@ -534,6 +535,12 @@ Lo que sigue de esta fase:
    - `docs/DESPLIEGUE_SERVIDOR.md`, `docs/ARRANQUE_WINDOWS.md` y `docs/BACKUPS_WINDOWS.md` pasan a historia o se reemplazan por la guía de Linux;
    - `docs/FIRMADOR_LOCAL.md` se actualiza con el contenedor.
 6. Guardar la imagen de Windows (si se sacó) durante un período acordado (P15) antes de borrarla.
+7. **Dejarlo sin monitor:**
+   - en la BIOS, que encienda solo cuando vuelve la luz;
+   - que no se detenga al arrancar si no hay teclado;
+   - la tarjeta de video queda puesta, porque el Ryzen 5 3600 no trae video propio y sin tarjeta no arranca.
+
+   Después se desconectan el monitor y el teclado, se reinicia y se comprueba por SSH que todo volvió.
 
 ---
 
