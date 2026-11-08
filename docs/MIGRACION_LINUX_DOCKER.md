@@ -21,6 +21,7 @@
    - la fase C tiene que salir completa antes del día del cambio;
    - lo que no se puede perder se copia dos veces (Drive y un medio externo): certificados y `resources/firmador/`, `.env`, base, `storage/app/private`, `storage/app/templates` y `backups/`;
    - **recomendado**: una imagen completa del disco de Windows en un disco USB, para poder restaurarlo tal cual si el cambio falla.
+   - Melqui ya tiene el instalador (ISO) de Windows (08/11). Sirve para reinstalar Windows **limpio**, pero no guarda los programas, la configuración ni los datos del servidor: no reemplaza la imagen ni las copias.
 3. **Nunca dos sistemas emitiendo a la vez.** En ningún momento pueden estar activos, al mismo tiempo, dos instancias con el mismo certificado, la transmisión a Hacienda encendida y el mismo túnel de Cloudflare. Eso duplica documentos y números correlativos.
 4. **Ninguna migración de base nueva** forma parte de este trabajo. El contenedor no corre `migrate` solo al arrancar.
 5. Siguen todas las reglas del proyecto: rama y PR, sin commit ni push directo a `master` y la guía de pantallas para cualquier vista que se toque.
@@ -517,7 +518,7 @@ Lo que sigue de esta fase:
 - **Cuándo:** el firmador no firma, Hacienda rechaza, los lectores no marcan, el login por Cloudflare no funciona o falta algún dato. Se intenta arreglar en Linux hasta una **hora límite** fijada de antemano.
 - **Pasada la hora límite**, si hay imagen de Windows: restaurarla desde el disco USB (una o dos horas), arrancar Windows, volver a habilitar las tareas, el worker, el firmador y cloudflared, y `php artisan up`.
 - **Si en Linux ya se emitieron DTE o entraron marcas o cobros**, antes de restaurar Windows hay que sacar en Linux un volcado y una copia de `storage/app/private` y restaurarlos en Windows antes de reabrir. Depende de que el MySQL de Windows acepte un volcado de 8.4 (P6). **Nunca** reabrir Windows con su base vieja, porque se repetirían correlativos ya usados en Hacienda.
-- **Sin imagen de Windows**, la única salida es seguir en Linux hasta arreglarlo. Por eso la fase C tiene que salir completa.
+- **Sin imagen de Windows**, la salida práctica es seguir en Linux hasta arreglarlo. Con la ISO se puede reinstalar Windows, pero después hay que volver a instalar y configurar todo (Laragon, MySQL, firmador, tareas, cloudflared) y restaurar las copias: es cosa de un día, no de horas. Por eso la fase C tiene que salir completa.
 - Comprobar la hora del sistema antes de firmar (R9).
 
 ### Fase F — Después del cambio
