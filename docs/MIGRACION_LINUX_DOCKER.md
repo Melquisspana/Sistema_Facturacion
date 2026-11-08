@@ -209,15 +209,17 @@ Todos los contenedores con código PHP usan **una sola imagen propia**. Cambia s
 - corre `storage:link` si falta;
 - **no** corre `migrate`.
 
+**Comandos:** los `docker compose` de este documento van con `--env-file .env.compose` (o con `COMPOSE_ENV_FILES=.env.compose` en el entorno del host): compose exige las variables de MySQL y por defecto solo lee `.env`.
+
 **Mismo usuario en todo:** web, worker, programador y comandos a mano corren como `www-data`. Por ejemplo: `docker compose exec -u www-data web php artisan ...`. Flysystem crea los archivos con 0600; si el worker corriera como root, la web no podría leer lo que él escribe.
 
 **Zona horaria:** `TZ=America/El_Salvador` en todos los contenedores. El host sincroniza el reloj por NTP.
 
 ### 3.2 Redes
 
-- **`backend`** (`internal: true`, sin salida a internet): `mysql` y los firmadores. Los contenedores `web`, `worker` y `scheduler` también están en esta red. Los firmadores no necesitan internet para firmar.
+- **`backend`** (`internal: true`, sin salida a internet): `mysql` y el `firmador` (8080). Los contenedores `web`, `worker` y `scheduler` también están en esta red. El firmador no necesita internet para firmar.
 - **`frontend`**: `web`, `worker`, `scheduler` y `cloudflared`. Tiene salida a internet y una **subred fija** (`172.30.0.0/24`) para darle a cloudflared una **IP fija** (172.30.0.10), que es lo único que va en `TRUSTED_PROXIES`. No se confía en toda la subred ni en su puerta de enlace (ver 3.6).
-- Publicado en el host: **solo `80:80`**, y `443` si existe el vhost de contingencia. MySQL y los firmadores van **sin `ports:`**.
+- Publicado en el host: **solo `80:80`**, y `443` si existe el vhost de contingencia. MySQL y el firmador van **sin `ports:`**.
 
 ### 3.3 Volúmenes
 
@@ -227,13 +229,15 @@ Todos los contenedores con código PHP usan **una sola imagen propia**. Cambia s
 | `/srv/facturacion/backups` → `/var/www/html/backups` | scheduler (y web, que muestra el estado) | **carpeta del host**, para que rclone la lea directo |
 | `mysql-data` → `/var/lib/mysql` | mysql | volumen de Docker |
 | `/srv/facturacion/certificados/produccion` → carpeta `uploads/` del firmador | firmador | carpeta del host, 0700, `:ro` |
-| `.env` → `/var/www/html/.env` | web, worker, scheduler | archivo del host `:ro`, nunca dentro de la imagen |
+| `.env` → `/var/www/html/.env` | web, worker, scheduler | archivo del host `:ro`, nunca dentro de la imagen; dueño `root:33` y `0640` |
 
 Las rutas `/srv/facturacion/...` son una propuesta.
 
+**Permisos del `.env` de Laravel en el host:** `chown root:33 /srv/facturacion/env/laravel.env && chmod 0640 /srv/facturacion/env/laravel.env`, y la carpeta `env/` con `chown root:33` y `chmod 0750`. **Nunca 0644**: dejaría `APP_KEY`, la clave de la base y los tokens legibles para cualquier usuario del host. Con `0600 root:root`, `www-data` (uid 33) no lo puede leer y Laravel arrancaría callado con la configuración por defecto; por eso el entrypoint corta el arranque y deja el motivo en `docker compose logs`.
+
 ### 3.4 Healthchecks y reinicio
 
-- Todos los servicios con `restart: unless-stopped`. Esto reemplaza los bucles de los `.bat` y las tareas de Windows.
+- Todos los servicios con `restart: always`. Esto reemplaza los bucles de los `.bat` y las tareas de Windows. **No** `unless-stopped`: ante un corte, NUT corre `docker compose stop` y apaga, y con `unless-stopped` nada volvería a arrancar con el host. Para dejar algo parado a propósito durante un reinicio se usa `docker compose down`.
 - **Comprobaciones de salud:**
   - `mysql`: `mysqladmin ping`;
   - `firmador`: `GET http://localhost:8080/firmardocumento/status`. La imagen JRE puede no traer `curl`; hay que comprobarlo o agregarlo;
@@ -250,7 +254,7 @@ El archivo real está en la raíz del repo (`compose.yaml`), con `compose.local.
 services:
   web:
     image: facturacion-app:${APP_IMAGE_TAG}
-    restart: unless-stopped
+    restart: always
     ports: ["80:80"]
     env_file: .env.compose        # solo variables de compose; el .env de Laravel va montado
     environment: { TZ: America/El_Salvador }
@@ -278,7 +282,7 @@ services:
 
   mysql:
     image: mysql:8.4
-    restart: unless-stopped
+    restart: always
     volumes: [mysql-data:/var/lib/mysql]
     networks: [backend]
     stop_grace_period: 60s
@@ -286,7 +290,7 @@ services:
 
   firmador:
     image: eclipse-temurin:21-jre
-    restart: unless-stopped
+    restart: always
     working_dir: /firmador
     command: java -Dspring.profiles.active=nonssl -jar svfe-api-firmador-2.0.0-exec.jar --server.port=8080
     volumes:
@@ -296,7 +300,7 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:<versión fija>
-    restart: unless-stopped
+    restart: always
     command: tunnel run
     environment: { TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN} }
     networks: [frontend]
@@ -317,16 +321,16 @@ Resuelto en `compose.yaml`:
 
 ### 3.6 Lo que queda en el host Linux, fuera de Docker
 
-- **Tailscale:** SSH de despliegue en el host. Tailscale Serve **no** puede seguir hacia `127.0.0.1:80` como proxy de confianza: lo que entra por el puerto publicado llega a Apache con la IP de la puerta de enlace de Docker (172.30.0.1), y por esa misma IP pueden llegar equipos de la red local cuando pasa por `docker-proxy`. Confiar en ella dejaría a cualquiera de la oficina inventarse la IP (y saltarse el límite de intentos) o fingir HTTPS. Por eso `TRUSTED_PROXIES` lleva **solo** la IP fija de cloudflared. Dos salidas (P16):
-  - **Recomendada:** contenedor `tailscale/tailscale` en la red `frontend` con IP fija (por ejemplo 172.30.0.11), `TS_SERVE_CONFIG` hacia `http://web:80`, y esa IP agregada a `TRUSTED_PROXIES`. Es un nodo nuevo de Tailscale, aparte del SSH del host.
-  - **Mínima:** dejar Tailscale Serve del host hacia `127.0.0.1:80` **sin** confiar en él. Funciona, pero Laravel lo ve como HTTP y desde una sola IP: el techo de intentos por IP cuenta junto a todos los que entren por ahí.
+- **Tailscale:** SSH de despliegue en el host. Tailscale Serve **no** puede seguir hacia `127.0.0.1:80` como proxy de confianza: lo que entra por el puerto publicado llega a Apache con la IP de la puerta de enlace de Docker (172.30.0.1), y por esa misma IP pueden llegar equipos de la red local cuando pasa por `docker-proxy`. Confiar en ella dejaría a cualquiera de la oficina inventarse la IP (y saltarse el límite de intentos) o fingir HTTPS. Por eso `TRUSTED_PROXIES` lleva **solo** la IP fija de cloudflared. La única salida válida (P16):
+  - **Recomendada:** contenedor `tailscale/tailscale` en la red `frontend` con IP fija (por ejemplo 172.30.0.11), `TS_SERVE_CONFIG` hacia `http://web:80`, y esa IP agregada a `TRUSTED_PROXIES`. Es un nodo nuevo de Tailscale, aparte del SSH del host. Su nombre `.ts.net` va en `APACHE_HOSTS_EXTRA`.
+  - **Mínima (no sirve sola):** dejar Tailscale Serve del host hacia `127.0.0.1:80` sin confiar en él no alcanza. Laravel ve el pedido como HTTP y arma en `http://` las direcciones del CSS y el JS de Vite, de los formularios y de las redirecciones. El navegador las bloquea dentro de la página https y la app se ve rota. Solo andaría forzando la URL raíz o `ASSET_URL` a `https://<nombre>.ts.net`, lo que rompe la entrada por la red local y por el dominio público. No se recomienda.
   - Confiar en la puerta de enlace solo valdría con `userland-proxy: false` en el daemon y comprobando que una conexión desde otro equipo de la red local llega con su propia IP. No se recomienda.
 - **rclone, por cron del host:**
   - sube `/srv/facturacion/backups`;
   - sube `storage/app/private`, sin `paquetes/`, `backup-temp/` ni `diagnostico-concurrencia/`;
   - sube `storage/app/templates`;
   - la configuración y el remoto se vuelven a crear en Linux; lo hace Melqui.
-- **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
+- **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Al volver la luz, `restart: always` levanta todo cuando arranca Docker, sin entrar a nadie. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
 - **Reloj:** NTP del sistema. Hay que confirmar la hora antes del primer DTE (riesgo R9).
 - **Rotación de logs:** si se cambia `LOG_CHANNEL` a `daily` no hace falta en el host. Si no, `logrotate` sobre `storage/logs`.
 - **Cortafuegos:** solo el 80 en la red local (y el 443 si aplica). Docker escribe sus propias reglas de iptables y puede saltarse las de `ufw`, así que hay que revisar el resultado con un escaneo desde otra máquina.
@@ -369,7 +373,7 @@ Se dejan anotados para no hacer de más:
 | `package.json` | Quitar `@tailwindcss/vite` | Nadie lo usa (el proyecto está en Tailwind 3) |
 | `ARQUITECTURA.md`, `docs/ESTADO_FASE_FACTURACION.md` | Cambiar 8113 por 8080 | Puertos viejos que llevan a configurar mal |
 
-Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host lo sigue haciendo Apache, igual que hoy.
+El filtro del Host lo hace Apache: en `docker/apache/facturacion.conf` el primer vhost responde 404 a todo Host que no sea `facturacion.test`, `localhost`, `APACHE_DOMINIO_PUBLICO` o los de `APACHE_HOSTS_EXTRA` (IP de la red local y nombre de Tailscale). Así nadie de la oficina puede mandar un Host ajeno para que Laravel arme enlaces hacia otro dominio. Como segunda barrera, el enlace de «olvidé mi contraseña» sale siempre con `APP_URL` (`AppServiceProvider`, con su prueba). `trustHosts` de Laravel queda descartado: no actúa en `local` ni en pruebas y repetiría la lista de Apache.
 
 ### 4.4 Solo configuración (`.env`, compose y host)
 
@@ -387,9 +391,10 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
 | `LOG_CHANNEL` / `LOG_STACK` | `daily`, porque hoy `laravel.log` no rota |
 | `APP_MAINTENANCE_DRIVER` | `cache` (va a la base y afecta a todos los contenedores) o dejar `file`, que ya se comparte en el volumen |
 | `TZ` | `America/El_Salvador` en todos los contenedores |
-| `APP_URL`, `SESSION_SECURE_COOKIE`, `GMAIL_REDIRECT_URI`, `CLOUDFLARE_ACCESS_*` | **los mismos de producción** si el dominio no cambia (P9) |
+| `APP_URL`, `SESSION_SECURE_COOKIE`, `GMAIL_REDIRECT_URI`, `CLOUDFLARE_ACCESS_*` | **los mismos de producción** si el dominio no cambia (P9). `APP_URL` tiene que ser el dominio público (`https://…`): el enlace de «olvidé mi contraseña» sale con él, y desde la red local se llega por Cloudflare |
+| `APACHE_DOMINIO_PUBLICO`, `APACHE_HOSTS_EXTRA` (`.env.compose`) | el dominio público; y la IP de la red local y el nombre `.ts.net`, separados por espacios. Otro Host recibe 404 |
 | Destino del túnel en Cloudflare | `http://web:80` |
-| Tailscale Serve | `127.0.0.1:80` (igual que hoy) |
+| Tailscale Serve | contenedor `tailscale` con IP fija hacia `http://web:80`, en `TRUSTED_PROXIES` (3.6); no `127.0.0.1:80` del host |
 | Reserva de DHCP | la misma IP para el equipo (los ESP32 la tienen fija) |
 
 ---
@@ -417,7 +422,8 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
   - `iconv('Windows-1252', 'UTF-8', …)` convierte bien `ñ`, `é` y `€`;
   - `mysqldump` 8.4.13 (cliente oficial de MySQL, con huella de la clave comprobada). `MYSQL_PWD` **sigue funcionando** contra `mysql:8.4`: `backup:mysql-diario` dejó su `.sql` con «Dump completed» y su SHA-256. `BackupMysqlDiarioCommand` no se cambió;
   - `upload_max_filesize` 12M, `post_max_size` 110M, `memory_limit` 512M, `date.timezone` America/El_Salvador, opcache activo sin `validate_timestamps`;
-  - todo `/var/www/html` es de `www-data`; la imagen no trae `.env`, `storage/`, certificados ni Composer.
+  - el código es de `root` y `www-data` no lo puede escribir (`touch public/index.php` da «Permission denied»); `www-data` solo escribe en `storage/`, `backups/`, `bootstrap/cache` y `bootstrap/views`. La imagen no trae `.env`, `storage/`, certificados, `auth.json` ni Composer, tampoco en subcarpetas (los patrones de secretos de `.dockerignore` llevan `**/`);
+  - el entrypoint corta el arranque si `www-data` no puede leer el `.env`; Apache responde 404 a un Host que no está en la lista; todo con `restart: always`.
 - Probado con `compose.local.yaml` (MySQL propio y vacío, firma simulada): `/up` y `/login` responden 200; worker y programador corren como `www-data` (uid 33); un archivo que escribe el worker lo lee la web; `schedule:list` muestra el respaldo solo con `BACKUP_DIARIO_PROGRAMADO=true`; `scripts/linux/backup-restore-test.sh` restauró un `.sql` y un `.zip` en una base `_restore_test` y la borró.
 - Comprobado en Docker Desktop: lo que entra por el puerto publicado desde el propio equipo llega a Apache con la IP de la puerta de enlace (172.30.0.1). Por eso no se confía en ella (3.6).
 - Paso 5 **pendiente**: la suite completa la corre la sesión coordinadora. Por ahora pasaron dentro del contenedor las pruebas tocadas y vecinas (126 pruebas).
@@ -512,7 +518,10 @@ Lo que sigue de esta fase:
    - `backup:mysql-diario` deja su `.sql` con SHA-256 en `respaldo_ejecuciones`. `backup:run` termina bien. `scripts/linux/backup-restore-test.sh` restaura en una base `_restore_test`.
    - Lector: simular con `curl` un `ping` y un `marcar` hacia `IP:80` con `Host: facturacion.test` y los encabezados `X-Dispositivo`/`X-Dispositivo-Token` de un lector de prueba. Si hay un ESP32 de banco, probarlo de verdad.
    - IMAP contra un buzón de prueba, si existe. Si no, al menos `imap_open` cargada.
-   - Reiniciar el host: todo vuelve solo y en orden. Simular un corte con NUT si el UPS está disponible.
+   - Reiniciar el host: todo vuelve solo y en orden.
+   - `docker compose stop` y después reiniciar el host (lo que hace NUT, sin UPS): todo vuelve solo.
+   - Corte real con NUT cuando haya UPS (P14).
+   - Tailscale: el contenedor `tailscale` con IP fija en `TRUSTED_PROXIES` sirve la app por `https://<nombre>.ts.net` con CSS, JS y formularios en https (P16).
    - Escaneo de puertos desde otra máquina: solo responde el 80 (y el 443 si aplica).
 4. Anotar cada falla y su arreglo en este documento antes de pasar a D.
 
@@ -634,7 +643,7 @@ Lo que sigue de esta fase:
 | P13 | ¿El paquete del MH trae JAR, compose o variante para Linux? ¿Exige otra versión de Java? ¿Se usa el perfil `ssl` en producción? | Contenido de `resources/firmador/` en el servidor |
 | P14 | ¿Qué UPS hay y se puede conectar por USB para NUT? | Melqui |
 | P15 | ¿Cuánto tiempo se guarda la imagen de Windows después del cambio? ¿Hay un disco USB para sacarla? | Decisión de Melqui |
-| P16 | ¿Tailscale en el host (nodo nuevo) o en contenedor? ¿Cambia el nombre que usa el despliegue por SSH? | Decisión técnica y consola de Tailscale |
+| P16 | ¿Tailscale en el host (nodo nuevo) o en contenedor? ¿Cambia el nombre que usa el despliegue por SSH? Recomendado: contenedor con IP fija en `TRUSTED_PROXIES` para servir la app (3.6); falta probarlo en la fase C | Decisión técnica y consola de Tailscale |
 | P17 | Si se activa BitLocker antes del cambio, ¿la clave de recuperación está a mano para restaurar la imagen? | Melqui |
 | P18 | ¿Quién consulta `/salud` desde afuera (issue #163)? ¿Hay que avisarle de una ventana sin servicio? | Melqui |
 | P19 | ¿Existe hoy `storage/app/templates/exportaciones/lista_empaque.xlsx` en producción? | Servidor (fase B) |
