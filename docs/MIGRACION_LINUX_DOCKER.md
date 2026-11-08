@@ -533,7 +533,7 @@ Lo que sigue de esta fase:
    - sin `cloudflared`;
    - sin el puerto 80 publicado en la red de la oficina;
    - `DTE_TRANSMISION_DRY_RUN=true`, `MAIL_MAILER=log`, `ALERTAS_ENABLED=false`, `DOCUMENTOS_RECIBIDOS_AUTO_SYNC=false`;
-   - los ajustes automáticos que viven en la base (PPQ, cobros, gastos) **no se cambian**: se deja apagado el `scheduler` y el `worker` arranca solo para pruebas puntuales.
+   - los ajustes automáticos que viven en la base (PPQ, cobros, gastos) **no se cambian**: no se crean el `scheduler` ni el `worker`. Se levanta solo `docker compose up -d mysql web` (el firmador viene por `depends_on`), y las pruebas de cola se hacen con `docker compose run --rm worker php artisan queue:work --once`. Si ya se crearon, se quitan con `docker compose rm -sf scheduler worker` y no con `stop`: con `restart: always` volverían a arrancar al reiniciar la máquina y cambiarían la copia.
    Así no se renueva ningún token de Gmail, no se manda ningún correo, no se transmite nada y no se pisa ningún correlativo.
 3. Medir el tiempo de toda la restauración: copiar, importar, `chown -R 33:33`, levantar. Ese tiempo define la ventana del día del cambio.
 4. Comprobar:

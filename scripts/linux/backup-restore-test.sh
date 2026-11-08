@@ -80,7 +80,7 @@ WORK_DIR="$(mktemp -d)"
 chmod 700 "$WORK_DIR"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-read -r -s -p "Contraseña de MySQL para $USUARIO: " CLAVE
+IFS= read -r -s -p "Contraseña de MySQL para $USUARIO: " CLAVE
 echo
 CREDENCIALES="$WORK_DIR/credenciales.cnf"
 # En el archivo de opciones, dentro de comillas, \ y " se escriben escapados.
@@ -112,6 +112,9 @@ case "$ARCHIVO" in
         ;;
     *.zip)
         php -r '
+            // Todo dentro de try: al arrancar Laravel, su manejador convierte los avisos en
+            // excepciones, y una excepción sin atrapar terminaría con código 0.
+            try {
             $zip = new ZipArchive();
             if ($zip->open($argv[1]) !== true) { fwrite(STDERR, "No se pudo abrir el ZIP.\n"); exit(1); }
             // La clave vive en el .env montado, no en el entorno del contenedor: se toma de
@@ -130,12 +133,20 @@ case "$ARCHIVO" in
                     $entrada = $zip->getStream($nombre);
                     if ($entrada === false) { fwrite(STDERR, "No se pudo leer el .sql (¿el ZIP está cifrado y la clave BACKUP_ARCHIVE_PASSWORD del .env falta o no es la correcta?).\n"); exit(1); }
                     $salida = fopen($argv[2], "wb");
-                    stream_copy_to_stream($entrada, $salida);
+                    // Un error de CRC o de descompresión devuelve false: el respaldo está dañado.
+                    if ($salida === false || stream_copy_to_stream($entrada, $salida) === false || ! fclose($salida)) {
+                        fwrite(STDERR, "El .sql del ZIP está dañado (error de CRC o de descompresión).\n");
+                        exit(1);
+                    }
                     exit(0);
                 }
             }
             fwrite(STDERR, "El ZIP no trae un .sql.\n");
             exit(1);
+            } catch (\Throwable $e) {
+                fwrite(STDERR, "No se pudo extraer el .sql del ZIP (¿dañado o con otra clave?): ".$e->getMessage()."\n");
+                exit(1);
+            }
         ' "$ARCHIVO" "$SQL"
         ;;
     *)
@@ -145,6 +156,13 @@ case "$ARCHIVO" in
 esac
 if [[ ! -s "$SQL" ]]; then
     echo "ERROR: el .sql del respaldo está vacío."
+    exit 1
+fi
+# Un volcado con USE o CREATE DATABASE (hecho con --databases) escribiría fuera de la
+# base temporal, en la real. Los de backup:mysql-diario y spatie no los traen.
+if grep -qiE '^[[:space:]]*(USE[[:space:]]|CREATE[[:space:]]+(DATABASE|SCHEMA)|/\*![0-9]+[[:space:]]+CREATE[[:space:]]+(DATABASE|SCHEMA))' "$SQL"; then
+    echo "ERROR: el volcado cambia de base (USE o CREATE DATABASE) y escribiría fuera de $TEMP_DB."
+    echo "Use un volcado de una sola base, sin --databases ni --all-databases."
     exit 1
 fi
 echo "Dump listo: $(du -h "$SQL" | cut -f1)"
