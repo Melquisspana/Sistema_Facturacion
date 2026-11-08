@@ -92,10 +92,13 @@ RUN chmod 0755 /usr/local/bin/facturacion-entrypoint
 
 WORKDIR /var/www/html
 
-# Código con dueño www-data (uid 33): web, worker y programador corren con ese usuario.
-COPY --chown=www-data:www-data . .
-COPY --chown=www-data:www-data --from=vendor /app/vendor ./vendor
-COPY --chown=www-data:www-data --from=assets /app/public/build ./public/build
+# Código con dueño root y sin escritura para www-data (uid 33, el usuario de Apache, el
+# worker y el programador): un archivo escrito donde no debe no puede reemplazar
+# public/index.php, un .htaccess ni una clase. www-data solo escribe en storage/,
+# backups/, bootstrap/cache y bootstrap/views.
+COPY . .
+COPY --from=vendor /app/vendor ./vendor
+COPY --from=assets /app/public/build ./public/build
 
 # storage/ no entra a la imagen (.dockerignore): se arma vacío para que el volumen nuevo
 # nazca con esta estructura y con el dueño correcto.
@@ -103,8 +106,12 @@ RUN set -eux; \
     mkdir -p storage/app/private storage/app/public storage/app/templates \
         storage/framework/cache/data storage/framework/sessions storage/framework/views \
         storage/framework/testing storage/logs storage/fonts backups bootstrap/cache bootstrap/views; \
-    chown -R www-data:www-data storage backups bootstrap; \
-    # La imagen oficial deja /var/www/html en 1777: el código no tiene por qué ser de todos.
+    # Sin escritura de grupo ni de otros, aunque el contexto venga de Windows con 0777.
+    chmod -R u=rwX,go=rX /var/www/html; \
+    chown -R www-data:www-data storage backups bootstrap/cache bootstrap/views; \
+    # La imagen oficial deja /var/www/html de www-data y en 1777: con esa carpeta, www-data
+    # podría renombrar public/ y poner otra en su lugar.
+    chown root:root /var/www/html; \
     chmod 0755 /var/www/html; \
     ln -s ../storage/app/public public/storage; \
     chown -h www-data:www-data public/storage
@@ -126,6 +133,8 @@ CMD ["apache2-foreground"]
 # entrypoint de producción: config:cache dejaría a las pruebas con la configuración fija.
 FROM app AS test
 COPY --from=vendor /usr/bin/composer /usr/local/bin/composer
+# Esta etapa nunca se despliega: composer install y las pruebas escriben en el código.
+RUN chown -R www-data:www-data /var/www/html
 USER www-data
 RUN composer install --no-interaction --no-progress --prefer-dist \
     && cp .env.example .env \

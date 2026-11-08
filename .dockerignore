@@ -1,9 +1,12 @@
 # Lo que NUNCA entra a la imagen: secretos, datos, material criptográfico y lo que
 # se genera dentro de la construcción. Ver docs/MIGRACION_LINUX_DOCKER.md §4.2.
 
+# Los patrones sin ruta valen solo en la raíz del contexto (no como en .gitignore):
+# por eso los de secretos llevan **/ y alcanzan cualquier subcarpeta.
+
 # Configuración con secretos (el .env se monta al arrancar). Las plantillas sí entran:
 # no tienen valores y las pruebas leen .env.example.
-.env*
+**/.env*
 !.env.example
 !.env.compose.example
 
@@ -14,12 +17,14 @@ public/storage
 
 # Firmador del MH y certificados: solo en el host, montados en su contenedor.
 resources/firmador/
-*.crt
-*.p12
-*.pfx
-*.key
-*.pem
-cert.txt
+**/*.crt
+**/*.p12
+**/*.pfx
+**/*.key
+**/*.pem
+**/cert.txt
+# Credenciales de Composer.
+auth.json
 
 # Se generan en la construcción (vendor y assets), o son de cada máquina.
 vendor/
@@ -39,7 +44,7 @@ bootstrap/cache/*.php
 tmp/
 evidencias/
 firmware/
-*.log
+**/*.log
 compose*.yaml
 Dockerfile
 .dockerignore
