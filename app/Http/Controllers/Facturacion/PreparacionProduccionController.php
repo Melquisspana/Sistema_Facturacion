@@ -122,8 +122,8 @@ class PreparacionProduccionController extends Controller
         $workerEstado = ['activo' => 'ok', 'inactivo' => 'advertencia', 'sin_datos' => 'info'][$hb['estado']] ?? 'info';
         $workerDetalle = match ($hb['estado']) {
             'activo' => 'Worker activo — último pulso '.$hb['hace'].'.',
-            'inactivo' => 'Worker posiblemente detenido — último pulso '.$hb['hace'].'. Reinicialo: start-queue.bat en Windows o docker compose restart worker en Linux.',
-            default => 'Sin datos: el worker aún no reportó actividad. Arrancalo: start-queue.bat en Windows o docker compose up -d worker en Linux.',
+            'inactivo' => 'Worker posiblemente detenido — último pulso '.$hb['hace'].'. Reinicialo: start-queue.bat en Windows o docker compose --env-file .env.compose restart worker en Linux.',
+            default => 'Sin datos: el worker aún no reportó actividad. Arrancalo: start-queue.bat en Windows o docker compose --env-file .env.compose up -d worker en Linux.',
         };
 
         // Firmador: solo CONFIGURACIÓN en el render (la prueba en vivo es aparte).

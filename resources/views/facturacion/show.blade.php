@@ -37,7 +37,7 @@
             @if (($correosAtascados ?? 0) > 0)
                 <div class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
                     <strong>⚠ Hay {{ $correosAtascados }} {{ $correosAtascados === 1 ? 'correo' : 'correos' }} en cola sin procesar.</strong>
-                    El worker parece apagado; abrí <code class="font-mono">start-queue.bat</code> para que salgan.
+                    El worker parece apagado; reinicialo para que salgan: <code class="font-mono">start-queue.bat</code> en Windows o <code class="font-mono">docker compose --env-file .env.compose up -d worker</code> en Linux.
                 </div>
             @endif
 
