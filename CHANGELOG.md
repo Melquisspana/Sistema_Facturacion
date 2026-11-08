@@ -8,6 +8,26 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.08] - 2026-11-08
+
+Rutas › Por entregar para los vendedores, sin armar salidas (#269), y las vacaciones como pago de una sola persona con su pantalla propia (#270, con 1 migración).
+
+### Agregado
+
+- Rutas › Por entregar: el vendedor ve en el celular todos los CCF pendientes de los últimos 45 días, agrupados por la ruta de su sala, con el PDF y los botones «Entregado» y «No se pudo entregar». Nadie arma salidas: al marcar se usa la salida en curso de esa ruta o se crea sola una con ese CCF. Un «No se pudo entregar» se puede volver a intentar. Las salas sin ruta muestran el PDF y piden que la oficina les asigne una (#269).
+- Rutas: las salidas que se armaron solas se cierran solas al día siguiente, y las que quedaron vacías se cancelan. La oficina las termina con «Terminar ruta». El listado de salidas marca las que están «Por liquidar» y tiene un filtro para verlas, y el inicio de Rutas avisa cuántas hay (#269).
+- Planilla › Pagar vacaciones: el enlace «Vacaciones por pagar» lleva a una pantalla propia con cada persona, su año de servicio, el bruto y el neto estimado, y un botón «Pagar vacaciones» que solo pide la fecha de pago (#270).
+
+### Cambiado
+
+- Planilla: las vacaciones son siempre el pago de una sola persona, y puede haber varios en el mismo mes. El formulario general ya no las genera. En el inicio, la revisión, los impresos, la ficha de Personal y Gastos dicen «Pago de vacaciones de {nombre}» y el año de servicio, sin período ni quincena (#270).
+- Planilla: el año de servicio queda guardado en el pago al confirmarlo, y el recibo ya no cambia si después se corrige la fecha de ingreso. Un pago anulado se puede volver a hacer, y la fecha de pago no puede ser de un mes que todavía no llegó (#270).
+- Planilla: «solo se puede borrar la última» cuenta solo las planillas que comparten alguna persona (#270).
+
+### Corregido
+
+- Rutas: la nota de una entrega admite hasta 300 caracteres en las tres pantallas, y una más larga ya no da error (#269).
+
 ## [2026.11.07] - 2026-11-07
 
 Órdenes de compra leídas del correo e impresas con el CCF (#264, con 1 migración y la dependencia FPDI), la factura de Compras vista desde su JSON (#265) y la nota de crédito del pronto pago hecha desde la revisión del TXT (#267).
