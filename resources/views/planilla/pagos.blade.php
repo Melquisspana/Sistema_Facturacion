@@ -16,7 +16,7 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h1 class="text-xl font-semibold leading-tight text-gray-800">Pagos · {{ $planilla->esVacaciones() ? $planilla->nombreDeVacaciones() : $planilla->periodo }}</h1>
+                <h1 class="text-xl font-semibold leading-tight text-gray-800">Pagos · {{ $planilla->esIndividual() ? $planilla->nombreDelPago() : $planilla->periodo }}</h1>
                 <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }}</p>
             </div>
             <a href="{{ route('planilla.show', $planilla) }}" class="{{ $boton }}">Volver a la planilla</a>

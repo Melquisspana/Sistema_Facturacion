@@ -170,7 +170,7 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
     public function test_a_quien_esta_de_baja_no_se_le_agrega_nada(): void
     {
         $p = $this->persona();
-        app(BajaEmpleado::class)->dar($this->admin, $p, '2026-02-01');
+        app(BajaEmpleado::class)->dar($this->admin, $p, '2026-02-01', 'otro');
         $cuenta = $this->cuenta('contabilidad');
 
         $this->actingAs($this->admin)->post(route('planilla.empleados.modulos', $p), ['usa_sistema' => '1', 'user_id' => (string) $cuenta->id])

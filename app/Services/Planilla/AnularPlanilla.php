@@ -108,11 +108,12 @@ final class AnularPlanilla
                 'anulada_at' => now(),
                 'anulada_por' => $usuario->id,
                 'motivo_anulacion' => $motivo,
-            ] + ($planilla->esVacaciones() && $planilla->individual_de > 0 ? [
-                // Un pago de vacaciones anulado deja libre su lugar en la clave única, para
-                // poder pagarle de nuevo a la persona ese mismo mes. En vacaciones `periodo`
-                // es solo la clave técnica: no se muestra ni lo usan Gastos ni el cálculo,
-                // que miran `desde`. Quincenas y mensuales no cambian: siguen ocupándolo.
+            ] + ($planilla->esIndividual() && $planilla->individual_de > 0 ? [
+                // Un pago individual anulado (vacaciones, indemnización) deja libre su lugar
+                // en la clave única, para poder pagarle de nuevo a la persona ese mismo mes.
+                // En esos pagos `periodo` es solo la clave técnica: no se muestra ni lo usan
+                // Gastos ni el cálculo, que miran `desde`. Quincenas y mensuales no cambian:
+                // siguen ocupándolo.
                 'periodo' => $periodo.'-A'.$planilla->id,
             ] : []));
 

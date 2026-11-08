@@ -17,15 +17,17 @@
     // Interruptores de Configuración › Módulos (valor guardado → .env). Se leen una vez.
     $pagosActivos = \App\Enums\ModuloSistema::PlanillaPagos->activo();
     $gastosActivo = \App\Enums\ModuloSistema::Gastos->activo();
+    // Un pago de una persona (vacaciones, indemnización) no es una planilla de varios.
+    $queEs = $planilla->esIndividual() ? 'el pago' : 'la planilla';
 @endphp
 
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                @if ($planilla->esVacaciones())
-                    {{-- Anual y de una persona: sin mes ni tipo de período. --}}
-                    <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $planilla->nombreDeVacaciones() }}</h1>
+                @if ($planilla->esIndividual())
+                    {{-- De una persona (vacaciones, indemnización): sin mes ni tipo de período. --}}
+                    <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $planilla->nombreDelPago() }}</h1>
                     <p class="text-sm text-gray-500">
                         {{ $planilla->periodoEnPalabras() }}
                         @if ($planilla->fecha_pago) · Pago el {{ $planilla->fecha_pago->format('d/m/Y') }} @endif
@@ -91,7 +93,7 @@
                         </p>
                     @elseif ($planilla->estado === 'anulada')
                         <p class="mt-2 text-sm text-gray-600">
-                            Nada que pagar: la planilla se anuló y sus obligaciones se extinguieron sin que saliera dinero.
+                            Nada que pagar: {{ $queEs }} se anuló y sus obligaciones se extinguieron sin que saliera dinero.
                         </p>
                     @else
                         <dl class="mt-2 space-y-1 text-sm">
@@ -150,7 +152,7 @@
                         </dl>
 
                         <div class="rounded border border-gray-100 bg-gray-50 p-3 text-xs leading-relaxed text-gray-600">
-                            <p>Incluye los anticipos que se descontaron {{ $planilla->esVacaciones() ? 'en este pago' : 'en esta quincena' }}.</p>
+                            <p>Incluye los anticipos que se descontaron {{ $planilla->esIndividual() ? 'en este pago' : 'en esta quincena' }}.</p>
                             @if ($cuadre && $cuadre['cuadra'])
                                 <p class="mt-2 font-medium text-emerald-700">
                                     Cuadra: {{ Dinero::mostrar($cuadre['desembolsado']) }} desembolsados
@@ -175,7 +177,7 @@
             @if ($planilla->borrador())
                 @can('planilla.gestionar')
                     <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-                        <h2 class="text-sm font-semibold text-indigo-900">Esta planilla quedó como borrador</h2>
+                        <h2 class="text-sm font-semibold text-indigo-900">{{ $planilla->esIndividual() ? 'Este pago' : 'Esta planilla' }} quedó como borrador</h2>
                         <p class="mt-1 text-sm text-indigo-900">
                             Todavía no debe nada. Terminala para generarla, o borrala abajo.
                         </p>
@@ -301,7 +303,7 @@
             @if ($planilla->confirmada())
                 @can('planilla.gestionar')
                     <section class="rounded-lg border border-red-200 bg-white p-4">
-                        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Anular la planilla</h2>
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Anular {{ $queEs }}</h2>
                         <p class="mt-1 text-xs text-gray-600">
                             Deja sin efecto lo que se debía y libera los anticipos. No borra nada. Si ya hay pagos,
                             primero hay que revertirlos.
@@ -324,7 +326,7 @@
             @if ($posterior === null)
                 @can('planilla.gestionar')
                     <section class="rounded-lg border border-red-200 bg-white p-4">
-                        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Borrar la planilla</h2>
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Borrar {{ $queEs }}</h2>
                         @if ($impedimentos !== [])
                             <p class="mt-1 text-sm text-gray-700">No se puede borrar:</p>
                             <ul class="mt-1 list-inside list-disc text-sm text-gray-700">
@@ -338,10 +340,10 @@
                                 anticipos que descontaba vuelven a tener su saldo. Después se puede generar de nuevo.
                             </p>
                             <form method="POST" action="{{ route('planilla.destroy', $planilla) }}" class="mt-2"
-                                  onsubmit="return confirm(@js('¿Borrar '.($planilla->esVacaciones() ? 'el '.lcfirst($planilla->nombreDeVacaciones()) : 'la planilla '.$planilla->periodo).'? Se borra con todo lo que creó y no se puede deshacer.'))">
+                                  onsubmit="return confirm(@js('¿Borrar '.($planilla->esIndividual() ? (str_starts_with($planilla->nombreDelPago(), 'Prestación') ? 'la ' : 'el ').lcfirst($planilla->nombreDelPago()) : 'la planilla '.$planilla->periodo).'? Se borra con todo lo que creó y no se puede deshacer.'))">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Borrar la planilla</button>
+                                <button type="submit" class="inline-flex min-h-11 items-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Borrar {{ $queEs }}</button>
                             </form>
                         @endif
                     </section>

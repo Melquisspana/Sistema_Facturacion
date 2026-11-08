@@ -9,6 +9,7 @@ use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -200,6 +201,19 @@ final class ConfirmarPlanilla
      */
     private function fijarAnioDeServicio(Planilla $planilla): void
     {
+        // Indemnización: lo mismo con el tiempo de servicio, del ingreso a la baja.
+        if ($planilla->esIndemnizacion()) {
+            foreach ($planilla->detalles as $detalle) {
+                $e = $detalle->empleado;
+
+                $detalle->update($e?->alta_el === null || $e->baja_el === null
+                    ? ['periodo_desde' => null, 'periodo_hasta' => null]
+                    : ['periodo_desde' => $e->alta_el->toDateString(), 'periodo_hasta' => CarbonImmutable::parse((string) $e->baja_el)->toDateString()]);
+            }
+
+            return;
+        }
+
         if (! $planilla->esVacaciones()) {
             return;
         }
@@ -234,15 +248,16 @@ final class ConfirmarPlanilla
         $gasto = Gasto::firstOrCreate(['clave' => $clave], [
             'huella_peticion' => hash('sha256', $clave),
             'beneficiario' => $detalle->nombre_snapshot,
-            'concepto' => ($planilla->esVacaciones() ? 'Vacaciones' : 'Planilla '.$planilla->periodo).' · '.$detalle->nombre_snapshot,
+            // «Vacaciones · Ana», «Indemnización · Ana», «Prestación por renuncia · Ana».
+            'concepto' => ($planilla->esIndividual() ? Planilla::CLASES[$planilla->clase] : 'Planilla '.$planilla->periodo).' · '.$detalle->nombre_snapshot,
             'categoria' => 'Planilla',
             'ambito' => 'empresarial',
             'naturaleza' => 'operativo',
             'moneda' => $planilla->moneda,
             'importe' => Dinero::decimal($aPagar),
-            // Vacaciones: el mes de `desde` es solo su clave técnica, no un período pagado.
-            'periodo_desde' => $planilla->esVacaciones() ? null : $planilla->desde,
-            'periodo_hasta' => $planilla->esVacaciones() ? null : $planilla->hasta,
+            // Pago individual: el mes de `desde` es solo su clave técnica, no un período pagado.
+            'periodo_desde' => $planilla->esIndividual() ? null : $planilla->desde,
+            'periodo_hasta' => $planilla->esIndividual() ? null : $planilla->hasta,
             'documentacion' => 'pendiente',
             'responsable_id' => $planilla->registrado_por,
             'registrado_por' => $usuario->id,
@@ -301,14 +316,16 @@ final class ConfirmarPlanilla
             $gasto = Gasto::firstOrCreate(['clave' => $clave], [
                 'huella_peticion' => hash('sha256', $clave),
                 'beneficiario' => $nombre,
-                'concepto' => $planilla->esVacaciones() ? 'Descuentos de vacaciones de '.$planilla->detalles->first()?->nombre_snapshot : 'Descuentos de planilla '.$planilla->periodo,
+                'concepto' => $planilla->esIndividual()
+                    ? 'Descuentos de '.mb_strtolower(Planilla::CLASES[$planilla->clase]).' de '.$planilla->detalles->first()?->nombre_snapshot
+                    : 'Descuentos de planilla '.$planilla->periodo,
                 'categoria' => 'Planilla',
                 'ambito' => 'empresarial',
                 'naturaleza' => 'operativo',
                 'moneda' => $planilla->moneda,
                 'importe' => Dinero::decimal($importe),
-                'periodo_desde' => $planilla->esVacaciones() ? null : $planilla->desde,
-                'periodo_hasta' => $planilla->esVacaciones() ? null : $planilla->hasta,
+                'periodo_desde' => $planilla->esIndividual() ? null : $planilla->desde,
+                'periodo_hasta' => $planilla->esIndividual() ? null : $planilla->hasta,
                 'documentacion' => 'pendiente',
                 'responsable_id' => $planilla->registrado_por,
                 'registrado_por' => $usuario->id,

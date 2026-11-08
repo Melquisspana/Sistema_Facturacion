@@ -3,6 +3,7 @@
 namespace App\Models\Planilla;
 
 use App\Models\User;
+use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\VacacionesAnuales;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -36,6 +37,9 @@ class Planilla extends Model
         'aguinaldo' => 'Aguinaldo',
         'quincena25' => 'Quincena 25',
         'vacaciones' => 'Vacaciones',
+        // De una sola persona y solo desde su baja: no se abren desde «Generar planilla».
+        'indemnizacion' => 'Indemnización',
+        'renuncia' => 'Prestación por renuncia',
     ];
 
     public const ESTADOS = [
@@ -73,7 +77,7 @@ class Planilla extends Model
     }
 
     /**
-     * La persona de un pago individual (vacaciones). Las planillas de varios guardan 0 en
+     * La persona de un pago individual (vacaciones, indemnización). Las planillas de varios guardan 0 en
      * `individual_de`, así que no la tienen.
      */
     public function individual(): BelongsTo
@@ -88,6 +92,40 @@ class Planilla extends Model
     public function esVacaciones(): bool
     {
         return $this->clase === VacacionesAnuales::CLASE;
+    }
+
+    /** Indemnización por despido o prestación por renuncia: de UNA persona, desde su baja. */
+    public function esIndemnizacion(): bool
+    {
+        return IndemnizacionBaja::es((string) $this->clase);
+    }
+
+    /**
+     * Pago de una sola persona (vacaciones, indemnización): sin formato de planilla. En
+     * pantalla no lleva tipo de período ni mes; `tipo_periodo` y `periodo` son su clave técnica.
+     */
+    public function esIndividual(): bool
+    {
+        return $this->esVacaciones() || $this->esIndemnizacion();
+    }
+
+    /**
+     * Cómo se nombra en pantalla: «Pago de vacaciones de Ana», «Pago de indemnización de
+     * Ana», «Prestación por renuncia de Ana» o «Planilla 2026-11-Q1».
+     */
+    public function nombreDelPago(): string
+    {
+        if ($this->esVacaciones()) {
+            return $this->nombreDeVacaciones();
+        }
+
+        if ($this->esIndemnizacion()) {
+            $persona = $this->individual ?? $this->detalles->first()?->empleado;
+
+            return IndemnizacionBaja::titulo($this->clase, $persona?->nombre);
+        }
+
+        return 'Planilla '.$this->periodo;
     }
 
     /**
@@ -138,9 +176,20 @@ class Planilla extends Model
             : $vacaciones->anioDeServicio($persona, $this->desde->toImmutable());
     }
 
-    /** Cómo se lee el período, en palabras. En vacaciones, el año de servicio. */
+    /**
+     * Cómo se lee el período, en palabras. En vacaciones, el año de servicio; en la
+     * indemnización, el tiempo de servicio.
+     */
     public function periodoEnPalabras(): string
     {
+        if ($this->esIndemnizacion()) {
+            $linea = $this->detalles->first();
+            $servicio = $linea === null ? null : app(IndemnizacionBaja::class)->servicioDeLinea($linea);
+
+            return $servicio === null ? 'Tiempo de servicio sin fecha de ingreso'
+                : 'Tiempo de servicio: del '.$servicio['desde']->format('d/m/Y').' al '.$servicio['hasta']->format('d/m/Y');
+        }
+
         if ($this->esVacaciones()) {
             // Las de antes con varias personas: cada una tenía su año, que va en su recibo.
             if ($this->personaDeVacaciones() === null && $this->detalles->count() > 1) {

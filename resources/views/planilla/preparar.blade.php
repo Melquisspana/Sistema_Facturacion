@@ -25,13 +25,13 @@
         ])->values(),
     ])->values();
 
-    // Vacaciones: un pago anual de una persona, no una quincena.
-    $vacaciones = $planilla->esVacaciones();
+    // Vacaciones o indemnización: un pago de una persona, no una quincena.
+    $vacaciones = $planilla->esIndividual();
     $deEsto = $vacaciones ? 'de este pago' : 'de esta quincena';
-    // En vacaciones el monto es el ingreso «Vacaciones»: esa columna lo dice.
-    $extras = $vacaciones ? 'Vacaciones' : 'Extras';
+    // En un pago individual el monto es su ingreso («Vacaciones», «Indemnización»): esa columna lo dice.
+    $extras = $vacaciones ? Planilla::CLASES[$planilla->clase] : 'Extras';
     $pregunta = $vacaciones
-        ? '¿Generar el '.lcfirst($planilla->nombreDeVacaciones()).'? '
+        ? '¿Generar '.(str_starts_with($planilla->nombreDelPago(), 'Prestación') ? 'la ' : 'el ').lcfirst($planilla->nombreDelPago()).'? '
         : '¿Generar la planilla '.$planilla->periodo.'? ';
 
     $disponiblesJs = $disponibles->map(fn ($e) => [
@@ -46,11 +46,11 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ $planilla->esVacaciones() ? $planilla->nombreDeVacaciones() : Planilla::TIPOS_PERIODO[$planilla->tipo_periodo].' · '.$planilla->periodo }}
+                    {{ $planilla->esIndividual() ? $planilla->nombreDelPago() : Planilla::TIPOS_PERIODO[$planilla->tipo_periodo].' · '.$planilla->periodo }}
                 </h1>
                 <p class="text-sm text-gray-500">
                     {{ $planilla->periodoEnPalabras() }}
-                    @if ($planilla->clase !== 'regular' && ! $planilla->esVacaciones()) · {{ Planilla::CLASES[$planilla->clase] }} @endif
+                    @if ($planilla->clase !== 'regular' && ! $planilla->esIndividual()) · {{ Planilla::CLASES[$planilla->clase] }} @endif
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -574,7 +574,11 @@
                     </template>
 
                     <template x-if="disponibles.length === 0">
-                        @if ($vacaciones)
+                        @if ($planilla->esIndemnizacion())
+                            <p class="text-sm text-gray-600">
+                                Un pago de indemnización es de una sola persona. El de otra se calcula desde su ficha, en Personal.
+                            </p>
+                        @elseif ($vacaciones)
                             <p class="text-sm text-gray-600">
                                 Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá
                                 <a href="{{ route('planilla.vacaciones') }}" class="font-medium text-indigo-700 underline">Pagar vacaciones</a>.

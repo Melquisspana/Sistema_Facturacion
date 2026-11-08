@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
  * Borrar una planilla con todo lo que creó, como si nunca se hubiera generado.
  *
  * SOLO LA ÚLTIMA. La que va arriba en la lista: la de período más reciente y, con el
- * mismo período, la que se hizo después. Para un pago de vacaciones, la última de su
+ * mismo período, la que se hizo después. Para un pago individual, el último de su
  * persona ({@see posterior()}). Borrar una del medio dejaría un hueco en la
  * historia y descontaría de nuevo anticipos que la siguiente ya dio por recuperados.
  * Un borrador se borra siempre: no creó nada.
@@ -30,7 +30,7 @@ final class BorrarPlanilla
     /**
      * La planilla que va después de esta, si hay alguna.
      *
-     * Un pago de vacaciones es de una persona: solo lo frena, o es frenado por, una
+     * Un pago individual (vacaciones, indemnización) es de una persona: solo lo frena, o es frenado por, una
      * planilla posterior en la que esté alguien de los suyos. Entre quincenas y mensuales
      * todo sigue igual: cualquiera posterior cuenta.
      */
@@ -47,8 +47,8 @@ final class BorrarPlanilla
                     ->whereColumn('d.planilla_id', 'planillas.id')
                     ->whereIn('d.planilla_empleado_id', $personas));
 
-                if (! $planilla->esVacaciones()) {
-                    $q->orWhere('clase', '!=', VacacionesAnuales::CLASE);
+                if (! $planilla->esIndividual()) {
+                    $q->orWhereNotIn('clase', [VacacionesAnuales::CLASE, ...array_values(IndemnizacionBaja::CLASES)]);
                 }
             })
             ->orderBy('desde')
@@ -67,7 +67,9 @@ final class BorrarPlanilla
 
         if (! $planilla->borrador() && ($siguiente = $this->posterior($planilla)) !== null) {
             $motivos[] = 'Solo se puede borrar la última planilla, y después de esta está '
-                .($siguiente->esVacaciones() ? 'el '.lcfirst($siguiente->nombreDeVacaciones()) : 'la '.$siguiente->periodo).'.';
+                .($siguiente->esIndividual()
+                    ? ($siguiente->clase === IndemnizacionBaja::CLASES['renuncia'] ? 'la ' : 'el ').lcfirst($siguiente->nombreDelPago())
+                    : 'la '.$siguiente->periodo).'.';
         }
 
         $gastos = $this->gastos($planilla);
