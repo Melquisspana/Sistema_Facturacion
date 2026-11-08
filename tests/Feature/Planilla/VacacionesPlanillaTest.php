@@ -336,6 +336,7 @@ class VacacionesPlanillaTest extends TestCase
 
     public function test_lo_ya_pagado_no_se_paga_otra_vez_en_otro_mes(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2026-12-10 09:00'));
         $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
         $this->generar('2026-11-20', $ana);
 
@@ -423,7 +424,9 @@ class VacacionesPlanillaTest extends TestCase
             'no existe' => ['2026-02-30', 'fecha_pago', 'La fecha de pago no es una fecha válida.'],
             'antes del primer año' => ['2021-10-15', 'empleado', 'Ana Ficticia no tiene vacaciones por pagar: todavía no cumple un año.'],
             // Hoy es 06/11/2026: noviembre de 2027 pagaría un año que todavía no se trabajó.
-            'un año que no se trabajó' => ['2027-11-15', 'fecha_pago', 'Con esa fecha se pagaría el año que se cumple el 10/11/2027, que todavía no se trabajó.'],
+            'un año que no se trabajó' => ['2027-11-15', 'fecha_pago', 'La fecha de pago no puede ser de un mes que todavía no llegó.'],
+            // El año ya se cumplió, pero diciembre todavía no llegó: lo mismo que el `max` del campo.
+            'un mes que no llegó' => ['2026-12-10', 'fecha_pago', 'La fecha de pago no puede ser de un mes que todavía no llegó.'],
         ];
     }
 
@@ -582,6 +585,73 @@ class VacacionesPlanillaTest extends TestCase
             ->assertSee('10/11/25–10/11/26');
     }
 
+    public function test_corregir_la_fecha_de_ingreso_hacia_adelante_no_paga_dos_veces_el_ano(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-03-20 09:00'));
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-03-15');
+        $this->generar('2026-03-20', $ana);
+
+        // Se corrige: entró el 20/04. El año que termina el 20/04/2026 se cruza once meses
+        // con el que ya cobró (hasta el 15/03/2026): es el mismo, no se paga otra vez.
+        $ana->update(['alta_el' => '2020-04-20']);
+        $this->travelTo(CarbonImmutable::parse('2026-04-25 09:00'));
+        $this->assertSame([], $this->porPagar('2026-04-25'));
+
+        try {
+            $this->abrir('2026-04-25', $ana);
+            $this->fail('Tenía que rechazarlo.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('ya cobró las vacaciones del año cumplido el 20/04/2026, en el pago del 20/03/2026', $e->errors()['empleado'][0]);
+        }
+
+        // Y el año siguiente no se pierde.
+        $this->travelTo(CarbonImmutable::parse('2027-04-25 09:00'));
+        $this->assertSame(['Ana Ficticia'], $this->porPagar('2027-04-25'));
+        $this->assertSame('confirmada', $this->generar('2027-04-25', $ana)->estado);
+    }
+
+    public function test_corregir_la_fecha_de_ingreso_hacia_atras_no_da_por_pagado_un_ano_que_no_se_pago(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-04-25 09:00'));
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-04-20');
+        $this->generar('2026-04-25', $ana);
+
+        // Se corrige: entró el 15/03. El año que termina el 15/03/2026 es el que ya cobró.
+        $ana->update(['alta_el' => '2020-03-15']);
+        $this->assertSame([], $this->porPagar('2026-04-25'));
+
+        // El que termina el 15/03/2027 no se pagó (el cobrado terminó el 20/04/2026): le toca.
+        $this->travelTo(CarbonImmutable::parse('2027-03-20 09:00'));
+        $this->assertSame(['Ana Ficticia'], $this->porPagar('2027-03-20'));
+        $nuevo = $this->generar('2027-03-20', $ana);
+        $this->assertSame(['2026-03-15', '2027-03-15'], [$this->linea($nuevo, $ana)->periodo_desde->toDateString(), $this->linea($nuevo, $ana)->periodo_hasta->toDateString()]);
+    }
+
+    public function test_el_ano_de_servicio_no_sale_del_formulario(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-20 09:00'));
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $borrador = $this->abrir('2026-11-20', $ana);
+        $conceptos = $this->linea($borrador, $ana)->conceptos->map(fn ($c) => [
+            'tipo' => $c->tipo, 'ley' => $c->ley, 'concepto' => $c->concepto, 'importe' => (string) $c->importe,
+            'destino' => $c->destino, 'tercero' => $c->tercero,
+        ])->all();
+        // Un POST a mano que trae otro año.
+        $forjada = ['planilla_empleado_id' => $ana->id, 'salario' => '0.00', 'periodo_desde' => '2019-01-01', 'periodo_hasta' => '2019-12-31', 'conceptos' => $conceptos];
+
+        app(PrepararPlanilla::class)->guardarLineas($this->actor, $borrador, [$forjada]);
+        $this->assertNull($this->linea($borrador, $ana)->periodo_desde);
+        $this->assertNull($this->linea($borrador, $ana)->periodo_hasta);
+
+        // Un borrador viejo que ya tenía fechas: al confirmar se escribe el calculado.
+        $this->linea($borrador, $ana)->update(['periodo_desde' => '2019-01-01', 'periodo_hasta' => '2019-12-31']);
+        $this->actingAs($this->actor)->post(route('planilla.confirmar', $borrador))->assertSessionHasNoErrors();
+
+        $linea = $this->linea($borrador, $ana);
+        $this->assertSame('confirmada', $borrador->fresh()->estado);
+        $this->assertSame(['2025-11-10', '2026-11-10'], [$linea->periodo_desde->toDateString(), $linea->periodo_hasta->toDateString()]);
+    }
+
     public function test_el_formato_del_recibo_sale_de_la_clase_y_no_de_la_fecha(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-20 09:00'));
@@ -653,6 +723,7 @@ class VacacionesPlanillaTest extends TestCase
 
     public function test_si_se_anula_vuelve_a_quedar_por_pagar(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2026-12-10 09:00'));
         $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
         $noviembre = $this->generar('2026-11-20', $ana);
         app(AnularPlanilla::class)->anular($this->actor, $noviembre, 'Prueba de anulación');
@@ -904,7 +975,10 @@ class VacacionesPlanillaTest extends TestCase
 
         $borrador = $this->abrir('2026-11-20', $this->persona('Bea', 'FICTICIO-2', '2021-11-03', '300.00', false));
         $this->actingAs($this->actor)->get(route('planilla.preparar', $borrador))->assertOk()
-            ->assertSee('Pago de vacaciones')->assertDontSee('Pago del período');
+            ->assertSee('Pago de vacaciones')->assertDontSee('Pago del período')
+            // El salario en 0 viaja oculto: el monto es el ingreso «Vacaciones».
+            ->assertDontSee(":id=\"'salario-'+i\"", false)
+            ->assertSee(":name=\"'lineas['+i+'][salario]'\" :value=\"l.salario\"", false);
     }
 
     public function test_enlace_del_inicio_a_pagar_vacaciones(): void

@@ -46,7 +46,6 @@ final class PrepararPlanilla
         private DescuentosLey $descuentos,
         private PrestacionAnual $prestaciones,
         private AcumuladoRenta $acumulados,
-        private VacacionesAnuales $vacaciones,
     ) {}
 
     /**
@@ -172,6 +171,16 @@ final class PrepararPlanilla
     /** Que la persona de un pago de vacaciones de verdad las tenga por pagar en esa fecha. */
     private function exigirVacacionesPorPagar(PlanillaEmpleado $empleado, CarbonImmutable $pago): void
     {
+        // Lo mismo que el `max` del campo. Un pago con fecha de un mes que no llegó dejaría
+        // un pago «del futuro» que frena borrar las quincenas de por medio. Con este tope
+        // tampoco se puede pagar un año sin trabajar: el año que paga una fecha termina, a
+        // más tardar, el fin de su mes, y el que se cumple este mes sí se paga.
+        if ($pago > CarbonImmutable::now()->endOfMonth()) {
+            throw ValidationException::withMessages([
+                'fecha_pago' => 'La fecha de pago no puede ser de un mes que todavía no llegó.',
+            ]);
+        }
+
         $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el)->toDateString();
         $motivo = ! $empleado->activo || ($baja !== null && $baja < $pago->startOfMonth()->toDateString())
             ? 'no está activa en planilla'
@@ -179,15 +188,6 @@ final class PrepararPlanilla
 
         if ($motivo !== null) {
             throw ValidationException::withMessages(['empleado' => $empleado->nombre.' no tiene vacaciones por pagar: '.$motivo.'.']);
-        }
-
-        // No se paga un año que todavía no se trabajó. El que se cumple este mes, sí.
-        $anio = $this->vacaciones->anioDeServicio($empleado, $pago);
-
-        if ($anio !== null && $anio['hasta'] > CarbonImmutable::now()->endOfMonth()) {
-            throw ValidationException::withMessages([
-                'fecha_pago' => 'Con esa fecha se pagaría el año que se cumple el '.$anio['hasta']->format('d/m/Y').', que todavía no se trabajó.',
-            ]);
         }
     }
 
@@ -329,6 +329,10 @@ final class PrepararPlanilla
                     'lineas' => 'Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá «Pagar vacaciones».',
                 ]);
             }
+
+            // En vacaciones esas fechas son el año de servicio, y lo escribe solo el sistema
+            // al confirmar ({@see ConfirmarPlanilla}): nunca el formulario.
+            $lineas = array_map(fn (array $l) => array_merge($l, ['periodo_desde' => null, 'periodo_hasta' => null]), $lineas);
         }
 
         return DB::transaction(function () use ($usuario, $planilla, $lineas) {

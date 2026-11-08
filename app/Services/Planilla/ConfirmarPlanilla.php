@@ -195,7 +195,8 @@ final class ConfirmarPlanilla
     /**
      * Vacaciones: el año de servicio que se paga queda escrito en la línea al confirmar,
      * en `periodo_desde` y `periodo_hasta`. Así el recibo firmado no cambia si después se
-     * corrige la fecha de ingreso de la ficha. Lo que ya tenga fechas no se toca.
+     * corrige la fecha de ingreso de la ficha. Se escribe siempre el calculado: nada que
+     * haya llegado de un formulario o de un borrador viejo cuenta como año pagado.
      */
     private function fijarAnioDeServicio(Planilla $planilla): void
     {
@@ -203,12 +204,13 @@ final class ConfirmarPlanilla
             return;
         }
 
-        foreach ($planilla->detalles->whereNull('periodo_desde') as $detalle) {
+        foreach ($planilla->detalles as $detalle) {
             $anio = $detalle->empleado === null ? null : $this->vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable());
 
-            if ($anio !== null) {
-                $detalle->update(['periodo_desde' => $anio['desde']->toDateString(), 'periodo_hasta' => $anio['hasta']->toDateString()]);
-            }
+            // Sin año calculable (los reparos ya lo habrían frenado) queda vacío, no lo de antes.
+            $detalle->update($anio === null
+                ? ['periodo_desde' => null, 'periodo_hasta' => null]
+                : ['periodo_desde' => $anio['desde']->toDateString(), 'periodo_hasta' => $anio['hasta']->toDateString()]);
         }
     }
 

@@ -21,9 +21,11 @@ use Illuminate\Support\Facades\DB;
  * UN AÑO DE SERVICIO YA ESTÁ PAGADO si:
  *  - el año de su aniversario es igual o anterior a «Vacaciones pagadas hasta» de la
  *    ficha, que es lo que se pagó fuera del sistema; o
- *  - hay un pago de vacaciones no anulado que lo incluye. Qué año pagó sale del mes del
- *    pago: uno entre el aniversario y el siguiente paga ese año. Los borradores cuentan,
- *    porque están en curso.
+ *  - hay un pago de vacaciones no anulado que lo incluye. Un pago confirmado guarda el
+ *    año que pagó, y es el mismo año si termina a menos de seis meses de este aniversario
+ *    (así una fecha de ingreso corregida no lo paga dos veces ni lo pierde). Sin año
+ *    guardado (borradores, que cuentan porque están en curso, y pagos de antes), sale del
+ *    mes del pago: uno entre el aniversario y el siguiente paga ese año.
  *
  * Todo en centavos enteros, y se redondea una sola vez, al centavo, la mitad hacia arriba.
  */
@@ -218,8 +220,19 @@ final class VacacionesAnuales
             ->where('p.clase', self::CLASE)
             ->where('p.estado', '!=', 'anulada')
             ->when($salvoPlanilla !== null, fn ($q) => $q->where('p.id', '!=', $salvoPlanilla))
-            ->whereDate('p.desde', '>=', $aniversario->startOfMonth()->toDateString())
-            ->whereDate('p.desde', '<', $ingreso->addYearsNoOverflow($anios + 1)->startOfMonth()->toDateString())
+            ->where(fn ($q) => $q
+                // Con el año guardado al confirmar, decide ese año y no el mes del pago: si
+                // después se corrige la fecha de ingreso, el año ya pagado sigue pagado. Es el
+                // mismo año si termina a menos de seis meses de este aniversario (se cruzan
+                // más de la mitad); uno que termina a seis meses o más es otro año, en las
+                // dos direcciones de la corrección.
+                ->where(fn ($q) => $q->whereNotNull('d.periodo_hasta')
+                    ->whereDate('d.periodo_hasta', '>', $aniversario->subMonthsNoOverflow(6)->toDateString())
+                    ->whereDate('d.periodo_hasta', '<', $aniversario->addMonthsNoOverflow(6)->toDateString()))
+                // Sin año guardado (borradores y pagos de antes), por el mes del pago.
+                ->orWhere(fn ($q) => $q->whereNull('d.periodo_hasta')
+                    ->whereDate('p.desde', '>=', $aniversario->startOfMonth()->toDateString())
+                    ->whereDate('p.desde', '<', $ingreso->addYearsNoOverflow($anios + 1)->startOfMonth()->toDateString())))
             ->first(['p.fecha_pago', 'p.desde']);
 
         if ($pagado !== null) {
