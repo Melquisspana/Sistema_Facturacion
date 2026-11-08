@@ -98,9 +98,20 @@ class AuditoriaDatoPersonalTest extends TestCase
         $this->assertNull($actividad->getExtraProperty('dato_personal'));
     }
 
-    public function test_contabilidad_ve_que_cambio_pero_no_el_dui_ni_el_domicilio(): void
+    /**
+     * La pantalla de Auditoría nunca muestra el antes y el después de un ajuste, ni
+     * siquiera en las filas viejas, de antes de este cambio, que sí guardaron el valor.
+     */
+    public function test_contabilidad_ve_que_cambio_pero_no_el_antes_ni_el_despues_ni_de_filas_viejas(): void
     {
         $this->guardarDatosDelPatrono($this->usuario('administrador'));
+        activity('ajustes')
+            ->withProperties([
+                'clave' => 'planilla.contrato.patrono.dui',
+                'valor_antes' => '11111111-1',
+                'valor_despues' => self::DUI,
+            ])
+            ->log('cambió la configuración «planilla.contrato.patrono.dui»');
 
         $this->actingAs($this->usuario('contabilidad'))
             ->get(route('auditoria.index', ['log_name' => 'ajustes']))
@@ -108,6 +119,7 @@ class AuditoriaDatoPersonalTest extends TestCase
             ->assertSee('planilla.contrato.patrono.dui')
             ->assertSee('planilla.contrato.patrono.domicilio')
             ->assertDontSee(self::DUI)
+            ->assertDontSee('11111111-1')
             ->assertDontSee(self::DOMICILIO);
     }
 
