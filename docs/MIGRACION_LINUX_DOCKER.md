@@ -24,7 +24,7 @@
    - Melqui ya tiene el instalador (ISO) de Windows (08/11). Sirve para reinstalar Windows **limpio**, pero no guarda los programas, la configuración ni los datos del servidor: no reemplaza la imagen ni las copias.
 3. **Nunca dos sistemas emitiendo a la vez.** En ningún momento pueden estar activos, al mismo tiempo, dos instancias con el mismo certificado, la transmisión a Hacienda encendida y el mismo túnel de Cloudflare. Eso duplica documentos y números correlativos.
 4. **Ninguna migración de base nueva** forma parte de este trabajo. El contenedor no corre `migrate` solo al arrancar.
-5. **Sin monitor, sin teclado y sin iniciar sesión** (pedido de Melqui, 08/11). Con Linux el servidor queda sin pantalla. Todo arranca solo al encender: Docker con `restart: unless-stopped` y los servicios del host por systemd, sin escritorio gráfico ni sesión abierta. Se administra por SSH sobre Tailscale. En Windows no se cambia nada: esto queda para Linux.
+5. **Sin monitor, sin teclado y sin iniciar sesión** (pedido de Melqui, 08/11). Con Linux el servidor queda sin pantalla. Todo arranca solo al encender: Docker con `restart: always` y los servicios del host por systemd, sin escritorio gráfico ni sesión abierta. Se administra por SSH sobre Tailscale. En Windows no se cambia nada: esto queda para Linux.
 6. Siguen todas las reglas del proyecto: rama y PR, sin commit ni push directo a `master` y la guía de pantallas para cualquier vista que se toque.
 
 ---
