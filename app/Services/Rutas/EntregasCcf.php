@@ -16,6 +16,7 @@ use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\User;
+use App\Support\HoraNegocio;
 use App\Support\IdentidadPpq;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -56,6 +57,9 @@ class EntregasCcf
     /** Forma de pago elegible al entregar: no se cobra ahora (quedan o crédito). */
     public const SIN_COBRO = 'sin_cobro';
 
+    /** Ventana de «Por entregar»: lo facturado hace más quedó viejo y no se lista. */
+    public const DIAS_POR_ENTREGAR = 45;
+
     public function __construct(private readonly AlbaranLocalizador $albaranes) {}
 
     // ================================================================ pendientes
@@ -67,30 +71,48 @@ class EntregasCcf
     }
 
     /**
-     * Pendientes de estas salas, en una consulta para todas.
+     * «Por entregar» del vendedor: lo pendiente de TODAS las salas, con ruta o sin ella, de
+     * los últimos {@see self::DIAS_POR_ENTREGAR} días (y nunca antes de `rutas.entregas_desde`).
+     * A diferencia de la carga de una salida, incluye lo que ya va sin registrar en una salida
+     * abierta: sigue por entregar y se marca dentro de esa salida. Los más viejos primero.
      *
-     * @param  array<int, int>  $salas
+     * Con `$dteId`, solo ese CCF (vacío si no está por entregar).
+     *
      * @return Collection<int, Dte>
      */
-    private function pendientesDeSalas(array $salas): Collection
+    public function porEntregar(?int $dteId = null): Collection
+    {
+        $desde = max($this->desde(), Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR));
+
+        return $this->pendientesDeSalas(null, $desde, enCamino: true, dteId: $dteId);
+    }
+
+    /**
+     * Pendientes de estas salas (todas, con `null`), en una consulta para todas.
+     *
+     * @param  array<int, int>|null  $salas
+     * @return Collection<int, Dte>
+     */
+    private function pendientesDeSalas(?array $salas, ?Carbon $desde = null, bool $enCamino = false, ?int $dteId = null): Collection
     {
         if ($salas === []) {
             return collect();
         }
 
         $candidatos = $this->baseCcf()
-            ->whereIn('cliente_sucursal_id', $salas)
-            ->whereDate('fecha_emision', '>=', $this->desde())
+            ->when($salas === null, fn ($q) => $q->whereNotNull('cliente_sucursal_id'), fn ($q) => $q->whereIn('cliente_sucursal_id', $salas))
+            ->when($dteId !== null, fn ($q) => $q->whereKey($dteId))
+            ->whereDate('fecha_emision', '>=', $desde ?? $this->desde())
             ->whereNotExists(function ($q) {
                 $q->selectRaw('1')->from('salida_ruta_entregas')
                     ->whereColumn('salida_ruta_entregas.dte_id', 'dtes.id')->where('salida_ruta_entregas.resultado', ResultadoEntrega::Entregado->value);
             })
-            ->whereNotExists(function ($q) {
+            ->unless($enCamino, fn ($q) => $q->whereNotExists(function ($q) {
                 $q->selectRaw('1')->from('salida_ruta_entregas')
                     ->join('salidas_ruta', 'salidas_ruta.id', '=', 'salida_ruta_entregas.salida_ruta_id')
                     ->whereColumn('salida_ruta_entregas.dte_id', 'dtes.id')->whereNull('salida_ruta_entregas.resultado')
                     ->whereIn('salidas_ruta.estado', [EstadoSalidaRuta::Planificada->value, EstadoSalidaRuta::EnCurso->value]);
-            })
+            }))
             ->orderBy('fecha_emision')
             ->orderBy('id')
             ->get();
@@ -150,7 +172,9 @@ class EntregasCcf
      */
     public function cargarNuevosEnCurso(SalidaRuta $salida): int
     {
-        if ($salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->proposito->entrega() || $salida->diaCerrado()) {
+        // La que se armó sola desde «Por entregar» lleva solo lo que se marcó: si cargara la
+        // ruta entera, la salida formal que arme la oficina ya no podría llevar esos CCF.
+        if ($salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->proposito->entrega() || $salida->diaCerrado() || $salida->esAutomatica()) {
             return 0;
         }
         $nuevos = $this->pendientesDeRuta($salida->ruta)->pluck('id')
@@ -214,10 +238,21 @@ class EntregasCcf
         $this->exigirAbierta($salida);
         $dte = $this->ccfCargable($numeroControl, $ejercicio);
 
-        return DB::transaction(function () use ($salida, $dte) {
+        return $this->meterCcf($salida, $dte->id);
+    }
+
+    /**
+     * Mete este CCF en la salida, con la salida y el DTE bloqueados y los mismos controles de
+     * la carga: que no esté ya en ella, ni entregado, ni sin registrar en otra salida abierta.
+     *
+     * @throws ValidationException
+     */
+    public function meterCcf(SalidaRuta $salida, int $dteId): SalidaRutaEntrega
+    {
+        return DB::transaction(function () use ($salida, $dteId) {
             $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
             $this->exigirAbierta($salida);
-            $dte = Dte::whereKey($dte->id)->lockForUpdate()->firstOrFail();
+            $dte = Dte::whereKey($dteId)->lockForUpdate()->firstOrFail();
             if (($motivo = $this->conflictoCarga($salida, $dte->id)) !== null) {
                 throw ValidationException::withMessages(['numero_control' => $motivo]);
             }
@@ -336,6 +371,10 @@ class EntregasCcf
 
             $nota = trim((string) ($datos['nota'] ?? '')) ?: null;
 
+            // La columna es de 300: el `maxlength` del formulario no alcanza.
+            if ($nota !== null && mb_strlen($nota) > 300) {
+                throw ValidationException::withMessages(['nota' => 'La nota puede tener hasta 300 caracteres.']);
+            }
             if ($motivo->exigeNota() && $nota === null) {
                 throw ValidationException::withMessages(['nota' => 'Con «Otro», escribí qué pasó.']);
             }
@@ -408,6 +447,18 @@ class EntregasCcf
             if ($salida->estado === EstadoSalidaRuta::Cancelada) {
                 throw ValidationException::withMessages(['entrega' => 'La salida está cancelada: no se corrige nada en ella.']);
             }
+
+            // La automática ({@see PorEntregar}) lleva solo lo marcado: si la fila quedara
+            // pendiente, el CCF quedaría tomado por ella y ninguna otra salida lo podría llevar.
+            // Se borra, así que no choca con que el CCF vaya en otra salida abierta; si la
+            // salida queda vacía, se cancela.
+            if ($salida->esAutomatica()) {
+                $entrega->delete();
+                $original->exists = false;
+                $this->cancelarAutomaticaVacia($salida);
+
+                return;
+            }
             if (! $salida->estado->esTerminal() && $this->existeBloqueando($this->enOtraSalidaAbierta($salida, $entrega->dte_id))) {
                 throw ValidationException::withMessages(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
             }
@@ -427,6 +478,26 @@ class EntregasCcf
             ]);
             $original->setRawAttributes($entrega->getAttributes(), true);
         });
+    }
+
+    /**
+     * La automática en curso, o finalizada sin liquidar, que quedó sin entregas, gastos ni
+     * cierres no fue una salida: se cancela (no cuenta como visita en el tablero ni queda por
+     * liquidar). Con la salida ya bloqueada.
+     */
+    public function cancelarAutomaticaVacia(SalidaRuta $salida): bool
+    {
+        $anterior = $salida->estado;
+        if (! $salida->esAutomatica() || ! ($anterior === EstadoSalidaRuta::EnCurso || $salida->esPorLiquidar())
+            || $salida->entregas()->exists() || $salida->gastos()->exists() || $salida->cierres()->exists()) {
+            return false;
+        }
+        $anterior === EstadoSalidaRuta::EnCurso ? $salida->cancelar() : $salida->anularAutomaticaFinalizada();
+        activity('salida_ruta')->performedOn($salida)
+            ->withProperties(['estado_anterior' => $anterior->value, 'estado_nuevo' => EstadoSalidaRuta::Cancelada->value, 'desde' => 'por_entregar'])
+            ->log('se canceló sola: quedó vacía');
+
+        return true;
     }
 
     // ================================================================ lectura

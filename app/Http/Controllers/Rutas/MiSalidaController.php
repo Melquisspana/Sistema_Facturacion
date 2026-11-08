@@ -226,6 +226,16 @@ class MiSalidaController extends Controller
             $this->entregas->deshacer($entrega);
         });
 
+        // En la automática la fila se borra, y si era la única la salida se cancela: volver
+        // atrás daría 403, así que se va a «Por entregar», donde el CCF aparece otra vez.
+        $salida->refresh();
+        if ($salida->esAutomatica()) {
+            $aviso = 'Se quitó el CCF de la salida; vuelve a Por entregar.';
+
+            return $salida->estado === EstadoSalidaRuta::EnCurso ? back()->with('status', $aviso)
+                : redirect()->route('rutas.por-entregar.index')->with('status', $aviso);
+        }
+
         return back()->with('status', 'El CCF volvió a quedar sin registrar.');
     }
 

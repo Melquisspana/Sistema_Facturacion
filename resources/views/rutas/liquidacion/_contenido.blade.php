@@ -89,7 +89,8 @@
         </section>
     @endif
 
-    @if (! $salida->estaLiquidada() && $enCurso)
+    {{-- En curso, o una automática de «Por entregar» que se finalizó sola sin liquidar. --}}
+    @if (\App\Services\Rutas\LiquidacionSalida::seLiquida($salida) && ($enCurso || ! $modoVendedor))
         <form method="POST" action="{{ route($prefijo.'liquidar', $salida) }}" class="space-y-5">
             @csrf
             @if ($sinMarcar->isNotEmpty())

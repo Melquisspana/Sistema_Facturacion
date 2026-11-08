@@ -5,6 +5,7 @@ use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
 use App\Http\Controllers\Rutas\PedidoSalaController;
 use App\Http\Controllers\Rutas\PersonalRutaController;
+use App\Http\Controllers\Rutas\PorEntregarController;
 use App\Http\Controllers\Rutas\RutaCoberturaController;
 use App\Http\Controllers\Rutas\RutaController;
 use App\Http\Controllers\Rutas\RutaSalaController;
@@ -83,6 +84,21 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
             Route::put('{salida}/pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
             Route::patch('{salida}/pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
         });
+    });
+
+/*
+| «Por entregar» (06/11/2026): los CCF que faltan entregar, por ruta, para que el vendedor los
+| marque sin que nadie arme la salida. Mira el vendedor y también la oficina (`rutas.ver`);
+| marcar es solo del vendedor. El PDF, solo de un CCF de la lista. Deshacer usa la ruta de
+| «Mi salida».
+*/
+Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', 'cache.headers:no_store;private'])
+    ->prefix('rutas/por-entregar')->name('rutas.por-entregar.')
+    ->group(function () {
+        Route::get('/', [PorEntregarController::class, 'index'])->name('index');
+        Route::get('{dte}/pdf', [PorEntregarController::class, 'pdf'])->name('pdf');
+        Route::post('{dte}/marcar', [PorEntregarController::class, 'marcar'])->name('marcar')
+            ->middleware('permission:rutas.entregas.registrar');
     });
 
 Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;private'])

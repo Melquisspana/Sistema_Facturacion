@@ -33,8 +33,12 @@
                         @endforeach
                     </select>
                 </div>
+                <label class="flex min-h-11 items-center gap-2 text-sm text-gray-700 dark:text-paper-100">
+                    <input type="checkbox" name="por_liquidar" value="1" @checked(request()->boolean('por_liquidar')) class="h-4 w-4 rounded border-gray-300 dark:border-ink-600 dark:bg-ink-800">
+                    Solo por liquidar
+                </label>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filtrar</button>
-                @if (request()->hasAny(['ruta_id', 'estado']))
+                @if (request()->hasAny(['ruta_id', 'estado', 'por_liquidar']))
                     <a href="{{ route('rutas.salidas.index') }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
@@ -73,7 +77,13 @@
                                     <td class="py-3 px-4 text-center tabular-nums {{ $salida->entregas_count > 0 ? 'text-gray-700 dark:text-paper-100' : 'text-gray-400 dark:text-paper-500' }}">
                                         {{ $salida->entregados_count }} / {{ $salida->entregas_count }}
                                     </td>
-                                    <td class="py-3 px-4 text-center"><x-rutas.estado-badge :estado="$salida->estado" /></td>
+                                    <td class="py-3 px-4 text-center">
+                                        <x-rutas.estado-badge :estado="$salida->estado" />
+                                        {{-- Se finalizó sola: falta «Terminar ruta» y rendir el efectivo. --}}
+                                        @if ($salida->esPorLiquidar())
+                                            <span class="mt-1 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Por liquidar</span>
+                                        @endif
+                                    </td>
                                     <td class="py-3 px-4 text-right">
                                         <a href="{{ route('rutas.salidas.show', $salida) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Ver</a>
                                     </td>

@@ -100,6 +100,17 @@ class LiquidacionSalida
     }
 
     /**
+     * Se puede hacer «Terminar ruta»: en curso, o una automática de «Por entregar» que se
+     * finalizó sola al pasar el día ({@see PorEntregar::finalizarAutomaticasViejas()}) y
+     * todavía no se liquidó. La regla de los días es la misma: cada día con entregas o gastos
+     * se termina antes, y la oficina puede terminar los días de una salida finalizada.
+     */
+    public static function seLiquida(SalidaRuta $salida): bool
+    {
+        return ($salida->estado === EstadoSalidaRuta::EnCurso && ! $salida->estaLiquidada()) || $salida->esPorLiquidar();
+    }
+
+    /**
      * Anota el motivo de lo que sobró, comprueba que todos los días estén terminados,
      * finaliza la salida y deja constancia de quién entrega el dinero.
      *
@@ -114,7 +125,7 @@ class LiquidacionSalida
             if ($salida->estaLiquidada()) {
                 throw ValidationException::withMessages(['salida' => 'Esta ruta ya está terminada.']);
             }
-            if ($salida->estado !== EstadoSalidaRuta::EnCurso) {
+            if (! self::seLiquida($salida)) {
                 throw ValidationException::withMessages(['salida' => 'Solo se termina una ruta en curso.']);
             }
 
@@ -153,7 +164,10 @@ class LiquidacionSalida
                 throw ValidationException::withMessages(['entrega_dinero_personal_id' => 'Elegí quién entrega el dinero entre los que van en la salida.']);
             }
 
-            $salida->finalizar();
+            // La automática ya finalizada conserva su regreso: no se finaliza de nuevo.
+            if ($salida->estado === EstadoSalidaRuta::EnCurso) {
+                $salida->finalizar();
+            }
             $salida->update([
                 'entrega_dinero_personal_id' => $hayCobro ? (int) $validados['entrega_dinero_personal_id'] : null,
                 'liquidada_por' => $usuario->id,
