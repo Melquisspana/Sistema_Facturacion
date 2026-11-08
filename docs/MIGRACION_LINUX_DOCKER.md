@@ -1,6 +1,6 @@
 # Migración del servidor a Linux con Docker
 
-> Plan de trabajo, 08/11/2026. Todavía no se ejecutó nada y no cambió nada en producción.
+> Plan de trabajo, 08/11/2026. Producción no cambió. La fase A (archivos de Docker y cambios de código en el repo) está hecha; ver su estado en la sección 5.
 > Este documento se armó con mapas del repositorio hechos en modo lectura. Cuando algo no se puede ver en el repo, aparece como **pregunta abierta** (sección 6) y no como algo seguro.
 > Por ser un repositorio público, aquí no van datos de clientes ni de personas, IP reales, dominios reales ni secretos. Los secretos aparecen solo por su **nombre de variable**.
 
@@ -39,7 +39,7 @@
 | Programador (`schedule:run`) | **No se sabe si corre** (ver P1) | `docs/DESPLIEGUE_SERVIDOR.md §7.1` |
 | MySQL | Laragon | `config/database.php` |
 | Firmador del MH, puerto 8080 | `firmador-auto.bat` (Java con el JDK 21 que trae el paquete) | `docs/FIRMADOR_LOCAL.md` |
-| Segundo firmador, puerto 8119 | No se ve en el repo (ver P2) | `tests/Feature/Alertas/SaludPublicaTest.php:23`, `SALUD_FIRMADORES` |
+| Segundo firmador, puerto 8119 | `signer-mh`, desde la carpeta Inicio. **No se migra**: Melqui no lo usa (P2) | `tests/Feature/Alertas/SaludPublicaTest.php:23`, `SALUD_FIRMADORES` |
 | cloudflared (túnel) | Instalado en el servidor | `docs/apache/facturacion.conf.example` |
 | Tailscale (Serve y SSH) | Instalado en el servidor | `bootstrap/app.php`, `docs/DESPLIEGUE_SERVIDOR.md:9` |
 | Respaldo diario de la base | Tarea «DTE Backup Diario» a las 02:00 | `scripts/windows/backup-diario.bat` |
@@ -120,7 +120,7 @@ Las horas fijas dependen de la zona `America/El_Salvador`. Los registros van a `
 
 - La app firma por **una sola dirección**: `DTE_FIRMADOR_URL`, que por defecto es `http://localhost:8080/firmardocumento` (`config/dte.php:117-119`). El cliente es `app/Services/Dte/DteFirmaService.php`: `POST {url}/` para firmar y `GET {url}/status` para el estado. Espera hasta `DTE_FIRMA_TIMEOUT` (10 s).
 - **8080:** es el firmador oficial del MH, `svfe-api-firmador-2.0.0-exec.jar`, con el perfil `nonssl`. Busca el certificado `<NIT>.crt` en `uploads/` (carpeta de trabajo) o en `CERTIFICATE_HOME` (`docs/FIRMADOR_LOCAL.md §2`). Ni el JAR, ni el JDK, ni los certificados están en git (`.gitignore:26-34`): **existen solo en el servidor**.
-- **8119:** solo lo vigila `/salud` (`SALUD_FIRMADORES`); ningún servicio lo usa para firmar. Las notas de operación de fuera del repo hablan de un segundo firmador con el certificado de pruebas para apitest (ver P2).
+- **8119:** solo lo vigila `/salud` (`SALUD_FIRMADORES`); ningún servicio lo usa para firmar. **No se migra** (decisión de Melqui, 08/11: no lo usa). En Linux, `SALUD_FIRMADORES` lleva solo el del 8080.
 - En la documentación aparece el puerto 8113 (`ARQUITECTURA.md`, `docs/ESTADO_FASE_FACTURACION.md:315`). Está **desactualizado**: el JAR trae 8113 por defecto, pero `firmador-auto.bat` lo fuerza a 8080.
 
 ### 2.7 Almacenamiento y volúmenes
@@ -134,7 +134,7 @@ Las horas fijas dependen de la zona `America/El_Salvador`. Los registros van a `
 | `storage/fonts` | Caché de fuentes de dompdf | Se puede regenerar |
 | `backups/` (`BACKUP_DIARIO_ROOT`) | Volcados `.sql` del respaldo diario | **Sí, carpeta del host** |
 | `/var/lib/mysql` | Datos de MySQL | **Sí** |
-| Carpeta de certificados del firmador | `<NIT>.crt` de producción (y el de pruebas aparte) | Sí, carpeta del host, solo lectura |
+| Carpeta de certificados del firmador | `<NIT>.crt` de producción | Sí, carpeta del host, solo lectura |
 | `bootstrap/cache`, `public/build` | Se generan | **No**: van dentro de la imagen o se crean al arrancar |
 
 La base guarda rutas **relativas al disco**, así que no hay rutas `C:\` que reescribir en los datos. El enlace `public/storage` se crea con `storage:link`; hoy no sirve archivos, pero `PanelSistema` lo revisa.
@@ -146,7 +146,7 @@ La base guarda rutas **relativas al disco**, así que no hay rutas `C:\` que ree
 | 80/tcp, red local | Web para la oficina y los ESP32 (HTTP plano con `Host: facturacion.test`) | **Publicado** en la red local |
 | 443/tcp, red local | Vhost HTTPS de contingencia (decisión 0006 §1.1); no se sabe si existe hoy (P8) | Solo si existe |
 | 3306 | MySQL | Solo red interna de compose |
-| 8080 / 8119 | Firmadores | Solo red interna, **nunca** publicados |
+| 8080 | Firmador | Solo red interna, **nunca** publicado |
 | 22 | SSH de despliegue | Solo por Tailscale |
 | Salida 443 | Hacienda (`apitest`/`api.dtes.mh.gob.sv`), Gmail API, Drive, certificados de Cloudflare Access, sonda de contingencia | Desde la web, el worker y el programador |
 | Salida 587 / 993 | SMTP de Gmail (STARTTLS) / IMAP SSL | Desde el worker y el programador |
@@ -191,7 +191,6 @@ Todos los contenedores con código PHP usan **una sola imagen propia**. Cambia s
 | `scheduler` | la misma | `php artisan schedule:work`, **una sola instancia**. |
 | `mysql` | `mysql:8.4` | Volumen de datos; red interna solamente. |
 | `firmador` | `eclipse-temurin:21-jre` + el JAR del MH montado | `java -Dspring.profiles.active=nonssl -jar svfe-api-firmador-2.0.0-exec.jar --server.port=8080`; certificado montado `:ro`. |
-| `firmador-pruebas` o `signer-mh` | igual | Solo si se confirma que hace falta (P2), con **su propio** volumen de certificado. |
 | `cloudflared` | `cloudflare/cloudflared` | `tunnel run`; el destino del túnel cambia de `127.0.0.1:80` a `http://web:80`. |
 
 **Imagen de la app, en varias etapas:**
@@ -217,7 +216,7 @@ Todos los contenedores con código PHP usan **una sola imagen propia**. Cambia s
 ### 3.2 Redes
 
 - **`backend`** (`internal: true`, sin salida a internet): `mysql` y los firmadores. Los contenedores `web`, `worker` y `scheduler` también están en esta red. Los firmadores no necesitan internet para firmar.
-- **`frontend`**: `web`, `worker`, `scheduler` y `cloudflared`. Tiene salida a internet y una **subred fija** (`ipam`, por ejemplo `172.30.0.0/24`) para declarar los proxies de confianza (sección 4.1).
+- **`frontend`**: `web`, `worker`, `scheduler` y `cloudflared`. Tiene salida a internet y una **subred fija** (`172.30.0.0/24`) para darle a cloudflared una **IP fija** (172.30.0.10), que es lo único que va en `TRUSTED_PROXIES`. No se confía en toda la subred ni en su puerta de enlace (ver 3.6).
 - Publicado en el host: **solo `80:80`**, y `443` si existe el vhost de contingencia. MySQL y los firmadores van **sin `ports:`**.
 
 ### 3.3 Volúmenes
@@ -228,7 +227,6 @@ Todos los contenedores con código PHP usan **una sola imagen propia**. Cambia s
 | `/srv/facturacion/backups` → `/var/www/html/backups` | scheduler (y web, que muestra el estado) | **carpeta del host**, para que rclone la lea directo |
 | `mysql-data` → `/var/lib/mysql` | mysql | volumen de Docker |
 | `/srv/facturacion/certificados/produccion` → carpeta `uploads/` del firmador | firmador | carpeta del host, 0700, `:ro` |
-| `/srv/facturacion/certificados/pruebas` → igual | firmador de pruebas | carpeta del host, 0700, `:ro` |
 | `.env` → `/var/www/html/.env` | web, worker, scheduler | archivo del host `:ro`, nunca dentro de la imagen |
 
 Las rutas `/srv/facturacion/...` son una propuesta.
@@ -244,7 +242,9 @@ Las rutas `/srv/facturacion/...` son una propuesta.
 - `web`, `worker` y `scheduler` arrancan con `depends_on: condition: service_healthy` de `mysql` y `firmador`.
 - `stop_grace_period`: amplio en `mysql` (por ejemplo 60 s) para que se apague limpio. En `worker`, el trabajo que se esté ejecutando puede cortarse; como tiene un solo intento, queda como fallido y se relanza a mano.
 
-### 3.5 Borrador de `compose.yaml` (orientativo, no definitivo)
+### 3.5 `compose.yaml`
+
+El archivo real está en la raíz del repo (`compose.yaml`), con `compose.local.yaml` para una máquina de prueba. Lo que sigue es el borrador original, que se deja como referencia del diseño; donde difieran, manda el archivo.
 
 ```yaml
 services:
@@ -310,14 +310,17 @@ volumes:
   mysql-data:
 ```
 
-Antes de usarlo hay que confirmar tres cosas:
-- si el JAR se puede leer desde una carpeta montada `:ro` mientras se escribe en `uploads/`;
-- si el firmador necesita escribir logs en su carpeta de trabajo;
-- la versión de cloudflared.
+Resuelto en `compose.yaml`:
+- el JAR va en `/opt/firmador` (`:ro`) y la carpeta de trabajo es `/trabajo`, del contenedor; el certificado se monta en `/trabajo/uploads` (`:ro`). Así el firmador puede escribir registros sin tocar lo montado. Falta probarlo con el JAR real (fase C);
+- cloudflared fijo en `2026.10.0`, con IP fija 172.30.0.10;
+- la imagen `eclipse-temurin:21-jre` trae `curl`, así que el healthcheck del firmador funciona sin agregar nada.
 
 ### 3.6 Lo que queda en el host Linux, fuera de Docker
 
-- **Tailscale:** SSH de despliegue y Tailscale Serve hacia `127.0.0.1:80`. Lo que entra por ahí llega a Apache con la IP de la puerta de enlace de Docker, por eso esa subred va entre los proxies de confianza. La otra opción, el contenedor `tailscale/tailscale` con `TS_SERVE_CONFIG` hacia `web:80`, queda abierta.
+- **Tailscale:** SSH de despliegue en el host. Tailscale Serve **no** puede seguir hacia `127.0.0.1:80` como proxy de confianza: lo que entra por el puerto publicado llega a Apache con la IP de la puerta de enlace de Docker (172.30.0.1), y por esa misma IP pueden llegar equipos de la red local cuando pasa por `docker-proxy`. Confiar en ella dejaría a cualquiera de la oficina inventarse la IP (y saltarse el límite de intentos) o fingir HTTPS. Por eso `TRUSTED_PROXIES` lleva **solo** la IP fija de cloudflared. Dos salidas (P16):
+  - **Recomendada:** contenedor `tailscale/tailscale` en la red `frontend` con IP fija (por ejemplo 172.30.0.11), `TS_SERVE_CONFIG` hacia `http://web:80`, y esa IP agregada a `TRUSTED_PROXIES`. Es un nodo nuevo de Tailscale, aparte del SSH del host.
+  - **Mínima:** dejar Tailscale Serve del host hacia `127.0.0.1:80` **sin** confiar en él. Funciona, pero Laravel lo ve como HTTP y desde una sola IP: el techo de intentos por IP cuenta junto a todos los que entren por ahí.
+  - Confiar en la puerta de enlace solo valdría con `userland-proxy: false` en el daemon y comprobando que una conexión desde otro equipo de la red local llega con su propia IP. No se recomienda.
 - **rclone, por cron del host:**
   - sube `/srv/facturacion/backups`;
   - sube `storage/app/private`, sin `paquetes/`, `backup-temp/` ni `diagnostico-concurrencia/`;
@@ -336,11 +339,11 @@ Antes de usarlo hay que confirmar tres cosas:
 
 | Archivo | Cambio | Motivo |
 |---|---|---|
-| `bootstrap/app.php` (l. 53-60) | `trustProxies(at: '127.0.0.1')` pasa a leer una lista de una variable de entorno (por ejemplo la subred fija de compose más `127.0.0.1`), sin abrirla a cualquier origen | En Docker, cloudflared y Tailscale Serve llegan desde otra IP. Si no se cambia, `isSecure()` da falso y se apaga el login de Cloudflare Access; el límite de intentos de login y de los lectores trata a todos como una sola IP, y el lector queda anotado con una IP equivocada |
-| `tests/Feature/Seguridad/SesionesYAccesoTest.php` (l. 173 en adelante) | Actualizar la prueba y agregar el caso de un proxy que no es de confianza | Lo exige la regla de pruebas para seguridad |
-| `routes/console.php` | Agregar `backup:mysql-diario --origen=automatico` a las 02:00, o dejarlo en un cron del host (**decisión pendiente**, P5) | Hoy lo dispara una tarea de Windows, que en Linux no existe |
-| `app/Http/Controllers/Facturacion/PreparacionProduccionController.php` (l. 124-125) | Cambiar el texto «Abrí start-queue.bat» por una indicación que sirva en los dos sistemas | Solo es un mensaje, pero en Linux confunde |
-| `scripts/backup-restore-test.bat` | Agregar su equivalente `scripts/linux/backup-restore-test.sh` | El actual usa `mysql.exe` y PowerShell; la prueba de restauración tiene que existir en Linux |
+| `bootstrap/app.php` (l. 53-60) | **Hecho.** La lista sale de `TRUSTED_PROXIES` (`config/trustedproxy.php`, `App\Support\Sistema\ProxiesDeConfianza`): por defecto `127.0.0.1`, como hoy; comodines, redes /0 o valores inválidos vuelven al defecto. En Linux: solo la IP fija de cloudflared | En Docker, cloudflared y Tailscale Serve llegan desde otra IP. Si no se cambia, `isSecure()` da falso y se apaga el login de Cloudflare Access; el límite de intentos de login y de los lectores trata a todos como una sola IP, y el lector queda anotado con una IP equivocada |
+| `tests/Feature/Seguridad/SesionesYAccesoTest.php` (l. 173 en adelante) | **Hecho.** Casos de proxy de confianza, origen no confiable y comodín rechazado | Lo exige la regla de pruebas para seguridad |
+| `routes/console.php` | **Hecho.** `backup:mysql-diario --origen=automatico` a las 02:00, registrado solo con `BACKUP_DIARIO_PROGRAMADO=true` (P5) | Hoy lo dispara una tarea de Windows, que en Linux no existe |
+| `app/Http/Controllers/Facturacion/PreparacionProduccionController.php` (l. 124-125) | **Hecho.** El texto nombra `start-queue.bat` (Windows) y `docker compose` (Linux) | Solo es un mensaje, pero en Linux confunde |
+| `scripts/backup-restore-test.bat` | **Hecho:** `scripts/linux/backup-restore-test.sh` (se corre dentro del contenedor web) | El actual usa `mysql.exe` y PowerShell; la prueba de restauración tiene que existir en Linux |
 | `app/Console/Commands/BackupMysqlDiarioCommand.php` (l. 124-141) | **Solo si falla:** pasar la contraseña con `--defaults-extra-file` temporal en lugar de `MYSQL_PWD` | `MYSQL_PWD` está obsoleta en MySQL 8; hay que comprobar en la fase C si el cliente 8.4 todavía la acepta |
 
 ### 4.2 Archivos nuevos del repo (Docker)
@@ -376,9 +379,11 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
 | `DB_DUMP_PATH` | vacío o `/usr/bin` (`BackupMysqlDiarioCommand` ya quita el `.exe` cuando no es Windows) |
 | `BACKUP_DIARIO_ROOT` | `/var/www/html/backups` |
 | `DTE_FIRMADOR_URL` | `http://firmador:8080/firmardocumento` |
-| `SALUD_FIRMADORES` | las URL con los nombres de los servicios (`http://firmador:8080/...` y el segundo, si existe) |
+| `SALUD_FIRMADORES` | solo `http://firmador:8080/firmardocumento/status` (el 8119 no se migra) |
 | `DTE_PDF_LOGO_PATH` | vacío (usa `public_path`) o una ruta Linux |
 | `DB_QUEUE_RETRY_AFTER` | mayor que 3600 (por ejemplo 3700) |
+| `TRUSTED_PROXIES` | `172.30.0.10` (cloudflared); más la IP fija del contenedor de Tailscale si se usa (3.6). Nunca la puerta de enlace ni la red de la oficina |
+| `BACKUP_DIARIO_PROGRAMADO` | `true` (en Windows queda en `false`: lo corre su tarea de las 02:00) |
 | `LOG_CHANNEL` / `LOG_STACK` | `daily`, porque hoy `laravel.log` no rota |
 | `APP_MAINTENANCE_DRIVER` | `cache` (va a la base y afecta a todos los contenedores) o dejar `file`, que ya se comparte en el volumen |
 | `TZ` | `America/El_Salvador` en todos los contenedores |
@@ -403,6 +408,55 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
    - `php -i` muestra los límites de subida y la zona horaria esperados.
 5. Correr la suite completa de PHPUnit **dentro del contenedor**, de una vez y sin banderas. Así se ven diferencias de mayúsculas o de comportamiento de Linux que no aparecen en Windows. Revisión previa: 928 clases contra PSR-4, los `use App\...` y 360 llamadas a vistas, sin problemas.
 6. Se entrega sin desplegar.
+
+**Estado (08/11/2026, rama `feat/docker-fase-a`):**
+
+- Pasos 2 y 3 **hechos**: archivos de 4.2 (`Dockerfile`, `.dockerignore`, `compose.yaml`, `compose.local.yaml`, `.env.compose.example`, `docker/`), los cambios de 4.1 y P5 decidida. También `ext-bcmath` en `composer.json` (en el lock cambia solo `content-hash` y `platform`, sin tocar versiones) y `storage/framework/views` fuera del `content` de Tailwind.
+- Paso 4 **comprobado** en la imagen final (PHP 8.3.36, Apache 2.4.68):
+  - `php -m`: bcmath, gd, zip, imap, intl, pdo_mysql, pcntl, posix, Zend OPcache y curl. `composer check-platform-reqs` corre al construir: si falta una extensión, la imagen no se construye;
+  - `iconv('Windows-1252', 'UTF-8', …)` convierte bien `ñ`, `é` y `€`;
+  - `mysqldump` 8.4.13 (cliente oficial de MySQL, con huella de la clave comprobada). `MYSQL_PWD` **sigue funcionando** contra `mysql:8.4`: `backup:mysql-diario` dejó su `.sql` con «Dump completed» y su SHA-256. `BackupMysqlDiarioCommand` no se cambió;
+  - `upload_max_filesize` 12M, `post_max_size` 110M, `memory_limit` 512M, `date.timezone` America/El_Salvador, opcache activo sin `validate_timestamps`;
+  - todo `/var/www/html` es de `www-data`; la imagen no trae `.env`, `storage/`, certificados ni Composer.
+- Probado con `compose.local.yaml` (MySQL propio y vacío, firma simulada): `/up` y `/login` responden 200; worker y programador corren como `www-data` (uid 33); un archivo que escribe el worker lo lee la web; `schedule:list` muestra el respaldo solo con `BACKUP_DIARIO_PROGRAMADO=true`; `scripts/linux/backup-restore-test.sh` restauró un `.sql` y un `.zip` en una base `_restore_test` y la borró.
+- Comprobado en Docker Desktop: lo que entra por el puerto publicado desde el propio equipo llega a Apache con la IP de la puerta de enlace (172.30.0.1). Por eso no se confía en ella (3.6).
+- Paso 5 **pendiente**: la suite completa la corre la sesión coordinadora. Por ahora pasaron dentro del contenedor las pruebas tocadas y vecinas (126 pruebas).
+- `php artisan tinker` como `www-data` necesita `-e HOME=/tmp` (psysh quiere escribir en `/var/www/.config`).
+
+#### Cómo levantarlo en una máquina de prueba
+
+En una máquina con Docker, sin firmador real, sin túnel y sin datos reales. Los archivos de `tmp/` no se versionan.
+
+```sh
+# 1. Variables de compose y .env de Laravel solo para esta prueba.
+mkdir -p tmp/docker-local
+cp .env.compose.example tmp/docker-local/compose.env
+cp .env.example tmp/docker-local/laravel.env
+#    compose.env: LARAVEL_ENV_FILE=./tmp/docker-local/laravel.env, WEB_PUERTO_LOCAL (8088
+#    si el 80 está ocupado) y MYSQL_DATABASE/USER/PASSWORD/ROOT_PASSWORD inventadas.
+#    laravel.env: APP_KEY (php artisan key:generate --show o `openssl rand -base64 32`
+#    con el prefijo base64:), DB_HOST=mysql y DB_DATABASE/USERNAME/PASSWORD iguales a
+#    las de MySQL, BACKUP_DIARIO_ROOT=/var/www/html/backups, DB_QUEUE_RETRY_AFTER=3700.
+
+# 2. Construir y levantar (web, worker, programador y MySQL).
+C="docker compose -p facturacion-local --env-file tmp/docker-local/compose.env -f compose.yaml -f compose.local.yaml"
+$C up -d --build
+
+# 3. Crear las tablas en ESE MySQL (base nueva y aislada; nunca contra otra base).
+$C exec -u www-data web php artisan migrate
+
+# 4. Comprobar.
+curl -I http://localhost:8088/up
+$C exec scheduler php artisan schedule:list
+$C run --rm -e BACKUP_DIARIO_PROGRAMADO=true scheduler php artisan schedule:list
+
+# Pruebas filtradas dentro del contenedor (SQLite en memoria, como la CI).
+docker build --target test -t facturacion-app:test .
+docker run --rm facturacion-app:test php vendor/bin/phpunit --filter SesionesYAccesoTest
+
+# Bajar todo; -v borra también los volúmenes de esta prueba.
+$C down -v
+```
 
 ### Fase B — Reconciliar el servidor con git (solo lectura en producción)
 
@@ -448,7 +502,7 @@ Lo que sigue de esta fase:
    - **nunca** el certificado de producción.
 3. Lista de comprobación:
    - Login normal por IP y por `facturacion.test`. Login por Cloudflare Access con un túnel de prueba, si se puede, para confirmar `isSecure()` y la IP real en el límite de intentos.
-   - `/up` y `/salud` en verde, con los dos firmadores si aplica.
+   - `/up` y `/salud` en verde, con el firmador del 8080.
    - `php artisan dte:firma-check` y una firma de prueba de punta a punta.
    - PDF de un DTE (dompdf y fuentes) y un Excel (phpspreadsheet).
    - Importar un archivo en `Windows-1252` (conciliación PPQ y carga de personal).
@@ -546,7 +600,7 @@ Lo que sigue de esta fase:
 | R1 | **Programador nuevo en producción.** Si hoy no corre `schedule:run` (P1), al pasar a Linux se encienden de golpe hasta 13 tareas: sincronizaciones de Gmail, cobros, alertas, spatie a la 01:30 y el cierre automático de rutas | Responder P1 en la fase B. Si no corre hoy, decidir con Melqui qué interruptores se encienden el día del cambio y cuáles después |
 | R2 | **Doble emisión.** Dos instancias con el mismo certificado, Hacienda activa o el mismo túnel | Principio 3. En los ensayos, `DRY_RUN`, apitest o una red aislada. El día del cambio, Windows deshabilitado antes de encender Linux |
 | R3 | **Firmador expuesto.** Acepta CORS `*` y recibe la contraseña del certificado en cada pedido | Firmador sin `ports:`, en red `internal`, y escaneo de puertos desde fuera |
-| R4 | **Certificado equivocado.** El de producción y el de pruebas tienen el mismo NIT y el mismo nombre de archivo | Carpetas del host separadas con nombres claros, un servicio por certificado y `dte:firma-check` antes del primer DTE |
+| R4 | **Certificado equivocado.** El de producción y el de pruebas tienen el mismo NIT y el mismo nombre de archivo | En Linux solo va el de producción (el firmador de pruebas no se migra, P2). En los ensayos, carpeta aparte con nombre claro y `dte:firma-check` antes del primer DTE |
 | R5 | **Proxies de confianza.** Sin el cambio de `bootstrap/app.php` se apaga el login de Cloudflare y el límite de intentos cuenta mal | Cambio de la sección 4.1, con su prueba, en la fase A |
 | R6 | **Permisos.** El worker o los comandos a mano corren como root y la web no puede leer lo que ellos escriben | `user: www-data` en todos los servicios y `chown -R 33:33` tras copiar desde Windows |
 | R7 | **Diferencias de MySQL entre Windows y Linux:** `lower_case_table_names` (en Linux solo se fija al crear la base), `sql_mode`, juego de caracteres, `DEFINER` en rutinas o eventos y el permiso `EVENT` para `--events` | Revisarlo en la fase D con la copia real; llevar a `mysql:8.4` los valores que importan del `my.ini` de producción (P7) |
@@ -566,10 +620,10 @@ Lo que sigue de esta fase:
 | # | Pregunta | Dónde se responde |
 |---|---|---|
 | P1 | ¿Hoy corre `schedule:run` en producción? `docs/DESPLIEGUE_SERVIDOR.md §7.1` dice que no, pero esa tabla está vieja | Tareas programadas del servidor (fase B) |
-| P2 | ¿Qué es el firmador del puerto 8119, cómo arranca y con qué certificado? ¿Es el de apitest? ¿Se sigue usando? | Servidor (fase B) |
+| P2 | ~~¿Qué es el firmador del puerto 8119?~~ **Respondida:** `signer-mh`; Melqui no lo usa y **no se migra** (08/11). Sin servicio en compose; `SALUD_FIRMADORES` solo con el 8080 | — |
 | P3 | ¿Cuál de los dos workers corre en producción: el `.bat` de la raíz (`--tries=1`, sin `--timeout`) o `scripts/windows/queue-worker-auto.bat`? | Tareas de Windows (fase B) |
 | P4 | ¿Producción tiene `ext-imap` activa? Si no, hoy la lectura de Compras por IMAP no funciona y encenderla es un cambio de comportamiento | `php -m` en el servidor |
-| P5 | ¿El respaldo diario pasa a `routes/console.php` (cambio de código) o a un cron del host? | Decisión de Melqui |
+| P5 | ~~¿El respaldo diario pasa a `routes/console.php` o a un cron del host?~~ **Decidida:** a `routes/console.php`, 02:00, detrás de `BACKUP_DIARIO_PROGRAMADO` (apagado por defecto para no duplicar la tarea de Windows; `true` en Linux) | — |
 | P6 | ¿Qué versión de MySQL tiene producción? ¿Un volcado de 8.4 se puede restaurar ahí si hay que volver atrás? | Servidor y fase D |
 | P7 | ¿Qué `sql_mode`, juego de caracteres, `lower_case_table_names` y tamaños de memoria tiene el `my.ini` de producción? | Servidor (fase B) |
 | P8 | ¿Existe hoy el vhost HTTPS de contingencia para la red local (decisión 0006)? | Configuración de Apache del servidor |
