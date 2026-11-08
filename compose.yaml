@@ -48,13 +48,21 @@ services:
     <<: *app
     user: www-data
     command: ["php", "artisan", "queue:work", "--tries=3", "--sleep=3", "--timeout=60", "--max-time=3600"]
+    # La imagen de Apache trae SIGWINCH, que queue:work ignora: sin esto, stop lo mata con
+    # SIGKILL al vencer el plazo. Con SIGTERM termina el trabajo en curso y sale.
+    stop_signal: SIGTERM
     stop_grace_period: 70s
 
   # Un solo programador: corre schedule:run cada minuto.
+  # schedule:work no atiende señales y como PID 1 el kernel no le aplica SIGTERM:
+  # init pone un proceso inicial delante para que stop lo detenga al momento.
+  # Un schedule:run en curso (por ejemplo un respaldo) se corta igual.
   scheduler:
     <<: *app
     user: www-data
     command: ["php", "artisan", "schedule:work"]
+    init: true
+    stop_signal: SIGTERM
 
   mysql:
     image: mysql:8.4
