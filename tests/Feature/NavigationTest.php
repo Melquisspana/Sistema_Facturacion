@@ -541,6 +541,8 @@ class NavigationTest extends TestCase
                 'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'rutas.personal.index',
                 // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
                 'rutas.pedidos.index',
+                // «Por entregar» (06/11/2026): la oficina también mira lo que falta entregar.
+                'rutas.por-entregar.index',
             ]),
             $this->enlacesDelSidebar($html),
         );

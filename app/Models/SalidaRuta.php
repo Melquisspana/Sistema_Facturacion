@@ -36,6 +36,9 @@ class SalidaRuta extends Model
 
     protected $table = 'salidas_ruta';
 
+    /** Observación de la salida que se arma sola desde «Por entregar» ({@see esAutomatica()}). */
+    public const OBSERVACION_AUTOMATICA = 'Se armó sola al marcar una entrega en «Por entregar».';
+
     protected $fillable = [
         'ruta_id',
         'fecha_inicio',
@@ -158,6 +161,15 @@ class SalidaRuta extends Model
     public function liquidadaPor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'liquidada_por');
+    }
+
+    /**
+     * La que se armó sola al marcar una entrega en «Por entregar» (06/11/2026). Sin columna
+     * propia: la marca es esta observación. Si la oficina la edita, pasa a ser una salida más.
+     */
+    public function esAutomatica(): bool
+    {
+        return $this->observaciones === self::OBSERVACION_AUTOMATICA;
     }
 
     /** Ruta terminada y liquidada: ya no se tocan sus días, entregas ni gastos. */
