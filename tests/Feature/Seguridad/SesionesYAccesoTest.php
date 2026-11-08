@@ -4,10 +4,13 @@ namespace Tests\Feature\Seguridad;
 
 use App\Enums\PermisoSistema;
 use App\Models\User;
+use App\Support\Sistema\ProxiesDeConfianza;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -193,6 +196,88 @@ class SesionesYAccesoTest extends TestCase
         $desdeProxy('198.51.100.99, 203.0.113.10')->post('/login', ['email' => 'otra@example.com', 'password' => 'mala'])
             ->assertSessionHasErrors('email');
         $this->assertNotSame(trans('auth.failed'), session('errors')->first('email'));
+    }
+
+    // --------------------------------------------------------- proxies de confianza
+
+    /** Ruta de prueba que devuelve lo que la app cree del visitante. */
+    private function rutaQueMuestraElVisitante(): void
+    {
+        Route::get('/_prueba/visitante', fn (Request $request) => [
+            'ip' => $request->ip(),
+            'https' => $request->isSecure(),
+        ]);
+    }
+
+    private function pedidoReenviadoDesde(string $origen)
+    {
+        return $this->withServerVariables(['REMOTE_ADDR' => $origen])
+            ->withHeaders(['X-Forwarded-For' => '203.0.113.10', 'X-Forwarded-Proto' => 'https'])
+            ->getJson('/_prueba/visitante');
+    }
+
+    /**
+     * En Docker, cloudflared llega desde su IP fija de la red de compose. Desde ahí se
+     * cree la IP real del visitante y que entró por HTTPS (sin esto se apaga el SSO de
+     * Cloudflare Access y el techo por IP cuenta a todos como uno).
+     */
+    public function test_un_proxy_de_confianza_fija_la_ip_real_y_el_https(): void
+    {
+        config(['trustedproxy.proxies' => ProxiesDeConfianza::desde('172.30.0.10')]);
+        $this->rutaQueMuestraElVisitante();
+
+        $this->pedidoReenviadoDesde('172.30.0.10')
+            ->assertOk()
+            ->assertExactJson(['ip' => '203.0.113.10', 'https' => true]);
+    }
+
+    /**
+     * Cualquier otro origen —por ejemplo la puerta de enlace de Docker, por donde puede
+     * entrar un equipo de la red local— no puede inventarse la IP ni el HTTPS.
+     */
+    public function test_un_origen_que_no_es_de_confianza_no_puede_inventar_su_ip_ni_el_https(): void
+    {
+        config(['trustedproxy.proxies' => ProxiesDeConfianza::desde('172.30.0.10')]);
+        $this->rutaQueMuestraElVisitante();
+
+        $this->pedidoReenviadoDesde('172.30.0.1')
+            ->assertOk()
+            ->assertExactJson(['ip' => '172.30.0.1', 'https' => false]);
+    }
+
+    public function test_sin_valor_se_confia_solo_en_127_0_0_1_como_siempre(): void
+    {
+        $this->assertSame(['127.0.0.1'], ProxiesDeConfianza::desde(null));
+        $this->assertSame(['127.0.0.1'], ProxiesDeConfianza::desde(''));
+        $this->assertSame(['127.0.0.1'], ProxiesDeConfianza::desde(' , '));
+    }
+
+    public function test_una_lista_valida_de_ip_y_redes_se_respeta(): void
+    {
+        $this->assertSame(
+            ['172.30.0.10', '172.30.0.11', 'fd00::/64', '::1'],
+            ProxiesDeConfianza::desde(' 172.30.0.10, 172.30.0.11 ,fd00::/64,::1'),
+        );
+    }
+
+    /** Un comodín o una red que lo abarca todo no se acepta ni a medias: vuelve al defecto. */
+    public function test_los_comodines_y_los_valores_invalidos_vuelven_al_defecto(): void
+    {
+        foreach (['*', '**', 'REMOTE_ADDR', '0.0.0.0/0', '::/0', '10.0.0.0/0', '172.30.0.10, *',
+            'cloudflared', '172.30.0.0/33', '172.30.0.0/abc', '172.30.0.0/24/8', '300.1.1.1'] as $valor) {
+            $this->assertSame(['127.0.0.1'], ProxiesDeConfianza::desde($valor), "aceptó «{$valor}»");
+        }
+    }
+
+    /** Y de punta a punta: con un comodín en la variable, nadie puede fijar su IP. */
+    public function test_con_un_comodin_ningun_origen_puede_inventar_su_ip(): void
+    {
+        config(['trustedproxy.proxies' => ProxiesDeConfianza::desde('*')]);
+        $this->rutaQueMuestraElVisitante();
+
+        $this->pedidoReenviadoDesde('192.0.2.50')
+            ->assertOk()
+            ->assertExactJson(['ip' => '192.0.2.50', 'https' => false]);
     }
 
     public function test_una_cuenta_inactiva_recibe_el_mismo_mensaje_que_una_contrasena_equivocada(): void
