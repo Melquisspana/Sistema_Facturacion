@@ -24,6 +24,9 @@ use Illuminate\Support\Facades\Storage;
  * Una orden que no se puede leer se guarda igual, como `sin_leer`, para revisarla a
  * mano. Lo único que no se guarda es un correo sin PDF (no hay qué guardar): se avisa
  * por salida.
+ *
+ * Antes de ir a Gmail, cada corrida vuelve a leer las `sin_leer` desde su PDF guardado,
+ * para que una mejora del lector arregle sola las que ya llegaron (ver releerSinLeer).
  */
 class OrdenesSincronizarCommand extends Command
 {
@@ -34,6 +37,8 @@ class OrdenesSincronizarCommand extends Command
 
     public function handle(GmailClient $gmail, ConfiguracionGmail $configuracion, OrdenCompraParser $parser, SalaSucursalResolver $salas): int
     {
+        $this->releerSinLeer($parser, $salas);
+
         if (! $gmail->disponible()) {
             $this->error('Gmail no está disponible (integración deshabilitada o cuenta desconectada): no se trajo ninguna orden.');
 
@@ -68,6 +73,64 @@ class OrdenesSincronizarCommand extends Command
             $desde->format('d/m/Y'), $conteo['nuevas'], $conteo['sin_leer'], $conteo['ya_estaban'], $conteo['sin_pdf']));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Vuelve a leer, desde el PDF guardado en el disco privado, las órdenes que quedaron
+     * «sin leer». No toca Gmail y es idempotente: la que se lee pasa a `leida` y ya no se
+     * vuelve a intentar. Solo llena lo que estaba vacío; lo que ya tenía dato no se pisa.
+     *
+     * Sigue «sin leer» si el PDF no está, si el lector no encuentra el número o si el
+     * número ya es de otra orden (un reenvío): eso lo decide alguien a mano.
+     */
+    private function releerSinLeer(OrdenCompraParser $parser, SalaSucursalResolver $salas): void
+    {
+        $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
+        $releidas = 0;
+
+        foreach (OrdenCompraRecibida::where('estado', OrdenCompraRecibida::SIN_LEER)->lazyById() as $orden) {
+            if (! $disco->exists($orden->pdf_path)) {
+                $this->warn("Orden #{$orden->id}: no está su PDF ({$orden->pdf_path}); sigue «sin leer».");
+
+                continue;
+            }
+
+            $datos = $parser->desdePdf((string) $disco->get($orden->pdf_path));
+            if ($datos['numero'] === null) {
+                continue;
+            }
+
+            $previa = OrdenCompraRecibida::where('numero', $datos['numero'])->whereKeyNot($orden->id)->first();
+            if ($previa !== null) {
+                $this->warn("Orden #{$orden->id}: el número {$datos['numero']} ya es de la orden #{$previa->id}; sigue «sin leer» para revisarla.");
+
+                continue;
+            }
+
+            if ($orden->cliente_sucursal_id === null) {
+                $datos['cliente_sucursal_id'] = $salas->resolver($orden->sala_codigo ?? $datos['sala_codigo'])['cliente_sucursal_id'];
+            }
+            foreach (['numero', 'sala_codigo', 'cliente_sucursal_id', 'fecha_creacion', 'fecha_despacho', 'total', 'lineas'] as $campo) {
+                if ($orden->{$campo} === null && ($datos[$campo] ?? null) !== null) {
+                    $orden->{$campo} = $datos[$campo];
+                }
+            }
+            $orden->estado = OrdenCompraRecibida::LEIDA;
+
+            try {
+                $orden->save();
+            } catch (UniqueConstraintViolationException) {
+                // Otra corrida le dio ese número a otra orden en el mismo instante.
+                $this->warn("Orden #{$orden->id}: el número {$datos['numero']} ya es de otra orden; sigue «sin leer» para revisarla.");
+
+                continue;
+            }
+            $releidas++;
+        }
+
+        if ($releidas > 0) {
+            $this->info("{$releidas} orden(es) que estaban «sin leer» se leyeron de nuevo desde su PDF.");
+        }
     }
 
     /** @param  array<string, int>  $conteo */

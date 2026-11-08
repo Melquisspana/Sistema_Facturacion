@@ -178,6 +178,92 @@ class OrdenesSincronizarCommandTest extends TestCase
         $this->assertStringStartsWith('label:OC_Prueba ', $gmail->consulta);
     }
 
+    /** Una orden «sin leer» como las que dejó el lector anterior, con su PDF guardado (o no). */
+    private function sinLeer(string $mensaje, ?string $pdf, array $datos = []): OrdenCompraRecibida
+    {
+        $ruta = OrdenCompraRecibida::CARPETA_PDF.'/'.$mensaje.'.pdf';
+        if ($pdf !== null) {
+            Storage::disk((string) config('dte.storage.disk', 'local'))->put($ruta, $pdf);
+        }
+
+        return OrdenCompraRecibida::create([
+            'pdf_path' => $ruta,
+            'pdf_hash' => hash('sha256', $mensaje),
+            'gmail_message_id' => $mensaje,
+            'estado' => OrdenCompraRecibida::SIN_LEER,
+            ...$datos,
+        ]);
+    }
+
+    public function test_relee_las_sin_leer_desde_su_pdf_sin_ir_a_gmail(): void
+    {
+        $cliente = Cliente::factory()->contribuyente()->create();
+        config(['ppq.cliente_default_id' => $cliente->id]);
+        $sala = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'codigo' => '0317']);
+        // Lo que ya tenía dato no se pisa: la fecha de despacho leída antes queda.
+        $orden = $this->sinLeer('m1', OrdenCompraParserTest::pdf(OrdenCompraParserTest::textoEdi()), ['fecha_despacho' => '2026-11-09']);
+        $gmail = new class([[]], []) extends GmailClientDeImportacion
+        {
+            public int $bajados = 0;
+
+            public function adjuntos(string $messageId): array
+            {
+                $this->bajados++;
+
+                return parent::adjuntos($messageId);
+            }
+        };
+        $this->app->instance(GmailClient::class, $gmail);
+
+        $this->artisan('ordenes:sincronizar')
+            ->expectsOutputToContain('1 orden(es) que estaban «sin leer» se leyeron de nuevo')
+            ->assertSuccessful();
+
+        $orden->refresh();
+        $this->assertSame(OrdenCompraRecibida::LEIDA, $orden->estado);
+        $this->assertSame('26110317004521', $orden->numero);
+        $this->assertSame('0317', $orden->sala_codigo);
+        $this->assertSame($sala->id, $orden->cliente_sucursal_id);
+        $this->assertSame('2026-11-04', $orden->fecha_creacion->toDateString());
+        $this->assertSame('2026-11-09', $orden->fecha_despacho->toDateString());
+        $this->assertSame('77.94', $orden->total);
+        $this->assertCount(10, $orden->lineas);
+        $this->assertSame(0, $gmail->bajados);
+
+        // Idempotente: la segunda corrida no la vuelve a tocar.
+        $antes = $orden->updated_at;
+        $this->travel(1)->minutes();
+        $this->artisan('ordenes:sincronizar')
+            ->doesntExpectOutputToContain('se leyeron de nuevo')
+            ->assertSuccessful();
+        $this->assertEquals($antes, $orden->fresh()->updated_at);
+    }
+
+    public function test_al_releer_un_numero_repetido_o_sin_pdf_sigue_sin_leer_y_la_leida_no_se_toca(): void
+    {
+        $this->gmail([[]], []);
+        $pdf = OrdenCompraParserTest::pdf(OrdenCompraParserTest::textoEdi());
+        $leida = OrdenCompraRecibida::create([
+            'numero' => '26110317004521', 'sala_codigo' => '0317', 'total' => '1.00',
+            'pdf_path' => OrdenCompraRecibida::CARPETA_PDF.'/m0.pdf', 'pdf_hash' => hash('sha256', 'm0'),
+            'gmail_message_id' => 'm0', 'estado' => OrdenCompraRecibida::LEIDA,
+        ]);
+        $repetida = $this->sinLeer('m1', $pdf);
+        $sinPdf = $this->sinLeer('m2', null);
+
+        $this->artisan('ordenes:sincronizar')
+            ->expectsOutputToContain("Orden #{$repetida->id}: el número 26110317004521 ya es de la orden #{$leida->id}")
+            ->expectsOutputToContain("Orden #{$sinPdf->id}: no está su PDF")
+            ->assertSuccessful();
+
+        $this->assertSame(OrdenCompraRecibida::SIN_LEER, $repetida->fresh()->estado);
+        $this->assertNull($repetida->fresh()->numero);
+        $this->assertNull($repetida->fresh()->lineas);
+        $this->assertSame(OrdenCompraRecibida::SIN_LEER, $sinPdf->fresh()->estado);
+        $this->assertSame('1.00', $leida->fresh()->total);
+        $this->assertNull($leida->fresh()->lineas);
+    }
+
     public function test_esta_programada_cada_diez_minutos_y_solo_con_gmail_habilitado(): void
     {
         $evento = collect(app(Schedule::class)->events())->first(fn ($e) => str_contains((string) $e->command, 'ordenes:sincronizar'));
