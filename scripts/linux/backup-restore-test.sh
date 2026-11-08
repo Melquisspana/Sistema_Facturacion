@@ -16,8 +16,11 @@
 #  - Pide confirmación y la contraseña del usuario de MySQL (por defecto root, que
 #    puede crear y borrar bases). La contraseña no se muestra ni va en la línea de
 #    comandos: viaja en un archivo temporal 0600 que se borra al terminar.
-#  - Si el ZIP está cifrado, toma la clave de BACKUP_ARCHIVE_PASSWORD.
-#  - Importa, muestra conteos básicos y al final ofrece borrar la base temporal.
+#  - Si el ZIP está cifrado, toma la clave del .env de Laravel (backup.backup.password,
+#    BACKUP_ARCHIVE_PASSWORD); no hace falta pasarla por la línea de comandos. Si está
+#    en el entorno, esa tiene prioridad.
+#  - Importa, muestra conteos básicos y al final ofrece borrar la base temporal, también
+#    si la creación o la importación fallan.
 #
 #  Variables opcionales: MYSQL_HOST (mysql), MYSQL_PORT (3306), MYSQL_RESTORE_USER (root).
 # ==========================================================================
@@ -88,6 +91,19 @@ CLAVE="${CLAVE//\"/\\\"}"
 unset CLAVE
 mysql_() { mysql --defaults-extra-file="$CREDENCIALES" "$@"; }
 
+# Al final y ante un error de creación o importación: la temporal puede tener datos
+# reales a medias y no se deja sin preguntar.
+ofrecer_borrado() {
+    read -r -p "¿Borrar la base temporal $TEMP_DB ahora? (SI/NO): " BORRAR
+    if [[ "$BORRAR" == "SI" ]]; then
+        mysql_ -e "DROP DATABASE IF EXISTS \`$TEMP_DB\`;"
+        echo "Base temporal eliminada."
+    else
+        echo "Se deja $TEMP_DB para que la inspecciones. Bórrala luego con:"
+        echo "  mysql -u $USUARIO -p -h $HOST -e 'DROP DATABASE IF EXISTS \`$TEMP_DB\`;'"
+    fi
+}
+
 # 2-3. Sacar SOLO el .sql del ZIP (o usar el .sql tal cual).
 SQL="$WORK_DIR/dump.sql"
 case "$ARCHIVO" in
@@ -98,13 +114,21 @@ case "$ARCHIVO" in
         php -r '
             $zip = new ZipArchive();
             if ($zip->open($argv[1]) !== true) { fwrite(STDERR, "No se pudo abrir el ZIP.\n"); exit(1); }
+            // La clave vive en el .env montado, no en el entorno del contenedor: se toma de
+            // la configuración de Laravel sin imprimirla ni pasarla por la línea de comandos.
             $clave = getenv("BACKUP_ARCHIVE_PASSWORD");
-            if ($clave !== false && $clave !== "") { $zip->setPassword($clave); }
+            if ($clave === false || $clave === "") {
+                require "vendor/autoload.php";
+                $app = require "bootstrap/app.php";
+                $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+                $clave = (string) config("backup.backup.password");
+            }
+            if ($clave !== "") { $zip->setPassword($clave); }
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $nombre = $zip->getNameIndex($i);
                 if (str_ends_with(strtolower($nombre), ".sql")) {
                     $entrada = $zip->getStream($nombre);
-                    if ($entrada === false) { fwrite(STDERR, "No se pudo leer el .sql (¿falta BACKUP_ARCHIVE_PASSWORD?).\n"); exit(1); }
+                    if ($entrada === false) { fwrite(STDERR, "No se pudo leer el .sql (¿el ZIP está cifrado y la clave BACKUP_ARCHIVE_PASSWORD del .env falta o no es la correcta?).\n"); exit(1); }
                     $salida = fopen($argv[2], "wb");
                     stream_copy_to_stream($entrada, $salida);
                     exit(0);
@@ -127,11 +151,19 @@ echo "Dump listo: $(du -h "$SQL" | cut -f1)"
 
 # 4. (Re)crear la base temporal: DROP/CREATE solo de la TEMPORAL.
 echo "Creando base temporal $TEMP_DB ..."
-mysql_ -e "DROP DATABASE IF EXISTS \`$TEMP_DB\`; CREATE DATABASE \`$TEMP_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+if ! mysql_ -e "DROP DATABASE IF EXISTS \`$TEMP_DB\`; CREATE DATABASE \`$TEMP_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; then
+    echo "ERROR creando la base temporal."
+    ofrecer_borrado
+    exit 1
+fi
 
 # 5. Importar.
 echo "Importando dump en $TEMP_DB ... (puede tardar)"
-mysql_ "$TEMP_DB" < "$SQL"
+if ! mysql_ "$TEMP_DB" < "$SQL"; then
+    echo "ERROR importando el dump. La base $TEMP_DB puede tener datos a medias."
+    ofrecer_borrado
+    exit 1
+fi
 
 # 6. Verificación: conteos básicos.
 echo
@@ -147,11 +179,4 @@ echo " La base real $REAL_DB NO fue modificada."
 echo "===================================================================="
 echo
 
-read -r -p "¿Borrar la base temporal $TEMP_DB ahora? (SI/NO): " BORRAR
-if [[ "$BORRAR" == "SI" ]]; then
-    mysql_ -e "DROP DATABASE IF EXISTS \`$TEMP_DB\`;"
-    echo "Base temporal eliminada."
-else
-    echo "Se deja $TEMP_DB para que la inspecciones. Bórrala luego con:"
-    echo "  mysql -u $USUARIO -p -h $HOST -e 'DROP DATABASE IF EXISTS \`$TEMP_DB\`;'"
-fi
+ofrecer_borrado
