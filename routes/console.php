@@ -30,6 +30,23 @@ Schedule::command('backup:clean')->daily()->at('01:00');
 Schedule::command('backup:run')->daily()->at('01:30');
 
 /*
+| Respaldo DIARIO verificado de la base (mysqldump + SHA-256 + `respaldo_ejecuciones`).
+| En Windows lo lanza la tarea «DTE Backup Diario» a las 02:00; en Linux con Docker no
+| existe esa tarea y lo corre el planificador.
+|
+| Se REGISTRA solo con BACKUP_DIARIO_PROGRAMADO=true (apagado por defecto), y no con
+| `when()` como las demás: así `schedule:list` dice la verdad en cada servidor —en
+| Windows no aparece, porque ahí no lo corre el planificador— y encender el
+| planificador en Windows no duplica el volcado de la tarea de las 02:00.
+*/
+if (config('backup_diario.programado')) {
+    Schedule::command('backup:mysql-diario --origen=automatico')
+        ->dailyAt('02:00')
+        ->withoutOverlapping(60)
+        ->appendOutputTo(storage_path('logs/backup-diario.log'));
+}
+
+/*
 | Albaranes de Calleja desde Gmail. SOLO LECTURA de Gmail; escribe únicamente en
 | `ppq_albaranes`. No toca DTE, correlativos, conciliación ni los lotes de PPQ.
 |
