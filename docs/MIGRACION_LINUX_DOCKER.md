@@ -527,6 +527,32 @@ Lo que sigue de esta fase:
    - Escaneo de puertos desde otra máquina: solo responde el 80 (y el 443 si aplica).
 4. Anotar cada falla y su arreglo en este documento antes de pasar a D.
 
+**Resultado del ensayo del 08/11/2026.** Se hizo en Debian 13 dentro de WSL2, con systemd y Docker Engine nativo, en la PC de desarrollo. Usó `compose.yaml` más un archivo de ensayo que deja afuera el firmador y cloudflared, porque no hay JAR ni token. Hubo firma simulada, sin transmisión, con `MAIL_MAILER=log` y una base nueva solo con catálogos, roles y el administrador.
+
+- **Salieron bien:**
+  - login y filtro de Host;
+  - `/up` y `/salud`;
+  - proxies: desde otro contenedor no se puede falsificar `X-Forwarded-*`;
+  - lector simulado (`ping` y `marcar`);
+  - solo el puerto web publicado;
+  - `imap`;
+  - CCF firmado con el mock, su PDF y un Excel;
+  - importación en Windows-1252;
+  - 10 MB en Gastos y fotos webp y jpg (11 MB se rechaza con el mensaje de la app);
+  - permisos de lo guardado;
+  - cola y ZIP del worker descargado por la web;
+  - programador con sus horas;
+  - `backup:mysql-diario` con SHA-256;
+  - `backup-restore-test.sh`;
+  - hora de El Salvador en todos los contenedores;
+  - apagado y corte de luz simulados: todo volvió solo, y con `down` queda apagado.
+- **Fallas encontradas y arregladas:**
+  - el worker y el programador no se detenían con `stop` (la imagen trae `SIGWINCH`): ahora llevan `stop_signal: SIGTERM`, y el programador además `init: true`;
+  - con `BACKUP_ARCHIVE_PASSWORD` vacía, spatie igual cifraba el ZIP: ahora vacía quiere decir sin cifrar;
+  - la CSP global pisaba la `sandbox` de los archivos de Gastos. Pasa también en Windows y va en su propio PR.
+- **A tener en cuenta:** en una base nueva el worker se reinicia hasta que corren las migraciones, porque falta la tabla `cache`. Hay que levantar primero `mysql` y `web`, migrar, y después el worker.
+- **Quedó para el servidor real o para la fase D:** firmador y cloudflared reales, Tailscale (P16), permisos reales del `.env`, NUT y BIOS.
+
 ### Fase D — Ensayo de restauración con una copia real, en aislado
 
 1. Melqui lleva a mano a la máquina de ensayo una copia reciente: volcado de la base, `storage/app/private`, `storage/app/templates`, `.env` y certificados. Nadie más la toca y no sale de esa máquina.
