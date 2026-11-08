@@ -17,7 +17,10 @@
 **Principios:**
 
 1. **Producción no se toca hasta el ensayo.** Las fases A, B, C y D trabajan en el repo, en otra máquina o en un entorno aislado. El servidor de producción solo se **lee** (inventario y comparación) hasta el día del cambio.
-2. **Windows queda como vuelta atrás.** Linux se instala en un **segundo disco**, con arranque doble. El disco de Windows no se formatea ni se cambia. Si el cambio falla, se arranca otra vez desde Windows.
+2. **Mismo disco, sin arranque doble** (decisión de Melqui, 08/11). Linux reemplaza a Windows en el único disco. **No hay vuelta atrás rápida**: volver a Windows es reinstalarlo o restaurar una imagen, que lleva horas. Por eso:
+   - la fase C tiene que salir completa antes del día del cambio;
+   - lo que no se puede perder se copia dos veces (Drive y un medio externo): certificados y `resources/firmador/`, `.env`, base, `storage/app/private`, `storage/app/templates` y `backups/`;
+   - **recomendado**: una imagen completa del disco de Windows en un disco USB, para poder restaurarlo tal cual si el cambio falla.
 3. **Nunca dos sistemas emitiendo a la vez.** En ningún momento pueden estar activos, al mismo tiempo, dos instancias con el mismo certificado, la transmisión a Hacienda encendida y el mismo túnel de Cloudflare. Eso duplica documentos y números correlativos.
 4. **Ninguna migración de base nueva** forma parte de este trabajo. El contenedor no corre `migrate` solo al arrancar.
 5. Siguen todas las reglas del proyecto: rama y PR, sin commit ni push directo a `master` y la guía de pantallas para cualquier vista que se toque.
@@ -320,7 +323,7 @@ Antes de usarlo hay que confirmar tres cosas:
   - sube `storage/app/templates`;
   - la configuración y el remoto se vuelven a crear en Linux; lo hace Melqui.
 - **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
-- **Reloj:** NTP del sistema. Con arranque doble hay que alinear el reloj de hardware entre Windows y Linux (riesgo R9).
+- **Reloj:** NTP del sistema. Hay que confirmar la hora antes del primer DTE (riesgo R9).
 - **Rotación de logs:** si se cambia `LOG_CHANNEL` a `daily` no hace falta en el host. Si no, `logrotate` sobre `storage/logs`.
 - **Cortafuegos:** solo el 80 en la red local (y el 443 si aplica). Docker escribe sus propias reglas de iptables y puede saltarse las de `ufw`, así que hay que revisar el resultado con un escaneo desde otra máquina.
 
@@ -421,7 +424,7 @@ Agregar `trustHosts` en Laravel queda descartado por ahora: el filtro del Host l
 - **Equipo:** un solo disco NVMe de 512 GB. La revisión de seguridad del equipo (P14 y P17) se lleva aparte, **fuera de este repo público**.
 - **Otros proyectos en la misma máquina:** `ControlTomas` (su propio `schedule:run`) y un respaldo de `RestaurantePOS`.
   - `RestaurantePOS` **no se migra** (decisión de Melqui, 08/11).
-  - `ControlTomas`: falta decidir si se mueve también, se queda en Windows o se apaga.
+  - `ControlTomas` **tampoco se migra**: no se usa (decisión de Melqui, 08/11). Se borra con Windows.
 
 Lo que sigue de esta fase:
 
@@ -482,7 +485,8 @@ Lo que sigue de esta fase:
 **Antes del día:**
 - Fase D aprobada, PR de las fases A y B mezclados e imagen construida con su etiqueta.
 - Reserva de DHCP confirmada.
-- Disco nuevo con Linux instalado y compose listo. **El disco de Windows se desconecta físicamente mientras se instala Linux**, para que el instalador no lo toque.
+- Memoria USB con el instalador de Linux, el `compose.yaml` y las imágenes ya construidas (o acceso a internet para bajarlas).
+- **Copias verificadas** de todo lo de la sección «Mismo disco» (principio 2), con su SHA-256, en Drive **y** en un medio externo. Recomendado: imagen completa del disco de Windows en un disco USB.
 - Ventana fuera del horario de facturación, sin rutas en curso y sin contingencia abierta.
 - Avisar a los usuarios.
 
@@ -492,35 +496,29 @@ Lo que sigue de esta fase:
    - comprobar que no hay DTE pendientes de transmitir ni lotes de contingencia;
    - esperar a que la tabla `jobs` quede vacía y revisar `failed_jobs`.
 2. `php artisan down` en Windows.
-3. Detener en Windows el worker, el firmador, cloudflared y las tareas programadas. **Deshabilitarlas**, no borrarlas, para no tener dos instancias a la vez si se arranca Windows por error.
+3. Detener en Windows el worker, el firmador, cloudflared y las tareas programadas.
 4. Respaldo final:
    - `backup:mysql-diario --origen=manual` (o un `mysqldump` equivalente);
-   - copia de `storage/app/private`, `storage/app/templates`, `backups/`, `.env` y certificados al disco de Linux o a un disco externo;
+   - copia de `storage/app/private`, `storage/app/templates`, `backups/`, `.env`, `resources/firmador/` y certificados a un medio externo **y** a Drive;
    - anotar el SHA-256 de cada archivo.
-5. Apagar Windows. Arrancar desde el disco de Linux.
-6. Verificar los hashes, restaurar la base en `mysql`, copiar `storage` y aplicar `chown -R 33:33` a `storage` y `backups`.
-7. `docker compose up -d` sin `cloudflared`. Revisar `/up`, `/salud`, `dte:firma-check`, el login local y un PDF.
-8. Encender `cloudflared` (Windows ya apagado: **un solo conector para el túnel**). Probar el login por Cloudflare Access desde fuera.
-9. Confirmar que Tailscale Serve y el SSH de despliegue responden.
-10. Lector: pedir una marca de prueba en un ESP32 real y ver su `ping` en el panel.
-11. **Primer DTE real**, con alguien de facturación al lado: firma, transmisión, sello de Hacienda y correo al cliente.
-12. Confirmar que el programador corre lo esperado y que la tabla `jobs` avanza.
-13. `php artisan up` si se usó modo mantenimiento en Linux, y avisar a los usuarios.
+5. (Recomendado) Sacar la imagen completa del disco de Windows al disco USB.
+6. Instalar Linux en el disco, **borrando Windows**. Instalar Docker y Tailscale y traer el compose y las copias.
+7. Verificar los hashes, restaurar la base en `mysql`, copiar `storage` y aplicar `chown -R 33:33` a `storage` y `backups`.
+8. `docker compose up -d` sin `cloudflared`. Revisar `/up`, `/salud`, `dte:firma-check`, el login local y un PDF.
+9. Encender `cloudflared` (**un solo conector para el túnel**). Probar el login por Cloudflare Access desde fuera.
+10. Confirmar que Tailscale Serve y el SSH de despliegue responden.
+11. Lector: pedir una marca de prueba en un ESP32 real y ver su `ping` en el panel.
+12. **Primer DTE real**, con alguien de facturación al lado: firma, transmisión, sello de Hacienda y correo al cliente.
+13. Confirmar que el programador corre lo esperado y que la tabla `jobs` avanza.
+14. `php artisan up` si se usó modo mantenimiento en Linux, y avisar a los usuarios.
 
-**Vuelta atrás:**
+**Si algo falla (sin arranque doble):**
 
-- **Cuándo:** el firmador no firma, Hacienda rechaza, los lectores no marcan, el login por Cloudflare no funciona o falta algún dato. Se decide **antes de una hora límite** fijada de antemano.
-- **Si en Linux todavía no se emitió ningún DTE ni se registró nada:**
-  1. `docker compose down`;
-  2. reiniciar en Windows;
-  3. volver a habilitar las tareas, el worker, el firmador y cloudflared;
-  4. `php artisan up`.
-  Windows queda tal como estaba.
-- **Si en Linux ya se emitieron DTE o entraron marcas o cobros:**
-  1. sacar en Linux un volcado y una copia de `storage/app/private`;
-  2. pasarlos a Windows y restaurarlos ahí antes de reabrir. Depende de que el MySQL de Windows acepte un volcado de 8.4 (P6);
-  3. **nunca** reabrir Windows con su base vieja, porque se repetirían correlativos ya usados en Hacienda.
-- Al volver a Windows, comprobar la hora del sistema antes de firmar (R9).
+- **Cuándo:** el firmador no firma, Hacienda rechaza, los lectores no marcan, el login por Cloudflare no funciona o falta algún dato. Se intenta arreglar en Linux hasta una **hora límite** fijada de antemano.
+- **Pasada la hora límite**, si hay imagen de Windows: restaurarla desde el disco USB (una o dos horas), arrancar Windows, volver a habilitar las tareas, el worker, el firmador y cloudflared, y `php artisan up`.
+- **Si en Linux ya se emitieron DTE o entraron marcas o cobros**, antes de restaurar Windows hay que sacar en Linux un volcado y una copia de `storage/app/private` y restaurarlos en Windows antes de reabrir. Depende de que el MySQL de Windows acepte un volcado de 8.4 (P6). **Nunca** reabrir Windows con su base vieja, porque se repetirían correlativos ya usados en Hacienda.
+- **Sin imagen de Windows**, la única salida es seguir en Linux hasta arreglarlo. Por eso la fase C tiene que salir completa.
+- Comprobar la hora del sistema antes de firmar (R9).
 
 ### Fase F — Después del cambio
 
@@ -534,7 +532,7 @@ Lo que sigue de esta fase:
 5. Actualizar la documentación:
    - `docs/DESPLIEGUE_SERVIDOR.md`, `docs/ARRANQUE_WINDOWS.md` y `docs/BACKUPS_WINDOWS.md` pasan a historia o se reemplazan por la guía de Linux;
    - `docs/FIRMADOR_LOCAL.md` se actualiza con el contenedor.
-6. **Retiro de Windows:** el disco de Windows se mantiene sin tocar durante un período acordado (P15). Solo después se decide si se reutiliza.
+6. Guardar la imagen de Windows (si se sacó) durante un período acordado (P15) antes de borrarla.
 
 ---
 
@@ -552,7 +550,7 @@ Lo que sigue de esta fase:
 | R6 | **Permisos.** El worker o los comandos a mano corren como root y la web no puede leer lo que ellos escriben | `user: www-data` en todos los servicios y `chown -R 33:33` tras copiar desde Windows |
 | R7 | **Diferencias de MySQL entre Windows y Linux:** `lower_case_table_names` (en Linux solo se fija al crear la base), `sql_mode`, juego de caracteres, `DEFINER` en rutinas o eventos y el permiso `EVENT` para `--events` | Revisarlo en la fase D con la copia real; llevar a `mysql:8.4` los valores que importan del `my.ini` de producción (P7) |
 | R8 | **Trabajos largos cortados.** Con `pcntl`, `RecuperarPeriodoCompras` (3600 s) se corta o se repite si `retry_after` es menor | Un solo worker y `DB_QUEUE_RETRY_AFTER` mayor que 3600 |
-| R9 | **Reloj con arranque doble.** Windows guarda la hora local en el reloj de hardware y Linux guarda UTC. Al cambiar de sistema la hora puede quedar corrida y Hacienda rechaza el DTE | Alinear los dos sistemas (Linux con reloj local o Windows con UTC) y revisar la hora antes de firmar |
+| R9 | **Reloj al cambiar de sistema.** Windows guarda la hora local en el reloj de hardware y Linux guarda UTC. Al instalar Linux la hora puede quedar corrida y Hacienda rechaza el DTE | NTP activo y revisar la hora antes de firmar |
 | R10 | **ESP32 sin conexión.** Si cambia la IP, el puerto o el Host aceptado, los lectores dejan de marcar | Reserva de DHCP (mismo equipo, misma tarjeta de red), puerto 80 publicado y `ServerName facturacion.test` |
 | R11 | **`APP_KEY` distinta.** No se pueden leer los tokens de Gmail ni los ajustes cifrados | Copiar exactamente la de producción y comprobarlo en la fase D |
 | R12 | **CSS distinto.** El build nuevo cambia cómo se ven pantallas que hoy dependen del CSS viejo de producción | Fase B, paso 2, con revisión visual |
@@ -580,8 +578,8 @@ Lo que sigue de esta fase:
 | P12 | ¿Qué sube rclone hoy, cuándo y a qué remoto? (`C:\rclone` no se toca) | Melqui |
 | P13 | ¿El paquete del MH trae JAR, compose o variante para Linux? ¿Exige otra versión de Java? ¿Se usa el perfil `ssl` en producción? | Contenido de `resources/firmador/` en el servidor |
 | P14 | ¿Qué UPS hay y se puede conectar por USB para NUT? | Melqui |
-| P15 | ¿Cuánto tiempo se guarda el disco de Windows intacto después del cambio? | Decisión de Melqui |
+| P15 | ¿Cuánto tiempo se guarda la imagen de Windows después del cambio? ¿Hay un disco USB para sacarla? | Decisión de Melqui |
 | P16 | ¿Tailscale en el host (nodo nuevo) o en contenedor? ¿Cambia el nombre que usa el despliegue por SSH? | Decisión técnica y consola de Tailscale |
-| P17 | ¿El disco de Windows tiene BitLocker? Si lo tiene, ¿la clave de recuperación está a mano antes de cambiar el orden de arranque? | Melqui |
+| P17 | Si se activa BitLocker antes del cambio, ¿la clave de recuperación está a mano para restaurar la imagen? | Melqui |
 | P18 | ¿Quién consulta `/salud` desde afuera (issue #163)? ¿Hay que avisarle de una ventana sin servicio? | Melqui |
 | P19 | ¿Existe hoy `storage/app/templates/exportaciones/lista_empaque.xlsx` en producción? | Servidor (fase B) |
