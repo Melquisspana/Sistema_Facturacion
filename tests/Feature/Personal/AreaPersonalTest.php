@@ -189,7 +189,7 @@ class AreaPersonalTest extends TestCase
 
         $this->get(route('personal.empleados.show', 'a'.$e->asistencia_empleado_id))->assertOk()
             ->assertSee('Huellas vigentes')
-            ->assertDontSee('876.54')->assertDontSee('FICTICIO-1')->assertDontSee('Últimas quincenas');
+            ->assertDontSee('876.54')->assertDontSee('FICTICIO-1')->assertDontSee('Últimos pagos');
 
         // Con la clave de planilla ve lo mismo: su enlace de Asistencia, nada más.
         $this->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()->assertDontSee('FICTICIO-1');
@@ -208,7 +208,7 @@ class AreaPersonalTest extends TestCase
             ->assertDontSee('Huellas')->assertDontSee('Beto Ejemplo')->assertDontSee('876.54');
 
         $this->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()
-            ->assertSee('Últimas quincenas')
+            ->assertSee('Últimos pagos')
             ->assertDontSee('Huellas vigentes')->assertDontSee('Últimas marcaciones')->assertDontSee('876.54')->assertDontSee('Cambiar sueldo');
 
         $this->get(route('personal.empleados.show', 'a'.$beto->id))->assertForbidden();
@@ -243,7 +243,7 @@ class AreaPersonalTest extends TestCase
 
         $this->actingAs($this->admin)->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()
             ->assertSee('FICTICIO-1')->assertSee('876.54')->assertSee('Huellas vigentes')->assertSee('Últimas marcaciones')
-            ->assertSee('Últimas quincenas')->assertSee('Cambiar sueldo')->assertSee('Dar de baja')->assertSee('Contrato');
+            ->assertSee('Últimos pagos')->assertSee('Cambiar sueldo')->assertSee('Dar de baja')->assertSee('Contrato');
     }
 
     public function test_la_ficha_de_alguien_que_no_existe_da_404(): void

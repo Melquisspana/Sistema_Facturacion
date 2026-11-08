@@ -9,6 +9,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -32,7 +33,9 @@ use Illuminate\Validation\ValidationException;
  * última quincena de junio y de diciembre la renta sale del recálculo del año.
  *
  * UNA PLANILLA POR PERÍODO. Lo garantiza el índice único
- * `(tipo_periodo, periodo, clase)` en la base, no una comprobación previa.
+ * `(tipo_periodo, periodo, clase, individual_de)` en la base, no una comprobación previa.
+ * `individual_de` es 0 en las planillas de varios; en vacaciones, que se pagan de a una
+ * persona, es esa persona, y por eso puede haber varios pagos en el mismo mes.
  */
 final class PrepararPlanilla
 {
@@ -62,6 +65,12 @@ final class PrepararPlanilla
             'moneda' => ['required', Rule::in(config('gastos.monedas'))],
             'fecha_pago' => ['nullable', 'date_format:Y-m-d'],
             'observaciones' => ['nullable', 'string', 'max:2000'],
+            // Solo en vacaciones, que se pagan de a una persona.
+            'empleado' => ['nullable', 'integer', Rule::exists('planilla_empleados', 'id')],
+        ], [
+            'fecha_pago.date_format' => 'La fecha de pago no es una fecha válida.',
+            'empleado.integer' => 'No se encontró a esa persona en planilla.',
+            'empleado.exists' => 'No se encontró a esa persona en planilla.',
         ])->validate();
 
         // Aguinaldo y Quincena 25 no pagan tiempo de un período: su fecha es la de pago.
@@ -71,13 +80,32 @@ final class PrepararPlanilla
             $datos['fecha'] = $datos['fecha_pago'];
         }
 
+        $vacaciones = $datos['clase'] === VacacionesAnuales::CLASE;
+        if ($vacaciones && blank($datos['empleado'] ?? null)) {
+            throw ValidationException::withMessages(['empleado' => 'Las vacaciones se pagan de a una persona: elegila en «Pagar vacaciones».']);
+        }
+        // `individual_de` entra en la clave única: 0 en las planillas de varios.
+        $individual = $vacaciones ? (int) $datos['empleado'] : 0;
+
         $periodo = $this->periodos->para($datos['tipo_periodo'], CarbonImmutable::parse($datos['fecha']));
 
-        return DB::transaction(function () use ($usuario, $datos, $periodo) {
+        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual) {
+            // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
+            // bloquear antes que nada; acá se repite sin costo para quien llama directo.
+            $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
+
             $existente = Planilla::where('tipo_periodo', $datos['tipo_periodo'])
                 ->where('periodo', $periodo['periodo'])
                 ->where('clase', $datos['clase'])
+                ->where('individual_de', $individual)
+                // Un pago de vacaciones anulado no ocupa el lugar: se puede pagar de nuevo.
+                // Al anularlo ya dejó libre la clave única ({@see AnularPlanilla}).
+                ->when($individual > 0, fn ($q) => $q->where('estado', '!=', 'anulada'))
                 ->first();
+
+            if ($existente === null && $persona !== null) {
+                $this->exigirVacacionesPorPagar($persona, CarbonImmutable::parse($datos['fecha_pago']));
+            }
 
             if ($existente !== null) {
                 // Volver a abrir una quincena que ya existe la devuelve con lo que se
@@ -91,26 +119,76 @@ final class PrepararPlanilla
                 return $existente;
             }
 
-            $planilla = Planilla::create([
-                'clave' => (string) Str::uuid(),
-                'tipo_periodo' => $datos['tipo_periodo'],
-                'periodo' => $periodo['periodo'],
-                'clase' => $datos['clase'],
-                'desde' => $periodo['desde'],
-                'hasta' => $periodo['hasta'],
-                // Quien llama al servicio sin pasar por HTTP puede mandar '' (la regla
-                // `nullable` lo acepta); MySQL estricto no guarda '' en una fecha.
-                'fecha_pago' => blank($datos['fecha_pago'] ?? null) ? null : $datos['fecha_pago'],
-                'moneda' => $datos['moneda'],
-                'estado' => 'borrador',
-                'observaciones' => $datos['observaciones'] ?? null,
-                'registrado_por' => $usuario->id,
-            ]);
+            try {
+                $planilla = Planilla::create([
+                    'clave' => (string) Str::uuid(),
+                    'tipo_periodo' => $datos['tipo_periodo'],
+                    'periodo' => $periodo['periodo'],
+                    'clase' => $datos['clase'],
+                    'individual_de' => $individual,
+                    'desde' => $periodo['desde'],
+                    'hasta' => $periodo['hasta'],
+                    // Quien llama al servicio sin pasar por HTTP puede mandar '' (la regla
+                    // `nullable` lo acepta); MySQL estricto no guarda '' en una fecha.
+                    'fecha_pago' => blank($datos['fecha_pago'] ?? null) ? null : $datos['fecha_pago'],
+                    'moneda' => $datos['moneda'],
+                    'estado' => 'borrador',
+                    'observaciones' => $datos['observaciones'] ?? null,
+                    'registrado_por' => $usuario->id,
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                // Otra pantalla la generó en el mismo instante: el índice único la frenó.
+                throw ValidationException::withMessages(['periodo' => ($individual > 0 ? 'Ese pago de vacaciones' : 'Esa planilla')
+                    .' se acaba de generar desde otra pantalla. Buscalo en la lista de Planillas antes de intentarlo de nuevo.']);
+            }
 
             $this->precargarActivos($usuario, $planilla);
 
             return $planilla;
         });
+    }
+
+    /**
+     * Bloquea la ficha de la persona de un pago de vacaciones, y nada si no lo es.
+     *
+     * Dos pagos de la misma persona a la vez (dos pestañas, dos meses) se esperan: el
+     * segundo ve el primero y no paga dos veces el mismo año. En MySQL (REPEATABLE READ)
+     * la foto de lo que lee la transacción se toma en su primera lectura común, así que
+     * este bloqueo tiene que ser LO PRIMERO de la transacción de afuera: por eso
+     * {@see GenerarPlanilla} lo llama antes de abrir.
+     *
+     * @param  array<string, mixed>  $datos
+     */
+    public function bloquearPersona(array $datos): ?PlanillaEmpleado
+    {
+        if (($datos['clase'] ?? null) !== VacacionesAnuales::CLASE || ! ctype_digit((string) ($datos['empleado'] ?? ''))) {
+            return null;
+        }
+
+        return PlanillaEmpleado::whereKey((int) $datos['empleado'])->lockForUpdate()->first();
+    }
+
+    /** Que la persona de un pago de vacaciones de verdad las tenga por pagar en esa fecha. */
+    private function exigirVacacionesPorPagar(PlanillaEmpleado $empleado, CarbonImmutable $pago): void
+    {
+        // Lo mismo que el `max` del campo. Un pago con fecha de un mes que no llegó dejaría
+        // un pago «del futuro» que frena borrar las quincenas de por medio. Con este tope
+        // tampoco se puede pagar un año sin trabajar: el año que paga una fecha termina, a
+        // más tardar, el fin de su mes, y el que se cumple este mes sí se paga.
+        if ($pago > CarbonImmutable::now()->endOfMonth()) {
+            throw ValidationException::withMessages([
+                'fecha_pago' => 'La fecha de pago no puede ser de un mes que todavía no llegó.',
+            ]);
+        }
+
+        $baja = $empleado->baja_el === null ? null : CarbonImmutable::parse((string) $empleado->baja_el)->toDateString();
+        $motivo = ! $empleado->activo || ($baja !== null && $baja < $pago->startOfMonth()->toDateString())
+            ? 'no está activa en planilla'
+            : $this->prestaciones->calcular(VacacionesAnuales::CLASE, $empleado, null, $pago)['fuera'];
+
+        if ($motivo !== null) {
+            throw ValidationException::withMessages(['empleado' => $empleado->nombre.' no tiene vacaciones por pagar: '.$motivo.'.']);
+        }
     }
 
     /**
@@ -152,6 +230,8 @@ final class PrepararPlanilla
 
         $empleados = PlanillaEmpleado::where('activo', true)
             ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde))
+            // Un pago individual (vacaciones) es solo de su persona.
+            ->when($planilla->individual_de > 0, fn ($q) => $q->whereKey($planilla->individual_de))
             ->orderBy('nombre')
             ->get();
 
@@ -194,7 +274,7 @@ final class PrepararPlanilla
         $lineas = [];
 
         foreach ($empleados as $empleado) {
-            $calculo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago);
+            $calculo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago, $planilla->id);
 
             if ($calculo['fuera'] !== null) {
                 continue;
@@ -239,6 +319,21 @@ final class PrepararPlanilla
         }
 
         $lineas = $this->validar($lineas);
+
+        // Un pago de vacaciones es de UNA persona, y es la suya: tampoco se agrega otra a mano.
+        if ($planilla->clase === VacacionesAnuales::CLASE) {
+            $ids = array_map('intval', array_column($lineas, 'planilla_empleado_id'));
+
+            if (count($ids) > 1 || ($planilla->individual_de > 0 && $ids !== [] && $ids !== [(int) $planilla->individual_de])) {
+                throw ValidationException::withMessages([
+                    'lineas' => 'Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá «Pagar vacaciones».',
+                ]);
+            }
+
+            // En vacaciones esas fechas son el año de servicio, y lo escribe solo el sistema
+            // al confirmar ({@see ConfirmarPlanilla}): nunca el formulario.
+            $lineas = array_map(fn (array $l) => array_merge($l, ['periodo_desde' => null, 'periodo_hasta' => null]), $lineas);
+        }
 
         return DB::transaction(function () use ($usuario, $planilla, $lineas) {
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
@@ -533,8 +628,11 @@ final class PrepararPlanilla
             }
         }
 
-        foreach ($activos->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id')) as $empleado) {
-            $calculo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago);
+        // Un pago individual es de su persona: quién más queda fuera no viene al caso.
+        $otros = $planilla->individual_de > 0 ? collect() : $activos->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id'));
+
+        foreach ($otros as $empleado) {
+            $calculo = $this->prestaciones->calcular($planilla->clase, $empleado, $mensuales[$empleado->id] ?? null, $pago, $planilla->id);
             $motivo = $calculo['fuera'];
 
             // En vacaciones, que ya haya cobrado o no cumpla el año es lo normal: no se avisa.
@@ -561,6 +659,10 @@ final class PrepararPlanilla
             $reparos[] = 'La planilla no tiene ni una persona.';
         }
 
+        if ($planilla->clase === VacacionesAnuales::CLASE && $planilla->detalles->count() > 1) {
+            $reparos[] = 'Un pago de vacaciones es de una sola persona, y este tiene '.$planilla->detalles->count().'.';
+        }
+
         foreach ($this->cruces($planilla) as $cruce) {
             // Una extraordinaria existe para pagar fuera de calendario: eso se avisa. Dos
             // regulares con las mismas fechas son la misma persona cobrando dos veces.
@@ -581,7 +683,7 @@ final class PrepararPlanilla
             $mensuales = $this->sueldos->mensualesEn($planilla->detalles->pluck('empleado')->filter(), $pago->toDateString());
 
             foreach ($planilla->detalles as $detalle) {
-                $calculo = $this->prestaciones->calcular($planilla->clase, $detalle->empleado, $mensuales[$detalle->planilla_empleado_id] ?? null, $pago);
+                $calculo = $this->prestaciones->calcular($planilla->clase, $detalle->empleado, $mensuales[$detalle->planilla_empleado_id] ?? null, $pago, $planilla->id);
 
                 if ($calculo['falta'] !== null) {
                     $reparos[] = $detalle->nombre_snapshot.': falta '.$calculo['falta'].' para calcularlo.';

@@ -33,13 +33,14 @@ use Illuminate\Support\Collection;
 class PlanillaController extends Controller
 {
     /** Lo que define qué planilla se genera. Viaja de la revisión a «Generar» tal cual. */
-    private const DATOS_DEL_PERIODO = ['tipo_periodo', 'fecha', 'clase', 'moneda', 'fecha_pago', 'observaciones'];
+    private const DATOS_DEL_PERIODO = ['tipo_periodo', 'fecha', 'clase', 'moneda', 'fecha_pago', 'observaciones', 'empleado'];
 
     public function index(Request $request, TotalesPlanilla $totales, VacacionesAnuales $vacaciones)
     {
         $verImportes = $request->user()->can('planilla.salarios');
 
         $planillas = Planilla::query()
+            ->with('individual')
             ->withCount('detalles')
             ->orderByDesc('desde')
             ->orderByDesc('id')
@@ -63,14 +64,31 @@ class PlanillaController extends Controller
             ? $request->query('tipo')
             : 'quincenal';
 
-        // El aviso de vacaciones del inicio llega con la clase ya elegida.
-        $clase = array_key_exists((string) $request->query('clase'), Planilla::CLASES) ? $request->query('clase') : 'regular';
-
         return view('planilla.create', [
             'tipo' => $tipo,
-            'clase' => $clase,
+            // Las vacaciones no son una planilla de varios: se pagan de a una en «Pagar vacaciones».
+            'clases' => array_diff_key(Planilla::CLASES, [VacacionesAnuales::CLASE => true]),
             'periodos' => $periodos->recientes($tipo, CarbonImmutable::now()),
             'hoy' => CarbonImmutable::now()->toDateString(),
+        ]);
+    }
+
+    /**
+     * «Pagar vacaciones»: quién las tiene por pagar, con su monto. Cada persona se paga
+     * por separado, con su botón, y pasa por la misma revisión que una planilla.
+     */
+    public function vacaciones(Request $request, VacacionesAnuales $vacaciones)
+    {
+        abort_unless($request->user()->can('planilla.gestionar') && $request->user()->can('planilla.salarios'), 403);
+
+        $hoy = CarbonImmutable::now();
+
+        return view('planilla.vacaciones', [
+            'filas' => $vacaciones->porPagar($hoy),
+            'hoy' => $hoy->toDateString(),
+            // No se paga un año que todavía no se trabajó; el que se cumple este mes, sí.
+            'maxima' => $hoy->endOfMonth()->toDateString(),
+            'moneda' => config('gastos.monedas')[0],
         ]);
     }
 
@@ -93,6 +111,11 @@ class PlanillaController extends Controller
     public function store(Request $request, GenerarPlanilla $generar)
     {
         $planilla = $generar->generar($request->user(), $request->only(self::DATOS_DEL_PERIODO));
+
+        if ($planilla->esVacaciones()) {
+            return redirect()->route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo'])
+                ->with('planilla.aviso', $planilla->nombreDeVacaciones().' generado. Imprimí el recibo y hacelo firmar.');
+        }
 
         return redirect()->route('planilla.impresos', $planilla)
             ->with('planilla.aviso', 'Planilla '.$planilla->periodo.' generada. Imprimí la hoja y hacela firmar.');
@@ -120,6 +143,10 @@ class PlanillaController extends Controller
         $disponibles = PlanillaEmpleado::where('activo', true)
             ->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id'))
             ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde))
+            // Un pago de vacaciones es de una sola persona: solo se ofrece la suya, si se quitó.
+            ->when($planilla->esVacaciones(), fn ($q) => $planilla->detalles->isEmpty() && $planilla->individual_de > 0
+                ? $q->whereKey($planilla->individual_de)
+                : $q->whereRaw('1 = 0'))
             ->orderBy('nombre')
             ->get();
 
@@ -190,6 +217,11 @@ class PlanillaController extends Controller
 
         $planilla = $preparar->guardarLineas($request->user(), $planilla, $request->input('lineas', []));
         $confirmar->confirmar($request->user(), $planilla);
+
+        if ($planilla->esVacaciones()) {
+            return redirect()->route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo'])
+                ->with('planilla.aviso', $planilla->nombreDeVacaciones().' generado. Imprimí el recibo y hacelo firmar.');
+        }
 
         return redirect()->route('planilla.impresos', $planilla)
             ->with('planilla.aviso', 'Planilla '.$planilla->periodo.' generada. Imprimí la hoja y hacela firmar.');

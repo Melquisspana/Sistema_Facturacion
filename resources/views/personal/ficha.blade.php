@@ -328,7 +328,7 @@
                 </div>
 
                 <div class="{{ $tarjeta }}">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimas quincenas</h3>
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimos pagos</h3>
                     @if ($quincenas->isEmpty())
                         <p class="mt-3 text-sm text-gray-500 dark:text-paper-300">Todavía no está en ninguna planilla.</p>
                     @else
@@ -337,7 +337,7 @@
                                 <caption class="sr-only">Últimas planillas de la persona</caption>
                                 <thead>
                                     <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-ink-600 dark:text-paper-300">
-                                        <th scope="col" class="py-2 pr-4">Período</th>
+                                        <th scope="col" class="py-2 pr-4">Pago</th>
                                         <th scope="col" class="py-2 pr-4">Tipo</th>
                                         <th scope="col" class="py-2 pr-4">Estado</th>
                                         @if ($verImportes)
@@ -348,7 +348,7 @@
                                 <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
                                     @foreach ($quincenas as $q)
                                         <tr>
-                                            <td class="py-2.5 pr-4"><a href="{{ route('planilla.show', $q->planilla) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">{{ $q->planilla->periodo }}</a></td>
+                                            <td class="py-2.5 pr-4"><a href="{{ route('planilla.show', $q->planilla) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">{{ $q->planilla->esVacaciones() ? 'Pago del '.$q->planilla->fecha_pago?->format('d/m/Y') : $q->planilla->periodo }}</a></td>
                                             <td class="py-2.5 pr-4 text-gray-600 dark:text-paper-300">{{ Planilla::CLASES[$q->planilla->clase] }}</td>
                                             <td class="py-2.5 pr-4 text-gray-600 dark:text-paper-300">{{ Planilla::ESTADOS[$q->planilla->estado] }}</td>
                                             @if ($verImportes)

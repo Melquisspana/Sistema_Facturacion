@@ -75,10 +75,12 @@ class PlanillaFlujoController extends Controller
 
     public function borrar(Request $request, Planilla $planilla, BorrarPlanilla $borrar)
     {
+        // El nombre antes de borrar: después ya no quedan sus líneas.
+        $nombre = $planilla->esVacaciones() ? $planilla->nombreDeVacaciones().' borrado' : 'Planilla '.$planilla->periodo.' borrada';
         $borrar->borrar($request->user(), $planilla);
 
-        return redirect()->route('planilla.index')->with('planilla.aviso', 'Planilla '.$planilla->periodo
-            .' borrada con todo lo que había creado. Los anticipos que descontaba volvieron a tener su saldo.');
+        return redirect()->route('planilla.index')->with('planilla.aviso', $nombre
+            .' con todo lo que había creado. Los anticipos que descontaba volvieron a tener su saldo.');
     }
 
     public function confirmar(Request $request, Planilla $planilla, ConfirmarPlanilla $confirmar)
@@ -96,7 +98,7 @@ class PlanillaFlujoController extends Controller
 
         return redirect()
             ->route('planilla.show', $planilla)
-            ->with('planilla.aviso', 'Planilla anulada. Las obligaciones se extinguieron con un ajuste interno —no se emitió ninguna nota de crédito— y los anticipos volvieron a quedar pendientes.');
+            ->with('planilla.aviso', ($planilla->esVacaciones() ? 'Pago de vacaciones anulado' : 'Planilla anulada').'. Las obligaciones se extinguieron con un ajuste interno —no se emitió ninguna nota de crédito— y los anticipos volvieron a quedar pendientes.');
     }
 
     /**
@@ -122,7 +124,7 @@ class PlanillaFlujoController extends Controller
     ) {
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
-        $planilla->load('detalles.conceptos', 'detalles.gasto.cuotas', 'detalles.empleado');
+        $planilla->load('detalles.conceptos', 'detalles.gasto.cuotas', 'detalles.empleado', 'individual');
 
         $formato = $request->query('formato') === 'recibo' ? 'recibo' : 'hoja';
         $esVacaciones = $planilla->clase === VacacionesAnuales::CLASE;
@@ -147,6 +149,10 @@ class PlanillaFlujoController extends Controller
             $propio = $detalle->periodo_desde !== null || $detalle->periodo_hasta !== null;
             $desde = $detalle->periodo_desde ?? $planilla->desde;
             $hasta = $detalle->periodo_hasta ?? $planilla->hasta;
+            // Vacaciones: el año de servicio que quedó escrito al confirmar, no el mes de la
+            // clave técnica. En vacaciones `periodo_desde` es ese año, no un período particular.
+            $anio = $esVacaciones ? $vacaciones->anioDeLinea($detalle, $planilla->desde->toImmutable()) : null;
+            $propio = $propio && ! $esVacaciones;
 
             if (filled($p['entrego'])) {
                 $entregaron[$p['entrego']] = true;
@@ -159,9 +165,16 @@ class PlanillaFlujoController extends Controller
                 'documento_tipo' => $detalle->documento_tipo_snapshot,
                 'cargo' => $detalle->cargo_snapshot,
                 'salario' => (string) $detalle->salario,
-                'folio' => $planilla->periodo.'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
-                'periodo' => $desde->format('d').'–'.$hasta->format('d').' '.mb_strtolower($hasta->translatedFormat('M')),
-                'periodo_largo' => 'del '.$desde->format('d/m/Y').' al '.$hasta->format('d/m/Y'),
+                // Varios pagos de vacaciones caen en el mismo mes: su folio sale del pago.
+                'folio' => $esVacaciones
+                    ? 'VAC-'.str_pad((string) $planilla->id, 5, '0', STR_PAD_LEFT)
+                    : $planilla->periodo.'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
+                'periodo' => $anio
+                    ? $anio['desde']->format('d/m/y').'–'.$anio['hasta']->format('d/m/y')
+                    : $desde->format('d').'–'.$hasta->format('d').' '.mb_strtolower($hasta->translatedFormat('M')),
+                'periodo_largo' => $anio
+                    ? 'del '.$anio['desde']->format('d/m/Y').' al '.$anio['hasta']->format('d/m/Y')
+                    : 'del '.$desde->format('d/m/Y').' al '.$hasta->format('d/m/Y'),
                 'periodo_propio' => $propio,
                 'ingresos' => $detalle->conceptos->where('tipo', 'ingreso')
                     ->map(fn ($c) => ['concepto' => $c->concepto, 'importe' => (string) $c->importe])->values()->all(),
@@ -190,10 +203,10 @@ class PlanillaFlujoController extends Controller
                         ? $p['fecha']->format('d/m/Y') : null,
                 'entrego' => $p['entrego'],
                 'estado' => $e + ['etiqueta' => EstadoPlanilla::ETIQUETAS[$e['estado']]],
+                // El formato del recibo sale de la clase del pago, nunca de las fechas.
+                'es_vacaciones' => $esVacaciones,
                 // Solo en vacaciones: el año de servicio que se paga, para el recibo que se firma.
-                'vacaciones' => $esVacaciones && $detalle->empleado
-                    ? $vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable())
-                    : null,
+                'vacaciones' => $anio,
             ];
 
             $suma['total_ingresos'] += $t['total_ingresos'];
@@ -218,7 +231,7 @@ class PlanillaFlujoController extends Controller
             'logo' => asset('images/dte/logo-transparent.png'),
             'entregaron' => implode(' y ', array_keys($entregaron)),
             'cabecera' => [
-                'periodo' => $planilla->periodo.' · '.$planilla->periodoEnPalabras(),
+                'periodo' => $esVacaciones ? $planilla->periodoEnPalabras() : $planilla->periodo.' · '.$planilla->periodoEnPalabras(),
                 'periodo_largo' => $planilla->periodoEnPalabras(),
                 'fecha_pago' => $planilla->fecha_pago?->format('d/m/Y'),
                 'hoy' => now()->format('d/m/Y'),

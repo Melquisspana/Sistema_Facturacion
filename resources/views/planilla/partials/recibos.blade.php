@@ -18,14 +18,17 @@
 
 @foreach ($lineas as $l)
     {{-- Vacaciones: el recibo dice qué se paga y de qué año de servicio, para que se firme. --}}
-    @php($vac = $l['vacaciones'] ?? null)
+    {{-- El formato sale de la clase del pago; el año, de lo que quedó escrito al confirmarlo. --}}
+    @php($vac = $l['es_vacaciones'] ?? false)
+    @php($anio = $l['vacaciones'] ?? null)
+    @php($anioTxt = $anio ? 'del '.$anio['desde']->format('d/m/Y').' al '.$anio['hasta']->format('d/m/Y') : 'sin fecha de ingreso')
     <div class="hoja-impresa">
         @if ($esBorrador)
             <div class="hi-sello">Borrador<small>no es comprobante de pago</small></div>
         @endif
 
         @include('planilla.partials.membrete', [
-            'documento' => $esBorrador ? 'Detalle de la quincena' : ($vac ? 'Recibo de vacaciones' : 'Recibo de pago'),
+            'documento' => $esBorrador ? ($vac ? 'Detalle de vacaciones' : 'Detalle de la quincena') : ($vac ? 'Recibo de vacaciones' : 'Recibo de pago'),
             'folio' => $esBorrador ? 'Sin número · impreso el '.e($cabecera['hoy']) : e($l['folio']),
         ])
 
@@ -45,8 +48,7 @@
             <p class="hi-declara">
                 Recibí de {{ $empleadora ?: $negocio }} la cantidad de {{ $moneda === 'USD' ? 'US$' : $moneda }}
                 <span class="mono">{{ $l['pagado_txt'] }}</span> en concepto de vacaciones anuales remuneradas:
-                15 días de salario más 30 % de recargo, correspondientes al año de servicio del
-                {{ $vac['desde']->format('d/m/Y') }} al {{ $vac['hasta']->format('d/m/Y') }}.
+                15 días de salario más 30 % de recargo, correspondientes al año de servicio {{ $anioTxt }}.
             </p>
         @endif
 
@@ -54,7 +56,7 @@
             <div>
                 @if ($vac)
                     <span class="et">Año de servicio</span>
-                    <span class="val mono">del {{ $vac['desde']->format('d/m/Y') }} al {{ $vac['hasta']->format('d/m/Y') }}</span>
+                    <span class="val mono">{{ $anioTxt }}</span>
                 @else
                     <span class="et">Período pagado</span>
                     <span class="val mono">{{ $l['periodo_largo'] }}</span>

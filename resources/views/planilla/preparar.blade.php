@@ -25,6 +25,15 @@
         ])->values(),
     ])->values();
 
+    // Vacaciones: un pago anual de una persona, no una quincena.
+    $vacaciones = $planilla->esVacaciones();
+    $deEsto = $vacaciones ? 'de este pago' : 'de esta quincena';
+    // En vacaciones el monto es el ingreso «Vacaciones»: esa columna lo dice.
+    $extras = $vacaciones ? 'Vacaciones' : 'Extras';
+    $pregunta = $vacaciones
+        ? '¿Generar el '.lcfirst($planilla->nombreDeVacaciones()).'? '
+        : '¿Generar la planilla '.$planilla->periodo.'? ';
+
     $disponiblesJs = $disponibles->map(fn ($e) => [
         'id' => $e->id, 'nombre' => $e->nombre, 'cargo' => $e->cargo,
         'salario' => $habitualesDisponibles[$e->id] ?? '',
@@ -37,11 +46,11 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h1 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ Planilla::TIPOS_PERIODO[$planilla->tipo_periodo] }} · {{ $planilla->periodo }}
+                    {{ $planilla->esVacaciones() ? $planilla->nombreDeVacaciones() : Planilla::TIPOS_PERIODO[$planilla->tipo_periodo].' · '.$planilla->periodo }}
                 </h1>
                 <p class="text-sm text-gray-500">
                     {{ $planilla->periodoEnPalabras() }}
-                    @if ($planilla->clase !== 'regular') · {{ Planilla::CLASES[$planilla->clase] }} @endif
+                    @if ($planilla->clase !== 'regular' && ! $planilla->esVacaciones()) · {{ Planilla::CLASES[$planilla->clase] }} @endif
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -70,7 +79,7 @@
             {{-- Generar es la única salida: guarda lo escrito y confirma. La pregunta lleva
                  las personas y el total que se ven en la pantalla en ese momento. --}}
             <form method="POST" action="{{ route('planilla.guardar', $planilla) }}"
-                  x-on:submit="if (! confirm('¿Generar la planilla ' + @js($planilla->periodo) + '? Son ' + lineas.length + ' personas y ' + @js($planilla->moneda) + ' ' + m(suma('aPagar')) + ' a pagar. Después ya no se edita.')) $event.preventDefault()"
+                  x-on:submit="if (! confirm(@js($pregunta) + 'Son ' + (@js($vacaciones) ? '' : lineas.length + ' personas y ') + @js($planilla->moneda) + ' ' + m(suma('aPagar')) + ' a pagar. Después ya no se edita.')) $event.preventDefault()"
                   x-data="{
                       lineas: @js($lineasIniciales),
                       disponibles: @js($disponiblesJs),
@@ -244,8 +253,8 @@
                      dos maquetaciones, y enviaría cada dato dos veces—. --}}
                 <div class="hidden rounded-t-lg border border-b-0 border-gray-200 bg-gray-50 px-4 py-2 lg:grid lg:grid-cols-12 lg:gap-3">
                     <p class="col-span-3 text-xs font-medium uppercase tracking-wide text-gray-500">Persona</p>
-                    <p class="col-span-2 text-xs font-medium uppercase tracking-wide text-gray-500">Pago del período</p>
-                    <p class="col-span-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Extras</p>
+                    <p class="col-span-2 text-xs font-medium uppercase tracking-wide text-gray-500">{{ $vacaciones ? '' : 'Pago del período' }}</p>
+                    <p class="col-span-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">{{ $extras }}</p>
                     <p class="col-span-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Descuentos</p>
                     <p class="col-span-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total a pagar</p>
                 </div>
@@ -278,6 +287,14 @@
                             </div>
 
                             {{-- ── Pago del período ── --}}
+                            @if ($vacaciones)
+                                {{-- Vacaciones no pagan tiempo: el salario va en 0 y no se muestra, para
+                                     que no confunda. El monto es el ingreso «Vacaciones», en la otra columna.
+                                     La celda queda vacía para que las columnas no se corran. --}}
+                                <div class="lg:col-span-2">
+                                    <input type="hidden" :name="'lineas['+i+'][salario]'" :value="l.salario">
+                                </div>
+                            @else
                             <div class="mt-3 lg:col-span-2 lg:mt-0">
                                 <label :for="'salario-'+i" class="block text-sm font-medium text-gray-700 lg:sr-only">Pago del período</label>
                                 <input :id="'salario-'+i" type="text" inputmode="decimal"
@@ -287,10 +304,11 @@
                                 <p class="mt-1 text-xs text-gray-400" x-show="l.habitual !== ''" x-cloak
                                    x-text="'habitual ' + l.habitual"></p>
                             </div>
+                            @endif
 
                             {{-- ── Extras ── --}}
                             <div class="mt-3 flex items-baseline justify-between gap-2 lg:col-span-2 lg:mt-0 lg:block lg:text-right">
-                                <span class="text-sm font-medium text-gray-700 lg:hidden">Extras</span>
+                                <span class="text-sm font-medium text-gray-700 lg:hidden">{{ $extras }}</span>
                                 <span class="text-sm tabular-nums"
                                       :class="otrosIngresos(l) > 0 ? 'text-gray-900' : 'text-gray-300'"
                                       x-text="otrosIngresos(l) > 0 ? m(otrosIngresos(l)) : '—'"></span>
@@ -345,7 +363,8 @@
                             <div x-show="abierto(i)" x-cloak :id="'detalle-'+i"
                                  class="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3 lg:col-span-12">
 
-                                {{-- ── Período particular ── --}}
+                                {{-- ── Período particular ── (vacaciones no pagan tiempo: no lo llevan) --}}
+                                @unless ($vacaciones)
                                 <fieldset>
                                     <legend class="text-xs font-semibold uppercase tracking-wide text-gray-500">
                                         Período trabajado
@@ -382,11 +401,12 @@
                                         </div>
                                     </div>
                                 </fieldset>
+                                @endunless
 
                                 {{-- ── Extras y descuentos ── --}}
                                 <div class="mt-4">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                        Extras y descuentos de esta quincena
+                                        Extras y descuentos {{ $deEsto }}
                                     </p>
                                     <p class="mt-1 text-xs text-gray-500">
                                         Los extras empiezan vacíos cada vez, a propósito: uno que se copiara solo
@@ -516,13 +536,13 @@
                                 {{-- ── Nota y quitar ── --}}
                                 <div class="mt-4 flex flex-wrap items-end justify-between gap-3">
                                     <div class="min-w-0 flex-1 sm:max-w-md">
-                                        <label :for="'nota-'+i" class="block text-xs text-gray-500">Nota de esta quincena (opcional)</label>
+                                        <label :for="'nota-'+i" class="block text-xs text-gray-500">Nota {{ $deEsto }} (opcional)</label>
                                         <input :id="'nota-'+i" type="text" :name="'lineas['+i+'][observaciones]'" x-model="l.observaciones"
                                                maxlength="500" class="{{ $campo }} text-xs">
                                     </div>
                                     <button type="button" @click="quitar(i)" class="{{ $boton }} text-gray-600"
-                                            :aria-label="'Quitar a ' + l.nombre + ' de esta quincena'">
-                                        Quitar de esta quincena
+                                            :aria-label="'Quitar a ' + l.nombre + ' ' + @js($deEsto)">
+                                        Quitar {{ $deEsto }}
                                     </button>
                                 </div>
                             </div>
@@ -554,10 +574,17 @@
                     </template>
 
                     <template x-if="disponibles.length === 0">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
-                            <p class="text-sm text-gray-600">Ya están en la planilla todas las personas registradas.</p>
-                            <a href="{{ route('personal.empleados') }}" class="{{ $boton }}">Registrar o vincular una persona</a>
-                        </div>
+                        @if ($vacaciones)
+                            <p class="text-sm text-gray-600">
+                                Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá
+                                <a href="{{ route('planilla.vacaciones') }}" class="font-medium text-indigo-700 underline">Pagar vacaciones</a>.
+                            </p>
+                        @else
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <p class="text-sm text-gray-600">Ya están en la planilla todas las personas registradas.</p>
+                                <a href="{{ route('personal.empleados') }}" class="{{ $boton }}">Registrar o vincular una persona</a>
+                            </div>
+                        @endif
                     </template>
                 </div>
 
@@ -567,7 +594,7 @@
                         ni horas extra.
                     </p>
                     <button type="submit" class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700 sm:w-auto">
-                        Generar la planilla
+                        {{ $vacaciones ? 'Generar el pago' : 'Generar la planilla' }}
                     </button>
                 </div>
             </form>

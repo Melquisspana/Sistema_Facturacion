@@ -62,6 +62,7 @@ final class ConfirmarPlanilla
     public function __construct(
         private PrepararPlanilla $preparar,
         private TotalesPlanilla $totales,
+        private VacacionesAnuales $vacaciones,
     ) {}
 
     public function confirmar(User $usuario, Planilla $planilla): Planilla
@@ -92,6 +93,7 @@ final class ConfirmarPlanilla
                 }
 
                 $this->comprobarAnticipos($planilla);
+                $this->fijarAnioDeServicio($planilla);
 
                 $creadas = 0;
                 foreach ($planilla->detalles as $detalle) {
@@ -190,6 +192,28 @@ final class ConfirmarPlanilla
         }
     }
 
+    /**
+     * Vacaciones: el año de servicio que se paga queda escrito en la línea al confirmar,
+     * en `periodo_desde` y `periodo_hasta`. Así el recibo firmado no cambia si después se
+     * corrige la fecha de ingreso de la ficha. Se escribe siempre el calculado: nada que
+     * haya llegado de un formulario o de un borrador viejo cuenta como año pagado.
+     */
+    private function fijarAnioDeServicio(Planilla $planilla): void
+    {
+        if (! $planilla->esVacaciones()) {
+            return;
+        }
+
+        foreach ($planilla->detalles as $detalle) {
+            $anio = $detalle->empleado === null ? null : $this->vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable());
+
+            // Sin año calculable (los reparos ya lo habrían frenado) queda vacío, no lo de antes.
+            $detalle->update($anio === null
+                ? ['periodo_desde' => null, 'periodo_hasta' => null]
+                : ['periodo_desde' => $anio['desde']->toDateString(), 'periodo_hasta' => $anio['hasta']->toDateString()]);
+        }
+    }
+
     /** La obligación con la persona por lo que se le paga. */
     private function obligacionDelEmpleado(User $usuario, Planilla $planilla, PlanillaDetalle $detalle): bool
     {
@@ -210,14 +234,15 @@ final class ConfirmarPlanilla
         $gasto = Gasto::firstOrCreate(['clave' => $clave], [
             'huella_peticion' => hash('sha256', $clave),
             'beneficiario' => $detalle->nombre_snapshot,
-            'concepto' => 'Planilla '.$planilla->periodo.' · '.$detalle->nombre_snapshot,
+            'concepto' => ($planilla->esVacaciones() ? 'Vacaciones' : 'Planilla '.$planilla->periodo).' · '.$detalle->nombre_snapshot,
             'categoria' => 'Planilla',
             'ambito' => 'empresarial',
             'naturaleza' => 'operativo',
             'moneda' => $planilla->moneda,
             'importe' => Dinero::decimal($aPagar),
-            'periodo_desde' => $planilla->desde,
-            'periodo_hasta' => $planilla->hasta,
+            // Vacaciones: el mes de `desde` es solo su clave técnica, no un período pagado.
+            'periodo_desde' => $planilla->esVacaciones() ? null : $planilla->desde,
+            'periodo_hasta' => $planilla->esVacaciones() ? null : $planilla->hasta,
             'documentacion' => 'pendiente',
             'responsable_id' => $planilla->registrado_por,
             'registrado_por' => $usuario->id,
@@ -276,14 +301,14 @@ final class ConfirmarPlanilla
             $gasto = Gasto::firstOrCreate(['clave' => $clave], [
                 'huella_peticion' => hash('sha256', $clave),
                 'beneficiario' => $nombre,
-                'concepto' => 'Descuentos de planilla '.$planilla->periodo,
+                'concepto' => $planilla->esVacaciones() ? 'Descuentos de vacaciones de '.$planilla->detalles->first()?->nombre_snapshot : 'Descuentos de planilla '.$planilla->periodo,
                 'categoria' => 'Planilla',
                 'ambito' => 'empresarial',
                 'naturaleza' => 'operativo',
                 'moneda' => $planilla->moneda,
                 'importe' => Dinero::decimal($importe),
-                'periodo_desde' => $planilla->desde,
-                'periodo_hasta' => $planilla->hasta,
+                'periodo_desde' => $planilla->esVacaciones() ? null : $planilla->desde,
+                'periodo_hasta' => $planilla->esVacaciones() ? null : $planilla->hasta,
                 'documentacion' => 'pendiente',
                 'responsable_id' => $planilla->registrado_por,
                 'registrado_por' => $usuario->id,

@@ -35,6 +35,8 @@ final class GenerarPlanilla
     public function generar(User $usuario, array $datos): Planilla
     {
         return DB::transaction(function () use ($usuario, $datos) {
+            // Lo primero de la transacción, antes de leer nada (MySQL, REPEATABLE READ).
+            $this->preparar->bloquearPersona($datos);
             $planilla = $this->preparar->abrir($usuario, $datos);
 
             if (! $planilla->wasRecentlyCreated) {
@@ -58,13 +60,14 @@ final class GenerarPlanilla
         DB::beginTransaction();
 
         try {
+            $this->preparar->bloquearPersona($datos);
             $planilla = $this->preparar->abrir($usuario, $datos);
 
             if (! $planilla->wasRecentlyCreated) {
                 return ['existente' => $planilla, 'planilla' => null, 'personas' => [], 'resumen' => null, 'avisos' => [], 'reparos' => []];
             }
 
-            $planilla->load('detalles.conceptos', 'detalles.empleado');
+            $planilla->load('detalles.conceptos', 'detalles.empleado', 'individual');
 
             return [
                 'existente' => null,
@@ -85,6 +88,13 @@ final class GenerarPlanilla
 
     public function yaExiste(Planilla $planilla): string
     {
+        // Solo llega uno vigente: los anulados no ocupan el lugar.
+        if ($planilla->esVacaciones()) {
+            return $planilla->borrador()
+                ? 'Ya hay un borrador del '.lcfirst($planilla->nombreDeVacaciones()).' que quedó de antes. Terminalo o borralo.'
+                : 'Ese '.lcfirst($planilla->nombreDeVacaciones()).' ya está hecho. Si hay que corregirlo, anulalo y pagalo de nuevo.';
+        }
+
         if ($planilla->borrador()) {
             return 'Ya hay un borrador de '.$planilla->periodo.' que quedó de antes. Terminalo o borralo.';
         }

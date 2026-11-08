@@ -14,6 +14,8 @@
      diferencia sería esconder justo lo que hay que revisar. --}}
 {{-- Se recibe de quien incluye la parte; si no lo dice, lo dice la planilla. --}}
 @php($esBorrador = $esBorrador ?? (isset($planilla) && $planilla->borrador()))
+{{-- Vacaciones: anual y de una persona, sin quincena ni mes. --}}
+@php($deVacaciones = isset($planilla) && $planilla->esVacaciones())
 
 <div class="hoja-impresa">
     @if ($esBorrador)
@@ -21,7 +23,7 @@
     @endif
 
     @include('planilla.partials.membrete', [
-        'documento' => 'Planilla para firma',
+        'documento' => $deVacaciones ? 'Vacaciones para firma' : 'Planilla para firma',
         'folio' => e($cabecera['periodo_largo'])
             .'<br>'.($esBorrador
                 ? 'Sin pagar · impresa el '.e($cabecera['hoy'])
@@ -33,7 +35,7 @@
             <tr>
                 <th class="izq" style="width:6mm">N.º</th>
                 <th class="izq" style="width:46mm">Trabajador</th>
-                <th class="izq" style="width:16mm">Período</th>
+                <th class="izq" style="width:16mm">{{ $deVacaciones ? 'Año de servicio' : 'Período' }}</th>
                 <th style="width:18mm">Importe</th>
                 <th style="width:18mm">Descuento</th>
                 <th style="width:26mm">{{ $esBorrador ? 'A pagar' : 'Total recibido' }}</th>
@@ -99,7 +101,7 @@
                 <div class="txt">
                     @if ($entregaron !== '')
                         Entregó el pago · <strong>{{ $entregaron }}</strong>
-                        <br><em>según los pagos registrados de esta quincena</em>
+                        <br><em>según los pagos registrados {{ $deVacaciones ? 'de este pago' : 'de esta quincena' }}</em>
                     @else
                         Entregó el pago · nombre y firma
                     @endif
