@@ -10,7 +10,10 @@ name: facturacion
 
 x-app: &app
   image: facturacion-app:${APP_IMAGE_TAG:-local}
-  restart: unless-stopped
+  # always y no unless-stopped: ante un corte, NUT corre `docker compose stop` y apaga;
+  # con unless-stopped nada volvería a arrancar con el host. Para dejar algo parado
+  # durante un reinicio: `docker compose down`.
+  restart: always
   environment:
     TZ: America/El_Salvador
   volumes:
@@ -31,6 +34,7 @@ services:
     environment:
       TZ: America/El_Salvador
       APACHE_DOMINIO_PUBLICO: ${APACHE_DOMINIO_PUBLICO:-facturacion.example.com}
+      APACHE_HOSTS_EXTRA: ${APACHE_HOSTS_EXTRA:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/up"]
       interval: 30s
@@ -54,7 +58,7 @@ services:
 
   mysql:
     image: mysql:8.4
-    restart: unless-stopped
+    restart: always
     environment:
       TZ: America/El_Salvador
       MYSQL_DATABASE: ${MYSQL_DATABASE:?falta MYSQL_DATABASE en .env.compose}
@@ -78,7 +82,7 @@ services:
   # alcanzan web, worker y programador por la red interna.
   firmador:
     image: eclipse-temurin:21-jre
-    restart: unless-stopped
+    restart: always
     environment:
       TZ: America/El_Salvador
     working_dir: /trabajo
@@ -99,7 +103,7 @@ services:
   # Un solo conector para el túnel: nunca encenderlo mientras Windows siga atendiendo.
   cloudflared:
     image: cloudflare/cloudflared:2026.10.0
-    restart: unless-stopped
+    restart: always
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN:-}

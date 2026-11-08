@@ -13,7 +13,8 @@ set -eu
 cd /var/www/html
 
 : "${APACHE_DOMINIO_PUBLICO:=facturacion.example.com}"
-export APACHE_DOMINIO_PUBLICO
+: "${APACHE_HOSTS_EXTRA:=}"
+export APACHE_DOMINIO_PUBLICO APACHE_HOSTS_EXTRA
 
 como_www_data() {
     if [ "$(id -u)" = "0" ]; then
@@ -31,8 +32,11 @@ if [ "$(id -u)" = "0" ]; then
     find storage backups \! -user www-data -exec chown www-data:www-data {} +
 fi
 
-if [ ! -f .env ]; then
-    echo "facturacion-entrypoint: no hay .env montado en /var/www/html/.env" >&2
+# Sin .env legible, Laravel arranca callado con la configuración por defecto (sin
+# APP_KEY ni DB_HOST): se corta acá para que el motivo salga en docker compose logs.
+if [ ! -f .env ] || ! como_www_data test -r .env; then
+    echo "facturacion-entrypoint: /var/www/html/.env falta, no es un archivo o www-data (uid 33) no lo puede leer; en el host: chown root:33 laravel.env && chmod 0640 laravel.env" >&2
+    exit 1
 fi
 
 como_www_data php artisan config:cache --no-ansi
