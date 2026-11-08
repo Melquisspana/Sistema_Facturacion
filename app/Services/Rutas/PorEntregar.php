@@ -21,7 +21,8 @@ use Illuminate\Validation\ValidationException;
  *
  *   1. si el CCF ya va sin registrar en una salida en curso (una formal a San Miguel, por
  *      ejemplo), en esa;
- *   2. si no, en la salida de entrega en curso de HOY de la ruta de su sala;
+ *   2. si no, en la salida de entrega en curso de HOY de la ruta de su sala (la formal,
+ *      aunque sea un viaje que empezó antes; si no, la automática de hoy);
  *   3. si no hay, en una que se arma sola: en curso, para entregar, de hoy, a nombre del
  *      vendedor y con él adentro. No carga los demás pendientes: lleva solo lo que se marca.
  *
@@ -65,17 +66,28 @@ class PorEntregar
             throw ValidationException::withMessages(['entrega' => 'Este CCF va en la salida '.$entrega->salida->descripcionCorta()
                 .', que todavía no empezó: se marca cuando la empiecen.']);
         }
+        // Con el día cerrado la política no deja registrar: se dice por qué, no un 403.
+        if ($entrega?->salida->diaCerrado()) {
+            throw ValidationException::withMessages(['entrega' => 'Este CCF va en la salida '.$entrega->salida->descripcionCorta()
+                .', que ya cerró el día de hoy: pedile a la oficina que lo reabra.']);
+        }
 
         return $entrega;
     }
 
+    /**
+     * La salida de entrega en curso de la ruta para hoy. La que armó la oficina va antes que
+     * la automática, y vale aunque haya empezado antes (un viaje de varios días a San Miguel),
+     * como cuando carga lo facturado en camino ({@see EntregasCcf::cargarNuevosEnCurso()}).
+     * La automática, solo la de hoy. Las que ya cerraron el día de hoy no reciben más.
+     */
     private function enLaDeHoy(Dte $dte, int $rutaId, User $usuario): SalidaRutaEntrega
     {
         $hoy = HoraNegocio::fechaHoy();
-        // La que armó la oficina va antes que la automática.
         $salida = SalidaRuta::where('ruta_id', $rutaId)->enEstado(EstadoSalidaRuta::EnCurso)
-            ->whereDate('fecha_inicio', $hoy)->orderBy('id')->lockForUpdate()->get()
-            ->filter(fn (SalidaRuta $s) => $s->proposito->entrega())
+            ->whereDate('fecha_inicio', '<=', $hoy)->orderByDesc('fecha_inicio')->orderBy('id')->lockForUpdate()->get()
+            ->filter(fn (SalidaRuta $s) => $s->proposito->entrega() && ! $s->diaCerrado($hoy)
+                && (! $s->esAutomatica() || $s->fecha_inicio->toDateString() === $hoy))
             ->sortBy(fn (SalidaRuta $s) => $s->esAutomatica() ? 1 : 0)->first()
             ?? $this->armar($rutaId, $hoy, $usuario, $dte);
 
@@ -110,7 +122,8 @@ class PorEntregar
             return;
         }
 
-        $resultado = $this->participantes->sincronizar($salida, [...$actuales->all(), $persona->id], $salida->responsable()->value('rutas_personal_id'));
+        $responsable = $salida->responsable()->value('rutas_personal_id');
+        $resultado = $this->participantes->sincronizar($salida, [...$actuales->all(), $persona->id], $responsable === null ? null : (int) $responsable);
         activity('salida_ruta')
             ->performedOn($salida)
             ->causedBy($usuario)

@@ -217,6 +217,41 @@ class PorEntregarTest extends TestCase
         }
     }
 
+    public function test_viaje_de_varios_dias_automatica_de_ayer_y_dia_cerrado(): void
+    {
+        // San Marcos: un viaje formal que empezó ayer sigue en curso; lo facturado hoy va en él.
+        $ana = PersonalRuta::create(['nombre' => 'Ana Inventada']);
+        $viaje = $this->salidaFormal('San Marcos', $ana, fecha: '2026-11-05');
+        $nuevo = $this->ccf('San Marcos');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $nuevo), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $this->assertSame(1, SalidaRuta::count());
+        $this->assertSame(ResultadoEntrega::Entregado, $viaje->entregas()->sole()->resultado);
+
+        // Antiguo: la automática de ayer no se reutiliza; se arma la de hoy.
+        $ayer = SalidaRuta::create(['ruta_id' => $this->rutas['Antiguo']->id, 'fecha_inicio' => '2026-11-05', 'estado' => EstadoSalidaRuta::EnCurso,
+            'observaciones' => SalidaRuta::OBSERVACION_AUTOMATICA, 'created_by' => $this->vendedor->id]);
+        $primero = $this->ccf('Antiguo');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $primero), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $hoy = SalidaRuta::whereKeyNot([$viaje->id, $ayer->id])->sole();
+        $this->assertTrue($hoy->esAutomatica());
+        $this->assertSame('2026-11-06', $hoy->fecha_inicio->toDateString());
+        $this->assertSame(0, $ayer->entregas()->count());
+
+        // Con el día de hoy cerrado, la de hoy ya no recibe: se arma otra.
+        $hoy->cierres()->create(['fecha' => '2026-11-06', 'cerrado_por' => User::factory()->create()->id, 'cerrado_en' => now()]);
+        $segundo = $this->ccf('Antiguo');
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $segundo), ['resultado' => 'entregado'])->assertSessionHasNoErrors();
+        $this->assertSame(4, SalidaRuta::count());
+        $this->assertSame(1, $hoy->entregas()->count());
+
+        // Y si el CCF ya va en una salida con el día cerrado, se dice por qué no se marca.
+        $tercero = $this->ccf('Antiguo');
+        $hoy->entregas()->create(['dte_id' => $tercero->id, 'cliente_sucursal_id' => $tercero->cliente_sucursal_id]);
+        $this->actingAs($this->vendedor)->post(route('rutas.por-entregar.marcar', $tercero), ['resultado' => 'entregado'])
+            ->assertSessionHasErrors('entrega');
+        $this->assertNull($hoy->entregas()->where('dte_id', $tercero->id)->sole()->resultado);
+    }
+
     public function test_lo_que_va_en_una_salida_planificada_espera_a_que_empiece(): void
     {
         $dte = $this->ccf('Antiguo');
