@@ -8,9 +8,13 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <h1 class="text-xl font-semibold leading-tight text-gray-800">
-            {{ $planilla->esVacaciones() ? $planilla->nombreDeVacaciones() : 'Generar la planilla '.$planilla->periodo }}
-        </h1>
+        @if ($planilla->esVacaciones())
+            {{-- Anual y de una persona: el año de servicio, sin mes ni tipo de período. --}}
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $planilla->nombreDeVacaciones() }}</h1>
+            <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }}</p>
+        @else
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Generar la planilla {{ $planilla->periodo }}</h1>
+        @endif
     </x-slot>
 
     <div class="px-4 py-5 sm:px-6">
@@ -29,8 +33,8 @@
                 <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="que-se-crea">
                     <h2 id="que-se-crea" class="text-sm font-semibold text-indigo-900">Se va a generar</h2>
                     <p class="mt-1 text-sm text-indigo-900">
-                        {{ $planilla->periodoEnPalabras() }}
-                        @if ($planilla->fecha_pago) · Pago el {{ $planilla->fecha_pago->format('d/m/Y') }} @endif
+                        @if ($detalle?->cargo_snapshot) Puesto: {{ $detalle->cargo_snapshot }} · @endif
+                        Pago el {{ $planilla->fecha_pago?->format('d/m/Y') }}
                     </p>
 
                     @if ($detalle)
@@ -87,7 +91,7 @@
             @endif
 
             @if ($reparos !== [])
-                <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
+                <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
                     <p class="font-medium">Antes de generar hay que resolver:</p>
                     @include('planilla.partials.avisos-por-persona', ['lista' => $reparos])
                 </div>

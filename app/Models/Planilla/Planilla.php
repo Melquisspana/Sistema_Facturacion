@@ -90,10 +90,30 @@ class Planilla extends Model
         return $this->clase === VacacionesAnuales::CLASE;
     }
 
+    /**
+     * La persona de un pago de vacaciones. Los de antes de los pagos individuales tienen
+     * `individual_de` en 0: si eran de una sola persona, es esa; si eran de varias, ninguna.
+     */
+    public function personaDeVacaciones(): ?PlanillaEmpleado
+    {
+        if (! $this->esVacaciones()) {
+            return null;
+        }
+
+        return $this->individual ?? ($this->detalles->count() === 1 ? $this->detalles->first()->empleado : null);
+    }
+
     /** «Pago de vacaciones de Ana Pérez». */
     public function nombreDeVacaciones(): string
     {
-        return 'Pago de vacaciones de '.($this->individual?->nombre ?? $this->detalles->first()?->nombre_snapshot ?? '—');
+        $persona = $this->personaDeVacaciones();
+
+        if ($persona !== null) {
+            return 'Pago de vacaciones de '.$persona->nombre;
+        }
+
+        // Solo las de antes, que pagaban a varios en una misma hoja.
+        return $this->detalles->count() > 1 ? 'Pago de vacaciones de '.$this->detalles->count().' personas' : 'Pago de vacaciones';
     }
 
     /**
@@ -103,17 +123,20 @@ class Planilla extends Model
      */
     public function anioDeServicio(): ?array
     {
-        if (! $this->esVacaciones() || $this->individual === null || $this->desde === null) {
+        $persona = $this->personaDeVacaciones();
+
+        if ($persona === null || $this->desde === null) {
             return null;
         }
 
-        return app(VacacionesAnuales::class)->anioDeServicio($this->individual, $this->desde->toImmutable());
+        return app(VacacionesAnuales::class)->anioDeServicio($persona, $this->desde->toImmutable());
     }
 
     /** Cómo se lee el período, en palabras. En vacaciones, el año de servicio. */
     public function periodoEnPalabras(): string
     {
-        if ($this->esVacaciones()) {
+        // Una de antes con varias personas no tiene un solo año de servicio: va con sus fechas.
+        if ($this->personaDeVacaciones() !== null) {
             $anio = $this->anioDeServicio();
 
             return $anio === null ? 'Año de servicio sin fecha de ingreso'

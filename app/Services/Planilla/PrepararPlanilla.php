@@ -32,7 +32,9 @@ use Illuminate\Validation\ValidationException;
  * última quincena de junio y de diciembre la renta sale del recálculo del año.
  *
  * UNA PLANILLA POR PERÍODO. Lo garantiza el índice único
- * `(tipo_periodo, periodo, clase)` en la base, no una comprobación previa.
+ * `(tipo_periodo, periodo, clase, individual_de)` en la base, no una comprobación previa.
+ * `individual_de` es 0 en las planillas de varios; en vacaciones, que se pagan de a una
+ * persona, es esa persona, y por eso puede haber varios pagos en el mismo mes.
  */
 final class PrepararPlanilla
 {
@@ -64,6 +66,10 @@ final class PrepararPlanilla
             'observaciones' => ['nullable', 'string', 'max:2000'],
             // Solo en vacaciones, que se pagan de a una persona.
             'empleado' => ['nullable', 'integer', Rule::exists('planilla_empleados', 'id')],
+        ], [
+            'fecha_pago.date_format' => 'La fecha de pago no es una fecha válida.',
+            'empleado.integer' => 'No se encontró a esa persona en planilla.',
+            'empleado.exists' => 'No se encontró a esa persona en planilla.',
         ])->validate();
 
         // Aguinaldo y Quincena 25 no pagan tiempo de un período: su fecha es la de pago.
@@ -83,14 +89,18 @@ final class PrepararPlanilla
         $periodo = $this->periodos->para($datos['tipo_periodo'], CarbonImmutable::parse($datos['fecha']));
 
         return DB::transaction(function () use ($usuario, $datos, $periodo, $individual) {
+            // Dos pagos de la misma persona a la vez (dos pestañas, otro mes) esperan uno al
+            // otro: el segundo ya ve el primero y no paga dos veces el mismo año.
+            $persona = $individual > 0 ? PlanillaEmpleado::whereKey($individual)->lockForUpdate()->firstOrFail() : null;
+
             $existente = Planilla::where('tipo_periodo', $datos['tipo_periodo'])
                 ->where('periodo', $periodo['periodo'])
                 ->where('clase', $datos['clase'])
                 ->where('individual_de', $individual)
                 ->first();
 
-            if ($existente === null && $individual > 0) {
-                $this->exigirVacacionesPorPagar(PlanillaEmpleado::findOrFail($individual), CarbonImmutable::parse($datos['fecha_pago']));
+            if ($existente === null && $persona !== null) {
+                $this->exigirVacacionesPorPagar($persona, CarbonImmutable::parse($datos['fecha_pago']));
             }
 
             if ($existente !== null) {

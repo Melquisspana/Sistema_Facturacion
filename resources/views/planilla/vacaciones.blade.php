@@ -16,6 +16,7 @@
         <div class="mx-auto max-w-6xl space-y-3">
             @if ($errors->any())
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700" role="alert">
+                    <p class="font-medium">No se generó ningún pago.</p>
                     <ul class="list-inside list-disc">@foreach ($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul>
                 </div>
             @endif
@@ -68,7 +69,7 @@
                                             <input type="hidden" name="moneda" value="{{ $moneda }}">
                                             <input type="hidden" name="empleado" value="{{ $e->id }}">
                                             <label for="fecha-pago-{{ $e->id }}" class="sr-only">Fecha de pago de {{ $e->nombre }}</label>
-                                            <input id="fecha-pago-{{ $e->id }}" name="fecha_pago" type="date" value="{{ $hoy }}" required class="{{ $campo }}">
+                                            <input id="fecha-pago-{{ $e->id }}" name="fecha_pago" type="date" value="{{ (string) old('empleado') === (string) $e->id ? old('fecha_pago', $hoy) : $hoy }}" required class="{{ $campo }}">
                                             <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Pagar vacaciones</button>
                                         </form>
                                     </td>

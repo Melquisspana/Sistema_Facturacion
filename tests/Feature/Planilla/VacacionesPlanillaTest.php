@@ -14,7 +14,9 @@ use App\Services\Planilla\GenerarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\VacacionesAnuales;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Activitylog\Models\Activity;
@@ -370,6 +372,80 @@ class VacacionesPlanillaTest extends TestCase
         app(PrepararPlanilla::class)->abrir($this->actor, ['tipo_periodo' => 'mensual', 'fecha' => '2026-11-20', 'clase' => 'vacaciones', 'moneda' => 'USD', 'fecha_pago' => '2026-11-20']);
     }
 
+    public function test_el_formulario_generico_no_genera_vacaciones(): void
+    {
+        $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $generico = ['tipo_periodo' => 'quincenal', 'fecha' => '2026-11-01', 'clase' => 'vacaciones', 'moneda' => 'USD', 'fecha_pago' => '2026-11-20'];
+
+        $this->actingAs($this->actor)->from(route('planilla.create'))->get(route('planilla.revisar', $generico))
+            ->assertRedirect(route('planilla.create'))
+            ->assertSessionHasErrors(['empleado' => 'Las vacaciones se pagan de a una persona: elegila en «Pagar vacaciones».']);
+        $this->actingAs($this->actor)->post(route('planilla.store'), $generico)->assertSessionHasErrors('empleado');
+
+        $this->assertSame(0, Planilla::count());
+    }
+
+    public function test_agregar_a_mano_en_la_revision_solo_admite_a_su_persona(): void
+    {
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $bea = $this->persona('Bea', 'FICTICIO-2', '2021-11-03', '300.00', false);
+        // Un borrador que quedó de antes: el único lugar donde se agregan personas a mano.
+        $planilla = $this->abrir('2026-11-20', $ana);
+
+        $this->actingAs($this->actor)->get(route('planilla.preparar', $planilla))->assertOk()
+            ->assertSee('Pago de vacaciones de Ana Ficticia')
+            ->assertSee('Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá')
+            ->assertDontSee('Bea Ficticia')
+            // «quincena» solo queda en un comentario del código de la página, que no se ve.
+            ->assertDontSee('Período trabajado')->assertDontSee('esta quincena')->assertDontSee('Mensual');
+
+        $linea = fn (PlanillaEmpleado $e) => ['planilla_empleado_id' => $e->id, 'salario' => '0.00',
+            'conceptos' => [['tipo' => 'ingreso', 'concepto' => 'Vacaciones', 'importe' => '195.00']]];
+
+        $this->actingAs($this->actor)->put(route('planilla.guardar', $planilla), ['lineas' => [$linea($ana), $linea($bea)]])
+            ->assertSessionHasErrors(['lineas' => 'Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá «Pagar vacaciones».']);
+
+        $this->assertSame([$ana->id], $planilla->detalles()->pluck('planilla_empleado_id')->all());
+        $this->assertSame('borrador', $planilla->fresh()->estado);
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string}> */
+    public static function fechasInvalidas(): array
+    {
+        return [
+            'sin fecha' => ['', 'fecha_pago', 'Indicá la fecha de pago.'],
+            'al revés' => ['20/11/2026', 'fecha_pago', 'La fecha de pago no es una fecha válida.'],
+            'no existe' => ['2026-02-30', 'fecha_pago', 'La fecha de pago no es una fecha válida.'],
+            'antes del primer año' => ['2021-10-15', 'empleado', 'Ana Ficticia no tiene vacaciones por pagar: todavía no cumple un año.'],
+        ];
+    }
+
+    #[DataProvider('fechasInvalidas')]
+    public function test_valida_la_fecha_de_pago(string $fecha, string $campo, string $mensaje): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+
+        $this->actingAs($this->actor)->from(route('planilla.vacaciones'))
+            ->get(route('planilla.revisar', ['fecha_pago' => $fecha] + $this->datos('2026-11-06', $ana)))
+            ->assertRedirect(route('planilla.vacaciones'))
+            ->assertSessionHasErrors([$campo => $mensaje]);
+
+        $this->assertSame(0, Planilla::count());
+    }
+
+    public function test_al_volver_de_un_error_la_fecha_escrita_se_conserva(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-06 09:00'));
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+
+        $this->actingAs($this->actor)->from(route('planilla.vacaciones'))->followingRedirects()
+            ->get(route('planilla.revisar', ['fecha_pago' => '2021-10-15'] + $this->datos('2026-11-06', $ana)))->assertOk()
+            ->assertSee('No se generó ningún pago.')
+            ->assertSee('todavía no cumple un año')
+            ->assertSee('id="fecha-pago-'.$ana->id.'" name="fecha_pago" type="date" value="2021-10-15"', false);
+    }
+
     public function test_si_la_ficha_lo_da_por_pagado_despues_de_abrir_frena(): void
     {
         $e = $this->persona('Eva', 'FICTICIO-5', '2019-06-20');
@@ -470,8 +546,8 @@ class VacacionesPlanillaTest extends TestCase
             ->assertDontSee('Mensual')->assertDontSee('2026-11 ·')->assertDontSee('01/11/2026 al 30/11/2026');
 
         $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()
-            ->assertSee('Vacaciones · Ana Ficticia · 10/11/2025 al 10/11/2026')
-            ->assertDontSee('Mensual');
+            ->assertSeeInOrder(['Pago de vacaciones de Ana Ficticia', 'Año de servicio: del 10/11/2025 al 10/11/2026 · Pago el 20/11/2026'])
+            ->assertDontSee('Mensual')->assertDontSee('>2026-11<', false);
 
         $this->actingAs($this->actor)->get(route('planilla.impresos', $planilla))->assertOk()
             ->assertSee('Impresos · Pago de vacaciones de Ana Ficticia')
@@ -514,6 +590,64 @@ class VacacionesPlanillaTest extends TestCase
             ->assertSee('Recibo de pago')->assertSee('Período pagado')->assertSee('Entregó el pago')
             ->assertDontSee('Firma y sello de la empleadora')
             ->assertDontSee('vacaciones anuales')->assertDontSee('Período de goce')->assertDontSee('Año de servicio');
+    }
+
+    public function test_borrar_un_pago_de_vacaciones_lo_dice_por_su_nombre(): void
+    {
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $planilla = $this->generar('2026-11-20', $ana);
+
+        $this->actingAs($this->actor)->delete(route('planilla.destroy', $planilla))
+            ->assertRedirect(route('planilla.index'))
+            ->assertSessionHas('planilla.aviso', 'Pago de vacaciones de Ana Ficticia borrado con todo lo que había creado. Los anticipos que descontaba volvieron a tener su saldo.');
+
+        $this->assertSame(0, Planilla::count());
+        $this->assertSame(['Ana Ficticia'], $this->porPagar('2026-11-20'));
+    }
+
+    // ── Las planillas de varios no cambian ────────────────────────────────
+
+    public function test_la_quincena_y_la_mensual_siguen_siendo_una_por_periodo(): void
+    {
+        $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $quincena = ['tipo_periodo' => 'quincenal', 'fecha' => '2026-11-01', 'clase' => 'regular', 'moneda' => 'USD'];
+        $mensual = ['tipo_periodo' => 'mensual', 'fecha' => '2026-11-01', 'clase' => 'regular', 'moneda' => 'USD'];
+
+        $this->actingAs($this->actor)->get(route('planilla.revisar', $mensual))->assertOk()
+            ->assertSee('Generar la planilla 2026-11')->assertSee('Mensual')->assertSee('01/11/2026 al 30/11/2026')
+            ->assertDontSee('Año de servicio');
+
+        $primera = app(GenerarPlanilla::class)->generar($this->actor, $quincena);
+        $this->assertSame(0, (int) $primera->individual_de);
+
+        try {
+            app(GenerarPlanilla::class)->generar($this->actor, $quincena);
+            $this->fail('Tenía que rechazarla.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('La planilla 2026-11-Q1 ya existe', $e->errors()['periodo'][0]);
+        }
+
+        // Y la base lo sigue garantizando, aunque alguien se saltara la comprobación.
+        $this->expectException(QueryException::class);
+        Planilla::create(collect($primera->getAttributes())->except(['id', 'clave'])->put('clave', 'otra-clave')->all());
+    }
+
+    public function test_la_migracion_baja_y_vuelve_a_subir(): void
+    {
+        $migracion = require database_path('migrations/2026_11_07_100000_add_individual_de_to_planillas.php');
+
+        $migracion->down();
+        $this->assertFalse(Schema::hasColumn('planillas', 'individual_de'));
+
+        $migracion->up();
+        $this->assertTrue(Schema::hasColumn('planillas', 'individual_de'));
+
+        // Dos pagos de vacaciones del mismo mes, de personas distintas, caben.
+        $ana = $this->persona('Ana', 'FICTICIO-1', '2020-11-10');
+        $bea = $this->persona('Bea', 'FICTICIO-2', '2021-11-03', '300.00', false);
+        $this->generar('2026-11-20', $ana);
+        $this->generar('2026-11-25', $bea);
+        $this->assertSame(2, Planilla::where('periodo', '2026-11')->count());
     }
 
     public function test_enlace_del_inicio_a_pagar_vacaciones(): void
@@ -643,6 +777,14 @@ class VacacionesPlanillaTest extends TestCase
         $this->actingAs($sinSalarios)->get(route('planilla.index'))->assertOk()->assertDontSee('Vacaciones por pagar');
         $this->actingAs($sinSalarios)->get(route('planilla.vacaciones'))->assertForbidden();
         $this->actingAs($sinSalarios)->get(route('planilla.revisar', $this->datos('2026-11-06', $ana)))->assertForbidden();
+        $this->actingAs($sinSalarios)->post(route('planilla.store'), $this->datos('2026-11-06', $ana))->assertForbidden();
+
+        // Con lo mismo que pide una planilla, entra y ve a quién pagarle.
+        $gestiona = User::factory()->create(['activo' => true]);
+        $gestiona->syncPermissions(['planilla.ver', 'planilla.gestionar', 'planilla.salarios']);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->actingAs($gestiona)->get(route('planilla.vacaciones'))->assertOk()->assertSee('Ana Ficticia');
+        $this->actingAs($gestiona)->get(route('planilla.revisar', $this->datos('2026-11-06', $ana)))->assertOk()->assertSee('Sí, generar el pago');
 
         // Sin el permiso de entrada, ni el inicio.
         $nadie = User::factory()->create(['activo' => true]);

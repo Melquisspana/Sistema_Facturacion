@@ -49,7 +49,8 @@ final class BorrarPlanilla
         $motivos = [];
 
         if (! $planilla->borrador() && ($siguiente = $this->posterior($planilla)) !== null) {
-            $motivos[] = 'Solo se puede borrar la última planilla, y después de esta está la '.$siguiente->periodo.'.';
+            $motivos[] = 'Solo se puede borrar la última planilla, y después de esta está '
+                .($siguiente->esVacaciones() ? 'el '.lcfirst($siguiente->nombreDeVacaciones()) : 'la '.$siguiente->periodo).'.';
         }
 
         $gastos = $this->gastos($planilla);

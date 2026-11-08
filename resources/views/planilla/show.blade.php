@@ -150,7 +150,7 @@
                         </dl>
 
                         <div class="rounded border border-gray-100 bg-gray-50 p-3 text-xs leading-relaxed text-gray-600">
-                            <p>Incluye los anticipos que se descontaron en esta quincena.</p>
+                            <p>Incluye los anticipos que se descontaron {{ $planilla->esVacaciones() ? 'en este pago' : 'en esta quincena' }}.</p>
                             @if ($cuadre && $cuadre['cuadra'])
                                 <p class="mt-2 font-medium text-emerald-700">
                                     Cuadra: {{ Dinero::mostrar($cuadre['desembolsado']) }} desembolsados

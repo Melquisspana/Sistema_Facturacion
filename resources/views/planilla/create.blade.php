@@ -83,7 +83,12 @@
                 <p class="text-xs text-gray-500">
                     Aguinaldo y Quincena 25 usan la <strong>fecha de pago</strong> en vez del período de arriba, y
                     calculan solos el monto de cada persona, con y sin descuentos de ley. Las vacaciones se pagan de
-                    a una persona, en <a href="{{ route('planilla.vacaciones') }}" class="underline">Pagar vacaciones</a>.
+                    a una persona, en
+                    @can('planilla.salarios')
+                        <a href="{{ route('planilla.vacaciones') }}" class="underline">Pagar vacaciones</a>.
+                    @else
+                        «Pagar vacaciones».
+                    @endcan
                 </p>
 
                 <div>

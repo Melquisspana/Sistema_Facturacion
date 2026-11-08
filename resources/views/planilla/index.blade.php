@@ -78,11 +78,10 @@
                                             {{-- A la ficha: ahí están Impresos, Pagos, Anular y Borrar. --}}
                                             @if ($p->esVacaciones())
                                                 {{-- Anual y de una persona: sin mes ni tipo de período. --}}
-                                                @php($anio = $p->anioDeServicio())
-                                                <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">Vacaciones · {{ $p->individual?->nombre ?? '—' }}@if ($anio) · {{ $anio['desde']->format('d/m/Y') }} al {{ $anio['hasta']->format('d/m/Y') }}@endif</a>
-                                                @if ($p->fecha_pago)
-                                                    <p class="text-xs text-gray-500">Pago el {{ $p->fecha_pago->format('d/m/Y') }}</p>
-                                                @endif
+                                                <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->nombreDeVacaciones() }}</a>
+                                                <p class="text-xs text-gray-500">
+                                                    {{ $p->periodoEnPalabras() }}@if ($p->fecha_pago) · Pago el {{ $p->fecha_pago->format('d/m/Y') }}@endif
+                                                </p>
                                             @else
                                                 <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->periodo }}</a>
                                                 <p class="text-xs text-gray-500">{{ $p->periodoEnPalabras() }}</p>

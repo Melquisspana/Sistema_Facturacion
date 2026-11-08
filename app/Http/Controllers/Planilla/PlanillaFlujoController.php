@@ -75,10 +75,12 @@ class PlanillaFlujoController extends Controller
 
     public function borrar(Request $request, Planilla $planilla, BorrarPlanilla $borrar)
     {
+        // El nombre antes de borrar: después ya no quedan sus líneas.
+        $nombre = $planilla->esVacaciones() ? $planilla->nombreDeVacaciones().' borrado' : 'Planilla '.$planilla->periodo.' borrada';
         $borrar->borrar($request->user(), $planilla);
 
-        return redirect()->route('planilla.index')->with('planilla.aviso', 'Planilla '.$planilla->periodo
-            .' borrada con todo lo que había creado. Los anticipos que descontaba volvieron a tener su saldo.');
+        return redirect()->route('planilla.index')->with('planilla.aviso', $nombre
+            .' con todo lo que había creado. Los anticipos que descontaba volvieron a tener su saldo.');
     }
 
     public function confirmar(Request $request, Planilla $planilla, ConfirmarPlanilla $confirmar)
@@ -96,7 +98,7 @@ class PlanillaFlujoController extends Controller
 
         return redirect()
             ->route('planilla.show', $planilla)
-            ->with('planilla.aviso', 'Planilla anulada. Las obligaciones se extinguieron con un ajuste interno —no se emitió ninguna nota de crédito— y los anticipos volvieron a quedar pendientes.');
+            ->with('planilla.aviso', ($planilla->esVacaciones() ? 'Pago de vacaciones anulado' : 'Planilla anulada').'. Las obligaciones se extinguieron con un ajuste interno —no se emitió ninguna nota de crédito— y los anticipos volvieron a quedar pendientes.');
     }
 
     /**

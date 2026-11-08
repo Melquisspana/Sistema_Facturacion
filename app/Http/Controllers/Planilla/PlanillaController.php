@@ -141,6 +141,10 @@ class PlanillaController extends Controller
         $disponibles = PlanillaEmpleado::where('activo', true)
             ->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id'))
             ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde))
+            // Un pago de vacaciones es de una sola persona: solo se ofrece la suya, si se quitó.
+            ->when($planilla->esVacaciones(), fn ($q) => $planilla->detalles->isEmpty() && $planilla->individual_de > 0
+                ? $q->whereKey($planilla->individual_de)
+                : $q->whereRaw('1 = 0'))
             ->orderBy('nombre')
             ->get();
 

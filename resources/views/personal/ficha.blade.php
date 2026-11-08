@@ -348,7 +348,7 @@
                                 <tbody class="divide-y divide-gray-100 dark:divide-ink-700">
                                     @foreach ($quincenas as $q)
                                         <tr>
-                                            <td class="py-2.5 pr-4"><a href="{{ route('planilla.show', $q->planilla) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">{{ $q->planilla->periodo }}</a></td>
+                                            <td class="py-2.5 pr-4"><a href="{{ route('planilla.show', $q->planilla) }}" class="text-indigo-600 hover:underline dark:text-indigo-400">{{ $q->planilla->esVacaciones() ? 'Pago del '.$q->planilla->fecha_pago?->format('d/m/Y') : $q->planilla->periodo }}</a></td>
                                             <td class="py-2.5 pr-4 text-gray-600 dark:text-paper-300">{{ Planilla::CLASES[$q->planilla->clase] }}</td>
                                             <td class="py-2.5 pr-4 text-gray-600 dark:text-paper-300">{{ Planilla::ESTADOS[$q->planilla->estado] }}</td>
                                             @if ($verImportes)
