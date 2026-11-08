@@ -82,6 +82,10 @@
                     </div>
                 @endif
 
+                {{-- La automática de «Por entregar» se finaliza sola al pasar el día; la oficina la termina igual. --}}
+                @if ($puedeTerminar && $salida->estado === \App\Enums\EstadoSalidaRuta::Finalizada && \App\Services\Rutas\LiquidacionSalida::seLiquida($salida))
+                    <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-gray-800 px-4 py-3 text-center text-sm font-medium text-white hover:bg-gray-700 dark:bg-paper-100 dark:text-ink-900 dark:hover:bg-white">Terminar ruta</a>
+                @endif
                 @if ($puedeTerminar && $salida->estaLiquidada())
                     <a href="{{ route('rutas.salidas.terminar', $salida) }}" class="mt-5 flex min-h-11 items-center justify-center rounded-lg bg-green-700 px-4 py-3 text-sm font-medium text-white hover:bg-green-800">Liquidación de la ruta</a>
                 @endif

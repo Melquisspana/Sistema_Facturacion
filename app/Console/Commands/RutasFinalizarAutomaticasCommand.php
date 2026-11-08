@@ -8,7 +8,8 @@ use Illuminate\Console\Command;
 /**
  * Finaliza las salidas que se armaron solas en «Por entregar» los días anteriores
  * ({@see PorEntregar::finalizarAutomaticasViejas()}). Sin esto quedaban en curso para siempre:
- * la ruta figuraba «en ruta» en el tablero y «Mi salida» abría la vieja. No las liquida.
+ * la ruta figuraba «en ruta» en el tablero y «Mi salida» abría la vieja. Las vacías se
+ * cancelan. No las liquida: la oficina hace «Terminar ruta».
  */
 class RutasFinalizarAutomaticasCommand extends Command
 {
@@ -18,7 +19,8 @@ class RutasFinalizarAutomaticasCommand extends Command
 
     public function handle(PorEntregar $porEntregar): int
     {
-        $this->info('Salidas automáticas finalizadas: '.$porEntregar->finalizarAutomaticasViejas().'.');
+        $cuenta = $porEntregar->finalizarAutomaticasViejas();
+        $this->info("Salidas automáticas finalizadas: {$cuenta['finalizadas']}. Canceladas por vacías: {$cuenta['canceladas']}.");
 
         return self::SUCCESS;
     }

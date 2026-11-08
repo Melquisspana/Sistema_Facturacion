@@ -447,17 +447,20 @@ class EntregasCcf
             if ($salida->estado === EstadoSalidaRuta::Cancelada) {
                 throw ValidationException::withMessages(['entrega' => 'La salida está cancelada: no se corrige nada en ella.']);
             }
-            if (! $salida->estado->esTerminal() && $this->existeBloqueando($this->enOtraSalidaAbierta($salida, $entrega->dte_id))) {
-                throw ValidationException::withMessages(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
-            }
 
             // La automática ({@see PorEntregar}) lleva solo lo marcado: si la fila quedara
             // pendiente, el CCF quedaría tomado por ella y ninguna otra salida lo podría llevar.
+            // Se borra, así que no choca con que el CCF vaya en otra salida abierta; si la
+            // salida queda vacía, se cancela.
             if ($salida->esAutomatica()) {
                 $entrega->delete();
                 $original->exists = false;
+                $this->cancelarAutomaticaVacia($salida);
 
                 return;
+            }
+            if (! $salida->estado->esTerminal() && $this->existeBloqueando($this->enOtraSalidaAbierta($salida, $entrega->dte_id))) {
+                throw ValidationException::withMessages(['entrega' => 'Ese CCF ya va en otra salida abierta: no puede quedar pendiente en dos salidas.']);
             }
 
             $entrega->update([
@@ -475,6 +478,24 @@ class EntregasCcf
             ]);
             $original->setRawAttributes($entrega->getAttributes(), true);
         });
+    }
+
+    /**
+     * La automática en curso que quedó sin entregas, gastos ni cierres no fue una salida: se
+     * cancela (no cuenta como visita en el tablero). Con la salida ya bloqueada.
+     */
+    public function cancelarAutomaticaVacia(SalidaRuta $salida): bool
+    {
+        if (! $salida->esAutomatica() || $salida->estado !== EstadoSalidaRuta::EnCurso
+            || $salida->entregas()->exists() || $salida->gastos()->exists() || $salida->cierres()->exists()) {
+            return false;
+        }
+        $salida->cancelar();
+        activity('salida_ruta')->performedOn($salida)
+            ->withProperties(['estado_anterior' => EstadoSalidaRuta::EnCurso->value, 'estado_nuevo' => EstadoSalidaRuta::Cancelada->value, 'desde' => 'por_entregar'])
+            ->log('se canceló sola: quedó vacía');
+
+        return true;
     }
 
     // ================================================================ lectura

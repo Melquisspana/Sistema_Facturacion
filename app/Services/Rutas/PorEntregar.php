@@ -64,23 +64,39 @@ class PorEntregar
     }
 
     /**
-     * Finaliza las automáticas de días anteriores (de una ruta, o de todas): con el regreso
-     * el mismo día en que se armaron. No las liquida: eso sigue siendo de la oficina. Lo
-     * llama el planificador cada mañana y «Por entregar» al marcar. Devuelve cuántas.
+     * Cierra las automáticas de días anteriores (de una ruta, o de todas). La vacía (sin
+     * entregas, gastos ni cierres) se cancela; las demás se finalizan con el regreso el día en
+     * que se armaron y quedan para que la oficina haga «Terminar ruta»
+     * ({@see LiquidacionSalida::liquidar()} acepta una automática finalizada). No las liquida.
+     * Lo llama el planificador cada mañana y «Por entregar» al marcar.
+     *
+     * @return array{finalizadas: int, canceladas: int}
      */
-    public function finalizarAutomaticasViejas(?int $rutaId = null): int
+    public function finalizarAutomaticasViejas(?int $rutaId = null): array
     {
         $hoy = HoraNegocio::fechaHoy();
         $ids = SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->where('observaciones', SalidaRuta::OBSERVACION_AUTOMATICA)
             ->whereDate('fecha_inicio', '<', $hoy)->when($rutaId !== null, fn ($q) => $q->where('ruta_id', $rutaId))
             ->orderBy('id')->pluck('id');
-        $finalizadas = 0;
+        $cuenta = ['finalizadas' => 0, 'canceladas' => 0];
 
         foreach ($ids as $id) {
-            $finalizadas += DB::transaction(function () use ($id) {
+            $hecho = DB::transaction(function () use ($id) {
                 $salida = SalidaRuta::lockForUpdate()->find($id);
                 if ($salida === null || $salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->esAutomatica()) {
-                    return 0;
+                    return null;
+                }
+                // Lo que quedó sin marcar (si la oficina le cargó CCF) no se entregó: queda libre
+                // para otra salida, y «Terminar ruta» no pide motivos que ya no se pueden anotar.
+                $sueltos = $salida->entregas()->pendientes()->lockForUpdate()->get();
+                if ($sueltos->isNotEmpty()) {
+                    $sueltos->each->delete();
+                    activity('salida_ruta')->performedOn($salida)
+                        ->withProperties(['dte_ids' => $sueltos->pluck('dte_id')->all(), 'desde' => 'por_entregar'])
+                        ->log('quitó los CCF sin marcar al cerrarse sola');
+                }
+                if ($this->entregas->cancelarAutomaticaVacia($salida)) {
+                    return 'canceladas';
                 }
                 $salida->finalizar($salida->fecha_inicio->toDateString());
                 activity('salida_ruta')
@@ -88,11 +104,14 @@ class PorEntregar
                     ->withProperties(['estado_anterior' => EstadoSalidaRuta::EnCurso->value, 'estado_nuevo' => EstadoSalidaRuta::Finalizada->value, 'desde' => 'por_entregar'])
                     ->log('se finalizó sola');
 
-                return 1;
+                return 'finalizadas';
             });
+            if ($hecho !== null) {
+                $cuenta[$hecho]++;
+            }
         }
 
-        return $finalizadas;
+        return $cuenta;
     }
 
     /**
@@ -137,14 +156,21 @@ class PorEntregar
     private function enLaDeHoy(Dte $dte, int $rutaId, PersonalRuta $persona, User $usuario): SalidaRutaEntrega
     {
         $hoy = HoraNegocio::fechaHoy();
-        $salida = SalidaRuta::where('ruta_id', $rutaId)->enEstado(EstadoSalidaRuta::EnCurso)
+        $candidatas = SalidaRuta::where('ruta_id', $rutaId)->enEstado(EstadoSalidaRuta::EnCurso)
             ->whereDate('fecha_inicio', '<=', $hoy)->orderByDesc('fecha_inicio')->orderBy('id')->lockForUpdate()->get()
             ->filter(fn (SalidaRuta $s) => $s->proposito->entrega() && ! $s->diaCerrado($hoy)
                 && ($s->esAutomatica() ? $s->fecha_inicio->toDateString() === $hoy : self::participa($s, $persona)))
-            ->sortBy(fn (SalidaRuta $s) => $s->esAutomatica() ? 1 : 0)->first()
-            ?? $this->armar($rutaId, $hoy, $usuario, $dte);
+            ->sortBy(fn (SalidaRuta $s) => $s->esAutomatica() ? 1 : 0);
+        $salida = $candidatas->first() ?? $this->armar($rutaId, $hoy, $usuario, $dte);
 
         $entrega = $salida->entregas()->where('dte_id', $dte->id)->lockForUpdate()->first();
+        // El «No se pudo entregar» de un día ya cerrado de esa salida no se toca: el intento de
+        // hoy va a la automática de hoy (el CCF no queda pendiente en dos salidas: se registra ya).
+        if ($entrega?->resultado === ResultadoEntrega::NoEntregado && $entrega->fecha_resultado
+            && $salida->diaCerrado($entrega->fecha_resultado->toDateString())) {
+            $salida = $candidatas->first(fn (SalidaRuta $s) => $s->esAutomatica()) ?? $this->armar($rutaId, $hoy, $usuario, $dte);
+            $entrega = $salida->entregas()->where('dte_id', $dte->id)->lockForUpdate()->first();
+        }
         if ($entrega?->resultado === ResultadoEntrega::NoEntregado) {
             $this->reintentar($entrega, $usuario);
         }
@@ -155,7 +181,7 @@ class PorEntregar
 
     /**
      * Un «No se pudo entregar» ya anotado en esta salida (hoy, por él u otro, o un día
-     * anterior del viaje): el toque nuevo es un nuevo intento. La fila vuelve a pendiente y
+     * anterior del viaje que siga abierto): el toque nuevo es un nuevo intento. La fila vuelve a pendiente y
      * se registra lo nuevo, en la misma transacción: si el registro no pasa, queda como estaba.
      */
     private function reintentar(SalidaRutaEntrega $entrega, User $usuario): void
