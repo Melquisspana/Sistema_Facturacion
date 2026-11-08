@@ -8,20 +8,32 @@ use App\Services\Rutas\FichaVendedor;
 use App\Services\Usuarios\UltimoAdministrador;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class BajaEmpleado
 {
-    public function dar(User $actor, PlanillaEmpleado $e, string $fecha): void
+    /**
+     * El motivo decide si le toca indemnización o prestación por renuncia
+     * ({@see IndemnizacionBaja}). No hay columna para él: queda en la bitácora de la baja.
+     */
+    public function dar(User $actor, PlanillaEmpleado $e, string $fecha, ?string $motivo): void
     {
         $this->autorizar($actor, $e);
-        Validator::make(['fecha' => $fecha], ['fecha' => ['required', 'date_format:Y-m-d']])->validate();
+        // `motivo_baja` y no `motivo`: en la ficha, «Cambiar sueldo» ya tiene su campo `motivo`.
+        Validator::make(['fecha' => $fecha, 'motivo_baja' => $motivo], [
+            'fecha' => ['required', 'date_format:Y-m-d'],
+            'motivo_baja' => ['required', Rule::in(array_keys(IndemnizacionBaja::MOTIVOS))],
+        ], [
+            'motivo_baja.required' => 'Elegí el motivo de la baja.',
+            'motivo_baja.in' => 'Elegí el motivo de la baja de la lista.',
+        ])->validate();
 
         if ($e->alta_el !== null && $fecha < $e->alta_el->toDateString()) {
             throw ValidationException::withMessages(['fecha' => 'La baja no puede ser anterior a la fecha de ingreso ('.$e->alta_el->format('d/m/Y').').']);
         }
 
-        $this->cambiar($actor, $e, false, $fecha);
+        $this->cambiar($actor, $e, false, $fecha, $motivo);
     }
 
     public function reactivar(User $actor, PlanillaEmpleado $e): void
@@ -38,11 +50,15 @@ class BajaEmpleado
         }
     }
 
-    private function cambiar(User $actor, PlanillaEmpleado $e, bool $activo, ?string $fecha): void
+    private function cambiar(User $actor, PlanillaEmpleado $e, bool $activo, ?string $fecha, ?string $motivo = null): void
     {
-        DB::transaction(function () use ($actor, $e, $activo, $fecha) {
+        DB::transaction(function () use ($actor, $e, $activo, $fecha, $motivo) {
             $e = PlanillaEmpleado::lockForUpdate()->findOrFail($e->id);
             $this->autorizar($actor, $e);
+            // Una segunda baja cambiaría la fecha y el motivo que lee la indemnización.
+            if (! $activo && ! $e->activo) {
+                throw ValidationException::withMessages(['empleado' => 'Esta persona ya está de baja. Para cambiar la fecha o el motivo, primero reactivala.']);
+            }
             $usuario = $e->usuario()->lockForUpdate()->first();
             if (! $activo && $usuario && ($usuario->id === $actor->id || UltimoAdministrador::es($usuario))) {
                 throw ValidationException::withMessages(['empleado' => 'No podés dar de baja a tu propio usuario ni al último administrador activo.']);
@@ -54,7 +70,9 @@ class BajaEmpleado
                 $usuario->update(['activo' => $activo]);
                 app(FichaVendedor::class)->sincronizar($usuario);
             }
-            activity('empleado')->performedOn($e)->causedBy($actor)->log($activo ? 'reactivó al empleado' : 'dio de baja al empleado');
+            activity('empleado')->performedOn($e)->causedBy($actor)
+                ->withProperties($activo ? [] : ['fecha' => $fecha, 'motivo' => $motivo])
+                ->log($activo ? 'reactivó al empleado' : 'dio de baja al empleado');
         });
     }
 }

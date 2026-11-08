@@ -29,13 +29,14 @@ use Illuminate\Validation\ValidationException;
  * ISSS, AFP Y RENTA SE PROPONEN SOLOS para quien va con descuentos de ley, en la
  * quincena regular: {@see DescuentosLey} los calcula y una persona los revisa o los
  * corrige. Aguinaldo, Quincena 25 y vacaciones tienen su propia planilla
- * ({@see PrestacionAnual}); indemnización y horas extra no se calculan. En la
+ * ({@see PrestacionAnual}), y la indemnización la suya, desde la baja
+ * ({@see IndemnizacionBaja}); las horas extra no se calculan. En la
  * última quincena de junio y de diciembre la renta sale del recálculo del año.
  *
  * UNA PLANILLA POR PERÍODO. Lo garantiza el índice único
  * `(tipo_periodo, periodo, clase, individual_de)` en la base, no una comprobación previa.
- * `individual_de` es 0 en las planillas de varios; en vacaciones, que se pagan de a una
- * persona, es esa persona, y por eso puede haber varios pagos en el mismo mes.
+ * `individual_de` es 0 en las planillas de varios; en vacaciones e indemnización, que se
+ * pagan de a una persona, es esa persona, y por eso puede haber varios pagos en el mismo mes.
  */
 final class PrepararPlanilla
 {
@@ -65,7 +66,7 @@ final class PrepararPlanilla
             'moneda' => ['required', Rule::in(config('gastos.monedas'))],
             'fecha_pago' => ['nullable', 'date_format:Y-m-d'],
             'observaciones' => ['nullable', 'string', 'max:2000'],
-            // Solo en vacaciones, que se pagan de a una persona.
+            // Solo en vacaciones e indemnización, que se pagan de a una persona.
             'empleado' => ['nullable', 'integer', Rule::exists('planilla_empleados', 'id')],
         ], [
             'fecha_pago.date_format' => 'La fecha de pago no es una fecha válida.',
@@ -84,26 +85,63 @@ final class PrepararPlanilla
         if ($vacaciones && blank($datos['empleado'] ?? null)) {
             throw ValidationException::withMessages(['empleado' => 'Las vacaciones se pagan de a una persona: elegila en «Pagar vacaciones».']);
         }
+
+        $indemnizacion = IndemnizacionBaja::es($datos['clase']);
+        $alta = null;
+        if ($indemnizacion) {
+            $baja = blank($datos['empleado'] ?? null) ? null : PlanillaEmpleado::whereKey((int) $datos['empleado'])->value('baja_el');
+
+            if ($baja === null) {
+                throw ValidationException::withMessages(['empleado' => 'La indemnización se paga desde la baja de la persona: calculala en su ficha de Personal.']);
+            }
+
+            // Va en el día de la baja: un solo pago por baja ({@see IndemnizacionBaja::generada()}).
+            $datos['fecha'] = CarbonImmutable::parse((string) $baja)->toDateString();
+            $alta = PlanillaEmpleado::whereKey((int) $datos['empleado'])->first()?->alta_el?->toDateString();
+        }
+
         // `individual_de` entra en la clave única: 0 en las planillas de varios.
-        $individual = $vacaciones ? (int) $datos['empleado'] : 0;
+        $individual = $vacaciones || $indemnizacion ? (int) $datos['empleado'] : 0;
 
         $periodo = $this->periodos->para($datos['tipo_periodo'], CarbonImmutable::parse($datos['fecha']));
 
-        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual) {
+        // La clave técnica y las fechas son el día de la baja: así va después de la última
+        // quincena que cobró, en la lista y al borrar. Con el día, y no el mes, una
+        // recontratación que se va el mismo mes que la relación anterior no choca con su
+        // pago en la clave única: las dos bajas no pueden caer el mismo día. Anulado le
+        // queda «2026-10-31-A123», que cabe en los 20 caracteres.
+        if ($indemnizacion) {
+            $periodo['periodo'] = $periodo['desde'] = $periodo['hasta'] = $datos['fecha'];
+        }
+
+        return DB::transaction(function () use ($usuario, $datos, $periodo, $individual, $alta) {
             // Ver {@see bloquearPersona()}. Si quien llama ya abrió una transacción, tiene que
             // bloquear antes que nada; acá se repite sin costo para quien llama directo.
             $persona = $individual > 0 ? $this->bloquearPersona($datos) : null;
 
+            // Un pago individual sin su persona bloqueada no pasaría por sus comprobaciones.
+            if ($individual > 0 && $persona === null) {
+                throw ValidationException::withMessages(['empleado' => 'No se encontró a esa persona en planilla.']);
+            }
+
             $existente = Planilla::where('tipo_periodo', $datos['tipo_periodo'])
                 ->where('periodo', $periodo['periodo'])
-                ->where('clase', $datos['clase'])
+                // La de la misma baja, sea despido o renuncia: se genera una sola vez.
+                ->when(IndemnizacionBaja::es($datos['clase']),
+                    fn ($q) => $q->whereIn('clase', IndemnizacionBaja::CLASES),
+                    fn ($q) => $q->where('clase', $datos['clase']))
+                // De esta relación laboral, como {@see IndemnizacionBaja::generada()}: el pago
+                // de antes de una recontratación no es el de esta baja.
+                ->when($alta !== null, fn ($q) => $q->whereDate('desde', '>=', $alta))
                 ->where('individual_de', $individual)
                 // Un pago de vacaciones anulado no ocupa el lugar: se puede pagar de nuevo.
                 // Al anularlo ya dejó libre la clave única ({@see AnularPlanilla}).
                 ->when($individual > 0, fn ($q) => $q->where('estado', '!=', 'anulada'))
                 ->first();
 
-            if ($existente === null && $persona !== null) {
+            if ($existente === null && $persona !== null && IndemnizacionBaja::es($datos['clase'])) {
+                $this->exigirIndemnizacion($persona, $datos['clase'], CarbonImmutable::parse($datos['fecha_pago']), $datos['fecha']);
+            } elseif ($existente === null && $persona !== null) {
                 $this->exigirVacacionesPorPagar($persona, CarbonImmutable::parse($datos['fecha_pago']));
             }
 
@@ -138,7 +176,7 @@ final class PrepararPlanilla
                 ]);
             } catch (UniqueConstraintViolationException) {
                 // Otra pantalla la generó en el mismo instante: el índice único la frenó.
-                throw ValidationException::withMessages(['periodo' => ($individual > 0 ? 'Ese pago de vacaciones' : 'Esa planilla')
+                throw ValidationException::withMessages(['periodo' => ($individual > 0 ? (IndemnizacionBaja::es($datos['clase']) ? 'Ese pago de indemnización' : 'Ese pago de vacaciones') : 'Esa planilla')
                     .' se acaba de generar desde otra pantalla. Buscalo en la lista de Planillas antes de intentarlo de nuevo.']);
             }
 
@@ -149,7 +187,8 @@ final class PrepararPlanilla
     }
 
     /**
-     * Bloquea la ficha de la persona de un pago de vacaciones, y nada si no lo es.
+     * Bloquea la ficha de la persona de un pago individual (vacaciones, indemnización), y
+     * nada si no lo es.
      *
      * Dos pagos de la misma persona a la vez (dos pestañas, dos meses) se esperan: el
      * segundo ve el primero y no paga dos veces el mismo año. En MySQL (REPEATABLE READ)
@@ -161,11 +200,18 @@ final class PrepararPlanilla
      */
     public function bloquearPersona(array $datos): ?PlanillaEmpleado
     {
-        if (($datos['clase'] ?? null) !== VacacionesAnuales::CLASE || ! ctype_digit((string) ($datos['empleado'] ?? ''))) {
+        $clase = (string) ($datos['clase'] ?? '');
+        // El mismo entero que acepta la regla `integer` de {@see abrir()}: «+5» o « 5» también
+        // son la persona 5, y tienen que bloquearla y pasar por sus comprobaciones.
+        $id = is_scalar($datos['empleado'] ?? null)
+            ? filter_var($datos['empleado'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
+            : false;
+
+        if (($clase !== VacacionesAnuales::CLASE && ! IndemnizacionBaja::es($clase)) || $id === false) {
             return null;
         }
 
-        return PlanillaEmpleado::whereKey((int) $datos['empleado'])->lockForUpdate()->first();
+        return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
     }
 
     /** Que la persona de un pago de vacaciones de verdad las tenga por pagar en esa fecha. */
@@ -188,6 +234,35 @@ final class PrepararPlanilla
 
         if ($motivo !== null) {
             throw ValidationException::withMessages(['empleado' => $empleado->nombre.' no tiene vacaciones por pagar: '.$motivo.'.']);
+        }
+    }
+
+    /**
+     * Que a la persona de verdad le corresponda ESE pago por su baja, con la persona ya
+     * bloqueada: dada de baja, con el motivo de la clase, sin otro pago vigente de la misma
+     * baja y con todo lo que hace falta para calcularlo.
+     */
+    private function exigirIndemnizacion(PlanillaEmpleado $empleado, string $clase, CarbonImmutable $pago, string $baja): void
+    {
+        // Lo mismo que en vacaciones: un pago «del futuro» frenaría borrar las quincenas.
+        if ($pago > CarbonImmutable::now()->endOfMonth()) {
+            throw ValidationException::withMessages(['fecha_pago' => 'La fecha de pago no puede ser de un mes que todavía no llegó.']);
+        }
+
+        // La baja se leyó antes del bloqueo: si cambió a la vez, que no pase de largo.
+        if ($empleado->baja_el === null || CarbonImmutable::parse((string) $empleado->baja_el)->toDateString() !== $baja) {
+            throw ValidationException::withMessages(['empleado' => 'La baja de '.$empleado->nombre.' cambió mientras tanto. Volvé a calcularla desde su ficha.']);
+        }
+
+        if ($pago->toDateString() < $baja) {
+            throw ValidationException::withMessages(['fecha_pago' => 'La fecha de pago no puede ser anterior a la baja ('.CarbonImmutable::parse($baja)->format('d/m/Y').').']);
+        }
+
+        $calculo = $this->prestaciones->calcular($clase, $empleado, null, $pago);
+
+        if ($calculo['fuera'] !== null || $calculo['falta'] !== null) {
+            throw ValidationException::withMessages(['empleado' => $empleado->nombre.': '
+                .($calculo['fuera'] ?? 'falta '.$calculo['falta'].' para calcularlo').'.']);
         }
     }
 
@@ -228,9 +303,11 @@ final class PrepararPlanilla
             return;
         }
 
-        $empleados = PlanillaEmpleado::where('activo', true)
-            ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde))
-            // Un pago individual (vacaciones) es solo de su persona.
+        $empleados = PlanillaEmpleado::query()
+            // La indemnización es de quien ya se fue: no se mira si sigue activa.
+            ->unless($planilla->esIndemnizacion(), fn ($q) => $q->where('activo', true)
+                ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
+            // Un pago individual (vacaciones, indemnización) es solo de su persona.
             ->when($planilla->individual_de > 0, fn ($q) => $q->whereKey($planilla->individual_de))
             ->orderBy('nombre')
             ->get();
@@ -320,18 +397,21 @@ final class PrepararPlanilla
 
         $lineas = $this->validar($lineas);
 
-        // Un pago de vacaciones es de UNA persona, y es la suya: tampoco se agrega otra a mano.
-        if ($planilla->clase === VacacionesAnuales::CLASE) {
+        // Un pago individual es de UNA persona, y es la suya: tampoco se agrega otra a mano.
+        if ($planilla->esIndividual()) {
             $ids = array_map('intval', array_column($lineas, 'planilla_empleado_id'));
 
             if (count($ids) > 1 || ($planilla->individual_de > 0 && $ids !== [] && $ids !== [(int) $planilla->individual_de])) {
                 throw ValidationException::withMessages([
-                    'lineas' => 'Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá «Pagar vacaciones».',
+                    'lineas' => $planilla->esVacaciones()
+                        ? 'Un pago de vacaciones es de una sola persona. Para pagarle a otra, usá «Pagar vacaciones».'
+                        : 'Un pago de indemnización es de una sola persona. El de otra se calcula desde su ficha.',
                 ]);
             }
 
-            // En vacaciones esas fechas son el año de servicio, y lo escribe solo el sistema
-            // al confirmar ({@see ConfirmarPlanilla}): nunca el formulario.
+            // En vacaciones esas fechas son el año de servicio, y en la indemnización el
+            // tiempo de servicio. Las escribe solo el sistema al confirmar
+            // ({@see ConfirmarPlanilla}): nunca el formulario.
             $lineas = array_map(fn (array $l) => array_merge($l, ['periodo_desde' => null, 'periodo_hasta' => null]), $lineas);
         }
 
@@ -659,8 +739,9 @@ final class PrepararPlanilla
             $reparos[] = 'La planilla no tiene ni una persona.';
         }
 
-        if ($planilla->clase === VacacionesAnuales::CLASE && $planilla->detalles->count() > 1) {
-            $reparos[] = 'Un pago de vacaciones es de una sola persona, y este tiene '.$planilla->detalles->count().'.';
+        if ($planilla->esIndividual() && $planilla->detalles->count() > 1) {
+            $reparos[] = 'Un pago '.($planilla->esVacaciones() ? 'de vacaciones' : 'de indemnización')
+                .' es de una sola persona, y este tiene '.$planilla->detalles->count().'.';
         }
 
         foreach ($this->cruces($planilla) as $cruce) {
@@ -693,6 +774,18 @@ final class PrepararPlanilla
                 // mismo año de servicio pagado dos veces, o uno que todavía no se cumplió.
                 if ($planilla->clase === VacacionesAnuales::CLASE && $calculo['fuera'] !== null) {
                     $reparos[] = $detalle->nombre_snapshot.': no le tocan vacaciones en esta planilla ('.$calculo['fuera'].').';
+                }
+
+                // Lo mismo en la indemnización: otra baja, otro motivo o una ya generada.
+                if ($planilla->esIndemnizacion() && $calculo['fuera'] !== null) {
+                    $reparos[] = $detalle->nombre_snapshot.': no corresponde este pago ('.$calculo['fuera'].').';
+                }
+
+                // Un borrador de una baja que después se corrigió llevaría el monto de la fecha
+                // vieja con el recibo de la nueva.
+                $baja = $detalle->empleado?->baja_el;
+                if ($planilla->esIndemnizacion() && ($baja === null || CarbonImmutable::parse((string) $baja)->toDateString() !== $planilla->desde->toDateString())) {
+                    $reparos[] = 'La baja cambió desde que se generó este borrador: borralo y calculalo de nuevo.';
                 }
             }
         }

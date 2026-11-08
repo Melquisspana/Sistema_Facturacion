@@ -14,8 +14,9 @@
      diferencia sería esconder justo lo que hay que revisar. --}}
 {{-- Se recibe de quien incluye la parte; si no lo dice, lo dice la planilla. --}}
 @php($esBorrador = $esBorrador ?? (isset($planilla) && $planilla->borrador()))
-{{-- Vacaciones: anual y de una persona, sin quincena ni mes. --}}
+{{-- Vacaciones e indemnización: de una persona, sin quincena ni mes. --}}
 @php($deVacaciones = isset($planilla) && $planilla->esVacaciones())
+@php($deIndemnizacion = isset($planilla) && $planilla->esIndemnizacion())
 
 <div class="hoja-impresa">
     @if ($esBorrador)
@@ -23,7 +24,7 @@
     @endif
 
     @include('planilla.partials.membrete', [
-        'documento' => $deVacaciones ? 'Vacaciones para firma' : 'Planilla para firma',
+        'documento' => $deVacaciones ? 'Vacaciones para firma' : ($deIndemnizacion ? \App\Models\Planilla\Planilla::CLASES[$planilla->clase].' para firma' : 'Planilla para firma'),
         'folio' => e($cabecera['periodo_largo'])
             .'<br>'.($esBorrador
                 ? 'Sin pagar · impresa el '.e($cabecera['hoy'])
@@ -35,7 +36,7 @@
             <tr>
                 <th class="izq" style="width:6mm">N.º</th>
                 <th class="izq" style="width:46mm">Trabajador</th>
-                <th class="izq" style="width:16mm">{{ $deVacaciones ? 'Año de servicio' : 'Período' }}</th>
+                <th class="izq" style="width:16mm">{{ $deVacaciones ? 'Año de servicio' : ($deIndemnizacion ? 'Tiempo de servicio' : 'Período') }}</th>
                 <th style="width:18mm">Importe</th>
                 <th style="width:18mm">Descuento</th>
                 <th style="width:26mm">{{ $esBorrador ? 'A pagar' : 'Total recibido' }}</th>
@@ -101,7 +102,7 @@
                 <div class="txt">
                     @if ($entregaron !== '')
                         Entregó el pago · <strong>{{ $entregaron }}</strong>
-                        <br><em>según los pagos registrados {{ $deVacaciones ? 'de este pago' : 'de esta quincena' }}</em>
+                        <br><em>según los pagos registrados {{ $deVacaciones || $deIndemnizacion ? 'de este pago' : 'de esta quincena' }}</em>
                     @else
                         Entregó el pago · nombre y firma
                     @endif
@@ -115,9 +116,14 @@
     @endunless
 
     <p class="hi-legal">
-        Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
-        propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
-        Única. No incluye aporte patronal, indemnización ni horas extra.
+        @if ($deIndemnizacion)
+            Control interno de remuneraciones con importes revisados. Este documento no sustituye
+            la Planilla Única. No incluye aguinaldo ni vacaciones proporcionales.
+        @else
+            Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
+            propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
+            Única. No incluye aporte patronal, indemnización ni horas extra.
+        @endif
         @unless ($esBorrador)
             Cada trabajador firma únicamente por el total recibido de su renglón; las diferencias
             entre importe y total recibido están señaladas donde corresponde.

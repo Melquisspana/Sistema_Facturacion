@@ -34,7 +34,7 @@
 
             <p class="rounded-md border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 ISSS, AFP y renta son una propuesta que se puede corregir.
-                <strong>No calcula</strong> aporte patronal, indemnización ni horas extra.
+                La indemnización se calcula desde la baja de la persona, en su ficha. <strong>No calcula</strong> aporte patronal ni horas extra.
                 @if ($verImportes && auth()->user()->can('planilla.gestionar'))
                     El recálculo de renta de junio y diciembre usa la
                     <a href="{{ route('planilla.renta.index') }}" class="font-medium text-indigo-700 underline">renta antes del sistema</a>.
@@ -77,9 +77,9 @@
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-4 py-2.5">
                                             {{-- A la ficha: ahí están Impresos, Pagos, Anular y Borrar. --}}
-                                            @if ($p->esVacaciones())
-                                                {{-- Anual y de una persona: sin mes ni tipo de período. --}}
-                                                <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->nombreDeVacaciones() }}</a>
+                                            @if ($p->esIndividual())
+                                                {{-- De una persona (vacaciones, indemnización): sin mes ni tipo de período. --}}
+                                                <a href="{{ route('planilla.show', $p) }}" class="font-medium text-indigo-600 hover:underline">{{ $p->nombreDelPago() }}</a>
                                                 <p class="text-xs text-gray-500">
                                                     {{ $p->periodoEnPalabras() }}@if ($p->fecha_pago) · Pago el {{ $p->fecha_pago->format('d/m/Y') }}@endif
                                                 </p>
@@ -89,8 +89,8 @@
                                             @endif
                                         </td>
                                         <td class="px-4 py-2.5 text-gray-600">
-                                            @if ($p->esVacaciones())
-                                                Vacaciones
+                                            @if ($p->esIndividual())
+                                                {{ Planilla::CLASES[$p->clase] }}
                                             @else
                                                 {{ Planilla::TIPOS_PERIODO[$p->tipo_periodo] }}
                                                 @if ($p->clase !== 'regular')

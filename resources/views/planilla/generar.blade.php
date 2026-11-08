@@ -8,9 +8,9 @@
 
 <x-app-layout>
     <x-slot name="header">
-        @if ($planilla->esVacaciones())
-            {{-- Anual y de una persona: el año de servicio, sin mes ni tipo de período. --}}
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $planilla->nombreDeVacaciones() }}</h1>
+        @if ($planilla->esIndividual())
+            {{-- De una persona: el año o el tiempo de servicio, sin mes ni tipo de período. --}}
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">{{ $planilla->nombreDelPago() }}</h1>
             <p class="text-sm text-gray-500">{{ $planilla->periodoEnPalabras() }}</p>
         @else
             <h1 class="text-xl font-semibold leading-tight text-gray-800">Generar la planilla {{ $planilla->periodo }}</h1>
@@ -26,9 +26,9 @@
                 </div>
             @endif
 
-            @if ($planilla->esVacaciones())
-                {{-- Vacaciones: anual y de una persona. Sin tipo de período ni mes: el año de
-                     servicio, la fecha de pago y el monto con sus descuentos. --}}
+            @if ($planilla->esIndividual())
+                {{-- Vacaciones o indemnización: de una persona. Sin tipo de período ni mes: la
+                     fecha de pago y el monto con sus descuentos. --}}
                 @php($detalle = $planilla->detalles->first())
                 <section class="rounded-lg border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="que-se-crea">
                     <h2 id="que-se-crea" class="text-sm font-semibold text-indigo-900">Se va a generar</h2>
@@ -48,6 +48,9 @@
                             @endforeach
                             <div class="flex justify-between gap-4 border-t border-gray-200 pt-1 font-semibold"><dt>A pagar</dt><dd class="whitespace-nowrap tabular-nums text-indigo-900">{{ $planilla->moneda }} {{ $d['a_pagar'] }}</dd></div>
                         </dl>
+                        @if ($planilla->esIndemnizacion() && filled($detalle->observaciones))
+                            <p class="mt-2 text-xs text-gray-600">{{ $detalle->observaciones }}</p>
+                        @endif
                     @endif
 
                     <p class="mt-3 text-sm text-indigo-900">
@@ -97,7 +100,7 @@
                 </div>
             @endif
 
-            @unless ($planilla->esVacaciones())
+            @unless ($planilla->esIndividual())
             <section class="overflow-hidden rounded-lg border border-gray-200 bg-white" aria-labelledby="personas-a-generar">
                 <h2 id="personas-a-generar" class="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Quién entra</h2>
                 <ul class="divide-y divide-gray-100">
@@ -124,10 +127,12 @@
                 @foreach ($datos as $campo => $valor)
                     <input type="hidden" name="{{ $campo }}" value="{{ $valor }}">
                 @endforeach
-                <a href="{{ $planilla->esVacaciones() ? route('planilla.vacaciones') : route('planilla.create', ['tipo' => $datos['tipo_periodo'] ?? null]) }}" class="{{ $secundario }}">Cancelar</a>
+                <a href="{{ $planilla->esVacaciones() ? route('planilla.vacaciones')
+                    : ($planilla->esIndemnizacion() ? route('planilla.empleados.indemnizacion', $planilla->individual_de)
+                    : route('planilla.create', ['tipo' => $datos['tipo_periodo'] ?? null])) }}" class="{{ $secundario }}">Cancelar</a>
                 @if ($reparos === [])
                     <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-semibold text-white hover:bg-indigo-700">
-                        {{ $planilla->esVacaciones() ? 'Sí, generar el pago' : 'Sí, generar la planilla' }}
+                        {{ $planilla->esIndividual() ? 'Sí, generar el pago' : 'Sí, generar la planilla' }}
                     </button>
                 @endif
             </form>

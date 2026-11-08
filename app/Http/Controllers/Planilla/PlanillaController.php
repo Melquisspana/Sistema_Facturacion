@@ -6,12 +6,14 @@ use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\Planilla\PlanillaSueldo;
 use App\Services\Gastos\Dinero;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\BajaEmpleado;
 use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\DatosEmpleado;
 use App\Services\Planilla\GenerarPlanilla;
+use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
@@ -67,7 +69,8 @@ class PlanillaController extends Controller
         return view('planilla.create', [
             'tipo' => $tipo,
             // Las vacaciones no son una planilla de varios: se pagan de a una en «Pagar vacaciones».
-            'clases' => array_diff_key(Planilla::CLASES, [VacacionesAnuales::CLASE => true]),
+            // La indemnización tampoco: sale de la baja de la persona, en su ficha.
+            'clases' => array_diff_key(Planilla::CLASES, [VacacionesAnuales::CLASE => true], array_flip(IndemnizacionBaja::CLASES)),
             'periodos' => $periodos->recientes($tipo, CarbonImmutable::now()),
             'hoy' => CarbonImmutable::now()->toDateString(),
         ]);
@@ -112,9 +115,8 @@ class PlanillaController extends Controller
     {
         $planilla = $generar->generar($request->user(), $request->only(self::DATOS_DEL_PERIODO));
 
-        if ($planilla->esVacaciones()) {
-            return redirect()->route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo'])
-                ->with('planilla.aviso', $planilla->nombreDeVacaciones().' generado. Imprimí el recibo y hacelo firmar.');
+        if ($planilla->esIndividual()) {
+            return $this->alRecibo($planilla);
         }
 
         return redirect()->route('planilla.impresos', $planilla)
@@ -140,11 +142,13 @@ class PlanillaController extends Controller
 
         $planilla->load('detalles.conceptos', 'detalles.empleado');
 
-        $disponibles = PlanillaEmpleado::where('activo', true)
+        $disponibles = PlanillaEmpleado::query()
             ->whereNotIn('id', $planilla->detalles->pluck('planilla_empleado_id'))
-            ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde))
-            // Un pago de vacaciones es de una sola persona: solo se ofrece la suya, si se quitó.
-            ->when($planilla->esVacaciones(), fn ($q) => $planilla->detalles->isEmpty() && $planilla->individual_de > 0
+            // La indemnización es de quien ya se fue.
+            ->unless($planilla->esIndemnizacion(), fn ($q) => $q->where('activo', true)
+                ->where(fn ($q) => $q->whereNull('baja_el')->orWhereDate('baja_el', '>=', $planilla->desde)))
+            // Un pago individual es de una sola persona: solo se ofrece la suya, si se quitó.
+            ->when($planilla->esIndividual(), fn ($q) => $planilla->detalles->isEmpty() && $planilla->individual_de > 0
                 ? $q->whereKey($planilla->individual_de)
                 : $q->whereRaw('1 = 0'))
             ->orderBy('nombre')
@@ -218,13 +222,20 @@ class PlanillaController extends Controller
         $planilla = $preparar->guardarLineas($request->user(), $planilla, $request->input('lineas', []));
         $confirmar->confirmar($request->user(), $planilla);
 
-        if ($planilla->esVacaciones()) {
-            return redirect()->route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo'])
-                ->with('planilla.aviso', $planilla->nombreDeVacaciones().' generado. Imprimí el recibo y hacelo firmar.');
+        if ($planilla->esIndividual()) {
+            return $this->alRecibo($planilla);
         }
 
         return redirect()->route('planilla.impresos', $planilla)
             ->with('planilla.aviso', 'Planilla '.$planilla->periodo.' generada. Imprimí la hoja y hacela firmar.');
+    }
+
+    /** Un pago de una persona sale directo a su recibo para firmar. */
+    private function alRecibo(Planilla $planilla)
+    {
+        return redirect()->route('planilla.impresos', ['planilla' => $planilla, 'formato' => 'recibo'])
+            ->with('planilla.aviso', $planilla->nombreDelPago().($planilla->clase === IndemnizacionBaja::CLASES['renuncia'] ? ' generada.' : ' generado.')
+                .' Imprimí el recibo y hacelo firmar.');
     }
 
     // ── Registro de personas ──────────────────────────────────────────────
@@ -256,12 +267,22 @@ class PlanillaController extends Controller
     /** El sueldo nunca cambia solo: lo cambia una persona, con fecha. */
     public function cambiarSueldo(Request $request, PlanillaEmpleado $empleado, SueldoHabitual $sueldos)
     {
+        // Misma fecha que una fila que ya existe: se corrige esa fila, y se dice.
+        $fecha = $request->input('vigente_desde');
+        $corrige = is_string($fecha) && PlanillaSueldo::where('planilla_empleado_id', $empleado->id)->whereDate('vigente_desde', $fecha)->exists();
+
         $sueldos->registrarMensual($request->user(), $empleado, $request->only(['sueldo_mensual', 'vigente_desde', 'motivo', 'confirmar_bajo_minimo']));
 
         // Sin el importe: la bitácora la ve quien no tiene `planilla.salarios`.
         activity('empleado')->performedOn($empleado)->causedBy($request->user())->log('cambió el sueldo');
 
-        return back()->with('planilla.aviso', 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.');
+        // Si no había mínimo a esa fecha y se comparó con el primero, se dice.
+        $aviso = $sueldos->minimoParaValidar($empleado, (string) $fecha)['aviso'];
+
+        return back()->with('planilla.aviso', ($corrige
+            ? 'Sueldo corregido: ya había uno vigente desde el '.CarbonImmutable::parse($fecha)->format('d/m/Y').' y se corrigió esa fila.'
+            : 'Sueldo actualizado. Vale para las quincenas que empiecen desde esa fecha.')
+            .($aviso === null ? '' : ' '.$aviso));
     }
 
     public function actualizarDatos(Request $request, PlanillaEmpleado $empleado, DatosEmpleado $datos)
@@ -282,8 +303,12 @@ class PlanillaController extends Controller
 
     public function bajaEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
     {
-        $bajas->dar($request->user(), $empleado, (string) $request->input('fecha'));
+        $motivo = $request->input('motivo_baja');
+        $bajas->dar($request->user(), $empleado, (string) $request->input('fecha'), is_string($motivo) ? $motivo : null);
         $mensaje = 'Empleado dado de baja. Su historial se conserva.';
+        if (is_string($motivo) && isset(IndemnizacionBaja::CLASES[$motivo])) {
+            $mensaje .= ' La '.IndemnizacionBaja::nombre($motivo).' se calcula desde su ficha.';
+        }
         $huellas = $empleado->asistencia?->huellas()->where('activo', true)->count() ?? 0;
         if ($huellas > 0) {
             $mensaje .= ' Conserva '.$huellas.' huella(s) vigente(s): quitalas si ya no las necesita.';
@@ -294,8 +319,21 @@ class PlanillaController extends Controller
 
     public function reactivarEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
     {
+        // Antes de reactivar: con la indemnización ya pagada, volver a darle de baja no la
+        // paga otra vez ({@see IndemnizacionBaja::generada()}), salvo con otra fecha de ingreso.
+        $pagada = app(IndemnizacionBaja::class)->generada($empleado);
         $bajas->reactivar($request->user(), $empleado);
+        $mensaje = 'Empleado reactivado. Las huellas vigentes se conservan.';
 
-        return back()->with('planilla.aviso', 'Empleado reactivado. Las huellas vigentes se conservan.');
+        $que = $pagada === null ? null : IndemnizacionBaja::nombre((string) IndemnizacionBaja::motivoDeClase($pagada->clase));
+
+        if ($pagada?->borrador()) {
+            // Sin confirmar no se pagó nada, pero quedó con el monto de esta baja.
+            $mensaje .= ' Hay un borrador de '.$que.' de la baja del '.$pagada->desde->format('d/m/Y').': como la reactivaste, borralo.';
+        } elseif ($pagada !== null) {
+            $mensaje .= ' Ya se le pagó '.$que.' por la baja del '.$pagada->desde->format('d/m/Y').': si vuelve a trabajar, poné su nueva fecha de ingreso.';
+        }
+
+        return back()->with('planilla.aviso', $mensaje);
     }
 }

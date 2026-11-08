@@ -95,6 +95,13 @@ final class GenerarPlanilla
                 : 'Ese '.lcfirst($planilla->nombreDeVacaciones()).' ya está hecho. Si hay que corregirlo, anulalo y pagalo de nuevo.';
         }
 
+        // Despido o renuncia: el de esta baja, sea de la clase que sea.
+        if ($planilla->esIndemnizacion()) {
+            return $planilla->borrador()
+                ? 'Ya hay un borrador del pago de esta baja que quedó de antes: '.lcfirst($planilla->nombreDelPago()).'. Terminalo o borralo.'
+                : 'El pago de esta baja ya está hecho: '.lcfirst($planilla->nombreDelPago()).'. Si hay que corregirlo, anulalo y generalo de nuevo.';
+        }
+
         if ($planilla->borrador()) {
             return 'Ya hay un borrador de '.$planilla->periodo.' que quedó de antes. Terminalo o borralo.';
         }

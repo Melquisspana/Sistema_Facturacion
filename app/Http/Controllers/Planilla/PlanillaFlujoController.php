@@ -15,6 +15,7 @@ use App\Services\Planilla\ComprobanteAdelanto;
 use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\EstadoPlanilla;
 use App\Services\Planilla\IdentidadNegocio;
+use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\InformePlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\TotalesPlanilla;
@@ -76,7 +77,9 @@ class PlanillaFlujoController extends Controller
     public function borrar(Request $request, Planilla $planilla, BorrarPlanilla $borrar)
     {
         // El nombre antes de borrar: después ya no quedan sus líneas.
-        $nombre = $planilla->esVacaciones() ? $planilla->nombreDeVacaciones().' borrado' : 'Planilla '.$planilla->periodo.' borrada';
+        $nombre = $planilla->esIndividual()
+            ? $planilla->nombreDelPago().($planilla->clase === IndemnizacionBaja::CLASES['renuncia'] ? ' borrada' : ' borrado')
+            : 'Planilla '.$planilla->periodo.' borrada';
         $borrar->borrar($request->user(), $planilla);
 
         return redirect()->route('planilla.index')->with('planilla.aviso', $nombre
@@ -98,7 +101,8 @@ class PlanillaFlujoController extends Controller
 
         return redirect()
             ->route('planilla.show', $planilla)
-            ->with('planilla.aviso', ($planilla->esVacaciones() ? 'Pago de vacaciones anulado' : 'Planilla anulada').'. Las obligaciones se extinguieron con un ajuste interno —no se emitió ninguna nota de crédito— y los anticipos volvieron a quedar pendientes.');
+            ->with('planilla.aviso', ($planilla->esVacaciones() ? 'Pago de vacaciones anulado'
+                : ($planilla->esIndemnizacion() ? $planilla->nombreDelPago().($planilla->clase === IndemnizacionBaja::CLASES['renuncia'] ? ' anulada' : ' anulado') : 'Planilla anulada')).'. Las obligaciones se extinguieron con un ajuste interno —no se emitió ninguna nota de crédito— y los anticipos volvieron a quedar pendientes.');
     }
 
     /**
@@ -121,6 +125,7 @@ class PlanillaFlujoController extends Controller
         EstadoPlanilla $estado,
         IdentidadNegocio $identidad,
         VacacionesAnuales $vacaciones,
+        IndemnizacionBaja $indemnizacion,
     ) {
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
@@ -128,6 +133,7 @@ class PlanillaFlujoController extends Controller
 
         $formato = $request->query('formato') === 'recibo' ? 'recibo' : 'hoja';
         $esVacaciones = $planilla->clase === VacacionesAnuales::CLASE;
+        $esIndemnizacion = $planilla->esIndemnizacion();
         $pagos = $this->pagosPorDetalle($planilla);
 
         $lineas = [];
@@ -152,7 +158,9 @@ class PlanillaFlujoController extends Controller
             // Vacaciones: el año de servicio que quedó escrito al confirmar, no el mes de la
             // clave técnica. En vacaciones `periodo_desde` es ese año, no un período particular.
             $anio = $esVacaciones ? $vacaciones->anioDeLinea($detalle, $planilla->desde->toImmutable()) : null;
-            $propio = $propio && ! $esVacaciones;
+            // Indemnización: lo mismo con el tiempo de servicio, del ingreso a la baja.
+            $anio ??= $esIndemnizacion ? $indemnizacion->servicioDeLinea($detalle) : null;
+            $propio = $propio && ! $planilla->esIndividual();
 
             if (filled($p['entrego'])) {
                 $entregaron[$p['entrego']] = true;
@@ -165,9 +173,10 @@ class PlanillaFlujoController extends Controller
                 'documento_tipo' => $detalle->documento_tipo_snapshot,
                 'cargo' => $detalle->cargo_snapshot,
                 'salario' => (string) $detalle->salario,
-                // Varios pagos de vacaciones caen en el mismo mes: su folio sale del pago.
-                'folio' => $esVacaciones
-                    ? 'VAC-'.str_pad((string) $planilla->id, 5, '0', STR_PAD_LEFT)
+                // Varios pagos individuales caen en el mismo mes: su folio sale del pago.
+                'folio' => $planilla->esIndividual()
+                    ? ($esVacaciones ? 'VAC-' : ($planilla->clase === IndemnizacionBaja::CLASES['renuncia'] ? 'REN-' : 'IND-'))
+                        .str_pad((string) $planilla->id, 5, '0', STR_PAD_LEFT)
                     : $planilla->periodo.'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
                 'periodo' => $anio
                     ? $anio['desde']->format('d/m/y').'–'.$anio['hasta']->format('d/m/y')
@@ -206,7 +215,11 @@ class PlanillaFlujoController extends Controller
                 // El formato del recibo sale de la clase del pago, nunca de las fechas.
                 'es_vacaciones' => $esVacaciones,
                 // Solo en vacaciones: el año de servicio que se paga, para el recibo que se firma.
-                'vacaciones' => $anio,
+                'vacaciones' => $esVacaciones ? $anio : null,
+                // Solo en indemnización: qué se paga, por cuánto tiempo y el detalle del cálculo.
+                'indemnizacion' => $esIndemnizacion && ($recibo = $indemnizacion->delRecibo($planilla, $detalle)) !== null
+                    ? $recibo + ['detalle' => $detalle->observaciones]
+                    : null,
             ];
 
             $suma['total_ingresos'] += $t['total_ingresos'];
@@ -231,7 +244,7 @@ class PlanillaFlujoController extends Controller
             'logo' => asset('images/dte/logo-transparent.png'),
             'entregaron' => implode(' y ', array_keys($entregaron)),
             'cabecera' => [
-                'periodo' => $esVacaciones ? $planilla->periodoEnPalabras() : $planilla->periodo.' · '.$planilla->periodoEnPalabras(),
+                'periodo' => $planilla->esIndividual() ? $planilla->periodoEnPalabras() : $planilla->periodo.' · '.$planilla->periodoEnPalabras(),
                 'periodo_largo' => $planilla->periodoEnPalabras(),
                 'fecha_pago' => $planilla->fecha_pago?->format('d/m/Y'),
                 'hoy' => now()->format('d/m/Y'),

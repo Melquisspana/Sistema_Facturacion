@@ -6,6 +6,7 @@ use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaSueldo;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -103,6 +104,52 @@ final class SueldoHabitual
     }
 
     /**
+     * Con qué salario mínimo se valida un sueldo que rige desde `$vigenteDesde`.
+     *
+     * Activa: el de hoy si la fecha ya pasó, como siempre. De baja (por ejemplo, para su
+     * indemnización): el del ÚLTIMO día en que esa fila rige dentro de la relación, que es
+     * la baja o el día antes de la fila siguiente, lo que llegue primero. Así un sueldo que
+     * rige hasta la baja no queda por debajo del mínimo de la baja, y uno que la siguiente
+     * fila reemplazó antes no se mide con un aumento que ya no le tocó. Si a esa fecha no
+     * hay mínimo cargado (la configuración empieza el 01/06/2025), se usa el primero y se
+     * avisa en `aviso`.
+     *
+     * @return array{centavos: int, aviso: ?string}
+     */
+    public function minimoParaValidar(PlanillaEmpleado $empleado, string $vigenteDesde): array
+    {
+        if ($empleado->activo || $empleado->baja_el === null) {
+            return ['centavos' => $this->salarioMinimo->vigenteEn(max($vigenteDesde, now()->toDateString())), 'aviso' => null];
+        }
+
+        $hasta = Carbon::parse((string) $empleado->baja_el)->toDateString();
+        $siguiente = PlanillaSueldo::where('planilla_empleado_id', $empleado->id)
+            ->whereDate('vigente_desde', '>', $vigenteDesde)
+            ->orderBy('vigente_desde')
+            ->value('vigente_desde');
+
+        if ($siguiente !== null) {
+            $hasta = min($hasta, Carbon::parse((string) $siguiente)->subDay()->toDateString());
+        }
+
+        try {
+            return ['centavos' => $this->salarioMinimo->vigenteEn($hasta), 'aviso' => null];
+        } catch (ValidationException $sinMinimo) {
+            $primero = collect(config('planilla_descuentos.salario_minimo'))->min('vigente_desde');
+
+            if ($primero === null) {
+                throw $sinMinimo;
+            }
+
+            return [
+                'centavos' => $this->salarioMinimo->vigenteEn($primero),
+                'aviso' => 'No hay salario mínimo cargado al '.Carbon::parse($hasta)->format('d/m/Y')
+                    .': se comparó con el primero que hay, vigente desde el '.Carbon::parse($primero)->format('d/m/Y').'.',
+            ];
+        }
+    }
+
+    /**
      * Registra el sueldo MENSUAL: guarda el mensual y su importe por pago en la misma
      * fila, y comprueba que el sueldo sea legal.
      *
@@ -130,13 +177,13 @@ final class SueldoHabitual
             throw ValidationException::withMessages(['sueldo_mensual' => 'El sueldo tiene que ser mayor a cero.']);
         }
 
-        $fecha = max($datos['vigente_desde'], now()->toDateString());
-        $minimo = $this->salarioMinimo->vigenteEn($fecha);
+        ['centavos' => $minimo, 'aviso' => $aviso] = $this->minimoParaValidar($empleado, $datos['vigente_desde']);
 
         if ($mensual < $minimo && ($empleado->con_descuentos_ley || ! filter_var($datos['confirmar_bajo_minimo'] ?? false, FILTER_VALIDATE_BOOLEAN))) {
             throw ValidationException::withMessages([
                 'sueldo_mensual' => 'El sueldo queda por debajo del salario mínimo vigente ('.Dinero::mostrar($minimo).')'
-                    .($empleado->con_descuentos_ley ? '.' : '. Para continuar, confirmalo.'),
+                    .($empleado->con_descuentos_ley ? '.' : '. Para continuar, confirmalo.')
+                    .($aviso === null ? '' : ' '.$aviso),
             ]);
         }
 

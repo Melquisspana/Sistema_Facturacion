@@ -22,13 +22,17 @@
     @php($vac = $l['es_vacaciones'] ?? false)
     @php($anio = $l['vacaciones'] ?? null)
     @php($anioTxt = $anio ? 'del '.$anio['desde']->format('d/m/Y').' al '.$anio['hasta']->format('d/m/Y') : 'sin fecha de ingreso')
+    {{-- Indemnización o renuncia: lo mismo, con el tiempo de servicio y el detalle del cálculo. --}}
+    @php($ind = $l['indemnizacion'] ?? null)
     <div class="hoja-impresa">
         @if ($esBorrador)
             <div class="hi-sello">Borrador<small>no es comprobante de pago</small></div>
         @endif
 
         @include('planilla.partials.membrete', [
-            'documento' => $esBorrador ? ($vac ? 'Detalle de vacaciones' : 'Detalle de la quincena') : ($vac ? 'Recibo de vacaciones' : 'Recibo de pago'),
+            'documento' => $esBorrador
+                ? ($ind ? 'Detalle del pago' : ($vac ? 'Detalle de vacaciones' : 'Detalle de la quincena'))
+                : ($ind['titulo'] ?? ($vac ? 'Recibo de vacaciones' : 'Recibo de pago')),
             'folio' => $esBorrador ? 'Sin número · impreso el '.e($cabecera['hoy']) : e($l['folio']),
         ])
 
@@ -52,9 +56,23 @@
             </p>
         @endif
 
+        @if ($ind && ! $esBorrador)
+            <p class="hi-declara">
+                Recibí de {{ $empleadora ?: $negocio }} la cantidad de {{ $moneda === 'USD' ? 'US$' : $moneda }}
+                <span class="mono">{{ $l['pagado_txt'] }}</span> en concepto de {{ $ind['concepto'] }}, por
+                {{ $ind['tiempo'] }} de servicio, del {{ $ind['desde']->format('d/m/Y') }} al {{ $ind['hasta']->format('d/m/Y') }}.
+            </p>
+        @endif
+        @if ($ind && filled($ind['detalle']))
+            <p class="hi-calculo"><span class="et">Detalle del cálculo</span> {{ $ind['detalle'] }}</p>
+        @endif
+
         <div class="hi-fechas">
             <div>
-                @if ($vac)
+                @if ($ind)
+                    <span class="et">Tiempo de servicio</span>
+                    <span class="val mono">del {{ $ind['desde']->format('d/m/Y') }} al {{ $ind['hasta']->format('d/m/Y') }}</span>
+                @elseif ($vac)
                     <span class="et">Año de servicio</span>
                     <span class="val mono">{{ $anioTxt }}</span>
                 @else
@@ -138,9 +156,9 @@
                     </div>
                     <div class="quien mono">{{ $l['nombre'] }}@if ($l['dui']) · {{ \App\Models\Planilla\PlanillaEmpleado::DOCUMENTO_TIPOS[$l['documento_tipo'] ?? 'dui'] }} {{ $l['dui'] }}@endif</div>
                 </div>
-                @if ($vac)
-                    {{-- Vacaciones: firma la empleadora y pone su sello encima de la firma
-                         (Melqui, 06/11/2026: sin recuadro aparte para el sello). --}}
+                @if ($vac || $ind)
+                    {{-- Vacaciones e indemnización: firma la empleadora y pone su sello encima de
+                         la firma (Melqui, 06/11/2026: sin recuadro aparte para el sello). --}}
                     <div class="bloque">
                         <div class="linea"></div>
                         <div class="txt">Firma y sello de la empleadora</div>
@@ -160,9 +178,14 @@
         @endunless
 
         <p class="hi-legal">
-            Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
-            propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
-            Única. No incluye aporte patronal, indemnización ni horas extra.
+            @if ($ind)
+                Control interno de remuneraciones con importes revisados. Este documento no sustituye
+                la Planilla Única. No incluye aguinaldo ni vacaciones proporcionales.
+            @else
+                Control interno de remuneraciones con importes revisados. ISSS, AFP y renta son una
+                propuesta del sistema revisada por una persona, y este documento no sustituye la Planilla
+                Única. No incluye aporte patronal, indemnización ni horas extra.
+            @endif
             @if ($esBorrador)
                 La planilla no está confirmada y no se ha pagado nada: este documento
                 <strong>no lleva espacio para firmar</strong> ni declara recibido.

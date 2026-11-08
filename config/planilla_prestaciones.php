@@ -2,7 +2,7 @@
 
 /*
 |--------------------------------------------------------------------------
-| Aguinaldo, Quincena 25 y vacaciones
+| Aguinaldo, Quincena 25, vacaciones e indemnización
 |--------------------------------------------------------------------------
 |
 | Parámetros con vigencia y fuente. Cuando la ley cambia se agrega una versión: las
@@ -87,6 +87,52 @@ return [
         // Melqui, 06/11/2026: llevan descuentos de ley. Quien va con descuentos paga ISSS,
         // AFP y renta como en una quincena; quien va sin descuentos cobra el bruto.
         'con_descuentos_ley' => true,
+    ],
+
+    // Lo que se paga cuando la persona SE VA, una sola vez: sale de su baja, como pago de
+    // esa sola persona ({@see \App\Services\Planilla\IndemnizacionBaja}).
+    //
+    // Salario básico diario = sueldo mensual vigente a la fecha de baja ÷ `dias_del_mes`.
+    // Años de servicio = del ingreso al día de baja, ese día incluido; la fracción son los
+    // días que pasan del último aniversario ÷ `dias_del_anio`. El tope es en salarios
+    // mínimos diarios vigentes a la fecha de baja, del sector de la empresa
+    // ({@see \App\Services\Planilla\SalarioMinimo}). Se redondea una sola vez, al centavo,
+    // la mitad hacia arriba.
+    //
+    // Confirmar con la contadora: todos los números de abajo, que el día de baja cuente
+    // como trabajado, que el tope también limite el mínimo de 15 días del despido y que no
+    // se sumen aguinaldo ni vacaciones proporcionales.
+    'indemnizacion' => [
+        // Despido sin causa. Código de Trabajo Art. 58: 30 días de salario básico por año
+        // de servicio y proporcional por fracción, nunca menos de 15 días, y ningún
+        // salario diario mayor que 4 salarios mínimos diarios para el cálculo.
+        // Confirmar con la contadora.
+        'despido' => [
+            'dias_por_anio' => 30,
+            'minimo_dias' => 15,
+            'tope_minimos' => 4,
+            'anios_minimos' => 0,
+        ],
+
+        // Renuncia voluntaria. Ley Reguladora de la Prestación Económica por Renuncia
+        // Voluntaria: desde 2 años de servicio continuo, 15 días de salario básico por
+        // año y proporcional por fracción, con un salario diario no mayor que 2 salarios
+        // mínimos diarios. Confirmar con la contadora: artículos, el mínimo de años y el
+        // proporcional por fracción.
+        'renuncia' => [
+            'dias_por_anio' => 15,
+            'minimo_dias' => 0,
+            'tope_minimos' => 2,
+            'anios_minimos' => 2,
+        ],
+
+        // Confirmar con la contadora.
+        'dias_del_mes' => 30,
+        'dias_del_anio' => 365,
+
+        // Ni la indemnización ni la prestación por renuncia llevan ISSS, AFP ni renta.
+        // Confirmar con la contadora. En true se calculan como en una quincena.
+        'con_descuentos_ley' => false,
     ],
 
 ];

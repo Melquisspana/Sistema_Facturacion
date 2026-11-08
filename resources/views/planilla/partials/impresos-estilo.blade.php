@@ -93,6 +93,9 @@
     /* Recibo de vacaciones: lo que la persona declara recibir, y el goce escrito a mano. */
     .hi-declara { margin-top: 4mm; font-size: 10pt; line-height: 1.5; color: #141414; }
     .hi-goce { margin-top: 5mm; font-size: 9.5pt; color: #141414; }
+    /* Indemnización y renuncia: el detalle del cálculo que quedó al generarla. */
+    .hi-calculo { margin-top: 3mm; font-size: 8.8pt; line-height: 1.45; color: #2a2a2a; }
+    .hi-calculo .et { display: block; font-weight: 700; font-size: 7.8pt; letter-spacing: .12em; text-transform: uppercase; color: #3a3a3a; }
 
     .hi-firmas { display: flex; gap: 10mm; margin-top: 9mm; }
     .hi-firmas .bloque { flex: 1; }

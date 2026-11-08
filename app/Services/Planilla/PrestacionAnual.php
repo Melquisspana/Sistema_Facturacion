@@ -9,8 +9,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Aguinaldo, Quincena 25 y vacaciones: lo que le toca a cada persona, con los parámetros de
- * `config/planilla_prestaciones.php`. Las vacaciones las resuelve {@see VacacionesAnuales}.
+ * Aguinaldo, Quincena 25, vacaciones e indemnización: lo que le toca a cada persona, con los
+ * parámetros de `config/planilla_prestaciones.php`. Las vacaciones las resuelve
+ * {@see VacacionesAnuales}; la indemnización y la prestación por renuncia, {@see IndemnizacionBaja}.
  *
  * Son planillas de su propia clase y usan todo lo demás tal cual: preparar, confirmar,
  * pagar y recibos. El monto entra como un ingreso más, y por eso se puede corregir a mano
@@ -24,9 +25,13 @@ use Illuminate\Validation\ValidationException;
  */
 final class PrestacionAnual
 {
-    public const CLASES = ['aguinaldo', 'quincena25', VacacionesAnuales::CLASE];
+    /** La indemnización y la prestación por renuncia también: no pagan tiempo de un período. */
+    public const CLASES = ['aguinaldo', 'quincena25', VacacionesAnuales::CLASE, IndemnizacionBaja::CLASES['despido'], IndemnizacionBaja::CLASES['renuncia']];
 
-    public function __construct(private VacacionesAnuales $vacaciones) {}
+    public function __construct(
+        private VacacionesAnuales $vacaciones,
+        private IndemnizacionBaja $indemnizacion,
+    ) {}
 
     public function es(string $clase): bool
     {
@@ -44,8 +49,8 @@ final class PrestacionAnual
 
         $pago = CarbonImmutable::parse($fecha);
 
-        // Las vacaciones se pagan cualquier mes: el de la fecha de pago es el de la planilla.
-        if ($clase === VacacionesAnuales::CLASE) {
+        // Las vacaciones y la indemnización se pagan cualquier mes.
+        if ($clase === VacacionesAnuales::CLASE || IndemnizacionBaja::es($clase)) {
             return;
         }
 
@@ -76,6 +81,11 @@ final class PrestacionAnual
     {
         if ($clase === VacacionesAnuales::CLASE) {
             return $this->vacaciones->calcular($empleado, $mensual, $pago, $salvoPlanilla);
+        }
+
+        // Con el sueldo a la fecha de baja, no a la de pago: lo busca ella.
+        if (IndemnizacionBaja::es($clase)) {
+            return $this->indemnizacion->calcularPago($clase, $empleado, $salvoPlanilla);
         }
 
         $parametros = $this->parametros($clase, $pago);
