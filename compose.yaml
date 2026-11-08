@@ -59,6 +59,18 @@ services:
   mysql:
     image: mysql:8.4
     restart: always
+    # Igual que el MySQL de Windows (leído en producción el 08/11):
+    # - zona -06:00: allá la sesión usa la hora del sistema (UTC-6) y hay ~286 columnas
+    #   TIMESTAMP; con UTC se leerían 6 horas corridas. El Salvador no tiene horario de verano.
+    # - utf8mb4_unicode_ci: la de la base y sus tablas; el volcado no trae CREATE DATABASE,
+    #   así que la base que crea MYSQL_DATABASE tiene que nacer con esa collation.
+    # - max_allowed_packet 512M, como el my.ini de producción.
+    # lower_case_table_names queda en 0 (Linux): todas las tablas están en minúsculas.
+    command:
+      - --default-time-zone=-06:00
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-allowed-packet=512M
     environment:
       TZ: America/El_Salvador
       MYSQL_DATABASE: ${MYSQL_DATABASE:?falta MYSQL_DATABASE en .env.compose}
