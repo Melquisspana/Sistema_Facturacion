@@ -250,11 +250,20 @@ class OrdenesSincronizarCommandTest extends TestCase
         ]);
         $repetida = $this->sinLeer('m1', $pdf);
         $sinPdf = $this->sinLeer('m2', null);
+        // El mismo PDF que la leída (el correo reenviado tal cual): ni se intenta.
+        $reenvio = $this->sinLeer('m3', $pdf, ['pdf_hash' => $leida->pdf_hash]);
 
         $this->artisan('ordenes:sincronizar')
             ->expectsOutputToContain("Orden #{$repetida->id}: el número 26110317004521 ya es de la orden #{$leida->id}")
             ->expectsOutputToContain("Orden #{$sinPdf->id}: no está su PDF")
+            ->doesntExpectOutputToContain("Orden #{$reenvio->id}:")
             ->assertSuccessful();
+
+        // El aviso sale una sola vez: la corrida siguiente no repite nada.
+        $this->artisan('ordenes:sincronizar')
+            ->doesntExpectOutputToContain('sigue «sin leer»')
+            ->assertSuccessful();
+        $this->assertSame(OrdenCompraRecibida::SIN_LEER, $reenvio->fresh()->estado);
 
         $this->assertSame(OrdenCompraRecibida::SIN_LEER, $repetida->fresh()->estado);
         $this->assertNull($repetida->fresh()->numero);
@@ -262,6 +271,40 @@ class OrdenesSincronizarCommandTest extends TestCase
         $this->assertSame(OrdenCompraRecibida::SIN_LEER, $sinPdf->fresh()->estado);
         $this->assertSame('1.00', $leida->fresh()->total);
         $this->assertNull($leida->fresh()->lineas);
+    }
+
+    public function test_al_releer_la_sala_guardada_tiene_que_ser_la_del_numero(): void
+    {
+        $this->gmail([[]], []);
+        $cliente = Cliente::factory()->contribuyente()->create();
+        config(['ppq.cliente_default_id' => $cliente->id]);
+        $otra = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'codigo' => '0250']);
+        $buena = ClienteSucursal::factory()->create(['cliente_id' => $cliente->id, 'codigo' => '0317']);
+        // El lector anterior le había puesto otra sala (de una descripción «0250 …»).
+        $orden = $this->sinLeer('m1', OrdenCompraParserTest::pdf(OrdenCompraParserTest::textoEdi()), [
+            'sala_codigo' => '0250', 'cliente_sucursal_id' => $otra->id,
+        ]);
+
+        $this->artisan('ordenes:sincronizar')->assertSuccessful();
+
+        $orden->refresh();
+        $this->assertSame(OrdenCompraRecibida::LEIDA, $orden->estado);
+        $this->assertSame('26110317004521', $orden->numero);
+        $this->assertSame('0317', $orden->sala_codigo);
+        $this->assertSame($buena->id, $orden->cliente_sucursal_id);
+    }
+
+    public function test_una_orden_nueva_sin_leer_no_se_vuelve_a_intentar_ni_avisar(): void
+    {
+        $this->gmail([['m1']], ['m1' => $this->adjunto("nada legible\n")]);
+
+        $this->artisan('ordenes:sincronizar')->assertSuccessful();
+        $this->artisan('ordenes:sincronizar')
+            ->doesntExpectOutputToContain('sigue «sin leer»')
+            ->doesntExpectOutputToContain('se leyeron de nuevo')
+            ->assertSuccessful();
+
+        $this->assertSame(OrdenCompraRecibida::SIN_LEER, OrdenCompraRecibida::sole()->estado);
     }
 
     public function test_esta_programada_cada_diez_minutos_y_solo_con_gmail_habilitado(): void

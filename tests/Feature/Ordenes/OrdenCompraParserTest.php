@@ -49,7 +49,8 @@ class OrdenCompraParserTest extends TestCase
      * Texto como lo saca smalot del PDF real del EDI: etiquetas del encabezado juntas, la
      * sala después de «Número:», la tabla POR COLUMNAS (descripciones, costos, códigos,
      * cantidades y otros bloques) y el número completo solo en su línea al pie. Todo
-     * inventado: empresa, sala, productos, operador y números.
+     * inventado: empresa, sala, productos, operador y números. `$descuento` es el monto
+     * del «Descuento General» (5 %) del pie: el de las diez líneas es 3.90.
      *
      * @param  list<array{0: string, 1: string, 2: string, 3: string}>  $lineas
      */
@@ -58,6 +59,7 @@ class OrdenCompraParserTest extends TestCase
         string $sala = "0317 SUPERMERCADO DE PRUEBA LAS \nCOLINAS",
         array $lineas = self::LINEAS_EDI,
         string $operador = 'OPER9901 OPERADOR DE PRUEBA',
+        string $descuento = '3.90',
     ): string {
         $columna = fn (int $i, string $antes = '') => implode("\n", array_map(fn (array $l) => $antes.$l[$i], $lineas));
         $repetir = fn (string $fila) => implode("\n", array_fill(0, count($lineas), $fila));
@@ -76,7 +78,7 @@ class OrdenCompraParserTest extends TestCase
             'Bonif. Descs.', 'Orden de Compra', 'Reg. Fisc.:', 'Descuento:', 'General: ', 'Cond. Pago: ',
             '000000-0', 'CREDITO A 30 DIAS', 'Factor', 'de Caja.',
             $columna(2, ' '), $repetir(' 1.000'),
-            'Nota:', "Digitado por\tAutorizado por\tProveedor", ' 3.90', '5.00% . 0.00 . 0.00', 'Aprobado',
+            'Nota:', "Digitado por\tAutorizado por\tProveedor", ' '.$descuento, '5.00% . 0.00 . 0.00', 'Aprobado',
             $repetir('UN'),
             'Fecha Entrega:04/12/2026 Cancelación:05/12/2026',
             'USUARIO:', $operador,
@@ -194,6 +196,7 @@ class OrdenCompraParserTest extends TestCase
             sala: "\t0045 SALA DE PRUEBA SUR",
             lineas: array_slice(self::LINEAS_EDI, 0, 2),
             operador: "OPER0451\tOPERADOR DE PRUEBA SUR",
+            descuento: '1.01',
         ));
 
         $this->assertSame('2611004500777', $datos['numero']);
@@ -222,6 +225,25 @@ class OrdenCompraParserTest extends TestCase
 
         // Un número al pie de otra sala que la del encabezado tampoco.
         $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '26110999004521'))['numero']);
+
+        // Ni uno con la sala y un mes válidos pero de otro año (7410 = octubre de 2074):
+        // tiene que ir a no más de un mes de la fecha del encabezado.
+        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '74100317004521'))['numero']);
+        $this->assertNull($parser->desdeTexto(self::textoEdi(numero: '26090317004521'))['numero']);
+        $this->assertSame('26100317004521', $parser->desdeTexto(self::textoEdi(numero: '26100317004521'))['numero']);
+    }
+
+    public function test_el_numero_con_etiqueta_pasa_por_los_mismos_controles(): void
+    {
+        $parser = new OrdenCompraParser;
+
+        // Con etiqueta, pero de otra sala que «Entrega en»: no se toma.
+        $otraSala = str_replace('Orden de Compra # 261102320010394', 'Orden de Compra # 261109990010394', self::texto('261102320010394'));
+        $this->assertNull($parser->desdeTexto($otraSala)['numero']);
+
+        // Con etiqueta, pero es un código de barras de las líneas: sigue con el suelto del pie.
+        $codigo = str_replace("1/\n", "Orden de Compra # 7410020300015\n1/\n", self::textoEdi());
+        $this->assertSame('26110317004521', $parser->desdeTexto($codigo)['numero']);
     }
 
     public function test_si_los_bloques_no_cuadran_no_inventa_lineas(): void
@@ -241,6 +263,61 @@ class OrdenCompraParserTest extends TestCase
         // Una descripción partida en dos líneas: once descripciones para diez códigos.
         $partida = str_replace("BOMBON DE PRUEBA\n", "BOMBON DE\nPRUEBA\n", self::textoEdi());
         $this->assertNull((new OrdenCompraParser)->desdeTexto($partida)['lineas']);
+
+        // Una cantidad de menos: nueve cantidades y diez bonificaciones.
+        $sinCantidad = (new OrdenCompraParser)->desdeTexto(preg_replace('/^ 20\.000\n/m', '', self::textoEdi(), 1));
+        $this->assertNull($sinCantidad['lineas']);
+        $this->assertNull($sinCantidad['total']);
+        $this->assertSame('26110317004521', $sinCantidad['numero']);
+    }
+
+    public function test_si_el_descuento_general_no_cuadra_con_la_suma_no_hay_lineas_ni_total(): void
+    {
+        // 5 % de 77.94 es 3.90; impreso 3.80: algo se leyó mal.
+        $datos = (new OrdenCompraParser)->desdeTexto(self::textoEdi(descuento: '3.80'));
+
+        $this->assertNull($datos['lineas']);
+        $this->assertNull($datos['total']);
+        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('0317', $datos['sala_codigo']);
+        $this->assertSame('leida', $datos['estado']);
+    }
+
+    public function test_una_orden_de_dos_paginas_no_queda_con_las_lineas_de_la_primera(): void
+    {
+        $datos = (new OrdenCompraParser)->desdeTexto(self::textoEdi().self::textoEdi());
+
+        $this->assertNull($datos['lineas']);
+        $this->assertNull($datos['total']);
+        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('0317', $datos['sala_codigo']);
+    }
+
+    public function test_la_sala_solo_sale_de_las_lineas_despues_de_numero(): void
+    {
+        // Sin sala después de «Número:», una descripción «0250 …» y una nota «0800 …» no
+        // cuentan: la sala sale del número.
+        $lineas = self::LINEAS_EDI;
+        $lineas[2][1] = '0250 TURRON DE PRUEBA';
+        $texto = str_replace("Nota:\n", "Nota:\n0800 ENTREGAR ANTES DE LAS 9\n", self::textoEdi(sala: 'SALA SIN CODIGO', lineas: $lineas));
+
+        $datos = (new OrdenCompraParser)->desdeTexto($texto);
+
+        $this->assertSame('0317', $datos['sala_codigo']);
+        $this->assertSame('26110317004521', $datos['numero']);
+        $this->assertSame('0250 TURRON DE PRUEBA', $datos['lineas'][2]['articulo']);
+    }
+
+    public function test_un_total_en_una_descripcion_no_es_el_total(): void
+    {
+        // Por filas: el «Total» impreso tiene que empezar la línea y llevar «:».
+        $filas = str_replace('CARAMELO DE PRUEBA 12 UN', 'LIMPIADOR TOTAL 2.50', self::texto('261102320010394'));
+        $this->assertSame('22.90', (new OrdenCompraParser)->desdeTexto($filas)['total']);
+
+        // Por columnas ni se busca: manda la suma.
+        $lineas = self::LINEAS_EDI;
+        $lineas[0][1] = 'TOTAL: 2.50 LIMPIADOR';
+        $this->assertSame('77.94', (new OrdenCompraParser)->desdeTexto(self::textoEdi(lineas: $lineas))['total']);
     }
 
     public function test_lee_un_pdf_armado_con_dompdf(): void

@@ -9,9 +9,11 @@ use App\Models\OrdenCompraRecibida;
 use App\Services\Ppq\GmailClient;
 use App\Services\Ppq\OrdenCompraParser;
 use App\Services\Ppq\SalaSucursalResolver;
+use App\Support\OrdenCompra;
 use Illuminate\Console\Command;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -78,17 +80,34 @@ class OrdenesSincronizarCommand extends Command
     /**
      * Vuelve a leer, desde el PDF guardado en el disco privado, las órdenes que quedaron
      * «sin leer». No toca Gmail y es idempotente: la que se lee pasa a `leida` y ya no se
-     * vuelve a intentar. Solo llena lo que estaba vacío; lo que ya tenía dato no se pisa.
+     * vuelve a intentar. Solo llena lo que estaba vacío; lo que ya tenía dato no se pisa,
+     * salvo la sala: tiene que ser la del número, y si la guardada es otra se recalcula
+     * desde el número (con su sucursal).
      *
-     * Sigue «sin leer» si el PDF no está, si el lector no encuentra el número o si el
-     * número ya es de otra orden (un reenvío): eso lo decide alguien a mano.
+     * Sigue «sin leer» si el PDF no está, si el lector no encuentra el número, si el
+     * número ya es de otra orden (un reenvío) o si de él no sale la sala: eso lo decide
+     * alguien a mano.
+     *
+     * Para no repetir lo mismo cada 10 minutos, cada orden se intenta UNA vez por versión
+     * del lector (OrdenCompraParser::VERSION, marcada en caché, sin migración) y el aviso
+     * sale esa vez. Las que tienen el mismo PDF que una ya leída ni se intentan: son el
+     * mismo correo reenviado y no van a cambiar.
      */
     private function releerSinLeer(OrdenCompraParser $parser, SalaSucursalResolver $salas): void
     {
         $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
         $releidas = 0;
 
-        foreach (OrdenCompraRecibida::where('estado', OrdenCompraRecibida::SIN_LEER)->lazyById() as $orden) {
+        $pendientes = OrdenCompraRecibida::where('estado', OrdenCompraRecibida::SIN_LEER)
+            ->whereNotIn('pdf_hash', OrdenCompraRecibida::where('estado', OrdenCompraRecibida::LEIDA)->select('pdf_hash'))
+            ->lazyById();
+
+        foreach ($pendientes as $orden) {
+            if (Cache::get(self::marcaRelectura($orden)) === OrdenCompraParser::VERSION) {
+                continue;
+            }
+            Cache::forever(self::marcaRelectura($orden), OrdenCompraParser::VERSION);
+
             if (! $disco->exists($orden->pdf_path)) {
                 $this->warn("Orden #{$orden->id}: no está su PDF ({$orden->pdf_path}); sigue «sin leer».");
 
@@ -107,10 +126,19 @@ class OrdenesSincronizarCommand extends Command
                 continue;
             }
 
-            if ($orden->cliente_sucursal_id === null) {
-                $datos['cliente_sucursal_id'] = $salas->resolver($orden->sala_codigo ?? $datos['sala_codigo'])['cliente_sucursal_id'];
+            $sala = OrdenCompra::salaDesde($datos['numero']);
+            if ($sala === null) {
+                $this->warn("Orden #{$orden->id}: del número {$datos['numero']} no sale la sala; sigue «sin leer».");
+
+                continue;
             }
-            foreach (['numero', 'sala_codigo', 'cliente_sucursal_id', 'fecha_creacion', 'fecha_despacho', 'total', 'lineas'] as $campo) {
+            if ($orden->sala_codigo !== $sala) {
+                $orden->sala_codigo = $sala;
+                $orden->cliente_sucursal_id = null;
+            }
+            $datos['cliente_sucursal_id'] = $salas->resolver($sala)['cliente_sucursal_id'];
+
+            foreach (['numero', 'cliente_sucursal_id', 'fecha_creacion', 'fecha_despacho', 'total', 'lineas'] as $campo) {
                 if ($orden->{$campo} === null && ($datos[$campo] ?? null) !== null) {
                     $orden->{$campo} = $datos[$campo];
                 }
@@ -131,6 +159,12 @@ class OrdenesSincronizarCommand extends Command
         if ($releidas > 0) {
             $this->info("{$releidas} orden(es) que estaban «sin leer» se leyeron de nuevo desde su PDF.");
         }
+    }
+
+    /** Clave de caché con la versión del lector con que ya se intentó esta orden. */
+    private static function marcaRelectura(OrdenCompraRecibida $orden): string
+    {
+        return 'ordenes:relectura:'.$orden->id;
     }
 
     /** @param  array<string, int>  $conteo */
@@ -174,7 +208,7 @@ class OrdenesSincronizarCommand extends Command
         Storage::disk((string) config('dte.storage.disk', 'local'))->put($ruta, $pdf['data']);
 
         try {
-            OrdenCompraRecibida::create([
+            $orden = OrdenCompraRecibida::create([
                 'numero' => $datos['numero'],
                 'sala_codigo' => $datos['sala_codigo'],
                 'cliente_sucursal_id' => $salas->resolver($datos['sala_codigo'])['cliente_sucursal_id'],
@@ -196,6 +230,8 @@ class OrdenesSincronizarCommand extends Command
 
         $conteo['nuevas']++;
         if ($datos['estado'] === OrdenCompraRecibida::SIN_LEER) {
+            // Ya la leyó este mismo lector: la relectura no la repite ni repite el aviso.
+            Cache::forever(self::marcaRelectura($orden), OrdenCompraParser::VERSION);
             $conteo['sin_leer']++;
             $this->warn("Correo {$id}: no se pudo leer el número de la orden; quedó «sin leer» para revisarla a mano.");
         }
