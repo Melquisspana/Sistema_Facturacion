@@ -479,6 +479,10 @@ class DteController extends Controller
         $ccfElegido = $preCcf?->id ?? (old('dte_relacionado_id') !== null
             ? (int) old('dte_relacionado_id')
             : null);
+        // La NC del ajuste abre lista: con un CCF del cliente que alcanza ya elegido.
+        if ($cobroAjuste && $ccfElegido === null) {
+            $ccfElegido = app(NotaCreditoAjuste::class)->ccfSugerido($cobroAjuste);
+        }
 
         $formulario = $this->datosFormularioNotaCredito($ccfElegido, $preCcf);
         if ($notaAc04 !== null && $preCcf !== null) {
@@ -528,11 +532,15 @@ class DteController extends Controller
     ): JsonResponse {
         $this->authorize('create', Dte::class);
 
+        // La NC de pronto pago va a la sala de las notas (en Calleja, la bodega de oficina
+        // central), que no tiene CCF propios: se relaciona con un CCF de cualquier sala del
+        // cliente. Filtrar por esa sala dejaba el buscador vacío (06/11/2026).
+        $deAjuste = $request->filled('cobro_ajuste');
         $pagina = $busqueda->paginar(
             texto: (string) $request->input('q', ''),
             pagina: max(1, (int) $request->input('pagina', 1)),
             clienteId: $request->filled('cliente_id') ? $request->integer('cliente_id') : null,
-            salaId: $request->filled('cliente_sucursal_id') ? $request->integer('cliente_sucursal_id') : null,
+            salaId: ! $deAjuste && $request->filled('cliente_sucursal_id') ? $request->integer('cliente_sucursal_id') : null,
         );
 
         // Desde el ajuste del TXT el monto de la nota ya se conoce: cada CCF viaja con su

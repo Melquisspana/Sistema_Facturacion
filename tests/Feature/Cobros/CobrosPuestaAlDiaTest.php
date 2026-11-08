@@ -360,21 +360,93 @@ class CobrosPuestaAlDiaTest extends TestCase
         $lote = app(CrearPpqDesdeSeguimiento::class)->crear($this->cliente, [$doc->id]);
         $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
 
-        // Al revisar: el PPQ que paga y el ajuste, sin acciones todavía.
+        // Al revisar: el PPQ que paga y el ajuste, con «Hacer nota de crédito» sin aplicar.
         $this->subirVarios(['quedan.txt' => $txt], soloRevisar: true)->assertOk()
             ->assertSeeText('Este TXT paga el PPQ '.$lote->referencia)
             ->assertSeeText('Ajuste de pronto pago (QD)')->assertSeeText('PPQ/33762')
-            ->assertSeeText('Al aplicar vas a poder crear la nota de crédito.')
+            ->assertSeeText('Hacer nota de crédito')->assertSee(route('cobros.pagos.ajuste-nc', $this->cliente), false)
             ->assertDontSeeText('Crear nota de crédito')->assertDontSeeText('Estado de cobro de');
 
         // Al aplicar: el botón de la nota queda a la vista, sin abrir ningún detalle.
         $aplicado = $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [hash('sha256', $txt)]])->assertOk()
             ->assertSeeText('Este TXT paga el PPQ '.$lote->referencia.' (queda pagado)')
             ->assertSeeText('Crear nota de crédito')->assertSeeText('Vincular NC existente')
-            ->assertDontSeeText('Al aplicar vas a poder crear la nota de crédito')
+            ->assertDontSeeText('Hacer nota de crédito')
             ->assertSeeText('Todo el PPQ vino pagado como se presentó.');
         $ajuste = CobroAjuste::sole();
         $this->assertStringNotContainsString('<details', explode('Crear nota de crédito', $aplicado->getContent())[0]);
         $aplicado->assertSee(route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id]), false);
+    }
+
+    public function test_la_nota_del_pronto_pago_se_hace_desde_la_revision_sin_aplicar_y_aplicar_despues_la_encuentra(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
+        $hash = hash('sha256', $txt);
+        $this->subirVarios(['quedan.txt' => $txt], soloRevisar: true)->assertOk();
+        $this->assertSame(0, CobroAjuste::count(), 'Revisar no deja el ajuste.');
+
+        // «Hacer nota de crédito»: registra SOLO el ajuste de esa línea y abre la nota.
+        $ajuste = null;
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3])
+            ->assertRedirect(route('facturacion.create-nota-credito', ['cobro_ajuste' => ($ajuste = CobroAjuste::sole())->id]));
+        $this->assertSame('PPQ/33762', $ajuste->referencia);
+        $this->assertSame('3', $ajuste->referencia_linea);
+        $this->assertSame(0, CobroEvento::count(), 'No se aplicó ningún pago.');
+
+        // La nota queda hecha y enlazada (como la deja NotaCreditoAjuste::crear()).
+        $nc = $this->dte('05', ['dte_relacionado_id' => $doc->dte_id, 'estado' => 'borrador', 'total_pagar' => '1.50',
+            'tipo_nota_credito' => TipoNotaCredito::ProntoPago->value]);
+        $ajuste->update(['nc_dte_id' => $nc->id]);
+
+        // Otra vez el botón: no hace otra nota, va a la que ya está.
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3])
+            ->assertRedirect(route('facturacion.edit', $nc->id));
+
+        // Al aplicar el TXT, el mismo ajuste (huella + línea) ya tiene su nota: no se duplica.
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash]])->assertOk()
+            ->assertDontSeeText('Crear nota de crédito');
+        $this->assertSame($nc->id, CobroAjuste::sole()->nc_dte_id);
+    }
+
+    public function test_si_la_nota_del_ajuste_se_borro_el_boton_deja_hacer_la_nueva(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
+        $hash = hash('sha256', $txt);
+        $this->subirVarios(['quedan.txt' => $txt], soloRevisar: true)->assertOk();
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3]);
+        $ajuste = CobroAjuste::sole();
+        $nc = $this->dte('05', ['dte_relacionado_id' => $doc->dte_id, 'estado' => 'borrador', 'total_pagar' => '1.50',
+            'tipo_nota_credito' => TipoNotaCredito::ProntoPago->value]);
+        $ajuste->update(['nc_dte_id' => $nc->id]);
+
+        // El borrador se borra: el ajuste vuelve a estar pendiente y el botón abre la nota nueva.
+        $nc->delete();
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3])
+            ->assertRedirect(route('facturacion.create-nota-credito', ['cobro_ajuste' => $ajuste->id]));
+    }
+
+    public function test_hacer_la_nota_desde_la_revision_exige_un_txt_revisado_una_linea_qd_y_permiso(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
+        $hash = hash('sha256', $txt);
+
+        // Sin revisar en esta sesión: no hay de dónde sacar la línea.
+        $this->actingAs($this->usuario())->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3])
+            ->assertRedirect()->assertSessionHas('error', fn ($m) => str_contains($m, 'no se revisó'));
+
+        $this->subirVarios(['quedan.txt' => $txt], soloRevisar: true)->assertOk();
+        // La línea 2 es un CF, no un ajuste.
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 2])
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'no es un ajuste'));
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => 'no-es-huella', 'linea' => 3])
+            ->assertSessionHasErrors('hash');
+        $this->assertSame(0, CobroAjuste::count());
+
+        // Contabilidad no gestiona cobros: 403.
+        $conta = User::factory()->create()->assignRole(RolSistema::Contabilidad->value);
+        $this->actingAs($conta)->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3])->assertForbidden();
     }
 }
