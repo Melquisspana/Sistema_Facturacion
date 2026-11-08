@@ -205,16 +205,16 @@ class SueldoYValidacionesTest extends TestCase
     {
         $e = $this->alta(['alta_el' => '2026-03-01']);
 
-        $this->fallaCon('fecha', fn () => app(BajaEmpleado::class)->dar($this->actor, $e, '2026-02-28'));
+        $this->fallaCon('fecha', fn () => app(BajaEmpleado::class)->dar($this->actor, $e, '2026-02-28', 'otro'));
 
-        app(BajaEmpleado::class)->dar($this->actor, $e, '2026-03-01');
+        app(BajaEmpleado::class)->dar($this->actor, $e, '2026-03-01', 'otro');
         $this->assertFalse($e->fresh()->activo);
     }
 
     public function test_el_documento_no_se_repite_con_un_inactivo(): void
     {
         $e = $this->alta(['documento_tipo' => 'dui', 'dui' => '00000000-0']);
-        app(BajaEmpleado::class)->dar($this->actor, $e, '2026-03-01');
+        app(BajaEmpleado::class)->dar($this->actor, $e, '2026-03-01', 'otro');
 
         $this->fallaCon('dui', fn () => $this->alta(['documento_tipo' => 'dui', 'dui' => '000000000', 'nombres' => 'Bea', 'apellidos' => 'Otra']));
     }

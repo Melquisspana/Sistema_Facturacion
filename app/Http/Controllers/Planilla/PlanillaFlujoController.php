@@ -15,6 +15,7 @@ use App\Services\Planilla\ComprobanteAdelanto;
 use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\EstadoPlanilla;
 use App\Services\Planilla\IdentidadNegocio;
+use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\InformePlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\TotalesPlanilla;
@@ -119,6 +120,7 @@ class PlanillaFlujoController extends Controller
         EstadoPlanilla $estado,
         IdentidadNegocio $identidad,
         VacacionesAnuales $vacaciones,
+        IndemnizacionBaja $indemnizacion,
     ) {
         abort_unless($request->user()->can('planilla.salarios'), 403);
 
@@ -126,6 +128,7 @@ class PlanillaFlujoController extends Controller
 
         $formato = $request->query('formato') === 'recibo' ? 'recibo' : 'hoja';
         $esVacaciones = $planilla->clase === VacacionesAnuales::CLASE;
+        $esIndemnizacion = $planilla->clase === IndemnizacionBaja::CLASE;
         $pagos = $this->pagosPorDetalle($planilla);
 
         $lineas = [];
@@ -193,6 +196,10 @@ class PlanillaFlujoController extends Controller
                 // Solo en vacaciones: el año de servicio que se paga, para el recibo que se firma.
                 'vacaciones' => $esVacaciones && $detalle->empleado
                     ? $vacaciones->anioDeServicio($detalle->empleado, $planilla->desde->toImmutable())
+                    : null,
+                // Solo en indemnización: qué se paga, por cuánto tiempo y el detalle del cálculo.
+                'indemnizacion' => $esIndemnizacion && ($recibo = $indemnizacion->delRecibo($planilla, $detalle)) !== null
+                    ? $recibo + ['detalle' => $detalle->observaciones]
                     : null,
             ];
 

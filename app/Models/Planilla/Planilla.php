@@ -34,6 +34,8 @@ class Planilla extends Model
         'aguinaldo' => 'Aguinaldo',
         'quincena25' => 'Quincena 25',
         'vacaciones' => 'Vacaciones',
+        // De una sola persona y solo desde su baja: no se abre desde «Generar planilla».
+        'indemnizacion' => 'Indemnización o renuncia',
     ];
 
     public const ESTADOS = [

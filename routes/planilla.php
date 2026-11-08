@@ -3,6 +3,7 @@
 use App\Http\Controllers\Planilla\PlanillaContratoController;
 use App\Http\Controllers\Planilla\PlanillaController;
 use App\Http\Controllers\Planilla\PlanillaFlujoController;
+use App\Http\Controllers\Planilla\PlanillaIndemnizacionController;
 use App\Http\Controllers\Planilla\PlanillaPagoController;
 use App\Http\Controllers\Planilla\PlanillaRentaController;
 use Illuminate\Support\Facades\Route;
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Route;
 |  - `planilla.gestionar` : preparar y confirmar. Confirmar crea obligaciones.
 |
 | ISSS, AFP y renta se proponen solos para quien va con descuentos, y una persona los
-| revisa. No calcula aporte patronal, indemnización ni horas extra.
+| revisa. La indemnización sale de la baja. No calcula aporte patronal ni horas extra.
 */
 
 Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
@@ -60,6 +61,11 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
         Route::post('empleados/{empleado}/modulos', [PlanillaController::class, 'completarModulos'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.modulos');
         Route::post('empleados/{empleado}/baja', [PlanillaController::class, 'bajaEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.baja');
         Route::post('empleados/{empleado}/reactivar', [PlanillaController::class, 'reactivarEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.reactivar');
+        // Indemnización o prestación por renuncia de quien se fue. Lleva importes.
+        Route::get('empleados/{empleado}/indemnizacion', [PlanillaIndemnizacionController::class, 'revisar'])
+            ->whereNumber('empleado')->middleware([$gestionar, 'permission:planilla.salarios'])->name('empleados.indemnizacion');
+        Route::post('empleados/{empleado}/indemnizacion', [PlanillaIndemnizacionController::class, 'generar'])
+            ->whereNumber('empleado')->middleware([$gestionar, 'permission:planilla.salarios'])->name('empleados.indemnizacion.store');
         Route::post('empleados', [PlanillaController::class, 'guardarEmpleado'])
             ->middleware($gestionar)->name('empleados.store');
 

@@ -56,7 +56,8 @@
                     <div>
                         <label for="clase" class="block text-sm font-medium text-gray-700">Tipo</label>
                         <select id="clase" name="clase" class="{{ $c }}">
-                            @foreach (Planilla::CLASES as $clave => $texto)
+                            {{-- La indemnización no se abre acá: sale de la baja de la persona. --}}
+                            @foreach (\Illuminate\Support\Arr::except(Planilla::CLASES, \App\Services\Planilla\IndemnizacionBaja::CLASE) as $clave => $texto)
                                 <option value="{{ $clave }}" @selected(old('clase', $clase) === $clave)>{{ $texto }}</option>
                             @endforeach
                         </select>

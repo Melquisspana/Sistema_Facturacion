@@ -12,6 +12,7 @@ use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Asistencia\HoraOficial;
+use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\PosiblesRepetidos;
 use App\Services\Planilla\SalarioMinimo;
 use App\Services\Planilla\SueldoHabitual;
@@ -118,6 +119,7 @@ class PersonalController extends Controller
         SueldoHabitual $sueldos,
         ConsultaAsistencia $consulta,
         HoraOficial $horaOficial,
+        IndemnizacionBaja $indemnizacion,
     ): View {
         [$veAsistencia, $vePlanilla] = $this->accesos($request);
         abort_unless(preg_match('/^([ap])(\d+)$/D', $persona, $partes) === 1, 404);
@@ -139,6 +141,13 @@ class PersonalController extends Controller
             'asistencia' => $asistencia,
             'verImportes' => $verImportes,
             'mensual' => $verImportes ? ($sueldos->mensualesEn(new Collection([$ficha]), now()->toDateString())[$ficha->id] ?? null) : null,
+            // De baja: con qué motivo y si ya se generó su indemnización.
+            'baja' => $ficha !== null && ! $ficha->activo && $ficha->baja_el !== null ? [
+                'motivo' => $indemnizacion->motivoDeBaja($ficha),
+                'planilla' => $generada = $indemnizacion->generada($ficha),
+                // Lo que se generó: despido o renuncia.
+                'generada' => $generada === null ? null : $indemnizacion->motivoDePlanilla($generada),
+            ] : null,
             'quincenas' => $ficha === null ? collect() : PlanillaDetalle::where('planilla_empleado_id', $ficha->id)
                 ->with('planilla')->latest('id')->limit(12)->get(),
             // Cuentas de antes que todavía no son de nadie: se pueden enlazar acá.

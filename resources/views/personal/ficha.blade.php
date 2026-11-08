@@ -4,6 +4,7 @@
     use App\Models\Planilla\Planilla;
     use App\Models\Planilla\PlanillaEmpleado;
     use App\Services\Gastos\Dinero;
+    use App\Services\Planilla\IndemnizacionBaja;
 
     $tarjeta = 'rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
     $dt = 'text-gray-500 dark:text-paper-300';
@@ -43,7 +44,7 @@
             @endif
 
             @if ($ficha)
-                @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'vacaciones_pagadas_hasta', 'modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id', 'sueldo_mensual', 'vigente_desde', 'fecha', 'empleado', 'contrato']))
+                @if ($errors->hasAny(['nombre', 'nombres', 'apellidos', 'documento_tipo', 'dui', 'cargo', 'alta_el', 'vacaciones_pagadas_hasta', 'modulos', 'rol', 'email', 'password', 'user_id', 'asistencia_empleado_id', 'personal_ruta_id', 'sueldo_mensual', 'vigente_desde', 'fecha', 'motivo', 'empleado', 'contrato']))
                     <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
                         <ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
                     </div>
@@ -53,6 +54,9 @@
                     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Planilla</h3>
                     <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                         <div class="flex gap-2"><dt class="{{ $dt }}">Estado:</dt><dd class="{{ $dd }}">{{ $ficha->activo ? 'Activo' : 'De baja'.($ficha->baja_el ? ' desde el '.\Illuminate\Support\Carbon::parse($ficha->baja_el)->format('d/m/Y') : '') }}</dd></div>
+                        @if ($baja)
+                            <div class="flex gap-2"><dt class="{{ $dt }}">Motivo de la baja:</dt><dd class="{{ $dd }}">{{ $baja['motivo'] ? IndemnizacionBaja::MOTIVOS[$baja['motivo']] : 'Sin dato: la baja es de antes de que se preguntara' }}{{ $baja['motivo'] === 'otro' ? ' · no corresponde indemnización' : '' }}</dd></div>
+                        @endif
                         <div class="flex gap-2"><dt class="{{ $dt }}">Descuentos de ley:</dt><dd class="{{ $dd }}">{{ $ficha->con_descuentos_ley ? 'Con descuentos' : 'Sin descuentos' }}</dd></div>
                         <div class="flex gap-2"><dt class="{{ $dt }}">{{ PlanillaEmpleado::DOCUMENTO_TIPOS[$ficha->documento_tipo] }}:</dt><dd class="{{ $dd }}">{{ $ficha->dui ?? '—' }}</dd></div>
                         <div class="flex gap-2"><dt class="{{ $dt }}">Cargo:</dt><dd class="{{ $dd }}">{{ $ficha->cargo ?? '—' }}</dd></div>
@@ -209,7 +213,16 @@
                                 </details>
                             @endif
 
-                            <details>
+                            {{-- Indemnización o prestación por renuncia: se paga una sola vez, al irse. --}}
+                            @if ($baja && $verImportes && $baja['motivo'] !== 'otro')
+                                @if ($baja['planilla'])
+                                    <a href="{{ route('planilla.show', $baja['planilla']) }}" class="{{ $secundario }}">Ver la {{ IndemnizacionBaja::nombre($baja['generada']) }}</a>
+                                @else
+                                    <a href="{{ route('planilla.empleados.indemnizacion', $ficha) }}" class="{{ $secundario }}">Calcular {{ $baja['motivo'] ? IndemnizacionBaja::nombre($baja['motivo']) : 'indemnización o prestación por renuncia' }}</a>
+                                @endif
+                            @endif
+
+                            <details @if ($errors->hasAny(['fecha', 'motivo'])) open @endif>
                                 <summary class="{{ $secundario }} cursor-pointer">{{ $ficha->activo ? 'Dar de baja' : 'Reactivar' }}</summary>
                                 <form method="POST" action="{{ route($ficha->activo ? 'planilla.empleados.baja' : 'planilla.empleados.reactivar', $ficha) }}"
                                       onsubmit="return confirm('¿Confirmás el cambio de estado de esta persona y sus módulos enlazados?')" class="mt-2 w-72 space-y-2">
@@ -217,7 +230,17 @@
                                     @if ($ficha->activo)
                                         <div>
                                             <label for="fecha" class="{{ $etiqueta }}">Fecha de baja</label>
-                                            <input id="fecha" name="fecha" type="date" value="{{ now()->toDateString() }}" required class="{{ $campo }}">
+                                            <input id="fecha" name="fecha" type="date" value="{{ old('fecha', now()->toDateString()) }}" required class="{{ $campo }}">
+                                        </div>
+                                        <div>
+                                            <label for="motivo_baja" class="{{ $etiqueta }}">Motivo de la baja</label>
+                                            <select id="motivo_baja" name="motivo" required aria-describedby="motivo_baja_ayuda" class="{{ $campo }}">
+                                                <option value="">Elegí el motivo</option>
+                                                @foreach (IndemnizacionBaja::MOTIVOS as $valor => $texto)
+                                                    <option value="{{ $valor }}" @selected(old('motivo') === $valor)>{{ $texto }}</option>
+                                                @endforeach
+                                            </select>
+                                            <p id="motivo_baja_ayuda" class="mt-1 text-xs text-gray-500 dark:text-paper-300">Decide si le toca indemnización o prestación por renuncia.</p>
                                         </div>
                                     @endif
                                     <button class="{{ $secundario }}">Confirmar</button>

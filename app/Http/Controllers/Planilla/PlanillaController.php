@@ -12,6 +12,7 @@ use App\Services\Planilla\BajaEmpleado;
 use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\DatosEmpleado;
 use App\Services\Planilla\GenerarPlanilla;
+use App\Services\Planilla\IndemnizacionBaja;
 use App\Services\Planilla\PeriodoPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
@@ -64,7 +65,8 @@ class PlanillaController extends Controller
             : 'quincenal';
 
         // El aviso de vacaciones del inicio llega con la clase ya elegida.
-        $clase = array_key_exists((string) $request->query('clase'), Planilla::CLASES) ? $request->query('clase') : 'regular';
+        $clase = array_key_exists((string) $request->query('clase'), Planilla::CLASES) && $request->query('clase') !== IndemnizacionBaja::CLASE
+            ? $request->query('clase') : 'regular';
 
         return view('planilla.create', [
             'tipo' => $tipo,
@@ -250,8 +252,12 @@ class PlanillaController extends Controller
 
     public function bajaEmpleado(Request $request, PlanillaEmpleado $empleado, BajaEmpleado $bajas)
     {
-        $bajas->dar($request->user(), $empleado, (string) $request->input('fecha'));
+        $motivo = $request->input('motivo');
+        $bajas->dar($request->user(), $empleado, (string) $request->input('fecha'), is_string($motivo) ? $motivo : null);
         $mensaje = 'Empleado dado de baja. Su historial se conserva.';
+        if (in_array($motivo, ['despido', 'renuncia'], true)) {
+            $mensaje .= ' La '.IndemnizacionBaja::nombre($motivo).' se calcula desde su ficha.';
+        }
         $huellas = $empleado->asistencia?->huellas()->where('activo', true)->count() ?? 0;
         if ($huellas > 0) {
             $mensaje .= ' Conserva '.$huellas.' huella(s) vigente(s): quitalas si ya no las necesita.';

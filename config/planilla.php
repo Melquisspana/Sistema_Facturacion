@@ -34,7 +34,8 @@ return [
     | de ley, propone ISSS, AFP y renta en la quincena regular, con los parámetros de
     | `config/planilla_descuentos.php`, y una persona los revisa o los corrige.
     |
-    | NO calcula aporte patronal, indemnización ni horas extra, y
+    | La indemnización sale de la baja (App\Services\Planilla\IndemnizacionBaja).
+    | NO calcula aporte patronal ni horas extra, y
     | no infiere nada a partir de las marcaciones de Asistencia.
     |
     */

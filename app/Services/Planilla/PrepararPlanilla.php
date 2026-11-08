@@ -28,7 +28,8 @@ use Illuminate\Validation\ValidationException;
  * ISSS, AFP Y RENTA SE PROPONEN SOLOS para quien va con descuentos de ley, en la
  * quincena regular: {@see DescuentosLey} los calcula y una persona los revisa o los
  * corrige. Aguinaldo, Quincena 25 y vacaciones tienen su propia planilla
- * ({@see PrestacionAnual}); indemnización y horas extra no se calculan. En la
+ * ({@see PrestacionAnual}), y la indemnización la suya, desde la baja
+ * ({@see IndemnizacionBaja}); las horas extra no se calculan. En la
  * última quincena de junio y de diciembre la renta sale del recálculo del año.
  *
  * UNA PLANILLA POR PERÍODO. Lo garantiza el índice único
@@ -58,7 +59,8 @@ final class PrepararPlanilla
         $datos = Validator::make($datos, [
             'tipo_periodo' => ['required', Rule::in(array_keys(Planilla::TIPOS_PERIODO))],
             'fecha' => ['required', 'date_format:Y-m-d'],
-            'clase' => ['required', Rule::in(array_keys(Planilla::CLASES))],
+            // La indemnización sale de la baja de una persona ({@see IndemnizacionBaja}).
+            'clase' => ['required', Rule::in(array_keys(Planilla::CLASES)), Rule::notIn([IndemnizacionBaja::CLASE])],
             'moneda' => ['required', Rule::in(config('gastos.monedas'))],
             'fecha_pago' => ['nullable', 'date_format:Y-m-d'],
             'observaciones' => ['nullable', 'string', 'max:2000'],
@@ -444,8 +446,8 @@ final class PrepararPlanilla
      */
     private function cruces(Planilla $planilla): Collection
     {
-        // El aguinaldo no paga tiempo: que caiga en el mes de una quincena no es un cruce.
-        if ($this->prestaciones->es($planilla->clase)) {
+        // El aguinaldo y la indemnización no pagan tiempo: caer en el mes de una quincena no es un cruce.
+        if ($this->prestaciones->es($planilla->clase) || $planilla->clase === IndemnizacionBaja::CLASE) {
             return collect();
         }
 
@@ -454,7 +456,7 @@ final class PrepararPlanilla
             ->whereIn('d.planilla_empleado_id', $planilla->detalles->pluck('planilla_empleado_id'))
             ->where('p.id', '!=', $planilla->id)
             ->where('p.estado', '!=', 'anulada')
-            ->whereNotIn('p.clase', PrestacionAnual::CLASES)
+            ->whereNotIn('p.clase', [...PrestacionAnual::CLASES, IndemnizacionBaja::CLASE])
             ->whereDate('p.desde', '<=', $planilla->hasta->toDateString())
             ->whereDate('p.hasta', '>=', $planilla->desde->toDateString())
             ->get(['d.nombre_snapshot', 'p.periodo', 'p.clase']);

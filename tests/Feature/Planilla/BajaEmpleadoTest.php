@@ -46,7 +46,7 @@ class BajaEmpleadoTest extends TestCase
         $e = $this->empleado($actor);
         $marcacion = AsistenciaMarcacion::factory()->create(['asistencia_empleado_id' => $e->asistencia_empleado_id]);
         $huella = AsistenciaHuella::factory()->create(['asistencia_empleado_id' => $e->asistencia_empleado_id, 'activo' => true]);
-        $this->actingAs($actor)->from(route('personal.empleados'))->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02'])
+        $this->actingAs($actor)->from(route('personal.empleados'))->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02', 'motivo' => 'otro'])
             ->assertSessionHasNoErrors()->assertRedirect(route('personal.empleados'))->assertSessionHas('planilla.aviso', fn ($aviso) => str_contains($aviso, 'huella(s) vigente(s)'));
         $this->assertFalse($e->fresh()->activo);
         $this->assertSame('2026-11-02', $e->fresh()->baja_el);
@@ -79,7 +79,7 @@ class BajaEmpleadoTest extends TestCase
         $actor->givePermissionTo(['planilla.gestionar', 'usuarios.gestionar', 'asistencia.gestionar', 'rutas.personal.gestionar']);
         $e = $this->empleado($actor, ['rol' => 'administrador']);
         try {
-            app(BajaEmpleado::class)->dar($actor, $e, '2026-11-02');
+            app(BajaEmpleado::class)->dar($actor, $e, '2026-11-02', 'otro');
             $this->fail('Debía proteger al último administrador.');
         } catch (ValidationException $error) {
             $this->assertArrayHasKey('empleado', $error->errors());
@@ -96,7 +96,7 @@ class BajaEmpleadoTest extends TestCase
         $actor = $this->actor();
         $this->actor();
         $e = $this->empleado($actor, ['user_id' => $actor->id, 'es_otra_persona' => true]);
-        $this->actingAs($actor)->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02'])->assertSessionHasErrors('empleado');
+        $this->actingAs($actor)->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02', 'motivo' => 'otro'])->assertSessionHasErrors('empleado');
         $this->assertTrue($e->fresh()->activo);
         $this->assertTrue($actor->fresh()->activo);
         $this->assertTrue($e->asistencia->activo);
@@ -114,7 +114,7 @@ class BajaEmpleadoTest extends TestCase
         $e = $this->empleado($this->actor());
         $actor = User::factory()->create(['activo' => true]);
         $actor->syncPermissions(array_values(array_diff(['planilla.ver', 'planilla.gestionar', 'usuarios.gestionar', 'asistencia.gestionar', 'rutas.personal.gestionar'], [$sin])));
-        $this->actingAs($actor)->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02'])->assertForbidden();
+        $this->actingAs($actor)->post(route('planilla.empleados.baja', $e), ['fecha' => '2026-11-02', 'motivo' => 'otro'])->assertForbidden();
         $this->post(route('planilla.empleados.reactivar', $e))->assertForbidden();
         $this->assertTrue($e->fresh()->activo);
         $this->assertTrue($e->asistencia->activo);
@@ -126,7 +126,7 @@ class BajaEmpleadoTest extends TestCase
     {
         $actor = $this->actor();
         $e = $this->empleado($actor);
-        $this->actingAs($actor)->post(route('planilla.empleados.baja', $e), ['fecha' => '02/11/2026'])->assertSessionHasErrors('fecha');
+        $this->actingAs($actor)->post(route('planilla.empleados.baja', $e), ['fecha' => '02/11/2026', 'motivo' => 'otro'])->assertSessionHasErrors('fecha');
         $this->assertTrue($e->fresh()->activo);
     }
 }

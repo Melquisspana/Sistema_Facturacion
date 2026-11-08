@@ -28,7 +28,8 @@ use Illuminate\Support\Str;
  * Solo calcula planillas regulares quincenales: la tabla es la quincenal y `Topes`
  * se reparten entre `pagos_por_mes`. Y las vacaciones, si
  * `planilla_prestaciones.vacaciones.con_descuentos_ley` lo dice: se calculan igual que
- * una quincena, sobre el monto de las vacaciones solo.
+ * una quincena, sobre el monto de las vacaciones solo. Lo mismo la indemnización, con
+ * `planilla_prestaciones.indemnizacion.con_descuentos_ley`, que por defecto dice que no.
  */
 final class DescuentosLey
 {
@@ -37,6 +38,10 @@ final class DescuentosLey
     {
         if ($planilla->clase === VacacionesAnuales::CLASE) {
             return (bool) config('planilla_prestaciones.vacaciones.con_descuentos_ley');
+        }
+
+        if ($planilla->clase === IndemnizacionBaja::CLASE) {
+            return (bool) config('planilla_prestaciones.indemnizacion.con_descuentos_ley');
         }
 
         return $planilla->tipo_periodo === 'quincenal' && $planilla->clase === 'regular';
