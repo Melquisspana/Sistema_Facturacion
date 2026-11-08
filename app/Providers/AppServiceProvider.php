@@ -26,6 +26,7 @@ use App\Services\Rutas\FuentePedidos;
 use App\Services\Rutas\FuentePedidosCcf;
 use App\Support\PasswordRules;
 use App\Support\WorkerHeartbeat;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Contracts\Cache\Factory;
@@ -123,6 +124,12 @@ class AppServiceProvider extends ServiceProvider
         // contraseña: el panel de usuarios ya la usaba, pero el cambio desde el perfil y el
         // restablecimiento por correo caían en el mínimo de 8 de Laravel.
         Password::defaults(fn () => PasswordRules::reglas());
+
+        // El enlace de «olvidé mi contraseña» sale siempre con APP_URL y nunca con el Host
+        // del pedido: desde la red local se podría mandar un Host ajeno para que el correo
+        // lleve el token a otro dominio. Apache ya filtra el Host; esta es la segunda barrera.
+        ResetPassword::createUrlUsing(static fn ($usuario, string $token) => rtrim((string) config('app.url'), '/')
+            .route('password.reset', ['token' => $token, 'email' => $usuario->getEmailForPasswordReset()], false));
 
         // Bitácora de accesos: login, logout, intentos fallidos, bloqueos y restablecimientos.
         Event::subscribe(AuditoriaAccesos::class);
