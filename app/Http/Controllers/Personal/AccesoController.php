@@ -45,6 +45,8 @@ class AccesoController extends Controller
         $this->authorize('viewAny', User::class);
 
         $busqueda = trim((string) $request->input('q', ''));
+        // «Accesos externos»: las cuentas de gente de afuera (la contadora), sin ficha.
+        $externas = $request->boolean('externas');
 
         $usuarios = User::query()
             ->with($this->conPersonal() ? ['roles', 'planillaEmpleado'] : ['roles'])
@@ -52,12 +54,13 @@ class AccesoController extends Controller
                 ->where('name', 'like', "%{$busqueda}%")
                 ->orWhere('email', 'like', "%{$busqueda}%")))
             ->when($this->conPersonal() && $request->boolean('sin_ficha'), fn ($q) => $this->sinFicha($q))
+            ->when($externas, fn ($q) => $this->externas($q))
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
 
         return view('personal.accesos.index', [
-            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha')],
+            'usuarios' => $usuarios, 'filtros' => ['q' => $busqueda, 'sin_ficha' => $request->boolean('sin_ficha'), 'externas' => $externas],
             'sinFicha' => $this->conPersonal() ? $this->sinFicha(User::query())->count() : 0,
             'conPersonal' => $this->conPersonal(), 'verFichas' => $request->user()->can('planilla.ver'),
         ]);
@@ -209,7 +212,7 @@ class AccesoController extends Controller
         return redirect()->route('personal.accesos.index')->with('status', 'Cuenta eliminada.');
     }
 
-    /** Personal enlaza cuentas solo con Planilla encendida e instalada. */
+    /** Personal enlaza cuentas siempre que esté instalado, encendida o no Planilla. */
     private function conPersonal(): bool
     {
         return PlanillaEmpleado::enUso();
@@ -219,6 +222,14 @@ class AccesoController extends Controller
     private function sinFicha(Builder $consulta): Builder
     {
         return $consulta->whereDoesntHave('planillaEmpleado')->where('cuenta_externa', false);
+    }
+
+    /** Las cuentas externas: marcadas así y sin persona en Personal. */
+    private function externas(Builder $consulta): Builder
+    {
+        $consulta->where('cuenta_externa', true);
+
+        return $this->conPersonal() ? $consulta->whereDoesntHave('planillaEmpleado') : $consulta;
     }
 
     /** La persona de esta cuenta. Sin la tabla (Planilla sin instalar) no hay ninguna. */

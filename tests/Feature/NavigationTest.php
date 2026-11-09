@@ -470,12 +470,15 @@ class NavigationTest extends TestCase
             //    sistema (04/11/2026): Configuración es un apartado propio en la barra
             //    superior y los otros cuatro viven en su índice. Ninguno perdió la
             //    puerta: ver test_facturacion_ya_no_tiene_los_bloques_de_administracion.
+            //  - ENTRA 'personal.empleados' (08/11/2026): Personal funciona con Planilla
+            //    apagada, así que el área aparece en el selector para la administración.
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
                 'rutas.dashboard',
                 // El área Fábrica (09/11/2026): el administrador tiene todos los permisos,
                 // así que el selector del panel la ofrece.
                 'fabrica.pedidos.index',
+                'personal.empleados',
             ]],
             // Jefatura: lectura amplia, sin administración. ENTRA 'rutas.dashboard':
             // desde el 26/09/2026 planifica las salidas (rutas.ver + rutas.gestionar), así
@@ -547,7 +550,8 @@ class NavigationTest extends TestCase
                 // Pocas puertas (27/09/2026): la asignación vive en Configurar rutas.
                 // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
                 // (29/10/2026), con `rutas.personal.ver`.
-                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'rutas.personal.index',
+                // Desde el 08/11/2026 su lista es la de Personal, que llega por el selector de áreas.
+                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'personal.empleados',
                 // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
                 'rutas.pedidos.index',
                 // «Por entregar» (06/11/2026): la oficina también mira lo que falta entregar.
@@ -629,17 +633,21 @@ class NavigationTest extends TestCase
         $this->assertContains(route('personal.accesos.index'), $this->enlacesDelSidebar($personal));
         $this->assertStringNotContainsString('/usuarios', $this->sidebarDe($personal));
 
-        // Con Personal encendida, Configuración no la repite.
+        // Configuración no repite la lista entera: solo lleva a los accesos externos.
         $this->actingAs($admin)->get(route('configuracion.resumen'))->assertOk()
-            ->assertDontSee(route('personal.accesos.index'), false);
+            ->assertDontSee('href="'.route('personal.accesos.index').'"', false);
     }
 
-    /** Con Personal apagada, Accesos sigue a un clic: en Configuración › Administración. */
-    public function test_sin_personal_accesos_queda_en_configuracion(): void
+    /** Configuración › Administración lleva a los accesos de afuera (08/11/2026). */
+    public function test_configuracion_lleva_a_los_accesos_externos(): void
     {
         $this->actingAs($this->usuario('administrador'))->get(route('configuracion.resumen'))->assertOk()
-            ->assertSee(route('personal.accesos.index'), false)
-            ->assertSeeInOrder(['Administración', 'Accesos']);
+            ->assertSee(route('personal.accesos.index', ['externas' => 1]), false)
+            ->assertSeeInOrder(['Administración', 'Accesos externos']);
+
+        // Sin `usuarios.gestionar` no se dibuja.
+        $this->actingAs($this->usuario('contabilidad'))->get(route('auditoria.index'))->assertOk()
+            ->assertDontSee('Accesos externos');
     }
 
     // ------------------------------------------------------------------ rutas y estado activo

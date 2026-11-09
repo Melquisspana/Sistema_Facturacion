@@ -205,8 +205,9 @@ class AsistenciaSimpleTest extends TestCase
         }
         $this->actingAs($this->usuario());
         config(['asistencia.enabled' => false]);
-        foreach ($urls as $url) {
-            $this->get($url)->assertNotFound();
+        foreach ($urls as $i => $url) {
+            // Empleados es de Personal, que no se apaga (08/11/2026): sin `planilla.ver` es 403.
+            $i === 1 || $i === 2 ? $this->get($url)->assertForbidden() : $this->get($url)->assertNotFound();
         }
     }
 

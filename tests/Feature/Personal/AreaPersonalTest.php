@@ -113,6 +113,8 @@ class AreaPersonalTest extends TestCase
         $this->assertTrue(AreaSistema::Asistencia->habilitada());
         $this->assertContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($this->admin));
         $this->assertSame($asistencia ? 'asistencia.dashboard' : 'planilla.index', AreaSistema::Asistencia->rutaInicioPara($this->admin));
+        // Empleados está siempre: las fichas de Personal no dependen de Planilla (08/11/2026).
+        $this->assertStringContainsString(route('personal.empleados'), $this->sidebar(route('personal.empleados'), $this->admin));
 
         $sidebar = $this->sidebar(route('personal.empleados'), $this->admin);
 
@@ -121,7 +123,9 @@ class AreaPersonalTest extends TestCase
 
         $lista = $this->get(route('personal.empleados'))->assertOk();
         $asistencia ? $lista->assertSee('Beto Ejemplo') : $lista->assertDontSee('Beto Ejemplo');
-        $planilla ? $lista->assertSee('Descuentos') : $lista->assertDontSee('Descuentos');
+        // La ficha (con sus descuentos de ley) es de Personal; el sueldo, de Planilla.
+        $lista->assertSee('Descuentos');
+        $planilla ? $lista->assertSee('Sueldo mensual') : $lista->assertDontSee('Sueldo mensual');
         $asistencia ? $lista->assertSee('Huellas') : $lista->assertDontSee('Huellas');
 
         $this->get(route('asistencia.dashboard'))->assertStatus($asistencia ? 200 : 404);
@@ -133,23 +137,36 @@ class AreaPersonalTest extends TestCase
         $this->get(route('personal.empleados.show', 'p'.$persona->id))->assertOk();
     }
 
-    public function test_con_los_dos_apagados_el_area_desaparece(): void
+    /** «Personal siempre tiene que funcionar» (08/11/2026): con los dos apagados queda Empleados. */
+    public function test_con_los_dos_apagados_personal_sigue(): void
     {
+        $persona = $this->enPlanilla();
         config(['asistencia.enabled' => false, 'planilla.enabled' => false]);
 
-        $this->assertFalse(AreaSistema::Asistencia->habilitada());
-        $this->assertNotContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($this->admin));
-        $this->actingAs($this->admin)->get(route('personal.empleados'))->assertNotFound();
+        $this->assertTrue(AreaSistema::Asistencia->habilitada());
+        $this->assertContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($this->admin));
+        $this->assertSame('personal.empleados', AreaSistema::Asistencia->rutaInicioPara($this->admin));
+        $this->actingAs($this->admin)->get(route('personal.empleados'))->assertOk()->assertSee('Ana Ficticia');
+        $this->get(route('personal.empleados.show', 'p'.$persona->id))->assertOk();
+        $this->get(route('asistencia.dashboard'))->assertNotFound();
+        $this->get(route('planilla.index'))->assertNotFound();
     }
 
     public function test_el_permiso_de_una_puerta_apagada_no_abre_la_otra(): void
     {
         config(['planilla.enabled' => false]);
 
+        // Con Planilla apagada, `planilla.ver` abre las fichas de Personal y nada de Planilla.
         $encargada = $this->usuario(['planilla.ver', 'dashboard.ver']);
+        $this->assertContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($encargada));
+        $this->assertSame('personal.empleados', AreaSistema::Asistencia->rutaInicioPara($encargada));
+        $this->actingAs($encargada)->get(route('planilla.index'))->assertNotFound();
 
-        $this->assertNotContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($encargada));
-        $this->actingAs($encargada)->get(route('personal.empleados'))->assertForbidden();
+        // Y `asistencia.ver` con Asistencia apagada no abre nada.
+        config(['asistencia.enabled' => false]);
+        $marca = $this->usuario(['asistencia.ver', 'dashboard.ver']);
+        $this->assertNotContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($marca));
+        $this->actingAs($marca)->get(route('personal.empleados'))->assertForbidden();
     }
 
     public function test_una_sola_fila_por_persona_aunque_este_en_los_dos_modulos(): void
@@ -286,24 +303,16 @@ class AreaPersonalTest extends TestCase
         $this->get(route('planilla.empleados.create'))->assertOk();
     }
 
-    public function test_el_boton_nuevo_empleado_usa_el_alta_que_corresponde(): void
+    public function test_el_boton_nuevo_empleado_es_siempre_el_alta_de_personal(): void
     {
         $this->actingAs($this->admin)->get(route('personal.empleados'))
             ->assertSee(route('planilla.empleados.create'))->assertDontSee(route('asistencia.empleados.create'));
 
+        // Con Planilla apagada también: Asistencia ya no da altas sueltas (08/11/2026).
         config(['planilla.enabled' => false]);
 
         $this->get(route('personal.empleados'))
-            ->assertSee(route('asistencia.empleados.create'))->assertDontSee(route('planilla.empleados.create'));
-    }
-
-    public function test_el_alta_de_asistencia_lleva_a_la_ficha_con_su_aviso(): void
-    {
-        config(['planilla.enabled' => false]);
-
-        $this->actingAs($this->admin)->followingRedirects()
-            ->post(route('asistencia.empleados.store'), ['nombres' => 'Beto', 'apellidos' => 'Ejemplo'])
-            ->assertOk()->assertSee('dado de alta')->assertSee('Huellas vigentes');
+            ->assertSee(route('planilla.empleados.create'))->assertDontSee(route('asistencia.empleados.create'));
     }
 
     public function test_el_lector_no_cambio_ni_redirige(): void

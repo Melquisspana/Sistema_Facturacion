@@ -31,6 +31,8 @@ class PersonalCargarTest extends TestCase
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+        // La carga trae sueldos, que son de Planilla: con el módulo apagado se rechazan (08/11/2026).
+        config(['planilla.enabled' => true]);
 
         $admin = User::factory()->create(['activo' => true, 'email' => 'admin@example.test']);
         $admin->syncPermissions(PermisoSistema::todos());
