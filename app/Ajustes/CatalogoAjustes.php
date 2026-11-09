@@ -2123,6 +2123,55 @@ class CatalogoAjustes
             ),
 
             // ================================================================
+            // N2 — FERIADOS DE HACIENDA (issue #49). Días inhábiles del MH para el
+            // plazo de invalidar un CCF, una NC o una ND (decisión 0005). Sección
+            // propia y no `fiscal_invalidacion`: estos SÍ se escriben, desde
+            // Configuración → Feriados de Hacienda.
+            //
+            // Sin `claveConfig` a propósito: el respaldo de config/dte.php va POR
+            // AÑO y lo resuelve App\Support\Dte\CalendarioInhabiles, no esta capa.
+            // ================================================================
+            DefinicionAjuste::hacer(
+                clave: 'dte.invalidacion.dias_inhabiles',
+                seccion: 'feriados_hacienda',
+                tipo: TipoAjuste::Lista,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Días inhábiles de Hacienda',
+                descripcion: 'Feriados del calendario tributario del MH, de todos los años. No cuentan como días hábiles en el plazo para invalidar un CCF, una NC o una ND.',
+                reglas: ['fecha'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'dte.invalidacion.anios_completos',
+                seccion: 'feriados_hacienda',
+                tipo: TipoAjuste::Lista,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Años con el calendario de Hacienda completo',
+                descripcion: 'Si el año del plazo no está acá, el plazo se calcula y se avisa que falta el calendario completo.',
+                reglas: ['anio'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'dte.invalidacion.anios_en_configuracion',
+                seccion: 'feriados_hacienda',
+                tipo: TipoAjuste::Lista,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Años del calendario del sistema cambiados en Configuración',
+                descripcion: 'Años que traía el sistema y que ya se cambiaron en Feriados de Hacienda. Para ellos vale solo lo de Configuración, aunque se quiten todos los días o se desmarque el año completo.',
+                reglas: ['anio'],
+            ),
+
+            // ================================================================
             // QUÉ NO ENTRA ACÁ, Y NO ES UN OLVIDO
             //
             //  - DTE_PROD_USER / DTE_PROD_PASSWORD / DTE_TEST_USER /
