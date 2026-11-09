@@ -74,6 +74,9 @@ class QuedanCallejaExporter
 
     private const PRIMERA_FILA = 2;
 
+    /** Columnas del DTE que se leen para identificarlo y saber si todavía vale (#12). */
+    private const COLUMNAS_DTE = 'id,tipo_dte,numero_control,estado,sello_recepcion,fecha_procesamiento_mh,sello_invalidacion';
+
     /** Nombre de la hoja en la plantilla del cliente. Se conserva tal cual. */
     private const HOJA = 'Hoja3';
 
@@ -143,10 +146,10 @@ class QuedanCallejaExporter
      *    Calleja); si no hay, del registrado al emitir la NC. La fecha sale del albarán
      *    registrado en la NC y, si no hay fecha, del PPQ. El TIPO (AC02/AC04) sale de
      *    la NC, porque la copia PPQ no lo guarda. La sala confirmada a mano manda.
-     *  · No van las NC que ya no están aceptadas ({@see fueraDelArchivo()}) ni las que ya viajaron en un lote anterior (el portal
-     *    responde «ya se encuentra asociado a un registro de quedan»). Tampoco la que el TXT
-     *    devolvió por no descontada: va en el PPQ nuevo, no en su quedan (confirmado por
-     *    el usuario, 25/10/2026).
+     *  · No van las NC que ya no están aceptadas ({@see fueraDelArchivo()}) ni las que ya
+     *    viajaron en un lote anterior (el portal responde «ya se encuentra asociado a un
+     *    registro de quedan»). Tampoco la que el TXT devolvió por no descontada: va en el
+     *    PPQ nuevo, no en su quedan (confirmado por el usuario, 25/10/2026).
      *
      * Regla del usuario (25/09/2026): en la solicitud de quedan también van las NC.
      *
@@ -221,7 +224,7 @@ class QuedanCallejaExporter
      */
     private function ccfDelLote(PpqLote $lote): Collection
     {
-        $lote->loadMissing(['items.dte', 'items.albaran']);
+        $lote->loadMissing(['items.dte:'.self::COLUMNAS_DTE, 'items.albaran']);
 
         // Los tipos ajenos a 03/05 siguen aquí para que problema() bloquee el archivo
         // con un motivo visible; nunca deben salir como si fueran CCF. El invalidado sale
@@ -239,7 +242,7 @@ class QuedanCallejaExporter
      */
     public function fueraDelArchivo(PpqLote $lote): array
     {
-        $lote->load('items.dte');
+        $lote->load('items.dte:'.self::COLUMNAS_DTE);
 
         return $lote->itemsOrdenados()
             ->map(fn (PpqItem $i) => ($motivo = $this->motivoFuera($i)) === null ? null
