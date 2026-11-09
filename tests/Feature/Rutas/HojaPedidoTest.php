@@ -5,13 +5,18 @@ namespace Tests\Feature\Rutas;
 use App\Enums\EstadoPedidoSala;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
+use App\Models\PuntoVenta;
 use App\Models\Ruta;
 use App\Models\UnidadMedida;
 use App\Models\User;
+use App\Services\Dte\DteBorradorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -180,5 +185,30 @@ class HojaPedidoTest extends TestCase
             ->assertSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false);
         $this->get(route('rutas.pedidos.hoja', [$this->pedido, 'fecha' => '8/11/2026']))
             ->assertSessionHasErrors('fecha');
+    }
+
+    public function test_la_hoja_y_el_detalle_reciben_lo_que_regresa_de_lo_facturado(): void
+    {
+        $envio = $this->envio([$this->galleta->id => '6', $this->canilla->id => '4']);
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()->assertViewHas('regresa', []);
+
+        $empresa = Empresa::create(['razon_social' => 'Empresa de prueba', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        $dte = (new Dte)->forceFill([
+            'tipo_dte' => '03', 'ambiente' => '00', 'estado' => 'borrador', 'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id, 'cliente_id' => $this->sala->cliente_id, 'fecha_emision' => '2026-11-09', 'hora_emision' => '08:00:00',
+        ]);
+        $dte->save();
+        app(DteBorradorService::class)->establecerCantidadProducto($dte, $this->galleta, 5);
+        Dte::whereKey($dte->id)->update(['estado' => 'aceptado']);
+        $envio->update(['dte_id' => $dte->id]);
+
+        $esperado = [
+            $this->galleta->id => ['llego' => '6.0000', 'facturado' => '5.0000', 'regresa' => '1.0000'],
+            $this->canilla->id => ['llego' => '4.0000', 'facturado' => '0.0000', 'regresa' => '4.0000'],
+        ];
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()->assertViewHas('regresa', $esperado);
+        $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()->assertViewHas('regresa', $esperado);
     }
 }
