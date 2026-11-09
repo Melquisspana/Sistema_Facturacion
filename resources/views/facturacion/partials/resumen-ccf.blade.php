@@ -19,6 +19,22 @@
 @endphp
 
 <div class="space-y-6">
+    {{-- Aviso SUAVE de lo que llegó de la fábrica: un envío del pedido que no está en el
+         borrador, o un producto que pasa de lo que llegó o no vino. No frena generar. Va arriba
+         del panel, a la vista junto a «Generar», porque el panel se repinta con cada cambio de
+         cantidad (DteController::respuestaLineas). --}}
+    @if (($avisosPedido ?? []) !== [])
+        <div role="alert" class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
+            <strong>⚠ Revisá contra lo que llegó de la fábrica:</strong>
+            <ul class="mt-1 list-disc list-inside">
+                @foreach ($avisosPedido as $aviso)
+                    <li>{{ $aviso }}</li>
+                @endforeach
+            </ul>
+            <p class="mt-1">Podés generar igual si es correcto.</p>
+        </div>
+    @endif
+
     {{-- Productos agregados --}}
     <div class="bg-white shadow sm:rounded-lg p-4">
         <div class="flex items-center justify-between mb-3">
@@ -116,21 +132,6 @@
 
     {{-- Totales (compacto: apilado vertical para el panel). Reusa el partial único. --}}
     @include('facturacion.partials.totales', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'compacto' => true])
-
-    {{-- Aviso SUAVE de lo que llegó de la fábrica: un envío del pedido que no está en el
-         borrador, o un producto que pasa de lo que llegó o no vino. No frena generar. Va acá
-         porque este panel se repinta con cada cambio de cantidad (DteController::respuestaLineas). --}}
-    @if (($avisosPedido ?? []) !== [])
-        <div role="alert" class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
-            <strong>⚠ Revisá contra lo que llegó de la fábrica:</strong>
-            <ul class="mt-1 list-disc list-inside">
-                @foreach ($avisosPedido as $aviso)
-                    <li>{{ $aviso }}</li>
-                @endforeach
-            </ul>
-            <p class="mt-1">Podés generar igual si es correcto.</p>
-        </div>
-    @endif
 
     {{-- Generar: consume el correlativo y deja de ser editable. Deshabilitado sin líneas;
          el confirm con resumen viene de la vista (fallback genérico si no se pasa). --}}
