@@ -54,7 +54,7 @@ class OpcionesModuloTest extends TestCase
     public function test_cada_opcion_esta_en_la_lista_blanca_y_se_guarda_en_la_tabla_nueva(): void
     {
         $catalogo = app(CatalogoAjustes::class);
-        $porSeccion = ['ppq', 'cobros', 'alertas', 'planilla', 'rutas', 'gastos', 'exportaciones'];
+        $porSeccion = ['ppq', 'cobros', 'alertas', 'planilla', 'rutas', 'gastos', 'exportaciones', 'compras', 'asistencia'];
 
         foreach ($porSeccion as $seccion) {
             $definiciones = $catalogo->porSeccion($seccion);

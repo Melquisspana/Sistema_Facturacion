@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Asistencia;
 
 use App\Enums\Asistencia\ResultadoMarcacion;
+use App\Facades\Ajustes;
 use App\Services\Asistencia\HoraOficial;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -32,7 +33,7 @@ class MarcarRequest extends FormRequest
             'fingerprint_id' => ['required', 'integer', 'min:0', 'max:65535'],
             'marcado_en' => ['sometimes', 'required', 'integer', function ($attribute, $value, $fail) {
                 $ahora = app(HoraOficial::class)->instante()->getTimestamp();
-                $maxDias = max(0, (int) config('asistencia.diferidas_max_dias', 31));
+                $maxDias = max(0, (int) Ajustes::entero('asistencia.diferidas_max_dias', 31));
                 if (is_bool($value) || ! is_scalar($value) || ! is_numeric($value)
                     || $value > $ahora + 300 || $value < $ahora - $maxDias * 86400) {
                     $fail('La hora de la marcación está fuera del rango permitido.');

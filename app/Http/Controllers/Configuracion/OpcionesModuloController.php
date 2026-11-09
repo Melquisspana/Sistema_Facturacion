@@ -133,6 +133,28 @@ class OpcionesModuloController extends Controller
                 ],
             ],
         ],
+        'compras' => [
+            'titulo' => 'Compras',
+            'descripcion' => 'Documentos que mandan los proveedores al buzón de compras.',
+            'modulo' => null,
+            'grupos' => [
+                [
+                    'titulo' => 'Tareas automáticas',
+                    'claves' => ['documentos_recibidos.sincronizacion_automatica'],
+                ],
+            ],
+        ],
+        'asistencia' => [
+            'titulo' => 'Asistencia',
+            'descripcion' => 'Cómo reciben los lectores de huella las marcas.',
+            'modulo' => ModuloSistema::Asistencia,
+            'grupos' => [
+                [
+                    'titulo' => 'Lectores de huella',
+                    'claves' => ['asistencia.cooldown_segundos', 'asistencia.diferidas_max_dias'],
+                ],
+            ],
+        ],
         'planilla' => [
             'titulo' => 'Planilla',
             'descripcion' => 'Salario mínimo y datos del patrono para el contrato de trabajo. Razón social y NIT salen de la empresa emisora.',
