@@ -51,11 +51,12 @@ class CobrosCompletarHistorialCommand extends Command
 
         // 1. TXT de pago de los lotes PPQ de ESTE cliente (o sin cliente, los viejos), del más
         //    viejo al más nuevo, una vez por huella. El de un lote de otro cliente dejaría acá
-        //    sus ajustes (QD).
+        //    sus ajustes (QD). Los lotes borrados también cuentan: lo que su TXT dice pagado
+        //    está pagado aunque el lote ya no se use.
         $archivos = PpqConciliacion::query()
             ->where('origen', OrigenConciliacionPpq::Txt->value)
             ->whereNotNull('archivo_path')
-            ->whereHas('lote', fn ($q) => $q->where(fn ($w) => $w->where('cliente_id', $cliente->id)->orWhereNull('cliente_id')))
+            ->whereHas('lote', fn ($q) => $q->withTrashed()->where(fn ($w) => $w->where('cliente_id', $cliente->id)->orWhereNull('cliente_id')))
             ->orderBy('id')
             ->get()
             ->unique('archivo_hash');

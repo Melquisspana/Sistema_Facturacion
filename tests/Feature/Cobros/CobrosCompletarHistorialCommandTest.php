@@ -142,4 +142,22 @@ class CobrosCompletarHistorialCommandTest extends TestCase
         $this->assertSame(EstadoPagoCobro::Pendiente, $doc->refresh()->pago_estado);
         $this->assertTrue($doc->revisar_historico);
     }
+
+    /** El lote PPQ se borró (borrado blando) después de conciliar: su TXT sigue siendo historia y se aplica. */
+    public function test_aplica_el_txt_de_un_lote_borrado(): void
+    {
+        Storage::fake((string) config('dte.storage.disk', 'local'));
+        config(['ppq.codigo_proveedor' => '000123']);
+
+        $cliente = $this->clienteDeCobros();
+        $pagado = $this->doc($cliente, '101', '2026-06-20');
+        $this->loteConTxt($cliente, "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n"
+            ."000123;TITULAR DE EJEMPLO;CF;DTE03M001P002000000000000101;20-JUN-26;100.00\n")->delete();
+
+        $this->artisan('cobros:completar-historial', ['--cliente' => $cliente->id, '--aplicar' => true])
+            ->expectsOutputToContain('1 aplicados')
+            ->assertSuccessful();
+
+        $this->assertSame(EstadoPagoCobro::Pagado, $pagado->refresh()->pago_estado);
+    }
 }
