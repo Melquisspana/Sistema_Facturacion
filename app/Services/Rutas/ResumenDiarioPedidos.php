@@ -123,7 +123,7 @@ class ResumenDiarioPedidos
         };
 
         $envios = PedidoSalaEnvio::query()->vigentes()->whereDate('fecha', $fecha)
-            ->with(['pedido.sala:id,nombre', 'pedido.lineas.producto:id,nombre', 'pedido.lineas.envioLineasVigentes', 'lineas.linea.producto:id,nombre'])
+            ->with(['pedido.sala:id,nombre', 'lineas.linea.producto:id,nombre'])
             ->orderBy('id')
             ->get();
 
@@ -138,10 +138,31 @@ class ResumenDiarioPedidos
             ];
         }
 
-        // Lo que faltó de los pedidos que salieron hoy y quedaron cerrados. Si lo que falta
-        // va en otro envío (sigue por mandar), sale abajo, con los pendientes.
-        foreach ($envios->pluck('pedido')->unique('id') as $pedido) {
-            if ($pedido->estaPorMandar()) {
+        // Lo que faltó y lo que no se trae: los pedidos que se CERRARON hoy, según la
+        // auditoría del cierre, aunque su envío haya salido otro día («Lo que falta no se
+        // trae» no crea envío). No se usa `updated_at`: agregar la OC después lo movería.
+        // Un pedido que se reabrió y sigue por mandar sale abajo, con los pendientes.
+        $cerrados = PedidoSala::query()
+            ->whereIn('id', Activity::query()
+                ->where('log_name', 'pedido_sala')
+                ->where('subject_type', (new PedidoSala)->getMorphClass())
+                ->whereIn('description', [PedidosFabrica::AUDITORIA_PARTE, PedidosFabrica::AUDITORIA_NO_SE_TRAE, PedidosFabrica::AUDITORIA_LO_QUE_FALTA])
+                ->whereDate('created_at', $fecha)
+                ->select('subject_id'))
+            ->whereIn('estado', [EstadoPedidoSala::Enviado->value, EstadoPedidoSala::NoSeTrae->value])
+            ->with(['sala:id,nombre', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
+            ->orderBy('id')
+            ->get();
+
+        foreach ($cerrados as $pedido) {
+            if ($pedido->estado === EstadoPedidoSala::NoSeTrae) {
+                foreach ($pedido->lineas as $linea) {
+                    $salas[$sala($pedido)]['no_se_trae'][] = [
+                        'nombre' => (string) $linea->producto?->nombre,
+                        'cantidad' => $linea->cantidadLegible(),
+                    ];
+                }
+
                 continue;
             }
             foreach ($pedido->lineas->filter->tienePendiente() as $linea) {
@@ -149,22 +170,6 @@ class ResumenDiarioPedidos
                     'nombre' => (string) $linea->producto?->nombre,
                     'cantidad' => PedidoSalaLinea::legible($linea->pendiente()),
                     'motivo' => $linea->motivo_no_enviado,
-                ];
-            }
-        }
-
-        // `updated_at` se guarda en la hora del negocio (app.timezone).
-        $noSeTraen = PedidoSala::query()->where('estado', EstadoPedidoSala::NoSeTrae->value)
-            ->whereDate('updated_at', $fecha)
-            ->with(['sala:id,nombre', 'lineas.producto:id,nombre'])
-            ->orderBy('id')
-            ->get();
-
-        foreach ($noSeTraen as $pedido) {
-            foreach ($pedido->lineas as $linea) {
-                $salas[$sala($pedido)]['no_se_trae'][] = [
-                    'nombre' => (string) $linea->producto?->nombre,
-                    'cantidad' => $linea->cantidadLegible(),
                 ];
             }
         }

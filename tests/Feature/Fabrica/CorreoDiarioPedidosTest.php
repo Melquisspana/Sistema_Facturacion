@@ -102,7 +102,7 @@ class CorreoDiarioPedidosTest extends TestCase
     }
 
     /** @param  array<int, string>  $cantidades  [producto_id => cantidad] */
-    private function mandar(PedidoSala $pedido, array $cantidades, array $motivos = []): void
+    private function mandar(PedidoSala $pedido, array $cantidades, array $motivos = [], bool $sigue = false): void
     {
         $porLinea = fn (array $datos) => collect($datos)->mapWithKeys(
             fn ($valor, $producto) => [$pedido->lineas()->where('producto_id', $producto)->value('id') => $valor],
@@ -110,7 +110,7 @@ class CorreoDiarioPedidosTest extends TestCase
 
         app(PedidosFabrica::class)->mandar($pedido, [
             'clave' => (string) Str::uuid(), 'version' => $this->version($pedido),
-            'cantidades' => $porLinea($cantidades), 'motivos' => $porLinea($motivos),
+            'cantidades' => $porLinea($cantidades), 'motivos' => $porLinea($motivos), 'sigue' => $sigue,
         ], $this->fabrica);
     }
 
@@ -152,6 +152,28 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*No se trae.*Galleta de prueba: 3/s', $html);
         $this->assertTrue(strpos($html, 'Abarrotes Inventados') < strpos($html, 'Súper Ficticio Centro'));
         $this->assertTrue(strpos($html, 'Súper Ficticio Centro') < strpos($html, 'Tienda Inventada Norte'));
+    }
+
+    public function test_lo_que_falta_y_se_da_por_perdido_otro_dia_sale_en_falto_ese_dia(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+
+        // Lunes: sale una parte y lo que falta iba a ir en otro envío.
+        $this->travelTo('2026-11-09 10:00:00');
+        $pedido = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '24', $this->canilla->id => '6']);
+        $this->mandar($pedido, [$this->galleta->id => '24', $this->canilla->id => '0'], [$this->canilla->id => 'Sin harina'], sigue: true);
+
+        // Martes: «Lo que falta no se trae», sin envío ese día.
+        $this->travelTo('2026-11-10 10:00:00');
+        app(PedidosFabrica::class)->cerrar($pedido, $this->version($pedido), $this->fabrica);
+
+        $this->travelTo('2026-11-10 17:00:00');
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        $html = $this->enviado()->render();
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
+        $this->assertStringNotContainsString('Sigue por mandar', $html);
     }
 
     public function test_lo_escrito_en_la_fabrica_no_mete_enlaces_ni_imagenes_en_el_correo(): void
