@@ -9,6 +9,7 @@ use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
+use App\Models\Planilla\PlanillaLote;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
 use App\Services\Gastos\RegistrarPago;
@@ -418,6 +419,28 @@ class FlujoPlanillaTest extends TestCase
         ]);
 
         $this->assertSame('pagado', app(EstadoPlanilla::class)->deTercero($tercero->fresh()->load('gasto.cuotas'))['estado']);
+    }
+
+    /**
+     * #22 · Pagar sin los datos del pago es un aviso por campo, no un error del sistema.
+     * Antes se leían sin preguntar si venían, y el lote además dejaba creado un lote vacío.
+     */
+    public function test_pagar_sin_los_datos_del_pago_avisa_por_campo(): void
+    {
+        $u = $this->gestor();
+        ['planilla' => $planilla] = $this->planillaLista($u);
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
+        $detalle = PlanillaDetalle::firstOrFail();
+        $tercero = PlanillaObligacionTercero::firstOrFail();
+        $faltan = ['importe', 'fecha', 'metodo' => 'El campo método de pago es obligatorio.', 'pagado_por'];
+
+        $this->actingAs($u)->post(route('planilla.pagar.persona', $detalle), [])->assertSessionHasErrors($faltan);
+        $this->actingAs($u)->post(route('planilla.pagar.tercero', $tercero), [])->assertSessionHasErrors($faltan);
+        $this->actingAs($u)->post(route('planilla.pagar.lote', $planilla), ['detalles' => [$detalle->id]])
+            ->assertSessionHasErrors(['fecha', 'metodo', 'pagado_por']);
+
+        $this->assertSame(0, Pago::count());
+        $this->assertSame(0, PlanillaLote::count(), 'Un lote rechazado no deja un lote vacío.');
     }
 
     public function test_no_se_puede_pagar_un_borrador(): void
