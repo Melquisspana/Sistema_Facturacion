@@ -136,9 +136,10 @@ final class PrepararPlanilla
                 // de antes de una recontratación no es el de esta baja.
                 ->when($alta !== null, fn ($q) => $q->whereDate('desde', '>=', $alta))
                 ->where('individual_de', $individual)
-                // Un pago de vacaciones anulado no ocupa el lugar: se puede pagar de nuevo.
-                // Al anularlo ya dejó libre la clave única ({@see AnularPlanilla}).
-                ->when($individual > 0, fn ($q) => $q->where('estado', '!=', 'anulada'))
+                // Una anulada no ocupa el lugar: se puede hacer de nuevo. Un pago individual
+                // dejó libre la clave única al anularse ({@see AnularPlanilla}); una quincena
+                // o una mensual la deja ahora, al volver a hacerse ({@see liberarAnuladas()}).
+                ->where('estado', '!=', 'anulada')
                 ->first();
 
             if ($existente === null && $persona !== null && IndemnizacionBaja::es($datos['clase'])) {
@@ -157,6 +158,10 @@ final class PrepararPlanilla
                 $this->precargarActivos($usuario, $existente);
 
                 return $existente;
+            }
+
+            if ($individual === 0) {
+                $this->liberarAnuladas($usuario, $datos['tipo_periodo'], $datos['clase'], $periodo);
             }
 
             try {
@@ -214,6 +219,72 @@ final class PrepararPlanilla
         }
 
         return PlanillaEmpleado::whereKey($id)->lockForUpdate()->first();
+    }
+
+    /**
+     * Deja libre el lugar de una quincena o una mensual anulada, para volver a hacerla.
+     *
+     * La anulada se queda como está —motivo, líneas, deudas extinguidas, pagos revertidos
+     * y papeles firmados— y solo cambia su clave técnica a «2026-11-Q1-A{id}», como un
+     * pago individual al anularse. En pantalla sigue siendo «2026-11-Q1»
+     * ({@see Planilla::periodo()}).
+     *
+     * Solo lo frena un pago VIGENTE contra una anulada de ese período: hacerla de nuevo le
+     * pagaría dos veces a la misma persona. Uno revertido no frena.
+     *
+     * @param  array{periodo: string, desde: string, hasta: string, etiqueta: string}  $periodo
+     */
+    private function liberarAnuladas(User $usuario, string $tipo, string $clase, array $periodo): void
+    {
+        // También las que ya dejaron el lugar. Por la clave única, que en MySQL bloquea
+        // solo esas filas y no la tabla entera.
+        $anuladas = Planilla::where('tipo_periodo', $tipo)
+            ->where(fn ($q) => $q->where('periodo', $periodo['periodo'])->orWhere('periodo', 'like', $periodo['periodo'].'-A%'))
+            ->where('clase', $clase)
+            ->where('individual_de', 0)
+            ->where('estado', 'anulada')
+            ->lockForUpdate()
+            ->get();
+
+        if ($anuladas->isEmpty()) {
+            return;
+        }
+
+        $gastos = DB::table('planilla_detalles')->whereIn('planilla_id', $anuladas->modelKeys())->whereNotNull('gasto_id')->pluck('gasto_id')
+            ->merge(DB::table('planilla_obligaciones_terceros')->whereIn('planilla_id', $anuladas->modelKeys())->whereNotNull('gasto_id')->pluck('gasto_id'));
+
+        $conPagos = DB::table('gastos_pago_aplicaciones as a')
+            ->join('gastos_pagos as p', 'p.id', '=', 'a.pago_id')
+            ->join('gastos_cuotas as c', 'c.id', '=', 'a.cuota_id')
+            ->join('gastos as g', 'g.id', '=', 'c.gasto_id')
+            ->whereIn('c.gasto_id', $gastos)
+            ->whereNull('p.revertido_at')
+            ->distinct()
+            ->orderBy('g.beneficiario')
+            ->pluck('g.beneficiario')
+            ->all();
+
+        if ($conPagos !== []) {
+            throw ValidationException::withMessages([
+                'periodo' => 'No se puede volver a hacer: la planilla '.$periodo['periodo'].' anulada tiene pagos sin revertir ('
+                    .implode(', ', array_slice($conPagos, 0, 5)).(count($conPagos) > 5 ? ' y otros' : '').'). '
+                    .'Revertí primero esos pagos, cada uno con su motivo, y después volvé a generarla.',
+            ]);
+        }
+
+        // Solo una ocupa el lugar en la clave única; las de antes ya lo dejaron.
+        $ocupa = $anuladas->first(fn (Planilla $p) => $p->getRawOriginal('periodo') === $periodo['periodo']);
+
+        if ($ocupa === null) {
+            return;
+        }
+
+        $ocupa->update(['periodo' => $periodo['periodo'].'-A'.$ocupa->id]);
+
+        // Sin importes: la bitácora la ve quien no tiene `planilla.salarios`.
+        activity('planilla')->performedOn($ocupa)->causedBy($usuario)
+            ->withProperties(['periodo' => $periodo['periodo']])
+            ->log('dejó libre su período para volver a hacerla');
     }
 
     /** Que la persona de un pago de vacaciones de verdad las tenga por pagar en esa fecha. */

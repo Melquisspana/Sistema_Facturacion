@@ -479,7 +479,7 @@ class VacacionesPlanillaTest extends TestCase
         app(AnularPlanilla::class)->anular($this->actor, $primero, 'Se pagó con el sueldo equivocado');
 
         // Queda guardado, con su persona, pero ya no ocupa el lugar del mes.
-        $this->assertSame('2026-11-A'.$primero->id, $primero->fresh()->periodo);
+        $this->assertSame('2026-11-A'.$primero->id, $primero->fresh()->getRawOriginal('periodo'));
         $this->assertSame(['Ana Ficticia'], $this->porPagar('2026-11-20'));
 
         // La revisión ya no rebota al anulado: muestra el pago nuevo.
@@ -513,10 +513,12 @@ class VacacionesPlanillaTest extends TestCase
 
         $this->assertSame('2026-11-Q1', $quincena->fresh()->periodo);
 
-        // Sigue ocupando su lugar: para hacerla de nuevo hay que borrarla, como siempre.
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('La planilla 2026-11-Q1 ya existe (anulada)');
-        app(GenerarPlanilla::class)->generar($this->actor, ['tipo_periodo' => 'quincenal', 'fecha' => '2026-11-01', 'clase' => 'regular', 'moneda' => 'USD']);
+        // Ya no ocupa su lugar: se hace de nuevo y la anulada sigue diciendo su quincena.
+        $nueva = app(GenerarPlanilla::class)->generar($this->actor, ['tipo_periodo' => 'quincenal', 'fecha' => '2026-11-01', 'clase' => 'regular', 'moneda' => 'USD']);
+
+        $this->assertSame('2026-11-Q1', $nueva->periodo);
+        $this->assertSame('2026-11-Q1', $quincena->fresh()->periodo);
+        $this->assertSame('2026-11-Q1-A'.$quincena->id, $quincena->fresh()->getRawOriginal('periodo'));
     }
 
     public function test_si_otra_pantalla_lo_genero_a_la_vez_es_un_error_que_se_entiende(): void

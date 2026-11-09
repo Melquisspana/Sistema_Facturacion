@@ -3,6 +3,7 @@
 namespace Tests\Feature\Planilla;
 
 use App\Enums\PermisoSistema;
+use App\Models\Gastos\Ajuste;
 use App\Models\Gastos\Cuota;
 use App\Models\Gastos\Gasto;
 use App\Models\Planilla\Planilla;
@@ -12,6 +13,8 @@ use App\Models\Planilla\PlanillaDocumento;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
+use App\Services\Gastos\RegistrarAjuste;
+use App\Services\Gastos\RegistrarPago;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\AnularPlanilla;
 use App\Services\Planilla\PagarPlanilla;
@@ -20,6 +23,7 @@ use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -271,5 +275,107 @@ class GenerarYBorrarPlanillaTest extends TestCase
         $this->actingAs($mirón)->delete(route('planilla.destroy', $planilla))->assertForbidden();
 
         $this->assertNotNull($planilla->fresh());
+    }
+
+    // ─────────────────────── Volver a hacer una anulada ───────────────────────
+
+    public function test_una_quincena_anulada_se_vuelve_a_generar_y_conserva_su_historia(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+        $ajustes = DB::table('gastos_ajustes')->count();
+
+        // La revisión ya no lleva a la anulada: ofrece generarla de nuevo.
+        $this->actingAs($this->actor)->get(route('planilla.revisar', $this->periodo('2026-10-01')))
+            ->assertOk()->assertSee('Sí, generar la planilla');
+
+        $nueva = $this->generar('2026-10-01');
+
+        $this->assertNotSame($anulada->id, $nueva->id);
+        $this->assertSame('confirmada', $nueva->estado);
+        $this->assertSame('2026-10-Q1', $nueva->periodo);
+
+        // La nueva no pisa la anulada: queda con su motivo, su línea, sus deudas
+        // extinguidas y su ajuste, y en pantalla sigue siendo la misma quincena.
+        $anulada->refresh();
+        $this->assertSame('anulada', $anulada->estado);
+        $this->assertSame('Se generó con el sueldo equivocado', $anulada->motivo_anulacion);
+        $this->assertSame(1, PlanillaDetalle::where('planilla_id', $anulada->id)->count());
+        $this->assertSame(2, PlanillaObligacionTercero::where('planilla_id', $anulada->id)->count());
+        $this->assertSame($ajustes, DB::table('gastos_ajustes')->count());
+        $this->assertSame(6, Gasto::count());
+        $this->assertSame('2026-10-Q1', $anulada->periodo);
+        $this->assertSame(1, Activity::where('description', 'dejó libre su período para volver a hacerla')->where('subject_id', $anulada->id)->count());
+
+        $this->actingAs($this->actor)->get(route('planilla.index'))->assertOk()->assertDontSee('2026-10-Q1-A');
+        $this->actingAs($this->actor)->get(route('planilla.show', $anulada))->assertOk()
+            ->assertSee('2026-10-Q1')->assertDontSee('2026-10-Q1-A')->assertSee('Anulada');
+
+        // Y se puede repetir: anular también la nueva y hacerla otra vez.
+        app(AnularPlanilla::class)->anular($this->actor, $nueva, 'Otra vez el sueldo equivocado');
+        $this->generar('2026-10-01');
+
+        $this->assertSame(['anulada', 'anulada', 'confirmada'], Planilla::orderBy('id')->pluck('estado')->all());
+    }
+
+    public function test_papeles_firmados_y_una_planilla_posterior_no_impiden_volver_a_hacerla(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        PlanillaDocumento::create([
+            'planilla_id' => $anulada->id, 'tipo' => 'hoja_firmada', 'ruta' => 'planilla/firmados/ficticio.pdf',
+            'nombre' => 'hoja.pdf', 'mime' => 'application/pdf', 'bytes' => 10, 'sha256' => str_repeat('a', 64),
+            'registrado_por' => $this->actor->id, 'created_at' => now(),
+        ]);
+        $this->generar('2026-10-16');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'La hoja firmada tenía un error');
+
+        $nueva = $this->generar('2026-10-01');
+
+        $this->assertSame('confirmada', $nueva->estado);
+        $this->assertSame(1, PlanillaDocumento::where('planilla_id', $anulada->id)->count());
+        $this->assertSame(3, Planilla::count());
+    }
+
+    public function test_una_anulada_con_pagos_revertidos_se_vuelve_a_generar(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        $pago = app(PagarPlanilla::class)->pagarPersona($this->actor, PlanillaDetalle::sole(), [
+            'importe' => '50.00', 'fecha' => '2026-10-16', 'metodo' => 'efectivo',
+            'pagado_por' => $this->actor->id, 'sin_comprobante' => 'Abono en caja.',
+        ]);
+        app(PagarPlanilla::class)->revertirPago($this->actor, $pago, 'Se registró en la quincena equivocada');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+
+        $nueva = $this->generar('2026-10-01');
+
+        $this->assertSame('confirmada', $nueva->estado);
+        // El pago revertido sigue en la historia de la anulada.
+        $this->assertNotNull($pago->fresh()->revertido_at);
+        $this->assertSame(1, DB::table('gastos_pago_aplicaciones')->count());
+    }
+
+    public function test_una_anulada_con_un_pago_vigente_no_se_vuelve_a_hacer_y_dice_que_revertir(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+
+        // La única forma de pagar una anulada: revertir en Gastos el ajuste que extinguió
+        // la deuda y pagarla desde ahí.
+        $cuota = PlanillaDetalle::sole()->gasto->cuotas()->sole();
+        app(RegistrarAjuste::class)->revertir($this->actor, Ajuste::where('cuota_id', $cuota->id)->sole(), 'Se anuló sin querer');
+        app(RegistrarPago::class)->registrar($this->actor, [
+            'clave' => (string) Str::uuid(), 'importe' => '50.00', 'fecha' => '2026-10-16',
+            'metodo' => 'efectivo', 'pagado_por' => $this->actor->id, 'sin_comprobante' => 'Abono en caja.',
+        ], [['cuota_id' => $cuota->id, 'importe' => '50.00']]);
+
+        $mensaje = 'No se puede volver a hacer: la planilla 2026-10-Q1 anulada tiene pagos sin revertir (Ana Ficticia). '
+            .'Revertí primero esos pagos, cada uno con su motivo, y después volvé a generarla.';
+
+        $this->actingAs($this->actor)->post(route('planilla.store'), $this->periodo('2026-10-01'))
+            ->assertSessionHasErrors(['periodo' => $mensaje]);
+
+        // Nada cambió: la anulada sigue en su lugar y no hay otra.
+        $this->assertSame(1, Planilla::count());
+        $this->assertSame('2026-10-Q1', $anulada->fresh()->getRawOriginal('periodo'));
     }
 }

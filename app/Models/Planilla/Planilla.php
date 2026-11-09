@@ -3,12 +3,16 @@
 namespace App\Models\Planilla;
 
 use App\Models\User;
+use App\Services\Planilla\AnularPlanilla;
 use App\Services\Planilla\IndemnizacionBaja;
+use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\VacacionesAnuales;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 /**
  * La planilla de un período.
@@ -54,6 +58,19 @@ class Planilla extends Model
             'desde' => 'date', 'hasta' => 'date', 'fecha_pago' => 'date',
             'confirmada_at' => 'datetime', 'anulada_at' => 'datetime',
         ];
+    }
+
+    /**
+     * El período como se lee: «2026-11-Q1». Una anulada que dejó libre su lugar en la
+     * clave única guarda «2026-11-Q1-A{id}» ({@see AnularPlanilla},
+     * {@see PrepararPlanilla::abrir()}); en la lista, la ficha, los impresos y los mensajes
+     * sigue siendo el período que fue. La clave guardada: `getRawOriginal('periodo')`.
+     */
+    protected function periodo(): Attribute
+    {
+        return Attribute::get(fn (?string $valor, array $fila) => $valor !== null && ($fila['estado'] ?? null) === 'anulada'
+            ? Str::chopEnd($valor, '-A'.($fila['id'] ?? ''))
+            : $valor);
     }
 
     public function detalles(): HasMany
