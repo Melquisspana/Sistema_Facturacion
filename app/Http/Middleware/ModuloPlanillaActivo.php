@@ -27,7 +27,12 @@ use Symfony\Component\HttpFoundation\Response;
 class ModuloPlanillaActivo
 {
     /** Tablas sin las cuales el módulo no puede funcionar. */
-    private const TABLAS = ['planilla_empleados', 'planillas', 'planilla_detalles', 'planilla_conceptos'];
+    private const TABLAS = [
+        'planilla_empleados', 'planillas', 'planilla_detalles', 'planilla_conceptos',
+        'planilla_anticipos', 'planilla_anticipo_aplicaciones', 'planilla_obligaciones_terceros',
+        'planilla_lotes', 'planilla_lote_pagos', 'planilla_documentos',
+        'planilla_sueldos', 'planilla_renta_acumulados',
+    ];
 
     public function handle(Request $request, Closure $next): Response
     {

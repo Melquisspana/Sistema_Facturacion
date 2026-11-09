@@ -326,4 +326,17 @@ class PlataConfirmarPlanillaTest extends TestCase
         $this->assertSame(1, DB::table('planilla_anticipo_aplicaciones')->count());
         $this->assertSame(3000, $anticipo->fresh()->pendiente());
     }
+
+    // ═══════════ e. Instalación a medias ═══════════
+
+    public function test_con_una_tabla_de_planilla_sin_migrar_el_modulo_no_se_abre(): void
+    {
+        $u = $this->gestor();
+
+        Schema::dropIfExists('planilla_documentos');
+
+        $respuesta = $this->actingAs($u)->get(route('planilla.index'));
+        $respuesta->assertStatus(503);
+        $respuesta->assertSee('planilla_documentos');
+    }
 }
