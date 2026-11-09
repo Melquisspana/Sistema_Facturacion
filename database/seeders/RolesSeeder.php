@@ -34,6 +34,11 @@ class RolesSeeder extends Seeder
             Permission::findOrCreate($permiso, 'web');
         }
 
+        // Spatie limpia su caché con los eventos del modelo; con WithoutModelEvents
+        // (DatabaseSeeder) se quedaba con la lista leída antes de crear los permisos y
+        // syncPermissions no los encontraba en una base nueva (#25).
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
         // 2) Roles + su set exacto de permisos.
         foreach (RolSistema::cases() as $rol) {
             $role = Role::findOrCreate($rol->value, 'web');
