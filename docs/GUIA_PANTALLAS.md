@@ -171,6 +171,18 @@ Tomado de las fichas de Gastos y Rutas.
 - `x-planta.toggle-activo` se reemplaza por `x-asistencia.estado`, que ya hace lo mismo y además recibe el permiso; pasa a llamarse `x-estado-activo`.
 - Colores con significado: verde = listo/activo, ámbar = falta algo, rojo = rechazado/error, gris = inactivo/borrador, índigo/azul = en proceso.
 
+### Pantalla táctil (Fábrica)
+
+Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el dedo o con el mouse de una laptop. Agregado el 09/11/2026.
+
+- **Botón principal:** `min-h-12 py-5 text-xl font-bold rounded-xl`, índigo («Se manda todo», «Mandar»).
+- **Secundarios:** `min-h-12 py-4 text-lg font-semibold rounded-xl`, blancos con borde («Faltan cosas», «No se trae», «Deshacer»).
+- **Cantidad:** `text-2xl font-bold tabular-nums`, alineada a la derecha.
+- Sin texto con prefijo de pantalla: el botón dice lo que hace.
+- Lo que se puede deshacer no se confirma: sale el aviso con un botón «Deshacer».
+- `confirm()` solo para «Deshacer» un envío y para «Borrar lo marcado».
+- La lista se recarga sola cuando nadie la toca; la hoja que se está llenando, nunca (guarda sola).
+
 ---
 
 ## 3. Plan por PR
