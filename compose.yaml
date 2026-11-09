@@ -31,10 +31,23 @@ services:
     build: .
     ports:
       - "${WEB_PUERTO:-80}:80"
+      # HTTPS de la red local (contingencia sin internet), publicado SOLO en la IP del
+      # servidor en la red local. Sin WEB_IP_LAN queda en 127.0.0.1 del host: nadie de
+      # la red llega. Apache abre el 443 solo con el certificado y LAN_SUBNET (ver
+      # docker/apache/facturacion.conf); si faltan, el 80 sigue igual.
+      - "${WEB_IP_LAN:-127.0.0.1}:443:443"
+    # Los tres de x-app más el certificado de la red local, que solo lo ve web.
+    volumes:
+      - app-storage:/var/www/html/storage
+      - ${BACKUPS_DIR:-/srv/facturacion/backups}:/var/www/html/backups
+      - ${LARAVEL_ENV_FILE:-/srv/facturacion/env/laravel.env}:/var/www/html/.env:ro
+      - ${LAN_TLS_DIR:-/srv/facturacion/tls}:/etc/facturacion/tls:ro
     environment:
       TZ: America/El_Salvador
       APACHE_DOMINIO_PUBLICO: ${APACHE_DOMINIO_PUBLICO:-facturacion.example.com}
       APACHE_HOSTS_EXTRA: ${APACHE_HOSTS_EXTRA:-}
+      LAN_HOST: ${WEB_IP_LAN:-}
+      LAN_SUBNET: ${LAN_SUBNET:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/up"]
       interval: 30s

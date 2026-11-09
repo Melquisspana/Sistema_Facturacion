@@ -14,7 +14,9 @@ cd /var/www/html
 
 : "${APACHE_DOMINIO_PUBLICO:=facturacion.example.com}"
 : "${APACHE_HOSTS_EXTRA:=}"
-export APACHE_DOMINIO_PUBLICO APACHE_HOSTS_EXTRA
+: "${LAN_SUBNET:=}"
+: "${LAN_HOST:=}"
+export APACHE_DOMINIO_PUBLICO APACHE_HOSTS_EXTRA LAN_SUBNET LAN_HOST
 
 como_www_data() {
     if [ "$(id -u)" = "0" ]; then
@@ -43,6 +45,39 @@ como_www_data php artisan config:cache --no-ansi
 
 if [ ! -e public/storage ]; then
     como_www_data php artisan storage:link --no-ansi
+fi
+
+# HTTPS de la red local (docker/apache/facturacion.conf). Se enciende solo si están el
+# certificado, la llave, LAN_SUBNET y LAN_HOST, si la llave es la del certificado y no
+# tiene contraseña, y si Apache acepta esa configuración. Si no, Apache arranca igual
+# con el 80 y el motivo queda en docker compose logs web.
+https_red_local() {
+    tls=/etc/facturacion/tls
+    if [ ! -e "$tls/lan.crt" ] && [ ! -e "$tls/lan.key" ] && [ -z "$LAN_SUBNET" ] && [ -z "$LAN_HOST" ]; then
+        return 1
+    fi
+    falta=""
+    [ -f "$tls/lan.crt" ] || falta="$falta $tls/lan.crt"
+    [ -f "$tls/lan.key" ] || falta="$falta $tls/lan.key"
+    [ -n "$LAN_SUBNET" ] || falta="$falta LAN_SUBNET"
+    [ -n "$LAN_HOST" ] || falta="$falta LAN_HOST (WEB_IP_LAN en .env.compose)"
+    if [ -n "$falta" ]; then
+        echo "facturacion-entrypoint: HTTPS de la red local apagado; falta:$falta" >&2
+        return 1
+    fi
+    clave_publica="$(openssl x509 -noout -pubkey -in "$tls/lan.crt" 2>/dev/null || true)"
+    if [ -z "$clave_publica" ] || [ "$clave_publica" != "$(openssl pkey -pubout -passin pass: -in "$tls/lan.key" 2>/dev/null || true)" ]; then
+        echo "facturacion-entrypoint: HTTPS de la red local apagado; lan.crt o lan.key no se pueden leer, no son pareja o la llave tiene contraseña" >&2
+        return 1
+    fi
+    if ! salida="$(apache2ctl -t -D FACTURACION_LAN_HTTPS 2>&1)"; then
+        echo "facturacion-entrypoint: HTTPS de la red local apagado; Apache no acepta la configuración: $salida" >&2
+        return 1
+    fi
+}
+
+if [ "${1:-}" = "apache2-foreground" ] && https_red_local; then
+    set -- "$@" -D FACTURACION_LAN_HTTPS
 fi
 
 exec "$@"

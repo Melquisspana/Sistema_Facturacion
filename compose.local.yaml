@@ -24,6 +24,14 @@ services:
     <<: *app-local
     ports: !override
       - "${WEB_PUERTO_LOCAL:-8088}:80"
+      # HTTPS de la red local, solo en este equipo.
+      - "127.0.0.1:${WEB_PUERTO_LOCAL_HTTPS:-8443}:443"
+    # Los de x-app-local más la carpeta del certificado, que solo ve web.
+    volumes: !override
+      - app-storage:/var/www/html/storage
+      - backups-local:/var/www/html/backups
+      - ${LARAVEL_ENV_FILE:?falta LARAVEL_ENV_FILE}:/var/www/html/.env:ro
+      - ${LAN_TLS_DIR:-./tmp/docker-local/tls}:/etc/facturacion/tls:ro
     environment:
       TZ: America/El_Salvador
       DTE_FIRMADOR_MOCK: "true"
