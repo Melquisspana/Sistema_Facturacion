@@ -54,7 +54,8 @@ return new class extends Migration
             // Siempre mayor que 0: un producto que no fue no tiene fila.
             $table->decimal('cantidad', 11, 4);
 
-            $table->unique(['pedido_sala_envio_id', 'pedido_sala_linea_id']);
+            // Nombre corto a propósito: el automático tiene 73 caracteres y MySQL acepta 64.
+            $table->unique(['pedido_sala_envio_id', 'pedido_sala_linea_id'], 'pse_lineas_envio_linea_unique');
         });
 
         Schema::table('pedido_sala_lineas', function (Blueprint $table) {
