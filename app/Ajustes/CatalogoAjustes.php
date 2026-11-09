@@ -1307,6 +1307,22 @@ class CatalogoAjustes
                 claveConfig: 'pedidos.fabrica_desde',
                 reglas: ['fecha'],
             ),
+            DefinicionAjuste::hacer(
+                clave: 'pedidos.correo_resumen_diario',
+                seccion: 'rutas',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'A quién va el resumen de las 5 de la tarde',
+                descripcion: 'Uno o varios correos separados por coma. Cada día a las 5 de la tarde reciben qué salió de la fábrica, qué faltó y qué sigue por mandar. Vacío, no se manda.',
+                claveConfig: 'pedidos.correo_resumen_diario',
+                reglas: ['correos', 'maxlen:500'],
+                // Son correos de personas: la auditoría guarda solo que cambió.
+                datoPersonal: true,
+            ),
 
             // ---------------------------------------------------------- Gastos
             DefinicionAjuste::hacer(
