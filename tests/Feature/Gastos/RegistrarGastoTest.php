@@ -331,6 +331,28 @@ class RegistrarGastoTest extends TestCase
         $this->assertSame(0, Pago::count());
     }
 
+    /**
+     * #22 · Una cuota que llega sin la casilla «aplicar» cuenta como cero: el aviso es que
+     * el reparto no suma lo pagado, no un error del sistema.
+     */
+    public function test_una_cuota_sin_aplicar_avisa_que_el_reparto_no_suma_lo_pagado(): void
+    {
+        $usuario = $this->operador();
+
+        $this->actingAs($usuario)->post(route('gastos.store'), $this->datos($usuario, [
+            'cuotas' => [['importe' => '50.00', 'vence' => null]],
+            'ya_pagado' => 1,
+            'pago_importe' => '50.00',
+            'pago_fecha' => '2026-09-06',
+            'pago_metodo' => 'efectivo',
+            'pagado_por' => $usuario->id,
+            'sin_comprobante' => 'sin recibo',
+        ]))->assertSessionHasErrors(['pago_importe' => 'El reparto por cuotas debe sumar el importe pagado.']);
+
+        $this->assertSame(0, Gasto::count());
+        $this->assertSame(0, Pago::count());
+    }
+
     public function test_aplicar_mas_que_la_cuota_se_bloquea(): void
     {
         $usuario = $this->operador();

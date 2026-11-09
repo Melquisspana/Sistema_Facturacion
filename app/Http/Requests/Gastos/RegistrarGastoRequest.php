@@ -93,7 +93,8 @@ class RegistrarGastoRequest extends FormRequest
                 $importe = Dinero::centavos((string) $fila['importe']);
                 $suma += $importe;
                 if ($this->boolean('ya_pagado')) {
-                    $pago = Dinero::centavos((string) ($fila['aplicar'] ?: '0'));
+                    // Sin la casilla cuenta como cero: el aviso es que el reparto no suma.
+                    $pago = Dinero::centavos((string) (($fila['aplicar'] ?? null) ?: '0'));
                     $aplicado += $pago;
                     if ($pago > $importe) {
                         $v->errors()->add("cuotas.$i.aplicar", 'El pago supera el importe de esta cuota.');

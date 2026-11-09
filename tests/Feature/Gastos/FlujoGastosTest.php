@@ -925,6 +925,21 @@ class FlujoGastosTest extends TestCase
         $this->assertSame(2, $gasto->cuotas()->count());
     }
 
+    /** #22 · Una cuota que llega sin la clave «vence» queda sin vencimiento, como si viniera vacía. */
+    public function test_completar_una_cuota_sin_vence_la_deja_sin_vencimiento(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u, ['importe' => null], []);
+
+        $this->actingAs($u)->post(route('gastos.completar', $gasto), [
+            'cuotas' => [['importe' => '250.00']],
+        ])->assertRedirect(route('gastos.show', $gasto));
+
+        $gasto->refresh();
+        $this->assertSame('250.00', $gasto->importe);
+        $this->assertNull($gasto->cuotas->first()->vence);
+    }
+
     public function test_completar_dos_veces_no_duplica_cuotas(): void
     {
         $u = $this->operador();

@@ -218,6 +218,30 @@ class PantallasSimplesTest extends TestCase
         $this->assertSame(10000, $saldos->pendienteCuota($nueva->cuotas()->first()));
     }
 
+    /**
+     * #22 · Un importe mal escrito en el reparto elegido a mano es un aviso al lado de esa
+     * compra, no un error del sistema. Antes reventaba al pasarlo a centavos.
+     */
+    public function test_un_importe_mal_escrito_en_el_reparto_del_abono_es_un_aviso(): void
+    {
+        $u = $this->completo();
+        $compra = $this->compraDeProveedorA($u, 'Pepitoria', '300.00');
+
+        foreach (['cien', '10.505', ['100.00']] as $importe) {
+            $this->actingAs($u)->post(route('gastos.cuentas.abonos'), [
+                'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor A',
+                'importe' => '100.00', 'fecha' => now()->toDateString(),
+                'metodo' => 'transferencia', 'moneda' => 'USD',
+                'dirigido' => '1',
+                'reparto' => [['cuota_id' => $compra->cuotas()->first()->id, 'importe' => $importe]],
+            ])->assertSessionHasErrors([
+                'reparto.0.importe' => 'Escribí el importe de cada compra con hasta dos decimales, sin comas.',
+            ]);
+        }
+
+        $this->assertSame(0, Pago::count());
+    }
+
     public function test_sin_permiso_de_pagos_no_se_puede_abonar_por_la_ruta(): void
     {
         $u = $this->completo();

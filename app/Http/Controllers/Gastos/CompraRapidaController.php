@@ -155,6 +155,18 @@ class CompraRapidaController extends Controller
         $reparto = null;
 
         if ($request->boolean('dirigido') && is_array($request->input('reparto'))) {
+            // Antes de pasarlo a centavos: un importe mal escrito es un aviso en esa compra,
+            // no un error del sistema.
+            $request->validate([
+                'reparto.*' => ['array'],
+                'reparto.*.cuota_id' => ['nullable', 'integer'],
+                'reparto.*.importe' => ['nullable', 'regex:/^\d{1,9}(?:\.\d{1,2})?$/D'],
+            ], [
+                'reparto.*.array' => 'El reparto llegó incompleto. Volvé a abrir la cuenta e intentalo de nuevo.',
+                'reparto.*.cuota_id.integer' => 'El reparto llegó incompleto. Volvé a abrir la cuenta e intentalo de nuevo.',
+                'reparto.*.importe.regex' => 'Escribí el importe de cada compra con hasta dos decimales, sin comas.',
+            ]);
+
             $reparto = array_values(array_filter(
                 array_map(fn ($fila) => [
                     'cuota_id' => (int) ($fila['cuota_id'] ?? 0),
