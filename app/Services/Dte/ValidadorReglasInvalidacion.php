@@ -113,7 +113,7 @@ class ValidadorReglasInvalidacion
             return [];
         }
 
-        // fhProcesamiento es hora LOCAL marcada como UTC: conservar el día tal cual.
+        // fhProcesamiento es hora local de Hacienda, la misma zona de la base: conservar el día tal cual.
         $fechaSello = $dte->fecha_procesamiento_mh->format('Y-m-d');
         $plazo = new PlazoInvalidacion;
         $limite = $plazo->limite($dte->tipo_dte, $fechaSello);
@@ -124,8 +124,8 @@ class ValidadorReglasInvalidacion
         $mensaje = 'Fuera de plazo: el documento obtuvo el sello el '.$dte->fecha_procesamiento_mh->format('d/m/Y')
             .' y el plazo para invalidarlo venció el '.HoraNegocio::aLocal($limite)->format('d/m/Y')
             .' a las 23:59:59 (hora de El Salvador). Hacienda no da sello a una invalidación fuera de plazo.';
-        if (! $plazo->calendarioCompleto($dte->tipo_dte, $fechaSello)) {
-            $mensaje .= ' (calculado sin calendario de días inhábiles '.$plazo->anioCalendario($fechaSello).'; cargarlo en config/dte.php)';
+        if ($aviso = $plazo->avisoCalendario($dte->tipo_dte, $fechaSello)) {
+            $mensaje .= ' '.$aviso;
         }
 
         return [$mensaje];

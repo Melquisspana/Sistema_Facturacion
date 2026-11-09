@@ -67,6 +67,7 @@
                 ['ruta' => 'configuracion.correlativos.index', 'patron' => 'configuracion.correlativos.*', 'titulo' => 'Correlativos'],
                 ['ruta' => 'configuracion.fiscal.parametros', 'patron' => 'configuracion.fiscal.parametros*', 'titulo' => 'Parámetros fiscales'],
                 ['ruta' => 'configuracion.fiscal.invalidacion', 'patron' => 'configuracion.fiscal.invalidacion*', 'titulo' => 'Invalidación'],
+                ['ruta' => 'configuracion.fiscal.feriados', 'patron' => 'configuracion.fiscal.feriados*', 'titulo' => 'Feriados de Hacienda'],
             ],
         ],
         [

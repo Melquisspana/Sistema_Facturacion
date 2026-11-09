@@ -39,10 +39,10 @@ return [
     | reinicia y puede quedar desfasado—, y esta es la zona con la que se le
     | presenta al dispositivo para mostrarla en pantalla.
     |
-    | Existe aparte de `config('app.timezone')` porque esa está en UTC (ver
-    | config/app.php) y toda la aplicación guarda en UTC: cambiarla movería fechas
-    | de DTE, correlativos y reportes. Acá solo se decide cómo se FORMATEA la hora
-    | para el operador que está parado frente al lector.
+    | La aplicación guarda en hora de El Salvador (`app.timezone`, ver config/app.php
+    | y la decisión 0004). Esta zona va aparte porque solo decide cómo se FORMATEA la
+    | hora para el operador que está parado frente al lector y qué día es
+    | `fecha_local`.
     */
     'zona_horaria' => env('ASISTENCIA_ZONA_HORARIA', 'America/El_Salvador'),
 
