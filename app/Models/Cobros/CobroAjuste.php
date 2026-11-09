@@ -2,6 +2,7 @@
 
 namespace App\Models\Cobros;
 
+use App\Enums\EstadoDte;
 use App\Models\Cliente;
 use App\Models\Concerns\RecortaTextosAColumna;
 use App\Models\Dte;
@@ -21,7 +22,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * A pedido se crea una NC desde el ajuste por el neto del TXT, calculando su concepto
  * con el motor fiscal existente. También puede vincularse una NC ya creada. Se resuelve
- * al leer cuando Hacienda la acepta realmente; invalidarla vuelve a dejarlo pendiente.
+ * al leer cuando Hacienda la acepta realmente; invalidarla o que Hacienda la rechace
+ * vuelve a dejarlo pendiente.
  */
 class CobroAjuste extends Model
 {
@@ -117,8 +119,10 @@ class CobroAjuste extends Model
             return 'descartado';
         }
 
+        // Una NC invalidada o rechazada por Hacienda no cubre nada: el descuento vuelve a
+        // pendiente solo (#12), sin esperar a que alguien toque «Desvincular NC».
         $nc = $this->notaCredito;
-        if (! $nc || $nc->tieneEventoInvalidacion()) {
+        if (! $nc || $nc->tieneEventoInvalidacion() || $nc->estado === EstadoDte::Rechazado) {
             return 'pendiente_nc';
         }
 
