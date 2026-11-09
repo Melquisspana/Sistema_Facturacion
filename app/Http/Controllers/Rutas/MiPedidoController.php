@@ -53,6 +53,8 @@ class MiPedidoController extends Controller
 
     public function edit(SalidaRuta $salida, PedidoSala $pedido): View|RedirectResponse
     {
+        // Primero, que vaya en esa salida: a un ajeno no se le dice qué sala tiene pedido.
+        Gate::authorize('sacarPedido', $salida);
         // Con una pantalla vieja (o volviendo de un error al guardar): un aviso, no un 403.
         if ($pedido->estaVigente() && $pedido->fabricaEmpezo()) {
             return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$pedido->cliente_sucursal_id)

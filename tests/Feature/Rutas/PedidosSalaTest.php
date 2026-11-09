@@ -473,6 +473,12 @@ class PedidosSalaTest extends TestCase
         $aviso = 'El pedido de «Tienda Centro» ya está en la fábrica. Si cambió algo, avisá a la oficina.';
         $this->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))->assertRedirect()->assertSessionHas('error', $aviso);
         $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertRedirect()->assertSessionHas('error', $aviso);
+        // Un vendedor que no va en esa salida no se entera de qué sala tiene pedido: 403.
+        $ajeno = User::factory()->create(['activo' => true])->assignRole('vendedor');
+        PersonalRuta::create(['nombre' => 'Vendedor Ajeno', 'user_id' => $ajeno->id]);
+        $this->actingAs($ajeno)->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))
+            ->assertForbidden();
+        $this->actingAs($this->vendedor);
         // Sigue «Pedido sacado», sin «Corregir», y no se saca otro en la misma salida.
         $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado')->assertDontSee('Corregir');
         $this->sacar()->assertSessionHasErrors('lineas');
