@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoEventoCobro;
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
+use App\Exceptions\Ppq\ArchivoPagosDeOtroClienteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroAjuste;
@@ -89,6 +90,7 @@ class AplicadorPagosTxt
      *
      * @throws ArchivoConciliacionInconsistenteException
      * @throws ArchivoProveedorInvalidoException si alguna fila trae un código de proveedor distinto del esperado
+     * @throws ArchivoPagosDeOtroClienteException si un ajuste del archivo ya es de otro cliente
      */
     public function aplicar(
         Cliente $cliente,
@@ -404,6 +406,8 @@ class AplicadorPagosTxt
      * es el mismo ajuste, así que al aplicar después se encuentra con su nota ya hecha.
      *
      * @return array<string, mixed>
+     *
+     * @throws ArchivoPagosDeOtroClienteException si esa línea ya es un ajuste de otro cliente
      */
     public function registrarAjuste(Cliente $cliente, array $fila, ArchivoConciliacion $archivo, ?User $usuario): array
     {
@@ -446,6 +450,12 @@ class AplicadorPagosTxt
                 'user_id' => $usuario?->id,
             ],
         );
+
+        // Huella + línea es única en todo el sistema: si ya es de otro cliente, reutilizarla
+        // pondría acá su deducción y su nota de crédito. Se rechaza el archivo entero.
+        if ((int) $ajuste->cliente_id !== (int) $cliente->id) {
+            throw new ArchivoPagosDeOtroClienteException($ajuste);
+        }
 
         return ['ajuste' => $ajuste, 'fila' => $fila, 'solicitud' => $solicitud, 'nuevo' => $ajuste->wasRecentlyCreated];
     }

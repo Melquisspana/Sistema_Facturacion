@@ -3,6 +3,7 @@
 namespace App\Services\Cobros;
 
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
+use App\Exceptions\Ppq\ArchivoPagosDeOtroClienteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Models\Cliente;
 use App\Models\User;
@@ -59,7 +60,7 @@ class PuestaAlDiaPagos
 
                             return array_replace($resultado, ['estado' => 'aplicado', 'informe' => $informe, 'lotes' => $lotes]);
                         });
-                    } catch (ArchivoConciliacionInconsistenteException|ArchivoProveedorInvalidoException $e) {
+                    } catch (ArchivoConciliacionInconsistenteException|ArchivoProveedorInvalidoException|ArchivoPagosDeOtroClienteException $e) {
                         $resultado['mensaje'] = $e->getMessage();
                     }
                 }

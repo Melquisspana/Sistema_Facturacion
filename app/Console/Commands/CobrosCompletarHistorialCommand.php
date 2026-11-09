@@ -41,12 +41,21 @@ class CobrosCompletarHistorialCommand extends Command
 
             return self::FAILURE;
         }
+        // Solo un cliente de cobros (perfil documental activo), como en la bandeja.
+        if (! $cliente->perfilDocumento()->where('activo', true)->exists()) {
+            $this->error("El cliente {$cliente->nombre} (id {$cliente->id}) no tiene perfil documental activo para cobros. No se aplicó nada.");
+
+            return self::FAILURE;
+        }
         $aplicar = (bool) $this->option('aplicar');
 
-        // 1. TXT de pago de los lotes PPQ, del más viejo al más nuevo, una vez por huella.
+        // 1. TXT de pago de los lotes PPQ de ESTE cliente (o sin cliente, los viejos), del más
+        //    viejo al más nuevo, una vez por huella. El de un lote de otro cliente dejaría acá
+        //    sus ajustes (QD).
         $archivos = PpqConciliacion::query()
             ->where('origen', OrigenConciliacionPpq::Txt->value)
             ->whereNotNull('archivo_path')
+            ->whereHas('lote', fn ($q) => $q->where(fn ($w) => $w->where('cliente_id', $cliente->id)->orWhereNull('cliente_id')))
             ->orderBy('id')
             ->get()
             ->unique('archivo_hash');
