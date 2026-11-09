@@ -308,6 +308,29 @@ class FlujoPlanillaTest extends TestCase
         }
     }
 
+    /**
+     * #22 · Un anticipo en cero o mal escrito es un aviso claro, con un solo mensaje, y no
+     * un error del sistema. «0» y «0.00» no pasan aunque `gt:0` vaya sin `numeric`: la
+     * regla de formato ya exige cifras, y con cifras Laravel compara como número.
+     */
+    public function test_un_anticipo_en_cero_o_mal_escrito_avisa_con_un_mensaje_claro(): void
+    {
+        $u = $this->gestor();
+        $ana = $this->empleado($u, 'Ana Mendoza');
+        $cero = 'El anticipo tiene que ser mayor que cero.';
+        $formato = 'Escribí el anticipo con hasta dos decimales, sin comas.';
+
+        foreach ([['0', $cero], ['0.00', $cero], ['abc', $formato], ['1,000.00', $formato], [['60.00'], $formato]] as [$importe, $mensaje]) {
+            $this->actingAs($u)->post(route('planilla.anticipos.store', $ana), [
+                'fecha' => '2026-09-02', 'importe' => $importe, 'moneda' => 'USD',
+            ])->assertSessionHasErrors('importe');
+
+            $this->assertSame([$mensaje], session('errors')->get('importe'));
+        }
+
+        $this->assertSame(0, PlanillaAnticipo::count());
+    }
+
     public function test_solo_se_ofrecen_anticipos_con_saldo(): void
     {
         $u = $this->gestor();
