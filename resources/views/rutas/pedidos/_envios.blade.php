@@ -3,8 +3,9 @@
      oficina (rutas/pedidos/show) y «Hechos» de la fábrica (fabrica/pedidos/index).
 
      Variables: $envios (con lineas.linea.producto, registradoPor, anuladoPor y, si
-     $conSala, pedido.sala; con $conFacturacion, también dte); $conSala (bool); $conDeshacer
-     (bool, solo la fábrica); $conFacturacion (bool, solo la oficina: «Por facturar»,
+     $conSala, pedido.sala; con $conFacturacion o $conDeshacer, también dte); $conSala (bool);
+     $conDeshacer (bool, solo la fábrica; si ya se facturó, en vez del botón dice que avise a
+     la oficina); $conFacturacion (bool, solo la oficina: «Por facturar»,
      «Borrador abierto» o «Facturado en CCF n.º …» por envío; la fábrica no ve nada de esto). --}}
 @php
     $conSala ??= false;
@@ -44,6 +45,12 @@
                         @csrf @method('PATCH')
                         <button class="inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-4 text-lg font-semibold text-gray-800 hover:bg-gray-50">Deshacer</button>
                     </form>
+                @else
+                    {{-- Sin «Deshacer» porque la oficina ya lo facturó: la fábrica sabe a quién
+                         avisar (el mismo texto que da PedidosFabrica si tocan a la vez). --}}
+                    @if (! $anulado && $envio->estaFacturado())
+                        <p class="mt-3 text-base font-medium text-amber-800">{{ \App\Services\Rutas\PedidosFabrica::FACTURADO }}</p>
+                    @endif
                 @endcan
             @endif
         </li>

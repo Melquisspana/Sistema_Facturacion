@@ -526,6 +526,29 @@ class PedidosFabricaTest extends TestCase
         $this->assertFalse($envio->refresh()->estaVigente());
     }
 
+    public function test_hechos_dice_por_que_no_se_puede_deshacer_lo_que_ya_se_facturo(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+        $this->mandar($pedido, [$this->galleta->id => '12']);
+        $envio = PedidoSalaEnvio::sole();
+        $hechos = route('fabrica.pedidos.index', ['ver' => 'hechos']);
+        $this->get($hechos)->assertOk()->assertSee('Deshacer</button>', false)->assertDontSee(PedidosFabrica::FACTURADO);
+
+        $empresa = Empresa::create(['razon_social' => 'Empresa de prueba', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        $dte = (new Dte)->forceFill([
+            'tipo_dte' => TipoDte::CreditoFiscal->value, 'ambiente' => '00', 'estado' => EstadoDte::Borrador->value,
+            'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $this->sala->cliente_id,
+            'fecha_emision' => '2026-11-09', 'hora_emision' => '08:00:00',
+        ]);
+        $dte->save();
+        $envio->update(['dte_id' => $dte->id]);
+
+        // La oficina ya lo facturó: sin «Deshacer», y la fábrica sabe a quién avisar.
+        $this->get($hechos)->assertOk()->assertDontSee('Deshacer</button>', false)->assertSee(PedidosFabrica::FACTURADO);
+    }
+
     public function test_la_hoja_de_un_pedido_ya_resuelto_vuelve_a_la_lista(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '12']);
