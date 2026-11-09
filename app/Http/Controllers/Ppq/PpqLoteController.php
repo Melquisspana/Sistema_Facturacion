@@ -207,6 +207,8 @@ class PpqLoteController extends Controller
             'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
             'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
             'items' => $ficha->pagina($ficha->idsRecientesPrimero($filas)),
+            // Lo que el formato quedan deja fuera porque ya no vale ante Hacienda (#12).
+            'fueraDelQuedan' => app(QuedanCallejaExporter::class)->fueraDelArchivo($lote),
         ]);
     }
 

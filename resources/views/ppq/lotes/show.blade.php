@@ -90,6 +90,17 @@
                 </p>
             @endif
 
+            @if ($fueraDelQuedan !== [])
+                <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
+                    <p>El formato quedan deja fuera lo que ya no vale ante Hacienda:</p>
+                    <ul class="mt-1 list-disc pl-5">
+                        @foreach ($fueraDelQuedan as $linea)
+                            <li>{{ $linea }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             {{-- Resumen superior --}}
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 rounded-xl p-4">
