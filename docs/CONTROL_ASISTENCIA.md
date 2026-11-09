@@ -968,7 +968,9 @@ el sensor, así que, si el lector informa haber grabado en la ranura reservada, 
 orden pasa a `grabada_tras_cancelar` (sigue cancelada), la ranura entra al índice
 del sensor y la ficha abre «Avanzado» con «Anotar esta ranura» (#84). El aviso se
 va al anotarla, o cuando el lector vuelve a informar su índice sin esa ranura
-porque la borraron en el sensor.
+porque la borraron en el sensor. Y no vuelve: si después esa ranura tuvo una
+asignación (aunque ya la hayan quitado) o una orden más nueva, lo que haya en el
+sensor ya no se atribuye a esa persona.
 
 **Opciones avanzadas → ranura manual.** Cerrado por defecto y con su advertencia.
 Existe para **un** caso: sensores que ya traían plantillas de antes, donde hace

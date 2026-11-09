@@ -194,13 +194,33 @@ class AsistenciaOrdenEnrolamiento extends Model
      * ¿El lector grabó tras cancelarse la orden y esa huella sigue en el sensor sin
      * dueño? Deja de serlo al anotarla a alguien, o cuando el lector vuelve a
      * informar su contenido y ya no la tiene (la borraron en el sensor).
+     *
+     * Y no vuelve: si después esa ranura tuvo una asignación (aunque ya la hayan
+     * quitado) o una orden más nueva, lo que hoy haya en el sensor ya no se puede
+     * atribuir a esta persona. Sin esto, la ficha volvía a ofrecer anotar la
+     * plantilla de otro (#84).
      */
     public function quedoSinDueno(): bool
     {
-        return $this->motivo_fallo === MotivoFalloEnrolamiento::GrabadaTrasCancelar
-            && (bool) $this->dispositivo?->activo
-            && in_array($this->ranura_reservada, $this->dispositivo->ranurasOcupadasEnSensor(), true)
-            && ! AsistenciaHuella::query()->deRanura($this->asistencia_dispositivo_id, $this->ranura_reservada)->activas()->exists();
+        if ($this->motivo_fallo !== MotivoFalloEnrolamiento::GrabadaTrasCancelar
+            || ! $this->dispositivo?->activo
+            || ! in_array($this->ranura_reservada, $this->dispositivo->ranurasOcupadasEnSensor(), true)) {
+            return false;
+        }
+
+        $huellaDespues = AsistenciaHuella::query()
+            ->deRanura($this->asistencia_dispositivo_id, $this->ranura_reservada)
+            ->where(fn (Builder $q) => $q->where('activo', true)
+                ->orWhere('created_at', '>=', $this->finalizada_at ?? $this->created_at))
+            ->exists();
+
+        $ordenDespues = self::query()
+            ->deDispositivo($this->asistencia_dispositivo_id)
+            ->where('ranura_reservada', $this->ranura_reservada)
+            ->where('id', '>', $this->id)
+            ->exists();
+
+        return ! $huellaDespues && ! $ordenDespues;
     }
 
     public function segundosParaExpirar(): int

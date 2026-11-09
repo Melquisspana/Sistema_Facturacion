@@ -63,13 +63,14 @@ class HuellaTrasCancelarTest extends TestCase
     }
 
     /** El lector se lleva la orden y alguien la cancela desde la ficha mientras captura. */
-    private function cancelarMientrasCaptura(): array
+    private function cancelarMientrasCaptura(?AsistenciaEmpleado $empleado = null): array
     {
-        $orden = app(CrearOrdenEnrolamiento::class)($this->ana, $this->lector->refresh());
+        $empleado ??= $this->ana;
+        $orden = app(CrearOrdenEnrolamiento::class)($empleado, $this->lector->refresh());
         $token = $this->comoElLector()->getJson('/api/asistencia/enrolamiento/pendiente')->json('orden.token');
 
         $this->actingAs($this->gestor())
-            ->delete(route('asistencia.empleados.enrolamiento.destroy', [$this->ana, $orden]))
+            ->delete(route('asistencia.empleados.enrolamiento.destroy', [$empleado, $orden]))
             ->assertSessionHas('status');
 
         return [$orden->refresh(), $token];
@@ -159,6 +160,54 @@ class HuellaTrasCancelarTest extends TestCase
         $this->actingAs($this->gestor())->get(route('personal.empleados.show', 'a'.$this->ana->id))->assertOk()
             ->assertDontSee('Anotar esta ranura');
         $this->assertSame(0, AsistenciaHuella::count());
+    }
+
+    /**
+     * Anotada y después quitada, la ranura sigue en el índice hasta que el lector
+     * arranque, pero el aviso ya se resolvió: no vuelve a ofrecer anotarla.
+     */
+    public function test_el_aviso_no_vuelve_al_quitar_la_huella_que_se_anoto(): void
+    {
+        [$orden, $token] = $this->cancelarMientrasCaptura();
+        $this->informarGrabada($orden, $token, $orden->ranura_reservada)->assertOk();
+        $gestor = $this->gestor();
+
+        $this->actingAs($gestor)->post(route('asistencia.empleados.huellas.store', $this->ana), [
+            'asistencia_dispositivo_id' => $this->lector->id,
+            'fingerprint_id' => $orden->ranura_reservada,
+        ])->assertSessionHas('status');
+        $this->actingAs($gestor)->patch(route('asistencia.huellas.liberar', AsistenciaHuella::sole()))->assertSessionHas('status');
+
+        $this->assertContains($orden->ranura_reservada, $this->lector->refresh()->ranurasOcupadasEnSensor());
+        $this->actingAs($gestor)->get(route('personal.empleados.show', 'a'.$this->ana->id))->assertOk()
+            ->assertDontSee('Anotar esta ranura')
+            ->assertDontSee('quedó sin dueño');
+    }
+
+    /**
+     * La ranura se vació en el sensor y después la usó otra persona: lo que hay
+     * ahí ya no es de Ana, y su ficha no puede ofrecerle anotarlo.
+     */
+    public function test_si_la_ranura_pasa_a_otra_persona_la_ficha_vieja_no_ofrece_anotarla(): void
+    {
+        [$orden, $token] = $this->cancelarMientrasCaptura();
+        $this->informarGrabada($orden, $token, $orden->ranura_reservada)->assertOk();
+
+        // La borran en el lector y el lector vuelve a informar lo que tiene.
+        $this->comoElLector()->postJson('/api/asistencia/enrolamiento/indice-sensor', ['capacidad' => 162, 'ocupadas' => []])->assertOk();
+
+        // A Beto le toca la misma ranura y también se cancela mientras captura.
+        $beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Prueba']);
+        [$deBeto, $tokenDeBeto] = $this->cancelarMientrasCaptura($beto);
+        $this->assertSame($orden->ranura_reservada, $deBeto->ranura_reservada);
+        $this->informarGrabada($deBeto, $tokenDeBeto, $deBeto->ranura_reservada)->assertOk()->assertJsonPath('motivo', 'grabada_tras_cancelar');
+        $gestor = $this->gestor();
+
+        $this->actingAs($gestor)->get(route('personal.empleados.show', 'a'.$this->ana->id))->assertOk()
+            ->assertDontSee('Anotar esta ranura')
+            ->assertDontSee('quedó sin dueño');
+        $this->actingAs($gestor)->get(route('personal.empleados.show', 'a'.$beto->id))->assertOk()
+            ->assertSee('Anotar esta ranura');
     }
 
     /** Si dice haber grabado en otra ranura no se le cree: no se anota nada. */
