@@ -211,4 +211,65 @@ class HojaPedidoTest extends TestCase
         $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()->assertViewHas('regresa', $esperado);
         $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()->assertViewHas('regresa', $esperado);
     }
+
+    /** Un CCF aceptado con estas cantidades, enlazado a los envíos (como lo deja FacturarPedido). */
+    private function ccf(array $envios, array $cantidades, string $estado = 'aceptado'): Dte
+    {
+        $empresa = Empresa::firstOrCreate(['razon_social' => 'Empresa de prueba'], ['ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::firstOrCreate(['codigo' => 'M001'], ['empresa_id' => $empresa->id, 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::firstOrCreate(['codigo' => 'P001'], ['establecimiento_id' => $estab->id, 'nombre' => 'Caja', 'activo' => true]);
+        $dte = (new Dte)->forceFill([
+            'tipo_dte' => '03', 'ambiente' => '00', 'estado' => 'borrador', 'establecimiento_id' => $estab->id,
+            'punto_venta_id' => $pv->id, 'cliente_id' => $this->sala->cliente_id, 'fecha_emision' => '2026-11-09', 'hora_emision' => '08:00:00',
+        ]);
+        $dte->save();
+        foreach ($cantidades as $producto => $cantidad) {
+            app(DteBorradorService::class)->establecerCantidadProducto($dte, Producto::find($producto), $cantidad);
+        }
+        Dte::whereKey($dte->id)->update(['estado' => $estado, 'numero_control' => $estado === 'borrador' ? null : 'DTE-03-M001P001-000000000004321']);
+        foreach ($envios as $envio) {
+            $envio->update(['dte_id' => $dte->id]);
+        }
+
+        return $dte->refresh();
+    }
+
+    public function test_la_hoja_facturada_lleva_el_ccf_y_lo_que_regresa(): void
+    {
+        $envio = $this->envio([$this->galleta->id => '6', $this->canilla->id => '4']);
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertDontSee('Regresa')
+            ->assertDontSee('CCF');
+
+        $this->ccf([$envio], [$this->galleta->id => 5, $this->canilla->id => 4]);
+
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertSee('CCF n.º …4321')
+            ->assertSeeInOrder(['Llegó', 'Regresa', 'Falta'])
+            // Galleta: llegó 6, se facturó 5, regresa 1. Canilla: regresa 0.
+            ->assertSeeInOrder(['Galleta de prueba', '6', '1', 'Canilla de prueba', '4', '0'])
+            ->assertDontSee('$');
+    }
+
+    public function test_el_detalle_dice_como_va_cada_envio_y_lo_que_regresa(): void
+    {
+        $uno = $this->envio([$this->galleta->id => '6'], fecha: '2026-11-08');
+        $this->envio([$this->canilla->id => '4']);
+        $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
+            ->assertDontSee('Regresa')
+            ->assertSee('Por facturar')
+            ->assertSee(route('facturacion.create-ccf', ['pedido' => $this->pedido->id]), false);
+
+        $ccf = $this->ccf([$uno], [$this->galleta->id => 5]);
+
+        $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
+            ->assertSeeInOrder(['Envío 1', 'Facturado en CCF n.º …4321', 'Envío 2', 'Por facturar'])
+            ->assertSee(route('facturacion.show', $ccf), false)
+            ->assertSeeInOrder(['Mandado', 'Regresa', 'Falta'])
+            ->assertSee(route('facturacion.create-ccf', ['pedido' => $this->pedido->id]), false);
+
+        // La fábrica, en «Hechos», no ve nada de facturación.
+        $this->actingAs($this->fabrica)->get(route('fabrica.pedidos.index', ['ver' => 'hechos']))
+            ->assertDontSee('Facturado en CCF')->assertDontSee('Por facturar');
+    }
 }

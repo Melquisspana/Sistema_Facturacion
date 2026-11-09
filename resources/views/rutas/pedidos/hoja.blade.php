@@ -20,9 +20,13 @@
         mandado en parte, lo que falta «va en otro envío»; pendiente o anulado, un aviso y
         ninguna F, para que la hoja impresa no parezca un faltante de la fábrica.
 
+        Ya facturado, lleva el n.º de CCF en los datos y la columna «Regresa»: lo que llegó menos
+        lo que quedó en el CCF (lo que la OC no pidió y se bajó en el editor).
+
         Variables: $pedido con sala, ruta, sacadoPor, lineas.producto,
-        lineas.envioLineasVigentes y envios (solo los vigentes) con sus lineas; $volverAl (Y-m-d
-        o null), el día al que vuelve «Llegó de la fábrica».
+        lineas.envioLineasVigentes y envios (solo los vigentes) con sus lineas y su dte; $regresa
+        [producto_id => llego, facturado, regresa] (vacío si no hay nada facturado); $volverAl
+        (Y-m-d o null), el día al que vuelve «Llegó de la fábrica».
     --}}
     <style>
         :root {
@@ -105,6 +109,7 @@
             background: var(--ambar-claro); color: var(--ambar); font-size: 12px; font-weight: 700;
         }
         td.motivo { font-style: italic; color: var(--gris); }
+        td.regresa { font-weight: 800; color: var(--ambar); }
         tbody tr.falto td { background: #fff1f1; }
 
         .leyenda { margin: 8px 0 0; padding: 6px 10px; border-left: 4px solid; border-radius: 4px; font-size: 12px; font-weight: 600; }
@@ -151,6 +156,12 @@
     $estado = $pedido->estado;
     $cerrado = $estado->cerrado();
     $parcial = $estado === \App\Enums\EstadoPedidoSala::Parcial;
+    // Sin consultas: los envíos ya traen su CCF.
+    $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);
+    $conCcf = $facturacion['facturados']->isNotEmpty() || $facturacion['borrador'] !== null;
+    $enviosTexto = fn ($lista) => ($lista->count() === 1 ? 'envío ' : 'envíos ').$lista->pluck('numero')->join(', ', ' y ');
+    $enviosDe = fn ($dte) => $enviosTexto($envios->where('dte_id', $dte->id));
+    $conRegresa = $regresa !== [];
 @endphp
 
 <div class="no-print">
@@ -190,6 +201,19 @@
                 Todavía no salió nada.
             @endforelse
         </dd></div>
+        @if ($conCcf)
+            <div class="ancho"><dt>Facturación</dt><dd>
+                @foreach ($facturacion['facturados'] as $dte)
+                    <span class="envio">CCF n.º {{ $dte->numero_control ? '…'.\App\Support\OrdenCompra::ultimosDigitos($dte->numero_control) : $dte->etiquetaNumeroSistema() }} · {{ $enviosDe($dte) }}</span>
+                @endforeach
+                @if ($facturacion['borrador'])
+                    <span class="envio">CCF en borrador · {{ $enviosDe($facturacion['borrador']) }}</span>
+                @endif
+                @if ($facturacion['por_facturar']->isNotEmpty())
+                    <span class="envio">Sin facturar · {{ $enviosTexto($facturacion['por_facturar']) }}</span>
+                @endif
+            </dd></div>
+        @endif
     </dl>
 
     <div class="tabla-wrap">
@@ -205,6 +229,9 @@
                         @endforeach
                     @endif
                     <th class="num">Llegó</th>
+                    @if ($conRegresa)
+                        <th class="num">Regresa</th>
+                    @endif
                     <th>Falta</th>
                     <th>Motivo</th>
                 </tr>
@@ -225,6 +252,9 @@
                             @endforeach
                         @endif
                         <td class="num llego">{{ \App\Models\PedidoSalaLinea::legible($linea->mandado()) }}</td>
+                        @if ($conRegresa)
+                            <td class="num regresa">{{ isset($regresa[$linea->producto_id]) ? \App\Models\PedidoSalaLinea::legible($regresa[$linea->producto_id]['regresa']) : '—' }}</td>
+                        @endif
                         <td class="falta">
                             @if ($falto)
                                 <span class="f" role="img" aria-label="Faltó">F</span> <span class="cuanto-falto">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</span>
@@ -238,6 +268,9 @@
             </tbody>
         </table>
     </div>
+    @if ($conRegresa)
+        <p class="leyenda leyenda-ambar">Regresa: lo que llegó y no se facturó porque la OC no lo pidió.</p>
+    @endif
     @if ($cerrado && $pedido->faltaAlgo())
         <p class="leyenda leyenda-rojo">F: faltó. Al lado va cuánto faltó.</p>
     @elseif ($parcial)
