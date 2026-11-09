@@ -543,6 +543,9 @@ class RegistrarGastoTest extends TestCase
         $respuesta->assertOk();
         $respuesta->assertHeader('X-Content-Type-Options', 'nosniff');
         $respuesta->assertHeader('Cache-Control', 'no-store, private'); // Symfony normaliza el orden
+        // La política propia del archivo (sandbox) no la pisa la global de SecurityHeaders.
+        $this->assertTrue(config('security.headers.content_security_policy.enabled'));
+        $respuesta->assertHeader('Content-Security-Policy', "sandbox; default-src 'none'");
 
         // Sin sesión, ni siquiera se ofrece.
         auth()->logout();
