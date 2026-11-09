@@ -182,4 +182,148 @@ class PlataConfirmarPlanillaTest extends TestCase
         $this->assertSame('50.50', Gasto::findOrFail($obligacion->gasto_id)->importe);
         $this->assertSame('Asociación Cooperativa Ficticia', $obligacion->tercero);
     }
+
+    // ═══════════ c. El anticipo es de esa persona, en esa moneda y vigente ═══════════
+
+    public function test_no_se_descuenta_el_anticipo_de_otra_persona(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $carlos = $this->empleado($u, 'Carlos Prueba');
+        $deCarlos = $this->anticipo($u, $carlos);
+
+        try {
+            app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+                $this->linea($ana, [$this->deAnticipo($deCarlos)]),
+            ]);
+            $this->fail('El anticipo de otra persona no se le descuenta a Ana.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('es de otra persona', $e->getMessage());
+        }
+
+        $this->assertSame(0, DB::table('planilla_conceptos')->count());
+    }
+
+    public function test_no_se_descuenta_un_anticipo_en_otra_moneda(): void
+    {
+        config()->set('gastos.monedas', ['USD', 'EUR']);
+
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $enEuros = $this->anticipo($u, $ana, 'EUR');
+
+        try {
+            app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+                $this->linea($ana, [$this->deAnticipo($enEuros)]),
+            ]);
+            $this->fail('Un anticipo en EUR no se recupera en una planilla en USD.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('EUR', $e->getMessage());
+        }
+    }
+
+    public function test_no_se_descuenta_un_anticipo_cuyo_pago_esta_revertido(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $anticipo = $this->anticipo($u, $ana, 'USD', $pago->id);
+
+        app(RegistrarPago::class)->revertir($u, $pago, 'La salida de caja se registró por error.');
+
+        try {
+            app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+                $this->linea($ana, [$this->deAnticipo($anticipo)]),
+            ]);
+            $this->fail('Un anticipo cuyo pago se revirtió no es dinero entregado.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('revertido', $e->getMessage());
+        }
+    }
+
+    public function test_si_el_pago_se_revierte_despues_de_guardar_el_borrador_no_se_confirma(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $anticipo = $this->anticipo($u, $ana, 'USD', $pago->id);
+
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            $this->linea($ana, [$this->deAnticipo($anticipo)]),
+        ]);
+
+        // El borrador no aplica nada, así que el pago todavía se puede revertir.
+        app(RegistrarPago::class)->revertir($u, $pago, 'La salida de caja se registró por error.');
+
+        $reparos = app(PrepararPlanilla::class)->reparosParaConfirmar($planilla->fresh()->load('detalles.conceptos'));
+        $this->assertStringContainsString('revertido', implode(' ', $reparos));
+
+        try {
+            app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh());
+            $this->fail('Confirmar tenía que frenarse: el anticipo ya no es dinero entregado.');
+        } catch (ValidationException) {
+            // Lo esperado.
+        }
+
+        $this->assertTrue($planilla->fresh()->borrador());
+        $this->assertSame(0, DB::table('planilla_anticipo_aplicaciones')->count());
+    }
+
+    public function test_el_anticipo_propio_vigente_se_sigue_descontando(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $anticipo = $this->anticipo($u, $ana, 'USD', $pago->id);
+
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            $this->linea($ana, [$this->deAnticipo($anticipo, '30.00')]),
+        ]);
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh());
+
+        $this->assertTrue($planilla->fresh()->confirmada());
+        $this->assertSame(3000, $anticipo->fresh()->pendiente());
+    }
+
+    // ═══════════ d. Guardar no pisa una planilla confirmada en medio ═══════════
+
+    public function test_guardar_con_la_planilla_confirmada_en_medio_no_borra_sus_lineas(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $anticipo = $this->anticipo($u, $ana);
+
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            $this->linea($ana, [$this->deAnticipo($anticipo, '30.00')]),
+        ]);
+
+        // Lo que tenía en la mano quien guarda: la planilla leída cuando era borrador.
+        $leidaAntes = $planilla->fresh();
+        $this->assertTrue($leidaAntes->borrador());
+
+        // Mientras tanto, otra persona la confirma.
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh());
+
+        try {
+            app(PrepararPlanilla::class)->guardarLineas($u, $leidaAntes, [
+                $this->linea($ana, [], '999.00'),
+            ]);
+            $this->fail('Guardar sobre una planilla ya confirmada tenía que rechazarse.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('confirmada', $e->getMessage());
+        }
+
+        // Las líneas confirmadas siguen, con su deuda y el anticipo aplicado.
+        $detalle = $planilla->fresh()->detalles()->sole();
+        $this->assertSame('200.00', $detalle->salario);
+        $this->assertNotNull($detalle->gasto_id);
+        $this->assertSame(1, DB::table('planilla_anticipo_aplicaciones')->count());
+        $this->assertSame(3000, $anticipo->fresh()->pendiente());
+    }
 }

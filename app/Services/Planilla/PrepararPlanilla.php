@@ -2,7 +2,9 @@
 
 namespace App\Services\Planilla;
 
+use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
+use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaConcepto;
 use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
@@ -387,13 +389,7 @@ final class PrepararPlanilla
     public function guardarLineas(User $usuario, Planilla $planilla, array $lineas): Planilla
     {
         $this->autorizar($usuario);
-
-        if (! $planilla->borrador()) {
-            throw ValidationException::withMessages([
-                'estado' => 'Esta planilla ya está '.mb_strtolower(Planilla::ESTADOS[$planilla->estado])
-                    .' y no se edita. Para corregirla hay que anularla y explicar por qué.',
-            ]);
-        }
+        $this->exigirBorrador($planilla);
 
         $lineas = $this->validar($lineas);
 
@@ -417,6 +413,10 @@ final class PrepararPlanilla
 
         return DB::transaction(function () use ($usuario, $planilla, $lineas) {
             $planilla = Planilla::whereKey($planilla->id)->lockForUpdate()->firstOrFail();
+            // Otra vez, ya bloqueada: si se confirmó entre la primera mirada y el bloqueo,
+            // borrar sus líneas se llevaría las de una planilla con deuda y anticipos aplicados.
+            $this->exigirBorrador($planilla);
+            $this->comprobarAnticipos($planilla, $lineas);
             $previos = $this->conceptosDeLeyGuardados($planilla);
 
             // Se rehace el borrador entero. Es seguro porque un borrador no tiene
@@ -848,6 +848,14 @@ final class PrepararPlanilla
                     }
 
                     $anticipo = $concepto->anticipo;
+
+                    // Se vuelve a mirar al confirmar: el pago pudo revertirse con el borrador guardado.
+                    if ($motivo = $this->motivoContraAnticipo($anticipo, (int) $detalle->planilla_empleado_id, $planilla->moneda)) {
+                        $reparos[] = $detalle->nombre_snapshot.': '.$motivo;
+
+                        continue;
+                    }
+
                     $recupera = Dinero::centavos((string) $concepto->importe);
                     // Lo ya aplicado por ESTE concepto no cuenta como pendiente ajeno.
                     $disponible = $anticipo->pendiente() + $this->yaAplicado($concepto->id);
@@ -904,6 +912,61 @@ final class PrepararPlanilla
         }
 
         return $datos['lineas'];
+    }
+
+    private function exigirBorrador(Planilla $planilla): void
+    {
+        if (! $planilla->borrador()) {
+            throw ValidationException::withMessages([
+                'estado' => 'Esta planilla ya está '.mb_strtolower(Planilla::ESTADOS[$planilla->estado])
+                    .' y no se edita. Para corregirla hay que anularla y explicar por qué.',
+            ]);
+        }
+    }
+
+    /**
+     * Que cada anticipo que se descuenta pueda descontarse en ESTA línea. Que exista no
+     * alcanza: el de otra persona, uno en otra moneda o uno cuyo pago se revirtió
+     * recuperarían dinero que esta persona nunca recibió.
+     *
+     * @param  array<int, array<string, mixed>>  $lineas  ya validadas
+     */
+    private function comprobarAnticipos(Planilla $planilla, array $lineas): void
+    {
+        foreach ($lineas as $linea) {
+            foreach ($linea['conceptos'] ?? [] as $concepto) {
+                if ($concepto['tipo'] !== 'descuento' || ($concepto['destino'] ?? null) !== 'anticipo'
+                    || blank($concepto['planilla_anticipo_id'] ?? null) || trim((string) ($concepto['importe'] ?? '')) === '') {
+                    continue;
+                }
+
+                $anticipo = PlanillaAnticipo::findOrFail($concepto['planilla_anticipo_id']);
+
+                if ($motivo = $this->motivoContraAnticipo($anticipo, (int) $linea['planilla_empleado_id'], $planilla->moneda)) {
+                    throw ValidationException::withMessages(['lineas' => $motivo]);
+                }
+            }
+        }
+    }
+
+    /** Por qué este anticipo no se puede descontar a esta persona en esta moneda, si no se puede. */
+    private function motivoContraAnticipo(PlanillaAnticipo $anticipo, int $empleadoId, string $moneda): ?string
+    {
+        $del = 'El anticipo del '.$anticipo->fecha->format('d/m/Y');
+
+        if ((int) $anticipo->planilla_empleado_id !== $empleadoId) {
+            return $del.' es de otra persona: solo se le descuenta a quien lo recibió.';
+        }
+
+        if ($anticipo->moneda !== $moneda) {
+            return $del.' está en '.$anticipo->moneda.' y esta planilla en '.$moneda.': no se recupera en otra moneda.';
+        }
+
+        if ($anticipo->pago_id !== null && ! Pago::whereKey($anticipo->pago_id)->whereNull('revertido_at')->exists()) {
+            return $del.' viene de un pago revertido: ese dinero no se entregó y no hay nada que recuperar.';
+        }
+
+        return null;
     }
 
     /** Lo que este mismo concepto ya tenía aplicado, para no contarlo como ajeno. */
