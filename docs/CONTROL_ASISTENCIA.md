@@ -929,7 +929,7 @@ El lector solo puede alegar lo que él puede ver:
 | `captura_defectuosa` | `ranura_no_coincide` |
 | `dedos_no_coinciden` | `empleado_no_elegible` |
 | `fallo_modelo` | `cancelada_por_operador` |
-| `fallo_guardado` | |
+| `fallo_guardado` | `grabada_tras_cancelar` |
 | `ranura_ocupada_en_sensor` | |
 | `cancelada_en_dispositivo` | |
 
@@ -962,9 +962,13 @@ sola cada 3 s** — sin conexión permanente es lo único honesto, y el enrolami
 dura menos de un minuto. Debajo quedan los últimos tres intentos terminados, que es
 cómo se entiende por qué falló el anterior.
 
-Cancelar es seguro en cualquier momento: si el lector ya grabó y todavía no
-reportó, su resultado llegará sobre una orden final y se tratará como reintento,
-sin crear nada.
+Cancelar no crea nada: si el lector ya grabó y todavía no reportó, su resultado
+llega sobre una orden cancelada y la huella no nace. Pero la plantilla sí quedó en
+el sensor, así que, si el lector informa haber grabado en la ranura reservada, la
+orden pasa a `grabada_tras_cancelar` (sigue cancelada), la ranura entra al índice
+del sensor y la ficha abre «Avanzado» con «Anotar esta ranura» (#84). El aviso se
+va al anotarla, o cuando el lector vuelve a informar su índice sin esa ranura
+porque la borraron en el sensor.
 
 **Opciones avanzadas → ranura manual.** Cerrado por defecto y con su advertencia.
 Existe para **un** caso: sensores que ya traían plantillas de antes, donde hace
@@ -1040,8 +1044,9 @@ marcación en curso.
 **Cancelar una orden mientras el lector ya captura deja una plantilla huérfana.** El
 07/10/2026 se canceló desde la web una orden que el lector ya estaba grabando: la
 plantilla quedó en la ranura y el resultado llegó sobre una orden final, que no crea
-nada. La persona marcaba con `huella_desconocida`. Se arregla con «Anotar una ranura
-ya grabada» y el número que el lector devuelve al reconocer el dedo.
+nada. La persona marcaba con `huella_desconocida`. Desde #84 el servidor lo anota
+(`grabada_tras_cancelar`) y la ficha ofrece «Anotar esta ranura» con el número que
+informó el lector.
 
 **Lo que el lector todavía no puede alegar.** No existe un motivo para «este dedo
 ya está enrolado en otra ranura», así que el firmware **no** lo detecta: inventar un

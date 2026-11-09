@@ -190,6 +190,19 @@ class AsistenciaOrdenEnrolamiento extends Model
         return $this->estado->estaViva() && $this->expira_at->isPast();
     }
 
+    /**
+     * ¿El lector grabó tras cancelarse la orden y esa huella sigue en el sensor sin
+     * dueño? Deja de serlo al anotarla a alguien, o cuando el lector vuelve a
+     * informar su contenido y ya no la tiene (la borraron en el sensor).
+     */
+    public function quedoSinDueno(): bool
+    {
+        return $this->motivo_fallo === MotivoFalloEnrolamiento::GrabadaTrasCancelar
+            && (bool) $this->dispositivo?->activo
+            && in_array($this->ranura_reservada, $this->dispositivo->ranurasOcupadasEnSensor(), true)
+            && ! AsistenciaHuella::query()->deRanura($this->asistencia_dispositivo_id, $this->ranura_reservada)->activas()->exists();
+    }
+
     public function segundosParaExpirar(): int
     {
         return max(0, (int) Carbon::now()->diffInSeconds($this->expira_at, false));

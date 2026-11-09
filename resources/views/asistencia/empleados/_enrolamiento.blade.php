@@ -3,6 +3,11 @@
 @endphp
 <div class="{{ $tarjeta }}">
     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Guardar huella</h3>
+    @can('asistencia.gestionar')
+        @if (($huellasSinDueno ?? collect())->isNotEmpty())
+            <p class="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">El lector guardó una huella de {{ $empleado->nombreCorto() }} aunque se canceló el registro, y quedó sin dueño. Anotala en «Avanzado», más abajo.</p>
+        @endif
+    @endcan
     @if ($ordenViva)
         <div class="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-500/30 dark:bg-blue-500/10">
             <div class="flex flex-wrap items-start justify-between gap-3">
