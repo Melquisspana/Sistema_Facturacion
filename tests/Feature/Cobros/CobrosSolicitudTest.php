@@ -686,7 +686,6 @@ class CobrosSolicitudTest extends TestCase
             ->assertSeeText('No se pudo descargar '.$solicitud->referencia);
     }
 
-    /** Un documento no puede estar en dos solicitudes vigentes: sería cobrarlo dos veces. */
     /**
      * #22 · El número del día ya no sale de contar las solicitudes del cliente: contar no
      * reserva nada, así que dos generadas a la vez —o dos clientes con el mismo código de
@@ -711,6 +710,7 @@ class CobrosSolicitudTest extends TestCase
         $this->assertSame(["SOL-000123-{$hoy}-01", "SOL-000123-{$hoy}-02"], $referencias);
     }
 
+    /** Un documento no puede estar en dos solicitudes vigentes: sería cobrarlo dos veces. */
     public function test_no_se_puede_incluir_el_mismo_documento_en_dos_solicitudes(): void
     {
         $cliente = $this->cliente();
