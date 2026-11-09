@@ -23,6 +23,7 @@ use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\NotasDelQuedan;
 use App\Services\Dte\PerfilDocumentoResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -448,6 +449,36 @@ class CobrosQuedanNotasCreditoTest extends TestCase
             ->assertSeeText('Notas de crédito que respaldaron esta solicitud')
             ->assertSee($nc->numero_control)
             ->assertSee($lote->referencia);
+    }
+
+    /** #12 (decisión de Melqui, 09/11/2026): la NC que ya no vale sale sola del quedan y se avisa. */
+    public function test_la_nc_que_ya_no_esta_aceptada_sale_sola_del_quedan_y_la_ficha_avisa(): void
+    {
+        $usuario = $this->usuario();
+        $ccfDte = $this->dte('03');
+        $vigente = $this->nc($ccfDte);
+        $rechazada = $this->nc($ccfDte);
+        $this->lote([$vigente, $rechazada], presentado: true);
+        $documento = $this->ccf($ccfDte);
+
+        $token = $this->previa([$documento->id], $usuario)->assertOk()->viewData('token');
+        $this->actingAs($usuario)
+            ->post(route('cobros.solicitudes.store', $this->cliente), ['previa' => $token])
+            ->assertSessionHasNoErrors();
+        $solicitud = CobroSolicitud::sole();
+        $this->assertSame(2, $solicitud->notas()->count());
+
+        DB::table('dtes')->where('id', $rechazada->id)->update(['estado' => 'rechazado']);
+
+        $this->actingAs($usuario)->get(route('cobros.solicitudes.show', $solicitud))
+            ->assertOk()
+            ->assertSeeText('No va en el quedan: Hacienda la rechazó.');
+
+        $ruta = app(ExportadorSolicitudCargaMasivaV1::class)->generar($solicitud->fresh());
+        $hoja = IOFactory::load($ruta)->getActiveSheet();
+        @unlink($ruta);
+        $this->assertSame(3, $hoja->getHighestDataRow(), 'Encabezado + 1 CCF + la NC vigente.');
+        $this->assertSame($vigente->albaran->numero, $hoja->getCell('B3')->getValue());
     }
 
     public function test_una_nc_aparecida_despues_de_la_previa_impide_confirmar(): void

@@ -373,7 +373,8 @@ class CobrosController extends Controller
             'notasCongeladas' => $solicitud->notas()
                 ->with([
                     'documento:id,numero_control',
-                    'dte:id,numero_control,total_pagar,estado',
+                    // Con lo que hace falta para saber si la nota todavía va en el quedan (#12).
+                    'dte:id,tipo_dte,numero_control,total_pagar,estado,sello_recepcion,fecha_procesamiento_mh,sello_invalidacion',
                     'dte.albaran:id,dte_id,numero_canonico,tipo_codigo',
                     'exportacion:id,referencia,presentada_en,presentada_por,referencia_portal',
                     'exportacion.presentadaPor:id,name',

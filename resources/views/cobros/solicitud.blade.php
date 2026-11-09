@@ -236,7 +236,13 @@
                                 @foreach ($notasCongeladas as $vinculo)
                                     <tr>
                                         <td class="p-2 font-mono whitespace-nowrap">{{ $vinculo->documento?->numero_control ?? 'Documento no disponible' }}</td>
-                                        <td class="p-2 font-mono whitespace-nowrap">{{ $vinculo->dte?->numero_control ?? 'Nota no disponible' }}</td>
+                                        <td class="p-2 font-mono whitespace-nowrap">
+                                            {{ $vinculo->dte?->numero_control ?? 'Nota no disponible' }}
+                                            {{-- #12: antes de la primera descarga se avisa la nota que el archivo dejará fuera; después manda la copia archivada. --}}
+                                            @if ($solicitud->archivo_hash === null && $vinculo->dte && ($motivoFuera = \App\Support\VigenciaFiscalDte::motivoFueraDelArchivo($vinculo->dte)))
+                                                <span class="block whitespace-normal font-sans text-xs text-amber-700" role="status">No va en el quedan: {{ $motivoFuera }}.</span>
+                                            @endif
+                                        </td>
                                         <td class="p-2 font-mono text-xs">{{ $vinculo->dte?->albaran?->numero_canonico ?? '—' }}</td>
                                         <td class="p-2 text-right font-mono">{{ $vinculo->dte ? number_format((float) $vinculo->dte->total_pagar, 2) : '—' }}</td>
                                         <td class="p-2 text-xs">

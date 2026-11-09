@@ -2,11 +2,11 @@
 
 namespace App\Services\Cobros\Exportadores;
 
-use App\Enums\EstadoDte;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Cobros\CobroSolicitud;
 use App\Models\Cobros\CobroSolicitudItem;
 use App\Support\NumeroAlbaran;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Support\Carbon;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -234,7 +234,8 @@ class ExportadorSolicitudCargaMasivaV1 implements ExportadorSolicitud
 
     /**
      * Filas de las NC que respaldaron a los CCF de la solicitud, desde el albarán de
-     * crédito propio de cada NC. Las invalidadas o sin albarán legible no van.
+     * crédito propio de cada NC. Las que ya no están aceptadas por Hacienda salen solas
+     * (la ficha de la solicitud avisa cuáles, #12) y las sin albarán legible no van.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -245,7 +246,7 @@ class ExportadorSolicitudCargaMasivaV1 implements ExportadorSolicitud
             $dte = $nota->dte;
             $albaran = $dte?->albaran;
             $partes = NumeroAlbaran::desde($albaran?->numero_canonico);
-            if ($dte === null || $dte->estado === EstadoDte::Invalidado || $partes === null || $albaran->fecha === null) {
+            if ($dte === null || VigenciaFiscalDte::motivoFueraDelArchivo($dte) !== null || $partes === null || $albaran->fecha === null) {
                 continue;
             }
             $fecha = Carbon::parse($albaran->fecha);
