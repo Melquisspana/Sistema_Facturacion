@@ -8,6 +8,18 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.08.3] - 2026-11-08
+
+El servidor queda igual al repositorio, como preparación del paso a Linux. Entra la importación y auditoría de documentos enviados de Cobros, que estaba en el repositorio sin desplegar (con 1 migración).
+
+### Agregado
+
+- Cobros: `cobros:auditar-enviados` (solo lectura) y `cobros:importar-enviados` (en seco, salvo con `--aplicar`) traen al seguimiento los CCF y NC enviados desde la cuenta Gmail conectada con su JSON adjunto. Guardan de qué correo y adjunto salió cada documento y la relación NC→CCF que declara la nota, sin inferir ninguna. En los documentos que ya existen solo completan campos vacíos. Se corren a mano, piden cliente y rango de fechas, y no están en el programador. La migración `2026_09_25_120000` crea `cobro_documento_procedencias` y `cobro_documento_relaciones` sin tocar las tablas existentes.
+
+### Cambiado
+
+- Mejor contraste y colores en la ficha de Cobros, el aviso de contingencia, la invalidación oficial, las pantallas de contingencia y el plazo de las notas de crédito, y el ícono de Planilla en el menú.
+
 ## [2026.11.08.2] - 2026-11-08
 
 Indemnización y prestación por renuncia como pago de una sola persona desde la baja (#271), y el lector de órdenes de compra ajustado al PDF real del EDI (#273). Sin migraciones.
