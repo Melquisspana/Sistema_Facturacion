@@ -14,6 +14,7 @@ use App\Models\Cobros\CobroSolicitud;
 use App\Models\Cobros\CobroSolicitudItem;
 use App\Models\Cobros\CobroSolicitudNota;
 use App\Models\NcExportacion;
+use App\Models\Secuencia;
 use App\Models\User;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Services\Cobros\Exportadores\ExportadorSolicitudFactory;
@@ -759,17 +760,22 @@ class SolicitudCobroService
     /**
      * Referencia legible y única: SOL-{codigo}-{YYYYMMDD}-{n del día}. La fecha es la de
      * GENERACIÓN del archivo, no la de los documentos, que pueden ser de cualquier fecha.
+     *
+     * El número lo da una {@see Secuencia} por prefijo, bajo bloqueo de fila. Antes salía de
+     * contar las del cliente en el día, y contar no reserva nada: dos generadas a la vez —o
+     * dos clientes con el mismo código— pedían el mismo número y chocaban con el índice
+     * único. Se salta un número ya usado: el día del cambio puede haberlo dado la cuenta.
      */
     private function referencia(Cliente $cliente): string
     {
-        $hoy = Carbon::today();
         $codigo = $this->perfiles->paraCliente($cliente->id)?->codigo_proveedor ?: ('CLI'.$cliente->id);
+        $prefijo = 'SOL-'.$codigo.'-'.Carbon::today()->format('Ymd');
 
-        $previas = CobroSolicitud::where('cliente_id', $cliente->id)
-            ->whereDate('created_at', $hoy->toDateString())
-            ->count();
+        do {
+            $referencia = sprintf('%s-%02d', $prefijo, Secuencia::siguiente($prefijo));
+        } while (CobroSolicitud::where('referencia', $referencia)->exists());
 
-        return sprintf('SOL-%s-%s-%02d', $codigo, $hoy->format('Ymd'), $previas + 1);
+        return $referencia;
     }
 
     /**

@@ -416,6 +416,42 @@ class NcExportacionLoteTest extends TestCase
         $servicio->crear($cliente, [$notas[0]->id, $notas[1]->id], $this->usuario());
     }
 
+    /**
+     * #22 · El número del día ya no sale de contar los lotes del cliente: contar no reserva
+     * nada, así que dos lotes generados a la vez —o dos clientes con el mismo código de
+     * proveedor, como estos— pedían el mismo número y chocaban con el índice único.
+     */
+    public function test_dos_lotes_del_mismo_codigo_el_mismo_dia_no_chocan(): void
+    {
+        $servicio = app(NcExportacionService::class);
+        $hoy = Carbon::today()->format('Ymd');
+
+        $referencias = [];
+        foreach ([1, 2] as $_) {
+            $cliente = $this->cliente();   // los dos con el código 000123
+            $notas = $this->notasAceptadas($cliente, 1);
+            $referencias[] = $servicio->crear($cliente, [$notas[0]->id], $this->usuario())->referencia;
+        }
+
+        $this->assertSame(["NC-000123-{$hoy}-01", "NC-000123-{$hoy}-02"], $referencias);
+    }
+
+    /** El día del cambio ya puede haber lotes numerados por la cuenta: su número se salta. */
+    public function test_un_numero_del_dia_que_ya_existe_se_salta(): void
+    {
+        $cliente = $this->cliente();
+        $hoy = Carbon::today()->format('Ymd');
+        NcExportacion::create([
+            'cliente_id' => $cliente->id, 'referencia' => "NC-000123-{$hoy}-01",
+            'formato' => 'albaran_nc_v1', 'archivo_nombre' => 'previo.xlsx',
+        ]);
+        $notas = $this->notasAceptadas($cliente, 1);
+
+        $lote = app(NcExportacionService::class)->crear($cliente, [$notas[0]->id], $this->usuario());
+
+        $this->assertSame("NC-000123-{$hoy}-02", $lote->referencia);
+    }
+
     public function test_lote_fallido_no_deja_rastro(): void
     {
         $cliente = $this->cliente();

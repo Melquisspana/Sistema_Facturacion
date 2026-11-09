@@ -10,6 +10,7 @@ use App\Models\ClientePerfilDocumento;
 use App\Models\Dte;
 use App\Models\NcExportacion;
 use App\Models\NcExportacionItem;
+use App\Models\Secuencia;
 use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\Exportadores\ExportadorNc;
@@ -628,18 +629,22 @@ class NcExportacionService
      * Referencia legible y única: {codigo}-{YYYYMMDD de generación}-{n del día}. La fecha
      * es la del ARCHIVO, no la de las notas; el correlativo por día solo evita colisiones
      * cuando se generan varios el mismo día.
+     *
+     * El número lo da una {@see Secuencia} por prefijo, bajo bloqueo de fila. Antes salía de
+     * contar los del cliente en el día, y contar no reserva nada: dos generados a la vez —o
+     * dos clientes con el mismo código— pedían el mismo número y chocaban con el índice
+     * único. Se salta un número ya usado: el día del cambio puede haberlo dado la cuenta.
      */
     private function referencia(Cliente $cliente, ClientePerfilDocumento $perfil): string
     {
-        $hoy = Carbon::today();
-
-        $previos = NcExportacion::where('cliente_id', $cliente->id)
-            ->whereDate('created_at', $hoy->toDateString())
-            ->count();
-
         $codigo = $perfil->codigo_proveedor ?: ('CLI'.$cliente->id);
+        $prefijo = 'NC-'.$codigo.'-'.Carbon::today()->format('Ymd');
 
-        return sprintf('NC-%s-%s-%02d', $codigo, $hoy->format('Ymd'), $previos + 1);
+        do {
+            $referencia = sprintf('%s-%02d', $prefijo, Secuencia::siguiente($prefijo));
+        } while (NcExportacion::where('referencia', $referencia)->exists());
+
+        return $referencia;
     }
 
     /**
