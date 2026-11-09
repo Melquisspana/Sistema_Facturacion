@@ -19,10 +19,16 @@ use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
 /**
- * El correo de las 17:00 con lo que hizo la fábrica en el día, por sala: lo que salió en
- * cada envío, lo que faltó (con su motivo), lo que se marcó «No se trae» y lo que sigue por
- * mandar con sus días de atraso. Si no salió nada, sale igual con «Hoy no salió ningún
- * pedido» y los pendientes.
+ * El correo de las 17:00 con lo que hizo la fábrica, por sala: lo que salió en cada envío,
+ * lo que se deshizo de un envío que ya había salido en un correo anterior, lo que faltó
+ * (con su motivo), lo que se marcó «No se trae» y lo que sigue por mandar con sus días de
+ * atraso. Si no salió nada, sale igual con «Hoy no salió ningún pedido» y los pendientes.
+ *
+ * DESDE EL CORREO ANTERIOR. Cubre desde el instante hasta el que llegó el último resumen
+ * (`hasta` en su auditoría) hasta ahora, no solo el día: lo que la fábrica hace después
+ * de las 17:00 sale en el correo siguiente. Sin un resumen anterior, desde el inicio del
+ * día. Los dos extremos entran: algo del mismo segundo del corte puede salir en los dos
+ * correos, pero nunca en ninguno.
  *
  * A QUIÉN. El ajuste `pedidos.correo_resumen_diario` (Configuración › Rutas, dato
  * personal). Vacío: no se manda y queda en el log.
@@ -76,7 +82,8 @@ class ResumenDiarioPedidos
         }
 
         // Se arma ANTES de tomar la marca: si la consulta falla, no queda tomada.
-        $contenido = $this->contenido($fecha);
+        $hasta = now()->startOfSecond();
+        $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta);
 
         $clave = 'pedidos.correo_resumen_diario.'.$fecha;
         if (! Cache::add($clave, true, now()->addDays(2))) {
@@ -85,7 +92,7 @@ class ResumenDiarioPedidos
 
         if ($this->candado->debeSimular()) {
             Log::info('Pedidos: resumen diario SIMULADO', ['fecha' => $fecha, 'motivo' => $this->candado->motivo()]);
-            $this->auditar($fecha, 'simulado', count($destinatarios));
+            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta);
 
             return 'simulado';
         }
@@ -102,43 +109,57 @@ class ResumenDiarioPedidos
             return 'fallido';
         }
 
-        $this->auditar($fecha, 'enviado', count($destinatarios));
+        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta);
 
         return 'enviado';
     }
 
     /**
-     * Lo del día, agrupado por sala y ordenado por su nombre.
+     * Lo que pasó entre `$desde` y `$hasta` (en la hora de la base, app.timezone), agrupado
+     * por sala y ordenado por su nombre.
      *
-     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>}>}
+     * @return array{fecha: string, salio_algo: bool, salas: array<string, array{salio: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, deshecho: list<array{numero: int, hora: string, productos: list<array{nombre: string, cantidad: string}>}>, falto: list<array{nombre: string, cantidad: string, motivo: ?string}>, no_se_trae: list<array{nombre: string, cantidad: string}>, por_mandar: list<array{fecha: string, atraso: int, productos: list<array{nombre: string, cantidad: string}>}>}>}
      */
-    public function contenido(string $fecha): array
+    public function contenido(Carbon $desde, Carbon $hasta): array
     {
         $salas = [];
         $sala = function (PedidoSala $pedido) use (&$salas): string {
             $nombre = (string) ($pedido->sala?->nombre ?? 'Sala sin nombre');
-            $salas[$nombre] ??= ['salio' => [], 'falto' => [], 'no_se_trae' => [], 'por_mandar' => []];
+            $salas[$nombre] ??= ['salio' => [], 'deshecho' => [], 'falto' => [], 'no_se_trae' => [], 'por_mandar' => []];
 
             return $nombre;
         };
+        $hoy = Carbon::parse($hasta->toDateString());
+        // La hora sola si es del día del correo; si no (después de las 17:00 de ayer), con la fecha.
+        $envio = function (PedidoSalaEnvio $envio) use ($hoy): array {
+            $local = HoraNegocio::aLocal($envio->created_at);
 
-        $envios = PedidoSalaEnvio::query()->vigentes()->whereDate('fecha', $fecha)
-            ->with(['pedido.sala:id,nombre', 'lineas.linea.producto:id,nombre'])
-            ->orderBy('id')
-            ->get();
-
-        foreach ($envios as $envio) {
-            $salas[$sala($envio->pedido)]['salio'][] = [
+            return [
                 'numero' => $envio->numero,
-                'hora' => HoraNegocio::aLocal($envio->created_at)->format('H:i'),
+                'hora' => $local->format($local->isSameDay($hoy) ? 'H:i' : 'd/m H:i'),
                 'productos' => $envio->lineas->map(fn ($l) => [
                     'nombre' => (string) $l->linea?->producto?->nombre,
                     'cantidad' => PedidoSalaLinea::legible((string) $l->cantidad),
                 ])->values()->all(),
             ];
+        };
+        $relaciones = ['pedido.sala:id,nombre', 'lineas.linea.producto:id,nombre'];
+
+        $envios = PedidoSalaEnvio::query()->vigentes()->whereBetween('created_at', [$desde, $hasta])
+            ->with($relaciones)->orderBy('id')->get();
+        foreach ($envios as $e) {
+            $salas[$sala($e->pedido)]['salio'][] = $envio($e);
         }
 
-        // Lo que faltó y lo que no se trae: los pedidos que se CERRARON hoy, según la
+        // Un envío que un correo anterior dio por salido y se deshizo después. Uno que salió y
+        // se deshizo entre los dos correos no se nombra: nunca se informó.
+        $deshechos = PedidoSalaEnvio::query()->whereBetween('anulado_en', [$desde, $hasta])->where('created_at', '<', $desde)
+            ->with($relaciones)->orderBy('id')->get();
+        foreach ($deshechos as $e) {
+            $salas[$sala($e->pedido)]['deshecho'][] = $envio($e);
+        }
+
+        // Lo que faltó y lo que no se trae: los pedidos que se CERRARON en el período, según la
         // auditoría del cierre, aunque su envío haya salido otro día («Lo que falta no se
         // trae» no crea envío). No se usa `updated_at`: agregar la OC después lo movería.
         // Un pedido que se reabrió y sigue por mandar sale abajo, con los pendientes.
@@ -147,7 +168,7 @@ class ResumenDiarioPedidos
                 ->where('log_name', 'pedido_sala')
                 ->where('subject_type', (new PedidoSala)->getMorphClass())
                 ->whereIn('description', [PedidosFabrica::AUDITORIA_PARTE, PedidosFabrica::AUDITORIA_NO_SE_TRAE, PedidosFabrica::AUDITORIA_LO_QUE_FALTA])
-                ->whereDate('created_at', $fecha)
+                ->whereBetween('created_at', [$desde, $hasta])
                 ->select('subject_id'))
             ->whereIn('estado', [EstadoPedidoSala::Enviado->value, EstadoPedidoSala::NoSeTrae->value])
             ->with(['sala:id,nombre', 'lineas' => fn ($q) => $q->orderBy('id'), 'lineas.producto:id,nombre', 'lineas.envioLineasVigentes'])
@@ -174,7 +195,6 @@ class ResumenDiarioPedidos
             }
         }
 
-        $hoy = Carbon::parse($fecha);
         foreach ($this->fabrica->porMandar()->get() as $pedido) {
             $salas[$sala($pedido)]['por_mandar'][] = [
                 'fecha' => $pedido->fecha->format('d/m/Y'),
@@ -195,6 +215,19 @@ class ResumenDiarioPedidos
         ];
     }
 
+    /** Hasta dónde llegó el último resumen, en la hora de la base; null si nunca salió uno. */
+    private function desdeElAnterior(): ?Carbon
+    {
+        $anterior = Activity::query()
+            ->where('log_name', 'pedido_sala')
+            ->where('description', self::AUDITORIA)
+            ->latest('id')
+            ->first();
+        $hasta = $anterior?->properties['hasta'] ?? null;
+
+        return $hasta ? Carbon::parse($hasta) : $anterior?->created_at;
+    }
+
     private function yaEnviado(string $fecha): bool
     {
         return Activity::query()
@@ -205,10 +238,10 @@ class ResumenDiarioPedidos
     }
 
     /** Sin los correos: son datos personales y la auditoría la lee más gente. */
-    private function auditar(string $fecha, string $estado, int $destinatarios): void
+    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta): void
     {
         activity('pedido_sala')
-            ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios])
+            ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios, 'hasta' => $hasta->format('Y-m-d H:i:s')])
             ->log(self::AUDITORIA);
     }
 }

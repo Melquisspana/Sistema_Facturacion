@@ -1,6 +1,6 @@
 {{--
-    Resumen diario de los pedidos de sala (17:00). Por sala: lo que salió, lo que faltó,
-    lo que no se trae y lo que sigue por mandar. Listas y no tablas: el nombre de un
+    Resumen diario de los pedidos de sala (17:00), desde el correo anterior. Por sala: lo
+    que salió, lo que se deshizo, lo que faltó, lo que no se trae y lo que sigue por mandar. Listas y no tablas: el nombre de un
     producto con «|» rompería una tabla de markdown. Todo lo que escribió alguien pasa por
     $literal: sin eso, un motivo con `[texto](url)` sería un enlace en el correo.
 --}}
@@ -15,9 +15,18 @@
 ## {{ $literal($sala) }}
 
 @if (count($datos['salio']) > 0)
-**Salió hoy**
+**Salió**
 
 @foreach ($datos['salio'] as $envio)
+- Envío {{ $envio['numero'] }} ({{ $envio['hora'] }}): {{ collect($envio['productos'])->map(fn ($p) => $literal($p['nombre']).' '.$p['cantidad'])->implode(', ') }}
+
+@endforeach
+
+@endif
+@if (count($datos['deshecho']) > 0)
+**Se deshizo** (había salido en un correo anterior; vuelve a quedar pendiente)
+
+@foreach ($datos['deshecho'] as $envio)
 - Envío {{ $envio['numero'] }} ({{ $envio['hora'] }}): {{ collect($envio['productos'])->map(fn ($p) => $literal($p['nombre']).' '.$p['cantidad'])->implode(', ') }}
 
 @endforeach

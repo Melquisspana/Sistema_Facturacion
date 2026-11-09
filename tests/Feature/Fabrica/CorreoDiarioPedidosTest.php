@@ -21,6 +21,7 @@ use App\Support\Correo\CandadoCorreoReal;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -148,7 +149,7 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertStringNotContainsString('7.77', $html, 'el resumen no lleva precios');
         // Las salas, por nombre; en cada una lo que pasó.
         $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 06\/11\/2026 \(3 días de atraso\): Canilla de prueba 2\.5/s', $html);
-        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió hoy.*Envío 1 \(17:00\): Galleta de prueba 24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(17:00\): Galleta de prueba 24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
         $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*No se trae.*Galleta de prueba: 3/s', $html);
         $this->assertTrue(strpos($html, 'Abarrotes Inventados') < strpos($html, 'Súper Ficticio Centro'));
         $this->assertTrue(strpos($html, 'Súper Ficticio Centro') < strpos($html, 'Tienda Inventada Norte'));
@@ -174,6 +175,41 @@ class CorreoDiarioPedidosTest extends TestCase
         $html = $this->enviado()->render();
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
         $this->assertStringNotContainsString('Sigue por mandar', $html);
+    }
+
+    public function test_lo_que_pasa_despues_de_las_cinco_sale_en_el_correo_del_dia_siguiente(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $centro = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5']);
+        $norte = $this->pedido($this->sala('Tienda Inventada Norte'), [$this->galleta->id => '3']);
+        $sur = $this->pedido($this->sala('Abarrotes Inventados Sur'), [$this->canilla->id => '2']);
+
+        // Lunes: lo de las 16:00 sale en el correo de las 17:00.
+        $this->travelTo('2026-11-09 16:00:00');
+        $this->mandar($centro, [$this->galleta->id => '5']);
+        $this->travelTo('2026-11-09 17:00:00');
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        // Después de que salió el correo.
+        $this->travelTo('2026-11-09 17:20:00');
+        $this->mandar($norte, [$this->galleta->id => '3']);
+        $this->travelTo('2026-11-09 17:30:00');
+        app(PedidosFabrica::class)->anularEnvio($centro, $centro->envios()->sole(), $this->fabrica);
+        $this->travelTo('2026-11-09 17:40:00');
+        app(PedidosFabrica::class)->cerrar($sur, $this->version($sur), $this->fabrica);
+
+        $this->travelTo('2026-11-10 17:00:00');
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        $correos = Mail::sent(ResumenDiarioPedidosCorreo::class);
+        $this->assertCount(2, $correos);
+        $html = $correos->last()->render();
+        $this->assertMatchesRegularExpression('/Tienda Inventada Norte.*Salió.*Envío 1 \(09\/11 17:20\): Galleta de prueba 3/s', $html);
+        $this->assertMatchesRegularExpression('/Abarrotes Inventados Sur.*No se trae.*Canilla de prueba: 2/s', $html);
+        // El envío que el correo del lunes dio por salido se deshizo: se avisa y vuelve a pendiente.
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Se deshizo.*Envío 1 \(09\/11 16:00\): Galleta de prueba 5.*Sigue por mandar/s', $html);
+        $this->assertStringNotContainsString('Hoy no salió ningún pedido', $html);
     }
 
     public function test_lo_escrito_en_la_fabrica_no_mete_enlaces_ni_imagenes_en_el_correo(): void
@@ -216,7 +252,7 @@ class CorreoDiarioPedidosTest extends TestCase
             'cantidades' => [$pedido->lineas()->value('id') => '8'],
         ], $this->fabrica);
 
-        $sala = app(ResumenDiarioPedidos::class)->contenido('2026-11-09')['salas']['Súper Ficticio Centro'];
+        $sala = app(ResumenDiarioPedidos::class)->contenido(Carbon::parse('2026-11-09'), now())['salas']['Súper Ficticio Centro'];
 
         $this->assertSame([], $sala['falto']);
         $this->assertSame([['fecha' => '09/11/2026', 'atraso' => 0, 'productos' => [['nombre' => 'Galleta de prueba', 'cantidad' => '4']]]], $sala['por_mandar']);
@@ -251,7 +287,7 @@ class CorreoDiarioPedidosTest extends TestCase
 
         Mail::assertSentCount(1);
         $auditoria = Activity::where('log_name', 'pedido_sala')->where('description', ResumenDiarioPedidos::AUDITORIA)->sole();
-        $this->assertSame(['fecha' => '2026-11-09', 'estado' => 'enviado', 'destinatarios' => 2], $auditoria->properties->all());
+        $this->assertSame(['fecha' => '2026-11-09', 'estado' => 'enviado', 'destinatarios' => 2, 'hasta' => '2026-11-09 17:00:00'], $auditoria->properties->all());
         $this->assertStringNotContainsString('ejemplo.test', $auditoria->properties->toJson(), 'los correos son datos personales');
 
         $this->travelTo('2026-11-10 17:00:00');
