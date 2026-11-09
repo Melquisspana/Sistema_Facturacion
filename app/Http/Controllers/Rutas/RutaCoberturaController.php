@@ -8,6 +8,7 @@ use App\Models\Distrito;
 use App\Models\Ruta;
 use App\Models\RutaCobertura;
 use App\Services\Rutas\PropuestaRutas;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -38,14 +39,18 @@ class RutaCoberturaController extends Controller
 
         // Un lugar es de una sola ruta. Se avisa con nombre y apellido en vez de dejar que el
         // índice único reviente: quien lo intenta necesita saber quién lo tiene.
-        $existente = RutaCobertura::with('ruta:id,nombre')->where($campo, $datos[$campo])->first();
-        if ($existente !== null) {
-            return back()->with('error', $existente->ruta_id === $ruta->id
-                ? "«{$lugar}» ya está en la cobertura de esta ruta."
-                : "«{$lugar}» ya lo cubre la ruta «{$existente->ruta->nombre}». Quitalo de allá primero.");
+        if ($aviso = $this->yaCubierto($ruta, $campo, $datos[$campo], $lugar)) {
+            return back()->with('error', $aviso);
         }
 
-        $ruta->coberturas()->create([$campo => $datos[$campo]]);
+        try {
+            $ruta->coberturas()->create([$campo => $datos[$campo]]);
+        } catch (UniqueConstraintViolationException) {
+            // Otra pantalla lo agregó entre la consulta de arriba y este alta: el índice único
+            // frenó el duplicado. Se vuelve a leer para decir quién lo tiene ahora.
+            return back()->with('error', $this->yaCubierto($ruta, $campo, $datos[$campo], $lugar)
+                ?? "«{$lugar}» se acaba de agregar desde otra pantalla. Recargá la página para verlo.");
+        }
 
         activity('ruta')
             ->performedOn($ruta)
@@ -69,5 +74,19 @@ class RutaCoberturaController extends Controller
             ->log('quitó de la cobertura de la ruta');
 
         return back()->with('status', "«{$lugar}» ya no está en la cobertura. Las salas asignadas no cambiaron.");
+    }
+
+    /** El aviso de que el lugar ya tiene ruta, o null si está libre. */
+    private function yaCubierto(Ruta $ruta, string $campo, int|string $id, string $lugar): ?string
+    {
+        $existente = RutaCobertura::with('ruta:id,nombre')->where($campo, $id)->first();
+
+        if ($existente === null) {
+            return null;
+        }
+
+        return $existente->ruta_id === $ruta->id
+            ? "«{$lugar}» ya está en la cobertura de esta ruta."
+            : "«{$lugar}» ya lo cubre la ruta «{$existente->ruta->nombre}». Quitalo de allá primero.";
     }
 }
