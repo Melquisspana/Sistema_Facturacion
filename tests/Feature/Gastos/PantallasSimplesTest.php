@@ -219,7 +219,7 @@ class PantallasSimplesTest extends TestCase
     }
 
     /**
-     * #22 · Un importe mal escrito en el reparto elegido a mano es un aviso al lado de esa
+     * #22 · Un importe mal escrito en el reparto elegido a mano es un aviso que nombra esa
      * compra, no un error del sistema. Antes reventaba al pasarlo a centavos.
      */
     public function test_un_importe_mal_escrito_en_el_reparto_del_abono_es_un_aviso(): void
@@ -235,10 +235,49 @@ class PantallasSimplesTest extends TestCase
                 'dirigido' => '1',
                 'reparto' => [['cuota_id' => $compra->cuotas()->first()->id, 'importe' => $importe]],
             ])->assertSessionHasErrors([
-                'reparto.0.importe' => 'Escribí el importe de cada compra con hasta dos decimales, sin comas.',
+                'reparto.0.importe' => 'Escribí el importe de «Pepitoria» con hasta dos decimales, sin comas.',
             ]);
         }
 
+        $this->assertSame(0, Pago::count());
+    }
+
+    /**
+     * #22 · El aviso sale arriba de la pantalla, no junto a la fila: con dos importes mal
+     * escritos se leía dos veces el mismo texto, sin saber cuál corregir. Ahora cada aviso
+     * nombra su compra, y una compra que esta persona no ve no se nombra.
+     */
+    public function test_cada_importe_mal_escrito_del_reparto_nombra_su_compra(): void
+    {
+        $u = $this->completo();
+        $harina = $this->compraDeProveedorA($u, 'Harina', '300.00');
+        $azucar = $this->compraDeProveedorA($u, 'Azúcar', '200.00');
+        $casa = app(CuentaProveedor::class)->agregarCompra($u, [
+            'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor A', 'concepto' => 'Cortinas de la casa',
+            'importe' => '90.00', 'fecha' => now()->toDateString(), 'ambito' => 'personal', 'moneda' => 'USD',
+        ]);
+        $sinPersonales = $this->usuario([
+            PermisoSistema::GastosVer, PermisoSistema::GastosRegistrar,
+            PermisoSistema::GastosPagosRegistrar, PermisoSistema::DteVer, PermisoSistema::DashboardVer,
+        ]);
+
+        $this->actingAs($sinPersonales)->post(route('gastos.cuentas.abonos'), [
+            'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor A',
+            'importe' => '100.00', 'fecha' => now()->toDateString(),
+            'metodo' => 'transferencia', 'moneda' => 'USD',
+            'dirigido' => '1',
+            'reparto' => [
+                ['cuota_id' => $harina->cuotas()->first()->id, 'importe' => '1,000.00'],
+                ['cuota_id' => $azucar->cuotas()->first()->id, 'importe' => '50,00'],
+                ['cuota_id' => $casa->cuotas()->first()->id, 'importe' => 'diez'],
+            ],
+        ])->assertSessionHasErrors('reparto.0.importe');
+
+        $this->assertSame([
+            'Escribí el importe de «Harina» con hasta dos decimales, sin comas.',
+            'Escribí el importe de «Azúcar» con hasta dos decimales, sin comas.',
+            'Escribí el importe de una de las compras con hasta dos decimales, sin comas.',
+        ], session('errors')->all());
         $this->assertSame(0, Pago::count());
     }
 

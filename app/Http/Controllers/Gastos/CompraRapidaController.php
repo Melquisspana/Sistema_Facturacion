@@ -155,8 +155,9 @@ class CompraRapidaController extends Controller
         $reparto = null;
 
         if ($request->boolean('dirigido') && is_array($request->input('reparto'))) {
-            // Antes de pasarlo a centavos: un importe mal escrito es un aviso en esa compra,
-            // no un error del sistema.
+            // Antes de pasarlo a centavos: un importe mal escrito es un aviso, no un error del
+            // sistema. El aviso sale arriba de la pantalla, no junto a la fila, así que nombra
+            // la compra: con dos filas mal escritas se leía dos veces el mismo texto.
             $request->validate([
                 'reparto.*' => ['array'],
                 'reparto.*.cuota_id' => ['nullable', 'integer'],
@@ -164,8 +165,8 @@ class CompraRapidaController extends Controller
             ], [
                 'reparto.*.array' => 'El reparto llegó incompleto. Volvé a abrir la cuenta e intentalo de nuevo.',
                 'reparto.*.cuota_id.integer' => 'El reparto llegó incompleto. Volvé a abrir la cuenta e intentalo de nuevo.',
-                'reparto.*.importe.regex' => 'Escribí el importe de cada compra con hasta dos decimales, sin comas.',
-            ]);
+                'reparto.*.importe.regex' => 'Escribí el importe de :attribute con hasta dos decimales, sin comas.',
+            ], $this->comprasDelReparto($request, $cuentas));
 
             $reparto = array_values(array_filter(
                 array_map(fn ($fila) => [
@@ -243,5 +244,31 @@ class CompraRapidaController extends Controller
 
                 return $fila;
             });
+    }
+
+    /**
+     * Cómo se nombra cada fila del reparto en el aviso de un importe mal escrito: por el
+     * concepto de su compra. Solo entre las compras abiertas que esta persona ve en esta
+     * cuenta; cualquier otra queda como «una de las compras», sin decir de qué se trata.
+     *
+     * @return array<string, string>
+     */
+    private function comprasDelReparto(Request $request, CuentaProveedor $cuentas): array
+    {
+        $proveedor = $request->input('beneficiario');
+        $moneda = $request->input('moneda');
+        $conceptos = is_string($proveedor) && is_string($moneda)
+            ? $cuentas->abiertas($request->user(), $proveedor, $moneda)->mapWithKeys(fn ($c) => [$c->id => $c->gasto->concepto])
+            : collect();
+
+        $nombres = [];
+
+        foreach ($request->input('reparto') as $i => $fila) {
+            $id = is_array($fila) ? filter_var($fila['cuota_id'] ?? null, FILTER_VALIDATE_INT) : false;
+            $concepto = $id === false ? null : $conceptos->get($id);
+            $nombres["reparto.{$i}.importe"] = $concepto !== null ? '«'.$concepto.'»' : 'una de las compras';
+        }
+
+        return $nombres;
     }
 }
