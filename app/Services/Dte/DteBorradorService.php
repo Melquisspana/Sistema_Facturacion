@@ -25,6 +25,7 @@ use App\Models\Dte;
 use App\Models\DteLinea;
 use App\Models\Producto;
 use App\Models\User;
+use App\Services\Rutas\FacturarPedido;
 use App\Support\Dinero;
 use App\Support\Dte\ReglaOrdenCompra;
 use App\Support\Dte\ResuelveEmisorUnico;
@@ -233,6 +234,13 @@ class DteBorradorService
             }
 
             $this->recalcular($nuevo);
+
+            // Duplicar un CCF que ya no cuenta (rechazado o invalidado) es corregirlo: la
+            // copia se queda con lo que llegó de la fábrica para él. Si el original sigue
+            // valiendo, sus envíos no se mueven (lo hará la invalidación con su reemplazo).
+            if (! $original->sigueFacturado()) {
+                FacturarPedido::pasarAlCcfQueCorrige($original, $nuevo, 'duplicado', $usuario);
+            }
 
             return $nuevo->refresh();
         });

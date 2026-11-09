@@ -230,6 +230,38 @@ class FacturarPedidoTest extends TestCase
         $this->assertSame([$anterior->id], $ultimo->properties['dte_anteriores']);
     }
 
+    public function test_el_ccf_que_corrige_a_uno_rechazado_se_queda_con_los_envios(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $envio = $this->envio($pedido, [$this->galleta->id => '10']);
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+        $original = Dte::sole();
+
+        // Mientras el CCF cuenta, «Duplicar» no le quita los envíos.
+        Dte::whereKey($original->id)->update(['estado' => EstadoDte::Aceptado->value]);
+        $this->post(route('facturacion.duplicar', $original))->assertSessionMissing('error');
+        $this->assertSame($original->id, $envio->refresh()->dte_id);
+        Dte::latest('id')->first()->delete();
+
+        // Hacienda lo rechaza y se corrige con «Duplicar»: lo que llegó queda en el CCF nuevo.
+        Dte::whereKey($original->id)->update(['estado' => EstadoDte::Rechazado->value]);
+        $this->post(route('facturacion.duplicar', $original))->assertSessionMissing('error');
+        $nuevo = Dte::latest('id')->first();
+        $this->assertSame($nuevo->id, $envio->refresh()->dte_id);
+        $this->assertTrue($envio->estaFacturado());
+        $this->assertSame(0, PedidoSalaEnvio::porFacturar()->count());
+
+        // «Facturar» ya no hace otro CCF con la misma mercadería: lleva al que lo corrige.
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertRedirect(route('facturacion.edit', $nuevo));
+        $this->assertSame(3, Dte::withTrashed()->count());
+
+        $log = Activity::where('description', 'el CCF que corrige se quedó con lo que llegó del pedido')->sole();
+        $this->assertTrue($log->subject->is($pedido));
+        $this->assertSame($nuevo->id, $log->properties['dte_id']);
+        $this->assertSame($original->id, $log->properties['dte_anterior']);
+        $this->assertSame([['envio_id' => $envio->id, 'numero' => 1]], $log->properties['envios']);
+    }
+
     public function test_un_producto_sin_precio_inactivo_o_con_decimales_frena_y_no_crea_nada(): void
     {
         $sinPrecio = Producto::factory()->create(['nombre' => 'Turrón de prueba', 'precio_unitario' => 0]);

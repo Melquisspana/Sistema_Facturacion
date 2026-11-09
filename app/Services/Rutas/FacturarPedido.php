@@ -30,7 +30,9 @@ use Illuminate\Validation\ValidationException;
  *
  * El enlace va en `pedido_sala_envios.dte_id`. «Facturado» lo decide
  * `Dte::cuentaComoFacturado()`: un borrador borrado o un CCF invalidado o rechazado devuelve
- * el envío a «Por facturar» sin limpiar nada a mano.
+ * el envío a «Por facturar» sin limpiar nada a mano. Salvo que otro CCF lo corrija (el que lo
+ * reemplaza al invalidarlo, o su copia tras un rechazo): ese se queda con los envíos
+ * ({@see pasarAlCcfQueCorrige()}).
  *
  * Nunca se crea un CCF incompleto: un producto sin precio, inactivo o borrado, o una
  * cantidad con decimales frena todo. Las cantidades se suman con bcmath y pasan a entero
@@ -44,6 +46,9 @@ class FacturarPedido
 
     /** Lo que llegó después de crear el borrador va en ese mismo CCF, no en otro con la misma OC. */
     public const BORRADOR_ABIERTO = 'Este pedido ya tiene un borrador abierto. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo lo que llegó.';
+
+    /** Bitácora de {@see pasarAlCcfQueCorrige()}. */
+    public const PASO_AL_QUE_CORRIGE = 'el CCF que corrige se quedó con lo que llegó del pedido';
 
     public function __construct(
         private readonly DteBorradorService $borradores,
@@ -143,6 +148,37 @@ class FacturarPedido
 
             return $dte;
         }, 3);
+    }
+
+    /**
+     * El CCF $nuevo corrige a $anterior: lo reemplaza en una invalidación aceptada, o es su
+     * copia («Duplicar») después de un rechazo. Los envíos vigentes que estaban en $anterior
+     * pasan a $nuevo, para que no vuelvan a «Por facturar» con la mercadería ya facturada en
+     * el nuevo (otro «Facturar» la cobraría dos veces). La bitácora del pedido guarda los dos.
+     */
+    public static function pasarAlCcfQueCorrige(Dte $anterior, Dte $nuevo, string $como, ?User $usuario = null): void
+    {
+        $envios = PedidoSalaEnvio::query()->vigentes()->where('dte_id', $anterior->id)
+            ->orderBy('id')->lockForUpdate()->get(['id', 'pedido_sala_id', 'numero']);
+        if ($envios->isEmpty()) {
+            return;
+        }
+        PedidoSalaEnvio::whereKey($envios->modelKeys())->update(['dte_id' => $nuevo->id]);
+
+        $pedidos = PedidoSala::query()->whereKey($envios->pluck('pedido_sala_id')->unique()->all())->get();
+        foreach ($pedidos as $pedido) {
+            $log = activity('pedido_sala')->performedOn($pedido)->withProperties([
+                'dte_id' => $nuevo->id,
+                'dte_anterior' => $anterior->id,
+                'como' => $como,
+                'envios' => $envios->where('pedido_sala_id', $pedido->id)
+                    ->map(fn (PedidoSalaEnvio $e) => ['envio_id' => $e->id, 'numero' => $e->numero])->values()->all(),
+            ]);
+            if ($usuario !== null) {
+                $log->causedBy($usuario);
+            }
+            $log->log(self::PASO_AL_QUE_CORRIGE);
+        }
     }
 
     /**
