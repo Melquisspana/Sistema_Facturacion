@@ -135,6 +135,8 @@ class PlanillaFlujoController extends Controller
         $esVacaciones = $planilla->clase === VacacionesAnuales::CLASE;
         $esIndemnizacion = $planilla->esIndemnizacion();
         $pagos = $this->pagosPorDetalle($planilla);
+        // Hecha de nuevo después de anularla: su folio no repite el de la anulada.
+        $vez = $planilla->vez();
 
         $lineas = [];
         $suma = ['total_ingresos' => 0, 'descuentos' => 0, 'a_pagar' => 0, 'pagado' => 0];
@@ -177,7 +179,7 @@ class PlanillaFlujoController extends Controller
                 'folio' => $planilla->esIndividual()
                     ? ($esVacaciones ? 'VAC-' : ($planilla->clase === IndemnizacionBaja::CLASES['renuncia'] ? 'REN-' : 'IND-'))
                         .str_pad((string) $planilla->id, 5, '0', STR_PAD_LEFT)
-                    : $planilla->periodo.'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
+                    : $planilla->periodo.($vez > 1 ? '-V'.$vez : '').'-'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
                 'periodo' => $anio
                     ? $anio['desde']->format('d/m/y').'–'.$anio['hasta']->format('d/m/y')
                     : $desde->format('d').'–'.$hasta->format('d').' '.mb_strtolower($hasta->translatedFormat('M')),
@@ -246,6 +248,7 @@ class PlanillaFlujoController extends Controller
             'cabecera' => [
                 'periodo' => $planilla->esIndividual() ? $planilla->periodoEnPalabras() : $planilla->periodo.' · '.$planilla->periodoEnPalabras(),
                 'periodo_largo' => $planilla->periodoEnPalabras(),
+                'vez' => $vez,
                 'fecha_pago' => $planilla->fecha_pago?->format('d/m/Y'),
                 'hoy' => now()->format('d/m/Y'),
             ],

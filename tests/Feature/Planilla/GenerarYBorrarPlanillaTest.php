@@ -464,6 +464,24 @@ class GenerarYBorrarPlanillaTest extends TestCase
             fn (string $sql) => str_contains($sql, 'planillas') && str_contains($sql, 'periodo'))));
     }
 
+    public function test_la_rehecha_lleva_otro_folio_y_la_anulada_conserva_el_suyo(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+        $nueva = $this->generar('2026-10-01');
+
+        $recibos = fn (Planilla $p) => $this->actingAs($this->actor)
+            ->get(route('planilla.impresos', ['planilla' => $p, 'formato' => 'recibo']))->assertOk();
+        $hoja = fn (Planilla $p) => $this->actingAs($this->actor)->get(route('planilla.impresos', $p))->assertOk();
+
+        // El recibo de la anulada ya pudo imprimirse y firmarse: su folio no cambia.
+        $recibos($anulada)->assertSee('2026-10-Q1-001')->assertDontSee('2026-10-Q1-V');
+        $recibos($nueva)->assertSee('2026-10-Q1-V2-001')->assertDontSee('2026-10-Q1-001');
+
+        $hoja($anulada)->assertDontSee('versión 2');
+        $hoja($nueva)->assertSee('versión 2');
+    }
+
     private function mensajeDeudaPendiente(): string
     {
         return 'No se puede volver a hacer: la planilla 2026-10-Q1 anulada tiene deudas pendientes en Gastos (Ana Ficticia), '

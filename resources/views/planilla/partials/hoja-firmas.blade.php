@@ -23,9 +23,10 @@
         <div class="hi-sello">Borrador<small>no es comprobante de pago</small></div>
     @endif
 
+    {{-- Hecha de nuevo después de anularla, dice su versión: la hoja de la anulada, quizá ya firmada, no se confunde con esta. --}}
     @include('planilla.partials.membrete', [
         'documento' => $deVacaciones ? 'Vacaciones para firma' : ($deIndemnizacion ? \App\Models\Planilla\Planilla::CLASES[$planilla->clase].' para firma' : 'Planilla para firma'),
-        'folio' => e($cabecera['periodo_largo'])
+        'folio' => e($cabecera['periodo_largo']).(($cabecera['vez'] ?? 1) > 1 ? ' · versión '.e($cabecera['vez']) : '')
             .'<br>'.($esBorrador
                 ? 'Sin pagar · impresa el '.e($cabecera['hoy'])
                 : 'Pagada el '.e($cabecera['fecha_pago'] ?? '—')),

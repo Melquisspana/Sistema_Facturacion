@@ -73,6 +73,26 @@ class Planilla extends Model
             : $valor);
     }
 
+    /**
+     * Qué vez se hace esta quincena o mensual: 1 la primera; 2, 3… si se volvió a hacer
+     * después de anular la anterior ({@see PrepararPlanilla::abrir()}). Va en los impresos:
+     * los de la anulada, quizá ya firmados, no se confunden con los de la nueva.
+     */
+    public function vez(): int
+    {
+        if ($this->esIndividual()) {
+            return 1;
+        }
+
+        // Las de antes del mismo período son anuladas: otra no habría dejado hacer esta.
+        return 1 + self::where('tipo_periodo', $this->tipo_periodo)
+            ->where(fn ($q) => $q->where('periodo', $this->periodo)->orWhere('periodo', 'like', $this->periodo.'-A%'))
+            ->where('clase', $this->clase)
+            ->where('individual_de', 0)
+            ->where('id', '<', $this->id)
+            ->count();
+    }
+
     public function detalles(): HasMany
     {
         return $this->hasMany(PlanillaDetalle::class, 'planilla_id')->orderBy('nombre_snapshot');
