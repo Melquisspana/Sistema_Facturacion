@@ -11,6 +11,7 @@ use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Enums\ModuloSistema;
 use App\Http\Controllers\Controller;
+use App\Models\Cliente;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -54,6 +55,10 @@ class OpcionesModuloController extends Controller
                     'titulo' => 'Conciliación con el albarán',
                     'descripcion' => 'Cuánta diferencia de monto se acepta antes de marcar un documento.',
                     'claves' => ['ppq.diferencia_coincide', 'ppq.diferencia_pequena', 'ppq.albaranes.tipo_entrega'],
+                ],
+                [
+                    'titulo' => 'Cliente',
+                    'claves' => ['ppq.cliente_default_id'],
                 ],
                 [
                     'titulo' => 'Orden de compra y archivos del cliente',
@@ -228,11 +233,14 @@ class OpcionesModuloController extends Controller
         $pagina = $this->pagina($request);
 
         $grupos = [];
+        $conCliente = false;
         foreach ($this->gruposVisibles($pagina) as $grupo) {
             $campos = [];
             foreach ($grupo['claves'] as $clave) {
+                $definicion = $catalogo->definicion($clave);
+                $conCliente = $conCliente || $definicion->tipo === TipoAjuste::Cliente;
                 $campos[self::campo($clave)] = [
-                    'definicion' => $catalogo->definicion($clave),
+                    'definicion' => $definicion,
                     'estado' => $ajustes->estadoParaPantalla($clave),
                 ];
             }
@@ -244,6 +252,8 @@ class OpcionesModuloController extends Controller
             'accion' => route('configuracion.opciones.'.$pagina.'.update'),
             'volver' => route('configuracion.opciones.'.$pagina),
             'grupos' => $grupos,
+            // La lista de clientes, igual que en el filtro de lotes, solo si la página la usa.
+            'clientes' => $conCliente ? Cliente::query()->orderBy('nombre')->get(['id', 'nombre']) : collect(),
         ]);
     }
 
@@ -389,7 +399,8 @@ class OpcionesModuloController extends Controller
 
         $reglas[] = match ($definicion->tipo) {
             TipoAjuste::Booleano => 'boolean',
-            TipoAjuste::Entero => 'integer',
+            // Que el cliente exista lo comprueba el catálogo (ConversorValor), con su mensaje.
+            TipoAjuste::Entero, TipoAjuste::Cliente => 'integer',
             TipoAjuste::Decimal => 'numeric',
             TipoAjuste::Email => 'email',
             TipoAjuste::Enumerado => Rule::in($definicion->opciones),

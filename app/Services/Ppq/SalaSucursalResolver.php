@@ -2,6 +2,7 @@
 
 namespace App\Services\Ppq;
 
+use App\Facades\Ajustes;
 use App\Models\ClienteSucursal;
 use App\Models\PpqSala;
 use App\Support\Sala;
@@ -91,7 +92,7 @@ class SalaSucursalResolver
 
         $query = ClienteSucursal::query()->whereIn('codigo', $variantes);
 
-        if ($cliente = config('ppq.cliente_default_id')) {
+        if ($cliente = Ajustes::cliente('ppq.cliente_default_id')) {
             $query->where('cliente_id', $cliente);
         }
 

@@ -5,6 +5,7 @@ namespace App\Ajustes;
 use App\Ajustes\Definicion\DefinicionAjuste;
 use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
+use App\Models\Cliente;
 use App\Support\Dinero;
 
 /**
@@ -46,6 +47,10 @@ class ConversorValor
             // por float. Se opera con App\Support\Dinero (bcmath).
             TipoAjuste::Decimal => Dinero::de($this->validarDecimal($definicion, $texto)),
             TipoAjuste::Lista => $this->aLista($texto),
+            // Leer no consulta la base (que exista se exige al guardar) y es tolerante
+            // como el booleano: un .env con «0» o texto queda «sin cliente», como antes
+            // (el lector hacía `if ($id = config(...))`), en vez de tumbar cada pantalla.
+            TipoAjuste::Cliente => preg_match('/^[1-9]\d*$/', trim($texto)) === 1 ? (int) trim($texto) : null,
             TipoAjuste::Texto, TipoAjuste::Email, TipoAjuste::Enumerado, TipoAjuste::Secreto => $texto,
         };
     }
@@ -63,6 +68,7 @@ class ConversorValor
         return match ($definicion->tipo) {
             TipoAjuste::Booleano => $this->normalizarBooleano($definicion, $valor) ? '1' : '0',
             TipoAjuste::Entero => (string) $valor,
+            TipoAjuste::Cliente => trim((string) $valor),
             TipoAjuste::Decimal => Dinero::de(is_string($valor) ? $valor : (string) $valor),
             TipoAjuste::Lista => $this->codificarLista((array) $valor),
             TipoAjuste::Email => strtolower(trim((string) $valor)),
@@ -102,6 +108,7 @@ class ConversorValor
             TipoAjuste::Lista => $this->validarLista($definicion, $valor),
             TipoAjuste::Secreto => $this->validarSecreto($definicion, (string) $valor),
             TipoAjuste::Texto => $this->validarTexto($definicion, (string) $valor),
+            TipoAjuste::Cliente => $this->validarCliente($definicion, $valor),
         };
     }
 
@@ -295,6 +302,39 @@ class ConversorValor
                 "«{$definicion->etiqueta}» debe ser un horario «desde-hasta» en formato HH:MM-HH:MM, con la hora de cierre después de la de apertura (por ejemplo 08:00-17:00)."
             );
         }
+    }
+
+    /** Id de cliente bien formado (entero positivo). No consulta la base. */
+    private function idCliente(DefinicionAjuste $definicion, mixed $valor): int
+    {
+        $texto = trim((string) $valor);
+
+        if (preg_match('/^[1-9]\d*$/', $texto) !== 1) {
+            throw ValorAjusteInvalidoException::con(
+                $definicion->clave,
+                "«{$definicion->etiqueta}» debe ser un cliente de la lista (recibido: «{$texto}»)."
+            );
+        }
+
+        return (int) $texto;
+    }
+
+    /**
+     * Al GUARDAR, el cliente tiene que existir (un borrado no cuenta): un id que no es
+     * de nadie mandaría los lotes y las notas a ninguna parte, o a otra empresa.
+     */
+    private function validarCliente(DefinicionAjuste $definicion, mixed $valor): string
+    {
+        $id = $this->idCliente($definicion, $valor);
+
+        if (! Cliente::query()->whereKey($id)->exists()) {
+            throw ValorAjusteInvalidoException::con(
+                $definicion->clave,
+                "«{$definicion->etiqueta}»: el cliente elegido no existe."
+            );
+        }
+
+        return (string) $id;
     }
 
     private function validarSecreto(DefinicionAjuste $definicion, string $valor): string

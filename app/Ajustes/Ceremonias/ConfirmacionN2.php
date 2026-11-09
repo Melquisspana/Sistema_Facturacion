@@ -6,7 +6,9 @@ use App\Ajustes\Ajustes;
 use App\Ajustes\CatalogoAjustes;
 use App\Ajustes\ConversorValor;
 use App\Ajustes\Definicion\NivelConfirmacion;
+use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
+use App\Models\Cliente;
 
 /**
  * Confirmación de nivel N2: "esto es lo que vas a cambiar, ¿seguro?".
@@ -71,15 +73,30 @@ class ConfirmacionN2
             $textoActual = $this->conversor->aTexto($definicion, $actual);
 
             if ($textoNuevo !== $textoActual) {
-                $cambios[] = CambioPropuesto::deValor(
-                    $definicion,
-                    $actual,
-                    $this->conversor->aValor($definicion, $textoNuevo),
-                );
+                $nuevo = $this->conversor->aValor($definicion, $textoNuevo);
+
+                // Un cliente se confirma por su NOMBRE: «7 → 12» no dice a qué empresa
+                // van a ir los lotes.
+                if ($definicion->tipo === TipoAjuste::Cliente) {
+                    [$actual, $nuevo] = [$this->nombreCliente($actual), $this->nombreCliente($nuevo)];
+                }
+
+                $cambios[] = CambioPropuesto::deValor($definicion, $actual, $nuevo);
             }
         }
 
         return $cambios;
+    }
+
+    private function nombreCliente(mixed $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        $nombre = Cliente::query()->whereKey($id)->value('nombre');
+
+        return $nombre === null ? "cliente {$id} (no existe)" : "{$nombre} (n.º {$id})";
     }
 
     /**

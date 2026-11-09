@@ -131,7 +131,7 @@ class DevolucionesAlbaran
         if ($dte === null || $dte->tipo_dte !== TipoDte::CreditoFiscal || $dte->estado !== EstadoDte::Aceptado) {
             return ['dte' => null, 'motivo' => 'sin CCF aceptado e inequívoco para la referencia o la OC'];
         }
-        $clienteNota = $nota->clienteSucursal?->cliente_id ?? config('ppq.cliente_default_id');
+        $clienteNota = $nota->clienteSucursal?->cliente_id ?? Ajustes::cliente('ppq.cliente_default_id');
         $salaNota = Sala::normalizar($nota->sala_codigo ?: Albaran::salaDesdeNumero($nota->numero_albaran));
         $salaNumero = Sala::normalizar(Albaran::salaDesdeNumero($nota->numero_albaran));
         $salaCcf = Sala::normalizar($dte->clienteSucursal?->codigo) ?: OrdenCompra::salaDesde($dte->numero_orden_compra);

@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static int|null entero(string $clave, ?int $porDefecto = null)
  * @method static string|null decimal(string $clave, ?string $porDefecto = null)
  * @method static array<int, string> lista(string $clave)
+ * @method static int|null cliente(string $clave)
  * @method static string|null secretoParaRuntime(string $clave)
  * @method static ValorAjuste resolver(string $clave)
  * @method static FuenteAjuste fuente(string $clave)

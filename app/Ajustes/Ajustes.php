@@ -131,6 +131,15 @@ class Ajustes
         return $valor === null ? $porDefecto : (string) $valor;
     }
 
+    /** Id del cliente guardado (o del .env). No comprueba que exista: eso se exige al guardar. */
+    public function cliente(string $clave): ?int
+    {
+        $this->exigirTipo($clave, TipoAjuste::Cliente);
+        $valor = $this->get($clave);
+
+        return $valor === null ? null : (int) $valor;
+    }
+
     /** @return array<int, string> */
     public function lista(string $clave): array
     {

@@ -11,6 +11,7 @@ use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Exceptions\Ppq\ArchivoQuedanIncompletoException;
 use App\Exceptions\Ppq\ConciliacionYaProcesadaException;
+use App\Facades\Ajustes;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Ppq\PpqLoteRequest;
 use App\Models\Cliente;
@@ -163,7 +164,7 @@ class PpqLoteController extends Controller
         return view('ppq.lotes.create', [
             'clientes' => Cliente::orderBy('nombre')->get(['id', 'nombre']),
             'estados' => EstadoPpq::opciones(),
-            'clienteDefault' => config('ppq.cliente_default_id'),
+            'clienteDefault' => Ajustes::cliente('ppq.cliente_default_id'),
         ]);
     }
 
@@ -173,7 +174,7 @@ class PpqLoteController extends Controller
         $lote = PpqLote::create($request->validated() + [
             'user_id' => $request->user()->id,
             'estado' => EstadoPpq::Borrador->value,
-            'cliente_id' => config('ppq.cliente_default_id')
+            'cliente_id' => Ajustes::cliente('ppq.cliente_default_id')
                 ?? Cliente::whereHas('perfilDocumento', fn ($q) => $q->where('activo', true))->value('id'),
         ]);
 

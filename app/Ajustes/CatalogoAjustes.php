@@ -959,6 +959,19 @@ class CatalogoAjustes
                 claveConfig: 'ppq.albaranes.sincronizacion_automatica',
                 porDefecto: false,
             ),
+            DefinicionAjuste::hacer(
+                clave: 'ppq.cliente_default_id',
+                seccion: 'ppq',
+                tipo: TipoAjuste::Cliente,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Cliente del pronto pago',
+                descripcion: 'A este cliente se le crean los lotes y con él se cruzan las salas y las notas de crédito de pronto pago. Otro cliente manda los lotes nuevos a esa empresa.',
+                claveConfig: 'ppq.cliente_default_id',
+            ),
 
             // --------------------------------------------------------- Cobros
             DefinicionAjuste::hacer(
