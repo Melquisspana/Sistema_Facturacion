@@ -32,10 +32,15 @@ services:
     ports:
       - "${WEB_PUERTO:-80}:80"
       # HTTPS de la red local (contingencia sin internet), publicado SOLO en la IP del
-      # servidor en la red local. Sin WEB_IP_LAN queda en 127.0.0.1 del host: nadie de
-      # la red llega. Apache abre el 443 solo con el certificado y LAN_SUBNET (ver
-      # docker/apache/facturacion.conf); si faltan, el 80 sigue igual.
-      - "${WEB_IP_LAN:-127.0.0.1}:443:443"
+      # servidor en la red local. Sin WEB_IP_LAN va a un puerto al azar de 127.0.0.1 del
+      # host: nadie de la red llega y no choca con otro 443 del host. Apache abre el 443
+      # solo con el certificado y LAN_SUBNET (ver docker/apache/facturacion.conf); si
+      # faltan, el 80 sigue igual.
+      # Si el host no tiene esa IP cuando arranca Docker (después de un corte, el router
+      # puede volver más tarde), web no arranca, con el 80 incluido, y Docker no lo
+      # reintenta. Por eso el host lleva net.ipv4.ip_nonlocal_bind=1 (paso 0 de §3.7 de
+      # docs/MIGRACION_LINUX_DOCKER.md).
+      - "${WEB_IP_LAN:-127.0.0.1}:${WEB_IP_LAN:+443}:443"
     # Los tres de x-app más el certificado de la red local, que solo lo ve web.
     volumes:
       - app-storage:/var/www/html/storage

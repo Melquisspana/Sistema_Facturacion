@@ -331,7 +331,7 @@ Resuelto en `compose.yaml`:
   - sube `storage/app/private`, sin `paquetes/`, `backup-temp/` ni `diagnostico-concurrencia/`;
   - sube `storage/app/templates`;
   - la configuración y el remoto se vuelven a crear en Linux; lo hace Melqui.
-- **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Al volver la luz, `restart: always` levanta todo cuando arranca Docker, sin entrar a nadie. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
+- **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Al volver la luz, `restart: always` levanta todo cuando arranca Docker, sin entrar a nadie. Con el 443 de la red local, eso vale solo con el paso 0 de 3.7: sin él, si el router vuelve más tarde que el servidor, `web` no arranca, con el 80 incluido. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
 - **Reloj:** NTP del sistema. Hay que confirmar la hora antes del primer DTE (riesgo R9).
 - **Rotación de logs:** si se cambia `LOG_CHANNEL` a `daily` no hace falta en el host. Si no, `logrotate` sobre `storage/logs`.
 - **Cortafuegos:** solo el 80 y el 443 en la red local. Docker escribe sus propias reglas de iptables y puede saltarse las de `ufw`, así que hay que revisar el resultado con un escaneo desde otra máquina.
@@ -345,37 +345,49 @@ Sin internet, las PC de la oficina entran al servidor por `https://<IP local>`, 
 - La imagen trae `mod_ssl`, pero **ningún certificado**. El certificado y la llave están solo en el host y se montan de solo lectura en `web`; el worker y el programador no los ven.
 - El 443 se abre solo si están las cuatro cosas: `lan.crt` y `lan.key` en `LAN_TLS_DIR`, `WEB_IP_LAN` y `LAN_SUBNET`. Lo decide el entrypoint de `web` cada vez que arranca. Además comprueba que la llave sea la del certificado, que no tenga contraseña y que Apache acepte la configuración.
 - **Si falta algo o algo está mal, el 443 queda cerrado y el 80 arranca igual.** El motivo sale en `docker compose logs web` como «HTTPS de la red local apagado». Sin certificado ni variables no avisa nada: es lo normal en una máquina de prueba.
-- compose publica el 443 **solo en `WEB_IP_LAN`**. Sin esa variable lo deja en `127.0.0.1` del servidor, donde nadie de la red llega. compose no tiene puertos que existan solo con una variable, salvo con otro archivo; así no hace falta acordarse de un `-f` más en cada comando.
+- compose publica el 443 **solo en `WEB_IP_LAN`**. Sin esa variable lo deja en un puerto al azar de `127.0.0.1` del servidor: nadie de la red llega y no choca con otro programa del servidor que use el 443. compose no tiene puertos que existan solo con una variable, salvo con otro archivo; así no hace falta acordarse de un `-f` más en cada comando.
 - Apache atiende el 443 solo para la red de la oficina (`LAN_SUBNET`): desde otra IP responde 403. Acepta la misma lista de `Host` que el 80 más la IP local (`WEB_IP_LAN`); con otro Host responde 404.
 - **Laravel no cambia.** El pedido llega por HTTPS directo a Apache, sin proxy: `isSecure()` es verdadero, la cookie `Secure` se guarda y el CSRF anda. Los enlaces se arman con la IP por la que se entró. En el `.env` de Laravel, `SESSION_DOMAIN` tiene que estar vacío: una cookie atada al dominio público no se guarda al entrar por IP.
 
 **En el servidor, una vez** (192.0.2.10 y 192.0.2.0/24 son ejemplos; van la IP y la red reales):
 
 ```sh
+# 0. OBLIGATORIO antes de poner WEB_IP_LAN: que Docker pueda publicar el 443 en esa IP
+#    aunque el servidor todavía no la tenga. Después de un corte de luz, el router puede
+#    volver más tarde que el servidor. Sin esto, Docker no publica el puerto, web no
+#    arranca (con el 80 incluido) y no lo vuelve a intentar hasta que alguien entre.
+#    Solo deja escuchar en una IP que todavía no llegó; no abre ningún puerto.
+echo 'net.ipv4.ip_nonlocal_bind = 1' | sudo tee /etc/sysctl.d/90-facturacion-ip-lan.conf
+sudo sysctl --system > /dev/null
+cat /proc/sys/net/ipv4/ip_nonlocal_bind               # 1
+
 # 1. Certificado autofirmado con la IP en subjectAltName, válido por 825 días. La llave
 #    va sin contraseña: Apache arranca solo, sin nadie que la escriba. Las tres últimas
-#    líneas lo marcan como certificado de servidor y no de autoridad (sin ellas, OpenSSL
-#    3 lo hace de autoridad, Apache avisa y algún navegador puede negarse).
-sudo install -d -m 0750 /srv/facturacion/tls
-cd /srv/facturacion/tls
+#    líneas de openssl lo marcan como certificado de servidor y no de autoridad (sin
+#    ellas, OpenSSL 3 lo hace de autoridad, Apache avisa y algún navegador puede negarse).
+#    Con rutas completas y sin cd: la carpeta queda de root y sin root no se entra.
+D=/srv/facturacion/tls                                # la carpeta de LAN_TLS_DIR
+sudo install -d -m 0750 "$D"
 sudo openssl req -x509 -newkey rsa:3072 -sha256 -days 825 -noenc \
-    -keyout lan.key -out lan.crt \
+    -keyout "$D/lan.key" -out "$D/lan.crt" \
     -subj "/CN=192.0.2.10" -addext "subjectAltName=IP:192.0.2.10" \
     -addext "basicConstraints=critical,CA:FALSE" \
     -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
     -addext "extendedKeyUsage=serverAuth"
-sudo chmod 0600 lan.key
-sudo chmod 0644 lan.crt
-sudo openssl x509 -noout -enddate -in lan.crt     # anotar el vencimiento
+sudo chmod 0600 "$D/lan.key"
+sudo chmod 0644 "$D/lan.crt"
+sudo openssl x509 -noout -enddate -in "$D/lan.crt"    # anotar el vencimiento
 
 # 2. En .env.compose:
 #      WEB_IP_LAN=192.0.2.10
 #      LAN_SUBNET=192.0.2.0/24
 #    LAN_TLS_DIR solo si la carpeta no es /srv/facturacion/tls.
 
-# 3. Recrear web y revisar.
+# 3. Desde la carpeta de compose.yaml y .env.compose: recrear web y revisar.
+ip -4 -o addr | grep -w 192.0.2.10                    # la IP tiene que ser del servidor
 docker compose --env-file .env.compose up -d web
 docker compose --env-file .env.compose logs web | grep 'red local'   # sin avisos
+docker compose --env-file .env.compose ps web         # con 192.0.2.10:443->443/tcp
 ```
 
 - La llave queda de `root` con `0600`. Apache la lee al arrancar, como root, antes de pasar a `www-data`. Nunca va al repo ni a la imagen: `.gitignore` y `.dockerignore` excluyen `*.crt` y `*.key`.
@@ -386,10 +398,10 @@ docker compose --env-file .env.compose logs web | grep 'red local'   # sin aviso
 
 **Cuidado:**
 
-- `WEB_IP_LAN` tiene que ser una IP que el servidor tenga. Si no la tiene, Docker no puede publicar el puerto y **`web` no arranca, con el 80 incluido**: pasa si la IP está mal escrita, si el DHCP le dio otra o si Docker arranca antes de que la red tenga la IP. Comprobado en Docker Desktop (09/11): con una IP ajena, el contenedor no arranca. Defensas:
-  - la reserva de DHCP, que ya hace falta por los ESP32 (R10);
-  - `net.ipv4.ip_nonlocal_bind = 1` en `/etc/sysctl.d/`, para que Docker publique aunque la IP llegue después. Falta comprobarlo en Linux;
-  - después de cada reinicio, `docker compose ps` con `web` sano.
+- **Sin el paso 0, `WEB_IP_LAN` puede tumbar el 80.** Si el servidor no tiene esa IP cuando arranca Docker, Docker no puede publicar el puerto y **`web` no arranca, con el 80 incluido**. `restart: always` no lo reintenta: solo levanta un contenedor que se cayó después de arrancar. Pasa si el router vuelve más tarde que el servidor después de un corte, si el DHCP le dio otra IP o si está mal escrita.
+- Con el paso 0, una IP equivocada ya no tumba el 80, pero el 443 no responde; por eso el `grep` y el `ps` del paso 3. La reserva de DHCP, que ya hace falta por los ESP32 (R10), evita que la IP cambie.
+- Si `web` alguna vez no arrancó por el puerto, se levanta con `docker compose --env-file .env.compose up -d --force-recreate web`. Un `up -d` o un `restart` sin `--force-recreate` lo dejan corriendo **sin ningún puerto publicado**, ni siquiera el 80. El healthcheck se hace dentro del contenedor y sigue sano: en `ps` lo que falta es `0.0.0.0:80->80/tcp`.
+- Con `WEB_IP_LAN`, el 443 de esa IP tiene que estar libre: si otro programa del servidor ya escucha en el 443, `web` no arranca. Se ve en el primer `up`.
 - `LAN_SUBNET` **nunca** incluye una red de Docker (172.16.0.0/12). Por la puerta de enlace de `frontend` (172.30.0.1) llega lo que pasa por el proxy de Docker, por ejemplo una conexión desde el propio servidor. Con Docker Engine en Linux, las PC de la oficina deberían llegar con su propia IP; falta confirmarlo desde una PC. Si una recibe 403, la IP con que llegó está en `docker compose logs web`.
 - En Docker Desktop todo llega con la IP de la puerta de enlace. Para probar ahí, `LAN_SUBNET` es esa IP (ver «Cómo levantarlo en una máquina de prueba»).
 
@@ -400,6 +412,12 @@ docker compose --env-file .env.compose logs web | grep 'red local'   # sin aviso
 - Desde una IP fuera de `LAN_SUBNET` da 403: la del equipo cuando no está en la lista y la de otro contenedor. Con un `Host` que no está en la lista da 404, igual que el 80. TLS 1.1 no conecta; 1.2 y 1.3 sí.
 - Sin certificado, sin `LAN_SUBNET`, con la llave de otro certificado, con la llave con contraseña o con `LAN_SUBNET` inválida, el 443 queda cerrado, el motivo sale en los registros y el 80 responde 200 con `web` sano. Sin nada configurado, no avisa. Sin el control del entrypoint, Apache no arrancaba con esa llave ni con la de contraseña, aunque `apache2ctl -t` decía «Syntax OK».
 - El 80 sigue igual: mismos vhost (`apache2ctl -S`), `/up` y `/login` en 200, Host ajeno en 404. La imagen no trae `/etc/facturacion` ni certificados, y el worker no ve la carpeta del certificado.
+- Por el 443, `/.htaccess` da 403, igual que por el 80, y `/robots.txt` da 200. Lo cierra `AuthMerging And`. Sin esa línea, el `Require ip` reemplaza el `Require all denied` de los `.ht*` de `apache2.conf`, y `/.htaccess` da 200 desde la red de la oficina.
+- El paso 0, en un Docker Engine 29.9.3 de Linux aislado (Docker dentro de Docker), con los puertos de `compose.yaml` y un servidor mínimo en lugar de la app:
+  - sin el paso 0 y sin la IP, `up` falla con «cannot assign requested address». Después de reiniciar el motor sin la IP, `web` queda detenido y el 80 no responde: ni un minuto después ni cuando llega la IP;
+  - después de esa falla, `up -d` y `restart` dejan a `web` corriendo sin ningún puerto; `up -d --force-recreate` lo arregla;
+  - con el paso 0, `web` arranca sin la IP con el 80 y vuelve solo después de reiniciar el motor. Cuando llega la IP, el 443 responde en ella desde otro equipo; en otra IP del servidor sigue cerrado.
+- El paso 1 de 3.7, corrido como root en un contenedor Linux y desde otra carpeta, deja `lan.crt` y `lan.key` (pareja, la llave en `0600`) solo en `/srv/facturacion/tls`. En Git Bash de Windows, con `MSYS_NO_PATHCONV=1`, genera el certificado de prueba.
 
 ---
 
@@ -526,8 +544,11 @@ $C exec scheduler php artisan schedule:list
 $C run --rm -e BACKUP_DIARIO_PROGRAMADO=true scheduler php artisan schedule:list
 
 # 5. (Opcional) HTTPS de la red local (3.7), en https://localhost:8443 de este equipo.
-#    El certificado va en tmp/docker-local/tls (no se versiona), con el comando del
-#    paso 1 de 3.7 hecho dentro de esa carpeta y sin sudo.
+#    El certificado va en tmp/docker-local/tls (no se versiona): el paso 1 de 3.7 con
+#    D=tmp/docker-local/tls y sin sudo. El paso 0 acá no hace falta. En Git Bash de
+#    Windows, antes: export MSYS_NO_PATHCONV=1 (si no, Git Bash cambia "/CN=192.0.2.10"
+#    por una ruta de Windows y openssl falla); en WSL o Linux no hace falta. En Windows,
+#    install avisa que no puede cambiar los permisos de la carpeta: no importa.
 #    compose.env: WEB_IP_LAN=192.0.2.10 (acá solo cuenta como Host: el 443 va a
 #    127.0.0.1:8443) y LAN_SUBNET con la IP con que llega curl a Apache. En Docker
 #    Desktop es la puerta de enlace de la red frontend, 172.30.0.1.
@@ -601,6 +622,7 @@ Lo que sigue de esta fase:
    - Reiniciar el host **sin monitor ni teclado y sin iniciar sesión**: todo vuelve solo y en orden, y se entra por SSH.
    - Simular un corte de luz (desenchufar) y comprobar que enciende solo y que todo vuelve.
    - `docker compose stop` y después reiniciar el host (lo que hace NUT, sin UPS): todo vuelve solo.
+   - Encender el servidor con el router apagado y prenderlo unos minutos después: `web` arranca solo con el 80 y, cuando llega la IP, el 443 responde en `WEB_IP_LAN`, sin entrar al servidor (paso 0 de 3.7).
    - Corte real con NUT cuando haya UPS (P14).
    - Tailscale: el contenedor `tailscale` con IP fija en `TRUSTED_PROXIES` sirve la app por `https://<nombre>.ts.net` con CSS, JS y formularios en https (P16).
    - Escaneo de puertos desde otra máquina: solo responden el 80 y el 443 (3.7).
@@ -673,7 +695,7 @@ Lo que sigue de esta fase:
    - copia de `storage/app/private`, `storage/app/templates`, `backups/`, `.env`, `resources/firmador/` y certificados a un medio externo **y** a Drive;
    - anotar el SHA-256 de cada archivo.
 5. (Recomendado) Sacar la imagen completa del disco de Windows al disco USB.
-6. Instalar Linux en el disco, **borrando Windows**. Instalar Docker y Tailscale y traer el compose y las copias.
+6. Instalar Linux en el disco, **borrando Windows**. Instalar Docker y Tailscale, aplicar el paso 0 de 3.7 y traer el compose y las copias.
 7. Verificar los hashes, restaurar la base en `mysql`, copiar `storage` y aplicar `chown -R 33:33` a `storage` y `backups`.
 8. `docker compose up -d` sin `cloudflared`. Revisar `/up`, `/salud`, `dte:firma-check`, el login local y un PDF.
 9. Encender `cloudflared` (**un solo conector para el túnel**). Probar el login por Cloudflare Access desde fuera.
