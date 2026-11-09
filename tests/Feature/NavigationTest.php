@@ -902,6 +902,7 @@ class NavigationTest extends TestCase
             'correlativos' => ['configuracion.correlativos.index'],
             'parámetros fiscales' => ['configuracion.fiscal.parametros'],
             'invalidación' => ['configuracion.fiscal.invalidacion'],
+            'feriados de hacienda' => ['configuracion.fiscal.feriados'],
             'correo y servidor' => ['configuracion.correo.edit'],
             'contabilidad' => ['configuracion.contabilidad.edit'],
             'gmail / prontos pagos' => ['configuracion.integraciones.gmail'],

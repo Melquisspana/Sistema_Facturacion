@@ -23,6 +23,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
 use Spatie\Permission\Models\Permission;
@@ -157,12 +158,42 @@ class OrdenesRecibidasTest extends TestCase
         $this->assertSame([$pendiente->id], OrdenCompraRecibida::sinFacturar()->pluck('id')->all());
     }
 
-    public function test_un_ccf_invalidado_no_cuenta_como_facturada(): void
+    /** @return array<string, array{0: EstadoDte, 1: bool}> */
+    public static function estadosDelCcf(): array
     {
-        $orden = $this->orden('261102320010394', $this->sala('0232'));
-        $this->ccf('261102320010394', null, EstadoDte::Invalidado);
+        return [
+            'rechazado: vuelve a pendiente' => [EstadoDte::Rechazado, true],
+            'invalidado: vuelve a pendiente' => [EstadoDte::Invalidado, true],
+            'borrador vigente: la esconde mientras se trabaja' => [EstadoDte::Borrador, false],
+            'aceptado: facturada' => [EstadoDte::Aceptado, false],
+        ];
+    }
+
+    /**
+     * Una sola regla en la lista, en el enlace al CCF y en las que se ofrecen al facturar:
+     * cuenta como facturada solo con un CCF no borrado que no esté invalidado ni rechazado.
+     */
+    #[DataProvider('estadosDelCcf')]
+    public function test_la_orden_queda_pendiente_segun_el_estado_de_su_ccf(EstadoDte $estado, bool $pendiente): void
+    {
+        $sala = $this->sala('0232');
+        $orden = $this->orden('261102320010394', $sala);
+        $ccf = $this->ccf('261102320010394', $sala, $estado);
+
+        $this->assertSame($pendiente ? [$orden->id] : [], OrdenCompraRecibida::sinFacturar()->pluck('id')->all());
+        $this->assertSame($pendiente ? [] : [$ccf->id], array_map(fn (Dte $d) => $d->id, array_values(OrdenCompraRecibida::ccfPorNumero([$orden->numero]))));
+        $this->assertSame($pendiente ? ['261102320010394'] : [], array_column(OrdenCompraRecibida::pendientesPorSucursal()[$sala->id] ?? [], 'numero'));
+    }
+
+    public function test_un_ccf_borrado_no_cuenta_como_facturada(): void
+    {
+        $sala = $this->sala('0232');
+        $orden = $this->orden('261102320010394', $sala);
+        $this->ccf('261102320010394', $sala)->delete();
 
         $this->assertSame([$orden->id], OrdenCompraRecibida::sinFacturar()->pluck('id')->all());
+        $this->assertSame([], OrdenCompraRecibida::ccfPorNumero([$orden->numero]));
+        $this->assertSame(['261102320010394'], array_column(OrdenCompraRecibida::pendientesPorSucursal()[$sala->id] ?? [], 'numero'));
     }
 
     public function test_filtra_por_mes(): void

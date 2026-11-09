@@ -20,11 +20,12 @@ use Carbon\CarbonImmutable;
  * INCLUSIVO en los dos extremos. Se comparan contra `fecha_local`, que es la
  * columna que guarda exactamente eso.
  *
- * No es un detalle de implementación: en El Salvador (UTC−6) una marcación de las
- * 19:30 del día 5 se guarda como 01:30 UTC del día 6. Filtrar por `marcado_at`
- * —el instante— dejaría esa marcación FUERA del día 5 y la metería en el 6. La
- * pregunta «qué se marcó el jueves» es una pregunta sobre el día local, y esta
- * clase la representa como tal.
+ * No es un detalle de implementación: `marcado_at` —el instante— se guarda en hora
+ * de El Salvador (`app.timezone`, issue #59), pero el día lo fija `fecha_local` al
+ * marcar, con la zona oficial del módulo. Derivar el día de `marcado_at` dependería
+ * de la zona de guardado: con otra `app.timezone`, una marcación de las 19:30 del
+ * día 5 caería en el 6. La pregunta «qué se marcó el jueves» es una pregunta sobre
+ * el día local, y esta clase la representa como tal.
  *
  * ────────────────────────────── Inmutable ──────────────────────────────
  *
