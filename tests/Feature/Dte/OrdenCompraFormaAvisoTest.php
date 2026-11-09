@@ -107,6 +107,8 @@ class OrdenCompraFormaAvisoTest extends TestCase
         $this->actingAs($usuario)->get(route('facturacion.edit', $dte))
             ->assertOk()
             ->assertSee('tiene 16 dígitos y deben ser de 13 a 15')
+            ->assertSeeText('Las órdenes de este cliente tienen de 13 a 15 números')
+            ->assertDontSeeText('14 números')
             ->assertSee('Revisé la orden: generar igual');
 
         $this->actingAs($usuario)
