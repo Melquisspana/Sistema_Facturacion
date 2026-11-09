@@ -26,17 +26,29 @@ class PersonalRutaTest extends TestCase
         return User::factory()->create()->assignRole('administrador');
     }
 
-    public function test_se_da_de_alta_una_persona_con_varias_funciones(): void
+    /** Rutas no crea personas sueltas: se cargan en Personal, encendida o no Planilla (08/11/2026). */
+    public function test_rutas_no_da_de_alta_personas_sueltas(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('rutas.personal.store'), [
-                'nombre' => 'Hugo Ficticio',
-                'telefono' => '7777-0000',
-                'funciones' => [FuncionPersonalRuta::Vendedor->value, FuncionPersonalRuta::Cobrador->value],
-            ])
-            ->assertRedirect();
+            ->get(route('rutas.personal.create'))
+            ->assertRedirect(route('planilla.empleados.create'));
 
-        $persona = PersonalRuta::sole();
+        $this->post(route('rutas.personal.store'), [
+            'nombre' => 'Hugo Ficticio',
+            'telefono' => '7777-0000',
+            'funciones' => [FuncionPersonalRuta::Vendedor->value],
+        ])->assertSessionHasErrors('nombre');
+
+        $this->assertSame(0, PersonalRuta::count());
+    }
+
+    public function test_una_persona_puede_tener_varias_funciones(): void
+    {
+        $persona = PersonalRuta::create(['nombre' => 'Hugo Ficticio', 'telefono' => '7777-0000']);
+        foreach ([FuncionPersonalRuta::Vendedor, FuncionPersonalRuta::Cobrador] as $funcion) {
+            $persona->funciones()->create(['funcion' => $funcion->value]);
+        }
+        $persona = $persona->fresh();
 
         $this->assertSame('Hugo Ficticio', $persona->nombre);
         $this->assertTrue($persona->activo);
@@ -129,11 +141,14 @@ class PersonalRutaTest extends TestCase
         $usuario = User::factory()->create(['activo' => true]);
         PersonalRuta::create(['nombre' => 'Hugo Ficticio', 'user_id' => $usuario->id]);
 
+        $otro = PersonalRuta::create(['nombre' => 'Otro Hugo']);
+
+        // Una ficha suelta de antes de Personal se sigue corrigiendo en Rutas.
         $this->actingAs($this->admin())
-            ->post(route('rutas.personal.store'), ['nombre' => 'Otro Hugo', 'user_id' => $usuario->id])
+            ->put(route('rutas.personal.update', $otro), ['nombre' => 'Otro Hugo', 'user_id' => $usuario->id])
             ->assertSessionHasErrors('user_id');
 
-        $this->assertSame(1, PersonalRuta::count());
+        $this->assertNull($otro->fresh()->user_id);
     }
 
     public function test_ver_personal_exige_permiso(): void
@@ -151,7 +166,8 @@ class PersonalRutaTest extends TestCase
         $conPermiso = User::factory()->create();
         $conPermiso->givePermissionTo(['rutas.ver', 'rutas.personal.ver', 'planilla.ver']);
 
-        $this->actingAs($conPermiso)->get(route('rutas.personal.index'))->assertOk();
+        // Con permiso entra, y la lista es la de Personal.
+        $this->actingAs($conPermiso)->get(route('rutas.personal.index'))->assertRedirect(route('personal.empleados'));
 
         // Ver no es gestionar: el alta necesita el otro permiso.
         $this->actingAs($conPermiso)->get(route('rutas.personal.create'))->assertForbidden();

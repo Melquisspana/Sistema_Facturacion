@@ -30,7 +30,7 @@ class PersonalNombresDistintosCommand extends Command
     public function handle(NombreUnico $nombres): int
     {
         if (! PlanillaEmpleado::enUso()) {
-            $this->info('Planilla no está en uso: no hay fichas de Personal que revisar.');
+            $this->info('Personal no está instalado: no hay fichas que revisar.');
 
             return self::SUCCESS;
         }

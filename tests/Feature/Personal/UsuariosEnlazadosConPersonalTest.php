@@ -289,14 +289,14 @@ class UsuariosEnlazadosConPersonalTest extends TestCase
             ->assertSee('suelta@icloud.com')->assertDontSee('enlazada@icloud.com');
     }
 
-    public function test_con_planilla_apagada_accesos_no_habla_de_personal(): void
+    /** Personal funciona con Planilla apagada (08/11/2026): Accesos sigue avisando quién no tiene ficha. */
+    public function test_con_planilla_apagada_accesos_sigue_con_personal(): void
     {
         config(['planilla.enabled' => false]);
-        $cuenta = $this->cuenta('contabilidad');
+        $this->cuenta('contabilidad');
 
         $this->actingAs($this->admin)->get(route('personal.accesos.index'))->assertOk()
-            ->assertDontSee('Sin ficha en Personal')->assertSee('Nueva cuenta externa');
-        $this->actingAs($this->admin)->get(route('personal.accesos.show', $cuenta))->assertOk()->assertDontSee('Sin ficha en Personal');
+            ->assertSee('Sin ficha en Personal')->assertSee('Nueva cuenta externa');
         // Aun sin Planilla, acá solo se crea la cuenta externa: el empleado entra desde su ficha.
         $this->actingAs($this->admin)->get(route('personal.accesos.create'))->assertOk()
             ->assertSee('id="name"', false)->assertDontSee('value="administrador"', false)->assertDontSee('planilla_empleado_id');

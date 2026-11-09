@@ -73,9 +73,11 @@ class PersonalSoloAdministracionTest extends TestCase
     {
         $admin = $this->con(RolSistema::Administrador);
 
-        $this->actingAs($admin)->get(route('rutas.personal.index'))->assertOk()->assertSee('Rosa Ficticia');
+        // La lista de Rutas es la de Personal: quien no tiene ficha aparece en su aviso.
+        $this->actingAs($admin)->get(route('rutas.personal.index'))->assertRedirect(route('personal.empleados'));
+        $this->actingAs($admin)->followingRedirects()->get(route('rutas.personal.index'))->assertOk()->assertSee('Rosa Ficticia');
         $this->actingAs($admin)->get(route('rutas.personal.show', $this->rosa))->assertOk();
         $this->actingAs($admin)->get(route('rutas.dashboard'))->assertOk()
-            ->assertSee('href="'.route('rutas.personal.index').'"', false);
+            ->assertSee('href="'.route('personal.empleados').'"', false);
     }
 }

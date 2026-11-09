@@ -54,6 +54,9 @@
     // entra; el menú no puede permitirse esa consulta, por la misma razón por la que el
     // contador de avisos dejó de hacerla.
     $vePlanilla = App\Enums\ModuloSistema::Planilla->activo() && $usuario->can('planilla.ver');
+    // Las fichas de Personal (Empleados) no dependen de Planilla: la misma llave, sin el
+    // interruptor (08/11/2026). Tampoco consultan la base.
+    $vePersonal = $usuario->can('planilla.ver');
 
     // Activos por item (rutas actuales, sin cambios de lógica).
     // "Documentos fiscales" cubre el listado y TODAS las pantallas del documento —crear

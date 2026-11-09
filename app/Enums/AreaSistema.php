@@ -62,14 +62,16 @@ enum AreaSistema: string
      * Las PUERTAS del área: cada una es un módulo con su interruptor, su permiso de
      * entrada y su pantalla de aterrizaje.
      *
-     * Casi todas las áreas tienen UNA. «Personal» tiene DOS, porque agrupa dos módulos, y
-     * eso obliga a razonar por puerta y no por área:
+     * Casi todas las áreas tienen UNA. «Personal» tiene TRES —Asistencia, Planilla y las
+     * fichas de Personal—, y eso obliga a razonar por puerta y no por área:
      *
      *  - Quien solo tiene `asistencia.ver` entra y aterriza en Hoy. No ve una sola fila de
      *    Planilla.
      *  - Quien solo tiene `planilla.ver` —sin `asistencia.ver`— **también entra**, y aterriza
      *    en Planillas.
      *  - Y si un módulo está apagado, su puerta no existe: el área sigue en pie por la otra.
+     *  - Las fichas no se apagan: con Planilla apagada, quien tiene `planilla.ver` aterriza
+     *    en Empleados. Por eso el área nunca desaparece entera.
      *
      * @return array<int, array{permiso: string, habilitada: bool, ruta: string}>
      */
@@ -101,6 +103,9 @@ enum AreaSistema: string
                     'habilitada' => ModuloSistema::Asistencia->activo(), 'ruta' => 'asistencia.dashboard'],
                 ['permiso' => PermisoSistema::PlanillaVer->value,
                     'habilitada' => ModuloSistema::Planilla->activo(), 'ruta' => 'planilla.index'],
+                // Las fichas de Personal no tienen interruptor (08/11/2026): con Planilla
+                // apagada, la administración entra igual y aterriza en Empleados.
+                ['permiso' => PermisoSistema::PlanillaVer->value, 'habilitada' => true, 'ruta' => 'personal.empleados'],
             ],
         };
     }

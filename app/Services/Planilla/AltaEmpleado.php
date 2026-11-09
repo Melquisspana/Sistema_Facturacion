@@ -2,6 +2,7 @@
 
 namespace App\Services\Planilla;
 
+use App\Enums\ModuloSistema;
 use App\Http\Requests\Usuarios\StoreUserRequest;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\PersonalRuta;
@@ -54,6 +55,10 @@ class AltaEmpleado
         $datos = $this->autorizarModulos($actor, $datos);
         if (filled($datos['sueldo_mensual'] ?? null)) {
             abort_unless($actor->can('planilla.salarios'), 403);
+            // El alta es de Personal y funciona con Planilla apagada; el sueldo, no.
+            if (! ModuloSistema::Planilla->activo()) {
+                throw ValidationException::withMessages(['sueldo_mensual' => 'Planilla está apagada: el sueldo se carga cuando se encienda.']);
+            }
         }
         $reglas = [
             'nombres' => ['required', 'string', 'max:80'], 'apellidos' => ['required', 'string', 'max:80'],

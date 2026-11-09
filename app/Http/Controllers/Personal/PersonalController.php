@@ -22,7 +22,6 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -37,8 +36,9 @@ use Illuminate\View\View;
  * rutas y sus permisos, y esta pantalla solo las ofrece.
  *
  * Cada módulo se muestra si está encendido Y el usuario tiene su permiso, y no hay más
- * llaves que esas: `asistencia.ver` para huellas y marcaciones, `planilla.ver` para lo de
- * planilla sin importes, y `planilla.salarios` para los importes.
+ * llaves que esas: `asistencia.ver` para huellas y marcaciones, `planilla.ver` para las
+ * fichas de Personal, y `planilla.salarios` para los importes. Las fichas no dependen de
+ * que Planilla esté encendida (08/11/2026); los importes y las quincenas, sí.
  */
 class PersonalController extends Controller
 {
@@ -48,7 +48,7 @@ class PersonalController extends Controller
     {
         [$veAsistencia, $vePlanilla] = $this->accesos($request);
 
-        $verImportes = $vePlanilla && $request->user()->can('planilla.salarios');
+        $verImportes = $vePlanilla && ModuloSistema::Planilla->activo() && $request->user()->can('planilla.salarios');
         $empleados = $vePlanilla ? PlanillaEmpleado::with(['asistencia' => $this->conHuellas(...)])->get() : collect();
         $hoy = now()->toDateString();
         $mensuales = $verImportes ? $sueldos->mensualesEn($empleados, $hoy) : [];
@@ -96,7 +96,7 @@ class PersonalController extends Controller
             'verImportes' => $verImportes,
             'minimo' => $minimo,
             'bajoMinimo' => $bajoMinimo,
-            'rutasSinFicha' => $request->user()->can('rutas.personal.ver') && $request->user()->can('planilla.ver') && PlanillaEmpleado::enUso()
+            'rutasSinFicha' => $vePlanilla && $request->user()->can('rutas.personal.ver')
                 ? PersonalRuta::whereNotIn('id', PlanillaEmpleado::whereNotNull('personal_ruta_id')->select('personal_ruta_id'))->orderBy('nombre')->get()
                 : collect(),
         ]);
@@ -135,7 +135,8 @@ class PersonalController extends Controller
         $asistencia = $veAsistencia ? $asistencia : null;
         abort_if($ficha === null && $asistencia === null, 403);
 
-        $verImportes = $ficha !== null && $request->user()->can('planilla.salarios');
+        $planillaActiva = ModuloSistema::Planilla->activo();
+        $verImportes = $ficha !== null && $planillaActiva && $request->user()->can('planilla.salarios');
         $datos = [
             'nombre' => $ficha?->nombre ?? $asistencia->nombreCompleto(),
             // Todo lo de la persona en un lugar: su usuario y su ficha de Rutas.
@@ -154,7 +155,9 @@ class PersonalController extends Controller
             // Desde cuándo tiene sueldo cargado: elegir una de esas fechas corrige esa fila.
             'fechasSueldo' => $verImportes ? PlanillaSueldo::where('planilla_empleado_id', $ficha->id)
                 ->orderBy('vigente_desde')->pluck('vigente_desde')->map(fn ($f) => Carbon::parse($f)->format('d/m/Y'))->all() : [],
-            'quincenas' => $ficha === null ? collect() : PlanillaDetalle::where('planilla_empleado_id', $ficha->id)
+            // Las quincenas son de Planilla: con el módulo apagado no se muestran.
+            'planillaActiva' => $planillaActiva,
+            'quincenas' => $ficha === null || ! $planillaActiva ? collect() : PlanillaDetalle::where('planilla_empleado_id', $ficha->id)
                 ->with('planilla')->latest('id')->limit(12)->get(),
             // Cuentas de antes que todavía no son de nadie: se pueden enlazar acá.
             'usuariosSinFicha' => $ficha?->user_id === null && $ficha?->activo && $request->user()->can('usuarios.gestionar')
@@ -198,17 +201,17 @@ class PersonalController extends Controller
     }
 
     /**
-     * Qué módulos alcanza este usuario. Repite lo que hacen `modulo.asistencia` y
-     * `modulo.planilla`, porque esta pantalla tiene que abrir con cualquiera de los dos:
-     * ambos apagados es 404, y encendidos pero sin permiso es 403.
+     * Qué alcanza este usuario: Asistencia (si está encendida, con `asistencia.ver`) y las
+     * fichas de Personal (instaladas, con `planilla.ver`), estén o no encendida Planilla.
+     * Sin ninguna de las dos es 404, y sin permiso es 403.
      *
      * @return array{0: bool, 1: bool}
      */
     private function accesos(Request $request): array
     {
         $asistencia = ModuloSistema::Asistencia->activo();
-        // Sin tablas, Planilla no está instalada: esta pantalla sigue por Asistencia.
-        $planilla = ModuloSistema::Planilla->activo() && Schema::hasTable('planilla_empleados');
+        // Sin tablas, Personal no está instalado: esta pantalla sigue por Asistencia.
+        $planilla = PlanillaEmpleado::enUso();
 
         abort_unless($asistencia || $planilla, 404);
         abort_unless((bool) $request->user()?->activo, 403);

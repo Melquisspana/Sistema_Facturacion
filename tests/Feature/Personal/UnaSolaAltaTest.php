@@ -86,14 +86,20 @@ class UnaSolaAltaTest extends TestCase
         $this->actingAs($soloRutas)->get(route('rutas.personal.create'))->assertForbidden();
     }
 
-    public function test_con_planilla_apagada_asistencia_y_rutas_siguen_como_antes(): void
+    /** Personal funciona siempre (08/11/2026): con Planilla apagada nadie se carga dos veces. */
+    public function test_con_planilla_apagada_asistencia_y_rutas_no_crean_personas_sueltas(): void
     {
         config(['planilla.enabled' => false]);
+        $sinMarcar = $this->persona();
 
-        $this->actingAs($this->admin)->get(route('asistencia.empleados.create'))->assertOk()->assertSee('name="nombres"', false);
-        $this->actingAs($this->admin)->get(route('rutas.personal.create'))->assertOk()->assertSee('name="nombre"', false);
-        $this->actingAs($this->admin)->post(route('rutas.personal.store'), ['nombre' => 'Bea Ficticia'])->assertSessionHasNoErrors();
-        $this->assertSame(1, PersonalRuta::count());
+        $this->actingAs($this->admin)->get(route('asistencia.empleados.create'))->assertOk()
+            ->assertDontSee('name="nombres"', false)->assertSee('Dar de alta en Personal')->assertSee($sinMarcar->nombre);
+        $this->post(route('asistencia.empleados.store'), ['nombres' => 'Bea', 'apellidos' => 'Ficticia'])->assertSessionHasErrors('nombres');
+        $this->get(route('rutas.personal.create'))->assertRedirect(route('planilla.empleados.create'));
+        $this->post(route('rutas.personal.store'), ['nombre' => 'Bea Ficticia'])->assertSessionHasErrors('nombre');
+
+        $this->assertSame(0, AsistenciaEmpleado::count());
+        $this->assertSame(0, PersonalRuta::count());
     }
 
     public function test_rutas_lleva_a_la_ficha_y_no_cambia_sus_enlaces(): void
