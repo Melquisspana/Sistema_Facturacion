@@ -106,7 +106,8 @@ class RegistrarMarcacion
                 ->orderByDesc('id')
                 ->first();
 
-            $cooldown = max(0, (int) Ajustes::entero('asistencia.cooldown_segundos', 90));
+            // Tolerante: un .env fuera del rango de la pantalla no puede frenar las marcas.
+            $cooldown = max(0, Ajustes::enteroTolerante('asistencia.cooldown_segundos', 90));
 
             $vecinos = [$ultima];
             if ($diferida) {

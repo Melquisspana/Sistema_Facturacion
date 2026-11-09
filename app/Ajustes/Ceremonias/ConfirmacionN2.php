@@ -69,7 +69,8 @@ class ConfirmacionN2
                 continue;
             }
 
-            $actual = $this->ajustes->resolver($clave)->valor;
+            // Un .env fuera de rango cuenta como «sin valor»: si no, no se podría taparlo.
+            $actual = $this->ajustes->resolverParaPantalla($clave)->valor;
             $textoActual = $this->conversor->aTexto($definicion, $actual);
 
             if ($textoNuevo !== $textoActual) {

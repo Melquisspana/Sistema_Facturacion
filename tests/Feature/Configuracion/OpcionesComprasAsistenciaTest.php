@@ -160,6 +160,50 @@ class OpcionesComprasAsistenciaTest extends TestCase
         $this->assertSame(['asistencia.cooldown_segundos', 'asistencia.diferidas_max_dias'], $claves);
     }
 
+    /**
+     * Un .env fuera de rango no tumba la página: abre con el campo vacío y un aviso, y
+     * desde ahí se guarda un valor válido que lo tapa (con su confirmación y auditoría).
+     */
+    public function test_un_env_fuera_de_rango_no_tumba_la_pagina_y_se_puede_tapar(): void
+    {
+        config(['asistencia.enabled' => true, 'asistencia.cooldown_segundos' => 900, 'asistencia.diferidas_max_dias' => 90]);
+        $admin = $this->admin();
+
+        $this->actingAs($admin)->get(route('configuracion.opciones.asistencia'))->assertOk()
+            ->assertSee('El valor del servidor (.env) no sirve')
+            ->assertSee('no puede ser mayor que 600')
+            ->assertSee('no puede ser mayor que 60')
+            ->assertDontSee('value="900"', false);
+
+        // N1: se guarda directo.
+        $this->actingAs($admin)->put(route('configuracion.opciones.asistencia.update'), [
+            $this->campo('asistencia.cooldown_segundos') => '120',
+        ])->assertRedirect(route('configuracion.opciones.asistencia'));
+        $this->assertSame(120, Ajustes::entero('asistencia.cooldown_segundos'));
+
+        // N2: pide confirmación y después se guarda.
+        $this->actingAs($admin)->put(route('configuracion.opciones.asistencia.update'), [
+            $this->campo('asistencia.diferidas_max_dias') => '30',
+        ])->assertOk()->assertSee('Esto es lo que va a cambiar');
+        $this->actingAs($admin)->put(route('configuracion.opciones.asistencia.update'), [
+            $this->campo('asistencia.diferidas_max_dias') => '30', 'confirmacion' => '1',
+        ])->assertRedirect(route('configuracion.opciones.asistencia'));
+        $this->assertSame(30, Ajustes::entero('asistencia.diferidas_max_dias'));
+
+        $claves = Activity::query()->where('log_name', 'ajustes')->get()->map(fn ($a) => $a->properties['clave'])->all();
+        $this->assertSame(['asistencia.cooldown_segundos', 'asistencia.diferidas_max_dias'], $claves);
+
+        // Con lo guardado, la página abre sin el aviso y muestra «Usar el valor del servidor»,
+        // y volver al .env (fuera de rango) tampoco rompe.
+        $this->actingAs($admin)->get(route('configuracion.opciones.asistencia'))->assertOk()
+            ->assertDontSee('El valor del servidor (.env) no sirve')
+            ->assertSee('value="120"', false)
+            ->assertSee('Usar el valor del servidor');
+        $this->actingAs($admin)->delete(route('configuracion.ajustes.servidor', 'asistencia.cooldown_segundos'))
+            ->assertRedirect();
+        $this->assertSame(FuenteAjuste::Configuracion, Ajustes::resolverParaPantalla('asistencia.cooldown_segundos')->fuente);
+    }
+
     /** El lector llama a la API muchas veces: leer el ajuste ya leído no consulta la base. */
     public function test_leer_el_ajuste_del_lector_no_agrega_consultas(): void
     {

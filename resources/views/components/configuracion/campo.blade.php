@@ -29,6 +29,10 @@
         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
     @enderror
 
+    @if ($estado?->invalido)
+        <p class="mt-1 text-xs text-amber-800">{{ $estado->invalido }}</p>
+    @endif
+
     @if ($estado || $claveTecnica)
         <p class="mt-1 text-xs text-gray-400">
             @if ($estado)

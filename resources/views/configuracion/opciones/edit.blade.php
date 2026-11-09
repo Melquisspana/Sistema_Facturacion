@@ -63,6 +63,9 @@
                                 @error($campo)
                                     <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                                 @enderror
+                                @if ($estado->invalido)
+                                    <p class="mt-1 text-xs text-amber-800">{{ $estado->invalido }}</p>
+                                @endif
                             </div>
                         @else
                             <x-configuracion.campo :nombre="$campo" :etiqueta="$definicion->etiqueta" :estado="$estado"

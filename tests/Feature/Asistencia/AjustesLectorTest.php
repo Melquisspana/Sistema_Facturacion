@@ -86,4 +86,26 @@ class AjustesLectorTest extends TestCase
         $this->marcarHace(35 * 86400)->assertOk();
         $this->assertDatabaseCount('asistencia_marcaciones', 3);
     }
+
+    /**
+     * Un .env fuera del rango de la pantalla (900 s, 90 días) no frena las marcas: el
+     * lector sigue usándolo tal cual, como antes de que existiera la pantalla.
+     */
+    public function test_un_env_fuera_de_rango_no_frena_las_marcas(): void
+    {
+        config(['asistencia.cooldown_segundos' => 900, 'asistencia.diferidas_max_dias' => 90]);
+
+        // 61 días atrás: fuera de los 60 de la pantalla, dentro de los 90 del .env.
+        $this->marcarHace(61 * 86400)->assertOk();
+
+        // 900 s del .env: otra marca a los 300 s no cuenta.
+        $this->marcarHace(3600)->assertOk();
+        $this->marcarHace(3300)->assertStatus(409)->assertJsonPath('estado', 'cooldown');
+        $this->assertDatabaseCount('asistencia_marcaciones', 2);
+
+        // Lo guardado en pantalla tapa ese .env.
+        Ajustes::guardarComoSistema('asistencia.cooldown_segundos', 60);
+        $this->marcarHace(3300)->assertOk();
+        $this->assertDatabaseCount('asistencia_marcaciones', 3);
+    }
 }
