@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -191,6 +192,34 @@ class NcExportacionArchivoTest extends TestCase
         $this->assertSame($bytes, $this->bytes($segunda), 'Byte a byte el archivo archivado.');
         $this->assertSame(2, $lote->refresh()->descargas);
         $this->assertSame(2, $lote->items()->count(), 'Ninguna NC agregada.');
+    }
+
+    /** #12 (decisión de Melqui, 09/11/2026): la NC invalidada antes de la primera descarga sale sola y se avisa. */
+    public function test_la_nc_invalidada_antes_de_la_primera_descarga_sale_sola_del_archivo_y_la_ficha_avisa(): void
+    {
+        $cliente = $this->cliente();
+        $vigente = $this->nc($cliente, '10.00');
+        $invalidada = $this->nc($cliente, '20.50');
+        $lote = $this->lote($cliente, [$vigente, $invalidada]);
+        $invalidada->forceFill(['estado' => 'invalidado'])->saveQuietly();
+
+        $this->actingAs($this->usuario())->get(route('ppq.nc-exportaciones.show', $lote))
+            ->assertOk()
+            ->assertSeeText('La primera descarga deja fuera del archivo lo que ya no vale ante Hacienda:')
+            ->assertSeeText($invalidada->numero_control.': fue invalidada ante Hacienda.');
+
+        $ruta = tempnam(sys_get_temp_dir(), 'nc_prueba_');
+        file_put_contents($ruta, $this->bytes($this->descargar($lote)->assertOk()));
+        $libro = IOFactory::load($ruta);
+        @unlink($ruta);
+        $controles = array_column(array_slice($libro->getActiveSheet()->toArray(), 2), 2);
+        $libro->disconnectWorksheets();
+        $this->assertSame([$vigente->numero_control], $controles);
+
+        // Con la copia archivada manda el archivo que se entregó: el aviso ya no aplica.
+        $this->actingAs($this->usuario())->get(route('ppq.nc-exportaciones.show', $lote))
+            ->assertOk()
+            ->assertDontSeeText('La primera descarga deja fuera del archivo');
     }
 
     public function test_la_ficha_dice_que_la_copia_es_de_la_primera_descarga(): void

@@ -119,6 +119,9 @@ class NcExportacionController extends Controller
             // Solo lectura: abrir la ficha no registra nada.
             'descargas' => $registro->historial($lote),
             'descargasRegistradas' => $registro->cantidad($lote),
+            // Antes de la primera descarga: qué NC dejará fuera el archivo y por qué (#12).
+            // Con la copia archivada manda lo que se entregó.
+            'fueraDelArchivo' => $lote->tieneCopiaArchivada() ? [] : $lote->notasFueraDelArchivo(),
         ]);
     }
 
