@@ -394,6 +394,13 @@ class FacturarPedidoTest extends TestCase
             $this->quesadilla->id => ['llego' => '3.0000', 'facturado' => '0.0000', 'regresa' => '3.0000'],
         ], $facturar->regresa($pedido));
 
+        // Si en el editor se pone más de lo que llegó, no regresa nada (nunca negativo).
+        $this->post(route('facturacion.productos.cantidad', [$dte, $this->galleta]), ['cantidad' => 12])->assertSessionHasNoErrors();
+        $this->assertSame(
+            ['llego' => '10.0000', 'facturado' => '12.0000', 'regresa' => '0.0000'],
+            $facturar->regresa($pedido)[$this->galleta->id],
+        );
+
         // Si el CCF se invalida, ya no hay nada facturado.
         Dte::whereKey($dte->id)->update(['estado' => EstadoDte::Invalidado->value]);
         $this->assertSame([], $facturar->regresa($pedido));

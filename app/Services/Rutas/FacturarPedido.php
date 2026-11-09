@@ -216,7 +216,13 @@ class FacturarPedido
             $porProducto[$l->producto_id]['facturado'] = bcadd($porProducto[$l->producto_id]['facturado'], (string) $l->cantidad, 4);
         }
 
-        return array_map(fn (array $p) => $p + ['regresa' => bcsub($p['llego'], $p['facturado'], 4)], $porProducto);
+        // Lo que regresa nunca es negativo: si el CCF lleva más de lo que llegó, no regresa
+        // nada (el editor ya avisa que pasa de lo que llegó).
+        return array_map(function (array $p) {
+            $resto = bcsub($p['llego'], $p['facturado'], 4);
+
+            return $p + ['regresa' => bccomp($resto, '0', 4) < 0 ? '0.0000' : $resto];
+        }, $porProducto);
     }
 
     /**
