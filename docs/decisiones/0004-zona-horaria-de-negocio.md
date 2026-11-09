@@ -17,13 +17,13 @@ Queda así:
 - **Zona de guardado: hora de El Salvador en todos los entornos.** `config/app.php` usa `America/El_Salvador` por defecto, y `.env.example` lo deja explícito. Desarrollo y CI prueban igual que producción. No se migra producción a UTC: no hay datos que convertir y el riesgo no se justifica.
 - `HoraNegocio` sigue siendo la fuente explícita del día de negocio. Como hoy coincide con `app.timezone`, las etapas 2 a 4 de abajo (Gastos, Cobros, planificador y pantallas) dejan de corregir un corrimiento en producción. Quedan como limpieza: usar `HoraNegocio` donde la fecha de negocio importa, para no depender de la configuración.
 - `inicioDelDiaUtc()` y `finDelDiaUtc()` solo sirven para comparar instantes en memoria (hoy, `PlazoInvalidacion`). **No se usan como parámetro de una consulta**: Laravel escribe la hora del Carbon sin convertirla a `app.timezone`.
-- **Hallazgo corregido**: Asistencia guardaba `marcado_at` con un Carbon en UTC (`HoraOficial::instante()`). Con la aplicación en hora local, Eloquent escribía la hora UTC y al leerla la tomaba como local, seis horas corrida. `fecha_local` estaba bien. Ahora el instante se crea en `app.timezone`. Si producción ya tiene marcaciones, las anteriores a este cambio necesitan revisión aparte, de solo lectura primero.
+- **Hallazgo corregido**: Asistencia guardaba `marcado_at` con un Carbon en UTC (`HoraOficial::instante()`). Con la aplicación en hora local, Eloquent escribía la hora UTC y al leerla la tomaba como local, seis horas corrida. `fecha_local` estaba bien. Ahora el instante se crea en `app.timezone`. Las marcaciones de producción anteriores a este cambio se revisaron aparte, de solo lectura (ver «Comprobación en producción» abajo).
 - `fecha_procesamiento_mh` (la `fhProcesamiento` local de Hacienda) queda en la misma zona que el resto de la base en todos los entornos.
 - La «Decisión (propuesta)» y el «Plan de despliegue» de abajo se conservan como historia. Quedaron **sustituidos** por esta corrección: donde dicen «mantener UTC» o «guardar en UTC», manda lo de arriba.
 
 ### Comprobación en producción (2026-11-09)
 
-Con una revisión de solo lectura se confirmó que producción corre con `America/El_Salvador` y que no hay marcaciones de Asistencia anteriores al cambio de `HoraOficial::instante()`. No queda ningún dato que corregir.
+Con una revisión de solo lectura se confirmó que producción corre con `America/El_Salvador` y que no hay marcaciones de Asistencia anteriores al cambio de `HoraOficial::instante()`. No hay marcaciones que corregir. Esta comprobación cubre solo la zona y las marcaciones de Asistencia, no el resto de la base.
 
 ## Contexto
 
