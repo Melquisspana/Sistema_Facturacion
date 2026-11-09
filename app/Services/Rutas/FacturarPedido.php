@@ -80,7 +80,7 @@ class FacturarPedido
             'envios' => $envios,
             'oc' => $oc,
             // Un CCF rechazado no avisa: no factura nada y hay que volver a facturar.
-            'oc_con_ccf' => $oc === null ? null : (OrdenCompraRecibida::ccfPorNumero([OrdenCompra::normalizar($oc)], soloLosQueCuentan: true)[OrdenCompra::normalizar($oc)] ?? null),
+            'oc_con_ccf' => $oc === null ? null : (OrdenCompraRecibida::ccfPorNumero([OrdenCompra::normalizar($oc)])[OrdenCompra::normalizar($oc)] ?? null),
             'borrador' => $this->borradorAbierto($pedido),
         ];
     }

@@ -325,9 +325,27 @@ return [
     | El plazo de transmisión se calcula desde el sello (decisión 0005).
     */
     'invalidacion' => [
-        // Se carga con el calendario oficial del MH; no se inventan fechas.
-        // Formato: ['2026' => ['2026-05-01', ...]]. Sin tabla se calcula sin feriados.
-        'dias_inhabiles' => [],
+        // Días inhábiles del MH por año (decisión 0005). Lo que se carga en Configuración
+        // → Feriados de Hacienda manda; esto es el RESPALDO para un año que no esté ahí.
+        // Solo el calendario oficial del MH; no se inventan fechas. Un año sin lista se
+        // calcula sin feriados (el límite queda igual o antes del real) y se avisa.
+        // Formato: ['2026' => ['2026-05-01', ...]].
+        'dias_inhabiles' => [
+            // Fuente: Calendario Tributario 2026 del MH, página 1, «Días de asueto». El
+            // mismo calendario avisa que la Asamblea Legislativa puede modificar las fechas.
+            '2026' => [
+                '2026-01-01', '2026-01-02', // Año Nuevo
+                '2026-03-30', '2026-03-31', '2026-04-01', '2026-04-02', '2026-04-03',
+                '2026-04-04', '2026-04-05', '2026-04-06', // Semana Santa
+                '2026-05-01', // Día del Trabajo
+                '2026-06-17', // Día del Padre
+                '2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', // Fiestas del Divino Salvador del Mundo
+                '2026-09-15', // Día de la Independencia
+                '2026-11-02', // Día de los Difuntos
+                '2026-12-24', '2026-12-25', '2026-12-26', '2026-12-27', '2026-12-28',
+                '2026-12-29', '2026-12-30', '2026-12-31', // Fiestas navideñas y fin de año
+            ],
+        ],
         // Versión del schema del evento (invalidacion-schema-v3.json).
         'version' => (int) env('DTE_INVALIDACION_VERSION', 3),
         // MODO MOCK (Fase C): firma SIMULADA del evento, sin firmador real y sin
@@ -351,7 +369,7 @@ return [
         'cod_estable_mh' => env('DTE_INVALIDACION_COD_ESTABLE_MH', ''),
         'cod_punto_venta_mh' => env('DTE_INVALIDACION_COD_PUNTO_VENTA_MH', ''),
         // Datos de quien REALIZA el evento (responsable). Obligatorios en el schema.
-        // TODO: completar con datos reales antes de invalidar de verdad.
+        // Se cargan en el .env del servidor; acá no van valores.
         'responsable' => [
             'nombre' => env('DTE_INVALIDACION_RESP_NOMBRE', ''),
             'tipo_doc' => env('DTE_INVALIDACION_RESP_TIPO_DOC', ''),   // CAT-022 (36=NIT, 13=DUI)

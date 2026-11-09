@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * «Facturada» no se guarda: se calcula contra los CCF vigentes cuyo
  * `numero_orden_compra`, sin espacios, guiones ni puntos, es igual a `numero`. Así un
- * CCF creado, invalidado o borrado después cambia la respuesta sin tocar esta tabla.
+ * CCF creado, invalidado, rechazado o borrado después cambia la respuesta sin tocar esta tabla.
  *
  * @property string|null $numero
  * @property string|null $sala_codigo
@@ -79,12 +79,24 @@ class OrdenCompraRecibida extends Model
         return "REPLACE(REPLACE(REPLACE(TRIM(dtes.numero_orden_compra), ' ', ''), '-', ''), '.', '')";
     }
 
-    /** CCF que cuentan como «facturada»: no invalidados ni borrados (los borradores sí cuentan). */
+    /**
+     * Estados con los que un CCF NO factura su orden: invalidado, o rechazado por Hacienda
+     * (hay que volver a emitirlo). Los borradores sí cuentan: esconden la orden mientras
+     * se trabaja. Es la única regla; la usan también los avisos de OC repetida.
+     *
+     * @return list<string>
+     */
+    public static function estadosQueNoFacturan(): array
+    {
+        return [EstadoDte::Invalidado->value, EstadoDte::Rechazado->value];
+    }
+
+    /** CCF que cuentan como «facturada»: no borrados y con un estado que factura. */
     private static function ccfVigentes(QueryBuilder $q): QueryBuilder
     {
         return $q->from('dtes')
             ->where('dtes.tipo_dte', TipoDte::CreditoFiscal->value)
-            ->where('dtes.estado', '!=', EstadoDte::Invalidado->value)
+            ->whereNotIn('dtes.estado', self::estadosQueNoFacturan())
             ->whereNull('dtes.deleted_at')
             ->whereNotNull('dtes.numero_orden_compra');
     }
@@ -97,14 +109,13 @@ class OrdenCompraRecibida extends Model
     }
 
     /**
-     * CCF vigente (el más reciente) de cada número de orden. Con `$soloLosQueCuentan`, sin
-     * los rechazados ({@see Dte::scopeCuentaComoFacturado()}): para avisar «esa OC ya tiene
-     * un CCF» en un pedido, un CCF que Hacienda rechazó no factura nada.
+     * CCF vigente (el más reciente) de cada número de orden. Los borrados no salen (SoftDeletes).
+     * Misma regla que {@see scopeSinFacturar()}.
      *
      * @param  array<int, string>  $numeros
      * @return array<string, Dte>
      */
-    public static function ccfPorNumero(array $numeros, bool $soloLosQueCuentan = false): array
+    public static function ccfPorNumero(array $numeros): array
     {
         $numeros = array_values(array_unique(array_filter($numeros)));
         if ($numeros === []) {
@@ -113,8 +124,7 @@ class OrdenCompraRecibida extends Model
 
         return Dte::query()
             ->where('tipo_dte', TipoDte::CreditoFiscal->value)
-            ->where('estado', '!=', EstadoDte::Invalidado->value)
-            ->when($soloLosQueCuentan, fn ($q) => $q->cuentaComoFacturado())
+            ->whereNotIn('estado', self::estadosQueNoFacturan())
             ->whereRaw(self::ocDelDte().' in ('.implode(',', array_fill(0, count($numeros), '?')).')', $numeros)
             ->orderBy('id')
             ->get(['id', 'numero_control', 'numero_interno', 'numero_orden_compra', 'estado', 'fecha_emision'])

@@ -9,8 +9,9 @@ use App\Services\Asistencia\HoraOficial;
 /**
  * La pantalla «Marcas de hoy» de Asistencia. SOLO LECTURA.
  *
- * «El día» es el de la hora de negocio (HoraOficial, America/El_Salvador), nunca la
- * fecha UTC: a las 23:30 locales ya es mañana en UTC y la gente seguiría marcando hoy.
+ * «El día» es el de la hora de negocio (HoraOficial, America/El_Salvador), que también
+ * es la zona en que se guarda `marcado_at` (`app.timezone`, issue #59). Se pide
+ * explícito para no depender de esa configuración.
  * Las jornadas las arma {@see ConsultaJornadas}, la misma capa del reporte: la pantalla
  * no empareja marcaciones por su cuenta.
  *

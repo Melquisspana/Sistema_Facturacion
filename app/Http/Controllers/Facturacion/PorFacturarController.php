@@ -74,7 +74,7 @@ class PorFacturarController extends Controller
         // CCF rechazado no cuenta: no factura nada y hay que volver a facturar).
         $ocCorreo = OrdenCompraRecibida::pendientesPorSucursal();
         $conCcf = OrdenCompraRecibida::ccfPorNumero($pedidos->getCollection()
-            ->map(fn (PedidoSala $p) => OrdenCompra::normalizar($p->numero_orden_compra))->all(), soloLosQueCuentan: true);
+            ->map(fn (PedidoSala $p) => OrdenCompra::normalizar($p->numero_orden_compra))->all());
         $oc = [];
         $facturacion = [];
         foreach ($pedidos as $pedido) {

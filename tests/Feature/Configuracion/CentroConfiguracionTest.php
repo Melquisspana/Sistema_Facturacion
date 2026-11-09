@@ -149,9 +149,9 @@ class CentroConfiguracionTest extends TestCase
             'En pantalla pequeña las secciones deben envolverse, no salirse.',
         );
 
-        // Una entrada por sección real: Resumen; las tres de General; las cinco de
+        // Una entrada por sección real: Resumen; las tres de General; las seis de
         // Facturación electrónica (Hacienda / API, Certificado y firmador,
-        // Correlativos, Parámetros fiscales, Invalidación); las dos de Correo; las
+        // Correlativos, Parámetros fiscales, Invalidación, Feriados de Hacienda); las dos de Correo; las
         // tres de Integraciones (Gmail, Buzón de compras, Segundo buzón); las siete de
         // Módulos (Prender y apagar más las opciones de Pronto pago, Cobros, Rutas,
         // Avisos de fallas, Compras y Exportaciones: Gastos, Asistencia y Planilla no
@@ -163,7 +163,7 @@ class CentroConfiguracionTest extends TestCase
         // que añadir una pantalla obligue a mirar el índice, que es donde se nota si
         // quedó en el grupo equivocado.
         $this->assertSame(
-            26,
+            27,
             substr_count($barra, 'whitespace-nowrap'),
             'El índice debe listar exactamente las secciones existentes, sin partir sus nombres.',
         );
