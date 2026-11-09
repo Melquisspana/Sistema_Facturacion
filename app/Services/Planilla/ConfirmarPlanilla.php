@@ -12,6 +12,7 @@ use App\Services\Gastos\Dinero;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Ramsey\Uuid\Uuid;
 
@@ -131,10 +132,13 @@ final class ConfirmarPlanilla
                 return $planilla->fresh();
             });
         } catch (QueryException $e) {
-            // Un índice único saltó: otro proceso confirmó esta misma planilla mientras
-            // este lo intentaba. Se devuelve lo que quedó, que es lo correcto.
-            if (str_contains(mb_strtolower($e->getMessage()), 'duplicate') || $e->getCode() === '23000') {
-                return $planilla->fresh();
+            // La transacción ya se deshizo. Si fue porque otro proceso confirmó esta misma
+            // planilla mientras tanto, se devuelve lo que quedó. Cualquier otro error de
+            // integridad es un error de verdad: no se disfraza de confirmación.
+            $ahora = $planilla->fresh();
+
+            if ($e->getCode() === '23000' && $ahora?->confirmada()) {
+                return $ahora;
             }
 
             throw $e;
@@ -291,27 +295,26 @@ final class ConfirmarPlanilla
                     continue;
                 }
 
-                $nombre = trim($concepto->tercero);
-                $porTercero[$nombre] ??= 0;
-                $porTercero[$nombre] += Dinero::centavos((string) $concepto->importe);
+                // Se queda el nombre como lo escribió la primera línea; la suma es de todas.
+                $clave = self::claveDeTercero($concepto->tercero);
+                $porTercero[$clave] ??= ['nombre' => Str::squish($concepto->tercero), 'importe' => 0];
+                $porTercero[$clave]['importe'] += Dinero::centavos((string) $concepto->importe);
             }
         }
 
+        // Las que ya hubiera, con la MISMA clave: buscarlas con la comparación de la base
+        // (que en MySQL no distingue mayúsculas ni tildes) saltaba la segunda en silencio.
+        $existentes = PlanillaObligacionTercero::where('planilla_id', $planilla->id)->pluck('tercero')
+            ->map(fn (string $t) => self::claveDeTercero($t))->all();
+
         $creadas = 0;
 
-        foreach ($porTercero as $nombre => $importe) {
-            if ($importe <= 0) {
+        foreach ($porTercero as $claveTercero => ['nombre' => $nombre, 'importe' => $importe]) {
+            if ($importe <= 0 || in_array((string) $claveTercero, $existentes, true)) {
                 continue;
             }
 
-            $yaExiste = PlanillaObligacionTercero::where('planilla_id', $planilla->id)
-                ->where('tercero', $nombre)->first();
-
-            if ($yaExiste !== null) {
-                continue;
-            }
-
-            $clave = Uuid::uuid5(self::NS_TERCERO, $planilla->clave.'|'.mb_strtolower($nombre))->toString();
+            $clave = Uuid::uuid5(self::NS_TERCERO, $planilla->clave.'|'.$claveTercero)->toString();
 
             $gasto = Gasto::firstOrCreate(['clave' => $clave], [
                 'huella_peticion' => hash('sha256', $clave),
@@ -351,5 +354,18 @@ final class ConfirmarPlanilla
         }
 
         return $creadas;
+    }
+
+    /**
+     * La identidad de un tercero: sin mayúsculas, tildes ni espacios de más. Es la misma
+     * para agrupar, para ver si ya existe y para la clave de su gasto, y es como compara
+     * el índice único en MySQL (`utf8mb4_unicode_ci`): «Cooperativa» y «cooperativa » son
+     * el mismo acreedor y una sola deuda por la suma de las dos.
+     */
+    private static function claveDeTercero(string $tercero): string
+    {
+        $limpio = Str::squish($tercero);
+
+        return mb_strtolower(Str::ascii($limpio) ?: $limpio);
     }
 }
