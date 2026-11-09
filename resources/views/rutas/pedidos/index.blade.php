@@ -1,7 +1,8 @@
 {{-- «Pedidos» de la oficina: los sugeridos que sacan los vendedores en las salas. Filtros por
      fecha, ruta y sala (docs/GUIA_PANTALLAS.md: formulario GET, «Filtrar» secundario y
-     «Limpiar» solo con filtros). En el celular, tarjetas; en la computadora, tabla. Solo
-     lectura: las acciones de producción llegan con su pantalla. --}}
+     «Limpiar» solo con filtros). «Mandado el»: lo que la fábrica mandó ese día. En el
+     celular, tarjetas; en la computadora, tabla. Solo lectura: lo que sale lo marca la
+     fábrica en /fabrica/pedidos. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -18,7 +19,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <x-rutas.avisos />
 
-            <form method="GET" class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 items-end lg:grid-cols-5">
+            <form method="GET" class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 items-end lg:grid-cols-6">
                 @if (request('salida'))
                     <input type="hidden" name="salida" value="{{ request('salida') }}">
                 @endif
@@ -38,6 +39,10 @@
                             <option value="{{ $r->id }}" @selected((string) request('ruta_id') === (string) $r->id)>{{ $r->nombre }}</option>
                         @endforeach
                     </select>
+                </div>
+                <div>
+                    <label for="f-mandado" class="{{ $etiqueta }}">Mandado el</label>
+                    <input id="f-mandado" type="date" name="mandado_el" value="{{ request('mandado_el') }}" class="{{ $campo }}">
                 </div>
                 <div>
                     <label for="f-sala" class="{{ $etiqueta }}">Sala</label>

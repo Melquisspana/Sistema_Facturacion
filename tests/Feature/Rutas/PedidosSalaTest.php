@@ -12,6 +12,7 @@ use App\Models\Dte;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\PedidoSala;
+use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
 use App\Models\Ruta;
@@ -440,5 +441,111 @@ class PedidosSalaTest extends TestCase
             $this->get(route('rutas.pedidos.index'))->assertForbidden();
             $this->get(route('rutas.pedidos.show', $primero))->assertForbidden();
         }
+    }
+
+    // ══════════════════════════════ vendedor contra fábrica
+
+    /** Un envío de la fábrica, directo en la base (la pantalla tiene sus propias pruebas). */
+    private function envioDeFabrica(PedidoSala $pedido, string $cantidad = '12'): PedidoSalaEnvio
+    {
+        $envio = $pedido->envios()->create(['numero' => $pedido->envios()->count() + 1, 'clave' => (string) Str::uuid(), 'fecha' => '2026-11-05', 'registrado_por' => $this->oficina->id]);
+        $envio->lineas()->create(['pedido_sala_linea_id' => $pedido->lineas()->first()->id, 'cantidad' => $cantidad]);
+
+        return $envio;
+    }
+
+    public function test_cuando_la_fabrica_empezo_el_vendedor_ya_no_corrige_ni_anula(): void
+    {
+        $this->sacar()->assertSessionHasNoErrors();
+        $pedido = PedidoSala::sole();
+        $envio = $this->envioDeFabrica($pedido);
+        $pedido->update(['estado' => EstadoPedidoSala::Enviado]);
+        $lineas = $pedido->lineas()->pluck('id')->all();
+        $error = 'La fábrica ya marcó este pedido; ya no se puede corregir. Avisá a la oficina.';
+
+        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '4']])
+            ->assertSessionHasErrors(['lineas' => $error]);
+        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $pedido]))->assertSessionHasErrors(['lineas' => $error]);
+        $this->assertSame($lineas, $pedido->lineas()->pluck('id')->all());
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+
+        // Con la pantalla vieja o desde la sala: el aviso, no un 403.
+        $aviso = 'El pedido de «Tienda Centro» ya está en la fábrica. Si cambió algo, avisá a la oficina.';
+        $this->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))->assertRedirect()->assertSessionHas('error', $aviso);
+        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertRedirect()->assertSessionHas('error', $aviso);
+        // Sigue «Pedido sacado», sin «Corregir», y no se saca otro en la misma salida.
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado')->assertDontSee('Corregir');
+        $this->sacar()->assertSessionHasErrors('lineas');
+        $this->assertSame(1, PedidoSala::count());
+
+        // También con el envío anulado (cuenta igual) y con «No se trae» o el armado empezado.
+        $envio->update(['anulado_en' => now(), 'anulado_por' => $this->oficina->id]);
+        $pedido->update(['estado' => EstadoPedidoSala::Registrado]);
+        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
+
+        $this->sacar([], $this->salaOc)->assertSessionHasNoErrors();
+        $otro = PedidoSala::where('cliente_sucursal_id', $this->salaOc->id)->sole();
+        $otro->update(['estado' => EstadoPedidoSala::NoSeTrae]);
+        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $otro]))->assertSessionHasErrors(['lineas' => $error]);
+        $otro->update(['estado' => EstadoPedidoSala::Registrado, 'armando_desde' => now(), 'armando_por' => $this->oficina->id]);
+        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $otro]), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
+        $this->assertSame(EstadoPedidoSala::Registrado, $otro->refresh()->estado);
+    }
+
+    public function test_un_pedido_que_la_fabrica_marco_sigue_contando_como_sacado(): void
+    {
+        $this->sacar()->assertSessionHasNoErrors();
+        $this->sacar([], $this->salaOc)->assertSessionHasNoErrors();
+        PedidoSala::where('cliente_sucursal_id', $this->sala->id)->update(['estado' => EstadoPedidoSala::Parcial->value]);
+        PedidoSala::where('cliente_sucursal_id', $this->salaOc->id)->update(['estado' => EstadoPedidoSala::NoSeTrae->value]);
+
+        $this->sacar()->assertSessionHasErrors('lineas');
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk()->assertSee('2 pedidos sacados');
+
+        // Mi salida con varios pedidos no hace una consulta por pedido para «Corregir».
+        $this->actingAs($this->vendedor);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado');
+        DB::disableQueryLog();
+        $this->assertSame(1, collect(DB::getQueryLog())->filter(fn ($q) => str_contains($q['query'], '"pedido_sala_envios"'))->count());
+    }
+
+    public function test_la_oc_se_agrega_en_un_pedido_mandado_pero_no_en_uno_anulado(): void
+    {
+        $this->sacar()->assertSessionHasNoErrors();
+        $pedido = PedidoSala::sole();
+        $this->actingAs($this->oficina);
+        foreach ([EstadoPedidoSala::Parcial, EstadoPedidoSala::Enviado, EstadoPedidoSala::NoSeTrae] as $estado) {
+            $pedido->update(['estado' => $estado]);
+            $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '26110236004586'])->assertSessionHasNoErrors()
+                ->assertSessionHas('status', 'Orden de compra guardada.');
+        }
+        $pedido->update(['estado' => EstadoPedidoSala::Anulado]);
+        $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '1'])->assertForbidden();
+    }
+
+    public function test_la_oficina_filtra_por_lo_que_se_mando_un_dia_y_ve_los_envios(): void
+    {
+        $this->sacar()->assertSessionHasNoErrors();
+        $this->sacar([], $this->salaOc)->assertSessionHasNoErrors();
+        $pedido = PedidoSala::where('cliente_sucursal_id', $this->sala->id)->sole();
+        $otro = PedidoSala::where('cliente_sucursal_id', $this->salaOc->id)->sole();
+        $this->envioDeFabrica($pedido, '8');
+        $this->envioDeFabrica($otro)->update(['anulado_en' => now(), 'anulado_por' => $this->oficina->id]);
+        $pedido->lineas()->first()->update(['motivo_no_enviado' => 'No alcanzó']);
+        $pedido->update(['estado' => EstadoPedidoSala::Enviado]);
+
+        $this->actingAs($this->oficina);
+        $this->get(route('rutas.pedidos.index'))->assertOk(); // se lleva el aviso de «guardado» del vendedor
+        $this->get(route('rutas.pedidos.index', ['mandado_el' => '2026-11-05']))->assertOk()
+            ->assertSee('Tienda Centro')->assertDontSee('Súper Ficticio Norte')->assertSee('Mandado el');
+        $this->get(route('rutas.pedidos.index', ['mandado_el' => '2026-11-06']))->assertSee('Nada coincide con estos filtros.');
+        $this->get(route('rutas.pedidos.index', ['mandado_el' => 'hoy']))->assertSessionHasErrors('mandado_el');
+
+        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()
+            ->assertSeeInOrder(['Pidió', 'Mandado', 'Falta', 'Motivo', 'Galleta de prueba', '12', '8', '4', 'No alcanzó'])
+            ->assertSee('Envío 1 · 05/11/2026');
+        $this->get(route('rutas.pedidos.show', $otro))->assertOk()->assertSee('Anulado por')->assertSee('line-through', false);
     }
 }

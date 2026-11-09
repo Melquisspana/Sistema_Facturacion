@@ -69,11 +69,15 @@
 
             <section class="rounded-lg border border-gray-200 bg-white" aria-labelledby="productos-titulo">
                 <h2 id="productos-titulo" class="px-4 pt-4 text-base font-semibold text-gray-800 sm:px-5">Productos</h2>
+                <div class="overflow-x-auto">
                 <table class="mt-2 min-w-full text-sm">
                     <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                             <th class="px-4 py-3 sm:px-5">Producto</th>
-                            <th class="px-4 py-3 text-right sm:px-5">Cantidad</th>
+                            <th class="px-4 py-3 text-right sm:px-5">Pidió</th>
+                            <th class="px-4 py-3 text-right sm:px-5">Mandado</th>
+                            <th class="px-4 py-3 text-right sm:px-5">Falta</th>
+                            <th class="px-4 py-3 sm:px-5">Motivo</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -84,10 +88,24 @@
                                     <span class="block text-xs text-gray-500">{{ $linea->producto?->codigo }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ $linea->cantidadLegible() }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ \App\Models\PedidoSalaLinea::legible($linea->mandado()) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums sm:px-5">{{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}</td>
+                                <td class="px-4 py-3 text-gray-600 sm:px-5">{{ $linea->motivo_no_enviado ?? '—' }}</td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
+                </div>
+            </section>
+
+            {{-- Cada envío por separado, para compararlo con el sugerido y la OC. --}}
+            <section class="{{ $caja }}" aria-labelledby="envios-titulo">
+                <h2 id="envios-titulo" class="text-base font-semibold text-gray-800">Lo que mandó la fábrica</h2>
+                @if ($pedido->envios->isEmpty())
+                    <p class="mt-1 text-sm text-gray-500">La fábrica todavía no mandó nada.</p>
+                @else
+                    <div class="mt-3">@include('rutas.pedidos._envios', ['envios' => $pedido->envios])</div>
+                @endif
             </section>
         </div>
     </div>
