@@ -33,10 +33,15 @@ use Throwable;
  * A QUIÉN. El ajuste `pedidos.correo_resumen_diario` (Configuración › Rutas, dato
  * personal). Vacío: no se manda y queda en el log.
  *
- * UNA VEZ POR DÍA. La auditoría («mandó el resumen diario de pedidos», con la fecha) es la
- * marca que dura: sobrevive a un `cache:clear` del despliegue. `Cache::add` con la fecha en
- * la clave cubre dos corridas a la vez. Si el envío falla, la marca de la caché se suelta y
- * no se audita, así que se puede volver a correr a mano.
+ * UNA VEZ POR DÍA, DESDE LAS 17:00. Antes de esa hora no sale: una corrida a mano de la
+ * mañana no le quita el día al de las 17:00. La auditoría («mandó el resumen diario de
+ * pedidos», con la fecha) es la marca que dura: sobrevive a un `cache:clear` del despliegue.
+ * `Cache::add` con la fecha en la clave cubre dos corridas a la vez. Si el envío falla, la
+ * marca de la caché se suelta y no se audita, así que se puede volver a correr a mano.
+ *
+ * A MANO (`--forzar`). Sale ya, a cualquier hora y aunque el del día ya haya salido, con lo
+ * mismo que traería el siguiente. Queda auditado aparte y no cuenta como el de las 17:00:
+ * ni lo frena ni corre el período del siguiente.
  *
  * FUERA DE PRODUCCIÓN NO SALE: pasa por {@see CandadoCorreoReal}, como los demás correos,
  * y queda como simulado.
@@ -46,6 +51,11 @@ use Throwable;
 class ResumenDiarioPedidos
 {
     public const AUDITORIA = 'mandó el resumen diario de pedidos';
+
+    public const AUDITORIA_A_MANO = 'mandó a mano el resumen de pedidos';
+
+    /** La hora del día (de El Salvador) a la que sale; la usa también el planificador. */
+    public const HORA = '17:00';
 
     public function __construct(
         private PedidosFabrica $fabrica,
@@ -62,11 +72,12 @@ class ResumenDiarioPedidos
     }
 
     /**
-     * Manda el resumen del día de negocio de hoy.
+     * Manda el resumen del día de negocio de hoy. Con `$forzar` (a mano) sale aunque sea
+     * temprano o ya haya salido, sin contar como el del día.
      *
-     * @return 'sin_destinatarios'|'ya_enviado'|'enviado'|'simulado'|'fallido'
+     * @return 'sin_destinatarios'|'temprano'|'ya_enviado'|'enviado'|'simulado'|'fallido'
      */
-    public function enviar(): string
+    public function enviar(bool $forzar = false): string
     {
         $fecha = HoraNegocio::fechaHoy();
         $destinatarios = $this->destinatarios();
@@ -77,7 +88,11 @@ class ResumenDiarioPedidos
             return 'sin_destinatarios';
         }
 
-        if ($this->yaEnviado($fecha)) {
+        if (! $forzar && HoraNegocio::ahora()->format('H:i') < self::HORA) {
+            return 'temprano';
+        }
+
+        if (! $forzar && $this->yaEnviado($fecha)) {
             return 'ya_enviado';
         }
 
@@ -86,13 +101,13 @@ class ResumenDiarioPedidos
         $contenido = $this->contenido($this->desdeElAnterior() ?? Carbon::parse($fecha), $hasta);
 
         $clave = 'pedidos.correo_resumen_diario.'.$fecha;
-        if (! Cache::add($clave, true, now()->addDays(2))) {
+        if (! $forzar && ! Cache::add($clave, true, now()->addDays(2))) {
             return 'ya_enviado';
         }
 
         if ($this->candado->debeSimular()) {
             Log::info('Pedidos: resumen diario SIMULADO', ['fecha' => $fecha, 'motivo' => $this->candado->motivo()]);
-            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta);
+            $this->auditar($fecha, 'simulado', count($destinatarios), $hasta, $forzar);
 
             return 'simulado';
         }
@@ -103,13 +118,15 @@ class ResumenDiarioPedidos
             Mail::to($destinatarios)->send(new ResumenDiarioPedidosCorreo($contenido));
         } catch (Throwable $e) {
             // Puede haber salido igual; se suelta la marca para poder reintentarlo a mano.
-            Cache::forget($clave);
+            if (! $forzar) {
+                Cache::forget($clave);
+            }
             Log::warning('Pedidos: resumen diario FALLIDO', ['fecha' => $fecha, 'error' => mb_substr($e->getMessage(), 0, 500)]);
 
             return 'fallido';
         }
 
-        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta);
+        $this->auditar($fecha, 'enviado', count($destinatarios), $hasta, $forzar);
 
         return 'enviado';
     }
@@ -238,10 +255,10 @@ class ResumenDiarioPedidos
     }
 
     /** Sin los correos: son datos personales y la auditoría la lee más gente. */
-    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta): void
+    private function auditar(string $fecha, string $estado, int $destinatarios, Carbon $hasta, bool $aMano): void
     {
         activity('pedido_sala')
             ->withProperties(['fecha' => $fecha, 'estado' => $estado, 'destinatarios' => $destinatarios, 'hasta' => $hasta->format('Y-m-d H:i:s')])
-            ->log(self::AUDITORIA);
+            ->log($aMano ? self::AUDITORIA_A_MANO : self::AUDITORIA);
     }
 }

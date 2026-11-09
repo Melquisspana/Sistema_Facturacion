@@ -295,6 +295,38 @@ class CorreoDiarioPedidosTest extends TestCase
         Mail::assertSentCount(2);
     }
 
+    public function test_a_mano_antes_de_las_cinco_no_sale_y_con_forzar_sale_sin_quitar_el_de_las_cinco(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $this->travelTo('2026-11-09 09:00:00');
+        $pedido = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '5']);
+        $this->mandar($pedido, [$this->galleta->id => '5']);
+
+        $this->travelTo('2026-11-09 10:00:00');
+        $this->artisan('pedidos:correo-diario')
+            ->expectsOutputToContain('Todavía no son las 5 de la tarde')
+            ->assertSuccessful();
+        Mail::assertNothingSent();
+        $this->assertSame(0, Activity::where('description', ResumenDiarioPedidos::AUDITORIA)->count());
+
+        // Para probarlo: sale ya, pero no cuenta como el de las 5.
+        $this->artisan('pedidos:correo-diario', ['--forzar' => true])->expectsOutput('Resumen enviado.')->assertSuccessful();
+        Mail::assertSentCount(1);
+
+        $this->travelTo('2026-11-09 17:00:00');
+        $this->artisan('pedidos:correo-diario')->expectsOutput('Resumen enviado.')->assertSuccessful();
+        Mail::assertSentCount(2);
+        // El de las 5 trae el día entero, también lo que ya iba en el de prueba.
+        $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(09:00\): Galleta de prueba 5/s', Mail::sent(ResumenDiarioPedidosCorreo::class)->last()->render());
+
+        // Reenviarlo después de las 5 también se puede, solo con --forzar.
+        $this->artisan('pedidos:correo-diario')->expectsOutput('El resumen de hoy ya se había mandado.')->assertSuccessful();
+        $this->artisan('pedidos:correo-diario', ['--forzar' => true])->expectsOutput('Resumen enviado.')->assertSuccessful();
+        Mail::assertSentCount(3);
+        $this->assertSame(1, Activity::where('description', ResumenDiarioPedidos::AUDITORIA)->count());
+    }
+
     public function test_si_el_envio_falla_no_queda_marcado_y_se_puede_reintentar(): void
     {
         Mail::fake();
