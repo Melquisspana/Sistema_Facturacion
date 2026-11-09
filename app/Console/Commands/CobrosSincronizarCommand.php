@@ -102,6 +102,7 @@ class CobrosSincronizarCommand extends Command
                 $resumen['sin_cambio'],
                 $resumen['revision_historica'] + $historicos,
             ));
+            $this->avisarEnOtroCliente($resumen['en_otro_cliente']);
 
             if ($this->option('vincular')) {
                 $this->info('  '.$this->vincular($cliente, $vinculador));
@@ -128,6 +129,7 @@ class CobrosSincronizarCommand extends Command
                 $previsto['revision_historica'],
             ]],
         );
+        $this->avisarEnOtroCliente($previsto['en_otro_cliente']);
 
         if ($this->option('vincular')) {
             $this->line(sprintf(
@@ -161,6 +163,15 @@ class CobrosSincronizarCommand extends Command
         }
 
         $this->warn('  ENSAYO EN SECO: no se escribió nada. Agregá --aplicar cuando el resultado sea el esperado.');
+    }
+
+    /** El número ya está en el seguimiento de otro cliente: no entra y lo tiene que ver alguien. */
+    private function avisarEnOtroCliente(int $cuantos): void
+    {
+        if ($cuantos > 0) {
+            $this->warn("  {$cuantos} ya está(n) en el seguimiento de otro cliente y no se dan de alta acá. "
+                .'Revisá a qué cliente corresponden (el detalle queda en el log).');
+        }
     }
 
     /**

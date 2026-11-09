@@ -17,6 +17,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -65,11 +66,15 @@ class AltaCobrosService
      * Es IDEMPOTENTE: correrla dos veces no crea nada nuevo ni pisa estados. Solo agrega
      * los que faltan y adopta los externos que ahora tienen su DTE.
      *
-     * @return array{creados: int, adoptados: int, sin_cambio: int, revision_historica: int}
+     * Un número que ya está en el seguimiento de OTRO cliente no se da de alta: la llave es
+     * única en todo el sistema y crearlo tumbaba la corrida entera. Se cuenta en
+     * `en_otro_cliente`, se anota en el log y se sigue con los demás.
+     *
+     * @return array{creados: int, adoptados: int, sin_cambio: int, revision_historica: int, en_otro_cliente: int}
      */
     public function sincronizar(Cliente $cliente): array
     {
-        $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0];
+        $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0, 'en_otro_cliente' => 0];
 
         $existentes = CobroDocumento::deCliente($cliente->id)
             ->get(['id', 'dte_id', 'numero_control_norm', 'ejercicio_control'])
@@ -89,6 +94,20 @@ class AltaCobrosService
                 if ($existente !== null) {
                     $adoptado = $this->adoptar($existente->id, $dte);
                     $adoptado ? $resumen['adoptados']++ : $resumen['sin_cambio']++;
+
+                    continue;
+                }
+
+                $ajeno = $this->enOtroCliente($cliente, $dte);
+                if ($ajeno !== null) {
+                    $resumen['en_otro_cliente']++;
+                    Log::warning('Cobros: el documento ya está en el seguimiento de otro cliente; no se dio de alta.', [
+                        'numero_control' => $dte->numero_control,
+                        'dte_id' => $dte->id,
+                        'cliente_id' => $cliente->id,
+                        'cobro_documento_id' => $ajeno->id,
+                        'otro_cliente_id' => (int) $ajeno->cliente_id,
+                    ]);
 
                     continue;
                 }
@@ -114,17 +133,17 @@ class AltaCobrosService
      * alta corra sola: sobre los datos reales se ve cuántos entrarían y cuántos vienen con
      * antecedente del circuito anterior.
      *
-     * @return array{creados: int, adoptados: int, sin_cambio: int, revision_historica: int}
+     * @return array{creados: int, adoptados: int, sin_cambio: int, revision_historica: int, en_otro_cliente: int}
      */
     public function previsualizar(Cliente $cliente): array
     {
-        $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0];
+        $resumen = ['creados' => 0, 'adoptados' => 0, 'sin_cambio' => 0, 'revision_historica' => 0, 'en_otro_cliente' => 0];
 
         $existentes = CobroDocumento::deCliente($cliente->id)
             ->get(['id', 'dte_id', 'numero_control_norm', 'ejercicio_control'])
             ->keyBy(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control));
 
-        $this->elegibles($cliente)->chunkById(200, function ($documentos) use (&$resumen, $existentes) {
+        $this->elegibles($cliente)->chunkById(200, function ($documentos) use (&$resumen, $existentes, $cliente) {
             foreach ($documentos as $dte) {
                 $clave = EjercicioControl::llave($dte->numero_control, EjercicioControl::de($dte->fecha_emision));
 
@@ -136,6 +155,12 @@ class AltaCobrosService
 
                 if ($existente !== null) {
                     $existente->dte_id === null ? $resumen['adoptados']++ : $resumen['sin_cambio']++;
+
+                    continue;
+                }
+
+                if ($this->enOtroCliente($cliente, $dte) !== null) {
+                    $resumen['en_otro_cliente']++;
 
                     continue;
                 }
@@ -170,6 +195,16 @@ class AltaCobrosService
             // servidor de producción no es una factura que se cobre.
             ->when(config('dte.ambiente') === '01', fn ($q) => $q->where('ambiente', '!=', '00'))
             ->aceptadoRealMh();
+    }
+
+    /** El seguimiento de OTRO cliente que ya tiene este número y ejercicio, si lo hay. */
+    private function enOtroCliente(Cliente $cliente, Dte $dte): ?CobroDocumento
+    {
+        return CobroDocumento::query()
+            ->where('numero_control_norm', IdentidadPpq::normalizar($dte->numero_control))
+            ->where('ejercicio_control', EjercicioControl::de($dte->fecha_emision) ?? EjercicioControl::hoy())
+            ->where('cliente_id', '!=', $cliente->id)
+            ->first(['id', 'cliente_id']);
     }
 
     /** Crea el seguimiento de un DTE aceptado, con sus antecedentes si los hay. */

@@ -465,7 +465,9 @@ class CobrosController extends Controller
             $resumen['adoptados'],
             $resumen['sin_cambio'],
             $resumen['revision_historica'] + $historicos,
-        ));
+        ).($resumen['en_otro_cliente'] > 0
+            ? " {$resumen['en_otro_cliente']} no entraron porque ya están en el seguimiento de otro cliente: revisá a cuál corresponden."
+            : ''));
     }
 
     /**

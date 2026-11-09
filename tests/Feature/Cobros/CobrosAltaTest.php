@@ -4,6 +4,8 @@ namespace Tests\Feature\Cobros;
 
 use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\EstadoDte;
+use App\Enums\PermisoSistema;
+use App\Enums\RolSistema;
 use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
@@ -15,10 +17,15 @@ use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Models\User;
 use App\Services\Cobros\AltaCobrosService;
 use App\Services\Dte\DteBorradorService;
 use App\Services\Dte\DteGeneracionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
@@ -235,5 +242,44 @@ class CobrosAltaTest extends TestCase
 
         $this->assertSame(1, CobroDocumento::count());
         $this->assertSame($calleja->id, CobroDocumento::firstOrFail()->cliente_id);
+    }
+
+    /**
+     * Issue #13: el número de control ya está en el seguimiento de OTRO cliente (la llave es
+     * única en todo el sistema). Antes la tarea de cada 10 minutos se caía ahí y los demás
+     * no entraban; ahora lo informa, no toca el ajeno y sigue.
+     */
+    public function test_un_numero_que_ya_esta_en_otro_cliente_no_tumba_el_alta(): void
+    {
+        Log::spy();
+        $cliente = $this->cliente();
+        $otro = Cliente::factory()->contribuyente()->create();
+        $choca = $this->ccfAceptado($cliente, '26090017003463');
+        $sigue = $this->ccfAceptado($cliente, '26090017003464');
+        $ajeno = CobroDocumento::create([
+            'cliente_id' => $otro->id, 'origen' => OrigenCobroDocumento::Externo->value, 'tipo_dte' => '03',
+            'numero_control' => $choca->numero_control, 'fecha_emision' => $choca->fecha_emision, 'monto' => '10.00',
+        ]);
+
+        config()->set('cobros.alta.automatica', true);
+        $this->artisan('cobros:sincronizar', ['--cliente' => $cliente->id, '--aplicar' => true])
+            ->expectsOutputToContain('1 ya está(n) en el seguimiento de otro cliente')
+            ->assertExitCode(0);
+
+        $this->assertSame($sigue->id, CobroDocumento::deCliente($cliente->id)->sole()->dte_id, 'Los demás sí entraron.');
+        $this->assertSame($otro->id, (int) $ajeno->refresh()->cliente_id);
+        $this->assertNull($ajeno->dte_id, 'El del otro cliente no se toca.');
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn ($mensaje, $datos) => str_contains($mensaje, 'otro cliente')
+            && $datos['dte_id'] === $choca->id && $datos['cobro_documento_id'] === $ajeno->id);
+
+        // El botón de la pantalla también lo dice.
+        foreach (PermisoSistema::todos() as $permiso) {
+            Permission::findOrCreate($permiso, 'web');
+        }
+        Role::findOrCreate(RolSistema::Administrador->value, 'web')->syncPermissions(PermisoSistema::paraRol(RolSistema::Administrador));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->actingAs(User::factory()->create()->assignRole(RolSistema::Administrador->value))
+            ->post(route('cobros.sincronizar', $cliente))->assertRedirect()
+            ->assertSessionHas('status', fn ($m) => str_contains($m, '1 no entraron porque ya están en el seguimiento de otro cliente'));
     }
 }
