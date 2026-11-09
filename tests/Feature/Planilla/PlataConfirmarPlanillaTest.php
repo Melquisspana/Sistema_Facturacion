@@ -312,6 +312,8 @@ class PlataConfirmarPlanillaTest extends TestCase
             $this->fail('Un anticipo cuyo pago se revirtió no es dinero entregado.');
         } catch (ValidationException $e) {
             $this->assertStringContainsString('revertido', $e->getMessage());
+            // Con veinte personas hay que saber qué línea corregir.
+            $this->assertStringContainsString('Ana Prueba: El anticipo del 02/09/2026', $e->getMessage());
         }
     }
 
@@ -434,6 +436,29 @@ class PlataConfirmarPlanillaTest extends TestCase
         // En MySQL, sin candado, la aplicación de una planilla que se confirmaba a la vez
         // no se vería y el pago se revertiría con el anticipo ya descontado.
         $this->assertLeidaConCandado($sql, 'planilla_anticipo_aplicaciones', 'lock in share mode');
+    }
+
+    public function test_la_pantalla_no_ofrece_anticipos_que_el_servidor_rechazaria(): void
+    {
+        config()->set('gastos.monedas', ['USD', 'EUR']);
+
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $carlos = $this->empleado($u, 'Carlos Prueba');
+
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $this->anticipo($u, $ana, 'USD', $pago->id);
+        app(RegistrarPago::class)->revertir($u, $pago, 'La salida de caja se registró por error.');
+        $this->anticipo($u, $ana, 'EUR');
+        $vigente = $this->anticipo($u, $carlos);
+
+        $this->actingAs($u)->get(route('planilla.preparar', $planilla))
+            ->assertOk()
+            ->assertViewHas('anticipos', function (array $anticipos) use ($ana, $carlos, $vigente) {
+                return ($anticipos[$ana->id] ?? []) === []
+                    && array_column($anticipos[$carlos->id] ?? [], 'id') === [$vigente->id];
+            });
     }
 
     // ═══════════ d. Guardar no pisa una planilla confirmada en medio ═══════════

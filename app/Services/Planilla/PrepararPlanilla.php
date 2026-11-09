@@ -943,14 +943,21 @@ final class PrepararPlanilla
                 $anticipo = PlanillaAnticipo::findOrFail($concepto['planilla_anticipo_id']);
 
                 if ($motivo = $this->motivoContraAnticipo($anticipo, (int) $linea['planilla_empleado_id'], $planilla->moneda)) {
-                    throw ValidationException::withMessages(['lineas' => $motivo]);
+                    // Con el nombre delante, como en los reparos: con veinte personas hay
+                    // que saber qué línea corregir.
+                    $nombre = PlanillaEmpleado::whereKey($linea['planilla_empleado_id'])->value('nombre');
+
+                    throw ValidationException::withMessages(['lineas' => $nombre.': '.$motivo]);
                 }
             }
         }
     }
 
-    /** Por qué este anticipo no se puede descontar a esta persona en esta moneda, si no se puede. */
-    private function motivoContraAnticipo(PlanillaAnticipo $anticipo, int $empleadoId, string $moneda): ?string
+    /**
+     * Por qué este anticipo no se puede descontar a esta persona en esta moneda, si no se
+     * puede. La usa también la pantalla, para no ofrecer lo que después se rechaza.
+     */
+    public function motivoContraAnticipo(PlanillaAnticipo $anticipo, int $empleadoId, string $moneda): ?string
     {
         $del = 'El anticipo del '.$anticipo->fecha->format('d/m/Y');
 
