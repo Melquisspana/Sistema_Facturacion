@@ -14,11 +14,14 @@ use Illuminate\Support\Facades\Schema;
  *  - `pedido_sala_envio_lineas`: qué productos llevó y cuánto. Apunta a la LÍNEA del
  *    pedido, así la base garantiza que el producto es de ese pedido, y es RESTRICT: la base
  *    no deja borrar un envío con sus líneas ni la línea de un pedido que ya salió.
- *  - `pedido_sala_lineas.va_borrador`: lo que la fábrica va marcando en la hoja «Qué va»
- *    antes de mandar; se guarda solo y se limpia al mandar. El motivo del borrador va en
- *    `motivo_no_enviado`, que ya existe.
+ *  - `pedido_sala_lineas.va_borrador` / `motivo_borrador`: lo que la fábrica va marcando
+ *    en la hoja «Qué va» antes de mandar; se guarda solo y se limpia al mandar o cerrar. El
+ *    motivo del borrador va aparte de `motivo_no_enviado` (que ya existe y es el motivo
+ *    OFICIAL del faltante vigente): si compartieran columna, marcar o borrar lo marcado
+ *    pisaría el motivo de un envío anterior.
  *  - `pedidos_sala.armando_desde` / `armando_por`: desde cuándo y quién empezó a armarlo.
- *    También frena la corrección del vendedor: la fábrica ya empezó.
+ *    También frena la corrección del vendedor: la fábrica ya empezó. `armando_sigue`: la
+ *    casilla «Lo que falta va en otro envío» de lo marcado.
  *
  * `pedido_sala_lineas.cantidad_enviada` queda sin uso (en NULL): lo mandado sale solo de
  * la suma de los envíos vigentes.
@@ -56,11 +59,13 @@ return new class extends Migration
 
         Schema::table('pedido_sala_lineas', function (Blueprint $table) {
             $table->decimal('va_borrador', 11, 4)->nullable()->after('motivo_no_enviado');
+            $table->string('motivo_borrador', 200)->nullable()->after('va_borrador');
         });
 
         Schema::table('pedidos_sala', function (Blueprint $table) {
             $table->timestamp('armando_desde')->nullable()->after('estado');
             $table->foreignId('armando_por')->nullable()->after('armando_desde')->constrained('users')->restrictOnDelete();
+            $table->boolean('armando_sigue')->default(false)->after('armando_por');
         });
     }
 
@@ -68,11 +73,11 @@ return new class extends Migration
     {
         Schema::table('pedidos_sala', function (Blueprint $table) {
             $table->dropConstrainedForeignId('armando_por');
-            $table->dropColumn('armando_desde');
+            $table->dropColumn(['armando_desde', 'armando_sigue']);
         });
 
         Schema::table('pedido_sala_lineas', function (Blueprint $table) {
-            $table->dropColumn('va_borrador');
+            $table->dropColumn(['va_borrador', 'motivo_borrador']);
         });
 
         // Primero las líneas y después la cabecera.

@@ -112,7 +112,10 @@ class PedidosFabrica
      * Guarda lo marcado en la hoja sin mandar nada (se llama solo, con cada cambio). El
      * pedido queda «Armando» desde el primero; eso se audita una vez, no cada tecla.
      *
-     * @param  array{cantidades?: array<int|string, string>, motivos?: array<int|string, ?string>}  $datos
+     * El motivo marcado va en `motivo_borrador`: el oficial (`motivo_no_enviado`, el de un
+     * envío anterior) no se toca hasta mandar.
+     *
+     * @param  array{cantidades?: array<int|string, string>, motivos?: array<int|string, ?string>, sigue?: bool}  $datos
      */
     public function guardarBorrador(PedidoSala $pedido, array $datos, User $usuario): void
     {
@@ -131,13 +134,13 @@ class PedidosFabrica
                 if (! array_key_exists($linea->id, $cantidades)) {
                     continue;
                 }
-                $va = $cantidades[$linea->id];
                 $linea->update([
-                    'va_borrador' => $va,
-                    'motivo_no_enviado' => bccomp($va, $linea->pendiente(), 4) === -1 ? $this->motivo($motivos[$linea->id] ?? null) : null,
+                    'va_borrador' => $cantidades[$linea->id],
+                    'motivo_borrador' => $this->motivo($motivos[$linea->id] ?? null),
                 ]);
             }
 
+            $pedido->update(['armando_sigue' => ! empty($datos['sigue'])]);
             if ($pedido->armando_desde === null) {
                 $pedido->update(['armando_desde' => now(), 'armando_por' => $usuario->id]);
                 activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
@@ -147,7 +150,7 @@ class PedidosFabrica
         }, 3);
     }
 
-    /** «Borrar lo marcado»: limpia el borrador y el armado. Lo ya mandado no se toca. */
+    /** «Borrar lo marcado»: limpia el borrador y el armado. Lo ya mandado (y su motivo) no se toca. */
     public function borrarBorrador(PedidoSala $pedido, User $usuario): void
     {
         DB::transaction(function () use ($pedido, $usuario) {
@@ -161,9 +164,9 @@ class PedidosFabrica
                 return;
             }
             foreach ($conBorrador as $linea) {
-                $linea->update(['va_borrador' => null, 'motivo_no_enviado' => null]);
+                $linea->update(['va_borrador' => null, 'motivo_borrador' => null]);
             }
-            $pedido->update(['armando_desde' => null, 'armando_por' => null]);
+            $pedido->update(['armando_desde' => null, 'armando_por' => null, 'armando_sigue' => false]);
             activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
                 ->withProperties(['lineas' => $conBorrador->map(fn (PedidoSalaLinea $l) => [
                     'pedido_sala_linea_id' => $l->id, 'producto_id' => $l->producto_id, 'va_borrador' => (string) $l->getOriginal('va_borrador'),
@@ -229,6 +232,7 @@ class PedidosFabrica
             foreach ($pedido->lineas as $linea) {
                 $linea->update([
                     'va_borrador' => null,
+                    'motivo_borrador' => null,
                     'motivo_no_enviado' => $linea->tienePendiente() ? $this->motivo($motivos[$linea->id] ?? null) : null,
                 ]);
             }
@@ -237,6 +241,7 @@ class PedidosFabrica
                 'estado' => $this->estadoSegun($pedido, cerrar: empty($datos['sigue'])),
                 'armando_desde' => null,
                 'armando_por' => null,
+                'armando_sigue' => false,
             ]);
 
             activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
@@ -277,10 +282,11 @@ class PedidosFabrica
             $this->exigirVersion($pedido, $version);
 
             $anterior = $pedido->estado;
-            foreach ($pedido->lineas->whereNotNull('va_borrador') as $linea) {
-                $linea->update(['va_borrador' => null]);
+            // Lo marcado y no mandado se descarta; el motivo oficial (el del último envío) queda.
+            foreach ($pedido->lineas as $linea) {
+                $linea->update(['va_borrador' => null, 'motivo_borrador' => null]);
             }
-            $pedido->update(['estado' => $this->estadoSegun($pedido, cerrar: true), 'armando_desde' => null, 'armando_por' => null]);
+            $pedido->update(['estado' => $this->estadoSegun($pedido, cerrar: true), 'armando_desde' => null, 'armando_por' => null, 'armando_sigue' => false]);
 
             $propiedades = ['estado_anterior' => $anterior->value, 'estado_nuevo' => $pedido->estado->value];
             if ($pedido->estado === EstadoPedidoSala::NoSeTrae) {

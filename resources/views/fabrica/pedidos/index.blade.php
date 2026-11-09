@@ -3,9 +3,15 @@
      py-4/py-5 y letra text-xl/2xl, más grandes que en la oficina. Funciona igual con el
      mouse.
 
-     Se recarga sola cada 30 s, solo si nadie tocó la pantalla (ni el teclado) en los
-     últimos 20 s y no hay un formulario enviándose: así no se corren las tarjetas bajo el
-     dedo. Sin librerías: Alpine, que ya está. --}}
+     Se recarga sola cada 30 s, solo si nadie la usó (dedo, mouse, rueda ni teclado) en los
+     últimos 20 s y no hay un formulario enviándose: así no se corren las
+     tarjetas bajo el dedo ni bajo el puntero. Cada recarga renueva la sesión, así que para
+     quien ve más que Fábrica se corta tras `$limiteRecarga` ms sin uso (lo último que se
+     usó se recuerda entre recargas en sessionStorage; sin él, no se recarga sola). La
+     tableta de la fábrica ($limiteRecarga = null) se recarga sin tope. No se escucha
+     `scroll` ni el movimiento sin desplazamiento: el navegador los dispara solo al
+     recargar (restaura la posición, actualiza el hover) y la recarga no tendría fin. Sin
+     librerías: Alpine, que ya está. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -16,10 +22,26 @@
     @php($hoy = \App\Support\HoraNegocio::fechaHoy())
 
     <div class="py-6 sm:py-8"
-         x-data="{ ultimo: Date.now(), enviando: false }"
-         @pointerdown.window="ultimo = Date.now()"
-         @keydown.window="ultimo = Date.now()"
-         x-init="setInterval(() => { if (! enviando && Date.now() - ultimo > 20000) location.reload() }, 30000)">
+         x-data="{
+             ultimo: Date.now(), enviando: false, limite: @js($limiteRecarga), recuerda: false,
+             uso() {
+                 const ahora = Date.now();
+                 if (ahora - this.ultimo < 1000) return;
+                 this.ultimo = ahora;
+                 try { sessionStorage.setItem('fabrica.ultimo', String(ahora)); } catch (e) {}
+             },
+         }"
+         @pointerdown.window="uso()" @pointermove.window="if ($event.movementX || $event.movementY) uso()" @wheel.window="uso()" @keydown.window="uso()"
+         x-init="
+             try {
+                 const antes = Number(sessionStorage.getItem('fabrica.ultimo'));
+                 if (antes) ultimo = antes; else sessionStorage.setItem('fabrica.ultimo', String(ultimo));
+                 recuerda = true;
+             } catch (e) {}
+             setInterval(() => {
+                 const quieto = Date.now() - ultimo;
+                 if (! enviando && quieto > 20000 && (limite === null || (recuerda && quieto < limite))) location.reload();
+             }, 30000)">
         <div class="max-w-7xl mx-auto space-y-4 px-4 sm:px-6 lg:px-8">
             <x-rutas.avisos />
 

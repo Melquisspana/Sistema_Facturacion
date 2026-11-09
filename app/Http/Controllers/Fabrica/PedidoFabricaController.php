@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Fabrica;
 
+use App\Enums\AreaSistema;
 use App\Enums\EstadoPedidoSala;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Fabrica\BorradorPedidoRequest;
@@ -40,6 +41,10 @@ class PedidoFabricaController extends Controller
             // Una clave por tarjeta: si «Se manda todo» se toca dos veces, sale un solo envío.
             'claves' => $porMandar?->mapWithKeys(fn (PedidoSala $p) => [$p->id => (string) Str::uuid()])->all() ?? [],
             'hechos' => $ver === 'hechos' ? $this->fabrica->hechos() : null,
+            // La recarga sola renueva la sesión: para quien ve más del sistema que Fábrica se
+            // corta antes de que la sesión venza por inactividad (SESSION_LIFETIME). La
+            // tableta de la fábrica (solo Pedidos) se recarga sin tope.
+            'limiteRecarga' => AreaSistema::soloFabrica($request->user()) ? null : max(1, (int) config('session.lifetime') - 1) * 60000,
         ]);
     }
 
@@ -58,7 +63,7 @@ class PedidoFabricaController extends Controller
     /** Lo marcado en la hoja, sin recargar. Responde JSON (los errores, 422 con su texto). */
     public function borrador(BorradorPedidoRequest $request, PedidoSala $pedido): JsonResponse
     {
-        $this->fabrica->guardarBorrador($pedido, $request->validated(), $request->user());
+        $this->fabrica->guardarBorrador($pedido, $request->validated() + ['sigue' => $request->boolean('sigue')], $request->user());
 
         return response()->json(['guardado' => true]);
     }

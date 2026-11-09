@@ -3,12 +3,17 @@
      botones de min-h-12 con py-4/py-5 y letra text-xl/2xl, a propósito más grandes que en
      la oficina. Funciona igual con el mouse.
 
+     Si se está armando, el botón grande manda LO MARCADO en la hoja (cantidades, motivos y
+     la casilla «va en otro envío»), no todo lo que falta: si no, registraría un despacho
+     de lo que se marcó «Nada».
+
      Variables: $pedido (con lo de PedidosFabrica::relaciones()), $clave, $atrasado (bool),
      $hoy (Y-m-d). --}}
 @php
     $faltan = $pedido->lineas->filter->tienePendiente();
     $completas = $pedido->lineas->reject->tienePendiente();
     $parcial = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
+    $armando = $pedido->armando_desde !== null;
     $version = $pedido->versionProduccion();
     $dias = (int) $pedido->fecha->diffInDays(\Illuminate\Support\Carbon::parse($hoy));
 @endphp
@@ -48,6 +53,9 @@
                     @if (bccomp($linea->mandado(), '0', 4) === 1)
                         <span class="block text-sm text-gray-500">faltan {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }} de {{ $linea->cantidadLegible() }}</span>
                     @endif
+                    @if ($armando && $linea->va_borrador !== null && bccomp((string) $linea->va_borrador, $linea->pendiente(), 4) !== 0)
+                        <span class="block text-sm font-semibold text-indigo-700">Marcado: va {{ \App\Models\PedidoSalaLinea::legible((string) $linea->va_borrador) }}</span>
+                    @endif
                 </span>
             </li>
         @endforeach
@@ -66,11 +74,18 @@
             <input type="hidden" name="clave" value="{{ $clave }}">
             <input type="hidden" name="version" value="{{ $version }}">
             @foreach ($faltan as $linea)
-                <input type="hidden" name="cantidades[{{ $linea->id }}]" value="{{ $linea->pendiente() }}">
+                @php($marcado = $armando && $linea->va_borrador !== null)
+                <input type="hidden" name="cantidades[{{ $linea->id }}]" value="{{ $marcado ? $linea->va_borrador : $linea->pendiente() }}">
+                @if ($marcado && filled($linea->motivo_borrador))
+                    <input type="hidden" name="motivos[{{ $linea->id }}]" value="{{ $linea->motivo_borrador }}">
+                @endif
             @endforeach
+            @if ($armando && $pedido->armando_sigue)
+                <input type="hidden" name="sigue" value="1">
+            @endif
             <button :disabled="enviando"
                     class="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 py-5 text-xl font-bold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50">
-                {{ $parcial ? 'Mandar lo que falta' : 'Se manda todo' }}
+                {{ $armando ? 'Mandar lo marcado' : ($parcial ? 'Mandar lo que falta' : 'Se manda todo') }}
             </button>
         </form>
         <div class="grid grid-cols-2 gap-3">

@@ -181,7 +181,8 @@ Para la pantalla de la fábrica (`/fabrica/pedidos`), que se usa de pie, con el 
 - Sin texto con prefijo de pantalla: el botón dice lo que hace.
 - Lo que se puede deshacer no se confirma: sale el aviso con un botón «Deshacer».
 - `confirm()` solo para «Deshacer» un envío y para «Borrar lo marcado».
-- La lista se recarga sola cuando nadie la toca; la hoja que se está llenando, nunca (guarda sola).
+- La lista se recarga sola cuando nadie la usa (dedo, mouse, rueda o teclado); la hoja que se está llenando, nunca (guarda sola). Cada recarga renueva la sesión: para quien ve más que Fábrica, deja de recargarse antes de que la sesión venza por inactividad.
+- La hoja guarda con un solo retardo corto y, al salir, primero termina de guardar. Los errores del guardado se muestran con texto propio en castellano (por ejemplo, «Se cerró la sesión. Volvé a entrar.»), nunca el mensaje en inglés del sistema.
 
 ---
 

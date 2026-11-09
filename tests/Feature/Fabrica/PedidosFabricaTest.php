@@ -515,7 +515,9 @@ class PedidosFabricaTest extends TestCase
         $this->assertNotNull($pedido->armando_desde);
         $this->assertSame($this->fabrica->id, $pedido->armando_por);
         $this->assertSame('20.0000', $pedido->lineas()->whereKey($g)->value('va_borrador'));
-        $this->assertSame('Sin canillas', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
+        // El motivo marcado va aparte: el oficial lo escribe recién el envío.
+        $this->assertSame('Sin canillas', $pedido->lineas()->whereKey($c)->value('motivo_borrador'));
+        $this->assertNull($pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
         // Se audita una vez, no cada cambio; y el borrador no invalida la tarjeta de otra tableta.
         $this->assertSame(1, Activity::where('description', 'empezó a armar el pedido')->count());
         $this->assertSame($version, $this->version($pedido));
@@ -543,6 +545,8 @@ class PedidosFabricaTest extends TestCase
         $this->assertNull($pedido->armando_desde);
         $this->assertNull($pedido->armando_por);
         $this->assertSame(0, $pedido->lineas()->whereNotNull('va_borrador')->count());
+        $this->assertSame(0, $pedido->lineas()->whereNotNull('motivo_borrador')->count());
+        $this->assertSame('Sin canillas', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
         $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '1']])
             ->assertStatus(422)->assertJsonValidationErrors(['pedido' => PedidosFabrica::CERRADO]);
 
@@ -595,5 +599,183 @@ class PedidosFabricaTest extends TestCase
             $p->update(['estado' => EstadoPedidoSala::Parcial]);
         }
         $this->assertSame($pocos, $contar());
+    }
+
+    // ══════════════════════════════ revisión: hallazgos corregidos
+
+    /**
+     * Lo que manda el navegador con el formulario que apunta a $accion (el primero que
+     * aparezca): sus campos con valor, y las casillas solo si están marcadas.
+     *
+     * @return array<string, mixed>
+     */
+    private function camposDelFormulario(string $html, string $accion): array
+    {
+        $this->assertSame(1, preg_match('/<form[^>]*action="'.preg_quote($accion, '/').'"[^>]*>(.*?)<\/form>/s', $html, $form));
+        preg_match_all('/<input\b[^>]*>/', $form[1], $etiquetas);
+        $datos = [];
+        foreach ($etiquetas[0] as $etiqueta) {
+            if (! preg_match('/\bname="([^"]+)"/', $etiqueta, $nombre)
+                || (str_contains($etiqueta, 'type="checkbox"') && ! preg_match('/\schecked\b/', $etiqueta))) {
+                continue;
+            }
+            $valor = preg_match('/\bvalue="([^"]*)"/', $etiqueta, $v) ? html_entity_decode($v[1]) : '';
+            parse_str($nombre[1].'='.urlencode($valor), $uno);
+            $datos = array_replace_recursive($datos, $uno);
+        }
+
+        return $datos;
+    }
+
+    public function test_despues_del_aviso_de_cambio_la_hoja_trae_la_version_nueva_y_se_puede_mandar(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '24', $this->canilla->id => '6']);
+        $vieja = $this->version($pedido);
+        $c = $this->linea($pedido, $this->canilla);
+
+        // Otra tableta manda una parte mientras esta tenía la hoja abierta.
+        $this->mandar($pedido, [$this->galleta->id => '24', $this->canilla->id => '0'], ['sigue' => '1'])->assertSessionHasNoErrors();
+        $nueva = $this->version($pedido);
+
+        $this->from(route('fabrica.pedidos.show', $pedido))
+            ->post(route('fabrica.pedidos.mandar', $pedido), ['clave' => (string) Str::uuid(), 'version' => $vieja, 'cantidades' => [$c => '6']])
+            ->assertRedirect(route('fabrica.pedidos.show', $pedido))
+            ->assertSessionHasErrors(['pedido' => PedidosFabrica::CAMBIO]);
+
+        // La hoja vuelve con la versión NUEVA (no la que venía en el formulario) y se puede mandar.
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->assertSee(PedidosFabrica::CAMBIO)->getContent();
+        $this->assertStringContainsString('name="version" value="'.$nueva.'"', $html);
+        $this->assertStringNotContainsString($vieja, $html);
+        $this->post(route('fabrica.pedidos.mandar', $pedido), $this->camposDelFormulario($html, route('fabrica.pedidos.mandar', $pedido)))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+        $this->assertSame(2, $pedido->envios()->count());
+    }
+
+    public function test_el_borrador_no_pisa_el_motivo_del_envio_anterior_y_cerrar_no_deja_motivos_del_borrador(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '5', $this->canilla->id => '6']);
+        $c = $this->linea($pedido, $this->canilla);
+        $this->mandar($pedido, [$this->galleta->id => '5', $this->canilla->id => '0'], ['motivos' => [$c => 'sin harina'], 'sigue' => '1'])
+            ->assertSessionHasNoErrors();
+
+        // Al día siguiente la hoja trae «Va» = lo pendiente y el guardado automático lo manda.
+        $this->travelTo('2026-11-10 08:00:00');
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$c => '6'], 'motivos' => [$c => 'sin harina']])->assertOk();
+        $this->assertSame('sin harina', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
+
+        // «Lo que falta no se trae»: el motivo oficial sigue siendo el del envío 1.
+        $this->patch(route('fabrica.pedidos.cerrar', $pedido), ['version' => $this->version($pedido)])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+        $this->assertSame('sin harina', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
+
+        // Lo marcado y abandonado no queda como motivo de un pedido que no se trae.
+        $otro = $this->pedido([$this->galleta->id => '6'], '2026-11-10', $this->otraSala);
+        $g = $this->linea($otro, $this->galleta);
+        $this->patchJson(route('fabrica.pedidos.borrador', $otro), ['cantidades' => [$g => '2'], 'motivos' => [$g => 'marcado y abandonado']])->assertOk();
+        $this->patch(route('fabrica.pedidos.cerrar', $otro), ['version' => $this->version($otro)])->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::NoSeTrae, $otro->refresh()->estado);
+        $this->assertNull($otro->lineas()->whereKey($g)->value('motivo_no_enviado'));
+    }
+
+    public function test_borrar_lo_marcado_no_borra_el_motivo_del_envio_anterior(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '5', $this->canilla->id => '6']);
+        $c = $this->linea($pedido, $this->canilla);
+        $this->mandar($pedido, [$this->galleta->id => '5', $this->canilla->id => '0'], ['motivos' => [$c => 'No salió del horno'], 'sigue' => '1'])
+            ->assertSessionHasNoErrors();
+
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$c => '2'], 'motivos' => [$c => 'Solo dos por ahora']])->assertOk();
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('value="Solo dos por ahora"', false);
+        $this->assertSame('No salió del horno', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
+
+        $this->patch(route('fabrica.pedidos.borrador.borrar', $pedido))->assertSessionHas('status', 'Se borró lo marcado.');
+        $this->assertSame('No salió del horno', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertSee('value="No salió del horno"', false);
+    }
+
+    public function test_la_tarjeta_de_un_pedido_que_se_esta_armando_manda_lo_marcado(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '24', $this->canilla->id => '6']);
+        $g = $this->linea($pedido, $this->galleta);
+        $c = $this->linea($pedido, $this->canilla);
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '24', $c => '0'], 'motivos' => [$c => 'Sin canillas']])->assertOk();
+
+        $html = $this->get(route('fabrica.pedidos.index'))->assertOk()
+            ->assertSee('Armando')->assertSee('Mandar lo marcado')->assertDontSee('Se manda todo')->getContent();
+        $this->post(route('fabrica.pedidos.mandar', $pedido), $this->camposDelFormulario($html, route('fabrica.pedidos.mandar', $pedido)))
+            ->assertSessionHasNoErrors();
+
+        $envio = PedidoSalaEnvio::with('lineas')->sole();
+        $this->assertSame([$g], $envio->lineas->pluck('pedido_sala_linea_id')->all());
+        $pedido->refresh();
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->estado);
+        $this->assertTrue($this->cargado($pedido)->faltaAlgo());
+        $this->assertSame('Sin canillas', $pedido->lineas()->whereKey($c)->value('motivo_no_enviado'));
+    }
+
+    public function test_la_casilla_lo_que_falta_va_en_otro_envio_se_guarda_con_el_borrador(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '24', $this->canilla->id => '6']);
+        $g = $this->linea($pedido, $this->galleta);
+        $c = $this->linea($pedido, $this->canilla);
+
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$g => '24', $c => '0'], 'sigue' => '1'])->assertOk();
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/name="sigue" value="1"[^>]*\schecked\b/', $html);
+        // La tarjeta también la respeta: lo que falta sigue por mandar.
+        $tarjeta = $this->get(route('fabrica.pedidos.index'))->getContent();
+        $this->post(route('fabrica.pedidos.mandar', $pedido), $this->camposDelFormulario($tarjeta, route('fabrica.pedidos.mandar', $pedido)))
+            ->assertSessionHasNoErrors();
+        $this->assertSame(EstadoPedidoSala::Parcial, $pedido->refresh()->estado);
+        $this->assertFalse($pedido->armando_sigue);
+
+        $this->patchJson(route('fabrica.pedidos.borrador', $pedido), ['cantidades' => [$c => '0']])->assertOk();
+        $html = $this->get(route('fabrica.pedidos.show', $pedido))->getContent();
+        $this->assertDoesNotMatchRegularExpression('/name="sigue" value="1"[^>]*\schecked\b/', $html);
+    }
+
+    public function test_la_lista_deja_de_recargarse_si_nadie_la_usa_salvo_en_la_tableta_de_la_fabrica(): void
+    {
+        config()->set('session.lifetime', 30);
+
+        // La tableta de la fábrica (solo ve Pedidos) se recarga sin tope.
+        $this->get(route('fabrica.pedidos.index'))->assertOk()->assertSee('limite: null', false);
+
+        // Quien ve más del sistema deja de recargar antes de que venza su sesión.
+        $this->actingAs(User::factory()->create(['activo' => true])->assignRole('administrador'));
+        $this->get(route('fabrica.pedidos.index'))->assertOk()->assertSee('limite: 1740000', false)->assertSee('sessionStorage', false);
+    }
+
+    public function test_la_recarga_cuenta_la_rueda_y_el_movimiento_del_mouse(): void
+    {
+        $this->get(route('fabrica.pedidos.index'))->assertOk()
+            ->assertSee('@wheel.window', false)->assertSee('@pointermove.window', false);
+    }
+
+    public function test_la_hoja_guarda_con_un_solo_retardo_y_lo_pendiente_antes_de_salir(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '24']);
+
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertDontSee('debounce', false)
+            ->assertSee('@pagehide.window', false)->assertSee('keepalive', false);
+    }
+
+    public function test_el_guardado_automatico_muestra_sus_errores_en_castellano(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '24']);
+
+        $this->get(route('fabrica.pedidos.show', $pedido))->assertOk()
+            ->assertSee('Se cerró la sesión. Volvé a entrar.')
+            ->assertDontSee('j.message', false);
+    }
+
+    public function test_el_rol_fabrica_ve_solo_pedidos_tambien_fuera_de_fabrica(): void
+    {
+        $html = $this->get(route('profile.edit'))->assertOk()->getContent();
+        preg_match('/<aside id="sidebar-principal".*?<\/aside>/s', $html, $aside);
+        preg_match_all('/href="([^"]+)"/', $aside[0], $enlaces);
+        $this->assertSame([route('fabrica.pedidos.index')], array_values(array_unique($enlaces[1])));
     }
 }

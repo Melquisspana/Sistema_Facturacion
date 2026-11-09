@@ -12,8 +12,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *
  *  - Lo mandado sale SOLO de la suma de las líneas de los envíos vigentes
  *    ({@see mandado()}); la columna `cantidad_enviada` quedó sin uso, en NULL.
- *  - `motivo_no_enviado`: por qué no va lo que falta, opcional. Lo escribe la fábrica.
- *  - `va_borrador`: lo que la fábrica va marcando en la hoja antes de mandar.
+ *  - `motivo_no_enviado`: por qué no va lo que falta, opcional. Es el motivo OFICIAL del
+ *    faltante vigente: lo escribe la fábrica al mandar, nunca el borrador.
+ *  - `va_borrador` / `motivo_borrador`: lo que la fábrica va marcando en la hoja antes de
+ *    mandar.
  *
  * Las cuentas van con bcmath a escala 4, nunca con float.
  */
@@ -21,7 +23,7 @@ class PedidoSalaLinea extends Model
 {
     protected $table = 'pedido_sala_lineas';
 
-    protected $fillable = ['producto_id', 'cantidad', 'motivo_no_enviado', 'va_borrador'];
+    protected $fillable = ['producto_id', 'cantidad', 'motivo_no_enviado', 'va_borrador', 'motivo_borrador'];
 
     protected function casts(): array
     {

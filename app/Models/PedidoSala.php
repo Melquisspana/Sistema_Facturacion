@@ -35,6 +35,7 @@ class PedidoSala extends Model
         'notas',
         'armando_desde',
         'armando_por',
+        'armando_sigue',
     ];
 
     protected function casts(): array
@@ -46,6 +47,7 @@ class PedidoSala extends Model
             'registrado_por' => 'integer',
             'armando_desde' => 'datetime',
             'armando_por' => 'integer',
+            'armando_sigue' => 'boolean',
         ];
     }
 

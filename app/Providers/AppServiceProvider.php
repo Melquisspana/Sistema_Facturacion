@@ -243,8 +243,11 @@ class AppServiceProvider extends ServiceProvider
             // la sidebar. Es PRESENTACIÓN: la autorización real vive en el middleware
             // de cada grupo de rutas. El área activa se deriva de la URL, nunca de la
             // sesión. Solo permisos (que Spatie cachea) y config: CERO consultas.
-            $view->with('areaActiva', AreaSistema::activaDesdeRequest());
-            $view->with('areasVisibles', AreaSistema::visiblesPara(auth()->user()));
+            // Quien solo ve Fábrica tiene solo «Pedidos» también fuera de /fabrica (por
+            // ejemplo en /profile, que por la URL caería en Facturación).
+            $areasVisibles = AreaSistema::visiblesPara(auth()->user());
+            $view->with('areaActiva', $areasVisibles === [AreaSistema::Fabrica] ? AreaSistema::Fabrica : AreaSistema::activaDesdeRequest());
+            $view->with('areasVisibles', $areasVisibles);
         });
 
         // Mismo estado operativo DTE para las pantallas de facturación (ficha + creación),

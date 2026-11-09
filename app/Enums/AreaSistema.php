@@ -243,6 +243,16 @@ enum AreaSistema: string
         ));
     }
 
+    /**
+     * ¿El usuario solo ve Fábrica (la tableta de la fábrica)? Su menú es solo «Pedidos»
+     * en cualquier pantalla, también en las que no son de un área (/profile), y su lista
+     * se recarga sola sin tope.
+     */
+    public static function soloFabrica(?User $usuario): bool
+    {
+        return self::visiblesPara($usuario) === [self::Fabrica];
+    }
+
     /** Área principal (primera visible) o null si el usuario no ve ninguna. */
     public static function principalPara(?User $usuario): ?self
     {
