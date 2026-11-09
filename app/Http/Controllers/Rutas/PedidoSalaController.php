@@ -64,6 +64,19 @@ class PedidoSalaController extends Controller
         return view('rutas.pedidos.show', ['pedido' => $pedido]);
     }
 
+    /**
+     * La hoja de lo que salió: el sugerido en limpio para imprimir. Todo lo que pidió el
+     * vendedor, lo que llegó en cada envío vigente y una «F» en lo que faltó. Sin precios.
+     */
+    public function hoja(PedidoSala $pedido): View
+    {
+        Gate::authorize('view', $pedido);
+        $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'sacadoPor:id,nombre', 'lineas.producto:id,codigo,nombre',
+            'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->whereNull('anulado_en')->orderBy('numero'), 'envios.lineas']);
+
+        return view('rutas.pedidos.hoja', ['pedido' => $pedido]);
+    }
+
     /** Agregar o corregir la OC, que suele llegar después por EDI. Avisa si su forma no cuadra. */
     public function ordenCompra(Request $request, PedidoSala $pedido, PedidosSala $pedidos): RedirectResponse
     {

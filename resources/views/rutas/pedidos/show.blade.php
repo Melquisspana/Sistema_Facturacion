@@ -24,6 +24,9 @@
             <section class="{{ $caja }}">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <x-rutas.estado-badge :estado="$pedido->estado" />
+                    {{-- Barra de acciones de la ficha (x-secondary-button es solo <button>). --}}
+                    <a href="{{ route('rutas.pedidos.hoja', $pedido) }}" target="_blank" rel="noopener"
+                       class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
                 </div>
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>

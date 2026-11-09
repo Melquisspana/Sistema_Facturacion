@@ -117,6 +117,11 @@
                            class="{{ $btnBase }} bg-indigo-600 hover:bg-indigo-700 focus-visible:ring-indigo-500">
                             Nuevo CCF
                         </a>
+                        {{-- Lo que mandó la fábrica hoy, con su hoja: de ahí sale el CCF. Secundario (blanco). --}}
+                        <a href="{{ route('facturacion.llego-de-fabrica') }}"
+                           class="inline-flex items-center justify-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
+                            Llegó de la fábrica
+                        </a>
                         <a href="{{ route('facturacion.create-nota-credito') }}"
                            class="{{ $btnBase }} bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500">
                             Nueva nota de crédito
