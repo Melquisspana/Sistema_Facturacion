@@ -138,6 +138,22 @@ Tomado de Planta (tabla, filtros y «Limpiar») y de Gastos (lista en tarjetas e
   - con filtros: «Nada coincide con estos filtros.» + enlace «Limpiar filtros».
 - **Celular:** en las pantallas que se usan en ruta o en el celular (Rutas, Cobros, Gastos), la tabla se cambia por una lista de tarjetas (`sm:hidden` / `hidden sm:block`). En las de oficina alcanza con que la tabla se corra de lado (`overflow-x-auto`).
 
+### Pestañas
+
+Tomado de Gastos. Para las partes de una misma pantalla (Gastos por estado; el tablero de Rutas: Resumen, Mapa y Vendedores).
+
+- Una fila de enlaces dentro de un `<nav>` con `aria-label`: `flex flex-wrap gap-1 border-b border-gray-200`.
+- Cada pestaña: `inline-flex min-h-11 items-center rounded-t-md px-3 text-sm`. La elegida lleva `border-b-2 border-indigo-600 font-semibold text-indigo-700` y `aria-current="page"`; las otras, `text-gray-600 hover:text-gray-900`.
+- Si una pestaña pide un permiso, sin él no se dibuja. La ruta igual lleva su candado.
+
+### Mapas y gráficos
+
+Tomado del mapa de ventas de Rutas (09/11/2026).
+
+- Los colores propios del dibujo (rampas, rayado, leyenda) van como variables en un bloque `<style>` de la vista, con sus tonos para la clase `dark` de `<html>`. Lo demás (cajas, textos, botones) usa las clases de siempre.
+- Siempre con leyenda y con una tabla de los mismos datos, que sirve sin el dibujo y con lector de pantalla.
+- Las librerías van como archivo en `public/vendor/<nombre>/` con su licencia, no por CDN: así andan en contingencia y sin internet.
+
 ### Fichas y detalles
 
 Tomado de las fichas de Gastos y Rutas.
