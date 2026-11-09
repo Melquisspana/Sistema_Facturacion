@@ -70,8 +70,9 @@ class CambioPropuesto
     private static function legible(mixed $valor): string
     {
         return match (true) {
-            $valor === null, $valor === '' => 'sin definir',
+            $valor === null, $valor === '', $valor === [] => 'sin definir',
             is_bool($valor) => $valor ? 'Sí' : 'No',
+            is_array($valor) => implode(', ', $valor),
             default => (string) $valor,
         };
     }

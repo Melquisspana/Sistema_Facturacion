@@ -338,6 +338,8 @@ secretos.
 | `mail.from.address` | N2 | Nueva | `mail.from.address` |
 | `mail.from.name` | N2 | Nueva | `mail.from.name` |
 | **secciones `fiscal`, `fiscal_parametros`, `fiscal_invalidacion`** (~30 claves) | N2/**N3** | Ninguna (solo lectura) | `config/dte.php` — ver §25 |
+| `dte.invalidacion.dias_inhabiles` | N2 | Nueva | por año, `dte.invalidacion.dias_inhabiles` — ver §25 |
+| `dte.invalidacion.anios_completos` | N2 | Nueva | un año del archivo cuenta como completo |
 | `ppq.gmail.enabled` | N2 | Nueva | `ppq.gmail.enabled` |
 | `ppq.gmail.client_id` | N2 | Nueva | `ppq.gmail.client_id` |
 | `ppq.gmail.client_secret` | N2 | Nueva (cifrado) | `ppq.gmail.client_secret` |
@@ -773,8 +775,29 @@ activada en producción.
 Cuatro pantallas —Hacienda / API, Certificado y firmador, Parámetros fiscales,
 Invalidación— más Correlativos, que ya existía. Todas de **SOLO LECTURA**: no hay
 un solo `PUT` en el grupo. Los dos únicos `POST` son comprobaciones, no cambios.
+La excepción es **Feriados de Hacienda** (abajo).
 
 Código: `app/Ajustes/Fiscal/`.
+
+### Feriados de Hacienda (issue #49)
+
+Los días inhábiles del MH para el plazo de invalidar un CCF, una NC o una ND
+(decisión 0005). Se elige el año y se agrega un día o un rango «desde–hasta» (se
+guarda día por día), se quita un día o se marca el año como completo. Cada cambio
+pasa por la confirmación N2, que muestra qué días entran o salen, y queda en la
+auditoría.
+
+- Dos ajustes N2 de la sección `feriados_hacienda`, tipo `Lista`, en la tabla nueva:
+  `dte.invalidacion.dias_inhabiles` (fechas de todos los años) y
+  `dte.invalidacion.anios_completos` (años marcados completos). El registro rechaza
+  fechas inválidas o repetidas y las guarda en orden; la pantalla exige además que
+  sean del año elegido y un tope de 60 días por año.
+- `App\Support\Dte\CalendarioInhabiles` decide el calendario de cada año: manda lo
+  cargado en Configuración (un año con alguna fecha o marcado completo); si no, el de
+  `config('dte.invalidacion.dias_inhabiles')`, que trae el oficial 2026; si no hay
+  ninguno, de lunes a viernes sin feriados y con aviso.
+- Si el año todavía sale del archivo, el primer cambio lo copia entero a
+  Configuración, ya marcado completo.
 
 ### Por qué nada es editable todavía
 
