@@ -23,18 +23,34 @@ class OrdenCompra
      * Extrae el código de sala (4 dígitos, conservando el cero inicial) desde la OC:
      * los `length` dígitos que siguen al prefijo YYMM (`prefix` dígitos). Devuelve
      * null si la OC es demasiado corta. Ej.: 2606026002401 → 0260.
+     * `$posicion` es la de {@see posicionSala()} ya leída: un ciclo sobre muchas órdenes
+     * la lee una vez en lugar de consultar los ajustes en cada fila.
+     *
+     * @param  array{0: int, 1: int}|null  $posicion
      */
-    public static function salaDesde(?string $oc): ?string
+    public static function salaDesde(?string $oc, ?array $posicion = null): ?string
     {
         $oc = self::normalizar($oc);
-        $prefix = (int) Ajustes::entero('ppq.sala_oc_prefix', 4);
-        $length = (int) Ajustes::entero('ppq.sala_oc_length', 4);
+        [$prefix, $length] = $posicion ?? self::posicionSala();
 
         if (strlen($oc) < $prefix + $length) {
             return null;
         }
 
         return substr($oc, $prefix, $length);
+    }
+
+    /**
+     * Dónde va la sala dentro de la OC, según los ajustes: [prefijo, largo].
+     *
+     * @return array{0: int, 1: int}
+     */
+    public static function posicionSala(): array
+    {
+        return [
+            (int) Ajustes::entero('ppq.sala_oc_prefix', 4),
+            (int) Ajustes::entero('ppq.sala_oc_length', 4),
+        ];
     }
 
     /** Alias descriptivo. */

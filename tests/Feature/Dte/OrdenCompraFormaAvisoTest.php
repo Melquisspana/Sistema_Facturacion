@@ -15,7 +15,9 @@ use App\Models\PuntoVenta;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use App\Support\HoraNegocio;
+use Illuminate\Cache\Events\RetrievingKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -210,6 +212,43 @@ class OrdenCompraFormaAvisoTest extends TestCase
             ->assertSee('INT-OTRA-SALA')
             ->assertSee('es de la sala 0025 y la factura va para')
             ->assertDontSee('INT-SU-SALA');
+    }
+
+    public function test_auditoria_lee_los_ajustes_lo_mismo_con_uno_que_con_muchos_ccf(): void
+    {
+        // Dónde va la sala en la orden es un ajuste: se lee una vez por pantalla, no una
+        // vez por CCF. Cada lectura de ajustes consulta la huella de la caché (con el store
+        // database, una consulta), así que se cuentan esas lecturas.
+        $lecturas = 0;
+        Event::listen(RetrievingKey::class, function (RetrievingKey $evento) use (&$lecturas): void {
+            if ($evento->key === 'ajustes:huella') {
+                $lecturas++;
+            }
+        });
+        $admin = $this->usuario('administrador');
+        $contar = function () use ($admin, &$lecturas): int {
+            $lecturas = 0;
+            $this->actingAs($admin)->get(route('auditoria.ordenes_compra'))->assertOk();
+
+            return $lecturas;
+        };
+        $emitir = function (string $orden, string $sala, string $numero): void {
+            $this->borrador($orden, codigoSala: $sala)
+                ->forceFill(['estado' => EstadoDte::Generado->value, 'numero_interno' => $numero])->saveQuietly();
+        };
+        $otraSala = HoraNegocio::hoy()->format('ym').'00250004665';
+
+        $emitir($otraSala, '0250', 'INT-1');
+        $conUno = $contar();
+
+        $emitir($otraSala, '0250', 'INT-2');
+        $emitir($otraSala, '0250', 'INT-3');
+        $emitir($this->ordenValida(), '0123', 'INT-4');
+        $emitir($this->ordenValida(), '0123', 'INT-5');
+        $conCinco = $contar();
+
+        $this->assertGreaterThan(0, $conUno);
+        $this->assertSame($conUno, $conCinco);
     }
 
     public function test_auditoria_explica_la_forma_real_de_la_orden(): void

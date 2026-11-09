@@ -9,6 +9,7 @@ use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
 use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\OrdenCompra;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
@@ -97,6 +98,9 @@ class AuditoriaController extends Controller
             'hasta' => ['nullable', 'date', 'after_or_equal:desde'],
         ]);
 
+        // Una sola lectura de los ajustes para toda la lista, no una por CCF.
+        $posicionSala = OrdenCompra::posicionSala();
+
         $revisar = Dte::query()
             ->ambienteOperativoActual()
             ->where('tipo_dte', TipoDte::CreditoFiscal->value)
@@ -115,6 +119,7 @@ class AuditoriaController extends Controller
                     $dte->numero_orden_compra,
                     $dte->fecha_emision ?? $dte->created_at,
                     $dte->clienteSucursal,
+                    $posicionSala,
                 ),
             ])
             ->filter(fn (array $fila) => $fila['problemas'] !== [])
