@@ -86,7 +86,7 @@
             @if ($resumen['cantidad'] > 0)
                 <p class="text-xs text-gray-500">
                     El formato de quedan trae los CCF (AC01) y sus NC (AC02/AC04). Las NC se suben antes al portal, desde Documentos fiscales. Luego cargá aquí el reporte del caso.
-                    El TXT de pago se carga en <a href="{{ route('cobros.index') }}" class="text-indigo-600 hover:underline">Cobros Calleja</a> y actualiza este PPQ solo.
+                    El TXT de pago se carga en <a href="{{ route('cobros.index') }}" class="text-indigo-600 hover:underline">Cobros de supermercados</a> y actualiza este PPQ solo.
                 </p>
             @endif
 

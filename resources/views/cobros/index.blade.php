@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">Cobros Calleja</h2>
+                <h2 class="font-semibold text-xl text-gray-800 dark:text-paper-100 leading-tight">Cobros de supermercados</h2>
                 <p class="text-sm text-gray-500 dark:text-paper-300">Cada CCF desde la entrega hasta el pago</p>
             </div>
             <div class="flex flex-wrap items-center gap-2 text-sm">

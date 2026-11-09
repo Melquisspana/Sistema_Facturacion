@@ -220,7 +220,7 @@ Schedule::command('gastos:avisos --aplicar')
 
 /*
 |--------------------------------------------------------------------------
-| Cobros Calleja — alta de documentos aceptados
+| Cobros de supermercados — alta de documentos aceptados
 |--------------------------------------------------------------------------
 | Incorpora al seguimiento de cobros los CCF/NC que Hacienda ya aceptó.
 |
@@ -256,7 +256,7 @@ Schedule::command('cobros:sincronizar --aplicar --vincular')
 
 /*
 |--------------------------------------------------------------------------
-| Cobros Calleja — lectura de los acuses y observaciones del cliente
+| Cobros de supermercados — lectura de los acuses y observaciones del cliente
 |--------------------------------------------------------------------------
 | SOLO LECTURA del buzón: no envía, no responde, no marca como leído y no mueve
 | etiquetas. Escribe únicamente en `cobro_correos`, en `cobro_eventos` y en el acuse de
