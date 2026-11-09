@@ -1,17 +1,30 @@
 {{-- Una sala en «Llegó de la fábrica»: el sugerido en limpio (pidió, llegó y la «F» en lo
-     que faltó, con su motivo debajo del producto), el estado, la OC y la hoja para imprimir.
-     Sin precios. Si el pedido tuvo envíos otros días, una columna aparte con lo que llegó el
-     día elegido: es lo que se factura ese día. La «F» solo con el pedido cerrado; mandado en
-     parte, lo que falta «va en otro envío».
+     que faltó, con su motivo debajo del producto), el estado, la OC, cómo va la facturación,
+     la hoja para imprimir y «Facturar». Sin precios. Si el pedido tuvo envíos otros días, una
+     columna aparte con lo que llegó el día elegido; con el filtro «Sin facturar», con lo que
+     sigue sin facturar. La «F» solo con el pedido cerrado; mandado en parte, lo que falta «va
+     en otro envío».
+
+     «Facturar» (solo quien factura) abre el formulario del CCF ya lleno con TODO lo que llegó y
+     no se facturó, de cualquier día. Sale aunque la sala espere la OC: se escribe a mano en el
+     formulario y el servidor no deja crear el CCF sin ella. Con un borrador abierto no sale:
+     lo que llegó después va en ese mismo CCF (FacturarPedido::BORRADOR_ABIERTO).
 
      Variables: $pedido (sala, ruta, sacadoPor, lineas.producto, lineas.envioLineasVigentes,
-     envios vigentes con sus lineas); $oc [propuestas, del_correo, aviso, lista]; $fecha (Y-m-d). --}}
+     envios vigentes con sus lineas y su dte); $oc [propuestas, del_correo, aviso, lista];
+     $fecha (Y-m-d); $sinFacturar (bool); $facturacion (FacturarPedido::estado: por_facturar,
+     borrador, facturados). --}}
 @php
     $cerrado = $pedido->estado->cerrado();
     $parcial = $pedido->estado === \App\Enums\EstadoPedidoSala::Parcial;
-    $delDia = $pedido->envios->filter(fn ($e) => $e->fecha->format('Y-m-d') === $fecha);
+    $porFacturar = $facturacion['por_facturar'];
+    $delDia = $sinFacturar ? $porFacturar : $pedido->envios->filter(fn ($e) => $e->fecha->format('Y-m-d') === $fecha);
     $otrosDias = $delDia->count() !== $pedido->envios->count();
     $diaCorto = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $fecha)->format('d/m');
+    $columnaDelDia = $sinFacturar ? 'Por facturar' : 'Llegó el '.$diaCorto;
+    // Lo que «Facturar» lleva de otros días (sin el filtro): que no sorprenda en el CCF.
+    $porFacturarOtroDia = ! $sinFacturar && $porFacturar->contains(fn ($e) => $e->fecha->format('Y-m-d') !== $fecha);
+    $enviosTexto = fn ($envios) => ($envios->count() === 1 ? 'envío ' : 'envíos ').$envios->pluck('numero')->join(', ', ' y ');
     $llegoEseDia = [];
     foreach ($delDia as $envio) {
         foreach ($envio->lineas as $l) {
@@ -57,10 +70,36 @@
                 @endif
             </dd>
         </div>
+        {{-- Cómo va la facturación: lo que sigue sin facturar, el borrador y los CCF ya hechos. --}}
+        <div class="sm:col-span-2"><dt class="text-xs font-medium text-gray-500">Facturación</dt>
+            <dd class="space-y-1 text-gray-800">
+                @foreach ($facturacion['facturados'] as $dte)
+                    <p>@include('facturacion.por-facturar._ccf', ['dte' => $dte]) · {{ $enviosTexto($pedido->envios->where('dte_id', $dte->id)) }}</p>
+                @endforeach
+                @if ($facturacion['borrador'])
+                    <p>@include('facturacion.por-facturar._ccf', ['dte' => $facturacion['borrador']]) · {{ $enviosTexto($pedido->envios->where('dte_id', $facturacion['borrador']->id)) }}</p>
+                @endif
+                @if ($porFacturar->isNotEmpty())
+                    <p><x-planta.badge color="amber">Por facturar</x-planta.badge> {{ $enviosTexto($porFacturar) }}</p>
+                    @if ($facturacion['borrador'])
+                        <p class="text-amber-800">Llegó algo después del borrador. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo.</p>
+                    @endif
+                @endif
+            </dd>
+        </div>
     </dl>
 
     @if ($otrosDias)
-        <p class="mt-3 text-sm text-amber-800">También tuvo envíos otros días: facturá solo lo que llegó el {{ $diaCorto }}.</p>
+        <p class="mt-3 text-sm text-amber-800">
+            @if ($sinFacturar)
+                Una parte ya se facturó: «{{ $columnaDelDia }}» es lo que va en el CCF.
+            @else
+                También tuvo envíos otros días.
+                @if ($porFacturarOtroDia)
+                    «Facturar» lleva todo lo que sigue sin facturar, también lo de otros días.
+                @endif
+            @endif
+        </p>
     @endif
 
     <div class="mt-3 overflow-x-auto">
@@ -70,7 +109,7 @@
                     <th class="px-3 py-2">Producto</th>
                     <th class="px-3 py-2 text-right">Pidió</th>
                     @if ($otrosDias)
-                        <th class="px-3 py-2 text-right">Llegó el {{ $diaCorto }}</th>
+                        <th class="px-3 py-2 text-right">{{ $columnaDelDia }}</th>
                         <th class="px-3 py-2 text-right">Total</th>
                     @else
                         <th class="px-3 py-2 text-right">Llegó</th>
@@ -120,6 +159,13 @@
                class="inline-flex min-h-11 items-center justify-center text-sm text-indigo-600 underline">Ver pedido</a>
             <a href="{{ route('rutas.pedidos.hoja', [$pedido, 'fecha' => $fecha]) }}" target="_blank" rel="noopener"
                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir hoja</a>
+            {{-- x-primary-button es solo <button>: el enlace lleva sus clases (docs/GUIA_PANTALLAS.md). --}}
+            @if ($porFacturar->isNotEmpty() && ! $facturacion['borrador'])
+                @can('create', App\Models\Dte::class)
+                    <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id]) }}"
+                       class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
+                @endcan
+            @endif
         </div>
     @endcan
 </li>

@@ -80,8 +80,12 @@ class PorFacturarController extends Controller
             $facturacion[$pedido->id] = FacturarPedido::estado($pedido);
             $delPedido = filled($pedido->numero_orden_compra);
             $deOtraSala = $delPedido ? ReglaOrdenCompra::salaDistinta($pedido->numero_orden_compra, $pedido->sala) : null;
+            $ccfDeLaOc = $delPedido ? ($conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)] ?? null) : null;
+            // El CCF de la OC es el de este mismo pedido y no queda nada por facturar: no es aviso.
+            $esElPropio = $ccfDeLaOc !== null && $facturacion[$pedido->id]['por_facturar']->isEmpty()
+                && $pedido->envios->contains('dte_id', $ccfDeLaOc->id);
             $aviso = match (true) {
-                $delPedido && isset($conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)]) => 'Esa OC ya tiene un CCF.',
+                $ccfDeLaOc !== null && ! $esElPropio => 'Esa OC ya tiene un CCF.',
                 $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
                 default => null,
             };
