@@ -75,13 +75,15 @@ class AreaAsistenciaTest extends TestCase
         }
     }
 
-    public function test_el_area_se_apaga_con_el_interruptor_del_modulo(): void
+    public function test_la_puerta_de_asistencia_se_apaga_con_el_interruptor_del_modulo(): void
     {
         config()->set('asistencia.enabled', false);
-        $this->assertFalse(AreaSistema::Asistencia->habilitada());
+        $this->assertFalse(AreaSistema::Asistencia->puertas()[0]['habilitada']);
+        // El área «Personal» sigue en pie por las fichas, que no tienen interruptor (08/11/2026).
+        $this->assertTrue(AreaSistema::Asistencia->habilitada());
 
         config()->set('asistencia.enabled', true);
-        $this->assertTrue(AreaSistema::Asistencia->habilitada());
+        $this->assertTrue(AreaSistema::Asistencia->puertas()[0]['habilitada']);
     }
 
     public function test_el_area_activa_se_deriva_de_la_url(): void
@@ -103,9 +105,10 @@ class AreaAsistenciaTest extends TestCase
     {
         config()->set('asistencia.enabled', false);
 
-        $this->actingAs($this->admin())
-            ->get(route($ruta))
-            ->assertNotFound();
+        $respuesta = $this->actingAs($this->admin())->get(route($ruta));
+
+        // Empleados es de Personal: sigue para la administración, sin nada de Asistencia (08/11/2026).
+        $ruta === 'personal.empleados' ? $respuesta->assertOk()->assertDontSee('Huellas') : $respuesta->assertNotFound();
     }
 
     public function test_con_el_modulo_apagado_tampoco_se_puede_escribir(): void
@@ -122,13 +125,14 @@ class AreaAsistenciaTest extends TestCase
     public function test_con_el_modulo_apagado_el_area_no_aparece_en_el_selector(): void
     {
         config()->set('asistencia.enabled', false);
-        $admin = $this->admin();
+        // Quien solo tiene Asistencia: la administración sigue viendo el área por Personal.
+        $encargado = $this->soloVer();
 
-        $this->assertNotContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($admin));
+        $this->assertNotContains(AreaSistema::Asistencia, AreaSistema::visiblesPara($encargado));
 
         // Pero sigue siendo un área a la que PERTENECE por permisos: es la
         // distinción entre «no le toca» y «su área está apagada».
-        $this->assertContains(AreaSistema::Asistencia, AreaSistema::potencialesPara($admin));
+        $this->assertContains(AreaSistema::Asistencia, AreaSistema::potencialesPara($encargado));
     }
 
     public function test_con_el_modulo_encendido_el_area_aparece_para_quien_tiene_el_permiso(): void
@@ -157,6 +161,22 @@ class AreaAsistenciaTest extends TestCase
         $respuesta->assertDontSee('Reportes</a>', escape: false);
         $respuesta->assertDontSee('Enrolamiento</a>', escape: false);
         $respuesta->assertDontSee('Jornadas</a>', escape: false);
+    }
+
+    /** La pantalla de entrada se llama «Marcas de hoy» en el menú y en su encabezado. */
+    public function test_la_pantalla_de_entrada_se_llama_marcas_de_hoy(): void
+    {
+        $html = $this->actingAs($this->admin())->get(route('asistencia.dashboard'))->assertOk()->getContent();
+
+        // Menú: el enlace a la pantalla dice «Marcas de hoy».
+        $this->assertMatchesRegularExpression(
+            '/href="'.preg_quote(route('asistencia.dashboard'), '/').'"[^>]*>\s*Marcas de hoy\s*<\/a>/',
+            $html,
+        );
+        // Encabezado de la pantalla.
+        $this->assertStringContainsString('Marcas de hoy</h2>', $html);
+        // Y «Hoy» suelto ya no aparece como texto de enlace ni de título.
+        $this->assertDoesNotMatchRegularExpression('/>\s*Hoy\s*</', $html);
     }
 
     /**

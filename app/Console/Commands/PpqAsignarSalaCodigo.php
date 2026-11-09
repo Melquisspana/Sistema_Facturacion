@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Support\Sala;
@@ -18,7 +19,7 @@ class PpqAsignarSalaCodigo extends Command
         {codigo : Código de sala de 4 dígitos (ej. 0230)}
         {--id= : ID de la sucursal a actualizar}
         {--buscar= : Texto para localizar la sucursal por nombre}
-        {--cliente= : ID del cliente (por defecto el de config ppq.cliente_default_id / Calleja)}';
+        {--cliente= : ID del cliente (por defecto el de Configuración › Módulos › Pronto pago, o el del .env)}';
 
     protected $description = 'Asigna el código de sala (0230) a una sucursal de cliente';
 
@@ -33,7 +34,7 @@ class PpqAsignarSalaCodigo extends Command
 
         $clienteId = $this->resolverClienteId();
         if ($clienteId === null) {
-            $this->error('No se pudo resolver el cliente. Pasá --cliente=ID o configurá ppq.cliente_default_id.');
+            $this->error('No se pudo resolver el cliente. Pasá --cliente=ID o elegí el cliente en Configuración › Módulos › Pronto pago.');
 
             return self::FAILURE;
         }
@@ -90,7 +91,7 @@ class PpqAsignarSalaCodigo extends Command
         if ($id = $this->option('cliente')) {
             return (int) $id;
         }
-        if ($id = config('ppq.cliente_default_id')) {
+        if ($id = Ajustes::cliente('ppq.cliente_default_id')) {
             return (int) $id;
         }
 

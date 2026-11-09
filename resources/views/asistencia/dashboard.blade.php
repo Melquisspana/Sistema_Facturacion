@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Hoy</h2>
+        <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Marcas de hoy</h2>
     </x-slot>
     <div class="py-8">
         <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">

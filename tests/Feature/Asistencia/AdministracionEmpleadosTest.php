@@ -119,21 +119,24 @@ class AdministracionEmpleadosTest extends TestCase
 
     // ─────────────────────────────── Alta ───────────────────────────────
 
-    public function test_se_da_de_alta_a_una_persona(): void
+    /**
+     * Desde el 08/11/2026 Personal funciona siempre: las personas se cargan una sola vez,
+     * ahí, y Asistencia no crea a nadie suelto, encendida o no Planilla.
+     */
+    public function test_asistencia_no_da_de_alta_personas_sueltas(): void
     {
         $this->actingAs($this->admin())
-            ->post(route('asistencia.empleados.store'), [
-                'nombres' => 'Ana María',
-                'apellidos' => 'Pérez Rivas',
-                'codigo' => 'RH-014',
-                'fecha_ingreso' => '2026-01-15',
-            ])
-            ->assertSessionHasNoErrors();
+            ->get(route('asistencia.empleados.create'))
+            ->assertOk()->assertSee('Dar de alta en Personal')->assertSee(route('planilla.empleados.create'), false);
 
-        $empleado = AsistenciaEmpleado::sole();
-        $this->assertSame('Ana María Pérez Rivas', $empleado->nombreCompleto());
-        $this->assertSame('RH-014', $empleado->codigo);
-        $this->assertTrue($empleado->activo, 'Quien se da de alta nace activo.');
+        $this->post(route('asistencia.empleados.store'), [
+            'nombres' => 'Ana María',
+            'apellidos' => 'Pérez Rivas',
+            'codigo' => 'RH-014',
+            'fecha_ingreso' => '2026-01-15',
+        ])->assertSessionHasErrors('nombres');
+
+        $this->assertSame(0, AsistenciaEmpleado::count());
     }
 
     public function test_el_codigo_de_planilla_no_se_puede_repetir(): void
@@ -166,9 +169,11 @@ class AdministracionEmpleadosTest extends TestCase
     public function test_el_formulario_no_puede_atar_a_una_persona_con_un_usuario_del_sistema(): void
     {
         $otro = User::factory()->create();
+        // Una ficha suelta de antes de Personal: se sigue corrigiendo acá.
+        $empleado = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
 
         $this->actingAs($this->admin())
-            ->post(route('asistencia.empleados.store'), [
+            ->put(route('asistencia.empleados.update', $empleado), [
                 'nombres' => 'Ana', 'apellidos' => 'Pérez', 'user_id' => $otro->id,
             ])
             ->assertSessionHasNoErrors();
@@ -247,10 +252,8 @@ class AdministracionEmpleadosTest extends TestCase
 
     public function test_alta_edicion_y_desactivacion_quedan_auditadas(): void
     {
-        $this->actingAs($this->admin())
-            ->post(route('asistencia.empleados.store'), ['nombres' => 'Ana', 'apellidos' => 'Pérez']);
-
-        $empleado = AsistenciaEmpleado::sole();
+        // El alta ya no es de Asistencia (es de Personal); la ficha suelta de antes se sigue auditando.
+        $empleado = AsistenciaEmpleado::create(['nombres' => 'Ana', 'apellidos' => 'Pérez', 'activo' => true]);
 
         $this->actingAs($this->admin())
             ->put(route('asistencia.empleados.update', $empleado), ['nombres' => 'Ana María', 'apellidos' => 'Pérez']);

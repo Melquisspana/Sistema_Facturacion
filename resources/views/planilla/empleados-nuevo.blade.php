@@ -23,9 +23,10 @@
                         </select></div>
                     <div><label for="dui" class="block text-sm font-medium text-gray-700">Número de documento</label><input id="dui" name="dui" required maxlength="20" value="{{ old('dui') }}" class="{{ $c }}"></div>
                     <div><label for="alta_el" class="block text-sm font-medium text-gray-700">Fecha de ingreso</label><input id="alta_el" name="alta_el" type="date" value="{{ old('alta_el') }}" class="{{ $c }}"></div>
-                    @can('planilla.salarios')
+                    {{-- El sueldo es de Planilla: con el módulo apagado se carga después, desde la ficha. --}}
+                    @if ($conPlanilla && auth()->user()->can('planilla.salarios'))
                         <div><label for="sueldo_mensual" class="block text-sm font-medium text-gray-700">Sueldo mensual</label><input id="sueldo_mensual" name="sueldo_mensual" inputmode="decimal" value="{{ old('sueldo_mensual') }}" class="{{ $c }}"></div>
-                    @endcan
+                    @endif
                     <div><label for="con_descuentos_ley" class="block text-sm font-medium text-gray-700">Descuentos de ley (obligatorio)</label>
                         <select id="con_descuentos_ley" name="con_descuentos_ley" required class="{{ $c }}">
                             <option value="">Elegí una opción</option><option value="1" @selected((string) old('con_descuentos_ley') === '1')>Con descuentos de ley</option><option value="0" @selected((string) old('con_descuentos_ley') === '0')>Sin descuentos de ley</option>

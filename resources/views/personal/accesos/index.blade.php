@@ -10,13 +10,22 @@
     $destino = fn ($u) => $conPersonal && $verFichas && $u->planillaEmpleado
         ? route('personal.empleados.show', 'p'.$u->planillaEmpleado->id)
         : route('personal.accesos.show', $u);
+    // Lo que se conserva al filtrar o limpiar la búsqueda.
+    $vista = array_filter(['sin_ficha' => $filtros['sin_ficha'] ? 1 : null, 'externas' => $filtros['externas'] ? 1 : null]);
 @endphp
 
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Accesos al sistema</h1>
-            <a href="{{ route('personal.accesos.create') }}" class="{{ $primario }}">Nueva cuenta externa</a>
+            <h1 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">{{ $filtros['externas'] ? 'Accesos externos' : 'Accesos al sistema' }}</h1>
+            <div class="flex flex-wrap items-center gap-3">
+                @if ($filtros['externas'])
+                    <a href="{{ route('personal.accesos.index') }}" class="{{ $secundario }}">Todos los accesos</a>
+                @else
+                    <a href="{{ route('personal.accesos.index', ['externas' => 1]) }}" class="{{ $secundario }}">Accesos externos</a>
+                @endif
+                <a href="{{ route('personal.accesos.create') }}" class="{{ $primario }}">Nueva cuenta externa</a>
+            </div>
         </div>
     </x-slot>
 
@@ -29,7 +38,11 @@
                 <p role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">{{ session('error') }}</p>
             @endif
 
-            @if ($conPersonal)
+            @if ($filtros['externas'])
+                <p class="text-sm text-gray-600 dark:text-paper-300">
+                    Cuentas de gente de afuera, sin ficha en Personal: la contadora. Solo pueden tener el rol Contabilidad.
+                </p>
+            @elseif ($conPersonal)
                 <p class="text-sm text-gray-600 dark:text-paper-300">
                     El acceso de cada persona se da y se cambia en su ficha de
                     <a href="{{ route('personal.empleados') }}" class="font-medium text-indigo-600 underline dark:text-indigo-400">Empleados</a>,
@@ -37,7 +50,7 @@
                 </p>
             @endif
 
-            @if ($conPersonal && $sinFicha > 0)
+            @if ($conPersonal && $sinFicha > 0 && ! $filtros['externas'])
                 <p role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                     {{ $sinFicha === 1 ? 'Hay 1 usuario sin ficha en Personal.' : 'Hay '.$sinFicha.' usuarios sin ficha en Personal.' }}
                     Siguen entrando; enlazalos desde la ficha de su persona, en «Agregar acceso o módulos».
@@ -50,7 +63,7 @@
             @endif
 
             <form method="GET" class="flex flex-wrap items-end gap-3">
-                @if ($filtros['sin_ficha'])<input type="hidden" name="sin_ficha" value="1">@endif
+                @foreach ($vista as $nombre => $valor)<input type="hidden" name="{{ $nombre }}" value="{{ $valor }}">@endforeach
                 <div class="w-full sm:w-72">
                     <label for="q" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Buscar</label>
                     <input id="q" type="text" name="q" value="{{ $filtros['q'] }}" placeholder="Nombre o correo…"
@@ -58,7 +71,7 @@
                 </div>
                 <button class="{{ $secundario }}">Filtrar</button>
                 @if ($filtros['q'] !== '')
-                    <a href="{{ route('personal.accesos.index', $filtros['sin_ficha'] ? ['sin_ficha' => 1] : []) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
+                    <a href="{{ route('personal.accesos.index', $vista) }}" class="text-sm text-gray-500 hover:underline dark:text-paper-300">Limpiar</a>
                 @endif
             </form>
 
@@ -112,7 +125,9 @@
                             @empty
                                 <tr>
                                     <td colspan="{{ $columnas }}" class="px-4 py-10 text-center text-gray-500 dark:text-paper-300">
-                                        @if ($filtros['q'] !== '' || $filtros['sin_ficha'])
+                                        @if ($filtros['externas'] && $filtros['q'] === '')
+                                            Todavía no hay accesos externos. <a href="{{ route('personal.accesos.create') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Crear el primero</a>
+                                        @elseif ($filtros['q'] !== '' || $filtros['sin_ficha'] || $filtros['externas'])
                                             Nada coincide con estos filtros. <a href="{{ route('personal.accesos.index') }}" class="text-indigo-600 hover:underline dark:text-indigo-400">Limpiar filtros</a>
                                         @else
                                             Todavía no hay accesos.

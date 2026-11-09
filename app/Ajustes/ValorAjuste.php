@@ -19,6 +19,9 @@ class ValorAjuste
         public readonly DefinicionAjuste $definicion,
         public readonly mixed $valor,
         public readonly FuenteAjuste $fuente,
+        // Motivo por el que el valor de su fuente no sirve (un .env fuera de rango).
+        // Solo lo llena {@see Ajustes::resolverParaPantalla()}; entonces $valor es null.
+        public readonly ?string $invalido = null,
     ) {}
 
     public function configurado(): bool

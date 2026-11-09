@@ -82,7 +82,7 @@ class NavigationTest extends TestCase
     /**
      * La sidebar SIN el selector de áreas: la lista de secciones del área activa.
      * Elegir un área y navegar dentro de una son operaciones distintas: «Rutas»
-     * identifica el área y «Cobros Calleja» es un grupo de secciones que también
+     * identifica el área y «Cobros de supermercados» es un grupo de secciones que también
      * aparece en la barra de Facturación.
      */
     private function seccionesDelSidebar(string $html): string
@@ -121,7 +121,7 @@ class NavigationTest extends TestCase
         foreach ([
             'Inicio',
             'Ventas y facturación',
-            'Cobros Calleja',
+            'Cobros de supermercados',
             'Contabilidad',
         ] as $categoria) {
             $resp->assertSee($categoria);
@@ -437,7 +437,7 @@ class NavigationTest extends TestCase
             'dashboard',
             'clientes.index', 'productos.index', 'facturacion.index',
             // SALE 'ppq.index' y ENTRA 'cobros.index': el seguimiento de CCF de
-            // Cobros Calleja reemplazó la búsqueda de PPQ como primera fila;
+            // Cobros de supermercados reemplazó la búsqueda de PPQ como primera fila;
             // se conserva el mismo permiso ppq.ver.
             'cobros.index', 'ppq.lotes.index',
             'documentos-recibidos.index', 'contabilidad.paquete',
@@ -470,12 +470,15 @@ class NavigationTest extends TestCase
             //    sistema (04/11/2026): Configuración es un apartado propio en la barra
             //    superior y los otros cuatro viven en su índice. Ninguno perdió la
             //    puerta: ver test_facturacion_ya_no_tiene_los_bloques_de_administracion.
+            //  - ENTRA 'personal.empleados' (08/11/2026): Personal funciona con Planilla
+            //    apagada, así que el área aparece en el selector para la administración.
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
                 'rutas.dashboard',
                 // El área Fábrica (09/11/2026): el administrador tiene todos los permisos,
                 // así que el selector del panel la ofrece.
                 'fabrica.pedidos.index',
+                'personal.empleados',
             ]],
             // Jefatura: lectura amplia, sin administración. ENTRA 'rutas.dashboard':
             // desde el 26/09/2026 planifica las salidas (rutas.ver + rutas.gestionar), así
@@ -531,7 +534,7 @@ class NavigationTest extends TestCase
 
     /**
      * El área Rutas presenta solo sus pantallas —Rutas, Ventas, Salidas anteriores y
-     * Configurar rutas—. Cobros Calleja salió de esta barra (28/10/2026): sigue en la de
+     * Configurar rutas—. Cobros de supermercados salió de esta barra (28/10/2026): sigue en la de
      * Facturación.
      */
     public function test_el_area_rutas_presenta_solo_sus_enlaces(): void
@@ -547,7 +550,8 @@ class NavigationTest extends TestCase
                 // Pocas puertas (27/09/2026): la asignación vive en Configurar rutas.
                 // Ventas (28/10/2026) solo aparece con `rutas.ventas.ver`; Personal
                 // (29/10/2026), con `rutas.personal.ver`.
-                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'rutas.personal.index',
+                // Desde el 08/11/2026 su lista es la de Personal, que llega por el selector de áreas.
+                'rutas.dashboard', 'rutas.ventas.index', 'rutas.salidas.index', 'rutas.rutas.index', 'personal.empleados',
                 // Pedidos de las salas (sacar pedido, 05/11/2026), con `rutas.pedidos.ver`.
                 'rutas.pedidos.index',
                 // «Por entregar» (06/11/2026): la oficina también mira lo que falta entregar.
@@ -561,7 +565,7 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe($html);
         $this->assertStringContainsString('Salidas anteriores', $sidebar);
         $this->assertStringContainsString('Configurar rutas', $sidebar);
-        $this->assertStringNotContainsString('Cobros Calleja', $sidebar);
+        $this->assertStringNotContainsString('Cobros de supermercados', $sidebar);
         // La custodia del papel se retiró (26/09/2026).
         $this->assertStringNotContainsString('Recepción de CCF', $sidebar);
         $this->assertStringNotContainsString('Excepciones', $sidebar);
@@ -573,7 +577,7 @@ class NavigationTest extends TestCase
         // NO Administración, Configuración ni Sistema.
         $resp = $this->actingAs($this->usuario('jefatura'))->get(route('dashboard'))->assertOk();
 
-        $resp->assertSee('Cobros Calleja');
+        $resp->assertSee('Cobros de supermercados');
         $resp->assertSee('Contabilidad');
         // Exportaciones ya no es una sección; su parte visible es la fila de listas.
         $resp->assertSee('Listas de empaque');
@@ -629,17 +633,21 @@ class NavigationTest extends TestCase
         $this->assertContains(route('personal.accesos.index'), $this->enlacesDelSidebar($personal));
         $this->assertStringNotContainsString('/usuarios', $this->sidebarDe($personal));
 
-        // Con Personal encendida, Configuración no la repite.
+        // Configuración no repite la lista entera: solo lleva a los accesos externos.
         $this->actingAs($admin)->get(route('configuracion.resumen'))->assertOk()
-            ->assertDontSee(route('personal.accesos.index'), false);
+            ->assertDontSee('href="'.route('personal.accesos.index').'"', false);
     }
 
-    /** Con Personal apagada, Accesos sigue a un clic: en Configuración › Administración. */
-    public function test_sin_personal_accesos_queda_en_configuracion(): void
+    /** Configuración › Administración lleva a los accesos de afuera (08/11/2026). */
+    public function test_configuracion_lleva_a_los_accesos_externos(): void
     {
         $this->actingAs($this->usuario('administrador'))->get(route('configuracion.resumen'))->assertOk()
-            ->assertSee(route('personal.accesos.index'), false)
-            ->assertSeeInOrder(['Administración', 'Accesos']);
+            ->assertSee(route('personal.accesos.index', ['externas' => 1]), false)
+            ->assertSeeInOrder(['Administración', 'Accesos externos']);
+
+        // Sin `usuarios.gestionar` no se dibuja.
+        $this->actingAs($this->usuario('contabilidad'))->get(route('auditoria.index'))->assertOk()
+            ->assertDontSee('Accesos externos');
     }
 
     // ------------------------------------------------------------------ rutas y estado activo
@@ -780,13 +788,13 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * El grupo «Cobros Calleja» en la barra de Facturación cuelga
+     * El grupo «Cobros de supermercados» en la barra de Facturación cuelga
      * sus dos opciones directamente, sin subtítulo intermedio.
      *
      * Primero se llamó «Cobros», luego «Pronto pago» al limitarse a PPQ y retirar
      * el subtítulo «Prontos Pagos». Ahora contiene el ciclo de cobro completo,
      * desde el seguimiento del CCF hasta el pago, junto al historial de PPQ:
-     * por eso se llama «Cobros Calleja», igual que en la barra del área Rutas.
+     * por eso se llama «Cobros de supermercados», igual que en la barra del área Rutas.
      */
     public function test_cobros_calleja_es_un_grupo_plano_en_la_barra_de_facturacion(): void
     {
@@ -796,7 +804,7 @@ class NavigationTest extends TestCase
             $this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent()
         );
 
-        $this->assertStringContainsString('Cobros Calleja', $secciones);
+        $this->assertStringContainsString('Cobros de supermercados', $secciones);
 
         // Ni el rótulo viejo del grupo ni el subtítulo que llevaba dentro.
         $this->assertStringNotContainsString('Pronto pago', $secciones);
@@ -807,15 +815,15 @@ class NavigationTest extends TestCase
 
         // Las dos opciones cuelgan directamente del grupo, en este orden.
         $this->assertMatchesRegularExpression(
-            '/Cobros Calleja.*Seguimiento de CCF.*Historial de PPQ/su',
+            '/Cobros de supermercados.*Seguimiento de CCF.*Historial de PPQ/su',
             $secciones,
-            'Bajo «Cobros Calleja» deben colgar Seguimiento de CCF e Historial de PPQ, en ese orden.',
+            'Bajo «Cobros de supermercados» deben colgar Seguimiento de CCF e Historial de PPQ, en ese orden.',
         );
     }
 
     /**
      * El ÁREA se llama «Rutas» desde el 26/09/2026 (antes «Cobros», cuando cargaba la
-     * custodia del CCF físico). Cobros Calleja ya no aparece en su barra, pero sigue
+     * custodia del CCF físico). Cobros de supermercados ya no aparece en su barra, pero sigue
      * entero en la de Facturación con el mismo rótulo.
      */
     public function test_el_area_se_llama_rutas_y_cobros_calleja_queda_en_facturacion(): void
@@ -824,9 +832,9 @@ class NavigationTest extends TestCase
         $sidebar = $this->sidebarDe($html);
 
         $this->assertSame('Rutas', AreaSistema::Rutas->label());
-        $this->assertStringNotContainsString('Cobros Calleja', $sidebar);
+        $this->assertStringNotContainsString('Cobros de supermercados', $sidebar);
         $facturacion = $this->sidebarDe($this->actingAs($this->usuario('administrador'))->get(route('dashboard'))->assertOk()->getContent());
-        $this->assertStringContainsString('Cobros Calleja', $facturacion);
+        $this->assertStringContainsString('Cobros de supermercados', $facturacion);
         $this->get(route('cobros.index'))->assertOk();
         $this->assertStringNotContainsString('Prontos Pagos', $sidebar);
     }

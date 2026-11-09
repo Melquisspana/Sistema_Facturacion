@@ -3,6 +3,7 @@
 namespace App\Services\Planilla;
 
 use App\Models\Gastos\Gasto;
+use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaDetalle;
@@ -12,6 +13,7 @@ use App\Services\Gastos\Dinero;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Ramsey\Uuid\Uuid;
 
@@ -131,10 +133,13 @@ final class ConfirmarPlanilla
                 return $planilla->fresh();
             });
         } catch (QueryException $e) {
-            // Un índice único saltó: otro proceso confirmó esta misma planilla mientras
-            // este lo intentaba. Se devuelve lo que quedó, que es lo correcto.
-            if (str_contains(mb_strtolower($e->getMessage()), 'duplicate') || $e->getCode() === '23000') {
-                return $planilla->fresh();
+            // La transacción ya se deshizo. Si fue porque otro proceso confirmó esta misma
+            // planilla mientras tanto, se devuelve lo que quedó. Cualquier otro error de
+            // integridad es un error de verdad: no se disfraza de confirmación.
+            $ahora = $planilla->fresh();
+
+            if ($e->getCode() === '23000' && $ahora?->confirmada()) {
+                return $ahora;
             }
 
             throw $e;
@@ -161,13 +166,31 @@ final class ConfirmarPlanilla
             }
         }
 
+        // Orden de los candados: planilla, anticipo, pago. Revertir un pago toma el pago y
+        // no el anticipo, así que nunca se esperan en orden cruzado.
         foreach ($porAnticipo as $anticipoId => $recupera) {
             $anticipo = PlanillaAnticipo::whereKey($anticipoId)->lockForUpdate()->firstOrFail();
 
-            if ($recupera > $anticipo->pendiente()) {
+            // El pago pudo revertirse después de los reparos: se mira con candado, que lee
+            // lo último confirmado, y la aplicación se inserta recién después.
+            if ($anticipo->pago_id !== null) {
+                $pago = Pago::whereKey($anticipo->pago_id)->lockForUpdate()->first();
+
+                if ($pago === null || $pago->revertido_at !== null) {
+                    throw ValidationException::withMessages([
+                        'anticipos' => 'El pago del anticipo del '.$anticipo->fecha->format('d/m/Y')
+                            .' fue revertido; no se puede descontar.',
+                    ]);
+                }
+            }
+
+            // Con candado: sin él, otra planilla confirmada mientras tanto no se vería.
+            $pendiente = $anticipo->pendiente(bloquear: true);
+
+            if ($recupera > $pendiente) {
                 throw ValidationException::withMessages([
                     'anticipos' => 'Del anticipo del '.$anticipo->fecha->format('d/m/Y').' quedan '
-                        .Dinero::decimal($anticipo->pendiente()).' por recuperar y esta planilla descuenta '
+                        .Dinero::decimal($pendiente).' por recuperar y esta planilla descuenta '
                         .Dinero::decimal($recupera).'. No se puede recuperar dos veces el mismo anticipo.',
                 ]);
             }
@@ -291,27 +314,26 @@ final class ConfirmarPlanilla
                     continue;
                 }
 
-                $nombre = trim($concepto->tercero);
-                $porTercero[$nombre] ??= 0;
-                $porTercero[$nombre] += Dinero::centavos((string) $concepto->importe);
+                // Se queda el nombre como lo escribió la primera línea; la suma es de todas.
+                $clave = self::claveDeTercero($concepto->tercero);
+                $porTercero[$clave] ??= ['nombre' => Str::squish($concepto->tercero), 'importe' => 0];
+                $porTercero[$clave]['importe'] += Dinero::centavos((string) $concepto->importe);
             }
         }
 
+        // Las que ya hubiera, con la MISMA clave: buscarlas con la comparación de la base
+        // (que en MySQL no distingue mayúsculas ni tildes) saltaba la segunda en silencio.
+        $existentes = PlanillaObligacionTercero::where('planilla_id', $planilla->id)->pluck('tercero')
+            ->map(fn (string $t) => self::claveDeTercero($t))->all();
+
         $creadas = 0;
 
-        foreach ($porTercero as $nombre => $importe) {
-            if ($importe <= 0) {
+        foreach ($porTercero as $claveTercero => ['nombre' => $nombre, 'importe' => $importe]) {
+            if ($importe <= 0 || in_array((string) $claveTercero, $existentes, true)) {
                 continue;
             }
 
-            $yaExiste = PlanillaObligacionTercero::where('planilla_id', $planilla->id)
-                ->where('tercero', $nombre)->first();
-
-            if ($yaExiste !== null) {
-                continue;
-            }
-
-            $clave = Uuid::uuid5(self::NS_TERCERO, $planilla->clave.'|'.mb_strtolower($nombre))->toString();
+            $clave = Uuid::uuid5(self::NS_TERCERO, $planilla->clave.'|'.$claveTercero)->toString();
 
             $gasto = Gasto::firstOrCreate(['clave' => $clave], [
                 'huella_peticion' => hash('sha256', $clave),
@@ -351,5 +373,26 @@ final class ConfirmarPlanilla
         }
 
         return $creadas;
+    }
+
+    /**
+     * La identidad de un tercero: sin mayúsculas, tildes ni espacios de más, sin
+     * caracteres de formato invisibles (espacio de ancho cero, guion suave, unión de ancho
+     * cero) y con las letras de ancho completo llevadas a las normales. Es la misma para
+     * agrupar, para ver si ya existe y para la clave de su gasto, y sigue lo que el índice
+     * único iguala en MySQL (`utf8mb4_unicode_ci`): «Cooperativa», «cooperativa » y un
+     * nombre pegado de un PDF con un carácter invisible son el mismo acreedor y una sola
+     * deuda por la suma.
+     */
+    private static function claveDeTercero(string $tercero): string
+    {
+        // Sin la extensión intl solo quedarían sin igualar las letras de ancho completo.
+        if (class_exists(\Normalizer::class)) {
+            $tercero = \Normalizer::normalize($tercero, \Normalizer::FORM_KC) ?: $tercero;
+        }
+        $tercero = preg_replace('/\p{Cf}+/u', '', $tercero) ?? $tercero;
+        $limpio = Str::squish($tercero);
+
+        return mb_strtolower(Str::ascii($limpio) ?: $limpio);
     }
 }

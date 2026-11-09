@@ -134,13 +134,15 @@ class PantallasSimplesRutasTest extends TestCase
         // Los empleados son solo de la administración (04/11/2026).
         $usuario = $this->usuario('administrador');
 
+        // Su lista es la de Personal (08/11/2026): se llega por el área Personal.
         $this->actingAs($usuario)->get(route('rutas.rutas.index'))
             ->assertOk()
-            ->assertSee(route('rutas.personal.index'), false)
+            ->assertSee(route('personal.empleados'), false)
             ->assertDontSee('Todavía no hay vendedores')
             ->assertDontSee('Nombre del vendedor');
 
-        $this->actingAs($usuario)->get(route('rutas.personal.index'))
+        // La lista es la de Personal: quien no tiene ficha sale en su aviso.
+        $this->actingAs($usuario)->followingRedirects()->get(route('rutas.personal.index'))
             ->assertOk()
             ->assertSee('José');
 

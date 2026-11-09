@@ -55,19 +55,27 @@ class PlanillaAnticipo extends Model
         return $this->hasMany(PlanillaConcepto::class, 'planilla_anticipo_id');
     }
 
-    /** Lo ya recuperado, en centavos. */
-    public function recuperado(): int
+    /**
+     * Lo ya recuperado, en centavos.
+     *
+     * `$bloquear` es para quien va a decidir con este número dentro de una transacción
+     * (confirmar una planilla): en MySQL una lectura sin candado devuelve la foto que la
+     * transacción tomó al empezar y no ve la aplicación que otra confirmación acaba de
+     * dejar; con candado lee lo último confirmado.
+     */
+    public function recuperado(bool $bloquear = false): int
     {
         return DB::table('planilla_anticipo_aplicaciones')
             ->where('planilla_anticipo_id', $this->id)
+            ->when($bloquear, fn ($q) => $q->lockForUpdate())
             ->pluck('importe')
             ->sum(fn ($v) => Dinero::centavos((string) $v));
     }
 
     /** Lo que todavía queda por recuperar, en centavos. Nunca negativo. */
-    public function pendiente(): int
+    public function pendiente(bool $bloquear = false): int
     {
-        return max(Dinero::centavos((string) $this->importe) - $this->recuperado(), 0);
+        return max(Dinero::centavos((string) $this->importe) - $this->recuperado($bloquear), 0);
     }
 
     /** ¿De dónde salió el dinero? Solo para mostrarlo. */

@@ -5,7 +5,7 @@
                 Auditoría de vinculación de albaranes
             </h2>
             <a href="{{ route('cobros.index', ['cliente_id' => $cliente->id]) }}"
-               class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Cobros Calleja</a>
+               class="text-sm font-medium text-indigo-600 hover:text-indigo-800">← Cobros de supermercados</a>
         </div>
     </x-slot>
 

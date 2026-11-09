@@ -10,6 +10,7 @@ use App\Models\Dte;
 use App\Models\PpqAlbaran;
 use App\Models\PpqLote;
 use App\Support\Dinero;
+use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use Illuminate\Support\Collection;
 
@@ -17,6 +18,9 @@ use Illuminate\Support\Collection;
  * Lo que el TXT del último PPQ NO pagó, de los lotes que ese TXT concilió: CCF que no
  * vinieron, CCF pagados de menos (posible devolución AC04) y NC que Calleja no descontó.
  * Un TXT por PPQ (regla del usuario): lo que no vino en él, de ese lote, no se pagó.
+ *
+ * Un renglón sin `dte_id` se cruza por número de control + ejercicio (#121): desde 2027 el
+ * mismo número puede ser un CCF de 2026 y otro de 2027, y nunca se toma uno por el otro.
  *
  * Solo lee. Lo usa la pantalla del TXT y lo vuelve a usar {@see ReenviarPendientesTxt}
  * como única regla de qué se puede devolver.
@@ -41,17 +45,17 @@ class PendientesDelTxt
             ->get();
         foreach ($lotes as $lote) {
             foreach ($itemsPorLote[$lote->id] as $item) {
+                $llave = EjercicioControl::llave($item->numero_control, $item->ejercicio_control);
+                $mismaNota = fn (Dte $nota) => $llave !== null && EjercicioControl::llave($nota->numero_control, EjercicioControl::de($nota->fecha_emision)) === $llave;
                 $doc = $item->dte_id ? $documentos->firstWhere('dte_id', $item->dte_id) : null;
                 if (! $doc) {
-                    $clave = IdentidadPpq::normalizar($item->numero_control);
-                    $coinciden = $clave === null ? collect() : $documentos->where('numero_control_norm', $clave);
+                    $coinciden = $llave === null ? collect()
+                        : $documentos->filter(fn ($d) => EjercicioControl::llave($d->numero_control_norm, $d->ejercicio_control) === $llave);
                     $doc = $coinciden->count() === 1 ? $coinciden->first() : null;
                 }
                 $dteId = $item->dte_id ?? $doc?->dte_id;
                 if (! $dteId && $item->tipo_dte === '05') {
-                    $clave = IdentidadPpq::normalizar($item->numero_control);
-                    $notas = Dte::where('cliente_id', $cliente->id)->where('tipo_dte', '05')->get()
-                        ->filter(fn ($nota) => $clave !== null && IdentidadPpq::normalizar($nota->numero_control) === $clave);
+                    $notas = Dte::where('cliente_id', $cliente->id)->where('tipo_dte', '05')->get()->filter($mismaNota);
                     $dteId = $notas->count() === 1 ? $notas->first()->id : null;
                 }
                 if (isset($motivos[$dteId])) {
@@ -80,8 +84,7 @@ class PendientesDelTxt
                         ->where('estado', '!=', EstadoDte::Invalidado->value)
                         ->when($item->dte_id, fn ($q) => $q->whereKey($item->dte_id))->get();
                     if (! $item->dte_id) {
-                        $clave = IdentidadPpq::normalizar($item->numero_control);
-                        $nc = $nc->filter(fn ($dte) => $clave !== null && IdentidadPpq::normalizar($dte->numero_control) === $clave);
+                        $nc = $nc->filter($mismaNota);
                     }
                     if ($nc->count() === 1) {
                         $ccf = $nc->first()->dte_relacionado_id ? $documentos->firstWhere('dte_id', $nc->first()->dte_relacionado_id) : null;

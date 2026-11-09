@@ -3,14 +3,14 @@
          y el usuario tiene su permiso: el candado real sigue en las rutas.
 
          «Accesos» (quién entra al sistema; antes, «Usuarios» en Facturación) va con
-         `usuarios.gestionar` y no depende de los módulos. Empleados solo se ofrece si se
-         alcanza Asistencia o Planilla: es lo mismo que pide su pantalla. --}}
+         `usuarios.gestionar` y no depende de los módulos. Empleados se ofrece con Asistencia
+         o con `planilla.ver`, encendida o no Planilla: es lo mismo que pide su pantalla. --}}
     @php($veAsistencia = \App\Enums\ModuloSistema::Asistencia->activo() && auth()->user()->can('asistencia.ver'))
     <x-sidebar-group titulo="Personal" icono="asistencia">
         @if ($veAsistencia)
-            <x-sidebar-link :href="route('asistencia.dashboard')" :active="request()->routeIs('asistencia.dashboard')">Hoy</x-sidebar-link>
+            <x-sidebar-link :href="route('asistencia.dashboard')" :active="request()->routeIs('asistencia.dashboard')">Marcas de hoy</x-sidebar-link>
         @endif
-        @if ($veAsistencia || $vePlanilla)
+        @if ($veAsistencia || $vePersonal)
             <x-sidebar-link :href="route('personal.empleados')" :active="request()->routeIs('personal.empleados*', 'personal.repetidos', 'asistencia.empleados.*', 'planilla.empleados*')">Empleados</x-sidebar-link>
         @endif
         @if ($veAsistencia)

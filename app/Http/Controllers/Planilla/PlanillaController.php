@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Planilla;
 
+use App\Enums\ModuloSistema;
 use App\Enums\RolSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Planilla\Planilla;
@@ -170,7 +171,7 @@ class PlanillaController extends Controller
             'habitualesDisponibles' => $this->habitualesDe($sueldos, $disponibles, $planilla),
             // Los anticipos con saldo de cada persona. Un descuento de anticipo tiene
             // que apuntar a UNO de estos: escribir la referencia no controla nada.
-            'anticipos' => $this->anticiposDisponibles($anticipos),
+            'anticipos' => $this->anticiposDisponibles($anticipos, $preparar, $planilla),
         ]);
     }
 
@@ -195,17 +196,23 @@ class PlanillaController extends Controller
         );
     }
 
-    private function anticiposDisponibles(RegistrarAnticipo $anticipos): array
+    /**
+     * Solo lo que el servidor deja descontar en esta planilla (misma moneda, pago
+     * vigente): elegir otro se rechaza al guardar y se pierde lo escrito.
+     */
+    private function anticiposDisponibles(RegistrarAnticipo $anticipos, PrepararPlanilla $preparar, Planilla $planilla): array
     {
         $salida = [];
 
         foreach (PlanillaEmpleado::where('activo', true)->get() as $empleado) {
-            $salida[$empleado->id] = $anticipos->disponibles($empleado)->map(fn ($a) => [
-                'id' => $a->id,
-                'etiqueta' => $a->fecha->format('d/m/Y').' · '.$a->moneda.' '.$a->importe
-                    .' · quedan '.Dinero::mostrar($a->pendiente()),
-                'pendiente' => Dinero::decimal($a->pendiente()),
-            ])->values()->all();
+            $salida[$empleado->id] = $anticipos->disponibles($empleado)
+                ->filter(fn ($a) => $preparar->motivoContraAnticipo($a, $empleado->id, $planilla->moneda) === null)
+                ->map(fn ($a) => [
+                    'id' => $a->id,
+                    'etiqueta' => $a->fecha->format('d/m/Y').' · '.$a->moneda.' '.$a->importe
+                        .' · quedan '.Dinero::mostrar($a->pendiente()),
+                    'pendiente' => Dinero::decimal($a->pendiente()),
+                ])->values()->all();
         }
 
         return $salida;
@@ -239,6 +246,9 @@ class PlanillaController extends Controller
     }
 
     // ── Registro de personas ──────────────────────────────────────────────
+    // Es Personal, no Planilla: funciona con el módulo apagado (ver routes/planilla.php).
+    // Lo que sí es de Planilla —el sueldo, el contrato, la indemnización— solo se ofrece
+    // con el módulo encendido.
 
     public function nuevoEmpleado(Request $request, RegistrarEmpleado $registrar, AltaEmpleado $alta)
     {
@@ -248,6 +258,7 @@ class PlanillaController extends Controller
             'candidatos' => $registrar->candidatos(),
             'coincidencias' => $alta->coincidencias((string) old('nombres', ''), (string) old('apellidos', '')),
             'roles' => RolSistema::opciones(),
+            'conPlanilla' => ModuloSistema::Planilla->activo(),
         ]);
     }
 
@@ -257,11 +268,11 @@ class PlanillaController extends Controller
 
         // Con descuentos lleva contrato: sus datos se piden una sola vez, en esa pantalla.
         // Quien no ve importes no puede abrirla: el contrato lleva el sueldo.
-        $sigueConContrato = $empleado->con_descuentos_ley && $request->user()->can('planilla.salarios');
+        $sigueConContrato = $empleado->con_descuentos_ley && ModuloSistema::Planilla->activo() && $request->user()->can('planilla.salarios');
 
         return redirect()
             ->route($sigueConContrato ? 'planilla.empleados.contrato' : 'personal.empleados.show', $sigueConContrato ? $empleado : 'p'.$empleado->id)
-            ->with('planilla.aviso', $empleado->nombre.' quedó en planilla.');
+            ->with('planilla.aviso', $empleado->nombre.' quedó en Personal.');
     }
 
     /** El sueldo nunca cambia solo: lo cambia una persona, con fecha. */
@@ -306,7 +317,7 @@ class PlanillaController extends Controller
         $motivo = $request->input('motivo_baja');
         $bajas->dar($request->user(), $empleado, (string) $request->input('fecha'), is_string($motivo) ? $motivo : null);
         $mensaje = 'Empleado dado de baja. Su historial se conserva.';
-        if (is_string($motivo) && isset(IndemnizacionBaja::CLASES[$motivo])) {
+        if (is_string($motivo) && isset(IndemnizacionBaja::CLASES[$motivo]) && ModuloSistema::Planilla->activo()) {
             $mensaje .= ' La '.IndemnizacionBaja::nombre($motivo).' se calcula desde su ficha.';
         }
         $huellas = $empleado->asistencia?->huellas()->where('activo', true)->count() ?? 0;

@@ -965,6 +965,19 @@ class CatalogoAjustes
                 claveConfig: 'ppq.albaranes.sincronizacion_automatica',
                 porDefecto: false,
             ),
+            DefinicionAjuste::hacer(
+                clave: 'ppq.cliente_default_id',
+                seccion: 'ppq',
+                tipo: TipoAjuste::Cliente,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Cliente del pronto pago',
+                descripcion: 'A este cliente se le crean los lotes y con él se cruzan las salas y las notas de crédito de pronto pago. Otro cliente manda los lotes nuevos a esa empresa.',
+                claveConfig: 'ppq.cliente_default_id',
+            ),
 
             // --------------------------------------------------------- Cobros
             DefinicionAjuste::hacer(
@@ -1352,6 +1365,59 @@ class CatalogoAjustes
                 descripcion: 'Encendida, cada mañana se avisa de los pagos por vencer según lo que eligió cada persona.',
                 claveConfig: 'gastos.avisos.automaticos',
                 porDefecto: false,
+            ),
+
+            // --------------------------------------------------------- Compras
+            // Sección propia y no `documentos_recibidos`: esa es la conexión al buzón
+            // (Integraciones); esta es la tarea que lo lee sola.
+            DefinicionAjuste::hacer(
+                clave: 'documentos_recibidos.sincronizacion_automatica',
+                seccion: 'compras',
+                tipo: TipoAjuste::Booleano,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Bajar las compras del correo solo, cada quince minutos',
+                descripcion: 'Encendida, el sistema lee el buzón de compras por su cuenta y guarda los documentos de los proveedores. Apagada, se bajan a mano desde Documentos recibidos. Necesita el buzón configurado en Integraciones.',
+                claveConfig: 'documentos_recibidos.sincronizacion_automatica',
+                porDefecto: false,
+            ),
+
+            // ------------------------------------------------------ Asistencia
+            // Las leen el lector de huella en cada marca: pasan por la caché de
+            // Ajustes, sin consulta propia. El rango incluye el 0 que ya admitía el
+            // código (max(0, …)), para que un .env con 0 siga leyéndose.
+            DefinicionAjuste::hacer(
+                clave: 'asistencia.cooldown_segundos',
+                seccion: 'asistencia',
+                tipo: TipoAjuste::Entero,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N1,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Segundos de espera entre dos marcas de la misma persona',
+                descripcion: 'Si alguien vuelve a poner el dedo antes de este tiempo, no se guarda otra marca: el lector le muestra la que ya hizo. Con 0 no se espera.',
+                claveConfig: 'asistencia.cooldown_segundos',
+                porDefecto: 90,
+                reglas: ['min:0', 'max:600'],
+            ),
+            DefinicionAjuste::hacer(
+                clave: 'asistencia.diferidas_max_dias',
+                seccion: 'asistencia',
+                tipo: TipoAjuste::Entero,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Días hacia atrás que se aceptan marcas hechas sin internet',
+                descripcion: 'El lector guarda las marcas que hizo sin red y las manda después. Las más viejas que esto se rechazan. Cambia qué horas entran a la planilla.',
+                claveConfig: 'asistencia.diferidas_max_dias',
+                porDefecto: 31,
+                reglas: ['min:0', 'max:60'],
             ),
 
             // ================================================================

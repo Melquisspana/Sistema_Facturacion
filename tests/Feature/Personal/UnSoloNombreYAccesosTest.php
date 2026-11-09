@@ -85,7 +85,7 @@ class UnSoloNombreYAccesosTest extends TestCase
         $p = $p->fresh();
         $this->assertSame($suelta->id, $p->asistencia_empleado_id);
         $this->assertSame(2, AsistenciaEmpleado::count());
-        // La suelta toma el nombre de la ficha: «Hoy» la muestra igual que Personal.
+        // La suelta toma el nombre de la ficha: «Marcas de hoy» la muestra igual que Personal.
         $this->assertSame('Ana Ficticia', $suelta->fresh()->nombreCompleto());
         $this->assertSame('Ana Ficticia', $p->nombre);
     }

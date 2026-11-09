@@ -141,7 +141,8 @@ Schedule::command('ordenes:sincronizar')
 | autenticación fallida) solo sirven si alguien puede leerlos después.
 |
 | DOS LLAVES, las dos necesarias:
-|   1. `DOCUMENTOS_RECIBIDOS_AUTO_SYNC=true` en .env (apagado por defecto);
+|   1. «Bajar las compras del correo solo» en Configuración › Módulos › Compras, o
+|      `DOCUMENTOS_RECIBIDOS_AUTO_SYNC=true` en .env si no hay nada guardado (apagado);
 |   2. algo que ejecute `php artisan schedule:run` cada minuto en el servidor.
 | Con una sola, no corre. Ver docs/SINCRONIZACION_COMPRAS.md §3.
 |
@@ -155,8 +156,9 @@ Schedule::command('compras:sincronizar --aplicar --solape=2')
     ->everyFifteenMinutes()
     // INTERRUPTOR. `when()` se evalúa cuando el scheduler decide si corre, no al
     // registrar la tarea: así la definición SIEMPRE existe (y se puede inspeccionar y
-    // probar) pero no ejecuta nada hasta que se enciende en .env. Apagado por defecto.
-    ->when(fn () => (bool) config('documentos_recibidos.sincronizacion_automatica', false))
+    // probar) pero no ejecuta nada hasta que se enciende. Apagado por defecto. Lo guardado
+    // en Configuración › Módulos › Compras manda sobre el .env (boolSinBase, como PPQ).
+    ->when(fn () => Ajustes::boolSinBase('documentos_recibidos.sincronizacion_automatica'))
     ->withoutOverlapping(20)
     ->appendOutputTo(storage_path('logs/compras-sincronizacion.log'));
 
@@ -220,7 +222,7 @@ Schedule::command('gastos:avisos --aplicar')
 
 /*
 |--------------------------------------------------------------------------
-| Cobros Calleja — alta de documentos aceptados
+| Cobros de supermercados — alta de documentos aceptados
 |--------------------------------------------------------------------------
 | Incorpora al seguimiento de cobros los CCF/NC que Hacienda ya aceptó.
 |
@@ -256,7 +258,7 @@ Schedule::command('cobros:sincronizar --aplicar --vincular')
 
 /*
 |--------------------------------------------------------------------------
-| Cobros Calleja — lectura de los acuses y observaciones del cliente
+| Cobros de supermercados — lectura de los acuses y observaciones del cliente
 |--------------------------------------------------------------------------
 | SOLO LECTURA del buzón: no envía, no responde, no marca como leído y no mueve
 | etiquetas. Escribe únicamente en `cobro_correos`, en `cobro_eventos` y en el acuse de
