@@ -15,6 +15,8 @@ use App\Services\Planilla\ConfirmarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Grammars\SQLiteGrammar;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -124,6 +126,48 @@ class PlataConfirmarPlanillaTest extends TestCase
             'clave' => (string) Str::uuid(), 'importe' => '60.00', 'fecha' => '2026-09-02',
             'metodo' => 'efectivo', 'pagado_por' => $u->id, 'sin_comprobante' => 'Entregado en caja.',
         ], [['cuota_id' => $cuota->id, 'importe' => '60.00']]);
+    }
+
+    /**
+     * Las consultas que corren de acá en adelante, con su candado escrito. SQLite no lo
+     * escribe (todo va en serie), así que en SQLite se deja como comentario, que la base
+     * ignora; MySQL ya lo escribe solo. Es la forma de comprobar en SQLite que una
+     * lectura que decide va con candado: la carrera completa solo se ve en MySQL con dos
+     * conexiones.
+     *
+     * @return \ArrayObject<int, string>
+     */
+    private function consultasConCandado(): \ArrayObject
+    {
+        $conexion = DB::connection();
+
+        if ($conexion->getDriverName() === 'sqlite') {
+            $conexion->setQueryGrammar(new class($conexion) extends SQLiteGrammar
+            {
+                protected function compileLock(Builder $query, $value)
+                {
+                    if (is_string($value)) {
+                        return $value;
+                    }
+
+                    return $value ? '/* for update */' : '/* lock in share mode */';
+                }
+            });
+        }
+
+        $sql = new \ArrayObject;
+        DB::listen(fn ($q) => $sql->append(mb_strtolower($q->sql)));
+
+        return $sql;
+    }
+
+    /** @param  \ArrayObject<int, string>  $sql */
+    private function assertLeidaConCandado(\ArrayObject $sql, string $tabla, string $candado): void
+    {
+        $con = array_filter($sql->getArrayCopy(),
+            fn (string $q) => str_starts_with($q, 'select') && preg_match('/[`"]'.$tabla.'[`"]/', $q) && str_contains($q, $candado));
+
+        $this->assertNotEmpty($con, 'Ninguna lectura de '.$tabla.' lleva «'.$candado.'».');
     }
 
     // ═══════════ a. Un error de integridad cualquiera no es «ya confirmada» ═══════════
@@ -315,6 +359,81 @@ class PlataConfirmarPlanillaTest extends TestCase
 
         $this->assertTrue($planilla->fresh()->confirmada());
         $this->assertSame(3000, $anticipo->fresh()->pendiente());
+    }
+
+    public function test_al_confirmar_lo_recuperado_del_anticipo_y_su_pago_se_leen_con_candado(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $anticipo = $this->anticipo($u, $ana, 'USD', $pago->id);
+
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            $this->linea($ana, [$this->deAnticipo($anticipo, '30.00')]),
+        ]);
+
+        $sql = $this->consultasConCandado();
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh());
+
+        $this->assertTrue($planilla->fresh()->confirmada());
+        // En MySQL, sin candado, otra planilla que descontó el mismo anticipo mientras
+        // tanto no se vería y se recuperaría dos veces.
+        $this->assertLeidaConCandado($sql, 'planilla_anticipo_aplicaciones', 'for update');
+        // Y el pago, que alguien pudo estar revirtiendo a la vez.
+        $this->assertLeidaConCandado($sql, 'gastos_pagos', 'for update');
+    }
+
+    public function test_si_el_pago_se_revierte_despues_de_los_reparos_la_confirmacion_lo_ve_y_no_descuenta(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $anticipo = $this->anticipo($u, $ana, 'USD', $pago->id);
+
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            $this->linea($ana, [$this->deAnticipo($anticipo, '30.00')]),
+        ]);
+
+        // Otro proceso revierte el pago justo cuando la confirmación ya pasó los reparos
+        // y acaba de bloquear el anticipo.
+        $this->consultasConCandado();
+        $revertido = false;
+        DB::listen(function ($q) use (&$revertido, $pago) {
+            $sql = mb_strtolower($q->sql);
+            if ($revertido || ! preg_match('/[`"]planilla_anticipos[`"]/', $sql) || ! str_contains($sql, 'for update')) {
+                return;
+            }
+            $revertido = true;
+            DB::table('gastos_pagos')->where('id', $pago->id)->update(['revertido_at' => now()]);
+        });
+
+        try {
+            app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh());
+            $this->fail('Con el pago revertido en medio, el anticipo no se descuenta.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('revertido', $e->getMessage());
+        }
+
+        $this->assertTrue($revertido);
+        $this->assertTrue($planilla->fresh()->borrador());
+        $this->assertSame(0, DB::table('planilla_anticipo_aplicaciones')->count());
+    }
+
+    public function test_revertir_un_pago_cuenta_las_aplicaciones_de_su_anticipo_con_candado(): void
+    {
+        $u = $this->gestor();
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $pago = $this->pagoReal($u, 'Ana Prueba');
+        $this->anticipo($u, $ana, 'USD', $pago->id);
+
+        $sql = $this->consultasConCandado();
+        app(RegistrarPago::class)->revertir($u, $pago, 'La salida de caja se registró por error.');
+
+        // En MySQL, sin candado, la aplicación de una planilla que se confirmaba a la vez
+        // no se vería y el pago se revertiría con el anticipo ya descontado.
+        $this->assertLeidaConCandado($sql, 'planilla_anticipo_aplicaciones', 'lock in share mode');
     }
 
     // ═══════════ d. Guardar no pisa una planilla confirmada en medio ═══════════

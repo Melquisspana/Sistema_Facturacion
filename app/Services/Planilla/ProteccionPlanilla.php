@@ -130,8 +130,13 @@ final class ProteccionPlanilla implements ProteccionDeGastos
             return null;
         }
 
+        // Con candado compartido, ya con el pago bloqueado por quien revierte: si una
+        // planilla lo estaba descontando, se espera a que confirme y su aplicación se ve
+        // (en MySQL una lectura sin candado usaría la foto vieja y daría cero). No se
+        // bloquea el anticipo, para no invertir el orden planilla, anticipo, pago.
         $aplicaciones = DB::table('planilla_anticipo_aplicaciones')
             ->where('planilla_anticipo_id', $anticipo->id)
+            ->sharedLock()
             ->count();
 
         if ($aplicaciones === 0) {

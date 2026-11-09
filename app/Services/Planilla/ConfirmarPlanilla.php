@@ -3,6 +3,7 @@
 namespace App\Services\Planilla;
 
 use App\Models\Gastos\Gasto;
+use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
 use App\Models\Planilla\PlanillaDetalle;
@@ -165,13 +166,31 @@ final class ConfirmarPlanilla
             }
         }
 
+        // Orden de los candados: planilla, anticipo, pago. Revertir un pago toma el pago y
+        // no el anticipo, así que nunca se esperan en orden cruzado.
         foreach ($porAnticipo as $anticipoId => $recupera) {
             $anticipo = PlanillaAnticipo::whereKey($anticipoId)->lockForUpdate()->firstOrFail();
 
-            if ($recupera > $anticipo->pendiente()) {
+            // El pago pudo revertirse después de los reparos: se mira con candado, que lee
+            // lo último confirmado, y la aplicación se inserta recién después.
+            if ($anticipo->pago_id !== null) {
+                $pago = Pago::whereKey($anticipo->pago_id)->lockForUpdate()->first();
+
+                if ($pago === null || $pago->revertido_at !== null) {
+                    throw ValidationException::withMessages([
+                        'anticipos' => 'El pago del anticipo del '.$anticipo->fecha->format('d/m/Y')
+                            .' fue revertido; no se puede descontar.',
+                    ]);
+                }
+            }
+
+            // Con candado: sin él, otra planilla confirmada mientras tanto no se vería.
+            $pendiente = $anticipo->pendiente(bloquear: true);
+
+            if ($recupera > $pendiente) {
                 throw ValidationException::withMessages([
                     'anticipos' => 'Del anticipo del '.$anticipo->fecha->format('d/m/Y').' quedan '
-                        .Dinero::decimal($anticipo->pendiente()).' por recuperar y esta planilla descuenta '
+                        .Dinero::decimal($pendiente).' por recuperar y esta planilla descuenta '
                         .Dinero::decimal($recupera).'. No se puede recuperar dos veces el mismo anticipo.',
                 ]);
             }
