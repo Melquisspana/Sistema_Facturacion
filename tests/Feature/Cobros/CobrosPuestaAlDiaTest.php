@@ -316,7 +316,8 @@ class CobrosPuestaAlDiaTest extends TestCase
 
     /**
      * Issue #13: el mismo TXT aplicado antes en OTRO cliente dejó allá su QD. En el cliente
-     * de cobros correcto ese ajuste no se reutiliza: el archivo se rechaza entero y lo dice.
+     * de cobros correcto ese ajuste no se reutiliza ni se mueve, pero los CF/NC del archivo
+     * sí se aplican: rechazarlo entero dejaba el CCF pendiente sin forma de destrabarlo.
      */
     public function test_un_ajuste_registrado_en_otro_cliente_no_se_reutiliza(): void
     {
@@ -343,13 +344,15 @@ class CobrosPuestaAlDiaTest extends TestCase
             ->assertSessionHas('error', fn ($m) => str_contains($m, 'ya está registrada en otro cliente'));
 
         $this->subirVarios(['pagos.txt' => $txt], soloRevisar: true)->assertOk()
-            ->assertSeeText('ya está registrada en otro cliente')->assertSeeText('Otra cadena de prueba');
+            ->assertSeeText('Ajustes (QD) que ya están en otro cliente (1)')->assertSeeText('Otra cadena de prueba');
         $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash]])
-            ->assertOk()->assertSeeText('Este TXT no se revisó en esta sesión');
+            ->assertOk()->assertDontSeeText('Este TXT no se revisó en esta sesión')
+            ->assertSeeText('Ajustes (QD) que ya están en otro cliente (1)');
 
         $this->assertSame(1, CobroAjuste::count(), 'No se creó ni se movió ningún ajuste.');
         $this->assertSame($otro->id, (int) $ajeno->refresh()->cliente_id);
-        $this->assertSame(0, $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count(), 'No se aplicó nada del archivo.');
+        $this->assertSame(1, $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count(), 'El CF del cliente correcto sí se aplicó.');
+        $this->assertSame(EstadoPagoCobro::Pagado, $doc->refresh()->pago_estado);
     }
 
     public function test_revision_nueva_reemplaza_las_huellas_y_los_errores_no_se_autorizan(): void

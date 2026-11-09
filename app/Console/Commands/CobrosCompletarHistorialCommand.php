@@ -85,6 +85,10 @@ class CobrosCompletarHistorialCommand extends Command
                 $this->line(sprintf('TXT %s: %d aplicados, %d sin cambio, %d en revisión, %d no están en el seguimiento.',
                     $c->archivo_nombre, count($informe['aplicados']), count($informe['sin_cambio']),
                     count($informe['en_revision']), count($informe['no_identificados'])));
+                if ($informe['ajustes_de_otro_cliente'] !== []) {
+                    $this->warn(sprintf('TXT %s: %d ajuste(s) QD ya están en otro cliente; no se registraron acá.',
+                        $c->archivo_nombre, count($informe['ajustes_de_otro_cliente'])));
+                }
             } catch (Throwable $e) {
                 $this->warn("TXT {$c->archivo_nombre}: no se aplicó ({$e->getMessage()}).");
             }

@@ -10,9 +10,9 @@ use RuntimeException;
  * Un ajuste (QD) de este TXT —misma huella y línea— ya está registrado en OTRO cliente.
  *
  * La huella y la línea identifican el ajuste en todo el sistema, así que reutilizarlo
- * pondría en este cliente la deducción (y su nota de crédito) de otro. Se rechaza el
- * archivo ENTERO, mismo criterio que {@see ArchivoProveedorInvalidoException}: el
- * archivo es de un cliente o del otro, y eso lo decide una persona.
+ * pondría en este cliente la deducción (y su nota de crédito) de otro. Al hacer la nota
+ * desde la revisión se rechaza; al aplicar el TXT, {@see AplicadorPagosTxt::aplicar()}
+ * salta solo esa línea, la informa y aplica el resto.
  *
  * @see AplicadorPagosTxt::registrarAjuste()
  */

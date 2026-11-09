@@ -160,4 +160,34 @@ class CobrosCompletarHistorialCommandTest extends TestCase
 
         $this->assertSame(EstadoPagoCobro::Pagado, $pagado->refresh()->pago_estado);
     }
+
+    /**
+     * Issue #13: el mismo TXT ya se aplicó en otro cliente y su QD quedó allá. En el cliente
+     * correcto el QD no se trae ni se mueve, pero el CF sí se aplica y el QD se avisa.
+     */
+    public function test_un_qd_que_ya_esta_en_otro_cliente_no_frena_los_pagos_del_archivo(): void
+    {
+        Storage::fake((string) config('dte.storage.disk', 'local'));
+        config(['ppq.codigo_proveedor' => '000123']);
+
+        $cliente = $this->clienteDeCobros();
+        $otro = $this->clienteDeCobros();
+        $pagado = $this->doc($cliente, '101', '2026-06-20');
+        $txt = "CODIGO_PROVEEDOR;NOMBRE;TIPO_DOCUMENTO;NUMERO_DOCUMENTO;FECHA_DOCUMENTO;VALOR\n"
+            ."000123;TITULAR DE EJEMPLO;CF;DTE03M001P002000000000000101;20-JUN-26;100.00\n"
+            ."000123;TITULAR DE EJEMPLO;QD;PPQ/33762;10-SEP-26;-1.50\n";
+        $this->loteConTxt($otro, $txt);
+        $this->artisan('cobros:completar-historial', ['--cliente' => $otro->id, '--aplicar' => true])->assertSuccessful();
+        $ajeno = CobroAjuste::sole();
+        $this->assertSame($otro->id, (int) $ajeno->cliente_id);
+
+        $this->loteConTxt($cliente, $txt);
+        $this->artisan('cobros:completar-historial', ['--cliente' => $cliente->id, '--aplicar' => true])
+            ->expectsOutputToContain('1 ajuste(s) QD ya están en otro cliente')
+            ->assertSuccessful();
+
+        $this->assertSame(EstadoPagoCobro::Pagado, $pagado->refresh()->pago_estado);
+        $this->assertSame(1, CobroAjuste::count(), 'No se creó otro ajuste.');
+        $this->assertSame($otro->id, (int) $ajeno->refresh()->cliente_id, 'Ni se movió el ajeno.');
+    }
 }
