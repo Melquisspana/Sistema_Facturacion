@@ -514,7 +514,7 @@ class PedidosSalaTest extends TestCase
         DB::enableQueryLog();
         $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado');
         DB::disableQueryLog();
-        $this->assertSame(1, collect(DB::getQueryLog())->filter(fn ($q) => str_contains($q['query'], '"pedido_sala_envios"'))->count());
+        $this->assertSame(1, collect(DB::getQueryLog())->filter(fn ($q) => preg_match('/[`"]pedido_sala_envios[`"]/', $q['query']))->count());
     }
 
     public function test_la_oc_se_agrega_en_un_pedido_mandado_pero_no_en_uno_anulado(): void
