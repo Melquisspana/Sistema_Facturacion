@@ -357,13 +357,21 @@ final class ConfirmarPlanilla
     }
 
     /**
-     * La identidad de un tercero: sin mayúsculas, tildes ni espacios de más. Es la misma
-     * para agrupar, para ver si ya existe y para la clave de su gasto, y es como compara
-     * el índice único en MySQL (`utf8mb4_unicode_ci`): «Cooperativa» y «cooperativa » son
-     * el mismo acreedor y una sola deuda por la suma de las dos.
+     * La identidad de un tercero: sin mayúsculas, tildes ni espacios de más, sin
+     * caracteres de formato invisibles (espacio de ancho cero, guion suave, unión de ancho
+     * cero) y con las letras de ancho completo llevadas a las normales. Es la misma para
+     * agrupar, para ver si ya existe y para la clave de su gasto, y sigue lo que el índice
+     * único iguala en MySQL (`utf8mb4_unicode_ci`): «Cooperativa», «cooperativa » y un
+     * nombre pegado de un PDF con un carácter invisible son el mismo acreedor y una sola
+     * deuda por la suma.
      */
     private static function claveDeTercero(string $tercero): string
     {
+        // Sin la extensión intl solo quedarían sin igualar las letras de ancho completo.
+        if (class_exists(\Normalizer::class)) {
+            $tercero = \Normalizer::normalize($tercero, \Normalizer::FORM_KC) ?: $tercero;
+        }
+        $tercero = preg_replace('/\p{Cf}+/u', '', $tercero) ?? $tercero;
         $limpio = Str::squish($tercero);
 
         return mb_strtolower(Str::ascii($limpio) ?: $limpio);

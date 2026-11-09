@@ -34,6 +34,10 @@ use Tests\TestCase;
  *  c. El anticipo que se descuenta es de esa persona, en esa moneda y de un pago vigente.
  *  d. Guardar el borrador no borra las líneas de una planilla que se confirmó en medio.
  *  e. Con una instalación a medias el módulo no se abre.
+ *
+ * Y lo que encontró la revisión de esos arreglos: lo que decide con un saldo dentro de
+ * la transacción lo lee con candado, la pantalla no ofrece anticipos que el servidor
+ * rechaza, y un carácter invisible en el nombre del tercero no parte la deuda.
  */
 class PlataConfirmarPlanillaTest extends TestCase
 {
@@ -181,6 +185,29 @@ class PlataConfirmarPlanillaTest extends TestCase
         $this->assertSame('50.50', $obligacion->importe);
         $this->assertSame('50.50', Gasto::findOrFail($obligacion->gasto_id)->importe);
         $this->assertSame('Asociación Cooperativa Ficticia', $obligacion->tercero);
+    }
+
+    public function test_un_caracter_invisible_en_el_nombre_del_tercero_no_parte_la_deuda(): void
+    {
+        $u = $this->gestor();
+        $planilla = $this->planilla($u);
+        $ana = $this->empleado($u, 'Ana Prueba');
+        $carlos = $this->empleado($u, 'Carlos Prueba');
+
+        // El segundo, pegado de un PDF, trae un espacio de ancho cero en medio. MySQL lo
+        // ignora en el índice único: es el mismo acreedor.
+        app(PrepararPlanilla::class)->guardarLineas($u, $planilla, [
+            $this->linea($ana, [$this->aTercero('CoopX', '10.00')]),
+            $this->linea($carlos, [$this->aTercero("Coop\u{200B}X", '5.25')]),
+        ]);
+
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla->fresh());
+
+        $this->assertTrue($planilla->fresh()->confirmada());
+        $this->assertSame(1, PlanillaObligacionTercero::count());
+        $obligacion = PlanillaObligacionTercero::firstOrFail();
+        $this->assertSame('15.25', $obligacion->importe);
+        $this->assertSame('15.25', Gasto::findOrFail($obligacion->gasto_id)->importe);
     }
 
     // ═══════════ c. El anticipo es de esa persona, en esa moneda y vigente ═══════════
