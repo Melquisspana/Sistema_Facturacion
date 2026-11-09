@@ -87,9 +87,16 @@ class BarridoCorreosCobro
     private const SOLAPE_HORAS = 36;
 
     /**
-     * Tope de páginas por ventana. Acota el trabajo de una corrida cuando la tanda viene
+     * Tope de páginas de la COLA. Acota el trabajo de una corrida cuando la tanda viene
      * entera de mensajes ya conocidos: sin esto, una cola con miles de correos ya leídos
-     * podría recorrer el buzón entero en una sola pasada.
+     * podría recorrer el buzón entero en una sola pasada. La cola avanza igual, porque los
+     * ids conocidos mueven su marca.
+     *
+     * La CABEZA no lleva tope: su ventana va de la marca a hoy y la marca solo se mueve
+     * cuando la ventana se recorrió entera. Con tope, un atraso de más de PAGINAS_MAX
+     * páginas dejaba la cabeza leyendo siempre las mismas mil primeras, sin terminar
+     * nunca: la marca quedaba quieta para siempre y lo que estaba más allá no se leía. Listar
+     * ids es barato y lo ya registrado no baja el cuerpo.
      */
     private const PAGINAS_MAX = 10;
 
@@ -160,6 +167,7 @@ class BarridoCorreosCobro
             $topeAlcanzado,
             $enEstaTanda,
             $cabezaCompleta,
+            paginasMax: null,
         );
         $mensajes = $cabeza;
 
@@ -251,7 +259,7 @@ class BarridoCorreosCobro
                 $masVieja = $masVieja === null || $fecha->lt($masVieja) ? $fecha : $masVieja;
             }
 
-            // Con la cabeza cortada (tope o páginas) queda un hueco sin leer entre la marca
+            // Con la cabeza cortada por el tope queda un hueco sin leer entre la marca
             // anterior y lo más viejo que se leyó. Si la marca saltara a lo más nuevo, ese
             // hueco quedaría debajo de la ventana para siempre —y con el buzón ya recorrido,
             // la cola tampoco mira ahí—. Se queda donde estaba y la siguiente sigue desde
@@ -286,6 +294,7 @@ class BarridoCorreosCobro
      * @param  array<string, Carbon>  $vistos  se rellena: id => fecha del mensaje
      * @param  array<string, true>  $enEstaTanda  ids ya recogidos por la otra ventana
      * @param  bool  $completa  se rellena: si la consulta se recorrió hasta el final
+     * @param  int|null  $paginasMax  null = sin tope de páginas (la cabeza)
      * @return array<int, array<string, mixed>>
      */
     private function recorrer(
@@ -296,6 +305,7 @@ class BarridoCorreosCobro
         bool &$topeAlcanzado,
         array &$enEstaTanda,
         bool &$completa = true,
+        ?int $paginasMax = self::PAGINAS_MAX,
     ): array {
         $vistos ??= [];
         $mensajes = [];
@@ -348,7 +358,7 @@ class BarridoCorreosCobro
             }
 
             $token = $pagina['siguiente'];
-        } while (filled($token) && count($mensajes) < $limite && $paginas < self::PAGINAS_MAX);
+        } while (filled($token) && count($mensajes) < $limite && ($paginasMax === null || $paginas < $paginasMax));
 
         if (filled($token) && count($mensajes) >= $limite) {
             $topeAlcanzado = true;
