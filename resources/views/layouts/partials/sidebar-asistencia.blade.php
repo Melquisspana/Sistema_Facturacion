@@ -8,7 +8,7 @@
     @php($veAsistencia = \App\Enums\ModuloSistema::Asistencia->activo() && auth()->user()->can('asistencia.ver'))
     <x-sidebar-group titulo="Personal" icono="asistencia">
         @if ($veAsistencia)
-            <x-sidebar-link :href="route('asistencia.dashboard')" :active="request()->routeIs('asistencia.dashboard')">Hoy</x-sidebar-link>
+            <x-sidebar-link :href="route('asistencia.dashboard')" :active="request()->routeIs('asistencia.dashboard')">Marcas de hoy</x-sidebar-link>
         @endif
         @if ($veAsistencia || $vePlanilla)
             <x-sidebar-link :href="route('personal.empleados')" :active="request()->routeIs('personal.empleados*', 'personal.repetidos', 'asistencia.empleados.*', 'planilla.empleados*')">Empleados</x-sidebar-link>

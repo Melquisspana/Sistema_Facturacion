@@ -161,7 +161,7 @@ class PersonalController extends Controller
                 ? User::whereNotIn('id', PlanillaEmpleado::whereNotNull('user_id')->select('user_id'))->with('roles')->orderBy('name')->get()
                 : collect(),
             // Fichas de Asistencia de antes que no son de nadie en Personal: al ponerla a
-            // marcar se enlaza la suya en vez de crear otra (si no, sale dos veces en «Hoy»).
+            // marcar se enlaza la suya en vez de crear otra (si no, sale dos veces en «Marcas de hoy»).
             'asistenciasSueltas' => $ficha?->asistencia_empleado_id === null && $ficha?->activo && $request->user()->can('asistencia.gestionar')
                 ? $this->asistenciasSueltas($ficha)
                 : collect(),
