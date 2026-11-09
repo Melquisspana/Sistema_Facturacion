@@ -4,6 +4,7 @@ namespace App\Services\Asistencia;
 
 use App\DataTransferObjects\Asistencia\ResultadoRegistroMarcacion;
 use App\Enums\Asistencia\TipoMarcacion;
+use App\Facades\Ajustes;
 use App\Models\Asistencia\AsistenciaDispositivo;
 use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Models\Asistencia\AsistenciaHuella;
@@ -105,7 +106,8 @@ class RegistrarMarcacion
                 ->orderByDesc('id')
                 ->first();
 
-            $cooldown = max(0, (int) config('asistencia.cooldown_segundos'));
+            // Tolerante: un .env fuera del rango de la pantalla no puede frenar las marcas.
+            $cooldown = max(0, Ajustes::enteroTolerante('asistencia.cooldown_segundos', 90));
 
             $vecinos = [$ultima];
             if ($diferida) {

@@ -27,6 +27,9 @@ enum TipoAjuste: string
     case Secreto = 'secreto';
     case Lista = 'lista';
 
+    /** Id de un cliente que existe (no borrado). Se elige de la lista de clientes. */
+    case Cliente = 'cliente';
+
     /** ¿Este tipo se guarda cifrado y NUNCA vuelve al navegador? */
     public function esSecreto(): bool
     {
@@ -44,6 +47,7 @@ enum TipoAjuste: string
             self::Enumerado => 'Opción de una lista',
             self::Secreto => 'Secreto',
             self::Lista => 'Lista de valores',
+            self::Cliente => 'Cliente',
         };
     }
 }

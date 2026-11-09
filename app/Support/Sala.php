@@ -2,14 +2,16 @@
 
 namespace App\Support;
 
+use App\Facades\Ajustes;
 use App\Models\ClienteSucursal;
+use App\Models\PpqSala;
 
 /**
  * Resuelve el nombre de una sala/CD a partir de su código de 4 dígitos (ej. 0260),
  * buscándolo en `cliente_sucursales.codigo`. Si no existe, devuelve solo el código.
  *
  * El match tolera códigos guardados sin el cero inicial (230 == 0230) y, si está
- * configurado `ppq.cliente_default_id`, acota la búsqueda a ese cliente (Calleja)
+ * configurado `ppq.cliente_default_id` (Ajustes: pantalla o .env), acota la búsqueda a ese cliente (Calleja)
  * para evitar choques de código entre clientes. Cachea por request.
  */
 class Sala
@@ -32,7 +34,7 @@ class Sala
 
             $query = ClienteSucursal::query()->whereIn('codigo', $variantes);
 
-            if ($cliente = config('ppq.cliente_default_id')) {
+            if ($cliente = Ajustes::cliente('ppq.cliente_default_id')) {
                 $query->where('cliente_id', $cliente);
             }
 
@@ -40,7 +42,7 @@ class Sala
             // Calleja, cuyas sucursales tienen `codigo` nulo—, se cae al mapa auxiliar de PPQ
             // (nombres que ya vimos en JSON de CCF o altas manuales). El mapa NO es fiscal.
             self::$cache[$codigo] = $query->value('nombre')
-                ?? \App\Models\PpqSala::nombre($codigo);
+                ?? PpqSala::nombre($codigo);
         }
 
         return self::$cache[$codigo];
@@ -90,7 +92,7 @@ class Sala
     public static function olvidarCache(): void
     {
         self::$cache = [];
-        \App\Models\PpqSala::olvidarCache();
+        PpqSala::olvidarCache();
     }
 
     /** Normaliza un código a 4 dígitos con cero inicial; null si no es de 1-4 dígitos. */

@@ -47,6 +47,8 @@ class EstadoAjuste implements Arrayable, JsonSerializable
         public readonly FuenteAjuste $fuente,
         public readonly mixed $valor,
         public readonly ?string $advertencia,
+        // Aviso de que el valor del servidor (.env) no sirve y no se está mostrando.
+        public readonly ?string $invalido = null,
     ) {}
 
     public static function desde(ValorAjuste $resuelto): self
@@ -74,6 +76,8 @@ class EstadoAjuste implements Arrayable, JsonSerializable
             fuente: $resuelto->fuente,
             valor: $resuelto->valor,
             advertencia: self::advertencia($resuelto),
+            invalido: $resuelto->invalido === null ? null
+                : "El valor del servidor (.env) no sirve: {$resuelto->invalido} Guardá uno válido acá.",
         );
     }
 
@@ -94,6 +98,9 @@ class EstadoAjuste implements Arrayable, JsonSerializable
             fuente: $resuelto->fuente,
             valor: null,
             advertencia: self::advertencia($resuelto),
+            // Sin el motivo: el mensaje puede llevar lo recibido.
+            invalido: $resuelto->invalido === null ? null
+                : 'El valor del servidor no es válido: guardá uno nuevo acá.',
         );
     }
 
@@ -129,6 +136,7 @@ class EstadoAjuste implements Arrayable, JsonSerializable
             // así, no porque acá se decida ocultarla.
             'valor' => $this->valor,
             'advertencia' => $this->advertencia,
+            'invalido' => $this->invalido,
         ];
     }
 

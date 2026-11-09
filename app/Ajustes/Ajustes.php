@@ -11,6 +11,7 @@ use App\Ajustes\Definicion\TipoAjuste;
 use App\Ajustes\Excepciones\AjusteNoEditableException;
 use App\Ajustes\Excepciones\AutorizacionAjusteException;
 use App\Ajustes\Excepciones\ConflictoDeAjusteException;
+use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
 use App\Models\Configuracion;
 use App\Support\Dinero;
 use Illuminate\Contracts\Auth\Access\Authorizable;
@@ -122,6 +123,24 @@ class Ajustes
         return $valor === null ? $porDefecto : (int) $valor;
     }
 
+    /**
+     * Como {@see entero()}, pero si el .env trae un número que el catálogo no admite
+     * (fuera de rango, no numérico) no rompe: lo reporta y usa el .env tal cual, como
+     * hacía el lector antes de que existiera la pantalla. Para los lectores que no
+     * pueden fallar en cada uso (el lector de huella). Lo guardado ya se validó al guardar.
+     */
+    public function enteroTolerante(string $clave, int $porDefecto): int
+    {
+        try {
+            return $this->entero($clave, $porDefecto) ?? $porDefecto;
+        } catch (ValorAjusteInvalidoException $e) {
+            report($e);
+            $claveConfig = $this->catalogo->definicion($clave)->claveConfig;
+
+            return $claveConfig === null ? $porDefecto : (int) config($claveConfig, $porDefecto);
+        }
+    }
+
     /** Decimal como CADENA, para operarlo con {@see Dinero} sin perder precisión. */
     public function decimal(string $clave, ?string $porDefecto = null): ?string
     {
@@ -129,6 +148,15 @@ class Ajustes
         $valor = $this->get($clave);
 
         return $valor === null ? $porDefecto : (string) $valor;
+    }
+
+    /** Id del cliente guardado (o del .env). No comprueba que exista: eso se exige al guardar. */
+    public function cliente(string $clave): ?int
+    {
+        $this->exigirTipo($clave, TipoAjuste::Cliente);
+        $valor = $this->get($clave);
+
+        return $valor === null ? null : (int) $valor;
     }
 
     /** @return array<int, string> */
@@ -179,6 +207,29 @@ class Ajustes
         return $this->resolverSinOverride($definicion);
     }
 
+    /**
+     * Como {@see resolver()}, pero un valor que el catálogo no admite (un .env fuera de
+     * rango) vuelve sin valor y con el motivo en `invalido`, en vez de lanzar. Para la
+     * pantalla, la confirmación y la auditoría: si no, ese .env tumba justo la página
+     * que permite taparlo con un valor válido. Los lectores siguen con resolver().
+     */
+    public function resolverParaPantalla(string $clave): ValorAjuste
+    {
+        try {
+            return $this->resolver($clave);
+        } catch (ValorAjusteInvalidoException $e) {
+            $definicion = $this->catalogo->definicion($clave);
+            [$texto, $fuente] = $this->overrideAlmacenado($definicion);
+
+            return new ValorAjuste(
+                $definicion,
+                null,
+                $texto !== null ? $fuente : FuenteAjuste::Configuracion,
+                (string) $e->errores->first(),
+            );
+        }
+    }
+
     /** Pasos 2 a 4 de la resolución: config()/.env → defecto → nada. */
     private function resolverSinOverride(DefinicionAjuste $definicion): ValorAjuste
     {
@@ -224,7 +275,7 @@ class Ajustes
     /** Lo único que puede ir a una vista o a un JSON. Para secretos NO lleva el valor. */
     public function estadoParaPantalla(string $clave): EstadoAjuste
     {
-        return EstadoAjuste::desde($this->resolver($clave));
+        return EstadoAjuste::desde($this->resolverParaPantalla($clave));
     }
 
     /** @return array<string, EstadoAjuste> */
@@ -258,7 +309,7 @@ class Ajustes
      *
      * @param  Carbon|null  $vistoEn  `updated_at` que el formulario tenía al abrirse.
      *
-     * @throws AutorizacionAjusteException|AjusteNoEditableException|ConflictoDeAjusteException|Excepciones\ValorAjusteInvalidoException
+     * @throws AutorizacionAjusteException|AjusteNoEditableException|ConflictoDeAjusteException|ValorAjusteInvalidoException
      */
     public function guardar(string $clave, mixed $valor, ?Carbon $vistoEn = null): void
     {
@@ -315,7 +366,7 @@ class Ajustes
             throw AjusteNoEditableException::para($definicion);
         }
 
-        $antes = $this->resolver($clave);
+        $antes = $this->resolverParaPantalla($clave);
 
         match ($definicion->persistencia) {
             Persistencia::Nueva => $this->repositorio->eliminar($clave),
@@ -323,7 +374,7 @@ class Ajustes
             Persistencia::Ninguna => null,
         };
 
-        $despues = $this->resolver($clave);
+        $despues = $this->resolverParaPantalla($clave);
 
         // La auditoría decide si los valores se registran (nunca los de un secreto).
         $this->auditoria->overrideQuitado($definicion, $antes->fuente, $despues->fuente, $antes->valor, $despues->valor);
@@ -342,7 +393,11 @@ class Ajustes
             throw new \LogicException("«{$clave}» es un secreto: su valor no se anuncia.");
         }
 
-        return $this->resolverSinOverride($definicion);
+        try {
+            return $this->resolverSinOverride($definicion);
+        } catch (ValorAjusteInvalidoException $e) {
+            return new ValorAjuste($definicion, null, FuenteAjuste::Configuracion, (string) $e->errores->first());
+        }
     }
 
     // ------------------------------------------------------------- permisos
@@ -382,7 +437,8 @@ class Ajustes
 
         // Estado ANTERIOR: se captura antes de escribir, porque después ya no
         // habría cómo saber de dónde se resolvía.
-        $resueltoAntes = $this->resolver($definicion->clave);
+        // Tolerante: un .env fuera de rango no puede impedir guardar el valor que lo tapa.
+        $resueltoAntes = $this->resolverParaPantalla($definicion->clave);
 
         match ($definicion->persistencia) {
             Persistencia::Nueva => $this->repositorio->guardar($definicion->clave, $texto, $definicion->seCifra()),

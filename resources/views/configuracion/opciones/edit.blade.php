@@ -35,6 +35,8 @@
                                 return null;
                             };
                             $actual = $estado->valor;
+                            // Para el selector de cliente: lo que se eligió o el que manda hoy.
+                            $elegido = (string) old($campo, $actual);
                         @endphp
 
                         @if ($tipo === \App\Ajustes\Definicion\TipoAjuste::Booleano)
@@ -61,6 +63,9 @@
                                 @error($campo)
                                     <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                                 @enderror
+                                @if ($estado->invalido)
+                                    <p class="mt-1 text-xs text-amber-800">{{ $estado->invalido }}</p>
+                                @endif
                             </div>
                         @else
                             <x-configuracion.campo :nombre="$campo" :etiqueta="$definicion->etiqueta" :estado="$estado"
@@ -71,6 +76,18 @@
                                             <option value="{{ $opcion }}" @selected(old($campo, $actual) === $opcion)>
                                                 {{ ucfirst(str_replace('_', ' ', $opcion)) }}
                                             </option>
+                                        @endforeach
+                                    </select>
+                                @elseif ($tipo === \App\Ajustes\Definicion\TipoAjuste::Cliente)
+                                    {{-- La misma lista de clientes del filtro de lotes. Vacío = no tocar. --}}
+                                    <select id="{{ $campo }}" name="{{ $campo }}" class="w-full rounded-md border-gray-300 text-sm">
+                                        <option value="">
+                                            {{ $elegido !== '' && ! $clientes->contains('id', (int) $elegido)
+                                                ? 'El cliente '.$elegido.' no existe: elegí otro'
+                                                : '— Elegir cliente —' }}
+                                        </option>
+                                        @foreach ($clientes as $cliente)
+                                            <option value="{{ $cliente->id }}" @selected($elegido === (string) $cliente->id)>{{ $cliente->nombre }}</option>
                                         @endforeach
                                     </select>
                                 @elseif (in_array($tipo, [\App\Ajustes\Definicion\TipoAjuste::Entero, \App\Ajustes\Definicion\TipoAjuste::Decimal], true))

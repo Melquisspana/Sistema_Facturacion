@@ -7,6 +7,7 @@ use App\Enums\Cobros\EstadoVinculacionAlbaran;
 use App\Enums\Cobros\OrigenCobroDocumento;
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
+use App\Facades\Ajustes;
 use App\Models\Cliente;
 use App\Models\ClientePerfilDocumento;
 use App\Models\Cobros\CobroDocumento;
@@ -305,11 +306,29 @@ class PpqAvisosAlbaranTest extends TestCase
 
     public function test_seguimiento_explica_una_referencia_a_ccf_de_otro_cliente(): void
     {
+        $this->comprobarAc04DeCcfDeOtroCliente(fn () => config(['ppq.cliente_default_id' => $this->cliente->id]));
+    }
+
+    /**
+     * Con el cliente guardado en Configuración › Módulos › Pronto pago, manda ese y no el
+     * .env: el .env apunta al cliente del CCF (no habría motivo), lo guardado al otro.
+     */
+    public function test_la_ac04_usa_el_cliente_guardado_en_pantalla(): void
+    {
+        $this->comprobarAc04DeCcfDeOtroCliente(function (Cliente $delCcf) {
+            config(['ppq.cliente_default_id' => $delCcf->id]);
+            Ajustes::guardarComoSistema('ppq.cliente_default_id', $this->cliente->id);
+        });
+    }
+
+    private function comprobarAc04DeCcfDeOtroCliente(\Closure $clienteDelModulo): void
+    {
         $doc = $this->ccf();
         $otro = Cliente::factory()->create(['nombre' => 'Distribuidora El Bosque']);
         $this->dte('03', ['cliente_id' => $otro->id, 'numero_control' => 'DTE-03-M001P002-000000000004826',
             'numero_orden_compra' => '26110148008765']);
-        config(['ppq.cliente_default_id' => $this->cliente->id, 'dte.ambiente' => '01']);
+        $clienteDelModulo($otro);
+        config(['dte.ambiente' => '01']);
         $nota = $this->devolucion($doc, '31.87', ['numero_albaran' => 'AC04/0148/00/8427',
             'numero_orden_compra' => null, 'sala_codigo' => '0148', 'archivo_path' => 'ppq/albaranes/ac04-ficticia.pdf']);
         Storage::disk((string) config('dte.storage.disk', 'local'))->put($nota->archivo_path,
