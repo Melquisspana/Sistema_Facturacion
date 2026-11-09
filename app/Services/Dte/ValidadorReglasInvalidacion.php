@@ -113,7 +113,7 @@ class ValidadorReglasInvalidacion
             return [];
         }
 
-        // fhProcesamiento es hora LOCAL marcada como UTC: conservar el día tal cual.
+        // fhProcesamiento es hora local de Hacienda, la misma zona de la base: conservar el día tal cual.
         $fechaSello = $dte->fecha_procesamiento_mh->format('Y-m-d');
         $plazo = new PlazoInvalidacion;
         $limite = $plazo->limite($dte->tipo_dte, $fechaSello);

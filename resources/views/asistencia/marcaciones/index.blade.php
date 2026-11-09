@@ -6,9 +6,9 @@
      pantalla ya sabe distinguir los dos orígenes.
 
      LAS FECHAS SON DÍAS LOCALES. El filtro compara contra `fecha_local`, no
-     contra el instante en UTC: en El Salvador (UTC−6) una marcación de las 19:30
-     del día 5 se guarda como 01:30 UTC del día 6, y filtrar por el instante
-     desplazaría el turno de la tarde entero al día siguiente.
+     contra el instante `marcado_at`. El instante se guarda en hora de El Salvador
+     (`app.timezone`, issue #59), pero el día lo fija `fecha_local` al marcar:
+     filtrar por el instante haría depender el día de la zona de guardado.
 
      La cabecera muestra CONTEOS. No hay horas trabajadas ni tardanzas: necesitan
      horarios y los horarios no existen todavía. --}}

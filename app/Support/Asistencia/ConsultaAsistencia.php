@@ -29,10 +29,11 @@ use Illuminate\Support\Collection;
  * SIEMPRE sobre `fecha_local`, nunca sobre `marcado_at`. Dos razones y las dos
  * mandan:
  *
- *  1. CORRECCIÓN. En El Salvador (UTC−6) una marcación de las 19:30 del día 5 se
- *     guarda como 01:30 UTC del día 6. Filtrar por el instante la sacaría del día
- *     5 y la metería en el 6 — sin error, sin aviso, con el turno de la tarde
- *     entero desplazado.
+ *  1. CORRECCIÓN. `marcado_at` se guarda en hora de El Salvador (`app.timezone`,
+ *     issue #59); el día de la marcación lo fija `fecha_local` al marcar. Filtrar
+ *     por el instante haría depender el día de la zona de guardado: con otra
+ *     `app.timezone`, una marcación de las 19:30 del día 5 saldría del 5 y entraría
+ *     en el 6 — sin error, sin aviso, con el turno de la tarde entero desplazado.
  *  2. RENDIMIENTO. `fecha_local` está indexada, sola y junto al empleado.
  *     Convertir `marcado_at` a hora local dentro del `where` exigiría funciones de
  *     zona horaria que difieren entre MySQL y SQLite y que ningún índice puede
