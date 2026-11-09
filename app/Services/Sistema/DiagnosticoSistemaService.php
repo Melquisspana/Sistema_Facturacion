@@ -166,7 +166,7 @@ class DiagnosticoSistemaService
 
         return $this->check('notificaciones_respaldo', 'Avisos de respaldo', 'advertencia',
             'Notificaciones de backup no configuradas: si un respaldo falla, nadie recibe aviso. '
-            .'Definí BACKUP_NOTIFICACIONES_CORREO en el .env del servidor.');
+            .'Cargá el correo de aviso en Configuración › Sistema, o definí BACKUP_NOTIFICACIONES_CORREO en el .env del servidor.');
     }
 
     /**

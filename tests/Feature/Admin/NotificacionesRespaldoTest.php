@@ -2,14 +2,21 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Ajustes\Ajustes;
+use App\Ajustes\Correo\ConfiguracionCorreoRuntime;
 use App\Services\Sistema\DiagnosticoSistemaService;
 use App\Support\Sistema\NotificacionesRespaldo;
+use Exception;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Mockery;
+use RuntimeException;
 use Spatie\Backup\Config\Config as BackupConfig;
 use Spatie\Backup\Config\NotificationMailConfig;
+use Spatie\Backup\Events\CleanupHasFailed;
 use Spatie\Backup\Notifications\Notifiable as SpatieNotifiable;
 use Spatie\Backup\Notifications\Notifications\BackupHasFailedNotification;
 use Spatie\Backup\Notifications\Notifications\BackupWasSuccessfulNotification;
@@ -331,5 +338,147 @@ class NotificacionesRespaldoTest extends TestCase
         config(['backup.notifications.mail.to' => NotificacionesRespaldo::SIN_CONFIGURAR]);
 
         $this->assertNotSame('critico', $this->checkRespaldos()['nivel']);
+    }
+
+    /*
+    |---------------------------------------------------------------------------
+    | El correo de aviso guardado en Configuración › Sistema
+    |---------------------------------------------------------------------------
+    |
+    | config/backup.php se arma con el .env al arrancar. Lo guardado en pantalla se
+    | aplica al empezar cada comando de spatie, desde el evento CommandStarting.
+    */
+
+    /**
+     * Fuera de las pruebas, Laravel convierte los eventos de consola de Symfony en
+     * CommandStarting; en las pruebas no lo hace. Se enciende acá y se descarta la
+     * consola ya armada para que el próximo `artisan()` la arme con esos eventos.
+     */
+    private function conEventosDeConsola(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $kernel->rerouteSymfonyCommandEvents();
+        $kernel->setArtisan(null);
+    }
+
+    /** El estado del .env vacío: centinela y canales cerrados. */
+    private function envSinCorreo(): void
+    {
+        config([
+            'backup.notifications.mail.to' => NotificacionesRespaldo::destinatarioConfigurado(''),
+            'backup.notifications.notifications' => array_map(
+                fn () => NotificacionesRespaldo::canalesDeAviso(''),
+                config('backup.notifications.notifications')
+            ),
+        ]);
+        $this->recargarConfigDeSpatie();
+    }
+
+    /** Un .env con correo de aviso y el canal de la limpieza fallida abierto. */
+    private function envConCorreo(): void
+    {
+        config([
+            'backup.notifications.mail.to' => 'avisos-env@ejemplo.test',
+            'backup.notifications.notifications.'.CleanupHasFailedNotification::class => ['mail'],
+        ]);
+        $this->recargarConfigDeSpatie();
+    }
+
+    public function test_el_correo_guardado_en_pantalla_gana_al_env_vacio_en_los_comandos_de_respaldo(): void
+    {
+        $this->correoSmtp();
+        Storage::fake('local');
+        $this->envSinCorreo();
+        app(Ajustes::class)->guardarComoSistema('respaldos.notificaciones.correo', 'avisos-pantalla@ejemplo.test');
+        $this->conEventosDeConsola();
+
+        $this->artisan('backup:clean')->assertSuccessful();
+
+        $this->assertSame('avisos-pantalla@ejemplo.test', config('backup.notifications.mail.to'));
+        $this->assertSame('avisos-pantalla@ejemplo.test', (new SpatieNotifiable)->routeNotificationForMail());
+
+        $canales = config('backup.notifications.notifications');
+        $this->assertSame(['mail'], $canales[BackupHasFailedNotification::class]);
+        $this->assertSame(['mail'], $canales[UnhealthyBackupWasFoundNotification::class]);
+        $this->assertSame(['mail'], $canales[CleanupHasFailedNotification::class]);
+        // Los éxitos siguen sin correo.
+        $this->assertSame([], $canales[BackupWasSuccessfulNotification::class]);
+        $this->assertSame([], $canales[HealthyBackupWasFoundNotification::class]);
+        $this->assertSame([], $canales[CleanupWasSuccessfulNotification::class]);
+        Notification::assertNotSentTo(new SpatieNotifiable, CleanupWasSuccessfulNotification::class);
+
+        // Y una incidencia sale por correo.
+        event(new CleanupHasFailed(new Exception('Disco de respaldos lleno (prueba).')));
+
+        Notification::assertSentTo(
+            new SpatieNotifiable,
+            CleanupHasFailedNotification::class,
+            fn ($notificacion, array $canales) => $canales === ['mail'],
+        );
+
+        // El diagnóstico también lo ve.
+        $this->assertSame(['avisos-pantalla@ejemplo.test'], NotificacionesRespaldo::destinatarios());
+    }
+
+    public function test_sin_nada_guardado_los_comandos_de_respaldo_quedan_como_antes(): void
+    {
+        $this->correoSmtp();
+        Storage::fake('local');
+        $this->envSinCorreo();
+        $antes = config('backup.notifications');
+        $this->conEventosDeConsola();
+
+        $this->artisan('backup:clean')->assertSuccessful();
+
+        $this->assertSame($antes, config('backup.notifications'));
+
+        event(new CleanupHasFailed(new Exception('Disco de respaldos lleno (prueba).')));
+        Notification::assertNothingSent();
+        Mail::assertNothingSent();
+    }
+
+    public function test_sin_nada_guardado_el_correo_del_env_se_respeta(): void
+    {
+        $this->correoSmtp();
+        Storage::fake('local');
+        $this->envConCorreo();
+        $this->conEventosDeConsola();
+
+        $this->artisan('backup:clean')->assertSuccessful();
+
+        $this->assertSame('avisos-env@ejemplo.test', config('backup.notifications.mail.to'));
+        $this->assertSame(['mail'], config('backup.notifications.notifications.'.CleanupHasFailedNotification::class));
+    }
+
+    /** Sin base, el aviso de un respaldo fallido tiene que poder salir igual con el .env. */
+    public function test_si_la_base_no_responde_el_respaldo_corre_con_el_env(): void
+    {
+        $this->correoSmtp();
+        Storage::fake('local');
+        $this->envConCorreo();
+
+        $sinBase = Mockery::mock(Ajustes::class);
+        $sinBase->shouldReceive('resolver', 'get', 'texto', 'secretoParaRuntime')
+            ->andThrow(new RuntimeException('Connection refused (prueba)'));
+        $this->app->instance(Ajustes::class, $sinBase);
+        $this->app->forgetInstance(ConfiguracionCorreoRuntime::class);
+        $this->conEventosDeConsola();
+
+        $this->artisan('backup:clean')->assertSuccessful();
+
+        $this->assertSame('avisos-env@ejemplo.test', config('backup.notifications.mail.to'));
+        $this->assertSame(['mail'], config('backup.notifications.notifications.'.CleanupHasFailedNotification::class));
+    }
+
+    /** Un comando que no es de spatie no toca la configuración de respaldos. */
+    public function test_otros_comandos_no_aplican_el_correo_guardado(): void
+    {
+        $this->envSinCorreo();
+        app(Ajustes::class)->guardarComoSistema('respaldos.notificaciones.correo', 'avisos-pantalla@ejemplo.test');
+        $this->conEventosDeConsola();
+
+        $this->artisan('about', ['--only' => 'environment'])->assertSuccessful();
+
+        $this->assertSame(NotificacionesRespaldo::SIN_CONFIGURAR, config('backup.notifications.mail.to'));
     }
 }

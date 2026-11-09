@@ -254,7 +254,9 @@ return [
         'mail' => [
             /*
              * Destinatario de los avisos de respaldo. Se configura con
-             * BACKUP_NOTIFICACIONES_CORREO en el .env del entorno.
+             * BACKUP_NOTIFICACIONES_CORREO en el .env del entorno; lo guardado en
+             * Configuración › Sistema gana al ejecutar los comandos de respaldo (ver
+             * NotificacionesRespaldo::aplicar()).
              *
              * El default NO es un correo real: es el centinela de
              * NotificacionesRespaldo, con formato válido (spatie

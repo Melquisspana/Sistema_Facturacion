@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Gastos;
 
+use App\Ajustes\Ajustes;
 use App\Enums\PermisoSistema;
 use App\Mail\Gastos\ResumenGastosCorreo;
 use App\Models\Gastos\Aviso;
@@ -551,5 +552,29 @@ class AvisosTest extends TestCase
 
         $this->assertSame(1, Aviso::count());
         Mail::assertNothingSent();
+    }
+
+    /** El resumen sale por el servidor de correo guardado en Configuración, no por el del .env. */
+    public function test_el_resumen_sale_por_el_servidor_de_correo_guardado_en_pantalla(): void
+    {
+        Mail::fake();
+        config(['mail.mailers.smtp.host' => 'smtp.delenv.test']);
+        app(Ajustes::class)->guardarComoSistema('mail.smtp.host', 'smtp.pantalla.test');
+
+        $u = $this->operador();
+        $this->preferencias($u, ['correo' => true, 'resumen' => 'diario']);
+        $this->gasto($u, [], [['100.00', '2026-03-01']]);
+        $this->app->instance(CandadoCorreoReal::class, new class extends CandadoCorreoReal
+        {
+            public function debeSimular(): bool
+            {
+                return false;
+            }
+        });
+
+        $resultado = $this->enviar('2026-03-10');
+
+        $this->assertSame(1, $resultado['enviados']);
+        $this->assertSame('smtp.pantalla.test', config('mail.mailers.smtp.host'));
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Ajustes\Ajustes;
 use App\Models\RespaldoEjecucion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -203,7 +204,8 @@ class BackupMysqlDiarioCommand extends Command
     /** Borra SOLO backups/{prefijo}*.sql vencidos; nunca toca archivos sin ese prefijo. */
     private function aplicarRetencion(string $prefijo): int
     {
-        $dias = (int) config('backup_diario.dias_retencion', 30);
+        // Lo guardado en Configuración gana al .env, como en el resto de los ajustes.
+        $dias = (int) app(Ajustes::class)->entero('respaldos.dias_retencion', 30);
         $limite = Carbon::now(config('app.timezone'))->subDays($dias);
         $disco = Storage::disk('backups');
         $eliminados = 0;
