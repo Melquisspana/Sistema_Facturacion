@@ -231,6 +231,44 @@ class CobrosBarridoBuzonTest extends TestCase
         $this->assertGreaterThan(0, $segunda['ya_conocidos']);
     }
 
+    /**
+     * Issue #13: la tarea estuvo parada más de 36 horas y entraron más correos que el límite
+     * de 50. Antes la cabeza saltaba a lo más nuevo y lo que no cupo quedaba debajo de su
+     * ventana para siempre: con el buzón ya recorrido, la cola tampoco mira ahí.
+     */
+    public function test_un_atraso_de_mas_de_36_horas_con_mas_de_50_correos_no_pierde_ninguno(): void
+    {
+        $cliente = $this->cliente();
+        $gmail = new GmailClientDeBuzon($this->buzon(30, 'viejo', Carbon::parse('2026-09-10 12:00:00')));
+        $barrido = new BarridoCorreosCobro($gmail);
+        $lector = app(LectorCorreosCobro::class);
+        $corrida = function () use ($barrido, $lector, $cliente): array {
+            $tanda = $barrido->prepararTanda($cliente, 'consulta', 50);
+            $lector->procesar($cliente, $tanda['mensajes']);
+
+            return [$tanda, $barrido->confirmarAvance($cliente, 'consulta', $tanda)];
+        };
+
+        [, $progreso] = $corrida();
+        $this->assertTrue($progreso->barrido_completo, 'El buzón de antes quedó recorrido entero.');
+
+        // Cinco días sin correr: 120 correos nuevos, uno por hora.
+        foreach ($this->buzon(120, 'nuevo') as $mensaje) {
+            $gmail->recibir($mensaje);
+        }
+        $cuerposAntes = $gmail->cuerposBajados;
+
+        $corridas = 0;
+        do {
+            [$tanda] = $corrida();
+            $corridas++;
+        } while ($tanda['mensajes'] !== [] && $corridas < 10);
+
+        $this->assertSame(150, CobroCorreo::count(), 'Los 120 nuevos, ni uno perdido.');
+        $this->assertSame(120, $gmail->cuerposBajados - $cuerposAntes, 'Cada correo se bajó una sola vez.');
+        $this->assertSame(4, $corridas, 'Tres tandas de hasta 50 y una que ya no trae nada.');
+    }
+
     // ------------------------------------------- interrupciones
 
     /**
