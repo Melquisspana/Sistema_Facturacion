@@ -528,6 +528,8 @@ Configuración                  ← barra superior, en cualquier área (permiso 
 │   ├── Correo y servidor      ← SMTP + documentos fiscales + contabilidad
 │   └── Contabilidad
 ├── Integraciones              ← Gmail, buzón de compras, segundo buzón, lectores de huella
+├── Producción                 ← atajos a los catálogos de planta (planta.catalogos.ver; viven en su módulo)
+├── Gastos                     ← atajo a «Gastos que se repiten» (gastos.ver; vive en su módulo)
 ├── Sistema
 │   ├── Respaldos y estado
 │   └── Salud del sistema      ← permiso sistema.salud

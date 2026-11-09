@@ -7,7 +7,7 @@ use App\Models\Asistencia\AsistenciaEmpleado;
 use App\Services\Asistencia\HoraOficial;
 
 /**
- * La pantalla «Hoy» de Asistencia. SOLO LECTURA.
+ * La pantalla «Marcas de hoy» de Asistencia. SOLO LECTURA.
  *
  * «El día» es el de la hora de negocio (HoraOficial, America/El_Salvador), nunca la
  * fecha UTC: a las 23:30 locales ya es mañana en UTC y la gente seguiría marcando hoy.

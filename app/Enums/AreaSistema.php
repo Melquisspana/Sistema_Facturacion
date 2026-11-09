@@ -65,7 +65,7 @@ enum AreaSistema: string
      * Casi todas las áreas tienen UNA. «Personal» tiene TRES —Asistencia, Planilla y las
      * fichas de Personal—, y eso obliga a razonar por puerta y no por área:
      *
-     *  - Quien solo tiene `asistencia.ver` entra y aterriza en Hoy. No ve una sola fila de
+     *  - Quien solo tiene `asistencia.ver` entra y aterriza en «Marcas de hoy». No ve una sola fila de
      *    Planilla.
      *  - Quien solo tiene `planilla.ver` —sin `asistencia.ver`— **también entra**, y aterriza
      *    en Planillas.
