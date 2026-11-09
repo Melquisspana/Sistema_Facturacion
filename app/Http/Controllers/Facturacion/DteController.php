@@ -729,7 +729,9 @@ class DteController extends Controller
     ): View {
         $this->authorize('view', $dte);
 
-        $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios']);
+        $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios',
+            // «Viene del pedido N» (los envíos de la fábrica que se facturaron acá).
+            'enviosPedido' => fn ($q) => $q->vigentes()->orderBy('numero'), 'enviosPedido.pedido']);
 
         // Solo para precisar la nota de retención en los totales (no recalcula nada).
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
@@ -1766,7 +1768,12 @@ class DteController extends Controller
         // Orden de compra con otra forma o sala sin código: aviso con «Generar igual».
         $avisosOc = ReglaOrdenCompra::avisos($dte);
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'catalogosAduaneros', 'datosReceptor'));
+        // Si salió de «Facturar» un pedido: «Viene del pedido N» y un aviso SUAVE de lo que
+        // pasa de lo que llegó de la fábrica o no vino. NO frena la emisión.
+        $dte->load(['enviosPedido' => fn ($q) => $q->vigentes()->orderBy('numero'), 'enviosPedido.pedido']);
+        $avisosPedido = app(FacturarPedido::class)->avisosDelCcf($dte);
+
+        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
     }
 
     /**

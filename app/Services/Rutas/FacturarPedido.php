@@ -42,6 +42,9 @@ class FacturarPedido
 
     public const NADA = 'Todavía no llegó nada de la fábrica para este pedido.';
 
+    /** Lo que llegó después de crear el borrador va en ese mismo CCF, no en otro con la misma OC. */
+    public const BORRADOR_ABIERTO = 'Este pedido ya tiene un borrador abierto. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo lo que llegó.';
+
     public function __construct(
         private readonly DteBorradorService $borradores,
         private readonly PrecioProductoResolver $precios,
@@ -99,6 +102,9 @@ class FacturarPedido
             }
             if (! $pedido->estaVigente()) {
                 throw ValidationException::withMessages(['pedido' => PedidosFabrica::ANULADO]);
+            }
+            if ($this->borradorAbierto($pedido) !== null) {
+                throw ValidationException::withMessages(['pedido' => self::BORRADOR_ABIERTO]);
             }
 
             $envios->load('lineas.linea.producto');
@@ -171,6 +177,41 @@ class FacturarPedido
         }
 
         return array_map(fn (array $p) => $p + ['regresa' => bcsub($p['llego'], $p['facturado'], 4)], $porProducto);
+    }
+
+    /**
+     * Aviso SUAVE del editor (no frena la emisión): en un CCF que salió de envíos de la
+     * fábrica, los productos que pasan de lo que llegó o que no vinieron. Vacío si el CCF
+     * no viene de ningún pedido.
+     *
+     * @return list<string>
+     */
+    public function avisosDelCcf(Dte $dte): array
+    {
+        $envios = $dte->enviosPedido()->vigentes()->with('lineas.linea:id,producto_id')->get();
+        if ($envios->isEmpty()) {
+            return [];
+        }
+
+        $llego = [];
+        foreach ($envios as $envio) {
+            foreach ($envio->lineas as $l) {
+                $id = $l->linea->producto_id;
+                $llego[$id] = bcadd($llego[$id] ?? '0', (string) $l->cantidad, 4);
+            }
+        }
+
+        $avisos = [];
+        foreach ($dte->lineas()->whereNotNull('producto_id')->orderBy('numero_linea')->get(['producto_id', 'descripcion', 'cantidad']) as $l) {
+            $vino = $llego[$l->producto_id] ?? null;
+            if ($vino === null) {
+                $avisos[] = $l->descripcion.' no vino de la fábrica en este pedido.';
+            } elseif (bccomp((string) $l->cantidad, $vino, 4) > 0) {
+                $avisos[] = $l->descripcion.': van '.PedidoSalaLinea::legible((string) $l->cantidad).' y llegaron '.PedidoSalaLinea::legible($vino).'.';
+            }
+        }
+
+        return $avisos;
     }
 
     /**

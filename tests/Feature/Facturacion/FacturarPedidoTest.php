@@ -389,4 +389,137 @@ class FacturarPedidoTest extends TestCase
         $this->assertNull($estado['borrador']);
         $this->assertSame([Dte::sole()->id], $estado['facturados']->modelKeys());
     }
+
+    private function botonApagado(string $html): bool
+    {
+        preg_match_all('/<button\b[^>]*>/', $html, $botones);
+        $boton = collect($botones[0])->first(fn (string $b) => str_contains($b, 'id="crear-borrador"'));
+        $this->assertNotNull($boton, 'Falta el botón «Crear borrador».');
+
+        return (bool) preg_match('/\sdisabled(\s|=|>)/', $boton);
+    }
+
+    public function test_el_formulario_con_el_pedido_muestra_lo_que_llego_y_manda_a_facturar(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10', $this->quesadilla->id => '3'], '26119001000123');
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->envio($pedido, [$this->galleta->id => '4', $this->quesadilla->id => '3']);
+
+        $respuesta = $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk();
+
+        $respuesta->assertSee('action="'.route('facturacion.pedidos.facturar', $pedido).'"', false)
+            ->assertDontSee('action="'.route('facturacion.store-ccf').'"', false)
+            // La sala va fija: sin buscador de cliente.
+            ->assertDontSee('id="cliente_buscar"', false)
+            ->assertSee('Sala de prueba Norte')
+            ->assertSee('value="26119001000123"', false)
+            ->assertSee('Lo que llegó')
+            ->assertSeeInOrder(['Galleta de prueba', '10', 'Quesadilla de prueba', '3'])
+            ->assertSee('Envío 1 · 08/11/2026')
+            ->assertSee('Envío 2 · 09/11/2026')
+            ->assertSee('Crear borrador');
+        $this->assertFalse($this->botonApagado($respuesta->getContent()));
+
+        // Lo que se escribió y volvió con error manda sobre la OC del pedido.
+        $this->withSession(['_old_input' => ['numero_orden_compra' => '26119001000999']])
+            ->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))
+            ->assertSee('value="26119001000999"', false)
+            ->assertDontSee('value="26119001000123"', false);
+    }
+
+    public function test_el_formulario_muestra_lo_que_frena_y_apaga_el_boton(): void
+    {
+        $sinPrecio = Producto::factory()->create(['nombre' => 'Turrón de prueba', 'precio_unitario' => 0]);
+        $pedido = $this->pedido([$this->galleta->id => '3', $sinPrecio->id => '1']);
+        $this->envio($pedido, [$this->galleta->id => '2.5000', $sinPrecio->id => '1']);
+
+        $respuesta = $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
+            ->assertSee('Turrón de prueba no tiene precio para esta sala.')
+            ->assertSee('Galleta de prueba llegó con decimales (2.5): el CCF solo lleva cantidades enteras.');
+        $this->assertTrue($this->botonApagado($respuesta->getContent()));
+
+        // Sin nada por facturar, también apagado.
+        $vacio = $this->pedido([$this->galleta->id => '3']);
+        $respuesta = $this->get(route('facturacion.create-ccf', ['pedido' => $vacio->id]))->assertOk()
+            ->assertSee('No queda nada por facturar de este pedido.');
+        $this->assertTrue($this->botonApagado($respuesta->getContent()));
+    }
+
+    public function test_sin_pedido_el_formulario_del_ccf_queda_igual(): void
+    {
+        $this->get(route('facturacion.create-ccf'))->assertOk()
+            ->assertSee('action="'.route('facturacion.store-ccf').'"', false)
+            ->assertSee('id="cliente_buscar"', false)
+            ->assertSee('Crear CCF')
+            ->assertDontSee('Lo que llegó')
+            ->assertDontSee('crear-borrador');
+    }
+
+    public function test_con_un_borrador_abierto_lo_que_llega_despues_no_hace_otro_ccf(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+        $borrador = Dte::sole();
+        $this->envio($pedido, [$this->galleta->id => '4']);
+
+        // El formulario lo avisa con el enlace al borrador y no deja crear otro.
+        $respuesta = $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
+            ->assertSee(FacturarPedido::BORRADOR_ABIERTO)
+            ->assertSee(route('facturacion.edit', $borrador), false);
+        $this->assertTrue($this->botonApagado($respuesta->getContent()));
+
+        // El servidor tampoco: dos CCF con la misma OC confunden la entrega y Cobros.
+        $this->post(route('facturacion.pedidos.facturar', $pedido))
+            ->assertSessionHasErrors(['pedido' => FacturarPedido::BORRADOR_ABIERTO]);
+        $this->assertSame(1, Dte::withTrashed()->count());
+
+        // Borrado el borrador, sale un solo CCF con los dos envíos.
+        $borrador->delete();
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+        $this->assertEquals([$this->galleta->id => 10.0], $this->cantidades(Dte::sole()));
+    }
+
+    public function test_el_editor_avisa_si_un_producto_pasa_de_lo_que_llego_o_no_vino_sin_frenar(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->envio($pedido, [$this->galleta->id => '4']);
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+        $dte = Dte::sole();
+
+        $this->get(route('facturacion.edit', $dte))->assertOk()
+            ->assertSee('Viene del pedido N.º '.$pedido->id)
+            ->assertSee(route('rutas.pedidos.show', $pedido), false)
+            ->assertDontSee('Revisá contra lo que llegó de la fábrica');
+
+        $this->post(route('facturacion.productos.cantidad', [$dte, $this->galleta]), ['cantidad' => 12])->assertSessionHasNoErrors();
+        $this->post(route('facturacion.productos.cantidad', [$dte, $this->canilla]), ['cantidad' => 2])->assertSessionHasNoErrors();
+
+        $this->get(route('facturacion.edit', $dte))->assertOk()
+            ->assertSee('Revisá contra lo que llegó de la fábrica')
+            ->assertSee('Galleta de prueba: van 12 y llegaron 10.')
+            ->assertSee('Canilla de prueba no vino de la fábrica en este pedido.');
+
+        // Un CCF hecho por «Nuevo CCF» no dice nada de pedidos.
+        $this->post(route('facturacion.store-ccf'), ['tipo_dte' => '03', 'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $this->sala->id])
+            ->assertSessionHasNoErrors();
+        $suelto = Dte::latest('id')->first();
+        $this->assertNotSame($dte->id, $suelto->id);
+        $this->get(route('facturacion.edit', $suelto))->assertOk()
+            ->assertDontSee('Viene del pedido')
+            ->assertDontSee('Revisá contra lo que llegó de la fábrica');
+    }
+
+    public function test_la_ficha_del_ccf_dice_de_que_pedido_viene(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->envio($pedido, [$this->galleta->id => '4']);
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+
+        $this->get(route('facturacion.show', Dte::sole()))->assertOk()
+            ->assertSee('Viene del pedido N.º '.$pedido->id.' (envíos 1 y 2)')
+            ->assertSee(route('rutas.pedidos.show', $pedido), false);
+    }
 }
