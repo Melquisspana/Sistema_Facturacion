@@ -236,19 +236,24 @@ final class PrepararPlanilla
      */
     private function liberarAnuladas(User $usuario, string $tipo, string $clase, array $periodo): void
     {
-        // También las que ya dejaron el lugar. Por la clave única, que en MySQL bloquea
-        // solo esas filas y no la tabla entera.
-        $anuladas = Planilla::where('tipo_periodo', $tipo)
+        // También las que ya dejaron el lugar. Primero SIN candado: casi nunca hay una, y en
+        // MySQL un candado sobre filas que no existen toma un hueco del índice que dos
+        // generaciones a la vez comparten; al insertar, cada una espera a la otra y MySQL
+        // corta una (bloqueo mutuo) con un error 500 en vez del mensaje de {@see abrir()}.
+        $ids = Planilla::where('tipo_periodo', $tipo)
             ->where(fn ($q) => $q->where('periodo', $periodo['periodo'])->orWhere('periodo', 'like', $periodo['periodo'].'-A%'))
             ->where('clase', $clase)
             ->where('individual_de', 0)
             ->where('estado', 'anulada')
-            ->lockForUpdate()
-            ->get();
+            ->pluck('id');
 
-        if ($anuladas->isEmpty()) {
+        if ($ids->isEmpty()) {
             return;
         }
+
+        // Por id: bloquea solo esas filas. Releídas con el candado, por si otra pantalla
+        // acaba de dejar libre o de borrar alguna.
+        $anuladas = Planilla::whereKey($ids)->where('estado', 'anulada')->lockForUpdate()->get();
 
         $gastos = DB::table('planilla_detalles')->whereIn('planilla_id', $anuladas->modelKeys())->whereNotNull('gasto_id')->pluck('gasto_id')
             ->merge(DB::table('planilla_obligaciones_terceros')->whereIn('planilla_id', $anuladas->modelKeys())->whereNotNull('gasto_id')->pluck('gasto_id'));

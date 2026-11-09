@@ -21,6 +21,9 @@ use App\Services\Planilla\PagarPlanilla;
 use App\Services\Planilla\PrepararPlanilla;
 use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Grammars\SQLiteGrammar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -377,5 +380,38 @@ class GenerarYBorrarPlanillaTest extends TestCase
         // Nada cambió: la anulada sigue en su lugar y no hay otra.
         $this->assertSame(1, Planilla::count());
         $this->assertSame('2026-10-Q1', $anulada->fresh()->getRawOriginal('periodo'));
+    }
+
+    public function test_generar_no_bloquea_planillas_por_periodo_sino_por_id(): void
+    {
+        // En MySQL, un candado por período sobre filas que todavía no existen toma un hueco
+        // del índice que dos generaciones simultáneas comparten: al insertar, cada una espera
+        // a la otra y MySQL corta una con un error 500. SQLite no tiene candados y Laravel no
+        // los escribe; con esta gramática quedan a la vista en la consulta.
+        if (DB::getDriverName() === 'sqlite') {
+            DB::connection()->setQueryGrammar(new class(DB::connection()) extends SQLiteGrammar
+            {
+                protected function compileLock(Builder $query, $value): string
+                {
+                    return $value === true ? '/* for update */' : '';
+                }
+            });
+        }
+
+        $candados = [];
+        DB::listen(function (QueryExecuted $consulta) use (&$candados) {
+            if (str_contains($consulta->sql, 'for update')) {
+                $candados[] = $consulta->sql;
+            }
+        });
+
+        // La primera vez, sin anuladas; después, con una anulada que deja su lugar.
+        $anulada = $this->generar('2026-10-01');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+        $this->generar('2026-10-01');
+
+        $this->assertNotEmpty($candados, 'La prueba tiene que ver los candados.');
+        $this->assertSame([], array_values(array_filter($candados,
+            fn (string $sql) => str_contains($sql, 'planillas') && str_contains($sql, 'periodo'))));
     }
 }
