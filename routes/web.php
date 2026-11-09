@@ -562,7 +562,7 @@ Route::middleware('auth')->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | Cobros Calleja — seguimiento de factura a pago
+    | Cobros de supermercados — seguimiento de factura a pago
     |--------------------------------------------------------------------------
     | La bandeja PRINCIPAL del cobro: cada factura desde que Hacienda la acepta hasta
     | que el cliente la paga, incluidas las que nunca se presentaron. Rutas sigue

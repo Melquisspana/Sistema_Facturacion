@@ -46,12 +46,12 @@ Cada arreglo tiene su prueba, que se escribió antes y falló antes del cambio. 
 |---|---|---|
 | H1 | #40, #58 | Va con la sesión de Hacienda; pendiente en MH. |
 | H2 | #119, #129 | FE y FEX al contado ya mandan pagos (aceptado en apitest). En el CCF a crédito se vuelve al formato anterior, con código y montoPago = total, más plazo y período: con `codigo` null y monto 0.00 el MH lo recibía con observación 002 «Forma de pago difiere del Total a Pagar» (apitest, 24/10/2026). |
-| H3 | #120 | El PDF y el evento de invalidación leen el JSON emitido. Si el dato actual coincide, el PDF sale igual que antes. El correo se sigue enviando a la dirección actual. Pendiente en MH: invalidar una FE vieja con NIT con guiones. |
+| H3 | #120 | El PDF y el evento de invalidación leen el JSON emitido. Si el dato actual coincide, el PDF sale igual que antes. El correo se sigue enviando a la dirección actual. Aceptado en apitest el 24/10/2026: la invalidación de una FE emitida con NIT con guiones recibió sello (va con tipo 36 y solo dígitos). |
 | H4 | #125 | Migración aditiva `dtes.ejercicio` y reinicio con el correlativo bloqueado. **No se despliega sin #121** (Cobros, Rutas y PPQ por número de control + ejercicio). Va al servidor antes del 31/12. |
 | H5 | #119 | — |
 | H6 | #119 | — |
 | H7 | #123 | Decisión de Melqui: no bloquear. Se avisa y se pide un motivo obligatorio, que queda en la auditoría. |
-| H8 | #124 | La prueba mostró el hueco: 2.32 contra 2.40 con 20 líneas de $1.01. En las FE nuevas la base gravada puede variar unos centavos. Pendiente en MH: FE de muchas líneas con descuento global. |
+| H8 | #124 | La prueba mostró el hueco: 2.32 contra 2.40 con 20 líneas de $1.01. En las FE nuevas la base gravada puede variar unos centavos. Aceptado en apitest el 24/10/2026 después de #128: el primer intento se rechazó con 003 «totalGravada difiere de sumatoria de items»; con #128 se recibió con sello y totalIva coincide. |
 | H9 | #123 | — |
 | H10 | #123 | Decisión: bloquear la FEX de servicios (se exportan bienes). |
 | H11 | #124 | `php artisan dte:catalogos --verificar`, de solo lectura. En producción lo corre la sesión de Hacienda dentro del paquete final. |

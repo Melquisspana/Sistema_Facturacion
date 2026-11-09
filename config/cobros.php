@@ -3,7 +3,7 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Cobros Calleja — seguimiento de factura a pago
+    | Cobros de supermercados — seguimiento de factura a pago
     |--------------------------------------------------------------------------
     | Este módulo NO emite, NO firma, NO transmite y NO recalcula ningún valor
     | fiscal: lee documentos ya aceptados por Hacienda y sigue su cobro.

@@ -20,6 +20,7 @@ use App\Services\Cobros\AltaCobrosService;
 use App\Services\Cobros\AplicadorPagosTxt;
 use App\Services\Cobros\ImportadorEnviadosService;
 use App\Services\Cobros\LectorCorreosCobro;
+use App\Services\Cobros\PendientesDelTxt;
 use App\Services\Cobros\ReporteCasoCalleja;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\ArchivoConciliacion;
@@ -31,6 +32,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -354,6 +356,74 @@ class CobrosNumeroEntreEjerciciosTest extends TestCase
         $this->assertSame(EstadoPagoCobro::Pendiente, $documento->refresh()->pago_estado);
     }
 
+    // ------------------------------------------------------------------ pendientes del TXT
+
+    private function loteConRenglon(Cliente $cliente, string $referencia, string $fecha, string $tipo = '03', string $numero = self::NUMERO): PpqLote
+    {
+        $lote = PpqLote::create(['cliente_id' => $cliente->id, 'referencia' => $referencia, 'fecha' => $fecha, 'estado' => 'listo']);
+        $lote->items()->create(['origen' => 'gmail', 'tipo_dte' => $tipo, 'numero_control' => $numero,
+            'fecha_documento' => $fecha, 'monto_dte' => 100, 'sin_albaran' => true]);
+
+        return $lote;
+    }
+
+    /** @return array<int, int> id del lote => id del documento de cada CCF no pagado */
+    private function noPagados(Cliente $cliente, PpqLote ...$lotes): array
+    {
+        return collect(app(PendientesDelTxt::class)->analizar($cliente, collect($lotes))['no_pagados'])
+            ->mapWithKeys(fn ($e) => [$e['lote']->id => $e['documento']->id])->all();
+    }
+
+    public function test_los_pendientes_del_txt_cruzan_cada_renglon_con_el_ccf_de_su_ejercicio(): void
+    {
+        $cliente = $this->cliente();
+        $de2026 = $this->externo($cliente, '2026-12-20');
+        $de2027 = $this->externo($cliente, '2027-01-15');
+        $dic = $this->loteConRenglon($cliente, 'PPQ dic', '2026-12-20');
+        $ene = $this->loteConRenglon($cliente, 'PPQ ene', '2027-01-15');
+
+        // Ninguno desaparece por compartir número: cada uno con el suyo.
+        $this->assertEquals([$dic->id => $de2026->id, $ene->id => $de2027->id], $this->noPagados($cliente, $dic, $ene));
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function unSoloEjercicioEnElSeguimiento(): array
+    {
+        return [
+            'solo el de 2026' => ['2026-12-20', '2027-01-15'],
+            'solo el de 2027' => ['2027-01-15', '2026-12-20'],
+        ];
+    }
+
+    #[DataProvider('unSoloEjercicioEnElSeguimiento')]
+    public function test_los_pendientes_del_txt_no_toman_el_ccf_del_otro_ejercicio(string $existe, string $otro): void
+    {
+        $cliente = $this->cliente();
+        $documento = $this->externo($cliente, $existe);
+        $suyo = $this->loteConRenglon($cliente, 'PPQ suyo', $existe);
+        $ajeno = $this->loteConRenglon($cliente, 'PPQ ajeno', $otro);
+
+        $this->assertEquals([$suyo->id => $documento->id], $this->noPagados($cliente, $suyo, $ajeno),
+            'El renglón del otro ejercicio no devuelve ni marca este CCF.');
+    }
+
+    public function test_las_nc_no_descontadas_se_cruzan_con_la_nc_de_su_ejercicio(): void
+    {
+        $cliente = $this->cliente();
+        $numeroNc = 'DTE-05-M001P002-000000000000015';
+        $nc2026 = $this->dteVerificableCobros($cliente, $numeroNc, '2026-12-20', '5.00', '05');
+        $nc2026->forceFill(['ejercicio' => 2026])->save();
+        $nc2027 = $this->dteVerificableCobros($cliente, $numeroNc, '2027-01-15', '5.00', '05');
+        $nc2027->forceFill(['ejercicio' => 2027])->save();
+        $dic = $this->loteConRenglon($cliente, 'PPQ dic', '2026-12-20', '05', $numeroNc);
+        $ene = $this->loteConRenglon($cliente, 'PPQ ene', '2027-01-15', '05', $numeroNc);
+
+        $nc = collect(app(PendientesDelTxt::class)->analizar($cliente, collect([$dic, $ene]))['nc_no_descontadas'])
+            ->mapWithKeys(fn ($e) => [$e['lote']->id => $e['item']->dte->id])->all();
+
+        $this->assertEquals([$dic->id => $nc2026->id, $ene->id => $nc2027->id], $nc);
+    }
+
     // ------------------------------------------------------------------ importación de enviados
 
     public function test_importar_un_enviado_de_2027_no_completa_el_documento_de_2026(): void
@@ -378,6 +448,28 @@ class CobrosNumeroEntreEjerciciosTest extends TestCase
         $nuevo = CobroDocumento::where('codigo_generacion', $codigo)->firstOrFail();
         $this->assertSame(2027, $nuevo->ejercicio_control);
         $this->assertNotSame($de2026->id, $nuevo->id);
+    }
+
+    public function test_importar_el_mismo_numero_de_2026_y_2027_en_una_corrida_trae_los_dos(): void
+    {
+        $cliente = $this->cliente();
+        $adjuntos = [];
+        foreach (['m1' => '2026-12-20', 'm2' => '2027-01-15'] as $mensaje => $fecha) {
+            $codigo = strtoupper(Str::uuid()->toString());
+            $json = [
+                'identificacion' => ['numeroControl' => self::NUMERO, 'codigoGeneracion' => $codigo, 'tipoDte' => '03', 'fecEmi' => $fecha],
+                'resumen' => ['totalPagar' => 100.0],
+                'receptor' => ['nit' => self::NIT, 'nombre' => 'Calleja'],
+                'selloRecibido' => 'SELLO'.$codigo,
+            ];
+            $adjuntos[$mensaje] = [['filename' => 'dte.json', 'mime' => 'application/json', 'data' => json_encode($json)]];
+        }
+        $this->app->instance(GmailClient::class, new GmailClientDeImportacion([array_keys($adjuntos)], $adjuntos));
+
+        $r = app(ImportadorEnviadosService::class)->importar($cliente, Carbon::parse('2026-12-01'), Carbon::parse('2027-01-31'), 100, true);
+
+        $this->assertSame([], $r->excepciones, 'Entre ejercicios el mismo número no es un conflicto.');
+        $this->assertEqualsCanonicalizing([2026, 2027], CobroDocumento::where('numero_control_norm', self::NUMERO_TXT)->pluck('ejercicio_control')->all());
     }
 
     // ------------------------------------------------------------------ correos

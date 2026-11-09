@@ -65,7 +65,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 /**
- * COBROS CALLEJA: la bandeja donde se ve cada factura desde que Hacienda la acepta hasta
+ * COBROS DE SUPERMERCADOS: la bandeja donde se ve cada factura desde que Hacienda la acepta hasta
  * que el cliente la paga, incluidas las que nunca se presentaron.
  *
  * Es la pantalla PRINCIPAL del cobro. Rutas sigue existiendo y sigue mostrando documentos,

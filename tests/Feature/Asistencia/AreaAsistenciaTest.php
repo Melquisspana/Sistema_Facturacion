@@ -163,6 +163,22 @@ class AreaAsistenciaTest extends TestCase
         $respuesta->assertDontSee('Jornadas</a>', escape: false);
     }
 
+    /** La pantalla de entrada se llama «Marcas de hoy» en el menú y en su encabezado. */
+    public function test_la_pantalla_de_entrada_se_llama_marcas_de_hoy(): void
+    {
+        $html = $this->actingAs($this->admin())->get(route('asistencia.dashboard'))->assertOk()->getContent();
+
+        // Menú: el enlace a la pantalla dice «Marcas de hoy».
+        $this->assertMatchesRegularExpression(
+            '/href="'.preg_quote(route('asistencia.dashboard'), '/').'"[^>]*>\s*Marcas de hoy\s*<\/a>/',
+            $html,
+        );
+        // Encabezado de la pantalla.
+        $this->assertStringContainsString('Marcas de hoy</h2>', $html);
+        // Y «Hoy» suelto ya no aparece como texto de enlace ni de título.
+        $this->assertDoesNotMatchRegularExpression('/>\s*Hoy\s*</', $html);
+    }
+
     /**
      * Quien no administra lectores no ve su enlace. Ocultar no autoriza —el
      * middleware sigue mandando— pero ofrecer una puerta que devuelve 403 es peor

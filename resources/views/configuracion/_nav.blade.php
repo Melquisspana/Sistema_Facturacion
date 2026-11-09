@@ -89,6 +89,34 @@
         ],
     ] : [];
 
+    // Atajos a lo que se configura DENTRO de Producción y de Gastos. Esas pantallas
+    // se quedan en su módulo a propósito: si se mudaran acá exigirían
+    // `configuracion.gestionar` y el rol Producción perdería sus catálogos. Por eso
+    // no dependen de $configura sino de lo mismo que piden sus rutas: módulo
+    // encendido y el permiso de la pantalla. Ninguna consulta a tablas del módulo;
+    // la fase 2 de Gastos es una pregunta de esquema que el menú ya hizo y el
+    // servicio (singleton) recuerda.
+    if (\App\Enums\AreaSistema::Planta->habilitada() && $usuario->can('planta.ver') && $usuario->can('planta.catalogos.ver')) {
+        $grupos[] = [
+            'titulo' => 'Producción',
+            'items' => array_map(
+                static fn (string $ruta, string $titulo) => ['ruta' => 'planta.'.$ruta.'.index', 'patron' => 'planta.'.$ruta.'.*', 'titulo' => $titulo],
+                ['insumos', 'lotes', 'proveedores', 'ubicaciones', 'productos-base', 'presentaciones', 'empaques'],
+                ['Insumos', 'Lotes', 'Proveedores', 'Ubicaciones', 'Productos base', 'Presentaciones', 'Configuración de empaque'],
+            ),
+        ];
+    }
+
+    if (\App\Enums\ModuloSistema::Gastos->activo() && $usuario->can('gastos.ver')
+        && app(\App\Services\Gastos\InstalacionGastos::class)->fase2Instalada()) {
+        $grupos[] = [
+            'titulo' => 'Gastos',
+            'items' => [
+                ['ruta' => 'gastos.reglas.index', 'patron' => 'gastos.reglas.*', 'titulo' => 'Gastos que se repiten'],
+            ],
+        ];
+    }
+
     // Sistema: lo editable de los respaldos y, aparte, «Salud del sistema», que salió
     // de la barra de Facturación con su contador de trabajos fallidos.
     $grupos[] = [

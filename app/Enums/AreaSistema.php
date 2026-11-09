@@ -45,7 +45,7 @@ enum AreaSistema: string
      *
      * `Rutas` se llamó «Cobros» mientras cargaba la custodia del CCF físico. Desde el
      * 26/09/2026 es el módulo de rutas (salidas, salas, vendedores) y el cobro vive en
-     * Cobros Calleja, dentro de Facturación.
+     * Cobros de supermercados, dentro de Facturación.
      *
      * `Asistencia` se muestra como «Personal»: junta Asistencia y Planilla, que son la
      * misma gente. Conserva su value, y por eso sus URL y su barra lateral.
@@ -69,7 +69,7 @@ enum AreaSistema: string
      * Casi todas las áreas tienen UNA. «Personal» tiene TRES —Asistencia, Planilla y las
      * fichas de Personal—, y eso obliga a razonar por puerta y no por área:
      *
-     *  - Quien solo tiene `asistencia.ver` entra y aterriza en Hoy. No ve una sola fila de
+     *  - Quien solo tiene `asistencia.ver` entra y aterriza en «Marcas de hoy». No ve una sola fila de
      *    Planilla.
      *  - Quien solo tiene `planilla.ver` —sin `asistencia.ver`— **también entra**, y aterriza
      *    en Planillas.

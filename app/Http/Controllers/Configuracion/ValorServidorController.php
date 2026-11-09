@@ -46,7 +46,7 @@ class ValorServidorController extends Controller
                 'consecuencia' => 'Se borra lo guardado en la aplicación y vuelve a mandar el archivo de configuración del servidor (.env) o, si no dice nada, el valor por defecto. Para cambiarlo otra vez, guardalo de nuevo en esta pantalla.',
                 'cambios' => [CambioPropuesto::deValor(
                     $definicion,
-                    $ajustes->resolver($clave)->valor,
+                    $ajustes->resolverParaPantalla($clave)->valor,
                     $ajustes->valorDelServidor($clave)->valor,
                 )],
                 'accion' => $request->url(),

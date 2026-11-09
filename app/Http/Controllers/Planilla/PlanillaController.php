@@ -171,7 +171,7 @@ class PlanillaController extends Controller
             'habitualesDisponibles' => $this->habitualesDe($sueldos, $disponibles, $planilla),
             // Los anticipos con saldo de cada persona. Un descuento de anticipo tiene
             // que apuntar a UNO de estos: escribir la referencia no controla nada.
-            'anticipos' => $this->anticiposDisponibles($anticipos),
+            'anticipos' => $this->anticiposDisponibles($anticipos, $preparar, $planilla),
         ]);
     }
 
@@ -196,17 +196,23 @@ class PlanillaController extends Controller
         );
     }
 
-    private function anticiposDisponibles(RegistrarAnticipo $anticipos): array
+    /**
+     * Solo lo que el servidor deja descontar en esta planilla (misma moneda, pago
+     * vigente): elegir otro se rechaza al guardar y se pierde lo escrito.
+     */
+    private function anticiposDisponibles(RegistrarAnticipo $anticipos, PrepararPlanilla $preparar, Planilla $planilla): array
     {
         $salida = [];
 
         foreach (PlanillaEmpleado::where('activo', true)->get() as $empleado) {
-            $salida[$empleado->id] = $anticipos->disponibles($empleado)->map(fn ($a) => [
-                'id' => $a->id,
-                'etiqueta' => $a->fecha->format('d/m/Y').' · '.$a->moneda.' '.$a->importe
-                    .' · quedan '.Dinero::mostrar($a->pendiente()),
-                'pendiente' => Dinero::decimal($a->pendiente()),
-            ])->values()->all();
+            $salida[$empleado->id] = $anticipos->disponibles($empleado)
+                ->filter(fn ($a) => $preparar->motivoContraAnticipo($a, $empleado->id, $planilla->moneda) === null)
+                ->map(fn ($a) => [
+                    'id' => $a->id,
+                    'etiqueta' => $a->fecha->format('d/m/Y').' · '.$a->moneda.' '.$a->importe
+                        .' · quedan '.Dinero::mostrar($a->pendiente()),
+                    'pendiente' => Dinero::decimal($a->pendiente()),
+                ])->values()->all();
         }
 
         return $salida;

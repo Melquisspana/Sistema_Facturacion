@@ -305,10 +305,11 @@ class ImportadorEnviadosService
             $grupos[(string) $codigo] = $selladas;
         }
 
-        // El mismo número de control con dos códigos distintos: ninguno es confiable.
+        // El mismo número de control con dos códigos distintos en el MISMO ejercicio: ninguno
+        // es confiable. Entre ejercicios es legítimo (#121): el correlativo vuelve a 1 en 2027.
         $porNumero = [];
         foreach ($grupos as $codigo => $copias) {
-            $porNumero[IdentidadPpq::normalizar($copias[0]->numeroControl)][] = $codigo;
+            $porNumero[EjercicioControl::llave($copias[0]->numeroControl, EjercicioControl::de($copias[0]->fechaEmision) ?? EjercicioControl::hoy())][] = $codigo;
         }
         foreach ($porNumero as $codigos) {
             if (count($codigos) > 1) {
