@@ -3,6 +3,8 @@
 .env
 .env.backup*
 .env.production
+# Variables de compose del servidor (secretos). Solo se versiona .env.compose.example.
+.env.compose
 .phpactor.json
 .phpunit.result.cache
 /.fleet

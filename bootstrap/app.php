@@ -50,10 +50,11 @@ return Application::configure(basePath: dirname(__DIR__))
             CerrarSesionUsuarioInactivo::class,
         ]);
 
-        // Confiar en el proxy local (Tailscale Serve -> 127.0.0.1:80) para
-        // interpretar correctamente X-Forwarded-Proto/Host/Port/For.
+        // Cabeceras X-Forwarded-* que se creen, y solo si vienen de un proxy de confianza.
+        // La lista de proxies no se fija acá: este bloque corre antes de cargar la
+        // configuración. La lee el middleware en cada pedido desde config/trustedproxy.php
+        // (TRUSTED_PROXIES; por defecto 127.0.0.1, Tailscale Serve en Windows).
         $middleware->trustProxies(
-            at: '127.0.0.1',
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT

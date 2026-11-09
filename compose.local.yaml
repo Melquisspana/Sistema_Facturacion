@@ -1,0 +1,45 @@
+# Máquina de PRUEBA: sin firmador real, sin túnel y en un puerto alterno.
+# Ver «Cómo levantarlo en una máquina de prueba» en docs/MIGRACION_LINUX_DOCKER.md.
+#
+#   docker compose -p facturacion-local --env-file tmp/docker-local/compose.env \
+#       -f compose.yaml -f compose.local.yaml up -d --build
+#
+# MySQL es el del compose, con su propio volumen: nunca la base de desarrollo ni la de
+# producción. La firma es simulada (DTE_FIRMADOR_MOCK=true) y no se levantan ni el
+# firmador ni cloudflared, que quedan en un perfil que no se enciende.
+
+x-app-local: &app-local
+  environment:
+    TZ: America/El_Salvador
+    DTE_FIRMADOR_MOCK: "true"
+  volumes: !override
+    - app-storage:/var/www/html/storage
+    - backups-local:/var/www/html/backups
+    - ${LARAVEL_ENV_FILE:?falta LARAVEL_ENV_FILE}:/var/www/html/.env:ro
+  depends_on: !override
+    mysql: { condition: service_healthy }
+
+services:
+  web:
+    <<: *app-local
+    ports: !override
+      - "${WEB_PUERTO_LOCAL:-8088}:80"
+    environment:
+      TZ: America/El_Salvador
+      DTE_FIRMADOR_MOCK: "true"
+      APACHE_DOMINIO_PUBLICO: facturacion.example.com
+
+  worker:
+    <<: *app-local
+
+  scheduler:
+    <<: *app-local
+
+  firmador:
+    profiles: ["solo-servidor"]
+
+  cloudflared:
+    profiles: ["solo-servidor"]
+
+volumes:
+  backups-local:

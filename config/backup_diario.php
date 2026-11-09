@@ -3,6 +3,14 @@
 return [
 
     /*
+    | Programar `backup:mysql-diario --origen=automatico` a las 02:00 en el planificador
+    | (routes/console.php). APAGADO por defecto: en Windows lo dispara la tarea
+    | «DTE Backup Diario» y encenderlo ahí duplicaría el volcado. En Linux con Docker no
+    | hay tarea de Windows, así que se enciende (BACKUP_DIARIO_PROGRAMADO=true).
+    */
+    'programado' => (bool) env('BACKUP_DIARIO_PROGRAMADO', false),
+
+    /*
     | Días de retención de los dumps AUTOMÁTICOS (prefijo "auto-") en backups/.
     | NUNCA se borran archivos sin ese prefijo (protege los dumps manuales que ya
     | existen en esa carpeta). Configurable; mínimo recomendado 14-30 días.

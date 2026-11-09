@@ -1,0 +1,150 @@
+# Servidor de producción en Linux. Ver docs/MIGRACION_LINUX_DOCKER.md §3.
+#
+#   docker compose --env-file .env.compose up -d
+#
+# .env.compose tiene SOLO variables de compose (ver .env.compose.example). El .env de
+# Laravel es otro archivo del host y se monta de solo lectura en los contenedores PHP.
+# Para una máquina de prueba sin firmador ni túnel: compose.local.yaml.
+
+name: facturacion
+
+x-app: &app
+  image: facturacion-app:${APP_IMAGE_TAG:-local}
+  # always y no unless-stopped: ante un corte, NUT corre `docker compose stop` y apaga;
+  # con unless-stopped nada volvería a arrancar con el host. Para dejar algo parado
+  # durante un reinicio: `docker compose down`.
+  restart: always
+  environment:
+    TZ: America/El_Salvador
+  volumes:
+    - app-storage:/var/www/html/storage
+    - ${BACKUPS_DIR:-/srv/facturacion/backups}:/var/www/html/backups
+    - ${LARAVEL_ENV_FILE:-/srv/facturacion/env/laravel.env}:/var/www/html/.env:ro
+  networks: [frontend, backend]
+  depends_on:
+    mysql: { condition: service_healthy }
+    firmador: { condition: service_healthy }
+
+services:
+  web:
+    <<: *app
+    build: .
+    ports:
+      - "${WEB_PUERTO:-80}:80"
+    environment:
+      TZ: America/El_Salvador
+      APACHE_DOMINIO_PUBLICO: ${APACHE_DOMINIO_PUBLICO:-facturacion.example.com}
+      APACHE_HOSTS_EXTRA: ${APACHE_HOSTS_EXTRA:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Una sola réplica: con pcntl los límites de tiempo se cumplen y RecuperarPeriodoCompras
+  # (3600 s) podría correr dos veces con dos workers (§2.5). DB_QUEUE_RETRY_AFTER > 3600.
+  worker:
+    <<: *app
+    user: www-data
+    command: ["php", "artisan", "queue:work", "--tries=3", "--sleep=3", "--timeout=60", "--max-time=3600"]
+    # La imagen de Apache trae SIGWINCH, que queue:work ignora: sin esto, stop lo mata con
+    # SIGKILL al vencer el plazo. Con SIGTERM termina el trabajo en curso y sale.
+    stop_signal: SIGTERM
+    stop_grace_period: 70s
+
+  # Un solo programador: corre schedule:run cada minuto.
+  # schedule:work no atiende señales y como PID 1 el kernel no le aplica SIGTERM:
+  # init pone un proceso inicial delante para que stop lo detenga al momento.
+  # Un schedule:run en curso (por ejemplo un respaldo) se corta igual.
+  scheduler:
+    <<: *app
+    user: www-data
+    command: ["php", "artisan", "schedule:work"]
+    init: true
+    stop_signal: SIGTERM
+
+  mysql:
+    image: mysql:8.4
+    restart: always
+    # Igual que el MySQL de Windows (leído en producción el 08/11):
+    # - zona -06:00: allá la sesión usa la hora del sistema (UTC-6) y hay ~286 columnas
+    #   TIMESTAMP; con UTC se leerían 6 horas corridas. El Salvador no tiene horario de verano.
+    # - utf8mb4_unicode_ci: la de la base y sus tablas; el volcado no trae CREATE DATABASE,
+    #   así que la base que crea MYSQL_DATABASE tiene que nacer con esa collation.
+    # - max_allowed_packet 512M, como el my.ini de producción.
+    # lower_case_table_names queda en 0 (Linux): todas las tablas están en minúsculas.
+    command:
+      - --default-time-zone=-06:00
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-allowed-packet=512M
+    environment:
+      TZ: America/El_Salvador
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?falta MYSQL_DATABASE en .env.compose}
+      MYSQL_USER: ${MYSQL_USER:?falta MYSQL_USER en .env.compose}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?falta MYSQL_PASSWORD en .env.compose}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?falta MYSQL_ROOT_PASSWORD en .env.compose}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks: [backend]
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # Firmador oficial del MH (8080). El JAR y el certificado de PRODUCCIÓN están solo en
+  # el host, de solo lectura. La carpeta de trabajo es del contenedor, así el firmador
+  # puede escribir sus registros sin tocar las carpetas montadas. Sin ports: solo lo
+  # alcanzan web, worker y programador por la red interna.
+  firmador:
+    image: eclipse-temurin:21-jre
+    restart: always
+    environment:
+      TZ: America/El_Salvador
+    working_dir: /trabajo
+    command: ["java", "-Dspring.profiles.active=nonssl", "-jar", "/opt/firmador/svfe-api-firmador-2.0.0-exec.jar", "--server.port=8080"]
+    volumes:
+      - ${FIRMADOR_JAR_DIR:-/srv/facturacion/firmador/jar}:/opt/firmador:ro
+      - ${FIRMADOR_CERT_DIR:-/srv/facturacion/certificados/produccion}:/trabajo/uploads:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/firmardocumento/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Túnel de Cloudflare hacia http://web:80. IP FIJA: es el único origen cuyas cabeceras
+  # X-Forwarded-* cree Laravel (TRUSTED_PROXIES=172.30.0.10 en el .env de Laravel).
+  # Un solo conector para el túnel: nunca encenderlo mientras Windows siga atendiendo.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: always
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN:-}
+    networks:
+      frontend:
+        ipv4_address: 172.30.0.10
+    depends_on:
+      web: { condition: service_healthy }
+
+networks:
+  # Salida a internet (Hacienda, Gmail, Drive) y el túnel. Subred fija para la IP de
+  # cloudflared. La puerta de enlace (172.30.0.1) NO es de confianza: por ahí pueden
+  # llegar equipos de la red local a través del puerto publicado.
+  frontend:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  # Sin salida a internet: MySQL y el firmador.
+  backend:
+    internal: true
+
+volumes:
+  app-storage:
+  mysql-data:

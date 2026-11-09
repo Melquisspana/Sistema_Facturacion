@@ -30,6 +30,23 @@ class PasswordResetTest extends TestCase
         Notification::assertSentTo($user, ResetPassword::class);
     }
 
+    public function test_el_enlace_de_restablecer_usa_app_url_y_no_el_host_del_pedido(): void
+    {
+        Notification::fake();
+
+        $user = User::factory()->create();
+
+        $this->post('http://atacante.example/forgot-password', ['email' => $user->email]);
+
+        $base = rtrim((string) config('app.url'), '/');
+        Notification::assertSentTo($user, ResetPassword::class, function (ResetPassword $notification) use ($user, $base) {
+            $enlace = $notification->toMail($user)->actionUrl;
+
+            return str_starts_with($enlace, $base.'/reset-password/'.$notification->token)
+                && ! str_contains($enlace, 'atacante.example');
+        });
+    }
+
     public function test_reset_password_screen_can_be_rendered(): void
     {
         Notification::fake();

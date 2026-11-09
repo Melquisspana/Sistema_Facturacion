@@ -79,7 +79,7 @@
                         Worker/cola {{ ($worker['estado'] ?? '') === 'inactivo' ? 'posiblemente detenido' : 'sin datos' }}
                         @if (($worker['hace'] ?? null)) — último pulso {{ $worker['hace'] }} @endif
                     </p>
-                    <p class="mt-1">Correos y jobs en cola <span class="font-semibold">no saldrán</span>. Arrancá <span class="font-mono">queue:work</span> (start-queue.bat) antes de emitir real.</p>
+                    <p class="mt-1">Correos y jobs en cola <span class="font-semibold">no saldrán</span>. Arrancá <span class="font-mono">queue:work</span> antes de emitir real: start-queue.bat en Windows o <span class="font-mono">docker compose --env-file .env.compose up -d worker</span> en Linux.</p>
                 </div>
             @endif
 

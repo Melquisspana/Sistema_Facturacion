@@ -13,6 +13,7 @@ use App\Models\PuntoVenta;
 use App\Models\RespaldoEjecucion;
 use App\Services\Dte\DteFirmaService;
 use App\Services\Dte\DteTransmisionService;
+use App\Support\Correo\CandadoCorreoReal;
 use App\Support\Dte\CorrelativoSistemaNuevo;
 use App\Support\WorkerHeartbeat;
 use Illuminate\Http\JsonResponse;
@@ -121,8 +122,8 @@ class PreparacionProduccionController extends Controller
         $workerEstado = ['activo' => 'ok', 'inactivo' => 'advertencia', 'sin_datos' => 'info'][$hb['estado']] ?? 'info';
         $workerDetalle = match ($hb['estado']) {
             'activo' => 'Worker activo — último pulso '.$hb['hace'].'.',
-            'inactivo' => 'Worker posiblemente detenido — último pulso '.$hb['hace'].'. Abrí start-queue.bat.',
-            default => 'Sin datos: el worker aún no reportó actividad (corré start-queue.bat).',
+            'inactivo' => 'Worker posiblemente detenido — último pulso '.$hb['hace'].'. Reinicialo: start-queue.bat en Windows o docker compose --env-file .env.compose restart worker en Linux.',
+            default => 'Sin datos: el worker aún no reportó actividad. Arrancalo: start-queue.bat en Windows o docker compose --env-file .env.compose up -d worker en Linux.',
         };
 
         // Firmador: solo CONFIGURACIÓN en el render (la prueba en vivo es aparte).
@@ -136,7 +137,7 @@ class PreparacionProduccionController extends Controller
         $mailFrom = (string) config('mail.from.address', '');
         $smtpConfigurado = $mailFrom !== '' && ($mailer !== 'smtp' || $mailHost !== '');
         // Candado de correo real: fuera de producción no sale ningún correo.
-        $candadoCorreo = app(\App\Support\Correo\CandadoCorreoReal::class);
+        $candadoCorreo = app(CandadoCorreoReal::class);
         $correoBloqueado = $candadoCorreo->debeSimular();
 
         return [

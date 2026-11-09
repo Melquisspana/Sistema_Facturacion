@@ -121,4 +121,39 @@ class EnvExampleTest extends TestCase
                 $clave.' debe estar presente y VACÍA en .env.example.');
         }
     }
+
+    /**
+     * .env.example dice «Vacío = el ZIP queda SIN cifrar»: env() da "" y spatie cifra con
+     * cualquier valor distinto de null, así que config/backup.php tiene que dar null.
+     */
+    public function test_clave_de_respaldo_vacia_deja_el_zip_sin_cifrar(): void
+    {
+        $this->assertNull($this->claveDelZipCon(''));
+        $this->assertSame('clave-de-prueba', $this->claveDelZipCon('clave-de-prueba'));
+    }
+
+    private function claveDelZipCon(string $valor): ?string
+    {
+        $antes = [getenv('BACKUP_ARCHIVE_PASSWORD'), $_ENV['BACKUP_ARCHIVE_PASSWORD'] ?? null, $_SERVER['BACKUP_ARCHIVE_PASSWORD'] ?? null];
+
+        try {
+            putenv('BACKUP_ARCHIVE_PASSWORD='.$valor);
+            $_ENV['BACKUP_ARCHIVE_PASSWORD'] = $valor;
+            $_SERVER['BACKUP_ARCHIVE_PASSWORD'] = $valor;
+
+            return (require dirname(__DIR__, 3).'/config/backup.php')['backup']['password'];
+        } finally {
+            $antes[0] === false ? putenv('BACKUP_ARCHIVE_PASSWORD') : putenv('BACKUP_ARCHIVE_PASSWORD='.$antes[0]);
+            if ($antes[1] === null) {
+                unset($_ENV['BACKUP_ARCHIVE_PASSWORD']);
+            } else {
+                $_ENV['BACKUP_ARCHIVE_PASSWORD'] = $antes[1];
+            }
+            if ($antes[2] === null) {
+                unset($_SERVER['BACKUP_ARCHIVE_PASSWORD']);
+            } else {
+                $_SERVER['BACKUP_ARCHIVE_PASSWORD'] = $antes[2];
+            }
+        }
+    }
 }
