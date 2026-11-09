@@ -284,15 +284,11 @@ class ConversorValor
             );
         }
 
-        if (in_array('fecha', $definicion->reglas, true)) {
-            $partes = preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $texto, $m) === 1 ? $m : null;
-
-            if ($partes === null || ! checkdate((int) $partes[2], (int) $partes[3], (int) $partes[1])) {
-                throw ValorAjusteInvalidoException::con(
-                    $definicion->clave,
-                    "«{$definicion->etiqueta}» debe ser una fecha válida (AAAA-MM-DD)."
-                );
-            }
+        if (in_array('fecha', $definicion->reglas, true) && ! $this->esFecha($texto)) {
+            throw ValorAjusteInvalidoException::con(
+                $definicion->clave,
+                "«{$definicion->etiqueta}» debe ser una fecha válida (AAAA-MM-DD)."
+            );
         }
 
         if (in_array('rango_horas', $definicion->reglas, true)
@@ -302,6 +298,13 @@ class ConversorValor
                 "«{$definicion->etiqueta}» debe ser un horario «desde-hasta» en formato HH:MM-HH:MM, con la hora de cierre después de la de apertura (por ejemplo 08:00-17:00)."
             );
         }
+    }
+
+    /** Fecha real en AAAA-MM-DD (el 30 de febrero no pasa). */
+    private function esFecha(string $texto): bool
+    {
+        return preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $texto, $m) === 1
+            && checkdate((int) $m[2], (int) $m[3], (int) $m[1]);
     }
 
     /** Id de cliente bien formado (entero positivo). No consulta la base. */
@@ -363,6 +366,28 @@ class ConversorValor
                     "«{$definicion->etiqueta}» solo admite una lista de valores simples."
                 );
             }
+        }
+
+        // Lista de fechas (AAAA-MM-DD) o de años (AAAA): cada una con su formato, sin
+        // repetidas y guardadas en orden, para que el lector no tenga que adivinar.
+        $fechas = in_array('fecha', $definicion->reglas, true);
+        if ($fechas || in_array('anio', $definicion->reglas, true)) {
+            $lista = array_map(static fn ($v) => trim((string) $v), $lista);
+
+            foreach ($lista as $elemento) {
+                if ($fechas ? ! $this->esFecha($elemento) : preg_match('/^\d{4}$/D', $elemento) !== 1) {
+                    throw ValorAjusteInvalidoException::con(
+                        $definicion->clave,
+                        "«{$definicion->etiqueta}»: «{$elemento}» no es ".($fechas ? 'una fecha válida (AAAA-MM-DD).' : 'un año válido (AAAA).')
+                    );
+                }
+            }
+
+            if (count($lista) !== count(array_unique($lista))) {
+                throw ValorAjusteInvalidoException::con($definicion->clave, "«{$definicion->etiqueta}» tiene valores repetidos.");
+            }
+
+            sort($lista);
         }
 
         return $this->codificarLista($lista);

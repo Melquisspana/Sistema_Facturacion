@@ -16,8 +16,8 @@ use Illuminate\Support\Collection;
  *
  * NO consulta `AsistenciaMarcacion` por su cuenta: pide los datos a
  * {@see ConsultaAsistencia} con un {@see FiltroAsistencia}. Es deliberado. Toda
- * la garantía de la fase anterior —filtrar por `fecha_local` y no por el instante
- * UTC, aprovechar los índices, no inventar nada cuando falta el lector— vive ahí,
+ * la garantía de la fase anterior —filtrar por `fecha_local` y no por el instante,
+ * aprovechar los índices, no inventar nada cuando falta el lector— vive ahí,
  * y una segunda consulta escrita acá la perdería en silencio.
  *
  * La cadena queda así, y es la que el módulo de Formatos va a usar entera:
@@ -26,10 +26,10 @@ use Illuminate\Support\Collection;
  *
  * ────────────────────────── Se agrupa por DÍA LOCAL ──────────────────────────
  *
- * Por `fecha_local`, la columna, nunca volviendo a derivarla de `marcado_at`. En
- * El Salvador (UTC−6) una marcación de las 19:30 del día 5 se guarda como 01:30
- * UTC del día 6: derivar el día del instante movería el turno de la tarde entero.
- * La Fase 3 dejó eso protegido y acá no se rompe.
+ * Por `fecha_local`, la columna, nunca volviendo a derivarla de `marcado_at`. El
+ * instante se guarda en hora de El Salvador (`app.timezone`, issue #59), pero
+ * derivar el día de él dependería de esa configuración: con otra zona movería el
+ * turno de la tarde entero. La Fase 3 dejó eso protegido y acá no se rompe.
  *
  * ───────────────────────── Qué NO calcula, otra vez ─────────────────────────
  *

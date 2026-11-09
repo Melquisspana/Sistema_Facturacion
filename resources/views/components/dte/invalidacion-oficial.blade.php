@@ -213,7 +213,7 @@
                     $fechaSello = $dte->fecha_procesamiento_mh->format('Y-m-d');
                     try {
                         $limite = $plazo->limite($dte->tipo_dte, $fechaSello);
-                        $calendarioCompleto = $plazo->calendarioCompleto($dte->tipo_dte, $fechaSello);
+                        $avisoCalendario = $plazo->avisoCalendario($dte->tipo_dte, $fechaSello);
                     } catch (\InvalidArgumentException $e) {
                         $limite = null;
                     }
@@ -221,9 +221,7 @@
                 <p class="mt-1 text-sm text-gray-500">
                     @if ($limite)
                         Plazo para transmitir la invalidación: {{ \App\Support\HoraNegocio::aLocal($limite)->format('d/m/Y') }} a las 23:59:59 (hora de El Salvador).
-                        @unless ($calendarioCompleto)
-                            (calculado sin calendario de días inhábiles {{ $plazo->anioCalendario($fechaSello) }}; cargarlo en config/dte.php)
-                        @endunless
+                        {{ $avisoCalendario }}
                     @else
                         No se pudo calcular el plazo: la tabla de días inhábiles de la configuración no es válida.
                     @endif

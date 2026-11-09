@@ -14,6 +14,7 @@ use App\Http\Controllers\Configuracion\CorrelativoController;
 use App\Http\Controllers\Configuracion\CorreoController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\EstablecimientoController;
+use App\Http\Controllers\Configuracion\FeriadosHaciendaController;
 use App\Http\Controllers\Configuracion\FirmadorController;
 use App\Http\Controllers\Configuracion\HaciendaController;
 use App\Http\Controllers\Configuracion\IntegracionBuzonAdicionalController;
@@ -803,6 +804,14 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
 
         Route::get('facturacion-electronica/parametros', [ParametrosFiscalesController::class, 'index'])->name('fiscal.parametros');
         Route::get('facturacion-electronica/invalidacion', [InvalidacionController::class, 'index'])->name('fiscal.invalidacion');
+
+        // Feriados de Hacienda: la EXCEPCIÓN editable del bloque fiscal (#49). Los días
+        // inhábiles del MH para el plazo de invalidación. Cada cambio pasa por la
+        // confirmación N2: el primer envío solo muestra qué cambia.
+        Route::get('facturacion-electronica/feriados', [FeriadosHaciendaController::class, 'index'])->name('fiscal.feriados');
+        Route::post('facturacion-electronica/feriados', [FeriadosHaciendaController::class, 'agregar'])->name('fiscal.feriados.agregar');
+        Route::delete('facturacion-electronica/feriados', [FeriadosHaciendaController::class, 'quitar'])->name('fiscal.feriados.quitar');
+        Route::put('facturacion-electronica/feriados/completo', [FeriadosHaciendaController::class, 'completo'])->name('fiscal.feriados.completo');
 
         // Empresa emisora (registro único).
         Route::get('empresa', [EmpresaController::class, 'edit'])->name('empresa.edit');
