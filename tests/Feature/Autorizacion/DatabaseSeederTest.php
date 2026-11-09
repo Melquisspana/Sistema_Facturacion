@@ -4,6 +4,7 @@ namespace Tests\Feature\Autorizacion;
 
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
@@ -46,5 +47,9 @@ class DatabaseSeederTest extends TestCase
 
             $this->assertSame($esperados, $reales, "El rol {$rol->value} no tiene el set de permisos esperado.");
         }
+
+        // El administrador inicial no sale de db:seed: se crea aparte con
+        // UsuarioAdminInicialSeeder, como dice DatabaseSeeder y el README.
+        $this->assertSame(0, User::count());
     }
 }
