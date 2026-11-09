@@ -91,6 +91,31 @@ final class ReglaOrdenCompra
     }
 
     /**
+     * Lo que no cuadra en la orden de un CCF: la forma y, si la forma está bien, que la
+     * orden traiga el código de otra sala. Solo compara con un código de sala de 4 dígitos
+     * (el de Calleja); la sala sin código no se compara. La usan el aviso al generar y la
+     * auditoría, para que nunca discrepen.
+     *
+     * @return list<string>
+     */
+    public static function problemasConSala(?string $orden, CarbonInterface $fecha, ?ClienteSucursal $sala): array
+    {
+        $problemas = self::problemasForma($orden, $fecha);
+        if ($problemas !== [] || $sala === null) {
+            return $problemas;
+        }
+
+        $codigo = Sala::normalizar($sala->codigo);
+        $deLaOrden = OrdenCompra::salaDesde($orden);
+        if (preg_match('/^\d{4}$/', (string) $codigo) === 1 && $deLaOrden !== null && $deLaOrden !== $codigo) {
+            $problemas[] = 'La orden de compra «'.trim((string) $orden).'» es de la sala '.$deLaOrden
+                .' y la factura va para «'.$sala->nombre.'» ('.$codigo.'): revisá la orden o la sala.';
+        }
+
+        return $problemas;
+    }
+
+    /**
      * Avisos que se confirman antes de generar el CCF: la forma de la orden, la sala
      * sin código y la orden que trae el código de otra sala. Vacío si el documento no
      * exige orden de compra. La orden vacía no avisa acá: la generación ya la frena por su cuenta.
@@ -103,21 +128,13 @@ final class ReglaOrdenCompra
             return [];
         }
 
+        $sala = $dte->clienteSucursal;
         $avisos = filled($dte->numero_orden_compra)
-            ? self::problemasForma($dte->numero_orden_compra, $dte->fecha_emision ?? HoraNegocio::hoy())
+            ? self::problemasConSala($dte->numero_orden_compra, $dte->fecha_emision ?? HoraNegocio::hoy(), $sala)
             : [];
 
-        $sala = $dte->clienteSucursal;
         if ($sala !== null && blank($sala->codigo)) {
             $avisos[] = 'La sala «'.$sala->nombre.'» no tiene cargado su código de sala: cargalo en la ficha del cliente.';
-        } elseif ($sala !== null && $avisos === [] && filled($dte->numero_orden_compra)) {
-            // Solo con la forma bien y un código de sala de 4 dígitos (el de Calleja).
-            $codigo = Sala::normalizar($sala->codigo);
-            $deLaOrden = OrdenCompra::salaDesde($dte->numero_orden_compra);
-            if (preg_match('/^\d{4}$/', (string) $codigo) === 1 && $deLaOrden !== null && $deLaOrden !== $codigo) {
-                $avisos[] = 'La orden de compra «'.trim($dte->numero_orden_compra).'» es de la sala '.$deLaOrden
-                    .' y la factura va para «'.$sala->nombre.'» ('.$codigo.'): revisá la orden o la sala.';
-            }
         }
 
         return $avisos;

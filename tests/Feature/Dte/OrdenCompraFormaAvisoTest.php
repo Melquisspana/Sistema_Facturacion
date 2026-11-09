@@ -195,4 +195,30 @@ class OrdenCompraFormaAvisoTest extends TestCase
             ->get(route('auditoria.ordenes_compra'))
             ->assertForbidden();
     }
+
+    public function test_auditoria_lista_el_ccf_cuya_orden_es_de_otra_sala(): void
+    {
+        // Forma bien, pero la orden trae la sala 0025 y el CCF fue a la 0250.
+        $otraSala = $this->borrador(HoraNegocio::hoy()->format('ym').'00250004665', codigoSala: '0250');
+        $suSala = $this->borrador($this->ordenValida(), codigoSala: '0123');
+        $otraSala->forceFill(['estado' => EstadoDte::Generado->value, 'numero_interno' => 'INT-OTRA-SALA'])->saveQuietly();
+        $suSala->forceFill(['estado' => EstadoDte::Generado->value, 'numero_interno' => 'INT-SU-SALA'])->saveQuietly();
+
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('auditoria.ordenes_compra'))
+            ->assertOk()
+            ->assertSee('INT-OTRA-SALA')
+            ->assertSee('es de la sala 0025 y la factura va para')
+            ->assertDontSee('INT-SU-SALA');
+    }
+
+    public function test_auditoria_explica_la_forma_real_de_la_orden(): void
+    {
+        $this->actingAs($this->usuario('administrador'))
+            ->get(route('auditoria.ordenes_compra'))
+            ->assertOk()
+            ->assertSeeText('de 13 a 15 números')
+            ->assertSeeText('el quinto es un 0')
+            ->assertDontSeeText('14 números');
+    }
 }
