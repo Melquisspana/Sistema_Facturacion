@@ -150,7 +150,7 @@
                 <div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
                     <button type="submit"
                             class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Guardar
+                        Guardar marca de completo
                     </button>
                 </div>
             </form>

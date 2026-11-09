@@ -52,7 +52,9 @@ class FeriadosHaciendaTest extends TestCase
             ->assertSee('Feriados de Hacienda')
             ->assertSeeInOrder(['01/05/2026', 'viernes', '17/06/2026', 'miércoles', '15/09/2026', 'martes'])
             ->assertSee('26 días')
-            ->assertSee('Calendario Tributario 2026');
+            ->assertSee('Calendario Tributario 2026')
+            // El botón principal dice verbo + qué (docs/GUIA_PANTALLAS.md, Botones).
+            ->assertSee('Guardar marca de completo');
     }
 
     public function test_un_anio_sin_calendario_lo_dice(): void
