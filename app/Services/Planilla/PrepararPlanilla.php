@@ -2,6 +2,7 @@
 
 namespace App\Services\Planilla;
 
+use App\Models\Gastos\Cuota;
 use App\Models\Gastos\Pago;
 use App\Models\Planilla\Planilla;
 use App\Models\Planilla\PlanillaAnticipo;
@@ -10,6 +11,7 @@ use App\Models\Planilla\PlanillaDetalle;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\User;
 use App\Services\Gastos\Dinero;
+use App\Services\Gastos\SaldosGastos;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
@@ -49,6 +51,7 @@ final class PrepararPlanilla
         private DescuentosLey $descuentos,
         private PrestacionAnual $prestaciones,
         private AcumuladoRenta $acumulados,
+        private SaldosGastos $saldos,
     ) {}
 
     /**
@@ -229,8 +232,10 @@ final class PrepararPlanilla
      * pago individual al anularse. En pantalla sigue siendo «2026-11-Q1»
      * ({@see Planilla::periodo()}).
      *
-     * Solo lo frena un pago VIGENTE contra una anulada de ese período: hacerla de nuevo le
-     * pagaría dos veces a la misma persona. Uno revertido no frena.
+     * Solo lo frena una deuda de una anulada de ese período que siga VIVA en Gastos: con un
+     * pago vigente o con saldo pendiente, porque alguien revirtió el ajuste que la dejó en
+     * cero al anularla. Hacerla de nuevo dejaría dos deudas con la misma persona por la
+     * misma quincena, y se le podría pagar dos veces. Un pago revertido no frena.
      *
      * @param  array{periodo: string, desde: string, hasta: string, etiqueta: string}  $periodo
      */
@@ -258,22 +263,36 @@ final class PrepararPlanilla
         $gastos = DB::table('planilla_detalles')->whereIn('planilla_id', $anuladas->modelKeys())->whereNotNull('gasto_id')->pluck('gasto_id')
             ->merge(DB::table('planilla_obligaciones_terceros')->whereIn('planilla_id', $anuladas->modelKeys())->whereNotNull('gasto_id')->pluck('gasto_id'));
 
-        $conPagos = DB::table('gastos_pago_aplicaciones as a')
-            ->join('gastos_pagos as p', 'p.id', '=', 'a.pago_id')
-            ->join('gastos_cuotas as c', 'c.id', '=', 'a.cuota_id')
-            ->join('gastos as g', 'g.id', '=', 'c.gasto_id')
-            ->whereIn('c.gasto_id', $gastos)
-            ->whereNull('p.revertido_at')
-            ->distinct()
-            ->orderBy('g.beneficiario')
-            ->pluck('g.beneficiario')
-            ->all();
+        $conPagos = $pendientes = [];
+        foreach (Cuota::whereIn('gasto_id', $gastos)->with('gasto:id,beneficiario')->get() as $cuota) {
+            if ($this->saldos->aplicado($cuota->id) > 0) {
+                $conPagos[] = $cuota->gasto->beneficiario;
+            } elseif ($this->saldos->pendienteCuota($cuota) > 0) {
+                $pendientes[] = $cuota->gasto->beneficiario;
+            }
+        }
 
+        $quienes = function (array $nombres): string {
+            $nombres = collect($nombres)->unique()->sort()->values();
+
+            return $nombres->take(5)->implode(', ').($nombres->count() > 5 ? ' y otros' : '');
+        };
+
+        // Un pago a una anulada supone que se revirtió el ajuste de la anulación: al
+        // revertir el pago, la deuda vuelve a quedar pendiente. Por eso se piden los dos pasos.
         if ($conPagos !== []) {
             throw ValidationException::withMessages([
-                'periodo' => 'No se puede volver a hacer: la planilla '.$periodo['periodo'].' anulada tiene pagos sin revertir ('
-                    .implode(', ', array_slice($conPagos, 0, 5)).(count($conPagos) > 5 ? ' y otros' : '').'). '
-                    .'Revertí primero esos pagos, cada uno con su motivo, y después volvé a generarla.',
+                'periodo' => 'No se puede volver a hacer: la planilla '.$periodo['periodo'].' anulada tiene pagos sin revertir ('.$quienes($conPagos).'). '
+                    .'Revertí primero esos pagos, cada uno con su motivo, y en Gastos dejá esas deudas otra vez en cero con un ajuste, '
+                    .'como quedaron al anularla. Después volvé a generarla.',
+            ]);
+        }
+
+        if ($pendientes !== []) {
+            throw ValidationException::withMessages([
+                'periodo' => 'No se puede volver a hacer: la planilla '.$periodo['periodo'].' anulada tiene deudas pendientes en Gastos ('.$quienes($pendientes).'), '
+                    .'porque se revirtió el ajuste que las dejó en cero al anularla. '
+                    .'Dejalas otra vez en cero con un ajuste, con su motivo, y después volvé a generarla.',
             ]);
         }
 

@@ -13,8 +13,10 @@ use App\Models\Planilla\PlanillaDocumento;
 use App\Models\Planilla\PlanillaEmpleado;
 use App\Models\Planilla\PlanillaObligacionTercero;
 use App\Models\User;
+use App\Services\Gastos\Dinero;
 use App\Services\Gastos\RegistrarAjuste;
 use App\Services\Gastos\RegistrarPago;
+use App\Services\Gastos\SaldosGastos;
 use App\Services\Planilla\AltaEmpleado;
 use App\Services\Planilla\AnularPlanilla;
 use App\Services\Planilla\PagarPlanilla;
@@ -372,7 +374,8 @@ class GenerarYBorrarPlanillaTest extends TestCase
         ], [['cuota_id' => $cuota->id, 'importe' => '50.00']]);
 
         $mensaje = 'No se puede volver a hacer: la planilla 2026-10-Q1 anulada tiene pagos sin revertir (Ana Ficticia). '
-            .'Revertí primero esos pagos, cada uno con su motivo, y después volvé a generarla.';
+            .'Revertí primero esos pagos, cada uno con su motivo, y en Gastos dejá esas deudas otra vez en cero con un ajuste, '
+            .'como quedaron al anularla. Después volvé a generarla.';
 
         $this->actingAs($this->actor)->post(route('planilla.store'), $this->periodo('2026-10-01'))
             ->assertSessionHasErrors(['periodo' => $mensaje]);
@@ -380,6 +383,52 @@ class GenerarYBorrarPlanillaTest extends TestCase
         // Nada cambió: la anulada sigue en su lugar y no hay otra.
         $this->assertSame(1, Planilla::count());
         $this->assertSame('2026-10-Q1', $anulada->fresh()->getRawOriginal('periodo'));
+    }
+
+    public function test_revertir_el_pago_de_una_anulada_no_basta_si_su_deuda_quedo_pendiente(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+
+        $cuota = PlanillaDetalle::sole()->gasto->cuotas()->sole();
+        app(RegistrarAjuste::class)->revertir($this->actor, Ajuste::where('cuota_id', $cuota->id)->sole(), 'Se anuló sin querer');
+        $pago = app(RegistrarPago::class)->registrar($this->actor, [
+            'clave' => (string) Str::uuid(), 'importe' => '50.00', 'fecha' => '2026-10-16',
+            'metodo' => 'efectivo', 'pagado_por' => $this->actor->id, 'sin_comprobante' => 'Abono en caja.',
+        ], [['cuota_id' => $cuota->id, 'importe' => '50.00']]);
+
+        // Se sigue el mensaje: se revierte el pago. Pero el ajuste de la anulación sigue
+        // revertido, así que la deuda de la anulada vuelve a estar pendiente entera.
+        app(RegistrarPago::class)->revertir($this->actor, $pago, 'Se pagó una planilla anulada');
+        $this->assertSame(1, $this->deudasVivasDe('Ana Ficticia'));
+
+        $this->actingAs($this->actor)->post(route('planilla.store'), $this->periodo('2026-10-01'))
+            ->assertSessionHasErrors(['periodo' => $this->mensajeDeudaPendiente()]);
+        $this->assertSame(1, Planilla::count());
+
+        // Con la deuda otra vez en cero, sí: y queda una sola deuda viva con Ana.
+        $this->dejarEnCero($cuota);
+        $this->generar('2026-10-01');
+
+        $this->assertSame(2, Planilla::count());
+        $this->assertSame(1, $this->deudasVivasDe('Ana Ficticia'));
+    }
+
+    public function test_una_anulada_con_el_ajuste_revertido_no_se_vuelve_a_hacer(): void
+    {
+        $anulada = $this->generar('2026-10-01');
+        app(AnularPlanilla::class)->anular($this->actor, $anulada, 'Se generó con el sueldo equivocado');
+
+        // Sin pagar nada: basta con revertir el ajuste para que la deuda vuelva a vivir.
+        $cuota = PlanillaDetalle::sole()->gasto->cuotas()->sole();
+        app(RegistrarAjuste::class)->revertir($this->actor, Ajuste::where('cuota_id', $cuota->id)->sole(), 'Se anuló sin querer');
+
+        $this->actingAs($this->actor)->post(route('planilla.store'), $this->periodo('2026-10-01'))
+            ->assertSessionHasErrors(['periodo' => $this->mensajeDeudaPendiente()]);
+
+        $this->assertSame(1, Planilla::count());
+        $this->assertSame('2026-10-Q1', $anulada->fresh()->getRawOriginal('periodo'));
+        $this->assertSame(1, $this->deudasVivasDe('Ana Ficticia'));
     }
 
     public function test_generar_no_bloquea_planillas_por_periodo_sino_por_id(): void
@@ -413,5 +462,29 @@ class GenerarYBorrarPlanillaTest extends TestCase
         $this->assertNotEmpty($candados, 'La prueba tiene que ver los candados.');
         $this->assertSame([], array_values(array_filter($candados,
             fn (string $sql) => str_contains($sql, 'planillas') && str_contains($sql, 'periodo'))));
+    }
+
+    private function mensajeDeudaPendiente(): string
+    {
+        return 'No se puede volver a hacer: la planilla 2026-10-Q1 anulada tiene deudas pendientes en Gastos (Ana Ficticia), '
+            .'porque se revirtió el ajuste que las dejó en cero al anularla. '
+            .'Dejalas otra vez en cero con un ajuste, con su motivo, y después volvé a generarla.';
+    }
+
+    private function dejarEnCero(Cuota $cuota): void
+    {
+        app(RegistrarAjuste::class)->registrar($this->actor, $cuota, [
+            'clave' => (string) Str::uuid(), 'direccion' => 'credito', 'tipo' => 'correccion',
+            'importe' => Dinero::decimal(app(SaldosGastos::class)->pendienteCuota($cuota->fresh())),
+            'motivo' => 'La planilla está anulada',
+        ]);
+    }
+
+    /** Cuántas deudas con esa persona o ese tercero tienen algo pendiente en Gastos. */
+    private function deudasVivasDe(string $beneficiario): int
+    {
+        return Cuota::whereHas('gasto', fn ($q) => $q->where('beneficiario', $beneficiario))->get()
+            ->filter(fn (Cuota $c) => app(SaldosGastos::class)->pendienteCuota($c) > 0)
+            ->count();
     }
 }
