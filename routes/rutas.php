@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Rutas\AsignacionSalasController;
+use App\Http\Controllers\Rutas\MapaVentasController;
 use App\Http\Controllers\Rutas\MiPedidoController;
 use App\Http\Controllers\Rutas\MiSalidaController;
 use App\Http\Controllers\Rutas\PedidoSalaController;
@@ -106,6 +107,9 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
     ->name('rutas.')
     ->group(function () {
         Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+        // La pestaña «Mapa» del tablero: ventas por zona, con montos (09/11/2026).
+        Route::get('mapa', [MapaVentasController::class, 'index'])
+            ->middleware('permission:rutas.mapa.ver')->name('mapa');
         Route::get('ventas', [VentasController::class, 'index'])
             ->middleware('permission:rutas.ventas.ver')->name('ventas.index');
         Route::get('ventas/excel', [VentasController::class, 'excel'])
