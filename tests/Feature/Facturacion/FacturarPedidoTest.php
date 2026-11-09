@@ -259,7 +259,8 @@ class FacturarPedidoTest extends TestCase
         $this->assertTrue($log->subject->is($pedido));
         $this->assertSame($nuevo->id, $log->properties['dte_id']);
         $this->assertSame($original->id, $log->properties['dte_anterior']);
-        $this->assertSame([['envio_id' => $envio->id, 'numero' => 1]], $log->properties['envios']);
+        // assertEquals: MySQL reordena las claves de la columna JSON.
+        $this->assertEquals([['envio_id' => $envio->id, 'numero' => 1]], $log->properties['envios']);
     }
 
     public function test_un_producto_sin_precio_inactivo_o_con_decimales_frena_y_no_crea_nada(): void
@@ -348,8 +349,9 @@ class FacturarPedidoTest extends TestCase
         $this->assertSame($this->oficina->id, $log->causer_id);
         $this->assertSame(Dte::sole()->id, $log->properties['dte_id']);
         $this->assertSame('26119001000123', $log->properties['numero_orden_compra']);
-        $this->assertSame([['envio_id' => $uno->id, 'numero' => 1], ['envio_id' => $dos->id, 'numero' => 2]], $log->properties['envios']);
-        $this->assertSame([
+        // assertEquals: MySQL reordena las claves de la columna JSON.
+        $this->assertEquals([['envio_id' => $uno->id, 'numero' => 1], ['envio_id' => $dos->id, 'numero' => 2]], $log->properties['envios']);
+        $this->assertEquals([
             ['producto_id' => $this->galleta->id, 'cantidad' => 10],
             ['producto_id' => $this->quesadilla->id, 'cantidad' => 3],
         ], $log->properties['lineas']);
