@@ -30,13 +30,19 @@ class PlanillaEmpleado extends Model
     protected $guarded = ['id'];
 
     /**
-     * ¿Las personas se cargan en Personal? Con Planilla encendida e instalada, sí: cada
-     * persona se da de alta una sola vez ahí, y Usuarios, Asistencia y Rutas la eligen o
-     * llevan a su ficha en vez de volver a escribirla.
+     * ¿Las personas se cargan en Personal? Siempre que la tabla esté instalada, encendida
+     * o no Planilla (08/11/2026: «Personal siempre tiene que funcionar»): cada persona se
+     * da de alta una sola vez ahí, y Usuarios, Asistencia y Rutas la eligen o llevan a su
+     * ficha en vez de volver a escribirla.
+     *
+     * Lo que es de planilla de verdad (generar y pagar, sueldos, vacaciones, indemnización)
+     * sigue con su interruptor: {@see ModuloSistema::Planilla}.
+     *
+     * Una sola consulta por petición: la piden el menú y varias pantallas a la vez.
      */
     public static function enUso(): bool
     {
-        return ModuloSistema::Planilla->activo() && Schema::hasTable('planilla_empleados');
+        return once(fn () => Schema::hasTable('planilla_empleados'));
     }
 
     protected function casts(): array

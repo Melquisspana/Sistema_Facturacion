@@ -102,16 +102,16 @@
     ];
 
     // Administración: el rastro (Auditoría) y las cargas masivas (Importaciones), que
-    // vivían en la barra de Facturación. «Accesos» aparece SOLO con el área Personal
-    // apagada (instalación nueva): hasta que se encienda Asistencia o Planilla, donde
-    // vive normalmente, es el único lugar para crear un usuario.
+    // vivían en la barra de Facturación. «Accesos externos» lleva a las cuentas de gente
+    // de afuera (la contadora, solo con rol Contabilidad), que no tienen ficha en
+    // Personal; el acceso de los empleados se da en su ficha. Solo mira el permiso.
     $grupos[] = [
         'titulo' => 'Administración',
         'items' => [
             ...($usuario->can('auditoria.ver') ? [['ruta' => 'auditoria.index', 'patron' => 'auditoria.*', 'titulo' => 'Auditoría']] : []),
             ...($usuario->can('importaciones.gestionar') ? [['ruta' => 'importaciones.index', 'patron' => 'importaciones.*', 'titulo' => 'Importaciones']] : []),
-            ...(($usuario->can('usuarios.gestionar') && ! \App\Enums\AreaSistema::Asistencia->habilitada())
-                ? [['ruta' => 'personal.accesos.index', 'patron' => 'personal.accesos.*', 'titulo' => 'Accesos']]
+            ...($usuario->can('usuarios.gestionar')
+                ? [['ruta' => 'personal.accesos.index', 'parametros' => ['externas' => 1], 'patron' => 'personal.accesos.*', 'titulo' => 'Accesos externos']]
                 : []),
         ],
     ];
@@ -136,7 +136,7 @@
 
                 @foreach ($grupo['items'] as $item)
                     @php $activo = request()->routeIs($item['patron']); @endphp
-                    <a href="{{ route($item['ruta']) }}"
+                    <a href="{{ route($item['ruta'], $item['parametros'] ?? []) }}"
                        @if ($activo) aria-current="page" @endif
                        class="block whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition lg:mt-0.5 {{ $activo
                            ? 'bg-indigo-50 text-indigo-700'

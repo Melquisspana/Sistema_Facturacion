@@ -363,6 +363,8 @@
                     </dl>
                 </div>
 
+                {{-- Los pagos son de Planilla: con el módulo apagado, la ficha queda sin ellos. --}}
+                @if ($planillaActiva)
                 <div class="{{ $tarjeta }}">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-paper-100">Últimos pagos</h3>
                     @if ($quincenas->isEmpty())
@@ -397,6 +399,7 @@
                         </div>
                     @endif
                 </div>
+                @endif
             @endif
 
             @if ($asistencia)

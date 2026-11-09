@@ -23,15 +23,19 @@ use Symfony\Component\HttpFoundation\Response;
  * Confundirlas mandaría a quien administra a buscar un interruptor que ya está
  * encendido. Y exige usuario ACTIVO: la planilla toca salarios, así que una cuenta
  * desactivada con la sesión viva no entra.
+ *
+ * `modulo.planilla:personal` es para las fichas de Personal (alta, datos, módulos, baja):
+ * no miran el interruptor, porque Personal funciona con Planilla apagada. El usuario
+ * activo y las tablas se siguen exigiendo.
  */
 class ModuloPlanillaActivo
 {
     /** Tablas sin las cuales el módulo no puede funcionar. */
     private const TABLAS = ['planilla_empleados', 'planillas', 'planilla_detalles', 'planilla_conceptos'];
 
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, ?string $parte = null): Response
     {
-        abort_unless(ModuloSistema::Planilla->activo(), 404);
+        abort_unless($parte === 'personal' || ModuloSistema::Planilla->activo(), 404);
         abort_unless((bool) $request->user()?->activo, 403);
 
         $faltan = array_values(array_filter(self::TABLAS, fn (string $t) => ! Schema::hasTable($t)));

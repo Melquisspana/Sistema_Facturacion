@@ -54,7 +54,7 @@ class PersonalRutaEnFichaTest extends TestCase
         }
     }
 
-    public function test_sin_planilla_ver_o_con_planilla_apagada_conserva_rutas(): void
+    public function test_sin_planilla_ver_no_entra_y_con_planilla_apagada_sigue_en_personal(): void
     {
         $persona = PersonalRuta::create(['nombre' => 'Ana Ficticia']);
         $this->ficha($persona);
@@ -65,10 +65,11 @@ class PersonalRutaEnFichaTest extends TestCase
             $this->actingAs($usuario)->get(route('rutas.personal.index'))->assertForbidden();
             $this->get(route('rutas.personal.show', $persona))->assertForbidden();
         }
+        // Con Planilla apagada, Personal sigue (08/11/2026): Rutas no vuelve a crear gente suelta.
         config(['planilla.enabled' => false]);
-        $this->actingAs($this->admin)->get(route('rutas.personal.index'))->assertOk()
-            ->assertSee('href="'.route('rutas.personal.index').'"', false)
-            ->assertSee('href="'.route('rutas.personal.create').'"', false);
+        $this->actingAs($this->admin)->get(route('rutas.personal.index'))->assertRedirect(route('personal.empleados'));
+        $this->get(route('rutas.personal.create'))->assertRedirect(route('planilla.empleados.create'));
+        $this->assertTrue(PersonalRuta::seGestionaEnPersonal($this->admin));
         $this->assertFalse(PersonalRuta::seGestionaEnPersonal(null));
     }
 

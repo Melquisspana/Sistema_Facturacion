@@ -34,6 +34,24 @@ use Illuminate\Support\Facades\Route;
 | revisa. La indemnización sale de la baja. No calcula aporte patronal ni horas extra.
 */
 
+/*
+| Las fichas de Personal: alta, datos, módulos (acceso, Asistencia, Rutas), baja y
+| reactivar. Funcionan con Planilla APAGADA (08/11/2026: «Personal siempre tiene que
+| funcionar»), con los mismos permisos de la administración. Conservan su dirección y su
+| nombre `planilla.empleados.*` para no romper enlaces ni formularios.
+*/
+Route::middleware(['auth', 'modulo.planilla:personal', 'permission:planilla.ver', 'permission:planilla.gestionar'])
+    ->prefix('planilla')
+    ->name('planilla.')
+    ->group(function () {
+        Route::get('empleados/nuevo', [PlanillaController::class, 'nuevoEmpleado'])->name('empleados.create');
+        Route::post('empleados', [PlanillaController::class, 'guardarEmpleado'])->name('empleados.store');
+        Route::post('empleados/{empleado}/datos', [PlanillaController::class, 'actualizarDatos'])->whereNumber('empleado')->name('empleados.datos');
+        Route::post('empleados/{empleado}/modulos', [PlanillaController::class, 'completarModulos'])->whereNumber('empleado')->name('empleados.modulos');
+        Route::post('empleados/{empleado}/baja', [PlanillaController::class, 'bajaEmpleado'])->whereNumber('empleado')->name('empleados.baja');
+        Route::post('empleados/{empleado}/reactivar', [PlanillaController::class, 'reactivarEmpleado'])->whereNumber('empleado')->name('empleados.reactivar');
+    });
+
 Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
     ->prefix('planilla')
     ->name('planilla.')
@@ -48,25 +66,18 @@ Route::middleware(['auth', 'modulo.planilla', 'permission:planilla.ver'])
 
         Route::get('/', [PlanillaController::class, 'index'])->name('index');
 
-        // Registro de personas. Reutiliza identidades; no exige biometría.
-        // La lista vive en Personal. La dirección se queda para no romper enlaces guardados.
+        // El registro de personas está arriba, en Personal. La lista también vive ahí: la
+        // dirección se queda para no romper enlaces guardados.
         Route::get('empleados', fn () => redirect()->route('personal.empleados', [], 301))->name('empleados');
-        Route::get('empleados/nuevo', [PlanillaController::class, 'nuevoEmpleado'])->middleware($gestionar)->name('empleados.create');
         // El contrato lleva el sueldo: el controlador exige además `planilla.salarios`.
         Route::get('empleados/{empleado}/contrato', [PlanillaContratoController::class, 'edit'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato');
         Route::put('empleados/{empleado}/contrato', [PlanillaContratoController::class, 'update'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato.update');
         Route::get('empleados/{empleado}/contrato/pdf', [PlanillaContratoController::class, 'pdf'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.contrato.pdf');
         Route::post('empleados/{empleado}/sueldo', [PlanillaController::class, 'cambiarSueldo'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.sueldo');
-        Route::post('empleados/{empleado}/datos', [PlanillaController::class, 'actualizarDatos'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.datos');
-        Route::post('empleados/{empleado}/modulos', [PlanillaController::class, 'completarModulos'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.modulos');
-        Route::post('empleados/{empleado}/baja', [PlanillaController::class, 'bajaEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.baja');
         // Indemnización o prestación por renuncia de quien se fue: solo el cálculo. El pago se
         // genera por la revisión de abajo, como vacaciones. Lleva importes.
         Route::get('empleados/{empleado}/indemnizacion', [PlanillaIndemnizacionController::class, 'calcular'])
             ->whereNumber('empleado')->middleware([$gestionar, 'permission:planilla.salarios'])->name('empleados.indemnizacion');
-        Route::post('empleados/{empleado}/reactivar', [PlanillaController::class, 'reactivarEmpleado'])->whereNumber('empleado')->middleware($gestionar)->name('empleados.reactivar');
-        Route::post('empleados', [PlanillaController::class, 'guardarEmpleado'])
-            ->middleware($gestionar)->name('empleados.store');
 
         Route::get('abrir', [PlanillaController::class, 'create'])->middleware($gestionar)->name('create');
         // Revisar no guarda nada: muestra cuántas personas y cuánto antes de generar.
