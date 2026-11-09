@@ -33,6 +33,8 @@ class PedidoSala extends Model
         'estado',
         'numero_orden_compra',
         'notas',
+        'armando_desde',
+        'armando_por',
     ];
 
     protected function casts(): array
@@ -42,6 +44,8 @@ class PedidoSala extends Model
             'estado' => EstadoPedidoSala::class,
             'sacado_por_id' => 'integer',
             'registrado_por' => 'integer',
+            'armando_desde' => 'datetime',
+            'armando_por' => 'integer',
         ];
     }
 
@@ -75,9 +79,71 @@ class PedidoSala extends Model
         return $this->hasMany(PedidoSalaLinea::class, 'pedido_sala_id');
     }
 
+    public function armandoPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'armando_por');
+    }
+
+    /** Las salidas de la fábrica, también las anuladas. */
+    public function envios(): HasMany
+    {
+        return $this->hasMany(PedidoSalaEnvio::class, 'pedido_sala_id');
+    }
+
     public function estaRegistrado(): bool
     {
         return $this->estado === EstadoPedidoSala::Registrado;
+    }
+
+    /** Todo menos anulado. */
+    public function estaVigente(): bool
+    {
+        return $this->estado !== EstadoPedidoSala::Anulado;
+    }
+
+    /** Registrado o parcial: le falta salir de la fábrica. */
+    public function estaPorMandar(): bool
+    {
+        return $this->estado->porMandar();
+    }
+
+    /**
+     * ¿La fábrica ya lo tocó? Algún envío (aunque esté anulado), un estado distinto de
+     * Pendiente o el armado empezado. Usa `envios_exists` si vino precargado (withExists).
+     */
+    public function fabricaEmpezo(): bool
+    {
+        return ! $this->estaRegistrado() || $this->armando_desde !== null || $this->tieneEnvios();
+    }
+
+    /** Algún envío, también los anulados. */
+    public function tieneEnvios(): bool
+    {
+        if (array_key_exists('envios_exists', $this->attributes)) {
+            return (bool) $this->attributes['envios_exists'];
+        }
+
+        return $this->relationLoaded('envios') ? $this->envios->isNotEmpty() : $this->envios()->exists();
+    }
+
+    /** ¿Le falta algo por mandar? Con las líneas y sus envíos vigentes ya cargados. */
+    public function faltaAlgo(): bool
+    {
+        return $this->lineas->contains(fn (PedidoSalaLinea $l) => $l->tienePendiente());
+    }
+
+    /**
+     * Huella de lo que importa para mandar: el estado, las líneas (id y cantidad) y los
+     * envíos vigentes. Detecta la corrección del vendedor (cambian los id de las líneas),
+     * otra tableta que mandó primero y un envío anulado. El borrador NO entra: guardarlo
+     * no invalida la tarjeta de otra tableta. Se calcula con las relaciones ya cargadas.
+     */
+    public function versionProduccion(): string
+    {
+        $lineas = $this->lineas->sortBy('id')->map(fn (PedidoSalaLinea $l) => [$l->id, (string) $l->cantidad])->values()->all();
+        $envios = $this->envios->whereNull('anulado_en')->pluck('id')->sort()->values()->all();
+
+        return hash('sha256', json_encode([$this->estado->value, $lineas, $envios]));
     }
 
     /**
@@ -93,8 +159,14 @@ class PedidoSala extends Model
             : [];
     }
 
-    public function scopeRegistrados(Builder $q): Builder
+    /** Todo menos anulado: el pedido sacado cuenta aunque la fábrica ya lo haya marcado. */
+    public function scopeVigentes(Builder $q): Builder
     {
-        return $q->where('estado', EstadoPedidoSala::Registrado->value);
+        return $q->where('estado', '!=', EstadoPedidoSala::Anulado->value);
+    }
+
+    public function scopePorMandar(Builder $q): Builder
+    {
+        return $q->whereIn('estado', EstadoPedidoSala::valoresPorMandar());
     }
 }

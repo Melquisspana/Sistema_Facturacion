@@ -473,6 +473,9 @@ class NavigationTest extends TestCase
             'administrador' => ['administrador', [
                 ...$lecturaOperativa,
                 'rutas.dashboard',
+                // El área Fábrica (09/11/2026): el administrador tiene todos los permisos,
+                // así que el selector del panel la ofrece.
+                'fabrica.pedidos.index',
             ]],
             // Jefatura: lectura amplia, sin administración. ENTRA 'rutas.dashboard':
             // desde el 26/09/2026 planifica las salidas (rutas.ver + rutas.gestionar), así
@@ -512,6 +515,9 @@ class NavigationTest extends TestCase
 
         $this->assertSame(
             $this->urls([
+                // El área Fábrica (09/11/2026), desde el selector del panel: Producción
+                // también marca lo que sale de cada pedido.
+                'fabrica.pedidos.index',
                 'planta.dashboard',
                 'planta.existencias.index', 'planta.recepciones.index', 'planta.traslados.index',
                 'planta.disponibilidad.index', 'planta.ajustes.index', 'planta.movimientos.index',
@@ -546,6 +552,8 @@ class NavigationTest extends TestCase
                 'rutas.pedidos.index',
                 // «Por entregar» (06/11/2026): la oficina también mira lo que falta entregar.
                 'rutas.por-entregar.index',
+                // El área Fábrica (09/11/2026), desde el selector del panel.
+                'fabrica.pedidos.index',
             ]),
             $this->enlacesDelSidebar($html),
         );
@@ -998,9 +1006,10 @@ class NavigationTest extends TestCase
     }
 
     /**
-     * AISLAMIENTO. El selector solo muestra áreas permitidas Y habilitadas, así que
-     * producción —que solo tiene planta.ver— no recibe ni el selector ni un solo
-     * enlace fiscal. Es la garantía que no se puede perder al tocar navegación.
+     * AISLAMIENTO. El selector solo muestra áreas permitidas Y habilitadas. Producción
+     * tiene Planta y, desde el 09/11/2026, Fábrica (lo que sale de cada pedido): el
+     * selector ofrece esas dos y no recibe un solo enlace fiscal. Es la garantía que no
+     * se puede perder al tocar navegación.
      */
     public function test_produccion_no_recibe_selector_de_areas_ni_enlaces_fiscales(): void
     {
@@ -1009,9 +1018,10 @@ class NavigationTest extends TestCase
         $html = $this->actingAs($this->usuario('produccion'))->get(route('planta.dashboard'))->assertOk()->getContent();
         $sidebar = $this->sidebarDe($html);
 
-        // Con una sola área visible no se dibuja ningún selector, ni arriba ni dentro.
-        $this->assertStringNotContainsString('aria-label="Áreas de trabajo"', $sidebar);
-        $this->assertStringNotContainsString('data-area-selector', $html);
+        // El selector ofrece solo sus dos áreas: Producción y Fábrica.
+        $this->assertStringContainsString('data-area-selector', $html);
+        $this->assertStringContainsString(route('fabrica.pedidos.index'), $sidebar);
+        $this->assertStringNotContainsString('>Facturación<', $sidebar);
 
         // Comparación de URL COMPLETAS y no de subcadenas: «/productos» aparece
         // dentro de «/planta/productos-base», que sí es suyo, y una comprobación por

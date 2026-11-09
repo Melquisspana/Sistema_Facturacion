@@ -106,7 +106,7 @@ class MiSalidaController extends Controller
             'abierta' => true,
             'salasPedido' => $salida->proposito->sacaPedido() ? $this->salasParaPedido($salida) : collect(),
             'pedidosPorSala' => $salida->proposito->sacaPedido()
-                ? $salida->pedidos()->registrados()->with('lineas.producto:id,nombre')->get()->keyBy('cliente_sucursal_id')
+                ? $salida->pedidos()->vigentes()->withExists('envios')->with('lineas.producto:id,nombre')->get()->keyBy('cliente_sucursal_id')
                 : collect(),
         ]);
     }

@@ -1293,6 +1293,20 @@ class CatalogoAjustes
                 porDefecto: '2026-09-28',
                 reglas: ['fecha'],
             ),
+            DefinicionAjuste::hacer(
+                clave: 'pedidos.fabrica_desde',
+                seccion: 'rutas',
+                tipo: TipoAjuste::Texto,
+                sensibilidad: Sensibilidad::Interno,
+                impacto: Impacto::Medio,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'La fábrica ve los pedidos desde',
+                descripcion: 'Los pedidos de sala con fecha anterior no aparecen en «Por mandar» de la fábrica. Sin fecha, aparecen todos.',
+                claveConfig: 'pedidos.fabrica_desde',
+                reglas: ['fecha'],
+            ),
 
             // ---------------------------------------------------------- Gastos
             DefinicionAjuste::hacer(
