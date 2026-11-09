@@ -450,6 +450,28 @@ class CobrosNumeroEntreEjerciciosTest extends TestCase
         $this->assertNotSame($de2026->id, $nuevo->id);
     }
 
+    public function test_importar_el_mismo_numero_de_2026_y_2027_en_una_corrida_trae_los_dos(): void
+    {
+        $cliente = $this->cliente();
+        $adjuntos = [];
+        foreach (['m1' => '2026-12-20', 'm2' => '2027-01-15'] as $mensaje => $fecha) {
+            $codigo = strtoupper(Str::uuid()->toString());
+            $json = [
+                'identificacion' => ['numeroControl' => self::NUMERO, 'codigoGeneracion' => $codigo, 'tipoDte' => '03', 'fecEmi' => $fecha],
+                'resumen' => ['totalPagar' => 100.0],
+                'receptor' => ['nit' => self::NIT, 'nombre' => 'Calleja'],
+                'selloRecibido' => 'SELLO'.$codigo,
+            ];
+            $adjuntos[$mensaje] = [['filename' => 'dte.json', 'mime' => 'application/json', 'data' => json_encode($json)]];
+        }
+        $this->app->instance(GmailClient::class, new GmailClientDeImportacion([array_keys($adjuntos)], $adjuntos));
+
+        $r = app(ImportadorEnviadosService::class)->importar($cliente, Carbon::parse('2026-12-01'), Carbon::parse('2027-01-31'), 100, true);
+
+        $this->assertSame([], $r->excepciones, 'Entre ejercicios el mismo número no es un conflicto.');
+        $this->assertEqualsCanonicalizing([2026, 2027], CobroDocumento::where('numero_control_norm', self::NUMERO_TXT)->pluck('ejercicio_control')->all());
+    }
+
     // ------------------------------------------------------------------ correos
 
     private function correoConNumero(Cliente $cliente, string $fecha): void
