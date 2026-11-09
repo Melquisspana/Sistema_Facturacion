@@ -101,6 +101,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -284,6 +285,8 @@ class DteController extends Controller
      *  - `$propuesta` ({@see FacturarPedido::propuesta()}): `lineas` (nombre, cantidad,
      *    entero, precio, problema), `problemas` (si hay alguno, el botón va apagado), `oc`
      *    (la del pedido, valor inicial; `old()` sigue mandando), `oc_con_ccf` y `borrador`.
+     *  - `$cancelar` (url): a donde se estaba. `desde=pedido` vuelve a la ficha del pedido; si
+     *    no, a «Llegó de la fábrica» con su `fecha` o, sin una fecha válida, a «Sin facturar».
      * Sin `?pedido=` la pantalla queda exactamente igual.
      */
     public function createCcf(Request $request): View
@@ -295,10 +298,18 @@ class DteController extends Controller
             $pedido = PedidoSala::with('sala.cliente')->findOrFail($request->integer('pedido'));
             $this->authorize('view', $pedido);
         }
+        // Solo arma rutas propias: nada de la consulta llega tal cual a un enlace.
+        $fecha = Validator::make($request->query(), ['fecha' => ['required', 'date_format:Y-m-d']])->passes()
+            ? $request->query('fecha') : null;
 
         return view('facturacion.create-ccf', $this->datosFormularioCcf() + ($pedido === null ? [] : [
             'pedido' => $pedido,
             'propuesta' => app(FacturarPedido::class)->propuesta($pedido),
+            'cancelar' => match (true) {
+                $request->query('desde') === 'pedido' => route('rutas.pedidos.show', $pedido),
+                $fecha !== null && ! $request->boolean('sin_facturar') => route('facturacion.llego-de-fabrica', ['fecha' => $fecha]),
+                default => route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]),
+            },
         ]));
     }
 
@@ -2810,6 +2821,8 @@ class DteController extends Controller
             // Cambiar una línea mueve el total: los dos avisos tienen que volver medidos.
             'avisoImporteTxt' => $albaranNc['avisoImporteTxt'] ?? null,
             'excesoSaldoCcf' => $albaranNc['excesoSaldoCcf'] ?? null,
+            // Lo que no cuadra con lo que llegó de la fábrica, medido con la cantidad nueva.
+            'avisosPedido' => $esNc ? [] : app(FacturarPedido::class)->avisosDelCcf($dte),
         ])->render();
 
         return response()->json([

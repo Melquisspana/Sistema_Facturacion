@@ -97,12 +97,14 @@ class OrdenCompraRecibida extends Model
     }
 
     /**
-     * CCF vigente (el más reciente) de cada número de orden.
+     * CCF vigente (el más reciente) de cada número de orden. Con `$soloLosQueCuentan`, sin
+     * los rechazados ({@see Dte::scopeCuentaComoFacturado()}): para avisar «esa OC ya tiene
+     * un CCF» en un pedido, un CCF que Hacienda rechazó no factura nada.
      *
      * @param  array<int, string>  $numeros
      * @return array<string, Dte>
      */
-    public static function ccfPorNumero(array $numeros): array
+    public static function ccfPorNumero(array $numeros, bool $soloLosQueCuentan = false): array
     {
         $numeros = array_values(array_unique(array_filter($numeros)));
         if ($numeros === []) {
@@ -112,6 +114,7 @@ class OrdenCompraRecibida extends Model
         return Dte::query()
             ->where('tipo_dte', TipoDte::CreditoFiscal->value)
             ->where('estado', '!=', EstadoDte::Invalidado->value)
+            ->when($soloLosQueCuentan, fn ($q) => $q->cuentaComoFacturado())
             ->whereRaw(self::ocDelDte().' in ('.implode(',', array_fill(0, count($numeros), '?')).')', $numeros)
             ->orderBy('id')
             ->get(['id', 'numero_control', 'numero_interno', 'numero_orden_compra', 'estado', 'fecha_emision'])

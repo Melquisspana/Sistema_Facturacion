@@ -4,7 +4,7 @@
      facturación, la hoja para imprimir y «Facturar». Tarjetas también en la computadora:
      cada una es la hoja de una sala.
 
-     Variables: $pedidos (paginado), $oc [pedido_id => propuestas, del_correo, aviso, lista],
+     Variables: $pedidos (paginado), $oc [pedido_id => propuestas, titulo, aviso, lista],
      $fecha (Y-m-d), $esHoy, $sinFacturar (bool), $facturacion [pedido_id => por_facturar,
      borrador, facturados] y $otrosDiasSinFacturar (int). --}}
 <x-app-layout>

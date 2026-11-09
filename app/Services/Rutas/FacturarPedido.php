@@ -47,6 +47,9 @@ class FacturarPedido
     /** Lo que llegó después de crear el borrador va en ese mismo CCF, no en otro con la misma OC. */
     public const BORRADOR_ABIERTO = 'Este pedido ya tiene un borrador abierto. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo lo que llegó.';
 
+    /** En la tarjeta y el detalle del pedido: hay un borrador abierto y llegó otro envío. */
+    public const LLEGO_DESPUES_DEL_BORRADOR = 'Llegó algo después del borrador. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo.';
+
     /** Bitácora de {@see pasarAlCcfQueCorrige()}. */
     public const PASO_AL_QUE_CORRIGE = 'el CCF que corrige se quedó con lo que llegó del pedido';
 
@@ -76,7 +79,8 @@ class FacturarPedido
         return $this->armar($pedido, $envios) + [
             'envios' => $envios,
             'oc' => $oc,
-            'oc_con_ccf' => $oc === null ? null : (OrdenCompraRecibida::ccfPorNumero([OrdenCompra::normalizar($oc)])[OrdenCompra::normalizar($oc)] ?? null),
+            // Un CCF rechazado no avisa: no factura nada y hay que volver a facturar.
+            'oc_con_ccf' => $oc === null ? null : (OrdenCompraRecibida::ccfPorNumero([OrdenCompra::normalizar($oc)], soloLosQueCuentan: true)[OrdenCompra::normalizar($oc)] ?? null),
             'borrador' => $this->borradorAbierto($pedido),
         ];
     }
@@ -217,8 +221,10 @@ class FacturarPedido
 
     /**
      * Aviso SUAVE del editor (no frena la emisión): en un CCF que salió de envíos de la
-     * fábrica, los productos que pasan de lo que llegó o que no vinieron. Vacío si el CCF
-     * no viene de ningún pedido.
+     * fábrica, los envíos del mismo pedido que llegaron después y no están en él (para que
+     * salga un solo CCF con todo), y los productos que pasan de lo que llegó o que no
+     * vinieron. Vacío si el CCF no viene de ningún pedido. El editor lo vuelve a pedir con
+     * cada cambio de cantidad (va en el panel que se repinta).
      *
      * @return list<string>
      */
@@ -229,6 +235,15 @@ class FacturarPedido
             return [];
         }
 
+        $avisos = [];
+        $despues = PedidoSalaEnvio::query()->whereIn('pedido_sala_id', $envios->pluck('pedido_sala_id')->unique()->all())
+            ->porFacturar()->orderBy('numero')->pluck('numero');
+        if ($despues->isNotEmpty()) {
+            $avisos[] = ($despues->count() === 1 ? 'El envío ' : 'Los envíos ').$despues->join(', ', ' y ')
+                .' de este pedido '.($despues->count() === 1 ? 'llegó después y no está' : 'llegaron después y no están').' en este borrador.'
+                .' Para que salga un solo CCF con todo, eliminá este borrador en la lista de Facturación y tocá «Facturar» otra vez.';
+        }
+
         $llego = [];
         foreach ($envios as $envio) {
             foreach ($envio->lineas as $l) {
@@ -237,7 +252,6 @@ class FacturarPedido
             }
         }
 
-        $avisos = [];
         foreach ($dte->lineas()->whereNotNull('producto_id')->orderBy('numero_linea')->get(['producto_id', 'descripcion', 'cantidad']) as $l) {
             $vino = $llego[$l->producto_id] ?? null;
             if ($vino === null) {

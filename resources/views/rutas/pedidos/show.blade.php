@@ -5,7 +5,8 @@
      Variables: $pedido (con envios.dte) y $regresa [producto_id => llego, facturado,
      regresa] (FacturarPedido::regresa): la columna «Regresa» sale solo si ya se facturó algo.
      «Facturar» (solo quien factura) abre el formulario del CCF con lo que sigue sin facturar;
-     con un borrador abierto no sale: lo nuevo va en ese mismo CCF. --}}
+     con un borrador abierto no sale y se dice por qué: lo nuevo va en ese mismo CCF. El enlace
+     lleva `desde=pedido` para que «Cancelar» vuelva a esta ficha. --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -23,6 +24,7 @@
         // Sin consultas: los envíos ya traen su CCF.
         $facturacion = \App\Services\Rutas\FacturarPedido::estado($pedido);
         $puedeFacturar = $pedido->estaVigente() && $facturacion['por_facturar']->isNotEmpty() && ! $facturacion['borrador'];
+        $llegoDespues = $pedido->estaVigente() && $facturacion['por_facturar']->isNotEmpty() && $facturacion['borrador'] !== null;
     @endphp
 
     <div class="py-6 sm:py-8">
@@ -41,12 +43,15 @@
                         @endif
                         @if ($puedeFacturar)
                             @can('create', App\Models\Dte::class)
-                                <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id]) }}"
+                                <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']) }}"
                                    class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
                             @endcan
                         @endif
                     </div>
                 </div>
+                @if ($llegoDespues)
+                    <p class="mt-3 text-sm text-amber-800">{{ \App\Services\Rutas\FacturarPedido::LLEGO_DESPUES_DEL_BORRADOR }}</p>
+                @endif
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div><dt class="{{ $dt }}">Sala</dt><dd class="{{ $dd }}">{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
                     <div><dt class="{{ $dt }}">Fecha</dt><dd class="{{ $dd }}">{{ $pedido->fecha->format('d/m/Y') }}</dd></div>

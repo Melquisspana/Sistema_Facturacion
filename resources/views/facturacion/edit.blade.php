@@ -43,20 +43,8 @@
 
             @include('facturacion.partials.viene-del-pedido', ['dte' => $dte])
 
-            {{-- Aviso SUAVE de lo que llegó de la fábrica (FacturarPedido::avisosDelCcf): un
-                 producto que pasa de lo que llegó o que no vino. No frena generar. Se calcula al
-                 abrir el editor: después de cambiar cantidades, recargá para verlo al día. --}}
-            @if (($avisosPedido ?? []) !== [])
-                <div role="alert" class="rounded-md bg-amber-50 border border-amber-300 p-3 text-sm text-amber-800">
-                    <strong>⚠ Revisá contra lo que llegó de la fábrica:</strong>
-                    <ul class="mt-1 list-disc list-inside">
-                        @foreach ($avisosPedido as $aviso)
-                            <li>{{ $aviso }}</li>
-                        @endforeach
-                    </ul>
-                    <p class="mt-1">Podés generar igual si es correcto.</p>
-                </div>
-            @endif
+            {{-- El aviso de lo que llegó de la fábrica va en el panel de la derecha
+                 (partials/resumen-ccf), que se repinta con cada cambio de cantidad. --}}
 
             {{-- Aviso SUAVE de OC duplicada: solo advierte (con link); no bloquea generar. --}}
             @if ($ocDuplicada ?? null)
@@ -378,7 +366,7 @@
                 {{-- Panel lateral: resumen del CCF (productos agregados + totales + Generar), sticky. --}}
                 <div class="order-1 lg:order-2 @cannot('update', $dte) lg:col-span-3 @endcannot">
                     <div class="lg:sticky lg:top-6" id="resumen-panel">
-                        @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'confirmGenerar' => $confirmGenerar])
+                        @include('facturacion.partials.resumen-ccf', ['dte' => $dte, 'esAgenteRetencion' => $esAgenteRetencion ?? null, 'confirmGenerar' => $confirmGenerar, 'avisosPedido' => $avisosPedido ?? []])
                     </div>
                 </div>
             </div>

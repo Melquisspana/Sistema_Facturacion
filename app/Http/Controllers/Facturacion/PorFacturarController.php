@@ -70,33 +70,46 @@ class PorFacturarController extends Controller
             ->withQueryString();
 
         // Una sola consulta por página, no una por tarjeta. Las OC del correo ya vienen por
-        // sala y sin CCF; la que anotó el vendedor se revisa acá: de otra sala o ya usada.
+        // sala y sin CCF; la que anotó el vendedor se revisa acá: de otra sala o ya usada (un
+        // CCF rechazado no cuenta: no factura nada y hay que volver a facturar).
         $ocCorreo = OrdenCompraRecibida::pendientesPorSucursal();
         $conCcf = OrdenCompraRecibida::ccfPorNumero($pedidos->getCollection()
-            ->map(fn (PedidoSala $p) => OrdenCompra::normalizar($p->numero_orden_compra))->all());
+            ->map(fn (PedidoSala $p) => OrdenCompra::normalizar($p->numero_orden_compra))->all(), soloLosQueCuentan: true);
         $oc = [];
         $facturacion = [];
         foreach ($pedidos as $pedido) {
-            $facturacion[$pedido->id] = FacturarPedido::estado($pedido);
+            $estado = $facturacion[$pedido->id] = FacturarPedido::estado($pedido);
             $delPedido = filled($pedido->numero_orden_compra);
+            // Sin nada nuevo que facturar aparte (todo está en un CCF, o lo que llegó va en su
+            // borrador), la OC que vale es la de sus CCF, no las del correo.
+            $enSuCcf = ! $delPedido && ($estado['por_facturar']->isEmpty() || $estado['borrador'] !== null);
             $deOtraSala = $delPedido ? ReglaOrdenCompra::salaDistinta($pedido->numero_orden_compra, $pedido->sala) : null;
             $ccfDeLaOc = $delPedido ? ($conCcf[OrdenCompra::normalizar($pedido->numero_orden_compra)] ?? null) : null;
             // El CCF de la OC es el de este mismo pedido y no queda nada por facturar: no es aviso.
-            $esElPropio = $ccfDeLaOc !== null && $facturacion[$pedido->id]['por_facturar']->isEmpty()
+            $esElPropio = $ccfDeLaOc !== null && $estado['por_facturar']->isEmpty()
                 && $pedido->envios->contains('dte_id', $ccfDeLaOc->id);
             $aviso = match (true) {
                 $ccfDeLaOc !== null && ! $esElPropio => 'Esa OC ya tiene un CCF.',
                 $deOtraSala !== null => 'La OC es de la sala '.$deOtraSala.' y el pedido es de la '.Sala::normalizar($pedido->sala->codigo).'.',
                 default => null,
             };
-            $propuestas = $delPedido
-                ? [$pedido->numero_orden_compra]
-                : array_column($ocCorreo[$pedido->cliente_sucursal_id] ?? [], 'numero');
+            $propuestas = match (true) {
+                $delPedido => [$pedido->numero_orden_compra],
+                $enSuCcf => collect([$estado['borrador']])->filter()->merge($estado['facturados'])
+                    ->pluck('numero_orden_compra')->filter(fn ($n) => filled($n))->unique()->values()->all(),
+                default => array_column($ocCorreo[$pedido->cliente_sucursal_id] ?? [], 'numero'),
+            };
             $oc[$pedido->id] = [
                 'propuestas' => $propuestas,
-                'del_correo' => ! $delPedido,
+                'titulo' => match (true) {
+                    $propuestas === [] => 'Orden de compra',
+                    $delPedido => 'OC del pedido',
+                    $enSuCcf => 'OC del CCF',
+                    default => 'OC del correo',
+                },
                 'aviso' => $aviso,
-                'lista' => $aviso === null && ($propuestas !== [] || ! ReglaOrdenCompra::requerida($pedido->sala?->cliente, $pedido->sala)),
+                // Ya en su CCF: la OC quedó resuelta ahí (crearBorrador exige la que pide la sala).
+                'lista' => $aviso === null && ($enSuCcf || $propuestas !== [] || ! ReglaOrdenCompra::requerida($pedido->sala?->cliente, $pedido->sala)),
             ];
         }
 

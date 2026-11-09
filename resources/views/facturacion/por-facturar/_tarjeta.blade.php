@@ -11,7 +11,8 @@
      lo que llegó después va en ese mismo CCF (FacturarPedido::BORRADOR_ABIERTO).
 
      Variables: $pedido (sala, ruta, sacadoPor, lineas.producto, lineas.envioLineasVigentes,
-     envios vigentes con sus lineas y su dte); $oc [propuestas, del_correo, aviso, lista];
+     envios vigentes con sus lineas y su dte); $oc [propuestas, titulo («OC del pedido», «OC
+     del CCF» si ya está en su CCF, «OC del correo»), aviso, lista];
      $fecha (Y-m-d); $sinFacturar (bool); $facturacion (FacturarPedido::estado: por_facturar,
      borrador, facturados). --}}
 @php
@@ -58,7 +59,7 @@
         <div><dt class="text-xs font-medium text-gray-500">Envíos</dt><dd class="text-gray-800">
             {{ $pedido->envios->map(fn ($e) => 'Envío '.$e->numero.' · '.$e->fecha->format('d/m').' '.$e->created_at->format('H:i'))->implode(' · ') }}
         </dd></div>
-        <div><dt class="text-xs font-medium text-gray-500">{{ $oc['propuestas'] === [] ? 'Orden de compra' : ($oc['del_correo'] ? 'OC del correo' : 'OC del pedido') }}</dt>
+        <div><dt class="text-xs font-medium text-gray-500">{{ $oc['titulo'] }}</dt>
             <dd class="font-mono text-gray-800">
                 @if ($oc['propuestas'] === [])
                     <span class="font-sans {{ $oc['lista'] ? 'text-gray-600' : 'text-amber-800' }}">{{ $oc['lista'] ? 'La sala no pide OC.' : 'La sala pide OC y todavía no llegó.' }}</span>
@@ -82,7 +83,7 @@
                 @if ($porFacturar->isNotEmpty())
                     <p><x-planta.badge color="amber">Por facturar</x-planta.badge> {{ $enviosTexto($porFacturar) }}</p>
                     @if ($facturacion['borrador'])
-                        <p class="text-amber-800">Llegó algo después del borrador. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo.</p>
+                        <p class="text-amber-800">{{ \App\Services\Rutas\FacturarPedido::LLEGO_DESPUES_DEL_BORRADOR }}</p>
                     @endif
                 @endif
             </dd>
@@ -92,7 +93,10 @@
     @if ($otrosDias)
         <p class="mt-3 text-sm text-amber-800">
             @if ($sinFacturar)
-                Una parte ya se facturó: «{{ $columnaDelDia }}» es lo que va en el CCF.
+                {{-- Con un borrador abierto no se facturó nada todavía: lo explica «Facturación». --}}
+                @unless ($facturacion['borrador'])
+                    Una parte ya se facturó: «{{ $columnaDelDia }}» es lo que va en el CCF.
+                @endunless
             @else
                 También tuvo envíos otros días.
                 @if ($porFacturarOtroDia)
@@ -162,7 +166,8 @@
             {{-- x-primary-button es solo <button>: el enlace lleva sus clases (docs/GUIA_PANTALLAS.md). --}}
             @if ($porFacturar->isNotEmpty() && ! $facturacion['borrador'])
                 @can('create', App\Models\Dte::class)
-                    <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id]) }}"
+                    {{-- Con el filtro de la lista: «Cancelar» del formulario vuelve a lo que se miraba. --}}
+                    <a href="{{ route('facturacion.create-ccf', ['pedido' => $pedido->id] + ($sinFacturar ? ['sin_facturar' => 1] : ['fecha' => $fecha])) }}"
                        class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Facturar</a>
                 @endcan
             @endif

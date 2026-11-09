@@ -311,9 +311,12 @@
                     @if ($conPedido)
                         @include('facturacion.partials.lo-que-llego', ['pedido' => $pedido, 'propuesta' => $propuesta, 'sinNada' => $sinNada])
 
-                        <div class="flex items-center gap-3">
-                            <x-primary-button id="crear-borrador" :disabled="$bloqueado" class="disabled:cursor-not-allowed disabled:opacity-50">Crear borrador</x-primary-button>
-                            <a href="{{ route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]) }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
+                        {{-- Pie de la guía: Cancelar a la izquierda (vuelve a donde se estaba: la
+                             lista o la ficha del pedido, $cancelar) y el principal a la derecha. --}}
+                        <div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+                            <a href="{{ $cancelar }}"
+                               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</a>
+                            <x-primary-button id="crear-borrador" :disabled="$bloqueado" class="min-h-11 justify-center disabled:cursor-not-allowed disabled:opacity-50">Crear borrador</x-primary-button>
                         </div>
                     @else
                     <div class="flex items-center gap-3">

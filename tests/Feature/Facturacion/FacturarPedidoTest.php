@@ -543,6 +543,83 @@ class FacturarPedidoTest extends TestCase
             ->assertDontSee('Revisá contra lo que llegó de la fábrica');
     }
 
+    public function test_despues_de_un_rechazo_el_formulario_no_avisa_que_la_oc_ya_tiene_ccf(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10'], '26119001000123');
+        $this->envio($pedido, [$this->galleta->id => '10']);
+        $this->post(route('facturacion.pedidos.facturar', $pedido), ['numero_orden_compra' => '26119001000123'])->assertSessionHasNoErrors();
+        Dte::query()->update(['estado' => EstadoDte::Rechazado->value]);
+
+        // Hacienda lo rechazó: hay que volver a facturar, sin el aviso de facturar dos veces.
+        $respuesta = $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
+            ->assertDontSee('La OC del pedido ya tiene un CCF');
+        $this->assertNull($respuesta->viewData('propuesta')['oc_con_ccf']);
+        $this->assertFalse($this->botonApagado($respuesta->getContent()));
+
+        // Un CCF con esa OC que sí cuenta sigue avisando.
+        $this->post(route('facturacion.store-ccf'), ['tipo_dte' => '03', 'cliente_id' => $this->cliente->id, 'cliente_sucursal_id' => $this->sala->id, 'numero_orden_compra' => '26119001000123'])
+            ->assertSessionHasNoErrors();
+        $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id]))->assertOk()
+            ->assertSee('La OC del pedido ya tiene un CCF');
+    }
+
+    public function test_con_un_borrador_abierto_el_editor_y_el_pedido_dicen_que_llego_algo_despues(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+        $borrador = Dte::sole();
+        $aviso = 'El envío 2 de este pedido llegó después y no está en este borrador.';
+        $this->get(route('facturacion.edit', $borrador))->assertOk()->assertDontSee($aviso);
+
+        $this->envio($pedido, [$this->galleta->id => '4']);
+
+        $this->get(route('facturacion.edit', $borrador))->assertOk()
+            ->assertSee($aviso)
+            ->assertSee('Para que salga un solo CCF con todo, eliminá este borrador en la lista de Facturación y tocá «Facturar» otra vez.');
+        // El detalle no tiene «Facturar» y dice por qué.
+        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()
+            ->assertDontSee(route('facturacion.create-ccf', ['pedido' => $pedido->id]), false)
+            ->assertSee('Llegó algo después del borrador. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo.');
+    }
+
+    public function test_el_aviso_de_lo_que_llego_se_actualiza_al_cambiar_cantidades_sin_recargar(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '10']);
+        $this->post(route('facturacion.pedidos.facturar', $pedido))->assertSessionHasNoErrors();
+        $dte = Dte::sole();
+        $cantidad = fn (int $n) => $this->postJson(route('facturacion.productos.cantidad', [$dte, $this->galleta]), ['cantidad' => $n])
+            ->assertOk()->json('resumen_html');
+
+        $html = $cantidad(12);
+        $this->assertStringContainsString('Revisá contra lo que llegó de la fábrica', $html);
+        $this->assertStringContainsString('Galleta de prueba: van 12 y llegaron 10.', $html);
+
+        $this->assertStringNotContainsString('Revisá contra lo que llegó de la fábrica', $cantidad(10));
+    }
+
+    public function test_cancelar_vuelve_a_donde_se_estaba_y_va_antes_que_crear_borrador(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '10']);
+        $enlace = fn (string $url) => 'href="'.e($url).'"';
+
+        // Desde el detalle del pedido vuelve a la ficha.
+        $desdePedido = route('facturacion.create-ccf', ['pedido' => $pedido->id, 'desde' => 'pedido']);
+        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee($enlace($desdePedido), false);
+        $this->get($desdePedido)->assertOk()
+            ->assertSeeInOrder([$enlace(route('rutas.pedidos.show', $pedido)), 'Cancelar', 'Crear borrador'], false);
+
+        // Desde la lista, a la lista con el mismo filtro; si no se sabe, a «Sin facturar».
+        $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id, 'fecha' => '2026-11-08']))->assertOk()
+            ->assertSee($enlace(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08'])), false);
+        foreach ([['sin_facturar' => 1], ['fecha' => 'no-es-fecha'], []] as $filtro) {
+            $this->get(route('facturacion.create-ccf', ['pedido' => $pedido->id] + $filtro))->assertOk()
+                ->assertSee($enlace(route('facturacion.llego-de-fabrica', ['sin_facturar' => 1])), false);
+        }
+    }
+
     public function test_la_ficha_del_ccf_dice_de_que_pedido_viene(): void
     {
         $pedido = $this->pedido([$this->galleta->id => '10']);
