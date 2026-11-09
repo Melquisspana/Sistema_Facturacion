@@ -22,6 +22,7 @@ use App\Services\Planilla\RegistrarAnticipo;
 use App\Services\Planilla\RegistrarEmpleado;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -441,6 +442,34 @@ class FlujoPlanillaTest extends TestCase
 
         $this->assertSame(0, Pago::count());
         $this->assertSame(0, PlanillaLote::count(), 'Un lote rechazado no deja un lote vacío.');
+    }
+
+    /**
+     * #22 · El lote vacío aparecía con datos a medias: la fecha y el método bastaban para
+     * crear el lote en su propia transacción, y el pago se rechazaba después por lo que
+     * faltaba o estaba mal. Ahora todo se revisa antes de crear el lote.
+     */
+    public function test_un_lote_con_datos_a_medias_no_deja_un_lote_vacio(): void
+    {
+        $u = $this->gestor();
+        ['planilla' => $planilla] = $this->planillaLista($u);
+        app(ConfirmarPlanilla::class)->confirmar($u, $planilla);
+        $completos = [
+            'fecha' => now()->toDateString(), 'metodo' => 'transferencia', 'pagado_por' => $u->id,
+            'sin_comprobante' => 'Lote de prueba.', 'detalles' => PlanillaDetalle::pluck('id')->all(),
+        ];
+
+        foreach ([
+            'pagado_por' => Arr::except($completos, 'pagado_por'),
+            'fecha' => ['fecha' => now()->addDay()->toDateString()] + $completos,
+        ] as $campo => $datos) {
+            $respuesta = $this->actingAs($u)->post(route('planilla.pagar.lote', $planilla), $datos);
+
+            $this->assertSame(0, PlanillaLote::count(), "Con «{$campo}» mal quedó un lote vacío.");
+            $respuesta->assertSessionHasErrors($campo);
+        }
+
+        $this->assertSame(0, Pago::count());
     }
 
     public function test_no_se_puede_pagar_un_borrador(): void
