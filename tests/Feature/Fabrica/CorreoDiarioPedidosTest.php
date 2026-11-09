@@ -154,6 +154,25 @@ class CorreoDiarioPedidosTest extends TestCase
         $this->assertTrue(strpos($html, 'Súper Ficticio Centro') < strpos($html, 'Tienda Inventada Norte'));
     }
 
+    public function test_lo_escrito_en_la_fabrica_no_mete_enlaces_ni_imagenes_en_el_correo(): void
+    {
+        Mail::fake();
+        $this->correoReal();
+        $trampa = '![](https://rastreo.example/p.gif) [Ver detalle](https://phishing.example/login)';
+
+        $pedido = $this->pedido($this->sala('Súper [Ficticio](https://phishing.example/sala) Centro'), [$this->galleta->id => '4', $this->canilla->id => '2']);
+        $this->mandar($pedido, [$this->galleta->id => '4', $this->canilla->id => '0'], [$this->canilla->id => $trampa]);
+
+        $this->artisan('pedidos:correo-diario')->assertSuccessful();
+
+        $html = $this->enviado()->render();
+        $this->assertStringNotContainsString('src="https://rastreo.example', $html);
+        $this->assertStringNotContainsString('href="https://phishing.example', $html);
+        // Se lee tal cual se escribió.
+        $this->assertStringContainsString('[Ver detalle](https://phishing.example/login)', $html);
+        $this->assertStringContainsString('Súper [Ficticio](https://phishing.example/sala) Centro', $html);
+    }
+
     public function test_si_no_salio_nada_dice_hoy_no_salio_ningun_pedido_con_los_pendientes(): void
     {
         Mail::fake();

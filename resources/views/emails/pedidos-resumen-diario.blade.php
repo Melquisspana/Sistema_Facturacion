@@ -1,7 +1,8 @@
 {{--
     Resumen diario de los pedidos de sala (17:00). Por sala: lo que salió, lo que faltó,
     lo que no se trae y lo que sigue por mandar. Listas y no tablas: el nombre de un
-    producto con «|» rompería una tabla de markdown.
+    producto con «|» rompería una tabla de markdown. Todo lo que escribió alguien pasa por
+    $literal: sin eso, un motivo con `[texto](url)` sería un enlace en el correo.
 --}}
 <x-mail::message>
 # Pedidos del {{ $contenido['fecha'] }}
@@ -11,13 +12,13 @@
 
 @endif
 @forelse ($contenido['salas'] as $sala => $datos)
-## {{ $sala }}
+## {{ $literal($sala) }}
 
 @if (count($datos['salio']) > 0)
 **Salió hoy**
 
 @foreach ($datos['salio'] as $envio)
-- Envío {{ $envio['numero'] }} ({{ $envio['hora'] }}): {{ collect($envio['productos'])->map(fn ($p) => $p['nombre'].' '.$p['cantidad'])->implode(', ') }}
+- Envío {{ $envio['numero'] }} ({{ $envio['hora'] }}): {{ collect($envio['productos'])->map(fn ($p) => $literal($p['nombre']).' '.$p['cantidad'])->implode(', ') }}
 
 @endforeach
 
@@ -26,7 +27,7 @@
 **Faltó**
 
 @foreach ($datos['falto'] as $p)
-- {{ $p['nombre'] }}: {{ $p['cantidad'] }}@if ($p['motivo']) — {{ $p['motivo'] }}@endif
+- {{ $literal($p['nombre']) }}: {{ $p['cantidad'] }}@if ($p['motivo']) — {{ $literal($p['motivo']) }}@endif
 
 @endforeach
 
@@ -35,7 +36,7 @@
 **No se trae**
 
 @foreach ($datos['no_se_trae'] as $p)
-- {{ $p['nombre'] }}: {{ $p['cantidad'] }}
+- {{ $literal($p['nombre']) }}: {{ $p['cantidad'] }}
 @endforeach
 
 @endif
@@ -43,7 +44,7 @@
 **Sigue por mandar**
 
 @foreach ($datos['por_mandar'] as $pedido)
-- Pedido del {{ $pedido['fecha'] }} ({{ $pedido['atraso'] === 0 ? 'de hoy' : ($pedido['atraso'] === 1 ? '1 día de atraso' : $pedido['atraso'].' días de atraso') }}): {{ collect($pedido['productos'])->map(fn ($p) => $p['nombre'].' '.$p['cantidad'])->implode(', ') }}
+- Pedido del {{ $pedido['fecha'] }} ({{ $pedido['atraso'] === 0 ? 'de hoy' : ($pedido['atraso'] === 1 ? '1 día de atraso' : $pedido['atraso'].' días de atraso') }}): {{ collect($pedido['productos'])->map(fn ($p) => $literal($p['nombre']).' '.$p['cantidad'])->implode(', ') }}
 
 @endforeach
 
