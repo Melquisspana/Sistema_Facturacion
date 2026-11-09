@@ -247,7 +247,8 @@ class CobrosAltaTest extends TestCase
     /**
      * Issue #13: el número de control ya está en el seguimiento de OTRO cliente (la llave es
      * única en todo el sistema). Antes la tarea de cada 10 minutos se caía ahí y los demás
-     * no entraban; ahora lo informa, no toca el ajeno y sigue.
+     * no entraban; ahora lo informa, no toca el ajeno y sigue. Al final termina con error
+     * para que la tarea programada lo anote y llegue el aviso por correo.
      */
     public function test_un_numero_que_ya_esta_en_otro_cliente_no_tumba_el_alta(): void
     {
@@ -264,7 +265,8 @@ class CobrosAltaTest extends TestCase
         config()->set('cobros.alta.automatica', true);
         $this->artisan('cobros:sincronizar', ['--cliente' => $cliente->id, '--aplicar' => true])
             ->expectsOutputToContain('1 ya está(n) en el seguimiento de otro cliente')
-            ->assertExitCode(0);
+            ->expectsOutputToContain('1 documento(s) no entraron al seguimiento porque ya están en el de otro cliente')
+            ->assertFailed();
 
         $this->assertSame($sigue->id, CobroDocumento::deCliente($cliente->id)->sole()->dte_id, 'Los demás sí entraron.');
         $this->assertSame($otro->id, (int) $ajeno->refresh()->cliente_id);

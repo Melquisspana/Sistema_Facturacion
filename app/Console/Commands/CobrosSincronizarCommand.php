@@ -83,6 +83,8 @@ class CobrosSincronizarCommand extends Command
             return self::FAILURE;
         }
 
+        $enOtroCliente = 0;
+
         foreach ($clientes as $cliente) {
             $this->line("Cliente: {$cliente->nombre} (id {$cliente->id})");
 
@@ -103,10 +105,20 @@ class CobrosSincronizarCommand extends Command
                 $resumen['revision_historica'] + $historicos,
             ));
             $this->avisarEnOtroCliente($resumen['en_otro_cliente']);
+            $enOtroCliente += $resumen['en_otro_cliente'];
 
             if ($this->option('vincular')) {
                 $this->info('  '.$this->vincular($cliente, $vinculador));
             }
+        }
+
+        // Termina con error DESPUÉS de procesar a todos: así la tarea programada lo anota y
+        // llega el aviso por correo de siempre. Con éxito quedaba solo en el log, y el
+        // documento no entraba nunca al seguimiento sin que nadie se enterara.
+        if ($enOtroCliente > 0) {
+            $this->error("{$enOtroCliente} documento(s) no entraron al seguimiento porque ya están en el de otro cliente.");
+
+            return self::FAILURE;
         }
 
         return self::SUCCESS;
