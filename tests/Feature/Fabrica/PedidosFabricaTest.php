@@ -435,7 +435,8 @@ class PedidosFabricaTest extends TestCase
             ->assertSessionHas('status', 'Pedido de Tienda Inventada Norte cerrado: lo que falta no se trae.');
         $this->assertSame(EstadoPedidoSala::Enviado, $parcial->refresh()->estado);
         $cierre = Activity::where('description', 'cerró el pedido: lo que falta no se trae')->sole();
-        $this->assertSame([['producto_id' => $this->canilla->id, 'pendiente' => '4.0000']], $cierre->properties['faltantes']);
+        // assertEquals: MySQL reordena las claves de la columna JSON.
+        $this->assertEquals([['producto_id' => $this->canilla->id, 'pendiente' => '4.0000']], $cierre->properties['faltantes']);
         $this->mandar($parcial, [$this->canilla->id => '1'])->assertSessionHasErrors(['pedido' => PedidosFabrica::CERRADO]);
     }
 
