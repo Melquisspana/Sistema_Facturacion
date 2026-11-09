@@ -78,8 +78,14 @@
         .mv-zbtn { width:44px; height:44px; border-radius:.625rem; font-size:18px; font-weight:600; line-height:1; }
         .mv-leyenda { position:absolute; left:12px; bottom:12px; display:grid; gap:6px; padding:10px 12px; max-width:calc(100% - 24px); }
         .mv-rampa { display:flex; gap:2px; }
-        .mv-rampa span { width:38px; height:10px; border-radius:2px; }
-        .mv-rampa-txt { display:flex; justify-content:space-between; font-size:11px; font-variant-numeric:tabular-nums; }
+        .mv-rampa span { flex:1; min-width:38px; height:10px; border-radius:2px; }
+        /* Las cifras van en el borde entre dos tonos (rutas-mapa.js pone left en %). */
+        .mv-rampa-txt { position:relative; height:14px; font-size:11px; font-variant-numeric:tabular-nums; }
+        .mv-rampa-txt span { position:absolute; top:0; white-space:nowrap; }
+        /* Dónde falta: un tono por tramo, con sus números debajo. */
+        .mv-clases { display:flex; gap:2px; font-size:11px; font-variant-numeric:tabular-nums; }
+        .mv-clases span { flex:1; min-width:38px; display:grid; gap:3px; text-align:center; }
+        .mv-clases i { height:10px; border-radius:2px; }
         .mv-muestra { display:flex; align-items:center; gap:6px; font-size:12px; }
         .mv-muestra i { width:14px; height:10px; border-radius:2px; display:inline-block; }
         .mv-rayado { background:repeating-linear-gradient(45deg,var(--mv-vacia) 0 3px,var(--mv-raya) 3px 5px); }
