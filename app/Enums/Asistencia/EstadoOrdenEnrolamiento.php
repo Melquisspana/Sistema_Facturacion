@@ -95,7 +95,7 @@ enum EstadoOrdenEnrolamiento: string
             self::Pendiente, self::Tomada, self::EnCurso => 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300',
             self::Completada => 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300',
             self::Fallida => 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
-            self::Expirada, self::Cancelada => 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-400',
+            self::Expirada, self::Cancelada => 'bg-gray-100 text-gray-600 dark:bg-ink-700 dark:text-paper-300',
         };
     }
 }

@@ -5,11 +5,11 @@ namespace Tests\Unit\Support;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Las clases `paper-*` e `ink-*` de las vistas existen en la paleta (#194).
+ * Las clases `paper-*` e `ink-*` de las vistas y de los enums existen en la paleta (#194).
  *
  * Tailwind no genera una clase cuyo tono no está en `tailwind.config.js`, y en modo
  * oscuro ese texto queda con el color base sin avisar. Esta prueba falla si una vista
- * usa un tono que la paleta no define.
+ * o un enum (que arma las clases de las etiquetas) usa un tono que la paleta no define.
  */
 class PaletaTailwindTest extends TestCase
 {
@@ -22,20 +22,23 @@ class PaletaTailwindTest extends TestCase
         $this->assertNotEmpty($paleta['paper']);
 
         $faltantes = [];
-        $vistas = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($raiz.'/resources/views', \FilesystemIterator::SKIP_DOTS));
 
-        foreach ($vistas as $archivo) {
-            if (! str_ends_with($archivo->getFilename(), '.blade.php')) {
-                continue;
-            }
+        foreach (['/resources/views' => '.blade.php', '/app/Enums' => '.php'] as $carpeta => $extension) {
+            $archivos = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($raiz.$carpeta, \FilesystemIterator::SKIP_DOTS));
 
-            foreach (file($archivo->getPathname()) as $numero => $linea) {
-                // Sin letra antes: no confunde `shrink-0` ni `link-0` con `ink-0`; sí toma `text-paper-200`.
-                preg_match_all('/(?<!\w)(ink|paper)-(\d+)/', $linea, $usos, PREG_SET_ORDER);
+            foreach ($archivos as $archivo) {
+                if (! str_ends_with($archivo->getFilename(), $extension)) {
+                    continue;
+                }
 
-                foreach ($usos as [, $color, $tono]) {
-                    if (! in_array($tono, $paleta[$color], true)) {
-                        $faltantes[] = str_replace($raiz.DIRECTORY_SEPARATOR, '', $archivo->getPathname()).':'.($numero + 1)." usa {$color}-{$tono}";
+                foreach (file($archivo->getPathname()) as $numero => $linea) {
+                    // Sin letra antes: no confunde `shrink-0` ni `link-0` con `ink-0`; sí toma `text-paper-200`.
+                    preg_match_all('/(?<!\w)(ink|paper)-(\d+)/', $linea, $usos, PREG_SET_ORDER);
+
+                    foreach ($usos as [, $color, $tono]) {
+                        if (! in_array($tono, $paleta[$color], true)) {
+                            $faltantes[] = str_replace($raiz.DIRECTORY_SEPARATOR, '', $archivo->getPathname()).':'.($numero + 1)." usa {$color}-{$tono}";
+                        }
                     }
                 }
             }
