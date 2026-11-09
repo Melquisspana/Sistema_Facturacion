@@ -3,13 +3,18 @@
 namespace Tests\Feature\Facturacion;
 
 use App\Enums\EstadoPedidoSala;
+use App\Enums\TipoDte;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
 use App\Models\OrdenCompraRecibida;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
+use App\Models\PuntoVenta;
 use App\Models\Ruta;
 use App\Models\UnidadMedida;
 use App\Models\User;
@@ -64,12 +69,12 @@ class LlegoDeFabricaTest extends TestCase
     }
 
     /** @param  array<int, string>  $cantidades  [producto_id => cantidad] */
-    private function pedido(ClienteSucursal $sala, array $cantidades, ?string $oc = null): PedidoSala
+    private function pedido(ClienteSucursal $sala, array $cantidades, ?string $oc = null, EstadoPedidoSala $estado = EstadoPedidoSala::Enviado): PedidoSala
     {
         $pedido = PedidoSala::create([
             'cliente_sucursal_id' => $sala->id, 'ruta_id' => $this->ruta->id,
             'sacado_por_id' => $this->persona->id, 'registrado_por' => $this->oficina->id,
-            'fecha' => '2026-11-08', 'estado' => EstadoPedidoSala::Enviado, 'numero_orden_compra' => $oc,
+            'fecha' => '2026-11-08', 'estado' => $estado, 'numero_orden_compra' => $oc,
         ]);
         foreach ($cantidades as $producto => $cantidad) {
             $pedido->lineas()->create(['producto_id' => $producto, 'cantidad' => $cantidad]);
@@ -163,7 +168,7 @@ class LlegoDeFabricaTest extends TestCase
     {
         $exigeSinOc = $this->pedido($this->sala('Sala de prueba A', '9101', exigeOc: true), [$this->galleta->id => '1']);
         $noExige = $this->pedido($this->sala('Sala de prueba B', '9102'), [$this->galleta->id => '1']);
-        $ocPedido = $this->pedido($this->sala('Sala de prueba C', '9103', exigeOc: true), [$this->galleta->id => '1'], '43010000123456');
+        $ocPedido = $this->pedido($this->sala('Sala de prueba C', '9103', exigeOc: true), [$this->galleta->id => '1'], '26119103123456');
         $salaCorreo = $this->sala('Sala de prueba D', '9104', exigeOc: true);
         $ocCorreo = $this->pedido($salaCorreo, [$this->galleta->id => '1']);
         $this->ocDelCorreo($salaCorreo, '43010000999999');
@@ -174,7 +179,7 @@ class LlegoDeFabricaTest extends TestCase
         $this->get(route('facturacion.llego-de-fabrica'))->assertOk()->assertSeeInOrder([
             'Sala de prueba A', 'Esperando OC',
             'Sala de prueba B', 'Lista',
-            'Sala de prueba C', 'Lista', '43010000123456',
+            'Sala de prueba C', 'Lista', '26119103123456',
             'Sala de prueba D', 'Lista', '43010000999999',
         ]);
     }
@@ -219,5 +224,99 @@ class LlegoDeFabricaTest extends TestCase
         $this->get(route('facturacion.index'))->assertOk()
             ->assertSeeInOrder(['Nuevo CCF', 'Llegó de la fábrica'])
             ->assertSee(route('facturacion.llego-de-fabrica'), false);
+    }
+
+    public function test_con_envios_de_otros_dias_separa_lo_que_llego_el_dia_elegido(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->envio($pedido, [$this->galleta->id => '4'], '2026-11-09');
+
+        // Hoy llegaron 4; los 6 del 08/11 se facturaron ese día con su hoja.
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('También tuvo envíos otros días: facturá solo lo que llegó el 09/11.')
+            ->assertSeeInOrder(['Llegó el 09/11', 'Total', 'Galleta de prueba', '10', '4', '10']);
+
+        $this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08']))->assertOk()
+            ->assertSee('facturá solo lo que llegó el 08/11.')
+            ->assertSeeInOrder(['Llegó el 08/11', 'Total', 'Galleta de prueba', '10', '6', '10']);
+    }
+
+    public function test_con_envios_de_un_solo_dia_no_agrega_columna_ni_aviso(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6']);
+        $this->envio($pedido, [$this->galleta->id => '4']);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertDontSee('También tuvo envíos otros días')
+            ->assertDontSee('Llegó el 09/11');
+    }
+
+    public function test_mandado_en_parte_muestra_el_estado_y_lo_que_va_en_otro_envio_sin_f(): void
+    {
+        $parcial = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '10'], estado: EstadoPedidoSala::Parcial);
+        $this->envio($parcial, [$this->galleta->id => '6']);
+        $cerrado = $this->pedido($this->sala('Sala de prueba Sur', '9002'), [$this->galleta->id => '3']);
+        $this->envio($cerrado, [$this->galleta->id => '1']);
+
+        $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSeeInOrder(['Sala de prueba Norte', 'Mandado en parte', 'Galleta de prueba', '10', '6', 'Va en otro envío', '4'])
+            ->assertSeeInOrder(['Sala de prueba Sur', 'Mandado', 'Galleta de prueba', '3', '1', 'F', '2']);
+        // La F solo en el pedido cerrado: en el parcial lo que falta todavía va a llegar.
+        $this->assertSame(1, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
+    }
+
+    public function test_la_oc_del_pedido_de_otra_sala_o_ya_facturada_no_sale_lista(): void
+    {
+        $otraSala = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '1'], '2611 0232 0010394');
+        $usada = $this->pedido($this->sala('Sala de prueba Sur', '9002', exigeOc: true), [$this->galleta->id => '1'], '26119002000123');
+        foreach ([$otraSala, $usada] as $pedido) {
+            $this->envio($pedido, [$this->galleta->id => '1']);
+        }
+        $empresa = Empresa::create(['razon_social' => 'Empresa de prueba', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        (new Dte)->forceFill([
+            'tipo_dte' => TipoDte::CreditoFiscal->value, 'ambiente' => '00', 'estado' => 'aceptado',
+            'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $usada->sala->cliente_id,
+            'numero_control' => 'DTE-03-M001P001-000000000000001', 'numero_orden_compra' => '26119002000123',
+            'fecha_emision' => '2026-11-08', 'hora_emision' => '08:00:00', 'total_pagar' => 10,
+        ])->save();
+
+        $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSeeInOrder(['Sala de prueba Norte', 'Revisar OC', 'La OC es de la sala 0232 y el pedido es de la 9001.'])
+            ->assertSeeInOrder(['Sala de prueba Sur', 'Revisar OC', 'Esa OC ya tiene un CCF.']);
+        $this->assertStringNotContainsString('>Lista<', preg_replace('/\s+/', '', $respuesta->getContent()));
+    }
+
+    public function test_la_hoja_lleva_el_dia_que_se_estaba_mirando(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '10']);
+        $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
+        $this->envio($pedido, [$this->galleta->id => '4'], '2026-11-09');
+
+        $this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08']))->assertOk()
+            ->assertSee(route('rutas.pedidos.hoja', [$pedido, 'fecha' => '2026-11-08']), false);
+    }
+
+    public function test_jefatura_y_contabilidad_ven_el_enlace_aunque_no_facturen(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '1']);
+        $this->envio($pedido, [$this->galleta->id => '1']);
+
+        foreach (['jefatura', 'contabilidad'] as $rol) {
+            $usuario = User::factory()->create(['activo' => true])->assignRole($rol);
+            $this->assertFalse($usuario->can('create', Dte::class));
+            $this->actingAs($usuario)->get(route('facturacion.index'))->assertOk()
+                ->assertSee(route('facturacion.llego-de-fabrica'), false)
+                ->assertDontSee('Nuevo CCF');
+        }
+
+        // Contabilidad no ve los pedidos: la tarjeta no dibuja un pie vacío.
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Sala de prueba Norte')
+            ->assertDontSee('Imprimir hoja')
+            ->assertDontSee('border-t border-gray-100 pt-4', false);
     }
 }

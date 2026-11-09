@@ -67,14 +67,23 @@ class PedidoSalaController extends Controller
     /**
      * La hoja de lo que salió: el sugerido en limpio para imprimir. Todo lo que pidió el
      * vendedor, lo que llegó en cada envío vigente y una «F» en lo que faltó. Sin precios.
+     * `fecha` es el día que se miraba en «Llegó de la fábrica», para volver a ese día.
      */
-    public function hoja(PedidoSala $pedido): View
+    public function hoja(Request $request, PedidoSala $pedido): View
     {
         Gate::authorize('view', $pedido);
+        $fecha = $request->validate([
+            'fecha' => ['nullable', 'date_format:Y-m-d'],
+        ], [
+            'fecha.date_format' => 'Elegí un día válido.',
+        ])['fecha'] ?? null;
         $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'sacadoPor:id,nombre', 'lineas.producto:id,codigo,nombre',
             'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->whereNull('anulado_en')->orderBy('numero'), 'envios.lineas']);
 
-        return view('rutas.pedidos.hoja', ['pedido' => $pedido]);
+        return view('rutas.pedidos.hoja', [
+            'pedido' => $pedido,
+            'volverAl' => $fecha ?? $pedido->envios->last()?->fecha?->format('Y-m-d'),
+        ]);
     }
 
     /** Agregar o corregir la OC, que suele llegar después por EDI. Avisa si su forma no cuadra. */

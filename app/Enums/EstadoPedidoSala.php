@@ -53,6 +53,18 @@ enum EstadoPedidoSala: string
         return $this === self::Registrado || $this === self::Parcial;
     }
 
+    /** ¿Cerrado? Lo que no salió ya no va: solo acá la hoja marca la «F» de faltó. */
+    public function cerrado(): bool
+    {
+        return $this === self::Enviado || $this === self::NoSeTrae;
+    }
+
+    /** ¿Tiene hoja para imprimir? Salió algo o ya se cerró (no si está pendiente o anulado). */
+    public function tieneHoja(): bool
+    {
+        return $this === self::Parcial || $this->cerrado();
+    }
+
     /** @return list<string> */
     public static function valoresPorMandar(): array
     {

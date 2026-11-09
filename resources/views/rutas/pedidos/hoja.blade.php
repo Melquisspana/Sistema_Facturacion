@@ -13,8 +13,13 @@
         igual que facturacion/listas/imprimir, con sus propios estilos y sin el bundle de la
         aplicación; sale siempre en blanco y negro, en pantalla y en papel.
 
+        Dice el estado del pedido. La «F» solo con el pedido cerrado (Mandado o No se trae):
+        mandado en parte, lo que falta «va en otro envío»; pendiente o anulado, un aviso y
+        ninguna F, para que la hoja impresa no parezca un faltante de la fábrica.
+
         Variables: $pedido con sala, ruta, sacadoPor, lineas.producto,
-        lineas.envioLineasVigentes y envios (solo los vigentes) con sus lineas.
+        lineas.envioLineasVigentes y envios (solo los vigentes) con sus lineas; $volverAl (Y-m-d
+        o null), el día al que vuelve «Llegó de la fábrica».
     --}}
     <style>
         * { box-sizing: border-box; }
@@ -43,6 +48,7 @@
         .f { display: inline-block; min-width: 1.6em; border: 2px solid #111; border-radius: 4px; font-size: 16px; font-weight: 800; text-align: center; }
         tr.falto td { background: #f2f2f2; }
         .leyenda { margin-top: 8px; font-size: 11px; color: #555; }
+        .aviso { margin: 0 0 16px; padding: 8px 12px; border: 2px solid #111; border-radius: 4px; font-weight: 700; text-align: center; }
         .firma { margin-top: 48px; display: flex; flex-wrap: wrap; gap: 32px 48px; }
         .firma div { flex: 1 1 200px; border-top: 1px solid #333; padding-top: 4px; text-align: center; font-size: 11px; }
         .no-print { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
@@ -66,11 +72,14 @@
         $envio->id => $envio->lineas->mapWithKeys(fn ($l) => [$l->pedido_sala_linea_id => $l->cantidadLegible()])->all(),
     ]);
     $variosEnvios = $envios->count() > 1;
+    $estado = $pedido->estado;
+    $cerrado = $estado->cerrado();
+    $parcial = $estado === \App\Enums\EstadoPedidoSala::Parcial;
 @endphp
 
 <div class="no-print">
     @can('viewAny', App\Models\Dte::class)
-        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $envios->last()?->fecha?->format('Y-m-d')]) }}">Volver a «Llegó de la fábrica»</a>
+        <a href="{{ route('facturacion.llego-de-fabrica', ['fecha' => $volverAl]) }}">Volver a «Llegó de la fábrica»</a>
     @endcan
     <a href="{{ route('rutas.pedidos.show', $pedido) }}">Volver al pedido</a>
     <button type="button" onclick="window.print()">Imprimir</button>
@@ -79,15 +88,22 @@
 <h1>Lo que salió de la fábrica</h1>
 <p class="sub">Pedido n.º {{ $pedido->id }}</p>
 
+@if ($estado === \App\Enums\EstadoPedidoSala::Anulado)
+    <p class="aviso" role="alert">Este pedido está anulado: no se factura.</p>
+@elseif ($estado === \App\Enums\EstadoPedidoSala::Registrado)
+    <p class="aviso" role="alert">La fábrica todavía no mandó nada de este pedido.</p>
+@endif
+
 <dl class="datos">
     <div><dt>Sala</dt><dd>{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
+    <div><dt>Estado</dt><dd>{{ $estado->label() }}</dd></div>
     <div><dt>Ruta</dt><dd>{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</dd></div>
     <div><dt>Vendedor</dt><dd>{{ $pedido->sacadoPor?->nombre ?? '—' }}</dd></div>
     <div><dt>Fecha del pedido</dt><dd>{{ $pedido->fecha->format('d/m/Y') }}</dd></div>
     <div><dt>Orden de compra</dt><dd class="mono">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
     <div><dt>Envíos</dt><dd>
         @forelse ($envios as $envio)
-            <span style="display:block">Envío {{ $envio->numero }} · {{ $envio->created_at->format('d/m/Y H:i') }}</span>
+            <span style="display:block">Envío {{ $envio->numero }} · {{ $envio->fecha->format('d/m/Y') }} {{ $envio->created_at->format('H:i') }}</span>
         @empty
             Todavía no salió nada.
         @endforelse
@@ -103,7 +119,7 @@
                 <th class="num">Pidió</th>
                 @if ($variosEnvios)
                     @foreach ($envios as $envio)
-                        <th class="num">Envío {{ $envio->numero }}<br>{{ $envio->created_at->format('H:i') }}</th>
+                        <th class="num">Envío {{ $envio->numero }}<br>{{ $envio->fecha->format('d/m') }} {{ $envio->created_at->format('H:i') }}</th>
                     @endforeach
                 @endif
                 <th class="num">Llegó</th>
@@ -113,7 +129,10 @@
         </thead>
         <tbody>
             @foreach ($pedido->lineas as $linea)
-                @php $falto = $linea->tienePendiente(); @endphp
+                @php
+                    $pendiente = $linea->tienePendiente();
+                    $falto = $pendiente && $cerrado;
+                @endphp
                 <tr class="{{ $falto ? 'falto' : '' }}">
                     <td class="mono">{{ $linea->producto?->codigo }}</td>
                     <td>{{ $linea->producto?->nombre }}</td>
@@ -127,6 +146,8 @@
                     <td class="falta">
                         @if ($falto)
                             <span class="f" role="img" aria-label="Faltó">F</span> {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}
+                        @elseif ($pendiente && $parcial)
+                            Va en otro envío: {{ \App\Models\PedidoSalaLinea::legible($linea->pendiente()) }}
                         @endif
                     </td>
                     <td>{{ $falto ? ($linea->motivo_no_enviado ?? '') : '' }}</td>
@@ -135,7 +156,11 @@
         </tbody>
     </table>
 </div>
-<p class="leyenda">F: faltó. Al lado va cuánto faltó.</p>
+@if ($cerrado && $pedido->faltaAlgo())
+    <p class="leyenda">F: faltó. Al lado va cuánto faltó.</p>
+@elseif ($parcial)
+    <p class="leyenda">Mandado en parte: lo que falta todavía va a salir en otro envío.</p>
+@endif
 
 <div class="firma">
     <div>Firma de quien entrega</div>

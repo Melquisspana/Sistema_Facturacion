@@ -70,10 +70,10 @@ class HojaPedidoTest extends TestCase
     }
 
     /** @param  array<int, string>  $cantidades  [producto_id => cantidad] */
-    private function envio(array $cantidades, bool $anulado = false): PedidoSalaEnvio
+    private function envio(array $cantidades, bool $anulado = false, string $fecha = '2026-11-09'): PedidoSalaEnvio
     {
         $envio = $this->pedido->envios()->create([
-            'numero' => ((int) $this->pedido->envios()->max('numero')) + 1, 'clave' => (string) Str::uuid(), 'fecha' => '2026-11-09',
+            'numero' => ((int) $this->pedido->envios()->max('numero')) + 1, 'clave' => (string) Str::uuid(), 'fecha' => $fecha,
             'registrado_por' => $this->fabrica->id, 'anulado_en' => $anulado ? now() : null, 'anulado_por' => $anulado ? $this->fabrica->id : null,
         ]);
         foreach ($cantidades as $producto => $cantidad) {
@@ -107,6 +107,8 @@ class HojaPedidoTest extends TestCase
             ->assertSeeInOrder(['G01', 'Galleta de prueba', '10', '6', '6', 'F', '4', 'No hubo masa'])
             ->assertSeeInOrder(['C01', 'Canilla de prueba', '4', '1', '3', '4'])
             ->assertSeeInOrder(['P01', 'Pan de prueba', '2', 'F', '2'])
+            ->assertSee('Mandado')
+            ->assertSee('F: faltó')
             ->assertSee('Firma')
             ->assertDontSee('7.77')
             ->assertDontSee('3.33')
@@ -128,5 +130,55 @@ class HojaPedidoTest extends TestCase
         $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
             ->assertSee('Imprimir hoja')
             ->assertSee(route('rutas.pedidos.hoja', $this->pedido), false);
+    }
+
+    public function test_pedido_anulado_o_pendiente_avisa_y_no_marca_f(): void
+    {
+        foreach ([
+            [EstadoPedidoSala::Anulado, 'Anulado', 'Este pedido está anulado: no se factura.'],
+            [EstadoPedidoSala::Registrado, 'Pendiente', 'La fábrica todavía no mandó nada de este pedido.'],
+        ] as [$estado, $etiqueta, $aviso]) {
+            $this->pedido->update(['estado' => $estado]);
+
+            $respuesta = $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+                ->assertSee($etiqueta)
+                ->assertSee($aviso)
+                ->assertDontSee('F: faltó');
+            $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
+
+            // La ficha no ofrece imprimir una hoja que no dice nada.
+            $this->get(route('rutas.pedidos.show', $this->pedido))->assertOk()
+                ->assertDontSee('Imprimir hoja');
+        }
+    }
+
+    public function test_mandado_en_parte_marca_lo_que_va_en_otro_envio_en_vez_de_la_f(): void
+    {
+        $this->pedido->update(['estado' => EstadoPedidoSala::Parcial]);
+        $this->envio([$this->galleta->id => '6', $this->canilla->id => '4', $this->pan->id => '2']);
+
+        $respuesta = $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertSee('Mandado en parte')
+            ->assertSeeInOrder(['G01', 'Galleta de prueba', '10', '6', 'Va en otro envío', '4'])
+            ->assertDontSee('No hubo masa')
+            ->assertDontSee('F: faltó');
+        $this->assertSame(0, substr_count($respuesta->getContent(), 'aria-label="Faltó"'));
+    }
+
+    public function test_vuelve_al_dia_que_se_estaba_mirando_y_cada_envio_dice_su_dia(): void
+    {
+        $this->envio([$this->galleta->id => '6'], fecha: '2026-11-08');
+        $this->envio([$this->canilla->id => '4']);
+
+        $this->get(route('rutas.pedidos.hoja', [$this->pedido, 'fecha' => '2026-11-08']))->assertOk()
+            ->assertSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08']), false)
+            ->assertDontSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false)
+            ->assertSeeInOrder(['Envío 1 · 08/11/2026', 'Envío 2 · 09/11/2026', 'Envío 1<br>08/11', 'Envío 2<br>09/11', 'G01'], false);
+
+        // Sin fecha, la del último envío; una fecha mal escrita no se usa.
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertSee(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-09']), false);
+        $this->get(route('rutas.pedidos.hoja', [$this->pedido, 'fecha' => '8/11/2026']))
+            ->assertSessionHasErrors('fecha');
     }
 }

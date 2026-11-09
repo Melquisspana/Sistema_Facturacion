@@ -111,17 +111,21 @@
                     $tipoActual = $filtros['tipo_dte'] ?? '';
                 @endphp
 
-                @can('create', App\Models\Dte::class)
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-2 mb-4">
+                {{-- La pantalla ya pide `dte.ver`: «Llegó de la fábrica» también (Jefatura y
+                     Contabilidad la ven sin facturar); los botones de crear, solo con `dte.gestionar`. --}}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-2 mb-4">
+                    @can('create', App\Models\Dte::class)
                         <a href="{{ route('facturacion.create-ccf') }}"
                            class="{{ $btnBase }} bg-indigo-600 hover:bg-indigo-700 focus-visible:ring-indigo-500">
                             Nuevo CCF
                         </a>
-                        {{-- Lo que mandó la fábrica hoy, con su hoja: de ahí sale el CCF. Secundario (blanco). --}}
-                        <a href="{{ route('facturacion.llego-de-fabrica') }}"
-                           class="inline-flex items-center justify-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
-                            Llegó de la fábrica
-                        </a>
+                    @endcan
+                    {{-- Lo que mandó la fábrica hoy, con su hoja: de ahí sale el CCF. Secundario (blanco). --}}
+                    <a href="{{ route('facturacion.llego-de-fabrica') }}"
+                       class="inline-flex items-center justify-center w-full lg:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
+                        Llegó de la fábrica
+                    </a>
+                    @can('create', App\Models\Dte::class)
                         <a href="{{ route('facturacion.create-nota-credito') }}"
                            class="{{ $btnBase }} bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500">
                             Nueva nota de crédito
@@ -134,8 +138,8 @@
                            class="{{ $btnBase }} bg-sky-600 hover:bg-sky-700 focus-visible:ring-sky-500">
                             Nueva factura exportación
                         </a>
-                    </div>
-                @endcan
+                    @endcan
+                </div>
 
                 {{-- El listado muestra el ambiente OPERATIVO ACTUAL de esta instalación (00 en
                      desarrollo/APITEST, 01 en el servidor de producción), con todos sus estados
