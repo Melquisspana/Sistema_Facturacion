@@ -12,7 +12,7 @@ use App\Support\EjercicioControl;
 /**
  * El TXT de pago se carga UNA vez (en el Seguimiento). Con esas mismas filas se concilian
  * los PPQ que tienen alguno de sus documentos, y el estado de cada PPQ se pone solo:
- * pagado cuando todos sus CCF quedaron pagados.
+ * pagado cuando todos sus CCF quedaron pagados, y presentado otra vez si deja de estarlo.
  */
 class ActualizarPpqConTxt
 {
@@ -52,7 +52,11 @@ class ActualizarPpqConTxt
         return $resultado;
     }
 
-    /** Pagado cuando todos sus CCF quedaron conciliados. Devuelve si quedó pagado. */
+    /**
+     * Pagado cuando todos sus CCF quedaron conciliados; si un lote pagado deja de estarlo
+     * (se revirtió un cobro), vuelve a presentado: para cobrarse tuvo que presentarse (#12).
+     * Devuelve si quedó pagado.
+     */
     public static function actualizarEstado(PpqLote $lote): bool
     {
         $ccf = $lote->items()->get()->reject(fn (PpqItem $i) => $i->esNc());
@@ -60,6 +64,8 @@ class ActualizarPpqConTxt
 
         if ($pagado && $lote->estado !== EstadoPpq::Pagado) {
             $lote->update(['estado' => EstadoPpq::Pagado->value]);
+        } elseif (! $pagado && $lote->estado === EstadoPpq::Pagado) {
+            $lote->update(['estado' => EstadoPpq::Enviado->value]);
         }
 
         return $pagado;
