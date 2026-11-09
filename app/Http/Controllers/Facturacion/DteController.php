@@ -46,6 +46,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Exportacion;
 use App\Models\OrdenCompraRecibida;
+use App\Models\PedidoSala;
 use App\Models\PpqAlbaran;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -74,9 +75,11 @@ use App\Services\Dte\PreflightEmisionProduccionFactura;
 use App\Services\Dte\SaldoMontoCcf;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Services\Exportaciones\VincularFexALista;
+use App\Services\Rutas\FacturarPedido;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dinero;
 use App\Support\Dte\ArchivoEntregaDte;
+use App\Support\Dte\CondicionOperacion;
 use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
 use App\Support\Dte\OpcionesInvalidacion;
@@ -274,11 +277,29 @@ class DteController extends Controller
         return view('facturacion.invalidaciones', compact('dtes', 'filtros'));
     }
 
-    public function createCcf(): View
+    /**
+     * Formulario del CCF. Con `?pedido=` (desde «Llegó de la fábrica») además recibe:
+     *  - `$pedido` (PedidoSala, con `sala.cliente`): la sala y el cliente van fijos y el
+     *    formulario se manda a `facturacion.pedidos.facturar`.
+     *  - `$propuesta` ({@see FacturarPedido::propuesta()}): `lineas` (nombre, cantidad,
+     *    entero, precio, problema), `problemas` (si hay alguno, el botón va apagado), `oc`
+     *    (la del pedido, valor inicial; `old()` sigue mandando), `oc_con_ccf` y `borrador`.
+     * Sin `?pedido=` la pantalla queda exactamente igual.
+     */
+    public function createCcf(Request $request): View
     {
         $this->authorize('create', Dte::class);
 
-        return view('facturacion.create-ccf', $this->datosFormularioCcf());
+        $pedido = null;
+        if ($request->filled('pedido')) {
+            $pedido = PedidoSala::with('sala.cliente')->findOrFail($request->integer('pedido'));
+            $this->authorize('view', $pedido);
+        }
+
+        return view('facturacion.create-ccf', $this->datosFormularioCcf() + ($pedido === null ? [] : [
+            'pedido' => $pedido,
+            'propuesta' => app(FacturarPedido::class)->propuesta($pedido),
+        ]));
     }
 
     public function storeCcf(CrearBorradorRequest $request): RedirectResponse
@@ -297,7 +318,7 @@ class DteController extends Controller
         $cliente = Cliente::find($datos['cliente_id'] ?? null);
         $sucursal = ClienteSucursal::find($datos['cliente_sucursal_id'] ?? null);
         unset($datos['descuento_global']);
-        $datos['condicion_operacion'] = $this->condicionAplicada($cliente, $sucursal);
+        $datos['condicion_operacion'] = CondicionOperacion::para($cliente, $sucursal);
 
         try {
             $dte = $this->borradores->crearBorrador($datos, $request->user());
@@ -331,7 +352,7 @@ class DteController extends Controller
         $cliente = Cliente::find($datos['cliente_id'] ?? null);
         $sucursal = ClienteSucursal::find($datos['cliente_sucursal_id'] ?? null);
         unset($datos['descuento_global']);
-        $datos['condicion_operacion'] = $this->condicionAplicada($cliente, $sucursal);
+        $datos['condicion_operacion'] = CondicionOperacion::para($cliente, $sucursal);
 
         $dte = $this->borradores->crearBorrador($datos, $request->user());
 
@@ -380,7 +401,7 @@ class DteController extends Controller
         $cliente = Cliente::find($datos['cliente_id'] ?? null);
         $sucursal = ClienteSucursal::find($datos['cliente_sucursal_id'] ?? null);
         unset($datos['descuento_global']);
-        $datos['condicion_operacion'] = $this->condicionAplicada($cliente, $sucursal);
+        $datos['condicion_operacion'] = CondicionOperacion::para($cliente, $sucursal);
 
         $dte = $this->borradores->crearBorrador($datos, $request->user());
 
@@ -2870,7 +2891,7 @@ class DteController extends Controller
     /** @return array<string, mixed> */
     private function opcionCliente(Cliente $cliente, ?ClienteSucursal $sucursal): array
     {
-        $condicion = $this->condicionAplicada($cliente, $sucursal);
+        $condicion = CondicionOperacion::para($cliente, $sucursal);
 
         return [
             'key' => $cliente->id.'-'.($sucursal?->id ?? 0),
@@ -2913,14 +2934,6 @@ class DteController extends Controller
         return number_format($valor, 2, '.', '');
     }
 
-    /** Condición de operación a aplicar: sala → cliente → default contribuyente. */
-    private function condicionAplicada(?Cliente $cliente, ?ClienteSucursal $sucursal): int
-    {
-        return (int) ($sucursal?->condicion_operacion_default
-            ?? $cliente?->condicion_operacion_default
-            ?? config('dte.condicion_operacion_default_contribuyente', 2));
-    }
-
     /**
      * Mapea clientes a opciones para el buscador, con descuento/condición aplicados
      * (a nivel cliente; informativos en el formulario).
@@ -2931,7 +2944,7 @@ class DteController extends Controller
     private function clientesInformativos($clientes): array
     {
         return $clientes->map(function (Cliente $c) {
-            $condicion = $this->condicionAplicada($c, null);
+            $condicion = CondicionOperacion::para($c, null);
 
             return [
                 'id' => $c->id,

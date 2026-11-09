@@ -511,4 +511,27 @@ class Dte extends Model
     {
         return $this->belongsTo(User::class, 'invalidado_by');
     }
+
+    /** Los envíos de la fábrica que se facturaron en este CCF («Viene del pedido N»). */
+    public function enviosPedido(): HasMany
+    {
+        return $this->hasMany(PedidoSalaEnvio::class, 'dte_id');
+    }
+
+    /**
+     * La definición ÚNICA de «el envío ya está facturado»: el documento no está borrado
+     * (suave) ni quedó invalidado o rechazado, que son finales. El borrador cuenta: ya
+     * tiene dueño. Explícito sobre `deleted_at` para que valga también con `withTrashed`.
+     */
+    public function scopeCuentaComoFacturado(Builder $q): Builder
+    {
+        return $q->whereNull($q->getModel()->qualifyColumn('deleted_at'))
+            ->whereNotIn($q->getModel()->qualifyColumn('estado'), [EstadoDte::Invalidado->value, EstadoDte::Rechazado->value]);
+    }
+
+    /** Lo mismo que {@see scopeCuentaComoFacturado()} con el documento ya cargado. */
+    public function sigueFacturado(): bool
+    {
+        return ! $this->trashed() && ! in_array($this->estado, [EstadoDte::Invalidado, EstadoDte::Rechazado], true);
+    }
 }

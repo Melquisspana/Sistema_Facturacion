@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Rutas\FacturarPedido;
 use App\Services\Rutas\PedidosFabrica;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -17,7 +18,7 @@ class PedidoSalaEnvio extends Model
 {
     protected $table = 'pedido_sala_envios';
 
-    protected $fillable = ['numero', 'clave', 'fecha', 'registrado_por', 'anulado_en', 'anulado_por'];
+    protected $fillable = ['numero', 'clave', 'fecha', 'registrado_por', 'anulado_en', 'anulado_por', 'dte_id'];
 
     protected function casts(): array
     {
@@ -27,7 +28,30 @@ class PedidoSalaEnvio extends Model
             'numero' => 'integer',
             'registrado_por' => 'integer',
             'anulado_por' => 'integer',
+            'dte_id' => 'integer',
         ];
+    }
+
+    /**
+     * El CCF donde se facturó (lo pone {@see FacturarPedido}). Con los borrados: el enlace
+     * se ve aunque el borrador ya no exista. Si sigue facturado lo dice {@see estaFacturado()}.
+     */
+    public function dte(): BelongsTo
+    {
+        return $this->belongsTo(Dte::class)->withTrashed();
+    }
+
+    /** Vigentes y sin un CCF que cuente (nunca facturado, o su CCF se borró, invalidó o rechazó). */
+    public function scopePorFacturar(Builder $q): Builder
+    {
+        return $q->vigentes()->where(fn (Builder $w) => $w->whereNull('dte_id')
+            ->orWhereDoesntHave('dte', fn (Builder $d) => $d->cuentaComoFacturado()));
+    }
+
+    /** ¿Ya está en un CCF que cuenta? Usa la relación si vino precargada. */
+    public function estaFacturado(): bool
+    {
+        return $this->dte_id !== null && (bool) $this->dte?->sigueFacturado();
     }
 
     public function pedido(): BelongsTo
