@@ -12,6 +12,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
+use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Dte\DteBorradorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,7 +47,7 @@ class DteEdicionAvisosUiTest extends TestCase
 
         // Unidad mínima para ProductoFactory (productos.unidad_medida_id es NOT NULL);
         // no hace falta sembrar catálogos completos: aquí no se genera JSON.
-        \App\Models\UnidadMedida::create(['codigo' => '59', 'nombre' => 'Unidad', 'abreviatura' => 'u', 'activo' => true]);
+        UnidadMedida::create(['codigo' => '59', 'nombre' => 'Unidad', 'abreviatura' => 'u', 'activo' => true]);
 
         $empresa = Empresa::create(['razon_social' => 'Dulces La Negrita', 'ambiente' => '00', 'activo' => true]);
         $this->estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Matriz', 'activo' => true]);
@@ -165,6 +166,18 @@ class DteEdicionAvisosUiTest extends TestCase
     {
         $this->otroCcf('OC-REP-3', EstadoDte::Invalidado);
         $dte = $this->borrador('OC-REP-3');
+
+        $this->actingAs($this->usuario())
+            ->get(route('facturacion.edit', $dte))
+            ->assertOk()
+            ->assertDontSee('ya se usó en el CCF');
+    }
+
+    public function test_oc_repetida_en_rechazado_no_muestra_banner(): void
+    {
+        // El CCF rechazado por Hacienda no factura la orden: volver a emitirla no es duplicar.
+        $this->otroCcf('OC-REP-5', EstadoDte::Rechazado);
+        $dte = $this->borrador('OC-REP-5');
 
         $this->actingAs($this->usuario())
             ->get(route('facturacion.edit', $dte))
