@@ -351,7 +351,7 @@ return [
         'cod_estable_mh' => env('DTE_INVALIDACION_COD_ESTABLE_MH', ''),
         'cod_punto_venta_mh' => env('DTE_INVALIDACION_COD_PUNTO_VENTA_MH', ''),
         // Datos de quien REALIZA el evento (responsable). Obligatorios en el schema.
-        // TODO: completar con datos reales antes de invalidar de verdad.
+        // Se cargan en el .env del servidor; acá no van valores.
         'responsable' => [
             'nombre' => env('DTE_INVALIDACION_RESP_NOMBRE', ''),
             'tipo_doc' => env('DTE_INVALIDACION_RESP_TIPO_DOC', ''),   // CAT-022 (36=NIT, 13=DUI)

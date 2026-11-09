@@ -15,6 +15,7 @@ use App\Services\DocumentosRecibidos\ProgresoSincronizacionCompras;
 use App\Services\Dte\ArchivoEntregaDteService;
 use App\Services\Reportes\ReporteContadoraExcel;
 use App\Services\Reportes\ReporteContadoraQuery;
+use App\Support\HoraNegocio;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -419,6 +420,38 @@ class PaqueteContabilidadTest extends TestCase
 
         $this->assertSame(1, $resumen['compras_cantidad']);
         $this->assertSame(100.0, $resumen['compras_total']);
+    }
+
+    /**
+     * Borde del día en hora de El Salvador (decisión 0004, issue #59). Una venta fechada
+     * con el reloj de negocio a las 23:59 del 31 de julio es de JULIO, y la de las 00:00
+     * del 1 de agosto es de AGOSTO. Con el día tomado en UTC, las dos caerían en agosto.
+     */
+    public function test_ventas_en_el_borde_del_dia_caen_en_su_mes_local(): void
+    {
+        $this->seed(DatosInicialesNegritaSeeder::class);
+        $zona = 'America/El_Salvador';
+
+        $this->travelTo(Carbon::parse('2026-07-31 23:59:00', $zona));
+        $this->venta(HoraNegocio::ahora()->format('Y-m-d H:i:s'), 100);
+
+        $this->travelTo(Carbon::parse('2026-08-01 00:00:00', $zona));
+        $this->venta(HoraNegocio::ahora()->format('Y-m-d H:i:s'), 250);
+
+        $usuario = $this->usuario('contabilidad');
+        $julio = $this->actingAs($usuario)
+            ->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026, 'incluir_compras' => '0', 'incluir_ventas' => '1']))
+            ->assertOk()->viewData('resumen');
+        $agosto = $this->actingAs($usuario)
+            ->get(route('contabilidad.paquete', ['mes' => 8, 'anio' => 2026, 'incluir_compras' => '0', 'incluir_ventas' => '1']))
+            ->assertOk()->viewData('resumen');
+
+        $this->assertSame([1, 100.0], [$julio['ventas_cantidad'], $julio['ventas_total']]);
+        $this->assertSame([1, 250.0], [$agosto['ventas_cantidad'], $agosto['ventas_total']]);
+
+        // A las 00:00 del 1 de agosto ya es agosto: el paquete que toca es julio.
+        $rango = $this->get(route('contabilidad.paquete'))->assertOk()->viewData('rango');
+        $this->assertSame([7, 2026], [$rango['mes'], $rango['anio']]);
     }
 
     public function test_zip_trae_ambos_excel_y_adjuntos_de_compras(): void

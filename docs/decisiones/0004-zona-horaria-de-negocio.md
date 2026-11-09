@@ -2,7 +2,7 @@
 
 ## Estado
 
-Propuesta, corregida el 2026-10-06 (ver «Corrección» abajo; issue #59).
+Aceptada (corregida el 2026-10-06). Lo que vale es la sección «Corrección»; la «Decisión (propuesta)» original de mantener UTC quedó **sustituida** y se conserva solo como historia (issue #59).
 
 ## Fecha
 
@@ -19,7 +19,11 @@ Queda así:
 - `inicioDelDiaUtc()` y `finDelDiaUtc()` solo sirven para comparar instantes en memoria (hoy, `PlazoInvalidacion`). **No se usan como parámetro de una consulta**: Laravel escribe la hora del Carbon sin convertirla a `app.timezone`.
 - **Hallazgo corregido**: Asistencia guardaba `marcado_at` con un Carbon en UTC (`HoraOficial::instante()`). Con la aplicación en hora local, Eloquent escribía la hora UTC y al leerla la tomaba como local, seis horas corrida. `fecha_local` estaba bien. Ahora el instante se crea en `app.timezone`. Si producción ya tiene marcaciones, las anteriores a este cambio necesitan revisión aparte, de solo lectura primero.
 - `fecha_procesamiento_mh` (la `fhProcesamiento` local de Hacienda) queda en la misma zona que el resto de la base en todos los entornos.
-- La «Decisión (propuesta)» y el «Plan de despliegue» de abajo se conservan como historia. Donde dicen «guardar en UTC», manda esta corrección.
+- La «Decisión (propuesta)» y el «Plan de despliegue» de abajo se conservan como historia. Quedaron **sustituidos** por esta corrección: donde dicen «mantener UTC» o «guardar en UTC», manda lo de arriba.
+
+### Comprobación en producción (2026-11-09)
+
+Con una revisión de solo lectura se confirmó que producción corre con `America/El_Salvador` y que no hay marcaciones de Asistencia anteriores al cambio de `HoraOficial::instante()`. No queda ningún dato que corregir.
 
 ## Contexto
 
@@ -49,7 +53,7 @@ Es irreversible en la práctica una vez que se mezclen datos.
 
 **B. Mantener UTC para guardar y usar una zona de negocio explícita (recomendada).** El reloj del sistema y los datos no cambian. Lo que significa «hoy» para el negocio pasa a calcularse con una sola fuente: `America/El_Salvador`.
 
-## Decisión (propuesta)
+## Decisión (propuesta, sustituida por la «Corrección»)
 
 Opción B, por etapas y sin migraciones:
 
