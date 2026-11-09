@@ -340,6 +340,7 @@ secretos.
 | **secciones `fiscal`, `fiscal_parametros`, `fiscal_invalidacion`** (~30 claves) | N2/**N3** | Ninguna (solo lectura) | `config/dte.php` — ver §25 |
 | `dte.invalidacion.dias_inhabiles` | N2 | Nueva | por año, `dte.invalidacion.dias_inhabiles` — ver §25 |
 | `dte.invalidacion.anios_completos` | N2 | Nueva | un año del archivo cuenta como completo |
+| `dte.invalidacion.anios_en_configuracion` | N2 | Nueva | — (años del archivo que ya se cambiaron en la pantalla) |
 | `ppq.gmail.enabled` | N2 | Nueva | `ppq.gmail.enabled` |
 | `ppq.gmail.client_id` | N2 | Nueva | `ppq.gmail.client_id` |
 | `ppq.gmail.client_secret` | N2 | Nueva (cifrado) | `ppq.gmail.client_secret` |
@@ -787,17 +788,22 @@ guarda día por día), se quita un día o se marca el año como completo. Cada c
 pasa por la confirmación N2, que muestra qué días entran o salen, y queda en la
 auditoría.
 
-- Dos ajustes N2 de la sección `feriados_hacienda`, tipo `Lista`, en la tabla nueva:
-  `dte.invalidacion.dias_inhabiles` (fechas de todos los años) y
-  `dte.invalidacion.anios_completos` (años marcados completos). El registro rechaza
+- Tres ajustes N2 de la sección `feriados_hacienda`, tipo `Lista`, en la tabla nueva:
+  `dte.invalidacion.dias_inhabiles` (fechas de todos los años),
+  `dte.invalidacion.anios_completos` (años marcados completos) y
+  `dte.invalidacion.anios_en_configuracion` (años del archivo que ya se cambiaron
+  en la pantalla). El registro rechaza
   fechas inválidas o repetidas y las guarda en orden; la pantalla exige además que
   sean del año elegido y un tope de 60 días por año.
 - `App\Support\Dte\CalendarioInhabiles` decide el calendario de cada año: manda lo
-  cargado en Configuración (un año con alguna fecha o marcado completo); si no, el de
+  cargado en Configuración (un año con alguna fecha, marcado completo o anotado en
+  `anios_en_configuracion`); si no, el de
   `config('dte.invalidacion.dias_inhabiles')`, que trae el oficial 2026; si no hay
   ninguno, de lunes a viernes sin feriados y con aviso.
 - Si el año todavía sale del archivo, el primer cambio lo copia entero a
-  Configuración, ya marcado completo.
+  Configuración, ya marcado completo, y lo anota en `anios_en_configuracion`. Así,
+  si después se le quitan todos los días o se desmarca, queda vacío o sin marcar,
+  como dijo la confirmación, y no vuelve el calendario del archivo.
 
 ### Por qué nada es editable todavía
 

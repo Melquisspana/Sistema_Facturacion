@@ -3,9 +3,12 @@
 namespace Tests\Feature\Configuracion;
 
 use App\Ajustes\Excepciones\ValorAjusteInvalidoException;
+use App\Enums\TipoDte;
 use App\Facades\Ajustes;
 use App\Models\User;
 use App\Support\Dte\CalendarioInhabiles;
+use App\Support\Dte\PlazoInvalidacion;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Activitylog\Models\Activity;
@@ -98,6 +101,8 @@ class FeriadosHaciendaTest extends TestCase
             ->assertRedirect(route('configuracion.fiscal.feriados', ['anio' => 2027]));
 
         $this->assertSame(['2027-05-01'], Ajustes::lista(CalendarioInhabiles::FECHAS));
+        // 2027 no viene del archivo: no hay nada que tapar.
+        $this->assertSame([], Ajustes::lista(CalendarioInhabiles::EN_CONFIGURACION));
 
         $auditoria = $this->ultimaAuditoria();
         $this->assertSame($admin->id, $auditoria->causer_id);
@@ -200,6 +205,90 @@ class FeriadosHaciendaTest extends TestCase
         $this->assertNotContains('2026-06-17', $fechas);
         $this->assertContains('2026-05-01', $fechas);
         $this->assertSame(['2026'], Ajustes::lista(CalendarioInhabiles::COMPLETOS));
+        $this->assertSame(['2026'], Ajustes::lista(CalendarioInhabiles::EN_CONFIGURACION));
+    }
+
+    /**
+     * Un año del archivo que se vacía desde la pantalla queda vacío: lo que dice la
+     * confirmación es lo que se guarda, lo que queda en la auditoría y lo que usa el
+     * plazo. No vuelve el calendario del archivo.
+     */
+    public function test_vaciar_un_anio_del_archivo_no_lo_devuelve_al_archivo(): void
+    {
+        $admin = $this->admin();
+        $archivo = config('dte.invalidacion.dias_inhabiles.2026');
+        $ultima = array_pop($archivo);
+
+        // Se desmarca 2026 (copia las 26 fechas, sin marcar) y se quitan una por una.
+        $this->actingAs($admin)
+            ->put(route('configuracion.fiscal.feriados.completo'), ['anio' => 2026, 'confirmacion' => '1'])
+            ->assertRedirect();
+        foreach ($archivo as $fecha) {
+            $this->actingAs($admin)
+                ->delete(route('configuracion.fiscal.feriados.quitar'), ['anio' => 2026, 'fecha' => $fecha, 'confirmacion' => '1'])
+                ->assertRedirect();
+        }
+
+        $this->actingAs($admin)
+            ->delete(route('configuracion.fiscal.feriados.quitar'), ['anio' => 2026, 'fecha' => $ultima])
+            ->assertOk()
+            ->assertSee('2026: 1 día')
+            ->assertSee('2026: 0 días (se quita el jueves 31/12/2026)');
+        $this->actingAs($admin)
+            ->delete(route('configuracion.fiscal.feriados.quitar'), ['anio' => 2026, 'fecha' => $ultima, 'confirmacion' => '1'])
+            ->assertRedirect();
+
+        $this->assertSame(
+            ['fechas' => [], 'completo' => false, 'en_configuracion' => true],
+            app(CalendarioInhabiles::class)->delAnio('2026'),
+        );
+        $auditoria = $this->ultimaAuditoria();
+        $this->assertSame(CalendarioInhabiles::FECHAS, $auditoria->getExtraProperty('clave'));
+        $this->assertNull($auditoria->getExtraProperty('valor_despues'));
+
+        $this->actingAs($admin)
+            ->get(route('configuracion.fiscal.feriados', ['anio' => 2026]))
+            ->assertOk()
+            ->assertSee('0 días. Sin marcar como completo')
+            ->assertDontSee('26 días');
+
+        // El plazo cuenta de lunes a viernes, sin los feriados del archivo, y avisa.
+        $plazo = app(PlazoInvalidacion::class);
+        $this->assertEquals(HoraNegocio::finDelDiaUtc('2026-04-14'), $plazo->limite(TipoDte::CreditoFiscal, '2026-03-19'));
+        $this->assertFalse($plazo->calendarioCompleto(TipoDte::CreditoFiscal, '2026-03-19'));
+    }
+
+    /** Y al revés: un año del archivo sin días y marcado completo se puede desmarcar. */
+    public function test_desmarcar_un_anio_del_archivo_sin_dias_no_lo_devuelve_al_archivo(): void
+    {
+        $admin = $this->admin();
+        foreach (config('dte.invalidacion.dias_inhabiles.2026') as $fecha) {
+            $this->actingAs($admin)
+                ->delete(route('configuracion.fiscal.feriados.quitar'), ['anio' => 2026, 'fecha' => $fecha, 'confirmacion' => '1'])
+                ->assertRedirect();
+        }
+        $this->assertSame(
+            ['fechas' => [], 'completo' => true, 'en_configuracion' => true],
+            app(CalendarioInhabiles::class)->delAnio('2026'),
+        );
+
+        $this->actingAs($admin)
+            ->put(route('configuracion.fiscal.feriados.completo'), ['anio' => 2026])
+            ->assertOk()
+            ->assertSeeInOrder(['2026: completo', '2026: sin marcar']);
+        $this->actingAs($admin)
+            ->put(route('configuracion.fiscal.feriados.completo'), ['anio' => 2026, 'confirmacion' => '1'])
+            ->assertRedirect();
+
+        $this->assertSame(
+            ['fechas' => [], 'completo' => false, 'en_configuracion' => true],
+            app(CalendarioInhabiles::class)->delAnio('2026'),
+        );
+        $this->actingAs($admin)
+            ->get(route('configuracion.fiscal.feriados', ['anio' => 2026]))
+            ->assertOk()
+            ->assertSee('0 días. Sin marcar como completo')
+            ->assertDontSee('26 días');
     }
 
     // ---------------------------------------------------------------- completo

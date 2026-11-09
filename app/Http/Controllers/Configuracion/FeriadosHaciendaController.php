@@ -24,7 +24,9 @@ use Illuminate\View\View;
  * como días sueltos), se quita un día y se marca si el año está completo.
  *
  * Cada acción trabaja sobre el calendario VIGENTE del año: si el año todavía sale
- * de config/dte.php, el primer cambio lo copia entero a Configuración. Todo pasa
+ * de config/dte.php, el primer cambio lo copia entero a Configuración y lo deja
+ * anotado ahí, para que vaciarlo o desmarcarlo después no lo devuelva al archivo
+ * (lo confirmado es lo que queda y lo que usa el plazo). Todo pasa
  * por la confirmación N2 y la auditoría central de los ajustes, igual que el
  * servidor de correo o los respaldos. El permiso lo pone el grupo de rutas
  * (`configuracion.gestionar`) y lo vuelve a exigir el registro al guardar.

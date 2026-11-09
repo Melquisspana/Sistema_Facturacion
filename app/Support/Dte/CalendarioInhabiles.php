@@ -9,10 +9,11 @@ use InvalidArgumentException;
  * Días inhábiles del MH por año (decisión 0005, issue #49).
  *
  * Manda lo cargado en Configuración → Feriados de Hacienda. Un año está cargado ahí
- * si tiene alguna fecha o si está marcado como completo. Para un año que no lo
- * está, el respaldo es `config('dte.invalidacion.dias_inhabiles')`, donde tener la
- * lista del año significa que el año está completo. Si no hay ninguno, el año no
- * tiene calendario y el plazo se calcula de lunes a viernes, sin feriados.
+ * si tiene alguna fecha, si está marcado como completo o si es un año del archivo
+ * que ya se cambió en la pantalla. Para un año que no lo está, el respaldo es
+ * `config('dte.invalidacion.dias_inhabiles')`, donde tener la lista del año
+ * significa que el año está completo. Si no hay ninguno, el año no tiene
+ * calendario y el plazo se calcula de lunes a viernes, sin feriados.
  */
 final class CalendarioInhabiles
 {
@@ -21,6 +22,13 @@ final class CalendarioInhabiles
 
     /** Años que Configuración marca con el calendario completo (AAAA). */
     public const COMPLETOS = 'dte.invalidacion.anios_completos';
+
+    /**
+     * Años del archivo que ya se cambiaron en Configuración (AAAA). Para ellos vale
+     * solo Configuración, aunque queden sin fechas y sin marcar: si no, vaciarlos o
+     * desmarcarlos haría volver el calendario del archivo, distinto de lo confirmado.
+     */
+    public const EN_CONFIGURACION = 'dte.invalidacion.anios_en_configuracion';
 
     /** Tope de días por año. El calendario 2026 del MH trae 26. */
     public const MAXIMO_POR_ANIO = 60;
@@ -42,7 +50,7 @@ final class CalendarioInhabiles
         ));
         $completo = in_array($anio, Ajustes::lista(self::COMPLETOS), true);
 
-        if ($fechas !== [] || $completo) {
+        if ($fechas !== [] || $completo || in_array($anio, Ajustes::lista(self::EN_CONFIGURACION), true)) {
             foreach ($fechas as $fecha) {
                 if (! self::esFecha($fecha)) {
                     throw new InvalidArgumentException('Configuración inválida: fecha «'.$fecha.'» en Feriados de Hacienda. Se exige AAAA-MM-DD.');
@@ -72,6 +80,7 @@ final class CalendarioInhabiles
         $anios = array_merge(
             array_map(static fn (string $fecha) => substr($fecha, 0, 4), Ajustes::lista(self::FECHAS)),
             Ajustes::lista(self::COMPLETOS),
+            Ajustes::lista(self::EN_CONFIGURACION),
             array_map('strval', array_keys($this->delArchivo())),
         );
 
@@ -80,7 +89,8 @@ final class CalendarioInhabiles
 
     /**
      * Lo que hay que guardar para que `$anio` quede con estas fechas y esta marca. Los
-     * otros años quedan como están. Una lista vacía se guarda como «sin valor».
+     * otros años quedan como están. Una lista vacía se guarda como «sin valor». Un año
+     * del archivo queda anotado en EN_CONFIGURACION, para que no vuelva al archivo.
      *
      * @param  array<int, string>  $fechas
      * @return array<string, array<int, string>|null>
@@ -99,9 +109,16 @@ final class CalendarioInhabiles
         }
         sort($completos);
 
+        $enConfiguracion = array_diff(Ajustes::lista(self::EN_CONFIGURACION), [$anio]);
+        if (array_key_exists($anio, $this->delArchivo())) {
+            $enConfiguracion[] = $anio;
+        }
+        sort($enConfiguracion);
+
         return [
             self::FECHAS => $todas === [] ? null : array_values($todas),
             self::COMPLETOS => $completos === [] ? null : array_values($completos),
+            self::EN_CONFIGURACION => $enConfiguracion === [] ? null : array_values($enConfiguracion),
         ];
     }
 

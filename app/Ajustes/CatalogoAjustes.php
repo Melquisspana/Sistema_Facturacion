@@ -2157,6 +2157,19 @@ class CatalogoAjustes
                 descripcion: 'Si el año del plazo no está acá, el plazo se calcula y se avisa que falta el calendario completo.',
                 reglas: ['anio'],
             ),
+            DefinicionAjuste::hacer(
+                clave: 'dte.invalidacion.anios_en_configuracion',
+                seccion: 'feriados_hacienda',
+                tipo: TipoAjuste::Lista,
+                sensibilidad: Sensibilidad::Publico,
+                impacto: Impacto::Alto,
+                nivel: NivelConfirmacion::N2,
+                editabilidad: Editabilidad::Editable,
+                persistencia: Persistencia::Nueva,
+                etiqueta: 'Años del calendario del sistema cambiados en Configuración',
+                descripcion: 'Años que traía el sistema y que ya se cambiaron en Feriados de Hacienda. Para ellos vale solo lo de Configuración, aunque se quiten todos los días o se desmarque el año completo.',
+                reglas: ['anio'],
+            ),
 
             // ================================================================
             // QUÉ NO ENTRA ACÁ, Y NO ES UN OLVIDO
