@@ -9,7 +9,6 @@ use App\Models\Ruta;
 use App\Models\RutaCobertura;
 use App\Support\HoraNegocio;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -23,14 +22,18 @@ use Illuminate\Support\Str;
  *  · Sin compra: días desde el último CCF que cuenta en Rutas ({@see EntregasCcf::baseCcf()},
  *    el mismo filtro del ritmo) hasta el último día del tramo. Una sala que nunca compró
  *    también cuenta.
- *  · Última entrega: {@see EntregasCcf::ultimaVisitaPorSala()}, la de las entregas de Rutas.
+ *  · Última entrega: {@see EntregasCcf::ultimaVisitaPorSala()}, la de las entregas de Rutas,
+ *    hasta el último día del tramo. Así, en un mes pasado todo se cuenta al cierre del mes.
  *  · Rutas que pasan: la cobertura de las rutas activas ({@see RutaCobertura}) y la ruta de
- *    las salas del lugar (`cliente_sucursales.ruta_id`).
+ *    las salas del lugar (`cliente_sucursales.ruta_id`). Como en {@see PropuestaRutas::para()},
+ *    la cobertura de un distrito le gana a la de su departamento.
  *
  * El mes en curso va del 1 a hoy y se compara con el mismo tramo del mes anterior; un mes
- * pasado se compara con el mes anterior completo. Las salas sin distrito cargado no tienen
- * lugar en el mapa: se cuentan aparte. Todo sale de unas pocas consultas agregadas, sin
- * importar cuántas salas, zonas o rutas haya.
+ * pasado se compara con el mes anterior completo. Una sala cuenta en el mes si ya existía
+ * (o si compró en él). Las salas sin distrito cargado no tienen lugar en el mapa: se cuentan
+ * aparte. Con una ruta elegida, cada zona dice también cuántas salas tiene en total
+ * (`todas`), para no tomar por vacía una zona que atiende otra ruta. Todo sale de unas pocas
+ * consultas agregadas, sin importar cuántas salas, zonas o rutas haya.
  */
 class MapaVentas
 {
@@ -93,7 +96,8 @@ class MapaVentas
 
         // Lo vendido a cada sala (una consulta) y las salas: las activas y las que vendieron,
         // aunque estén desactivadas o borradas, para que el total sea el de Ventas. Lo vendido
-        // sin sala (consumidor final) suma al total y no tiene lugar en el mapa.
+        // sin sala (consumidor final) suma al total y no tiene lugar en el mapa. Las salas de
+        // las otras rutas también se leen: dicen qué zonas tienen salas y por dónde pasan.
         $ventas = $this->ventas->porSala($desde, $hasta, $anteriorDesde, $anteriorHasta, $rutaId);
         $sinSala = $ventas[0] ?? ['actual' => 0.0, 'anterior' => 0.0];
         unset($ventas[0]);
@@ -102,13 +106,12 @@ class MapaVentas
             ->leftJoin('departamentos', 'departamentos.id', '=', 'distritos.departamento_id')
             ->where(fn ($q) => $q->where(fn ($q) => $q->where('cliente_sucursales.activo', true)->whereNull('cliente_sucursales.deleted_at'))
                 ->orWhereIn('cliente_sucursales.id', array_keys($ventas)))
-            ->when($rutaId !== null, fn ($q) => $q->where('cliente_sucursales.ruta_id', $rutaId))
             ->orderBy('cliente_sucursales.nombre')
             ->toBase()
-            ->get(['cliente_sucursales.id', 'cliente_sucursales.nombre', 'cliente_sucursales.activo', 'cliente_sucursales.deleted_at', 'distritos.codigo as distrito', 'departamentos.codigo as departamento']);
+            ->get(['cliente_sucursales.id', 'cliente_sucursales.nombre', 'cliente_sucursales.activo', 'cliente_sucursales.deleted_at', 'cliente_sucursales.created_at', 'cliente_sucursales.ruta_id', 'distritos.codigo as distrito', 'departamentos.codigo as departamento']);
         $ids = $salas->pluck('id')->all();
 
-        // El último CCF hasta el fin del tramo y la última entrega de cada sala.
+        // El último CCF y la última entrega de cada sala, los dos hasta el fin del tramo.
         $ultimoCcf = $this->entregas->baseCcf()
             ->whereIn('cliente_sucursal_id', $ids)
             ->whereDate('fecha_emision', '<=', $hasta->toDateString())
@@ -116,7 +119,7 @@ class MapaVentas
             ->toBase()
             ->selectRaw('cliente_sucursal_id, MAX(fecha_emision) as ultima')
             ->pluck('ultima', 'cliente_sucursal_id');
-        $entregas = $this->entregas->ultimaVisitaPorSala($ids);
+        $entregas = $this->entregas->ultimaVisitaPorSala($ids, $hasta);
 
         $departamentos = Departamento::orderBy('codigo')->get(['id', 'codigo', 'nombre']);
         $distritos = Distrito::query()
@@ -151,12 +154,21 @@ class MapaVentas
             }
         };
         $depDeId = $departamentos->pluck('codigo', 'id');
-        foreach (RutaCobertura::query()->get(['ruta_id', 'departamento_id', 'distrito_id']) as $c) {
+        $coberturas = RutaCobertura::query()->get(['ruta_id', 'departamento_id', 'distrito_id'])
+            ->filter(fn (RutaCobertura $c) => isset($activas[$c->ruta_id]));
+        // Un distrito con cobertura propia es de esa ruta, no de la que cubre su departamento.
+        $propios = [];
+        foreach ($coberturas as $c) {
+            if ($c->distrito_id !== null && isset($claveDistrito[$c->distrito_id])) {
+                $propios[$claveDistrito[$c->distrito_id]] = true;
+            }
+        }
+        foreach ($coberturas as $c) {
             if ($c->departamento_id !== null) {
                 $dep = $depDeId[$c->departamento_id] ?? null;
                 $pasan(null, $dep, $c->ruta_id);
                 foreach ($zonasDis as $clave => $zona) {
-                    if ($zona['dep'] === $dep) {
+                    if ($zona['dep'] === $dep && ! isset($propios[$clave])) {
                         $pasan($clave, null, $c->ruta_id);
                     }
                 }
@@ -165,30 +177,35 @@ class MapaVentas
                 $pasan($clave, $zonasDis[$clave]['dep'], $c->ruta_id);
             }
         }
-        $conSalas = DB::table('cliente_sucursales')
-            ->where('activo', true)
-            ->whereNull('deleted_at')
-            ->whereNotNull('distrito_id')
-            ->distinct()
-            ->get(['distrito_id', 'ruta_id']);
-        foreach ($conSalas as $par) {
-            $clave = $claveDistrito[$par->distrito_id] ?? null;
-            if ($par->ruta_id !== null && $clave !== null) {
-                $pasan($clave, $zonasDis[$clave]['dep'], (int) $par->ruta_id);
-            }
-        }
-        $distritosSinSalas = count($claveDistrito) - $conSalas->pluck('distrito_id')->unique()->count();
 
         // Cada sala suma a su distrito, a su departamento y a los totales. La plata cuenta
-        // siempre; como sala solo cuenta la activa o la que compró en el tramo: una que se
-        // desactivó no es una sala «sin compra».
-        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'sinCompra' => 0, 'distritosSinSalas' => $distritosSinSalas];
+        // siempre; como sala solo cuenta la activa que ya existía en el tramo o la que compró
+        // en él: una que se desactivó no es una sala «sin compra», y una dada de alta después
+        // no estaba. Cuándo se desactivó una sala no queda guardado: para eso vale cómo está hoy.
+        $totales = ['ventas' => $sinSala['actual'], 'anterior' => $sinSala['anterior'], 'salas' => 0, 'compraron' => 0, 'sinCompra' => 0, 'distritosSinSalas' => 0];
         $sinUbicacion = ['salas' => 0, 'ventas' => 0.0];
         foreach ($salas as $sala) {
             $venta = $ventas[$sala->id] ?? ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
             $ultima = isset($ultimoCcf[$sala->id]) ? Carbon::parse($ultimoCcf[$sala->id], HoraNegocio::zona())->startOfDay() : null;
             $dias = $ultima === null ? null : max(0, (int) $ultima->diffInDays($hasta));
-            $cuenta = ((bool) $sala->activo && $sala->deleted_at === null) || $venta['compro'];
+            $abierta = (bool) $sala->activo && $sala->deleted_at === null;
+            $existia = $sala->created_at === null || substr((string) $sala->created_at, 0, 10) <= $hasta->toDateString();
+            $cuenta = ($abierta && $existia) || $venta['compro'];
+            $dis = self::clave($sala->departamento, $sala->distrito);
+            $ubicada = $dis !== null && isset($zonasDis[$dis]);
+
+            // De todas las rutas: la ruta de la sala pasa por su zona y la zona tiene salas.
+            if ($ubicada && $abierta && $sala->ruta_id !== null) {
+                $pasan($dis, $sala->departamento, (int) $sala->ruta_id);
+            }
+            if ($ubicada && $cuenta) {
+                $zonasDis[$dis]['todas']++;
+                $zonasDep[$sala->departamento]['todas']++;
+            }
+            if ($rutaId !== null && (int) $sala->ruta_id !== $rutaId) {
+                continue;
+            }
+
             $fila = [
                 'nombre' => $sala->nombre,
                 'cuenta' => $cuenta,
@@ -206,8 +223,7 @@ class MapaVentas
             $totales['compraron'] += (int) $fila['compro'];
             $totales['sinCompra'] += (int) $fila['sinCompra'];
 
-            $dis = self::clave($sala->departamento, $sala->distrito);
-            if ($dis === null || ! isset($zonasDis[$dis])) {
+            if (! $ubicada) {
                 $sinUbicacion['salas'] += (int) $cuenta;
                 $sinUbicacion['ventas'] += $fila['actual'];
 
@@ -216,8 +232,10 @@ class MapaVentas
             self::sumar($zonasDis[$dis], $fila);
             self::sumar($zonasDep[$sala->departamento], $fila);
         }
+        // Del país entero, sin el filtro de ruta: como la tarjeta lo dice.
+        $totales['distritosSinSalas'] = count($claveDistrito) - count(array_filter($zonasDis, fn (array $z) => $z['todas'] > 0));
 
-        $cerrar = fn (array $zona) => self::cerrar($zona, $rutas->pluck('id')->all(), $hoy);
+        $cerrar = fn (array $zona) => self::cerrar($zona, $rutas->pluck('id')->all(), $hasta);
 
         return [
             'mes' => $desde->format('Y-m'),
@@ -233,8 +251,9 @@ class MapaVentas
             'sinUbicacion' => ['salas' => $sinUbicacion['salas'], 'ventas' => round($sinUbicacion['ventas'], 2), 'sinSala' => round($sinSala['actual'], 2)],
             'rutas' => $rutas->map(fn (Ruta $r) => ['id' => $r->id, 'nombre' => $r->nombre])->all(),
             'departamentos' => array_map($cerrar, $zonasDep),
-            // Solo los distritos con salas, ventas o alguna ruta: el resto se dibuja vacío.
-            'distritos' => array_map($cerrar, array_filter($zonasDis, fn (array $z) => $z['salas'] > 0 || $z['ventas'] != 0 || $z['anterior'] != 0 || $z['rutas'] !== [])),
+            // Solo los distritos con salas (de cualquier ruta), ventas o alguna ruta: el resto
+            // se dibuja vacío.
+            'distritos' => array_map($cerrar, array_filter($zonasDis, fn (array $z) => $z['todas'] > 0 || $z['ventas'] != 0 || $z['anterior'] != 0 || $z['rutas'] !== [])),
         ];
     }
 
@@ -246,7 +265,7 @@ class MapaVentas
 
     private static function zona(string $nombre, string $departamento): array
     {
-        return ['nombre' => $nombre, 'dep' => $departamento, 'ventas' => 0.0, 'anterior' => 0.0, 'salas' => 0, 'compraron' => 0, 'sinCompra' => 0, 'entrega' => null, 'rutas' => [], 'lista' => []];
+        return ['nombre' => $nombre, 'dep' => $departamento, 'ventas' => 0.0, 'anterior' => 0.0, 'salas' => 0, 'todas' => 0, 'compraron' => 0, 'sinCompra' => 0, 'entrega' => null, 'rutas' => [], 'lista' => []];
     }
 
     private static function sumar(array &$zona, array $fila): void
@@ -270,8 +289,9 @@ class MapaVentas
      * comprar: las que nunca compraron primero.
      *
      * @param  array<int, int>  $orden  ids de las rutas activas, por nombre
+     * @param  Carbon  $hasta  el último día del tramo, el mismo de los días sin compra
      */
-    private static function cerrar(array $zona, array $orden, Carbon $hoy): array
+    private static function cerrar(array $zona, array $orden, Carbon $hasta): array
     {
         $lista = $zona['lista'];
         usort($lista, fn ($a, $b) => ($b['dias'] ?? PHP_INT_MAX) <=> ($a['dias'] ?? PHP_INT_MAX) ?: strcmp($a['nombre'], $b['nombre']));
@@ -280,7 +300,7 @@ class MapaVentas
         return array_merge($zona, [
             'ventas' => round($zona['ventas'], 2),
             'anterior' => round($zona['anterior'], 2),
-            'entregaDias' => $zona['entrega'] === null ? null : max(0, (int) Carbon::parse($zona['entrega'], HoraNegocio::zona())->diffInDays($hoy)),
+            'entregaDias' => $zona['entrega'] === null ? null : max(0, (int) Carbon::parse($zona['entrega'], HoraNegocio::zona())->diffInDays($hasta)),
             'rutas' => array_values(array_filter($orden, fn (int $id) => isset($zona['rutas'][$id]))),
             'peores' => array_slice($lista, 0, self::PEORES),
         ]);

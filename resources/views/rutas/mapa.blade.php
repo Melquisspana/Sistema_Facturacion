@@ -17,6 +17,14 @@
         $t = $datos['totales'];
         $variacion = $t['anterior'] != 0 ? ($t['ventas'] - $t['anterior']) / $t['anterior'] * 100 : null;
         $contra = $datos['enCurso'] ? 'frente al mismo tramo del mes anterior' : 'frente al mes anterior';
+        // Lo mismo, corto, para la tabla y la ficha: «vs. 1 al 9 de octubre» o «vs. septiembre».
+        $periodo = $datos['periodo'];
+        $mesAnterior = \Illuminate\Support\Carbon::parse($periodo['anteriorDesde'])->locale('es')->translatedFormat('F');
+        $diaFin = (int) substr($periodo['anteriorHasta'], 8, 2);
+        $contraCorto = 'vs. '.($datos['enCurso'] ? ($diaFin === 1 ? '1' : '1 al '.$diaFin).' de '.$mesAnterior : $mesAnterior);
+        // En un mes pasado, los días sin compra y la última entrega se cuentan al cierre del mes.
+        $corte = $datos['enCurso'] ? null : \Illuminate\Support\Carbon::parse($periodo['hasta'])->format('d/m');
+        $alCorte = $corte ? ' al '.$corte : '';
         $sinLugar = $datos['sinUbicacion'];
         $rutaElegida = collect($datos['rutas'])->firstWhere('id', $filtro['ruta']);
 
@@ -48,6 +56,7 @@
         /* Con la barra lateral, la tabla necesita todo el ancho hasta las pantallas grandes. */
         @media (min-width: 1536px) { .mv-abajo { grid-template-columns:360px minmax(0,1fr); } }
         .mv-falta-lista { display:grid; gap:.5rem; grid-template-columns:repeat(auto-fill, minmax(16rem, 1fr)); }
+        .mv-falta-vacias:has(details[open]) { grid-column:1 / -1; }
         .mv-seg { display:inline-flex; gap:2px; padding:3px; border-radius:.625rem; }
         .mv-seg button { min-height:2.75rem; padding:0 .75rem; border-radius:.45rem; font-size:.875rem; font-weight:500; }
         .mv-seg button[aria-pressed="false"]:hover { background:rgba(99,102,241,.08); }
@@ -100,7 +109,8 @@
 
             {{-- ===================== Filtros: mes y ruta por GET; modo y nivel en el navegador ===================== --}}
             <div class="flex flex-wrap items-end gap-3">
-                <form method="GET" action="{{ route('rutas.mapa') }}" class="flex flex-wrap items-end gap-3">
+                {{-- rutas-mapa.js le suma el #hash al enviar: así no se pierden el modo, el nivel ni la zona. --}}
+                <form method="GET" action="{{ route('rutas.mapa') }}" class="flex flex-wrap items-end gap-3" id="mapa-filtros">
                     <div class="w-full sm:w-72">
                         <label for="mapa-mes" class="block text-xs font-medium text-gray-500">Mes</label>
                         <select id="mapa-mes" name="mes" class="{{ $campo }} mt-1">
@@ -168,12 +178,12 @@
                     <div class="{{ $caja }} p-4">
                         <span class="block text-sm text-gray-600">Salas sin compra 30+ días</span>
                         <span class="mt-1 block text-2xl font-semibold tabular-nums {{ $t['sinCompra'] > 0 ? 'text-red-700' : 'text-gray-800' }}">{{ $t['sinCompra'] }}</span>
-                        <span class="mt-0.5 block text-xs text-gray-500">hace 30 días o más; van primero en «Dónde falta»</span>
+                        <span class="mt-0.5 block text-xs text-gray-500">hace 30 días o más{{ $corte ? ', contados al '.$corte.', el cierre del mes' : '' }}; van primero en «Dónde falta»</span>
                     </div>
                     <div class="{{ $caja }} p-4">
                         <span class="block text-sm text-gray-600">Distritos sin ninguna sala</span>
                         <span class="mt-1 block text-2xl font-semibold tabular-nums text-gray-800">{{ $t['distritosSinSalas'] }}</span>
-                        <span class="mt-0.5 block text-xs text-gray-500">donde todavía no vendemos</span>
+                        <span class="mt-0.5 block text-xs text-gray-500">donde todavía no vendemos{{ $rutaElegida ? ', en todo el país y con cualquier ruta' : '' }}</span>
                     </div>
                 </div>
             </section>
@@ -200,7 +210,8 @@
                             <button type="button" class="mv-zbtn border border-gray-300 bg-white text-gray-700 shadow-sm" id="mapa-todo" aria-label="Ver todo el país">⤢</button>
                         </div>
                     </div>
-                    <div class="mv-leyenda rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm" id="mapa-leyenda" aria-live="polite"></div>
+                    {{-- Sin aria-live: se redibuja en cada clic y al cambiar el tamaño, y el lector la repetiría. --}}
+                    <div class="mv-leyenda rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm" id="mapa-leyenda"></div>
                     <div class="mv-tip" id="mapa-tip" hidden></div>
                     <p class="px-4 py-6 text-center text-sm text-gray-500" id="mapa-carga">Cargando el mapa…</p>
                 </section>
@@ -220,8 +231,10 @@
                                 ->sortBy([fn ($a, $b) => $b['sinCompra'] <=> $a['sinCompra'], fn ($a, $b) => $b['anterior'] <=> $a['anterior']])
                                 ->take(5);
                             $maximo = max(1, (int) $faltan->max('sinCompra'));
-                            $vacias = collect($zonas)->filter(fn ($z) => $z['salas'] === 0 && $z['rutas'] !== [])->count();
-                            $palabra = $nivel === 'dep' ? ($vacias === 1 ? 'departamento' : 'departamentos') : ($vacias === 1 ? 'distrito' : 'distritos');
+                            // Por donde pasa una ruta (la elegida, si hay una) y sin ninguna sala de
+                            // ninguna ruta: con el filtro, las zonas de otras rutas no están vacías.
+                            $vacias = collect($zonas)->filter(fn ($z) => $z['todas'] === 0 && ($rutaElegida ? in_array($rutaElegida['id'], $z['rutas'], true) : $z['rutas'] !== []))->sortBy('nombre');
+                            $palabra = $nivel === 'dep' ? ($vacias->count() === 1 ? 'departamento' : 'departamentos') : ($vacias->count() === 1 ? 'distrito' : 'distritos');
                         @endphp
                         <ol class="mv-falta-lista mt-3" data-nivel-lista="{{ $nivel }}" @if ($nivel !== 'dep') hidden @endif>
                             @forelse ($faltan as $clave => $zona)
@@ -232,7 +245,7 @@
                                             <span class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-700"><span class="mv-punto" style="background:var(--mal)"></span>{{ $zona['sinCompra'] }} de {{ $zona['salas'] }}</span>
                                         </span>
                                         <span class="mt-0.5 block text-xs text-gray-500">
-                                            {{ $zona['sinCompra'] === 1 ? 'sala sin compra' : 'salas sin compra' }} hace 30 días o más · {{ $rutasTexto($zona['rutas']) ?: 'sin ruta' }}
+                                            {{ $zona['sinCompra'] === 1 ? 'sala sin compra' : 'salas sin compra' }} hace 30 días o más{{ $alCorte }} · {{ $rutasTexto($zona['rutas']) ?: 'sin ruta' }}
                                         </span>
                                         <span class="mv-barra mt-1.5 block"><span style="width: {{ round($zona['sinCompra'] / $maximo * 100) }}%"></span></span>
                                     </button>
@@ -240,9 +253,30 @@
                             @empty
                                 <li class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-500">Ninguna sala lleva 30 días o más sin comprar.</li>
                             @endforelse
-                            <li class="rounded-lg border border-gray-200 px-3 py-2">
-                                <span class="block text-sm text-gray-800"><strong>{{ $vacias }} {{ $palabra }}</strong> con ruta y sin ninguna sala</span>
-                                <span class="mt-0.5 block text-xs text-gray-500">{{ $vacias > 0 ? 'Ya pasamos cerca: son los primeros para ofrecer.' : 'Las rutas ya tienen salas en cada lugar que cubren.' }}</span>
+                            <li class="mv-falta-vacias rounded-lg border border-gray-200 px-3 py-2">
+                                <span class="block text-sm text-gray-800"><strong>{{ $vacias->count() }} {{ $palabra }}</strong> {{ $rutaElegida ? 'de '.$rutaElegida['nombre'].' sin ninguna sala' : 'con ruta y sin ninguna sala' }}</span>
+                                <span class="mt-0.5 block text-xs text-gray-500">
+                                    @if ($vacias->isNotEmpty())
+                                        Ya pasamos cerca: son los primeros para ofrecer.
+                                    @else
+                                        {{ $rutaElegida ? 'Cada lugar por donde pasa esta ruta ya tiene salas.' : 'Las rutas ya tienen salas en cada lugar que cubren.' }}
+                                    @endif
+                                </span>
+                                {{-- Los nombres, para encontrarlas sin el dibujo y con el teclado. --}}
+                                @if ($vacias->isNotEmpty())
+                                    <details class="mt-1">
+                                        <summary class="inline-flex min-h-11 cursor-pointer items-center text-sm font-medium text-indigo-600 hover:underline">Ver cuáles</summary>
+                                        <ul class="flex flex-wrap gap-2 pb-1">
+                                            @foreach ($vacias as $clave => $zona)
+                                                <li>
+                                                    <button type="button" data-zona="{{ $clave }}" class="inline-flex min-h-11 items-center rounded-full border border-gray-300 bg-white px-3 text-left text-sm text-gray-700 hover:bg-gray-50">
+                                                        {{ $zona['nombre'] }}@if ($nivel === 'dis')<span class="text-gray-500">&nbsp;· {{ $datos['departamentos'][$zona['dep']]['nombre'] ?? '' }}</span>@endif
+                                                    </button>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </details>
+                                @endif
                             </li>
                         </ol>
                     @endforeach
@@ -252,13 +286,18 @@
                     <h2 id="mapa-tabla" class="text-base font-semibold text-gray-800"><span data-nivel-texto="dep">Departamentos</span><span data-nivel-texto="dis" hidden>Distritos con salas</span></h2>
                     @foreach ($niveles as $nivel => $zonas)
                         @php
-                            $conSalas = collect($zonas)->filter(fn ($z) => $z['salas'] > 0 || $z['ventas'] != 0)->sortByDesc('ventas')->map(function (array $zona) use ($nivel, $datos) {
+                            $conSalas = collect($zonas)->filter(fn ($z) => $z['salas'] > 0 || $z['ventas'] != 0)->sortByDesc('ventas')->map(function (array $zona) use ($nivel, $datos, $corte) {
                                 $cambio = $zona['anterior'] != 0 ? ($zona['ventas'] - $zona['anterior']) / $zona['anterior'] * 100 : null;
 
                                 return $zona + [
                                     'depNombre' => $nivel === 'dis' ? ($datos['departamentos'][$zona['dep']]['nombre'] ?? '') : null,
                                     'cambioTexto' => $cambio === null ? '—' : ($cambio >= 0 ? '▲ ' : '▼ ').number_format(abs($cambio), 0).' %',
-                                    'entregaTexto' => $zona['entrega'] === null ? null : match ($zona['entregaDias']) { 0 => 'hoy', 1 => 'ayer', default => 'hace '.$zona['entregaDias'].' días' },
+                                    // En un mes pasado, la fecha: «hoy» o «ayer» serían del cierre del mes, no de hoy.
+                                    'entregaTexto' => match (true) {
+                                        $zona['entrega'] === null => null,
+                                        $corte !== null => \Illuminate\Support\Carbon::parse($zona['entrega'])->format('d/m/Y'),
+                                        default => match ($zona['entregaDias']) { 0 => 'hoy', 1 => 'ayer', default => 'hace '.$zona['entregaDias'].' días' },
+                                    },
                                 ];
                             });
                         @endphp
@@ -276,7 +315,7 @@
                                                     <span class="shrink-0 tabular-nums text-gray-800">{{ $plata($zona['ventas']) }}</span>
                                                 </span>
                                                 <span class="mt-0.5 block text-sm text-gray-600">
-                                                    {{ $zona['cambioTexto'] }} vs. mes anterior · {{ $zona['salas'] }} {{ $zona['salas'] === 1 ? 'sala' : 'salas' }} · <span class="{{ $zona['sinCompra'] > 0 ? 'font-medium text-red-700' : '' }}">{{ $zona['sinCompra'] }} sin compra 30+ días</span>
+                                                    {{ $zona['cambioTexto'] }} {{ $contraCorto }} · {{ $zona['salas'] }} {{ $zona['salas'] === 1 ? 'sala' : 'salas' }} · <span class="{{ $zona['sinCompra'] > 0 ? 'font-medium text-red-700' : '' }}">{{ $zona['sinCompra'] }} sin compra 30+ días{{ $alCorte }}</span>
                                                 </span>
                                                 <span class="block text-sm text-gray-500">{{ $rutasTexto($zona['rutas']) ?: 'Sin ruta' }} · última entrega {{ $zona['entregaTexto'] ?? '—' }}</span>
                                             </button>
@@ -289,7 +328,7 @@
                                         <tr>
                                             <th scope="col" class="px-3 py-2">Zona</th>
                                             <th scope="col" class="px-3 py-2 text-right">Vendido</th>
-                                            <th scope="col" class="px-3 py-2 text-right">vs. mes anterior</th>
+                                            <th scope="col" class="px-3 py-2 text-right">{{ $contraCorto }}</th>
                                             <th scope="col" class="px-3 py-2 text-right">Salas</th>
                                             <th scope="col" class="px-3 py-2 text-right">Sin compra 30+ días</th>
                                             <th scope="col" class="px-3 py-2">Ruta</th>
@@ -323,6 +362,9 @@
                     <p class="mt-3 text-xs text-gray-500">
                         Las ventas son las nacionales sin IVA, como en Ventas: la exportación no entra y las notas de crédito restan en el mes del CCF que corrigen.
                         La última entrega sale de las entregas de Rutas.
+                        @if ($corte)
+                            En un mes pasado, los días sin compra y la última entrega se cuentan al {{ $corte }}, el cierre del mes.
+                        @endif
                         Mapa: <a href="https://www.geoboundaries.org" class="underline" rel="noopener" target="_blank">geoBoundaries</a> (distritos) y © <a href="https://www.openstreetmap.org/copyright" class="underline" rel="noopener" target="_blank">OpenStreetMap</a> (departamentos, CC BY-SA).
                     </p>
                 </section>
@@ -331,7 +373,8 @@
         </div>
     </div>
 
-    <script type="application/json" id="mapa-datos">@json($datos)</script>
+    @php($paraElMapa = $datos + ['contra' => $contraCorto, 'corte' => $corte])
+    <script type="application/json" id="mapa-datos">@json($paraElMapa)</script>
     <script src="{{ asset('vendor/d3/d3.min.js') }}" defer></script>
     <script src="{{ $script }}" defer></script>
 </x-app-layout>

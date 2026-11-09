@@ -73,9 +73,12 @@ class MapaVentasTest extends TestCase
         // Costa cubre San Miguel entero, donde todavía no hay salas.
         RutaCobertura::create(['ruta_id' => $this->costa->id, 'departamento_id' => $sanMiguel->id]);
 
+        // Las salas ya existían en los meses que se miran.
+        $this->travelTo('2026-06-01 10:00:00');
         $this->norte = $this->sala('Sala de prueba Norte', $this->oriente, $centro);
         $this->sur = $this->sala('Sala de prueba Sur', $this->costa, $playa);
         $this->sinUbicacion = $this->sala('Sala de prueba sin lugar', $this->costa, null);
+        $this->travelTo('2026-11-09 10:00:00');
     }
 
     private function departamento(string $codigo, string $nombre): Departamento
@@ -298,6 +301,116 @@ class MapaVentasTest extends TestCase
         $this->assertSame(['salas' => 0, 'ventas' => 0.0, 'sinSala' => 0.0], $mapa['sinUbicacion']);
         // Las rutas que pasan no dependen del filtro: el modo «Rutas» las necesita todas.
         $this->assertSame([$this->costa->id], $mapa['distritos']['06-15']['rutas']);
+        // Ni las salas que tiene la zona: Sur es de Costa, así que la zona no está vacía.
+        $this->assertSame(1, $mapa['distritos']['06-15']['todas']);
+        $this->assertSame(2, $mapa['departamentos']['06']['todas']);
+        $this->assertSame(1, $mapa['totales']['distritosSinSalas']);
+    }
+
+    /**
+     * Con una ruta elegida, un distrito con salas de otra ruta no es «con ruta y sin ninguna
+     * sala»: la lista de «Dónde falta» solo cuenta los lugares de esa ruta sin ninguna sala, y
+     * los nombra para encontrarlos sin el mapa.
+     */
+    public function test_donde_falta_nombra_las_zonas_con_ruta_y_sin_salas(): void
+    {
+        $this->ventasDeEjemplo();
+        $admin = $this->usuario('administrador');
+
+        // Sin filtro: San Miguel (Costa la cubre) no tiene ninguna sala.
+        $html = $this->actingAs($admin)->get(route('rutas.mapa'))->assertOk()->getContent();
+        $this->assertStringContainsString('<strong>1 distrito</strong> con ruta y sin ninguna sala', $html);
+        $this->assertStringContainsString('<strong>1 departamento</strong> con ruta y sin ninguna sala', $html);
+        $this->assertStringContainsString('data-zona="12-01"', $html);
+        $this->assertStringContainsString('Ver cuáles', $html);
+
+        // Con Oriente: el distrito de Sur (Costa) no está vacío y San Miguel no es de Oriente.
+        $html = $this->actingAs($admin)->get(route('rutas.mapa', ['ruta' => $this->oriente->id]))->assertOk()->getContent();
+        $this->assertStringContainsString('<strong>0 distritos</strong> de Ruta Oriente sin ninguna sala', $html);
+        $this->assertStringContainsString('Cada lugar por donde pasa esta ruta ya tiene salas.', $html);
+        $this->assertStringNotContainsString('data-zona="06-15"', $html);
+        $this->assertStringNotContainsString('data-zona="12-01"', $html);
+
+        // Con Costa: San Miguel sí.
+        $html = $this->actingAs($admin)->get(route('rutas.mapa', ['ruta' => $this->costa->id]))->assertOk()->getContent();
+        $this->assertStringContainsString('<strong>1 distrito</strong> de Ruta Costa sin ninguna sala', $html);
+        $this->assertStringContainsString('data-zona="12-01"', $html);
+    }
+
+    /** Como en PropuestaRutas: el distrito con cobertura propia es de su ruta, no de la del departamento. */
+    public function test_la_cobertura_del_distrito_gana_a_la_del_departamento(): void
+    {
+        $sanMiguel = Departamento::where('codigo', '12')->first();
+        $this->distrito($sanMiguel, '02', 'Distrito Volcán');
+        $tercero = $this->distrito($sanMiguel, '03', 'Distrito Laguna');
+        RutaCobertura::create(['ruta_id' => $this->oriente->id, 'distrito_id' => Distrito::where('departamento_id', $sanMiguel->id)->where('codigo', '01')->value('id')]);
+        // La cobertura de una ruta inactiva no le quita el distrito a nadie.
+        $vieja = Ruta::create(['nombre' => 'Ruta Vieja', 'activa' => false]);
+        RutaCobertura::create(['ruta_id' => $vieja->id, 'distrito_id' => $tercero->id]);
+
+        $mapa = $this->mapa();
+
+        $this->assertSame([$this->oriente->id], $mapa['distritos']['12-01']['rutas']);
+        $this->assertSame([$this->costa->id], $mapa['distritos']['12-02']['rutas']);
+        $this->assertSame([$this->costa->id], $mapa['distritos']['12-03']['rutas']);
+        // El departamento tiene las dos: Costa lo cubre y Oriente pasa por uno de sus distritos.
+        $this->assertSame([$this->costa->id, $this->oriente->id], $mapa['departamentos']['12']['rutas']);
+    }
+
+    /**
+     * Un mes pasado cuenta las salas que ya existían: una dada de alta después no es «sin
+     * compra» en ese mes ni baja el «compraron X de N».
+     */
+    public function test_en_un_mes_pasado_no_cuentan_las_salas_dadas_de_alta_despues(): void
+    {
+        $this->ventasDeEjemplo();
+        $this->travelTo('2026-11-05 09:00:00');
+        $this->sala('Sala de prueba nueva', $this->oriente, Distrito::where('codigo', '14')->first());
+        $this->travelTo('2026-11-09 10:00:00');
+
+        $octubre = $this->mapa('2026-10');
+
+        // Norte, Sur y la sala sin lugar; la nueva no existía.
+        $this->assertSame(3, $octubre['totales']['salas']);
+        $this->assertSame(2, $octubre['totales']['compraron']);
+        $this->assertSame(1, $octubre['distritos']['06-14']['salas']);
+        $this->assertSame([['nombre' => 'Sala de prueba Norte', 'dias' => 11]], $octubre['distritos']['06-14']['peores']);
+
+        // En noviembre sí está y, como nunca compró, va primero entre las que más llevan sin comprar.
+        $noviembre = $this->mapa();
+        $this->assertSame(4, $noviembre['totales']['salas']);
+        $this->assertSame([['nombre' => 'Sala de prueba nueva', 'dias' => null], ['nombre' => 'Sala de prueba Norte', 'dias' => 6]], $noviembre['distritos']['06-14']['peores']);
+    }
+
+    /**
+     * En un mes pasado, los días sin compra y la última entrega se cuentan al cierre del mes, y
+     * la pantalla lo dice. La comparación dice contra qué tramo es.
+     */
+    public function test_un_mes_pasado_se_cuenta_al_cierre_y_dice_contra_que_compara(): void
+    {
+        $this->ventasDeEjemplo();
+        $this->entregada($this->norte, $this->oriente, '2026-10-21 11:00:00');
+        $admin = $this->usuario('administrador');
+
+        // La entrega del 04/11 es posterior al cierre de octubre.
+        $octubre = $this->mapa('2026-10');
+        $this->assertSame('2026-10-21', $octubre['distritos']['06-14']['entrega']);
+        $this->assertSame(10, $octubre['distritos']['06-14']['entregaDias']);
+        $this->assertSame('2026-11-04', $this->mapa()['distritos']['06-14']['entrega']);
+
+        $html = $this->actingAs($admin)->get(route('rutas.mapa', ['mes' => '2026-10']))->assertOk()->getContent();
+        $this->assertStringContainsString('contados al 31/10, el cierre del mes', $html);
+        $this->assertStringContainsString('se cuentan al 31/10, el cierre del mes', $html);
+        $this->assertStringContainsString('21/10/2026', $html);
+        $this->assertStringContainsString('vs. septiembre', $html);
+        $this->assertStringContainsString('"corte":"31\/10"', $html);
+
+        // El mes en curso compara contra el mismo tramo, y lo dice también en la tabla.
+        $html = $this->actingAs($admin)->get(route('rutas.mapa'))->assertOk()->getContent();
+        $this->assertStringContainsString('vs. 1 al 9 de octubre', $html);
+        $this->assertStringNotContainsString('vs. mes anterior', $html);
+        $this->assertStringContainsString('"corte":null', $html);
+        $this->assertStringNotContainsString('el cierre del mes', $html);
     }
 
     public function test_filtro_de_mes_compara_contra_el_mes_anterior_completo(): void
@@ -385,6 +498,12 @@ class MapaVentasTest extends TestCase
         // El nombre viaja escapado dentro del JSON («<» va como <): no cierra el <script>.
         $this->assertStringNotContainsString('</script><b>', $html);
         $this->assertStringContainsString(trim(json_encode('Sala </script>', JSON_HEX_TAG), '"'), $html);
+
+        // Solo la ficha avisa al lector de pantalla; la leyenda se redibuja en cada clic.
+        $this->assertMatchesRegularExpression('/id="mapa-ficha"[^>]*aria-live="polite"/', $html);
+        $this->assertDoesNotMatchRegularExpression('/id="mapa-leyenda"[^>]*aria-live/', $html);
+        // rutas-mapa.js le suma el #hash a este formulario al filtrar.
+        $this->assertStringContainsString('id="mapa-filtros"', $html);
     }
 
     public function test_hace_las_mismas_consultas_con_mas_salas_y_zonas(): void
