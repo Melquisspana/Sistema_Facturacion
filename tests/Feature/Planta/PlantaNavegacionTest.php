@@ -59,15 +59,20 @@ class PlantaNavegacionTest extends TestCase
         $resp->assertSee(route('planta.dashboard'), false);
     }
 
-    /** D2 — el rol de producción tiene una sola área: no se le dibuja selector. */
-    public function test_d2_produccion_no_ve_selector_por_tener_una_sola_area(): void
+    /**
+     * D2 — el rol de producción tiene Planta y, desde el 09/11/2026, Fábrica (lo que sale
+     * de cada pedido): el selector ofrece esas dos y nada fiscal.
+     */
+    public function test_d2_produccion_solo_ve_planta_y_fabrica_en_el_selector(): void
     {
         $this->encenderModulo();
 
         $this->actingAs($this->usuario('produccion'))
             ->get(route('planta.dashboard'))
             ->assertOk()
-            ->assertDontSee(self::MARCADOR_SELECTOR, false);
+            ->assertSee(self::MARCADOR_SELECTOR, false)
+            ->assertSee(route('fabrica.pedidos.index'), false)
+            ->assertDontSee(route('rutas.dashboard'), false);
     }
 
     /**

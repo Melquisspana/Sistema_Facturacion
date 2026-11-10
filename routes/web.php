@@ -958,6 +958,7 @@ Route::middleware(['auth', 'permission:configuracion.gestionar'])
 require __DIR__.'/auth.php';
 require __DIR__.'/planta.php';
 require __DIR__.'/rutas.php';
+require __DIR__.'/fabrica.php';
 require __DIR__.'/asistencia.php';
 require __DIR__.'/gastos.php';
 require __DIR__.'/planilla.php';

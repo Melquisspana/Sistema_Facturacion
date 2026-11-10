@@ -145,7 +145,7 @@ class RitmoRutas
         }
 
         $entregadas = $this->entregas->ultimaVisitaPorSala($salaIds);
-        $pedidos = PedidoSala::registrados()
+        $pedidos = PedidoSala::vigentes()
             ->whereIn('cliente_sucursal_id', $salaIds)
             ->groupBy('cliente_sucursal_id')
             ->selectRaw('cliente_sucursal_id, MAX(fecha) as ultima')
