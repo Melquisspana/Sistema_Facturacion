@@ -360,7 +360,7 @@ class IndemnizacionBajaTest extends TestCase
         app(AnularPlanilla::class)->anular($this->actor, $primero, 'Fecha de pago equivocada');
 
         // Anulado deja libre su lugar en la clave única.
-        $this->assertSame('2026-10-31-A'.$primero->id, $primero->fresh()->periodo);
+        $this->assertSame('2026-10-31-A'.$primero->id, $primero->fresh()->getRawOriginal('periodo'));
         $this->actingAs($this->actor)->get(route('personal.empleados.show', 'p'.$e->id))->assertOk()
             ->assertSee('Calcular indemnización');
 

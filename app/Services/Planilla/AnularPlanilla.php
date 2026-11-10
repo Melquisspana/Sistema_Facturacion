@@ -112,8 +112,9 @@ final class AnularPlanilla
                 // Un pago individual anulado (vacaciones, indemnización) deja libre su lugar
                 // en la clave única, para poder pagarle de nuevo a la persona ese mismo mes.
                 // En esos pagos `periodo` es solo la clave técnica: no se muestra ni lo usan
-                // Gastos ni el cálculo, que miran `desde`. Quincenas y mensuales no cambian:
-                // siguen ocupándolo.
+                // Gastos ni el cálculo, que miran `desde`. Una quincena o una mensual lo deja
+                // al volver a hacerse, si ninguna de sus deudas sigue viva en Gastos
+                // ({@see PrepararPlanilla::abrir()}).
                 'periodo' => $periodo.'-A'.$planilla->id,
             ] : []));
 

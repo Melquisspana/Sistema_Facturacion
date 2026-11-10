@@ -107,6 +107,6 @@ final class GenerarPlanilla
         }
 
         return 'La planilla '.$planilla->periodo.' ya existe ('.mb_strtolower(Planilla::ESTADOS[$planilla->estado])
-            .'). Para hacerla de nuevo, primero hay que borrarla.';
+            .'). Para hacerla de nuevo, primero hay que anularla o borrarla.';
     }
 }
