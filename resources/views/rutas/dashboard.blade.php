@@ -17,11 +17,11 @@
         $R = \App\Services\Rutas\RitmoRutas::class;
         $S = \App\Services\Rutas\Ritmo::class;
 
-        // Colores de la guía: rojo atrasada, ámbar toca ir, verde al día, gris sin
+        // Colores de la guía: rojo atrasada, ámbar le toca, verde al día, gris sin
         // ritmo, celeste en camino. Clases completas para que Tailwind las vea.
         $insignias = [
             $R::ATRASADA => ['Atrasada', 'bg-red-100 text-red-700'],
-            $R::PRONTO => ['Toca ir', 'bg-amber-100 text-amber-800'],
+            $R::PRONTO => ['Le toca', 'bg-amber-100 text-amber-800'],
             $R::AL_DIA => ['Al día', 'bg-green-100 text-green-700'],
             $R::EN_RUTA => ['En camino', 'bg-sky-100 text-sky-700'],
             $R::PROGRAMADA => ['Programada', 'bg-indigo-100 text-indigo-700'],
@@ -313,7 +313,7 @@
                                         </div>
                                         <span class="{{ $insignia }} {{ $estadoClase }}">{{ $estadoTexto($fila['estado'], $fila['faltan']) }}</span>
                                     </div>
-                                    <dl class="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-600 sm:grid-cols-3">
+                                    <dl class="mt-2 grid grid-cols-1 gap-1 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
                                         {{-- El último CCF facturado o la última entrega marcada en Rutas, la más nueva. --}}
                                         <div>
                                             <dt class="sr-only">Última entrega</dt>
@@ -335,6 +335,12 @@
                                             <div>
                                                 <dt class="sr-only">Último pedido sacado</dt>
                                                 <dd>Pedido sacado <time datetime="{{ $pedido->toDateString() }}" title="{{ $pedido->format('d/m/Y') }}">{{ $hace($desdeHoy($pedido)) }}</time></dd>
+                                            </div>
+                                        @endif
+                                        @if ($fila['proxima'])
+                                            <div>
+                                                <dt class="sr-only">Próxima visita</dt>
+                                                <dd class="{{ $fila['estado'] === $S::ATRASADA ? 'font-medium text-red-700' : '' }}">Próxima visita <time datetime="{{ $fila['proxima']->toDateString() }}">{{ $fila['proxima']->format('d/m/Y') }}</time></dd>
                                             </div>
                                         @endif
                                     </dl>

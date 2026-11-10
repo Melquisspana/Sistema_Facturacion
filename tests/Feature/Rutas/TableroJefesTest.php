@@ -158,7 +158,7 @@ class TableroJefesTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Súper Ficticio Centro', 'Toca ir', 'Última entrega', 'hace 11 días', 'Compra cada 13 días']);
+            ->assertSeeInOrder(['Súper Ficticio Centro', 'Le toca', 'Última entrega', 'hace 11 días', 'Compra cada 13 días']);
     }
 
     public function test_la_sala_cuenta_desde_el_ccf_la_entrega_de_rutas_o_el_pedido_sacado(): void
@@ -191,7 +191,7 @@ class TableroJefesTest extends TestCase
 
         $this->actingAs($this->admin())->get(route('rutas.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Tienda Inventada Uno', 'Toca ir', 'Última entrega', 'hace 14 días'])
+            ->assertSeeInOrder(['Tienda Inventada Uno', 'Le toca', 'Última entrega', 'hace 14 días'])
             ->assertSeeInOrder(['Tienda Inventada Tres', 'Al día', 'Última entrega', 'hace 14 días', 'Pedido sacado', 'ayer'])
             ->assertSee('title="30/10/2026"', false);
     }
@@ -295,7 +295,7 @@ class TableroJefesTest extends TestCase
             ->assertSeeInOrder([
                 'Ruta Muy Atrasada', 'Atrasada 10 días',
                 'Ruta Poco Atrasada', 'Atrasada 3 días',
-                'Ruta Toca Ir', 'Toca ir', 'faltan 1 día',
+                'Ruta Toca Ir', 'Le toca', 'faltan 1 día',
                 'Ruta Al Día', 'Al día',
             ]);
     }
@@ -394,6 +394,32 @@ class TableroJefesTest extends TestCase
             ->assertSeeInOrder(['Tienda Inventada Sin Ruta', 'Ruta Oriente'])
             ->assertSee('1 sala activa sin zona.')
             ->assertDontSee('sin ruta.');
+    }
+
+    /** La historia de la sala: último pedido, última entrega, cada cuánto compra y la próxima visita. */
+    public function test_la_sala_dice_su_proxima_visita_y_si_le_toca_o_esta_atrasada(): void
+    {
+        $ruta = Ruta::create(['nombre' => 'Ruta Norte']);
+        // Cada 14 días. Le toca: la última el 20/10, la próxima el 03/11 (hoy).
+        $this->ccfs($this->sala('Tienda Inventada Le Toca', $ruta), ['2026-09-22', '2026-10-06', '2026-10-20']);
+        // Atrasada: la próxima era el 20/10; pasó con margen (3 días).
+        $this->ccfs($this->sala('Tienda Inventada Atrasada', $ruta), ['2026-09-08', '2026-09-22', '2026-10-06']);
+        // Al día: un pedido sacado el 01/11 cuenta como la visita.
+        $alDia = $this->sala('Tienda Inventada Al Dia', $ruta);
+        $this->ccfs($alDia, ['2026-09-22', '2026-10-06', '2026-10-20']);
+        $this->pedido($alDia, '2026-11-01');
+
+        $salas = $this->salas();
+
+        $this->assertSame(['2026-11-03', Ritmo::PRONTO], [$salas['Tienda Inventada Le Toca']['proxima']->toDateString(), $salas['Tienda Inventada Le Toca']['estado']]);
+        $this->assertSame(['2026-10-20', Ritmo::ATRASADA], [$salas['Tienda Inventada Atrasada']['proxima']->toDateString(), $salas['Tienda Inventada Atrasada']['estado']]);
+        $this->assertSame(['2026-11-15', Ritmo::AL_DIA], [$salas['Tienda Inventada Al Dia']['proxima']->toDateString(), $salas['Tienda Inventada Al Dia']['estado']]);
+
+        $this->actingAs($this->admin())->get(route('rutas.dashboard'))
+            ->assertOk()
+            ->assertSeeInOrder(['Tienda Inventada Atrasada', 'Atrasada 14 días', 'Próxima visita', '20/10/2026'])
+            ->assertSeeInOrder(['Tienda Inventada Le Toca', 'Le toca', 'Próxima visita', '03/11/2026'])
+            ->assertSeeInOrder(['Tienda Inventada Al Dia', 'Al día', 'Última entrega', 'Compra cada', 'Pedido sacado', 'Próxima visita', '15/11/2026']);
     }
 
     public function test_el_tablero_hace_las_mismas_consultas_con_mas_zonas_y_salas(): void

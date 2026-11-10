@@ -146,7 +146,7 @@ class TableroRutasTest extends TestCase
         $respuesta->assertSeeInOrder(['Tienda Inventada Norte', 'Atrasada 52 días', 'Última entrega', 'hace 66 días', 'Compra cada 14 días (aprox.)', '¿Dejó de comprar?']);
         // Centro: la entrega marcada el 15/10 es más nueva que su CCF del 13/10.
         $respuesta->assertSeeInOrder(['Súper Ficticio Centro', 'Atrasada 5 días', 'Última entrega', 'hace 19 días', 'Compra cada 14 días']);
-        $respuesta->assertSeeInOrder(['Tienda La Inventada Playa', 'Toca ir', 'Compra cada 7 días']);
+        $respuesta->assertSeeInOrder(['Tienda La Inventada Playa', 'Le toca', 'Compra cada 7 días']);
         $respuesta->assertSeeInOrder(['Kiosco Ejemplo Bahía', 'Sin ritmo', 'Sin entregas en 12 meses', 'Todavía sin ritmo']);
         $respuesta->assertSee('title="15/10/2026"', false);
     }

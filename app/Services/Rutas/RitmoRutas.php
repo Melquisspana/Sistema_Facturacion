@@ -234,7 +234,7 @@ class RitmoRutas
      * la entrega o el pedido sacado más nuevo. Sin ella, desde el último pedido del ritmo.
      *
      * @param  array{entrega: ?CarbonImmutable, pedido: ?CarbonImmutable}|null  $visita
-     * @return array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool, ultimaEntrega: ?CarbonImmutable, ultimoPedido: ?CarbonImmutable}
+     * @return array{sala: ClienteSucursal, ritmo: Ritmo, estado: string, dias: ?int, faltan: ?int, dejoDeComprar: bool, ultimaEntrega: ?CarbonImmutable, ultimoPedido: ?CarbonImmutable, proxima: ?CarbonImmutable}
      */
     public static function filaSala(ClienteSucursal $sala, Ritmo $ritmo, CarbonImmutable $dia, ?array $visita = null): array
     {
@@ -253,6 +253,8 @@ class RitmoRutas
             'dejoDeComprar' => $ritmo->dejoDeComprar($dia, $dias),
             'ultimaEntrega' => $entrega,
             'ultimoPedido' => $pedido,
+            // Cuándo toca volver: la última visita más su ritmo.
+            'proxima' => $ritmo->dias !== null && $ultimaVisita !== null ? $ultimaVisita->addDays($ritmo->dias) : null,
         ];
     }
 
