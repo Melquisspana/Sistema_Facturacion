@@ -364,6 +364,23 @@ class ConciliacionNoDestructivaTest extends TestCase
         $this->assertSame(EstadoPpq::Enviado, $lote->fresh()->estado, 'Ya no está todo pagado: vuelve a presentado.');
     }
 
+    /** #12: el CCF invalidado salió solo del quedan, así que nadie lo va a pagar y no frena el estado del lote. */
+    public function test_un_ccf_invalidado_sin_cobro_no_impide_que_el_lote_quede_pagado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+        $anulado = $this->item($lote, 'DTE-03-M001P001-000000000000968', 80.00);
+        $dte = $this->ccf('DTE-03-M001P001-000000000000968', 80.00);
+        $dte->forceFill(['estado' => 'invalidado'])->saveQuietly();
+        $anulado->update(['dte_id' => $dte->id]);
+
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44))->assertOk();
+
+        $this->assertSame(EstadoPpq::Pagado, $lote->fresh()->estado, 'Se cobró todo lo que se presentó.');
+        $this->assertFalse($anulado->fresh()->estaConciliado(), 'El invalidado no se da por cobrado.');
+    }
+
     /** El motivo es opcional (decisión del usuario, 25/09/2026): sin él queda anotado igual. */
     public function test_la_correccion_sin_motivo_queda_anotada(): void
     {
