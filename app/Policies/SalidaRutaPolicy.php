@@ -9,7 +9,7 @@ use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Models\SalidaRutaGasto;
 use App\Models\User;
-use App\Services\Rutas\PedidosSala;
+use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 
 /**
@@ -46,14 +46,12 @@ class SalidaRutaPolicy
     }
 
     /**
-     * «Sacar pedido» en las salas: quien va en la salida, con ella en curso y si sale para
-     * sacar pedido. Que la sala sea de la salida lo valida {@see PedidosSala}.
+     * «Terminar el día» del viaje: quien va en él, con el viaje en curso. Lo que contesta (si
+     * mañana sigue en la zona) lo guarda {@see Viajes::terminarDia()}.
      */
-    public function sacarPedido(User $usuario, SalidaRuta $salida): bool
+    public function terminarDia(User $usuario, SalidaRuta $salida): bool
     {
-        return $usuario->can(PermisoSistema::RutasPedidosRegistrar->value)
-            && $salida->proposito->sacaPedido()
-            && $this->view($usuario, $salida);
+        return $salida->esViaje() && $this->view($usuario, $salida);
     }
 
     public function liquidacion(User $usuario, SalidaRuta $salida): bool

@@ -6,87 +6,114 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Rutas\PedidoSalaRequest;
 use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
+use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Services\Rutas\PedidosSala;
+use App\Services\Rutas\Viajes;
 use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\HoraNegocio;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 /**
- * «Sacar pedido» desde «Mi salida»: el formulario de una sala, guardarlo, corregirlo y
- * anularlo. La regla está en {@see PedidosSala}; acá solo se arma la pantalla.
+ * «Sacar pedido» del vendedor, sin salida armada (10/11/2026): buscar cualquier sala, el
+ * formulario del sugerido, guardarlo, corregirlo y anularlo. La regla está en
+ * {@see PedidosSala}; el viaje al que se suma, en {@see Viajes}. Acá solo se arma la pantalla.
  */
 class MiPedidoController extends Controller
 {
-    public function __construct(private readonly PedidosSala $pedidos) {}
+    public function __construct(private readonly PedidosSala $pedidos, private readonly Viajes $viajes) {}
 
-    public function create(Request $request, SalidaRuta $salida, ClienteSucursal $sucursal): View|RedirectResponse
+    /** El buscador de salas y los pedidos que sacó hoy. */
+    public function index(Request $request): View
     {
-        Gate::authorize('sacarPedido', $salida);
-        abort_unless($this->pedidos->salasDeSalida($salida)->whereKey($sucursal->id)->exists(), 404);
+        $texto = trim((string) ($request->validate(['q' => ['nullable', 'string', 'max:100']])['q'] ?? ''));
+        $persona = PedidosSala::persona($request->user());
+        $salas = $persona && mb_strlen($texto) >= 2
+            ? ClienteSucursal::query()->buscarTexto($texto)->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(20)->get()
+            : null;
+        $pedidosHoy = $persona
+            ? PedidoSala::query()->where('sacado_por_id', $persona->id)->whereDate('fecha', HoraNegocio::fechaHoy())->vigentes()
+                ->withExists('envios')->with(['sala:id,nombre', 'lineas.producto:id,nombre', 'salida'])->orderBy('id')->get()
+            : collect();
 
-        // Ya sacado: no se saca otro. Quien lo sacó lo corrige (si la fábrica no empezó); el
-        // compañero vuelve a la sala.
-        $sacado = $salida->pedidos()->vigentes()->where('cliente_sucursal_id', $sucursal->id)->first();
+        return view('rutas.sacar-pedido.index', [
+            'persona' => $persona,
+            'viaje' => $this->viajeQueSuma($persona),
+            'texto' => $texto,
+            'salas' => $salas,
+            'sacadas' => $salas === null ? collect() : PedidoSala::vigentes()->whereIn('cliente_sucursal_id', $salas->pluck('id'))
+                ->whereDate('fecha', HoraNegocio::fechaHoy())->pluck('cliente_sucursal_id')->flip(),
+            'pedidosHoy' => $pedidosHoy,
+        ]);
+    }
+
+    public function create(Request $request, ClienteSucursal $sucursal): View|RedirectResponse
+    {
+        Gate::authorize('create', PedidoSala::class);
+        abort_unless($sucursal->activo, 404);
+
+        // Ya sacado: no se saca otro. Quien lo sacó lo corrige (si la fábrica no empezó); los
+        // demás vuelven a la búsqueda con el aviso.
+        $sacado = $this->pedidos->yaSacado($sucursal, $request->user());
         if ($sacado) {
             if ($request->user()->can('corregir', $sacado)) {
-                return redirect()->route('rutas.mi-salida.pedidos.edit', [$salida, $sacado]);
+                return redirect()->route('rutas.sacar-pedido.edit', $sacado);
             }
 
-            return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$sucursal->id)
-                ->with('error', $sacado->fabricaEmpezo()
-                    ? 'El pedido de «'.$sucursal->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.'
-                    : 'El pedido de «'.$sucursal->nombre.'» ya está sacado.');
+            return redirect()->route('rutas.sacar-pedido.index')->with('error', $sacado->fabricaEmpezo()
+                ? 'El pedido de «'.$sucursal->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.'
+                : 'El pedido de «'.$sucursal->nombre.'» ya está sacado.');
         }
 
-        return $this->formulario($salida, $sucursal, null);
+        return $this->formulario($request, $sucursal, null);
     }
 
-    public function store(PedidoSalaRequest $request, SalidaRuta $salida, ClienteSucursal $sucursal): RedirectResponse
+    public function store(PedidoSalaRequest $request, ClienteSucursal $sucursal): RedirectResponse
     {
-        $pedido = $this->pedidos->guardar($salida, $sucursal, $request->validated(), $request->user());
+        $antes = $this->viajeQueSuma(PedidosSala::persona($request->user()));
+        $pedido = $this->pedidos->guardar($sucursal, $request->validated(), $request->user());
+        $nuevo = $antes?->id !== $pedido->salida_ruta_id ? ' Se abrió tu viaje: '.$pedido->salida->nombreViaje().'.' : '';
 
-        return $this->volver($salida, $pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.');
+        return $this->volver($pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.'.$nuevo);
     }
 
-    public function edit(SalidaRuta $salida, PedidoSala $pedido): View|RedirectResponse
+    public function edit(Request $request, PedidoSala $pedido): View|RedirectResponse
     {
-        // Primero, que vaya en esa salida: a un ajeno no se le dice qué sala tiene pedido.
-        Gate::authorize('sacarPedido', $salida);
         // Con una pantalla vieja (o volviendo de un error al guardar): un aviso, no un 403.
-        if ($pedido->estaVigente() && $pedido->fabricaEmpezo()) {
-            return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$pedido->cliente_sucursal_id)
+        if ($pedido->estaVigente() && $pedido->fabricaEmpezo() && PedidosSala::loSaco($request->user(), $pedido)) {
+            return redirect()->route('rutas.sacar-pedido.index')
                 ->with('error', 'El pedido de «'.$pedido->sala?->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.');
         }
         Gate::authorize('corregir', $pedido);
 
-        return $this->formulario($salida, $pedido->sala, $pedido);
+        return $this->formulario($request, $pedido->sala, $pedido);
     }
 
-    public function update(PedidoSalaRequest $request, SalidaRuta $salida, PedidoSala $pedido): RedirectResponse
+    public function update(PedidoSalaRequest $request, PedidoSala $pedido): RedirectResponse
     {
-        $pedido = $this->pedidos->guardar($salida, $pedido->sala, $request->validated(), $request->user(), $pedido);
+        $pedido = $this->pedidos->guardar($pedido->sala, $request->validated(), $request->user(), $pedido);
 
-        return $this->volver($salida, $pedido, 'Pedido de «'.$pedido->sala->nombre.'» corregido.');
+        return $this->volver($pedido, 'Pedido de «'.$pedido->sala->nombre.'» corregido.');
     }
 
-    public function anular(Request $request, SalidaRuta $salida, PedidoSala $pedido): RedirectResponse
+    public function anular(Request $request, PedidoSala $pedido): RedirectResponse
     {
-        $this->pedidos->anular($salida, $pedido, $request->user());
+        $this->pedidos->anular($pedido, $request->user());
 
-        return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$pedido->cliente_sucursal_id)
+        return redirect()->route('rutas.sacar-pedido.index')
             ->with('status', 'Pedido de «'.$pedido->sala->nombre.'» anulado. Si hace falta, sacalo de nuevo.');
     }
 
-    private function formulario(SalidaRuta $salida, ClienteSucursal $sala, ?PedidoSala $pedido): View
+    private function formulario(Request $request, ClienteSucursal $sala, ?PedidoSala $pedido): View
     {
         $sala->loadMissing('cliente:id,requiere_orden_compra');
         $pedido?->load('lineas');
 
         return view('rutas.mi-salida.pedido', [
-            'salida' => $salida->loadMissing('ruta'),
+            'viaje' => $pedido?->salida ?? $this->viajeQueSuma(PedidosSala::persona($request->user())),
             'sala' => $sala,
             'pedido' => $pedido,
             'productos' => $this->pedidos->productos(),
@@ -96,12 +123,20 @@ class MiPedidoController extends Controller
         ]);
     }
 
-    /** A la sala en «Mi salida», con el aviso de la OC si su forma no cuadra (no bloquea). */
-    private function volver(SalidaRuta $salida, PedidoSala $pedido, string $mensaje): RedirectResponse
+    /** El viaje del vendedor si todavía suma pedidos: adonde iría el próximo. */
+    private function viajeQueSuma(?PersonalRuta $persona): ?SalidaRuta
+    {
+        $viaje = $persona ? $this->viajes->abierto($persona) : null;
+
+        return $viaje !== null && $this->viajes->sigueSumando($viaje) ? $viaje : null;
+    }
+
+    /** A «Sacar pedido», con el aviso de la OC si su forma no cuadra (no bloquea). */
+    private function volver(PedidoSala $pedido, string $mensaje): RedirectResponse
     {
         $avisos = $pedido->avisosOrdenCompra();
 
-        return redirect()->to(route('rutas.mi-salida.show', $salida).'#sala-'.$pedido->cliente_sucursal_id)
+        return redirect()->route('rutas.sacar-pedido.index')
             ->with('status', trim($mensaje.($avisos ? ' Revisá la orden de compra: '.implode(' ', $avisos) : '')));
     }
 }

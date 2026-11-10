@@ -11,9 +11,10 @@ use App\Services\Rutas\PedidosSala;
 use App\Support\HoraNegocio;
 
 /**
- * Pedidos de sala. La oficina los mira con `rutas.pedidos.ver`. Corregir y anular: solo
- * quien lo sacó, el mismo día, mientras siga registrado, la fábrica no lo haya tocado y
- * pueda seguir sacando pedidos en esa salida (en curso y yendo en ella).
+ * Pedidos de sala. La oficina los mira con `rutas.pedidos.ver`. Sacar pedido: quien tiene
+ * `rutas.pedidos.registrar` y su ficha de Rutas activa, en cualquier sala, sin salida armada
+ * (10/11/2026): el pedido se suma solo a su viaje. Corregir y anular: solo quien lo sacó, el
+ * mismo día, mientras siga registrado y la fábrica no lo haya tocado.
  *
  * La fábrica (`fabrica.pedidos.mandar`) manda mientras esté por mandar y reabre lo cerrado
  * que todavía se puede mandar. La regla de cada paso vive en {@see PedidosFabrica}.
@@ -25,13 +26,19 @@ class PedidoSalaPolicy
         return $usuario->can(PermisoSistema::RutasPedidosVer->value);
     }
 
+    /** Sacar pedido: el permiso y la ficha de Rutas activa enlazada al usuario. */
+    public function create(User $usuario): bool
+    {
+        return $usuario->can(PermisoSistema::RutasPedidosRegistrar->value) && PedidosSala::persona($usuario) !== null;
+    }
+
     public function corregir(User $usuario, PedidoSala $pedido): bool
     {
         return $pedido->estaRegistrado()
             && ! $pedido->fabricaEmpezo()
             && $pedido->fecha->toDateString() === HoraNegocio::fechaHoy()
-            && $pedido->salida !== null
-            && $usuario->can('sacarPedido', $pedido->salida)
+            && ! ($pedido->salida?->estado->esTerminal() ?? false)
+            && $this->create($usuario)
             && PedidosSala::loSaco($usuario, $pedido);
     }
 

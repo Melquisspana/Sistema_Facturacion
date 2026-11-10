@@ -101,7 +101,7 @@ class TerminarRutaTest extends TestCase
 
         // Día 2: sigue la misma salida. Cobra con cheque y paga parqueo; algo sobra.
         $this->travel(1)->days();
-        $this->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $this->salida));
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $this->salida));
         $cheque = $this->entrega('cheque');
         $sobra = $this->entrega();
         $this->entregar($cheque);

@@ -78,11 +78,11 @@ class VendedorMiSalidaTest extends TestCase
             $this->assertSame(in_array($rol, [RolSistema::Administrador, RolSistema::Vendedor, RolSistema::JefeVendedores], true), in_array(PermisoSistema::RutasEntregasRegistrar->value, $rol->permisos(), true));
         }
         $this->assertSame([AreaSistema::Rutas], AreaSistema::visiblesPara($this->usuario));
-        // Desde el 06/11/2026 entra por «Por entregar»; «Mi salida» queda a un toque.
-        $this->assertSame('rutas.por-entregar.index', AreaSistema::Rutas->rutaInicioPara($this->usuario));
+        // Desde el 10/11/2026 entra por su inicio («Mi salida»): su viaje, «Sacar pedido» y «Por entregar».
+        $this->assertSame('rutas.mi-salida.index', AreaSistema::Rutas->rutaInicioPara($this->usuario));
         $this->get('/')->assertRedirect(route('dashboard'));
-        $this->get('/dashboard')->assertRedirect(route('rutas.por-entregar.index'));
-        $this->followingRedirects()->get('/')->assertOk()->assertSee('No hay CCF por entregar');
+        $this->get('/dashboard')->assertRedirect(route('rutas.mi-salida.index'));
+        $this->followingRedirects()->get('/')->assertOk()->assertSee('Sacar pedido')->assertSee('Por entregar');
         $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('No tenés salidas en camino');
     }
 
@@ -94,7 +94,7 @@ class VendedorMiSalidaTest extends TestCase
         $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee('No tenés salidas en camino');
         $una = $this->salida();
         $this->salida(false);
-        $this->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $una));
+        $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $una));
         $otra = $this->salida();
         $this->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $una))->assertSee(route('rutas.mi-salida.show', $otra));
     }
@@ -230,9 +230,10 @@ class VendedorMiSalidaTest extends TestCase
             // Públicas/invitados y archivos firmados de Laravel/Livewire; perfil y logout son excepciones de sesión.
             // Verificación y contraseña son la seguridad del propio perfil, sin datos de otras áreas.
             // `salud` es pública a propósito: la pide el vigilante de afuera sin sesión y no trae datos (#163).
-            // «Por entregar» es del vendedor como «Mi salida»: sus permisos los prueba PorEntregarTest.
+            // «Por entregar» y «Sacar pedido» son del vendedor como «Mi salida»: sus permisos los
+            // prueban PorEntregarTest y SacarPedidoSinSalidaTest.
             if (in_array('guest', $middleware, true)
-                || Str::is(['rutas.mi-salida.*', 'rutas.por-entregar.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud'], $nombre)) {
+                || Str::is(['rutas.mi-salida.*', 'rutas.por-entregar.*', 'rutas.sacar-pedido.*', 'profile.*', 'verification.*', 'password.*', 'logout', 'dashboard', 'storage.local*', 'livewire.preview-file', 'salud'], $nombre)) {
                 continue;
             }
             // Dashboard es la puerta de redirección y se verifica por separado.

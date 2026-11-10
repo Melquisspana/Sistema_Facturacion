@@ -1,5 +1,6 @@
 {{-- «Sugerido» de una sala (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10). Así le dicen al formato
-     de la empresa donde el vendedor apunta el pedido y que firma el gerente de la sala.
+     de la empresa donde el vendedor apunta el pedido y que firma el gerente de la sala. Desde
+     el 10/11/2026 no depende de una salida: el pedido se suma solo al viaje del vendedor.
 
      Los productos de facturación activos, con buscador (sin JavaScript se ven todos), la OC
      solo si la sala la usa (casi siempre llega después por EDI: se agrega desde la oficina) y
@@ -11,10 +12,10 @@
         $caja = 'rounded-2xl bg-white p-4 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
         $gris = 'text-sm text-gray-600 dark:text-paper-300';
         $campo = 'min-h-11 w-full rounded-lg border-gray-300 dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100';
-        $accion = $pedido ? route('rutas.mi-salida.pedidos.update', [$salida, $pedido]) : route('rutas.mi-salida.pedidos.store', [$salida, $sala]);
+        $accion = $pedido ? route('rutas.sacar-pedido.update', $pedido) : route('rutas.sacar-pedido.store', $sala);
     @endphp
 
-    <p class="text-sm font-medium text-gray-600 dark:text-paper-300">{{ $salida->ruta->nombre }}</p>
+    <p class="text-sm font-medium text-gray-600 dark:text-paper-300">{{ $viaje ? 'Tu viaje: '.$viaje->nombreViaje() : 'Tu primer pedido abre tu viaje.' }}</p>
     <h1 class="text-3xl font-bold">Sugerido</h1>
     <p class="mt-1 text-base">{{ $sala->nombre }}</p>
 
@@ -73,7 +74,7 @@
 
         {{-- Cancelar arriba y el principal abajo en el celular; en fila en la computadora. --}}
         <div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
-            <a href="{{ route('rutas.mi-salida.show', $salida) }}#sala-{{ $sala->id }}"
+            <a href="{{ route('rutas.sacar-pedido.index') }}"
                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</a>
             <button class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">{{ $pedido ? 'Guardar cambios' : 'Guardar pedido' }}</button>
         </div>

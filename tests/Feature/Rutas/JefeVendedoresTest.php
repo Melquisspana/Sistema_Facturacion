@@ -112,7 +112,7 @@ class JefeVendedoresTest extends TestCase
         $suya = $this->salida($this->ficha);
         $ajena = $this->salida(PersonalRuta::create(['nombre' => 'Rosa Ficticia']));
 
-        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $suya));
+        $this->actingAs($this->jefe)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $suya));
         $this->actingAs($this->jefe)->get(route('rutas.mi-salida.show', $suya))->assertOk();
         $this->actingAs($this->jefe)->get(route('rutas.mi-salida.cierre', $suya))->assertOk();
 

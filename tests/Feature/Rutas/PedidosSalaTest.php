@@ -31,8 +31,9 @@ use Tests\TestCase;
 /**
  * Sacar pedido en la sala desde el celular (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10): el
  * propósito de la salida, el «Sugerido» de cada sala (sin foto), corregir y anular el mismo
- * día, la lista y el detalle de la oficina y la OC que se agrega después desde ahí. Todos
- * los datos son inventados.
+ * día, la lista y el detalle de la oficina y la OC que se agrega después desde ahí. Desde el
+ * 10/11/2026 el pedido no va en una salida armada: se suma solo al viaje del vendedor
+ * (SacarPedidoSinSalidaTest y ViajeAutomaticoTest). Todos los datos son inventados.
  */
 class PedidosSalaTest extends TestCase
 {
@@ -95,11 +96,17 @@ class PedidosSalaTest extends TestCase
     }
 
     /** @param  array<string, mixed>  $extra */
-    private function sacar(array $extra = [], ?ClienteSucursal $sala = null, ?SalidaRuta $salida = null): TestResponse
+    private function sacar(array $extra = [], ?ClienteSucursal $sala = null): TestResponse
     {
-        return $this->post(route('rutas.mi-salida.pedidos.store', [$salida ?? $this->salida, $sala ?? $this->sala]), $extra + [
+        return $this->post(route('rutas.sacar-pedido.store', $sala ?? $this->sala), $extra + [
             'cantidades' => [$this->galleta->id => '12', $this->pan->id => ''],
         ]);
+    }
+
+    /** El viaje al que se sumaron los pedidos (se abre solo con el primero). */
+    private function viaje(): SalidaRuta
+    {
+        return PedidoSala::orderBy('id')->firstOrFail()->salida;
     }
 
     private function ccf(ClienteSucursal $sala): Dte
@@ -144,9 +151,11 @@ class PedidosSalaTest extends TestCase
 
         app(ParticipantesSalida::class)->sincronizar($vieja, [$this->persona->id], null);
         $this->get(route('rutas.mi-salida.show', $vieja))->assertOk()->assertSee('Para entregar')->assertDontSee('Sacar pedido');
-        $this->get(route('rutas.mi-salida.pedidos.create', [$vieja, $this->sala]))->assertForbidden();
-        $this->sacar([], null, $vieja)->assertForbidden();
-        $this->assertSame(0, PedidoSala::count());
+        // El pedido ya no va a una salida armada: se suma al viaje del vendedor.
+        $this->sacar()->assertSessionHasNoErrors();
+        $this->assertSame(0, $vieja->pedidos()->count());
+        $this->assertSame(0, $this->salida->pedidos()->count());
+        $this->assertTrue($this->viaje()->esViaje());
     }
 
     public function test_armar_salida_elige_el_proposito_y_la_de_pedido_no_lleva_ccf(): void
@@ -178,16 +187,16 @@ class PedidosSalaTest extends TestCase
     {
         $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()
             ->assertSee('Para entregar y sacar pedido')
-            ->assertSee(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))
-            ->assertSee('Tienda Centro');
+            // Sacar pedido ya no lista las salas de la ruta: lleva al buscador de cualquier sala.
+            ->assertSee('href="'.route('rutas.sacar-pedido.index').'"', false);
 
         Producto::factory()->create(['nombre' => 'Producto apagado', 'activo' => false]);
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertOk()
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk()
             ->assertSee('Sugerido')->assertDontSee('type="file"', false)->assertDontSee('multipart/form-data', false)
             ->assertSee('Galleta de prueba')->assertDontSee('Producto apagado')
             // Esta sala no usa OC.
             ->assertDontSee('Número de orden de compra');
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->salaOc]))->assertOk()
+        $this->get(route('rutas.sacar-pedido.create', $this->salaOc))->assertOk()
             ->assertSee('Número de orden de compra')
             ->assertSeeText('Si ya la tenés, son de 13 a 15 números.')
             ->assertDontSeeText('14 dígitos');
@@ -197,8 +206,8 @@ class PedidosSalaTest extends TestCase
     {
         $this->sacar(['notas' => ' Pidió para el viernes '])
             ->assertSessionHasNoErrors()
-            ->assertRedirect(route('rutas.mi-salida.show', $this->salida).'#sala-'.$this->sala->id)
-            ->assertSessionHas('status', 'Pedido de «Tienda Centro» guardado.');
+            ->assertRedirect(route('rutas.sacar-pedido.index'))
+            ->assertSessionHas('status', 'Pedido de «Tienda Centro» guardado. Se abrió tu viaje: Jueves · Santa Ana.');
 
         $pedido = PedidoSala::sole();
         $this->assertSame(EstadoPedidoSala::Registrado, $pedido->estado);
@@ -213,13 +222,13 @@ class PedidosSalaTest extends TestCase
         $this->assertSame('sacó el pedido de la sala', $actividad->description);
         $this->assertSame($this->galleta->id, $actividad->properties['lineas'][0]['producto_id']);
 
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('Pedido sacado')->assertSee('Galleta de prueba')
+        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertSee('Pedido sacado')->assertSee('Galleta de prueba')
             ->assertSee('Anular');
 
         // Una sola vez por sala: el segundo intento no crea otro.
         $this->sacar()->assertSessionHasErrors('lineas');
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))
-            ->assertRedirect(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]));
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))
+            ->assertRedirect(route('rutas.sacar-pedido.edit', $pedido));
         $this->assertSame(1, PedidoSala::count());
     }
 
@@ -250,47 +259,33 @@ class PedidosSalaTest extends TestCase
         $this->assertSame('2.5000', PedidoSala::sole()->lineas->sole()->cantidad);
     }
 
-    public function test_la_sala_tiene_que_ser_de_la_salida(): void
+    /** Antes la sala tenía que ser de la ruta de la salida; desde el 10/11/2026 sirve cualquiera activa. */
+    public function test_cualquier_sala_activa_sirve(): void
     {
-        $ajena = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de otra ruta', 'ruta_id' => Ruta::create(['nombre' => 'Otra'])->id]);
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $ajena]))->assertNotFound();
-        $this->sacar([], $ajena)->assertNotFound();
-
         $inactiva = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala cerrada', 'ruta_id' => $this->ruta->id, 'activo' => false]);
+        $this->get(route('rutas.sacar-pedido.create', $inactiva))->assertNotFound();
         $this->sacar([], $inactiva)->assertNotFound();
         $this->assertSame(0, PedidoSala::count());
 
-        // La de otra ruta que lleva un CCF en esta salida sí es de la salida.
-        $this->salida->entregas()->create(['dte_id' => $this->ccf($ajena)->id, 'cliente_sucursal_id' => $ajena->id]);
+        $ajena = Cliente::factory()->create()->sucursales()->create(['nombre' => 'Sala de otra ruta', 'ruta_id' => Ruta::create(['nombre' => 'Otra'])->id]);
+        $this->get(route('rutas.sacar-pedido.create', $ajena))->assertOk();
         $this->sacar([], $ajena)->assertSessionHasNoErrors();
         $this->assertSame($ajena->id, PedidoSala::sole()->cliente_sucursal_id);
     }
 
-    public function test_solo_quien_va_en_la_salida_en_curso_y_con_permiso(): void
+    /** Antes solo quien iba en la salida en curso; ahora cualquier vendedor con su ficha y el permiso. */
+    public function test_saca_cualquier_vendedor_con_ficha_y_permiso(): void
     {
         $ajeno = User::factory()->create(['activo' => true])->assignRole('vendedor');
-        PersonalRuta::create(['nombre' => 'Vendedor Ajeno', 'user_id' => $ajeno->id]);
+        $fichaAjena = PersonalRuta::create(['nombre' => 'Vendedor Ajeno', 'user_id' => $ajeno->id]);
         $this->actingAs($ajeno);
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertForbidden();
-        $this->sacar()->assertForbidden();
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertOk();
+        $this->sacar()->assertSessionHasNoErrors();
+        $this->assertSame($fichaAjena->id, PedidoSala::sole()->sacado_por_id);
 
         // La oficina no saca pedidos: no tiene el permiso de registrar.
         $this->actingAs($this->oficina);
-        $this->sacar()->assertForbidden();
-
-        // Salida planificada, terminada o solo para entregar: no.
-        $this->actingAs($this->vendedor);
-        foreach ([EstadoSalidaRuta::Planificada, EstadoSalidaRuta::Finalizada, EstadoSalidaRuta::Cancelada] as $estado) {
-            $this->salida->update(['estado' => $estado]);
-            $this->sacar()->assertForbidden();
-        }
-        $this->salida->update(['estado' => EstadoSalidaRuta::EnCurso, 'proposito' => PropositoSalida::Entregar]);
-        $this->sacar()->assertForbidden();
-        $this->assertSame(0, PedidoSala::count());
-
-        // Solo para sacar pedido: sí.
-        $this->salida->update(['proposito' => PropositoSalida::Pedido]);
-        $this->sacar()->assertSessionHasNoErrors();
+        $this->sacar([], $this->salaOc)->assertForbidden();
         $this->assertSame(1, PedidoSala::count());
 
         auth()->logout();
@@ -303,31 +298,31 @@ class PedidosSalaTest extends TestCase
     {
         $this->sacar()->assertSessionHasNoErrors();
         $pedido = PedidoSala::sole();
-        $this->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))->assertOk()
+        $this->get(route('rutas.sacar-pedido.edit', $pedido))->assertOk()
             ->assertSee('Guardar cambios')->assertSee('value="12"', false);
 
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), [
+        $this->put(route('rutas.sacar-pedido.update', $pedido), [
             'cantidades' => [$this->pan->id => '4'], 'notas' => 'Cambió de idea',
         ])->assertSessionHasNoErrors()->assertSessionHas('status', 'Pedido de «Tienda Centro» corregido.');
         $pedido->refresh();
         $this->assertSame([$this->pan->id], $pedido->lineas->pluck('producto_id')->all());
         $this->assertSame('Cambió de idea', $pedido->notas);
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '6']])->assertSessionHasNoErrors();
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '6']])->assertSessionHasNoErrors();
         $this->assertNull($pedido->refresh()->notas);
         $this->assertSame(2, Activity::where('description', 'corrigió el pedido de la sala')->count());
 
         // El compañero no lo corrige ni lo anula.
         $this->actingAs($this->companero);
-        $this->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))->assertForbidden();
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $pedido]))->assertForbidden();
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertRedirect()->assertSessionHas('error');
+        $this->get(route('rutas.sacar-pedido.edit', $pedido))->assertForbidden();
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
+        $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertForbidden();
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertRedirect()->assertSessionHas('error');
 
         // Al día siguiente ya no se corrige.
         $this->actingAs($this->vendedor);
         $this->travelTo('2026-11-06 09:00:00');
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $pedido]))->assertForbidden();
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
+        $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertForbidden();
         $this->assertSame('6.0000', $pedido->refresh()->lineas->sole()->cantidad);
     }
 
@@ -335,22 +330,19 @@ class PedidosSalaTest extends TestCase
     {
         $this->sacar()->assertSessionHasNoErrors();
         $pedido = PedidoSala::sole();
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $pedido]))->assertRedirect()
+        $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertRedirect()
             ->assertSessionHas('status', fn ($m) => str_contains($m, 'anulado'));
         $this->assertSame(EstadoPedidoSala::Anulado, $pedido->refresh()->estado);
         $this->assertSame(1, $pedido->lineas()->count());
         $this->assertTrue(Activity::where('description', 'anuló el pedido de la sala')->exists());
 
         // Anulado ya no se corrige ni se vuelve a anular, pero la sala se puede sacar de nuevo.
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $pedido]))->assertForbidden();
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertDontSee('Pedido sacado');
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
+        $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertForbidden();
+        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertDontSee('Pedido sacado');
         $this->sacar()->assertSessionHasNoErrors();
         $this->assertSame(2, PedidoSala::count());
-
-        // El pedido de otra salida no se toca por esta.
-        $otra = $this->salidaCon(PropositoSalida::Pedido);
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$otra, PedidoSala::latest('id')->first()]))->assertNotFound();
+        $this->assertSame($this->viaje()->id, PedidoSala::latest('id')->first()->salida_ruta_id, 'Vuelve al mismo viaje.');
     }
 
     // ══════════════════════════════ OC
@@ -358,7 +350,7 @@ class PedidosSalaTest extends TestCase
     public function test_la_oc_es_opcional_y_su_forma_solo_avisa(): void
     {
         $this->sacar([], $this->salaOc)->assertSessionHasNoErrors()
-            ->assertSessionHas('status', 'Pedido de «Súper Ficticio Norte» guardado.');
+            ->assertSessionHas('status', fn ($m) => str_starts_with($m, 'Pedido de «Súper Ficticio Norte» guardado.'));
         $this->assertNull(PedidoSala::sole()->numero_orden_compra);
         $this->assertSame([], PedidoSala::sole()->avisosOrdenCompra());
         PedidoSala::query()->delete();
@@ -367,13 +359,13 @@ class PedidosSalaTest extends TestCase
             ->assertSessionHas('status', fn ($m) => str_contains($m, 'tiene 12 dígitos y deben ser de 13 a 15'));
         $pedido = PedidoSala::sole();
         $this->assertSame('261102360045', $pedido->numero_orden_compra);
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertSee('tiene 12 dígitos y deben ser de 13 a 15');
+        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertSee('tiene 12 dígitos y deben ser de 13 a 15');
 
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), [
+        $this->put(route('rutas.sacar-pedido.update', $pedido), [
             'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26080236004586',
         ])->assertSessionHas('status', fn ($m) => str_contains($m, 'es de 08/2026 y el pedido es del 05/11/2026'));
 
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), [
+        $this->put(route('rutas.sacar-pedido.update', $pedido), [
             'cantidades' => [$this->galleta->id => '12'], 'numero_orden_compra' => '26110236004586',
         ])->assertSessionHas('status', 'Pedido de «Súper Ficticio Norte» corregido.');
         $this->assertSame([], $pedido->refresh()->avisosOrdenCompra());
@@ -429,12 +421,12 @@ class PedidosSalaTest extends TestCase
         $this->get(route('rutas.pedidos.index', ['ruta_id' => $otraRuta->id]))->assertOk()->assertSee('Nada coincide con estos filtros.');
         $this->get(route('rutas.pedidos.index', ['desde' => '2026-11-06']))->assertOk()->assertSee('Nada coincide con estos filtros.');
         $this->get(route('rutas.pedidos.index', ['desde' => '2026-11-05', 'hasta' => '2026-11-05']))->assertOk()->assertSee('Tienda Centro');
-        $this->get(route('rutas.pedidos.index', ['salida' => $this->salida->id]))->assertOk()->assertSee('Tienda Centro');
+        $this->get(route('rutas.pedidos.index', ['salida' => $this->viaje()->id]))->assertOk()->assertSee('Tienda Centro');
         $this->get(route('rutas.pedidos.index', ['desde' => 'ayer']))->assertSessionHasErrors('desde');
 
         $this->get(route('rutas.pedidos.show', $primero))->assertOk()
             ->assertSee('Pedido de Tienda Centro')->assertSee('Galleta de prueba')->assertSee('Carlos Inventado')->assertDontSee('Falta la foto');
-        $this->get(route('rutas.salidas.show', $this->salida))->assertOk()->assertSee('2 pedidos sacados');
+        $this->get(route('rutas.salidas.show', $this->viaje()))->assertOk()->assertSee('2 pedidos sacados');
 
         // El jefe de vendedores también mira; el vendedor, contabilidad y producción no.
         $this->actingAs(User::factory()->create(['activo' => true])->assignRole('jefe_vendedores'))
@@ -466,38 +458,38 @@ class PedidosSalaTest extends TestCase
         $lineas = $pedido->lineas()->pluck('id')->all();
         $error = 'La fábrica ya marcó este pedido; ya no se puede corregir. Avisá a la oficina.';
 
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '4']])
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '4']])
             ->assertSessionHasErrors(['lineas' => $error]);
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $pedido]))->assertSessionHasErrors(['lineas' => $error]);
+        $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertSessionHasErrors(['lineas' => $error]);
         $this->assertSame($lineas, $pedido->lineas()->pluck('id')->all());
         $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
 
         // Con la pantalla vieja o desde la sala: el aviso, no un 403.
         $aviso = 'El pedido de «Tienda Centro» ya está en la fábrica. Si cambió algo, avisá a la oficina.';
-        $this->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))->assertRedirect()->assertSessionHas('error', $aviso);
-        $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->sala]))->assertRedirect()->assertSessionHas('error', $aviso);
-        // Un vendedor que no va en esa salida no se entera de qué sala tiene pedido: 403.
+        $this->get(route('rutas.sacar-pedido.edit', $pedido))->assertRedirect()->assertSessionHas('error', $aviso);
+        $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertRedirect()->assertSessionHas('error', $aviso);
+        // Otro vendedor no lo corrige: 403.
         $ajeno = User::factory()->create(['activo' => true])->assignRole('vendedor');
         PersonalRuta::create(['nombre' => 'Vendedor Ajeno', 'user_id' => $ajeno->id]);
-        $this->actingAs($ajeno)->get(route('rutas.mi-salida.pedidos.edit', [$this->salida, $pedido]))
+        $this->actingAs($ajeno)->get(route('rutas.sacar-pedido.edit', $pedido))
             ->assertForbidden();
         $this->actingAs($this->vendedor);
-        // Sigue «Pedido sacado», sin «Corregir», y no se saca otro en la misma salida.
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado')->assertDontSee('Corregir');
+        // Sigue «Pedido sacado», sin «Corregir», y no se saca otro en la misma sala.
+        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertOk()->assertSee('Pedido sacado')->assertDontSee('Corregir');
         $this->sacar()->assertSessionHasErrors('lineas');
         $this->assertSame(1, PedidoSala::count());
 
         // También con el envío anulado (cuenta igual) y con «No se trae» o el armado empezado.
         $envio->update(['anulado_en' => now(), 'anulado_por' => $this->oficina->id]);
         $pedido->update(['estado' => EstadoPedidoSala::Registrado]);
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $pedido]), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
 
         $this->sacar([], $this->salaOc)->assertSessionHasNoErrors();
         $otro = PedidoSala::where('cliente_sucursal_id', $this->salaOc->id)->sole();
         $otro->update(['estado' => EstadoPedidoSala::NoSeTrae]);
-        $this->patch(route('rutas.mi-salida.pedidos.anular', [$this->salida, $otro]))->assertSessionHasErrors(['lineas' => $error]);
+        $this->patch(route('rutas.sacar-pedido.anular', $otro))->assertSessionHasErrors(['lineas' => $error]);
         $otro->update(['estado' => EstadoPedidoSala::Registrado, 'armando_desde' => now(), 'armando_por' => $this->oficina->id]);
-        $this->put(route('rutas.mi-salida.pedidos.update', [$this->salida, $otro]), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
+        $this->put(route('rutas.sacar-pedido.update', $otro), ['cantidades' => [$this->pan->id => '4']])->assertSessionHasErrors(['lineas' => $error]);
         $this->assertSame(EstadoPedidoSala::Registrado, $otro->refresh()->estado);
     }
 
@@ -509,13 +501,13 @@ class PedidosSalaTest extends TestCase
         PedidoSala::where('cliente_sucursal_id', $this->salaOc->id)->update(['estado' => EstadoPedidoSala::NoSeTrae->value]);
 
         $this->sacar()->assertSessionHasErrors('lineas');
-        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->salida))->assertOk()->assertSee('2 pedidos sacados');
+        $this->actingAs($this->oficina)->get(route('rutas.salidas.show', $this->viaje()))->assertOk()->assertSee('2 pedidos sacados');
 
         // Mi salida con varios pedidos no hace una consulta por pedido para «Corregir».
         $this->actingAs($this->vendedor);
         DB::flushQueryLog();
         DB::enableQueryLog();
-        $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado');
+        $this->get(route('rutas.mi-salida.show', $this->viaje()))->assertOk()->assertSee('Pedido sacado');
         DB::disableQueryLog();
         $this->assertSame(1, collect(DB::getQueryLog())->filter(fn ($q) => preg_match('/[`"]pedido_sala_envios[`"]/', $q['query']))->count());
     }

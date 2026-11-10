@@ -319,7 +319,7 @@ class PorEntregarTest extends TestCase
         $this->assertNotSame(RitmoRutas::EN_RUTA, $estadoAntiguo());
         $deHoy->finalizar('2026-11-06');
         $viaje->finalizar('2026-11-06');
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $proxima));
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $proxima));
 
         // Temprano cada día y sin pisarse.
         $evento = collect(app(Schedule::class)->events())->first(fn ($e) => str_contains((string) $e->command, 'rutas:finalizar-automaticas'));
@@ -702,9 +702,12 @@ class PorEntregarTest extends TestCase
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.pdf', $dte))->assertNotFound();
     }
 
-    public function test_el_vendedor_entra_por_por_entregar_y_mi_salida_sigue(): void
+    public function test_el_vendedor_entra_por_su_inicio_y_por_entregar_sigue_a_un_toque(): void
     {
-        $this->actingAs($this->vendedor)->get('/dashboard')->assertRedirect(route('rutas.por-entregar.index'));
+        // Desde el 10/11/2026 entra por su inicio («Mi salida»), que lleva a «Por entregar».
+        $this->actingAs($this->vendedor)->get('/dashboard')->assertRedirect(route('rutas.mi-salida.index'));
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()
+            ->assertSee('href="'.route('rutas.por-entregar.index').'"', false);
         $this->actingAs($this->vendedor)->get(route('rutas.por-entregar.index'))->assertOk()
             ->assertSeeInOrder(['Por entregar', 'Mi salida'])
             ->assertSee('href="'.route('rutas.mi-salida.index').'"', false)

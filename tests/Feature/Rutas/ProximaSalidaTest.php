@@ -130,7 +130,7 @@ class ProximaSalidaTest extends TestCase
     {
         $salida = $this->armarParaElJueves([$this->fichaVendedor, $this->fichaJefe]);
 
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $salida));
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $salida));
 
         $respuesta = $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.show', $salida))
             ->assertOk()
@@ -178,7 +178,7 @@ class ProximaSalidaTest extends TestCase
 
         foreach ([$this->jefe, $this->jefa] as $jefe) {
             $this->actingAs($jefe)->get(route('rutas.dashboard'))->assertOk()->assertSee(route('rutas.mi-salida.index'));
-            $this->actingAs($jefe)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $salida));
+            $this->actingAs($jefe)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $salida));
             $this->actingAs($jefe)->get(route('rutas.mi-salida.show', $salida))->assertOk()->assertSee('Tu próxima salida')->assertSee('Carlos Ficticio');
         }
         $this->actingAs($this->jefa)->get(route('rutas.mi-salida.show', $salida))->assertSee('Vas con Carlos Ficticio y Javier Inventado');
@@ -291,7 +291,7 @@ class ProximaSalidaTest extends TestCase
         $enCurso = SalidaRuta::create(['ruta_id' => $this->ruta->id, 'fecha_inicio' => '2026-11-03', 'estado' => EstadoSalidaRuta::EnCurso]);
         app(ParticipantesSalida::class)->sincronizar($enCurso, [$this->fichaVendedor->id], null);
 
-        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertRedirect(route('rutas.mi-salida.show', $enCurso));
+        $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.index'))->assertOk()->assertSee(route('rutas.mi-salida.show', $enCurso));
         $this->actingAs($this->vendedor)->get(route('rutas.mi-salida.show', $enCurso))
             ->assertOk()
             ->assertSee('Tu próxima salida')

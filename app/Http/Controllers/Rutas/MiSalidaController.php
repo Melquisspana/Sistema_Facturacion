@@ -7,19 +7,19 @@ use App\Enums\MotivoNoEntrega;
 use App\Enums\OrigenRegistroEntrega;
 use App\Http\Controllers\Controller;
 use App\Models\ClienteSucursal;
+use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
 use App\Services\Rutas\EntregasCcf;
-use App\Services\Rutas\PedidosSala;
 use App\Services\Rutas\Ritmo;
 use App\Services\Rutas\RitmoRutas;
+use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -29,7 +29,7 @@ class MiSalidaController extends Controller
     /** Hasta esta cantidad, «Tu próxima salida» lista los CCF uno por uno. */
     private const CCF_EN_LISTA = 10;
 
-    public function __construct(private readonly EntregasCcf $entregas, private readonly RitmoRutas $ritmo, private readonly PedidosSala $pedidos) {}
+    public function __construct(private readonly EntregasCcf $entregas, private readonly RitmoRutas $ritmo, private readonly Viajes $viajes) {}
 
     private function persona(Request $request): ?PersonalRuta
     {
@@ -53,23 +53,45 @@ class MiSalidaController extends Controller
             ->orderBy('fecha_inicio')->orderBy('id');
     }
 
-    public function index(Request $request): View|RedirectResponse
+    /**
+     * El inicio del vendedor (maqueta del 10/11/2026): su viaje, «Sacar pedido» y «Por
+     * entregar», y «Terminar el día» mientras el viaje suma pedidos. Debajo, las salidas que
+     * armó la oficina, en camino y próximas.
+     */
+    public function index(Request $request): View
     {
         $persona = $this->persona($request);
+        $viaje = $persona ? $this->viajes->abierto($persona) : null;
         $salidas = $persona ? SalidaRuta::with('ruta')->enEstado(EstadoSalidaRuta::EnCurso)
             ->whereHas('personal', fn ($q) => $q->where('rutas_personal.id', $persona->id))
+            ->when($viaje, fn ($q) => $q->whereKeyNot($viaje->id))
             ->orderBy('fecha_inicio')->orderBy('id')->get() : collect();
-        $proximas = $persona ? $this->proximas($persona)->get() : collect();
 
-        // La salida en curso manda; si no hay, se abre la próxima («Tu próxima salida»).
-        if ($salidas->count() === 1) {
-            return redirect()->route('rutas.mi-salida.show', $salidas->first());
-        }
-        if ($salidas->isEmpty() && $proximas->isNotEmpty()) {
-            return redirect()->route('rutas.mi-salida.show', $proximas->first());
-        }
+        return view('rutas.mi-salida.index', [
+            'persona' => $persona,
+            'viaje' => $viaje,
+            'dia' => $viaje ? $this->viajes->dia($viaje) : null,
+            'sumando' => $viaje !== null && $this->viajes->sigueSumando($viaje),
+            'salasConPedido' => $viaje ? $viaje->pedidos()->vigentes()->distinct()->count('cliente_sucursal_id') : 0,
+            'pedidosHoy' => $persona ? PedidoSala::vigentes()->where('sacado_por_id', $persona->id)->whereDate('fecha', HoraNegocio::fechaHoy())->count() : 0,
+            'salidas' => $salidas,
+            'proximas' => $persona ? $this->proximas($persona)->get() : collect(),
+        ]);
+    }
 
-        return view('rutas.mi-salida.index', compact('persona', 'salidas', 'proximas'));
+    /** «Terminar el día»: si mañana no sigue en la misma zona, el viaje deja de sumar pedidos. */
+    public function terminarDia(Request $request, SalidaRuta $salida): RedirectResponse
+    {
+        Gate::authorize('terminarDia', $salida);
+        $sigue = $request->validate(['sigue' => ['required', 'boolean']], [
+            'sigue.required' => 'Contestá si mañana seguís en la misma zona.',
+            'sigue.boolean' => 'Contestá si mañana seguís en la misma zona.',
+        ])['sigue'];
+        $this->viajes->terminarDia($salida, (bool) $sigue, $request->user());
+
+        return redirect()->route('rutas.mi-salida.index')->with('status', $sigue
+            ? 'Listo. Mañana tus pedidos se siguen sumando a este viaje.'
+            : 'Listo. Este viaje ya no suma pedidos; queda abierto para entregar.');
     }
 
     public function show(Request $request, SalidaRuta $salida): View
@@ -104,28 +126,12 @@ class MiSalidaController extends Controller
             'puedeGestionar' => false,
             'registrable' => ! $salida->diaCerrado(),
             'abierta' => true,
-            'salasPedido' => $salida->proposito->sacaPedido() ? $this->salasParaPedido($salida) : collect(),
+            // Los pedidos de esta salida (los del viaje); sacar uno nuevo es desde «Sacar pedido».
             'pedidosPorSala' => $salida->proposito->sacaPedido()
-                ? $salida->pedidos()->vigentes()->withExists('envios')->with('lineas.producto:id,nombre')->get()->keyBy('cliente_sucursal_id')
+                ? $salida->pedidos()->vigentes()->withExists('envios')->with(['sala:id,nombre', 'lineas.producto:id,nombre'])->orderBy('id')->get()
+                    ->each(fn (PedidoSala $p) => $p->setRelation('salida', $salida))
                 : collect(),
         ]);
-    }
-
-    /**
-     * Las salas donde se saca pedido en esta salida, con el ritmo del tablero: las atrasadas
-     * primero. Al final, las de otra ruta que llevan un CCF en esta salida.
-     *
-     * @return Collection<int, array{sala: ClienteSucursal, estado: ?string}>
-     */
-    private function salasParaPedido(SalidaRuta $salida): Collection
-    {
-        $deRuta = $this->ritmo->salasDeRuta($salida->ruta, CarbonImmutable::parse(HoraNegocio::fechaHoy()))
-            ->map(fn (array $f) => ['sala' => $f['sala'], 'estado' => $f['estado']]);
-        $otras = $this->pedidos->salasDeSalida($salida)->whereNotIn('id', $deRuta->pluck('sala.id'))
-            ->orderBy('nombre')->get(['id', 'ruta_id', 'nombre', 'codigo'])
-            ->map(fn (ClienteSucursal $sala) => ['sala' => $sala, 'estado' => null]);
-
-        return $deRuta->concat($otras)->values();
     }
 
     /**

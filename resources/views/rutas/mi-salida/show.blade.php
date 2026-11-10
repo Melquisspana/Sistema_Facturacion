@@ -1,7 +1,7 @@
 @extends('layouts.vendedor')
 
 @section('content')
-    <h1 class="text-3xl font-bold">{{ $salida->ruta->nombre }}</h1>
+    <h1 class="text-3xl font-bold">{{ $salida->titulo() }}</h1>
     <p class="mt-1 text-sm text-gray-600 dark:text-paper-300">{{ $salida->periodoLegible() }} · {{ $salida->proposito->descripcion() }}</p>
     @php
         $companeros = $salida->quienesVan($persona?->id);

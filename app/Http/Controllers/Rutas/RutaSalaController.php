@@ -42,15 +42,8 @@ class RutaSalaController extends Controller
             return response()->json([]);
         }
 
-        $like = '%'.$texto.'%';
-
         $salas = ClienteSucursal::query()
-            ->where('activo', true)
-            ->where(fn ($q) => $q
-                ->where('nombre', 'like', $like)
-                ->orWhere('codigo', 'like', $like)
-                ->orWhereHas('cliente', fn ($c) => $c->where('nombre', 'like', $like))
-                ->orWhereHas('distrito', fn ($d) => $d->where('nombre', 'like', $like)))
+            ->buscarTexto($texto)
             ->with(['cliente:id,nombre', 'distrito:id,nombre', 'ruta:id,nombre'])
             ->orderBy('nombre')
             ->limit(20)

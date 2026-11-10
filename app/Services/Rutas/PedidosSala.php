@@ -8,7 +8,6 @@ use App\Models\ClienteSucursal;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
-use App\Models\SalidaRuta;
 use App\Models\User;
 use App\Support\HoraNegocio;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,25 +17,23 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Sacar pedido en la sala desde «Mi salida» (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10).
+ * Sacar pedido en la sala (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10; sin salida armada desde el
+ * 10/11/2026).
  *
- * Toda la regla está acá: en qué salas de la salida se puede sacar, quién lo saca, una sola
- * vez por sala mientras no esté anulado (aunque la fábrica ya lo haya marcado), que no se corrija
- * después de que la fábrica empezó, y la auditoría con las líneas. Los datos del formulario llegan
- * ya validados por {@see PedidoSalaRequest}.
+ * Toda la regla está acá: cualquier sala activa, quién lo saca (su ficha de Rutas), una sola
+ * vez por sala en el viaje y en el día mientras no esté anulado (aunque la fábrica ya lo haya
+ * marcado), que no se corrija después de que la fábrica empezó, y la auditoría con las líneas.
+ * El pedido nuevo se suma solo al viaje del vendedor ({@see Viajes::paraPedido()}). Los datos
+ * del formulario llegan ya validados por {@see PedidoSalaRequest}.
  */
 class PedidosSala
 {
-    /**
-     * Las salas de la salida: las activas de su ruta y las que llevan un CCF en ella.
-     *
-     * @return Builder<ClienteSucursal>
-     */
-    public function salasDeSalida(SalidaRuta $salida): Builder
+    public function __construct(private readonly Viajes $viajes) {}
+
+    /** Quien saca el pedido: la ficha de Rutas activa del usuario. */
+    public static function persona(User $usuario): ?PersonalRuta
     {
-        return ClienteSucursal::query()->where(fn (Builder $q) => $q
-            ->where(fn (Builder $q) => $q->where('ruta_id', $salida->ruta_id)->where('activo', true))
-            ->orWhereIn('id', $salida->entregas()->select('cliente_sucursal_id')));
+        return PersonalRuta::where('user_id', $usuario->id)->where('activo', true)->first();
     }
 
     /** Productos de facturación activos, para el formulario. */
@@ -46,25 +43,18 @@ class PedidosSala
     }
 
     /**
-     * Saca el pedido de una sala o lo corrige (`$pedido`). Con la salida bloqueada: el
-     * compañero puede estar sacando el de la misma sala a la vez.
+     * Saca el pedido de una sala o lo corrige (`$pedido`). Con la sala bloqueada: otro vendedor
+     * puede estar sacando el de la misma sala a la vez. El pedido nuevo va al viaje del
+     * vendedor, que se abre o se continúa en la misma transacción: si algo falla, no queda un
+     * viaje vacío.
      *
      * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, numero_orden_compra?: ?string, notas?: ?string}  $datos
      */
-    public function guardar(SalidaRuta $salida, ClienteSucursal $sala, array $datos, User $usuario, ?PedidoSala $pedido = null): PedidoSala
+    public function guardar(ClienteSucursal $sala, array $datos, User $usuario, ?PedidoSala $pedido = null): PedidoSala
     {
-        return DB::transaction(function () use ($salida, $sala, $datos, $usuario, $pedido) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-            Gate::forUser($usuario)->authorize('sacarPedido', $salida);
-            abort_unless($this->salasDeSalida($salida)->whereKey($sala->id)->exists(), 404);
-
-            if ($pedido) {
-                $pedido = $salida->pedidos()->lockForUpdate()->findOrFail($pedido->id);
-                $this->exigirSinFabrica($pedido);
-                Gate::forUser($usuario)->authorize('corregir', $pedido);
-            } elseif ($salida->pedidos()->vigentes()->where('cliente_sucursal_id', $sala->id)->exists()) {
-                throw ValidationException::withMessages(['lineas' => 'El pedido de «'.$sala->nombre.'» ya está sacado. Si cambió algo, corregilo.']);
-            }
+        return DB::transaction(function () use ($sala, $datos, $usuario, $pedido) {
+            Gate::forUser($usuario)->authorize('create', PedidoSala::class);
+            $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
 
             $campos = [
                 'numero_orden_compra' => filled($datos['numero_orden_compra'] ?? null) ? trim($datos['numero_orden_compra']) : null,
@@ -72,14 +62,20 @@ class PedidosSala
             ];
 
             if ($pedido) {
+                $pedido = PedidoSala::whereKey($pedido->id)->where('cliente_sucursal_id', $sala->id)->lockForUpdate()->firstOrFail();
+                $this->exigirSinFabrica($pedido);
+                Gate::forUser($usuario)->authorize('corregir', $pedido);
                 $pedido->update($campos);
                 $pedido->lineas()->delete();
             } else {
-                $pedido = $salida->pedidos()->create($campos + [
+                $persona = self::persona($usuario);
+                $this->exigirSinSacar($sala, $usuario);
+                $viaje = $this->viajes->paraPedido($persona, $sala, $usuario);
+                $pedido = $viaje->pedidos()->create($campos + [
                     'cliente_sucursal_id' => $sala->id,
-                    'ruta_id' => $salida->ruta_id,
-                    // Quien lo saca es quien lo guarda: su ficha de campo en esta salida.
-                    'sacado_por_id' => $salida->personal()->where('user_id', $usuario->id)->where('activo', true)->firstOrFail()->id,
+                    // La zona de la sala, no la del viaje: un viaje cruza zonas vecinas.
+                    'ruta_id' => $this->viajes->zona($sala)?->id,
+                    'sacado_por_id' => $persona->id,
                     'registrado_por' => $usuario->id,
                     'fecha' => HoraNegocio::fechaHoy(),
                     'estado' => EstadoPedidoSala::Registrado,
@@ -96,12 +92,40 @@ class PedidosSala
         });
     }
 
-    /** Anula el pedido. Se conserva con sus líneas, para la oficina. */
-    public function anular(SalidaRuta $salida, PedidoSala $pedido, User $usuario): void
+    /**
+     * El pedido vigente que ya tiene la sala y frena otro: el de hoy, lo haya sacado quien sea
+     * (dos vendedores en la misma sala mandarían dos pedidos a la fábrica), o el del viaje del
+     * vendedor que todavía suma pedidos.
+     */
+    public function yaSacado(ClienteSucursal $sala, User $usuario): ?PedidoSala
     {
-        DB::transaction(function () use ($salida, $pedido, $usuario) {
-            $salida = SalidaRuta::lockForUpdate()->findOrFail($salida->id);
-            $pedido = $salida->pedidos()->lockForUpdate()->findOrFail($pedido->id);
+        $persona = self::persona($usuario);
+        $viaje = $persona ? $this->viajes->abierto($persona) : null;
+        $viajeId = $viaje !== null && $this->viajes->sigueSumando($viaje) ? $viaje->id : null;
+
+        return PedidoSala::vigentes()->where('cliente_sucursal_id', $sala->id)
+            ->where(fn (Builder $q) => $q->whereDate('fecha', HoraNegocio::fechaHoy())
+                ->when($viajeId, fn (Builder $q) => $q->orWhere('salida_ruta_id', $viajeId)))
+            ->with('sacadoPor:id,nombre,user_id')->latest('id')->first();
+    }
+
+    private function exigirSinSacar(ClienteSucursal $sala, User $usuario): void
+    {
+        $sacado = $this->yaSacado($sala, $usuario);
+        if ($sacado === null) {
+            return;
+        }
+
+        throw ValidationException::withMessages(['lineas' => self::loSaco($usuario, $sacado)
+            ? 'El pedido de «'.$sala->nombre.'» ya está sacado. Si cambió algo, corregilo.'
+            : 'El pedido de «'.$sala->nombre.'» ya lo sacó hoy '.($sacado->sacadoPor?->nombre ?? 'otro vendedor').'.']);
+    }
+
+    /** Anula el pedido. Se conserva con sus líneas, para la oficina. */
+    public function anular(PedidoSala $pedido, User $usuario): void
+    {
+        DB::transaction(function () use ($pedido, $usuario) {
+            $pedido = PedidoSala::lockForUpdate()->findOrFail($pedido->id);
             $this->exigirSinFabrica($pedido);
             Gate::forUser($usuario)->authorize('corregir', $pedido);
             $pedido->update(['estado' => EstadoPedidoSala::Anulado]);

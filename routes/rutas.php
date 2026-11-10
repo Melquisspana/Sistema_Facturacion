@@ -76,15 +76,24 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar', 'cache.headers
         Route::patch('{salida}/entregas/{entrega}', [MiSalidaController::class, 'update'])->name('update');
         Route::patch('{salida}/entregas/{entrega}/deshacer', [MiSalidaController::class, 'deshacer'])->name('deshacer');
         Route::post('{salida}/sala/{sucursal}', [MiSalidaController::class, 'sala'])->name('sala')->withoutScopedBindings();
-        // «Sacar pedido» en una sala de la salida (docs/PLAN_TABLERO_RUTAS.md, PR 9 y 10). Que
-        // vaya en la salida, en curso y para sacar pedido lo pide la policy; la sala, PedidosSala.
-        Route::middleware('permission:rutas.pedidos.registrar')->name('pedidos.')->group(function () {
-            Route::get('{salida}/sala/{sucursal}/pedido', [MiPedidoController::class, 'create'])->name('create')->withoutScopedBindings();
-            Route::post('{salida}/sala/{sucursal}/pedido', [MiPedidoController::class, 'store'])->name('store')->withoutScopedBindings();
-            Route::get('{salida}/pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');
-            Route::put('{salida}/pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
-            Route::patch('{salida}/pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
-        });
+        // «Terminar el día» del viaje: ¿mañana sigue en la misma zona? Si no, deja de sumar pedidos.
+        Route::post('{salida}/terminar-dia', [MiSalidaController::class, 'terminarDia'])->name('terminar-dia');
+    });
+
+/*
+| «Sacar pedido» (10/11/2026): el vendedor busca cualquier sala y saca el pedido sin salida
+| armada; el pedido se suma solo a su viaje. Que tenga su ficha de Rutas, que la sala esté
+| activa y quién corrige lo deciden la policy y PedidosSala.
+*/
+Route::middleware(['auth', 'permission:rutas.pedidos.registrar', 'cache.headers:no_store;private'])
+    ->prefix('rutas/sacar-pedido')->name('rutas.sacar-pedido.')
+    ->group(function () {
+        Route::get('/', [MiPedidoController::class, 'index'])->name('index');
+        Route::get('sala/{sucursal}', [MiPedidoController::class, 'create'])->name('create');
+        Route::post('sala/{sucursal}', [MiPedidoController::class, 'store'])->name('store');
+        Route::get('pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');
+        Route::put('pedidos/{pedido}', [MiPedidoController::class, 'update'])->name('update');
+        Route::patch('pedidos/{pedido}/anular', [MiPedidoController::class, 'anular'])->name('anular');
     });
 
 /*
