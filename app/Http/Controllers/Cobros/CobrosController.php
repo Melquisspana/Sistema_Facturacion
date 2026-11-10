@@ -13,6 +13,7 @@ use App\Enums\EstadoDte;
 use App\Enums\ResultadoEntrega;
 use App\Exceptions\CopiaArchivadaInservibleException;
 use App\Exceptions\DocumentosRecibidos\BuzonException;
+use App\Exceptions\Ppq\ArchivoPagosDeOtroClienteException;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroAjuste;
@@ -464,7 +465,9 @@ class CobrosController extends Controller
             $resumen['adoptados'],
             $resumen['sin_cambio'],
             $resumen['revision_historica'] + $historicos,
-        ));
+        ).($resumen['en_otro_cliente'] > 0
+            ? " {$resumen['en_otro_cliente']} no entraron porque ya están en el seguimiento de otro cliente: revisá a cuál corresponden."
+            : ''));
     }
 
     /**
@@ -913,7 +916,11 @@ class CobrosController extends Controller
             return $this->volver($cliente)->with('error', 'Esa línea del TXT no es un ajuste de pronto pago.');
         }
 
-        $ajuste = DB::transaction(fn () => $aplicador->registrarAjuste($cliente, $fila, $archivo, $request->user())['ajuste']);
+        try {
+            $ajuste = DB::transaction(fn () => $aplicador->registrarAjuste($cliente, $fila, $archivo, $request->user())['ajuste']);
+        } catch (ArchivoPagosDeOtroClienteException $e) {
+            return $this->volver($cliente)->with('error', $e->getMessage());
+        }
 
         // Ya tiene su nota vigente (o la misma deducción ya la tenía): se va a ella, no se
         // hace otra. Con la nota invalidada o borrada sigue pendiente y se hace la nueva.

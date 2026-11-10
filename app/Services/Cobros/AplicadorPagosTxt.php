@@ -6,6 +6,7 @@ use App\Enums\Cobros\EstadoEventoCobro;
 use App\Enums\Cobros\EstadoPagoCobro;
 use App\Enums\Cobros\TipoEventoCobro;
 use App\Exceptions\Ppq\ArchivoConciliacionInconsistenteException;
+use App\Exceptions\Ppq\ArchivoPagosDeOtroClienteException;
 use App\Exceptions\Ppq\ArchivoProveedorInvalidoException;
 use App\Models\Cliente;
 use App\Models\Cobros\CobroAjuste;
@@ -67,7 +68,9 @@ use Illuminate\Support\Facades\DB;
  *
  * ═══════════════════════ Los descuentos globales (QD) ═══════════════════════
  *
- * No se reparten entre las facturas. Ver {@see CobroAjuste}.
+ * No se reparten entre las facturas. Ver {@see CobroAjuste}. Un QD cuya línea ya está
+ * registrada en OTRO cliente no se trae ni se mueve: se informa aparte y el resto del archivo
+ * se aplica igual.
  *
  * No emite, no firma, no transmite y no toca ningún valor fiscal.
  */
@@ -120,6 +123,9 @@ class AplicadorPagosTxt
             'repetidas' => $repetidas,
             'otros_tipos' => $otrosTipos,
             'ajustes' => [],
+            // QD cuya línea (huella + línea) ya está registrada en OTRO cliente. No se tocan ni
+            // se traen acá; el resto del archivo se aplica igual y estos se muestran aparte.
+            'ajustes_de_otro_cliente' => [],
             'conservados' => [],
             'proveedor' => $this->proveedor($filas, ValidadorCodigoProveedorTxt::codigoConfigurado()),
             // Si este MISMO archivo ya se concilió en algún lote PPQ. Solo se informa: el
@@ -176,7 +182,17 @@ class AplicadorPagosTxt
             }
 
             foreach ($ajustes as $fila) {
-                $informe['ajustes'][] = $this->registrarAjuste($cliente, $fila, $archivo, $usuario);
+                try {
+                    $informe['ajustes'][] = $this->registrarAjuste($cliente, $fila, $archivo, $usuario);
+                } catch (ArchivoPagosDeOtroClienteException $e) {
+                    // Rechazar el archivo entero dejaba sin aplicar los CF/NC de ESTE cliente,
+                    // sin forma de destrabarlo desde la pantalla. Solo se salta esta línea.
+                    $informe['ajustes_de_otro_cliente'][] = [
+                        'fila' => $fila,
+                        'ajuste' => $e->ajuste,
+                        'cliente' => $e->ajuste->cliente?->nombre ?? 'id '.$e->ajuste->cliente_id,
+                    ];
+                }
             }
         });
 
@@ -404,6 +420,8 @@ class AplicadorPagosTxt
      * es el mismo ajuste, así que al aplicar después se encuentra con su nota ya hecha.
      *
      * @return array<string, mixed>
+     *
+     * @throws ArchivoPagosDeOtroClienteException si esa línea ya es un ajuste de otro cliente
      */
     public function registrarAjuste(Cliente $cliente, array $fila, ArchivoConciliacion $archivo, ?User $usuario): array
     {
@@ -446,6 +464,13 @@ class AplicadorPagosTxt
                 'user_id' => $usuario?->id,
             ],
         );
+
+        // Huella + línea es única en todo el sistema: si ya es de otro cliente, reutilizarla
+        // pondría acá su deducción y su nota de crédito. Se rechaza esta línea; `aplicar()`
+        // la informa aparte y sigue con el resto del archivo.
+        if ((int) $ajuste->cliente_id !== (int) $cliente->id) {
+            throw new ArchivoPagosDeOtroClienteException($ajuste);
+        }
 
         return ['ajuste' => $ajuste, 'fila' => $fila, 'solicitud' => $solicitud, 'nuevo' => $ajuste->wasRecentlyCreated];
     }

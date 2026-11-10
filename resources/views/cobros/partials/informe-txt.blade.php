@@ -156,7 +156,7 @@
     @endif
 
     {{-- ---------- Lo que el archivo no resolvió ---------- --}}
-    @if (! empty($informe['ambiguos']) || $informe['no_identificados'] !== [] || $informe['invalidas'] !== [] || $informe['otros_tipos'] !== [] || $informe['repetidas'] !== [])
+    @if (! empty($informe['ambiguos']) || ! empty($informe['ajustes_de_otro_cliente']) || $informe['no_identificados'] !== [] || $informe['invalidas'] !== [] || $informe['otros_tipos'] !== [] || $informe['repetidas'] !== [])
         <div class="rounded-lg border border-gray-200 bg-white p-4">
             <h3 class="font-medium text-gray-800 mb-1">Filas que hay que mirar</h3>
             <p class="text-sm text-gray-500 mb-4">
@@ -172,6 +172,17 @@
                         <ul class="mt-1 text-xs space-y-1">
                             @foreach ($informe['ambiguos'] as $ambiguo)
                                 <li>línea {{ $ambiguo['fila']['linea'] }} · {{ $ambiguo['fila']['tipo'] }} · {{ $ambiguo['fila']['numero'] }} · {{ $money($ambiguo['fila']['valor']) }} · {{ $ambiguo['candidatos']->pluck('ejercicio_control')->unique()->sort()->implode(' · ') }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+                @if (! empty($informe['ajustes_de_otro_cliente']))
+                    <div class="text-amber-800">
+                        <h4 class="font-medium">Ajustes (QD) que ya están en otro cliente ({{ count($informe['ajustes_de_otro_cliente']) }})</h4>
+                        <p class="text-xs">No se registraron acá ni se movieron; el resto del archivo sí se aplicó. Revisá a qué cliente corresponde cada uno.</p>
+                        <ul class="mt-1 font-mono text-xs space-y-0.5">
+                            @foreach ($informe['ajustes_de_otro_cliente'] as $entrada)
+                                <li>línea {{ $entrada['fila']['linea'] }} · QD · {{ $entrada['fila']['numero'] }} · {{ $money($entrada['fila']['valor']) }} · en {{ $entrada['cliente'] }} (ajuste #{{ $entrada['ajuste']->id }})</li>
                             @endforeach
                         </ul>
                     </div>

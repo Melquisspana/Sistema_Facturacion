@@ -314,6 +314,47 @@ class CobrosPuestaAlDiaTest extends TestCase
         $this->assertSame(1, PpqConciliacion::count());
     }
 
+    /**
+     * Issue #13: el mismo TXT aplicado antes en OTRO cliente dejó allá su QD. En el cliente
+     * de cobros correcto ese ajuste no se reutiliza ni se mueve, pero los CF/NC del archivo
+     * sí se aplican: rechazarlo entero dejaba el CCF pendiente sin forma de destrabarlo.
+     */
+    public function test_un_ajuste_registrado_en_otro_cliente_no_se_reutiliza(): void
+    {
+        $doc = $this->ccf();
+        $txt = $this->txt([$this->linea('CF', $doc->numero_control, '100.00'), $this->linea('QD', 'PPQ/33762', '-1.50')]);
+        $hash = hash('sha256', $txt);
+        $otro = Cliente::factory()->contribuyente()->create(['nombre' => 'Otra cadena de prueba']);
+        ClientePerfilDocumento::create(['cliente_id' => $otro->id, 'activo' => true, 'codigo_proveedor' => '000123',
+            'formato_export' => 'carga_masiva_nc_v1', 'exige_albaran_en_nc' => false, 'tolerancia_albaran' => 0]);
+        app(PerfilDocumentoResolver::class)->olvidar();
+
+        // Revisado en el cliente correcto y, mientras tanto, aplicado en el otro.
+        $this->subirVarios(['pagos.txt' => $txt], soloRevisar: true)->assertOk();
+        $this->post(route('cobros.pagos.revisar', $otro), [
+            'archivos' => [UploadedFile::fake()->createWithContent('pagos.txt', $txt)],
+        ])->assertOk();
+        $this->post(route('cobros.pagos.aplicar', $otro), ['hashes' => [$hash]])->assertOk();
+        $ajeno = CobroAjuste::sole();
+        $this->assertSame($otro->id, (int) $ajeno->cliente_id);
+
+        // «Hacer nota de crédito» desde la revisión no abre la nota del ajuste ajeno.
+        $this->post(route('cobros.pagos.ajuste-nc', $this->cliente), ['hash' => $hash, 'linea' => 3])
+            ->assertRedirect(route('cobros.index', ['cliente_id' => $this->cliente->id]))
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'ya está registrada en otro cliente'));
+
+        $this->subirVarios(['pagos.txt' => $txt], soloRevisar: true)->assertOk()
+            ->assertSeeText('Ajustes (QD) que ya están en otro cliente (1)')->assertSeeText('Otra cadena de prueba');
+        $this->post(route('cobros.pagos.aplicar', $this->cliente), ['hashes' => [$hash]])
+            ->assertOk()->assertDontSeeText('Este TXT no se revisó en esta sesión')
+            ->assertSeeText('Ajustes (QD) que ya están en otro cliente (1)');
+
+        $this->assertSame(1, CobroAjuste::count(), 'No se creó ni se movió ningún ajuste.');
+        $this->assertSame($otro->id, (int) $ajeno->refresh()->cliente_id);
+        $this->assertSame(1, $doc->eventos()->where('tipo', TipoEventoCobro::Pago->value)->count(), 'El CF del cliente correcto sí se aplicó.');
+        $this->assertSame(EstadoPagoCobro::Pagado, $doc->refresh()->pago_estado);
+    }
+
     public function test_revision_nueva_reemplaza_las_huellas_y_los_errores_no_se_autorizan(): void
     {
         $doc = $this->ccf();
