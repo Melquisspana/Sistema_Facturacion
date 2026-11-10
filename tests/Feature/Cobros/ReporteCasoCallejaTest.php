@@ -90,7 +90,7 @@ class ReporteCasoCallejaTest extends TestCase
         $this->actingAs($usuario)
             ->post(route('ppq.lotes.reporte-caso', $lote), ['reporte' => $this->reporte('12027', [$this->control('03', 197)])])
             ->assertRedirect()
-            ->assertSessionHas('status', fn ($m) => str_contains($m, 'Caso 12027: 1 documento(s)') && str_contains($m, 'vuelven a por presentar: 200'));
+            ->assertSessionHas('status', fn ($m) => str_contains($m, 'Caso 12027: 1 documento(s) registrados por '.$cliente->nombre.'.') && str_contains($m, 'vuelven a por presentar: 200'));
 
         $this->assertSame(EstadoPresentacionCobro::Recibida, $tomado->refresh()->presentacion_estado);
         $this->assertSame(EstadoPresentacionCobro::SinPresentar, $rechazado->refresh()->presentacion_estado);

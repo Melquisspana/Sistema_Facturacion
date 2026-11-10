@@ -295,6 +295,7 @@ class CobrosQuedanNotasCreditoTest extends TestCase
 
         $lote = NcExportacion::whereKeyNot($loteViejo->id)->sole();
         $respuesta->assertRedirect(route('ppq.nc-exportaciones.show', $lote));
+        $respuesta->assertSessionHas('status', fn ($m) => str_contains($m, 'subilo al portal de '.$this->cliente->nombre.' y registrá'));
         $this->assertSame([$nueva->id], $lote->items()->pluck('dte_id')->all());
         $this->assertSame('carga_masiva_nc_v1', $lote->formato);
         $this->assertSame($loteViejo->id, $yaExportada->refresh()->exportacionItem->nc_exportacion_id);

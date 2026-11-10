@@ -7,6 +7,7 @@ use App\Models\Correlativo;
 use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Producto;
+use App\Models\ProductoPrecioCliente;
 use App\Models\PuntoVenta;
 use Database\Seeders\DatosInicialesNegritaSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,9 +21,10 @@ class DatosInicialesNegritaSeederTest extends TestCase
     {
         $this->seed(DatosInicialesNegritaSeeder::class);
 
-        $empresa = Empresa::where('razon_social', 'Dulces La Negrita, S.A. de C.V.')->first();
+        // Repo público: el seeder trae una empresa de ejemplo, no la real.
+        $empresa = Empresa::where('razon_social', 'Empresa de Ejemplo, S.A. de C.V.')->first();
         $this->assertNotNull($empresa);
-        $this->assertSame('Dulces La Negrita', $empresa->nombre_comercial);
+        $this->assertSame('Empresa de Ejemplo', $empresa->nombre_comercial);
 
         $estab = Establecimiento::where('empresa_id', $empresa->id)->where('codigo', 'M001')->first();
         $this->assertNotNull($estab);
@@ -192,7 +194,7 @@ class DatosInicialesNegritaSeederTest extends TestCase
 
         $calleja = Cliente::where('nombre', 'Calleja, S.A. de C.V.')->firstOrFail();
         $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
-        $this->assertSame(1, \App\Models\ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        $this->assertSame(1, ProductoPrecioCliente::where('producto_id', $canillitas->id)
             ->where('cliente_id', $calleja->id)->where('activo', true)->count());
     }
 
@@ -203,14 +205,26 @@ class DatosInicialesNegritaSeederTest extends TestCase
         $canillitas = Producto::where('codigo_barra', '7412201700031')->firstOrFail();
 
         // Alguien cambió el precio a mano…
-        \App\Models\ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        ProductoPrecioCliente::where('producto_id', $canillitas->id)
             ->where('cliente_id', $calleja->id)->update(['precio' => 9.99]);
 
         // …reseed lo restaura al valor de la tabla, sin duplicar.
         $this->seed(DatosInicialesNegritaSeeder::class);
-        $this->assertSame('1.0500', \App\Models\ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        $this->assertSame('1.0500', ProductoPrecioCliente::where('producto_id', $canillitas->id)
             ->where('cliente_id', $calleja->id)->where('activo', true)->value('precio'));
-        $this->assertSame(1, \App\Models\ProductoPrecioCliente::where('producto_id', $canillitas->id)
+        $this->assertSame(1, ProductoPrecioCliente::where('producto_id', $canillitas->id)
             ->where('cliente_id', $calleja->id)->count());
+    }
+
+    public function test_si_ya_hay_empresa_emisora_no_crea_otra_ni_le_cambia_los_datos(): void
+    {
+        $real = Empresa::create(['razon_social' => 'Empresa ya cargada, S.A. de C.V.', 'nombre_comercial' => 'Nombre ya cargado', 'nit' => '0614-111111-111-1', 'activo' => true]);
+
+        $this->seed(DatosInicialesNegritaSeeder::class);
+
+        $this->assertSame(1, Empresa::count());
+        $this->assertSame('Nombre ya cargado', $real->refresh()->nombre_comercial);
+        $this->assertSame('0614-111111-111-1', $real->nit);
+        $this->assertDatabaseHas('establecimientos', ['empresa_id' => $real->id, 'codigo' => 'M001']);
     }
 }

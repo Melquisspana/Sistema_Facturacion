@@ -176,7 +176,7 @@
                                     @if ($ocultarPv)Punto de venta: <span class="font-medium text-gray-800">{{ $pvUnico->nombre }}</span>@endif
                                 </p>
                             @endif
-                            <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no al cliente. El correlativo se asigna automáticamente al generar.</p>
+                            <p class="text-xs text-amber-600">Estos datos pertenecen a {{ \App\Support\NombreEmpresa::actual() }}, no al cliente. El correlativo se asigna automáticamente al generar.</p>
                         </div>
 
                         {{-- Informativos: se toman del cliente y se congelan en el DTE --}}

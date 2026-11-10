@@ -24,5 +24,5 @@ El detalle completo está en el ZIP de Drive (Excel de compras y ventas, y los P
 El acceso está autorizado solo para este correo de contabilidad. Abrí el enlace con esa cuenta de Google.
 
 Gracias,
-Dulces La Negrita
+{{ \App\Support\NombreEmpresa::actual() }}
 </x-mail::message>

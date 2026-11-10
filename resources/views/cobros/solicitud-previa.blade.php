@@ -53,7 +53,7 @@
             <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                 <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-1">Notas de crédito de estos CCF</h3>
                 <p class="text-sm {{ $gris }} mb-4">
-                    Calleja no paga un CCF subido sin sus notas: en el portal se carga <strong>primero</strong> el archivo de NC
+                    {{ $cliente->nombre }} no paga un CCF subido sin sus notas: en el portal se carga <strong>primero</strong> el archivo de NC
                     (AC02/AC04) y <strong>después</strong> este de quedan. Se listan las NC relacionadas con cada CCF en este sistema;
                     solo las aceptadas realmente por Hacienda se exportan y descuentan.
                 </p>

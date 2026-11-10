@@ -3,6 +3,7 @@
 namespace App\Support\Dte;
 
 use App\Models\Dte;
+use App\Support\NombreEmpresa;
 
 /**
  * Plantilla del correo del DTE: reemplaza las variables {{...}} con datos del
@@ -41,7 +42,7 @@ class PlantillaCorreo
             '{{numero_control}}' => (string) ($dte->numero_control ?? ''),
             '{{codigo_generacion}}' => (string) ($dte->codigo_generacion ?? ''),
             '{{fecha}}' => (string) optional($dte->fecha_emision)->format('d/m/Y'),
-            '{{empresa}}' => 'Dulces La Negrita',
+            '{{empresa}}' => NombreEmpresa::actual(),
             '{{total}}' => '$'.number_format((float) $dte->total_pagar, 2),
         ];
     }

@@ -81,7 +81,7 @@
                         <form method="POST" action="{{ route('cobros.pagos.revisar', $cliente) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2">
                             @csrf
                             <div>
-                                <label for="archivos" class="block text-xs font-medium text-gray-600 dark:text-paper-300">TXT de pago de Calleja</label>
+                                <label for="archivos" class="block text-xs font-medium text-gray-600 dark:text-paper-300">TXT de pago de {{ $cliente->nombre }}</label>
                                 <input id="archivos" name="archivos[]" type="file" multiple accept=".txt,text/plain" required class="mt-1 text-sm">
                             </div>
                             <div>
@@ -446,7 +446,7 @@
                 {{-- ---------- Información secundaria ---------- --}}
                 @if ($ajustes->isNotEmpty() || $correos->isNotEmpty())
                     <details class="bg-white dark:bg-ink-800 shadow-sm ring-1 ring-gray-200 dark:ring-ink-600 rounded-xl p-4">
-                        <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-paper-100">Ajustes y correos de Calleja</summary>
+                        <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-paper-100">Ajustes y correos de {{ $cliente->nombre }}</summary>
                         @if ($ajustes->isNotEmpty())
                             <h3 class="mt-4 text-sm font-medium text-gray-700 dark:text-paper-100">Ajustes informados por el cliente (QD)</h3>
                             <div class="mt-2 overflow-x-auto">

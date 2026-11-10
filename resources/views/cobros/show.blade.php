@@ -138,10 +138,10 @@
             @if ($avisosAlbaran['reciente'] || $avisosAlbaran['pedir_nota'])
                 <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-4 text-sm" role="status">
                     @if ($avisosAlbaran['reciente'])
-                        <p class="text-amber-700 dark:text-amber-300">Albarán reciente: puede no estar en el portal de Calleja todavía.</p>
+                        <p class="text-amber-700 dark:text-amber-300">Albarán reciente: puede no estar en el portal de {{ $documento->cliente?->nombre ?? 'su cliente' }} todavía.</p>
                     @endif
                     @if ($avisosAlbaran['pedir_nota'])
-                        <p class="text-amber-700 dark:text-amber-300">Pedir la nota de devolución a Calleja · CCF {{ $documento->numero_control }} · OC {{ $entregaFicha->numero_orden_compra }} · sala {{ $entregaFicha->sala_codigo }}.</p>
+                        <p class="text-amber-700 dark:text-amber-300">Pedir la nota de devolución a {{ $documento->cliente?->nombre ?? 'su cliente' }} · CCF {{ $documento->numero_control }} · OC {{ $entregaFicha->numero_orden_compra }} · sala {{ $entregaFicha->sala_codigo }}.</p>
                     @endif
                 </div>
             @endif

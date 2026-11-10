@@ -3,6 +3,7 @@
 namespace Tests\Feature\Dte;
 
 use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
 use App\Enums\TipoImpuesto;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
@@ -72,7 +73,7 @@ class DteCcfUiTest extends TestCase
     private function borradorCcf(Cliente $cliente, Establecimiento $estab, PuntoVenta $pv): Dte
     {
         return app(DteBorradorService::class)->crearBorrador([
-            'tipo_dte' => \App\Enums\TipoDte::CreditoFiscal,
+            'tipo_dte' => TipoDte::CreditoFiscal,
             'cliente_id' => $cliente,
             'establecimiento_id' => $estab->id,
             'punto_venta_id' => $pv->id,
@@ -179,19 +180,19 @@ class DteCcfUiTest extends TestCase
         $this->assertTrue((bool) $cliente->requiere_orden_compra);
     }
 
-    public function test_selector_de_clientes_muestra_nombre_comercial(): void
+    public function test_selector_de_clientes_muestra_la_sala_para_distinguirla(): void
     {
         $this->emisor();
-        Cliente::factory()->contribuyente()->create([
-            'nombre' => 'Calleja S.A. de C.V.',
-            'nombre_comercial' => 'Selectos Santa Rosa',
-        ]);
+        // Antes pasaba solo porque el texto de ayuda traía escrito el nombre de una sala real.
+        // Lo que distingue la sala en el selector es la sucursal del cliente.
+        Cliente::factory()->contribuyente()->create(['nombre' => 'Cliente de prueba S.A. de C.V.'])
+            ->sucursales()->create(['nombre' => 'Sala de prueba Norte', 'activo' => true]);
 
         $this->actingAs($this->usuario('facturacion'))
             ->get(route('facturacion.create-ccf'))
             ->assertOk()
-            ->assertSee('Calleja')
-            ->assertSee('Selectos Santa Rosa'); // permite distinguir la sala
+            ->assertSee('Cliente de prueba S.A. de C.V.')
+            ->assertSee('Sala de prueba Norte'); // permite distinguir la sala
     }
 
     public function test_agregar_linea_actualiza_totales(): void

@@ -2,6 +2,8 @@
     @php
         $quedan = app(\App\Services\Ppq\QuedanCallejaExporter::class);
         $quedan->precargarDocumentos($lote, $items->getCollection());
+        // El nombre sale de la ficha del cliente del lote, nunca escrito a mano.
+        $nombreCliente = $lote->cliente?->nombre ?? $estadoReal['cliente_derivado']?->nombre ?? 'su cliente';
     @endphp
     <x-slot name="header">
         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -130,7 +132,7 @@
                     <div class="mt-1 text-2xl font-bold {{ $estadoLote['clase'] }}">{{ $money($difTotal) }}</div>
                     <div class="mt-0.5 text-xs {{ $estadoLote['clase'] }}">{{ $estadoLote['alerta'] ? $estadoLote['motivo'] : 'Todo cuadra' }}</div>
                     @if ($difDevoluciones > 0)
-                        <div class="mt-0.5 text-xs text-gray-500" title="Calleja descuenta la devolución del albarán de entrega (con su descuento); la NC AC04 va sin descuento.">
+                        <div class="mt-0.5 text-xs text-gray-500" title="{{ \Illuminate\Support\Str::ucfirst($nombreCliente) }} descuenta la devolución del albarán de entrega (con su descuento); la NC AC04 va sin descuento.">
                             {{ $money($difDevoluciones) }} cubiertos por devoluciones AC04
                         </div>
                     @endif
@@ -169,8 +171,8 @@
 
             @if ($resumen['cantidad'] > 0 && auth()->user()->can('ppq.gestionar'))
                 <div class="bg-white shadow-sm ring-1 ring-gray-200 sm:rounded-xl p-5">
-                    <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de Calleja</h3>
-                    <p class="mt-1 text-xs text-gray-500">Después de reportar el caso en el portal, subí el Excel que devuelve. Lo que Calleja registró queda presentado; los CCF que no tomó salen del lote con sus NC y vuelven a «por presentar» para el siguiente PPQ. Las NC de los CCF que quedan se mantienen.</p>
+                    <h3 class="text-sm font-semibold text-gray-700">Reporte del caso de {{ $nombreCliente }}</h3>
+                    <p class="mt-1 text-xs text-gray-500">Después de reportar el caso en el portal, subí el Excel que devuelve. Lo que {{ $nombreCliente }} registró queda presentado; los CCF que no tomó salen del lote con sus NC y vuelven a «por presentar» para el siguiente PPQ. Las NC de los CCF que quedan se mantienen.</p>
                     <form method="POST" action="{{ route('ppq.lotes.reporte-caso', $lote) }}" enctype="multipart/form-data" class="mt-3 flex flex-wrap items-end gap-3">
                         @csrf
                         <input type="file" name="reporte" accept=".xls,.xlsx" required

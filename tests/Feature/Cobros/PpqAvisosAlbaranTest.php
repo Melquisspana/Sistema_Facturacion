@@ -366,15 +366,15 @@ class PpqAvisosAlbaranTest extends TestCase
         $doc->albaran->update(['fecha_albaran' => '2026-10-20']);
         $this->actingAs($this->usuario());
         $url = route('cobros.documentos.show', $doc);
-        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Calleja');
+        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Cliente ficticio PPQ');
         $this->travel(1)->days();
-        $this->get($url)->assertOk()->assertSeeText('Pedir la nota de devolución a Calleja')
+        $this->get($url)->assertOk()->assertSeeText('Pedir la nota de devolución a Cliente ficticio PPQ')
             ->assertSeeText($doc->numero_control)->assertSeeText($doc->albaran->numero_orden_compra)->assertSeeText('0017');
         $doc->albaran->update(['monto_albaran' => '100.00']);
-        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Calleja');
+        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Cliente ficticio PPQ');
         $doc->albaran->update(['monto_albaran' => '98.95']);
         $this->devolucion($doc, '13.95', ['dte_id' => $doc->dte_id]);
-        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Calleja');
+        $this->get($url)->assertOk()->assertDontSeeText('Pedir la nota de devolución a Cliente ficticio PPQ');
     }
 
     public function test_no_pide_una_ac04_que_ya_llego_aunque_aun_este_sin_vincular(): void
@@ -466,5 +466,15 @@ class PpqAvisosAlbaranTest extends TestCase
             ->assertSeeText('2 no se pueden seleccionar')
             ->assertSeeText('CCF '.$enOtroLote->correlativoCorto().": sigue en el PPQ #{$lote->id}")
             ->assertSeeText('CCF '.$historico->correlativoCorto().': falta la revisión histórica');
+    }
+
+    public function test_la_ficha_nombra_el_portal_del_cliente_del_documento(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        $doc = $this->ccf();
+        $doc->albaran->update(['fecha_albaran' => today()]);
+
+        $this->actingAs($this->usuario())->get(route('cobros.documentos.show', $doc))->assertOk()
+            ->assertSeeText('puede no estar en el portal de Cliente ficticio PPQ todavía');
     }
 }

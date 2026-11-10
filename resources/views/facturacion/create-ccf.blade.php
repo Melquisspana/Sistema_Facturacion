@@ -53,7 +53,7 @@
                             @else
                                 Configuración (pídalo a un administrador).
                             @endrole
-                            Estos son del <strong>emisor</strong> (Dulces La Negrita), no del cliente.
+                            Estos son del <strong>emisor</strong> ({{ \App\Support\NombreEmpresa::actual() }}), no del cliente.
                         </p>
                     </div>
                 @endif
@@ -174,7 +174,7 @@
                                 </ul>
                             </div>
 
-                            <p class="mt-1 text-xs text-gray-400">Buscá la razón social o la sala (ej. «Selectos Santa Rosa», «Merliot»). El receptor fiscal es siempre el cliente.</p>
+                            <p class="mt-1 text-xs text-gray-400">Buscá la razón social o la sala (ej. «Sala Centro»). El receptor fiscal es siempre el cliente.</p>
                             <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
                             <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
                             @if (empty($opcionesCliente))
@@ -229,7 +229,7 @@
                                     @if ($ocultarPv)Punto de venta: <span class="font-medium text-gray-800">{{ $pvUnico->nombre }}</span>@endif
                                 </p>
                             @endif
-                            <p class="text-xs text-amber-600">Estos datos pertenecen a Dulces La Negrita, no a la sala del cliente. El correlativo se asigna automáticamente al generar.</p>
+                            <p class="text-xs text-amber-600">Estos datos pertenecen a {{ \App\Support\NombreEmpresa::actual() }}, no a la sala del cliente. El correlativo se asigna automáticamente al generar.</p>
                         </div>
 
                         {{-- Apéndice / Datos adicionales: aquí vive la orden de compra (regla Calleja). --}}

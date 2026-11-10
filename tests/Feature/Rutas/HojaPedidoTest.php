@@ -272,4 +272,14 @@ class HojaPedidoTest extends TestCase
         $this->actingAs($this->fabrica)->get(route('fabrica.pedidos.index', ['ver' => 'hechos']))
             ->assertDontSee('Facturado en CCF')->assertDontSee('Por facturar');
     }
+
+    public function test_la_hoja_lleva_el_nombre_de_la_empresa_de_configuracion(): void
+    {
+        config(['app.name' => 'Sistema de prueba']);
+        Empresa::create(['razon_social' => 'Empresa de prueba, S.A. de C.V.', 'nombre_comercial' => 'Confitería de prueba', 'activo' => true]);
+
+        $this->get(route('rutas.pedidos.hoja', $this->pedido))->assertOk()
+            ->assertSee('<p class="empresa">Confitería de prueba</p>', false)
+            ->assertDontSee('Sistema de prueba');
+    }
 }

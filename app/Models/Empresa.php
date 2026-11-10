@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AmbienteHacienda;
+use App\Support\NombreEmpresa;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -50,6 +51,14 @@ class Empresa extends Model
             'ambiente' => AmbienteHacienda::class,
             'activo' => 'boolean',
         ];
+    }
+
+    /** El nombre que se muestra en pantallas y correos se guarda en caché: se renueva al cambiar la empresa. */
+    protected static function booted(): void
+    {
+        static::saved(fn () => NombreEmpresa::olvidar());
+        static::deleted(fn () => NombreEmpresa::olvidar());
+        static::restored(fn () => NombreEmpresa::olvidar());
     }
 
     /**

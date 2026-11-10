@@ -489,4 +489,16 @@ class CobrosBandejaTest extends TestCase
             ->assertOk()
             ->assertSee('ensayo en seco', false);
     }
+
+    public function test_la_bandeja_nombra_al_cliente_por_el_nombre_de_su_ficha(): void
+    {
+        $cliente = $this->cliente();
+        $cliente->update(['nombre' => 'Cliente de prueba, S.A.']);
+        $this->documento($cliente);
+
+        $this->actingAs($this->usuario())
+            ->get(route('cobros.index', ['cliente_id' => $cliente->id]))
+            ->assertOk()
+            ->assertSeeText('TXT de pago de Cliente de prueba, S.A.');
+    }
 }

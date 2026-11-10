@@ -147,7 +147,9 @@ class ConciliacionNoDestructivaTest extends TestCase
             $this->linea('NC', 'DTE-05-M001P001-000000000000339', '08-JUN-26', -5.30),
         ]);
 
-        $this->subir($lote, $usuario, $txt)->assertOk();
+        $this->subir($lote, $usuario, $txt)->assertOk()
+            ->assertSeeText('leída(s) del TXT de '.$this->calleja()->nombre.'.')
+            ->assertSeeText($this->calleja()->nombre.' no informa aquí la fecha real del pago');
 
         $this->assertSame('pagado', $ccf->refresh()->conciliacion_estado);
         $this->assertSame('2026-06-05', $ccf->fecha_pago->toDateString());

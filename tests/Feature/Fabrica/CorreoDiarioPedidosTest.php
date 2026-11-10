@@ -9,6 +9,7 @@ use App\Enums\EstadoPedidoSala;
 use App\Mail\Pedidos\ResumenDiarioPedidosCorreo;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Empresa;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
@@ -129,6 +130,8 @@ class CorreoDiarioPedidosTest extends TestCase
     {
         Mail::fake();
         $this->correoReal();
+        config(['app.name' => 'Sistema de prueba']);
+        Empresa::create(['razon_social' => 'Empresa de prueba, S.A. de C.V.', 'nombre_comercial' => 'Confitería de prueba', 'activo' => true]);
 
         $centro = $this->pedido($this->sala('Súper Ficticio Centro'), [$this->galleta->id => '24', $this->canilla->id => '6']);
         $this->mandar($centro, [$this->galleta->id => '24', $this->canilla->id => '0'], [$this->canilla->id => 'Sin harina']);
@@ -147,6 +150,9 @@ class CorreoDiarioPedidosTest extends TestCase
         $html = $correo->render();
         $this->assertStringNotContainsString('Hoy no salió ningún pedido', $html);
         $this->assertStringNotContainsString('7.77', $html, 'el resumen no lleva precios');
+        // Firma con el nombre de Configuración › Empresa emisora, no con el del .env.
+        $this->assertStringContainsString('Confitería de prueba', $html);
+        $this->assertStringNotContainsString('Sistema de prueba', $html);
         // Las salas, por nombre; en cada una lo que pasó.
         $this->assertMatchesRegularExpression('/Abarrotes Inventados.*Sigue por mandar.*Pedido del 06\/11\/2026 \(3 días de atraso\): Canilla de prueba 2\.5/s', $html);
         $this->assertMatchesRegularExpression('/Súper Ficticio Centro.*Salió.*Envío 1 \(17:00\): Galleta de prueba 24.*Faltó.*Canilla de prueba: 6 — Sin harina/s', $html);
