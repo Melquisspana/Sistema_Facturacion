@@ -12,6 +12,7 @@ use App\Models\Gastos\Pago;
 use App\Models\User;
 use App\Services\Gastos\AccesoGastos;
 use App\Services\Gastos\AdjuntarDespues;
+use App\Services\Gastos\AnularGasto;
 use App\Services\Gastos\CompletarMonto;
 use App\Services\Gastos\ConsultaGastos;
 use App\Services\Gastos\InstalacionGastos;
@@ -139,7 +140,7 @@ class GastoController extends Controller
         $reglaDeEsteGasto = $fase2 ? $repetir->reglaDe($gasto) : null;
         $ancla = $repetir->anclaDe($gasto);
 
-        $gasto->load(['cuotas.ajustes', 'fuentes.documento', 'responsable', 'registrador']);
+        $gasto->load(['cuotas.ajustes', 'fuentes.documento', 'responsable', 'registrador', 'anulador']);
         $cuotaIds = $gasto->cuotas->pluck('id');
 
         $todos = Pago::whereIn('id', DB::table('gastos_pago_aplicaciones')
@@ -175,6 +176,11 @@ class GastoController extends Controller
                 : DB::table('gastos_adjuntos')->whereIn('pago_id', $completos->pluck('id'))->orderBy('id')->get()->groupBy('pago_id'),
             'ajustes' => Ajuste::whereIn('cuota_id', $cuotaIds)->orderByDesc('id')->get(),
             'historial' => $this->historial($gasto, $completos->pluck('id')),
+            // Lo que impide anular HOY (planilla o pagos vigentes), para decirlo antes
+            // de que alguien escriba el motivo en balde. El servidor lo vuelve a mirar.
+            'impedimentoAnular' => ! $gasto->anulado() && $usuario->can('gastos.administrar')
+                ? app(AnularGasto::class)->impedimento($gasto)
+                : null,
             'hoy' => now()->toDateString(),
             // Notas de crédito de Compras que todavía tienen remanente: se ofrecen para
             // aplicarlas como ajuste, con su disponible a la vista.
@@ -221,6 +227,22 @@ class GastoController extends Controller
 
         return redirect()->route('gastos.show', $gasto)->with('gastos.aviso',
             'Monto completado: '.$gasto->moneda.' '.$gasto->importe.'. La obligación ya se puede pagar.');
+    }
+
+    /** Anular sin borrar. Ver App\Services\Gastos\AnularGasto. */
+    public function anular(Request $request, Gasto $gasto, AnularGasto $servicio)
+    {
+        $datos = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:500'],
+        ], [
+            'motivo.required' => 'Explicá por qué se anula el gasto.',
+            'motivo.min' => 'El motivo tiene que decir algo: dentro de un mes nadie sabrá si fue un error o una decisión.',
+        ]);
+
+        $servicio->anular($request->user(), $gasto, $datos['motivo']);
+
+        return redirect()->route('gastos.show', $gasto)
+            ->with('gastos.aviso', 'Gasto #'.$gasto->id.' anulado. Ya no cuenta como deuda; queda en su ficha y en «Anulados».');
     }
 
     public function archivo(Request $request, int $adjunto, AccesoGastos $acceso)

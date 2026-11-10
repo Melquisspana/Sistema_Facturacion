@@ -57,28 +57,26 @@
         </x-sidebar-group>
     @endif
 
-    {{-- Cobros de supermercados. El grupo contiene el ciclo de cobro de Calleja: seguimiento
+    {{-- Seguimiento de facturas. El grupo contiene el ciclo de cobro de Calleja: seguimiento
          del CCF hasta el pago e historial de PPQ. /ppq y /cobros pertenecen
          técnicamente al área Facturación (el área se deriva de la URL, ver
          App\Enums\AreaSistema) y por eso se dibuja en este sidebar. No se movió
          ni un controlador ni un prefijo.
 
-         SE LLAMABA «Cobros» Y LUEGO «Pronto pago». Cuando sólo contenía PPQ, ese
-         nombre describía sus dos filas y el subtítulo «Prontos Pagos» sobraba.
-         Ahora el seguimiento abarca el ciclo de cobro completo, por eso el grupo
-         se llama «Cobros de supermercados»: Seguimiento de CCF e Historial de PPQ cuelgan
-         directamente de él, sin un subtítulo que repita la misma idea.
+         SE LLAMABA «Cobros», LUEGO «Pronto pago» y después «Cobros de supermercados».
+         El usuario pidió el 10/11/2026 que se llame «Seguimiento de facturas».
+         Seguimiento de CCF e Historial de PPQ cuelgan directamente de él, sin un
+         subtítulo que repita la misma idea.
 
-         El ÁREA se llama «Rutas» y su barra ofrece también este módulo. Las dos
-         barras usan el MISMO rótulo «Cobros de supermercados» y las mismas dos opciones,
-         para que el módulo no se llame de dos maneras según por dónde entres.
+         La barra del área Rutas ya no lo ofrece (28/10/2026): el módulo vive solo acá,
+         con un solo nombre.
 
          La clave del colapsable sigue siendo «cobros» a propósito: es la llave de
          localStorage donde ya está guardado si cada usuario tiene el grupo abierto o
          cerrado, y renombrarla les reiniciaría esa preferencia sin ningún motivo. Es
          un identificador técnico, no un rótulo. --}}
     @if ($vePpq)
-        <x-sidebar-group titulo="Cobros de supermercados" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
+        <x-sidebar-group titulo="Seguimiento de facturas" icono="cobros" clave="cobros" :activo="$grupoCobrosActivo">
             {{-- «Buscar CCF / NC» ya no va en el menú: es un botón dentro del Seguimiento. --}}
             <x-sidebar-link :href="route('cobros.index')" :active="request()->routeIs('cobros.*', 'ppq.index', 'ppq.albaranes_por_fecha')">Seguimiento de CCF</x-sidebar-link>
             <x-sidebar-link :href="route('ppq.lotes.index')" :active="request()->routeIs('ppq.lotes.*')">Historial de PPQ</x-sidebar-link>

@@ -12,6 +12,7 @@ use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroAlbaran;
+use App\Support\OrdenCompra;
 use App\Support\VigenciaFiscalDte;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -268,10 +269,13 @@ class QuedanCallejaExporter
         $motivos = [];
         /** @var array<string, string> $vistos clave sala|numero|tipo -> control ya usado */
         $vistos = [];
+        // Los ajustes se leen una vez por archivo, no por CCF (igual que ExcelCallejaExporter).
+        $posicionSala = OrdenCompra::posicionSala();
+        $tipoDeEntrega = PpqAlbaran::tipoDeEntrega();
 
         foreach ($ccf as $item) {
             $control = $item->numero_control ?? $item->dte?->numero_control ?? ('#'.$item->id);
-            $problema = $this->problema($item);
+            $problema = $this->problema($item, $posicionSala, $tipoDeEntrega);
 
             if ($problema !== null) {
                 $motivos[] = "{$control}: {$problema}.";
@@ -295,8 +299,13 @@ class QuedanCallejaExporter
         return [$filas, $motivos];
     }
 
-    /** Motivo por el que este CCF no puede entrar en el archivo, o null si está completo. */
-    private function problema(PpqItem $item): ?string
+    /**
+     * Motivo por el que este CCF no puede entrar en el archivo, o null si está completo.
+     *
+     * @param  array{0: int, 1: int}  $posicionSala  la de {@see OrdenCompra::posicionSala()} ya leída
+     * @param  string  $tipoDeEntrega  el de {@see PpqAlbaran::tipoDeEntrega()} ya leído
+     */
+    private function problema(PpqItem $item, array $posicionSala, string $tipoDeEntrega): ?string
     {
         if (($item->tipo_dte ?? $item->dte?->tipo_dte?->value) !== '03') {
             return 'el documento no es un CCF (tipo 03)';
@@ -308,7 +317,7 @@ class QuedanCallejaExporter
 
         $albaran = $item->albaran;
 
-        if (! $albaran->esDeEntrega()) {
+        if (! $albaran->esDeEntrega($tipoDeEntrega)) {
             return 'el albarán vinculado no es de entrega (AC01): es '.($albaran->tipo_codigo ?: 'de tipo desconocido');
         }
 
@@ -359,7 +368,7 @@ class QuedanCallejaExporter
 
         // Contradicción entre el documento y su albarán: la sala de la OC del CCF no
         // coincide con la sala del albarán vinculado (posible albarán equivocado).
-        $mismatch = $item->salaMismatch();
+        $mismatch = $item->salaMismatch($posicionSala);
         if ($mismatch !== null) {
             return "contradicción de sala: {$mismatch['detalle']}";
         }

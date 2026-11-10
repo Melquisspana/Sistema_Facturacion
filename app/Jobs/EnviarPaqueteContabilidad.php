@@ -116,11 +116,16 @@ class EnviarPaqueteContabilidad implements ShouldQueue
                 'etiqueta' => $this->rango['etiqueta'],
                 'motivo' => $motivo,
             ]);
-            $auditoria->registrar($usuario, 'fallido', $this->correo, $this->rango, $resumen, $nombreZip, $mensaje, archivoDriveId: $archivoDrive['id'] ?? null, errorTecnico: $motivo);
+            $auditoria->registrar($usuario, 'fallido', $this->correo, $this->rango, $resumen, $nombreZip, $mensaje, archivoDriveId: $archivoDrive['id'] ?? null, errorTecnico: $motivo, driveEnlace: $archivoDrive['webViewLink'] ?? null);
+            // El ZIP guardado es el que la pantalla ofrece con «Descargar» en el mismo aviso.
             GenerarPaqueteContabilidad::guardarZip($r['ruta'], $estado->rutaZip());
             $google = $e instanceof GoogleServiceException ? self::codigoGoogle($e) : null;
             $estado->terminar('envio_fallido', 'No se pudo enviar el paquete a contabilidad: '.$mensaje
-                .($google ? " (Google respondió {$google})" : '').' (no se cambió ningún estado).');
+                .($google ? " (Google respondió {$google})" : '').' (no se cambió ningún estado).', array_filter([
+                    'nombre_descarga' => $nombreZip,
+                    'drive_archivo_id' => $archivoDrive['id'] ?? null,
+                    'drive_enlace' => $archivoDrive['webViewLink'] ?? null,
+                ]));
 
             return;
         }
@@ -134,10 +139,13 @@ class EnviarPaqueteContabilidad implements ShouldQueue
                 ->update(['estado' => 'enviado']);
         }
 
-        $auditoria->registrar($usuario, 'enviado', $this->correo, $this->rango, $resumen, $nombreZip, null, $marcadas, archivoDriveId: $archivoDrive['id']);
+        $auditoria->registrar($usuario, 'enviado', $this->correo, $this->rango, $resumen, $nombreZip, null, $marcadas, archivoDriveId: $archivoDrive['id'], driveEnlace: $archivoDrive['webViewLink']);
         @unlink($r['ruta']);
 
-        $estado->terminar('enviado', "Paquete {$this->rango['etiqueta']} enviado a {$this->correo} ({$resumen['compras_cantidad']} compras, {$resumen['ventas_cantidad']} ventas). {$marcadas} compra(s) marcada(s) como enviada(s). Las ventas no se modificaron.");
+        $estado->terminar('enviado', "Paquete {$this->rango['etiqueta']} enviado a {$this->correo} ({$resumen['compras_cantidad']} compras, {$resumen['ventas_cantidad']} ventas). {$marcadas} compra(s) marcada(s) como enviada(s). Las ventas no se modificaron.", [
+            'drive_archivo_id' => $archivoDrive['id'],
+            'drive_enlace' => $archivoDrive['webViewLink'],
+        ]);
     }
 
     public function failed(Throwable $e): void

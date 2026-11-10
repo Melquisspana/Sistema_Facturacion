@@ -68,6 +68,17 @@ return [
     'diferidas_max_dias' => (int) env('ASISTENCIA_DIFERIDAS_MAX_DIAS', 31),
 
     /*
+    | Horario para los avisos suaves de «Marcas de hoy» (issue #87): quién llega tarde
+    | seguido y a quién le faltan horas al cerrar la quincena. Solo informan; no frenan
+    | marcas ni tocan Planilla. Se cambian en Configuración › Módulos › Asistencia.
+    */
+    'horario' => [
+        'entrada' => env('ASISTENCIA_HORARIO_ENTRADA', '08:00'),
+        'tolerancia_minutos' => (int) env('ASISTENCIA_HORARIO_TOLERANCIA_MINUTOS', 10),
+        'horas_por_dia' => (int) env('ASISTENCIA_HORARIO_HORAS_POR_DIA', 8),
+    ],
+
+    /*
     | Token de PROVISIÓN de un lector. Lo lee EXCLUSIVAMENTE el comando
     | `php artisan asistencia:dispositivo`, para poder fijar desde el .env el token
     | que se va a quemar en el firmware en vez de tener que copiar uno generado al

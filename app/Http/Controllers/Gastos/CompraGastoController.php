@@ -34,6 +34,7 @@ class CompraGastoController extends Controller
         $usuario = $request->user();
         $candidatos = Gasto::query()
             ->where('beneficiario', $documento->emisor_nombre)
+            ->whereNull('anulado_at')
             ->when(! $usuario->can('gastos.personales'), fn ($q) => $q->where('ambito', 'empresarial'))
             ->orderByDesc('id')->limit(25)->get();
 

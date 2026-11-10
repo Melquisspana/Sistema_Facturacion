@@ -21,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
@@ -311,6 +312,75 @@ class EnviarPaqueteContabilidadTest extends TestCase
         $this->assertSame('drive-paquete-1', $log->getExtraProperty('drive_archivo_id'));
         $this->assertArrayHasKey('Paquetes contabilidad/2026/07/documentos_contabilidad_2026-07.zip', $this->drive->archivos);
         $this->assertSame(self::CORREO, $this->drive->llamadas[0]['correo']);
+    }
+
+    /** Pantalla del período julio 2026, solo compras: la misma de la que sale el envío. */
+    private function pantalla(User $usuario)
+    {
+        return $this->actingAs($usuario)->get(route('contabilidad.paquete', ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 1, 'incluir_ventas' => 0]));
+    }
+
+    /** #60: el enlace de Drive queda guardado y a la vista, sin tener que buscarlo en la carpeta. */
+    public function test_el_envio_guarda_el_enlace_de_drive_y_lo_muestra(): void
+    {
+        Storage::fake('local');
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        $this->conCorreo();
+        $this->compra('2026-07-05', 100);
+        $usuario = $this->usuario('administrador');
+
+        $this->actingAs($usuario)->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
+            ->assertSessionHas('status');
+
+        $enlace = 'https://drive.google.com/file/d/drive-paquete-1/view';
+        $log = Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail();
+        $this->assertSame($enlace, $log->getExtraProperty('drive_enlace'));
+        $estado = json_decode((string) Storage::disk('local')->get('paquetes/'.$usuario->id.'/envio_2026-07_c.json'), true);
+        $this->assertSame('drive-paquete-1', $estado['drive_archivo_id']);
+        $this->assertSame($enlace, $estado['drive_enlace']);
+
+        $this->pantalla($usuario)->assertOk()->assertSee('href="'.$enlace.'"', false)->assertSee('Abrir en Drive');
+    }
+
+    /** #60: si Drive falla, el mismo aviso ofrece bajar el ZIP que ya se armó. */
+    public function test_si_falla_drive_la_pantalla_ofrece_descargar_el_zip(): void
+    {
+        Storage::fake('local');
+        $this->simularProduccionCorreo();
+        Mail::fake();
+        $this->conCorreo();
+        $this->compra('2026-07-05', 100);
+        $this->drive->error = new \RuntimeException('Drive caído');
+        $usuario = $this->usuario('administrador');
+
+        $this->actingAs($usuario)->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
+            ->assertSessionHas('error');
+
+        $descarga = route('contabilidad.paquete.descargar', ['mes' => 7, 'anio' => 2026, 'incluir_compras' => 1, 'incluir_ventas' => 0, 'tipo' => 'envio']);
+        $this->pantalla($usuario)->assertOk()->assertSee('href="'.e($descarga).'"', false);
+
+        $this->actingAs($usuario)->get($descarga)->assertOk()->assertDownload('documentos_contabilidad_2026-07.zip');
+        // El ZIP es de quien lo armó: otro usuario no lo encuentra.
+        $this->actingAs($this->usuario('administrador'))->get($descarga)->assertNotFound();
+    }
+
+    /** Si Drive subió y el correo falló, el enlace igual queda en la auditoría y en la pantalla. */
+    public function test_si_falla_el_correo_el_enlace_de_drive_queda_guardado(): void
+    {
+        Storage::fake('local');
+        $this->simularProduccionCorreo();
+        $this->conCorreo();
+        $this->compra('2026-07-05', 100);
+        $usuario = $this->usuario('administrador');
+        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('SMTP caído'));
+
+        $this->actingAs($usuario)->post(route('contabilidad.paquete.enviar'), $this->payload(['incluir_ventas' => 0]))
+            ->assertSessionHas('error');
+
+        $enlace = 'https://drive.google.com/file/d/drive-paquete-1/view';
+        $this->assertSame($enlace, Activity::where('log_name', 'paquete_contabilidad')->latest('id')->firstOrFail()->getExtraProperty('drive_enlace'));
+        $this->pantalla($usuario)->assertOk()->assertSee('href="'.$enlace.'"', false);
     }
 
     public function test_falla_drive_sin_enviar_ni_marcar_y_sin_exponer_tokens(): void

@@ -18,7 +18,9 @@
         'comprobantes_adjuntados' => 'Comprobantes adjuntados',
         'compra_origino_gasto' => 'Originado desde Compras',
         'compra_vinculada_como_respaldo' => 'Documento de Compras vinculado como respaldo',
+        'gasto_anulado' => 'Gasto anulado',
     ];
+    $anulado = $gasto->anulado();
 @endphp
 
 <x-app-layout>
@@ -41,7 +43,23 @@
         <div class="mx-auto max-w-5xl space-y-4">
             <x-gastos-aviso />
 
-            @if ($gasto->montoDesconocido())
+            @if ($anulado)
+                {{-- Anulado no es borrado: la ficha sigue abriendo y dice quién, cuándo y por qué. --}}
+                <div class="rounded-lg border border-red-200 bg-red-50 p-4">
+                    <p class="flex flex-wrap items-center gap-2 text-sm font-semibold text-red-700">
+                        <span class="inline-flex rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Anulado</span>
+                        Este gasto ya no se debe
+                    </p>
+                    <p class="mt-1 text-sm text-red-700">
+                        Lo anuló {{ $gasto->anulador?->name }} el {{ $gasto->anulado_at->format('d/m/Y H:i') }}. Motivo: «{{ $gasto->motivo_anulacion }}»
+                    </p>
+                    <p class="mt-1 text-xs text-red-700">
+                        No cuenta en el panel, en los pendientes, en los avisos ni en los totales. No se borró: queda acá para consulta, y los informes a una fecha anterior lo siguen mostrando.
+                    </p>
+                </div>
+            @endif
+
+            @if ($gasto->montoDesconocido() && ! $anulado)
                 <div class="rounded-lg border border-amber-300 bg-amber-50 p-4">
                     <p class="text-sm font-semibold text-amber-900">Esperando el monto</p>
                     <p class="mt-0.5 text-sm text-amber-800">
@@ -174,7 +192,7 @@
                 </div>
             </section>
 
-            @if ($puedeAjustar && $gasto->cuotas->isNotEmpty())
+            @if ($puedeAjustar && $gasto->cuotas->isNotEmpty() && ! $anulado)
                 {{-- El ajuste vive FUERA de la tabla a propósito. Dentro quedaba en la
                      última columna, o sea detrás del desplazamiento horizontal en un
                      teléfono, y el propio formulario era más ancho que la pantalla. --}}
@@ -353,7 +371,7 @@
                                     @unless ($ajuste->vigente())<span class="ml-1 rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Revertido</span>@endunless
                                 </p>
                                 <p class="text-sm text-gray-600">{{ $ajuste->motivo }}</p>
-                                @if ($puedeAjustar && $ajuste->vigente())
+                                @if ($puedeAjustar && $ajuste->vigente() && ! $anulado)
                                     <details class="mt-1">
                                         <summary class="inline-flex min-h-11 cursor-pointer items-center text-xs text-red-700 underline">Revertir</summary>
                                         <form method="POST" action="{{ route('gastos.ajustes.revertir', $ajuste) }}" class="mt-2 space-y-2">
@@ -484,6 +502,43 @@
                     </form>
                 @endif
             </section>
+
+            {{-- Anular. Toca dinero, así que va con el nivel 3 de la guía: un bloque de
+                 confirmación en la propia pantalla, con los datos del caso, como «Revertir
+                 este pago». Si algo lo impide (pagos vigentes, una planilla) se dice acá,
+                 antes de que alguien escriba el motivo en balde; el servidor lo vuelve a mirar. --}}
+            @if ($puedeAjustar && ! $anulado)
+                <section class="rounded-lg border border-red-200 bg-white p-4">
+                    <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Anular gasto</h2>
+
+                    @if ($impedimentoAnular)
+                        <p class="mt-2 text-sm text-gray-700">{{ $impedimentoAnular }}</p>
+                    @else
+                        <p class="mt-1 text-sm text-gray-600">Para un gasto que no corresponde: se cargó dos veces, al destinatario equivocado o es de un período que no se debía.</p>
+                        <details class="mt-2">
+                            <summary class="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50">Anular gasto</summary>
+                            <form method="POST" action="{{ route('gastos.anular', $gasto) }}" class="mt-2 space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
+                                @csrf
+                                <p class="text-sm font-semibold text-red-700">
+                                    ¿Anular el gasto #{{ $gasto->id }} · {{ $gasto->concepto }}?
+                                    <span class="block font-normal">
+                                        {{ $resumen['pendiente'] === null ? 'Todavía sin monto.' : 'Pendiente hoy: '.$gasto->moneda.' '.Dinero::mostrar($resumen['pendiente']).'.' }}
+                                    </span>
+                                </p>
+                                <ul class="list-inside list-disc space-y-0.5 text-xs text-red-700">
+                                    <li>Deja de contar como deuda: sale del panel, de los pendientes, de los avisos, de los resúmenes por correo y de los totales.</li>
+                                    <li>No se borra: queda marcado «Anulado» con tu nombre, la fecha y el motivo, y se sigue viendo acá y en la pestaña «Anulados».</li>
+                                    <li>Los informes a una fecha anterior lo siguen mostrando, porque ese día sí se debía.</li>
+                                    <li>No se puede deshacer desde esta pantalla.</li>
+                                </ul>
+                                <label for="motivo-anular" class="block text-xs font-medium text-gray-700">Motivo *</label>
+                                <input id="motivo-anular" name="motivo" required minlength="5" maxlength="500" class="{{ $control }}" placeholder="Se cargó dos veces por error">
+                                <button type="submit" class="min-h-11 w-full rounded-md bg-red-700 px-4 text-sm font-medium text-white sm:w-auto">Sí, anular el gasto</button>
+                            </form>
+                        </details>
+                    @endif
+                </section>
+            @endif
         </div>
     </div>
 </x-app-layout>
