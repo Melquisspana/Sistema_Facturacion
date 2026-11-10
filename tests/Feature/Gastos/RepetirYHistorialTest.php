@@ -170,6 +170,42 @@ class RepetirYHistorialTest extends TestCase
         $this->assertSame(1, Ocurrencia::count());
     }
 
+    /**
+     * En quincenal hay DOS períodos por mes. Un gasto de la segunda quincena no puede
+     * hacer nacer la primera del mismo mes: sería una deuda hacia atrás que nadie cargó.
+     */
+    public function test_repetir_un_gasto_de_la_segunda_quincena_no_crea_la_primera_del_mismo_mes(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u, [], [['400.00', '2026-09-30']]);
+
+        $regla = $this->repetir($u, $gasto, ['frecuencia' => 'quincenal', 'dia_mes' => 15, 'dia_mes_2' => 31]);
+
+        $this->assertSame('2026-09-Q2', Ocurrencia::where('regla_id', $regla->id)->value('periodo'));
+
+        // Al día siguiente no hay nada que generar: ni la quincena del 15/09, que ya pasó.
+        $resultado = $this->generar($regla, '2026-10-01');
+        $this->assertSame([], $resultado['periodos']);
+        $this->assertSame([], $resultado['fuera_de_ventana']);
+        $this->assertSame(1, Gasto::count());
+
+        // Lo que sigue sí nace, en su fecha.
+        $this->assertSame(['2026-10-Q1'], $this->generar($regla, '2026-10-15')['periodos']);
+    }
+
+    /** La primera quincena tampoco arrastra la segunda del mes anterior. */
+    public function test_repetir_un_gasto_de_la_primera_quincena_sigue_con_la_segunda_del_mes(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u);
+
+        $regla = $this->repetir($u, $gasto, ['frecuencia' => 'quincenal', 'dia_mes' => 15, 'dia_mes_2' => 31]);
+
+        $this->assertSame('2026-09-Q1', Ocurrencia::where('regla_id', $regla->id)->value('periodo'));
+        $this->assertSame(['2026-09-Q2'], $this->generar($regla, '2026-09-30')['periodos']);
+        $this->assertSame(2, Gasto::count());
+    }
+
     public function test_el_periodo_siguiente_si_se_crea_y_nace_sin_pagar(): void
     {
         $u = $this->operador();

@@ -445,6 +445,65 @@ class FlujoGastosTest extends TestCase
         $this->assertNotNull($ajuste->fresh()->revertido_at);
     }
 
+    /**
+     * Quitar un débito BAJA la deuda. Si ese débito ya se pagó, lo pagado queda por
+     * encima de lo que se debe y la cuota pasa a negativo. Antes pasaba sin aviso.
+     */
+    public function test_un_debito_ya_pagado_no_se_puede_revertir_hasta_revertir_el_pago(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u);
+        $cuota = $gasto->cuotas->first();
+        $saldos = app(SaldosGastos::class);
+
+        $ajuste = app(RegistrarAjuste::class)->registrar($u, $cuota, [
+            'clave' => (string) Str::uuid(), 'direccion' => 'debito', 'tipo' => 'nota_debito',
+            'importe' => '20.00', 'motivo' => 'Nota de débito por intereses',
+        ]);
+        // Se paga casi todo: quedan 5.00, menos que los 20.00 del débito.
+        $pago = app(RegistrarPago::class)->registrar($u, [
+            'clave' => (string) Str::uuid(), 'importe' => '115.00', 'fecha' => now()->toDateString(),
+            'metodo' => 'transferencia', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
+        ], [['cuota_id' => $cuota->id, 'importe' => '115.00']]);
+
+        $this->actingAs($u)->post(route('gastos.ajustes.revertir', $ajuste), ['motivo' => 'Se cargó por error'])
+            ->assertSessionHasErrors('motivo');
+
+        $this->assertNull($ajuste->fresh()->revertido_at, 'El débito sigue vigente.');
+        $this->assertSame(500, $saldos->pendienteCuota($cuota->fresh()), 'La cuota no quedó en negativo.');
+        $this->assertSame(0, DB::table('gastos_eventos')->where('accion', 'ajuste_revertido')->count());
+
+        // Revertido el pago que lo cubría, el débito ya se puede quitar.
+        app(RegistrarPago::class)->revertir($u, $pago, 'El pago incluía un cargo que no correspondía');
+        $this->actingAs($u)->post(route('gastos.ajustes.revertir', $ajuste), ['motivo' => 'Se cargó por error'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNotNull($ajuste->fresh()->revertido_at);
+        $this->assertSame(10000, $saldos->pendienteCuota($cuota->fresh()));
+    }
+
+    /** Quitar un crédito SUBE la deuda: nunca la deja en negativo, aunque ya esté pagada. */
+    public function test_revertir_un_credito_de_una_cuota_pagada_reabre_la_deuda_por_ese_importe(): void
+    {
+        $u = $this->operador();
+        $gasto = $this->gasto($u);
+        $cuota = $gasto->cuotas->first();
+
+        $ajuste = app(RegistrarAjuste::class)->registrar($u, $cuota, [
+            'clave' => (string) Str::uuid(), 'direccion' => 'credito', 'tipo' => 'nota_credito',
+            'importe' => '30.00', 'motivo' => 'Nota de crédito por devolución',
+        ]);
+        app(RegistrarPago::class)->registrar($u, [
+            'clave' => (string) Str::uuid(), 'importe' => '70.00', 'fecha' => now()->toDateString(),
+            'metodo' => 'transferencia', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
+        ], [['cuota_id' => $cuota->id, 'importe' => '70.00']]);
+
+        app(RegistrarAjuste::class)->revertir($u, $ajuste, 'La nota de crédito era de otra factura');
+
+        $this->assertNotNull($ajuste->fresh()->revertido_at);
+        $this->assertSame(3000, app(SaldosGastos::class)->pendienteCuota($cuota->fresh()));
+    }
+
     public function test_un_ajuste_exige_el_permiso_de_administrar(): void
     {
         $duenio = $this->operador();
@@ -539,8 +598,8 @@ class FlujoGastosTest extends TestCase
     public function test_el_informe_separa_pendientes_a_corte_de_pagos_del_periodo(): void
     {
         $u = $this->operador();
-        $abierto = $this->gasto($u, ['concepto' => 'Sigue abierto'], [['100.00', '2026-01-10']]);
-        $cerrado = $this->gasto($u, ['concepto' => 'Ya se pago'], [['80.00', '2026-01-10']]);
+        $abierto = $this->gasto($u, ['concepto' => 'Sigue abierto', 'created_at' => '2026-01-05 09:00:00'], [['100.00', '2026-01-10']]);
+        $cerrado = $this->gasto($u, ['concepto' => 'Ya se pago', 'created_at' => '2026-01-05 09:00:00'], [['80.00', '2026-01-10']]);
 
         app(RegistrarPago::class)->registrar($u, [
             'clave' => (string) Str::uuid(), 'importe' => '80.00', 'fecha' => '2026-02-10',
@@ -617,9 +676,9 @@ class FlujoGastosTest extends TestCase
     public function test_los_totales_del_informe_coinciden_con_la_suma_de_sus_filas(): void
     {
         $u = $this->operador();
-        $this->gasto($u, ['concepto' => 'Uno'], [['300.00', '2026-01-10']]);
-        $this->gasto($u, ['concepto' => 'Dos'], [['500.00', '2026-01-10']]);
-        $this->gasto($u, ['ambito' => 'personal', 'concepto' => 'Tres'], [['60.00', '2026-01-10']]);
+        $this->gasto($u, ['concepto' => 'Uno', 'created_at' => '2026-01-05 09:00:00'], [['300.00', '2026-01-10']]);
+        $this->gasto($u, ['concepto' => 'Dos', 'created_at' => '2026-01-05 09:00:00'], [['500.00', '2026-01-10']]);
+        $this->gasto($u, ['ambito' => 'personal', 'concepto' => 'Tres', 'created_at' => '2026-01-05 09:00:00'], [['60.00', '2026-01-10']]);
 
         $informes = app(InformeGastos::class);
         $filas = $informes->pendientes($u, '2026-02-01');
@@ -653,7 +712,7 @@ class FlujoGastosTest extends TestCase
     public function test_un_pago_posterior_al_corte_no_altera_el_saldo_de_esa_fecha(): void
     {
         $u = $this->operador();
-        $gasto = $this->gasto($u, ['concepto' => 'Deuda de enero'], [['100.00', '2026-01-10']]);
+        $gasto = $this->gasto($u, ['concepto' => 'Deuda de enero', 'created_at' => '2026-01-05 09:00:00'], [['100.00', '2026-01-10']]);
 
         // El pago ocurre en FEBRERO.
         app(RegistrarPago::class)->registrar($u, [
@@ -680,7 +739,7 @@ class FlujoGastosTest extends TestCase
     public function test_una_reversion_posterior_al_corte_no_reescribe_el_saldo_de_esa_fecha(): void
     {
         $u = $this->operador();
-        $gasto = $this->gasto($u, ['concepto' => 'Pagada en enero'], [['100.00', '2026-01-10']]);
+        $gasto = $this->gasto($u, ['concepto' => 'Pagada en enero', 'created_at' => '2026-01-05 09:00:00'], [['100.00', '2026-01-10']]);
 
         $pago = app(RegistrarPago::class)->registrar($u, [
             'clave' => (string) Str::uuid(), 'importe' => '100.00', 'fecha' => '2026-01-20',
@@ -703,10 +762,31 @@ class FlujoGastosTest extends TestCase
         $this->assertSame(10000, (int) $marzo->first()->pendiente);
     }
 
+    /**
+     * Y lo que faltaba: la deuda misma. Un gasto registrado en febrero no existía el 31
+     * de enero, así que «pendiente al 31 de enero» no puede mostrarlo ni sumarlo.
+     */
+    public function test_un_gasto_creado_despues_del_corte_no_aparece_en_los_pendientes_de_esa_fecha(): void
+    {
+        $u = $this->operador();
+        $this->gasto($u, ['concepto' => 'Ya existía en enero', 'created_at' => '2026-01-10 09:00:00'], [['100.00', '2026-01-20']]);
+        $this->gasto($u, ['concepto' => 'Nació en febrero', 'created_at' => '2026-02-05 15:30:00'], [['50.00', '2026-02-20']]);
+
+        $informes = app(InformeGastos::class);
+
+        $enero = $informes->pendientes($u, '2026-01-31');
+        $this->assertSame(['Ya existía en enero'], $enero->pluck('concepto')->all());
+        $this->assertSame(10000, $informes->totalesPorAmbito($enero, 'pendiente', enCentavos: true)['USD']['total']);
+
+        // El día en que se creó ya cuenta, a cualquier hora; el anterior todavía no.
+        $this->assertCount(1, $informes->pendientes($u, '2026-02-04'));
+        $this->assertCount(2, $informes->pendientes($u, '2026-02-05'));
+    }
+
     public function test_un_ajuste_posterior_al_corte_tampoco_cuenta_para_esa_fecha(): void
     {
         $u = $this->operador();
-        $gasto = $this->gasto($u, [], [['100.00', '2026-01-10']]);
+        $gasto = $this->gasto($u, ['created_at' => '2026-01-05 09:00:00'], [['100.00', '2026-01-10']]);
 
         $this->travelTo('2026-02-15 10:00:00');
         app(RegistrarAjuste::class)->registrar($u, $gasto->cuotas->first(), [

@@ -261,13 +261,16 @@ class CandadosPlanillaTest extends TestCase
         $corriente = $this->gastoCorriente();
 
         $ajeno = $this->soloGastos();
-        $filas = app(InformeGastos::class)->pendientes($ajeno, '2026-09-16');
+        // Corte de hoy: el informe a una fecha solo cuenta lo que ya existía ese día, y
+        // estas obligaciones se crean ahora.
+        $hoy = now()->toDateString();
+        $filas = app(InformeGastos::class)->pendientes($ajeno, $hoy);
 
         // El CSV es la salida más fácil de llevarse: filtra igual o no filtra nada.
         $this->assertSame(1, $filas->count());
         $this->assertSame($corriente->id, (int) $filas->first()->id);
 
-        $this->assertSame(4, app(InformeGastos::class)->pendientes($gestor, '2026-09-16')->count());
+        $this->assertSame(4, app(InformeGastos::class)->pendientes($gestor, $hoy)->count());
     }
 
     public function test_pagar_un_sueldo_exige_ver_los_salarios_ademas_de_poder_pagar(): void

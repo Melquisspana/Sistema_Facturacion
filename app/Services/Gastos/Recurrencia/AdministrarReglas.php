@@ -35,8 +35,8 @@ use Illuminate\Validation\ValidationException;
  *   reanudar  vuelve a generar; los períodos que pasaron durante la pausa se
  *             revisan con la ventana de recuperación, no se crean a ciegas.
  *   cancelar  cierra la regla para siempre. Las obligaciones que ya produjo
- *             siguen vivas: si alguna no corresponde, se anula una por una y con
- *             su motivo.
+ *             siguen vivas: si alguna no corresponde, se salda una por una con
+ *             un ajuste de crédito y su motivo (no existe «anular»).
  *   omitir    ocupa UN período sin crear obligación, con motivo. Es la única
  *             forma de decir «este mes no» sin que la corrida siguiente lo genere.
  */
@@ -252,7 +252,7 @@ final class AdministrarReglas
                     }
 
                     throw ValidationException::withMessages([
-                        'periodo' => 'Este período ya generó una obligación. Omitirlo ahora no la borraría: si no corresponde, anulá esa obligación con su motivo.',
+                        'periodo' => 'Este período ya generó una obligación. Omitirlo ahora no la borraría: si no corresponde, abrí su ficha y saldala con un ajuste de crédito («Corrección de importe») por lo que tenga pendiente, con su motivo.',
                     ]);
                 }
 

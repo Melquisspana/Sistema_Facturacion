@@ -157,20 +157,20 @@ final class RegistrarAjuste
                 return; // ya revertido: repetir no cambia nada ni duplica el evento
             }
 
-            // Quitar un DÉBITO baja la deuda: siempre cabe. Quitar un CRÉDITO la sube, y
-            // eso puede chocar con pagos que ya la cubrieron. No se deja pasar en
-            // silencio: quedaría un saldo negativo que nadie pidió.
-            if ($ajuste->direccion === 'credito') {
+            // Quitar un CRÉDITO sube la deuda: nunca la deja en negativo. Quitar un DÉBITO
+            // la baja, y si ese débito ya se pagó, lo pagado queda por encima de lo que
+            // se debe. No se deja pasar en silencio: quedaría un saldo negativo que
+            // nadie pidió. El pendiente ya descuenta los pagos vigentes, así que la
+            // comparación es contra lo pagado de verdad.
+            if ($ajuste->direccion === 'debito') {
                 $cuota = Cuota::whereKey($cuota->id)->lockForUpdate()->firstOrFail();
-                $futuro = $this->saldos->pendienteCuota($cuota) + Dinero::centavos((string) $ajuste->importe);
-                $tope = Dinero::centavos((string) $cuota->importe)
-                    + $this->saldos->ajustes($cuota->id, 'debito')
-                    - $this->saldos->ajustes($cuota->id, 'credito')
-                    + Dinero::centavos((string) $ajuste->importe);
+                $futuro = $this->saldos->pendienteCuota($cuota) - Dinero::centavos((string) $ajuste->importe);
 
-                if ($futuro > $tope) {
+                if ($futuro < 0) {
                     throw ValidationException::withMessages([
-                        'motivo' => 'Revertir este crédito dejaría la cuota descuadrada. Revisá antes los pagos aplicados.',
+                        'motivo' => 'Este débito ya está pagado: quitarlo dejaría la cuota con '
+                            .$gasto->moneda.' '.Dinero::decimal(-$futuro)
+                            .' pagados de más. Revertí primero el pago que lo cubrió.',
                     ]);
                 }
             }

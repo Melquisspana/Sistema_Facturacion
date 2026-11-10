@@ -236,11 +236,13 @@
 
             {{-- ══════════════ CUENTAS ABIERTAS ══════════════
                  Se debe, pero no hay fecha que reclamar. Acá viven Proveedor A, Proveedor B y
-                 Distribuidora Ejemplo, S.A. de C.V., y el saldo provisional se dice con todas las letras. --}}
+                 Distribuidora Ejemplo, S.A. de C.V., y el saldo provisional se dice con todas las letras.
+                 «Abonar» es de las COMPRAS, que forman la cuenta del proveedor. Otra deuda sin
+                 fecha —un alquiler, un servicio— no es de esa cuenta: se paga ella misma. --}}
             @if ($datos['sin_fecha']->isNotEmpty())
                 <x-gastos-grupo titulo="Cuentas abiertas · sin fecha" tono="verde" :total="$datos['sin_fecha']->sum('pendiente')">
                     @foreach ($datos['sin_fecha'] as $g)
-                        @include('gastos.partials.panel-fila-deuda', ['g' => $g, 'accion' => 'abonar'])
+                        @include('gastos.partials.panel-fila-deuda', ['g' => $g, 'accion' => $g->naturaleza === 'compra' ? 'abonar' : 'pagar'])
                     @endforeach
                 </x-gastos-grupo>
             @endif

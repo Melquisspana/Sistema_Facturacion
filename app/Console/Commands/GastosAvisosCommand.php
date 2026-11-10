@@ -96,14 +96,15 @@ class GastosAvisosCommand extends Command
         $envio = $resumenes->enviar($hoy);
 
         $this->newLine();
-        $this->info('Resúmenes: '.$envio['preparados'].' preparado(s) — '
+        $this->info('Resúmenes: '.$envio['preparados'].' preparado(s) y '.$envio['reintentados'].' reintentado(s) — '
             .$envio['enviados'].' enviado(s), '.$envio['simulados'].' simulado(s), '.$envio['fallidos'].' fallido(s).');
         $this->line('  · '.$envio['sin_pendientes'].' persona(s) sin pendientes: NO se les mandó nada, que es lo correcto.');
         $this->line('  · '.$envio['fuera_de_ventana'].' persona(s) cuyo resumen no toca hoy.');
 
         if ($envio['fallidos'] > 0) {
-            $this->warn('Hay resúmenes fallidos. Revisá `gastos_resumenes` ANTES de reenviar: '
-                .'un fallo después de que el servidor aceptó el mensaje puede significar que salió igual.');
+            $this->warn('Hay resúmenes fallidos. Se reintentan solos en las próximas corridas, hasta '
+                .EnviarResumenes::MAX_INTENTOS.' intentos cada uno. Si siguen fallando, revisá `gastos_resumenes` '
+                .'y el servidor de correo.');
         }
 
         return self::SUCCESS;

@@ -77,6 +77,10 @@ final class ConsultaGastos
      * Los pagos usan su fecha REAL (`fecha`), que es cuando salió el dinero. Los
      * ajustes usan `created_at`, que es lo único que tienen: cuando se les agregue una
      * fecha de efecto habrá que usarla acá.
+     *
+     * Y la DEUDA misma tiene que existir ya: un gasto registrado después del corte no
+     * estaba pendiente ese día. Se mira el `created_at` del gasto —que en una compra a
+     * crédito es la fecha de la compra—, porque las cuotas no guardan cuándo nacieron.
      */
     private function cuotasConSaldo(?string $corte = null): Builder
     {
@@ -111,6 +115,10 @@ final class ConsultaGastos
             ->selectRaw('SUM('.$centavos('importe').') as total');
 
         return DB::table('gastos_cuotas as c')
+            ->when($corte !== null, fn ($q) => $q->whereIn(
+                'c.gasto_id',
+                DB::table('gastos')->where('created_at', '<=', $finDelCorte)->select('id'),
+            ))
             ->leftJoinSub($aplicado, 'ap', 'ap.cuota_id', '=', 'c.id')
             ->leftJoinSub($ajuste('credito'), 'cr', 'cr.cuota_id', '=', 'c.id')
             ->leftJoinSub($ajuste('debito'), 'db', 'db.cuota_id', '=', 'c.id')

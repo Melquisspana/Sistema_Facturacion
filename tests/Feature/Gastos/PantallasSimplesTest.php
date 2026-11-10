@@ -196,6 +196,50 @@ class PantallasSimplesTest extends TestCase
         $this->assertSame(80000, $cuenta->saldo($u, 'Proveedor A', 'USD'));
     }
 
+    /**
+     * La cuenta de un proveedor son sus COMPRAS. Otra deuda con el mismo nombre —un
+     * alquiler, un servicio— no es de la cuenta: no suma a su saldo y un abono no puede
+     * ir a parar ahí, aunque sea la más vieja.
+     */
+    public function test_la_cuenta_no_mezcla_otra_deuda_del_mismo_nombre(): void
+    {
+        $u = $this->completo();
+        $alquiler = Gasto::create([
+            'clave' => (string) Str::uuid(), 'huella_peticion' => str_repeat('0', 64),
+            'beneficiario' => 'Proveedor A', 'concepto' => 'Alquiler de la bodega',
+            'categoria' => 'Alquiler', 'ambito' => 'empresarial', 'naturaleza' => 'operativo',
+            'moneda' => 'USD', 'importe' => '500.00', 'documentacion' => 'pendiente',
+            'responsable_id' => $u->id, 'registrado_por' => $u->id,
+            'created_at' => now()->subMonth(),
+        ]);
+        $alquiler->cuotas()->create(['numero' => 1, 'importe' => '500.00', 'vence' => null]);
+        $compra = $this->compraDeProveedorA($u, 'Pepitoria', '300.00');
+
+        $cuenta = app(CuentaProveedor::class);
+        $saldos = app(SaldosGastos::class);
+        $this->assertSame(30000, $cuenta->saldo($u, 'Proveedor A', 'USD'));
+
+        $abonar = fn (string $importe) => $this->actingAs($u)->post(route('gastos.cuentas.abonos'), [
+            'clave' => (string) Str::uuid(), 'beneficiario' => 'Proveedor A',
+            'importe' => $importe, 'fecha' => now()->toDateString(),
+            'metodo' => 'transferencia', 'moneda' => 'USD',
+        ]);
+
+        // Más que las compras: se rechaza, aunque el alquiler «alcanzaría» para absorberlo.
+        $abonar('400.00')->assertSessionHasErrors('importe');
+        $this->assertSame(0, Pago::count());
+
+        $abonar('300.00')->assertSessionHasNoErrors();
+        $this->assertSame(0, $saldos->pendienteCuota($compra->cuotas()->first()), 'El abono fue a la compra.');
+        $this->assertSame(50000, $saldos->pendienteCuota($alquiler->cuotas()->first()), 'El alquiler no se tocó.');
+
+        // En la pantalla principal, esa deuda sin fecha se PAGA; no ofrece un abono a
+        // una cuenta de compras de la que no forma parte.
+        $this->actingAs($u)->get(route('gastos.panel'))->assertOk()
+            ->assertSee(route('gastos.panel.pagar', $alquiler), false)
+            ->assertDontSee(route('gastos.panel.abonos'), false);
+    }
+
     public function test_el_abono_dirigido_por_http_respeta_lo_que_se_eligio(): void
     {
         $u = $this->completo();

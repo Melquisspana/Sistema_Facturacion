@@ -50,6 +50,10 @@ final class CuentaProveedor
     /**
      * Las compras con saldo vivo de un proveedor, de la más antigua a la más nueva.
      *
+     * SOLO compras (`naturaleza = compra`), igual que {@see cuentas()}. Un alquiler o un
+     * servicio con el mismo nombre de beneficiario es otra deuda: si entrara acá, sumaría
+     * al saldo de la cuenta y un abono —que va a lo más viejo— podría ir a parar a él.
+     *
      * @return Collection<int, Cuota>
      */
     public function abiertas(User $usuario, string $proveedor, string $moneda): Collection
@@ -58,6 +62,7 @@ final class CuentaProveedor
             ->join('gastos as g', 'g.id', '=', 'gastos_cuotas.gasto_id')
             ->where('g.beneficiario', $proveedor)
             ->where('g.moneda', $moneda)
+            ->where('g.naturaleza', 'compra')
             ->whereNotNull('g.importe')
             ->when(! $usuario->can('gastos.personales'), fn ($q) => $q->where('g.ambito', 'empresarial'))
             // Las obligaciones de planilla también son gastos con el nombre del empleado como
