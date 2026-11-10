@@ -15,7 +15,8 @@
     $pidePago ??= false;
     $portal ??= false;
 @endphp
-<div class="mt-3 grid grid-cols-2 gap-2">
+{{-- Con la pregunta del pago, «Entregado» va a todo el ancho y «No se pudo» abajo: las cuatro formas entran sin cortarse en el celular. --}}
+<div class="mt-3 grid {{ $pidePago || $portal ? 'grid-cols-1' : 'grid-cols-2' }} gap-2">
     <form id="entregar-{{ $clave }}" method="POST" action="{{ $accion }}">
         @csrf @method($metodo)
         <input type="hidden" name="resultado" value="entregado">

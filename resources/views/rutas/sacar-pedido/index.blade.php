@@ -49,7 +49,7 @@
                                         <span class="block font-semibold">{{ $sala->nombre }}</span>
                                         <span class="block {{ $gris }}">{{ collect([$sala->codigo, $sala->distrito?->nombre, $sala->cliente?->nombre])->filter()->implode(' · ') }}</span>
                                         @if (($ritmos[$sala->id]['dias'] ?? null) !== null)
-                                            <span class="block {{ $gris }}">Última compra hace {{ $ritmos[$sala->id]['dias'] === 1 ? '1 día' : $ritmos[$sala->id]['dias'].' días' }}</span>
+                                            <span class="block {{ $gris }}">{{ match ($ritmos[$sala->id]['dias']) { 0 => 'Última compra hoy', 1 => 'Última compra ayer', default => 'Última compra hace '.$ritmos[$sala->id]['dias'].' días' } }}</span>
                                         @endif
                                     </span>
                                     @if ($ritmos[$sala->id]['leToca'] ?? false)

@@ -36,7 +36,7 @@
     table.lista td { padding: 6px; border-bottom: 1px solid #e5e7eb; }
     table.lista tr.par td { background: #f9fafb; }
     table.lista tr { page-break-inside: avoid; }
-    .num { text-align: right; white-space: nowrap; }
+    .num, table.lista th.num { text-align: right; white-space: nowrap; }
     .mono { font-family: DejaVu Sans Mono, monospace; font-size: 8.5px; }
     .total td { font-weight: bold; border-top: 2px solid #4338ca; }
     .marca { display: inline-block; border: 1.5px solid; border-radius: 3px; padding: 0 4px; font-weight: bold; }
