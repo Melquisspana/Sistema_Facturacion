@@ -69,5 +69,5 @@ Ver en el sistema
 Este resumen llega cada día a las 5 de la tarde. Los correos que lo reciben se cambian
 en **Configuración › Rutas**.
 
-{{ config('app.name') }}
+{{ \App\Support\NombreEmpresa::actual() }}
 </x-mail::message>
