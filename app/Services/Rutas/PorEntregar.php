@@ -240,7 +240,7 @@ class PorEntregar
             ->performedOn($entrega->salida()->first())
             ->causedBy($usuario)
             ->withProperties(['entrega' => $entrega->id, 'dte_id' => $entrega->dte_id, 'antes' => $antes])
-            ->log('reintento desde Por entregar');
+            ->log(EntregasCcf::REINTENTO);
     }
 
     private function armar(int $rutaId, string $hoy, User $usuario, Dte $dte): SalidaRuta

@@ -92,7 +92,28 @@ class MiPedidoController extends Controller
         Gate::authorize('create', PedidoSala::class);
         $nombre = preg_replace('/\s+/u', ' ', trim((string) ($request->validate(['nombre' => ['nullable', 'string', 'max:100']])['nombre'] ?? '')));
 
-        return $this->formulario($request, null, null, $nombre);
+        return $this->formulario($request, null, null, $nombre)->with('parecidas', $this->parecidas($nombre));
+    }
+
+    /**
+     * «¿Es alguna de estas?»: las salas que ya existen con un nombre parecido al que escribió,
+     * para no cargar dos veces la misma tienda. Busca el texto entero y cada palabra que dice
+     * algo (sin «tienda», «sala», «súper»…).
+     *
+     * @return Collection<int, ClienteSucursal>
+     */
+    private function parecidas(string $nombre): Collection
+    {
+        $comunes = ['tienda', 'sala', 'super', 'súper', 'minisuper', 'minisúper', 'despensa', 'abarrotes', 'comercial'];
+        $palabras = collect(preg_split('/\s+/u', mb_strtolower($nombre)))
+            ->filter(fn (string $p) => mb_strlen($p) >= 4 && ! in_array($p, $comunes, true))->push($nombre)->unique()->values();
+        if (mb_strlen($nombre) < 3) {
+            return collect();
+        }
+
+        return ClienteSucursal::query()->where('activo', true)
+            ->where(fn ($q) => $palabras->each(fn (string $p) => $q->orWhere(fn ($o) => $o->buscarTexto($p))))
+            ->with(['cliente:id,nombre', 'distrito:id,nombre'])->orderBy('nombre')->limit(8)->get();
     }
 
     /** Tienda nueva: solo el nombre. La oficina la da de alta y la enlaza al facturar. */
@@ -111,6 +132,11 @@ class MiPedidoController extends Controller
         if ($pedido->estaVigente() && $pedido->fabricaEmpezo() && PedidosSala::loSaco($request->user(), $pedido)) {
             return redirect()->route('rutas.sacar-pedido.index')
                 ->with('error', 'El pedido de «'.$pedido->nombreSala().'» ya está en la fábrica. Si cambió algo, avisá a la oficina.');
+        }
+        // Ya sacó el de la sala siguiente: desde ahí lo corrige la oficina.
+        if ($pedido->estaVigente() && PedidosSala::loSaco($request->user(), $pedido) && PedidosSala::sacoElSiguiente($pedido)) {
+            return redirect()->route('rutas.sacar-pedido.index')
+                ->with('error', 'Ya sacaste el pedido de otra sala: este lo corrige la oficina.');
         }
         Gate::authorize('corregir', $pedido);
 

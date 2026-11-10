@@ -22,7 +22,8 @@ use Illuminate\Validation\ValidationException;
  *
  * Toda la regla está acá: cualquier sala activa, quién lo saca (su ficha de Rutas), una sola
  * vez por sala en el viaje y en el día mientras no esté anulado (aunque la fábrica ya lo haya
- * marcado), que no se corrija después de que la fábrica empezó, y la auditoría con las líneas.
+ * marcado), que no se corrija después de que la fábrica empezó ni después de sacar el de la
+ * sala siguiente ({@see sacoElSiguiente()}), y la auditoría con las líneas.
  * El pedido nuevo se suma solo al viaje del vendedor ({@see Viajes::paraPedido()}). Los datos
  * del formulario llegan ya validados por {@see PedidoSalaRequest}.
  */
@@ -230,6 +231,16 @@ class PedidosSala
             || $pedido->envios()->sharedLock()->exists()) {
             throw ValidationException::withMessages(['lineas' => self::EN_FABRICA]);
         }
+    }
+
+    /**
+     * ¿Quien lo sacó ya sacó el pedido de otra sala después? Desde ahí el pedido es de la
+     * oficina: el vendedor ya no lo corrige ni lo anula (Melqui, 10/11/2026).
+     */
+    public static function sacoElSiguiente(PedidoSala $pedido): bool
+    {
+        return $pedido->sacado_por_id !== null && PedidoSala::vigentes()
+            ->where('sacado_por_id', $pedido->sacado_por_id)->where('id', '>', $pedido->id)->exists();
     }
 
     /** ¿El usuario es quien sacó el pedido? Su ficha de campo activa. */

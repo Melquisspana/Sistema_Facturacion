@@ -3,26 +3,28 @@
 namespace App\Enums;
 
 /**
- * Por qué no se entregó un CCF. Los dos primeros son los de todos los días (el usuario,
- * 26/09/2026): se terminó tarde y no se llegó antes de las 5, o la sala ya no recibía a esa
- * hora. `Otro` exige nota.
+ * Por qué no se entregó un CCF. Los que se eligen (Melqui, 10/11/2026): «No alcanzó el
+ * tiempo», «Estaba cerrada», «No había quien recibiera», «No quiso» y «Otro», que exige
+ * nota. `FueraDeHorario` ya no se ofrece: queda para leer las entregas de antes.
  */
 enum MotivoNoEntrega: string
 {
     case SinTiempo = 'sin_tiempo';
-    case FueraDeHorario = 'fuera_de_horario';
     case SalaCerrada = 'sala_cerrada';
+    case SinQuienReciba = 'sin_quien_reciba';
     case NoAceptado = 'no_aceptado';
     case Otro = 'otro';
+    case FueraDeHorario = 'fuera_de_horario';
 
     public function label(): string
     {
         return match ($this) {
             self::SinTiempo => 'No alcanzó el tiempo',
-            self::FueraDeHorario => 'La sala ya no recibía a esa hora',
-            self::SalaCerrada => 'Sala cerrada',
-            self::NoAceptado => 'La sala no lo aceptó',
+            self::SalaCerrada => 'Estaba cerrada',
+            self::SinQuienReciba => 'No había quien recibiera',
+            self::NoAceptado => 'No quiso',
             self::Otro => 'Otro',
+            self::FueraDeHorario => 'La sala ya no recibía a esa hora',
         };
     }
 
@@ -36,7 +38,9 @@ enum MotivoNoEntrega: string
     {
         $opciones = [];
         foreach (self::cases() as $caso) {
-            $opciones[$caso->value] = $caso->label();
+            if ($caso !== self::FueraDeHorario) {
+                $opciones[$caso->value] = $caso->label();
+            }
         }
 
         return $opciones;

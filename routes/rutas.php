@@ -113,6 +113,8 @@ Route::middleware(['auth', 'permission:rutas.entregas.registrar|rutas.ver', 'cac
     ->group(function () {
         Route::get('/', [PorEntregarController::class, 'index'])->name('index');
         Route::get('{dte}/pdf', [PorEntregarController::class, 'pdf'])->name('pdf');
+        // La hoja del pedido del CCF (el sugerido con la F), para que la firme el gerente.
+        Route::get('{dte}/hoja', [PorEntregarController::class, 'hoja'])->name('hoja');
         Route::post('{dte}/marcar', [PorEntregarController::class, 'marcar'])->name('marcar')
             ->middleware('permission:rutas.entregas.registrar');
     });

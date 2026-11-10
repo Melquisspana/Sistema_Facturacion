@@ -114,7 +114,7 @@ class HojaPedidoTest extends TestCase
             ->assertSeeInOrder(['P01', 'Pan de prueba', '2', 'F', '2'])
             ->assertSee('Mandado')
             ->assertSee('F: faltó')
-            ->assertSee('Firma')
+            ->assertSee('Recibe (gerente de la sala)')
             ->assertDontSee('7.77')
             ->assertDontSee('3.33')
             ->assertDontSee('1.11')

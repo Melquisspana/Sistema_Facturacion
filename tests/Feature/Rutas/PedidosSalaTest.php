@@ -318,12 +318,15 @@ class PedidosSalaTest extends TestCase
         $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertForbidden();
         $this->get(route('rutas.sacar-pedido.create', $this->sala))->assertRedirect()->assertSessionHas('error');
 
-        // Al día siguiente ya no se corrige.
+        // Al día siguiente todavía lo corrige; después de sacar el de la sala siguiente, ya no
+        // (Melqui, 10/11/2026): desde ahí lo corrige la oficina.
         $this->actingAs($this->vendedor);
         $this->travelTo('2026-11-06 09:00:00');
+        $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '5']])->assertRedirect()->assertSessionHasNoErrors();
+        $this->sacar([], $this->salaOc)->assertSessionHasNoErrors();
         $this->put(route('rutas.sacar-pedido.update', $pedido), ['cantidades' => [$this->pan->id => '1']])->assertForbidden();
         $this->patch(route('rutas.sacar-pedido.anular', $pedido))->assertForbidden();
-        $this->assertSame('6.0000', $pedido->refresh()->lineas->sole()->cantidad);
+        $this->assertSame('5.0000', $pedido->refresh()->lineas->sole()->cantidad);
     }
 
     public function test_anular_lo_conserva_y_deja_sacar_de_nuevo(): void

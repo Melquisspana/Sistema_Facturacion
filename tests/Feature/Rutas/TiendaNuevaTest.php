@@ -318,4 +318,18 @@ class TiendaNuevaTest extends TestCase
             ->assertDontSee(route('clientes.create', ['pedido_sala' => $pedido->id]))
             ->assertSee('Pedile a quien maneja Clientes que la dé de alta');
     }
+
+    public function test_antes_de_la_tienda_nueva_ofrece_las_parecidas(): void
+    {
+        $existente = $this->salaDePrueba();
+        $existente->update(['nombre' => 'Chapina de prueba Norte']);
+        $this->actingAs($this->vendedor);
+
+        $this->get(route('rutas.sacar-pedido.tienda-nueva.create', ['nombre' => 'Tienda La Chapina']))->assertOk()
+            ->assertSee('¿Es alguna de estas?')->assertSee('Chapina de prueba Norte')
+            ->assertSee('href="'.route('rutas.sacar-pedido.create', $existente).'"', false)
+            ->assertSee('Si no es ninguna, seguí abajo: se guarda como tienda nueva.');
+        $this->get(route('rutas.sacar-pedido.tienda-nueva.create', ['nombre' => 'Tienda Zapote']))->assertOk()
+            ->assertDontSee('¿Es alguna de estas?');
+    }
 }

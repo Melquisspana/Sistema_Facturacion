@@ -82,14 +82,25 @@ class PedidoSalaController extends Controller
         ], [
             'fecha.date_format' => 'Elegí un día válido.',
         ])['fecha'] ?? null;
+
+        return view('rutas.pedidos.hoja', self::datosHoja($pedido, $facturar, $fecha));
+    }
+
+    /**
+     * Lo que lleva la hoja. La usan la oficina (acá) y el vendedor desde «Por entregar».
+     *
+     * @return array{pedido: PedidoSala, regresa: array, volverAl: ?string}
+     */
+    public static function datosHoja(PedidoSala $pedido, FacturarPedido $facturar, ?string $fecha): array
+    {
         $pedido->load(['sala:id,nombre,codigo', 'ruta:id,nombre', 'sacadoPor:id,nombre', 'lineas.producto:id,codigo,nombre',
             'lineas.envioLineasVigentes', 'envios' => fn ($q) => $q->whereNull('anulado_en')->orderBy('numero'), 'envios.lineas', 'envios.dte']);
 
-        return view('rutas.pedidos.hoja', [
+        return [
             'pedido' => $pedido,
             'regresa' => $facturar->regresa($pedido),
             'volverAl' => $fecha ?? $pedido->envios->last()?->fecha?->format('Y-m-d'),
-        ]);
+        ];
     }
 
     /** Agregar o corregir la OC, que suele llegar después por EDI. Avisa si su forma no cuadra. */

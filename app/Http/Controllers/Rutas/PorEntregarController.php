@@ -18,6 +18,7 @@ use App\Models\SalidaRutaParticipante;
 use App\Services\Dte\DtePdfService;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
+use App\Services\Rutas\FacturarPedido;
 use App\Services\Rutas\PorEntregar;
 use App\Services\Rutas\Viajes;
 use App\Support\HoraNegocio;
@@ -69,9 +70,10 @@ class PorEntregarController extends Controller
 
         $todos = $this->entregas->porEntregar()->whereNotIn('id', $marcados->pluck('dte_id'))
             ->load(['clienteSucursal:id,nombre,ruta_id', 'clienteSucursal.ruta:id,nombre', 'cliente:id,nombre,nombre_comercial,cobro_en_entrega']);
-        // Quién sacó el pedido de cada CCF, para «lo sacó otro vendedor». Una consulta.
-        $sacadoPor = PedidoSalaEnvio::vigentes()->whereIn('dte_id', $todos->modelKeys())->with('pedido.sacadoPor:id,nombre')
-            ->orderBy('id')->get()->mapWithKeys(fn (PedidoSalaEnvio $e) => [$e->dte_id => $e->pedido?->sacadoPor]);
+        // El pedido de cada CCF: quién lo sacó («lo sacó otro vendedor») y lo que no vino.
+        $pedidos = PedidoSalaEnvio::vigentes()->whereIn('dte_id', $todos->modelKeys())
+            ->with(['pedido.sacadoPor:id,nombre', 'pedido.lineas.producto:id,nombre', 'pedido.lineas.envioLineasVigentes'])
+            ->orderBy('id')->get()->mapWithKeys(fn (PedidoSalaEnvio $e) => [$e->dte_id => $e->pedido]);
 
         // Con su viaje en curso: «Este viaje» y «Toda la zona»; si no, todo, como antes.
         $viaje = $persona ? $this->viajes->abierto($persona) : null;
@@ -109,7 +111,9 @@ class PorEntregarController extends Controller
         return view('rutas.por-entregar.index', [
             'vistas' => array_map(fn ($lista) => $lista->count(), $vistas) + ($vistas ? ['todas' => $todos->count()] : []),
             'ver' => $ver,
-            'sacadoPor' => $sacadoPor,
+            'pedidos' => $pedidos,
+            // La factura que no se pudo entregar dos veces o más: aviso para el jefe.
+            'fallas' => $this->entregas->fallas($dtes->modelKeys()),
             'portal' => DiaVendedor::clientePortal(),
             'grupos' => $grupos,
             'visibles' => $ruta === null ? $grupos : $grupos->where('clave', $ruta)->values(),
@@ -154,7 +158,7 @@ class PorEntregarController extends Controller
                 'nullable', Rule::in([...array_column(FormaCobroEntrega::cases(), 'value'), EntregasCcf::SIN_COBRO]),
             ],
         ], ['forma_cobro.*' => 'Elegí cómo te pagaron: efectivo, cheque, transferencia o quedan.']);
-        $datos = $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota']);
+        $datos = $request->only(['resultado', 'forma_cobro', 'trae_nota_averia', 'motivo_no_entrega', 'nota', 'quedan_numero', 'quedan_fecha_pago']);
         if ($portal) {
             $datos['forma_cobro'] = EntregasCcf::SIN_COBRO;
         }
@@ -167,6 +171,18 @@ class PorEntregarController extends Controller
         });
 
         return back()->with('status', 'Entrega registrada: '.$registrada->resultado->label().' (salida '.$registrada->salida->descripcionCorta().').');
+    }
+
+    /**
+     * La hoja del pedido de un CCF de la lista (el sugerido en limpio, con la F en lo que
+     * faltó), para que el vendedor la imprima y la firme el gerente. Sin pedido, 404.
+     */
+    public function hoja(Dte $dte, FacturarPedido $facturar): View
+    {
+        abort_if($this->entregas->porEntregar($dte->id)->isEmpty(), 404);
+        $pedido = PedidoSalaEnvio::vigentes()->where('dte_id', $dte->id)->latest('id')->first()?->pedido ?? abort(404);
+
+        return view('rutas.pedidos.hoja', PedidoSalaController::datosHoja($pedido, $facturar, null) + ['volverPorEntregar' => true]);
     }
 
     /** El PDF, solo de un CCF de la lista: cualquier otro documento da 404. */

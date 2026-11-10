@@ -41,6 +41,16 @@
                     @endforeach
                 </div>
             </fieldset>
+            {{-- Quedan: puede anotar el número y la fecha de pago que le dieron (opcional). --}}
+            <details class="mt-1.5 text-xs text-gray-600 dark:text-paper-300">
+                <summary class="min-h-11 cursor-pointer py-2">Si dejaron quedan: número y fecha de pago <span class="underline">(opcional)</span></summary>
+                <label for="quedan-numero-{{ $clave }}" class="block">N.º de quedan</label>
+                <input id="quedan-numero-{{ $clave }}" name="quedan_numero" maxlength="30" autocomplete="off"
+                       class="mt-1 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+                <label for="quedan-fecha-{{ $clave }}" class="mt-2 block">Fecha de pago</label>
+                <input id="quedan-fecha-{{ $clave }}" name="quedan_fecha_pago" type="date" min="{{ \App\Support\HoraNegocio::fechaHoy() }}"
+                       class="mt-1 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
+            </details>
         @else
         {{-- Cómo pagó la sala esta vez. Vale la habitual del cliente y no se pregunta:
              solo si esta vez fue distinto se abre y se cambia. No toca su ficha. --}}
@@ -54,6 +64,12 @@
                 @endforeach
             </select>
         </details>
+        @endif
+        @if ($pidePago || $portal)
+            {{-- Una observación de la entrega, por ejemplo una devolución (casi no hay). --}}
+            <label for="obs-{{ $clave }}" class="sr-only">Observación de la entrega</label>
+            <input id="obs-{{ $clave }}" name="nota" maxlength="300" autocomplete="off" placeholder="Observación (opcional): devolución…"
+                   class="mt-1.5 min-h-11 w-full rounded-lg border-gray-300 text-sm dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100">
         @endif
     </form>
 

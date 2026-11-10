@@ -72,8 +72,23 @@
                 <div class="{{ $caja }} mt-3 px-4 py-3">
                     <p class="truncate text-xs font-medium text-gray-500 dark:text-paper-300">{{ $dte->clienteSucursal?->nombre ?? 'Sala sin identificar' }}</p>
                     <p class="truncate text-sm text-gray-800 dark:text-paper-100">{{ $dte->cliente?->nombre_comercial ?: $dte->cliente?->nombre }}</p>
-                    @if (($quien = $sacadoPor->get($dte->id)) && $quien->id !== $persona?->id)
+                    @php
+                        $pedidoDte = $pedidos->get($dte->id);
+                        $quien = $pedidoDte?->sacadoPor;
+                        // Lo que la fábrica no mandó, con el pedido ya cerrado: solo para avisar.
+                        $noVino = $pedidoDte && $pedidoDte->estado->cerrado() ? $pedidoDte->lineas->filter->tienePendiente() : collect();
+                    @endphp
+                    @if ($quien && $quien->id !== $persona?->id)
                         <p class="text-xs text-gray-500 dark:text-paper-300">Lo sacó {{ $quien->nombre }}</p>
+                    @endif
+                    @foreach ($noVino as $linea)
+                        @php
+                            $cajas = \App\Models\PedidoSalaLinea::legible($linea->pendiente());
+                        @endphp
+                        <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">No vino: {{ $cajas }} {{ $cajas === '1' ? 'caja' : 'cajas' }} de {{ $linea->producto?->nombre }}</p>
+                    @endforeach
+                    @if (($fallas[$dte->id] ?? 0) >= \App\Services\Rutas\EntregasCcf::FALLAS_AVISO)
+                        <p class="mt-1 text-sm font-medium text-red-700 dark:text-red-300">No se pudo entregar {{ $fallas[$dte->id] }} veces: avisale al jefe.</p>
                     @endif
                     <div class="mt-1 flex flex-wrap items-center justify-between gap-3">
                         <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -84,6 +99,12 @@
                             <p class="text-sm text-gray-600 dark:text-paper-300">{{ $dte->fecha_emision?->format('d/m') }}</p>
                             <p class="text-sm font-medium text-gray-800 dark:text-paper-100">${{ number_format((float) $dte->total_pagar, 2) }}</p>
                         </div>
+                        @if ($pedidoDte)
+                            <a href="{{ route('rutas.por-entregar.hoja', $dte) }}" target="_blank" rel="noopener"
+                               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
+                                Hoja para firmar<span class="sr-only"> del CCF {{ $dte->numero_control }}</span>
+                            </a>
+                        @endif
                         <a href="{{ route('rutas.por-entregar.pdf', $dte) }}" download
                            class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">
                             Descargar PDF<span class="sr-only"> del CCF {{ $dte->numero_control }}</span>

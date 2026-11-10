@@ -22,7 +22,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Spatie\Activitylog\Models\Activity;
 
 /**
  * Qué CCF hay que entregar, qué lleva cada salida y qué pasó con cada uno. Toda la regla
@@ -306,7 +308,8 @@ class EntregasCcf
      *
      * `forma_cobro` es cómo pagó la sala ESTA vez: una {@see FormaCobroEntrega} o
      * {@see self::SIN_COBRO} (quedan). Si no viene, se usa la habitual del cliente. No toca
-     * la ficha del cliente.
+     * la ficha del cliente. En «Entregado», `nota` es la observación (una devolución); en
+     * «No entregado», el detalle del motivo.
      *
      * @param  array{resultado: string, entregado_por_id?: int|string|null, forma_cobro?: string|null, trae_nota_averia?: bool|string|null, motivo_no_entrega?: string|null, nota?: string|null, fecha_resultado?: string|null}  $datos
      *
@@ -350,6 +353,12 @@ class EntregasCcf
                 }
 
                 $forma = $this->formaCobro($datos, $dte->cliente?->cobro_en_entrega);
+                $quedan = $forma === null ? $this->quedan($datos) : ['quedan_numero' => null, 'quedan_fecha_pago' => null];
+                // La observación de la entrega (una devolución, por ejemplo): opcional.
+                $observacion = trim((string) ($datos['nota'] ?? '')) ?: null;
+                if ($observacion !== null && mb_strlen($observacion) > 300) {
+                    throw ValidationException::withMessages(['nota' => 'La observación puede tener hasta 300 caracteres.']);
+                }
 
                 $entrega->update($comun + [
                     'forma_cobro' => $forma,
@@ -358,8 +367,8 @@ class EntregasCcf
                     'entregado_por_id' => $personaId,
                     'trae_nota_averia' => filter_var($datos['trae_nota_averia'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'motivo_no_entrega' => null,
-                    'nota' => null,
-                ]);
+                    'nota' => $observacion,
+                ] + $quedan);
 
                 $original->setRawAttributes($entrega->getAttributes(), true);
 
@@ -403,6 +412,31 @@ class EntregasCcf
             default => FormaCobroEntrega::tryFrom((string) $elegida)
                 ?? throw ValidationException::withMessages(['forma_cobro' => 'Elegí una forma de pago de la lista.']),
         };
+    }
+
+    /**
+     * El quedan que dio la sala (opcional): su número y la fecha de pago, que no puede ser
+     * anterior a hoy.
+     *
+     * @return array{quedan_numero: ?string, quedan_fecha_pago: ?string}
+     *
+     * @throws ValidationException
+     */
+    private function quedan(array $datos): array
+    {
+        $validos = Validator::make([
+            'quedan_numero' => filled($datos['quedan_numero'] ?? null) ? trim((string) $datos['quedan_numero']) : null,
+            'quedan_fecha_pago' => filled($datos['quedan_fecha_pago'] ?? null) ? (string) $datos['quedan_fecha_pago'] : null,
+        ], [
+            'quedan_numero' => ['nullable', 'string', 'max:30'],
+            'quedan_fecha_pago' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:'.HoraNegocio::fechaHoy()],
+        ], [
+            'quedan_numero.max' => 'El número del quedan puede tener hasta 30 caracteres.',
+            'quedan_fecha_pago.date_format' => 'Elegí una fecha de pago válida.',
+            'quedan_fecha_pago.after_or_equal' => 'La fecha de pago no puede ser anterior a hoy.',
+        ])->validate();
+
+        return ['quedan_numero' => $validos['quedan_numero'], 'quedan_fecha_pago' => $validos['quedan_fecha_pago']];
     }
 
     /** Toda la sala entregada, por la misma persona. Devuelve cuántos marcó. */
@@ -475,6 +509,8 @@ class EntregasCcf
                 'forma_cobro' => null,
                 'monto_esperado' => null,
                 'monto_cobrado' => null,
+                'quedan_numero' => null,
+                'quedan_fecha_pago' => null,
             ]);
             $original->setRawAttributes($entrega->getAttributes(), true);
         });
@@ -503,6 +539,42 @@ class EntregasCcf
     }
 
     // ================================================================ lectura
+
+    /** La descripción del intento anterior que se reintenta ({@see PorEntregar}). */
+    public const REINTENTO = 'reintento desde Por entregar';
+
+    /** Desde cuántos «No se pudo» de la misma factura se avisa al jefe. */
+    public const FALLAS_AVISO = 2;
+
+    /**
+     * Cuántas veces no se pudo entregar cada CCF: los «No se pudo» anotados y los que se
+     * reintentaron después (el reintento reusa la fila y deja el intento anterior en la
+     * bitácora). Dos consultas para todos. Con {@see self::FALLAS_AVISO} o más, el jefe lo ve.
+     *
+     * @param  array<int, int>  $dteIds
+     * @return array<int, int> dte_id => fallas
+     */
+    public function fallas(array $dteIds): array
+    {
+        if ($dteIds === []) {
+            return [];
+        }
+        $fallas = SalidaRutaEntrega::whereIn('dte_id', $dteIds)->where('resultado', ResultadoEntrega::NoEntregado->value)
+            ->groupBy('dte_id')->selectRaw('dte_id, COUNT(*) as fallas')->pluck('fallas', 'dte_id')
+            ->map(fn ($n) => (int) $n)->all();
+        $buscados = array_flip($dteIds);
+        Activity::query()->where('log_name', 'salida_ruta')->where('description', self::REINTENTO)
+            ->where('created_at', '>=', Carbon::parse(HoraNegocio::fechaHoy())->subDays(self::DIAS_POR_ENTREGAR + 30))
+            ->get(['id', 'properties'])
+            ->each(function (Activity $a) use (&$fallas, $buscados) {
+                $dte = (int) ($a->properties['dte_id'] ?? 0);
+                if (isset($buscados[$dte])) {
+                    $fallas[$dte] = ($fallas[$dte] ?? 0) + 1;
+                }
+            });
+
+        return $fallas;
+    }
 
     /**
      * Qué dice el albarán de cada CCF de estas entregas. Una fila sin resultado propio y con

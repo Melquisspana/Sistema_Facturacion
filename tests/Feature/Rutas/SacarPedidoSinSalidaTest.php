@@ -195,8 +195,15 @@ class SacarPedidoSinSalidaTest extends TestCase
 
         $this->travelTo('2026-11-10 09:00:00');
         $this->sacar($this->sala)->assertSessionHasNoErrors();
+        $ultimo = PedidoSala::latest('id')->first();
+        // Otro día lo sigue corrigiendo mientras no saque el de la sala siguiente.
         $this->travelTo('2026-11-11 09:00:00');
-        $this->put(route('rutas.sacar-pedido.update', PedidoSala::latest('id')->first()), ['cantidades' => [$this->galleta->id => '1']])->assertForbidden();
+        $this->put(route('rutas.sacar-pedido.update', $ultimo), ['cantidades' => [$this->galleta->id => '2']])->assertRedirect(route('rutas.sacar-pedido.index'))->assertSessionHasNoErrors();
+        $this->sacar($this->otraSala)->assertSessionHasNoErrors();
+        $this->put(route('rutas.sacar-pedido.update', $ultimo), ['cantidades' => [$this->galleta->id => '1']])->assertForbidden();
+        $this->patch(route('rutas.sacar-pedido.anular', $ultimo))->assertForbidden();
+        $this->get(route('rutas.sacar-pedido.edit', $ultimo))->assertRedirect(route('rutas.sacar-pedido.index'))
+            ->assertSessionHas('error', 'Ya sacaste el pedido de otra sala: este lo corrige la oficina.');
     }
 
     public function test_permisos_vendedor_si_fabrica_no(): void

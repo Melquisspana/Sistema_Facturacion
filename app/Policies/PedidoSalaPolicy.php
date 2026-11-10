@@ -8,13 +8,13 @@ use App\Models\PedidoSala;
 use App\Models\User;
 use App\Services\Rutas\PedidosFabrica;
 use App\Services\Rutas\PedidosSala;
-use App\Support\HoraNegocio;
 
 /**
  * Pedidos de sala. La oficina los mira con `rutas.pedidos.ver`. Sacar pedido: quien tiene
  * `rutas.pedidos.registrar` y su ficha de Rutas activa, en cualquier sala, sin salida armada
- * (10/11/2026): el pedido se suma solo a su viaje. Corregir y anular: solo quien lo sacó, el
- * mismo día, mientras siga registrado y la fábrica no lo haya tocado.
+ * (10/11/2026): el pedido se suma solo a su viaje. Corregir y anular: solo quien lo sacó,
+ * mientras siga registrado, la fábrica no lo haya tocado y no haya sacado el pedido de la
+ * sala siguiente (Melqui, 10/11/2026). Después lo corrige la oficina.
  *
  * La fábrica (`fabrica.pedidos.mandar`) manda mientras esté por mandar y reabre lo cerrado
  * que todavía se puede mandar. La regla de cada paso vive en {@see PedidosFabrica}.
@@ -36,10 +36,10 @@ class PedidoSalaPolicy
     {
         return $pedido->estaRegistrado()
             && ! $pedido->fabricaEmpezo()
-            && $pedido->fecha->toDateString() === HoraNegocio::fechaHoy()
             && ! ($pedido->salida?->estado->esTerminal() ?? false)
             && $this->create($usuario)
-            && PedidosSala::loSaco($usuario, $pedido);
+            && PedidosSala::loSaco($usuario, $pedido)
+            && ! PedidosSala::sacoElSiguiente($pedido);
     }
 
     /**

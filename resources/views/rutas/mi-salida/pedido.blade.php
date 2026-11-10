@@ -32,6 +32,26 @@
         @endif
 
         {{-- Tienda nueva (10/11/2026): solo el nombre. La oficina carga sus datos al facturar. --}}
+        @if (! $sala && ! $pedido && ($parecidas ?? collect())->isNotEmpty())
+            {{-- Antes, las que ya existen con un nombre parecido: si es una de estas, se saca ahí. --}}
+            <section class="{{ $caja }}" aria-labelledby="parecidas-titulo">
+                <h2 id="parecidas-titulo" class="text-lg font-bold">¿Es alguna de estas?</h2>
+                <ul class="mt-2 divide-y divide-gray-100 dark:divide-ink-700">
+                    @foreach ($parecidas as $parecida)
+                        <li>
+                            <a href="{{ route('rutas.sacar-pedido.create', $parecida) }}" class="flex min-h-11 items-center justify-between gap-3 py-2">
+                                <span class="min-w-0">
+                                    <span class="block font-semibold">{{ $parecida->nombre }}</span>
+                                    <span class="block {{ $gris }}">{{ collect([$parecida->codigo, $parecida->distrito?->nombre, $parecida->cliente?->nombre])->filter()->implode(' · ') }}</span>
+                                </span>
+                                <span class="shrink-0 text-sm font-medium text-indigo-600 underline dark:text-indigo-300">Es esta</span>
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+                <p class="mt-2 {{ $gris }}">Si no es ninguna, seguí abajo: se guarda como tienda nueva.</p>
+            </section>
+        @endif
         @unless ($sala)
             <div class="{{ $caja }}">
                 <label for="sala-nueva-nombre" class="block font-semibold">Nombre de la tienda</label>

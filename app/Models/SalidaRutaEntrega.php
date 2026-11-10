@@ -37,6 +37,8 @@ class SalidaRutaEntrega extends Model
         'forma_cobro',
         'monto_esperado',
         'monto_cobrado',
+        'quedan_numero',
+        'quedan_fecha_pago',
     ];
 
     protected function casts(): array
@@ -50,13 +52,14 @@ class SalidaRutaEntrega extends Model
             'origen_registro' => OrigenRegistroEntrega::class,
             'trae_nota_averia' => 'boolean',
             'fecha_resultado' => 'datetime',
+            'quedan_fecha_pago' => 'date',
         ];
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['resultado', 'motivo_no_entrega', 'nota', 'trae_nota_averia', 'entregado_por_id', 'fecha_resultado', 'origen_registro', 'forma_cobro', 'monto_cobrado'])
+            ->logOnly(['resultado', 'motivo_no_entrega', 'nota', 'trae_nota_averia', 'entregado_por_id', 'fecha_resultado', 'origen_registro', 'forma_cobro', 'monto_cobrado', 'quedan_numero', 'quedan_fecha_pago'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->useLogName('salida_ruta_entrega')
@@ -112,6 +115,15 @@ class SalidaRutaEntrega extends Model
     {
         return $q->where(fn (Builder $q) => $q->whereNull('origen_registro')
             ->orWhere('origen_registro', '!=', OrigenRegistroEntrega::FacturadoDespues->value));
+    }
+
+    /**
+     * Entregadas con quedan y su fecha de pago: lo que queda por cobrar, el pago más próximo
+     * primero. Lo leerá «Facturas por cobrar».
+     */
+    public function scopeQuedanPorCobrar(Builder $q): Builder
+    {
+        return $q->entregadas()->whereNull('forma_cobro')->whereNotNull('quedan_fecha_pago')->orderBy('quedan_fecha_pago');
     }
 
     public function scopePendientes(Builder $q): Builder

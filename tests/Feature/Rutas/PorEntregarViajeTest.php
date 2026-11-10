@@ -5,6 +5,7 @@ namespace Tests\Feature\Rutas;
 use App\Enums\EstadoPedidoSala;
 use App\Enums\EstadoSalidaRuta;
 use App\Enums\FormaCobroEntrega;
+use App\Enums\MotivoNoEntrega;
 use App\Enums\ResultadoEntrega;
 use App\Enums\RolEnSalida;
 use App\Models\Cliente;
@@ -16,9 +17,11 @@ use App\Models\Establecimiento;
 use App\Models\PedidoSala;
 use App\Models\PersonalRuta;
 use App\Models\PpqAlbaran;
+use App\Models\Producto;
 use App\Models\Ruta;
 use App\Models\SalidaRuta;
 use App\Models\SalidaRutaEntrega;
+use App\Models\UnidadMedida;
 use App\Models\User;
 use App\Services\Rutas\DiaVendedor;
 use App\Services\Rutas\EntregasCcf;
@@ -332,5 +335,118 @@ class PorEntregarViajeTest extends TestCase
         $this->travelTo('2026-11-22 04:00:00'); // domingo
         $this->artisan('rutas:finalizar-automaticas')->assertSuccessful();
         $this->assertFalse($otro->refresh()->suma_pedidos);
+    }
+
+    // ---------------------------------------------------------------- decisiones del 10/11/2026
+
+    /** Pedido mandado en parte y cerrado: pidió 12 galletas, vinieron 8 («Sin existencia»). */
+    private function pedidoConFaltante(): array
+    {
+        UnidadMedida::firstOrCreate(['codigo' => '59'], ['nombre' => 'Unidad', 'abreviatura' => 'u', 'activo' => true]);
+        $galleta = Producto::factory()->create(['nombre' => 'Galleta de prueba', 'codigo' => 'G01', 'precio_unitario' => 1.75]);
+        $pedido = $this->sacar('San Miguel', $this->personaAna, $this->ana);
+        $linea = $pedido->lineas()->create(['producto_id' => $galleta->id, 'cantidad' => '12', 'motivo_no_enviado' => 'Sin existencia']);
+        $dte = $this->facturado($pedido);
+        $pedido->envios()->sole()->lineas()->create(['pedido_sala_linea_id' => $linea->id, 'cantidad' => '8']);
+
+        return [$pedido, $dte, $galleta];
+    }
+
+    public function test_sacar_pedido_no_muestra_precios(): void
+    {
+        UnidadMedida::firstOrCreate(['codigo' => '59'], ['nombre' => 'Unidad', 'abreviatura' => 'u', 'activo' => true]);
+        Producto::factory()->create(['nombre' => 'Galleta de prueba', 'codigo' => 'G01', 'precio_unitario' => 1.75]);
+        $this->actingAs($this->ana)->get(route('rutas.sacar-pedido.create', $this->salas['San Miguel']))->assertOk()
+            ->assertSee('Galleta de prueba')->assertDontSee('1.75')->assertDontSee('Precio');
+    }
+
+    public function test_no_se_pudo_con_los_motivos_nuevos_y_aviso_a_las_dos_veces(): void
+    {
+        $dte = $this->ccf($this->salas['San Miguel']);
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSeeInOrder(['No alcanzó el tiempo', 'Estaba cerrada', 'No había quien recibiera', 'No quiso'])
+            ->assertDontSee('La sala ya no recibía a esa hora');
+
+        $this->actingAs($this->beto)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'sin_quien_reciba'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(MotivoNoEntrega::SinQuienReciba, SalidaRutaEntrega::sole()->motivo_no_entrega);
+        // La factura sigue en «Por entregar»; una vez no avisa.
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee($dte->numero_control)->assertDontSee('avisale al jefe');
+
+        $this->travelTo('2026-11-11 09:00:00');
+        $this->actingAs($this->beto)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'no_entregado', 'motivo_no_entrega' => 'no_aceptado'])
+            ->assertSessionHasNoErrors();
+        $this->assertEquals([$dte->id => 2], app(EntregasCcf::class)->fallas([$dte->id]));
+        // Al otro día sigue en la lista, con el aviso.
+        $this->travelTo('2026-11-12 08:00:00');
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()->assertSee($dte->numero_control)
+            ->assertSee('No se pudo entregar 2 veces: avisale al jefe.');
+    }
+
+    public function test_quedan_con_numero_y_fecha_de_pago_queda_por_cobrar(): void
+    {
+        $dte = $this->ccf($this->salas['San Miguel']);
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO,
+            'quedan_numero' => 'Q-0451', 'quedan_fecha_pago' => '2026-11-03'])->assertSessionHasErrors('quedan_fecha_pago');
+        $this->assertSame(0, SalidaRutaEntrega::whereNotNull('resultado')->count());
+
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => EntregasCcf::SIN_COBRO,
+            'quedan_numero' => ' Q-0451 ', 'quedan_fecha_pago' => '2026-11-24'])->assertSessionHasNoErrors();
+        $entrega = SalidaRutaEntrega::entregadas()->sole();
+        $this->assertSame('Q-0451', $entrega->quedan_numero);
+        $this->assertSame('2026-11-24', $entrega->quedan_fecha_pago->toDateString());
+        $this->assertTrue(SalidaRutaEntrega::quedanPorCobrar()->sole()->is($entrega));
+
+        // Con efectivo no se guarda un quedan.
+        $otro = $this->ccf($this->salas['San Miguel']);
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $otro), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo',
+            'quedan_numero' => 'Q-9', 'quedan_fecha_pago' => '2026-11-24'])->assertSessionHasNoErrors();
+        $this->assertNull(SalidaRutaEntrega::where('dte_id', $otro->id)->sole()->quedan_numero);
+
+        $this->actingAs($this->ana)->get(route('rutas.mi-salida.dia'))->assertOk()->assertSee('N.º Q-0451 · paga el 24/11/2026');
+    }
+
+    public function test_la_observacion_de_la_entrega_queda_guardada(): void
+    {
+        $dte = $this->ccf($this->salas['San Miguel']);
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $dte), ['resultado' => 'entregado', 'forma_cobro' => 'efectivo',
+            'nota' => 'Devolvieron 2 cajas golpeadas'])->assertSessionHasNoErrors();
+        $this->assertSame('Devolvieron 2 cajas golpeadas', SalidaRutaEntrega::sole()->nota);
+        $this->actingAs($this->ana)->post(route('rutas.por-entregar.marcar', $this->ccf($this->salas['San Miguel'])), ['resultado' => 'entregado',
+            'forma_cobro' => 'efectivo', 'nota' => str_repeat('a', 301)])->assertSessionHasErrors('nota');
+    }
+
+    public function test_el_pdf_del_dia_lleva_las_firmas(): void
+    {
+        $html = view('rutas.mi-salida.dia-pdf', [
+            'resumen' => app(DiaVendedor::class)->resumen($this->personaAna, $this->ana, '2026-11-10'),
+            'persona' => $this->personaAna, 'empresa' => 'Empresa de prueba', 'generado' => now(),
+        ])->render();
+        $this->assertStringContainsString('Entregó: ______________________', $html);
+        $this->assertStringContainsString('Recibió: ______________________', $html);
+        $this->assertStringContainsString('el vendedor entrega a la oficina el efectivo, los cheques y los quedan', $html);
+    }
+
+    public function test_no_vino_en_por_entregar_y_la_hoja_con_observaciones_para_firmar(): void
+    {
+        [$pedido, $dte] = $this->pedidoConFaltante();
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()
+            ->assertSee('No vino: 4 cajas de Galleta de prueba')
+            ->assertSee('href="'.route('rutas.por-entregar.hoja', $dte).'"', false);
+
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.hoja', $dte))->assertOk()
+            ->assertSee('Observaciones')
+            ->assertSee('Galleta de prueba: se pidieron 12, vinieron 8 (faltaron 4). Motivo: Sin existencia.')
+            ->assertSee('Recibe (gerente de la sala)')->assertSee('Volver a «Por entregar»')
+            ->assertDontSee('1.75');
+        // Mandado en parte (todavía va otro envío): no es faltante.
+        $pedido->update(['estado' => EstadoPedidoSala::Parcial]);
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.index'))->assertOk()->assertDontSee('No vino:');
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.hoja', $dte))->assertOk()
+            ->assertSee('Galleta de prueba: se pidieron 12, vinieron 8 (faltan 4). Va en otro envío.');
+
+        // Un CCF sin pedido no tiene hoja.
+        $this->actingAs($this->beto)->get(route('rutas.por-entregar.hoja', $this->ccf($this->salas['Santa Ana'])))->assertNotFound();
     }
 }

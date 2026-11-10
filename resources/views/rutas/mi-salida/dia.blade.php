@@ -30,6 +30,11 @@
     <div class="mt-3 {{ $caja }}">
         <h2 class="font-semibold">Quedan recibidos</h2>
         <p class="{{ $gris }}">{{ $resumen['quedan']['cantidad'] === 1 ? '1 factura' : $resumen['quedan']['cantidad'].' facturas' }}, {{ $dinero($resumen['quedan']['monto']) }}</p>
+        <ul class="mt-1 space-y-1 text-sm">
+            @foreach ($resumen['entregadas']->filter(fn ($e) => $e->quedan_numero || $e->quedan_fecha_pago) as $entrega)
+                <li>{{ $entrega->sala?->nombre }}{{ $entrega->quedan_numero ? ' · N.º '.$entrega->quedan_numero : '' }}{{ $entrega->quedan_fecha_pago ? ' · paga el '.$entrega->quedan_fecha_pago->format('d/m/Y') : '' }}</li>
+            @endforeach
+        </ul>
         @if ($resumen['portal']['cantidad'] > 0)
             <p class="mt-1 {{ $gris }}">Por el portal del supermercado: {{ $resumen['portal']['cantidad'] === 1 ? '1 factura' : $resumen['portal']['cantidad'].' facturas' }}, {{ $dinero($resumen['portal']['monto']) }}</p>
         @endif
@@ -63,5 +68,5 @@
         <a href="{{ route('rutas.mi-salida.dia.pdf') }}" class="inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-gray-300 bg-white px-4 py-3 text-lg font-semibold text-gray-700 hover:bg-gray-50 dark:border-ink-500 dark:bg-ink-800 dark:text-paper-100">Ver PDF del día</a>
         <a href="{{ route('rutas.mi-salida.index') }}" class="inline-flex min-h-11 items-center justify-center text-sm text-indigo-600 underline dark:text-indigo-300">Volver al inicio</a>
     </div>
-    <p class="mt-3 {{ $gris }}">El PDF lleva lo entregado, lo que no se pudo y lo cobrado. El dinero se entrega a la oficina con la liquidación.</p>
+    <p class="mt-3 {{ $gris }}">El PDF lleva lo entregado, lo que no se pudo y lo cobrado. Con él entregás a la oficina el efectivo, los cheques y los quedan, y lo firman los dos.</p>
 @endsection

@@ -46,7 +46,7 @@
     .vacio { color: #6b7280; padding: 8px 6px; }
     .firmas { width: 100%; margin-top: 50px; border-collapse: collapse; page-break-inside: avoid; }
     .firmas td { width: 50%; text-align: center; padding: 0 20px; border: none; }
-    .firmas .linea { border-top: 1px solid #374151; padding-top: 4px; }
+    .firmas .linea { padding-top: 4px; font-size: 11px; }
     .pie { margin-top: 18px; font-size: 8px; color: #6b7280; }
 </style>
 </head>
@@ -83,7 +83,15 @@
                     <td><span class="marca ok" aria-label="Entregado">E</span> {{ $entrega->sala?->nombre ?? 'Sala sin identificar' }}</td>
                     <td class="mono">{{ $entrega->dte?->numero_control }}</td>
                     <td>{{ $entrega->fecha_resultado?->format('H:i') }}</td>
-                    <td>{{ $entrega->forma_cobro?->label() ?? ($portal ? 'Por el portal' : 'Quedan') }}</td>
+                    <td>
+                        {{ $entrega->forma_cobro?->label() ?? ($portal ? 'Por el portal' : 'Quedan') }}
+                        @if ($entrega->quedan_numero || $entrega->quedan_fecha_pago)
+                            <br><span class="mono">{{ $entrega->quedan_numero ? 'N.º '.$entrega->quedan_numero : '' }}{{ $entrega->quedan_fecha_pago ? ' · paga '.$entrega->quedan_fecha_pago->format('d/m/Y') : '' }}</span>
+                        @endif
+                        @if ($entrega->nota)
+                            <br>Obs.: {{ $entrega->nota }}
+                        @endif
+                    </td>
                     <td class="num">${{ number_format((float) $entrega->dte?->total_pagar, 2) }}</td>
                 </tr>
             @empty
@@ -123,11 +131,11 @@
             @endif
         </tbody>
     </table>
-    <p class="aviso">El efectivo y los cheques se entregan a la oficina con la liquidación.</p>
+    <p class="aviso">Con esta hoja, el vendedor entrega a la oficina el efectivo, los cheques y los quedan. En el sistema no se marca nada más.</p>
 
     <table class="firmas"><tr>
-        <td><div class="linea">Entrega: {{ $persona->nombre }}</div></td>
-        <td><div class="linea">Recibe (oficina)</div></td>
+        <td><div class="linea">Entregó: ______________________</div></td>
+        <td><div class="linea">Recibió: ______________________</div></td>
     </tr></table>
 
     <p class="pie">Generado el {{ $generado->format('d/m/Y H:i') }}.</p>
