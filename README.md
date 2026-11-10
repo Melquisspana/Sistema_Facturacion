@@ -157,7 +157,7 @@ composer install
 cp .env.example .env
 php artisan key:generate
 php artisan migrate
-php artisan db:seed --class=CatalogosMhSeeder
+php artisan db:seed
 php artisan db:seed --class=UsuarioAdminInicialSeeder
 npm install
 npm run build

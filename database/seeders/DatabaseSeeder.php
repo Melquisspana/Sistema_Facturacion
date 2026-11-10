@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
             RolesSeeder::class,
         ]);
 
-        // El usuario administrador inicial y los permisos granulares se
-        // sembrarán en la fase de seguridad/usuarios.
+        // RolesSeeder ya deja cada rol con sus permisos. El administrador
+        // inicial se crea aparte con UsuarioAdminInicialSeeder.
     }
 }
