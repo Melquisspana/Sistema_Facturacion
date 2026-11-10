@@ -43,12 +43,33 @@ use Illuminate\Support\Facades\Mail;
  *
  * `gastos_resumenes.clave` es usuario + canal + ventana, y la fila se escribe ANTES
  * de tocar el transporte (outbox). Dos corridas de la misma ventana producen un
- * resumen. Lo que esto NO promete es exactitud absoluta del transporte: si el SMTP
- * corta después de aceptar, el estado queda `fallido` y hay que mirarlo antes de
- * reenviar, porque el mensaje pudo haber salido igual.
+ * resumen.
+ *
+ * ───────────────────────── Un fallido se reintenta ─────────────────────────
+ *
+ * Un resumen `fallido` se vuelve a intentar en las corridas siguientes —la misma
+ * fila, nunca otra—, con el contenido recalculado. Los frenos para no escribirle dos
+ * veces a la misma persona:
+ *
+ *   - como máximo {@see MAX_INTENTOS} intentos por resumen, contando el primero;
+ *   - solo el ÚLTIMO resumen de la persona y solo si es reciente: en cuanto toca uno
+ *     nuevo (el diario de mañana, el semanal siguiente), ese lo reemplaza;
+ *   - la fila se toma con un UPDATE condicionado al estado, así dos corridas a la vez
+ *     no reintentan el mismo.
+ *
+ * Lo que esto NO promete es exactitud absoluta del transporte: si el SMTP corta
+ * después de aceptar, el estado queda `fallido` aunque el mensaje haya salido, y el
+ * reintento lo manda otra vez. Entre un resumen repetido y uno perdido se elige el
+ * repetido, con ese tope de intentos.
  */
 final class EnviarResumenes
 {
+    /** Intentos por resumen, contando el primero. */
+    public const MAX_INTENTOS = 3;
+
+    /** Un fallido más viejo que esto ya no se reintenta: le toca al resumen siguiente. */
+    private const DIAS_DE_REINTENTO = 6;
+
     public function __construct(
         private ConsultaGastos $consulta,
         private ArmarAvisos $avisos,
@@ -56,11 +77,11 @@ final class EnviarResumenes
     ) {}
 
     /**
-     * @return array{preparados: int, enviados: int, simulados: int, fallidos: int, sin_pendientes: int, fuera_de_ventana: int}
+     * @return array{preparados: int, reintentados: int, enviados: int, simulados: int, fallidos: int, sin_pendientes: int, fuera_de_ventana: int}
      */
     public function enviar(CarbonImmutable $hoy): array
     {
-        $conteo = ['preparados' => 0, 'enviados' => 0, 'simulados' => 0, 'fallidos' => 0,
+        $conteo = ['preparados' => 0, 'reintentados' => 0, 'enviados' => 0, 'simulados' => 0, 'fallidos' => 0,
             'sin_pendientes' => 0, 'fuera_de_ventana' => 0];
 
         foreach ($this->avisos->destinatarios() as ['usuario' => $usuario, 'preferencias' => $prefs, 'ambitos' => $ambitos]) {
@@ -70,7 +91,15 @@ final class EnviarResumenes
 
             $ventana = $this->ventana($prefs->resumen, (int) $prefs->resumen_dia_semana, $hoy);
 
-            if ($ventana === null) {
+            // El que falló y sigue sin salir. Si hoy toca un resumen NUEVO, ese lo
+            // reemplaza: se reintenta solo el de la ventana de hoy, o el último cuando
+            // hoy no toca ninguno.
+            $fallido = $this->fallidoPorReintentar($usuario, $hoy);
+            if ($fallido !== null && $ventana !== null && $fallido->ventana !== $ventana) {
+                $fallido = null;
+            }
+
+            if ($ventana === null && $fallido === null) {
                 $conteo['fuera_de_ventana']++;
 
                 continue;
@@ -81,6 +110,17 @@ final class EnviarResumenes
             if ($contenido['obligaciones'] === 0) {
                 // Nada que decir: ni fila ni correo.
                 $conteo['sin_pendientes']++;
+
+                continue;
+            }
+
+            if ($fallido !== null) {
+                if (! $this->retomar($fallido, $contenido)) {
+                    continue; // otra corrida lo tomó primero
+                }
+
+                $conteo['reintentados']++;
+                $conteo[$this->entregar($usuario, $fallido->refresh(), $contenido)]++;
 
                 continue;
             }
@@ -187,6 +227,43 @@ final class EnviarResumenes
         return $entro === 1 ? Resumen::where('clave', $clave)->first() : null;
     }
 
+    /**
+     * El último resumen de la persona, si falló y todavía se puede reintentar.
+     *
+     * Solo el ÚLTIMO: si después de él ya hay otro resumen, ese es el vigente y el
+     * viejo no se resucita.
+     */
+    private function fallidoPorReintentar(User $usuario, CarbonImmutable $hoy): ?Resumen
+    {
+        $ultimo = Resumen::where('usuario_id', $usuario->id)->where('canal', 'correo')->orderByDesc('id')->first();
+
+        $reintentable = $ultimo !== null
+            && $ultimo->estado === 'fallido'
+            && $ultimo->intentos < self::MAX_INTENTOS
+            && $ultimo->created_at->gte($hoy->subDays(self::DIAS_DE_REINTENTO));
+
+        return $reintentable ? $ultimo : null;
+    }
+
+    /**
+     * Toma un fallido para reintentarlo y le pone el contenido de ahora.
+     *
+     * El UPDATE exige que siga `fallido` y con los mismos intentos: de dos corridas
+     * simultáneas, solo una lo cambia y la otra se retira sin enviar.
+     */
+    private function retomar(Resumen $resumen, array $contenido): bool
+    {
+        return DB::table('gastos_resumenes')
+            ->where('id', $resumen->id)
+            ->where('estado', 'fallido')
+            ->where('intentos', $resumen->intentos)
+            ->update([
+                'estado' => 'preparado',
+                'obligaciones' => $contenido['obligaciones'],
+                'contenido' => json_encode($contenido, JSON_THROW_ON_ERROR),
+            ]) === 1;
+    }
+
     /** @return 'enviados'|'simulados'|'fallidos' */
     private function entregar(User $usuario, Resumen $resumen, array $contenido): string
     {
@@ -213,12 +290,12 @@ final class EnviarResumenes
             app(ConfiguracionCorreoRuntime::class)->aplicar();
             Mail::to($usuario->email)->send(new ResumenGastosCorreo($usuario->name, $contenido));
 
-            $resumen->update(['estado' => 'enviado', 'intentos' => $resumen->intentos + 1, 'enviado_at' => now()]);
+            $resumen->update(['estado' => 'enviado', 'intentos' => $resumen->intentos + 1, 'error' => null, 'enviado_at' => now()]);
 
             return 'enviados';
         } catch (\Throwable $e) {
-            // Puede haber salido igual: el estado dice «falló», no «no llegó». Reenviar
-            // sin mirar es como se mandan dos correos por lo mismo.
+            // Puede haber salido igual: el estado dice «falló», no «no llegó». Por eso
+            // el reintento tiene tope ({@see MAX_INTENTOS}) y no insiste para siempre.
             $resumen->update([
                 'estado' => 'fallido',
                 'intentos' => $resumen->intentos + 1,

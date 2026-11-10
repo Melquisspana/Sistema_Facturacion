@@ -17,8 +17,10 @@ use App\Services\Gastos\RegistrarPago;
 use App\Support\Correo\CandadoCorreoReal;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Support\Testing\Fakes\MailFake;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -388,6 +390,132 @@ class AvisosTest extends TestCase
 
         $this->assertSame(0, $segunda['preparados']);
         $this->assertSame(1, Resumen::count());
+    }
+
+    // ──────────────────────── Un resumen que falla se reintenta ────────────────────────
+
+    /** El correo sale de verdad (sin el candado de desarrollo), sin tocar el entorno. */
+    private function permitirCorreoReal(): void
+    {
+        $this->app->instance(CandadoCorreoReal::class, new class extends CandadoCorreoReal
+        {
+            public function debeSimular(): bool
+            {
+                return false;
+            }
+        });
+    }
+
+    /**
+     * El servidor de correo vuelve a responder. No alcanza con `Mail::fake()`: después
+     * de `Mail::shouldReceive()` la fachada es un doble sin el manager real debajo.
+     */
+    private function correoRestablecido(): void
+    {
+        Mail::swap(new MailFake(new MailManager($this->app)));
+    }
+
+    /** Deja al usuario con el resumen semanal del lunes 09/03/2026 en estado «fallido». */
+    private function resumenSemanalFallido(): User
+    {
+        $this->permitirCorreoReal();
+        $u = $this->operador();
+        $this->preferencias($u, ['correo' => true, 'resumen' => 'semanal', 'resumen_dia_semana' => 1]);
+        $this->gasto($u, [], [['100.00', '2026-03-01']]);
+
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('El servidor de correo no responde'));
+        $lunes = $this->enviar('2026-03-09');
+
+        $this->assertSame(1, $lunes['fallidos']);
+        $this->assertSame('fallido', Resumen::firstOrFail()->estado);
+
+        return $u;
+    }
+
+    /**
+     * Antes, un resumen semanal que fallaba el lunes se perdía: la fila de esa ventana
+     * ya existía y nadie volvía a intentarlo hasta la semana siguiente.
+     */
+    public function test_un_resumen_fallido_se_reintenta_en_la_corrida_siguiente_y_sale_una_sola_vez(): void
+    {
+        $u = $this->resumenSemanalFallido();
+
+        // Martes: no toca resumen nuevo, pero el del lunes quedó sin salir.
+        $this->correoRestablecido();
+        $martes = $this->enviar('2026-03-10');
+
+        $this->assertSame(1, $martes['reintentados']);
+        $this->assertSame(1, $martes['enviados']);
+        $this->assertSame(0, $martes['preparados'], 'No es un resumen nuevo: es el mismo.');
+        $this->assertSame(1, Resumen::count());
+
+        $resumen = Resumen::firstOrFail();
+        $this->assertSame('enviado', $resumen->estado);
+        $this->assertSame(2, $resumen->intentos);
+        $this->assertNull($resumen->error);
+        Mail::assertSent(ResumenGastosCorreo::class, 1);
+
+        // Miércoles: ya salió. No se manda otra vez.
+        $miercoles = $this->enviar('2026-03-11');
+        $this->assertSame(0, $miercoles['reintentados']);
+        Mail::assertSent(ResumenGastosCorreo::class, 1);
+    }
+
+    public function test_un_resumen_que_sigue_fallando_se_deja_de_reintentar_al_tercer_intento(): void
+    {
+        $this->resumenSemanalFallido();
+
+        // El servidor sigue caído: martes y miércoles son los intentos 2 y 3.
+        $this->assertSame(1, $this->enviar('2026-03-10')['reintentados']);
+        $this->assertSame(1, $this->enviar('2026-03-11')['reintentados']);
+        $this->assertSame(3, Resumen::firstOrFail()->intentos);
+
+        // Jueves: ya no. Queda «fallido» para que alguien lo mire.
+        $this->correoRestablecido();
+        $jueves = $this->enviar('2026-03-12');
+
+        $this->assertSame(0, $jueves['reintentados']);
+        $this->assertSame('fallido', Resumen::firstOrFail()->estado);
+        Mail::assertNothingSent();
+    }
+
+    /** Si entre tanto se pagó todo, el reintento no reclama por correo una deuda que ya no existe. */
+    public function test_el_reintento_recalcula_y_no_manda_nada_si_ya_no_hay_pendientes(): void
+    {
+        $u = $this->resumenSemanalFallido();
+
+        $cuota = Gasto::firstOrFail()->cuotas->first();
+        app(RegistrarPago::class)->registrar($u, [
+            'clave' => (string) Str::uuid(), 'importe' => '100.00', 'fecha' => '2026-03-09',
+            'metodo' => 'transferencia', 'pagado_por' => $u->id, 'referencia' => null, 'sin_comprobante' => 'sin recibo',
+        ], [['cuota_id' => $cuota->id, 'importe' => '100.00']]);
+
+        $this->correoRestablecido();
+        $martes = $this->enviar('2026-03-10');
+
+        $this->assertSame(0, $martes['reintentados']);
+        $this->assertSame(1, $martes['sin_pendientes']);
+        Mail::assertNothingSent();
+    }
+
+    /** Con resumen diario no hace falta reintentar el de ayer: el de hoy lo reemplaza. */
+    public function test_un_resumen_nuevo_reemplaza_al_fallido_de_una_ventana_anterior(): void
+    {
+        $this->permitirCorreoReal();
+        $u = $this->operador();
+        $this->preferencias($u, ['correo' => true, 'resumen' => 'diario']);
+        $this->gasto($u, [], [['100.00', '2026-03-01']]);
+
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('El servidor de correo no responde'));
+        $this->enviar('2026-03-09');
+
+        $this->correoRestablecido();
+        $hoy = $this->enviar('2026-03-10');
+
+        $this->assertSame(1, $hoy['preparados']);
+        $this->assertSame(0, $hoy['reintentados']);
+        Mail::assertSent(ResumenGastosCorreo::class, 1);
+        $this->assertSame(['fallido', 'enviado'], Resumen::orderBy('id')->pluck('estado')->all());
     }
 
     public function test_el_resumen_semanal_sale_solo_el_dia_elegido(): void
