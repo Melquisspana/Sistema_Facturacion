@@ -98,7 +98,7 @@ class EvidenciaEntreCircuitosTest extends TestCase
             ->view('ppq.lotes.conciliacion', [
                 'lote' => $lote, 'reporte' => $reporte, 'archivo' => $archivo->nombre, 'totalFilas' => count($filas),
             ]);
-        $html->assertSee('Este mismo archivo ya se aplicó en el seguimiento de Cobros.');
+        $html->assertSee('Este mismo archivo ya se aplicó en Facturas por cobrar.');
     }
 
     /**

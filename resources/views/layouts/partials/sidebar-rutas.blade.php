@@ -1,6 +1,6 @@
 {{-- Sidebar del área Rutas (nombre técnico «rutas»: prefijo /rutas, permisos rutas.*,
      App\Enums\AreaSistema::Rutas). Deliberadamente SIN enlaces de Facturación ni de
-     Planta. Seguimiento de facturas tampoco: vive en la barra de Facturación (/cobros, /ppq) y el
+     Planta. El grupo Seguimiento (Facturas por cobrar) tampoco: vive en la barra de Facturación (/cobros, /ppq) y el
      usuario pidió sacarlo de acá (28/10/2026); su módulo y sus permisos no cambian.
 
      Ocultar no autoriza: cada grupo de rutas lleva su propio middleware. --}}

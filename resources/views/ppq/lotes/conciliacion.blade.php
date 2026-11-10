@@ -33,7 +33,7 @@
             @if (! empty($reporte['enCobros']))
                 @php $enCobros = $reporte['enCobros']; @endphp
                 <div class="rounded-md bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800" role="status">
-                    <p><strong>Este mismo archivo ya se aplicó en el seguimiento de Cobros.</strong></p>
+                    <p><strong>Este mismo archivo ya se aplicó en Facturas por cobrar.</strong></p>
                     <p class="mt-1">
                         @if ($enCobros['pagos'] > 0)
                             Registró {{ $enCobros['pagos'] }} pago(s) en {{ $enCobros['documentos'] }} documento(s)
