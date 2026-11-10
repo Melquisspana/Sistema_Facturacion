@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "La Negrita · arquitectura del sistema",
+    "title": "Sistema de facturación · arquitectura",
     "quality_profile": "showcase",
     "animation": "trace",
     "visual_preset": "signal-flow",
@@ -16,7 +16,7 @@
       "id": "pantallas",
       "type": "frontend",
       "label": "Pantallas web",
-      "sublabel": "Blade · Livewire · Alpine",
+      "sublabel": "Blade · Alpine",
       "pos": [
         40,
         320
@@ -211,8 +211,8 @@
       "dot": "cyan",
       "title": "Áreas del sistema",
       "items": [
-        "Facturación, exportaciones y compras",
-        "Rutas, planta, asistencia y PPQ"
+        "Facturación, cobros, exportaciones y compras",
+        "Rutas, planta, personal, planilla y gastos"
       ]
     },
     {
@@ -227,7 +227,7 @@
       "dot": "amber",
       "title": "Alcance de este mapa",
       "items": [
-        "Lectura del código local · 7 sep 2026",
+        "Lectura del código · 10 nov 2026",
         "No verifica servicios ni configuración activa"
       ]
     }

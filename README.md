@@ -126,6 +126,7 @@ Organización del código:
 
 Para profundizar:
 
+- [Mapa de arquitectura](docs/diagramas/arquitectura.visual-check.1440x900.light.png): pantallas, aplicación, servicios de DTE, Hacienda y cola de correos (diagrama).
 - [Flujo de emisión de un DTE](docs/diagramas/emision-dte.visual-check.1440x900.light.png): del borrador a la respuesta de Hacienda (diagrama).
 - [Transmisión a Hacienda](docs/TRANSMISION_DTE.md), [invalidación](docs/INVALIDACION_DTE.md) y [firmador local](docs/FIRMADOR_LOCAL.md).
 - [Control de asistencia](docs/CONTROL_ASISTENCIA.md) y [diseño del módulo de rutas](docs/DISENO_MODULO_RUTAS_20260926.md).
