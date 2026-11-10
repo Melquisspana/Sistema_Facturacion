@@ -1,6 +1,9 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Marcas de hoy</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-paper-100">Marcas de hoy</h2>
+            <a href="{{ route('asistencia.hoja') }}" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-ink-600 dark:bg-ink-800 dark:text-paper-100 dark:hover:bg-ink-700">Hoja para imprimir</a>
+        </div>
     </x-slot>
     <div class="py-8">
         <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
@@ -51,6 +54,27 @@
                     @endforelse
                 </ul>
             </div>
+            {{-- Avisos suaves, a propósito al pie y en gris: solo informan, no frenan nada ni
+                 tocan Planilla, y no salen en la hoja impresa. El horario sale de Configuración. --}}
+            @if ($avisos['tardanzas'] !== [] || $avisos['horas'] !== [])
+                <div class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600">
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-paper-100">Para tener en cuenta</h3>
+                    <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-paper-300">
+                        @foreach ($avisos['tardanzas'] as $aviso)
+                            <li>{{ $aviso['nombre'] }} llegó después de las {{ $avisos['limite'] }} en {{ $aviso['tarde'] }} de los últimos {{ $aviso['dias'] }} días que marcó.</li>
+                        @endforeach
+                        @foreach ($avisos['horas'] as $aviso)
+                            <li>Del {{ $avisos['quincena']['desde']->format('d/m/Y') }} al {{ $avisos['quincena']['hasta']->format('d/m/Y') }}, {{ $aviso['nombre'] }} tiene {{ $aviso['faltan'] }} h menos de lo esperado.@unless ($aviso['exacto']) Algún día quedó sin salida marcada.@endunless</li>
+                        @endforeach
+                    </ul>
+                    <p class="mt-3 text-xs text-gray-500 dark:text-paper-300">
+                        Es solo un aviso: no cambia la planilla. No conoce los feriados.
+                        @can('configuracion.gestionar')
+                            <a href="{{ route('configuracion.opciones.asistencia') }}" class="text-indigo-600 hover:underline dark:text-indigo-300">Cambiar el horario</a>
+                        @endcan
+                    </p>
+                </div>
+            @endif
         </div>
     </div>
 </x-app-layout>

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Asistencia\AsistenciaDashboardController;
 use App\Http\Controllers\Asistencia\EmpleadoController;
 use App\Http\Controllers\Asistencia\EnrolamientoController;
+use App\Http\Controllers\Asistencia\HojaAsistenciaController;
 use App\Http\Controllers\Asistencia\HuellaController;
 use App\Http\Controllers\Asistencia\JornadaController;
 use App\Http\Controllers\Asistencia\MarcacionController;
@@ -99,6 +100,9 @@ Route::middleware(['auth', 'modulo.asistencia', 'permission:asistencia.ver'])
         | Basta `asistencia.ver`: consultar no escribe nada.
         */
         Route::get('jornadas', [JornadaController::class, 'index'])->name('jornadas.index');
+
+        // Hoja diaria para imprimir y firmar. Basta `asistencia.ver`: no escribe nada.
+        Route::get('hoja', [HojaAsistenciaController::class, 'show'])->name('hoja');
 
         Route::get('reporte', [ReporteController::class, 'index'])->name('reporte');
         Route::get('reporte/excel', [ReporteController::class, 'excel'])->name('reporte.excel');
