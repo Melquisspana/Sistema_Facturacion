@@ -9,11 +9,22 @@
     $pvUnico = $estabUnico ? \App\Support\Dte\ResuelveEmisorUnico::puntoVentaOculto($estabUnico->id) : null;
     $ocultarEstab = (bool) $estabUnico;
     $ocultarPv = (bool) $pvUnico;
+
+    // «Facturar» un pedido (desde «Llegó de la fábrica» o el detalle del pedido): llegan
+    // $pedido y $propuesta (FacturarPedido::propuesta). La sala va fija, la OC del pedido es
+    // el valor inicial (old() manda), abajo va «Lo que llegó» y el POST va a
+    // facturacion.pedidos.facturar, que vuelve a revisar todo. Sin $pedido, nada cambia.
+    $conPedido = isset($pedido);
+    if ($conPedido) {
+        $salaPedido = $pedido->sala;
+        $sinNada = $propuesta['envios']->isEmpty();
+        $bloqueado = ! $pedido->estaVigente() || $sinNada || $propuesta['problemas'] !== [] || $propuesta['borrador'] !== null;
+    }
 @endphp
 
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Nuevo CCF (borrador)</h2>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ $conPedido ? 'Facturar el pedido N.º '.$pedido->id : 'Nuevo CCF (borrador)' }}</h2>
     </x-slot>
 
     <div class="py-8">
@@ -47,17 +58,17 @@
                     </div>
                 @endif
 
-                <form method="POST" action="{{ route('facturacion.store-ccf') }}"
+                <form method="POST" action="{{ $conPedido ? route('facturacion.pedidos.facturar', $pedido) : route('facturacion.store-ccf') }}"
                       x-data="{
                           opciones: @js($opcionesCliente),
                           ordenesPorSala: @js((object) ($ordenesPorSala ?? [])),
-                          clienteId: @js((string) old('cliente_id', '')),
-                          sucursalId: @js((string) old('cliente_sucursal_id', '')),
+                          clienteId: @js((string) ($conPedido ? $salaPedido?->cliente_id : old('cliente_id', ''))),
+                          sucursalId: @js((string) ($conPedido ? $salaPedido?->id : old('cliente_sucursal_id', ''))),
                           buscar: '',
-                          ordenElegida: @js((string) old('numero_orden_compra', '')),
+                          ordenElegida: @js((string) old('numero_orden_compra', $conPedido ? $propuesta['oc'] : '')),
                           abierto: false,
                           esAgente: false,
-                          requiereOc: false,
+                          requiereOc: @js($conPedido && \App\Support\Dte\ReglaOrdenCompra::requerida($salaPedido?->cliente, $salaPedido)),
                           descuento: '0.00',
                           condicionLabel: '—',
                           init() {
@@ -117,6 +128,18 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="md:col-span-2" @click.outside="abierto = false">
+                            @if ($conPedido)
+                            {{-- La sala y el cliente salen del pedido y no se cambian (el servidor los toma de ahí). --}}
+                            <p class="block font-medium text-sm text-gray-700">Cliente (contribuyente) / sala</p>
+                            <input type="hidden" name="cliente_id" value="{{ $salaPedido?->cliente_id }}">
+                            <input type="hidden" name="cliente_sucursal_id" value="{{ $salaPedido?->id }}">
+                            <p class="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                                {{ $salaPedido?->cliente?->nombre }} — {{ $salaPedido?->nombre }}{{ $salaPedido?->codigo ? ' · '.$salaPedido->codigo : '' }}
+                            </p>
+                            <p class="mt-1 text-xs text-gray-500">Sale del pedido N.º {{ $pedido->id }}: no se cambia.</p>
+                            <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
+                            <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
+                            @else
                             <x-input-label for="cliente_buscar" value="Cliente (contribuyente) / sala *" />
 
                             {{-- Valores reales enviados al servidor --}}
@@ -156,6 +179,7 @@
                             <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />
                             @if (empty($opcionesCliente))
                                 <p class="mt-1 text-xs text-amber-600">No hay clientes contribuyentes activos. Crea uno en Clientes.</p>
+                            @endif
                             @endif
                         </div>
 
@@ -229,10 +253,17 @@
                                        ? 'Este cliente/sala requiere número de orden de compra para emitir el CCF. No se podrá generar el documento sin ella.'
                                        : 'Si la sala entrega una orden de compra, anótela aquí; quedará en el apéndice del DTE.'"></p>
                                 <x-text-input id="numero_orden_compra" name="numero_orden_compra" type="text"
-                                              class="mt-2 block w-full md:w-2/3" :value="old('numero_orden_compra')"
+                                              class="mt-2 block w-full md:w-2/3" :value="old('numero_orden_compra', $conPedido ? $propuesta['oc'] : null)"
                                               x-ref="ordenCompra" x-bind:required="requiereOc" x-on:input="ordenElegida = $event.target.value"
                                               placeholder="N.º de orden de compra" />
                                 <x-input-error :messages="$errors->get('numero_orden_compra')" class="mt-1" />
+                                @if ($conPedido && $propuesta['oc_con_ccf'])
+                                    <p class="mt-2 text-sm text-amber-800">
+                                        La OC del pedido ya tiene un CCF:
+                                        <a href="{{ route('facturacion.show', $propuesta['oc_con_ccf']) }}" class="font-semibold underline">abrirlo</a>.
+                                        Revisá que no se facture dos veces.
+                                    </p>
+                                @endif
 
                                 {{-- Órdenes que llegaron por correo para esta sala y no tienen CCF (de la
                                      más nueva a la más vieja). Elegir una llena el campo; se puede
@@ -277,10 +308,22 @@
                         </div>
                     </div>
 
+                    @if ($conPedido)
+                        @include('facturacion.partials.lo-que-llego', ['pedido' => $pedido, 'propuesta' => $propuesta, 'sinNada' => $sinNada])
+
+                        {{-- Pie de la guía: Cancelar a la izquierda (vuelve a donde se estaba: la
+                             lista o la ficha del pedido, $cancelar) y el principal a la derecha. --}}
+                        <div class="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+                            <a href="{{ $cancelar }}"
+                               class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</a>
+                            <x-primary-button id="crear-borrador" :disabled="$bloqueado" class="min-h-11 justify-center disabled:cursor-not-allowed disabled:opacity-50">Crear borrador</x-primary-button>
+                        </div>
+                    @else
                     <div class="flex items-center gap-3">
                         <x-primary-button>Crear CCF</x-primary-button>
                         <a href="{{ route('facturacion.index') }}" class="text-sm text-gray-500 hover:underline">Cancelar</a>
                     </div>
+                    @endif
                 </form>
             </div>
         </div>

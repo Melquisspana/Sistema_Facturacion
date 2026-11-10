@@ -232,14 +232,26 @@ class LlegoDeFabricaTest extends TestCase
         $this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08');
         $this->envio($pedido, [$this->galleta->id => '4'], '2026-11-09');
 
-        // Hoy llegaron 4; los 6 del 08/11 se facturaron ese día con su hoja.
+        // Hoy llegaron 4 y el 08/11 llegaron 6. Ninguno se facturó: «Facturar» lleva los 10.
         $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
-            ->assertSee('También tuvo envíos otros días: facturá solo lo que llegó el 09/11.')
+            ->assertSee('También tuvo envíos otros días.')
+            ->assertSee('«Facturar» lleva todo lo que sigue sin facturar, también lo de otros días.')
             ->assertSeeInOrder(['Llegó el 09/11', 'Total', 'Galleta de prueba', '10', '4', '10']);
 
         $this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08']))->assertOk()
-            ->assertSee('facturá solo lo que llegó el 08/11.')
+            ->assertSee('También tuvo envíos otros días.')
             ->assertSeeInOrder(['Llegó el 08/11', 'Total', 'Galleta de prueba', '10', '6', '10']);
+
+        // Lo del 08/11 ya facturado: no hace falta avisar que «Facturar» lo lleva.
+        $this->facturado([$pedido->envios()->where('numero', 1)->sole()], 'aceptado');
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('También tuvo envíos otros días.')
+            ->assertDontSee('también lo de otros días');
+
+        // Con el filtro «Sin facturar», la columna aparte es lo que va en el CCF.
+        $this->get(route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]))->assertOk()
+            ->assertSee('Una parte ya se facturó: «Por facturar» es lo que va en el CCF.')
+            ->assertSeeInOrder(['Por facturar', 'Total', 'Galleta de prueba', '10', '4', '10']);
     }
 
     public function test_con_envios_de_un_solo_dia_no_agrega_columna_ni_aviso(): void
@@ -318,5 +330,241 @@ class LlegoDeFabricaTest extends TestCase
             ->assertSee('Sala de prueba Norte')
             ->assertDontSee('Imprimir hoja')
             ->assertDontSee('border-t border-gray-100 pt-4', false);
+    }
+
+    /** Un CCF hecho para esos envíos (como lo deja FacturarPedido), en el estado pedido. */
+    private function facturado(array $envios, string $estado = 'borrador', bool $borrado = false): Dte
+    {
+        $empresa = Empresa::firstOrCreate(['razon_social' => 'Empresa de prueba'], ['ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::firstOrCreate(['codigo' => 'M001'], ['empresa_id' => $empresa->id, 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::firstOrCreate(['codigo' => 'P001'], ['establecimiento_id' => $estab->id, 'nombre' => 'Caja', 'activo' => true]);
+        $dte = (new Dte)->forceFill([
+            'tipo_dte' => TipoDte::CreditoFiscal->value, 'ambiente' => '00', 'estado' => $estado,
+            'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $envios[0]->pedido->sala->cliente_id,
+            'numero_control' => $estado === 'borrador' ? null : 'DTE-03-M001P001-0000000000000'.str_pad((string) (Dte::withTrashed()->count() + 1), 2, '0', STR_PAD_LEFT),
+            'fecha_emision' => '2026-11-09', 'hora_emision' => '08:00:00', 'total_pagar' => 10,
+        ]);
+        $dte->save();
+        foreach ($envios as $envio) {
+            $envio->update(['dte_id' => $dte->id]);
+        }
+        if ($borrado) {
+            $dte->delete();
+        }
+
+        return $dte;
+    }
+
+    public function test_sin_facturar_lista_lo_que_llego_cualquier_dia_y_no_tiene_ccf(): void
+    {
+        $ayer = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '3']);
+        $this->envio($ayer, [$this->galleta->id => '3'], '2026-11-07');
+        $hecho = $this->pedido($this->sala('Sala de prueba Sur', '9002'), [$this->galleta->id => '3']);
+        $this->facturado([$this->envio($hecho, [$this->galleta->id => '3'], '2026-11-08')], 'aceptado');
+        $borrado = $this->pedido($this->sala('Sala de prueba Oeste', '9003'), [$this->galleta->id => '2']);
+        $this->facturado([$this->envio($borrado, [$this->galleta->id => '2'], '2026-11-08')], borrado: true);
+        $anulado = $this->pedido($this->sala('Sala de prueba Este', '9004'), [$this->galleta->id => '2']);
+        $this->envio($anulado, [$this->galleta->id => '2'], '2026-11-08', anulado: true);
+
+        $respuesta = $this->get(route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]))->assertOk()
+            ->assertViewHas('sinFacturar', true);
+
+        $this->assertSame([$ayer->id, $borrado->id], $respuesta->viewData('pedidos')->pluck('id')->all());
+        $this->get(route('facturacion.llego-de-fabrica', ['sin_facturar' => 'x']))->assertSessionHasErrors('sin_facturar');
+    }
+
+    public function test_cada_tarjeta_trae_su_estado_de_facturacion(): void
+    {
+        $porFacturar = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '3']);
+        $this->envio($porFacturar, [$this->galleta->id => '3']);
+        $conBorrador = $this->pedido($this->sala('Sala de prueba Sur', '9002'), [$this->galleta->id => '3']);
+        $borrador = $this->facturado([$this->envio($conBorrador, [$this->galleta->id => '3'])]);
+        $conCcf = $this->pedido($this->sala('Sala de prueba Oeste', '9003'), [$this->galleta->id => '2']);
+        $ccf = $this->facturado([$this->envio($conCcf, [$this->galleta->id => '2'])], 'aceptado');
+
+        $facturacion = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertViewHas('sinFacturar', false)->viewData('facturacion');
+
+        $this->assertCount(1, $facturacion[$porFacturar->id]['por_facturar']);
+        $this->assertNull($facturacion[$porFacturar->id]['borrador']);
+        $this->assertCount(0, $facturacion[$conBorrador->id]['por_facturar']);
+        $this->assertSame($borrador->id, $facturacion[$conBorrador->id]['borrador']->id);
+        $this->assertSame([$ccf->id], $facturacion[$conCcf->id]['facturados']->modelKeys());
+    }
+
+    public function test_avisa_cuantos_pedidos_de_otros_dias_siguen_sin_facturar(): void
+    {
+        $hoy = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '3']);
+        $this->envio($hoy, [$this->galleta->id => '3']);
+        foreach (['9002' => '2026-11-07', '9003' => '2026-11-08'] as $codigo => $dia) {
+            $this->envio($this->pedido($this->sala('Sala de prueba '.$codigo, $codigo), [$this->galleta->id => '1']), [$this->galleta->id => '1'], $dia);
+        }
+        $hecho = $this->pedido($this->sala('Sala de prueba Sur', '9004'), [$this->galleta->id => '3']);
+        $this->facturado([$this->envio($hecho, [$this->galleta->id => '3'], '2026-11-08')], 'aceptado');
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()->assertViewHas('otrosDiasSinFacturar', 2);
+        $this->get(route('facturacion.llego-de-fabrica', ['fecha' => '2026-11-08']))->assertOk()->assertViewHas('otrosDiasSinFacturar', 2);
+    }
+
+    public function test_la_tarjeta_dice_como_va_la_facturacion_y_solo_quien_factura_ve_el_boton(): void
+    {
+        $porFacturar = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '3']);
+        $this->envio($porFacturar, [$this->galleta->id => '3']);
+        $conBorrador = $this->pedido($this->sala('Sala de prueba Sur', '9002'), [$this->galleta->id => '3']);
+        $borrador = $this->facturado([$this->envio($conBorrador, [$this->galleta->id => '3'])]);
+        $conCcf = $this->pedido($this->sala('Sala de prueba Oeste', '9003'), [$this->galleta->id => '2']);
+        $ccf = $this->facturado([$this->envio($conCcf, [$this->galleta->id => '2'])], 'aceptado');
+        $facturar = fn (PedidoSala $p) => route('facturacion.create-ccf', ['pedido' => $p->id]);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Por facturar')
+            ->assertSee($facturar($porFacturar), false)
+            ->assertDontSee($facturar($conBorrador), false)
+            ->assertDontSee($facturar($conCcf), false)
+            ->assertSee('Borrador abierto')
+            ->assertSee(route('facturacion.edit', $borrador), false)
+            ->assertSee('Facturado en CCF n.º …'.substr($ccf->numero_control, -4))
+            ->assertSee(route('facturacion.show', $ccf), false);
+
+        // Jefatura mira pero no factura: sin botón.
+        $jefatura = User::factory()->create(['activo' => true])->assignRole('jefatura');
+        $this->actingAs($jefatura)->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Por facturar')
+            ->assertDontSee($facturar($porFacturar), false);
+    }
+
+    public function test_el_ccf_del_mismo_pedido_no_avisa_que_la_oc_ya_tiene_ccf_si_no_queda_nada(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000123');
+        $dte = $this->facturado([$this->envio($pedido, [$this->galleta->id => '3'])]);
+        Dte::whereKey($dte->id)->update(['numero_orden_compra' => '26119001000123']);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertDontSee('Esa OC ya tiene un CCF.')
+            ->assertSee('Lista');
+
+        // Llega otro envío: ahora sí avisa, porque «Facturar» haría otro CCF con la misma OC.
+        $this->envio($pedido, [$this->galleta->id => '2']);
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Esa OC ya tiene un CCF.');
+    }
+
+    public function test_el_ccf_rechazado_del_pedido_no_avisa_que_la_oc_ya_tiene_ccf(): void
+    {
+        $norte = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '5'], '26119001000123');
+        $rechazado = $this->facturado([$this->envio($norte, [$this->galleta->id => '5'])], 'rechazado');
+        Dte::whereKey($rechazado->id)->update(['numero_orden_compra' => '26119001000123']);
+
+        // Hacienda lo rechazó: hay que volver a facturar y la tarjeta no dice lo contrario.
+        $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Por facturar')
+            ->assertSee(route('facturacion.create-ccf', ['pedido' => $norte->id]), false)
+            ->assertDontSee('Esa OC ya tiene un CCF.')
+            ->assertDontSee('Revisar OC');
+        $this->assertTrue($respuesta->viewData('oc')[$norte->id]['lista']);
+
+        // Un CCF hecho a mano con la misma OC, aunque sea anterior al rechazado, sigue avisando.
+        $sala = $this->sala('Sala de prueba Sur', '9002', exigeOc: true);
+        $sur = $this->pedido($sala, [$this->galleta->id => '5'], '26119002000456');
+        $envio = $this->envio($sur, [$this->galleta->id => '5']);
+        $aMano = $this->facturado([$envio], 'aceptado');
+        $envio->update(['dte_id' => null]);
+        $rechazadoSur = $this->facturado([$envio], 'rechazado');
+        Dte::whereKey([$aMano->id, $rechazadoSur->id])->update(['numero_orden_compra' => '26119002000456']);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSeeInOrder(['Sala de prueba Sur', 'Revisar OC', 'Esa OC ya tiene un CCF.']);
+    }
+
+    public function test_el_pedido_facturado_con_una_oc_del_correo_muestra_la_oc_de_su_ccf(): void
+    {
+        // Norte: quedan otras OC del correo de la sala. Sur: no queda ninguna.
+        $salaNorte = $this->sala('Sala de prueba Norte', '9001', exigeOc: true);
+        $salaSur = $this->sala('Sala de prueba Sur', '9002', exigeOc: true);
+        $this->ocDelCorreo($salaNorte, '43010000000123');
+        $this->ocDelCorreo($salaNorte, '43010000000456');
+        $this->ocDelCorreo($salaSur, '43020000000789');
+        $ccf = [];
+        foreach ([[$salaNorte, '43010000000123'], [$salaSur, '43020000000789']] as [$sala, $numero]) {
+            $pedido = $this->pedido($sala, [$this->galleta->id => '5']);
+            $dte = $this->facturado([$this->envio($pedido, [$this->galleta->id => '5'])]);
+            Dte::whereKey($dte->id)->update(['numero_orden_compra' => $numero]);
+            $ccf[$pedido->id] = [$dte, $numero];
+        }
+
+        foreach (['borrador', 'aceptado'] as $estado) {
+            Dte::query()->update(['estado' => $estado]);
+            $respuesta = $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+                ->assertSeeInOrder(['Sala de prueba Norte', 'Lista', 'OC del CCF', '43010000000123'])
+                ->assertSeeInOrder(['Sala de prueba Sur', 'Lista', 'OC del CCF', '43020000000789'])
+                ->assertDontSee('Esperando OC')
+                ->assertDontSee('La sala pide OC y todavía no llegó.')
+                ->assertDontSee('43010000000456');
+            foreach ($ccf as $pedidoId => [, $numero]) {
+                $this->assertSame([$numero], $respuesta->viewData('oc')[$pedidoId]['propuestas'], $estado);
+            }
+        }
+    }
+
+    public function test_con_un_borrador_abierto_y_un_envio_nuevo_la_tarjeta_no_dice_que_ya_se_facturo(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '10']);
+        $this->facturado([$this->envio($pedido, [$this->galleta->id => '6'], '2026-11-08')]);
+        $this->envio($pedido, [$this->galleta->id => '4']);
+        $sinFacturar = route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]);
+
+        $this->get($sinFacturar)->assertOk()
+            ->assertSee('Llegó algo después del borrador. Borralo y tocá «Facturar» otra vez: así sale un solo CCF con todo.')
+            ->assertDontSee('Una parte ya se facturó');
+
+        // Con el CCF ya hecho, sí: lo que sigue sin facturar va en otro CCF.
+        Dte::query()->update(['estado' => 'aceptado']);
+        $this->get($sinFacturar)->assertOk()->assertSee('Una parte ya se facturó');
+    }
+
+    public function test_facturar_desde_la_tarjeta_recuerda_el_filtro_para_volver(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '3']);
+        $this->envio($pedido, [$this->galleta->id => '3']);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee(e(route('facturacion.create-ccf', ['pedido' => $pedido->id, 'fecha' => '2026-11-09'])), false);
+        $this->get(route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]))->assertOk()
+            ->assertSee(e(route('facturacion.create-ccf', ['pedido' => $pedido->id, 'sin_facturar' => 1])), false);
+    }
+
+    public function test_la_sala_que_espera_oc_igual_puede_abrir_el_formulario_para_escribirla(): void
+    {
+        $pedido = $this->pedido($this->sala('Sala de prueba Norte', '9001', exigeOc: true), [$this->galleta->id => '3']);
+        $this->envio($pedido, [$this->galleta->id => '3']);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Esperando OC')
+            ->assertSee(route('facturacion.create-ccf', ['pedido' => $pedido->id]), false);
+    }
+
+    public function test_el_filtro_sin_facturar_y_el_aviso_de_otros_dias(): void
+    {
+        $hoy = $this->pedido($this->sala('Sala de prueba Norte', '9001'), [$this->galleta->id => '3']);
+        $this->envio($hoy, [$this->galleta->id => '3']);
+        $ayer = $this->pedido($this->sala('Sala de prueba Sur', '9002'), [$this->galleta->id => '1']);
+        $this->envio($ayer, [$this->galleta->id => '1'], '2026-11-08');
+        $sinFacturar = route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]);
+
+        $this->get(route('facturacion.llego-de-fabrica'))->assertOk()
+            ->assertSee('Hay 1 pedido de otros días sin facturar.')
+            ->assertSee($sinFacturar, false)
+            ->assertDontSee('Sala de prueba Sur');
+
+        $respuesta = $this->get($sinFacturar)->assertOk()
+            ->assertSee('Sala de prueba Norte')
+            ->assertSee('Sala de prueba Sur')
+            ->assertDontSee('pedido de otros días sin facturar')
+            ->assertSee('Todo lo que llegó y sigue sin facturar, de cualquier día.');
+        $this->assertMatchesRegularExpression('/<a[^>]*aria-current="page"[^>]*>\s*Sin facturar/', $respuesta->getContent());
+
+        // Con todo facturado, lo dice.
+        PedidoSalaEnvio::query()->update(['anulado_en' => now()]);
+        $this->get($sinFacturar)->assertOk()->assertSee('No queda nada sin facturar.');
     }
 }

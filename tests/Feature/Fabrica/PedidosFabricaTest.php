@@ -2,14 +2,20 @@
 
 namespace Tests\Feature\Fabrica;
 
+use App\Enums\EstadoDte;
 use App\Enums\EstadoPedidoSala;
 use App\Enums\RolSistema;
+use App\Enums\TipoDte;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
+use App\Models\Dte;
+use App\Models\Empresa;
+use App\Models\Establecimiento;
 use App\Models\PedidoSala;
 use App\Models\PedidoSalaEnvio;
 use App\Models\PersonalRuta;
 use App\Models\Producto;
+use App\Models\PuntoVenta;
 use App\Models\Ruta;
 use App\Models\UnidadMedida;
 use App\Models\User;
@@ -488,6 +494,60 @@ class PedidosFabricaTest extends TestCase
         $this->travelTo('2026-11-10 08:00:00');
         $this->patch(route('fabrica.pedidos.anular-envio', [$pedido, $tercero]))->assertForbidden();
         $this->assertTrue($tercero->refresh()->estaVigente());
+    }
+
+    public function test_no_se_deshace_un_envio_facturado_pero_si_uno_con_su_borrador_borrado(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+        $this->mandar($pedido, [$this->galleta->id => '12']);
+        $envio = PedidoSalaEnvio::sole();
+        $empresa = Empresa::create(['razon_social' => 'Empresa de prueba', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        $dte = (new Dte)->forceFill([
+            'tipo_dte' => TipoDte::CreditoFiscal->value, 'ambiente' => '00', 'estado' => EstadoDte::Borrador->value,
+            'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $this->sala->cliente_id,
+            'fecha_emision' => '2026-11-09', 'hora_emision' => '08:00:00',
+        ]);
+        $dte->save();
+        $envio->update(['dte_id' => $dte->id]);
+
+        // Ni la política (el botón) ni el servicio: la oficina ya lo facturó.
+        $this->assertFalse($this->fabrica->can('anular', $envio->refresh()));
+        $this->patch(route('fabrica.pedidos.anular-envio', [$pedido, $envio]))
+            ->assertSessionHasErrors(['envio' => PedidosFabrica::FACTURADO]);
+        $this->assertTrue($envio->refresh()->estaVigente());
+        $this->assertSame(EstadoPedidoSala::Enviado, $pedido->refresh()->estado);
+        $this->assertFalse(Activity::where('description', 'anuló un envío del pedido')->exists());
+
+        // Con el borrador borrado vuelve a «Por facturar» y se puede deshacer el mismo día.
+        $dte->delete();
+        $this->assertTrue($this->fabrica->can('anular', $envio->refresh()));
+        $this->patch(route('fabrica.pedidos.anular-envio', [$pedido, $envio]))->assertSessionHasNoErrors();
+        $this->assertFalse($envio->refresh()->estaVigente());
+    }
+
+    public function test_hechos_dice_por_que_no_se_puede_deshacer_lo_que_ya_se_facturo(): void
+    {
+        $pedido = $this->pedido([$this->galleta->id => '12']);
+        $this->mandar($pedido, [$this->galleta->id => '12']);
+        $envio = PedidoSalaEnvio::sole();
+        $hechos = route('fabrica.pedidos.index', ['ver' => 'hechos']);
+        $this->get($hechos)->assertOk()->assertSee('Deshacer</button>', false)->assertDontSee(PedidosFabrica::FACTURADO);
+
+        $empresa = Empresa::create(['razon_social' => 'Empresa de prueba', 'ambiente' => '00', 'activo' => true]);
+        $estab = Establecimiento::create(['empresa_id' => $empresa->id, 'codigo' => 'M001', 'nombre' => 'Casa', 'activo' => true]);
+        $pv = PuntoVenta::create(['establecimiento_id' => $estab->id, 'codigo' => 'P001', 'nombre' => 'Caja', 'activo' => true]);
+        $dte = (new Dte)->forceFill([
+            'tipo_dte' => TipoDte::CreditoFiscal->value, 'ambiente' => '00', 'estado' => EstadoDte::Borrador->value,
+            'establecimiento_id' => $estab->id, 'punto_venta_id' => $pv->id, 'cliente_id' => $this->sala->cliente_id,
+            'fecha_emision' => '2026-11-09', 'hora_emision' => '08:00:00',
+        ]);
+        $dte->save();
+        $envio->update(['dte_id' => $dte->id]);
+
+        // La oficina ya lo facturó: sin «Deshacer», y la fábrica sabe a quién avisar.
+        $this->get($hechos)->assertOk()->assertDontSee('Deshacer</button>', false)->assertSee(PedidosFabrica::FACTURADO);
     }
 
     public function test_la_hoja_de_un_pedido_ya_resuelto_vuelve_a_la_lista(): void

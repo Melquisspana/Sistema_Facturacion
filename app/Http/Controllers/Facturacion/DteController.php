@@ -46,6 +46,7 @@ use App\Models\Empresa;
 use App\Models\Establecimiento;
 use App\Models\Exportacion;
 use App\Models\OrdenCompraRecibida;
+use App\Models\PedidoSala;
 use App\Models\PpqAlbaran;
 use App\Models\Producto;
 use App\Models\PuntoVenta;
@@ -74,9 +75,11 @@ use App\Services\Dte\PreflightEmisionProduccionFactura;
 use App\Services\Dte\SaldoMontoCcf;
 use App\Services\Dte\ValidadorReglasInvalidacion;
 use App\Services\Exportaciones\VincularFexALista;
+use App\Services\Rutas\FacturarPedido;
 use App\Support\Contabilidad\CorreoContabilidad;
 use App\Support\Dinero;
 use App\Support\Dte\ArchivoEntregaDte;
+use App\Support\Dte\CondicionOperacion;
 use App\Support\Dte\CorreoReceptorDte;
 use App\Support\Dte\DatosExportacionPresentacion;
 use App\Support\Dte\OpcionesInvalidacion;
@@ -98,6 +101,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -274,11 +278,39 @@ class DteController extends Controller
         return view('facturacion.invalidaciones', compact('dtes', 'filtros'));
     }
 
-    public function createCcf(): View
+    /**
+     * Formulario del CCF. Con `?pedido=` (desde «Llegó de la fábrica») además recibe:
+     *  - `$pedido` (PedidoSala, con `sala.cliente`): la sala y el cliente van fijos y el
+     *    formulario se manda a `facturacion.pedidos.facturar`.
+     *  - `$propuesta` ({@see FacturarPedido::propuesta()}): `lineas` (nombre, cantidad,
+     *    entero, precio, problema), `problemas` (si hay alguno, el botón va apagado), `oc`
+     *    (la del pedido, valor inicial; `old()` sigue mandando), `oc_con_ccf` y `borrador`.
+     *  - `$cancelar` (url): a donde se estaba. `desde=pedido` vuelve a la ficha del pedido; si
+     *    no, a «Llegó de la fábrica» con su `fecha` o, sin una fecha válida, a «Sin facturar».
+     * Sin `?pedido=` la pantalla queda exactamente igual.
+     */
+    public function createCcf(Request $request): View
     {
         $this->authorize('create', Dte::class);
 
-        return view('facturacion.create-ccf', $this->datosFormularioCcf());
+        $pedido = null;
+        if ($request->filled('pedido')) {
+            $pedido = PedidoSala::with('sala.cliente')->findOrFail($request->integer('pedido'));
+            $this->authorize('view', $pedido);
+        }
+        // Solo arma rutas propias: nada de la consulta llega tal cual a un enlace.
+        $fecha = Validator::make($request->query(), ['fecha' => ['required', 'date_format:Y-m-d']])->passes()
+            ? $request->query('fecha') : null;
+
+        return view('facturacion.create-ccf', $this->datosFormularioCcf() + ($pedido === null ? [] : [
+            'pedido' => $pedido,
+            'propuesta' => app(FacturarPedido::class)->propuesta($pedido),
+            'cancelar' => match (true) {
+                $request->query('desde') === 'pedido' => route('rutas.pedidos.show', $pedido),
+                $fecha !== null && ! $request->boolean('sin_facturar') => route('facturacion.llego-de-fabrica', ['fecha' => $fecha]),
+                default => route('facturacion.llego-de-fabrica', ['sin_facturar' => 1]),
+            },
+        ]));
     }
 
     public function storeCcf(CrearBorradorRequest $request): RedirectResponse
@@ -297,7 +329,7 @@ class DteController extends Controller
         $cliente = Cliente::find($datos['cliente_id'] ?? null);
         $sucursal = ClienteSucursal::find($datos['cliente_sucursal_id'] ?? null);
         unset($datos['descuento_global']);
-        $datos['condicion_operacion'] = $this->condicionAplicada($cliente, $sucursal);
+        $datos['condicion_operacion'] = CondicionOperacion::para($cliente, $sucursal);
 
         try {
             $dte = $this->borradores->crearBorrador($datos, $request->user());
@@ -331,7 +363,7 @@ class DteController extends Controller
         $cliente = Cliente::find($datos['cliente_id'] ?? null);
         $sucursal = ClienteSucursal::find($datos['cliente_sucursal_id'] ?? null);
         unset($datos['descuento_global']);
-        $datos['condicion_operacion'] = $this->condicionAplicada($cliente, $sucursal);
+        $datos['condicion_operacion'] = CondicionOperacion::para($cliente, $sucursal);
 
         $dte = $this->borradores->crearBorrador($datos, $request->user());
 
@@ -380,7 +412,7 @@ class DteController extends Controller
         $cliente = Cliente::find($datos['cliente_id'] ?? null);
         $sucursal = ClienteSucursal::find($datos['cliente_sucursal_id'] ?? null);
         unset($datos['descuento_global']);
-        $datos['condicion_operacion'] = $this->condicionAplicada($cliente, $sucursal);
+        $datos['condicion_operacion'] = CondicionOperacion::para($cliente, $sucursal);
 
         $dte = $this->borradores->crearBorrador($datos, $request->user());
 
@@ -708,7 +740,9 @@ class DteController extends Controller
     ): View {
         $this->authorize('view', $dte);
 
-        $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios']);
+        $dte->load(['cliente.pais', 'cliente.actividadEconomica', 'clienteSucursal', 'lineas', 'establecimiento', 'puntoVenta', 'dteRelacionado', 'anuladoPor', 'envios',
+            // «Viene del pedido N» (los envíos de la fábrica que se facturaron acá).
+            'enviosPedido' => fn ($q) => $q->vigentes()->orderBy('numero'), 'enviosPedido.pedido']);
 
         // Solo para precisar la nota de retención en los totales (no recalcula nada).
         $esAgenteRetencion = $this->borradores->esAgenteRetencion($dte);
@@ -1746,7 +1780,12 @@ class DteController extends Controller
         // Orden de compra con otra forma o sala sin código: aviso con «Generar igual».
         $avisosOc = ReglaOrdenCompra::avisos($dte);
 
-        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'catalogosAduaneros', 'datosReceptor'));
+        // Si salió de «Facturar» un pedido: «Viene del pedido N» y un aviso SUAVE de lo que
+        // pasa de lo que llegó de la fábrica o no vino. NO frena la emisión.
+        $dte->load(['enviosPedido' => fn ($q) => $q->vigentes()->orderBy('numero'), 'enviosPedido.pedido']);
+        $avisosPedido = app(FacturarPedido::class)->avisosDelCcf($dte);
+
+        return view('facturacion.edit', compact('dte', 'productosDisponibles', 'esAgenteRetencion', 'umbralRetencion', 'cantidadesPorProducto', 'ocDuplicada', 'avisosOc', 'avisosPedido', 'catalogosAduaneros', 'datosReceptor'));
     }
 
     /**
@@ -2783,6 +2822,8 @@ class DteController extends Controller
             // Cambiar una línea mueve el total: los dos avisos tienen que volver medidos.
             'avisoImporteTxt' => $albaranNc['avisoImporteTxt'] ?? null,
             'excesoSaldoCcf' => $albaranNc['excesoSaldoCcf'] ?? null,
+            // Lo que no cuadra con lo que llegó de la fábrica, medido con la cantidad nueva.
+            'avisosPedido' => $esNc ? [] : app(FacturarPedido::class)->avisosDelCcf($dte),
         ])->render();
 
         return response()->json([
@@ -2871,7 +2912,7 @@ class DteController extends Controller
     /** @return array<string, mixed> */
     private function opcionCliente(Cliente $cliente, ?ClienteSucursal $sucursal): array
     {
-        $condicion = $this->condicionAplicada($cliente, $sucursal);
+        $condicion = CondicionOperacion::para($cliente, $sucursal);
 
         return [
             'key' => $cliente->id.'-'.($sucursal?->id ?? 0),
@@ -2914,14 +2955,6 @@ class DteController extends Controller
         return number_format($valor, 2, '.', '');
     }
 
-    /** Condición de operación a aplicar: sala → cliente → default contribuyente. */
-    private function condicionAplicada(?Cliente $cliente, ?ClienteSucursal $sucursal): int
-    {
-        return (int) ($sucursal?->condicion_operacion_default
-            ?? $cliente?->condicion_operacion_default
-            ?? config('dte.condicion_operacion_default_contribuyente', 2));
-    }
-
     /**
      * Mapea clientes a opciones para el buscador, con descuento/condición aplicados
      * (a nivel cliente; informativos en el formulario).
@@ -2932,7 +2965,7 @@ class DteController extends Controller
     private function clientesInformativos($clientes): array
     {
         return $clientes->map(function (Cliente $c) {
-            $condicion = $this->condicionAplicada($c, null);
+            $condicion = CondicionOperacion::para($c, null);
 
             return [
                 'id' => $c->id,
