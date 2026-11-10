@@ -97,6 +97,7 @@ class OrdenesSincronizarCommand extends Command
     {
         $disco = Storage::disk((string) config('dte.storage.disk', 'local'));
         $releidas = 0;
+        $posicionSala = OrdenCompra::posicionSala();
 
         $pendientes = OrdenCompraRecibida::where('estado', OrdenCompraRecibida::SIN_LEER)
             ->whereNotIn('pdf_hash', OrdenCompraRecibida::where('estado', OrdenCompraRecibida::LEIDA)->select('pdf_hash'))
@@ -126,7 +127,7 @@ class OrdenesSincronizarCommand extends Command
                 continue;
             }
 
-            $sala = OrdenCompra::salaDesde($datos['numero']);
+            $sala = OrdenCompra::salaDesde($datos['numero'], $posicionSala);
             if ($sala === null) {
                 $this->warn("Orden #{$orden->id}: del número {$datos['numero']} no sale la sala; sigue «sin leer».");
 

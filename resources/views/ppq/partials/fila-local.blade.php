@@ -60,7 +60,8 @@
         'fecha' => optional($dte->fecha_emision)->format('Y-m-d'),
         'monto' => $dte->total_pagar,
         'ordenCompra' => $dte->numero_orden_compra,
-        'sala' => \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra),
+        // $posicionSala la deja leída la pantalla que incluye este parcial; sin ella se lee acá.
+        'sala' => \App\Support\OrdenCompra::salaDesde($dte->numero_orden_compra, $posicionSala ?? null),
         'salaNombre' => $dte->clienteSucursal?->nombre, // nombre comercial vía la relación del CCF
 
         'albaranNumero' => \App\Support\Albaran::numeroLimpio($alb?->numero_albaran ?? ($albGmail['numero_albaran'] ?? null)),

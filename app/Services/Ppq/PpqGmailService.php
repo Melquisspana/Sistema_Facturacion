@@ -336,9 +336,11 @@ class PpqGmailService
      */
     private function recordarSalas(array $fichas): void
     {
+        $posicionSala = OrdenCompra::posicionSala();
+
         foreach ($fichas as $ficha) {
             PpqSala::recordar(
-                OrdenCompra::salaDesde($ficha['ccf']['ordenCompra'] ?? null),
+                OrdenCompra::salaDesde($ficha['ccf']['ordenCompra'] ?? null, $posicionSala),
                 $ficha['ccf']['salaNombre'] ?? null,
                 'ccf_json',
             );

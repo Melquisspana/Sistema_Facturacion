@@ -55,6 +55,9 @@ class ExcelCallejaExporter
             $hoja->getStyle($col.':'.$col)->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
         }
 
+        // Dónde va la sala dentro de la OC se lee una vez, no en cada fila.
+        $posicionSala = OrdenCompra::posicionSala();
+
         // Filas (orden de Calleja: CCF primero, luego NC; cada grupo por correlativo ascendente).
         $fila = 2;
         foreach ($lote->itemsOrdenados() as $item) {
@@ -75,10 +78,10 @@ class ExcelCallejaExporter
             $hoja->setCellValueExplicit([8, $fila], (string) ($item->sello_recepcion ?? $item->dte?->sello_recepcion), DataType::TYPE_STRING);
             // Sala de venta: nombre comercial de la sucursal (ej. "Súper Selectos La Sultana");
             // si la sala no está registrada en la BD, cae al código de 4 dígitos.
-            $salaCodigo = (string) OrdenCompra::salaDesde($oc);
+            $salaCodigo = (string) OrdenCompra::salaDesde($oc, $posicionSala);
             // Nombre comercial: snapshot del item → sucursal relacionada → código. Si no hay
             // nombre, cae al código de 4 dígitos (no se escribe texto de error en el archivo).
-            $salaNombre = $item->salaNombre();
+            $salaNombre = $item->salaNombre($posicionSala);
             $hoja->setCellValueExplicit([9, $fila], $salaNombre ?: $salaCodigo, DataType::TYPE_STRING);
             // Diferencia = G − D, con el mismo signo que esas dos columnas (NC en negativo).
             // Vacía cuando no hay monto de albarán comparable.

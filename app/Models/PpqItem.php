@@ -76,29 +76,43 @@ class PpqItem extends Model
         });
     }
 
-    /** Código de sala (4 dígitos) derivado de la orden de compra. */
-    public function salaCodigo(): ?string
+    /**
+     * Código de sala (4 dígitos) derivado de la orden de compra.
+     *
+     * En este método y en los tres que siguen, `$posicionSala` es la de
+     * {@see OrdenCompra::posicionSala()} ya leída: quien recorre muchos renglones la lee
+     * una vez y la pasa, en lugar de consultar los ajustes en cada uno.
+     *
+     * @param  array{0: int, 1: int}|null  $posicionSala
+     */
+    public function salaCodigo(?array $posicionSala = null): ?string
     {
-        return OrdenCompra::salaDesde($this->numero_orden_compra);
+        return OrdenCompra::salaDesde($this->numero_orden_compra, $posicionSala);
     }
 
     /**
      * Nombre comercial de la sala: snapshot guardado al agregar → sucursal relacionada al
      * DTE → búsqueda por código. Null si ninguno resuelve.
+     *
+     * @param  array{0: int, 1: int}|null  $posicionSala
      */
-    public function salaNombre(): ?string
+    public function salaNombre(?array $posicionSala = null): ?string
     {
         if (filled($this->sala_nombre)) {
             return $this->sala_nombre;
         }
 
-        return Sala::nombrePreferido($this->salaCodigo(), $this->dte?->clienteSucursal?->nombre);
+        return Sala::nombrePreferido($this->salaCodigo($posicionSala), $this->dte?->clienteSucursal?->nombre);
     }
 
-    /** Texto siempre presente para pantalla ("…sin nombre registrado" si no hay nombre). */
-    public function salaDescripcion(): string
+    /**
+     * Texto siempre presente para pantalla ("…sin nombre registrado" si no hay nombre).
+     *
+     * @param  array{0: int, 1: int}|null  $posicionSala
+     */
+    public function salaDescripcion(?array $posicionSala = null): string
     {
-        return Sala::descripcion($this->salaCodigo(), $this->salaNombre());
+        return Sala::descripcion($this->salaCodigo($posicionSala), $this->salaNombre($posicionSala));
     }
 
     /** ¿Hay un albarán vinculado a este item (no marcado "sin albarán")? */
@@ -117,15 +131,16 @@ class PpqItem extends Model
      * Aviso si el albarán vinculado parece ser de OTRA sala que la del documento (posible
      * albarán equivocado). Null si coinciden o no hay datos. Separado de la diferencia de monto.
      *
+     * @param  array{0: int, 1: int}|null  $posicionSala
      * @return array<string, string>|null
      */
-    public function salaMismatch(): ?array
+    public function salaMismatch(?array $posicionSala = null): ?array
     {
         if (! $this->tieneAlbaran()) {
             return null;
         }
 
-        return PpqConciliacion::salaMismatch($this->salaCodigo(), $this->salaAlbaranCodigo());
+        return PpqConciliacion::salaMismatch($this->salaCodigo($posicionSala), $this->salaAlbaranCodigo());
     }
 
     /** Estado de conciliación (monto) de este item, distinguiendo "albarán sin monto". */

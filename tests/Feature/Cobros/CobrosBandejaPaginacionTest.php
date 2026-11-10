@@ -20,6 +20,7 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Concerns\CreaDteVerificableCobros;
+use Tests\Concerns\CuentaLecturasDeAjustes;
 use Tests\TestCase;
 
 /**
@@ -32,6 +33,7 @@ use Tests\TestCase;
 class CobrosBandejaPaginacionTest extends TestCase
 {
     use CreaDteVerificableCobros;
+    use CuentaLecturasDeAjustes;
     use RefreshDatabase;
 
     private int $n = 0;
@@ -184,6 +186,24 @@ class CobrosBandejaPaginacionTest extends TestCase
         $this->assertTrue($pagina2->viewData('documentos')->every(
             fn (CobroDocumento $d) => $d->pago_estado === EstadoPagoCobro::Pagado
         ), 'La página 2 respeta el filtro.');
+    }
+
+    /** Dónde va la sala dentro de la orden de compra se lee una vez por pantalla, no por documento. */
+    public function test_la_bandeja_no_consulta_los_ajustes_otra_vez_por_cada_documento(): void
+    {
+        $cliente = $this->cliente();
+        $usuario = $this->usuario();
+        $this->documento($cliente);
+        $this->bandeja($cliente, [], $usuario)->assertOk(); // lo que solo se lee la primera vez no cuenta
+
+        $conUno = $this->lecturasDeAjustes(fn () => $this->bandeja($cliente, [], $usuario)->assertOk());
+
+        foreach (range(1, 4) as $_) {
+            $this->documento($cliente);
+        }
+        $conCinco = $this->lecturasDeAjustes(fn () => $this->bandeja($cliente, [], $usuario)->assertOk()->assertSeeText('Mostrando 1–5 de 5'));
+
+        $this->assertSame($conUno, $conCinco, 'Cinco documentos cuestan las mismas lecturas de ajustes que uno.');
     }
 
     public function test_una_pagina_fuera_de_rango_ofrece_volver_a_la_primera(): void

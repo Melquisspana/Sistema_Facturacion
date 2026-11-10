@@ -15,6 +15,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\CuentaLecturasDeAjustes;
 use Tests\TestCase;
 
 /**
@@ -24,6 +25,7 @@ use Tests\TestCase;
  */
 class PpqLoteFichaPaginadaTest extends TestCase
 {
+    use CuentaLecturasDeAjustes;
     use RefreshDatabase;
 
     private const OC = '26050230001794';
@@ -172,6 +174,49 @@ class PpqLoteFichaPaginadaTest extends TestCase
         @unlink($ruta);
 
         $this->assertSame(46, $hoja->getHighestDataRow(), 'Encabezado + 45 documentos, no solo una página.');
+    }
+
+    /** Lote con `$cuantos` CCF de la misma sala, cada uno con su albarán de entrega. */
+    private function loteConAlbaranes(int $cuantos, int $desde): PpqLote
+    {
+        $lote = $this->lote();
+        foreach (range($desde, $desde + $cuantos - 1) as $n) {
+            $this->item($lote, '03', 'DTE-03-M001P002-'.str_pad((string) $n, 15, '0', STR_PAD_LEFT), 10.00, PpqAlbaran::create([
+                'numero_albaran' => 'AC01/0230/00/'.$n, 'numero_orden_compra' => self::OC, 'monto_albaran' => 10.00, 'origen' => 'gmail',
+            ]));
+        }
+
+        return $lote->fresh();
+    }
+
+    /** Dónde va la sala dentro de la orden de compra se lee una vez por archivo, no por documento. */
+    public function test_el_excel_no_consulta_los_ajustes_otra_vez_por_cada_documento(): void
+    {
+        $generar = function (PpqLote $lote): void {
+            @unlink(app(ExcelCallejaExporter::class)->generar($lote));
+        };
+        $uno = $this->loteConAlbaranes(1, 100);
+        $cinco = $this->loteConAlbaranes(5, 200);
+
+        $this->assertSame(
+            $this->lecturasDeAjustes(fn () => $generar($uno)),
+            $this->lecturasDeAjustes(fn () => $generar($cinco)),
+            'Cinco documentos cuestan las mismas lecturas de ajustes que uno.',
+        );
+    }
+
+    public function test_los_totales_de_la_ficha_no_consultan_los_ajustes_otra_vez_por_cada_documento(): void
+    {
+        $resumir = fn (PpqLote $lote) => app(FichaLotePpq::class)->resumen(app(FichaLotePpq::class)->filas($lote));
+        $uno = $this->loteConAlbaranes(1, 100);
+        $cinco = $this->loteConAlbaranes(5, 200);
+
+        $this->assertSame(
+            $this->lecturasDeAjustes(fn () => $resumir($uno)),
+            $this->lecturasDeAjustes(fn () => $resumir($cinco)),
+            'Cinco documentos cuestan las mismas lecturas de ajustes que uno.',
+        );
+        $this->assertSame(0, $resumir($cinco)['otra_sala'], 'Y el resultado no cambia: todos son de la sala de su orden.');
     }
 
     public function test_la_pagina_visible_no_hidrata_el_lote_entero(): void

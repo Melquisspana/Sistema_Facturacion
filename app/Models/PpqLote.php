@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\EstadoPpq;
 use App\Facades\Ajustes;
 use App\Services\Ppq\FichaLotePpq;
+use App\Support\OrdenCompra;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -120,7 +121,9 @@ class PpqLote extends Model
     /** Items cuyo albarán parece ser de otra sala que la del documento (posible equivocación). */
     public function cantidadOtraSala(): int
     {
-        return $this->items->filter(fn (PpqItem $i) => $i->salaMismatch() !== null)->count();
+        $posicionSala = OrdenCompra::posicionSala();
+
+        return $this->items->filter(fn (PpqItem $i) => $i->salaMismatch($posicionSala) !== null)->count();
     }
 
     /** Items con albarán cuyo monto difiere del CCF/NC más allá de la tolerancia. */

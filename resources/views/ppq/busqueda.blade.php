@@ -40,6 +40,9 @@
             @php
                 $esNcModo = $tipo === '05';
                 $ctxLink = array_filter(['q' => $filtros['q'] ?? null, 'lote' => $loteActivo?->id], fn ($v) => filled($v));
+                // Dónde va la sala dentro de la OC se lee una vez para todos los resultados
+                // (también la usa ppq.partials.fila-local, que hereda esta variable).
+                $posicionSala = \App\Support\OrdenCompra::posicionSala();
             @endphp
             <div class="bg-white shadow sm:rounded-lg p-6">
                 {{-- Selector de tipo de documento --}}
@@ -285,7 +288,7 @@
                             'fecha' => $ccf['fecha'] ?? null,
                             'monto' => $ccf['monto'] ?? null,
                             'ordenCompra' => $ccf['ordenCompra'] ?? null,
-                            'sala' => $ccf['sala'] ?? \App\Support\OrdenCompra::salaDesde($ccf['ordenCompra'] ?? null),
+                            'sala' => $ccf['sala'] ?? \App\Support\OrdenCompra::salaDesde($ccf['ordenCompra'] ?? null, $posicionSala),
                             'salaNombre' => $ccf['salaNombre'] ?? null, // nombre comercial vía el DTE local
 
                             'albaranNumero' => \App\Support\Albaran::numeroLimpio($alb['numero_albaran'] ?? null),

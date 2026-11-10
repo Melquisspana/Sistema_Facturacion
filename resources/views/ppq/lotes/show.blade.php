@@ -210,6 +210,8 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
+                            {{-- Dónde va la sala dentro de la OC se lee una vez para toda la página, no en cada documento. --}}
+                            @php $posicionSala = \App\Support\OrdenCompra::posicionSala(); @endphp
                             @forelse ($items as $item)
                                 @php
                                     $tipo = $item->tipo_dte ?? $item->dte?->tipo_dte?->value;
@@ -217,11 +219,11 @@
                                     $sello = $item->sello_recepcion ?? $item->dte?->sello_recepcion;
                                     $codigo = $item->codigo_generacion ?? $item->dte?->codigo_generacion;
                                     $numAlb = \App\Support\Albaran::numeroLimpio($item->albaran?->numero_albaran);
-                                    $sala = $item->salaCodigo();
-                                    $salaNombre = $item->salaNombre();
-                                    $salaDescripcion = $item->salaDescripcion();
+                                    $sala = $item->salaCodigo($posicionSala);
+                                    $salaNombre = $item->salaNombre($posicionSala);
+                                    $salaDescripcion = $item->salaDescripcion($posicionSala);
                                     $estado = $item->conciliacionEstado();
-                                    $mismatch = $item->salaMismatch();
+                                    $mismatch = $item->salaMismatch($posicionSala);
                                     $salaConfirmada = $quedan->salaConfirmada($item);
                                     $avisoSalaManual = $quedan->avisoSalaManual($item);
                                     if ($avisoSalaManual !== null && \App\Support\NumeroAlbaran::desde($item->albaran?->numero_albaran)?->sala === $salaConfirmada) {
