@@ -320,6 +320,8 @@ SESSION_SECURE_COOKIE=true
 
 Después de editar `.env`: `php artisan config:clear` (o `config:cache`).
 
+El `.env` se guarda en **UTF-8 sin BOM**. En Windows PowerShell 5.1 no se usa `Set-Content -Encoding utf8`, porque agrega el BOM. Un nombre con tilde mal codificado en el `.env` llega igual de roto al evento de invalidación; se comprueba con `php artisan dte:invalidacion-preflight`.
+
 > **Revocación**: quitarle el acceso a alguien en Cloudflare Access NO cierra una
 > sesión de Laravel que ya estaba abierta (sigue viva hasta expirar o hasta un
 > logout). Para un corte inmediato, desactivar también el usuario en el módulo

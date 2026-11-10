@@ -75,7 +75,7 @@ es presentarse.
 
 ### 3. Generar la solicitud
 
-Se marcan las facturas completas y se pulsa **«Generar solicitud con lo marcado»**. El
+Se marcan las facturas completas y se pulsa **«Crear PPQ con lo marcado»**. Antes de crear nada hay una vista previa (ver «Vista previa antes de crear la solicitud», más abajo). El
 archivo es el formato de **carga masiva de quedan** del portal: cinco columnas —sala,
 número, año, mes y tipo—, **todas del albarán**, no de la factura.
 
@@ -247,8 +247,7 @@ real:
   columna propia. Es una lectura, no un dato confirmado;
 - **la consulta a Gmail no se ha ejecutado contra el buzón.** El intérprete de los correos
   sí está probado con los mensajes reales, y la paginación con un doble; lo que falta es una
-  corrida en seco de `cobros:leer-correos` contra la cuenta;
-- **las migraciones no se han corrido.** `php artisan migrate` está pendiente.
+  corrida en seco de `cobros:leer-correos` contra la cuenta.
 
 ## Lo que este módulo deliberadamente no hace
 
@@ -258,3 +257,55 @@ real:
 - No reparte descuentos globales entre facturas.
 - No interpreta la ausencia de un documento en un archivo como un rechazo.
 - No asigna ningún significado a `AC06` ni a ningún otro código sin respaldo documental.
+
+## Reglas vigentes que venían de las bitácoras
+
+Estas reglas estaban repartidas en las revisiones fechadas de septiembre de 2026, que se retiraron de `docs/` (siguen en el historial de git). El porqué del recorrido completo está en la [decisión 0007](decisiones/0007-seguimiento-de-ccf-recorrido-principal-de-quedan.md).
+
+### Vista previa antes de crear la solicitud
+
+- Antes de crear la solicitud hay una vista previa con el cliente, la cantidad, la suma y las cinco columnas. Abrirla no crea solicitud, renglones ni archivo, y no cambia presentación ni pago.
+- Confirmar usa la selección guardada en la sesión, exige el token del mismo usuario y vuelve a validar la elegibilidad y la huella de los renglones dentro de una transacción. Si algo cambió, se rechaza sin dejar registros a medias. Un envío directo, sin vista previa, no prepara nada.
+- Orden del archivo: fecha de emisión y número de control, el más antiguo primero.
+
+### Formatos del portal
+
+- Son dos cargas distintas. **Quedan:** XLSX de cinco columnas, una fila por CCF con los datos de su albarán de entrega, sin notas. **Notas de crédito:** otra operación, con su propio archivo de 8 columnas; el anterior de 17 se conserva para los lotes viejos, que guardan su formato. El porcentaje de pronto pago se escribe aparte en el portal.
+- El archivo de quedan parte de la plantilla del cliente, guardada sin cambios en `resources/templates/`. Antes de generar se validan la hoja y los cinco encabezados; si falta o difiere, se detiene y no inventa otro formato. Al ejecutar no se lee nada fuera del proyecto.
+- El archivo de quedan también se descarga desde el lote PPQ (`ppq.lotes.quedan`). Datos faltantes, sala o tipo contradictorios, otro tipo de documento o un albarán duplicado bloquean la descarga completa, con su motivo. Generarlo no cambia estados.
+
+### Archivos descargados: copia verificable
+
+- La primera descarga de un archivo de notas o de una solicitud de quedan genera el Excel, guarda sus bytes con su SHA-256 y entrega esos mismos bytes. Las siguientes leen y verifican la copia, sin volver a generar aunque cambie el exportador o el perfil.
+- Copia ausente, alterada o con registro incompleto: se bloquea la descarga con un aviso; no se regenera ni se cuenta.
+- Un lote de notas descargado antes de existir la copia se entrega como «reconstrucción histórica», marcada así en la ficha y en el historial. No prueba lo que recibió el cliente.
+- Descargar no prueba que el archivo llegó ni que se presentó. Cada descarga queda en la bitácora con usuario, hora, nombre y SHA-256.
+
+### Archivo de pagos (TXT)
+
+- PPQ y Cobros validan el código de proveedor de cada fila contra `PPQ_CODIGO_PROVEEDOR`. Sin configuración, o con una fila de otro código o vacía, se rechaza el archivo entero antes de registrar nada.
+- Los importes son decimales exactos: `-.50` es −0.50.
+- El mismo TXT se reconoce por el SHA-256 de su contenido exacto. Si ya se procesó en el otro circuito (PPQ o Cobros), el informe lo avisa y enlaza. El aviso es informativo: no sincroniza estados, no suma pagos y no bloquea la carga.
+- Cobros no guarda el archivo como entidad: un TXT sin documentos identificados puede no dejar rastro, así que la falta de aviso no prueba que nunca se cargó.
+
+### Importes: CCF, albarán y nota de crédito
+
+- El CCF se compara con su albarán de entrega; la nota, con su propio albarán de crédito. El total fiscal de la nota puede diferir del albarán por descuento o retención: no se ajustan importes para que coincidan.
+- El descuento de la nota por modalidad lo define el perfil documental del cliente (por ejemplo: avería AC02 hereda el del CCF; devolución AC04 va sin descuento). Sin perfil activo queda una regla histórica que hereda también en AC04: hay que revisar el perfil del ambiente antes de atribuirle un importe al código.
+- En PPQ la diferencia de una nota lleva el mismo signo que sus montos; sin monto de albarán queda vacía.
+- Nunca se calcula una nota restando el CCF menos el albarán.
+
+### Vinculación por evidencia de un PPQ anterior
+
+- Además del vínculo explícito y de la orden de compra, vale la evidencia de un renglón de PPQ antiguo que ya guardó el albarán. Exige renglón de CCF, albarán de entrega activo, orden de compra coherente entre DTE, renglón y albarán, e identidad completa. Un documento sin DTE local necesita un segundo identificador que coincida (código de generación o sello).
+- Varios albaranes para un CCF, un albarán reclamado por otro documento, u orden de compra, importe, sala, cliente o período contradictorios: a revisión. Un AC02 o AC04 no respalda la entrega.
+- Ese vínculo no infiere presentación ni pago, y no quita la revisión histórica.
+- La auditoría de albaranes busca otros CCF con la misma orden de compra, también fuera del lote visible. Un importe igual no deshace una colisión; un importe distinto o ausente va a revisión.
+- Vínculo a mano: motivo obligatorio; se rechazan albaranes ocupados, de otro cliente o documento, o que no sean de entrega. Se escribe en una transacción, con bloqueo y relectura.
+
+### Revisión histórica y correo
+
+- Una revisión histórica abierta impide seleccionar el documento y crear la solicitud (lo valida el servidor). Cerrarla exige conclusión y referencia de evidencia. La opción por defecto mantiene el bloqueo; solo «nunca se presentó ni se cobró» habilita solicitudes, y no escribe pagos. Una sincronización posterior no la reabre.
+- No se presenta una factura con pago parcial, completo, con diferencia o por resolver.
+- El correo se guarda íntegro y se interpreta solo la respuesta actual (se apartan las citas). Un asunto de observaciones sigue siéndolo aunque cite un acuse; un rechazo queda sin clasificar; no se deducen archivos de números largos; si el código y el número de control se contradicen, la observación no se aplica.
+- Una observación localizada a medias deja visibles los pendientes, sin marcar recibida la solicitud ni pagada la factura.

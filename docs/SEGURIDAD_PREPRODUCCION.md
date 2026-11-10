@@ -1,7 +1,6 @@
 # Seguridad y entorno — checklist de preproducción (antes del piloto)
 
-Auditoría operativa de seguridad para el piloto del sistema DTE (ver
-`docs/PILOTO_PREPRODUCCION.md`). Confirma que **no** haya configuración peligrosa,
+Auditoría operativa de seguridad para el piloto del sistema DTE. Confirma que **no** haya configuración peligrosa,
 que los **secretos** no se expongan y que los **roles** estén bien acotados.
 
 > **Solo procedimiento y valores recomendados.** No cambia lógica fiscal, firma,
@@ -184,6 +183,6 @@ o consulta/contador acceden a pantallas de administrador.
 - Este documento **no** cambia código: es una guía de auditoría y valores recomendados.
 - Los candados y su lógica: `docs/TRANSMISION_DTE.md` (§7.b).
 - Invalidación (solo mock/dry-run en UI; real por consola): `docs/INVALIDACION_DTE.md`.
-- Piloto y comparación con Conta Portable: `docs/PILOTO_PREPRODUCCION.md`.
+- Reglas de cálculo que salieron del piloto: `docs/decisiones/0009-reglas-de-calculo-de-ccf-y-nota-de-credito.md`.
 - Backups y restauración: `docs/BACKUPS_WINDOWS.md`, `docs/RESTORE_BACKUP_WINDOWS.md`.
 - Worker de correos: `docs/COLA_CORREOS.md`.

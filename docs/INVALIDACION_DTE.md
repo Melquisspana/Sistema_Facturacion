@@ -14,8 +14,9 @@ de invalidación se **firma** y se **transmite** aparte, y su evidencia vive en 
 ### Fase A — Serializador / schema
 - Schema oficial: `resources/dte/schemas/invalidacion/invalidacion-schema-v3.json`
   (draft-07, `version: 3`, 4 bloques con `additionalProperties:false`).
-- `App\Enums\TipoAnulacionMh` (CAT-024): `1` Error en la información (exige documento de
-  reemplazo `codigoGeneracionR`), `2` Rescindir la operación, `3` Otro (exige motivo texto).
+- `App\Enums\TipoAnulacionMh` (CAT-024): `1` Error en la información, `2` Rescindir la
+  operación, `3` Otro (exige motivo en texto). Qué documento lleva sustituto en cada motivo
+  está en [Reglas por documento y motivo](#reglas-por-documento-y-motivo).
 - `App\Services\Dte\Serializadores\SerializadorInvalidacionMh::serializar(Dte, EventoInvalidacionData)`
   → array del evento (`identificacion` / `emisor` / `documento` / `motivo`).
   - `identificacion.codigoGeneracion` = **UUID nuevo** del evento (≠ al del DTE).
@@ -91,7 +92,7 @@ Para la firma/transmisión real también deben estar: `DTE_FIRMA_ENABLED=true`,
 | Confirmaciones del comando | `--transmitir-real` **y** `--confirmo-invalidar` |
 | Mock apagado | `DTE_INVALIDACION_MOCK=false` |
 | Confirmación real | `DTE_INVALIDACION_REAL_CONFIRMATION=true` |
-| Nunca producción | ambiente ≠ producción **y** endpoint `apitest.dtes.mh.gob.sv` |
+| Producción, solo con su llave | sin `DTE_INVALIDACION_PRODUCCION_ENABLED=true` un DTE de producción nunca se invalida; con ella se exige además la dirección oficial de producción (`DTE_PROD_ANULACION_URL`). En pruebas, endpoint `apitest.dtes.mh.gob.sv` |
 | Firma real | `DTE_FIRMA_ENABLED=true` **y** `DTE_FIRMADOR_MOCK=false` |
 | Datos del evento | responsable **y** solicitante completos |
 | Tipo explícito | `--tipo` obligatorio (sin default) |
@@ -135,6 +136,18 @@ alinearía a `dte.hora_emision`. Test de regresión:
   conservada en `dte/invalidacion/respuestas/`.
 - Reintento **bloqueado** (`tieneEventoInvalidacion()=true`); el comando real muestra el
   aviso "Este DTE ya fue invalidado oficialmente".
+
+## Reglas por documento y motivo
+
+La regla vive en un solo lugar, `app/Support/Dte/PoliticaInvalidacion.php`, y la usan el formulario, el control previo, el serializador, la simulación y el envío real. Se vuelve a validar justo antes de firmar.
+
+- **Factura, CCF y Factura de Exportación:** los motivos 1 y 3 exigen un documento sustituto ya aceptado por Hacienda (el 3, además, texto). El motivo 2 no lleva sustituto.
+- **Nota de crédito:** nunca lleva sustituto. Primero se invalida y después se emite la corrección; el sistema no la crea solo.
+- Un tipo de documento sin regla se rechaza. No hereda la del CCF.
+- El sustituto se verifica: existe en el sistema, es del mismo tipo, del mismo emisor (por NIT) y del mismo ambiente, está aceptado de verdad y no fue invalidado. El cliente puede ser otro. Si no se puede verificar, se bloquea. Cada sustituto corrige un solo documento ([decisión 0003](decisiones/0003-sustituto-de-un-solo-uso.md)).
+- Un CCF con una nota de crédito o de débito aceptada y vigente no se invalida, sin excepción. Una nota en borrador, rechazada, aceptada solo en simulación o ya invalidada no bloquea. Esta prohibición vale solo para el CCF.
+- El motivo admite hasta 200 caracteres.
+- Los plazos están en la [decisión 0005](decisiones/0005-plazos-de-invalidacion.md).
 
 ## Pendientes / notas
 - Datos de responsable/solicitante: deben ser **reales** en `.env` (el schema los exige).

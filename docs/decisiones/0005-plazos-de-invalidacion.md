@@ -39,4 +39,4 @@ Confirmado el 09/11/2026: el calendario 2026. El Calendario Tributario 2026 del 
 - Manual Funcional del Sistema de Transmisión v2.0, págs. 11-12 (texto externo de auditoría; no se copia al repositorio).
 - Calendario Tributario 2026 del MH, página 1, «Días de asueto» (no se copia al repositorio; las fechas están en `config/dte.php`).
 - [Decisión 0004](0004-zona-horaria-de-negocio.md): tratamiento de `fecha_procesamiento_mh`.
-- [Auditoría Hacienda 2.0, punto 2](../dte/AUDITORIA_HACIENDA_2_0_2026-09-20.md).
+- Auditoría Hacienda 2.0 del 20/09/2026, punto 2 (bitácora retirada de `docs/`; queda en el historial de git).

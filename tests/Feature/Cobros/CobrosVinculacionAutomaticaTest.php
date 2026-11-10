@@ -15,7 +15,8 @@ use Tests\Concerns\PreparaEmisorDte;
 use Tests\TestCase;
 
 /**
- * Punto 1 de docs/REDISENO_SEGUIMIENTO_CALLEJA_20260924.md: unir automáticamente en Cobros
+ * Punto 1 del rediseño del seguimiento (docs/decisiones/0007-seguimiento-de-ccf-recorrido-principal-de-quedan.md
+ * y docs/COBROS_CALLEJA.md): unir automáticamente en Cobros
  * los albaranes AC01 ya importados que `VinculadorAlbaranes` audite como ÚNICOS y sin
  * contradicciones, en una corrida programada, sin que nadie pulse «auditar».
  *

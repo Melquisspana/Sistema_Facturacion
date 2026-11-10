@@ -122,7 +122,7 @@ Las horas fijas dependen de la zona `America/El_Salvador`. Los registros van a `
 - La app firma por **una sola dirección**: `DTE_FIRMADOR_URL`, que por defecto es `http://localhost:8080/firmardocumento` (`config/dte.php:117-119`). El cliente es `app/Services/Dte/DteFirmaService.php`: `POST {url}/` para firmar y `GET {url}/status` para el estado. Espera hasta `DTE_FIRMA_TIMEOUT` (10 s).
 - **8080:** es el firmador oficial del MH, `svfe-api-firmador-2.0.0-exec.jar`, con el perfil `nonssl`. Busca el certificado `<NIT>.crt` en `uploads/` (carpeta de trabajo) o en `CERTIFICATE_HOME` (`docs/FIRMADOR_LOCAL.md §2`). Ni el JAR, ni el JDK, ni los certificados están en git (`.gitignore:26-34`): **existen solo en el servidor**.
 - **8119:** solo lo vigila `/salud` (`SALUD_FIRMADORES`); ningún servicio lo usa para firmar. **No se migra** (decisión de Melqui, 08/11: no lo usa). En Linux, `SALUD_FIRMADORES` lleva solo el del 8080.
-- En la documentación aparece el puerto 8113 (`ARQUITECTURA.md`, `docs/ESTADO_FASE_FACTURACION.md:315`). Está **desactualizado**: el JAR trae 8113 por defecto, pero `firmador-auto.bat` lo fuerza a 8080.
+- En la documentación aparece el puerto 8113 (`ARQUITECTURA.md`). Está **desactualizado**: el JAR trae 8113 por defecto, pero `firmador-auto.bat` lo fuerza a 8080.
 
 ### 2.7 Almacenamiento y volúmenes
 
@@ -456,7 +456,7 @@ Se dejan anotados para no hacer de más:
 | `composer.json` | `"php": "^8.3"` y agregar `ext-bcmath`; `ext-imap` en `suggest` | Que la imagen falle al construir si falta una extensión, en vez de fallar en uso |
 | `config/backup.php` | Destino de spatie al disco `backups` y quitar la entrada de ejemplo de `monitor_backups` (disco `s3`) | Hoy el ZIP queda dentro del mismo volumen que respalda |
 | `package.json` | Quitar `@tailwindcss/vite` | Nadie lo usa (el proyecto está en Tailwind 3) |
-| `ARQUITECTURA.md`, `docs/ESTADO_FASE_FACTURACION.md` | Cambiar 8113 por 8080 | Puertos viejos que llevan a configurar mal |
+| `ARQUITECTURA.md` | Cambiar 8113 por 8080 | Puertos viejos que llevan a configurar mal |
 
 El filtro del Host lo hace Apache: en `docker/apache/facturacion.conf` el primer vhost responde 404 a todo Host que no sea `facturacion.test`, `localhost`, `APACHE_DOMINIO_PUBLICO` o los de `APACHE_HOSTS_EXTRA` (IP de la red local y nombre de Tailscale). Así nadie de la oficina puede mandar un Host ajeno para que Laravel arme enlaces hacia otro dominio. Como segunda barrera, el enlace de «olvidé mi contraseña» sale siempre con `APP_URL` (`AppServiceProvider`, con su prueba). `trustHosts` de Laravel queda descartado: no actúa en `local` ni en pruebas y repetiría la lista de Apache.
 
