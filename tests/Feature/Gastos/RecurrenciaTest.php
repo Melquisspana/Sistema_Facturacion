@@ -3,6 +3,7 @@
 namespace Tests\Feature\Gastos;
 
 use App\Enums\PermisoSistema;
+use App\Models\Gastos\Ajuste;
 use App\Models\Gastos\Gasto;
 use App\Models\Gastos\Ocurrencia;
 use App\Models\Gastos\Pago;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Services\Gastos\Recurrencia\AdministrarReglas;
 use App\Services\Gastos\Recurrencia\CalendarioRecurrencia;
 use App\Services\Gastos\Recurrencia\GenerarObligaciones;
+use App\Services\Gastos\RegistrarAjuste;
 use App\Services\Gastos\SaldosGastos;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -549,6 +551,38 @@ class RecurrenciaTest extends TestCase
             $this->assertStringContainsString('ya generó una obligación', $e->getMessage());
         }
 
+        $this->assertSame(1, Gasto::count());
+    }
+
+    /**
+     * El aviso mandaba a «anular esa obligación», y anular no existe en el sistema. Tiene
+     * que nombrar algo que SÍ se puede hacer, y ese camino tiene que dejar la deuda en cero.
+     */
+    public function test_el_aviso_de_un_periodo_ya_generado_indica_un_camino_que_existe(): void
+    {
+        $u = $this->operador();
+        $regla = $this->crearRegla($u, ['vigente_desde' => '2026-03-01']);
+        $this->generar($regla, '2026-03-05');
+
+        try {
+            app(AdministrarReglas::class)->omitir($u, $regla, '2026-03', 'Me equivoqué al generarlo.');
+            $this->fail('Omitir un período generado tendría que rechazarse.');
+        } catch (ValidationException $e) {
+            $this->assertStringNotContainsStringIgnoringCase('anul', $e->getMessage());
+            $this->assertStringContainsString('ajuste de crédito', $e->getMessage());
+            $this->assertStringContainsString(Ajuste::TIPOS['correccion'], $e->getMessage());
+        }
+
+        // Lo que el aviso indica, hecho: la obligación sigue en el historial y ya no se debe.
+        $gasto = Gasto::firstOrFail();
+        app(RegistrarAjuste::class)->registrar($u, $gasto->cuotas->first(), [
+            'clave' => (string) Str::uuid(), 'direccion' => 'credito', 'tipo' => 'correccion',
+            'importe' => '400.00', 'motivo' => 'Este período no correspondía',
+        ]);
+
+        $resumen = app(SaldosGastos::class)->resumen($gasto->fresh(), '2026-03-05');
+        $this->assertSame(0, $resumen['pendiente']);
+        $this->assertSame('saldada_por_ajuste', $resumen['liquidacion']);
         $this->assertSame(1, Gasto::count());
     }
 
