@@ -9,9 +9,10 @@
                 </div>
 
                 <div class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-                    CCF emitidos a un cliente o sala que exige orden de compra, cuya orden no tiene la forma esperada:
-                    <strong>14 números</strong>, año y mes (AAMM), un 0 y 9 números más, del mismo mes del CCF, del anterior
-                    o del siguiente. Solo lectura: esta lista no cambia nada.
+                    CCF emitidos a un cliente o sala que exige orden de compra, cuya orden no cuadra. La orden lleva
+                    <strong>de 13 a 15 números</strong>: los 4 primeros son el año y el mes (AAMM), del mismo mes del CCF,
+                    del anterior o del siguiente; el quinto es un 0, y del quinto al octavo va el código de la sala del CCF.
+                    Solo lectura: esta lista no cambia nada.
                 </div>
 
                 <form method="GET" action="{{ route('auditoria.ordenes_compra') }}" class="mb-5 flex flex-wrap items-end gap-3">

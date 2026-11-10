@@ -188,7 +188,9 @@ class PedidosSalaTest extends TestCase
             // Esta sala no usa OC.
             ->assertDontSee('Número de orden de compra');
         $this->get(route('rutas.mi-salida.pedidos.create', [$this->salida, $this->salaOc]))->assertOk()
-            ->assertSee('Número de orden de compra');
+            ->assertSee('Número de orden de compra')
+            ->assertSeeText('Si ya la tenés, son de 13 a 15 números.')
+            ->assertDontSeeText('14 dígitos');
     }
 
     public function test_guarda_el_pedido_con_auditoria(): void
@@ -383,7 +385,8 @@ class PedidosSalaTest extends TestCase
         $pedido = PedidoSala::sole();
 
         $this->actingAs($this->oficina);
-        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Todavía sin OC')->assertSee('Agregar la OC');
+        $this->get(route('rutas.pedidos.show', $pedido))->assertOk()->assertSee('Todavía sin OC')->assertSee('Agregar la OC')
+            ->assertSeeText('De 13 a 15 números, del portal EDI.')->assertDontSeeText('14 dígitos');
         $this->patch(route('rutas.pedidos.orden-compra', $pedido), ['numero_orden_compra' => '261102360045'])
             ->assertRedirect(route('rutas.pedidos.show', $pedido))
             ->assertSessionHas('status', fn ($m) => str_starts_with($m, 'Orden de compra guardada.') && str_contains($m, '12 dígitos'));

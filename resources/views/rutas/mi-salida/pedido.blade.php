@@ -57,7 +57,7 @@
                 <label for="pedido-oc" class="block font-semibold">Número de orden de compra <span class="font-normal text-gray-600 dark:text-paper-300">(opcional)</span></label>
                 <input id="pedido-oc" name="numero_orden_compra" inputmode="numeric" maxlength="30" autocomplete="off" aria-describedby="pedido-oc-ayuda"
                        value="{{ old('numero_orden_compra', $pedido?->numero_orden_compra) }}" class="mt-2 font-mono {{ $campo }}">
-                <p id="pedido-oc-ayuda" class="mt-1 {{ $gris }}">Casi siempre llega después y la agrega la oficina. Si ya la tenés, son 14 dígitos.</p>
+                <p id="pedido-oc-ayuda" class="mt-1 {{ $gris }}">Casi siempre llega después y la agrega la oficina. Si ya la tenés, son de 13 a 15 números.</p>
                 @foreach ($pedido?->avisosOrdenCompra() ?? [] as $aviso)
                     <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">{{ $aviso }} Se guarda igual.</p>
                 @endforeach

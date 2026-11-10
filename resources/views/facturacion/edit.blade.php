@@ -66,7 +66,8 @@
                             <li>{{ $aviso }}</li>
                         @endforeach
                     </ul>
-                    <p class="mt-1">Las órdenes de este cliente tienen 14 números: año y mes (AAMM), un 0 y 9 números más.
+                    <p class="mt-1">Las órdenes de este cliente tienen de 13 a 15 números: los 4 primeros son el año y el mes (AAMM),
+                        el quinto es un 0 y del quinto al octavo va el código de la sala.
                         Si está mal escrita, no generes: este borrador no deja cambiarla y hay que crearlo de nuevo.</p>
                     @can('update', $dte)
                         <form method="POST" action="{{ route('facturacion.generar', $dte) }}" class="mt-2"

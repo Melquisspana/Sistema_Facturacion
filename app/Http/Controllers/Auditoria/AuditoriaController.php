@@ -9,6 +9,7 @@ use App\Models\Dte;
 use App\Models\DteEnvio;
 use App\Models\User;
 use App\Support\Dte\ReglaOrdenCompra;
+use App\Support\OrdenCompra;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Spatie\Activitylog\Models\Activity;
@@ -84,9 +85,9 @@ class AuditoriaController extends Controller
 
     /**
      * CCF emitidos a un cliente o sala que exige orden de compra cuya orden no tiene la
-     * forma de {@see ReglaOrdenCompra::problemasForma()}. Solo lectura: es para revisarlos;
-     * la corrección se decide aparte. La forma se evalúa en PHP con la misma regla que
-     * avisa al generar, para que la lista y el aviso nunca discrepen.
+     * forma esperada o trae el código de otra sala ({@see ReglaOrdenCompra::problemasConSala()}).
+     * Solo lectura: es para revisarlos; la corrección se decide aparte. Se evalúa en PHP con
+     * la misma regla que avisa al generar, para que la lista y el aviso nunca discrepen.
      */
     public function ordenesCompra(Request $request): View
     {
@@ -96,6 +97,9 @@ class AuditoriaController extends Controller
             'desde' => ['nullable', 'date'],
             'hasta' => ['nullable', 'date', 'after_or_equal:desde'],
         ]);
+
+        // Una sola lectura de los ajustes para toda la lista, no una por CCF.
+        $posicionSala = OrdenCompra::posicionSala();
 
         $revisar = Dte::query()
             ->ambienteOperativoActual()
@@ -111,7 +115,12 @@ class AuditoriaController extends Controller
             ->lazy(500)
             ->map(fn (Dte $dte) => [
                 'dte' => $dte,
-                'problemas' => ReglaOrdenCompra::problemasForma($dte->numero_orden_compra, $dte->fecha_emision ?? $dte->created_at),
+                'problemas' => ReglaOrdenCompra::problemasConSala(
+                    $dte->numero_orden_compra,
+                    $dte->fecha_emision ?? $dte->created_at,
+                    $dte->clienteSucursal,
+                    $posicionSala,
+                ),
             ])
             ->filter(fn (array $fila) => $fila['problemas'] !== [])
             ->values()

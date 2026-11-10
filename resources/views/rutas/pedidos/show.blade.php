@@ -86,7 +86,7 @@
                             <input id="oc" name="numero_orden_compra" inputmode="numeric" maxlength="30" autocomplete="off"
                                    value="{{ old('numero_orden_compra', $pedido->numero_orden_compra) }}"
                                    class="mt-1 min-h-11 w-full rounded-md border-gray-300 font-mono text-sm">
-                            <p class="mt-1 text-xs text-gray-500">14 dígitos, del portal EDI. Si la forma no cuadra, avisa y se guarda igual. Vacía, se quita.</p>
+                            <p class="mt-1 text-xs text-gray-500">De 13 a 15 números, del portal EDI. Si la forma no cuadra, avisa y se guarda igual. Vacía, se quita.</p>
                             <x-input-error :messages="$errors->get('numero_orden_compra')" class="mt-1" />
                         </div>
                         <button class="inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Guardar OC</button>
