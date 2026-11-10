@@ -1,6 +1,8 @@
 # Propuesta de Gastos — para revisión
 
-Fecha: 6 de septiembre de 2026. Estado: dirección general aprobada; inicio de fase 1 en desarrollo. Presentación del formulario Registrar gasto pendiente de revisión antes de extenderla al resto. Sin push ni despliegue.
+> **Estado al 10/11/2026:** construido y en `master`. Qué está encendido en producción se lee en `CHANGELOG.md`. Lo que sigue conserva la propuesta del 6 de septiembre de 2026 y el registro de cómo se construyó: los «sin commit, push ni despliegue» de cada corte describen ese momento, no el estado actual.
+
+Fecha de la propuesta: 6 de septiembre de 2026.
 
 **Acuerdos para comenzar fase 1**
 
@@ -314,7 +316,7 @@ Próximo paso: revisar alcance, bocetos y decisiones 1–3. Solo después de esa
 
 ## Estado de la implementación — corte 1 de fase 1 (8 de septiembre de 2026)
 
-Solo desarrollo. Sin commit, sin push, sin despliegue, sin tocar producción ni `C:\rclone`. Base de pruebas SQLite `:memory:`; base de desarrollo local `base_ejemplo` (no existe una base de producción en esta máquina). No se transmitió ningún DTE, no se ejecutó ningún pago bancario y no se envió ningún correo.
+En ese corte: solo desarrollo, sin commit, sin push, sin despliegue, sin tocar producción ni `C:\rclone`. Base de pruebas SQLite `:memory:`; base de desarrollo local `base_ejemplo` (no existe una base de producción en esta máquina). No se transmitió ningún DTE, no se ejecutó ningún pago bancario y no se envió ningún correo.
 
 **Corrección previa.** El archivo de rutas usaba una Closure dentro del array de middleware del grupo. Eso rompía la resolución de rutas con `Object of class Closure could not be converted to string` y por eso se había retirado su inclusión de `routes/web.php`. Ahora el interruptor vive en `App\Http\Middleware\ModuloGastosActivo` (alias `modulo.gastos`), como en Planta y Asistencia, y el grupo usa `['auth', 'modulo.gastos', 'permission:gastos.ver']`. `routes/gastos.php` volvió a `routes/web.php` y el enlace volvió al menú, detrás de `GASTOS_ENABLED` y de `gastos.ver`.
 
@@ -385,7 +387,7 @@ Cuatro filas tocadas. `dtes`, `clientes` y `cliente_sucursales` modificados hoy:
 
 ## Fase 1 completa — segundo corte (8 de septiembre de 2026)
 
-Aprobada la presentación del formulario, se completó el flujo. Sigue sin commit, push ni despliegue; sin tocar producción, Drive ni firmware.
+Aprobada la presentación del formulario, se completó el flujo. En ese corte seguía sin commit, push ni despliegue; sin tocar producción, Drive ni firmware.
 
 ### Lo que existe ahora
 
@@ -445,7 +447,7 @@ Aparte, el **topbar compartido** (`layouts/navigation.blade.php`) es una fila fl
 
 ## Fase 2 — recurrencias y avisos (9 de septiembre de 2026)
 
-Cerrada la fase 1, se construyó lo que sigue: reglas recurrentes, bandeja interna de avisos y resúmenes por correo. Sigue sin commit, push ni despliegue; sin tocar producción, Drive ni firmware. Planilla queda para su fase.
+Cerrada la fase 1, se construyó lo que sigue: reglas recurrentes, bandeja interna de avisos y resúmenes por correo. En ese corte seguía sin commit, push ni despliegue; sin tocar producción, Drive ni firmware. Planilla queda para su fase.
 
 ### Puntos de fase 1 que se confirmaron antes de abrir esta
 

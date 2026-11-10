@@ -2,6 +2,8 @@
 
 Encargo autorizado por el usuario: Claude implementa en desarrollo; Codex coordina, revisa y ejecuta comprobaciones. Sin producción, migraciones de bases reales, commit, push ni despliegue.
 
+> **Actualización del 10/11/2026.** Este es el registro de esa entrega. El código ya está en `master`, y los tres «Pendiente corregir» de abajo se corrigieron ese mismo día (ver «Estado»). Las reglas vigentes del módulo están en [`docs/COBROS_CALLEJA.md`](COBROS_CALLEJA.md).
+
 ## Sesión y modelo
 
 SessionId: `e4f53e43-f440-4a2e-b1a9-dd11860317ef`.
@@ -39,4 +41,4 @@ Límites conservados: la opción explícita previa de agregar sin albarán conti
 
 El alcance completo del módulo continúa en `docs/RELEVO_COBROS_PPQ_NC.md`.
 
-Primera entrega terminada y validada en desarrollo. Queda comprobado el ciclo del puente: encargo de implementación, cambios de Claude, revisión de Codex, dos rondas de corrección en la misma sesión y pruebas finales. El módulo completo no está terminado ni desplegado.
+Primera entrega terminada y validada en desarrollo. Queda comprobado el ciclo del puente: encargo de implementación, cambios de Claude, revisión de Codex, dos rondas de corrección en la misma sesión y pruebas finales. Al cierre de ese día el módulo completo no estaba terminado ni desplegado.

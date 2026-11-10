@@ -43,9 +43,9 @@ En la lista de empaque va un solo número FDA, el de la empresa, que se configur
 
 La hace el comando `exportacion:unificar-catalogo`, con la tabla aprobada por el usuario el 28/09/2026. Simula por defecto y aplica solo con `--aplicar`. Antes de aplicar, verifica que cada registro coincida en nombre, unidades y gramos, y guarda un respaldo JSON de las filas afectadas.
 
-## Estado al 28/09/2026
+## Estado
 
-La implementación está completa en el árbol de trabajo, sin commit. Se verificó en la copia aislada `prueba_unificacion_exportacion`: 48 productos, 62 presentaciones activas y 7 archivadas; los 86 items de listas quedaron idénticos. Las pruebas de exportaciones, listas y clientes pasan (400). La suite completa da 7 fallas en `NavigationTest`, que vienen de cambios previos al menú lateral («Pronto pago» → «Cobros Calleja») y no de este trabajo.
+La implementación está completa y en `master` desde el 28/09/2026. Se verificó en la copia aislada `prueba_unificacion_exportacion`: 48 productos, 62 presentaciones activas y 7 archivadas; los 86 items de listas quedaron idénticos. Las pruebas de exportaciones, listas y clientes pasan (400).
 
 Para aplicarlo en una base, en este orden:
 

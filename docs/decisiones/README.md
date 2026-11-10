@@ -46,3 +46,6 @@ Puede agregarse una sección de referencias relacionadas. Usá solo datos invent
 | [0004. Zona horaria: guardar y calcular el día de negocio en hora de El Salvador](0004-zona-horaria-de-negocio.md) | Aceptada (corregida el 2026-10-06) | 2026-10-03 |
 | [0005. Plazos para transmitir el evento de invalidación](0005-plazos-de-invalidacion.md) | Aceptada | 2026-10-04 |
 | [0006. Contingencia: emitir sin conexión con Hacienda y regularizar después](0006-contingencia.md) | Propuesta | 2026-10-06 |
+| [0007. Seguimiento de CCF es el recorrido principal de los quedan](0007-seguimiento-de-ccf-recorrido-principal-de-quedan.md) | Aceptada | 2026-11-10 |
+| [0008. Punto de venta propio y candados de emisión real](0008-punto-de-venta-propio-y-candados-de-emision-real.md) | Aceptada | 2026-11-10 |
+| [0009. Reglas de cálculo de CCF y nota de crédito](0009-reglas-de-calculo-de-ccf-y-nota-de-credito.md) | Aceptada | 2026-11-10 |

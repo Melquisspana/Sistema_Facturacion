@@ -207,7 +207,9 @@ El sistema no emite estas operaciones. Sus campos van siempre en `null` o en 0.0
 - Cargos y abonos que no afectan la base imponible (`noGravado`), saldo a favor, precio sugerido (`psv`) y percepción de IVA.
 - NC sobre más de un documento, sobre documentos físicos o sobre un Comprobante de Retención (07).
 - FEX de servicios: bloqueada en la creación, los datos aduaneros y la validación previa (H10, #123).
-- Tipos de documento ND, NR, CR, CL, DCL, FSE y CD; eventos de retorno y de operaciones especiales (ver la auditoría, punto 5).
+- Tipos de documento ND, NR, CR, CL, DCL, FSE y CD.
+- Evento de retorno (devoluciones de Factura y de Factura de Exportación) y evento de operaciones especiales: no están implementados ni tienen su esquema en el repositorio. El retorno admite hasta 50 documentos del mismo tipo, con tope por documento y plazo de tres meses, y no se reemplaza con la nota de crédito de CCF. Hay que resolver si aplican antes de emitir esos casos.
+- «Hacienda 2.0» no es poner versión 2 en todo: cada documento y cada evento lleva la versión de su propia estructura.
 
 ## Validación en el ambiente de pruebas del MH
 
