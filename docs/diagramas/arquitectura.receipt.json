@@ -3,15 +3,15 @@
   "ok": true,
   "command": "deliver",
   "type": "architecture",
-  "input": "C:\\laragon\\www\\Facturacion\\docs\\diagramas\\arquitectura.architecture.json",
-  "output": "C:\\laragon\\www\\Facturacion\\docs\\diagramas\\arquitectura.html",
+  "input": "C:\\laragon\\www\\Facturacion\\.claude\\worktrees\\agent-a826787e6afc20266\\docs\\diagramas\\arquitectura.architecture.json",
+  "output": "C:\\laragon\\www\\Facturacion\\.claude\\worktrees\\agent-a826787e6afc20266\\docs\\diagramas\\arquitectura.html",
   "specification": {
-    "sha256": "4ebf1e8e9bbc1515a22bf28f102e002b84abbba6f1529d974c5690f6a4740c95",
-    "bytes": 4483
+    "sha256": "888a27d2e7647cff908a9c25145d0528683b86f3ad029e536fad5912c4751d79",
+    "bytes": 4251
   },
   "artifact": {
-    "sha256": "2cf40d1d73bc256359891808b04b5444d9b432e39a8386ec682d475d66647f67",
-    "bytes": 715276
+    "sha256": "8b1f3ea8425907d2de5ad0d35a046b48dd6613f6c8d776cb0bb9b8dc8985c0fa",
+    "bytes": 715245
   },
   "validation": {
     "checksPassed": 9,

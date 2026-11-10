@@ -34,8 +34,8 @@ return [
 
         /*
         | Content-Security-Policy "básica". Permite 'unsafe-inline' y
-        | 'unsafe-eval' en scripts para no romper Alpine.js/Livewire (que
-        | evalúan expresiones en tiempo de ejecución). Se podrá endurecer
+        | 'unsafe-eval' en scripts para no romper Alpine.js (que
+        | evalúa expresiones en tiempo de ejecución). Se podrá endurecer
         | con nonces más adelante. Usar CSP_REPORT_ONLY=true para probar sin
         | bloquear.
         */
