@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Support\NombreEmpresa;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
@@ -33,7 +34,7 @@ class PaqueteContabilidadCorreo extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'Paquete contabilidad Dulces La Negrita - '.$this->etiqueta);
+        return new Envelope(subject: 'Paquete contabilidad '.NombreEmpresa::actual().' - '.$this->etiqueta);
     }
 
     public function content(): Content

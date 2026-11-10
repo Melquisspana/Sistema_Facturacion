@@ -67,5 +67,5 @@ Ver en el sistema
 Este resumen se manda solo cuando hay pendientes. Podés cambiar la frecuencia, los
 días de anticipación o desactivarlo desde **Gastos › Avisos › Preferencias**.
 
-{{ config('app.name') }}
+{{ \App\Support\NombreEmpresa::actual() }}
 </x-mail::message>

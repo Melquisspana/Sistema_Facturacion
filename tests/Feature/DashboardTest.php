@@ -93,6 +93,7 @@ class DashboardTest extends TestCase
     public function test_encabezado_saluda_con_el_nombre_del_usuario_y_la_fecha(): void
     {
         $usuario = $this->usuario('administrador');
+        $this->emisor(); // el nombre sale de Configuración › Empresa emisora
 
         $resp = $this->actingAs($usuario)->get(route('dashboard'))->assertOk();
 

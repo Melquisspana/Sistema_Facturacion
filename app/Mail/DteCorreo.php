@@ -2,7 +2,11 @@
 
 namespace App\Mail;
 
+use App\Enums\EstadoDte;
 use App\Models\Dte;
+use App\Models\DteEnvio;
+use App\Support\Dte\PlantillaCorreo;
+use App\Support\NombreEmpresa;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
@@ -16,7 +20,7 @@ use Illuminate\Queue\SerializesModels;
  * que cambia por canal es el asunto y el cuerpo:
  *
  * - canal `cliente` (o null: envíos históricos) → texto al cliente con la plantilla
- *   configurable ({@see \App\Support\Dte\PlantillaCorreo});
+ *   configurable ({@see PlantillaCorreo});
  * - canal `contabilidad` → aviso interno de registro contable, sin textos dirigidos
  *   al cliente y sin plantilla.
  *
@@ -50,7 +54,7 @@ class DteCorreo extends Mailable
             return new Envelope(subject: 'DTE para contabilidad — '.$tipo.($num ? ' '.$num : ''));
         }
 
-        return new Envelope(subject: $tipo.($num ? ' '.$num : '').' — Dulces La Negrita');
+        return new Envelope(subject: $tipo.($num ? ' '.$num : '').' — '.NombreEmpresa::actual());
     }
 
     public function content(): Content
@@ -64,15 +68,15 @@ class DteCorreo extends Mailable
 
         return new Content(markdown: 'emails.dte', with: [
             'dte' => $this->dte,
-            'cuerpo' => \App\Support\Dte\PlantillaCorreo::render($this->plantilla, $this->dte),
-            'aceptado' => $this->dte->estado === \App\Enums\EstadoDte::Aceptado,
+            'cuerpo' => PlantillaCorreo::render($this->plantilla, $this->dte),
+            'aceptado' => $this->dte->estado === EstadoDte::Aceptado,
         ]);
     }
 
     /** ¿Este correo va al canal de contabilidad (aviso interno) y no al cliente? */
     private function esParaContabilidad(): bool
     {
-        return $this->canal === \App\Models\DteEnvio::CANAL_CONTABILIDAD;
+        return $this->canal === DteEnvio::CANAL_CONTABILIDAD;
     }
 
     /**

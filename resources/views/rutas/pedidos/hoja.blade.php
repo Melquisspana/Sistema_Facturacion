@@ -175,7 +175,7 @@
 <main class="hoja">
     <header class="franja">
         <div>
-            <p class="empresa">{{ config('app.name') }}</p>
+            <p class="empresa">{{ \App\Support\NombreEmpresa::actual() }}</p>
             <h1>Lo que salió de la fábrica</h1>
         </div>
         <p class="numero"><span>Pedido n.º</span> <strong>{{ $pedido->id }}</strong></p>

@@ -16,7 +16,7 @@
             <div class="flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <h1 class="text-2xl font-semibold text-gray-800 dark:text-paper-100">{{ $saludo }}, {{ auth()->user()->name }}</h1>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Resumen operativo de Dulces La Negrita &middot; {{ \Illuminate\Support\Str::ucfirst(now()->translatedFormat('l d \d\e F \d\e Y')) }}</p>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-paper-300">Resumen operativo de {{ \App\Support\NombreEmpresa::actual() }} &middot; {{ \Illuminate\Support\Str::ucfirst(now()->translatedFormat('l d \d\e F \d\e Y')) }}</p>
                 </div>
                 <div class="flex flex-col items-end gap-1">
                     <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {{ $colorEstado[$estadoGeneral] }}">
