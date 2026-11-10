@@ -3,6 +3,8 @@
 use App\Ajustes\Integraciones\ConfiguracionGmail;
 use App\Enums\ModuloSistema;
 use App\Facades\Ajustes;
+use App\Services\Rutas\ResumenDiarioPedidos;
+use App\Support\HoraNegocio;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -312,3 +314,15 @@ Schedule::command('alertas:revisar')
 Schedule::command('rutas:finalizar-automaticas')
     ->dailyAt('04:00')
     ->withoutOverlapping(10);
+
+/*
+| Pedidos: el resumen de las 5 de la tarde a quien esté en Configuración › Rutas (qué salió
+| de la fábrica, qué faltó, qué no se trae y qué sigue por mandar). Hora de El Salvador
+| aunque el servidor tenga otra zona. Solo lee pedidos; sin correo cargado no manda nada y
+| lo deja en el log. Una vez por día: la auditoría marca el envío.
+*/
+Schedule::command('pedidos:correo-diario')
+    ->dailyAt(ResumenDiarioPedidos::HORA)
+    ->timezone(HoraNegocio::zona())
+    ->withoutOverlapping(10)
+    ->appendOutputTo(storage_path('logs/pedidos-correo-diario.log'));

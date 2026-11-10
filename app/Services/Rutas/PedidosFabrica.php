@@ -47,6 +47,17 @@ class PedidosFabrica
     public const FACTURADO = 'Ya se facturó: avisale a la oficina.';
 
     /**
+     * Lo que dice la auditoría cuando un pedido puede quedar cerrado con algo que no va. El
+     * resumen diario ({@see ResumenDiarioPedidos}) lee estos registros para saber qué se
+     * cerró y cuándo.
+     */
+    public const AUDITORIA_PARTE = 'mandó una parte del pedido';
+
+    public const AUDITORIA_NO_SE_TRAE = 'marcó que el pedido no se trae';
+
+    public const AUDITORIA_LO_QUE_FALTA = 'cerró el pedido: lo que falta no se trae';
+
+    /**
      * Lo que falta mandar, de cualquier fecha desde `pedidos.fabrica_desde`, del más viejo
      * al más nuevo. Sin precios: la fábrica no tiene `productos.ver`.
      *
@@ -262,7 +273,7 @@ class PedidosFabrica
                         'producto_id' => $l->producto_id, 'motivo' => $l->motivo_no_enviado,
                     ])->values()->all(),
                 ])
-                ->log($completo ? 'mandó todo el pedido' : 'mandó una parte del pedido');
+                ->log($completo ? 'mandó todo el pedido' : self::AUDITORIA_PARTE);
 
             return $envio->setRelation('pedido', $pedido);
         }, 3);
@@ -294,13 +305,13 @@ class PedidosFabrica
             $propiedades = ['estado_anterior' => $anterior->value, 'estado_nuevo' => $pedido->estado->value];
             if ($pedido->estado === EstadoPedidoSala::NoSeTrae) {
                 activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)->withProperties($propiedades)
-                    ->log('marcó que el pedido no se trae');
+                    ->log(self::AUDITORIA_NO_SE_TRAE);
             } else {
                 activity('pedido_sala')->performedOn($pedido)->causedBy($usuario)
                     ->withProperties($propiedades + ['faltantes' => $pedido->lineas->filter->tienePendiente()->map(fn ($l) => [
                         'producto_id' => $l->producto_id, 'pendiente' => $l->pendiente(),
                     ])->values()->all()])
-                    ->log('cerró el pedido: lo que falta no se trae');
+                    ->log(self::AUDITORIA_LO_QUE_FALTA);
             }
 
             return $pedido->estado;

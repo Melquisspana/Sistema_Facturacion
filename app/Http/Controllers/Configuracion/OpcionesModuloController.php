@@ -105,7 +105,7 @@ class OpcionesModuloController extends Controller
                 ],
                 [
                     'titulo' => 'Pedidos de la fábrica',
-                    'claves' => ['pedidos.fabrica_desde'],
+                    'claves' => ['pedidos.fabrica_desde', 'pedidos.correo_resumen_diario'],
                 ],
             ],
         ],

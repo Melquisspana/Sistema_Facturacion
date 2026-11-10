@@ -17,4 +17,17 @@ return [
 
     'fabrica_desde' => env('PEDIDOS_FABRICA_DESDE'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | A quién va el resumen diario de las 17:00
+    |--------------------------------------------------------------------------
+    |
+    | Uno o varios correos separados por coma. Lo carga el administrador en
+    | Configuración › Rutas: nunca se escribe en el repositorio. Vacío = no se
+    | manda (`pedidos:correo-diario` lo deja en el log).
+    |
+    */
+
+    'correo_resumen_diario' => env('PEDIDOS_CORREO_RESUMEN_DIARIO'),
+
 ];
