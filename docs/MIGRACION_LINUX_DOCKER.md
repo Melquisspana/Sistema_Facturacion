@@ -145,7 +145,7 @@ La base guarda rutas **relativas al disco**, así que no hay rutas `C:\` que ree
 | Puerto | Uso | En Linux |
 |---|---|---|
 | 80/tcp, red local | Web para la oficina y los ESP32 (HTTP plano con `Host: facturacion.test`) | **Publicado** en la red local |
-| 443/tcp, red local | Vhost HTTPS de contingencia (decisión 0006 §1.1); no se sabe si existe hoy (P8) | Solo si existe |
+| 443/tcp, red local | HTTPS para entrar sin internet (decisión 0006 §1.1, P8) | **Publicado solo en la IP local** del servidor (3.7) |
 | 3306 | MySQL | Solo red interna de compose |
 | 8080 | Firmador | Solo red interna, **nunca** publicado |
 | 22 | SSH de despliegue | Solo por Tailscale |
@@ -220,7 +220,7 @@ Todos los contenedores con código PHP usan **una sola imagen propia**. Cambia s
 
 - **`backend`** (`internal: true`, sin salida a internet): `mysql` y el `firmador` (8080). Los contenedores `web`, `worker` y `scheduler` también están en esta red. El firmador no necesita internet para firmar.
 - **`frontend`**: `web`, `worker`, `scheduler` y `cloudflared`. Tiene salida a internet y una **subred fija** (`172.30.0.0/24`) para darle a cloudflared una **IP fija** (172.30.0.10), que es lo único que va en `TRUSTED_PROXIES`. No se confía en toda la subred ni en su puerta de enlace (ver 3.6).
-- Publicado en el host: **solo `80:80`**, y `443` si existe el vhost de contingencia. MySQL y el firmador van **sin `ports:`**.
+- Publicado en el host: **solo `80:80`**, y el `443` solo en la IP local del servidor (3.7). MySQL y el firmador van **sin `ports:`**.
 
 ### 3.3 Volúmenes
 
@@ -331,10 +331,93 @@ Resuelto en `compose.yaml`:
   - sube `storage/app/private`, sin `paquetes/`, `backup-temp/` ni `diagnostico-concurrencia/`;
   - sube `storage/app/templates`;
   - la configuración y el remoto se vuelven a crear en Linux; lo hace Melqui.
-- **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Al volver la luz, `restart: always` levanta todo cuando arranca Docker, sin entrar a nadie. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
+- **UPS con NUT:** ante un corte largo, `upsmon` corre `docker compose stop` (para que MySQL se apague limpio) y después apaga el equipo. Al volver la luz, `restart: always` levanta todo cuando arranca Docker, sin entrar a nadie. Con el 443 de la red local, eso vale solo con el paso 0 de 3.7: sin él, si el router vuelve más tarde que el servidor, `web` no arranca, con el 80 incluido. Falta confirmar el modelo de UPS y si tiene conexión USB (P14).
 - **Reloj:** NTP del sistema. Hay que confirmar la hora antes del primer DTE (riesgo R9).
 - **Rotación de logs:** si se cambia `LOG_CHANNEL` a `daily` no hace falta en el host. Si no, `logrotate` sobre `storage/logs`.
-- **Cortafuegos:** solo el 80 en la red local (y el 443 si aplica). Docker escribe sus propias reglas de iptables y puede saltarse las de `ufw`, así que hay que revisar el resultado con un escaneo desde otra máquina.
+- **Cortafuegos:** solo el 80 y el 443 en la red local. Docker escribe sus propias reglas de iptables y puede saltarse las de `ufw`, así que hay que revisar el resultado con un escaneo desde otra máquina.
+
+### 3.7 HTTPS de la red local (contingencia sin internet)
+
+Sin internet, las PC de la oficina entran al servidor por `https://<IP local>`, que es `CONTINGENCIA_URL_LOCAL` (decisión 0006 §1.1). Por `http://` el navegador no guarda la cookie de sesión segura y no se puede iniciar sesión. En Windows lo resuelve un vhost de Apache con un certificado autofirmado y una regla del cortafuegos. En Linux lo hace el contenedor `web` en el 443.
+
+**Cómo funciona:**
+
+- La imagen trae `mod_ssl`, pero **ningún certificado**. El certificado y la llave están solo en el host y se montan de solo lectura en `web`; el worker y el programador no los ven.
+- El 443 se abre solo si están las cuatro cosas: `lan.crt` y `lan.key` en `LAN_TLS_DIR`, `WEB_IP_LAN` y `LAN_SUBNET`. Lo decide el entrypoint de `web` cada vez que arranca. Además comprueba que la llave sea la del certificado, que no tenga contraseña y que Apache acepte la configuración.
+- **Si falta algo o algo está mal, el 443 queda cerrado y el 80 arranca igual.** El motivo sale en `docker compose logs web` como «HTTPS de la red local apagado». Sin certificado ni variables no avisa nada: es lo normal en una máquina de prueba.
+- compose publica el 443 **solo en `WEB_IP_LAN`**. Sin esa variable lo deja en un puerto al azar de `127.0.0.1` del servidor: nadie de la red llega y no choca con otro programa del servidor que use el 443. compose no tiene puertos que existan solo con una variable, salvo con otro archivo; así no hace falta acordarse de un `-f` más en cada comando.
+- Apache atiende el 443 solo para la red de la oficina (`LAN_SUBNET`): desde otra IP responde 403. Acepta la misma lista de `Host` que el 80 más la IP local (`WEB_IP_LAN`); con otro Host responde 404.
+- **Laravel no cambia.** El pedido llega por HTTPS directo a Apache, sin proxy: `isSecure()` es verdadero, la cookie `Secure` se guarda y el CSRF anda. Los enlaces se arman con la IP por la que se entró. En el `.env` de Laravel, `SESSION_DOMAIN` tiene que estar vacío: una cookie atada al dominio público no se guarda al entrar por IP.
+
+**En el servidor, una vez** (192.0.2.10 y 192.0.2.0/24 son ejemplos; van la IP y la red reales):
+
+```sh
+# 0. OBLIGATORIO antes de poner WEB_IP_LAN: que Docker pueda publicar el 443 en esa IP
+#    aunque el servidor todavía no la tenga. Después de un corte de luz, el router puede
+#    volver más tarde que el servidor. Sin esto, Docker no publica el puerto, web no
+#    arranca (con el 80 incluido) y no lo vuelve a intentar hasta que alguien entre.
+#    Solo deja escuchar en una IP que todavía no llegó; no abre ningún puerto.
+echo 'net.ipv4.ip_nonlocal_bind = 1' | sudo tee /etc/sysctl.d/90-facturacion-ip-lan.conf
+sudo sysctl --system > /dev/null
+cat /proc/sys/net/ipv4/ip_nonlocal_bind               # 1
+
+# 1. Certificado autofirmado con la IP en subjectAltName, válido por 825 días. La llave
+#    va sin contraseña: Apache arranca solo, sin nadie que la escriba. Las tres últimas
+#    líneas de openssl lo marcan como certificado de servidor y no de autoridad (sin
+#    ellas, OpenSSL 3 lo hace de autoridad, Apache avisa y algún navegador puede negarse).
+#    Con rutas completas y sin cd: la carpeta queda de root y sin root no se entra.
+D=/srv/facturacion/tls                                # la carpeta de LAN_TLS_DIR
+sudo install -d -m 0750 "$D"
+sudo openssl req -x509 -newkey rsa:3072 -sha256 -days 825 -noenc \
+    -keyout "$D/lan.key" -out "$D/lan.crt" \
+    -subj "/CN=192.0.2.10" -addext "subjectAltName=IP:192.0.2.10" \
+    -addext "basicConstraints=critical,CA:FALSE" \
+    -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+    -addext "extendedKeyUsage=serverAuth"
+sudo chmod 0600 "$D/lan.key"
+sudo chmod 0644 "$D/lan.crt"
+sudo openssl x509 -noout -enddate -in "$D/lan.crt"    # anotar el vencimiento
+
+# 2. En .env.compose:
+#      WEB_IP_LAN=192.0.2.10
+#      LAN_SUBNET=192.0.2.0/24
+#    LAN_TLS_DIR solo si la carpeta no es /srv/facturacion/tls.
+
+# 3. Desde la carpeta de compose.yaml y .env.compose: recrear web y revisar.
+ip -4 -o addr | grep -w 192.0.2.10                    # la IP tiene que ser del servidor
+docker compose --env-file .env.compose up -d web
+docker compose --env-file .env.compose logs web | grep 'red local'   # sin avisos
+docker compose --env-file .env.compose ps web         # con 192.0.2.10:443->443/tcp
+```
+
+- La llave queda de `root` con `0600`. Apache la lee al arrancar, como root, antes de pasar a `www-data`. Nunca va al repo ni a la imagen: `.gitignore` y `.dockerignore` excluyen `*.crt` y `*.key`.
+- Apache avisa `AH01909` al arrancar: el certificado nombra la IP y no `facturacion.test`. Es normal.
+- **Renovarlo** antes del vencimiento: repetir el paso 1 y `docker compose restart web`. Un certificado nuevo hace que cada PC tenga que aceptar el aviso otra vez.
+
+**En las 3 PC de la oficina, una vez:** abrir el favorito «Facturación (sin internet)» (`https://<IP local>`). El navegador avisa que el certificado no es de confianza: «Avanzado → Continuar». Después se inicia sesión como siempre. El aviso puede volver al reiniciar el navegador o con el tiempo, y se acepta igual. Conviene hacerlo en las 3 antes de necesitarlo, en el ensayo de la decisión 0006.
+
+**Cuidado:**
+
+- **Sin el paso 0, `WEB_IP_LAN` puede tumbar el 80.** Si el servidor no tiene esa IP cuando arranca Docker, Docker no puede publicar el puerto y **`web` no arranca, con el 80 incluido**. `restart: always` no lo reintenta: solo levanta un contenedor que se cayó después de arrancar. Pasa si el router vuelve más tarde que el servidor después de un corte, si el DHCP le dio otra IP o si está mal escrita.
+- Con el paso 0, una IP equivocada ya no tumba el 80, pero el 443 no responde; por eso el `grep` y el `ps` del paso 3. La reserva de DHCP, que ya hace falta por los ESP32 (R10), evita que la IP cambie.
+- Si `web` alguna vez no arrancó por el puerto, se levanta con `docker compose --env-file .env.compose up -d --force-recreate web`. Un `up -d` o un `restart` sin `--force-recreate` lo dejan corriendo **sin ningún puerto publicado**, ni siquiera el 80. El healthcheck se hace dentro del contenedor y sigue sano: en `ps` lo que falta es `0.0.0.0:80->80/tcp`.
+- Con `WEB_IP_LAN`, el 443 de esa IP tiene que estar libre: si otro programa del servidor ya escucha en el 443, `web` no arranca. Se ve en el primer `up`.
+- `LAN_SUBNET` **nunca** incluye una red de Docker (172.16.0.0/12). Por la puerta de enlace de `frontend` (172.30.0.1) llega lo que pasa por el proxy de Docker, por ejemplo una conexión desde el propio servidor. Con Docker Engine en Linux, las PC de la oficina deberían llegar con su propia IP; falta confirmarlo desde una PC. Si una recibe 403, la IP con que llegó está en `docker compose logs web`.
+- En Docker Desktop todo llega con la IP de la puerta de enlace. Para probar ahí, `LAN_SUBNET` es esa IP (ver «Cómo levantarlo en una máquina de prueba»).
+
+**Comprobado el 09/11/2026** en Docker Desktop, con `compose.local.yaml`, un MySQL nuevo y vacío (migraciones y el administrador inicial) y un certificado de prueba en `tmp/`:
+
+- `https://localhost:<puerto>/up` da 200, y también entrando por IP sin SNI, como un navegador (`Host: 192.0.2.10`).
+- `/login` deja las cookies de sesión y `XSRF-TOKEN` con `secure`. El formulario apunta a `https://192.0.2.10/login`. Sin token, el POST da 419. Con token y clave, 302 a `/dashboard`, que con esa sesión da 200 y carga el CSS desde `https://192.0.2.10`.
+- Desde una IP fuera de `LAN_SUBNET` da 403: la del equipo cuando no está en la lista y la de otro contenedor. Con un `Host` que no está en la lista da 404, igual que el 80. TLS 1.1 no conecta; 1.2 y 1.3 sí.
+- Sin certificado, sin `LAN_SUBNET`, con la llave de otro certificado, con la llave con contraseña o con `LAN_SUBNET` inválida, el 443 queda cerrado, el motivo sale en los registros y el 80 responde 200 con `web` sano. Sin nada configurado, no avisa. Sin el control del entrypoint, Apache no arrancaba con esa llave ni con la de contraseña, aunque `apache2ctl -t` decía «Syntax OK».
+- El 80 sigue igual: mismos vhost (`apache2ctl -S`), `/up` y `/login` en 200, Host ajeno en 404. La imagen no trae `/etc/facturacion` ni certificados, y el worker no ve la carpeta del certificado.
+- Por el 443, `/.htaccess` da 403, igual que por el 80, y `/robots.txt` da 200. Lo cierra `AuthMerging And`. Sin esa línea, el `Require ip` reemplaza el `Require all denied` de los `.ht*` de `apache2.conf`, y `/.htaccess` da 200 desde la red de la oficina.
+- El paso 0, en un Docker Engine 29.9.3 de Linux aislado (Docker dentro de Docker), con los puertos de `compose.yaml` y un servidor mínimo en lugar de la app:
+  - sin el paso 0 y sin la IP, `up` falla con «cannot assign requested address». Después de reiniciar el motor sin la IP, `web` queda detenido y el 80 no responde: ni un minuto después ni cuando llega la IP;
+  - después de esa falla, `up -d` y `restart` dejan a `web` corriendo sin ningún puerto; `up -d --force-recreate` lo arregla;
+  - con el paso 0, `web` arranca sin la IP con el 80 y vuelve solo después de reiniciar el motor. Cuando llega la IP, el 443 responde en ella desde otro equipo; en otra IP del servidor sigue cerrado.
+- El paso 1 de 3.7, corrido como root en un contenedor Linux y desde otra carpeta, deja `lan.crt` y `lan.key` (pareja, la llave en `0600`) solo en `/srv/facturacion/tls`. En Git Bash de Windows, con `MSYS_NO_PATHCONV=1`, genera el certificado de prueba.
 
 ---
 
@@ -358,7 +441,8 @@ Resuelto en `compose.yaml`:
 - `docker/apache/facturacion.conf`, a partir de `docs/apache/facturacion.conf.example`:
   - `ServerName facturacion.test`;
   - el dominio público como `ServerAlias`;
-  - un vhost por defecto para la IP de la red local y Tailscale.
+  - un vhost por defecto para la IP de la red local y Tailscale;
+  - el HTTPS de la red local en el 443 (3.7).
 - `docker/php/php.ini` (valores de 2.3).
 - `docker/entrypoint.sh` (`config:cache` y `storage:link`, sin `migrate`).
 - `docs/MIGRACION_LINUX_DOCKER.md` (este archivo) y una guía de despliegue en Linux que reemplace a `docs/DESPLIEGUE_SERVIDOR.md` y `docs/ARRANQUE_WINDOWS.md` cuando termine el cambio.
@@ -393,7 +477,9 @@ El filtro del Host lo hace Apache: en `docker/apache/facturacion.conf` el primer
 | `APP_MAINTENANCE_DRIVER` | `cache` (va a la base y afecta a todos los contenedores) o dejar `file`, que ya se comparte en el volumen |
 | `TZ` | `America/El_Salvador` en todos los contenedores |
 | `APP_URL`, `SESSION_SECURE_COOKIE`, `GMAIL_REDIRECT_URI`, `CLOUDFLARE_ACCESS_*` | **los mismos de producción** si el dominio no cambia (P9). `APP_URL` tiene que ser el dominio público (`https://…`): el enlace de «olvidé mi contraseña» sale con él, y desde la red local se llega por Cloudflare |
+| `SESSION_DOMAIN` | vacío: una cookie atada al dominio público no se guarda al entrar por la IP local (3.7) |
 | `APACHE_DOMINIO_PUBLICO`, `APACHE_HOSTS_EXTRA` (`.env.compose`) | el dominio público; y la IP de la red local y el nombre `.ts.net`, separados por espacios. Otro Host recibe 404 |
+| `WEB_IP_LAN`, `LAN_SUBNET`, `LAN_TLS_DIR` (`.env.compose`) | la IP del servidor en la red local, la red de la oficina y la carpeta con `lan.crt` y `lan.key` (3.7) |
 | Destino del túnel en Cloudflare | `http://web:80` |
 | Tailscale Serve | contenedor `tailscale` con IP fija hacia `http://web:80`, en `TRUSTED_PROXIES` (3.6); no `127.0.0.1:80` del host |
 | Reserva de DHCP | la misma IP para el equipo (los ESP32 la tienen fija) |
@@ -456,6 +542,20 @@ $C exec -u www-data web php artisan migrate
 curl -I http://localhost:8088/up
 $C exec scheduler php artisan schedule:list
 $C run --rm -e BACKUP_DIARIO_PROGRAMADO=true scheduler php artisan schedule:list
+
+# 5. (Opcional) HTTPS de la red local (3.7), en https://localhost:8443 de este equipo.
+#    El certificado va en tmp/docker-local/tls (no se versiona): el paso 1 de 3.7 con
+#    D=tmp/docker-local/tls y sin sudo. El paso 0 acá no hace falta. En Git Bash de
+#    Windows, antes: export MSYS_NO_PATHCONV=1 (si no, Git Bash cambia "/CN=192.0.2.10"
+#    por una ruta de Windows y openssl falla); en WSL o Linux no hace falta. En Windows,
+#    install avisa que no puede cambiar los permisos de la carpeta: no importa.
+#    compose.env: WEB_IP_LAN=192.0.2.10 (acá solo cuenta como Host: el 443 va a
+#    127.0.0.1:8443) y LAN_SUBNET con la IP con que llega curl a Apache. En Docker
+#    Desktop es la puerta de enlace de la red frontend, 172.30.0.1.
+$C up -d web
+curl -k https://localhost:8443/up                              # 200
+curl -k https://127.0.0.1:8443/up -H 'Host: 192.0.2.10'        # 200, como un navegador por IP
+curl -k https://127.0.0.1:8443/up -H 'Host: otro.example'      # 404
 
 # Pruebas filtradas dentro del contenedor (SQLite en memoria, como la CI).
 docker build --target test -t facturacion-app:test .
@@ -522,9 +622,10 @@ Lo que sigue de esta fase:
    - Reiniciar el host **sin monitor ni teclado y sin iniciar sesión**: todo vuelve solo y en orden, y se entra por SSH.
    - Simular un corte de luz (desenchufar) y comprobar que enciende solo y que todo vuelve.
    - `docker compose stop` y después reiniciar el host (lo que hace NUT, sin UPS): todo vuelve solo.
+   - Encender el servidor con el router apagado y prenderlo unos minutos después: `web` arranca solo con el 80 y, cuando llega la IP, el 443 responde en `WEB_IP_LAN`, sin entrar al servidor (paso 0 de 3.7).
    - Corte real con NUT cuando haya UPS (P14).
    - Tailscale: el contenedor `tailscale` con IP fija en `TRUSTED_PROXIES` sirve la app por `https://<nombre>.ts.net` con CSS, JS y formularios en https (P16).
-   - Escaneo de puertos desde otra máquina: solo responde el 80 (y el 443 si aplica).
+   - Escaneo de puertos desde otra máquina: solo responden el 80 y el 443 (3.7).
 4. Anotar cada falla y su arreglo en este documento antes de pasar a D.
 
 **Resultado del ensayo del 08/11/2026.** Se hizo en Debian 13 dentro de WSL2, con systemd y Docker Engine nativo, en la PC de desarrollo. Usó `compose.yaml` más un archivo de ensayo que deja afuera el firmador y cloudflared, porque no hay JAR ni token. Hubo firma simulada, sin transmisión, con `MAIL_MAILER=log` y una base nueva solo con catálogos, roles y el administrador.
@@ -594,7 +695,7 @@ Lo que sigue de esta fase:
    - copia de `storage/app/private`, `storage/app/templates`, `backups/`, `.env`, `resources/firmador/` y certificados a un medio externo **y** a Drive;
    - anotar el SHA-256 de cada archivo.
 5. (Recomendado) Sacar la imagen completa del disco de Windows al disco USB.
-6. Instalar Linux en el disco, **borrando Windows**. Instalar Docker y Tailscale y traer el compose y las copias.
+6. Instalar Linux en el disco, **borrando Windows**. Instalar Docker y Tailscale, aplicar el paso 0 de 3.7 y traer el compose y las copias.
 7. Verificar los hashes, restaurar la base en `mysql`, copiar `storage` y aplicar `chown -R 33:33` a `storage` y `backups`.
 8. `docker compose up -d` sin `cloudflared`. Revisar `/up`, `/salud`, `dte:firma-check`, el login local y un PDF.
 9. Encender `cloudflared` (**un solo conector para el túnel**). Probar el login por Cloudflare Access desde fuera.
@@ -654,7 +755,7 @@ Lo que sigue de esta fase:
 | R12 | **CSS distinto.** El build nuevo cambia cómo se ven pantallas que hoy dependen del CSS viejo de producción | Fase B, paso 2, con revisión visual |
 | R13 | **Imagen incompleta:** falta bcmath, gd, zip o imap, o los límites de subida quedan en los de Docker | Comprobaciones de la fase A, paso 4, y `ext-bcmath` en `composer.json` |
 | R14 | **Volcado con cliente equivocado.** El `mysqldump` de MariaDB contra MySQL 8.4, o `MYSQL_PWD` rechazada | Cliente oficial 8.4 en la imagen y prueba en la fase C |
-| R15 | **Sin internet en el local.** La decisión 0006 da por supuesto que sin internet se sigue facturando en la red local | Confirmar que el acceso local (`http://facturacion.test` o el vhost HTTPS de contingencia) funciona con el contenedor y sin túnel |
+| R15 | **Sin internet en el local.** La decisión 0006 da por supuesto que sin internet se sigue facturando en la red local | **Resuelto (09/11/2026):** HTTPS de la red local en el 443 del contenedor `web` (3.7), comprobado en Docker con una base vacía. Falta el ensayo de la decisión 0006 desde una PC de la oficina, ya en Linux |
 | R16 | **Docker se salta el cortafuegos del host** al publicar puertos | Publicar solo lo indispensable y verificar con un escaneo externo |
 | R17 | **Pérdida de los únicos originales.** El JAR, el JDK y los certificados existen solo en el servidor Windows | Copia previa cifrada fuera del servidor, hecha por Melqui, antes de la fase E |
 
@@ -669,7 +770,7 @@ Lo que sigue de esta fase:
 | P5 | ~~¿El respaldo diario pasa a `routes/console.php` o a un cron del host?~~ **Decidida:** a `routes/console.php`, 02:00, detrás de `BACKUP_DIARIO_PROGRAMADO` (apagado por defecto para no duplicar la tarea de Windows; `true` en Linux) | — |
 | P6 | ¿Qué versión de MySQL tiene producción? ¿Un volcado de 8.4 se puede restaurar ahí si hay que volver atrás? | Servidor y fase D |
 | P7 | ¿Qué `sql_mode`, juego de caracteres, `lower_case_table_names` y tamaños de memoria tiene el `my.ini` de producción? | **Respondida (08/11, lectura del servidor):** `sql_mode` igual al de 8.4; la base y sus 133 tablas en `utf8mb4_unicode_ci`, ninguna con mayúsculas; sin rutinas, disparadores, eventos ni vistas (sin `DEFINER`); `time_zone` = hora del sistema (UTC-6); `max_allowed_packet` 512M. El servicio `mysql` del compose fija `--default-time-zone=-06:00`, `--collation-server=utf8mb4_unicode_ci` y `--max-allowed-packet=512M`. Sin la zona, las columnas `TIMESTAMP` se leerían 6 horas corridas. `lower_case_table_names` queda en 0 |
-| P8 | ¿Existe hoy el vhost HTTPS de contingencia para la red local (decisión 0006)? | Configuración de Apache del servidor |
+| P8 | ~~¿Existe hoy el vhost HTTPS de contingencia para la red local (decisión 0006)?~~ **Respondida:** sí. En Windows es un vhost de Apache con certificado autofirmado y una regla del cortafuegos. En Linux lo reemplaza el 443 del contenedor `web` (3.7) | — |
 | P9 | ¿El dominio público, `APP_URL`, `SESSION_SECURE_COOKIE` y `GMAIL_REDIRECT_URI` quedan iguales? | `.env` de producción (lo lee Melqui) |
 | P10 | ¿Algún pedido web necesita más de 30 s? ¿Qué `php.ini` tiene producción (subidas, memoria, opcache)? | Servidor y registros |
 | P11 | ¿Apache (menos cambio) o nginx + php-fpm? | Decisión técnica en la fase A |

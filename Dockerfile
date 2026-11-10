@@ -83,8 +83,12 @@ RUN set -eux; \
 
 RUN set -eux; \
     cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"; \
-    a2enmod rewrite headers; \
-    a2dissite 000-default
+    a2enmod rewrite headers ssl; \
+    a2dissite 000-default; \
+    # El 443 lo abre solo facturacion.conf, junto con su vhost HTTPS. El «Listen 443» de
+    # Debian lo abriría siempre y, sin vhost en ese puerto, Apache serviría /var/www/html
+    # entero, .env incluido, por HTTP plano.
+    echo 'Listen 80' > /etc/apache2/ports.conf
 COPY docker/php/php.ini "$PHP_INI_DIR/conf.d/zz-facturacion.ini"
 COPY docker/apache/facturacion.conf /etc/apache2/sites-available/facturacion.conf
 RUN a2ensite facturacion
@@ -125,7 +129,7 @@ USER www-data
 RUN php artisan package:discover --ansi
 USER root
 
-EXPOSE 80
+EXPOSE 80 443
 ENTRYPOINT ["facturacion-entrypoint"]
 CMD ["apache2-foreground"]
 
