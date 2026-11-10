@@ -288,11 +288,19 @@ final class RepetirGasto
         });
     }
 
-    /** Primer día del tramo de calendario al que pertenece un vencimiento. */
+    /**
+     * Primer día del tramo de calendario al que pertenece un vencimiento.
+     *
+     * En quincenal el mes tiene DOS períodos, así que el inicio del mes no alcanza: un
+     * gasto de la segunda quincena dejaría la primera dentro del alcance y la
+     * generación crearía esa deuda hacia atrás. Se arranca en el propio vencimiento,
+     * que deja fuera todo lo anterior sea cual sea la quincena.
+     */
     private function inicioDelPeriodo(string $frecuencia, CarbonImmutable $vence): CarbonImmutable
     {
         return match ($frecuencia) {
             'semanal' => $vence->startOfWeek(),
+            'quincenal' => $vence,
             'anual' => $vence->startOfYear(),
             default => $vence->startOfMonth(),
         };
