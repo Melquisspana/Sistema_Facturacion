@@ -198,11 +198,14 @@ class SalidaRuta extends Model
     /**
      * «Lunes · San Miguel»: el día en que empezó y las zonas de sus pedidos, en el orden en
      * que se sumaron («San Salvador y La Libertad»). Sin pedidos con zona, la de la salida.
+     * Con los pedidos (y su ruta) ya cargados no consulta: el tablero nombra muchos viajes.
      */
     public function nombreViaje(): string
     {
-        $nombres = $this->pedidos()->vigentes()->whereNotNull('ruta_id')->with('ruta:id,nombre')->orderBy('id')
-            ->get(['id', 'ruta_id'])->map(fn (PedidoSala $p) => $p->ruta?->nombre)->filter()->unique()->values();
+        $pedidos = $this->relationLoaded('pedidos')
+            ? $this->pedidos->filter(fn (PedidoSala $p) => $p->estaVigente() && $p->ruta_id !== null)->sortBy('id')
+            : $this->pedidos()->vigentes()->whereNotNull('ruta_id')->with('ruta:id,nombre')->orderBy('id')->get(['id', 'ruta_id']);
+        $nombres = $pedidos->map(fn (PedidoSala $p) => $p->ruta?->nombre)->filter()->unique()->values();
         if ($nombres->isEmpty()) {
             $nombres = collect([$this->ruta->nombre]);
         }

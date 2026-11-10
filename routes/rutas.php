@@ -18,6 +18,7 @@ use App\Http\Controllers\Rutas\SalidaGastoController;
 use App\Http\Controllers\Rutas\SalidaLiquidacionController;
 use App\Http\Controllers\Rutas\SalidaRutaController;
 use App\Http\Controllers\Rutas\VentasController;
+use App\Http\Controllers\Rutas\ViajesController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -116,6 +117,8 @@ Route::middleware(['auth', 'permission:rutas.ver', 'cache.headers:no_store;priva
     ->name('rutas.')
     ->group(function () {
         Route::get('/', [RutasDashboardController::class, 'index'])->name('dashboard');
+        // La pestaña «Viajes» del tablero: en qué paso va cada pedido de cada viaje (10/11/2026).
+        Route::get('viajes', [ViajesController::class, 'index'])->name('viajes');
         // La pestaña «Mapa» del tablero: ventas por zona, con montos (09/11/2026).
         Route::get('mapa', [MapaVentasController::class, 'index'])
             ->middleware('permission:rutas.mapa.ver')->name('mapa');
