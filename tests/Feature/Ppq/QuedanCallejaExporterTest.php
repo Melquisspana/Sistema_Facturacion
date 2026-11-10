@@ -218,20 +218,7 @@ class QuedanCallejaExporterTest extends TestCase
     /** NC local con su albarán de crédito propio, como queda al emitirla. */
     private function ncConAlbaran(PpqLote $lote, string $control, ?string $albaran, string $estado = 'aceptado'): PpqItem
     {
-        $this->estab ??= $this->crearEmisorDte()['estab'];
-        $dte = Dte::create([
-            'establecimiento_id' => $this->estab->id,
-            'tipo_dte' => '05',
-            'estado' => $estado,
-            'ambiente' => '01',
-            'numero_control' => $control,
-            'codigo_generacion' => strtoupper(Str::uuid()->toString()),
-            'sello_recepcion' => '2026SELLOREAL'.Str::random(8),
-            'fecha_procesamiento_mh' => now(),
-            'fecha_emision' => '2026-09-10',
-            'hora_emision' => '08:00:00',
-            'total_pagar' => 5.00,
-        ]);
+        $dte = $this->dteLocal('05', $control, $estado);
         if ($albaran !== null) {
             DteAlbaran::create([
                 'dte_id' => $dte->id,
@@ -255,6 +242,25 @@ class QuedanCallejaExporterTest extends TestCase
         ]);
     }
 
+    private function dteLocal(string $tipo, string $control, string $estado): Dte
+    {
+        $this->estab ??= $this->crearEmisorDte()['estab'];
+
+        return Dte::create([
+            'establecimiento_id' => $this->estab->id,
+            'tipo_dte' => $tipo,
+            'estado' => $estado,
+            'ambiente' => '01',
+            'numero_control' => $control,
+            'codigo_generacion' => strtoupper(Str::uuid()->toString()),
+            'sello_recepcion' => '2026SELLOREAL'.Str::random(8),
+            'fecha_procesamiento_mh' => now(),
+            'fecha_emision' => '2026-09-10',
+            'hora_emision' => '08:00:00',
+            'total_pagar' => 5.00,
+        ]);
+    }
+
     public function test_las_nc_van_despues_de_los_ccf_con_su_albaran_de_credito(): void
     {
         $lote = $this->lote();
@@ -275,6 +281,49 @@ class QuedanCallejaExporterTest extends TestCase
         ]);
         $this->assertSame('3874', $hoja->getCell('B4')->getValue());
         $this->assertSame('AC04', $hoja->getCell('E4')->getValue());
+    }
+
+    /** #12 (decisión de Melqui, 09/11/2026): lo que ya no vale sale solo del archivo y se avisa. */
+    public function test_el_ccf_invalidado_sale_solo_del_quedan_y_la_ficha_avisa_cual_y_por_que(): void
+    {
+        $lote = $this->lote();
+        $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
+        $anulado = $this->ccf($lote, 'DTE-03-M001P002-000000000000011', self::OC_B, $this->albaran('AC01/0231/00/11', self::OC_B));
+        $anulado->update(['dte_id' => $this->dteLocal('03', 'DTE-03-M001P002-000000000000011', 'invalidado')->id]);
+
+        $ruta = $this->exportador()->generar($lote->fresh());
+        $libro = IOFactory::load($ruta);
+        @unlink($ruta);
+        $this->assertSame([['0230', '10', 26, 5, 'AC01']], array_slice($libro->getActiveSheet()->toArray(formatData: false), 1));
+        $libro->disconnectWorksheets();
+
+        $this->assertSame(['CCF DTE-03-M001P002-000000000000011: fue invalidado ante Hacienda.'], $this->exportador()->fueraDelArchivo($lote->fresh()));
+        $this->actingAs($this->usuario())->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSeeText('El formato quedan deja fuera lo que ya no vale ante Hacienda:')
+            ->assertSeeText('CCF DTE-03-M001P002-000000000000011: fue invalidado ante Hacienda.');
+    }
+
+    public function test_las_nc_no_aceptadas_salen_solas_del_quedan_con_su_motivo(): void
+    {
+        $lote = $this->lote();
+        $this->ccf($lote, 'DTE-03-M001P002-000000000000010', self::OC_A, $this->albaran('AC01/0230/00/10', self::OC_A));
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000001', 'AC04/0207/00/3874');
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000002', 'AC02/0219/00/4534', estado: 'rechazado');
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000003', 'AC02/0219/00/4535', estado: 'borrador');
+        $this->ncConAlbaran($lote, 'DTE-05-M001P002-000000000000004', 'AC02/0219/00/4536', estado: 'invalidado');
+
+        $ruta = $this->exportador()->generar($lote->fresh());
+        $libro = IOFactory::load($ruta);
+        @unlink($ruta);
+        $this->assertSame([['0230', '10', 26, 5, 'AC01'], ['0207', '3874', 26, 8, 'AC04']],
+            array_slice($libro->getActiveSheet()->toArray(formatData: false), 1));
+        $libro->disconnectWorksheets();
+
+        $this->assertSame([
+            'NC DTE-05-M001P002-000000000000002: Hacienda la rechazó.',
+            'NC DTE-05-M001P002-000000000000003: todavía no está aceptada por Hacienda (estado: En edición).',
+            'NC DTE-05-M001P002-000000000000004: fue invalidada ante Hacienda.',
+        ], $this->exportador()->fueraDelArchivo($lote->fresh()));
     }
 
     public function test_ordena_por_tipo_fecha_sala_y_numero_de_albaran(): void

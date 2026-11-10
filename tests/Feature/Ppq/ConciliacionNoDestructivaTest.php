@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Ppq;
 
+use App\Enums\EstadoPpq;
 use App\Enums\OrigenConciliacionPpq;
 use App\Models\Cliente;
 use App\Models\Dte;
@@ -343,6 +344,41 @@ class ConciliacionNoDestructivaTest extends TestCase
         $this->assertNull($movimiento->estado_nuevo);
         $this->assertSame('126.44', (string) $movimiento->monto_pagado_anterior);
         $this->assertTrue($movimiento->deshizoUnPago());
+    }
+
+    /** #12: el estado guardado del lote sube al conciliar desde la ficha y baja al revertir. */
+    public function test_conciliar_deja_el_lote_pagado_y_revertir_lo_devuelve_a_presentado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $item = $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+        $this->item($lote, 'DTE-05-M001P001-000000000000339', 5.30, '05');
+
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44))->assertOk();
+        $this->assertSame(EstadoPpq::Pagado, $lote->fresh()->estado, 'Todos sus CCF quedaron pagados.');
+
+        $this->actingAs($usuario)
+            ->post(route('ppq.lotes.items.revertir-cobro', [$lote, $item]), ['motivo' => 'Calleja reversó el abono.'])
+            ->assertRedirect(route('ppq.lotes.show', $lote));
+
+        $this->assertSame(EstadoPpq::Enviado, $lote->fresh()->estado, 'Ya no está todo pagado: vuelve a presentado.');
+    }
+
+    /** #12: el CCF invalidado salió solo del quedan, así que nadie lo va a pagar y no frena el estado del lote. */
+    public function test_un_ccf_invalidado_sin_cobro_no_impide_que_el_lote_quede_pagado(): void
+    {
+        $usuario = $this->usuario();
+        $lote = $this->lote();
+        $this->item($lote, 'DTE-03-M001P001-000000000000967', 126.44);
+        $anulado = $this->item($lote, 'DTE-03-M001P001-000000000000968', 80.00);
+        $dte = $this->ccf('DTE-03-M001P001-000000000000968', 80.00);
+        $dte->forceFill(['estado' => 'invalidado'])->saveQuietly();
+        $anulado->update(['dte_id' => $dte->id]);
+
+        $this->subir($lote, $usuario, $this->linea('CF', 'DTE-03-M001P001-000000000000967', '05-JUN-26', 126.44))->assertOk();
+
+        $this->assertSame(EstadoPpq::Pagado, $lote->fresh()->estado, 'Se cobró todo lo que se presentó.');
+        $this->assertFalse($anulado->fresh()->estaConciliado(), 'El invalidado no se da por cobrado.');
     }
 
     /** El motivo es opcional (decisión del usuario, 25/09/2026): sin él queda anotado igual. */

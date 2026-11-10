@@ -366,6 +366,11 @@ class CobrosController extends Controller
             'total' => $this->totalDeRenglones($solicitud),
             'descargas' => $registro->paginado($solicitud, self::DESCARGAS_POR_PAGINA, 'descargas_page'),
             'descargasRegistradas' => $registro->cantidad($solicitud),
+            // Qué deja fuera el quedan y por qué (#12). Antes de la primera descarga, lo que
+            // hoy no vale; con la copia archivada, lo que quedó anotado al generarla.
+            'fueraDelArchivo' => $solicitud->archivo_hash !== null
+                ? $registro->fueraDelArchivo($solicitud)
+                : $solicitud->fueraDelArchivo(),
             'correos' => $solicitud->correos()
                 ->orderByDesc('fecha_mensaje')->orderByDesc('id')
                 ->get(['id', 'cobro_solicitud_id', 'tipo', 'asunto', 'fecha_mensaje', 'estado', 'motivo', 'referencia_calleja', 'fecha_programada_pago']),
@@ -374,7 +379,8 @@ class CobrosController extends Controller
             'notasCongeladas' => $solicitud->notas()
                 ->with([
                     'documento:id,numero_control',
-                    'dte:id,numero_control,total_pagar,estado',
+                    // Con lo que hace falta para saber si la nota todavía va en el quedan (#12).
+                    'dte:id,tipo_dte,numero_control,total_pagar,estado,sello_recepcion,fecha_procesamiento_mh,sello_invalidacion',
                     'dte.albaran:id,dte_id,numero_canonico,tipo_codigo',
                     'exportacion:id,referencia,presentada_en,presentada_por,referencia_portal',
                     'exportacion.presentadaPor:id,name',
@@ -731,6 +737,11 @@ class CobrosController extends Controller
             return redirect()
                 ->route('cobros.index', ['cliente_id' => $solicitud->cliente_id])
                 ->with('error', $e->mensajeUsuario());
+        } catch (ValidationException $e) {
+            // Ningún CCF de la solicitud sigue vigente (#12): no se generó ni se contó nada.
+            return redirect()
+                ->route('cobros.index', ['cliente_id' => $solicitud->cliente_id])
+                ->withErrors($e->errors());
         }
 
         // Contador + entrada en la bitácora de descargas PREPARADAS, juntos y solo ahora que

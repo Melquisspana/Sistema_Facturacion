@@ -108,6 +108,22 @@
                     </div>
                 </dl>
 
+                {{-- #12: lo que ya no vale ante Hacienda sale solo del quedan, y se dice cuál y por qué. --}}
+                @if ($fueraDelArchivo !== [])
+                    <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
+                        @if ($solicitud->archivo_hash)
+                            <p>El archivo descargado dejó fuera lo que ya no valía ante Hacienda:</p>
+                        @else
+                            <p>La primera descarga deja fuera del quedan lo que ya no vale ante Hacienda:</p>
+                        @endif
+                        <ul class="mt-1 list-disc pl-5">
+                            @foreach ($fueraDelArchivo as $linea)
+                                <li>{{ $linea }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+
                 <h4 class="mt-5 text-sm font-medium text-gray-700 dark:text-paper-100">Descargas preparadas</h4>
                 <p class="text-xs {{ $gris }} mb-2">Cada fila es una descarga que el sistema preparó con el archivo verificado. No prueba que el navegador la haya terminado ni que el archivo se haya presentado.</p>
 
@@ -236,7 +252,13 @@
                                 @foreach ($notasCongeladas as $vinculo)
                                     <tr>
                                         <td class="p-2 font-mono whitespace-nowrap">{{ $vinculo->documento?->numero_control ?? 'Documento no disponible' }}</td>
-                                        <td class="p-2 font-mono whitespace-nowrap">{{ $vinculo->dte?->numero_control ?? 'Nota no disponible' }}</td>
+                                        <td class="p-2 font-mono whitespace-nowrap">
+                                            {{ $vinculo->dte?->numero_control ?? 'Nota no disponible' }}
+                                            {{-- #12: antes de la primera descarga se avisa la nota que el archivo dejará fuera; después manda la copia archivada. --}}
+                                            @if ($solicitud->archivo_hash === null && $vinculo->dte && ($motivoFuera = \App\Support\VigenciaFiscalDte::motivoFueraDelArchivo($vinculo->dte)))
+                                                <span class="block whitespace-normal font-sans text-xs text-amber-700" role="status">No va en el quedan: {{ $motivoFuera }}.</span>
+                                            @endif
+                                        </td>
                                         <td class="p-2 font-mono text-xs">{{ $vinculo->dte?->albaran?->numero_canonico ?? '—' }}</td>
                                         <td class="p-2 text-right font-mono">{{ $vinculo->dte ? number_format((float) $vinculo->dte->total_pagar, 2) : '—' }}</td>
                                         <td class="p-2 text-xs">

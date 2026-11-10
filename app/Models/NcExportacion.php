@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EstadoNcExportacion;
 use App\Enums\ProcedenciaArchivoNc;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -149,12 +150,38 @@ class NcExportacion extends Model
     }
 
     /**
-     * Las NC del lote en el orden en que se exportaron. Ese orden se congeló al crear el
-     * lote, así que generar el archivo nunca incorpora NC aparecidas después.
+     * Las NC del lote que van en el archivo, en el orden en que se exportaron. Ese orden se
+     * congeló al crear el lote, así que generar el archivo nunca incorpora NC aparecidas
+     * después. La que dejó de estar aceptada por Hacienda antes de generarlo sale sola, y
+     * la ficha lo avisa ({@see notasFueraDelArchivo()}, #12).
      *
      * @return Collection<int, Dte>
      */
     public function notas(): Collection
+    {
+        return $this->notasDelLote()
+            ->filter(fn (Dte $nc) => VigenciaFiscalDte::motivoFueraDelArchivo($nc) === null)
+            ->values();
+    }
+
+    /**
+     * Las NC del lote que el archivo deja fuera, como «DTE-05-…: fue invalidada ante
+     * Hacienda.», para avisarlo antes de la primera descarga.
+     *
+     * @return array<int, string>
+     */
+    public function notasFueraDelArchivo(): array
+    {
+        return $this->notasDelLote()
+            ->map(fn (Dte $nc) => ($motivo = VigenciaFiscalDte::motivoFueraDelArchivo($nc)) === null
+                ? null : ($nc->numero_control ?: '#'.$nc->id).': '.$motivo.'.')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /** @return Collection<int, Dte> */
+    private function notasDelLote(): Collection
     {
         return $this->items()
             ->with('dte')

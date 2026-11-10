@@ -34,7 +34,8 @@ class NotaCreditoAjuste
         return Dte::query()->where('cliente_id', $clienteId)
             ->where('tipo_dte', TipoDte::NotaCredito->value)
             ->where('tipo_nota_credito', TipoNotaCredito::ProntoPago->value)
-            ->where('estado', '!=', EstadoDte::Invalidado->value)
+            // Ni invalidadas ni rechazadas: una NC que no vale no puede cubrir un QD (#12).
+            ->whereNotIn('estado', [EstadoDte::Invalidado->value, EstadoDte::Rechazado->value])
             ->where(fn ($q) => $q->whereNull('sello_invalidacion')->orWhere('sello_invalidacion', ''));
     }
 

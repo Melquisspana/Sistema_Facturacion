@@ -23,6 +23,7 @@ use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Services\Cobros\LiberarCcfDeLoteBorrado;
 use App\Services\Cobros\ReporteCasoCalleja;
+use App\Services\Ppq\ActualizarPpqConTxt;
 use App\Services\Ppq\ArchivoConciliacion;
 use App\Services\Ppq\ConciliacionTxtParser;
 use App\Services\Ppq\ConciliadorPpq;
@@ -206,6 +207,8 @@ class PpqLoteController extends Controller
             'admiteNcNuevas' => app(NcPosterioresLotePpq::class)->admite($lote),
             'idsCcfLote' => $lote->items->where('tipo_dte', '03')->pluck('dte_id')->filter()->flip(),
             'items' => $ficha->pagina($ficha->idsRecientesPrimero($filas)),
+            // Lo que el formato quedan deja fuera porque ya no vale ante Hacienda (#12).
+            'fueraDelQuedan' => app(QuedanCallejaExporter::class)->fueraDelArchivo($lote),
         ]);
     }
 
@@ -471,6 +474,9 @@ class PpqLoteController extends Controller
             // que sea suyo.
             return redirect()->route('ppq.lotes.show', $lote)->with('error', $e->getMessage());
         }
+
+        // Igual que el TXT cargado en Cobros: con todos sus CCF pagados, el lote queda pagado (#12).
+        ActualizarPpqConTxt::actualizarEstado($lote);
 
         return view('ppq.lotes.conciliacion', [
             'lote' => $lote,

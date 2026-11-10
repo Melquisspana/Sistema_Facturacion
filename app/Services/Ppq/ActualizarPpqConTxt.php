@@ -8,11 +8,12 @@ use App\Models\PpqItem;
 use App\Models\PpqLote;
 use App\Models\User;
 use App\Support\EjercicioControl;
+use App\Support\VigenciaFiscalDte;
 
 /**
  * El TXT de pago se carga UNA vez (en el Seguimiento). Con esas mismas filas se concilian
  * los PPQ que tienen alguno de sus documentos, y el estado de cada PPQ se pone solo:
- * pagado cuando todos sus CCF quedaron pagados.
+ * pagado cuando todos sus CCF quedaron pagados, y presentado otra vez si deja de estarlo.
  */
 class ActualizarPpqConTxt
 {
@@ -52,14 +53,23 @@ class ActualizarPpqConTxt
         return $resultado;
     }
 
-    /** Pagado cuando todos sus CCF quedaron conciliados. Devuelve si quedó pagado. */
+    /**
+     * Pagado cuando todos sus CCF quedaron conciliados; si un lote pagado deja de estarlo
+     * (se revirtió un cobro), vuelve a presentado: para cobrarse tuvo que presentarse (#12).
+     * El CCF invalidado que nadie cobró no cuenta: salió solo del quedan, así que el cliente
+     * no lo va a pagar y el lote se cobró entero sin él. Devuelve si quedó pagado.
+     */
     public static function actualizarEstado(PpqLote $lote): bool
     {
-        $ccf = $lote->items()->get()->reject(fn (PpqItem $i) => $i->esNc());
+        $ccf = $lote->items()->with('dte:id,tipo_dte,estado,sello_invalidacion')->get()
+            ->reject(fn (PpqItem $i) => $i->esNc()
+                || (! $i->estaConciliado() && $i->dte !== null && VigenciaFiscalDte::motivoFueraDelArchivo($i->dte) !== null));
         $pagado = $ccf->isNotEmpty() && $ccf->every(fn (PpqItem $i) => $i->estaConciliado());
 
         if ($pagado && $lote->estado !== EstadoPpq::Pagado) {
             $lote->update(['estado' => EstadoPpq::Pagado->value]);
+        } elseif (! $pagado && $lote->estado === EstadoPpq::Pagado) {
+            $lote->update(['estado' => EstadoPpq::Enviado->value]);
         }
 
         return $pagado;

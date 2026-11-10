@@ -30,6 +30,9 @@ class RegistroDescargas
 {
     public const LOG = 'descarga_preparada';
 
+    /** Lo que un archivo dejó fuera al generarse. Aparte de {@see LOG}: no es una descarga. */
+    public const LOG_FUERA = 'archivo_sin_lo_no_vigente';
+
     /**
      * Cuenta la descarga en el sujeto y deja la entrada con la huella del archivo QUE SE
      * VA A SERVIR (se calcula sobre el temporal, no se copia del registro).
@@ -93,6 +96,42 @@ class RegistroDescargas
             ->orderByDesc('id')
             ->paginate($porPagina, ['*'], $parametro)
             ->withQueryString();
+    }
+
+    /**
+     * Deja en la bitácora lo que el archivo del sujeto dejó FUERA al generarse porque ya no
+     * valía ante Hacienda (#12), como «CCF DTE-03-…: fue invalidado ante Hacienda.». Sin
+     * nada fuera no escribe. Lo llama quien genera y archiva, en su misma transacción.
+     *
+     * @param  array<int, string>  $lineas
+     */
+    public function registrarFueraDelArchivo(Model $sujeto, array $lineas, string $referencia): void
+    {
+        if ($lineas === []) {
+            return;
+        }
+
+        activity(self::LOG_FUERA)
+            ->performedOn($sujeto)
+            ->withProperties(['referencia' => $referencia, 'fuera' => array_values($lineas)])
+            ->log('generó el archivo dejando fuera lo que ya no vale ante Hacienda');
+    }
+
+    /**
+     * Lo que dejó fuera el archivo archivado del sujeto, tal como quedó anotado al generarlo.
+     *
+     * @return array<int, string>
+     */
+    public function fueraDelArchivo(Model $sujeto): array
+    {
+        $entrada = Activity::query()
+            ->where('log_name', self::LOG_FUERA)
+            ->where('subject_type', $sujeto->getMorphClass())
+            ->where('subject_id', $sujeto->getKey())
+            ->latest('id')
+            ->first();
+
+        return array_values((array) $entrada?->getExtraProperty('fuera'));
     }
 
     /** Cuántas descargas preparadas quedaron registradas para el sujeto. */

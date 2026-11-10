@@ -119,6 +119,9 @@ class NcExportacionController extends Controller
             // Solo lectura: abrir la ficha no registra nada.
             'descargas' => $registro->historial($lote),
             'descargasRegistradas' => $registro->cantidad($lote),
+            // Qué NC deja fuera el archivo y por qué (#12). Antes de la primera descarga, las
+            // que hoy no valen; con la copia archivada, las que quedaron anotadas al generarla.
+            'fueraDelArchivo' => $lote->tieneCopiaArchivada() ? $registro->fueraDelArchivo($lote) : $lote->notasFueraDelArchivo(),
         ]);
     }
 
@@ -191,6 +194,9 @@ class NcExportacionController extends Controller
             return redirect()
                 ->route('ppq.nc-exportaciones.show', $lote)
                 ->with('error', $e->mensajeUsuario());
+        } catch (ValidationException $e) {
+            // Ninguna nota del lote sigue vigente (#12): no se generó ni se contó nada.
+            return redirect()->route('ppq.nc-exportaciones.show', $lote)->withErrors($e->errors());
         }
 
         // Contador + entrada en la bitácora de descargas PREPARADAS, juntos y solo ahora que

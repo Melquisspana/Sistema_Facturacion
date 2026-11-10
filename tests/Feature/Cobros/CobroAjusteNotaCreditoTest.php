@@ -245,6 +245,29 @@ class CobroAjusteNotaCreditoTest extends TestCase
         $this->assertSame('pendiente_nc', $ajuste->fresh()->estadoEfectivo());
     }
 
+    /** #12: Hacienda rechazó la NC del QD; el descuento vuelve a pendiente sin tocar «Desvincular NC». */
+    public function test_la_nc_rechazada_libera_el_ajuste_y_no_se_ofrece_para_vincular(): void
+    {
+        $ajuste = $this->ajuste();
+        $rechazada = $this->nc();
+        $ajuste->update(['nc_dte_id' => $rechazada->id]);
+        DB::table('dtes')->where('id', $rechazada->id)->update(['estado' => EstadoDte::Rechazado->value]);
+
+        $this->assertSame('pendiente_nc', $ajuste->fresh()->estadoEfectivo());
+        $this->assertSame('NC de pronto pago pendiente', $ajuste->fresh()->label());
+
+        $nueva = $this->nc();
+        $this->post(route('cobros.ajustes.vincular-nc', $ajuste), ['nc_dte_id' => $nueva->id])->assertSessionHasNoErrors();
+        $this->assertSame($nueva->id, $ajuste->fresh()->nc_dte_id);
+
+        // Una NC rechazada no es vigente: no se lista ni se puede vincular a otra deducción.
+        $otro = $this->ajuste(['referencia_calleja' => '88888']);
+        $this->get(route('cobros.ajustes.notas-credito', $otro))->assertOk()
+            ->assertViewHas('notas', fn ($notas) => ! $notas->pluck('id')->contains($rechazada->id));
+        $this->post(route('cobros.ajustes.vincular-nc', $otro), ['nc_dte_id' => $rechazada->id])->assertSessionHasErrors('nc_dte_id');
+        $this->assertNull($otro->fresh()->nc_dte_id);
+    }
+
     public function test_vincula_y_desvincula_nc_existente_y_protege_otras_deducciones(): void
     {
         $ajuste = $this->ajuste();

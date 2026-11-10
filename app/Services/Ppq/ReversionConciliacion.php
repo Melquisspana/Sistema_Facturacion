@@ -37,7 +37,7 @@ use Illuminate\Validation\ValidationException;
  *
  * No borra el renglón ni lo saca del lote: lo devuelve a «pendiente». El documento sigue
  * presentado y vuelve a contar como algo por cobrar, que es lo que significa haber
- * revertido su pago.
+ * revertido su pago; si el lote figuraba pagado, vuelve a presentado.
  */
 class ReversionConciliacion
 {
@@ -110,6 +110,9 @@ class ReversionConciliacion
                     'motivo' => $motivo,
                 ])
                 ->log('revirtió el cobro registrado de un documento del lote');
+
+            // Un lote pagado con un cobro quitado ya no lo está (#12).
+            ActualizarPpqConTxt::actualizarEstado($item->lote);
 
             return $corrida;
         });

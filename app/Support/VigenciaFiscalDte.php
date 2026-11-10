@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Enums\AmbienteHacienda;
 use App\Enums\EstadoDte;
+use App\Enums\TipoDte;
 use App\Models\Dte;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -114,6 +115,35 @@ final class VigenciaFiscalDte
         }
 
         return null;
+    }
+
+    /**
+     * POR QUÉ un documento ya elegido para un archivo del portal del cliente (el quedan, el
+     * formato de NC) queda FUERA al generarlo; `null` si va. Decisión de Melqui (09/11/2026,
+     * #12): el sistema lo saca solo del archivo y avisa cuál quitó y por qué.
+     *
+     * Es más corta que {@see self::motivo()} a propósito: el documento ya pasó esa regla al
+     * entrar al lote, así que acá solo cuenta lo que puede cambiar DESPUÉS. El CCF sale si
+     * se invalidó; la NC, si ya no está aceptada de verdad por Hacienda (invalidada,
+     * rechazada, todavía en curso o sin sello real).
+     */
+    public static function motivoFueraDelArchivo(Dte $dte): ?string
+    {
+        $esNc = $dte->tipo_dte === TipoDte::NotaCredito;
+
+        if ($dte->tieneEventoInvalidacion()) {
+            return $esNc ? 'fue invalidada ante Hacienda' : 'fue invalidado ante Hacienda';
+        }
+
+        if (! $esNc || $dte->aceptadoRealmentePorMh()) {
+            return null;
+        }
+
+        return match ($dte->estado) {
+            EstadoDte::Rechazado => 'Hacienda la rechazó',
+            EstadoDte::Aceptado => 'no tiene sello de recepción real de Hacienda',
+            default => 'todavía no está aceptada por Hacienda (estado: '.($dte->estado?->label() ?? '—').')',
+        };
     }
 
     /**

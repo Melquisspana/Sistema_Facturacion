@@ -21,6 +21,7 @@ use App\Services\Cobros\Exportadores\ExportadorSolicitudFactory;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\NcExportacionService;
 use App\Services\Ppq\ValidadorCodigoProveedorTxt;
+use App\Services\RegistroDescargas;
 use App\Support\Dinero;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
@@ -433,7 +434,11 @@ class SolicitudCobroService
      * fila: dos primeras descargas simultáneas no pueden archivar dos archivos distintos; la
      * segunda espera y encuentra la copia de la primera.
      *
+     * Al generarlo, el CCF invalidado y la NC que dejó de estar aceptada salen solos y
+     * quedan anotados en la bitácora (#12).
+     *
      * @throws RuntimeException
+     * @throws ValidationException si ningún CCF de la solicitud sigue vigente
      */
     public function archivo(CobroSolicitud $solicitud): string
     {
@@ -447,7 +452,17 @@ class SolicitudCobroService
                 return $this->temporal($contenido);
             }
 
-            $fila->load('items.documento');
+            // #12: lo que ya no vale ante Hacienda sale solo. Sin ningún CCF vigente no se
+            // archiva un quedan vacío: se frena acá, antes de generar nada.
+            $fila->load('items.documento.dte');
+            $fuera = $fila->fueraDelArchivo();
+            if ($fila->items->isNotEmpty() && $fila->renglonesVigentes()->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'documentos' => "No se generó el archivo de la solicitud {$fila->referencia}: ninguno de sus CCF "
+                        .'sigue vigente ante Hacienda, así que no hay nada que presentar.',
+                ]);
+            }
+
             $generado = $this->exportadores->porSlug($fila->formato)->generar($fila);
             $contenido = file_get_contents($generado);
             @unlink($generado);
@@ -460,6 +475,8 @@ class SolicitudCobroService
             // huella y la próxima descarga vuelve a intentarlo desde cero.
             $this->guardarCopia($fila, $contenido);
             $this->sincronizarCopia($solicitud, $fila);
+            // Queda en la bitácora qué dejó fuera ESTE archivo, junto con la copia.
+            app(RegistroDescargas::class)->registrarFueraDelArchivo($fila, $fuera, (string) $fila->referencia);
 
             return $this->temporal($contenido);
         });

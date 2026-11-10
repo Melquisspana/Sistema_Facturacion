@@ -2,7 +2,6 @@
 
 namespace App\Services\Ppq;
 
-use App\Enums\EstadoDte;
 use App\Exceptions\Ppq\ArchivoQuedanIncompletoException;
 use App\Models\Cobros\CobroDocumento;
 use App\Models\Dte;
@@ -13,6 +12,7 @@ use App\Services\Cobros\Exportadores\ExportadorSolicitudCargaMasivaV1;
 use App\Support\EjercicioControl;
 use App\Support\IdentidadPpq;
 use App\Support\NumeroAlbaran;
+use App\Support\VigenciaFiscalDte;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -51,6 +51,12 @@ use Throwable;
  * contradicción de sala, o dos CCF resuelven al mismo albarán, el archivo COMPLETO se
  * rechaza con el detalle de qué documento lo impide ({@see ArchivoQuedanIncompletoException}).
  * No se genera un archivo con huecos ni se descarta en silencio un CCF problemático.
+ *
+ * ═══════════════ Lo que ya no vale sale solo, y se avisa ═══════════════
+ *
+ * Un CCF invalidado o una NC que ya no está aceptada por Hacienda no frenan el archivo:
+ * salen solos y la ficha del lote dice cuáles y por qué ({@see fueraDelArchivo()}).
+ * Decisión de Melqui (09/11/2026, #12); la regla es {@see VigenciaFiscalDte::motivoFueraDelArchivo()}.
  */
 class QuedanCallejaExporter
 {
@@ -67,6 +73,9 @@ class QuedanCallejaExporter
     private const COLUMNAS_TEXTO = ['A', 'B', 'E'];
 
     private const PRIMERA_FILA = 2;
+
+    /** Columnas del DTE que se leen para identificarlo y saber si todavía vale (#12). */
+    private const COLUMNAS_DTE = 'id,tipo_dte,numero_control,estado,sello_recepcion,fecha_procesamiento_mh,sello_invalidacion';
 
     /** Nombre de la hoja en la plantilla del cliente. Se conserva tal cual. */
     private const HOJA = 'Hoja3';
@@ -98,7 +107,7 @@ class QuedanCallejaExporter
 
         if ($ccf->isEmpty()) {
             throw new ArchivoQuedanIncompletoException([
-                'el lote no tiene comprobantes de crédito fiscal (tipo 03) vinculables a un '.
+                'el lote no tiene comprobantes de crédito fiscal (tipo 03) vigentes vinculables a un '.
                 'albarán de entrega.',
             ]);
         }
@@ -137,10 +146,10 @@ class QuedanCallejaExporter
      *    Calleja); si no hay, del registrado al emitir la NC. La fecha sale del albarán
      *    registrado en la NC y, si no hay fecha, del PPQ. El TIPO (AC02/AC04) sale de
      *    la NC, porque la copia PPQ no lo guarda. La sala confirmada a mano manda.
-     *  · No van las NC invalidadas ni las que ya viajaron en un lote anterior (el portal
-     *    responde «ya se encuentra asociado a un registro de quedan»). Tampoco la que el TXT
-     *    devolvió por no descontada: va en el PPQ nuevo, no en su quedan (confirmado por
-     *    el usuario, 25/10/2026).
+     *  · No van las NC que ya no están aceptadas ({@see fueraDelArchivo()}) ni las que ya
+     *    viajaron en un lote anterior (el portal responde «ya se encuentra asociado a un
+     *    registro de quedan»). Tampoco la que el TXT devolvió por no descontada: va en el
+     *    PPQ nuevo, no en su quedan (confirmado por el usuario, 25/10/2026).
      *
      * Regla del usuario (25/09/2026): en la solicitud de quedan también van las NC.
      *
@@ -173,7 +182,7 @@ class QuedanCallejaExporter
         $filas = [];
         $motivos = [];
         foreach ($notas as $item) {
-            if ($item->dte?->estado === EstadoDte::Invalidado || ($item->dte_id !== null && $yaPresentadas->has($item->dte_id))) {
+            if ($this->motivoFuera($item) !== null || ($item->dte_id !== null && $yaPresentadas->has($item->dte_id))) {
                 continue;
             }
             $control = $item->numero_control ?? $item->dte?->numero_control ?? ('#'.$item->id);
@@ -215,11 +224,38 @@ class QuedanCallejaExporter
      */
     private function ccfDelLote(PpqLote $lote): Collection
     {
-        $lote->loadMissing(['items.dte:id,tipo_dte,numero_control', 'items.albaran']);
+        $lote->loadMissing(['items.dte:'.self::COLUMNAS_DTE, 'items.albaran']);
 
         // Los tipos ajenos a 03/05 siguen aquí para que problema() bloquee el archivo
-        // con un motivo visible; nunca deben salir como si fueran CCF.
-        return $lote->itemsOrdenados()->reject(fn (PpqItem $i) => $i->esNc())->values();
+        // con un motivo visible; nunca deben salir como si fueran CCF. El invalidado sale
+        // solo y lo avisa fueraDelArchivo().
+        return $lote->itemsOrdenados()
+            ->reject(fn (PpqItem $i) => $i->esNc() || $this->motivoFuera($i) !== null)
+            ->values();
+    }
+
+    /**
+     * Los documentos del lote que el archivo deja fuera porque ya no valen ante Hacienda,
+     * como «CCF DTE-03-…: fue invalidado ante Hacienda.», para avisarlo en la ficha.
+     *
+     * @return array<int, string>
+     */
+    public function fueraDelArchivo(PpqLote $lote): array
+    {
+        $lote->load('items.dte:'.self::COLUMNAS_DTE);
+
+        return $lote->itemsOrdenados()
+            ->map(fn (PpqItem $i) => ($motivo = $this->motivoFuera($i)) === null ? null
+                : ($i->esNc() ? 'NC ' : 'CCF ').($i->numero_control ?? $i->dte->numero_control ?? '#'.$i->id).': '.$motivo.'.')
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /** Por qué este documento del lote ya no va en el archivo, o null si va. */
+    private function motivoFuera(PpqItem $item): ?string
+    {
+        return $item->dte === null ? null : VigenciaFiscalDte::motivoFueraDelArchivo($item->dte);
     }
 
     /**
