@@ -106,8 +106,8 @@
 
             @if (auth()->user()->can('gastos.pagos.corregir') && $pago->vigente())
                 <section class="rounded-lg border border-red-200 bg-red-50 p-4">
-                    <h2 class="text-sm font-semibold text-red-800">Corregir este pago</h2>
-                    <p class="mt-0.5 text-xs text-red-800">
+                    <h2 class="text-sm font-semibold text-red-700">Corregir este pago</h2>
+                    <p class="mt-0.5 text-xs text-red-700">
                         Un pago registrado no se edita ni se borra: se revierte entero, con motivo, y después se registra el correcto. Las aplicaciones originales se conservan en el historial.
                     </p>
                     <form method="POST" action="{{ route('gastos.pagos.revertir', $pago) }}" class="mt-2 space-y-2">

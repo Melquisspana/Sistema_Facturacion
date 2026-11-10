@@ -553,9 +553,12 @@ final class ConsultaGastos
         $this->ocultarProtegidos($consulta, $usuario, 'g.id');
 
         return $consulta
-            ->select('a.pago_id', 'a.importe as aplicado', 'c.id as cuota_id', 'c.numero', 'c.vence',
+            ->select('a.pago_id', 'c.id as cuota_id', 'c.numero', 'c.vence',
                 'g.id as gasto_id', 'g.concepto', 'g.beneficiario', 'g.ambito', 'g.categoria',
                 'g.naturaleza', 'g.moneda', 'g.periodo_desde')
+            // En CENTAVOS, como el saldo: la vista los muestra con Dinero::mostrar((int) …).
+            // La columna DECIMAL cruda («40.00») convertida a entero salía como 0.40.
+            ->selectRaw($this->centavos('a.importe').' as aplicado')
             ->selectRaw('COALESCE(sc.saldo, '.$this->centavos('c.importe').') as pendiente_actual')
             ->orderBy('a.pago_id')->orderBy('g.id')->orderBy('c.numero')
             ->get()

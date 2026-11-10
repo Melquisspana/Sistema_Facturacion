@@ -314,7 +314,7 @@
                                         <summary class="inline-flex min-h-11 cursor-pointer items-center text-xs text-red-700 underline">Revertir este pago</summary>
                                         <form method="POST" action="{{ route('gastos.pagos.revertir', $pago) }}" class="mt-2 space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
                                             @csrf
-                                            <p class="text-xs text-red-800">
+                                            <p class="text-xs text-red-700">
                                                 Revertir devuelve el saldo a la deuda y deja el registro en el historial. No borra nada, y no significa que el banco haya devuelto el dinero.
                                             </p>
                                             <label class="block text-xs font-medium text-gray-700" for="motivo-pago-{{ $pago->id }}">Motivo</label>
