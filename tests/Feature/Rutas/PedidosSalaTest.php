@@ -517,7 +517,9 @@ class PedidosSalaTest extends TestCase
         DB::enableQueryLog();
         $this->get(route('rutas.mi-salida.show', $this->salida))->assertOk()->assertSee('Pedido sacado');
         DB::disableQueryLog();
-        $this->assertSame(1, collect(DB::getQueryLog())->filter(fn ($q) => preg_match('/[`"]pedido_sala_envios[`"]/', $q['query']))->count());
+        // Solo las que buscan envíos de un pedido; el ritmo de las salas también nombra la tabla
+        // (deja afuera los CCF que salieron de un pedido) y es una sola consulta para todas.
+        $this->assertSame(1, collect(DB::getQueryLog())->filter(fn ($q) => preg_match('/[`"]pedido_sala_envios[`"]\.[`"]pedido_sala_id[`"]/', $q['query']))->count());
     }
 
     public function test_la_oc_se_agrega_en_un_pedido_mandado_pero_no_en_uno_anulado(): void
