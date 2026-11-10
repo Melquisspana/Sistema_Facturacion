@@ -312,7 +312,7 @@ class VentasEnvioContabilidadTest extends TestCase
         (new EnviarDteCorreo($envio->id))->handle(app(DtePdfService::class));
 
         Mail::assertSent(DteCorreo::class, function (DteCorreo $m) use ($dte) {
-            $m->assertHasSubject($dte->tipo_dte->label().' '.$dte->numero_control.' — Dulces La Negrita');
+            $m->assertHasSubject($dte->tipo_dte->label().' '.$dte->numero_control.' — Empresa de Ejemplo');
             $m->assertSeeInHtml('Estimado cliente');
             $m->assertDontSeeInHtml('registro contable');
 

@@ -25,8 +25,8 @@
 return [
     'nit' => env('COMPANY_NIT', ''),
     'nrc' => env('COMPANY_NRC', ''),
-    'nombre' => env('COMPANY_NAME', 'Dulces La Negrita'),
-    'nombre_comercial' => env('COMPANY_TRADE_NAME', 'Dulces La Negrita'),
+    'nombre' => env('COMPANY_NAME', ''),
+    'nombre_comercial' => env('COMPANY_TRADE_NAME', ''),
 
     'actividad_economica' => [
         'codigo' => env('COMPANY_ACTIVITY_CODE', ''),

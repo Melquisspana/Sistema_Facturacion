@@ -24,10 +24,10 @@ use App\Models\UnidadMedida;
 use Illuminate\Database\Seeder;
 
 /**
- * Datos iniciales REALES de prueba para Dulces La Negrita.
+ * Datos iniciales de EJEMPLO para probar el sistema. El repositorio es público: acá no
+ * van datos reales de la empresa. Los reales se cargan en Configuración › Empresa emisora.
  *
- * ⚠️ EDITABLE: ajustá los valores marcados (NIT/NRC, actividad, precios, etc.) con
- * los datos reales antes de producción. Es IDEMPOTENTE (updateOrCreate /
+ * ⚠️ EDITABLE: ajustá los valores marcados (actividad, precios, etc.) antes de usarlos. Es IDEMPOTENTE (updateOrCreate /
  * firstOrCreate) y NO borra nada: se puede correr varias veces sin duplicar ni
  * reiniciar correlativos ya consumidos.
  *
@@ -36,13 +36,13 @@ use Illuminate\Database\Seeder;
 class DatosInicialesNegritaSeeder extends Seeder
 {
     // --- Valores editables del emisor ---
-    private const EMPRESA_RAZON_SOCIAL = 'Dulces La Negrita, S.A. de C.V.';
+    private const EMPRESA_RAZON_SOCIAL = 'Empresa de Ejemplo, S.A. de C.V.';
 
-    private const EMPRESA_NOMBRE_COMERCIAL = 'Dulces La Negrita';
+    private const EMPRESA_NOMBRE_COMERCIAL = 'Empresa de Ejemplo';
 
-    private const EMPRESA_NIT = '0000-000000-000-0';   // EDITAR con el NIT real
+    private const EMPRESA_NIT = '0000-000000-000-0';   // ficticio
 
-    private const EMPRESA_NRC = '000000-0';            // EDITAR con el NRC real
+    private const EMPRESA_NRC = '000000-0';            // ficticio
 
     private const EMPRESA_TELEFONO = '2200-0000';
 
@@ -78,9 +78,16 @@ class DatosInicialesNegritaSeeder extends Seeder
 
     private function emisor(?Pais $pais, ?Departamento $depto, ?Municipio $muni, ?ActividadEconomica $actividad): Empresa
     {
-        return Empresa::updateOrCreate(
-            ['razon_social' => self::EMPRESA_RAZON_SOCIAL],
+        // La empresa emisora es un registro único. Si ya hay una, con el nombre que tenga,
+        // se usa esa tal cual: este seeder no crea una segunda ni le pisa los datos.
+        $existente = Empresa::query()->orderBy('id')->first();
+        if ($existente !== null) {
+            return $existente;
+        }
+
+        return Empresa::create(
             [
+                'razon_social' => self::EMPRESA_RAZON_SOCIAL,
                 'nombre_comercial' => self::EMPRESA_NOMBRE_COMERCIAL,
                 'nit' => self::EMPRESA_NIT,
                 'nrc' => self::EMPRESA_NRC,
