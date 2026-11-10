@@ -6,6 +6,9 @@
         // bloque ya abierto, para que nadie se quede sin ver un error.
         $avisoTecnico = str_contains(mb_strtolower((string) session('status').' '.session('error')), 'ranura')
             || $errors->hasAny(['fingerprint_id', 'ranura']);
+        // Huellas que el lector guardó aunque el registro se canceló (#84). También
+        // abren Avanzado: ahí está el número y el botón para anotarlas.
+        $sinDueno = $huellasSinDueno ?? collect();
     @endphp
 
     <div class="space-y-6">
@@ -51,6 +54,7 @@
                 'empleado' => $empleado,
                 'lectores' => $lectores,
                 'ordenViva' => $ordenViva,
+                'huellasSinDueno' => $sinDueno,
             ])
 
             {{-- ────────────────────── Asignaciones vigentes ────────────────────── --}}
@@ -103,11 +107,23 @@
 
             {{-- ──────────────────────── Asignar una ranura ──────────────────────── --}}
             @can('asistencia.gestionar')
-                <details class="{{ $tarjeta }}" @if ($avisoTecnico) open @endif>
+                <details class="{{ $tarjeta }}" @if ($avisoTecnico || $sinDueno->isNotEmpty()) open @endif>
                     <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-paper-100">Avanzado</summary>
                     @if ($avisoTecnico)
                         <div class="mt-4"><x-asistencia.avisos /></div>
                     @endif
+                    @foreach ($sinDueno as $grabada)
+                        <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                            <p>El lector «{{ $grabada->dispositivo?->nombre }}» guardó una huella de {{ $empleado->nombreCorto() }} en la <strong>ranura {{ $grabada->ranura_reservada }}</strong> después de que se canceló el registro, y quedó sin dueño. Hasta que la anotes, esa huella no marca.</p>
+                            <form method="POST" action="{{ route('asistencia.empleados.huellas.store', $empleado) }}" class="mt-3">
+                                @csrf
+                                <input type="hidden" name="asistencia_dispositivo_id" value="{{ $grabada->asistencia_dispositivo_id }}">
+                                <input type="hidden" name="fingerprint_id" value="{{ $grabada->ranura_reservada }}">
+                                <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Anotar esta ranura</button>
+                            </form>
+                            <p class="mt-2 text-xs">Si no es de {{ $empleado->nombreCorto() }}, borrala en el lector: este aviso se quita cuando el lector vuelva a informar lo que tiene guardado.</p>
+                        </div>
+                    @endforeach
                     @if (! $ordenViva && $empleado->activo && $lectores->isNotEmpty())
                         <div class="mt-4">
                             <label for="enrolamiento_ranura" class="block text-xs font-medium text-gray-500 dark:text-paper-300">Ranura manual para guardar huella</label>

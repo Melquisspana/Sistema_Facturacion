@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Personal;
 
+use App\Enums\Asistencia\MotivoFalloEnrolamiento;
 use App\Enums\ModuloSistema;
 use App\Http\Controllers\Controller;
 use App\Models\Asistencia\AsistenciaDispositivo;
@@ -197,6 +198,16 @@ class PersonalController extends Controller
             'ordenViva' => AsistenciaOrdenEnrolamiento::query()
                 ->where('asistencia_empleado_id', $asistencia->id)
                 ->vivas()->with('dispositivo')->latest('id')->first(),
+
+            // Huellas que el lector guardó aunque el registro ya se había cancelado
+            // (#84): la ficha ofrece anotarlas. Una por ranura de cada lector.
+            'huellasSinDueno' => AsistenciaOrdenEnrolamiento::query()
+                ->where('asistencia_empleado_id', $asistencia->id)
+                ->where('motivo_fallo', MotivoFalloEnrolamiento::GrabadaTrasCancelar->value)
+                ->with('dispositivo')->latest('id')->get()
+                ->filter->quedoSinDueno()
+                ->unique(fn (AsistenciaOrdenEnrolamiento $orden) => $orden->asistencia_dispositivo_id.':'.$orden->ranura_reservada)
+                ->values(),
         ]);
     }
 

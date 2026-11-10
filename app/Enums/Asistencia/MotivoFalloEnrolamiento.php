@@ -52,6 +52,13 @@ enum MotivoFalloEnrolamiento: string
     case CanceladaPorOperador = 'cancelada_por_operador';
 
     /**
+     * Se canceló desde la web, pero el lector ya estaba capturando y grabó igual en
+     * la ranura reservada. La orden sigue cancelada y no nace la huella: la plantilla
+     * queda en el sensor sin dueño hasta que alguien la anote en la ficha (#84).
+     */
+    case GrabadaTrasCancelar = 'grabada_tras_cancelar';
+
+    /**
      * Entre la reserva y la confirmación, esa ranura pasó a estar ASIGNADA a
      * alguien. Lo detecta el único de la base al llamar a AsignarHuella, y por eso
      * no se crea ninguna huella.
@@ -98,6 +105,7 @@ enum MotivoFalloEnrolamiento: string
             self::CanceladaEnDispositivo => 'Se canceló desde el lector.',
             self::Expirada => 'Pasó demasiado tiempo sin completarse.',
             self::CanceladaPorOperador => 'Se canceló desde el sistema.',
+            self::GrabadaTrasCancelar => 'Se canceló, pero el lector ya la había guardado. Quedó sin dueño: anotala en la ficha.',
             self::RanuraYaAsignada => 'Esa ranura se asignó a otra persona mientras el registro estaba en curso.',
             self::RanuraNoCoincide => 'El lector grabó en una ranura distinta de la reservada. No se asoció nada.',
             self::EmpleadoNoElegible => 'La persona dejó de estar activa mientras el registro estaba en curso.',

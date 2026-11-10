@@ -59,6 +59,11 @@ class ResolverEnrolamiento
      */
     public function completar(AsistenciaOrdenEnrolamiento $orden, int $fingerprintId): AsistenciaOrdenEnrolamiento
     {
+        if ($orden->motivo_fallo === MotivoFalloEnrolamiento::CanceladaPorOperador
+            && $fingerprintId === $orden->ranura_reservada) {
+            return $this->anotarGrabadaTrasCancelar($orden);
+        }
+
         if ($orden->estado->esFinal()) {
             return $orden;   // reintento: mismo desenlace, sin tocar nada
         }
@@ -153,6 +158,38 @@ class ResolverEnrolamiento
     }
 
     // ---------------------------------------------------------------- interno
+
+    /**
+     * Alguien canceló desde la web mientras el lector ya capturaba, y el lector
+     * grabó igual en la ranura que se le había reservado (#84).
+     *
+     * La orden sigue cancelada y NO nace la huella: cancelar fue una decisión de
+     * una persona y no se deshace sola. Pero la plantilla existe en el sensor, así
+     * que se anota en dos sitios: en la orden, para que la ficha ofrezca anotarla a
+     * la persona, y en el índice del sensor, para que la próxima elección no la
+     * tome por libre. Se hace una sola vez: después el motivo ya no es
+     * `cancelada_por_operador` y el reintento del lector devuelve lo mismo.
+     */
+    private function anotarGrabadaTrasCancelar(AsistenciaOrdenEnrolamiento $orden): AsistenciaOrdenEnrolamiento
+    {
+        return DB::transaction(function () use ($orden) {
+            $lector = $orden->dispositivo;
+            $lector->update([
+                'ranuras_ocupadas' => array_values(array_unique([
+                    ...$lector->ranurasOcupadasEnSensor(),
+                    $orden->ranura_reservada,
+                ])),
+            ]);
+
+            $orden->update([
+                'motivo_fallo' => MotivoFalloEnrolamiento::GrabadaTrasCancelar,
+                'detalle' => "Se canceló, pero el lector ya la había guardado en la ranura {$orden->ranura_reservada}. "
+                    .'Quedó sin dueño: anotala en la ficha.',
+            ]);
+
+            return $orden->refresh();
+        });
+    }
 
     private function fallar(
         AsistenciaOrdenEnrolamiento $orden,
