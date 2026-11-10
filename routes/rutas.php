@@ -89,6 +89,9 @@ Route::middleware(['auth', 'permission:rutas.pedidos.registrar', 'cache.headers:
     ->prefix('rutas/sacar-pedido')->name('rutas.sacar-pedido.')
     ->group(function () {
         Route::get('/', [MiPedidoController::class, 'index'])->name('index');
+        // Tienda nueva: solo el nombre; la oficina la da de alta y la enlaza al facturar.
+        Route::get('tienda-nueva', [MiPedidoController::class, 'createTiendaNueva'])->name('tienda-nueva.create');
+        Route::post('tienda-nueva', [MiPedidoController::class, 'storeTiendaNueva'])->name('tienda-nueva.store');
         Route::get('sala/{sucursal}', [MiPedidoController::class, 'create'])->name('create');
         Route::post('sala/{sucursal}', [MiPedidoController::class, 'store'])->name('store');
         Route::get('pedidos/{pedido}/editar', [MiPedidoController::class, 'edit'])->name('edit');

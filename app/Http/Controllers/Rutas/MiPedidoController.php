@@ -80,12 +80,31 @@ class MiPedidoController extends Controller
         return $this->volver($pedido, 'Pedido de «'.$sucursal->nombre.'» guardado.'.$nuevo);
     }
 
+    /** Tienda nueva: el sugerido con el nombre que escribió en el buscador. */
+    public function createTiendaNueva(Request $request): View
+    {
+        Gate::authorize('create', PedidoSala::class);
+        $nombre = preg_replace('/\s+/u', ' ', trim((string) ($request->validate(['nombre' => ['nullable', 'string', 'max:100']])['nombre'] ?? '')));
+
+        return $this->formulario($request, null, null, $nombre);
+    }
+
+    /** Tienda nueva: solo el nombre. La oficina la da de alta y la enlaza al facturar. */
+    public function storeTiendaNueva(PedidoSalaRequest $request): RedirectResponse
+    {
+        $antes = $this->viajeQueSuma(PedidosSala::persona($request->user()));
+        $pedido = $this->pedidos->guardar(null, $request->validated(), $request->user());
+        $nuevo = $antes?->id !== $pedido->salida_ruta_id ? ' Se abrió tu viaje: '.$pedido->salida->nombreViaje().'.' : '';
+
+        return $this->volver($pedido, 'Pedido de «'.$pedido->nombreSala().'» guardado. La oficina carga sus datos al facturar.'.$nuevo);
+    }
+
     public function edit(Request $request, PedidoSala $pedido): View|RedirectResponse
     {
         // Con una pantalla vieja (o volviendo de un error al guardar): un aviso, no un 403.
         if ($pedido->estaVigente() && $pedido->fabricaEmpezo() && PedidosSala::loSaco($request->user(), $pedido)) {
             return redirect()->route('rutas.sacar-pedido.index')
-                ->with('error', 'El pedido de «'.$pedido->sala?->nombre.'» ya está en la fábrica. Si cambió algo, avisá a la oficina.');
+                ->with('error', 'El pedido de «'.$pedido->nombreSala().'» ya está en la fábrica. Si cambió algo, avisá a la oficina.');
         }
         Gate::authorize('corregir', $pedido);
 
@@ -96,7 +115,7 @@ class MiPedidoController extends Controller
     {
         $pedido = $this->pedidos->guardar($pedido->sala, $request->validated(), $request->user(), $pedido);
 
-        return $this->volver($pedido, 'Pedido de «'.$pedido->sala->nombre.'» corregido.');
+        return $this->volver($pedido, 'Pedido de «'.$pedido->nombreSala().'» corregido.');
     }
 
     public function anular(Request $request, PedidoSala $pedido): RedirectResponse
@@ -104,22 +123,24 @@ class MiPedidoController extends Controller
         $this->pedidos->anular($pedido, $request->user());
 
         return redirect()->route('rutas.sacar-pedido.index')
-            ->with('status', 'Pedido de «'.$pedido->sala->nombre.'» anulado. Si hace falta, sacalo de nuevo.');
+            ->with('status', 'Pedido de «'.$pedido->nombreSala().'» anulado. Si hace falta, sacalo de nuevo.');
     }
 
-    private function formulario(Request $request, ClienteSucursal $sala, ?PedidoSala $pedido): View
+    /** El sugerido. Sin `$sala`, la tienda nueva: con `$nombreNueva` o el del pedido. */
+    private function formulario(Request $request, ?ClienteSucursal $sala, ?PedidoSala $pedido, string $nombreNueva = ''): View
     {
-        $sala->loadMissing('cliente:id,requiere_orden_compra');
+        $sala?->loadMissing('cliente:id,requiere_orden_compra');
         $pedido?->load('lineas');
 
         return view('rutas.mi-salida.pedido', [
             'viaje' => $pedido?->salida ?? $this->viajeQueSuma(PedidosSala::persona($request->user())),
             'sala' => $sala,
+            'nombreNueva' => $pedido?->sala_nueva_nombre ?? $nombreNueva,
             'pedido' => $pedido,
             'productos' => $this->pedidos->productos(),
             'cantidades' => $pedido ? $pedido->lineas->mapWithKeys(fn ($l) => [$l->producto_id => $l->cantidadLegible()])->all() : [],
             // La OC solo si la sala la usa (la misma regla de facturación) o si ya se anotó una.
-            'conOc' => ReglaOrdenCompra::requerida($sala->cliente, $sala) || filled($pedido?->numero_orden_compra),
+            'conOc' => ReglaOrdenCompra::requerida($sala?->cliente, $sala) || filled($pedido?->numero_orden_compra),
         ]);
     }
 

@@ -40,9 +40,12 @@ class PedidoSalaController extends Controller
             // Lo que llegó ese día: un envío VIGENTE de la fábrica con esa fecha.
             ->when($filtros['mandado_el'] ?? null, fn (Builder $q, $f) => $q->whereHas('envios', fn (Builder $e) => $e
                 ->whereNull('anulado_en')->whereDate('fecha', $f)))
-            ->when($filtros['sala'] ?? null, fn (Builder $q, $texto) => $q->whereHas('sala', fn (Builder $s) => $s
-                ->where('nombre', 'like', '%'.addcslashes($texto, '%_\\').'%')
-                ->orWhere('codigo', 'like', '%'.addcslashes($texto, '%_\\').'%')))
+            // La sala por nombre o código; la tienda nueva, por el nombre que escribió el vendedor.
+            ->when($filtros['sala'] ?? null, fn (Builder $q, $texto) => $q->where(fn (Builder $w) => $w
+                ->whereHas('sala', fn (Builder $s) => $s
+                    ->where('nombre', 'like', '%'.addcslashes($texto, '%_\\').'%')
+                    ->orWhere('codigo', 'like', '%'.addcslashes($texto, '%_\\').'%'))
+                ->orWhere('sala_nueva_nombre', 'like', '%'.addcslashes($texto, '%_\\').'%')))
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->paginate(25)

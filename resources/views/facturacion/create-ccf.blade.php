@@ -133,9 +133,19 @@
                             <p class="block font-medium text-sm text-gray-700">Cliente (contribuyente) / sala</p>
                             <input type="hidden" name="cliente_id" value="{{ $salaPedido?->cliente_id }}">
                             <input type="hidden" name="cliente_sucursal_id" value="{{ $salaPedido?->id }}">
+                            @if ($pedido->esTiendaNueva())
+                                {{-- Tienda nueva: sin sala no se factura. Primero se da de alta y se enlaza. --}}
+                                <div class="mt-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                                    <p class="font-medium">{{ $pedido->nombreSala() }}</p>
+                                    <p class="mt-1">{{ \App\Services\Rutas\FacturarPedido::SIN_SALA }}</p>
+                                    <a href="{{ route('facturacion.pedidos.tienda', $pedido) }}"
+                                       class="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Dar de alta la tienda</a>
+                                </div>
+                            @else
                             <p class="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
                                 {{ $salaPedido?->cliente?->nombre }} — {{ $salaPedido?->nombre }}{{ $salaPedido?->codigo ? ' · '.$salaPedido->codigo : '' }}
                             </p>
+                            @endif
                             <p class="mt-1 text-xs text-gray-500">Sale del pedido N.º {{ $pedido->id }}: no se cambia.</p>
                             <x-input-error :messages="$errors->get('cliente_id')" class="mt-1" />
                             <x-input-error :messages="$errors->get('cliente_sucursal_id')" class="mt-1" />

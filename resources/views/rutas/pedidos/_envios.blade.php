@@ -18,7 +18,7 @@
         <li class="rounded-lg border border-gray-200 bg-white p-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="font-semibold text-gray-800 {{ $anulado ? 'line-through text-gray-400' : '' }}">
-                    Envío {{ $envio->numero }}{{ $conSala ? ' · '.$envio->pedido?->sala?->nombre : '' }} · {{ $envio->created_at->format('d/m/Y H:i') }} · lo marcó {{ $envio->registradoPor?->name }}
+                    Envío {{ $envio->numero }}{{ $conSala ? ' · '.$envio->pedido?->nombreSala() : '' }} · {{ $envio->created_at->format('d/m/Y H:i') }} · lo marcó {{ $envio->registradoPor?->name }}
                 </p>
                 <x-rutas.estado-badge :estado="$anulado ? \App\Enums\EstadoPedidoSala::Anulado : \App\Enums\EstadoPedidoSala::Enviado" />
             </div>

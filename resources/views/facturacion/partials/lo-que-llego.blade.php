@@ -52,11 +52,15 @@
                 </table>
             </div>
 
-            @if ($propuesta['problemas'] !== [])
+            {{-- La tienda nueva no frena por una línea: frena por la sala que falta enlazar. --}}
+            @if ($pedido->esTiendaNueva())
+                <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 font-medium text-red-700">{{ \App\Services\Rutas\FacturarPedido::SIN_SALA }}</p>
+            @endif
+            @if (collect($propuesta['lineas'])->contains(fn ($l) => $l['problema'] !== null))
                 <p role="alert" class="rounded-md border border-red-200 bg-red-50 p-3 font-medium text-red-700">
                     Lo que está en rojo no deja crear el CCF. Arreglalo en Productos y volvé a abrir esta pantalla.
                 </p>
-            @else
+            @elseif (! $pedido->esTiendaNueva())
                 <p class="text-gray-600">El CCF sale con todo esto. En el editor bajás lo que la OC no pide: eso es lo que regresa.</p>
             @endif
         @endunless

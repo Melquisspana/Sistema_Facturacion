@@ -9,7 +9,7 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold leading-tight text-gray-800">Qué va a {{ $pedido->sala?->nombre }}</h1>
+            <h1 class="text-xl font-semibold leading-tight text-gray-800">Qué va a {{ $pedido->nombreSala() }}</h1>
         </div>
     </x-slot>
 

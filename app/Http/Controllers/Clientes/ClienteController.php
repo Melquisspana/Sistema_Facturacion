@@ -14,6 +14,7 @@ use App\Models\Cliente;
 use App\Models\ExportacionCliente;
 use App\Models\ExportacionProducto;
 use App\Models\Pais;
+use App\Services\Rutas\PedidosSala;
 use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -139,21 +140,32 @@ class ClienteController extends Controller
         return in_array($salas, self::SALAS, true) ? $salas : 'todas';
     }
 
-    public function create(): View
+    public function create(Request $request, PedidosSala $pedidos): View
     {
         $this->authorize('create', Cliente::class);
+        // «Dar de alta la tienda» desde Facturación: el nombre que escribió el vendedor.
+        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->query('pedido_sala'), $request->user());
 
         // El contacto (teléfono/correo) se captura principalmente en la sala; el
         // cliente no lo precarga. El teléfono sugerido 77777777 vive en el alta de
         // sala (ver ClienteSucursalController).
-        return view('clientes.form', $this->datosFormulario(new Cliente(['activo' => true])));
+        return view('clientes.form', $this->datosFormulario(new Cliente(['activo' => true, 'nombre' => $pedidoSala?->sala_nueva_nombre]))
+            + ['pedidoSala' => $pedidoSala]);
     }
 
-    public function store(ClienteRequest $request): RedirectResponse
+    public function store(ClienteRequest $request, PedidosSala $pedidos): RedirectResponse
     {
         $this->authorize('create', Cliente::class);
 
         $cliente = Cliente::create($request->validated());
+
+        // La tienda nueva de un pedido: sigue con su sala, que vuelve enlazando el pedido.
+        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->input('pedido_sala'), $request->user());
+        if ($pedidoSala !== null) {
+            return redirect()
+                ->route('clientes.sucursales.create', [$cliente, 'pedido_sala' => $pedidoSala->id])
+                ->with('status', 'Cliente creado. Agregá su sala: al guardarla queda enlazada al pedido N.º '.$pedidoSala->id.'.');
+        }
 
         // "Guardar y agregar primera sala": encadena el alta con el formulario de
         // sucursal, que es donde vive la ubicación operativa del cliente.

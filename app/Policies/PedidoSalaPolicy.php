@@ -54,6 +54,16 @@ class PedidoSalaPolicy
             && $pedido->estaVigente();
     }
 
+    /**
+     * Enlazar la tienda nueva a su sala (10/11/2026): quien factura (`dte.gestionar`) y ve
+     * el pedido. Que sea una tienda nueva vigente lo revisa {@see PedidosSala::enlazarSala()},
+     * con un mensaje claro en vez de un 403.
+     */
+    public function enlazarSala(User $usuario, PedidoSala $pedido): bool
+    {
+        return $this->view($usuario, $pedido) && $usuario->can(PermisoSistema::DteGestionar->value);
+    }
+
     /** Mandar todo o una parte, armar la hoja y «No se trae». */
     public function mandar(User $usuario, PedidoSala $pedido): bool
     {

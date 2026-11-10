@@ -3,13 +3,17 @@
 namespace App\Http\Controllers\Clientes;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Facturacion\TiendaNuevaController;
 use App\Http\Requests\Clientes\ClienteSucursalRequest;
 use App\Models\Cliente;
 use App\Models\ClienteSucursal;
 use App\Models\Pais;
+use App\Services\Rutas\PedidosSala;
 use App\Support\Ubicacion\OpcionesUbicacion;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -23,23 +27,41 @@ class ClienteSucursalController extends Controller
     /** Teléfono sugerido al crear una sala (editable). Solo aplica al alta. */
     private const TELEFONO_POR_DEFECTO = '77777777';
 
-    public function create(Cliente $cliente): View
+    public function create(Request $request, Cliente $cliente, PedidosSala $pedidos): View
     {
         $this->authorize('update', $cliente);
+        // La tienda nueva de un pedido: su nombre, y al guardar queda enlazada.
+        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->query('pedido_sala'), $request->user());
 
         return view('clientes.sucursales.form', $this->datosFormulario(
             $cliente,
-            new ClienteSucursal(['activo' => true, 'telefono' => self::TELEFONO_POR_DEFECTO])
-        ));
+            new ClienteSucursal(['activo' => true, 'telefono' => self::TELEFONO_POR_DEFECTO, 'nombre' => $pedidoSala?->sala_nueva_nombre])
+        ) + ['pedidoSala' => $pedidoSala]);
     }
 
-    public function store(ClienteSucursalRequest $request, Cliente $cliente): RedirectResponse
+    public function store(ClienteSucursalRequest $request, Cliente $cliente, PedidosSala $pedidos): RedirectResponse
     {
         $this->authorize('update', $cliente);
 
         $datos = $request->validated();
         $datos['pais_id'] = Pais::where('codigo', 'SV')->value('id'); // El Salvador
         $sucursal = $cliente->sucursales()->create($datos);
+
+        // «Dar de alta la tienda» desde Facturación: la sala queda enlazada al pedido y se
+        // vuelve a facturar. Si el enlace no se puede (otro ya lo enlazó), la sala igual queda.
+        $pedidoSala = $pedidos->tiendaNuevaPorEnlazar($request->input('pedido_sala'), $request->user());
+        if ($pedidoSala !== null) {
+            try {
+                $pedidoSala = $pedidos->enlazarSala($pedidoSala, $sucursal->id, $request->user());
+
+                return redirect()->route('facturacion.create-ccf', ['pedido' => $pedidoSala->id])
+                    ->with('status', TiendaNuevaController::listo($pedidoSala));
+            } catch (ValidationException $e) {
+                return redirect()->route('clientes.show', $cliente)
+                    ->with('error', 'Sala «'.$sucursal->nombre.'» creada, pero no se enlazó al pedido: '.collect($e->errors())->flatten()->implode(' '))
+                    ->with('sala_destacada', $sucursal->id);
+            }
+        }
 
         // Se vuelve a la ficha con la sala nombrada en el mensaje y señalada en la
         // tabla: con muchas salas, un «creada correctamente» genérico obliga a

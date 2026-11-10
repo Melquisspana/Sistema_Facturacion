@@ -79,7 +79,7 @@ class PedidoFabricaController extends Controller
     {
         $envio = $this->fabrica->mandar($pedido, $request->validated() + ['sigue' => $request->boolean('sigue')], $request->user());
         $pedido = $envio->loadMissing('pedido.sala', 'pedido.lineas.envioLineasVigentes')->pedido;
-        $sala = $pedido->sala?->nombre;
+        $sala = $pedido->nombreSala();
 
         $mensaje = match (true) {
             $pedido->estado === EstadoPedidoSala::Parcial => 'Salió una parte de '.$sala.'. Lo que falta sigue pendiente.',
@@ -104,7 +104,7 @@ class PedidoFabricaController extends Controller
         if ($estado === null) {
             return redirect()->route('fabrica.pedidos.index')->with('status', 'Ese pedido ya estaba resuelto.');
         }
-        $sala = $pedido->sala?->nombre;
+        $sala = $pedido->nombreSala();
 
         return redirect()->route('fabrica.pedidos.index')
             ->with('status', $estado === EstadoPedidoSala::NoSeTrae
@@ -123,7 +123,7 @@ class PedidoFabricaController extends Controller
         }
 
         return redirect()->to(url()->previous(route('fabrica.pedidos.index')))
-            ->with('status', $cambio ? 'El pedido de '.$pedido->sala?->nombre.' volvió a pendiente.' : 'Ese pedido ya estaba pendiente.');
+            ->with('status', $cambio ? 'El pedido de '.$pedido->nombreSala().' volvió a pendiente.' : 'Ese pedido ya estaba pendiente.');
     }
 
     /** «Deshacer» un envío del día: queda anulado, no se borra. */
@@ -133,7 +133,7 @@ class PedidoFabricaController extends Controller
 
         return redirect()->to(url()->previous(route('fabrica.pedidos.index')))
             ->with('status', $cambio
-                ? 'Envío '.$envio->numero.' de '.$pedido->sala?->nombre.' deshecho. Lo que llevaba vuelve a quedar pendiente.'
+                ? 'Envío '.$envio->numero.' de '.$pedido->nombreSala().' deshecho. Lo que llevaba vuelve a quedar pendiente.'
                 : 'Ese envío ya estaba deshecho.');
     }
 }

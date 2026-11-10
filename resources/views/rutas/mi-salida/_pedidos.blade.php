@@ -20,7 +20,7 @@
             @foreach ($pedidosPorSala as $pedido)
                 <li id="sala-{{ $pedido->cliente_sucursal_id }}" class="{{ $cajaPedido }}">
                     <div class="flex items-start justify-between gap-3">
-                        <p class="min-w-0 font-medium">{{ $pedido->sala?->nombre }}</p>
+                        <p class="min-w-0 font-medium">{{ $pedido->nombreSala() }}</p>
                         <span class="inline-flex shrink-0 items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">Pedido sacado</span>
                     </div>
                     <ul class="mt-2 space-y-1 text-sm">
@@ -40,7 +40,7 @@
                             <a href="{{ route('rutas.sacar-pedido.edit', $pedido) }}"
                                class="inline-flex min-h-11 items-center justify-center rounded-md border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50">Corregir</a>
                             <form method="POST" action="{{ route('rutas.sacar-pedido.anular', $pedido) }}"
-                                  onsubmit="return confirm('¿Anular el pedido de {{ addslashes($pedido->sala?->nombre ?? '') }}? Después lo podés sacar de nuevo.');">
+                                  onsubmit="return confirm('¿Anular el pedido de {{ addslashes($pedido->nombreSala()) }}? Después lo podés sacar de nuevo.');">
                                 @csrf @method('PATCH')
                                 <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Anular</button>
                             </form>

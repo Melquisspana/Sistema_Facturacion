@@ -4,7 +4,9 @@
 
      Los productos de facturación activos, con buscador (sin JavaScript se ven todos), la OC
      solo si la sala la usa (casi siempre llega después por EDI: se agrega desde la oficina) y
-     notas. El sugerido de papel no se sube al sistema (decisión de Melqui, 05/11/2026). --}}
+     notas. El sugerido de papel no se sube al sistema (decisión de Melqui, 05/11/2026).
+
+     Sin $sala es una tienda nueva: arriba va su nombre ($nombreNueva) y se guarda solo eso. --}}
 @extends('layouts.vendedor')
 
 @section('content')
@@ -12,18 +14,33 @@
         $caja = 'rounded-2xl bg-white p-4 ring-1 ring-gray-200 dark:bg-ink-800 dark:ring-ink-600';
         $gris = 'text-sm text-gray-600 dark:text-paper-300';
         $campo = 'min-h-11 w-full rounded-lg border-gray-300 dark:border-ink-600 dark:bg-ink-900 dark:text-paper-100';
-        $accion = $pedido ? route('rutas.sacar-pedido.update', $pedido) : route('rutas.sacar-pedido.store', $sala);
+        $accion = match (true) {
+            $pedido !== null => route('rutas.sacar-pedido.update', $pedido),
+            $sala !== null => route('rutas.sacar-pedido.store', $sala),
+            default => route('rutas.sacar-pedido.tienda-nueva.store'),
+        };
     @endphp
 
     <p class="text-sm font-medium text-gray-600 dark:text-paper-300">{{ $viaje ? 'Tu viaje: '.$viaje->nombreViaje() : 'Tu primer pedido abre tu viaje.' }}</p>
     <h1 class="text-3xl font-bold">Sugerido</h1>
-    <p class="mt-1 text-base">{{ $sala->nombre }}</p>
+    <p class="mt-1 text-base">{{ $sala?->nombre ?? 'Tienda nueva' }}</p>
 
     <form method="POST" action="{{ $accion }}" class="mt-5 space-y-5">
         @csrf
         @if ($pedido)
             @method('PUT')
         @endif
+
+        {{-- Tienda nueva (10/11/2026): solo el nombre. La oficina carga sus datos al facturar. --}}
+        @unless ($sala)
+            <div class="{{ $caja }}">
+                <label for="sala-nueva-nombre" class="block font-semibold">Nombre de la tienda</label>
+                <input id="sala-nueva-nombre" name="sala_nueva_nombre" type="text" required minlength="3" maxlength="100" autocomplete="off"
+                       aria-describedby="sala-nueva-ayuda" value="{{ old('sala_nueva_nombre', $nombreNueva) }}" class="mt-2 {{ $campo }}">
+                <p id="sala-nueva-ayuda" class="mt-1 {{ $gris }}">Solo el nombre. Sus datos se cargan en la oficina, al facturar.</p>
+                @error('sala_nueva_nombre')<p class="mt-1 text-sm text-red-700 dark:text-red-300" role="alert">{{ $message }}</p>@enderror
+            </div>
+        @endunless
 
         {{-- Productos: la misma lista de facturación. Las cantidades vacías no se piden. --}}
         <section class="{{ $caja }}" aria-labelledby="productos-titulo" x-data="{ q: '' }">

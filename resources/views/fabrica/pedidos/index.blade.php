@@ -104,7 +104,7 @@
                             @foreach ($hechos['cerrados'] as $pedido)
                                 <li class="rounded-lg border border-gray-200 bg-white p-4">
                                     <div class="flex flex-wrap items-center justify-between gap-2">
-                                        <p class="text-lg font-semibold text-gray-800">{{ $pedido->sala?->nombre }}</p>
+                                        <p class="text-lg font-semibold text-gray-800">{{ $pedido->nombreSala() }}</p>
                                         <x-rutas.estado-badge :estado="$pedido->estado" />
                                     </div>
                                     <p class="mt-1 text-sm text-gray-600">Del {{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</p>

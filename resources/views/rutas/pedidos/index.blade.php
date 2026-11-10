@@ -74,7 +74,7 @@
                         @foreach ($pedidos as $pedido)
                             <li class="px-4 py-3">
                                 <div class="flex items-start justify-between gap-3">
-                                    <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="min-w-0 font-medium text-indigo-600 underline">{{ $pedido->sala?->nombre }}</a>
+                                    <a href="{{ route('rutas.pedidos.show', $pedido) }}" class="min-w-0 font-medium text-indigo-600 underline">{{ $pedido->nombreSala() }}</a>
                                     <x-rutas.estado-badge :estado="$pedido->estado" class="shrink-0" />
                                 </div>
                                 <p class="mt-1 text-sm text-gray-600">{{ $pedido->fecha->format('d/m/Y') }} · {{ $pedido->ruta?->nombre ?? 'Sin ruta' }} · {{ $pedido->sacadoPor?->nombre ?? '—' }}</p>
@@ -104,7 +104,7 @@
                                 @foreach ($pedidos as $pedido)
                                     <tr>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->fecha->format('d/m/Y') }}</td>
-                                        <td class="px-4 py-3 font-medium text-gray-800">{{ $pedido->sala?->nombre }}</td>
+                                        <td class="px-4 py-3 font-medium text-gray-800">{{ $pedido->nombreSala() }}</td>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</td>
                                         <td class="px-4 py-3 text-gray-600">{{ $pedido->sacadoPor?->nombre ?? '—' }}</td>
                                         <td class="px-4 py-3 text-right tabular-nums">{{ $pedido->lineas_count }}</td>

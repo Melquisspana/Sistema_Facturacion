@@ -27,7 +27,8 @@ use Illuminate\Support\Facades\DB;
  *
  *   1. Si el vendedor tiene un viaje que sigue sumando ({@see sigueSumando()}) y la sala es
  *      de una de sus zonas o de un departamento igual o vecino al de sus salas, el pedido va
- *      ahí. Una sala sin zona ni departamento también va ahí: no hay con qué decir que no.
+ *      ahí. Una sala sin zona ni departamento también va ahí, y la tienda nueva (sin sala
+ *      todavía): no hay con qué decir que no.
  *   2. Si no, se abre otro viaje, de hoy, con el vendedor adentro. Su viaje anterior deja de
  *      sumar y queda abierto solo para entregar.
  *
@@ -80,14 +81,14 @@ class Viajes
     /**
      * El viaje donde va el pedido nuevo de esta sala: el que sigue o uno nuevo. Llamar dentro
      * de la transacción que guarda el pedido. Con la persona bloqueada, dos pedidos a la vez
-     * del mismo vendedor no abren dos viajes.
+     * del mismo vendedor no abren dos viajes. Sin `$sala`, la tienda nueva.
      */
-    public function paraPedido(PersonalRuta $persona, ClienteSucursal $sala, User $usuario): SalidaRuta
+    public function paraPedido(PersonalRuta $persona, ?ClienteSucursal $sala, User $usuario): SalidaRuta
     {
         return DB::transaction(function () use ($persona, $sala, $usuario) {
             PersonalRuta::whereKey($persona->id)->lockForUpdate()->firstOrFail();
             $hoy = HoraNegocio::fechaHoy();
-            $zona = $this->zona($sala);
+            $zona = $sala ? $this->zona($sala) : null;
 
             $actual = $this->abierto($persona, lock: true);
             if ($actual !== null && $actual->suma_pedidos && $this->sigueSumando($actual, $hoy) && $this->esDeSuZona($actual, $sala, $zona)) {
@@ -110,7 +111,7 @@ class Viajes
             activity('salida_ruta')
                 ->performedOn($viaje)
                 ->causedBy($usuario)
-                ->withProperties(['desde' => 'sacar_pedido', 'sala' => $sala->id, 'zona' => $zona?->nombre, 'vendedor' => $persona->nombre])
+                ->withProperties(['desde' => 'sacar_pedido', 'sala' => $sala?->id, 'zona' => $zona?->nombre, 'vendedor' => $persona->nombre])
                 ->log('se abrió solo el viaje');
 
             return $viaje;
@@ -255,10 +256,13 @@ class Viajes
 
     /**
      * ¿La sala es de una zona del viaje, o de un departamento igual o vecino al de sus salas?
-     * Sin zona ni departamento no hay con qué separarla: se suma.
+     * Sin zona ni departamento (o la tienda nueva, sin sala) no hay con qué separarla: se suma.
      */
-    private function esDeSuZona(SalidaRuta $viaje, ClienteSucursal $sala, ?Ruta $zona): bool
+    private function esDeSuZona(SalidaRuta $viaje, ?ClienteSucursal $sala, ?Ruta $zona): bool
     {
+        if ($sala === null) {
+            return true;
+        }
         $pedidos = $viaje->pedidos()->vigentes()->with('sala.departamento:id,codigo')->get(['id', 'ruta_id', 'cliente_sucursal_id']);
         $zonas = $pedidos->pluck('ruta_id')->push($viaje->ruta_id)->filter()->unique();
         if ($zona !== null && $zonas->contains($zona->id)) {

@@ -59,6 +59,18 @@
             </section>
         @endif
 
+        {{-- Tienda nueva: si no está en la lista, solo el nombre. La oficina la da de alta al facturar. --}}
+        <form method="GET" action="{{ route('rutas.sacar-pedido.tienda-nueva.create') }}"
+              class="mt-4 rounded-2xl border border-dashed border-indigo-300 bg-white p-4 dark:border-ink-600 dark:bg-ink-800">
+            <label for="tienda-nueva" class="block font-semibold">Tienda nueva</label>
+            <p class="mt-1 {{ $gris }}">¿No está en la lista? Escribí solo el nombre. Sus datos se cargan en la oficina, al facturar.</p>
+            <div class="mt-2 flex gap-2">
+                <input id="tienda-nueva" name="nombre" type="text" value="{{ $texto }}" required minlength="3" maxlength="100" autocomplete="off"
+                       placeholder="Nombre de la tienda" class="{{ $campo }}">
+                <button class="{{ $secundario }} shrink-0">Seguir</button>
+            </div>
+        </form>
+
         <section class="mt-6" aria-labelledby="hoy-titulo">
             <h2 id="hoy-titulo" class="text-xl font-semibold">Tus pedidos de hoy</h2>
             @if ($pedidosHoy->isEmpty())
@@ -67,7 +79,7 @@
                 <ul class="mt-3 space-y-3">
                     @foreach ($pedidosHoy as $pedido)
                         <li class="{{ $caja }}">
-                            <p class="font-semibold">{{ $pedido->sala?->nombre }}</p>
+                            <p class="font-semibold">{{ $pedido->nombreSala() }}</p>
                             <ul class="mt-2 space-y-1 text-sm">
                                 @foreach ($pedido->lineas as $linea)
                                     <li><span class="font-semibold tabular-nums">{{ $linea->cantidadLegible() }}</span> × {{ $linea->producto?->nombre }}</li>
@@ -77,7 +89,7 @@
                                 <div class="mt-3 grid grid-cols-2 gap-2">
                                     <a href="{{ route('rutas.sacar-pedido.edit', $pedido) }}" class="{{ $secundario }}">Corregir</a>
                                     <form method="POST" action="{{ route('rutas.sacar-pedido.anular', $pedido) }}"
-                                          onsubmit="return confirm('¿Anular el pedido de {{ addslashes($pedido->sala?->nombre ?? '') }}? Después lo podés sacar de nuevo.');">
+                                          onsubmit="return confirm('¿Anular el pedido de {{ addslashes($pedido->nombreSala()) }}? Después lo podés sacar de nuevo.');">
                                         @csrf @method('PATCH')
                                         <button class="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Anular</button>
                                     </form>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Hoja del pedido {{ $pedido->id }} · {{ $pedido->sala?->nombre }}</title>
+    <title>Hoja del pedido {{ $pedido->id }} · {{ $pedido->nombreSala() }}</title>
     {{--
         La hoja de lo que salió: el «sugerido» en limpio que antes copiaba a mano la fábrica.
         Todo lo que pidió el vendedor, lo que llegó en cada envío vigente y una «F» en lo que
@@ -188,7 +188,7 @@
     @endif
 
     <dl class="datos">
-        <div class="ancho"><dt>Sala</dt><dd>{{ $pedido->sala?->nombre }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
+        <div class="ancho"><dt>Sala</dt><dd>{{ $pedido->nombreSala() }}{{ $pedido->sala?->codigo ? ' · '.$pedido->sala->codigo : '' }}</dd></div>
         <div><dt>Estado</dt><dd><span class="insignia insignia-{{ $estado->color() }}">{{ $estado->label() }}</span></dd></div>
         <div><dt>Orden de compra</dt><dd class="mono">{{ $pedido->numero_orden_compra ?? 'Sin OC' }}</dd></div>
         <div><dt>Ruta</dt><dd>{{ $pedido->ruta?->nombre ?? 'Sin ruta' }}</dd></div>

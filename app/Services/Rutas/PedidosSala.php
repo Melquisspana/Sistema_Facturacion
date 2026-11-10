@@ -48,33 +48,48 @@ class PedidosSala
      * vendedor, que se abre o se continúa en la misma transacción: si algo falla, no queda un
      * viaje vacío.
      *
-     * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, numero_orden_compra?: ?string, notas?: ?string}  $datos
+     * Sin `$sala` es una tienda nueva (10/11/2026): lleva solo el nombre que escribió el
+     * vendedor (`sala_nueva_nombre`) y la oficina la enlaza al facturar ({@see enlazarSala()}).
+     * No se frena por repetida: sin sala no hay con qué compararla.
+     *
+     * @param  array{lineas: list<array{producto_id: int|string, cantidad: string}>, numero_orden_compra?: ?string, notas?: ?string, sala_nueva_nombre?: ?string}  $datos
      */
-    public function guardar(ClienteSucursal $sala, array $datos, User $usuario, ?PedidoSala $pedido = null): PedidoSala
+    public function guardar(?ClienteSucursal $sala, array $datos, User $usuario, ?PedidoSala $pedido = null): PedidoSala
     {
         return DB::transaction(function () use ($sala, $datos, $usuario, $pedido) {
             Gate::forUser($usuario)->authorize('create', PedidoSala::class);
-            $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
+            if ($sala !== null) {
+                $sala = ClienteSucursal::whereKey($sala->id)->where('activo', true)->lockForUpdate()->first() ?? abort(404);
+            }
 
             $campos = [
                 'numero_orden_compra' => filled($datos['numero_orden_compra'] ?? null) ? trim($datos['numero_orden_compra']) : null,
                 'notas' => filled($datos['notas'] ?? null) ? trim($datos['notas']) : null,
             ];
+            if ($sala === null) {
+                $nombre = trim((string) ($datos['sala_nueva_nombre'] ?? ''));
+                $campos['sala_nueva_nombre'] = $nombre !== '' ? $nombre : throw ValidationException::withMessages(['sala_nueva_nombre' => 'Escribí el nombre de la tienda.']);
+            }
 
             if ($pedido) {
-                $pedido = PedidoSala::whereKey($pedido->id)->where('cliente_sucursal_id', $sala->id)->lockForUpdate()->firstOrFail();
+                $pedido = PedidoSala::whereKey($pedido->id)
+                    ->when($sala, fn (Builder $q) => $q->where('cliente_sucursal_id', $sala->id), fn (Builder $q) => $q->whereNull('cliente_sucursal_id'))
+                    ->lockForUpdate()->firstOrFail();
                 $this->exigirSinFabrica($pedido);
                 Gate::forUser($usuario)->authorize('corregir', $pedido);
                 $pedido->update($campos);
                 $pedido->lineas()->delete();
             } else {
                 $persona = self::persona($usuario);
-                $this->exigirSinSacar($sala, $usuario);
+                if ($sala !== null) {
+                    $this->exigirSinSacar($sala, $usuario);
+                }
                 $viaje = $this->viajes->paraPedido($persona, $sala, $usuario);
                 $pedido = $viaje->pedidos()->create($campos + [
-                    'cliente_sucursal_id' => $sala->id,
-                    // La zona de la sala, no la del viaje: un viaje cruza zonas vecinas.
-                    'ruta_id' => $this->viajes->zona($sala)?->id,
+                    'cliente_sucursal_id' => $sala?->id,
+                    // La zona de la sala, no la del viaje: un viaje cruza zonas vecinas. La
+                    // tienda nueva la toma cuando la oficina la enlaza.
+                    'ruta_id' => $sala ? $this->viajes->zona($sala)?->id : null,
                     'sacado_por_id' => $persona->id,
                     'registrado_por' => $usuario->id,
                     'fecha' => HoraNegocio::fechaHoy(),
@@ -89,6 +104,51 @@ class PedidosSala
             $this->auditar($pedido, $usuario, $pedido->wasRecentlyCreated ? 'sacó el pedido de la sala' : 'corrigió el pedido de la sala');
 
             return $pedido;
+        });
+    }
+
+    public const AUDITORIA_ENLACE = 'enlazó la tienda nueva a su sala';
+
+    /**
+     * La tienda nueva que se está dando de alta en Clientes (`?pedido_sala=`): solo si sigue
+     * vigente y sin sala, y el usuario la puede enlazar. Si no, el alta es una más.
+     */
+    public function tiendaNuevaPorEnlazar(mixed $id, User $usuario): ?PedidoSala
+    {
+        $pedido = filter_var($id, FILTER_VALIDATE_INT) !== false
+            ? PedidoSala::vigentes()->whereKey((int) $id)->whereNull('cliente_sucursal_id')->first()
+            : null;
+
+        return $pedido !== null && $usuario->can('enlazarSala', $pedido) ? $pedido : null;
+    }
+
+    /**
+     * La oficina enlaza la tienda nueva a su sala, ya dada de alta en Clientes (o una que ya
+     * existía). Solo una vez, con el pedido vigente y la sala activa. El pedido toma la zona de
+     * la sala y conserva el nombre que escribió el vendedor. Recién entonces se puede facturar.
+     */
+    public function enlazarSala(PedidoSala $pedido, int $salaId, User $usuario): PedidoSala
+    {
+        return DB::transaction(function () use ($pedido, $salaId, $usuario) {
+            Gate::forUser($usuario)->authorize('enlazarSala', $pedido);
+            $pedido = PedidoSala::lockForUpdate()->findOrFail($pedido->id);
+            if (! $pedido->estaVigente()) {
+                throw ValidationException::withMessages(['pedido' => 'El pedido está anulado: no se enlaza.']);
+            }
+            if (! $pedido->esTiendaNueva()) {
+                throw ValidationException::withMessages(['pedido' => 'Este pedido ya tiene su sala: «'.$pedido->sala?->nombre.'».']);
+            }
+            $sala = ClienteSucursal::whereKey($salaId)->where('activo', true)->first()
+                ?? throw ValidationException::withMessages(['cliente_sucursal_id' => 'Elegí una sala activa.']);
+
+            $pedido->update(['cliente_sucursal_id' => $sala->id, 'ruta_id' => $pedido->ruta_id ?? $this->viajes->zona($sala)?->id]);
+            activity('pedido_sala')
+                ->performedOn($pedido)
+                ->causedBy($usuario)
+                ->withProperties(['sala_nueva_nombre' => $pedido->sala_nueva_nombre, 'cliente_sucursal_id' => $sala->id, 'cliente_id' => $sala->cliente_id])
+                ->log(self::AUDITORIA_ENLACE);
+
+            return $pedido->setRelation('sala', $sala);
         });
     }
 
@@ -184,7 +244,7 @@ class PedidosSala
         activity('pedido_sala')
             ->performedOn($pedido)
             ->causedBy($usuario)
-            ->withProperties($pedido->only(['cliente_sucursal_id', 'salida_ruta_id', 'sacado_por_id', 'fecha', 'estado', 'numero_orden_compra', 'notas'])
+            ->withProperties($pedido->only(['cliente_sucursal_id', 'sala_nueva_nombre', 'salida_ruta_id', 'sacado_por_id', 'fecha', 'estado', 'numero_orden_compra', 'notas'])
                 + ['lineas' => $pedido->lineas()->get(['producto_id', 'cantidad'])->toArray()])
             ->log($descripcion);
     }

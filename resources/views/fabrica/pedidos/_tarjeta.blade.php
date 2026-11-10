@@ -20,7 +20,7 @@
 <article class="rounded-2xl border p-5 {{ $atrasado ? 'border-amber-300 bg-amber-50 ring-1 ring-amber-300' : 'border-gray-200 bg-white' }}"
          aria-labelledby="pedido-{{ $pedido->id }}">
     <div class="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="pedido-{{ $pedido->id }}" class="min-w-0 text-2xl font-bold text-gray-800">{{ $pedido->sala?->nombre }}</h2>
+        <h2 id="pedido-{{ $pedido->id }}" class="min-w-0 text-2xl font-bold text-gray-800">{{ $pedido->nombreSala() }}</h2>
         <div class="flex flex-wrap items-center gap-2">
             @if ($pedido->armando_desde)
                 <span class="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Armando</span>
