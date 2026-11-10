@@ -80,6 +80,7 @@ class PaqueteContabilidadController extends Controller
         $bloqueaCobertura = $incluirCompras && $cob['bloquea_envio'];
 
         $usuarioId = (int) $request->user()->id;
+        $envio = EstadoPaquete::para($usuarioId, 'envio', $rango, $incluirCompras, $incluirVentas);
 
         return view('contabilidad.paquete', [
             'rango' => $rango,
@@ -93,7 +94,9 @@ class PaqueteContabilidadController extends Controller
             'fraseEnvio' => self::FRASE_ENVIO,
             'ultimoEnvio' => $this->ultimoEnvioExitoso(),
             'estadoZip' => EstadoPaquete::para($usuarioId, 'zip', $rango, $incluirCompras, $incluirVentas)->leer(),
-            'estadoEnvio' => EstadoPaquete::para($usuarioId, 'envio', $rango, $incluirCompras, $incluirVentas)->leer(),
+            'estadoEnvio' => $envio->leer(),
+            // ZIP del envío fallido, guardado por el job: se ofrece en el mismo aviso (#60).
+            'zipEnvioFallido' => $this->zipDeEnvioFallido($envio),
             'filtros' => $this->filtros($request, $rango, $incluirCompras, $incluirVentas),
         ]);
     }
@@ -182,18 +185,21 @@ class PaqueteContabilidadController extends Controller
 
     /**
      * Descarga el ZIP ya armado. Cada usuario solo ve los suyos: la ruta sale del usuario
-     * autenticado, no de un parámetro.
+     * autenticado, no de un parámetro. Con `tipo=envio`, el ZIP de un envío que falló.
      */
     public function descargar(Request $request): StreamedResponse
     {
         $rango = $this->periodo->rango($request);
+        $envio = $request->query('tipo') === 'envio';
         $estado = EstadoPaquete::para(
-            (int) $request->user()->id, 'zip', $rango,
+            (int) $request->user()->id, $envio ? 'envio' : 'zip', $rango,
             $request->boolean('incluir_compras', true), $request->boolean('incluir_ventas', true),
         );
         $datos = $estado->leer();
 
-        abort_unless(($datos['estado'] ?? null) === 'listo' && Storage::disk('local')->exists($estado->rutaZip()), 404);
+        abort_unless($envio
+            ? $this->zipDeEnvioFallido($estado)
+            : ($datos['estado'] ?? null) === 'listo' && Storage::disk('local')->exists($estado->rutaZip()), 404);
 
         return Storage::disk('local')->download($estado->rutaZip(), (string) $datos['nombre_descarga']);
     }
@@ -289,6 +295,16 @@ class PaqueteContabilidadController extends Controller
      * @param  array{mes: int, anio: int}  $rango
      * @return array<string, mixed>
      */
+    /** El envío falló y su ZIP sigue guardado (se limpia a las 24 h). */
+    private function zipDeEnvioFallido(EstadoPaquete $envio): bool
+    {
+        $datos = $envio->leer();
+
+        return ($datos['estado'] ?? null) === 'envio_fallido'
+            && filled($datos['nombre_descarga'] ?? null)
+            && Storage::disk('local')->exists($envio->rutaZip());
+    }
+
     private function filtros(Request $request, array $rango, bool $incluirCompras, bool $incluirVentas): array
     {
         return array_filter([
