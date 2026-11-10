@@ -8,6 +8,44 @@ El historial anterior a este archivo está en el registro de git.
 
 ## [Sin publicar]
 
+## [2026.11.10] - 2026-11-10
+
+Pedidos de sala de punta a punta: la fábrica marca lo que manda, la oficina ve «Llegó de la fábrica», imprime la hoja de cada sala y factura con «Facturar» un solo CCF con todo lo que llegó (#291, #293, #296), con el correo diario de las 5 pm (#292). También el mapa de ventas por zona en Rutas (#298), los feriados de Hacienda en Configuración (#297), la numeración por ejercicio en el TXT de pronto pago (#289) y una tanda de arreglos de Cobros, Planilla, Gastos y Facturación. Trae 2 migraciones (`2026_11_09_100000` y `2026_11_09_200000`) y los permisos `fabrica.pedidos.mandar` y `rutas.mapa.ver`, con el rol Fábrica.
+
+### Agregado
+
+- Fábrica: pantalla propia donde se marca qué se manda de cada pedido de sala, en uno o varios envíos, con lo que faltó y su motivo, y «Deshacer» el mismo día; un envío ya facturado no se deshace. Rol Fábrica nuevo, sin permisos de facturación (#291, #296).
+- Pedidos: correo diario a las 17:00 con lo que salió de la fábrica, lo que faltó y lo pendiente, a los destinatarios de Configuración › Rutas (#292).
+- Facturación › «Llegó de la fábrica»: una tarjeta por sala con lo que pidió el vendedor, lo que llegó y la F en lo que faltó, el estado de la OC y de la facturación, y los filtros «Del día» y «Sin facturar»; la hoja de cada sala para imprimir, a color y sin precios, con el CCF y lo que regresa (#293, #296).
+- Facturación: «Facturar» un pedido abre el CCF lleno con todo lo que llegó y no se facturó; varios envíos van en un solo CCF, sin facturar dos veces, y el envío vuelve a «Por facturar» si el CCF se borra, se invalida o lo rechaza Hacienda. El editor avisa lo que pasa de lo que llegó (#296).
+- Rutas: pestaña «Mapa» en el tablero con las ventas del mes por departamento y distrito, dónde falta y por dónde pasan las rutas, para Administración, Jefatura, Facturación y el jefe de vendedores (#298).
+- Configuración: feriados de Hacienda por año para el plazo de invalidación, con el calendario oficial 2026 de respaldo (#297); el nombre de la empresa en pantallas, correos e impresos sale de Empresa emisora (#310).
+- Configuración: respaldos, correos, Auditoría, Personal, Accesos externos, compras automáticas, lectores y el cliente del pronto pago en pantalla, y atajos a Producción, Gastos y «Marcas de hoy» (#283, #284, #285, #287).
+- Asistencia: la huella que el lector grabó después de cancelar el registro se puede anotar desde la ficha de Personal (#303).
+- Auditoría › Órdenes de compra para revisar: también los CCF cuya OC es de otra sala (#299).
+
+### Cambiado
+
+- Cobros: el TXT de pronto pago cruza por número de control y ejercicio (#289); el menú se llama «Cobros de supermercados» (#290); la NC del ajuste usa la tasa de IVA y de retención configuradas (#308).
+- Quedan y archivo de NC: lo que ya no vale ante Hacienda (CCF invalidado, NC no aceptada) sale solo del archivo, se avisa en la ficha y queda en la bitácora; no se archiva un archivo vacío (#306).
+- Planilla: una quincena o mensual anulada se puede volver a hacer en su mismo período, salvo que tenga pagos o deudas vivas en Gastos (#305); arreglos de importes (#288).
+- La ayuda de la orden de compra dice que lleva de 13 a 15 números (#299).
+- Cobros y PPQ: la sala de la orden de compra se lee una vez por pantalla o archivo (#307).
+
+### Corregido
+
+- Órdenes recibidas: una OC con CCF rechazado vuelve a pendiente (#294).
+- Cobros: un QD de otro cliente ya no se reutiliza ni frena los pagos del TXT, el alta automática no se cae con un número de control de otro cliente, y el barrido de correos no pierde mensajes tras un atraso (#301).
+- Avisos claros donde antes salía un error del sistema en Gastos, Planilla, Rutas y Cobros; las referencias SOL y NC del mismo día ya no chocan (#302).
+- Gastos: seis arreglos antes de activarlo: revertir un débito pagado, «pendientes al corte», la cuenta del proveedor, el aviso de período generado, repetir la segunda quincena y reintento de resúmenes (#309).
+- Seguridad: la CSP propia de una respuesta no la pisa la global (#282).
+- Instalación: `db:seed` deja cada rol con sus permisos en una base nueva (#304).
+
+### Documentación
+
+- Migración a Linux con Docker: imagen, compose, fase A y HTTPS de la red local para entrar sin internet (#281, #300).
+- Decisión 0004 aceptada (#295), H3 y H8 de Hacienda 2.0 (#286), bitácoras viejas retiradas con lo vigente en decisiones (#311) y diagrama de arquitectura genérico (#312).
+
 ## [2026.11.08.3] - 2026-11-08
 
 El servidor queda igual al repositorio, como preparación del paso a Linux. Entra la importación y auditoría de documentos enviados de Cobros, que estaba en el repositorio sin desplegar (con 1 migración).
