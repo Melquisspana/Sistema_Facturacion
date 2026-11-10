@@ -95,7 +95,7 @@ class PorEntregarController extends Controller
             'enCamino' => $enCamino,
             'trabados' => $trabados,
             // Su automática de hoy ya cobró: el efectivo se rinde cuando la oficina la termina.
-            'cobroHoy' => $puedeMarcar && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->where('observaciones', SalidaRuta::OBSERVACION_AUTOMATICA)
+            'cobroHoy' => $puedeMarcar && SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->automaticas()
                 ->whereDate('fecha_inicio', HoraNegocio::fechaHoy())
                 ->whereHas('participantes', fn ($q) => $q->where('rutas_personal_id', $persona->id))
                 ->whereHas('entregas', fn ($q) => $q->entregadas()->where('forma_cobro', FormaCobroEntrega::Efectivo->value))->exists(),

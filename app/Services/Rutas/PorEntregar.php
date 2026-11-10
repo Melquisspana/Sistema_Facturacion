@@ -64,7 +64,7 @@ class PorEntregar
     }
 
     /**
-     * Cierra las automáticas de días anteriores (de una ruta, o de todas). La vacía (sin
+     * Cierra las automáticas de entregar de días anteriores (de una ruta, o de todas). La vacía (sin
      * entregas, gastos ni cierres) se cancela; las demás se finalizan con el regreso el día en
      * que se armaron y quedan para que la oficina haga «Terminar ruta»
      * ({@see LiquidacionSalida::liquidar()} acepta una automática finalizada). No las liquida.
@@ -75,7 +75,9 @@ class PorEntregar
     public function finalizarAutomaticasViejas(?int $rutaId = null): array
     {
         $hoy = HoraNegocio::fechaHoy();
-        $ids = SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->where('observaciones', SalidaRuta::OBSERVACION_AUTOMATICA)
+        // Solo las de entregar: el viaje (que también saca pedido) dura varios días y se
+        // cierra cuando todo está entregado ({@see Viajes::cerrarTerminados()}).
+        $ids = SalidaRuta::enEstado(EstadoSalidaRuta::EnCurso)->automaticas()->where('proposito', PropositoSalida::Entregar->value)
             ->whereDate('fecha_inicio', '<', $hoy)->when($rutaId !== null, fn ($q) => $q->where('ruta_id', $rutaId))
             ->orderBy('id')->pluck('id');
         $cuenta = ['finalizadas' => 0, 'canceladas' => 0];
@@ -83,7 +85,7 @@ class PorEntregar
         foreach ($ids as $id) {
             $hecho = DB::transaction(function () use ($id) {
                 $salida = SalidaRuta::lockForUpdate()->find($id);
-                if ($salida === null || $salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->esAutomatica()) {
+                if ($salida === null || $salida->estado !== EstadoSalidaRuta::EnCurso || ! $salida->esAutomatica() || $salida->esViaje()) {
                     return null;
                 }
                 // Lo que quedó sin marcar (si la oficina le cargó CCF) no se entregó: queda libre
@@ -211,6 +213,7 @@ class PorEntregar
             'estado' => EstadoSalidaRuta::EnCurso,
             'proposito' => PropositoSalida::Entregar,
             'observaciones' => SalidaRuta::OBSERVACION_AUTOMATICA,
+            'automatica' => true,
             'created_by' => $usuario->id,
         ]);
         activity('salida_ruta')
