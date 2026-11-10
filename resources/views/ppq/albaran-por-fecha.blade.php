@@ -59,7 +59,7 @@
                     </div>
                     <button type="submit" class="rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700">Buscar albaranes</button>
                 </form>
-                <p class="mt-2 text-xs text-gray-400">Se buscan en Gmail (label Calleja_Albaranes) los albaranes recibidos ese día.</p>
+                <p class="mt-2 text-xs text-gray-400">Se buscan en Gmail (etiqueta de albaranes) los albaranes recibidos ese día.</p>
             </div>
 
             {{-- Resultados --}}

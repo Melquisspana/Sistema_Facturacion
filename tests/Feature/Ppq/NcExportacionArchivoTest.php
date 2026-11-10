@@ -200,7 +200,8 @@ class NcExportacionArchivoTest extends TestCase
 
         $this->actingAs($this->usuario())->get(route('ppq.nc-exportaciones.show', $lote))
             ->assertOk()
-            ->assertSeeText('Todavía no se descargó');
+            ->assertSeeText('Todavía no se descargó')
+            ->assertSeeText('En el portal de '.$cliente->nombre.' se sube primero este archivo');
 
         $this->descargar($lote)->assertOk();
 

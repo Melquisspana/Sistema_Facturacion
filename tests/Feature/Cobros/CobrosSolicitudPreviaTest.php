@@ -342,4 +342,18 @@ class CobrosSolicitudPreviaTest extends TestCase
         // El de la página 2, desde la página 2, sí.
         $this->previa($cliente, [$pagina2->id], $usuario, ['page' => 2])->assertOk();
     }
+
+    public function test_la_vista_previa_nombra_al_cliente_por_el_nombre_de_su_ficha(): void
+    {
+        $cliente = $this->cliente('Cliente de prueba, S.A.');
+        $documento = $this->listo($cliente, '2026-08-18');
+
+        $usuario = $this->usuario();
+
+        $previa = $this->previa($cliente, [$documento->id], $usuario)->assertOk()
+            ->assertSeeText('Cliente de prueba, S.A. no paga un CCF subido sin sus notas');
+
+        $this->confirmar($cliente, $previa->viewData('token'), $usuario)
+            ->assertSessionHas('status', fn ($m) => str_contains($m, 'subila al portal de Cliente de prueba, S.A.;'));
+    }
 }

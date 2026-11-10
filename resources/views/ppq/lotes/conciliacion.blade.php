@@ -7,6 +7,8 @@
     </x-slot>
 
     @php
+        // El nombre sale de la ficha del cliente del lote, nunca escrito a mano.
+        $nombreCliente = $lote->cliente?->nombre ?? 'su cliente';
         $t = $reporte['totales'];
         $money = fn ($v) => ((float) $v < 0 ? '−$' : '$').number_format(abs((float) $v), 2);
         $dmy = fn ($f) => \App\Support\Fecha::dmy($f) ?: '—';
@@ -17,13 +19,13 @@
         <div class="max-w-6xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             <div class="rounded-md bg-indigo-50 border border-indigo-200 p-3 text-sm text-indigo-800">
-                Archivo <span class="font-mono">{{ $archivo }}</span> — {{ $totalFilas }} fila(s) leída(s) del TXT de Calleja.
+                Archivo <span class="font-mono">{{ $archivo }}</span> — {{ $totalFilas }} fila(s) leída(s) del TXT de {{ $nombreCliente }}.
                 Los CCF se marcan como <strong>pagados</strong> solo si aparecen en el TXT (tipo CF); estar en el PPQ no los marca pagados.
                 <span class="mt-1 block">
                     Este archivo solo actualizó los documentos que nombra: <strong>{{ $reporte['corrida']?->items_cambiados ?? 0 }}</strong> renglón(es).
                     Los demás quedaron como estaban.
                 </span>
-                <span class="mt-1 block">Las fechas del TXT son las de los documentos; Calleja no informa aquí la fecha real del pago.</span>
+                <span class="mt-1 block">Las fechas del TXT son las de los documentos; {{ $nombreCliente }} no informa aquí la fecha real del pago.</span>
             </div>
 
             {{-- El MISMO archivo (misma huella) ya dejó pagos o ajustes en el seguimiento de
@@ -153,7 +155,7 @@
                 <div class="bg-white shadow-sm ring-1 ring-amber-200 sm:rounded-xl overflow-hidden">
                     <div class="px-5 py-3 border-b border-amber-200 bg-amber-50">
                         <h3 class="text-sm font-semibold text-amber-800">CCF del PPQ pendientes de conciliación ({{ count($reporte['ccfPendientes']) }})</h3>
-                        <p class="text-xs text-amber-700 mt-0.5">Están agregados al PPQ pero NO aparecen en el TXT de Calleja: siguen pendientes / no pagados.</p>
+                        <p class="text-xs text-amber-700 mt-0.5">Están agregados al PPQ pero NO aparecen en el TXT de {{ $nombreCliente }}: siguen pendientes / no pagados.</p>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
@@ -261,7 +263,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="px-5 py-2 text-xs text-gray-400">Calleja pagó/aplicó estos documentos pero no están en este PPQ. Verificá si deberían agregarse.</p>
+                    <p class="px-5 py-2 text-xs text-gray-400">{{ \Illuminate\Support\Str::ucfirst($nombreCliente) }} pagó/aplicó estos documentos pero no están en este PPQ. Verificá si deberían agregarse.</p>
                 </div>
             @endif
 

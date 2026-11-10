@@ -2,7 +2,7 @@
 <div>
     <label class="block text-sm font-medium text-gray-700">Referencia</label>
     <input type="text" name="referencia" value="{{ old('referencia', $l?->referencia) }}" required
-           class="mt-1 w-full rounded-md border-gray-300 text-sm" placeholder="ej. PPQ Calleja semana 25">
+           class="mt-1 w-full rounded-md border-gray-300 text-sm" placeholder="ej. PPQ semana 25">
     @error('referencia') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
 </div>
 

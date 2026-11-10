@@ -670,10 +670,11 @@ class CobrosController extends Controller
         }
 
         return redirect()->route('ppq.nc-exportaciones.show', $lote)->with('status', sprintf(
-            'Archivo de NC %s preparado con %d nota(s). Descargalo, subilo al portal de Calleja y registrá acá la '
+            'Archivo de NC %s preparado con %d nota(s). Descargalo, subilo al portal de %s y registrá acá la '
                 .'carga; después volvé a Cobros a preparar el quedan de esos CCF. Descargarlo no lo registra como subido.',
             $lote->referencia,
             $lote->items()->count(),
+            $cliente->nombre,
         ));
     }
 
@@ -707,10 +708,11 @@ class CobrosController extends Controller
         }
 
         return $this->volver($cliente)->with('status', sprintf(
-            'Solicitud %s generada con %d documento(s). Descargala y subila al portal de Calleja; '
+            'Solicitud %s generada con %d documento(s). Descargala y subila al portal de %s; '
                 .'después registrá la presentación acá: descargar el archivo no la presenta.',
             $solicitud->referencia,
             $solicitud->items()->count(),
+            $cliente->nombre,
         ));
     }
 

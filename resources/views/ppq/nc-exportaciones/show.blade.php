@@ -131,7 +131,7 @@
             <div class="bg-white dark:bg-ink-800 shadow sm:rounded-lg p-6">
                 <h3 class="font-medium text-gray-700 dark:text-paper-100 mb-1">Carga al portal</h3>
                 <p class="text-sm text-gray-500 dark:text-paper-300 mb-3">
-                    En el portal de Calleja se sube primero este archivo de NC y después el de quedan de los mismos CCF.
+                    En el portal de {{ $lote->cliente?->nombre ?? 'su cliente' }} se sube primero este archivo de NC y después el de quedan de los mismos CCF.
                     El sistema no sube nada: la carga la declara una persona. Descargar el archivo no la registra, y
                     registrarla no cambia el estado fiscal de las notas.
                 </p>

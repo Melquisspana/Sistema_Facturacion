@@ -4,6 +4,7 @@ namespace Tests\Feature\Ppq;
 
 use App\Enums\PermisoSistema;
 use App\Enums\RolSistema;
+use App\Models\Cliente;
 use App\Models\PpqAlbaran;
 use App\Models\PpqItem;
 use App\Models\PpqLote;
@@ -197,5 +198,21 @@ class PpqLoteFichaPaginadaTest extends TestCase
         $fuera = $this->ficha($lote, ['page' => 9])->assertOk();
         $fuera->assertSeeText('Esta página no existe');
         $this->assertSame(45, $fuera->viewData('resumen')['cantidad']);
+    }
+
+    public function test_la_ficha_nombra_al_cliente_del_lote_por_el_nombre_de_su_ficha(): void
+    {
+        $lote = $this->loteGrande();
+        $gestor = User::factory()->create()->assignRole(RolSistema::Administrador->value);
+
+        // Sin cliente en el lote no se inventa un nombre; con cliente, se usa el de su ficha.
+        $this->actingAs($gestor)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSeeText('Reporte del caso de su cliente');
+
+        $lote->update(['cliente_id' => Cliente::factory()->create(['nombre' => 'Cliente de prueba, S.A.'])->id]);
+
+        $this->actingAs($gestor)->get(route('ppq.lotes.show', $lote))->assertOk()
+            ->assertSeeText('Reporte del caso de Cliente de prueba, S.A.')
+            ->assertSeeText('Lo que Cliente de prueba, S.A. registró queda presentado');
     }
 }

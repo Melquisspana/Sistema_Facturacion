@@ -355,7 +355,7 @@ class PpqLoteController extends Controller
         $cliente = $lote->cliente ?? Cliente::whereHas('perfilDocumento', fn ($q) => $q->where('activo', true))->firstOrFail();
         $r = $reportes->aplicar($cliente, $reporte, $request->user(), $lote);
 
-        $mensaje = "Caso {$r['caso']}: {$r['recibidos']} documento(s) registrados por Calleja. El PPQ quedó presentado.";
+        $mensaje = "Caso {$r['caso']}: {$r['recibidos']} documento(s) registrados por {$cliente->nombre}. El PPQ quedó presentado.";
         $salieron = collect($r['devueltos'])->filter(fn ($doc) => $r['items_quitados']->contains(fn ($item) => $reportes->mismoDocumento($item, $doc)));
         if ($salieron->isNotEmpty()) {
             $mensaje .= ' Los devueltos salieron del PPQ y vuelven a por presentar: '
