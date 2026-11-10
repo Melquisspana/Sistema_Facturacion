@@ -16,12 +16,14 @@ use App\Models\NcExportacionItem;
 use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\Exportadores\ExportadorNcFactory;
+use App\Services\RegistroDescargas;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -216,10 +218,39 @@ class NcExportacionArchivoTest extends TestCase
         $libro->disconnectWorksheets();
         $this->assertSame([$vigente->numero_control], $controles);
 
-        // Con la copia archivada manda el archivo que se entregó: el aviso ya no aplica.
+        // Quedó en la bitácora qué se quitó y por qué, una sola vez: al generar el archivo.
+        $this->descargar($lote)->assertOk();
+        $entrada = Activity::where('log_name', RegistroDescargas::LOG_FUERA)->sole();
+        $this->assertTrue($entrada->subject->is($lote));
+        $this->assertSame([$invalidada->numero_control.': fue invalidada ante Hacienda.'], $entrada->getExtraProperty('fuera'));
+
+        // Con la copia archivada la ficha sigue diciendo qué dejó fuera ESE archivo.
         $this->actingAs($this->usuario())->get(route('ppq.nc-exportaciones.show', $lote))
             ->assertOk()
-            ->assertDontSeeText('La primera descarga deja fuera del archivo');
+            ->assertDontSeeText('La primera descarga deja fuera del archivo')
+            ->assertSeeText('El archivo descargado dejó fuera lo que ya no valía ante Hacienda:')
+            ->assertSeeText($invalidada->numero_control.': fue invalidada ante Hacienda.');
+    }
+
+    /** #12: sin ninguna nota vigente no se archiva para siempre un archivo vacío. */
+    public function test_si_ninguna_nota_sigue_aceptada_no_se_genera_ni_se_archiva_el_archivo(): void
+    {
+        $cliente = $this->cliente();
+        $invalidada = $this->nc($cliente, '20.50');
+        $lote = $this->lote($cliente, [$invalidada]);
+        $invalidada->forceFill(['estado' => 'invalidado'])->saveQuietly();
+
+        $respuesta = $this->descargar($lote);
+        $respuesta->assertRedirect(route('ppq.nc-exportaciones.show', $lote));
+        $respuesta->assertSessionHasErrors('archivo');
+        $this->assertNotInstanceOf(BinaryFileResponse::class, $respuesta->baseResponse);
+
+        $lote->refresh();
+        $this->assertFalse($lote->tieneCopiaArchivada());
+        $this->assertSame(EstadoNcExportacion::Generado, $lote->estado);
+        $this->assertSame(0, $lote->descargas);
+        $this->assertSame([], $this->disco()->allFiles());
+        $this->assertSame(0, Activity::where('log_name', RegistroDescargas::LOG_FUERA)->count());
     }
 
     public function test_la_ficha_dice_que_la_copia_es_de_la_primera_descarga(): void

@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\Dte\PerfilDocumentoResolver;
 use App\Services\Ppq\Exportadores\ExportadorNc;
 use App\Services\Ppq\Exportadores\ExportadorNcFactory;
+use App\Services\RegistroDescargas;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -340,7 +341,11 @@ class NcExportacionService
      * entonces. Todo bajo bloqueo de la fila: dos primeras descargas simultáneas no
      * archivan dos archivos distintos.
      *
+     * Al generarlo, la nota que dejó de estar aceptada por Hacienda sale sola y queda
+     * anotada en la bitácora (#12); si no queda ninguna, no se genera ni se archiva nada.
+     *
      * @throws RuntimeException
+     * @throws ValidationException si ninguna nota del lote sigue vigente
      */
     public function archivo(NcExportacion $lote): string
     {
@@ -358,6 +363,16 @@ class NcExportacionService
                 ? ProcedenciaArchivoNc::Reconstruccion
                 : ProcedenciaArchivoNc::PrimeraDescarga;
 
+            // #12: lo que ya no vale ante Hacienda sale solo. Si no queda ninguna nota, no se
+            // archiva para siempre un archivo vacío: se frena y la ficha dice cuáles y por qué.
+            $fuera = $fila->notasFueraDelArchivo();
+            if ($fuera !== [] && $fila->notas()->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'archivo' => "No se generó el archivo de {$fila->referencia}: ninguna de sus notas de crédito "
+                        .'sigue aceptada por Hacienda, así que no hay nada que cargar al portal.',
+                ]);
+            }
+
             $fila->loadMissing('cliente');
             $perfil = $this->perfilExportador($fila->cliente);
             $generado = $this->exportadores->porSlug($fila->formato)->generar($fila, $perfil);
@@ -372,6 +387,8 @@ class NcExportacionService
             // copia y la próxima descarga vuelve a intentarlo.
             $this->guardarCopia($fila, $contenido, $procedencia);
             $this->sincronizarCopia($lote, $fila);
+            // Queda en la bitácora qué dejó fuera ESTE archivo, junto con la copia.
+            app(RegistroDescargas::class)->registrarFueraDelArchivo($fila, $fuera, (string) $fila->referencia);
 
             return $this->temporal($contenido);
         });

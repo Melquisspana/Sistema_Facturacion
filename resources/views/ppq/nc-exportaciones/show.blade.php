@@ -89,7 +89,11 @@
 
                 @if ($fueraDelArchivo !== [])
                     <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
-                        <p>La primera descarga deja fuera del archivo lo que ya no vale ante Hacienda:</p>
+                        @if ($lote->tieneCopiaArchivada())
+                            <p>El archivo descargado dejó fuera lo que ya no valía ante Hacienda:</p>
+                        @else
+                            <p>La primera descarga deja fuera del archivo lo que ya no vale ante Hacienda:</p>
+                        @endif
                         <ul class="mt-1 list-disc pl-5">
                             @foreach ($fueraDelArchivo as $linea)
                                 <li>{{ $linea }}</li>
