@@ -145,6 +145,44 @@ class VentasRutas
         return $grupos + ['canal' => $canal, 'titulo' => $exportacion ? 'Ventas de exportación' : 'Ventas nacionales', 'totales' => $totales, 'tendencia' => $tendencia, 'devoluciones' => $devoluciones, 'ficha_sala' => $ficha, 'periodo' => $periodo, 'filtros' => $filtros, 'alertas' => $alertas, 'resumen' => $resumen, 'contadores' => ['ccf' => count($ccf), 'fe' => count($fe), 'fex' => count($fex), 'salas' => count($salasCompra), 'nc' => round($notas, 2)]];
     }
 
+    /**
+     * Lo vendido a cada sala en un tramo y en el tramo con que se compara, con las mismas
+     * reglas de {@see consultar()}: solo nacional (la exportación nunca entra), sin IVA,
+     * solo documentos reales (los invalidados no cuentan) y la NC en la fecha del documento
+     * que corrige. Una consulta para todas las salas. Lo que no tiene sala (consumidor
+     * final) va junto en la clave 0, como «Sin sala» en {@see consultar()}: así la suma es
+     * el total de Ventas. Lo pide el mapa de ventas por zona ({@see MapaVentas}).
+     *
+     * `compro`: la sala tuvo una venta (no una nota) en el tramo, como el contador de salas
+     * de {@see consultar()}.
+     *
+     * @return array<int, array{actual: float, anterior: float, compro: bool}> sala_id (0: sin sala) => montos
+     */
+    public function porSala(Carbon $desde, Carbon $hasta, Carbon $anteriorDesde, Carbon $anteriorHasta, ?int $ruta = null): array
+    {
+        $filtros = ['canal' => 'nacional'] + ($ruta !== null ? ['ruta' => $ruta] : []);
+        [$desde, $hasta, $anteriorDesde, $anteriorHasta] = array_map(fn (Carbon $d) => $d->toDateString(), [$desde, $hasta, $anteriorDesde, $anteriorHasta]);
+        $salas = [];
+        foreach ($this->lineas(Carbon::parse($anteriorDesde), Carbon::parse($hasta), $filtros) as $linea) {
+            $campo = match (true) {
+                $linea->fecha >= $desde && $linea->fecha <= $hasta => 'actual',
+                $linea->fecha >= $anteriorDesde && $linea->fecha <= $anteriorHasta => 'anterior',
+                default => null,
+            };
+            if ($campo === null) {
+                continue;
+            }
+            $sala = (int) $linea->sala_id;
+            $salas[$sala] ??= ['actual' => 0.0, 'anterior' => 0.0, 'compro' => false];
+            $salas[$sala][$campo] += $linea->monto;
+            if ($campo === 'actual' && $linea->tipo !== '05' && $linea->monto > 0) {
+                $salas[$sala]['compro'] = true;
+            }
+        }
+
+        return array_map(fn (array $s) => ['actual' => round($s['actual'], 2), 'anterior' => round($s['anterior'], 2), 'compro' => $s['compro']], $salas);
+    }
+
     private function devoluciones(Collection $lineas): array
     {
         $grupos = ['productos' => [], 'salas' => []];

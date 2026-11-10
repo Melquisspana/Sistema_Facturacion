@@ -49,6 +49,8 @@
     <div class="py-6 sm:py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
 
+            @include('rutas._pestanas', ['activa' => 'resumen'])
+
             <x-rutas.avisos />
 
             {{-- Las salidas de «Por entregar» se finalizan solas: el efectivo espera «Terminar ruta». --}}

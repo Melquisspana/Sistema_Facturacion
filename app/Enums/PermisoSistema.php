@@ -153,6 +153,10 @@ enum PermisoSistema: string
     case FabricaPedidosMandar = 'fabrica.pedidos.mandar';
     // Ventas netas y su Excel: consulta comercial de solo lectura.
     case RutasVentasVer = 'rutas.ventas.ver';
+    // El mapa de ventas por zona del tablero (09/11/2026): lo vendido en el mes por
+    // departamento y distrito, dónde falta y por dónde pasan las rutas. Lleva montos y el
+    // jefe de vendedores los ve (decisión de Melqui), pero no le abre la pantalla de Ventas.
+    case RutasMapaVer = 'rutas.mapa.ver';
     // Personal de campo: quién sale a vender, repartir o cobrar. `ver` es consulta;
     // `gestionar` da de alta y desactiva. Va aparte de `rutas.gestionar` porque el
     // catálogo de personas es un marco de trabajo, no la operación del día.
@@ -259,6 +263,8 @@ enum PermisoSistema: string
                 self::RutasSalidasTerminar,
                 self::RutasPedidosRegistrar,
                 self::RutasPedidosVer,
+                // El mapa del tablero, con montos (09/11/2026). Ventas sigue cerrada.
+                self::RutasMapaVer,
             ]),
 
             // Jefatura: solo lectura amplia. No gestiona, no emite, no invalida,
@@ -281,6 +287,7 @@ enum PermisoSistema: string
                 // administración (04/11/2026). Los sigue eligiendo al armar la salida.
                 self::RutasVentasVer,
                 self::RutasPedidosVer,
+                self::RutasMapaVer,
             ]),
 
             // Facturación: operación diaria. Emite y gestiona DTE, PPQ y
@@ -313,6 +320,8 @@ enum PermisoSistema: string
                 self::RutasVentasVer,
                 // Los pedidos de sala que va a facturar.
                 self::RutasPedidosVer,
+                // El mapa de ventas por zona del tablero (09/11/2026).
+                self::RutasMapaVer,
             ]),
 
             // Contabilidad: solo lectura contable + envío del paquete a la

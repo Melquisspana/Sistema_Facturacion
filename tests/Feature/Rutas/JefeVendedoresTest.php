@@ -55,7 +55,8 @@ class JefeVendedoresTest extends TestCase
     public function test_el_rol_tiene_solo_los_permisos_de_rutas_que_le_tocan(): void
     {
         $this->assertSame('Jefe de vendedores', RolSistema::JefeVendedores->label());
-        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar', 'rutas.salidas.terminar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver'], RolSistema::JefeVendedores->permisos());
+        // El mapa del tablero lleva montos (09/11/2026), pero `rutas.ventas.ver` sigue afuera.
+        $this->assertSame(['rutas.ver', 'rutas.entregas.registrar', 'rutas.salidas.armar', 'rutas.salidas.terminar', 'rutas.pedidos.registrar', 'rutas.pedidos.ver', 'rutas.mapa.ver'], RolSistema::JefeVendedores->permisos());
 
         foreach (['rutas.gestionar', 'rutas.personal.ver', 'rutas.personal.gestionar', 'rutas.ventas.ver', 'dte.ver', 'ppq.ver', 'planilla.ver', 'planilla.salarios', 'asistencia.ver', 'gastos.ver', 'dashboard.ver'] as $permiso) {
             $this->assertFalse($this->jefe->can($permiso), "El jefe no debería tener {$permiso}.");
