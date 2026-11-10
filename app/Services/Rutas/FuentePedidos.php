@@ -7,9 +7,8 @@ use Carbon\CarbonImmutable;
 /**
  * De dónde salen los pedidos de cada sala: sus fechas, para calcular el ritmo
  * ({@see RitmoPedidos}), y qué productos y cuántos, para el pedido estimado
- * ({@see EstimadoPedidos}). Hoy son los CCF ({@see FuentePedidosCcf}); cuando existan los
- * pedidos reales (etapa 3 de docs/PLAN_TABLERO_RUTAS.md) se cambia la fuente y el
- * cálculo y el tablero no se tocan.
+ * ({@see EstimadoPedidos}). Son los pedidos de sala completados con los CCF que no salieron
+ * de un pedido ({@see FuentePedidosSala}).
  */
 interface FuentePedidos
 {

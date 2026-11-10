@@ -103,7 +103,7 @@ class RitmoRutas
             ->groupBy('ruta_id');
         $salaIds = $salas->flatten()->pluck('id')->all();
         $ritmoSalas = $this->pedidos->porSala($salaIds, $hoy);
-        $visitas = $this->visitas($salaIds, $ritmoSalas);
+        $visitas = $this->visitas($salaIds);
 
         $orden = [self::ATRASADA => 0, self::PRONTO => 1, self::SIN_SALIDAS => 2, self::EN_RUTA => 3, self::PROGRAMADA => 3, self::AL_DIA => 4, self::SIN_RITMO => 5];
 
@@ -129,22 +129,27 @@ class RitmoRutas
     }
 
     /**
-     * La última entrega y el último pedido sacado de cada sala: tres consultas agregadas
-     * para todas juntas. La entrega es la más nueva entre el último CCF facturado (el
-     * comienzo del último pedido del ritmo) y la última entrega conocida en Rutas
-     * ({@see EntregasCcf::ultimaVisitaPorSala()}).
+     * La última entrega y el último pedido sacado de cada sala: unas pocas consultas
+     * agregadas para todas juntas. La entrega es la más nueva entre el último CCF facturado
+     * y la última entrega conocida en Rutas ({@see EntregasCcf::ultimaVisitaPorSala()}).
      *
      * @param  array<int, int>  $salaIds
-     * @param  array<int, Ritmo>  $ritmoSalas
      * @return array<int, array{entrega: ?CarbonImmutable, pedido: ?CarbonImmutable}>
      */
-    private function visitas(array $salaIds, array $ritmoSalas): array
+    private function visitas(array $salaIds): array
     {
         if ($salaIds === []) {
             return [];
         }
 
         $entregadas = $this->entregas->ultimaVisitaPorSala($salaIds);
+        // El ritmo ya mezcla pedidos y CCF: el último CCF se lee aparte.
+        $facturadas = $this->entregas->baseCcf()
+            ->whereIn('cliente_sucursal_id', $salaIds)
+            ->groupBy('cliente_sucursal_id')
+            ->toBase()
+            ->selectRaw('cliente_sucursal_id, MAX(fecha_emision) as ultima')
+            ->pluck('ultima', 'cliente_sucursal_id');
         $pedidos = PedidoSala::vigentes()
             ->whereIn('cliente_sucursal_id', $salaIds)
             ->groupBy('cliente_sucursal_id')
@@ -154,8 +159,9 @@ class RitmoRutas
         $visitas = [];
         foreach ($salaIds as $id) {
             $entrega = isset($entregadas[$id]) ? CarbonImmutable::instance($entregadas[$id])->startOfDay() : null;
+            $facturada = isset($facturadas[$id]) ? CarbonImmutable::parse($facturadas[$id])->startOfDay() : null;
             $visitas[$id] = [
-                'entrega' => self::masNueva($ritmoSalas[$id]?->ultima(), $entrega),
+                'entrega' => self::masNueva($facturada, $entrega),
                 'pedido' => isset($pedidos[$id]) ? CarbonImmutable::parse($pedidos[$id])->startOfDay() : null,
             ];
         }
@@ -201,7 +207,7 @@ class RitmoRutas
      */
     public static function filaSala(ClienteSucursal $sala, Ritmo $ritmo, CarbonImmutable $dia, ?array $visita = null): array
     {
-        $entrega = $visita['entrega'] ?? $ritmo->ultima();
+        $entrega = $visita === null ? $ritmo->ultima() : $visita['entrega'];
         $pedido = $visita['pedido'] ?? null;
         $ultimaVisita = self::masNueva($entrega, $pedido);
         $dias = $ultimaVisita === null ? null : max(0, (int) $ultimaVisita->diffInDays($dia->startOfDay()));
