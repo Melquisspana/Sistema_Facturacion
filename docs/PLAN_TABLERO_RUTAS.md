@@ -1,13 +1,13 @@
 # Plan: el nuevo inicio de Rutas (tablero del jefe de vendedores)
 
-**Estado:** propuesta revisada con las decisiones de Melqui del 03/11/2026 (sección 6). Todavía no hay código. Escrito el 03/11/2026 sobre `master` en `14a60bf`.
+**Estado:** propuesta revisada con las decisiones de Melqui del 03/11/2026 (sección 6). Al escribirlo no había código; el tablero para jefes ya entró a `master` (#263). Escrito el 03/11/2026 sobre `master` en `14a60bf`.
 
 **En una frase:** el inicio de Rutas pasa a ser un tablero para 1 o 2 jefes de vendedores que ven todas las rutas del país y les avisa **cuándo toca ir a cada sala y a cada ruta a sacar pedido**. El ritmo se calcula solo, con las facturas (CCF) que ya hay.
 
 Cómo se trabaja hoy, y lo que el plan respeta:
 
 - Rutas sirve para dos cosas: **sacar pedido** y **entregar**. Primero se saca el pedido y se entrega 1 o 2 días después.
-- Sacar pedido todavía no existe en el sistema. Llega en la etapa 3.
+- Al escribir este plan, sacar pedido no existía en el sistema. Hoy ya existe (pedidos de sala, `app/Services/Rutas/PedidosSala.php`).
 - No hay calendario fijo: se va «cuando se cree que toca». El sistema **avisa, no agenda**.
 - El tablero no gira alrededor de los CCF. Los CCF se usan solo para calcular el ritmo, porque la fecha del CCF es casi la del pedido.
 - Todo simple, para el celular, y siguiendo [la guía de pantallas](GUIA_PANTALLAS.md).

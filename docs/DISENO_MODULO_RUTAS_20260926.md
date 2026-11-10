@@ -8,7 +8,7 @@ Decisiones tomadas con el usuario para convertir el área «Cobros» (`/rutas-co
 - Si la sala da **nota de avería (AC02)**, el vendedor la trae junto al CCF. La AC04 llega por correo.
 - En Calleja, cuando cae el albarán al correo, ya consta la entrega. En tiendas y gasolineras no hay albarán.
 - Rutas conocidas: Santa Ana, San Miguel, Sonsonate, Usulután, Chalatenango y San Vicente. Cada una cubre departamentos o municipios cercanos (por ejemplo, San Vicente abarca Cojutepeque y Sensuntepeque).
-- La frecuencia es aproximada y la llevan de memoria los vendedores y el hermano del usuario. Una salida puede durar varios días (San Miguel, Santa Ana) y pueden ir varios vendedores. Lo que sobra se entrega al día siguiente o en otra salida.
+- La frecuencia es aproximada y la llevan de memoria los vendedores y quien coordina las rutas. Una salida puede durar varios días (San Miguel, Santa Ana) y pueden ir varios vendedores. Lo que sobra se entrega al día siguiente o en otra salida.
 - Casi todos los CCF salen de este sistema; los emitidos en Conta son excepcionales (2 en el mes). No se contempla agregar documentos externos.
 
 ## Qué se elimina
@@ -20,7 +20,7 @@ La custodia del CCF físico (entregar, transferir, incidencia, anular), la recep
 ### 1. Rutas y salas
 - La etiqueta del área cambia de «Cobros» a **Rutas**.
 - Cada ruta tiene **días objetivo** aproximados (`frecuencia_objetivo_dias`, que ya existe) y una **cobertura por departamento o municipio**.
-- Con la cobertura, el sistema **propone** la ruta de cada sala sin asignar y el usuario confirma o corrige. Hoy solo 18 de 135 salas tienen ruta.
+- Con la cobertura, el sistema **propone** la ruta de cada sala sin asignar y el usuario confirma o corrige. Al diseñarlo, solo 18 de 135 salas tenían ruta.
 - **Última visita por sala**: la fecha de la última entrega registrada, ya sea por el vendedor, por la oficina o por un albarán.
 
 ### 2. Salidas ligeras
@@ -74,7 +74,7 @@ Cada etapa lleva sus pruebas. No se hace commit, push ni despliegue sin instrucc
 
 ## Estado
 
-### Etapa 1 — hecha en desarrollo (26/09/2026, sin commit)
+### Etapa 1 — hecha el 26/09/2026 (ya en `master`)
 
 - Se retiraron la custodia, la recepción, las excepciones, la bandeja, el tablero de saldos, el seguimiento documental por salida y el comando `rutas:asociar-documentos`, con sus vistas, servicios, enums, `config/rutas.php` y las variables `RUTAS_*`. También se retiró el «papel físico» de PPQ: `PpqElegibilidad` queda solo con la regla fiscal.
 - Migración `2026_09_26_100000_simplificar_modulo_rutas`:
@@ -88,9 +88,7 @@ Cada etapa lleva sus pruebas. No se hace commit, push ni despliegue sin instrucc
   - «Asignar salas» (`PropuestaRutas`): el distrito gana sobre el departamento, solo cuentan las rutas activas y la propuesta se recalcula al aplicar.
 - La barra de Rutas muestra el grupo «Cobros Calleja» igual que la de Facturación.
 - **Al desplegar:** `php artisan migrate` y `php artisan db:seed --class=RolesSeeder` para que Facturación y Jefatura reciban los permisos.
-### Etapa 2 — hecha en desarrollo (27/09/2026, sin commit)
-
-Codex se quedó sin cuota al empezar (se restablece el 28/09 a las 2:55) y no dejó cambios. El usuario pidió que Claude la continuara.
+### Etapa 2 — hecha el 27/09/2026 (ya en `master`)
 
 - Migración `2026_09_27_100000_create_salida_ruta_entregas_table`: una fila por cada intento de entrega de un CCF en una salida. Modelo `SalidaRutaEntrega` y enums `ResultadoEntrega`, `MotivoNoEntrega` y `OrigenRegistroEntrega`.
 - `config/rutas.php`, clave `entregas_desde` (`RUTAS_ENTREGAS_DESDE`, 2026-09-28 por defecto): solo cuentan los CCF emitidos desde esa fecha.
@@ -105,9 +103,8 @@ Codex se quedó sin cuota al empezar (se restablece el 28/09 a las 2:55) y no de
   - «N CCF por entregar · $X» en cada tarjeta del tablero;
   - «Última visita» en las salas de cada ruta.
 - Pruebas: `tests/Feature/Rutas/EntregasSalidaTest.php` (21).
-- En local falta `php artisan migrate`: MySQL estaba apagado.
 
-### Simplificación (27/09/2026, sin commit)
+### Simplificación (27/09/2026, ya en `master`)
 
 El usuario lo probó sobre una copia de producción y lo encontró complicado. Decidió:
 
@@ -126,7 +123,7 @@ El módulo quedó en tres pantallas, más el aviso:
 
 Facturación y Jefatura reciben también `rutas.personal.*` para poder dar de alta vendedores.
 
-En desarrollo se probó sobre `base_ejemplo`, restaurada del respaldo de producción del 27/09 a las 2:30, con Gmail quitado, correo solo a log y firma y transmisión apagadas. Para volver: `DB_DATABASE=base_ejemplo`.
+En desarrollo se probó sobre una base local de ejemplo, con Gmail quitado, correo solo a log y firma y transmisión apagadas.
 
 - Pendiente de datos reales, a cargo del usuario: cargar la cobertura de cada ruta y sus días objetivo.
 - Rutas que describió el usuario el 27/09 (por confirmar contra las salas reales):
