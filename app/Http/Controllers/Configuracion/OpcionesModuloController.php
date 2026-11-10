@@ -155,12 +155,17 @@ class OpcionesModuloController extends Controller
         ],
         'asistencia' => [
             'titulo' => 'Asistencia',
-            'descripcion' => 'Cómo reciben los lectores de huella las marcas.',
+            'descripcion' => 'Cómo reciben los lectores de huella las marcas, y el horario para los avisos.',
             'modulo' => ModuloSistema::Asistencia,
             'grupos' => [
                 [
                     'titulo' => 'Lectores de huella',
                     'claves' => ['asistencia.cooldown_segundos', 'asistencia.diferidas_max_dias'],
+                ],
+                [
+                    'titulo' => 'Horario para los avisos',
+                    'descripcion' => 'Solo para los avisos de «Marcas de hoy»: no frenan nada ni cambian la planilla.',
+                    'claves' => ['asistencia.horario.entrada', 'asistencia.horario.tolerancia_minutos', 'asistencia.horario.horas_por_dia'],
                 ],
             ],
         ],
