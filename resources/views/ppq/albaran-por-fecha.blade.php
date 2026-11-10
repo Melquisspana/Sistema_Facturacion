@@ -10,7 +10,9 @@
         $esNc = ($doc['tipo_dte'] ?? null) === '05';
         $montoNum = isset($doc['monto_dte']) && $doc['monto_dte'] !== '' ? (float) $doc['monto_dte'] : null;
         $montoDoc = $montoNum === null ? '—' : ($esNc ? '−$'.number_format(abs($montoNum), 2) : '$'.number_format($montoNum, 2));
-        $sala = \App\Support\OrdenCompra::salaDesde($doc['numero_orden_compra'] ?? null);
+        // Dónde va la sala dentro de la OC se lee una vez para toda la pantalla.
+        $posicionSala = \App\Support\OrdenCompra::posicionSala();
+        $sala = \App\Support\OrdenCompra::salaDesde($doc['numero_orden_compra'] ?? null, $posicionSala);
         $salaEtq = \App\Support\Sala::etiqueta($sala);
         // Campos del documento a reenviar al agregar (sin 'q').
         $docPost = collect($doc)->except('q')->filter(fn ($v) => $v !== null && $v !== '')->all();
@@ -78,7 +80,7 @@
 
                     @forelse ($candidatos as $c)
                         @php
-                            $cSala = $c['sala'] ?? \App\Support\OrdenCompra::salaDesde($c['orden_compra'] ?? null);
+                            $cSala = $c['sala'] ?? \App\Support\OrdenCompra::salaDesde($c['orden_compra'] ?? null, $posicionSala);
                             // Sala "real" del albarán según su propio número (2º segmento): sirve para
                             // detectar que el albarán es de otra sala distinta a la del documento.
                             $cSalaAlb = \App\Support\Albaran::salaDesdeNumero($c['numero_albaran'] ?? null) ?: $cSala;

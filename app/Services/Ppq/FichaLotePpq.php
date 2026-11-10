@@ -121,6 +121,8 @@ class FichaLotePpq
     public function resumen(Collection $filas): array
     {
         $tolerancia = (float) Ajustes::decimal('ppq.diferencia_coincide', '0.05');
+        // Dónde va la sala dentro de la OC se lee una vez, no en cada renglón.
+        $posicionSala = OrdenCompra::posicionSala();
 
         $totalDte = 0.0;
         $totalAlb = 0.0;
@@ -161,7 +163,7 @@ class FichaLotePpq
                     $sinMonto++;
                 }
                 $salaAlbaran = Albaran::salaDesdeNumero($f->numero_albaran);
-                if (! $esNc && PpqConciliacion::salaMismatch(OrdenCompra::salaDesde($f->numero_orden_compra), $salaAlbaran) !== null) {
+                if (! $esNc && PpqConciliacion::salaMismatch(OrdenCompra::salaDesde($f->numero_orden_compra, $posicionSala), $salaAlbaran) !== null) {
                     $otraSala++;
                 }
             }

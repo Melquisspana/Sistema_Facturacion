@@ -27,10 +27,11 @@ class PpqBackfillSalas extends Command
     {
         $aplicar = (bool) $this->option('aplicar');
         $mapa = []; // codigo => ['nombre' => ..., 'fuente' => ...]
+        $posicionSala = OrdenCompra::posicionSala();
 
         // 1) Nombres ya snapshoteados en ppq_items.
         foreach (PpqItem::whereNotNull('sala_nombre')->get(['numero_orden_compra', 'sala_nombre']) as $it) {
-            $cod = OrdenCompra::salaDesde($it->numero_orden_compra);
+            $cod = OrdenCompra::salaDesde($it->numero_orden_compra, $posicionSala);
             if ($cod && blank($mapa[$cod] ?? null)) {
                 $mapa[$cod] = ['nombre' => $it->sala_nombre, 'fuente' => 'ppq_item'];
             }
@@ -50,7 +51,7 @@ class PpqBackfillSalas extends Command
             }
             $jsonLeidos++;
             $r = $parser->desdeJson($dec['data']);
-            $cod = OrdenCompra::salaDesde($r['ordenCompra'] ?? null);
+            $cod = OrdenCompra::salaDesde($r['ordenCompra'] ?? null, $posicionSala);
             $nombre = $r['salaNombre'] ?? null;
             // El JSON es autoritativo (nombre real del receptor): prioriza sobre el item.
             if ($cod && filled($nombre)) {
