@@ -86,12 +86,12 @@ class NotaCreditoAjuste
             $nc = $this->borradores->crearNotaCredito($original, $datos, $usuario);
             $linea = $this->borradores->agregarConceptoNotaCredito($nc, [
                 'descripcion' => 'Nota de crédito de pronto pago '.($ajuste->referencia_calleja ? '#'.$ajuste->referencia_calleja : $ajuste->referencia),
-                'monto' => number_format(max(1, (int) round($objetivo / 1.13)) / 100, 2, '.', ''),
+                'monto' => number_format(max(1, (int) round($objetivo / $this->factorBruto())) / 100, 2, '.', ''),
             ]);
 
             // Ambas ramas, también junto al umbral: solo el motor decide si retiene.
             $bases = [];
-            foreach ([1.12, 1.13] as $factor) {
+            foreach ([$this->factorNeto(), $this->factorBruto()] as $factor) {
                 $centro = (int) round($objetivo / $factor);
                 foreach ([0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5] as $delta) {
                     $bases[] = max(1, $centro + $delta);
@@ -148,19 +148,34 @@ class NotaCreditoAjuste
     }
 
     /**
+     * De la base al total con IVA: 1 + la tasa configurada (hoy 1.13). Se redondea para
+     * que la suma en coma flotante dé el mismo número que el literal.
+     */
+    private function factorBruto(): float
+    {
+        return round(1 + (float) config('dte.iva_tasa', 0.13), 6);
+    }
+
+    /** De la base a lo que paga un agente de retención: 1 + IVA − retención (hoy 1.12). */
+    private function factorNeto(): float
+    {
+        return round($this->factorBruto() - (float) config('dte.retencion_iva_tasa', 0.01), 6);
+    }
+
+    /**
      * Total bruto (antes de retención) que tendrá la NC del ajuste si se relaciona con
      * este CCF. Es una ESTIMACIÓN para ofrecer solo los CCF que alcanzan: el importe del
-     * TXT es neto de la retención del 1 %, que la NC hereda del CCF cuando su base supera
+     * TXT es neto de la retención de IVA, que la NC hereda del CCF cuando su base supera
      * el umbral. El total exacto lo mide crear() con el motor fiscal.
      */
     public function brutoEstimado(CobroAjuste $ajuste, Dte $ccf): string
     {
         $neto = abs((float) $ajuste->monto);
-        $base = $neto / 1.12;
+        $base = $neto / $this->factorNeto();
         $retiene = (bool) $ccf->aplica_retencion_iva
             && $base > (float) config('dte.retencion_iva_umbral', 100);
 
-        $bruto = $retiene ? $base * 1.13 : $neto;
+        $bruto = $retiene ? $base * $this->factorBruto() : $neto;
 
         return number_format(ceil(round($bruto * 100, 6)) / 100, 2, '.', '');
     }
