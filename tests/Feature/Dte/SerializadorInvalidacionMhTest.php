@@ -90,7 +90,7 @@ class SerializadorInvalidacionMhTest extends TestCase
     {
         return new EventoInvalidacionData(
             tipoAnulacion: $tipo,
-            nombreResponsable: 'Melqui Administrador',
+            nombreResponsable: 'Responsable de Prueba',
             tipoDocResponsable: '13',
             numDocResponsable: '040000000',
             nombreSolicita: 'Calleja Cuentas por Pagar',

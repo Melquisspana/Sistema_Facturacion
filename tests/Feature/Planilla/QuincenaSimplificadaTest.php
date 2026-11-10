@@ -96,21 +96,21 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_abrir_una_quincena_carga_sola_a_las_personas_activas_con_su_importe(): void
     {
         $u = $this->gestor();
-        $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
-        $this->persona($u, 'Carlos Rivas', '02345678-3', '200.00', '2026-01-01');
-        $this->persona($u, 'Rosa Alvarenga', '05678901-8', '180.00', '2026-01-01');
+        $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
+        $this->persona($u, 'Carlos Rótulo', '02345678-3', '200.00', '2026-01-01');
+        $this->persona($u, 'Rosa Alias', '05678901-8', '180.00', '2026-01-01');
 
         $planilla = $this->quincena($u, '2026-09-10');
 
         // Las tres ya están puestas, con su importe, sin haber escrito nada.
         $this->assertSame(3, $planilla->detalles->count());
         $this->assertSame(
-            ['Ana Mendoza' => '225.00', 'Carlos Rivas' => '200.00', 'Rosa Alvarenga' => '180.00'],
+            ['Ana Muestra' => '225.00', 'Carlos Rótulo' => '200.00', 'Rosa Alias' => '180.00'],
             $planilla->detalles->pluck('salario', 'nombre_snapshot')->all()
         );
 
         // Y el DUI viajó a la foto de la línea, para que el recibo no dependa de la ficha.
-        $this->assertSame('01234567-8', $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Mendoza')->dui_snapshot);
+        $this->assertSame('01234567-8', $planilla->detalles->firstWhere('nombre_snapshot', 'Ana Muestra')->dui_snapshot);
 
         // Extras y descuentos, vacíos. Es lo que impide pagar dos veces un extra viejo.
         $this->assertSame(0, DB::table('planilla_conceptos')->count());
@@ -119,7 +119,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_el_dui_conserva_sus_ceros_de_la_izquierda(): void
     {
         $u = $this->gestor();
-        $ana = $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
+        $ana = $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
 
         // Guardado como texto: si fuese número, esto sería 12345678.
         $this->assertSame('01234567-8', $ana->dui);
@@ -129,7 +129,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_cambiar_el_sueldo_no_reescribe_las_quincenas_anteriores(): void
     {
         $u = $this->gestor();
-        $ana = $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
+        $ana = $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
 
         // Agosto se prepara y se confirma con 225.
         $agosto = $this->quincena($u, '2026-08-10');
@@ -152,7 +152,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_el_importe_vigente_es_el_del_inicio_del_periodo(): void
     {
         $u = $this->gestor();
-        $ana = $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
+        $ana = $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
 
         // El aumento arranca el 10, a mitad de la quincena del 1 al 15.
         app(SueldoHabitual::class)->registrar($u, $ana, ['importe' => '250.00', 'vigente_desde' => '2026-09-10']);
@@ -170,7 +170,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_registrar_dos_veces_el_mismo_dia_corrige_en_vez_de_duplicar(): void
     {
         $u = $this->gestor();
-        $ana = $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
+        $ana = $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
 
         app(SueldoHabitual::class)->registrar($u, $ana, ['importe' => '250.00', 'vigente_desde' => '2026-09-01']);
         app(SueldoHabitual::class)->registrar($u, $ana, ['importe' => '260.00', 'vigente_desde' => '2026-09-01']);
@@ -183,7 +183,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_ajustar_una_quincena_no_cambia_el_sueldo_habitual(): void
     {
         $u = $this->gestor();
-        $ana = $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
+        $ana = $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
         $planilla = $this->quincena($u, '2026-09-10');
 
         // Esta quincena se le paga menos por una ausencia. Es una excepción del período.
@@ -203,8 +203,8 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_quien_causa_baja_sale_de_las_quincenas_nuevas_y_queda_en_las_viejas(): void
     {
         $u = $this->gestor();
-        $ana = $this->persona($u, 'Ana Mendoza', '01234567-8', '225.00', '2026-01-01');
-        $luis = $this->persona($u, 'Luis Portillo', '04567890-3', '180.00', '2026-01-01');
+        $ana = $this->persona($u, 'Ana Muestra', '01234567-8', '225.00', '2026-01-01');
+        $luis = $this->persona($u, 'Luis Postizo', '04567890-3', '180.00', '2026-01-01');
 
         $agosto = $this->quincena($u, '2026-08-10');
         $this->assertSame(2, $agosto->detalles->count());
@@ -214,7 +214,7 @@ class QuincenaSimplificadaTest extends TestCase
 
         // La quincena del 16 al 30 ya no lo propone.
         $septiembreB = $this->quincena($u, '2026-09-20');
-        $this->assertSame(['Ana Mendoza'], $septiembreB->detalles->pluck('nombre_snapshot')->all());
+        $this->assertSame(['Ana Muestra'], $septiembreB->detalles->pluck('nombre_snapshot')->all());
 
         // Y agosto lo conserva entero.
         $this->assertSame(2, $agosto->fresh()->detalles->count());
@@ -224,13 +224,13 @@ class QuincenaSimplificadaTest extends TestCase
     {
         $u = $this->gestor();
         $ana = app(RegistrarEmpleado::class)->registrar($u, [
-            'nombre' => 'Ana Mendoza', 'dui' => '01234567-8', 'cargo' => 'Ventas',
+            'nombre' => 'Ana Muestra', 'dui' => '01234567-8', 'cargo' => 'Ventas',
             'origen_tipo' => 'usuario', 'origen_id' => $u->id,
         ]);
         $ana->update(['activo' => false, 'baja_el' => '2026-09-05']);
 
         $devuelta = app(RegistrarEmpleado::class)->registrar($u, [
-            'nombre' => 'Ana Mendoza', 'origen_tipo' => 'usuario', 'origen_id' => $u->id,
+            'nombre' => 'Ana Muestra', 'origen_tipo' => 'usuario', 'origen_id' => $u->id,
         ]);
 
         $this->assertSame($ana->id, $devuelta->id);
@@ -244,7 +244,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_el_periodo_particular_se_guarda_y_no_calcula_el_importe(): void
     {
         $u = $this->gestor();
-        $luis = $this->persona($u, 'Luis Portillo', '04567890-3', '180.00', '2026-01-01');
+        $luis = $this->persona($u, 'Luis Postizo', '04567890-3', '180.00', '2026-01-01');
         $planilla = $this->quincena($u, '2026-09-10');
 
         // Entró el 8: se indican sus fechas y se escribe el importe a mano.
@@ -290,7 +290,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_el_comprobante_suma_el_saldo_pendiente_no_lo_adelantado_alguna_vez(): void
     {
         $u = $this->gestor();
-        $nubia = $this->persona($u, 'Nubia Flores', '10123456-4', '165.00', '2026-01-01');
+        $nubia = $this->persona($u, 'Nubia Ficción', '10123456-4', '165.00', '2026-01-01');
 
         // Se le adelantaron 60 en agosto…
         $viejo = $this->adelanto($u, $nubia, '60.00', '2026-08-05');
@@ -324,7 +324,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_un_anticipo_ya_recuperado_del_todo_no_entra_en_la_cuenta(): void
     {
         $u = $this->gestor();
-        $nubia = $this->persona($u, 'Nubia Flores', '10123456-4', '165.00', '2026-01-01');
+        $nubia = $this->persona($u, 'Nubia Ficción', '10123456-4', '165.00', '2026-01-01');
 
         $saldado = $this->adelanto($u, $nubia, '30.00', '2026-08-05');
 
@@ -351,7 +351,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_entregar_un_adelanto_registra_el_dinero_una_sola_vez(): void
     {
         $u = $this->gestor();
-        $nubia = $this->persona($u, 'Nubia Flores', '10123456-4', '165.00', '2026-01-01');
+        $nubia = $this->persona($u, 'Nubia Ficción', '10123456-4', '165.00', '2026-01-01');
 
         $anticipo = $this->adelanto($u, $nubia, '40.00', '2026-09-12');
 
@@ -380,7 +380,7 @@ class QuincenaSimplificadaTest extends TestCase
     public function test_el_folio_del_comprobante_no_se_repite_entre_personas(): void
     {
         $u = $this->gestor();
-        $a = $this->persona($u, 'Nubia Flores', '10123456-4', '165.00', '2026-01-01');
+        $a = $this->persona($u, 'Nubia Ficción', '10123456-4', '165.00', '2026-01-01');
         $b = $this->persona($u, 'Rafael Sosa', '11234567-9', '210.00', '2026-01-01');
 
         $folios = app(ComprobanteAdelanto::class);

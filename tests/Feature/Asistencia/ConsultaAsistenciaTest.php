@@ -52,8 +52,8 @@ class ConsultaAsistenciaTest extends TestCase
 
         $this->entrada = AsistenciaDispositivo::factory()->create(['codigo' => 'entrada', 'nombre' => 'Entrada principal']);
         $this->bodega = AsistenciaDispositivo::factory()->create(['codigo' => 'bodega', 'nombre' => 'Bodega']);
-        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Pérez']);
-        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Ramos']);
+        $this->ana = AsistenciaEmpleado::factory()->create(['nombres' => 'Ana', 'apellidos' => 'Prueba']);
+        $this->beto = AsistenciaEmpleado::factory()->create(['nombres' => 'Beto', 'apellidos' => 'Relleno']);
     }
 
     private function consulta(): ConsultaAsistencia
@@ -469,8 +469,8 @@ class ConsultaAsistenciaTest extends TestCase
             ->conRango(CarbonImmutable::parse('2026-03-01'), CarbonImmutable::parse('2026-03-31'));
 
         $this->assertSame(
-            'Empleado: Ana Pérez · Del 01/03/2026 al 31/03/2026',
-            $filtro->descripcion(['empleado' => 'Ana Pérez']),
+            'Empleado: Ana Prueba · Del 01/03/2026 al 31/03/2026',
+            $filtro->descripcion(['empleado' => 'Ana Prueba']),
         );
 
         $this->assertSame('Todas las marcaciones', FiltroAsistencia::vacio()->descripcion());

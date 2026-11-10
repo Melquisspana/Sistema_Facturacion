@@ -116,7 +116,7 @@ class AreaAsistenciaTest extends TestCase
         config()->set('asistencia.enabled', false);
 
         $this->actingAs($this->admin())
-            ->post(route('asistencia.empleados.store'), ['nombres' => 'Ana', 'apellidos' => 'Pérez'])
+            ->post(route('asistencia.empleados.store'), ['nombres' => 'Ana', 'apellidos' => 'Prueba'])
             ->assertNotFound();
 
         $this->assertSame(0, AsistenciaEmpleado::count());

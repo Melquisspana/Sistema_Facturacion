@@ -159,7 +159,7 @@ class FlujoGastosTest extends TestCase
     public function test_quien_solo_ve_empresa_no_recibe_filas_ni_totales_personales(): void
     {
         $duenio = $this->operador();
-        $this->gasto($duenio, ['ambito' => 'personal', 'concepto' => 'Universidad de Andrea']);
+        $this->gasto($duenio, ['ambito' => 'personal', 'concepto' => 'Universidad de Ana Ficticia']);
         $this->gasto($duenio, ['concepto' => 'Internet de la oficina']);
 
         $restringido = $this->soloEmpresa();
@@ -167,7 +167,7 @@ class FlujoGastosTest extends TestCase
 
         $respuesta->assertOk();
         $respuesta->assertSee('Internet de la oficina');
-        $respuesta->assertDontSee('Universidad de Andrea');
+        $respuesta->assertDontSee('Universidad de Ana Ficticia');
 
         // Y el total tampoco la delata.
         $totales = app(ConsultaGastos::class)->totales($restringido, [], now()->toDateString());
@@ -1056,7 +1056,7 @@ class FlujoGastosTest extends TestCase
         $duenio = $this->operador();
         // Un concepto que empieza por «=» se abriría como fórmula en Excel.
         $this->gasto($duenio, ['concepto' => '=SUMA(A1:A9) proveedor raro']);
-        $this->gasto($duenio, ['ambito' => 'personal', 'concepto' => 'Universidad de Andrea']);
+        $this->gasto($duenio, ['ambito' => 'personal', 'concepto' => 'Universidad de Ana Ficticia']);
 
         $csv = $this->actingAs($this->soloEmpresa())
             ->get(route('gastos.informes.exportar', ['informe' => 'pendientes']));
@@ -1065,7 +1065,7 @@ class FlujoGastosTest extends TestCase
         $contenido = $csv->streamedContent();
 
         $this->assertStringContainsString("'=SUMA(A1:A9)", $contenido, 'La fórmula queda neutralizada.');
-        $this->assertStringNotContainsString('Universidad de Andrea', $contenido, 'Una exportación no saca lo que la pantalla oculta.');
+        $this->assertStringNotContainsString('Universidad de Ana Ficticia', $contenido, 'Una exportación no saca lo que la pantalla oculta.');
     }
 
     public function test_exportar_exige_su_propio_permiso(): void

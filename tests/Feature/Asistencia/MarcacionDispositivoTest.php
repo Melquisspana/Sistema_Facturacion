@@ -55,7 +55,7 @@ class MarcacionDispositivoTest extends TestCase
 
         $this->empleado = AsistenciaEmpleado::create([
             'nombres' => 'Ana María',
-            'apellidos' => 'Pérez Rivas',
+            'apellidos' => 'Prueba Rótulo',
             'activo' => true,
         ]);
 
@@ -261,8 +261,8 @@ class MarcacionDispositivoTest extends TestCase
             'mensaje' => 'Entrada registrada',
             'empleado' => [
                 'id' => $this->empleado->id,
-                'nombre' => 'Ana María Pérez Rivas',
-                'nombre_corto' => 'Ana Pérez',
+                'nombre' => 'Ana María Prueba Rótulo',
+                'nombre_corto' => 'Ana Prueba',
             ],
             'marcacion' => [
                 'tipo' => 'entrada',
@@ -339,7 +339,7 @@ class MarcacionDispositivoTest extends TestCase
             'ok' => false,
             'estado' => 'cooldown',
             'mensaje' => 'Ya marcaste Entrada a las 07:02:10',
-            'empleado' => ['nombre_corto' => 'Ana Pérez'],
+            'empleado' => ['nombre_corto' => 'Ana Prueba'],
             'espera_segundos' => 88,
             'marcacion_previa' => ['tipo' => 'entrada', 'hora' => '07:02:10'],
         ]);
