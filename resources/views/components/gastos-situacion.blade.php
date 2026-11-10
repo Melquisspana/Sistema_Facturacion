@@ -14,6 +14,7 @@
         'saldada_mixta' => 'bg-emerald-100 text-emerald-800',
         'credito_a_favor' => 'bg-violet-100 text-violet-700',
         'por_determinar' => 'bg-gray-100 text-gray-700',
+        'anulada' => 'bg-red-100 text-red-700',
     ];
 
     $vencimiento = [

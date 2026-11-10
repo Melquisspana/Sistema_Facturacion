@@ -149,6 +149,19 @@ final class ProteccionPlanilla implements ProteccionDeGastos
             .'después revertí el pago.';
     }
 
+    public function motivoParaNoAnular(int $gastoId): ?string
+    {
+        if (! $this->instalada() || ! $this->esDePlanilla($gastoId)) {
+            return null;
+        }
+
+        // No es un permiso: a quien los tenga todos le pasa igual. Anularlo por Gastos
+        // dejaría la planilla confirmada con una deuda que ya no existe, y los anticipos
+        // que descontó, sin liberar.
+        return 'Este gasto viene de una planilla y no se anula desde Gastos: anulá la planilla en Planilla, '
+            .'con su motivo, y sus deudas se cierran solas.';
+    }
+
     private function esDePlanilla(int $gastoId): bool
     {
         return DB::table('planilla_detalles')->where('gasto_id', $gastoId)->exists()

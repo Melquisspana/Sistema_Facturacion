@@ -70,6 +70,10 @@ final class RegistrarPago
                 throw ValidationException::withMessages(['pago' => 'Revisá las cuotas seleccionadas.']);
             }
             abort_unless($gastos->every(fn ($gasto) => $this->acceso->ver($usuario, $gasto)), 403);
+            // Con el gasto bloqueado: una anulación simultánea no deja pasar el pago.
+            if ($anulado = $gastos->first(fn (Gasto $gasto) => $gasto->anulado())) {
+                throw ValidationException::withMessages(['pago' => 'El gasto #'.$anulado->id.' está anulado: ya no se debe y no se le registran pagos.']);
+            }
             // Alcanzar una obligación y poder pagarla no son lo mismo cuando la creó
             // otro módulo: un sueldo se ve con el permiso de salarios y se paga con el
             // de pagos de planilla.
